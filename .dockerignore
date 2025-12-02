@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+.specify
+.vscode
+**/node_modules
+**/dist
+specs
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example

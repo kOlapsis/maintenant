@@ -1,0 +1,36 @@
+# golangci-lint configuration for PulseBoard backend
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+
+linters-settings:
+  revive:
+    rules:
+      - name: line-length-limit
+        arguments: [120]
+
+  goimports:
+    local-prefixes: github.com/kOlapsis/pulseboard
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

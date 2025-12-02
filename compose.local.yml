@@ -1,0 +1,19 @@
+services:
+  pulseboard:
+    image: ghcr.io/kolapsis/pulseboard
+    build: .
+    container_name: pulseboard
+    restart: unless-stopped
+    group_add:
+      - ${DOCKER_GID:-983}
+    volumes:
+      - pulseboard_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PULSEBOARD_ADDR: "0.0.0.0:8080"
+      PULSEBOARD_DB: "/data/pulseboard.db"
+    ports:
+      - "8080:8080"
+
+volumes:
+  pulseboard_data:

@@ -1,0 +1,44 @@
+# Go
+*.exe
+*.test
+*.out
+vendor/
+backend/tmp/
+
+# Node.js / Frontend
+node_modules/
+dist/
+!backend/cmd/pulseboard/web/dist/.gitkeep
+frontend/dist/
+*.log
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+/data/
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+*.coverprofile
+
+# Build output
+backend/pulseboard
+CLAUDE.md
+.claude/
+pulseboard-*.md

@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+/* ===== PulseBoard Design System ===== */
+
+/* T004: Color primitives + semantic tokens via Tailwind v4 @theme */
+@theme {
+  /* Gray scale */
+  --color-pb-gray-50: #f9fafb;
+  --color-pb-gray-100: #f3f4f6;
+  --color-pb-gray-200: #e5e7eb;
+  --color-pb-gray-300: #d1d5db;
+  --color-pb-gray-400: #9ca3af;
+  --color-pb-gray-500: #6b7280;
+  --color-pb-gray-600: #4b5563;
+  --color-pb-gray-700: #374151;
+  --color-pb-gray-800: #1e293b;
+  --color-pb-gray-850: #151923;
+  --color-pb-gray-900: #0f1115;
+  --color-pb-gray-950: #0b0d11;
+
+  /* Status colors (spec-aligned) */
+  --color-pb-green-500: #10b981;
+  --color-pb-red-500: #f43f5e;
+  --color-pb-yellow-500: #f59e0b;
+  --color-pb-orange-500: #f97316;
+  --color-pb-blue-500: #3b82f6;
+}
+
+/* Dark theme (default) */
+@layer base {
+  :root {
+    /* Semantic: backgrounds — spec tokens */
+    --pb-bg-primary: #0f1115;
+    --pb-bg-surface: #151923;
+    --pb-bg-elevated: #1e293b;
+    --pb-bg-hover: #334155;
+
+    /* Semantic: text */
+    --pb-text-primary: #f9fafb;
+    --pb-text-secondary: #d1d5db;
+    --pb-text-muted: #64748b;
+    --pb-text-inverted: #0f1115;
+
+    /* Semantic: borders — slate-800 */
+    --pb-border-default: #1e293b;
+    --pb-border-subtle: #1e293b;
+
+    /* Accent */
+    --pb-accent: #3b82f6;
+    --pb-accent-hover: #2563eb;
+
+    /* Status semantic — spec-aligned */
+    --pb-status-ok: #10b981;
+    --pb-status-warn: #f59e0b;
+    --pb-status-critical: #f97316;
+    --pb-status-down: #f43f5e;
+    --pb-status-paused: #64748b;
+
+    /* Status backgrounds (muted) */
+    --pb-status-ok-bg: rgba(16, 185, 129, 0.15);
+    --pb-status-warn-bg: rgba(245, 158, 11, 0.15);
+    --pb-status-critical-bg: rgba(249, 115, 22, 0.15);
+    --pb-status-down-bg: rgba(244, 63, 94, 0.15);
+
+    /* Status glow shadows */
+    --pb-glow-ok: 0 0 8px rgba(16, 185, 129, 0.5);
+    --pb-glow-down: 0 0 8px rgba(244, 63, 94, 0.5);
+    --pb-glow-warn: 0 0 8px rgba(245, 158, 11, 0.4);
+
+    /* Radius */
+    --pb-radius-sm: 0.25rem;
+    --pb-radius-md: 0.5rem;
+    --pb-radius-lg: 0.75rem;
+
+    /* Shadows */
+    --pb-shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --pb-shadow-elevated: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+
+    /* T006: Density tokens (comfortable default) */
+    --pb-density-row-padding: 0.75rem;
+    --pb-density-gap: 1rem;
+    --pb-density-font-size: 0.875rem;
+  }
+
+  /* T006: Compact density overrides */
+  [data-density="compact"] {
+    --pb-density-row-padding: 0.375rem;
+    --pb-density-gap: 0.5rem;
+    --pb-density-font-size: 0.8125rem;
+  }
+
+  /* Base styles */
+  body {
+    background-color: var(--pb-bg-primary);
+    color: var(--pb-text-primary);
+    font-size: var(--pb-density-font-size);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Slide-over panel transition (spec) */
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.3s ease-out;
+}
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+/* Utility classes for design tokens */
+@layer utilities {
+  .bg-pb-primary { background-color: var(--pb-bg-primary); }
+  .bg-pb-surface { background-color: var(--pb-bg-surface); }
+  .bg-pb-elevated { background-color: var(--pb-bg-elevated); }
+  .text-pb-primary { color: var(--pb-text-primary); }
+  .text-pb-secondary { color: var(--pb-text-secondary); }
+  .text-pb-muted { color: var(--pb-text-muted); }
+  .border-pb-default { border-color: var(--pb-border-default); }
+  .border-pb-subtle { border-color: var(--pb-border-subtle); }
+  .shadow-pb-card { box-shadow: var(--pb-shadow-card); }
+  .shadow-pb-elevated { box-shadow: var(--pb-shadow-elevated); }
+  .glow-ok { box-shadow: var(--pb-glow-ok); }
+  .glow-down { box-shadow: var(--pb-glow-down); }
+  .glow-warn { box-shadow: var(--pb-glow-warn); }
+}
