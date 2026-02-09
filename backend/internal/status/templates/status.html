@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Status — PulseBoard</title>
+    <link rel="stylesheet" href="/status/static/status.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>System Status</h1>
+            <p class="org-subtitle">Current service health</p>
+        </header>
+
+        <div id="global-banner" class="banner banner-{{.GlobalStatus}}">
+            <span id="global-message">{{.GlobalMessage}}</span>
+        </div>
+
+        {{range .Groups}}
+        <section class="section component-group">
+            <h2>{{.Name}}</h2>
+            {{range .Components}}
+            <div class="component" data-component-id="{{.ID}}">
+                <span class="component-name">{{.DisplayName}}</span>
+                <span class="status-indicator status-{{.EffectiveStatus}}">{{.StatusLabel}}</span>
+            </div>
+            {{end}}
+        </section>
+        {{end}}
+
+        {{if .Ungrouped}}
+        <section class="section component-group">
+            <h2>Other Services</h2>
+            {{range .Ungrouped}}
+            <div class="component" data-component-id="{{.ID}}">
+                <span class="component-name">{{.DisplayName}}</span>
+                <span class="status-indicator status-{{.EffectiveStatus}}">{{.StatusLabel}}</span>
+            </div>
+            {{end}}
+        </section>
+        {{end}}
+
+        <footer>
+            <span class="powered-by">Powered by <strong>PulseBoard</strong></span>
+        </footer>
+    </div>
+
+    <script>
+    (function() {
+        var es = new EventSource('/status/events');
+
+        es.addEventListener('status.component_changed', function(e) {
+            var d = JSON.parse(e.data);
+            var el = document.querySelector('[data-component-id="' + d.component_id + '"]');
+            if (!el) return;
+            var ind = el.querySelector('.status-indicator');
+            if (ind) {
+                ind.className = 'status-indicator status-' + d.status;
+                var labels = {
+                    operational: 'Operational',
+                    degraded: 'Degraded Performance',
+                    partial_outage: 'Partial Outage',
+                    major_outage: 'Major Outage',
+                    under_maintenance: 'Under Maintenance'
+                };
+                ind.textContent = labels[d.status] || d.status;
+            }
+        });
+
+        es.addEventListener('status.global_changed', function(e) {
+            var d = JSON.parse(e.data);
+            var banner = document.getElementById('global-banner');
+            if (banner) {
+                banner.className = 'banner banner-' + d.status;
+            }
+            var msg = document.getElementById('global-message');
+            if (msg) {
+                msg.textContent = d.message;
+            }
+        });
+    })();
+    </script>
+</body>
+</html>
