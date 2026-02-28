@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulseboard
+  namespace: pulseboard
+  labels:
+    app.kubernetes.io/name: pulseboard
+    app.kubernetes.io/component: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # SQLite single-writer
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pulseboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pulseboard
+        app.kubernetes.io/component: monitoring
+    spec:
+      serviceAccountName: pulseboard
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65534
+      containers:
+        - name: pulseboard
+          image: ghcr.io/kolapsis/pulseboard:v0.1.0
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PULSEBOARD_RUNTIME
+              value: "kubernetes"
+            - name: PULSEBOARD_DB_PATH
+              value: "/data/pulseboard.db"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: pulseboard-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pulseboard-data
+  namespace: pulseboard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulseboard
+  namespace: pulseboard
+  labels:
+    app.kubernetes.io/name: pulseboard
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: pulseboard
