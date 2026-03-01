@@ -18,7 +18,7 @@ const resourcesStore = useResourcesStore()
 const updatesStore = useUpdatesStore()
 
 const metrics = computed(() => resourcesStore.formattedSnapshot(props.container.id))
-const containerUpdate = computed(() => updatesStore.updates.find(u => String(u.container_id) === String(props.container.id)) ?? null)
+const containerUpdate = computed(() => updatesStore.updates.find(u => u.container_id === props.container.external_id) ?? null)
 
 const stateColors: Record<string, { bg: string; text: string }> = {
   running: { bg: 'var(--pb-status-ok-bg)', text: 'var(--pb-status-ok)' },
@@ -94,7 +94,7 @@ function getStateStyle(state: string) {
         </div>
         <div class="mt-0.5 flex items-center gap-2">
           <p class="truncate text-xs" :style="{ color: 'var(--pb-text-muted)' }">
-            {{ container.image }}
+            {{ container.image.split('@')[0] }}
           </p>
           <UpdateBadge :update="containerUpdate" />
         </div>

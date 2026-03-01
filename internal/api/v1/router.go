@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/kolapsis/pulseboard/internal/alert"
-	"github.com/kolapsis/pulseboard/internal/pro"
+	"github.com/kolapsis/pulseboard/internal/extension"
 	"github.com/kolapsis/pulseboard/internal/certificate"
 	"github.com/kolapsis/pulseboard/internal/container"
 	"github.com/kolapsis/pulseboard/internal/endpoint"
@@ -94,6 +94,12 @@ var buildVersion string
 
 // SetBuildVersion stores the application version for the health endpoint.
 func SetBuildVersion(v string) { buildVersion = v }
+
+// organisationName is set at startup via SetOrganisationName.
+var organisationName string
+
+// SetOrganisationName stores the organisation name for the edition/status endpoints.
+func SetOrganisationName(name string) { organisationName = name }
 
 // Router sets up the /api/v1 route group.
 type Router struct {
@@ -407,20 +413,23 @@ func bodySizeLimitMiddleware(next http.Handler) http.Handler {
 // handleGetEdition returns a handler for the current edition and feature flags.
 func handleGetEdition(smtpConfigured bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		isPro := pro.CurrentEdition() == pro.Pro
+		isEnterprise := extension.CurrentEdition() == extension.Enterprise
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"edition": string(pro.CurrentEdition()),
+			"edition":           string(extension.CurrentEdition()),
+			"organisation_name": organisationName,
 			"features": map[string]bool{
-				"cve_enrichment":      isPro,
-				"risk_scoring":        isPro,
-				"changelog":           isPro,
-				"incidents":           isPro,
-				"maintenance_windows": isPro,
-				"subscribers":         isPro,
+				"cve_enrichment":      isEnterprise,
+				"risk_scoring":        isEnterprise,
+				"changelog":           isEnterprise,
+				"incidents":           isEnterprise,
+				"maintenance_windows": isEnterprise,
+				"subscribers":         isEnterprise,
 				"smtp":                smtpConfigured,
-				"alert_escalation":    isPro,
-				"alert_routing":       isPro,
-				"alert_templates":     isPro,
+				"slack":               isEnterprise,
+				"teams":               isEnterprise,
+				"alert_escalation":    isEnterprise,
+				"alert_routing":       isEnterprise,
+				"alert_templates":     isEnterprise,
 			},
 		})
 	}

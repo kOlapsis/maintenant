@@ -12,6 +12,7 @@ services:
     environment:
       PULSEBOARD_ADDR: "0.0.0.0:8080"
       PULSEBOARD_DB: "/data/pulseboard.db"
+      PULSEBOARD_ORGANISATION_NAME: "kOlapsis"
     ports:
       - "8080:8080"
 

@@ -20,7 +20,7 @@ const props = defineProps<{
         rel="noopener noreferrer"
         class="text-[10px] text-blue-500 hover:text-blue-400 flex items-center gap-1 transition-colors"
       >
-        Voir la release <ExternalLink :size="9" />
+        View release <ExternalLink :size="9" />
       </a>
     </div>
 
@@ -33,7 +33,7 @@ const props = defineProps<{
       {{ changelogSummary }}
     </p>
     <p v-else class="text-xs text-slate-600 italic">
-      Aucun résumé disponible
+      No summary available
     </p>
 
     <a
@@ -43,7 +43,7 @@ const props = defineProps<{
       rel="noopener noreferrer"
       class="mt-2 text-[10px] text-slate-500 hover:text-slate-400 flex items-center gap-1 transition-colors"
     >
-      Code source <ExternalLink :size="9" />
+      Source code <ExternalLink :size="9" />
     </a>
   </div>
 </template>

@@ -21,7 +21,7 @@ function getSeverityStyle(sev: string) {
 
 <template>
   <div v-if="cves.length === 0" class="text-xs text-slate-600 py-4 text-center">
-    Aucune CVE active
+    No active CVEs
   </div>
   <div v-else class="space-y-2">
     <div
@@ -45,7 +45,7 @@ function getSeverityStyle(sev: string) {
       </div>
       <p v-if="cve.summary" class="text-[11px] text-slate-500 mt-1">{{ cve.summary }}</p>
       <p v-if="cve.fixed_in" class="text-[10px] text-emerald-500 mt-1 font-medium">
-        Corrigé dans : {{ cve.fixed_in }}
+        Fixed in: {{ cve.fixed_in }}
       </p>
     </div>
   </div>

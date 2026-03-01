@@ -1,68 +1,38 @@
 package status
 
 import (
-	"embed"
 	"encoding/json"
-	"html/template"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"time"
 )
 
-//go:embed templates/*.html
-var templateFS embed.FS
-
-//go:embed static/*
-var staticFS embed.FS
-
-// Handler serves the public status page and related endpoints.
+// Handler serves the public status page API and SSE endpoints.
 type Handler struct {
 	service    *Service
 	sseHandler http.Handler
-	tmpl       *template.Template
 	logger     *slog.Logger
 }
 
 // NewHandler creates a new public status page handler.
 // sseHandler should be an SSEBroker that implements http.Handler for /status/events.
 func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger) *Handler {
-	tmpl := template.Must(template.ParseFS(templateFS, "templates/*.html"))
-
 	return &Handler{
 		service:    service,
 		sseHandler: sseHandler,
-		tmpl:       tmpl,
 		logger:     logger,
 	}
 }
 
-// Register registers all public status page routes on the given mux.
-func (h *Handler) Register(mux *http.ServeMux) {
-	// Serve static assets
-	staticSub, _ := fs.Sub(staticFS, "static")
-	mux.Handle("GET /status/static/", http.StripPrefix("/status/static/", http.FileServer(http.FS(staticSub))))
+// Middleware wraps an http.Handler (e.g. rate limiter).
+type Middleware func(http.Handler) http.Handler
 
-	// Public pages
-	mux.HandleFunc("GET /status", h.HandleStatusPage)
-	mux.HandleFunc("GET /status/api", h.HandleStatusAPI)
-	mux.Handle("GET /status/events", h.sseHandler)
-}
-
-// HandleStatusPage renders the public status page.
-func (h *Handler) HandleStatusPage(w http.ResponseWriter, r *http.Request) {
-	data, err := h.service.GetPageData(r.Context())
-	if err != nil {
-		h.logger.Error("failed to get status page data", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=30")
-	if err := h.tmpl.ExecuteTemplate(w, "status.html", data); err != nil {
-		h.logger.Error("failed to render status page", "error", err)
-	}
+// Register registers the status API and SSE routes directly on the given mux.
+// The status page itself is served by the SPA; the backend only provides
+// the JSON API and SSE event stream.
+func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
+	mux.Handle("GET /status/api", mw(http.HandlerFunc(h.HandleStatusAPI)))
+	mux.Handle("GET /status/events", mw(h.sseHandler))
 }
 
 // StatusAPIResponse is the JSON snapshot of current status.

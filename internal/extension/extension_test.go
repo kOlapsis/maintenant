@@ -1,4 +1,4 @@
-package pro
+package extension
 
 import (
 	"context"
@@ -14,9 +14,9 @@ func TestCurrentEditionReturnsCommunity(t *testing.T) {
 	}
 }
 
-func TestErrProFeature(t *testing.T) {
-	if ErrProFeature == nil {
-		t.Fatal("ErrProFeature should not be nil")
+func TestErrNotAvailable(t *testing.T) {
+	if ErrNotAvailable == nil {
+		t.Fatal("ErrNotAvailable should not be nil")
 	}
 }
 
@@ -52,8 +52,8 @@ func TestNoopMaintenanceSuppressor(t *testing.T) {
 
 func TestNoopTemplateEngine(t *testing.T) {
 	result, err := NoopTemplateEngine{}.Render(context.Background(), "test", map[string]any{"key": "val"})
-	if err != ErrProFeature {
-		t.Fatalf("expected ErrProFeature, got %v", err)
+	if err != ErrNotAvailable {
+		t.Fatalf("expected ErrNotAvailable, got %v", err)
 	}
 	if result != "" {
 		t.Fatalf("expected empty string, got %q", result)

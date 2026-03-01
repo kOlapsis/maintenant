@@ -62,7 +62,7 @@ function barColor(value: number): string {
         <input
           v-model="dashboard.searchQuery"
           type="text"
-          placeholder="Rechercher un service..."
+          placeholder="Search services..."
           class="bg-[#0f1115] border border-slate-800 rounded-lg py-2 pl-9 pr-4 text-sm w-72 focus:outline-none focus:ring-1 focus:ring-blue-500/60 focus:border-blue-500/40 transition-all text-slate-200 placeholder:text-slate-600"
         />
       </div>

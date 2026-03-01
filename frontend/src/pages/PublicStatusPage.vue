@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useEdition } from '@/composables/useEdition'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
+const { organisationName } = useEdition()
 
 interface IncidentUpdate {
   status: string
@@ -71,12 +73,12 @@ onUnmounted(() => {
 
 const globalBanner = computed(() => {
   const s = data.value?.global_status
-  if (s === 'operational') return { bg: 'bg-emerald-500', text: 'Tous les systèmes opérationnels', icon: '✓' }
-  if (s === 'degraded') return { bg: 'bg-amber-500', text: 'Performances dégradées', icon: '⚠' }
-  if (s === 'partial_outage') return { bg: 'bg-amber-500', text: 'Panne partielle', icon: '⚠' }
-  if (s === 'major_outage') return { bg: 'bg-rose-500', text: 'Panne majeure', icon: '✕' }
-  if (s === 'under_maintenance') return { bg: 'bg-blue-500', text: 'Maintenance en cours', icon: '⚙' }
-  return { bg: 'bg-slate-600', text: data.value?.global_message || 'Chargement…', icon: '·' }
+  if (s === 'operational') return { bg: 'bg-emerald-500', text: 'All Systems Operational', icon: '✓' }
+  if (s === 'degraded') return { bg: 'bg-amber-500', text: 'Degraded Performance', icon: '⚠' }
+  if (s === 'partial_outage') return { bg: 'bg-amber-500', text: 'Partial Outage', icon: '⚠' }
+  if (s === 'major_outage') return { bg: 'bg-rose-500', text: 'Major Outage', icon: '✕' }
+  if (s === 'under_maintenance') return { bg: 'bg-blue-500', text: 'Under Maintenance', icon: '⚙' }
+  return { bg: 'bg-slate-600', text: data.value?.global_message || 'Loading…', icon: '·' }
 })
 
 const incidentSeverityStyle = (severity: string) => {
@@ -88,16 +90,16 @@ const incidentSeverityStyle = (severity: string) => {
 
 const incidentStatusLabel = (status: string) => {
   const map: Record<string, string> = {
-    investigating: 'Investigation',
-    identified: 'Identifié',
-    monitoring: 'Surveillance',
-    resolved: 'Résolu',
+    investigating: 'Investigating',
+    identified: 'Identified',
+    monitoring: 'Monitoring',
+    resolved: 'Resolved',
   }
   return map[status] || status
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleString('fr-FR', {
+  return new Date(iso).toLocaleString('en-US', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   })
 }
@@ -116,9 +118,15 @@ function formatDate(iso: string) {
           </div>
           <span class="text-base font-bold text-white">PulseBoard</span>
         </div>
-        <span class="text-xs text-slate-500 font-medium">Page de statut publique</span>
+        <span class="text-xs text-slate-500 font-medium">Public Status Page</span>
       </div>
     </header>
+
+    <!-- Organisation title -->
+    <div v-if="organisationName" class="mx-auto max-w-3xl px-6 pt-10 pb-2 text-center">
+      <h1 class="text-3xl font-black text-white tracking-tight">{{ organisationName }}</h1>
+      <p class="text-sm text-slate-500 mt-1">Service Status</p>
+    </div>
 
     <!-- Loading -->
     <div v-if="loading" class="flex justify-center items-center py-24">
@@ -139,7 +147,7 @@ function formatDate(iso: string) {
           </div>
           <p v-if="data.global_message" class="text-sm opacity-80 mt-1">{{ data.global_message }}</p>
           <p class="text-xs opacity-60 mt-2">
-            Mis à jour le {{ formatDate(data.updated_at) }}
+            Updated {{ formatDate(data.updated_at) }}
           </p>
         </div>
       </div>
@@ -148,7 +156,7 @@ function formatDate(iso: string) {
 
         <!-- Active Incidents -->
         <section v-if="data.active_incidents?.length">
-          <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Incidents actifs</h2>
+          <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Active Incidents</h2>
           <div class="space-y-3">
             <div
               v-for="inc in data.active_incidents"
@@ -180,7 +188,7 @@ function formatDate(iso: string) {
 
         <!-- Upcoming Maintenance -->
         <section v-if="data.upcoming_maintenance?.length">
-          <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Maintenance prévue</h2>
+          <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Scheduled Maintenance</h2>
           <div class="space-y-3">
             <div
               v-for="maint in data.upcoming_maintenance"
@@ -190,7 +198,7 @@ function formatDate(iso: string) {
               <div class="flex items-start justify-between gap-3 mb-1">
                 <span class="font-semibold text-slate-100 text-sm">{{ maint.title }}</span>
                 <span class="shrink-0 text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 font-medium">
-                  Planifiée
+                  Scheduled
                 </span>
               </div>
               <p class="text-xs text-slate-500 mb-2">
@@ -211,7 +219,7 @@ function formatDate(iso: string) {
 
         <!-- Footer -->
         <footer class="pt-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-600">
-          <span>Propulsé par <span class="text-slate-500 font-semibold">PulseBoard</span></span>
+          <span>Powered by <span class="text-slate-500 font-semibold">PulseBoard</span></span>
         </footer>
 
       </div>

@@ -151,7 +151,7 @@ watch(() => props.containerId, () => {
             {{ container.name }}
           </h2>
           <p class="truncate text-xs" :style="{ color: 'var(--pb-text-muted)' }">
-            {{ container.image }}
+            {{ container.image.split('@')[0] }}
           </p>
         </div>
         <!-- State badge -->

@@ -5,10 +5,14 @@ import ContainerDetail from '@/components/ContainerDetail.vue'
 import ResourceSummary from '@/components/ResourceSummary.vue'
 import SlideOverPanel from '@/components/ui/SlideOverPanel.vue'
 import { useContainersStore } from '@/stores/containers'
+import { useUpdatesStore } from '@/stores/updates'
 import type { Container } from '@/services/containerApi'
 import { AlertTriangle, Info } from 'lucide-vue-next'
 
 const store = useContainersStore()
+const updatesStore = useUpdatesStore()
+
+updatesStore.fetchAllUpdates()
 const isK8s = computed(() => store.runtimeName === 'kubernetes')
 const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
 const showLabelTips = ref(localStorage.getItem('pb:hideLabelTips') !== '1')

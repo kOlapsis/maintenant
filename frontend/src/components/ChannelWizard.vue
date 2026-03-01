@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { createChannel, testChannel } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
+import FeatureGate from '@/components/FeatureGate.vue'
 
 const { hasFeature } = useEdition()
 
@@ -23,34 +24,13 @@ const form = ref({
   enabled: true,
 })
 
-const allChannelTypes = [
-  {
-    key: 'slack',
-    label: 'Slack',
-    description: 'Send notifications to a Slack channel via webhook',
-    icon: 'slack',
-    urlPlaceholder: 'https://hooks.slack.com/services/...',
-  },
+const ceChannelTypes = [
   {
     key: 'discord',
     label: 'Discord',
     description: 'Post alerts to a Discord channel via webhook',
     icon: 'discord',
     urlPlaceholder: 'https://discord.com/api/webhooks/...',
-  },
-  {
-    key: 'teams',
-    label: 'Teams',
-    description: 'Send alerts to Microsoft Teams via webhook',
-    icon: 'teams',
-    urlPlaceholder: 'https://outlook.office.com/webhook/...',
-  },
-  {
-    key: 'email',
-    label: 'Email',
-    description: 'Send email notifications via configured SMTP',
-    icon: 'email',
-    urlPlaceholder: 'alerts@example.com',
   },
   {
     key: 'webhook',
@@ -61,12 +41,37 @@ const allChannelTypes = [
   },
 ]
 
-const channelTypes = computed(() =>
-  allChannelTypes.filter(t => t.key !== 'email' || hasFeature('smtp'))
-)
+const proChannelTypes = [
+  {
+    key: 'email',
+    label: 'Email (SMTP)',
+    description: 'Send email notifications via your own SMTP server',
+    icon: 'email',
+    urlPlaceholder: 'alerts@example.com',
+    feature: 'smtp',
+  },
+  {
+    key: 'slack',
+    label: 'Slack',
+    description: 'Send rich notifications to a Slack channel',
+    icon: 'slack',
+    urlPlaceholder: 'https://hooks.slack.com/services/...',
+    feature: 'slack',
+  },
+  {
+    key: 'teams',
+    label: 'Teams',
+    description: 'Send alerts to Microsoft Teams via webhook',
+    icon: 'teams',
+    urlPlaceholder: 'https://outlook.office.com/webhook/...',
+    feature: 'teams',
+  },
+]
+
+const allChannelTypes = [...ceChannelTypes, ...proChannelTypes]
 
 const selectedTypeConfig = computed(() =>
-  channelTypes.value.find(t => t.key === selectedType.value)
+  allChannelTypes.find(t => t.key === selectedType.value)
 )
 
 function selectType(type: string) {
@@ -159,9 +164,10 @@ function goBack() {
       <h3 class="mb-1 text-sm font-semibold" style="color: var(--pb-text-primary)">Select Channel Type</h3>
       <p class="mb-4 text-xs" style="color: var(--pb-text-muted)">Choose how you want to receive notifications</p>
 
+      <!-- CE channels -->
       <div class="grid grid-cols-2 gap-3">
         <button
-          v-for="type in channelTypes"
+          v-for="type in ceChannelTypes"
           :key="type.key"
           @click="selectType(type.key)"
           class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all"
@@ -172,28 +178,13 @@ function goBack() {
           @mouseenter="($event.currentTarget as HTMLElement).style.borderColor = 'var(--pb-accent)'"
           @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--pb-accent)' : 'var(--pb-border-default)'"
         >
-          <!-- Icons -->
           <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--pb-bg-hover)">
-            <!-- Slack -->
-            <svg v-if="type.icon === 'slack'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--pb-accent)">
-              <path d="M6 2v4M14 14v4M2 6h4M14 6h4M6 10h8M10 6v8" />
-            </svg>
             <!-- Discord -->
-            <svg v-else-if="type.icon === 'discord'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #5865f2">
+            <svg v-if="type.icon === 'discord'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #5865f2">
               <path d="M4 4c2-1.5 4-2 6-2s4 .5 6 2" />
               <path d="M4 16c2 1.5 4 2 6 2s4-.5 6-2" />
               <circle cx="7.5" cy="10" r="1.5" />
               <circle cx="12.5" cy="10" r="1.5" />
-            </svg>
-            <!-- Teams -->
-            <svg v-else-if="type.icon === 'teams'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #6264A7">
-              <rect x="3" y="4" width="14" height="12" rx="2" />
-              <path d="M7 10h6M10 7v6" />
-            </svg>
-            <!-- Email -->
-            <svg v-else-if="type.icon === 'email'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--pb-status-ok)">
-              <rect x="2" y="4" width="16" height="12" rx="2" />
-              <path d="M2 6l8 5 8-5" />
             </svg>
             <!-- Webhook -->
             <svg v-else width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--pb-status-warn)">
@@ -205,6 +196,47 @@ function goBack() {
           <span class="text-sm font-medium" style="color: var(--pb-text-primary)">{{ type.label }}</span>
           <span class="text-[11px]" style="color: var(--pb-text-muted)">{{ type.description }}</span>
         </button>
+      </div>
+
+      <!-- Pro channels -->
+      <div class="mt-3 grid grid-cols-3 gap-3">
+        <FeatureGate
+          v-for="type in proChannelTypes"
+          :key="type.key"
+          :feature="type.feature"
+          :title="type.label"
+          :description="type.description"
+        >
+          <button
+            @click="selectType(type.key)"
+            class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all w-full"
+            :style="{
+              background: 'var(--pb-bg-elevated)',
+              borderColor: selectedType === type.key ? 'var(--pb-accent)' : 'var(--pb-border-default)',
+            }"
+            @mouseenter="($event.currentTarget as HTMLElement).style.borderColor = 'var(--pb-accent)'"
+            @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--pb-accent)' : 'var(--pb-border-default)'"
+          >
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--pb-bg-hover)">
+              <!-- Email -->
+              <svg v-if="type.icon === 'email'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--pb-status-ok)">
+                <rect x="2" y="4" width="16" height="12" rx="2" />
+                <path d="M2 6l8 5 8-5" />
+              </svg>
+              <!-- Slack -->
+              <svg v-else-if="type.icon === 'slack'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--pb-accent)">
+                <path d="M6 2v4M14 14v4M2 6h4M14 6h4M6 10h8M10 6v8" />
+              </svg>
+              <!-- Teams -->
+              <svg v-else-if="type.icon === 'teams'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #6264A7">
+                <rect x="3" y="4" width="14" height="12" rx="2" />
+                <path d="M7 10h6M10 7v6" />
+              </svg>
+            </div>
+            <span class="text-sm font-medium" style="color: var(--pb-text-primary)">{{ type.label }}</span>
+            <span class="text-[11px]" style="color: var(--pb-text-muted)">{{ type.description }}</span>
+          </button>
+        </FeatureGate>
       </div>
 
       <div class="mt-4 flex justify-end">

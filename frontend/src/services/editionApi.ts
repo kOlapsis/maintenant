@@ -4,6 +4,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
 export interface EditionResponse {
   edition: string
+  organisation_name: string
   features: Record<string, boolean>
 }
 

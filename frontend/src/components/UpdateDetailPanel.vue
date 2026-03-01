@@ -6,7 +6,7 @@ import { useEdition } from '@/composables/useEdition'
 import RiskScoreGauge from '@/components/RiskScoreGauge.vue'
 import CveList from '@/components/CveList.vue'
 import ChangelogViewer from '@/components/ChangelogViewer.vue'
-import ProFeatureGate from '@/components/ProFeatureGate.vue'
+import FeatureGate from '@/components/FeatureGate.vue'
 import { Copy, Check, Pin, PinOff, ArrowRight, ExternalLink } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -85,12 +85,12 @@ onMounted(loadDetail)
       <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Version</h4>
       <div class="flex items-center gap-3">
         <div class="text-center">
-          <p class="text-xs text-slate-500 mb-0.5">Actuelle</p>
+          <p class="text-xs text-slate-500 mb-0.5">Current</p>
           <p class="text-sm font-bold text-slate-200 font-mono">{{ detail.current_tag || 'latest' }}</p>
         </div>
         <ArrowRight :size="16" class="text-blue-500 shrink-0" />
         <div class="text-center">
-          <p class="text-xs text-slate-500 mb-0.5">Disponible</p>
+          <p class="text-xs text-slate-500 mb-0.5">Available</p>
           <p class="text-sm font-bold text-blue-400 font-mono">{{ detail.latest_tag }}</p>
         </div>
       </div>
@@ -105,29 +105,29 @@ onMounted(loadDetail)
           }"
         >{{ detail.update_type }}</span>
         <span v-if="detail.pinned" class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400">
-          <Pin :size="8" class="inline mr-0.5" /> Épinglé
+          <Pin :size="8" class="inline mr-0.5" /> Pinned
         </span>
       </div>
     </div>
 
     <!-- Risk Score (Pro) -->
-    <ProFeatureGate feature="risk_scoring" title="Score de risque">
+    <FeatureGate feature="risk_scoring" title="Risk Score" description="Instantly assess the risk of each update. A smart score combines CVE severity, breaking changes, and version jump to help you prioritize.">
       <div v-if="detail.risk_score > 0" class="bg-[#0f1115] rounded-xl p-4 border border-slate-800">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Score de risque</h4>
+        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Risk Score</h4>
         <RiskScoreGauge :score="detail.risk_score" :level="riskLevel" />
       </div>
-    </ProFeatureGate>
+    </FeatureGate>
 
     <!-- CVEs (Pro) -->
-    <ProFeatureGate feature="cve_enrichment" title="Vulnérabilités (CVE)">
+    <FeatureGate feature="cve_enrichment" title="Vulnerabilities (CVE)" description="See at a glance if your containers are exposed to known vulnerabilities. CVEs are automatically matched and ranked by severity.">
       <div class="bg-[#0f1115] rounded-xl p-4 border border-slate-800">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Vulnérabilités (CVE)</h4>
+        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Vulnerabilities (CVE)</h4>
         <CveList :cves="detail.active_cves || []" />
       </div>
-    </ProFeatureGate>
+    </FeatureGate>
 
     <!-- Changelog (Pro) -->
-    <ProFeatureGate feature="changelog" title="Changelog">
+    <FeatureGate feature="changelog" title="Changelog" description="Read what changed before you update. Changelogs are fetched automatically with breaking changes highlighted.">
       <div v-if="detail.changelog_url || detail.changelog_summary">
         <ChangelogViewer
           :changelog-url="detail.changelog_url"
@@ -136,28 +136,28 @@ onMounted(loadDetail)
           :source-url="detail.source_url"
         />
       </div>
-    </ProFeatureGate>
+    </FeatureGate>
 
     <!-- Previous digest (Pro) -->
-    <ProFeatureGate feature="cve_enrichment" title="Digest précédent">
+    <FeatureGate feature="cve_enrichment" title="Previous Digest" description="Keep a rollback safety net. The previous image digest is saved so you can revert in seconds if an update goes wrong.">
       <div v-if="detail.previous_digest" class="bg-[#0f1115] rounded-xl p-4 border border-slate-800">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Digest précédent</h4>
+        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Previous Digest</h4>
         <p class="text-[10px] text-slate-400 font-mono break-all">{{ detail.previous_digest }}</p>
-        <p class="text-[10px] text-slate-600 mt-1">Pour un rollback manuel :</p>
+        <p class="text-[10px] text-slate-600 mt-1">For manual rollback:</p>
         <code class="text-[10px] text-blue-400 block mt-0.5">docker pull {{ detail.image.split(':')[0] }}@{{ detail.previous_digest }}</code>
       </div>
-    </ProFeatureGate>
+    </FeatureGate>
 
     <!-- Update command -->
     <div v-if="detail.update_command" class="bg-[#0f1115] rounded-xl p-4 border border-slate-800">
       <div class="flex items-center justify-between mb-2">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Commande de mise à jour</h4>
+        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Update Command</h4>
         <button
           @click="copyCommand"
           class="text-[10px] text-blue-500 hover:text-blue-400 flex items-center gap-1 transition-colors"
         >
           <component :is="copied ? Check : Copy" :size="10" />
-          {{ copied ? 'Copié !' : 'Copier' }}
+          {{ copied ? 'Copied!' : 'Copy' }}
         </button>
       </div>
       <pre class="text-[11px] text-slate-300 bg-[#0a0c10] rounded-lg p-3 overflow-x-auto font-mono">{{ detail.update_command }}</pre>
@@ -175,20 +175,20 @@ onMounted(loadDetail)
             : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/20'"
         >
           <component :is="detail.pinned ? PinOff : Pin" :size="13" />
-          {{ detail.pinned ? 'Désépingler cette version' : 'Épingler cette version' }}
+          {{ detail.pinned ? 'Unpin this version' : 'Pin this version' }}
         </button>
         <div v-if="showPinInput && !detail.pinned" class="mt-2">
           <input
             v-model="pinReason"
             type="text"
-            placeholder="Raison (optionnel)"
+            placeholder="Reason (optional)"
             class="w-full px-3 py-2 bg-[#0f1115] border border-slate-700 rounded-lg text-xs text-slate-300 placeholder-slate-600 focus:border-blue-500 focus:outline-none"
           />
           <button
             @click="handlePin"
             class="mt-2 w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-all"
           >
-            Confirmer l'épinglage
+            Confirm pin
           </button>
         </div>
       </div>
@@ -202,12 +202,12 @@ onMounted(loadDetail)
         class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
       >
         <ExternalLink :size="13" />
-        Voir le code source
+        View source code
       </a>
     </div>
   </div>
 
   <div v-else class="text-center py-12">
-    <p class="text-sm text-slate-600">Aucune donnée de mise à jour disponible</p>
+    <p class="text-sm text-slate-600">No update data available</p>
   </div>
 </template>

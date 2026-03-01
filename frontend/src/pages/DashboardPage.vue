@@ -9,8 +9,10 @@ import type { Alert } from '@/services/alertApi'
 import SparklineChart from '@/components/ui/SparklineChart.vue'
 import SlideOverPanel from '@/components/ui/SlideOverPanel.vue'
 import UpdateSummaryStrip from '@/components/dashboard/UpdateSummaryStrip.vue'
+import UpdateBadge from '@/components/UpdateBadge.vue'
+import { useUpdatesStore } from '@/stores/updates'
 import { useEdition } from '@/composables/useEdition'
-import { timeAgoFr } from '@/utils/time'
+import { timeAgo } from '@/utils/time'
 import {
   Zap,
   Cpu,
@@ -30,6 +32,7 @@ const dashboard = useDashboardStore()
 const resources = useResourcesStore()
 const alertsStore = useAlertsStore()
 const statusAdmin = useStatusAdminStore()
+const updatesStore = useUpdatesStore()
 
 const selectedService = ref<UnifiedMonitor | null>(null)
 const slideOpen = ref(false)
@@ -157,7 +160,7 @@ const incidentFeed = computed(() => {
     const route = alertEntityRoute(alert)
     items.push({
       id: `alert-${alert.id}`,
-      service: alert.entity_name || alert.source || `Alerte #${alert.id}`,
+      service: alert.entity_name || alert.source || `Alert #${alert.id}`,
       message: alert.message,
       time: formatRelativeTime(alert.fired_at || alert.created_at),
       color,
@@ -201,7 +204,12 @@ function navigateToIncident(inc: { route: string }) {
   router.push(inc.route)
 }
 
-const formatRelativeTime = timeAgoFr
+const formatRelativeTime = timeAgo
+
+function containerUpdateForMonitor(monitor: UnifiedMonitor) {
+  if (monitor.type !== 'container') return null
+  return updatesStore.updates.find(u => u.container_name === monitor.name) ?? null
+}
 
 // Summary cards
 const summaryCards = computed(() => {
@@ -223,9 +231,9 @@ const summaryCards = computed(() => {
 
   return [
     {
-      title: 'Uptime Global',
+      title: 'Global Uptime',
       value: uptimePct !== '—' ? `${uptimePct}%` : '—',
-      subtitle: `${stats.value.running} / ${dashboard.monitors.length} moniteurs`,
+      subtitle: `${stats.value.running} / ${dashboard.monitors.length} monitors`,
       trend: null,
       trendUp: null,
       icon: Activity,
@@ -233,9 +241,9 @@ const summaryCards = computed(() => {
       valueColor: 'text-white',
     },
     {
-      title: 'Temps de Réponse',
+      title: 'Response Time',
       value: avgLatency ? `${avgLatency}ms` : 'N/A',
-      subtitle: avgLatency ? 'Moyenne endpoints' : 'Aucun endpoint',
+      subtitle: avgLatency ? 'Avg. endpoints' : 'No endpoints',
       trend: null,
       trendUp: null,
       icon: Zap,
@@ -243,7 +251,7 @@ const summaryCards = computed(() => {
       valueColor: 'text-white',
     },
     {
-      title: 'Ressources Hôte',
+      title: 'Host Resources',
       value: `${cpuVal}%`,
       subtitle: 'CPU Usage',
       trend: null,
@@ -253,9 +261,9 @@ const summaryCards = computed(() => {
       valueColor: cpuVal > 80 ? 'text-rose-400' : cpuVal > 60 ? 'text-amber-400' : 'text-white',
     },
     {
-      title: 'Certificats SSL',
+      title: 'SSL Certificates',
       value: `${certOk} OK`,
-      subtitle: certExpiring > 0 ? `${certExpiring} expire bientôt` : 'Tous valides',
+      subtitle: certExpiring > 0 ? `${certExpiring} expiring soon` : 'All valid',
       trend: null,
       trendUp: null,
       icon: Shield,
@@ -270,6 +278,7 @@ onMounted(() => {
   dashboard.connectAllSSE()
   alertsStore.fetchAlerts()
   alertsStore.fetchActiveAlerts()
+  updatesStore.fetchAllUpdates()
   if (hasFeature('incidents')) statusAdmin.fetchIncidents()
 })
 
@@ -319,8 +328,8 @@ onUnmounted(() => {
           <!-- Table header -->
           <div class="px-6 py-5 border-b border-slate-800 flex justify-between items-center">
             <div>
-              <h2 class="text-base font-bold text-white">Moniteurs unifiés</h2>
-              <p class="text-xs text-slate-500 mt-0.5">Auto-découverte Docker et sondes externes</p>
+              <h2 class="text-base font-bold text-white">Unified Monitors</h2>
+              <p class="text-xs text-slate-500 mt-0.5">Docker auto-discovery and external probes</p>
             </div>
             <div class="flex items-center gap-2">
               <button
@@ -333,7 +342,7 @@ onUnmounted(() => {
                 ]"
               >
                 <Filter :size="13" />
-                Filtrer
+                Filter
                 <span v-if="hasActiveFilters" class="w-1.5 h-1.5 rounded-full bg-blue-400" />
               </button>
               <RouterLink
@@ -341,7 +350,7 @@ onUnmounted(() => {
                 class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
               >
                 <Zap :size="13" class="fill-white" />
-                Ajouter un moniteur
+                Add monitor
               </RouterLink>
             </div>
           </div>
@@ -351,14 +360,14 @@ onUnmounted(() => {
             <input
               v-model="filterSearch"
               type="text"
-              placeholder="Rechercher un moniteur..."
+              placeholder="Search monitors..."
               class="px-3 py-1.5 bg-[#0f1115] border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 w-52"
             />
             <select
               v-model="filterType"
               class="px-3 py-1.5 bg-[#0f1115] border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-blue-500 appearance-none cursor-pointer"
             >
-              <option value="">Tous les types</option>
+              <option value="">All types</option>
               <option value="container">Container</option>
               <option value="endpoint">HTTP</option>
               <option value="heartbeat">Heartbeat</option>
@@ -373,17 +382,17 @@ onUnmounted(() => {
                   : 'bg-[#0f1115] text-slate-400 border-slate-700 hover:border-slate-600',
               ]"
             >
-              Incidents uniquement
+              Incidents only
             </button>
             <button
               v-if="hasActiveFilters"
               @click="clearFilters"
               class="px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 font-bold uppercase tracking-widest transition-colors"
             >
-              Effacer
+              Clear
             </button>
             <span class="ml-auto text-[10px] text-slate-600 font-bold">
-              {{ filteredServices.length }} / {{ dashboard.monitors.length }} moniteurs
+              {{ filteredServices.length }} / {{ dashboard.monitors.length }} monitors
             </span>
           </div>
 
@@ -392,10 +401,10 @@ onUnmounted(() => {
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="bg-[#0f1115]/60 text-slate-500 text-[10px] uppercase tracking-widest font-bold border-b border-slate-800/60">
-                  <th class="px-6 py-3.5">Statut / Nom</th>
+                  <th class="px-6 py-3.5">Status / Name</th>
                   <th class="px-6 py-3.5">Type</th>
-                  <th class="px-6 py-3.5">Détails / Ressources</th>
-                  <th class="px-6 py-3.5">Historique (90j)</th>
+                  <th class="px-6 py-3.5">Details / Resources</th>
+                  <th class="px-6 py-3.5">History (90d)</th>
                   <th class="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -418,6 +427,7 @@ onUnmounted(() => {
                           <Server v-if="service.type === 'container'" :size="9" />
                           <Clock v-else-if="service.type === 'heartbeat'" :size="9" />
                           <span>{{ service.subtitle }}</span>
+                          <UpdateBadge v-if="service.type === 'container'" :update="containerUpdateForMonitor(service)" />
                         </p>
                       </div>
                     </div>
@@ -470,8 +480,8 @@ onUnmounted(() => {
                       </div>
                     </div>
                     <div class="flex justify-between mt-1.5 text-[9px] text-slate-700 font-bold uppercase tracking-tight">
-                      <span>90j</span>
-                      <span>Aujourd'hui</span>
+                      <span>90d</span>
+                      <span>Today</span>
                     </div>
                   </td>
 
@@ -491,8 +501,8 @@ onUnmounted(() => {
                   <td colspan="5" class="px-6 py-16 text-center">
                     <Server :size="32" class="mx-auto text-slate-800 mb-3" />
                     <p class="text-sm text-slate-600 font-medium">
-                      <template v-if="dashboard.searchQuery || hasActiveFilters">Aucun moniteur correspondant aux filtres</template>
-                      <template v-else>Aucun moniteur. Lancez des conteneurs Docker ou ajoutez des endpoints.</template>
+                      <template v-if="dashboard.searchQuery || hasActiveFilters">No monitors matching filters</template>
+                      <template v-else>No monitors. Start Docker containers or add endpoints.</template>
                     </p>
                   </td>
                 </tr>
@@ -509,13 +519,13 @@ onUnmounted(() => {
             <div class="flex justify-between items-center mb-5">
               <h3 class="text-sm font-bold text-white flex items-center gap-2.5">
                 <Activity :size="15" class="text-blue-500" />
-                Fil d'activité des incidents
+                Incident Activity Feed
               </h3>
               <RouterLink
                 to="/alerts"
                 class="text-[10px] text-blue-500 hover:text-blue-400 font-bold uppercase tracking-widest transition-colors"
               >
-                Voir tout l'historique
+                View full history
               </RouterLink>
             </div>
 
@@ -545,8 +555,8 @@ onUnmounted(() => {
               <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
                 <Activity :size="18" class="text-emerald-500" />
               </div>
-              <p class="text-sm text-slate-600 font-medium">Aucun incident récent</p>
-              <p class="text-[10px] text-slate-700">Tous les services fonctionnent normalement</p>
+              <p class="text-sm text-slate-600 font-medium">No recent incidents</p>
+              <p class="text-[10px] text-slate-700">All services operating normally</p>
             </div>
           </div>
 
@@ -554,14 +564,14 @@ onUnmounted(() => {
           <div class="bg-[#151923] rounded-2xl border border-slate-800 p-6">
             <div class="flex items-center gap-2.5 mb-5">
               <Server :size="15" class="text-emerald-500" />
-              <h3 class="text-sm font-bold text-white">Ressources Hôte</h3>
+              <h3 class="text-sm font-bold text-white">Host Resources</h3>
             </div>
 
             <div class="space-y-5">
               <!-- CPU -->
               <div class="space-y-1.5">
                 <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-                  <span class="text-slate-500">Utilisation CPU</span>
+                  <span class="text-slate-500">CPU Usage</span>
                   <span class="text-slate-200">{{ Math.round(totalCpu) }}%</span>
                 </div>
                 <div class="h-1.5 w-full bg-[#0f1115] rounded-full border border-slate-800 overflow-hidden">
@@ -576,7 +586,7 @@ onUnmounted(() => {
               <!-- RAM -->
               <div class="space-y-1.5">
                 <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-                  <span class="text-slate-500">Mémoire RAM</span>
+                  <span class="text-slate-500">RAM Memory</span>
                   <span class="text-slate-200 text-right">
                     {{ resources.formatBytes(totalMemUsed) }} / {{ resources.formatBytes(totalMemLimit) }}
                   </span>
@@ -593,15 +603,15 @@ onUnmounted(() => {
               <!-- Stats -->
               <div class="pt-4 border-t border-slate-800 space-y-2.5">
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-                  <span class="text-slate-500">Conteneurs</span>
-                  <span class="text-slate-300 font-mono">{{ Object.keys(resources.snapshots).length }} actifs</span>
+                  <span class="text-slate-500">Containers</span>
+                  <span class="text-slate-300 font-mono">{{ Object.keys(resources.snapshots).length }} active</span>
                 </div>
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-                  <span class="text-slate-500">Moniteurs</span>
+                  <span class="text-slate-500">Monitors</span>
                   <span class="text-slate-300 font-mono">{{ dashboard.monitors.length }} total</span>
                 </div>
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-                  <span class="text-slate-500">Disponibilité</span>
+                  <span class="text-slate-500">Availability</span>
                   <span class="text-emerald-400 font-mono">
                     {{ dashboard.monitors.length > 0 ? ((stats.running / dashboard.monitors.length) * 100).toFixed(1) : '—' }}%
                   </span>
@@ -617,21 +627,21 @@ onUnmounted(() => {
       <template v-if="selectedService">
         <div class="grid grid-cols-2 gap-3 mb-6">
           <div class="bg-[#0f1115] p-4 rounded-xl border border-slate-800">
-            <p class="text-[10px] text-slate-500 font-bold uppercase mb-1.5 tracking-widest">Statut</p>
+            <p class="text-[10px] text-slate-500 font-bold uppercase mb-1.5 tracking-widest">Status</p>
             <div class="flex items-center gap-2">
               <div :class="['w-2.5 h-2.5 rounded-full', statusDotClass(selectedService.status)]" />
               <p class="text-white font-semibold text-sm">{{ selectedService.statusLabel }}</p>
             </div>
           </div>
           <div v-if="selectedService.metricValue" class="bg-[#0f1115] p-4 rounded-xl border border-slate-800">
-            <p class="text-[10px] text-slate-500 font-bold uppercase mb-1.5 tracking-widest">{{ selectedService.metricLabel || 'Métrique' }}</p>
+            <p class="text-[10px] text-slate-500 font-bold uppercase mb-1.5 tracking-widest">{{ selectedService.metricLabel || 'Metric' }}</p>
             <p class="text-white font-semibold text-sm font-mono">{{ selectedService.metricValue }}</p>
           </div>
         </div>
 
         <div class="space-y-3 mb-6">
           <div>
-            <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Détails</h4>
+            <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Details</h4>
             <div class="bg-[#0f1115] rounded-xl p-4 border border-slate-800 space-y-2.5">
               <div class="flex justify-between text-xs">
                 <span class="text-slate-500">Type</span>
@@ -642,7 +652,7 @@ onUnmounted(() => {
                 <span class="text-slate-300 truncate ml-4 text-right">{{ selectedService.subtitle }}</span>
               </div>
               <div v-if="selectedService.group" class="flex justify-between text-xs">
-                <span class="text-slate-500">Groupe</span>
+                <span class="text-slate-500">Group</span>
                 <span class="text-slate-300">{{ selectedService.group }}</span>
               </div>
             </div>
@@ -650,7 +660,7 @@ onUnmounted(() => {
         </div>
 
         <div v-if="selectedService.sparklineData && selectedService.sparklineData.length > 1" class="mb-6">
-          <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Tendance</h4>
+          <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Trend</h4>
           <div class="bg-[#0f1115] rounded-xl p-4 border border-slate-800">
             <SparklineChart
               :data="selectedService.sparklineData"
@@ -668,7 +678,7 @@ onUnmounted(() => {
             class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg text-center"
             @click="slideOpen = false"
           >
-            Voir les détails
+            View details
           </RouterLink>
         </div>
       </template>

@@ -32,7 +32,7 @@ const badgeConfig = computed(() => {
 <template>
   <div v-if="!update" class="inline-flex items-center gap-1 text-[10px]" :style="{ color: 'var(--pb-status-ok)' }">
     <Check :size="10" />
-    <span class="font-medium">À jour</span>
+    <span class="font-medium">Up to date</span>
   </div>
   <div
     v-else-if="badgeConfig"

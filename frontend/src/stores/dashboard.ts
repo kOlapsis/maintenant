@@ -62,16 +62,15 @@ function heartbeatStatus(h: Heartbeat): { status: UnifiedStatus; label: string }
 function certStatus(c: CertMonitor): { status: UnifiedStatus; label: string } {
   const days = c.latest_check?.days_remaining
   if (days != null) {
-    if (days < 3) return { status: 'down', label: `${days}j restants` }
-    if (days < 30) return { status: 'warning', label: `${days}j restants` }
-    return { status: 'ok', label: `${days}j restants` }
+    if (days < 3) return { status: 'down', label: `${days}d left` }
+    if (days < 30) return { status: 'warning', label: `${days}d left` }
+    return { status: 'ok', label: `${days}d left` }
   }
-  // Fallback sur le statut calculé par le backend
-  if (c.status === 'valid') return { status: 'ok', label: 'Valide' }
-  if (c.status === 'expiring') return { status: 'warning', label: 'Expire bientôt' }
-  if (c.status === 'expired') return { status: 'down', label: 'Expiré' }
-  if (c.status === 'error') return { status: 'down', label: 'Erreur' }
-  return { status: 'unknown', label: 'En attente' }
+  if (c.status === 'valid') return { status: 'ok', label: 'Valid' }
+  if (c.status === 'expiring') return { status: 'warning', label: 'Expiring soon' }
+  if (c.status === 'expired') return { status: 'down', label: 'Expired' }
+  if (c.status === 'error') return { status: 'down', label: 'Error' }
+  return { status: 'unknown', label: 'Pending' }
 }
 
 const statusOrder: Record<UnifiedStatus, number> = {
@@ -121,7 +120,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         name: c.name,
         status: s.status,
         statusLabel: s.label,
-        subtitle: c.image,
+        subtitle: c.image.split('@')[0] ?? c.image,
         group: c.orchestration_group || c.custom_group || null,
         sparklineData: cpuSpark?.length ? cpuSpark : null,
         sparklineType: cpuSpark?.length ? 'cpu' : null,

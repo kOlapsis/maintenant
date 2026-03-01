@@ -5,7 +5,7 @@ import StatusComponentManager from '@/components/StatusComponentManager.vue'
 import StatusIncidentManager from '@/components/StatusIncidentManager.vue'
 import StatusSmtpConfig from '@/components/StatusSmtpConfig.vue'
 import StatusMaintenanceManager from '@/components/StatusMaintenanceManager.vue'
-import ProFeatureGate from '@/components/ProFeatureGate.vue'
+import FeatureGate from '@/components/FeatureGate.vue'
 import { useEdition } from '@/composables/useEdition'
 
 const { hasFeature } = useEdition()
@@ -85,13 +85,13 @@ onUnmounted(() => {
 
     <!-- Tab content -->
     <StatusComponentManager v-if="activeTab === 'components'" />
-    <ProFeatureGate v-else-if="activeTab === 'incidents'" feature="incidents" title="Incident Management">
+    <FeatureGate v-else-if="activeTab === 'incidents'" feature="incidents" title="Incident Management" description="Track and communicate outages in real time. Your users see a live timeline of what happened, what's being done, and when it's resolved.">
       <StatusIncidentManager />
-    </ProFeatureGate>
-    <ProFeatureGate v-else-if="activeTab === 'maintenance'" feature="maintenance_windows" title="Maintenance Windows">
+    </FeatureGate>
+    <FeatureGate v-else-if="activeTab === 'maintenance'" feature="maintenance_windows" title="Maintenance Windows" description="Schedule maintenance ahead of time and notify your users automatically. No more surprise downtime.">
       <StatusMaintenanceManager />
-    </ProFeatureGate>
-    <ProFeatureGate v-else-if="activeTab === 'subscribers'" feature="subscribers" title="Subscriber Notifications">
+    </FeatureGate>
+    <FeatureGate v-else-if="activeTab === 'subscribers'" feature="subscribers" title="Subscriber Notifications" description="Let your users subscribe to status updates by email. They get notified instantly when an incident starts or a maintenance is planned.">
       <div
         class="rounded-lg border p-6"
         style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
@@ -132,9 +132,9 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-    </ProFeatureGate>
-    <ProFeatureGate v-else-if="activeTab === 'smtp'" feature="smtp" title="SMTP Configuration">
+    </FeatureGate>
+    <FeatureGate v-else-if="activeTab === 'smtp'" feature="smtp" title="SMTP Configuration" description="Use your own mail server to send notifications. Full control over sender address, branding, and deliverability.">
       <StatusSmtpConfig />
-    </ProFeatureGate>
+    </FeatureGate>
   </div>
 </template>

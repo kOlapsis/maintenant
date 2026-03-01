@@ -42,6 +42,7 @@ func main() {
 	}))
 	logger.Info("PulseBoard starting", "version", version, "commit", commit, "build_date", buildDate)
 	v1.SetBuildVersion(version)
+	v1.SetOrganisationName(os.Getenv("PULSEBOARD_ORGANISATION_NAME"))
 
 	// Configuration from environment
 	addr := envOrDefault("PULSEBOARD_ADDR", "127.0.0.1:8080")
@@ -511,10 +512,7 @@ func main() {
 	// --- Top-level mux combining admin router, public status page, and SPA ---
 	topMux := http.NewServeMux()
 
-	statusMux := http.NewServeMux()
-	statusHandler.Register(statusMux)
-	topMux.Handle("/status/", rl.Middleware(statusMux))
-	topMux.Handle("/status", rl.Middleware(statusMux))
+	statusHandler.Register(topMux, rl.Middleware)
 
 	topMux.Handle("/api/", router.Handler())
 	topMux.Handle("/ping/", rl.Middleware(router.Handler()))

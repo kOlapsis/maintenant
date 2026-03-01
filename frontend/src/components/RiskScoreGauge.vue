@@ -15,10 +15,10 @@ const gaugeColor = computed(() => {
 
 const levelLabel = computed(() => {
   switch (props.level) {
-    case 'critical': return 'Critique'
-    case 'high': return 'Élevé'
-    case 'moderate': return 'Modéré'
-    case 'low': return 'Faible'
+    case 'critical': return 'Critical'
+    case 'high': return 'High'
+    case 'moderate': return 'Moderate'
+    case 'low': return 'Low'
     default: return props.level
   }
 })

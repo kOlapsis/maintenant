@@ -91,9 +91,15 @@ function startStreaming() {
 
   eventSource.onerror = () => {
     loading.value = false
-    // Try fallback to static fetch
+    // Close to prevent EventSource auto-reconnect loop
+    // (especially for stopped containers where the stream closes immediately)
+    if (eventSource) {
+      eventSource.close()
+      eventSource = null
+    }
+    streaming.value = false
+    // Fallback to static fetch if we got nothing from SSE
     if (lines.value.length === 0) {
-      streaming.value = false
       fetchLogsStatic()
     }
   }

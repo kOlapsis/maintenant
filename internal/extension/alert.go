@@ -1,4 +1,4 @@
-package pro
+package extension
 
 import (
 	"context"
@@ -60,5 +60,5 @@ func (NoopMaintenanceSuppressor) IsSuppressed(_ context.Context, _ string, _ str
 type NoopTemplateEngine struct{}
 
 func (NoopTemplateEngine) Render(_ context.Context, _ string, _ map[string]any) (string, error) {
-	return "", ErrProFeature
+	return "", ErrNotAvailable
 }

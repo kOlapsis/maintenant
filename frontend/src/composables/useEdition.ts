@@ -9,7 +9,7 @@ async function load() {
   try {
     edition.value = await fetchEdition()
   } catch {
-    edition.value = { edition: 'community', features: {} }
+    edition.value = { edition: 'community', organisation_name: '', features: {} }
   }
   loaded.value = true
 }
@@ -18,12 +18,13 @@ async function load() {
 load()
 
 export function useEdition() {
-  const isPro = computed(() => edition.value?.edition === 'pro')
-  const isCE = computed(() => !isPro.value)
+  const isEnterprise = computed(() => edition.value?.edition === 'enterprise')
+  const isCommunity = computed(() => !isEnterprise.value)
+  const organisationName = computed(() => edition.value?.organisation_name || '')
 
   function hasFeature(name: string): boolean {
     return edition.value?.features[name] === true
   }
 
-  return { edition, isPro, isCE, hasFeature, load }
+  return { edition, isEnterprise, isCommunity, organisationName, hasFeature, load }
 }

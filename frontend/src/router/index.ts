@@ -13,6 +13,7 @@ const StatusAdminPage = () => import('../pages/StatusAdminPage.vue')
 const WebhooksPage = () => import('../pages/WebhooksPage.vue')
 const UpdatesPage = () => import('../pages/UpdatesPage.vue')
 const PublicStatusPage = () => import('../pages/PublicStatusPage.vue')
+const ProPage = () => import('../pages/ProPage.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -31,6 +32,7 @@ const router = createRouter({
         { path: 'status-admin', name: 'status-admin', component: StatusAdminPage },
         { path: 'webhooks', name: 'webhooks', component: WebhooksPage },
         { path: 'updates', name: 'updates', component: UpdatesPage },
+        { path: 'pro', name: 'pro', component: ProPage },
       ],
     },
     {

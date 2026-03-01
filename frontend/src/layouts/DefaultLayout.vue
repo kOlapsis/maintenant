@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { ref } from 'vue'
+import {RouterLink, RouterView, useRoute} from 'vue-router'
+import {ref} from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
-import { useAppVersion } from '@/composables/useAppVersion'
+import {useAppVersion} from '@/composables/useAppVersion'
 import {
   Activity,
   ArrowUpCircle,
@@ -18,23 +18,24 @@ import {
 } from 'lucide-vue-next'
 
 const route = useRoute()
-const { version } = useAppVersion()
+const {version} = useAppVersion()
 
 const mobileMenuOpen = ref(false)
+
 function closeMobileMenu() {
   mobileMenuOpen.value = false
 }
 
 const mainNav = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { to: '/containers', label: 'Conteneurs', icon: Box },
-  { to: '/endpoints', label: 'Endpoints HTTP', icon: Globe },
-  { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
-  { to: '/certificates', label: 'Certificats SSL', icon: Shield },
-  { to: '/updates', label: 'Mises à jour', icon: ArrowUpCircle },
-  { to: '/alerts', label: 'Alertes', icon: Bell },
-  { to: '/webhooks', label: 'Webhooks', icon: Link },
-  { to: '/status-admin', label: 'Pages de Statut', icon: Activity },
+  {to: '/dashboard', label: 'Dashboard', icon: LayoutGrid},
+  {to: '/containers', label: 'Containers', icon: Box},
+  {to: '/endpoints', label: 'HTTP Endpoints', icon: Globe},
+  {to: '/heartbeats', label: 'Heartbeats', icon: Heart},
+  {to: '/certificates', label: 'SSL Certificates', icon: Shield},
+  {to: '/updates', label: 'Updates', icon: ArrowUpCircle},
+  {to: '/alerts', label: 'Alerts', icon: Bell},
+  {to: '/webhooks', label: 'Webhooks', icon: Link},
+  {to: '/status-admin', label: 'Status Pages', icon: Activity},
 ]
 </script>
 
@@ -47,7 +48,8 @@ const mainNav = [
       <div class="flex flex-col flex-1 overflow-y-auto">
         <!-- Logo -->
         <div class="p-6 flex items-center gap-3 shrink-0">
-          <img src="/logo.svg" alt="PulseBoard" class="w-8 h-8 rounded-lg shadow-lg shadow-blue-500/25" />
+          <img src="/logo.svg" alt="PulseBoard"
+               class="w-8 h-8 rounded-lg shadow-lg shadow-blue-500/25"/>
           <h1 class="text-xl font-bold tracking-tight text-white">PulseBoard</h1>
         </div>
 
@@ -85,19 +87,19 @@ const mainNav = [
           <div class="bg-slate-800/40 rounded-xl p-3 border border-slate-700/40">
             <div class="flex justify-between items-center mb-2.5">
               <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter"
-                >Édition Community</span
+              >Community Edition</span
               >
               <span
                 class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/30 font-bold"
-                >{{ version }}</span
+              >{{ version }}</span
               >
             </div>
-            <button
-              disabled
-              class="w-full py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold transition-all shadow-lg shadow-blue-500/20"
+            <RouterLink
+              to="/pro"
+              class="block w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-all shadow-lg shadow-blue-500/20 text-center"
             >
-              Pro coming soon
-            </button>
+              Upgrade to Pro
+            </RouterLink>
           </div>
         </div>
       </div>
@@ -112,14 +114,14 @@ const mainNav = [
         class="p-1.5 rounded-md text-slate-400 hover:text-white transition-colors"
         aria-label="Toggle navigation"
       >
-        <Menu v-if="!mobileMenuOpen" :size="20" />
-        <X v-else :size="20" />
+        <Menu v-if="!mobileMenuOpen" :size="20"/>
+        <X v-else :size="20"/>
       </button>
       <div class="ml-3 flex items-center gap-2">
-        <img src="/logo.svg" alt="PulseBoard" class="w-6 h-6 rounded-md" />
+        <img src="/logo.svg" alt="PulseBoard" class="w-6 h-6 rounded-md"/>
         <span class="text-sm font-bold text-white">PulseBoard</span>
       </div>
-      <div class="flex-1" />
+      <div class="flex-1"/>
     </div>
 
     <!-- Mobile overlay -->
@@ -138,7 +140,7 @@ const mainNav = [
         class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-[#151923] border-r border-slate-800 flex flex-col"
       >
         <div class="p-6 flex items-center gap-3">
-          <img src="/logo.svg" alt="PulseBoard" class="w-8 h-8 rounded-lg" />
+          <img src="/logo.svg" alt="PulseBoard" class="w-8 h-8 rounded-lg"/>
           <h1 class="text-xl font-bold tracking-tight text-white">PulseBoard</h1>
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
@@ -155,7 +157,7 @@ const mainNav = [
             @click="closeMobileMenu"
           >
             <div class="flex items-center gap-3">
-              <component :is="item.icon" :size="16" class="shrink-0" />
+              <component :is="item.icon" :size="16" class="shrink-0"/>
               <span class="text-sm font-medium">{{ item.label }}</span>
             </div>
           </RouterLink>
@@ -165,11 +167,11 @@ const mainNav = [
 
     <!-- Main content -->
     <main class="flex-1 flex flex-col overflow-hidden">
-      <AppHeader />
+      <AppHeader/>
       <div class="flex-1 overflow-y-auto pt-14 md:pt-0">
         <RouterView v-slot="{ Component }">
           <Suspense>
-            <component :is="Component" />
+            <component :is="Component"/>
           </Suspense>
         </RouterView>
       </div>
@@ -182,14 +184,17 @@ const mainNav = [
 .fade-leave-active {
   transition: opacity 0.2s ease;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
 }
+
 .slide-left-enter-active,
 .slide-left-leave-active {
   transition: transform 0.3s ease-out;
 }
+
 .slide-left-enter-from,
 .slide-left-leave-to {
   transform: translateX(-100%);
