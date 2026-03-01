@@ -189,64 +189,137 @@ func main() {
 	// --- Public Status Page ---
 	statusBroker := v1.NewSSEBroker(logger)
 	statusSvc := status.NewService(statusCompStore, logger)
+	// containerStatus derives the status page status for a single container.
+	containerStatus := func(c *container.Container) string {
+		switch c.State {
+		case container.StateRunning:
+			if c.HealthStatus != nil && *c.HealthStatus == container.HealthUnhealthy {
+				return status.StatusDegraded
+			}
+			return status.StatusOperational
+		case container.StateCompleted:
+			// Exited with code 0 (migration, seed, init job) — not an error.
+			return status.StatusOperational
+		default:
+			return status.StatusMajorOutage
+		}
+	}
+
+	// endpointStatus derives the status page status for a single endpoint.
+	endpointStatus := func(ep *endpoint.Endpoint) string {
+		switch ep.Status {
+		case endpoint.StatusUp:
+			return status.StatusOperational
+		case endpoint.StatusDown:
+			return status.StatusMajorOutage
+		default:
+			return status.StatusOperational
+		}
+	}
+
+	// heartbeatStatus derives the status page status for a single heartbeat.
+	heartbeatStatus := func(hb *heartbeat.Heartbeat) string {
+		switch hb.Status {
+		case heartbeat.StatusUp:
+			return status.StatusOperational
+		case heartbeat.StatusDown:
+			return status.StatusMajorOutage
+		default:
+			return status.StatusDegraded
+		}
+	}
+
+	// certificateStatus derives the status page status for a single certificate monitor.
+	certificateStatus := func(cert *certificate.CertMonitor) string {
+		switch cert.Status {
+		case certificate.StatusValid:
+			return status.StatusOperational
+		case certificate.StatusExpiring:
+			return status.StatusDegraded
+		default:
+			return status.StatusMajorOutage
+		}
+	}
+
+	// worstStatus returns the most severe status between two values.
+	worstStatus := func(a, b string) string {
+		if status.Severity(a) >= status.Severity(b) {
+			return a
+		}
+		return b
+	}
+
 	statusSvc.SetMonitorStatusProvider(func(ctx context.Context, monitorType string, monitorID int64) string {
+		// When monitorID is 0, aggregate the worst status across all monitors of the type.
 		switch monitorType {
 		case "container":
-			c, err := svc.GetContainer(ctx, monitorID)
-			if err != nil || c == nil {
-				return status.StatusOperational
-			}
-			switch c.State {
-			case container.StateRunning:
-				if c.HealthStatus != nil && *c.HealthStatus == container.HealthUnhealthy {
-					return status.StatusDegraded
+			if monitorID != 0 {
+				c, err := svc.GetContainer(ctx, monitorID)
+				if err != nil || c == nil {
+					return status.StatusOperational
 				}
-				return status.StatusOperational
-			case container.StateCompleted:
-				// Exited with code 0 (migration, seed, init job) — not an error.
-				return status.StatusOperational
-			default:
-				return status.StatusMajorOutage
+				return containerStatus(c)
 			}
+			containers, err := svc.ListContainers(ctx, container.ListContainersOpts{})
+			if err != nil {
+				return status.StatusOperational
+			}
+			worst := status.StatusOperational
+			for _, c := range containers {
+				worst = worstStatus(worst, containerStatus(c))
+			}
+			return worst
 		case "endpoint":
-			ep, err := epSvc.GetEndpoint(ctx, monitorID)
-			if err != nil || ep == nil {
+			if monitorID != 0 {
+				ep, err := epSvc.GetEndpoint(ctx, monitorID)
+				if err != nil || ep == nil {
+					return status.StatusOperational
+				}
+				return endpointStatus(ep)
+			}
+			endpoints, err := epSvc.ListEndpoints(ctx, endpoint.ListEndpointsOpts{})
+			if err != nil {
 				return status.StatusOperational
 			}
-			switch ep.Status {
-			case endpoint.StatusUp:
-				return status.StatusOperational
-			case endpoint.StatusDown:
-				return status.StatusMajorOutage
-			default:
-				return status.StatusOperational
+			worst := status.StatusOperational
+			for _, ep := range endpoints {
+				worst = worstStatus(worst, endpointStatus(ep))
 			}
+			return worst
 		case "heartbeat":
-			hb, err := hbSvc.GetHeartbeat(ctx, monitorID)
-			if err != nil || hb == nil {
+			if monitorID != 0 {
+				hb, err := hbSvc.GetHeartbeat(ctx, monitorID)
+				if err != nil || hb == nil {
+					return status.StatusOperational
+				}
+				return heartbeatStatus(hb)
+			}
+			heartbeats, err := hbSvc.ListHeartbeats(ctx, heartbeat.ListHeartbeatsOpts{})
+			if err != nil {
 				return status.StatusOperational
 			}
-			switch hb.Status {
-			case heartbeat.StatusUp:
-				return status.StatusOperational
-			case heartbeat.StatusDown:
-				return status.StatusMajorOutage
-			default:
-				return status.StatusDegraded
+			worst := status.StatusOperational
+			for _, hb := range heartbeats {
+				worst = worstStatus(worst, heartbeatStatus(hb))
 			}
+			return worst
 		case "certificate":
-			cert, err := certSvc.GetMonitor(ctx, monitorID)
-			if err != nil || cert == nil {
+			if monitorID != 0 {
+				cert, err := certSvc.GetMonitor(ctx, monitorID)
+				if err != nil || cert == nil {
+					return status.StatusOperational
+				}
+				return certificateStatus(cert)
+			}
+			certs, err := certSvc.ListMonitors(ctx, certificate.ListCertificatesOpts{})
+			if err != nil {
 				return status.StatusOperational
 			}
-			switch cert.Status {
-			case certificate.StatusValid:
-				return status.StatusOperational
-			case certificate.StatusExpiring:
-				return status.StatusDegraded
-			default:
-				return status.StatusMajorOutage
+			worst := status.StatusOperational
+			for _, cert := range certs {
+				worst = worstStatus(worst, certificateStatus(cert))
 			}
+			return worst
 		}
 		return status.StatusOperational
 	})

@@ -26,10 +26,20 @@ interface MaintenanceBrief {
   ends_at: string
   components: string[]
 }
+interface ComponentBrief {
+  id: number
+  name: string
+  status: string
+}
+interface GroupBrief {
+  name: string
+  components: ComponentBrief[]
+}
 interface StatusData {
   global_status: string
   global_message: string
   updated_at: string
+  groups: GroupBrief[]
   active_incidents: IncidentBrief[]
   upcoming_maintenance: MaintenanceBrief[]
 }
@@ -54,12 +64,13 @@ async function fetchStatus() {
 
 function connectSSE() {
   eventSource = new EventSource('/status/events')
-  eventSource.addEventListener('status.updated', () => {
-    fetchStatus()
-  })
-  eventSource.addEventListener('incident.created', () => fetchStatus())
-  eventSource.addEventListener('incident.updated', () => fetchStatus())
-  eventSource.addEventListener('component.status_changed', () => fetchStatus())
+  eventSource.addEventListener('status.component_changed', () => fetchStatus())
+  eventSource.addEventListener('status.global_changed', () => fetchStatus())
+  eventSource.addEventListener('status.incident_created', () => fetchStatus())
+  eventSource.addEventListener('status.incident_updated', () => fetchStatus())
+  eventSource.addEventListener('status.incident_resolved', () => fetchStatus())
+  eventSource.addEventListener('status.maintenance_started', () => fetchStatus())
+  eventSource.addEventListener('status.maintenance_ended', () => fetchStatus())
 }
 
 onMounted(() => {
@@ -96,6 +107,17 @@ const incidentStatusLabel = (status: string) => {
     resolved: 'Resolved',
   }
   return map[status] || status
+}
+
+const componentStatusStyle = (status: string) => {
+  const styles: Record<string, { dot: string; label: string; text: string }> = {
+    operational: { dot: 'bg-emerald-500', label: 'Operational', text: 'text-emerald-400' },
+    degraded: { dot: 'bg-amber-500', label: 'Degraded Performance', text: 'text-amber-400' },
+    partial_outage: { dot: 'bg-amber-500', label: 'Partial Outage', text: 'text-amber-400' },
+    major_outage: { dot: 'bg-rose-500', label: 'Major Outage', text: 'text-rose-400' },
+    under_maintenance: { dot: 'bg-blue-500', label: 'Under Maintenance', text: 'text-blue-400' },
+  }
+  return styles[status] || { dot: 'bg-slate-500', label: status, text: 'text-slate-400' }
 }
 
 function formatDate(iso: string) {
@@ -153,6 +175,37 @@ function formatDate(iso: string) {
       </div>
 
       <div class="mx-auto max-w-3xl px-6 py-10 space-y-10">
+
+        <!-- Component Groups -->
+        <section v-if="data.groups?.length">
+          <div class="space-y-6">
+            <div v-for="group in data.groups" :key="group.name">
+              <h2
+                v-if="data.groups.length > 1 && group.name !== 'Other'"
+                class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3"
+              >{{ group.name }}</h2>
+              <div class="rounded-xl border border-slate-800 bg-[#151923] divide-y divide-slate-800">
+                <div
+                  v-for="comp in group.components"
+                  :key="comp.id"
+                  class="flex items-center justify-between px-5 py-3.5"
+                >
+                  <span class="text-sm font-medium text-slate-200">{{ comp.name }}</span>
+                  <div class="flex items-center gap-2">
+                    <span :class="['text-xs font-medium', componentStatusStyle(comp.status).text]">
+                      {{ componentStatusStyle(comp.status).label }}
+                    </span>
+                    <span :class="['h-2 w-2 rounded-full', componentStatusStyle(comp.status).dot]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div v-else-if="!data.active_incidents?.length && !data.upcoming_maintenance?.length" class="text-center py-6">
+          <p class="text-sm text-slate-500">No status components configured.</p>
+        </div>
 
         <!-- Active Incidents -->
         <section v-if="data.active_incidents?.length">

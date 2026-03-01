@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
 import {
   createComponent,
@@ -7,8 +7,55 @@ import {
   deleteComponent,
   type StatusComponent,
 } from '@/services/statusApi'
+import { listContainers, type Container } from '@/services/containerApi'
+import { listEndpoints, type Endpoint } from '@/services/endpointApi'
+import { listHeartbeats, type Heartbeat } from '@/services/heartbeatApi'
+import { listCertificates, type CertMonitor } from '@/services/certificateApi'
 
 const store = useStatusAdminStore()
+
+// --- Monitor options ---
+interface MonitorOption {
+  id: number
+  label: string
+}
+
+const monitorOptions = ref<MonitorOption[]>([])
+const monitorOptionsLoading = ref(false)
+
+async function loadMonitorOptions(type: string) {
+  monitorOptionsLoading.value = true
+  monitorOptions.value = []
+  try {
+    switch (type) {
+      case 'container': {
+        const res = await listContainers()
+        const all = res.groups.flatMap(g => g.containers)
+        monitorOptions.value = all.map((c: Container) => ({ id: c.id, label: c.name }))
+        break
+      }
+      case 'endpoint': {
+        const res = await listEndpoints()
+        monitorOptions.value = res.endpoints.map((e: Endpoint) => ({ id: e.id, label: `${e.container_name} — ${e.target}` }))
+        break
+      }
+      case 'heartbeat': {
+        const res = await listHeartbeats()
+        monitorOptions.value = res.heartbeats.map((h: Heartbeat) => ({ id: h.id, label: h.name }))
+        break
+      }
+      case 'certificate': {
+        const res = await listCertificates()
+        monitorOptions.value = res.certificates.map((c: CertMonitor) => ({ id: c.id, label: `${c.hostname}:${c.port}` }))
+        break
+      }
+    }
+  } catch {
+    monitorOptions.value = []
+  } finally {
+    monitorOptionsLoading.value = false
+  }
+}
 
 // --- Components ---
 const showCompForm = ref(false)
@@ -21,6 +68,28 @@ const compForm = ref({
   visible: true,
   auto_incident: false,
 })
+
+watch(() => compForm.value.monitor_type, (type) => {
+  if (!editingCompId.value) {
+    compForm.value.monitor_id = 0
+    compForm.value.display_name = ''
+    loadMonitorOptions(type)
+  }
+})
+
+function onMonitorSelected(id: number) {
+  compForm.value.monitor_id = id
+  if (id === 0) {
+    if (!compForm.value.display_name) {
+      compForm.value.display_name = `All ${monitorTypeLabels[compForm.value.monitor_type]}s`
+    }
+    return
+  }
+  const opt = monitorOptions.value.find(o => o.id === id)
+  if (opt && !compForm.value.display_name) {
+    compForm.value.display_name = opt.label
+  }
+}
 
 function resetCompForm() {
   compForm.value = {
@@ -46,6 +115,13 @@ function startEditComp(c: StatusComponent) {
     auto_incident: c.auto_incident,
   }
   showCompForm.value = true
+  loadMonitorOptions(c.monitor_type)
+}
+
+function startAddComp() {
+  resetCompForm()
+  showCompForm.value = true
+  loadMonitorOptions(compForm.value.monitor_type)
 }
 
 async function submitCompForm() {
@@ -69,7 +145,8 @@ async function handleDeleteComp(id: number) {
   store.fetchComponents()
 }
 
-async function handleOverride(comp: StatusComponent, status: string | null) {
+async function handleOverride(comp: StatusComponent, status: string) {
+  // Send empty string to clear the override (backend converts "" to NULL)
   await updateComponent(comp.id, { status_override: status })
   store.fetchComponents()
 }
@@ -83,7 +160,33 @@ const statusColors: Record<string, string> = {
 }
 
 const monitorTypes = ['container', 'endpoint', 'heartbeat', 'certificate']
-const statusOverrideOptions = ['', 'operational', 'degraded', 'partial_outage', 'major_outage', 'under_maintenance']
+const monitorTypeLabels: Record<string, string> = {
+  container: 'Container',
+  endpoint: 'HTTP Endpoint',
+  heartbeat: 'Heartbeat',
+  certificate: 'SSL Certificate',
+}
+
+const statusLabels: Record<string, string> = {
+  operational: 'Operational',
+  degraded: 'Degraded Performance',
+  partial_outage: 'Partial Outage',
+  major_outage: 'Major Outage',
+  under_maintenance: 'Under Maintenance',
+}
+
+function formatStatus(s: string): string {
+  return statusLabels[s] || s
+}
+
+const statusOverrideOptions: { value: string; label: string }[] = [
+  { value: '', label: 'Auto (from monitor)' },
+  { value: 'operational', label: 'Operational' },
+  { value: 'degraded', label: 'Degraded Performance' },
+  { value: 'partial_outage', label: 'Partial Outage' },
+  { value: 'major_outage', label: 'Major Outage' },
+  { value: 'under_maintenance', label: 'Under Maintenance' },
+]
 </script>
 
 <template>
@@ -93,7 +196,7 @@ const statusOverrideOptions = ['', 'operational', 'degraded', 'partial_outage', 
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-lg font-semibold" style="color: var(--pb-text-primary)">Status Components</h2>
         <button
-          @click="showCompForm = true"
+          @click="startAddComp"
           class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors"
           style="background: var(--pb-accent)"
           @mouseenter="($event.target as HTMLElement).style.background = 'var(--pb-accent-hover)'"
@@ -108,16 +211,25 @@ const statusOverrideOptions = ['', 'operational', 'degraded', 'partial_outage', 
           {{ editingCompId ? 'Edit Component' : 'New Component' }}
         </h3>
         <form @submit.prevent="submitCompForm" class="space-y-3">
-          <div v-if="!editingCompId" class="grid grid-cols-2 gap-3">
+          <div v-if="!editingCompId" class="space-y-3">
             <div>
               <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Monitor Type</label>
               <select v-model="compForm.monitor_type" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)">
-                <option v-for="t in monitorTypes" :key="t" :value="t">{{ t }}</option>
+                <option v-for="t in monitorTypes" :key="t" :value="t">{{ monitorTypeLabels[t] }}</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Monitor ID</label>
-              <input v-model.number="compForm.monitor_id" type="number" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+              <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">{{ monitorTypeLabels[compForm.monitor_type] }}</label>
+              <select
+                :value="compForm.monitor_id"
+                @change="onMonitorSelected(Number(($event.target as HTMLSelectElement).value))"
+                :disabled="monitorOptionsLoading"
+                class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm"
+                style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+              >
+                <option :value="0">{{ monitorOptionsLoading ? 'Loading...' : 'All (globalized)' }}</option>
+                <option v-for="opt in monitorOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+              </select>
             </div>
           </div>
           <div>
@@ -160,23 +272,23 @@ const statusOverrideOptions = ['', 'operational', 'degraded', 'partial_outage', 
                   <span class="text-sm font-medium" style="color: var(--pb-text-primary)">{{ c.display_name }}</span>
                   <span v-if="!c.visible" class="rounded px-1.5 py-0.5 text-xs" style="background: var(--pb-bg-elevated); color: var(--pb-text-muted)">hidden</span>
                   <span v-if="c.auto_incident" class="rounded px-1.5 py-0.5 text-xs" style="background: var(--pb-status-warn-bg); color: var(--pb-status-warn)">auto-incident</span>
-                  <span v-if="c.status_override" class="rounded px-1.5 py-0.5 text-xs" style="background: rgba(139, 92, 246, 0.15); color: #a78bfa">override: {{ c.status_override }}</span>
+                  <span v-if="c.status_override" class="rounded px-1.5 py-0.5 text-xs" style="background: rgba(139, 92, 246, 0.15); color: #a78bfa">overridden</span>
                 </div>
                 <p class="text-xs" style="color: var(--pb-text-muted)">
-                  {{ c.monitor_type }}:{{ c.monitor_id }}
-                  &middot; {{ c.effective_status }}
-                  <span v-if="c.derived_status !== c.effective_status"> (derived: {{ c.derived_status }})</span>
+                  {{ monitorTypeLabels[c.monitor_type] || c.monitor_type }}
+                  &middot; {{ formatStatus(c.effective_status) }}
+                  <span v-if="c.status_override && c.derived_status !== c.effective_status"> (monitor: {{ formatStatus(c.derived_status) }})</span>
                 </p>
               </div>
             </div>
             <div class="flex items-center gap-2">
               <select
-                @change="handleOverride(c, ($event.target as HTMLSelectElement).value || null)"
+                @change="handleOverride(c, ($event.target as HTMLSelectElement).value)"
                 class="rounded border px-2 py-1 text-xs"
                 style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
               >
-                <option v-for="s in statusOverrideOptions" :key="s" :value="s" :selected="(c.status_override || '') === s">
-                  {{ s || 'No override' }}
+                <option v-for="s in statusOverrideOptions" :key="s.value" :value="s.value" :selected="(c.status_override || '') === s.value">
+                  {{ s.label }}
                 </option>
               </select>
               <button @click="startEditComp(c)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Edit</button>

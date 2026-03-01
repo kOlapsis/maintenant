@@ -163,6 +163,22 @@ func (s *StatusComponentStoreImpl) GetComponentByMonitor(ctx context.Context, mo
 	return c, err
 }
 
+func (s *StatusComponentStoreImpl) ListGlobalComponents(ctx context.Context, monitorType string) ([]status.StatusComponent, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT sc.id, sc.monitor_type, sc.monitor_id, sc.display_name,
+			sc.group_id, g.name, sc.display_order, sc.visible,
+			sc.status_override, sc.auto_incident, sc.created_at, sc.updated_at
+		FROM status_components sc
+		LEFT JOIN component_groups g ON g.id = sc.group_id
+		WHERE sc.monitor_type = ? AND sc.monitor_id = 0
+		ORDER BY sc.display_order, sc.id`, monitorType)
+	if err != nil {
+		return nil, fmt.Errorf("list global components: %w", err)
+	}
+	defer rows.Close()
+	return scanComponents(rows)
+}
+
 func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *status.StatusComponent) (int64, error) {
 	now := time.Now().Unix()
 	res, err := s.writer.Exec(ctx,

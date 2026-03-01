@@ -122,15 +122,17 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 		return
 	}
-	if c.MonitorType == "" || c.MonitorID == 0 || c.DisplayName == "" {
-		WriteError(w, http.StatusBadRequest, "validation", "monitor_type, monitor_id, and display_name are required")
+	if c.MonitorType == "" || c.DisplayName == "" {
+		WriteError(w, http.StatusBadRequest, "validation", "monitor_type and display_name are required")
 		return
 	}
-	// Check for duplicate
-	existing, _ := h.components.GetComponentByMonitor(r.Context(), c.MonitorType, c.MonitorID)
-	if existing != nil {
-		WriteError(w, http.StatusConflict, "conflict", "Component already exists for this monitor")
-		return
+	// Check for duplicate (only when targeting a specific monitor)
+	if c.MonitorID != 0 {
+		existing, _ := h.components.GetComponentByMonitor(r.Context(), c.MonitorType, c.MonitorID)
+		if existing != nil {
+			WriteError(w, http.StatusConflict, "conflict", "Component already exists for this monitor")
+			return
+		}
 	}
 	if _, err := h.components.CreateComponent(r.Context(), &c); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())

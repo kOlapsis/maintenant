@@ -62,7 +62,11 @@ func (s *Service) DeriveComponentStatus(ctx context.Context, c *StatusComponent)
 	return StatusOperational
 }
 
-// statusSeverity returns a numeric severity for status comparison (higher = worse).
+// Severity returns a numeric severity for status comparison (higher = worse).
+func Severity(s string) int {
+	return statusSeverity(s)
+}
+
 func statusSeverity(s string) int {
 	switch s {
 	case StatusMajorOutage:
@@ -192,6 +196,23 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 		Groups:        groups,
 		Ungrouped:     ungrouped,
 	}, nil
+}
+
+// NotifyMonitorChanged checks whether a status component is linked to the given
+// monitor and, if so, broadcasts the updated status to public SSE clients.
+// It also notifies any global components (monitor_id=0) of the same type.
+func (s *Service) NotifyMonitorChanged(ctx context.Context, monitorType string, monitorID int64) {
+	comp, err := s.components.GetComponentByMonitor(ctx, monitorType, monitorID)
+	if err == nil && comp != nil {
+		s.BroadcastComponentChange(ctx, comp)
+	}
+	// Also notify global components (monitor_id=0) that aggregate all monitors of this type.
+	globals, err := s.components.ListGlobalComponents(ctx, monitorType)
+	if err == nil {
+		for i := range globals {
+			s.BroadcastComponentChange(ctx, &globals[i])
+		}
+	}
 }
 
 // BroadcastComponentChange notifies public SSE clients of a component status change.
