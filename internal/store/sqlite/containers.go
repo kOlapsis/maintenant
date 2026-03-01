@@ -196,7 +196,7 @@ func (s *ContainerStore) CountRestartsSince(ctx context.Context, containerID int
 	var count int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM state_transitions
-		WHERE container_id=? AND new_state='running' AND previous_state='restarting' AND timestamp>=?`,
+		WHERE container_id=? AND new_state='running' AND previous_state IN ('restarting','exited') AND timestamp>=?`,
 		containerID, since.Unix(),
 	).Scan(&count)
 	if err != nil {

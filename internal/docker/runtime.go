@@ -142,11 +142,21 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbrunt
 		return nil, nil // first sample, no delta yet
 	}
 
+	// When a container restarts, its cumulative TotalUsage resets to 0 while
+	// the previous snapshot still holds the old (large) value. Because these
+	// are uint64 counters, the subtraction would wrap around to a huge number
+	// and produce an absurd CPU percentage. Treat a counter reset the same as
+	// a first sample — skip this tick and let the next collection produce a
+	// valid delta.
+	if stats.CPUStats.CPUUsage.TotalUsage < prev.cpuTotal {
+		return nil, nil
+	}
+
 	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - prev.cpuTotal)
 	systemDelta := float64(stats.CPUStats.SystemUsage - prev.systemUsage)
 
 	var cpuPercent float64
-	if systemDelta > 0 && cpuDelta >= 0 {
+	if systemDelta > 0 {
 		numCPUs := float64(stats.CPUStats.OnlineCPUs)
 		if numCPUs == 0 {
 			numCPUs = float64(len(stats.CPUStats.CPUUsage.PercpuUsage))

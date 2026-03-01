@@ -83,6 +83,12 @@ func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 	case "start":
 		s.handleStateChange(ctx, evt, StateRunning)
 	case "stop":
+		// Docker sends "die" before "stop". If the container exited cleanly (exit 0),
+		// the die handler already set StateCompleted — don't overwrite it with StateExited.
+		c, _ := s.store.GetContainerByExternalID(ctx, evt.ExternalID)
+		if c != nil && c.State == StateCompleted {
+			return
+		}
 		s.handleStateChange(ctx, evt, StateExited)
 	case "die":
 		// Exit code 0 means the container terminated normally (e.g. migration, init container).
@@ -167,7 +173,10 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	}
 
 	// Check restart threshold (T030)
-	if newState == StateRunning && previousState == StateRestarting && s.restartChecker != nil {
+	// Trigger on any transition back to running from a crash state.
+	// Docker emits die→start (exited→running) during crash-loops; the
+	// "restarting" state only appears in static discovery snapshots.
+	if newState == StateRunning && (previousState == StateRestarting || previousState == StateExited) && s.restartChecker != nil {
 		alert, err := s.restartChecker.Check(ctx, c)
 		if err != nil {
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
@@ -340,14 +349,17 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			}
 			dc.ID = id
 
-			// Record initial state transition so uptime tracking has a starting point
-			if _, err := s.store.InsertTransition(ctx, &StateTransition{
-				ContainerID:   id,
-				PreviousState: StateCreated,
-				NewState:      dc.State,
-				Timestamp:     now,
-			}); err != nil {
-				s.logger.Error("reconcile initial transition", "container_id", id, "error", err)
+			// Record initial state transition so uptime tracking has a starting point.
+			// Skip if the container is still in "created" state to avoid a no-op transition.
+			if dc.State != StateCreated {
+				if _, err := s.store.InsertTransition(ctx, &StateTransition{
+					ContainerID:   id,
+					PreviousState: StateCreated,
+					NewState:      dc.State,
+					Timestamp:     now,
+				}); err != nil {
+					s.logger.Error("reconcile initial transition", "container_id", id, "error", err)
+				}
 			}
 
 			s.emitEvent("container.discovered", dc)

@@ -196,13 +196,18 @@ func main() {
 			if err != nil || c == nil {
 				return status.StatusOperational
 			}
-			if c.State == container.StateRunning {
+			switch c.State {
+			case container.StateRunning:
 				if c.HealthStatus != nil && *c.HealthStatus == container.HealthUnhealthy {
 					return status.StatusDegraded
 				}
 				return status.StatusOperational
+			case container.StateCompleted:
+				// Exited with code 0 (migration, seed, init job) — not an error.
+				return status.StatusOperational
+			default:
+				return status.StatusMajorOutage
 			}
-			return status.StatusMajorOutage
 		case "endpoint":
 			ep, err := epSvc.GetEndpoint(ctx, monitorID)
 			if err != nil || ep == nil {
