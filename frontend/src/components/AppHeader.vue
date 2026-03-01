@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useAlertsStore } from '@/stores/alerts'
 import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
-import { Search, Bell, AlertTriangle } from 'lucide-vue-next'
+import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu } from 'lucide-vue-next'
 
+const router = useRouter()
 const dashboard = useDashboardStore()
 const alertsStore = useAlertsStore()
 const resources = useResourcesStore()
@@ -13,19 +15,79 @@ const containers = useContainersStore()
 
 let summaryInterval: ReturnType<typeof setInterval> | null = null
 
-// Global SSE connections — always active while the app shell is mounted
+// Global SSE connections + initial data fetch — always active while the app shell is mounted
 onMounted(() => {
-  containers.connectSSE()
-  resources.connectSSE()
+  dashboard.fetchAll()
+  dashboard.connectAllSSE()
   resources.fetchSummary()
   summaryInterval = setInterval(() => resources.fetchSummary(), 30_000)
 })
 
 onUnmounted(() => {
-  containers.disconnectSSE()
-  resources.disconnectSSE()
+  dashboard.disconnectAllSSE()
   if (summaryInterval) clearInterval(summaryInterval)
 })
+
+const sourceRouteMap: Record<string, { route: string; label: string; icon: typeof Box }> = {
+  container: { route: 'containers', label: 'Containers', icon: Box },
+  endpoint: { route: 'endpoints', label: 'Endpoints', icon: Globe },
+  heartbeat: { route: 'heartbeats', label: 'Heartbeats', icon: Heart },
+  certificate: { route: 'certificates', label: 'Certificates', icon: ShieldCheck },
+  resource: { route: 'containers', label: 'Resources', icon: Cpu },
+}
+
+const alertsBySource = computed(() => {
+  const all = [
+    ...alertsStore.activeAlerts.critical,
+    ...alertsStore.activeAlerts.warning,
+    ...alertsStore.activeAlerts.info,
+  ]
+  const grouped: Record<string, { count: number; critical: number; warning: number }> = {}
+  for (const a of all) {
+    if (!grouped[a.source]) grouped[a.source] = { count: 0, critical: 0, warning: 0 }
+    grouped[a.source]!.count++
+    if (a.severity === 'critical') grouped[a.source]!.critical++
+    else if (a.severity === 'warning') grouped[a.source]!.warning++
+  }
+  return grouped
+})
+
+const sourceKeys = computed(() => Object.keys(alertsBySource.value))
+
+const bellOpen = ref(false)
+let closeTimeout: ReturnType<typeof setTimeout> | null = null
+
+function onBellEnter() {
+  if (closeTimeout) { clearTimeout(closeTimeout); closeTimeout = null }
+  if (alertsStore.totalActiveCount > 0) {
+    bellOpen.value = true
+  }
+}
+
+function onBellLeave() {
+  closeTimeout = setTimeout(() => { bellOpen.value = false }, 150)
+}
+
+function onBellClick() {
+  if (alertsStore.totalActiveCount === 0) {
+    router.push({ name: 'alerts' })
+    return
+  }
+  if (sourceKeys.value.length === 1) {
+    const source = sourceKeys.value[0]!
+    const mapped = sourceRouteMap[source]
+    router.push({ name: mapped?.route ?? 'alerts' })
+    bellOpen.value = false
+    return
+  }
+  bellOpen.value = !bellOpen.value
+}
+
+function navigateToSource(source: string) {
+  const mapped = sourceRouteMap[source]
+  router.push({ name: mapped?.route ?? 'alerts' })
+  bellOpen.value = false
+}
 
 const totalCpu = computed(() => {
   return Math.min(
@@ -144,13 +206,85 @@ function barColor(value: number): string {
         <span class="font-medium text-slate-400">{{ containers.runtimeLabel }}</span>
       </div>
 
-      <button class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all relative">
-        <Bell :size="18" />
-        <span
-          v-if="alertsStore.newAlertCount > 0"
-          class="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border-2 border-[#151923]"
-        />
-      </button>
+      <div
+        class="relative"
+        @mouseenter="onBellEnter"
+        @mouseleave="onBellLeave"
+      >
+        <button
+          @click="onBellClick"
+          class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all relative"
+        >
+          <Bell :size="18" />
+          <span
+            v-if="alertsStore.totalActiveCount > 0"
+            class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
+            :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-rose-500' : 'bg-amber-500'"
+          >
+            <span
+              class="absolute inset-0 rounded-full animate-ping"
+              :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-rose-500' : 'bg-amber-500'"
+            />
+          </span>
+        </button>
+
+        <!-- Popover menu -->
+        <Transition
+          enter-active-class="transition duration-100 ease-out"
+          enter-from-class="opacity-0 scale-95 -translate-y-1"
+          enter-to-class="opacity-100 scale-100 translate-y-0"
+          leave-active-class="transition duration-75 ease-in"
+          leave-from-class="opacity-100 scale-100 translate-y-0"
+          leave-to-class="opacity-0 scale-95 -translate-y-1"
+        >
+          <div
+            v-if="bellOpen"
+            class="absolute right-0 top-full mt-2 w-56 rounded-xl border border-slate-700 bg-[#151923] shadow-2xl shadow-black/40 overflow-hidden z-50"
+            @mouseenter="onBellEnter"
+            @mouseleave="onBellLeave"
+          >
+            <div class="px-3 py-2.5 border-b border-slate-800 flex items-center justify-between">
+              <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active alerts</span>
+              <span
+                class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
+                :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-rose-500/15 text-rose-400' : 'bg-amber-500/15 text-amber-400'"
+              >
+                {{ alertsStore.totalActiveCount }}
+              </span>
+            </div>
+            <div class="py-1">
+              <button
+                v-for="source in sourceKeys"
+                :key="source"
+                @click="navigateToSource(source)"
+                class="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/60 transition-colors"
+              >
+                <component
+                  :is="sourceRouteMap[source]?.icon ?? AlertTriangle"
+                  :size="14"
+                  class="shrink-0"
+                  :class="alertsBySource[source]?.critical ? 'text-rose-400' : alertsBySource[source]?.warning ? 'text-amber-400' : 'text-blue-400'"
+                />
+                <span class="flex-1 text-left">{{ sourceRouteMap[source]?.label ?? source }}</span>
+                <span
+                  class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
+                  :class="alertsBySource[source]?.critical ? 'bg-rose-500/15 text-rose-400' : alertsBySource[source]?.warning ? 'bg-amber-500/15 text-amber-400' : 'bg-blue-500/15 text-blue-400'"
+                >
+                  {{ alertsBySource[source]?.count }}
+                </span>
+              </button>
+            </div>
+            <div class="border-t border-slate-800">
+              <button
+                @click="navigateToSource('_all')"
+                class="w-full px-3 py-2 text-[11px] font-medium text-slate-500 hover:text-slate-300 hover:bg-slate-800/40 transition-colors text-center"
+              >
+                View all alerts
+              </button>
+            </div>
+          </div>
+        </Transition>
+      </div>
     </div>
   </header>
 
