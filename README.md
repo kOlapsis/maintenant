@@ -5,25 +5,19 @@
 <h1 align="center">PulseBoard</h1>
 
 <p align="center">
-  <strong>The all-in-one monitoring dashboard your self-hosted stack deserves.</strong><br>
-  Drop a single container. Watch everything. Sleep at night.
+  <strong>Monitor everything. Manage nothing.</strong><br>
+  Drop a single container. Your entire stack is monitored in seconds.
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a>  |  
-  <a href="#features">Features</a>  |  
-  <a href="#configuration">Configuration</a>  |  
-  <a href="#api">API</a>  |  
-  <a href="#contributing">Contributing</a>
+  <a href="https://github.com/kolapsis/pulseboard/releases"><img src="https://img.shields.io/github/v/release/kolapsis/pulseboard?style=flat-square&color=blue" alt="Release" /></a>
+  <a href="https://github.com/kolapsis/pulseboard/pkgs/container/pulseboard"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fpulseboard-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/pulseboard?style=flat-square" alt="License" /></a>
 </p>
 
-<!-- TODO: Uncomment when CI badges are set up
 <p align="center">
-  <img src="https://img.shields.io/github/license/kolapsis/pulseboard?color=blue" alt="License" />
-  <img src="https://img.shields.io/github/v/release/kolapsis/pulseboard" alt="Release" />
-  <img src="https://ghcr-badge.egpl.dev/kolapsis/pulseboard/size" alt="Image Size" />
+  <a href="https://kolapsis.github.io/pulseboard/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
 </p>
--->
 
 ---
 
@@ -84,6 +78,8 @@ kubectl apply -f deploy/kubernetes/
 
 PulseBoard auto-detects the in-cluster API. Read-only RBAC, namespace filtering, workload-level monitoring out of the box.
 
+> For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/pulseboard/)**.
+
 ---
 
 ## Features
@@ -130,7 +126,11 @@ Unified alerts across all monitoring sources. Webhook and Discord channels inclu
 
 ### Public Status Page
 
-Give your users a clean status page. Component groups, incident management.
+Give your users a clean, real-time status page. Component groups, live SSE updates, severity aggregation across all monitors.
+
+### MCP Server
+
+Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Query your infrastructure, read logs, and check alert status from any MCP-compatible AI assistant. Supports both stdio and Streamable HTTP transports.
 
 ---
 
@@ -143,12 +143,12 @@ Give your users a clean status page. Component groups, incident management.
 | `PULSEBOARD_ADDR`                   | `127.0.0.1:8080`        | HTTP bind address                               |
 | `PULSEBOARD_DB`                     | `./pulseboard.db`       | SQLite database path                            |
 | `PULSEBOARD_BASE_URL`               | `http://localhost:8080` | Base URL (used for heartbeat ping URLs)         |
-| `PULSEBOARD_CORS_ORIGINS`           | same-origin             | CORS allowed origins (comma-separated)          |
 | `PULSEBOARD_RUNTIME`                | auto-detect             | Force `docker` or `kubernetes`                  |
-| `PULSEBOARD_MAX_BODY_SIZE`          | `1048576`               | Max request body size in bytes (1 MB)           |
-| `PULSEBOARD_UPDATE_INTERVAL`        | `24h`                   | Update intelligence scan interval (Go duration) |
+| `PULSEBOARD_MCP`                    | `false`                 | Enable MCP server (Streamable HTTP on `/mcp`)   |
 | `PULSEBOARD_K8S_NAMESPACES`         | all                     | Namespace allowlist (comma-separated)           |
 | `PULSEBOARD_K8S_EXCLUDE_NAMESPACES` | none                    | Namespace blocklist                             |
+
+> Full configuration reference in the **[documentation](https://kolapsis.github.io/pulseboard/)**.
 
 ### Docker Labels Reference
 
@@ -161,7 +161,7 @@ labels:
   pulseboard.group: "backend"                  # Custom group name
   pulseboard.alert.severity: "critical"        # critical | warning | info
   pulseboard.alert.restart_threshold: "5"      # Restart loop threshold
-  pulseboard.alert.channels: "ops-webhook"      # Route to specific channels
+  pulseboard.alert.channels: "ops-webhook"     # Route to specific channels
 ```
 
 </details>
@@ -185,8 +185,7 @@ labels:
   pulseboard.endpoint.http.method: "POST"
   pulseboard.endpoint.http.expected-status: "200,201"
   pulseboard.endpoint.http.tls-verify: "false"
-  pulseboard.endpoint.http.headers: '{"Authorization":"Bearer tok"}' # or key=val,key=val
-  pulseboard.endpoint.http.max-redirects: "3"
+  pulseboard.endpoint.http.headers: '{"Authorization":"Bearer tok"}'
   pulseboard.endpoint.failure-threshold: "3"
   pulseboard.endpoint.recovery-threshold: "2"
 ```
@@ -198,7 +197,7 @@ labels:
 
 ```yaml
 labels:
-  pulseboard.tls.certificates: "example.com:443,api.example.com:443"  # Explicit TLS targets
+  pulseboard.tls.certificates: "example.com:443,api.example.com:443"
 ```
 
 </details>
@@ -356,61 +355,12 @@ Full REST API under `/api/v1/` for automation and integration.
 └──────────────────────────────────────────────────────┘
 ```
 
-**Design philosophy:**
-
-- **Single binary** — Frontend embedded in Go via `embed.FS`. One file to deploy.
+- **Single binary** — Frontend embedded via `embed.FS`. One file to deploy.
 - **Zero dependencies** — SQLite is the only database. No Redis, no Postgres, no message queue.
-- **Real-time by default** — SSE pushes every state change to the browser instantly.
+- **Real-time** — SSE pushes every state change to the browser instantly.
 - **Read-only** — PulseBoard never touches your containers. Observe only.
-- **Label-driven** — Configure monitoring through Docker labels. No YAML files to maintain.
-- **Runtime-agnostic** — Docker and Kubernetes behind a common interface, auto-detected at startup.
-
----
-
-## Development
-
-```bash
-# Frontend
-cd frontend && npm install && npm run build
-
-# Backend (embeds frontend dist/)
-go build -o pulseboard ./cmd/pulseboard
-
-# Run
-./pulseboard
-```
-
-**Requirements:** Go >= 1.25 · Node.js >= 20 · CGO enabled · Docker (for testing)
-
-<details>
-<summary><strong>Project structure</strong></summary>
-
-```
-cmd/pulseboard/            Entry point, service wiring
-internal/
-  api/v1/                  HTTP handlers, SSE broker, router
-  container/               Container model, service, uptime
-  docker/                  Docker runtime
-  kubernetes/              Kubernetes runtime
-  runtime/                 Runtime abstraction interface
-  endpoint/                Endpoint monitoring
-  heartbeat/               Heartbeat/cron monitoring
-  certificate/             TLS certificate monitoring
-  resource/                Resource metrics
-  alert/                   Alert engine, notifier
-  update/                  Update intelligence
-  status/                  Public status page
-  webhook/                 Webhook dispatcher
-  store/sqlite/            Store layer, migrations, writer
-
-frontend/src/
-  pages/                   Vue page components
-  components/              Reusable UI components
-  stores/                  Pinia stores (SSE-connected)
-  services/                API client services
-```
-
-</details>
+- **Label-driven** — Configure monitoring through Docker labels. No YAML to maintain.
+- **~17 MB RAM** — Lightweight enough to run on any VPS or Raspberry Pi.
 
 ---
 
@@ -429,7 +379,7 @@ PulseBoard is available in two editions:
 | Alert engine (fire, recover, silence) | x | x |
 | Webhook + Discord channels | x | x |
 | Public status page (components, groups) | x | x |
-| REST API + SSE | x | x |
+| REST API + SSE + MCP | x | x |
 | PWA support | x | x |
 | Slack, Teams, Email channels | | x |
 | Alert escalation + routing | | x |
@@ -441,8 +391,6 @@ PulseBoard is available in two editions:
 
 The Community Edition is fully functional for self-hosted monitoring. PulseBoard Pro adds advanced alerting, notification channels, and enterprise features.
 
-PulseBoard Pro is available as a separate commercial product.
-
 ---
 
 ## Contributing
@@ -453,7 +401,7 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 
 ## License
 
-Copyright 2026 - Benjamin Touchard / kOlapsis - Bordeaux - France
+Copyright 2025 - Benjamin Touchard / kOlapsis - Bordeaux, France
 
 Licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
 
