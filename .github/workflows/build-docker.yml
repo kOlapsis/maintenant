@@ -93,6 +93,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ env.BUILD_VERSION }}
             COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            LICENSE_PUBLIC_KEY=${{ secrets.LICENSE_PUBLIC_KEY }}

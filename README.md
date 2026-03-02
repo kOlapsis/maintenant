@@ -453,10 +453,8 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 
 ## License
 
-Copyright 2026 kOlapsis (Benjamin Touchard)
+Copyright 2026 - Benjamin Touchard / kOlapsis - Bordeaux - France
 
 Licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
 
 **You can use PulseBoard freely** for personal use, internal business use, and non-commercial purposes. The only restriction is offering PulseBoard as a competing hosted service.
-
-Each version converts to [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) four years after release.
