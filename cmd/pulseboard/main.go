@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"github.com/kolapsis/pulseboard/internal/extension"
 	"github.com/kolapsis/pulseboard/internal/heartbeat"
 	_ "github.com/kolapsis/pulseboard/internal/kubernetes"
+	"github.com/kolapsis/pulseboard/internal/license"
 	pbmcp "github.com/kolapsis/pulseboard/internal/mcp"
 	"github.com/kolapsis/pulseboard/internal/ratelimit"
 	"github.com/kolapsis/pulseboard/internal/resource"
@@ -34,9 +36,10 @@ import (
 )
 
 var (
-	version   = "dev"
-	commit    = "unknown"
-	buildDate = "unknown"
+	version      = "dev"
+	commit       = "unknown"
+	buildDate    = "unknown"
+	publicKeyB64 = ""
 )
 
 func main() {
@@ -99,6 +102,29 @@ func main() {
 	statusCompStore := sqlite.NewStatusComponentStore(db)
 	webhookStore := sqlite.NewWebhookStore(db)
 	updateStore := sqlite.NewUpdateStore(db)
+
+	// --- License manager ---
+	license.InitPublicKey(publicKeyB64)
+	licenseKey := os.Getenv("PULSEBOARD_LICENSE_KEY")
+	var licenseMgr *license.LicenseManager
+	if licenseKey != "" {
+		dataDir := filepath.Dir(dbPath)
+		var err error
+		licenseMgr, err = license.NewLicenseManager(licenseKey, dataDir, version, logger)
+		if err != nil {
+			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
+		} else {
+			extension.CurrentEdition = func() extension.Edition {
+				if licenseMgr.IsProEnabled() {
+					return extension.Enterprise
+				}
+				return extension.Community
+			}
+			licenseMgr.Start(ctx)
+			defer licenseMgr.Stop()
+			logger.Info("license manager started")
+		}
+	}
 
 	// --- Runtime detection ---
 	rt, err := pbruntime.Detect(ctx, logger)
@@ -341,6 +367,9 @@ func main() {
 		StatusSvc:  statusSvc,
 		Broker:     statusBroker,
 	})
+
+	// --- License status endpoint ---
+	router.RegisterLicenseRoutes(licenseMgr)
 
 	// --- UI redesign endpoints ---
 	uptimeDailyStore := sqlite.NewUptimeDailyStore(db)

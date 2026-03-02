@@ -31,11 +31,11 @@ const features = [
     title: 'Subscriber Notifications',
     description: 'Let users subscribe to status updates and receive alerts when incidents occur.',
   },
-  {
+  /*{
     icon: Mail,
     title: 'SMTP Configuration',
     description: 'Use your own mail server for branded notifications and full delivery control.',
-  },
+  },*/
   {
     icon: MessageSquare,
     title: 'Slack & Teams',

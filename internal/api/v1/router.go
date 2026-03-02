@@ -17,6 +17,7 @@ import (
 	"github.com/kolapsis/pulseboard/internal/resource"
 	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
 	"github.com/kolapsis/pulseboard/internal/status"
+	"github.com/kolapsis/pulseboard/internal/license"
 	"github.com/kolapsis/pulseboard/internal/update"
 	"github.com/kolapsis/pulseboard/internal/webhook"
 )
@@ -321,6 +322,24 @@ func NewRouter(broker *SSEBroker, rt pbruntime.Runtime, svc *container.Service, 
 	}
 
 	return r
+}
+
+// RegisterLicenseRoutes registers the license status endpoint.
+func (r *Router) RegisterLicenseRoutes(mgr *license.LicenseManager) {
+	if mgr == nil {
+		return
+	}
+
+	r.mux.HandleFunc("GET /api/v1/license/status", func(w http.ResponseWriter, req *http.Request) {
+		state := mgr.State()
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"status":      state.Status,
+			"plan":        state.Plan,
+			"message":     state.Message,
+			"verified_at": state.VerifiedAt,
+			"expires_at":  state.ExpiresAt,
+		})
+	})
 }
 
 // RegisterUpdateRoutes registers update intelligence endpoints.

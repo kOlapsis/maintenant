@@ -17,6 +17,14 @@ services:
       PULSEBOARD_MCP_ALLOWED_EMAIL: benjamin@kolapsis.com
     ports:
       - "8080:8080"
+    networks:
+      - shared
+    extra_hosts:
+      - "ackify.local:172.23.0.2"
 
 volumes:
   pulseboard_data:
+
+networks:
+  shared:
+    external: true

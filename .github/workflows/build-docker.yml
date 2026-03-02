@@ -27,12 +27,29 @@ jobs:
       packages: write
 
     steps:
+      - name: Validate required secrets
+        run: |
+          if [ -z "$LICENSE_PUBLIC_KEY" ]; then
+            echo "::error::LICENSE_PUBLIC_KEY secret is not set. Aborting build."
+            exit 1
+          fi
+        env:
+          LICENSE_PUBLIC_KEY: ${{ secrets.LICENSE_PUBLIC_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compute IMAGE_TAG
+      - name: Compute build metadata
         run: |
-          echo "IMAGE_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          # VERSION: strip leading 'v' from tag, or use ref name
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "BUILD_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "IMAGE_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "BUILD_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          fi
+          # BUILD_DATE: ISO 8601 timestamp
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -71,7 +88,7 @@ jobs:
           provenance: false
           tags: |
             ${{ steps.meta.outputs.tags }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_TAG && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, env.IMAGE_TAG) || '' }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

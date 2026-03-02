@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import {RouterLink, RouterView, useRoute} from 'vue-router'
-import {ref} from 'vue'
+import {ref, onMounted} from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import {useAppVersion} from '@/composables/useAppVersion'
+import {useEdition} from '@/composables/useEdition'
 import {
   Activity,
+  AlertTriangle,
   ArrowUpCircle,
   Bell,
   Box,
@@ -19,6 +21,11 @@ import {
 
 const route = useRoute()
 const {version} = useAppVersion()
+const {isEnterprise, licenseMessage, licenseStatusValue, loadLicenseStatus} = useEdition()
+
+onMounted(() => {
+  loadLicenseStatus()
+})
 
 const mobileMenuOpen = ref(false)
 
@@ -82,24 +89,26 @@ const mainNav = [
           </RouterLink>
         </nav>
 
-        <!-- Bottom section: Edition Community -->
+        <!-- Bottom section: Edition -->
         <div class="p-4 border-t border-slate-800 space-y-3 shrink-0">
           <div class="bg-slate-800/40 rounded-xl p-3 border border-slate-700/40">
             <div class="flex justify-between items-center mb-2.5">
-              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter"
-              >Community Edition</span
-              >
+              <span class="text-[10px] font-bold uppercase tracking-tighter"
+                :class="isEnterprise ? 'text-emerald-400' : 'text-slate-400'"
+              >{{ isEnterprise ? 'Pro Edition' : 'Community Edition' }}</span>
               <span
-                class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/30 font-bold"
-              >{{ version }}</span
-              >
+                class="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                :class="isEnterprise
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'"
+              >{{ version }}</span>
             </div>
-            <RouterLink
-              to="/pro"
-              class="block w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-all shadow-lg shadow-blue-500/20 text-center"
+            <span
+              v-if="!isEnterprise"
+              class="block w-full py-1.5 bg-slate-700/50 text-slate-500 rounded-lg text-xs font-semibold text-center cursor-default"
             >
-              Upgrade to Pro
-            </RouterLink>
+              Pro coming soon
+            </span>
           </div>
         </div>
       </div>
@@ -167,6 +176,18 @@ const mainNav = [
 
     <!-- Main content -->
     <main class="flex-1 flex flex-col overflow-hidden">
+      <!-- License warning banner -->
+      <div
+        v-if="licenseMessage"
+        class="flex items-center gap-2 px-4 py-2 text-xs font-medium shrink-0"
+        :class="{
+          'bg-amber-500/10 text-amber-400 border-b border-amber-500/20': licenseStatusValue === 'grace' || licenseStatusValue === 'unreachable',
+          'bg-red-500/10 text-red-400 border-b border-red-500/20': licenseStatusValue === 'expired' || licenseStatusValue === 'revoked' || licenseStatusValue === 'unknown',
+        }"
+      >
+        <AlertTriangle :size="14" class="shrink-0" />
+        <span>{{ licenseMessage }}</span>
+      </div>
       <AppHeader/>
       <div class="flex-1 overflow-y-auto pt-14 md:pt-0">
         <RouterView v-slot="{ Component }">

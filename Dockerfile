@@ -24,11 +24,16 @@ COPY --from=spa-builder /src/frontend/dist cmd/pulseboard/web/dist/
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
+ARG LICENSE_PUBLIC_KEY
 ARG TARGETOS TARGETARCH
 
 RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build \
-    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
+    -ldflags="-s -w \
+      -X main.version=${VERSION} \
+      -X main.commit=${COMMIT} \
+      -X main.buildDate=${BUILD_DATE} \
+      -X main.publicKeyB64=${LICENSE_PUBLIC_KEY}" \
     -o /out/pulseboard \
     ./cmd/pulseboard
 
