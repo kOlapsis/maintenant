@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/resource"
+	"github.com/kolapsis/maintenant/internal/resource"
 )
 
 // ResourceStore implements resource.ResourceStore using SQLite.

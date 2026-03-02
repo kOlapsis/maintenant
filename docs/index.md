@@ -1,4 +1,4 @@
-# PulseBoard
+# maintenant
 
 **The all-in-one monitoring dashboard your self-hosted stack deserves.**
 
@@ -6,11 +6,11 @@ Drop a single container. Watch everything. Sleep at night.
 
 ---
 
-## What is PulseBoard?
+## What is maintenant?
 
-Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, one for uptime, one for certs, one for metrics, and yet another for a status page. PulseBoard replaces all of them with a single binary, zero external dependencies, and zero configuration to get started.
+Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, one for uptime, one for certs, one for metrics, and yet another for a status page. maintenant replaces all of them with a single binary, zero external dependencies, and zero configuration to get started.
 
-Deploy one container, and PulseBoard auto-discovers your entire stack. Docker or Kubernetes — it does not matter.
+Deploy one container, and maintenant auto-discovers your entire stack. Docker or Kubernetes — it does not matter.
 
 ---
 
@@ -30,7 +30,7 @@ Deploy one container, and PulseBoard auto-discovers your entire stack. Docker or
 
 ## Comparison
 
-| | PulseBoard | Uptime Kuma | Portainer | Dozzle |
+| | maintenant | Uptime Kuma | Portainer | Dozzle |
 |---|:---:|:---:|:---:|:---:|
 | Container auto-discovery | **Yes** | No | Yes | Yes |
 | HTTP/TCP endpoint checks | **Yes** | Yes | No | No |
@@ -48,24 +48,24 @@ Deploy one container, and PulseBoard auto-discovers your entire stack. Docker or
 
 ## Quick Start
 
-Get PulseBoard running in 30 seconds:
+Get maintenant running in 30 seconds:
 
 ```yaml
 # docker-compose.yml
 services:
-  pulseboard:
-    image: ghcr.io/kolapsis/pulseboard:latest
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
     ports:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - pulseboard-data:/data
+      - maintenant-data:/data
     environment:
-      PULSEBOARD_DB: "/data/pulseboard.db"
+      MAINTENANT_DB: "/data/maintenant.db"
     restart: unless-stopped
 
 volumes:
-  pulseboard-data:
+  maintenant-data:
 ```
 
 ```bash

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )

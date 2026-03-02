@@ -1,6 +1,6 @@
 # Kubernetes Guide
 
-PulseBoard runs natively on Kubernetes with read-only RBAC, namespace filtering, and workload-level monitoring out of the box.
+maintenant runs natively on Kubernetes with read-only RBAC, namespace filtering, and workload-level monitoring out of the box.
 
 ---
 
@@ -9,7 +9,7 @@ PulseBoard runs natively on Kubernetes with read-only RBAC, namespace filtering,
 Apply the provided manifests:
 
 ```bash
-kubectl create namespace pulseboard
+kubectl create namespace maintenant
 kubectl apply -f deploy/kubernetes/
 ```
 
@@ -17,7 +17,7 @@ This creates:
 
 | Resource | Description |
 |----------|-------------|
-| **ServiceAccount** | `pulseboard` — identity for API access |
+| **ServiceAccount** | `maintenant` — identity for API access |
 | **ClusterRole** | Read-only access to pods, logs, services, events, workloads, and metrics |
 | **ClusterRoleBinding** | Binds the role to the service account |
 | **Deployment** | Single replica with security hardening |
@@ -28,7 +28,7 @@ This creates:
 
 ## RBAC Permissions
 
-PulseBoard requests the minimum permissions needed for monitoring:
+maintenant requests the minimum permissions needed for monitoring:
 
 ```yaml
 rules:
@@ -46,7 +46,7 @@ rules:
     verbs: ["get", "list"]
 ```
 
-PulseBoard never creates, modifies, or deletes any resource in your cluster.
+maintenant never creates, modifies, or deletes any resource in your cluster.
 
 !!! info "Metrics Server required"
     Resource metrics (CPU/memory) require [metrics-server](https://github.com/kubernetes-sigs/metrics-server)
@@ -76,7 +76,7 @@ A `/tmp` emptyDir is mounted for SQLite WAL temporary files since the root files
 
 ## Namespace Filtering
 
-By default, PulseBoard monitors all namespaces. Use environment variables to restrict scope:
+By default, maintenant monitors all namespaces. Use environment variables to restrict scope:
 
 ### Allowlist
 
@@ -84,7 +84,7 @@ Only monitor specific namespaces:
 
 ```yaml
 env:
-  - name: PULSEBOARD_K8S_NAMESPACES
+  - name: MAINTENANT_K8S_NAMESPACES
     value: "default,production,staging"
 ```
 
@@ -94,7 +94,7 @@ Monitor all namespaces except specific ones:
 
 ```yaml
 env:
-  - name: PULSEBOARD_K8S_EXCLUDE_NAMESPACES
+  - name: MAINTENANT_K8S_EXCLUDE_NAMESPACES
     value: "kube-system,kube-public,cert-manager"
 ```
 
@@ -102,15 +102,15 @@ env:
     `kube-system` and `kube-public` are excluded by default when using the blocklist.
     You do not need to add them explicitly.
 
-If both `PULSEBOARD_K8S_NAMESPACES` and `PULSEBOARD_K8S_EXCLUDE_NAMESPACES` are set, the allowlist takes precedence.
+If both `MAINTENANT_K8S_NAMESPACES` and `MAINTENANT_K8S_EXCLUDE_NAMESPACES` are set, the allowlist takes precedence.
 
 ---
 
 ## Workload Monitoring
 
-PulseBoard groups pods by their owning workload:
+maintenant groups pods by their owning workload:
 
-| Workload | What PulseBoard tracks |
+| Workload | What maintenant tracks |
 |----------|----------------------|
 | **Deployment** | Replica count, ready pods, rollout status |
 | **StatefulSet** | Ordered pod states, persistent volume claims |
@@ -122,9 +122,9 @@ Each workload appears as a single entry in the dashboard with aggregated health 
 
 ## Runtime Detection
 
-PulseBoard auto-detects Kubernetes in this order:
+maintenant auto-detects Kubernetes in this order:
 
-1. `PULSEBOARD_RUNTIME=kubernetes` environment variable (explicit override)
+1. `MAINTENANT_RUNTIME=kubernetes` environment variable (explicit override)
 2. `KUBERNETES_SERVICE_HOST` environment variable (set automatically by Kubernetes for in-cluster pods)
 3. `KUBECONFIG` environment variable or `~/.kube/config` file (for out-of-cluster development)
 
@@ -132,7 +132,7 @@ To force Kubernetes mode:
 
 ```yaml
 env:
-  - name: PULSEBOARD_RUNTIME
+  - name: MAINTENANT_RUNTIME
     value: "kubernetes"
 ```
 
@@ -173,14 +173,14 @@ resources:
     memory: 256Mi
 ```
 
-Adjust based on the number of monitored workloads. PulseBoard is lightweight — 50-100 workloads run comfortably within these limits.
+Adjust based on the number of monitored workloads. maintenant is lightweight — 50-100 workloads run comfortably within these limits.
 
 ---
 
 ## Scaling Considerations
 
 !!! warning "Single replica only"
-    PulseBoard uses SQLite with a single-writer pattern. The deployment strategy is set to
+    maintenant uses SQLite with a single-writer pattern. The deployment strategy is set to
     `Recreate` — do not scale beyond 1 replica.
 
 For high availability, ensure your PersistentVolumeClaim uses a storage class with adequate durability.
@@ -195,18 +195,18 @@ For high availability, ensure your PersistentVolumeClaim uses a storage class wi
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: pulseboard
-  namespace: pulseboard
+  name: maintenant
+  namespace: maintenant
 spec:
   rules:
-    - host: pulse.example.com
+    - host: now.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: pulseboard
+                name: maintenant
                 port:
                   name: http
 ```
@@ -214,7 +214,7 @@ spec:
 ### Port Forward (Development)
 
 ```bash
-kubectl port-forward -n pulseboard svc/pulseboard 8080:80
+kubectl port-forward -n maintenant svc/maintenant 8080:80
 ```
 
 Open **http://localhost:8080**.

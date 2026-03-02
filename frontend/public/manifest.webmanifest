@@ -1,6 +1,6 @@
 {
-  "name": "PulseBoard",
-  "short_name": "PulseBoard",
+  "name": "maintenant",
+  "short_name": "maintenant",
   "description": "Docker container monitoring dashboard",
   "start_url": "/dashboard",
   "display": "standalone",

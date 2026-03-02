@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/docker/docker/pkg/stdcopy"
-	cmodel "github.com/kolapsis/pulseboard/internal/container"
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
+	cmodel "github.com/kolapsis/maintenant/internal/container"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 )
 
 func init() {

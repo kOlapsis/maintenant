@@ -8,7 +8,7 @@ tmp/
 # Node.js / Frontend
 node_modules/
 dist/
-!cmd/pulseboard/web/dist/.gitkeep
+!cmd/maintenant/web/dist/.gitkeep
 frontend/dist/
 *.log
 
@@ -41,8 +41,9 @@ coverage/
 site/
 
 # Build output
-/pulseboard
+/maintenant
 CLAUDE.md
 .claude/
-pulseboard-*.md
+maintenant-*.md
 compose.local.yml
+/docs/icon-logo-graph.zip

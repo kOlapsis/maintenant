@@ -289,7 +289,7 @@ func TestAuthMiddleware_ErrorBodyIsJSON(t *testing.T) {
 // --- ProtectedResourceMetadataHandler tests ---
 
 func TestProtectedResourceMetadataHandler_ReturnsCorrectJSON(t *testing.T) {
-	handler := ProtectedResourceMetadataHandler("https://pulseboard.example.com")
+	handler := ProtectedResourceMetadataHandler("https://maintenant.example.com")
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil)
 	rec := httptest.NewRecorder()
 
@@ -300,7 +300,7 @@ func TestProtectedResourceMetadataHandler_ReturnsCorrectJSON(t *testing.T) {
 	var metadata map[string]any
 	err := json.NewDecoder(rec.Body).Decode(&metadata)
 	require.NoError(t, err)
-	assert.Equal(t, "https://pulseboard.example.com", metadata["resource"])
+	assert.Equal(t, "https://maintenant.example.com", metadata["resource"])
 
 	methods, ok := metadata["bearer_methods_supported"].([]any)
 	require.True(t, ok)

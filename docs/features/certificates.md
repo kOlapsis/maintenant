@@ -6,12 +6,12 @@ Automatic certificate detection from your HTTPS endpoints, plus standalone monit
 
 ## How It Works
 
-PulseBoard monitors TLS certificates in two ways:
+maintenant monitors TLS certificates in two ways:
 
-1. **Automatic detection** — When you configure an HTTPS endpoint check, PulseBoard automatically monitors the certificate on that domain.
+1. **Automatic detection** — When you configure an HTTPS endpoint check, maintenant automatically monitors the certificate on that domain.
 2. **Standalone monitors** — Add any domain manually through the API, even if it is not part of your monitored stack.
 
-PulseBoard connects to the domain, performs a full TLS handshake, parses the certificate chain, and records:
+maintenant connects to the domain, performs a full TLS handshake, parses the certificate chain, and records:
 
 - Issuer and subject
 - Expiry date
@@ -22,7 +22,7 @@ PulseBoard connects to the domain, performs a full TLS handshake, parses the cer
 
 ## Alert Thresholds
 
-PulseBoard alerts at multiple thresholds before certificate expiry:
+maintenant alerts at multiple thresholds before certificate expiry:
 
 | Days Before Expiry | Alert |
 |--------------------:|-------|
@@ -39,13 +39,13 @@ All certificate alerts are sent with **Critical** severity by default.
 
 ## Full Chain Validation
 
-PulseBoard validates the entire certificate chain, not just the leaf certificate:
+maintenant validates the entire certificate chain, not just the leaf certificate:
 
 - **Leaf certificate** — The server's own certificate
 - **Intermediate certificates** — Issued by the CA to sign the leaf
 - **Root certificate** — The trusted root CA
 
-If any certificate in the chain is invalid, expired, or missing, PulseBoard fires a `chain_invalid` alert.
+If any certificate in the chain is invalid, expired, or missing, maintenant fires a `chain_invalid` alert.
 
 ---
 
@@ -93,8 +93,8 @@ Add certificate monitoring to a container using labels:
 
 ```yaml
 labels:
-  pulseboard.certificate.domain: "api.example.com"
-  pulseboard.certificate.port: "443"
+  maintenant.certificate.domain: "api.example.com"
+  maintenant.certificate.port: "443"
 ```
 
 See the [Docker Labels Reference](../guides/docker-labels.md) for the full list of certificate-related labels.

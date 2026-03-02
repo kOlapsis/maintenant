@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const updateLabelPrefix = "pulseboard.update."
+const updateLabelPrefix = "maintenant.update."
 
 // ParseUpdateLabels extracts update configuration from Docker container labels.
 func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConfig {
@@ -29,14 +29,14 @@ func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConf
 			case "true", "1", "yes":
 				cfg.Enabled = true
 			default:
-				logger.Warn("invalid pulseboard.update.enabled value", "value", value)
+				logger.Warn("invalid maintenant.update.enabled value", "value", value)
 			}
 		case "track":
 			switch strings.ToLower(value) {
 			case "major", "minor", "patch", "digest":
 				cfg.Track = strings.ToLower(value)
 			default:
-				logger.Warn("invalid pulseboard.update.track value", "value", value)
+				logger.Warn("invalid maintenant.update.track value", "value", value)
 			}
 		case "pin":
 			cfg.Pin = value
@@ -54,7 +54,7 @@ func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConf
 			case "all", "critical", "none":
 				cfg.AlertOn = strings.ToLower(value)
 			default:
-				logger.Warn("invalid pulseboard.update.alert_on value", "value", value)
+				logger.Warn("invalid maintenant.update.alert_on value", "value", value)
 			}
 		case "digest_only":
 			switch strings.ToLower(value) {

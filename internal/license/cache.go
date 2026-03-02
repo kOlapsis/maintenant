@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const cacheFileName = ".pulseboard-license"
+const cacheFileName = ".maintenant-license"
 
 func cachePath(dataDir string) string {
 	return filepath.Join(dataDir, cacheFileName)

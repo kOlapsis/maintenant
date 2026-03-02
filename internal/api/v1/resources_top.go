@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/kolapsis/pulseboard/internal/resource"
+	"github.com/kolapsis/maintenant/internal/resource"
 )
 
 // ResourceTopService abstracts the resource service for top consumers.

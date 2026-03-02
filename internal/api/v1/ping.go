@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/kolapsis/pulseboard/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 )
 
 // PingHandler handles public ping endpoints.

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kolapsis/pulseboard/internal/webhook"
+	"github.com/kolapsis/maintenant/internal/webhook"
 )
 
 // WebhookHandler handles webhook subscription CRUD endpoints.
@@ -135,7 +135,7 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 		Type:      "test",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Data: map[string]interface{}{
-			"message": "PulseBoard webhook test",
+			"message": "maintenant webhook test",
 		},
 	}
 
@@ -154,8 +154,8 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-PulseBoard-Event", "test")
-	req.Header.Set("X-PulseBoard-Delivery", uuid.New().String())
+	req.Header.Set("X-maintenant-Event", "test")
+	req.Header.Set("X-maintenant-Delivery", uuid.New().String())
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert"
 )
 
 // AlertHandler handles alert-related HTTP endpoints.

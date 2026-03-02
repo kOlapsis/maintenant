@@ -9,15 +9,15 @@ var defaultExcluded = map[string]bool{
 	"kube-node-lease": true,
 }
 
-// NamespaceFilter controls which namespaces PulseBoard monitors.
+// NamespaceFilter controls which namespaces maintenant monitors.
 type NamespaceFilter struct {
 	allowlist map[string]bool // if non-empty, ONLY these namespaces are allowed
 	blocklist map[string]bool // merged with defaults; checked when allowlist is empty
 }
 
 // NewNamespaceFilter creates a filter from env var values.
-// allowCSV = PULSEBOARD_K8S_NAMESPACES (comma-separated allowlist).
-// excludeCSV = PULSEBOARD_K8S_EXCLUDE_NAMESPACES (comma-separated blocklist, appended to defaults).
+// allowCSV = MAINTENANT_K8S_NAMESPACES (comma-separated allowlist).
+// excludeCSV = MAINTENANT_K8S_EXCLUDE_NAMESPACES (comma-separated blocklist, appended to defaults).
 func NewNamespaceFilter(allowCSV, excludeCSV string) *NamespaceFilter {
 	f := &NamespaceFilter{
 		allowlist: map[string]bool{},

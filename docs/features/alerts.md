@@ -6,7 +6,7 @@ Unified alerts across all monitoring sources. Webhook and Discord channels inclu
 
 ## Alert Sources
 
-PulseBoard generates alerts from every monitoring subsystem:
+maintenant generates alerts from every monitoring subsystem:
 
 | Source | Events | Default Severity |
 |--------|--------|------------------|
@@ -21,11 +21,11 @@ PulseBoard generates alerts from every monitoring subsystem:
 
 ## Notification Channels
 
-PulseBoard delivers alerts to Discord, any HTTP webhook, and more. Each channel type formats the payload natively for the target platform.
+maintenant delivers alerts to Discord, any HTTP webhook, and more. Each channel type formats the payload natively for the target platform.
 
 ### Discord
 
-PulseBoard sends [Discord embeds](https://discord.com/developers/docs/resources/channel#embed-object) with severity-colored borders.
+maintenant sends [Discord embeds](https://discord.com/developers/docs/resources/channel#embed-object) with severity-colored borders.
 
 ```bash
 POST /api/v1/channels
@@ -49,11 +49,11 @@ POST /api/v1/channels
 }
 ```
 
-PulseBoard sends a JSON payload with alert details to the configured URL.
+maintenant sends a JSON payload with alert details to the configured URL.
 
 ### Pro Channels
 
-PulseBoard Pro adds native Slack (Block Kit), Microsoft Teams (MessageCard), and Email (SMTP) channels with platform-specific formatting.
+maintenant Pro adds native Slack (Block Kit), Microsoft Teams (MessageCard), and Email (SMTP) channels with platform-specific formatting.
 
 ---
 
@@ -73,8 +73,8 @@ You can also route alerts per container using Docker labels:
 
 ```yaml
 labels:
-  pulseboard.alert.channels: "ops-webhook,ops-discord"
-  pulseboard.alert.severity: "critical"
+  maintenant.alert.channels: "ops-webhook,ops-discord"
+  maintenant.alert.severity: "critical"
 ```
 
 ---
@@ -121,7 +121,7 @@ DELETE /api/v1/silence/{id}
 
 ## Retry and Backoff
 
-When a webhook delivery fails, PulseBoard retries with exponential backoff:
+When a webhook delivery fails, maintenant retries with exponential backoff:
 
 - Attempt 1: immediate
 - Attempt 2: 30 seconds

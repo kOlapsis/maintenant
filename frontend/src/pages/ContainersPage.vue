@@ -52,7 +52,7 @@ function openDetail(container: Container) {
             {{ store.runtimeLabel }} runtime unavailable
           </h3>
           <p class="mt-1 text-sm text-slate-400">
-            Cannot connect to the container runtime. Check that PulseBoard has access to the {{ store.runtimeLabel }} API.
+            Cannot connect to the container runtime. Check that maintenant has access to the {{ store.runtimeLabel }} API.
           </p>
         </div>
       </div>
@@ -69,9 +69,9 @@ function openDetail(container: Container) {
           <h3 class="text-sm font-medium text-pb-green-400">Customize with {{ labelOrAnnotation }}s</h3>
           <p class="mt-1 text-sm text-slate-400">
             Use {{ labelOrAnnotation }}s to configure container behavior:
-            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">pulseboard.ignore</code> to hide a container,
-            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">pulseboard.group</code> to group containers,
-            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">pulseboard.alert.severity</code> to set alert severity.
+            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.ignore</code> to hide a container,
+            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.group</code> to group containers,
+            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.alert.severity</code> to set alert severity.
           </p>
         </div>
         <button

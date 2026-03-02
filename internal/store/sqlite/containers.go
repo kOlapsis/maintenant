@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/container"
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 // ContainerStore implements container.ContainerStore using SQLite.

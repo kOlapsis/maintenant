@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kolapsis/pulseboard/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert"
 )
 
 // Dispatcher subscribes to SSE events and fans out to webhook subscriptions
@@ -65,8 +65,8 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 		// Build custom headers
 		deliveryID := uuid.New().String()
 		headers := map[string]string{
-			"X-PulseBoard-Event":    webhookEventType,
-			"X-PulseBoard-Delivery": deliveryID,
+			"X-maintenant-Event":    webhookEventType,
+			"X-maintenant-Delivery": deliveryID,
 		}
 
 		// HMAC signature if secret is set
@@ -74,7 +74,7 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 			mac := hmac.New(sha256.New, []byte(sub.Secret))
 			mac.Write(payloadBytes)
 			sig := hex.EncodeToString(mac.Sum(nil))
-			headers["X-PulseBoard-Signature"] = "sha256=" + sig
+			headers["X-maintenant-Signature"] = "sha256=" + sig
 		}
 
 		headersJSON, _ := json.Marshal(headers)

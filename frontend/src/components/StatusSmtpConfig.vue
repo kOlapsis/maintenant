@@ -127,7 +127,7 @@ function onPasswordInput() {
         </div>
         <div>
           <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">From Name</label>
-          <input v-model="form.from_name" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" placeholder="PulseBoard Status" />
+          <input v-model="form.from_name" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" placeholder="maintenant Status" />
         </div>
       </div>
 

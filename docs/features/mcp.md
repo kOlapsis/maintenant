@@ -1,12 +1,12 @@
 # MCP Server
 
-Expose PulseBoard monitoring data to AI coding assistants (Claude Code, Claude Desktop, Cursor, Windsurf) via the [Model Context Protocol](https://modelcontextprotocol.io/). Query container states, resource metrics, endpoint health, and more — directly from your editor.
+Expose maintenant monitoring data to AI coding assistants (Claude Code, Claude Desktop, Cursor, Windsurf) via the [Model Context Protocol](https://modelcontextprotocol.io/). Query container states, resource metrics, endpoint health, and more — directly from your editor.
 
 ---
 
 ## Overview
 
-PulseBoard embeds an MCP server that provides 18 tools covering every monitoring dimension. AI assistants can use these tools to diagnose issues, correlate data, and suggest fixes without you ever leaving your editor.
+maintenant embeds an MCP server that provides 18 tools covering every monitoring dimension. AI assistants can use these tools to diagnose issues, correlate data, and suggest fixes without you ever leaving your editor.
 
 **Transports:**
 
@@ -26,11 +26,11 @@ Add to your Claude Code MCP settings:
 ```json
 {
   "mcpServers": {
-    "pulseboard": {
-      "command": "pulseboard",
+    "maintenant": {
+      "command": "maintenant",
       "args": ["--mcp-stdio"],
       "env": {
-        "PULSEBOARD_DB": "/path/to/pulseboard.db"
+        "MAINTENANT_DB": "/path/to/maintenant.db"
       }
     }
   }
@@ -42,16 +42,16 @@ Add to your Claude Code MCP settings:
 1. Enable the MCP server:
 
 ```bash
-PULSEBOARD_MCP=true
+MAINTENANT_MCP=true
 ```
 
 2. (Optional) Restrict access to a specific email:
 
 ```bash
-PULSEBOARD_MCP_ALLOWED_EMAIL=you@example.com
+MAINTENANT_MCP_ALLOWED_EMAIL=you@example.com
 ```
 
-3. Connect your client to `http://your-pulseboard:8080/mcp`.
+3. Connect your client to `http://your-maintenant:8080/mcp`.
 
 ---
 
@@ -72,7 +72,7 @@ PULSEBOARD_MCP_ALLOWED_EMAIL=you@example.com
 | `get_resources` | Host resource summary: CPU, memory, network, disk |
 | `get_top_consumers` | Containers ranked by CPU or memory usage |
 | `get_updates` | Available image updates for monitored containers |
-| `get_health` | PulseBoard version, runtime, and status |
+| `get_health` | maintenant version, runtime, and status |
 
 ### Write Tools
 
@@ -93,10 +93,10 @@ Write tools marked **Extended** return an error in the Community Edition.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PULSEBOARD_MCP` | `false` | Enable the Streamable HTTP MCP server on `/mcp`. |
-| `PULSEBOARD_MCP_ALLOWED_EMAIL` | — | If set, only allow requests with a JWT containing this email claim. |
+| `MAINTENANT_MCP` | `false` | Enable the Streamable HTTP MCP server on `/mcp`. |
+| `MAINTENANT_MCP_ALLOWED_EMAIL` | — | If set, only allow requests with a JWT containing this email claim. |
 
-The `--mcp-stdio` flag is independent of `PULSEBOARD_MCP` — it runs the MCP server over stdin/stdout and exits when the connection closes.
+The `--mcp-stdio` flag is independent of `MAINTENANT_MCP` — it runs the MCP server over stdin/stdout and exits when the connection closes.
 
 ---
 
@@ -104,15 +104,15 @@ The `--mcp-stdio` flag is independent of `PULSEBOARD_MCP` — it runs the MCP se
 
 ### Stdio
 
-No authentication. The stdio transport is a local, trusted channel — only the process that spawned PulseBoard can communicate with it.
+No authentication. The stdio transport is a local, trusted channel — only the process that spawned maintenant can communicate with it.
 
 ### Streamable HTTP
 
-When `PULSEBOARD_MCP_ALLOWED_EMAIL` is set, PulseBoard requires a `Bearer` JWT in the `Authorization` header. The email claim (or `sub` claim as fallback) must match the configured address. This is the mechanism used by Claude.ai and other OAuth2-capable MCP clients.
+When `MAINTENANT_MCP_ALLOWED_EMAIL` is set, maintenant requires a `Bearer` JWT in the `Authorization` header. The email claim (or `sub` claim as fallback) must match the configured address. This is the mechanism used by Claude.ai and other OAuth2-capable MCP clients.
 
 When the variable is empty, the HTTP transport is open. Use your reverse proxy's auth layer to protect it.
 
-PulseBoard serves [RFC 9728 OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728) at `/.well-known/oauth-protected-resource` to help MCP clients discover auth requirements.
+maintenant serves [RFC 9728 OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728) at `/.well-known/oauth-protected-resource` to help MCP clients discover auth requirements.
 
 ---
 
@@ -132,7 +132,7 @@ Once connected, you can ask your AI assistant questions like:
 
 ## Proxy Configuration
 
-If PulseBoard runs behind a reverse proxy, the `/mcp` path requires special handling:
+If maintenant runs behind a reverse proxy, the `/mcp` path requires special handling:
 
 - **No request timeout** — MCP uses SSE for server-to-client streaming, which requires long-lived connections.
 - **No buffering** — Disable response buffering for `/mcp` to allow real-time SSE delivery.
@@ -142,8 +142,8 @@ If PulseBoard runs behind a reverse proxy, the `/mcp` path requires special hand
 
 ```yaml
 labels:
-  traefik.http.routers.pulseboard-mcp.rule: "Host(`pulse.example.com`) && PathPrefix(`/mcp`)"
-  traefik.http.services.pulseboard-mcp.loadbalancer.server.port: "8080"
+  traefik.http.routers.maintenant-mcp.rule: "Host(`now.example.com`) && PathPrefix(`/mcp`)"
+  traefik.http.services.maintenant-mcp.loadbalancer.server.port: "8080"
 ```
 
 ---

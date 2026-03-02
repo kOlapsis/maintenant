@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

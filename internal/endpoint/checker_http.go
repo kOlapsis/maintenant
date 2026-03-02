@@ -70,7 +70,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 		return result
 	}
 
-	req.Header.Set("User-Agent", "PulseBoard/1.0")
+	req.Header.Set("User-Agent", "maintenant/1.0")
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}

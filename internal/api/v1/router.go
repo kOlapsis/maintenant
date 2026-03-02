@@ -8,18 +8,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kolapsis/pulseboard/internal/alert"
-	"github.com/kolapsis/pulseboard/internal/extension"
-	"github.com/kolapsis/pulseboard/internal/certificate"
-	"github.com/kolapsis/pulseboard/internal/container"
-	"github.com/kolapsis/pulseboard/internal/endpoint"
-	"github.com/kolapsis/pulseboard/internal/heartbeat"
-	"github.com/kolapsis/pulseboard/internal/resource"
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
-	"github.com/kolapsis/pulseboard/internal/status"
-	"github.com/kolapsis/pulseboard/internal/license"
-	"github.com/kolapsis/pulseboard/internal/update"
-	"github.com/kolapsis/pulseboard/internal/webhook"
+	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/license"
+	"github.com/kolapsis/maintenant/internal/resource"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/update"
+	"github.com/kolapsis/maintenant/internal/webhook"
 )
 
 // corsAllowedOrigins holds the parsed CORS allowed origins (cached at init time).
@@ -30,7 +30,7 @@ var corsAllowedOrigins []string
 var maxBodySize int64 = 1048576 // 1 MB default
 
 func init() {
-	if raw := os.Getenv("PULSEBOARD_CORS_ORIGINS"); raw != "" {
+	if raw := os.Getenv("MAINTENANT_CORS_ORIGINS"); raw != "" {
 		if raw == "*" {
 			corsAllowedOrigins = []string{"*"}
 		} else {
@@ -43,7 +43,7 @@ func init() {
 		}
 	}
 
-	if raw := os.Getenv("PULSEBOARD_MAX_BODY_SIZE"); raw != "" {
+	if raw := os.Getenv("MAINTENANT_MAX_BODY_SIZE"); raw != "" {
 		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n > 0 {
 			maxBodySize = n
 		}
@@ -389,7 +389,7 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-// corsMiddleware adds CORS headers based on PULSEBOARD_CORS_ORIGINS configuration.
+// corsMiddleware adds CORS headers based on MAINTENANT_CORS_ORIGINS configuration.
 // If unset: no CORS headers (same-origin only). If "*": wildcard. Otherwise: origin allowlist.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

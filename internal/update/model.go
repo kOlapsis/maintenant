@@ -127,7 +127,7 @@ type ScanError struct {
 	Error         error
 }
 
-// UpdateConfig holds parsed pulseboard.update.* label values.
+// UpdateConfig holds parsed maintenant.update.* label values.
 type UpdateConfig struct {
 	Enabled     bool
 	Track       string // "major", "minor", "patch", "digest"

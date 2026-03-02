@@ -33,7 +33,7 @@ const (
 	SeverityInfo     AlertSeverity = "info"
 )
 
-// Container represents a discovered container/workload tracked by PulseBoard.
+// Container represents a discovered container/workload tracked by maintenant.
 type Container struct {
 	ID                  int64          `json:"id"`
 	ExternalID          string         `json:"external_id"`

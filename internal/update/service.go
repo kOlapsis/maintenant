@@ -53,7 +53,7 @@ type Service struct {
 // NewService creates the update intelligence service.
 func NewService(store UpdateStore, scanner *Scanner, containers ContainerLister, logger *slog.Logger) *Service {
 	interval := 24 * time.Hour
-	if v := os.Getenv("PULSEBOARD_UPDATE_INTERVAL"); v != "" {
+	if v := os.Getenv("MAINTENANT_UPDATE_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			interval = d
 		}

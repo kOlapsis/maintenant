@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/container"
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 const (

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/kolapsis/pulseboard/internal/alert"
-	"github.com/kolapsis/pulseboard/internal/certificate"
-	"github.com/kolapsis/pulseboard/internal/container"
-	"github.com/kolapsis/pulseboard/internal/endpoint"
-	"github.com/kolapsis/pulseboard/internal/heartbeat"
-	"github.com/kolapsis/pulseboard/internal/update"
+	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -85,7 +85,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "get_health",
-		Description: "Check PulseBoard's own health status, version, and runtime information.",
+		Description: "Check maintenant's own health status, version, and runtime information.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getHealthHandler(svc))
 }

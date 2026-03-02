@@ -1,9 +1,9 @@
-site_name: PulseBoard
+site_name: maintenant
 site_description: The all-in-one monitoring dashboard your self-hosted stack deserves.
-site_url: https://docs.pulseboard.dev
+site_url: https://kolapsis.github.io/maintenant/
 
-repo_name: kolapsis/pulseboard
-repo_url: https://github.com/kolapsis/pulseboard
+repo_name: kolapsis/maintenant
+repo_url: https://github.com/kolapsis/maintenant
 
 theme:
   name: material

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert"
 )
 
 // StatusIncident is a minimal representation for the status page API response.

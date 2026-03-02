@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	cmodel "github.com/kolapsis/pulseboard/internal/container"
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
+	cmodel "github.com/kolapsis/maintenant/internal/container"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"

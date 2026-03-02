@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/webhook"
+	"github.com/kolapsis/maintenant/internal/webhook"
 )
 
 // WebhookStoreImpl implements webhook.WebhookSubscriptionStore using SQLite.

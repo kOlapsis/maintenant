@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/update"
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 // UpdateStore implements update.UpdateStore using SQLite.

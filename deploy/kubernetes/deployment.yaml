@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pulseboard
-  namespace: pulseboard
+  name: maintenant
+  namespace: maintenant
   labels:
-    app.kubernetes.io/name: pulseboard
+    app.kubernetes.io/name: maintenant
     app.kubernetes.io/component: monitoring
 spec:
   replicas: 1
@@ -12,29 +12,29 @@ spec:
     type: Recreate # SQLite single-writer
   selector:
     matchLabels:
-      app.kubernetes.io/name: pulseboard
+      app.kubernetes.io/name: maintenant
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: pulseboard
+        app.kubernetes.io/name: maintenant
         app.kubernetes.io/component: monitoring
     spec:
-      serviceAccountName: pulseboard
+      serviceAccountName: maintenant
       securityContext:
         runAsNonRoot: true
         fsGroup: 65534
       containers:
-        - name: pulseboard
-          image: ghcr.io/kolapsis/pulseboard:v0.1.0
+        - name: maintenant
+          image: ghcr.io/kolapsis/maintenant:v0.1.0
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           env:
-            - name: PULSEBOARD_RUNTIME
+            - name: MAINTENANT_RUNTIME
               value: "kubernetes"
-            - name: PULSEBOARD_DB_PATH
-              value: "/data/pulseboard.db"
+            - name: MAINTENANT_DB_PATH
+              value: "/data/maintenant.db"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -68,15 +68,15 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: pulseboard-data
+            claimName: maintenant-data
         - name: tmp
           emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: pulseboard-data
-  namespace: pulseboard
+  name: maintenant-data
+  namespace: maintenant
 spec:
   accessModes:
     - ReadWriteOnce
@@ -87,10 +87,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: pulseboard
-  namespace: pulseboard
+  name: maintenant
+  namespace: maintenant
   labels:
-    app.kubernetes.io/name: pulseboard
+    app.kubernetes.io/name: maintenant
 spec:
   type: ClusterIP
   ports:
@@ -99,4 +99,4 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    app.kubernetes.io/name: pulseboard
+    app.kubernetes.io/name: maintenant

@@ -1,12 +1,12 @@
 # Endpoint Monitoring
 
-Define HTTP or TCP checks directly as Docker labels — no config files, no UI clicks. PulseBoard picks them up automatically when a container starts.
+Define HTTP or TCP checks directly as Docker labels — no config files, no UI clicks. maintenant picks them up automatically when a container starts.
 
 ---
 
 ## How It Works
 
-PulseBoard reads endpoint definitions from Docker labels on your containers. When a container with endpoint labels starts, PulseBoard automatically begins monitoring those endpoints at the configured interval.
+maintenant reads endpoint definitions from Docker labels on your containers. When a container with endpoint labels starts, maintenant automatically begins monitoring those endpoints at the configured interval.
 
 Each check records:
 
@@ -25,11 +25,11 @@ services:
   api:
     image: myapp:latest
     labels:
-      pulseboard.endpoint.http: "http://api:3000/health"
-      pulseboard.endpoint.interval: "15s"
+      maintenant.endpoint.http: "http://api:3000/health"
+      maintenant.endpoint.interval: "15s"
 ```
 
-That is it. PulseBoard starts checking `http://api:3000/health` every 15 seconds as soon as the container starts.
+That is it. maintenant starts checking `http://api:3000/health` every 15 seconds as soon as the container starts.
 
 ---
 
@@ -39,21 +39,21 @@ HTTP checks send a request to the configured URL and validate the response statu
 
 ```yaml
 labels:
-  pulseboard.endpoint.http: "https://api:8443/health"
+  maintenant.endpoint.http: "https://api:8443/health"
 ```
 
 ### Configuration Options
 
 | Label | Default | Description |
 |-------|---------|-------------|
-| `pulseboard.endpoint.http` | — | URL to check (required for HTTP) |
-| `pulseboard.endpoint.http.method` | `GET` | HTTP method (`GET`, `POST`, `HEAD`, etc.) |
-| `pulseboard.endpoint.http.expected-status` | `200` | Expected status codes (comma-separated, e.g., `200,201`) |
-| `pulseboard.endpoint.http.tls-verify` | `true` | Verify TLS certificates. Set to `false` for self-signed certs. |
-| `pulseboard.endpoint.interval` | `30s` | Check interval (Go duration format) |
-| `pulseboard.endpoint.timeout` | `10s` | Request timeout |
-| `pulseboard.endpoint.failure-threshold` | `1` | Consecutive failures before marking as down |
-| `pulseboard.endpoint.recovery-threshold` | `1` | Consecutive successes before marking as up |
+| `maintenant.endpoint.http` | — | URL to check (required for HTTP) |
+| `maintenant.endpoint.http.method` | `GET` | HTTP method (`GET`, `POST`, `HEAD`, etc.) |
+| `maintenant.endpoint.http.expected-status` | `200` | Expected status codes (comma-separated, e.g., `200,201`) |
+| `maintenant.endpoint.http.tls-verify` | `true` | Verify TLS certificates. Set to `false` for self-signed certs. |
+| `maintenant.endpoint.interval` | `30s` | Check interval (Go duration format) |
+| `maintenant.endpoint.timeout` | `10s` | Request timeout |
+| `maintenant.endpoint.failure-threshold` | `1` | Consecutive failures before marking as down |
+| `maintenant.endpoint.recovery-threshold` | `1` | Consecutive successes before marking as up |
 
 ---
 
@@ -63,7 +63,7 @@ TCP checks attempt to establish a connection to the configured host and port.
 
 ```yaml
 labels:
-  pulseboard.endpoint.tcp: "postgres:5432"
+  maintenant.endpoint.tcp: "postgres:5432"
 ```
 
 Useful for databases, caches, and services that do not expose HTTP endpoints.
@@ -77,18 +77,18 @@ Use indexed labels to monitor multiple endpoints from a single container:
 ```yaml
 labels:
   # First endpoint — HTTP health check
-  pulseboard.endpoint.0.http: "https://app:8443/health"
-  pulseboard.endpoint.0.interval: "15s"
-  pulseboard.endpoint.0.failure-threshold: "3"
+  maintenant.endpoint.0.http: "https://app:8443/health"
+  maintenant.endpoint.0.interval: "15s"
+  maintenant.endpoint.0.failure-threshold: "3"
 
   # Second endpoint — Redis TCP check
-  pulseboard.endpoint.1.tcp: "redis:6379"
-  pulseboard.endpoint.1.interval: "30s"
+  maintenant.endpoint.1.tcp: "redis:6379"
+  maintenant.endpoint.1.interval: "30s"
 ```
 
 !!! info "Indexed vs simple labels"
-    You can use either **simple** labels (`pulseboard.endpoint.http`) for a single endpoint
-    or **indexed** labels (`pulseboard.endpoint.0.http`, `pulseboard.endpoint.1.tcp`) for multiple
+    You can use either **simple** labels (`maintenant.endpoint.http`) for a single endpoint
+    or **indexed** labels (`maintenant.endpoint.0.http`, `maintenant.endpoint.1.tcp`) for multiple
     endpoints. Do not mix both styles on the same container.
 
 ---
@@ -99,9 +99,9 @@ Thresholds control how many consecutive check results are needed to change the e
 
 ```yaml
 labels:
-  pulseboard.endpoint.http: "https://api:3000/health"
-  pulseboard.endpoint.failure-threshold: "3"   # 3 consecutive failures = down
-  pulseboard.endpoint.recovery-threshold: "2"  # 2 consecutive successes = up
+  maintenant.endpoint.http: "https://api:3000/health"
+  maintenant.endpoint.failure-threshold: "3"   # 3 consecutive failures = down
+  maintenant.endpoint.recovery-threshold: "2"  # 2 consecutive successes = up
 ```
 
 - **failure-threshold** — Number of consecutive failures before the endpoint is marked as `down` and an alert is triggered.
@@ -111,7 +111,7 @@ labels:
 
 ## Uptime History and Sparklines
 
-PulseBoard records every check result and computes:
+maintenant records every check result and computes:
 
 - **Daily uptime percentage** — Available via `GET /api/v1/endpoints/{id}/uptime/daily`
 - **Response time trends** — Visualized as sparkline charts in the dashboard

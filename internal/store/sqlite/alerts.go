@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert"
 )
 
 // AlertStoreImpl implements alert.AlertStore using SQLite.

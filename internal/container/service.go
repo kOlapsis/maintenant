@@ -272,7 +272,7 @@ func (s *Service) emitEvent(eventType string, data interface{}) {
 	}
 }
 
-// GetContainer retrieves a container by its PulseBoard ID.
+// GetContainer retrieves a container by its maintenant ID.
 func (s *Service) GetContainer(ctx context.Context, id int64) (*Container, error) {
 	return s.store.GetContainerByID(ctx, id)
 }
@@ -283,7 +283,7 @@ func (s *Service) ListContainers(ctx context.Context, opts ListContainersOpts) (
 }
 
 // Reconcile compares stored container states with actual runtime state
-// and generates synthetic transitions for changes that occurred while PulseBoard was offline.
+// and generates synthetic transitions for changes that occurred while maintenant was offline.
 func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) error {
 	current, err := discoverer.DiscoverAll(ctx)
 	if err != nil {
@@ -306,7 +306,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 	for _, sc := range stored {
 		dc, exists := currentByExternalID[sc.ExternalID]
 		if !exists {
-			// Container was removed while PulseBoard was offline — archive it
+			// Container was removed while maintenant was offline — archive it
 			if err := s.store.ArchiveContainer(ctx, sc.ExternalID, now); err != nil {
 				s.logger.Error("reconcile archive", "external_id", sc.ExternalID, "error", err)
 			}

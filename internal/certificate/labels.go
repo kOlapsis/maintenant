@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const tlsLabel = "pulseboard.tls.certificates"
+const tlsLabel = "maintenant.tls.certificates"
 
 // ParsedCertLabel represents a single hostname:port parsed from the TLS certificates label.
 type ParsedCertLabel struct {
@@ -15,7 +15,7 @@ type ParsedCertLabel struct {
 }
 
 // ParseCertificateLabels extracts certificate monitoring targets from container labels.
-// The label format is: pulseboard.tls.certificates=host1,host2:8443,host3
+// The label format is: maintenant.tls.certificates=host1,host2:8443,host3
 // Hostnames without a port default to 443.
 func ParseCertificateLabels(labels map[string]string) []ParsedCertLabel {
 	raw, ok := labels[tlsLabel]

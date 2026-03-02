@@ -125,8 +125,8 @@ const mainNav = [
         <X v-else :size="20"/>
       </button>
       <div class="ml-3 flex items-center gap-2">
-        <img src="/logo.svg" alt="PulseBoard" class="w-6 h-6 rounded-md"/>
-        <span class="text-sm font-bold text-white">PulseBoard</span>
+        <img src="/logo.svg" alt="maintenant" class="w-6 h-6 rounded-md"/>
+        <span class="text-sm font-bold text-white">maintenant</span>
       </div>
       <div class="flex-1"/>
     </div>
@@ -147,8 +147,8 @@ const mainNav = [
         class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-[#12151C] border-r border-slate-800 flex flex-col"
       >
         <div class="p-6 flex items-center gap-3">
-          <img src="/logo.svg" alt="PulseBoard" class="w-8 h-8 rounded-lg"/>
-          <h1 class="text-xl font-bold tracking-tight text-white">PulseBoard</h1>
+          <img src="/logo.svg" alt="maintenant" class="w-8 h-8 rounded-lg"/>
+          <h1 class="text-xl font-bold tracking-tight text-white">maintenant</h1>
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <RouterLink

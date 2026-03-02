@@ -6,9 +6,9 @@ Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked
 
 ## How It Works
 
-PulseBoard connects to your container runtime (Docker socket or Kubernetes API) and watches for container lifecycle events in real time. There is nothing to configure — every container is discovered automatically.
+maintenant connects to your container runtime (Docker socket or Kubernetes API) and watches for container lifecycle events in real time. There is nothing to configure — every container is discovered automatically.
 
-When a new container starts, PulseBoard immediately begins tracking:
+When a new container starts, maintenant immediately begins tracking:
 
 - **State changes** — running, stopped, restarting, paused, exited (with exit codes)
 - **Health checks** — Docker `HEALTHCHECK` status (healthy, unhealthy, starting)
@@ -23,18 +23,18 @@ All state transitions are persisted in the database and pushed to the browser vi
 
 === "Docker"
 
-    PulseBoard connects to the Docker daemon via the socket (`/var/run/docker.sock`). Mount it as read-only:
+    maintenant connects to the Docker daemon via the socket (`/var/run/docker.sock`). Mount it as read-only:
 
     ```yaml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ```
 
-    Every running container is discovered automatically. New containers are picked up the moment they start. PulseBoard never modifies your containers — it is strictly read-only.
+    Every running container is discovered automatically. New containers are picked up the moment they start. maintenant never modifies your containers — it is strictly read-only.
 
 === "Kubernetes"
 
-    PulseBoard uses the in-cluster Kubernetes API with a read-only ServiceAccount. It watches:
+    maintenant uses the in-cluster Kubernetes API with a read-only ServiceAccount. It watches:
 
     - **Pods** — Individual container states, logs, events
     - **Deployments** — Rollout status, replica counts
@@ -52,11 +52,11 @@ Containers are automatically grouped for easy navigation.
 === "Docker"
 
     - **Compose projects** — Containers from the same `docker-compose.yml` are grouped by project name.
-    - **Custom groups** — Override with the `pulseboard.group` label:
+    - **Custom groups** — Override with the `maintenant.group` label:
 
     ```yaml
     labels:
-      pulseboard.group: "backend"
+      maintenant.group: "backend"
     ```
 
 === "Kubernetes"
@@ -67,7 +67,7 @@ Containers are automatically grouped for easy navigation.
 
 ## Health Checks
 
-PulseBoard reads Docker `HEALTHCHECK` results automatically. No configuration needed — if your container defines a health check, PulseBoard tracks it.
+maintenant reads Docker `HEALTHCHECK` results automatically. No configuration needed — if your container defines a health check, maintenant tracks it.
 
 Health states:
 
@@ -78,26 +78,26 @@ Health states:
 | `starting` | Container just started, health check not yet run |
 | `none` | No health check defined |
 
-When a container transitions to `unhealthy`, PulseBoard can trigger an alert through the [Alert Engine](alerts.md).
+When a container transitions to `unhealthy`, maintenant can trigger an alert through the [Alert Engine](alerts.md).
 
 ---
 
 ## Restart Loop Detection
 
-PulseBoard detects containers stuck in restart loops. When a container exceeds the configured restart threshold within a time window, an alert is fired.
+maintenant detects containers stuck in restart loops. When a container exceeds the configured restart threshold within a time window, an alert is fired.
 
 Configure the threshold per container:
 
 ```yaml
 labels:
-  pulseboard.alert.restart_threshold: "5"  # Alert after 5 restarts
+  maintenant.alert.restart_threshold: "5"  # Alert after 5 restarts
 ```
 
 ---
 
 ## Log Streaming
 
-PulseBoard provides real-time log streaming with stdout/stderr demultiplexing. Logs are streamed directly from the container runtime — they are not stored in PulseBoard's database.
+maintenant provides real-time log streaming with stdout/stderr demultiplexing. Logs are streamed directly from the container runtime — they are not stored in maintenant's database.
 
 Access logs via the API:
 
@@ -108,11 +108,11 @@ Access logs via the API:
 
 ## Excluding Containers
 
-To exclude a container from PulseBoard monitoring:
+To exclude a container from maintenant monitoring:
 
 ```yaml
 labels:
-  pulseboard.ignore: "true"
+  maintenant.ignore: "true"
 ```
 
 This is useful for infrastructure containers (reverse proxies, sidecars) that add noise to your dashboard.

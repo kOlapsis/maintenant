@@ -3,7 +3,7 @@ package alert
 import (
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/endpoint"
 )
 
 // EndpointAlert represents an alert or recovery event for an endpoint.

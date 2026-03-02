@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	cmodel "github.com/kolapsis/pulseboard/internal/container"
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
+	cmodel "github.com/kolapsis/maintenant/internal/container"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	k8s "k8s.io/client-go/kubernetes"
@@ -21,8 +21,8 @@ import (
 
 func init() {
 	pbruntime.Register("kubernetes", func(ctx context.Context, logger *slog.Logger) (pbruntime.Runtime, error) {
-		allowNS := os.Getenv("PULSEBOARD_K8S_NAMESPACES")
-		excludeNS := os.Getenv("PULSEBOARD_K8S_EXCLUDE_NAMESPACES")
+		allowNS := os.Getenv("MAINTENANT_K8S_NAMESPACES")
+		excludeNS := os.Getenv("MAINTENANT_K8S_EXCLUDE_NAMESPACES")
 		nsFilter := NewNamespaceFilter(allowNS, excludeNS)
 		return NewRuntime(logger, nsFilter)
 	})

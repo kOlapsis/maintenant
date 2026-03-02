@@ -9,17 +9,17 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	cmodel "github.com/kolapsis/pulseboard/internal/container"
+	cmodel "github.com/kolapsis/maintenant/internal/container"
 )
 
 const (
 	labelComposeProject = "com.docker.compose.project"
 	labelComposeService = "com.docker.compose.service"
-	labelPBIgnore       = "pulseboard.ignore"
-	labelPBGroup        = "pulseboard.group"
-	labelPBSeverity     = "pulseboard.alert.severity"
-	labelPBThreshold    = "pulseboard.alert.restart_threshold"
-	labelPBChannels     = "pulseboard.alert.channels"
+	labelPBIgnore       = "maintenant.ignore"
+	labelPBGroup        = "maintenant.group"
+	labelPBSeverity     = "maintenant.alert.severity"
+	labelPBThreshold    = "maintenant.alert.restart_threshold"
+	labelPBChannels     = "maintenant.alert.channels"
 )
 
 // DiscoveredContainer holds the result of discovering a single container.
@@ -140,7 +140,7 @@ func mapFromList(dc types.Container, now time.Time) *cmodel.Container {
 		LastStateChangeAt:  now,
 	}
 
-	// PulseBoard labels
+	// maintenant labels
 	applyLabels(cm, dc.Labels)
 
 	return cm

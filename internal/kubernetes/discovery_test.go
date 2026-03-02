@@ -214,11 +214,11 @@ func TestDiscoverAll_Annotations(t *testing.T) {
 			Name:      "api",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"pulseboard.group":                "backend",
-				"pulseboard.alert.severity":       "critical",
-				"pulseboard.alert.restart_threshold": "5",
-				"pulseboard.alert.channels":       "slack",
-				"pulseboard.ignore":               "true",
+				"maintenant.group":                "backend",
+				"maintenant.alert.severity":       "critical",
+				"maintenant.alert.restart_threshold": "5",
+				"maintenant.alert.channels":       "slack",
+				"maintenant.ignore":               "true",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{

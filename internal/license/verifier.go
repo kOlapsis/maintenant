@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	licenseServerURL = "https://license.pulseboard.io"
+	licenseServerURL = "https://license.maintenant.io"
 )
 
 // licenseServerOverride can be set via -ldflags to point to a dev/staging server.
@@ -69,7 +69,7 @@ func fetchLicense(ctx context.Context, client *http.Client, serverURL, licenseKe
 	}
 
 	req.Header.Set("Authorization", "Bearer "+licenseKey)
-	req.Header.Set("User-Agent", "PulseBoard/"+version)
+	req.Header.Set("User-Agent", "maintenant/"+version)
 
 	resp, err := client.Do(req)
 	if err != nil {

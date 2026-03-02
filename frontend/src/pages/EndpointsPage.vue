@@ -122,8 +122,8 @@ onUnmounted(() => {
           Monitor HTTP and TCP endpoints by adding {{ labelOrAnnotation }}s to your {{ isK8s ? 'pods' : 'containers' }}.
         </p>
         <p class="text-sm max-w-md text-slate-500">
-          Add the <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">pulseboard.endpoint.http</code>
-          or <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">pulseboard.endpoint.tcp</code>
+          Add the <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.endpoint.http</code>
+          or <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.endpoint.tcp</code>
           {{ labelOrAnnotation }} with the target URL.
         </p>
       </div>

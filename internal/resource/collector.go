@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/container"
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/container"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 )
 
 const (

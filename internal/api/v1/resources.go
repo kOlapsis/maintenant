@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/resource"
+	"github.com/kolapsis/maintenant/internal/resource"
 )
 
 // ResourceHandler handles resource monitoring HTTP endpoints.

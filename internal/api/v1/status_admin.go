@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/kolapsis/pulseboard/internal/status"
+	"github.com/kolapsis/maintenant/internal/status"
 )
 
 // StatusAdminHandler handles admin endpoints for the public status page.

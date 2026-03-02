@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/certificate"
 )
 
 // CertificateStore implements certificate.CertificateStore using SQLite.

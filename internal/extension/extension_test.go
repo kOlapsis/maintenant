@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert"
 )
 
 func TestCurrentEditionReturnsCommunity(t *testing.T) {

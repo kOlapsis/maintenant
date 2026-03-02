@@ -13,25 +13,25 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kolapsis/pulseboard/cmd/pulseboard/web"
-	"github.com/kolapsis/pulseboard/internal/alert"
-	v1 "github.com/kolapsis/pulseboard/internal/api/v1"
-	"github.com/kolapsis/pulseboard/internal/certificate"
-	"github.com/kolapsis/pulseboard/internal/container"
-	"github.com/kolapsis/pulseboard/internal/docker"
-	"github.com/kolapsis/pulseboard/internal/endpoint"
-	"github.com/kolapsis/pulseboard/internal/extension"
-	"github.com/kolapsis/pulseboard/internal/heartbeat"
-	_ "github.com/kolapsis/pulseboard/internal/kubernetes"
-	"github.com/kolapsis/pulseboard/internal/license"
-	pbmcp "github.com/kolapsis/pulseboard/internal/mcp"
-	"github.com/kolapsis/pulseboard/internal/ratelimit"
-	"github.com/kolapsis/pulseboard/internal/resource"
-	pbruntime "github.com/kolapsis/pulseboard/internal/runtime"
-	"github.com/kolapsis/pulseboard/internal/status"
-	"github.com/kolapsis/pulseboard/internal/store/sqlite"
-	"github.com/kolapsis/pulseboard/internal/update"
-	"github.com/kolapsis/pulseboard/internal/webhook"
+	"github.com/kolapsis/maintenant/cmd/maintenant/web"
+	"github.com/kolapsis/maintenant/internal/alert"
+	v1 "github.com/kolapsis/maintenant/internal/api/v1"
+	"github.com/kolapsis/maintenant/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/docker"
+	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
+	_ "github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/license"
+	pbmcp "github.com/kolapsis/maintenant/internal/mcp"
+	"github.com/kolapsis/maintenant/internal/ratelimit"
+	"github.com/kolapsis/maintenant/internal/resource"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/update"
+	"github.com/kolapsis/maintenant/internal/webhook"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -54,17 +54,17 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
-	logger.Info("PulseBoard starting", "version", version, "commit", commit, "build_date", buildDate)
+	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate)
 	v1.SetBuildVersion(version)
-	v1.SetOrganisationName(os.Getenv("PULSEBOARD_ORGANISATION_NAME"))
+	v1.SetOrganisationName(os.Getenv("MAINTENANT_ORGANISATION_NAME"))
 
 	// Configuration from environment
-	addr := envOrDefault("PULSEBOARD_ADDR", "127.0.0.1:8080")
-	dbPath := envOrDefault("PULSEBOARD_DB", "./pulseboard.db")
+	addr := envOrDefault("MAINTENANT_ADDR", "127.0.0.1:8080")
+	dbPath := envOrDefault("MAINTENANT_DB", "./maintenant.db")
 
 	// K8s namespace config (used when runtime is Kubernetes)
-	k8sNamespaces := os.Getenv("PULSEBOARD_K8S_NAMESPACES")
-	k8sExcludeNamespaces := os.Getenv("PULSEBOARD_K8S_EXCLUDE_NAMESPACES")
+	k8sNamespaces := os.Getenv("MAINTENANT_K8S_NAMESPACES")
+	k8sExcludeNamespaces := os.Getenv("MAINTENANT_K8S_EXCLUDE_NAMESPACES")
 	if k8sNamespaces != "" {
 		logger.Info("K8s namespace allowlist configured", "namespaces", k8sNamespaces)
 	}
@@ -105,7 +105,7 @@ func main() {
 
 	// --- License manager ---
 	license.InitPublicKey(publicKeyB64)
-	licenseKey := os.Getenv("PULSEBOARD_LICENSE_KEY")
+	licenseKey := os.Getenv("MAINTENANT_LICENSE_KEY")
 	var licenseMgr *license.LicenseManager
 	if licenseKey != "" {
 		dataDir := filepath.Dir(dbPath)
@@ -176,19 +176,19 @@ func main() {
 
 	// --- Heartbeat monitoring ---
 	hbSvc := heartbeat.NewService(hbStore, logger, nil)
-	hbSvc.SetBaseURL(envOrDefault("PULSEBOARD_BASE_URL", "http://localhost:"+addr[1:]))
+	hbSvc.SetBaseURL(envOrDefault("MAINTENANT_BASE_URL", "http://localhost:"+addr[1:]))
 	hbSvc.StartDeadlineChecker(ctx)
 
 	// --- SMTP configuration ---
-	smtpHost := os.Getenv("PULSEBOARD_SMTP_HOST")
+	smtpHost := os.Getenv("MAINTENANT_SMTP_HOST")
 	var smtpSender *alert.SMTPSender
 	if smtpHost != "" {
 		smtpSender = alert.NewSMTPSender(alert.SMTPConfig{
 			Host:     smtpHost,
-			Port:     envOrDefault("PULSEBOARD_SMTP_PORT", "587"),
-			Username: os.Getenv("PULSEBOARD_SMTP_USERNAME"),
-			Password: os.Getenv("PULSEBOARD_SMTP_PASSWORD"),
-			From:     envOrDefault("PULSEBOARD_SMTP_FROM", "pulseboard@localhost"),
+			Port:     envOrDefault("MAINTENANT_SMTP_PORT", "587"),
+			Username: os.Getenv("MAINTENANT_SMTP_USERNAME"),
+			Password: os.Getenv("MAINTENANT_SMTP_PASSWORD"),
+			From:     envOrDefault("MAINTENANT_SMTP_FROM", "maintenant@localhost"),
 		})
 		logger.Info("SMTP sender configured", "host", smtpHost)
 	}
@@ -674,13 +674,13 @@ func main() {
 
 	// MCP Streamable HTTP handler (mcpServer is assigned later, before srv.ListenAndServe)
 	var mcpServer *gomcp.Server
-	mcpEnabled := envOrDefault("PULSEBOARD_MCP", "false")
+	mcpEnabled := envOrDefault("maintenant_MCP", "false")
 	if mcpEnabled == "true" {
 		mcpHTTPHandler := gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
 			return mcpServer
 		}, nil)
 		var mcpHandler http.Handler = mcpHTTPHandler
-		if allowedEmail := os.Getenv("PULSEBOARD_MCP_ALLOWED_EMAIL"); allowedEmail != "" {
+		if allowedEmail := os.Getenv("maintenant_MCP_ALLOWED_EMAIL"); allowedEmail != "" {
 			mcpHandler = pbmcp.AuthMiddleware(allowedEmail, mcpHandler)
 			topMux.Handle("/.well-known/oauth-protected-resource", pbmcp.ProtectedResourceMetadataHandler(
 				fmt.Sprintf("http://%s/mcp", addr),
@@ -716,7 +716,7 @@ func main() {
 	}
 
 	// Prune orphan container alerts — resolve active alerts whose container no
-	// longer exists (e.g. destroyed between PulseBoard restarts).
+	// longer exists (e.g. destroyed between maintenant restarts).
 	if activeAlerts, err := alertStore.ListActiveAlerts(ctx); err == nil {
 		for _, a := range activeAlerts {
 			if a.EntityType != "container" {
@@ -872,7 +872,7 @@ func main() {
 
 	// --- Start HTTP server ---
 	go func() {
-		logger.Info("starting PulseBoard HTTP server", "addr", addr)
+		logger.Info("starting maintenant HTTP server", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTP server error", "error", err)
 			os.Exit(1)
@@ -881,7 +881,7 @@ func main() {
 
 	// --- Wait for shutdown ---
 	<-ctx.Done()
-	logger.Info("shutting down PulseBoard")
+	logger.Info("shutting down maintenant")
 
 	// Stop endpoint check engine
 	epSvc.Stop()
@@ -894,7 +894,7 @@ func main() {
 		logger.Error("HTTP server shutdown error", "error", err)
 	}
 
-	logger.Info("PulseBoard stopped")
+	logger.Info("maintenant stopped")
 }
 
 func envOrDefault(key, defaultVal string) string {

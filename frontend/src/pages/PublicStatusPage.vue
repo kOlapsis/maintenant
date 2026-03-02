@@ -265,7 +265,7 @@ function formatDate(iso: string) {
 
         <!-- Footer -->
         <footer class="pt-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-600">
-          <span>Powered by <span class="text-slate-500 font-semibold">PulseBoard</span></span>
+          <span>Powered by <span class="text-slate-500 font-semibold">maintenant</span></span>
         </footer>
 
       </div>

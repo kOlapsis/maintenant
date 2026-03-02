@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kolapsis/pulseboard/internal/container"
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 // fakeRuntime is a minimal Runtime implementation for testing detection.
@@ -52,7 +52,7 @@ func registerFake(name string) {
 func TestDetect_EnvOverrideDocker(t *testing.T) {
 	resetFactories()
 	registerFake("docker")
-	t.Setenv("PULSEBOARD_RUNTIME", "docker")
+	t.Setenv("MAINTENANT_RUNTIME", "docker")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 
 	rt, err := Detect(context.Background(), slog.Default())
@@ -67,7 +67,7 @@ func TestDetect_EnvOverrideDocker(t *testing.T) {
 func TestDetect_EnvOverrideKubernetes(t *testing.T) {
 	resetFactories()
 	registerFake("kubernetes")
-	t.Setenv("PULSEBOARD_RUNTIME", "kubernetes")
+	t.Setenv("MAINTENANT_RUNTIME", "kubernetes")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 
 	rt, err := Detect(context.Background(), slog.Default())
@@ -82,12 +82,12 @@ func TestDetect_EnvOverrideKubernetes(t *testing.T) {
 func TestDetect_InvalidOverride(t *testing.T) {
 	resetFactories()
 	registerFake("docker")
-	t.Setenv("PULSEBOARD_RUNTIME", "invalid")
+	t.Setenv("MAINTENANT_RUNTIME", "invalid")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 
 	_, err := Detect(context.Background(), slog.Default())
 	if err == nil {
-		t.Fatal("expected error for invalid PULSEBOARD_RUNTIME")
+		t.Fatal("expected error for invalid MAINTENANT_RUNTIME")
 	}
 }
 
@@ -95,7 +95,7 @@ func TestDetect_KubernetesServiceHost(t *testing.T) {
 	resetFactories()
 	registerFake("docker")
 	registerFake("kubernetes")
-	t.Setenv("PULSEBOARD_RUNTIME", "")
+	t.Setenv("MAINTENANT_RUNTIME", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBECONFIG", "")
 
@@ -111,7 +111,7 @@ func TestDetect_KubernetesServiceHost(t *testing.T) {
 func TestDetect_KubernetesServiceHostNoFactory(t *testing.T) {
 	resetFactories()
 	registerFake("docker")
-	t.Setenv("PULSEBOARD_RUNTIME", "")
+	t.Setenv("MAINTENANT_RUNTIME", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBECONFIG", "")
 
@@ -124,7 +124,7 @@ func TestDetect_KubernetesServiceHostNoFactory(t *testing.T) {
 func TestDetect_DockerFallback(t *testing.T) {
 	resetFactories()
 	registerFake("docker")
-	t.Setenv("PULSEBOARD_RUNTIME", "")
+	t.Setenv("MAINTENANT_RUNTIME", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	t.Setenv("KUBECONFIG", "")
 
@@ -142,7 +142,7 @@ func TestDetect_DockerFallback(t *testing.T) {
 
 func TestDetect_NoRuntime(t *testing.T) {
 	resetFactories()
-	t.Setenv("PULSEBOARD_RUNTIME", "")
+	t.Setenv("MAINTENANT_RUNTIME", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	t.Setenv("KUBECONFIG", "")
 	t.Setenv("HOME", t.TempDir())
@@ -157,7 +157,7 @@ func TestDetect_KubeconfigEnvFallback(t *testing.T) {
 	resetFactories()
 	registerFake("docker")
 	registerFake("kubernetes")
-	t.Setenv("PULSEBOARD_RUNTIME", "")
+	t.Setenv("MAINTENANT_RUNTIME", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 
 	// Create a fake kubeconfig file

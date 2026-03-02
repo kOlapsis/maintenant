@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/container"
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 // LogStreamer abstracts runtime log streaming for the API layer.

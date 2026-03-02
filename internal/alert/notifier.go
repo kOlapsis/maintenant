@@ -240,7 +240,7 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 		AlertType:  "test",
 		Severity:   SeverityInfo,
 		Status:     StatusActive,
-		Message:    "PulseBoard test notification",
+		Message:    "maintenant test notification",
 		EntityType: "test",
 		EntityName: "test",
 		FiredAt:    time.Now().UTC(),
@@ -252,7 +252,7 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 		if n.smtpSender == nil {
 			return 0, fmt.Errorf("SMTP not configured")
 		}
-		err := n.smtpSender.Send(ctx, ch.URL, "PulseBoard Test Notification", "This is a test notification from PulseBoard.\n\nIf you received this email, your alert channel is configured correctly.")
+		err := n.smtpSender.Send(ctx, ch.URL, "maintenant Test Notification", "This is a test notification from maintenant.\n\nIf you received this email, your alert channel is configured correctly.")
 		if err != nil {
 			return 0, err
 		}
@@ -390,7 +390,7 @@ func formatEmailSubject(eventType string, a *Alert) string {
 	} else if eventType == "test" {
 		prefix = "TEST"
 	}
-	return fmt.Sprintf("[PulseBoard] %s: %s", prefix, a.Message)
+	return fmt.Sprintf("[maintenant] %s: %s", prefix, a.Message)
 }
 
 func formatEmailBody(eventType string, a *Alert) string {
@@ -407,7 +407,7 @@ func formatEmailBody(eventType string, a *Alert) string {
 func eventTitle(eventType string, a *Alert) string {
 	switch {
 	case eventType == "test":
-		return "PulseBoard Test Notification"
+		return "maintenant Test Notification"
 	case strings.Contains(eventType, "resolved"):
 		return fmt.Sprintf("Resolved: %s", a.EntityName)
 	default:

@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	labelPrefix = "pulseboard.endpoint."
+	labelPrefix = "maintenant.endpoint."
 )
 
-// Indexed label regex: pulseboard.endpoint.N.http or pulseboard.endpoint.N.tcp
-var indexedLabelRe = regexp.MustCompile(`^pulseboard\.endpoint\.(\d+)\.(http|tcp)$`)
+// Indexed label regex: maintenant.endpoint.N.http or maintenant.endpoint.N.tcp
+var indexedLabelRe = regexp.MustCompile(`^maintenant\.endpoint\.(\d+)\.(http|tcp)$`)
 
-// Indexed config regex: pulseboard.endpoint.N.http.method, pulseboard.endpoint.N.interval, etc.
-var indexedConfigRe = regexp.MustCompile(`^pulseboard\.endpoint\.(\d+)\.(.+)$`)
+// Indexed config regex: maintenant.endpoint.N.http.method, maintenant.endpoint.N.interval, etc.
+var indexedConfigRe = regexp.MustCompile(`^maintenant\.endpoint\.(\d+)\.(.+)$`)
 
 // ParsedEndpoint holds a parsed endpoint definition from container labels.
 type ParsedEndpoint struct {
@@ -56,7 +56,7 @@ func ParseEndpointLabels(labels map[string]string, logger *slog.Logger) ([]*Pars
 
 		suffix := key[len(labelPrefix):]
 
-		// Simple endpoint: pulseboard.endpoint.http or pulseboard.endpoint.tcp
+		// Simple endpoint: maintenant.endpoint.http or maintenant.endpoint.tcp
 		if suffix == "http" || suffix == "tcp" {
 			ep, err := parseEndpointTarget(key, EndpointType(suffix), value)
 			if err != nil {
@@ -70,7 +70,7 @@ func ParseEndpointLabels(labels map[string]string, logger *slog.Logger) ([]*Pars
 			continue
 		}
 
-		// Indexed endpoint: pulseboard.endpoint.N.http or pulseboard.endpoint.N.tcp
+		// Indexed endpoint: maintenant.endpoint.N.http or maintenant.endpoint.N.tcp
 		if m := indexedLabelRe.FindStringSubmatch(key); m != nil {
 			idx, _ := strconv.Atoi(m[1])
 			epType := EndpointType(m[2])
@@ -88,7 +88,7 @@ func ParseEndpointLabels(labels map[string]string, logger *slog.Logger) ([]*Pars
 			continue
 		}
 
-		// Indexed config: pulseboard.endpoint.N.something
+		// Indexed config: maintenant.endpoint.N.something
 		if m := indexedConfigRe.FindStringSubmatch(key); m != nil {
 			idx, _ := strconv.Atoi(m[1])
 			configKey := m[2]
@@ -103,8 +103,8 @@ func ParseEndpointLabels(labels map[string]string, logger *slog.Logger) ([]*Pars
 			continue
 		}
 
-		// Global config: pulseboard.endpoint.interval, pulseboard.endpoint.timeout, etc.
-		// Also HTTP-specific: pulseboard.endpoint.http.method, etc.
+		// Global config: maintenant.endpoint.interval, maintenant.endpoint.timeout, etc.
+		// Also HTTP-specific: maintenant.endpoint.http.method, etc.
 		globalConfig[suffix] = value
 	}
 

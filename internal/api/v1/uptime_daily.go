@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/kolapsis/pulseboard/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store/sqlite"
 )
 
 // UptimeDailyFetcher abstracts the daily uptime store for testing.

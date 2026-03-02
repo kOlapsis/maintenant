@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/update"
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 // UpdateHandler handles update intelligence HTTP endpoints.

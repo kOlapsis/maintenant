@@ -47,7 +47,7 @@ func TestManager_ActiveLicense(t *testing.T) {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer test-key-123", r.Header.Get("Authorization"))
-		assert.Contains(t, r.Header.Get("User-Agent"), "PulseBoard/")
+		assert.Contains(t, r.Header.Get("User-Agent"), "maintenant/")
 
 		payload := LicensePayload{
 			Status:     "active",

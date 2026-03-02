@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/kolapsis/pulseboard/internal/extension"
+	"github.com/kolapsis/maintenant/internal/extension"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -144,7 +144,7 @@ func TestResumeMonitorHandler_EmptyType(t *testing.T) {
 func TestWriteToolRegistration(t *testing.T) {
 	svc := newCEServices()
 	server := gomcp.NewServer(&gomcp.Implementation{
-		Name:    "pulseboard-test",
+		Name:    "maintenant-test",
 		Version: "0.0.1",
 	}, nil)
 

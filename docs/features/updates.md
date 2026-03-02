@@ -1,12 +1,12 @@
 # Update Intelligence
 
-Know when your container images have updates available. PulseBoard scans OCI registries and compares digests. Stop running `docker pull` blindly.
+Know when your container images have updates available. maintenant scans OCI registries and compares digests. Stop running `docker pull` blindly.
 
 ---
 
 ## How It Works
 
-PulseBoard periodically scans the OCI registry for each monitored container image:
+maintenant periodically scans the OCI registry for each monitored container image:
 
 1. **Digest comparison** — Compares the local image digest with the latest available in the registry
 
@@ -14,10 +14,10 @@ PulseBoard periodically scans the OCI registry for each monitored container imag
 
 ## Scan Interval
 
-The scan interval is configured via the `PULSEBOARD_UPDATE_INTERVAL` environment variable:
+The scan interval is configured via the `MAINTENANT_UPDATE_INTERVAL` environment variable:
 
 ```bash
-PULSEBOARD_UPDATE_INTERVAL=24h  # Default: check once per day
+MAINTENANT_UPDATE_INTERVAL=24h  # Default: check once per day
 ```
 
 Accepts Go duration format: `12h`, `6h`, `30m`, etc.
@@ -32,13 +32,13 @@ POST /api/v1/updates/scan
 
 ## OCI Registry Scanning
 
-PulseBoard queries the OCI (Docker) registry API to compare image digests:
+maintenant queries the OCI (Docker) registry API to compare image digests:
 
 - **Docker Hub** — Public and private repositories
 - **GitHub Container Registry (GHCR)** — `ghcr.io` images
 - **Self-hosted registries** — Any OCI-compliant registry
 
-When a new digest is available for an image tag, PulseBoard flags it as having an update available.
+When a new digest is available for an image tag, maintenant flags it as having an update available.
 
 ---
 

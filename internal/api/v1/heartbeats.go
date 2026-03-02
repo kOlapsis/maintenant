@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kolapsis/pulseboard/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 )
 
 // HeartbeatHandler handles heartbeat CRUD endpoints.

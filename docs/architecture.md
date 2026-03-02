@@ -44,11 +44,11 @@
 
 **Real-time by default** — Every state change is pushed to the browser via Server-Sent Events (SSE). No polling, no stale data.
 
-**Read-only** — PulseBoard never modifies your containers. It observes the Docker socket or Kubernetes API in read-only mode.
+**Read-only** — maintenant never modifies your containers. It observes the Docker socket or Kubernetes API in read-only mode.
 
 **Label-driven** — Monitoring is configured through Docker labels directly on your containers. No separate config files to maintain.
 
-**Runtime-agnostic** — Docker and Kubernetes are abstracted behind a common `Runtime` interface. PulseBoard auto-detects the runtime at startup or can be forced via `PULSEBOARD_RUNTIME`.
+**Runtime-agnostic** — Docker and Kubernetes are abstracted behind a common `Runtime` interface. maintenant auto-detects the runtime at startup or can be forced via `MAINTENANT_RUNTIME`.
 
 ---
 
@@ -86,7 +86,7 @@
 ## Project Structure
 
 ```
-cmd/pulseboard/            Entry point, service wiring
+cmd/maintenant/            Entry point, service wiring
   web/                     Embedded frontend (embed.FS)
 pkg/                       Public packages (importable by Pro)
     app/                   AppBuilder, composable application assembly
@@ -157,7 +157,7 @@ Check Engine (ticker)
 
 ## SQLite Architecture
 
-PulseBoard uses SQLite in WAL (Write-Ahead Logging) mode with a single-writer pattern:
+maintenant uses SQLite in WAL (Write-Ahead Logging) mode with a single-writer pattern:
 
 - **One writer goroutine** — All writes are serialized through a channel-based writer to avoid `SQLITE_BUSY` errors
 - **Multiple readers** — Read queries run concurrently without blocking

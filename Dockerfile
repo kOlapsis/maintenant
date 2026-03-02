@@ -1,4 +1,3 @@
-# ── Stage 1: Build SPA ────────────────────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS spa-builder
 WORKDIR /src/frontend
 
@@ -8,7 +7,6 @@ RUN npm ci --ignore-scripts
 COPY frontend/ ./
 RUN npm run build-only
 
-# ── Stage 2: Build Go binary ─────────────────────────────────────────────────
 FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache gcc musl-dev
@@ -19,7 +17,7 @@ RUN go mod download
 
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-COPY --from=spa-builder /src/frontend/dist cmd/pulseboard/web/dist/
+COPY --from=spa-builder /src/frontend/dist cmd/maintenant/web/dist/
 
 ARG VERSION=dev
 ARG COMMIT=unknown
@@ -34,16 +32,15 @@ RUN CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
       -X main.commit=${COMMIT} \
       -X main.buildDate=${BUILD_DATE} \
       -X main.publicKeyB64=${LICENSE_PUBLIC_KEY}" \
-    -o /out/pulseboard \
-    ./cmd/pulseboard
+    -o /out/maintenant \
+    ./cmd/maintenant
 
-# ── Stage 3: Runtime ─────────────────────────────────────────────────────────
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata \
     && mkdir -p /data
 
-COPY --from=builder /out/pulseboard /app/pulseboard
+COPY --from=builder /out/maintenant /app/maintenant
 
 EXPOSE 8080
 VOLUME /data
@@ -51,4 +48,4 @@ VOLUME /data
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
 
-ENTRYPOINT ["/app/pulseboard"]
+ENTRYPOINT ["/app/maintenant"]

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 )
 
 // HeartbeatStore implements heartbeat.HeartbeatStore using SQLite.

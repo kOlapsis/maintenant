@@ -6,7 +6,7 @@ Give your users a clean status page. Component groups, incident management with 
 
 ## How It Works
 
-PulseBoard serves a standalone public status page at `/status/`. It is a server-rendered HTML page (no JavaScript required) with a real-time SSE connection for live updates.
+maintenant serves a standalone public status page at `/status/`. It is a server-rendered HTML page (no JavaScript required) with a real-time SSE connection for live updates.
 
 The status page displays:
 
@@ -57,7 +57,7 @@ Supported `monitor_type` values:
 | `heartbeat` | Heartbeat ping status |
 | `certificate` | TLS certificate validity |
 
-PulseBoard automatically derives the component status from the linked monitor:
+maintenant automatically derives the component status from the linked monitor:
 
 | Monitor State | Component Status |
 |---------------|-----------------|

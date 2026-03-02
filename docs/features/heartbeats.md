@@ -1,14 +1,14 @@
 # Heartbeat & Cron Monitoring
 
-Monitor cron jobs, scheduled tasks, and any periodic process. Create a monitor, get a unique URL, add one `curl` to your script. PulseBoard tracks start/finish times, durations, exit codes, and alerts you when a job misses its deadline.
+Monitor cron jobs, scheduled tasks, and any periodic process. Create a monitor, get a unique URL, add one `curl` to your script. maintenant tracks start/finish times, durations, exit codes, and alerts you when a job misses its deadline.
 
 ---
 
 ## How It Works
 
 1. **Create a heartbeat monitor** through the API or dashboard — give it a name and a deadline (e.g., "every 5 minutes").
-2. **Get a unique ping URL** — PulseBoard generates a UUID-based URL for this monitor.
-3. **Ping the URL** from your cron job or script — PulseBoard records the ping and resets the deadline timer.
+2. **Get a unique ping URL** — maintenant generates a UUID-based URL for this monitor.
+3. **Ping the URL** from your cron job or script — maintenant records the ping and resets the deadline timer.
 4. **Get alerted** if the deadline is missed — the job did not report in on time.
 
 ---
@@ -21,22 +21,22 @@ Every heartbeat monitor gets a unique URL:
 {BASE_URL}/ping/{uuid}
 ```
 
-Where `{BASE_URL}` is your `PULSEBOARD_BASE_URL` environment variable.
+Where `{BASE_URL}` is your `MAINTENANT_BASE_URL` environment variable.
 
 ### Simple Ping
 
 Report that the job ran successfully:
 
 ```bash
-curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}
+curl -fsS -o /dev/null https://now.example.com/ping/{uuid}
 ```
 
 ### Ping with Exit Code
 
-Report the job's exit code so PulseBoard can track failures:
+Report the job's exit code so maintenant can track failures:
 
 ```bash
-curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}/$?
+curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
 - Exit code `0` = success
@@ -48,17 +48,17 @@ Track job duration by sending a start ping before the job and a finish ping afte
 
 ```bash
 # Signal job start
-curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}/start
+curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/start
 
 # Run the actual job
 /usr/local/bin/my-backup.sh
 EXIT_CODE=$?
 
 # Signal job finish with exit code
-curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}/${EXIT_CODE}
+curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/${EXIT_CODE}
 ```
 
-PulseBoard calculates the duration between start and finish pings.
+maintenant calculates the duration between start and finish pings.
 
 ---
 
@@ -67,29 +67,29 @@ PulseBoard calculates the duration between start and finish pings.
 ### Basic Cron Entry
 
 ```bash
-# Run backup every day at 2 AM, report to PulseBoard
-0 2 * * * /usr/local/bin/backup.sh && curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}/$?
+# Run backup every day at 2 AM, report to maintenant
+0 2 * * * /usr/local/bin/backup.sh && curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
 ### With Duration Tracking
 
 ```bash
 # Report start and finish with exit code
-0 2 * * * curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}/start; /usr/local/bin/backup.sh; curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}/$?
+0 2 * * * curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/start; /usr/local/bin/backup.sh; curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
 ### Systemd Timer
 
 ```bash
 # In your service ExecStartPost or a wrapper script
-ExecStartPost=/usr/bin/curl -fsS -o /dev/null https://pulse.example.com/ping/{uuid}/0
+ExecStartPost=/usr/bin/curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/0
 ```
 
 ---
 
-## What PulseBoard Tracks
+## What maintenant Tracks
 
-For each heartbeat monitor, PulseBoard records:
+For each heartbeat monitor, maintenant records:
 
 | Metric | Description |
 |--------|-------------|
@@ -103,7 +103,7 @@ For each heartbeat monitor, PulseBoard records:
 
 ## Deadline Missed Alerts
 
-When a heartbeat monitor does not receive a ping within its configured deadline, PulseBoard fires a `deadline_missed` alert with **Critical** severity.
+When a heartbeat monitor does not receive a ping within its configured deadline, maintenant fires a `deadline_missed` alert with **Critical** severity.
 
 This means your cron job either:
 

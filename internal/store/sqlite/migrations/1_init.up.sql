@@ -1,4 +1,4 @@
--- PulseBoard consolidated schema (v1)
+-- maintenant consolidated schema (v1)
 -- Merges migrations 1-11 into a single initial schema.
 
 ----------------------------------------------------------------------
@@ -451,7 +451,7 @@ CREATE TABLE IF NOT EXISTS oauth_clients (
 );
 
 INSERT OR IGNORE INTO oauth_clients (id, secret_hash, grant_types, response_types, scopes, redirect_uris, is_public)
-VALUES ('pulseboard-ui', '', '["password","refresh_token"]', '["token"]', '["read","write","admin"]', '[]', 1);
+VALUES ('maintenant-ui', '', '["password","refresh_token"]', '["token"]', '["read","write","admin"]', '[]', 1);
 
 CREATE TABLE IF NOT EXISTS oauth_access_tokens (
     signature    TEXT NOT NULL PRIMARY KEY,

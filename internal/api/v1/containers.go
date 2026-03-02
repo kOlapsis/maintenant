@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/container"
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 // ContainerNameLister lists container names in a K8s workload pod spec.

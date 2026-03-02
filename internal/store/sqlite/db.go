@@ -9,7 +9,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// DB wraps a SQLite database connection with PulseBoard configuration.
+// DB wraps a SQLite database connection with maintenant configuration.
 type DB struct {
 	db     *sql.DB
 	writer *Writer

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	cmodel "github.com/kolapsis/pulseboard/internal/container"
+	cmodel "github.com/kolapsis/maintenant/internal/container"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -304,26 +304,26 @@ func podContainers(pod *corev1.Pod) []corev1.Container {
 	return pod.Spec.Containers
 }
 
-// applyAnnotations reads pulseboard.* annotations from K8s workloads.
+// applyAnnotations reads maintenant.* annotations from K8s workloads.
 func applyAnnotations(cm *cmodel.Container, annotations map[string]string) {
-	if v, ok := annotations["pulseboard.ignore"]; ok && (v == "true" || v == "1") {
+	if v, ok := annotations["maintenant.ignore"]; ok && (v == "true" || v == "1") {
 		cm.IsIgnored = true
 	}
-	if v, ok := annotations["pulseboard.group"]; ok && v != "" {
+	if v, ok := annotations["maintenant.group"]; ok && v != "" {
 		cm.CustomGroup = v
 	}
-	if v, ok := annotations["pulseboard.alert.severity"]; ok {
+	if v, ok := annotations["maintenant.alert.severity"]; ok {
 		switch cmodel.AlertSeverity(v) {
 		case cmodel.SeverityCritical, cmodel.SeverityWarning, cmodel.SeverityInfo:
 			cm.AlertSeverity = cmodel.AlertSeverity(v)
 		}
 	}
-	if v, ok := annotations["pulseboard.alert.restart_threshold"]; ok {
+	if v, ok := annotations["maintenant.alert.restart_threshold"]; ok {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cm.RestartThreshold = n
 		}
 	}
-	if v, ok := annotations["pulseboard.alert.channels"]; ok && v != "" {
+	if v, ok := annotations["maintenant.alert.channels"]; ok && v != "" {
 		cm.AlertChannels = v
 	}
 	// Fallback display name from K8s standard labels.

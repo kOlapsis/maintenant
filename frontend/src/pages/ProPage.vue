@@ -66,7 +66,7 @@ const features = [
           Pro Edition
         </div>
         <h1 class="text-4xl font-bold text-white tracking-tight mb-4">
-          Unlock the full power of PulseBoard
+          Unlock the full power of maintenant
         </h1>
         <p class="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
           Everything in Community, plus incident management, advanced notifications,

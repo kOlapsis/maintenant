@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	cmodel "github.com/kolapsis/pulseboard/internal/container"
+	cmodel "github.com/kolapsis/maintenant/internal/container"
 )
 
 // HealthInfo holds parsed health check information from a container.

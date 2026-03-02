@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/status"
+	"github.com/kolapsis/maintenant/internal/status"
 )
 
 // StatusComponentStoreImpl implements status.ComponentStore using SQLite.

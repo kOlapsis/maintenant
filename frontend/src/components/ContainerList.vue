@@ -105,7 +105,7 @@ onMounted(() => {
       </svg>
       <h3 class="text-lg font-medium mb-1" style="color: var(--pb-text-primary)">No containers detected</h3>
       <p class="text-sm max-w-sm" style="color: var(--pb-text-muted)">
-        PulseBoard will automatically discover containers when they start. Make sure your container runtime is accessible.
+        maintenant will automatically discover containers when they start. Make sure your container runtime is accessible.
       </p>
     </div>
 

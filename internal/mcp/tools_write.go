@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/kolapsis/pulseboard/internal/extension"
+	"github.com/kolapsis/maintenant/internal/extension"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

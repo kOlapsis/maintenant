@@ -1,4 +1,4 @@
-module github.com/kolapsis/pulseboard
+module github.com/kolapsis/maintenant
 
 go 1.25.6
 

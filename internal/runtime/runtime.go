@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/kolapsis/pulseboard/internal/container"
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 // Runtime abstracts the container orchestration platform.

@@ -3,7 +3,7 @@ package update
 import (
 	"context"
 
-	"github.com/kolapsis/pulseboard/internal/container"
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 // ContainerServiceAdapter adapts container.Service to the ContainerLister interface.

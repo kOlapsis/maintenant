@@ -1,6 +1,6 @@
 # Configuration
 
-PulseBoard is configured entirely through environment variables. No configuration files required.
+maintenant is configured entirely through environment variables. No configuration files required.
 
 ---
 
@@ -8,83 +8,83 @@ PulseBoard is configured entirely through environment variables. No configuratio
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PULSEBOARD_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers. |
-| `PULSEBOARD_DB` | `./pulseboard.db` | SQLite database file path. |
-| `PULSEBOARD_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and status page links. |
-| `PULSEBOARD_CORS_ORIGINS` | same-origin | CORS allowed origins (comma-separated). Empty means same-origin only. Set to `*` for wildcard. |
-| `PULSEBOARD_RUNTIME` | auto-detect | Force container runtime: `docker` or `kubernetes`. Auto-detected by default. |
-| `PULSEBOARD_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes for POST/PUT requests (default: 1 MB). |
-| `PULSEBOARD_UPDATE_INTERVAL` | `24h` | Update intelligence scan interval. Accepts Go duration format (e.g., `12h`, `30m`). |
-| `PULSEBOARD_K8S_NAMESPACES` | all | Kubernetes namespace allowlist (comma-separated). Empty monitors all namespaces. |
-| `PULSEBOARD_K8S_EXCLUDE_NAMESPACES` | none | Kubernetes namespace blocklist (comma-separated). |
-| `PULSEBOARD_MCP` | `false` | Enable the MCP server on `/mcp` (Streamable HTTP transport). |
-| `PULSEBOARD_MCP_ALLOWED_EMAIL` | — | Restrict MCP access to JWTs matching this email. |
+| `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers. |
+| `MAINTENANT_DB` | `./maintenant.db` | SQLite database file path. |
+| `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and status page links. |
+| `MAINTENANT_CORS_ORIGINS` | same-origin | CORS allowed origins (comma-separated). Empty means same-origin only. Set to `*` for wildcard. |
+| `MAINTENANT_RUNTIME` | auto-detect | Force container runtime: `docker` or `kubernetes`. Auto-detected by default. |
+| `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes for POST/PUT requests (default: 1 MB). |
+| `MAINTENANT_UPDATE_INTERVAL` | `24h` | Update intelligence scan interval. Accepts Go duration format (e.g., `12h`, `30m`). |
+| `MAINTENANT_K8S_NAMESPACES` | all | Kubernetes namespace allowlist (comma-separated). Empty monitors all namespaces. |
+| `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | none | Kubernetes namespace blocklist (comma-separated). |
+| `MAINTENANT_MCP` | `false` | Enable the MCP server on `/mcp` (Streamable HTTP transport). |
+| `MAINTENANT_MCP_ALLOWED_EMAIL` | — | Restrict MCP access to JWTs matching this email. |
 
 ### Example `.env` File
 
 ```bash
 # Listen address (use 0.0.0.0 inside containers, 127.0.0.1 on host)
-PULSEBOARD_ADDR=127.0.0.1:8080
+MAINTENANT_ADDR=127.0.0.1:8080
 
 # SQLite database path
-PULSEBOARD_DB=./pulseboard.db
+MAINTENANT_DB=./maintenant.db
 
 # Public base URL (used for heartbeat ping URLs and status page links)
-PULSEBOARD_BASE_URL=https://pulseboard.example.com
+MAINTENANT_BASE_URL=https://maintenant.example.com
 
 # CORS allowed origins (comma-separated, empty = same-origin only)
-# PULSEBOARD_CORS_ORIGINS=http://localhost:5173
+# MAINTENANT_CORS_ORIGINS=http://localhost:5173
 
 # Container runtime override (auto-detected by default: docker or kubernetes)
-# PULSEBOARD_RUNTIME=docker
+# maintenant_RUNTIME=docker
 
 # Max request body size in bytes (default: 1MB)
-# PULSEBOARD_MAX_BODY_SIZE=1048576
+# maintenant_MAX_BODY_SIZE=1048576
 
 # Update intelligence scan interval (Go duration, default: 24h)
-# PULSEBOARD_UPDATE_INTERVAL=24h
+# maintenant_UPDATE_INTERVAL=24h
 
 # Kubernetes namespaces to monitor (comma-separated, empty = all)
-# PULSEBOARD_K8S_NAMESPACES=default,production
+# maintenant_K8S_NAMESPACES=default,production
 
 # Kubernetes namespaces to exclude (comma-separated)
-# PULSEBOARD_K8S_EXCLUDE_NAMESPACES=kube-system
+# maintenant_K8S_EXCLUDE_NAMESPACES=kube-system
 
 # MCP Server (Model Context Protocol for AI assistants)
-# PULSEBOARD_MCP=true
-# PULSEBOARD_MCP_ALLOWED_EMAIL=you@example.com
+# maintenant_MCP=true
+# maintenant_MCP_ALLOWED_EMAIL=you@example.com
 ```
 
 ---
 
 ## Security Model
 
-PulseBoard does not include built-in authentication — by design.
+maintenant does not include built-in authentication — by design.
 
-Like Dozzle, Prometheus, and most self-hosted monitoring tools, PulseBoard is designed to sit behind your existing reverse proxy and auth middleware. No need to manage yet another set of user accounts.
+Like Dozzle, Prometheus, and most self-hosted monitoring tools, maintenant is designed to sit behind your existing reverse proxy and auth middleware. No need to manage yet another set of user accounts.
 
 ```
 Internet  ->  Reverse Proxy (Traefik / Caddy / nginx)
           ->  Auth (Authelia / Authentik / OAuth2 Proxy)
-          ->  PulseBoard
+          ->  maintenant
 ```
 
 ### Example: Traefik + Authelia
 
 ```yaml
 services:
-  pulseboard:
-    image: ghcr.io/kolapsis/pulseboard:latest
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
     labels:
       traefik.enable: "true"
-      traefik.http.routers.pulseboard.rule: "Host(`pulse.example.com`)"
-      traefik.http.routers.pulseboard.middlewares: "authelia@docker"
+      traefik.http.routers.maintenant.rule: "Host(`now.example.com`)"
+      traefik.http.routers.maintenant.middlewares: "authelia@docker"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - pulseboard-data:/data
+      - maintenant-data:/data
     environment:
-      PULSEBOARD_DB: "/data/pulseboard.db"
-      PULSEBOARD_BASE_URL: "https://pulse.example.com"
+      maintenant_DB: "/data/maintenant.db"
+      maintenant_BASE_URL: "https://now.example.com"
 ```
 
 ---
@@ -108,31 +108,31 @@ Two route prefixes are designed to be publicly accessible and should bypass your
 ```yaml
 labels:
   # Main router with auth
-  traefik.http.routers.pulseboard.rule: "Host(`pulse.example.com`)"
-  traefik.http.routers.pulseboard.middlewares: "authelia@docker"
+  traefik.http.routers.maintenant.rule: "Host(`now.example.com`)"
+  traefik.http.routers.maintenant.middlewares: "authelia@docker"
 
   # Public routes without auth
-  traefik.http.routers.pulseboard-public.rule: >
-    Host(`pulse.example.com`) &&
+  traefik.http.routers.maintenant-public.rule: >
+    Host(`now.example.com`) &&
     (PathPrefix(`/ping/`) || PathPrefix(`/status/`))
-  traefik.http.routers.pulseboard-public.priority: "100"
+  traefik.http.routers.maintenant-public.priority: "100"
 ```
 
 ---
 
 ## Database
 
-PulseBoard uses SQLite in WAL (Write-Ahead Logging) mode with a single-writer pattern. This provides excellent read performance while maintaining data integrity.
+maintenant uses SQLite in WAL (Write-Ahead Logging) mode with a single-writer pattern. This provides excellent read performance while maintaining data integrity.
 
 - The database file is created automatically on first startup.
 - Migrations run automatically — no manual steps required.
-- Back up the database by copying the `.db`, `.db-wal`, and `.db-shm` files while PulseBoard is stopped, or use `sqlite3 backup` while running.
+- Back up the database by copying the `.db`, `.db-wal`, and `.db-shm` files while maintenant is stopped, or use `sqlite3 backup` while running.
 
 !!! tip "Persistence in Docker"
     Always mount a volume for the database directory to persist data across container restarts:
     ```yaml
     volumes:
-      - pulseboard-data:/data
+      - maintenant-data:/data
     environment:
-      PULSEBOARD_DB: "/data/pulseboard.db"
+      maintenant_DB: "/data/maintenant.db"
     ```

@@ -6,7 +6,7 @@ Real-time CPU, memory, network I/O, and disk I/O per container. Historical chart
 
 ## Metrics Collected
 
-PulseBoard collects the following metrics for each container:
+maintenant collects the following metrics for each container:
 
 | Metric | Description |
 |--------|-------------|
@@ -17,7 +17,7 @@ PulseBoard collects the following metrics for each container:
 
 === "Docker"
 
-    Metrics are collected via the Docker `ContainerStatsOneShot` API. No additional configuration needed — if PulseBoard can see the container, it collects metrics.
+    Metrics are collected via the Docker `ContainerStatsOneShot` API. No additional configuration needed — if maintenant can see the container, it collects metrics.
 
 === "Kubernetes"
 
@@ -27,7 +27,7 @@ PulseBoard collects the following metrics for each container:
 
 ## Historical Charts
 
-PulseBoard stores metric snapshots and displays them as interactive time-series charts (powered by uPlot). Available time ranges:
+maintenant stores metric snapshots and displays them as interactive time-series charts (powered by uPlot). Available time ranges:
 
 | Range | Description |
 |-------|-------------|

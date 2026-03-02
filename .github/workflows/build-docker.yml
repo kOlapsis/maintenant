@@ -16,7 +16,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: kolapsis/pulseboard
+  IMAGE_NAME: kolapsis/maintenant
 
 jobs:
   build:

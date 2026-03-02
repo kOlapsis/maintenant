@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/kolapsis/pulseboard/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/certificate"
 )
 
 // CertificateHandler handles certificate monitor CRUD endpoints.

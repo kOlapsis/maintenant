@@ -24,20 +24,20 @@ func Register(name string, f Factory) {
 	factoryMu.Unlock()
 }
 
-// Detect auto-detects the container runtime or uses the PULSEBOARD_RUNTIME override.
+// Detect auto-detects the container runtime or uses the MAINTENANT_RUNTIME override.
 // Detection order: env override → KUBERNETES_SERVICE_HOST → KUBECONFIG → Docker socket.
 func Detect(ctx context.Context, logger *slog.Logger) (Runtime, error) {
-	override := os.Getenv("PULSEBOARD_RUNTIME")
+	override := os.Getenv("MAINTENANT_RUNTIME")
 
 	if override != "" {
 		f, ok := factories[override]
 		if !ok {
-			return nil, fmt.Errorf("unknown PULSEBOARD_RUNTIME=%q; registered runtimes: %v", override, registeredNames())
+			return nil, fmt.Errorf("unknown MAINTENANT_RUNTIME=%q; registered runtimes: %v", override, registeredNames())
 		}
 		logger.Info("runtime selected via override", "runtime", override)
 		rt, err := f(ctx, logger)
 		if err != nil {
-			return nil, fmt.Errorf("runtime %q from PULSEBOARD_RUNTIME failed: %w", override, err)
+			return nil, fmt.Errorf("runtime %q from MAINTENANT_RUNTIME failed: %w", override, err)
 		}
 		logger.Info("runtime initialized", "runtime", rt.Name(), "method", "env_override")
 		return rt, nil
@@ -89,13 +89,13 @@ func Detect(ctx context.Context, logger *slog.Logger) (Runtime, error) {
 	if f, ok := factories["docker"]; ok {
 		rt, err := f(ctx, logger)
 		if err != nil {
-			return nil, fmt.Errorf("Docker runtime unavailable: %w. Set PULSEBOARD_RUNTIME or ensure Docker socket is mounted", err)
+			return nil, fmt.Errorf("Docker runtime unavailable: %w. Set MAINTENANT_RUNTIME or ensure Docker socket is mounted", err)
 		}
 		logger.Info("runtime initialized", "runtime", rt.Name(), "method", "auto_detect_docker")
 		return rt, nil
 	}
 
-	return nil, fmt.Errorf("no runtime detected; ensure Docker socket is mounted or set PULSEBOARD_RUNTIME; registered: %v", registeredNames())
+	return nil, fmt.Errorf("no runtime detected; ensure Docker socket is mounted or set MAINTENANT_RUNTIME; registered: %v", registeredNames())
 }
 
 func registeredNames() []string {

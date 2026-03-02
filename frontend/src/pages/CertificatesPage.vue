@@ -288,7 +288,7 @@ function closeDetail() {
           HTTPS endpoints are auto-detected from {{ labelOrAnnotation }}s. Create standalone monitors for additional hosts.
         </p>
         <p class="text-sm max-w-sm" :style="{ color: 'var(--pb-text-muted)' }">
-          Add the <code class="rounded-md px-1.5 py-0.5 text-xs" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">pulseboard.tls.certificates</code>
+          Add the <code class="rounded-md px-1.5 py-0.5 text-xs" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.tls.certificates</code>
           {{ labelOrAnnotation }} to monitor specific certificates.
         </p>
       </div>

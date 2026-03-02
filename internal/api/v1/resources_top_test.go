@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/resource"
+	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

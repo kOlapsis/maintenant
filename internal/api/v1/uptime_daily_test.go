@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/kolapsis/pulseboard/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

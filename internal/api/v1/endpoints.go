@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/container"
-	"github.com/kolapsis/pulseboard/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/endpoint"
 )
 
 // EndpointHandler handles endpoint-related HTTP endpoints.

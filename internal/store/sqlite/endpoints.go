@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kolapsis/pulseboard/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/endpoint"
 )
 
 // EndpointStore implements endpoint.EndpointStore using SQLite.
