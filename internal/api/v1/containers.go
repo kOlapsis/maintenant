@@ -201,6 +201,39 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// HandleDelete handles DELETE /api/v1/containers/{id}.
+// Only allows deletion of non-running containers.
+func (h *ContainerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+		return
+	}
+
+	c, err := h.service.GetContainer(r.Context(), id)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		return
+	}
+	if c == nil {
+		WriteError(w, http.StatusNotFound, "CONTAINER_NOT_FOUND", "Container not found")
+		return
+	}
+
+	if c.State == "running" {
+		WriteError(w, http.StatusConflict, "CONTAINER_RUNNING", "Cannot delete a running container")
+		return
+	}
+
+	if err := h.service.DeleteContainer(r.Context(), id); err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete container")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // LogFetcher abstracts Docker log retrieval for the API layer.
 type LogFetcher interface {
 	FetchLogs(ctx context.Context, containerID string, lines int, timestamps bool) ([]string, error)

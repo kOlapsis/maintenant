@@ -112,6 +112,7 @@ function openDetail(container: Container) {
         v-if="selectedContainer"
         :container-id="selectedContainer.id"
         @close="detailOpen = false"
+        @deleted="detailOpen = false; store.fetchContainers()"
       />
     </SlideOverPanel>
   </div>

@@ -108,6 +108,10 @@ export function getContainer(id: number): Promise<ContainerDetailResponse> {
   return fetchJSON<ContainerDetailResponse>(`${API_BASE}/containers/${id}`)
 }
 
+export async function deleteContainer(id: number): Promise<void> {
+  await fetch(`${API_BASE}/containers/${id}`, { method: 'DELETE' })
+}
+
 export function listTransitions(
   id: number,
   params?: ListTransitionsParams,

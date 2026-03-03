@@ -135,6 +135,18 @@ func (s *ContainerStore) ArchiveContainer(ctx context.Context, externalID string
 	return nil
 }
 
+func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id int64) error {
+	_, err := s.writer.Exec(ctx, `DELETE FROM state_transitions WHERE container_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete container transitions: %w", err)
+	}
+	_, err = s.writer.Exec(ctx, `DELETE FROM containers WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete container: %w", err)
+	}
+	return nil
+}
+
 // InsertTransition records a state transition.
 func (s *ContainerStore) InsertTransition(ctx context.Context, t *container.StateTransition) (int64, error) {
 	res, err := s.writer.Exec(ctx,

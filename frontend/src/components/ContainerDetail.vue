@@ -16,6 +16,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import {
   getContainer,
   listTransitions,
+  deleteContainer,
   type ContainerDetailResponse,
   type StateTransition,
 } from '@/services/containerApi'
@@ -25,6 +26,7 @@ import LogViewer from './LogViewer.vue'
 import ContainerEventTimeline from './ContainerEventTimeline.vue'
 import {
   X,
+  Trash2,
   Terminal,
   Activity,
   Clock,
@@ -39,6 +41,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
+  deleted: [containerId: number]
 }>()
 
 const container = ref<ContainerDetailResponse | null>(null)
@@ -47,6 +50,8 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedLogContainer = ref<string | undefined>(undefined)
 const activeTab = ref<'logs' | 'info'>('info')
+const deleting = ref(false)
+const confirmingDelete = ref(false)
 const resourcesStore = useResourcesStore()
 
 const hasMultipleContainers = computed(() => {
@@ -57,7 +62,7 @@ const hasMultipleContainers = computed(() => {
 
 const stateConfig: Record<string, { color: string; bg: string; glow?: string }> = {
   running: { color: 'var(--pb-status-ok)', bg: 'var(--pb-status-ok-bg)', glow: 'var(--pb-glow-ok)' },
-  exited: { color: 'var(--pb-status-down)', bg: 'var(--pb-status-down-bg)', glow: 'var(--pb-glow-down)' },
+  exited: { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)' },
   completed: { color: 'var(--pb-text-secondary)', bg: 'var(--pb-bg-elevated)' },
   restarting: { color: 'var(--pb-status-warn)', bg: 'var(--pb-status-warn-bg)', glow: 'var(--pb-glow-warn)' },
   paused: { color: 'var(--pb-accent)', bg: 'var(--pb-bg-elevated)' },
@@ -109,6 +114,23 @@ async function loadData() {
     error.value = e instanceof Error ? e.message : 'Failed to load'
   } finally {
     loading.value = false
+  }
+}
+
+async function handleDelete() {
+  if (!confirmingDelete.value) {
+    confirmingDelete.value = true
+    return
+  }
+  deleting.value = true
+  try {
+    await deleteContainer(props.containerId)
+    emit('deleted', props.containerId)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to delete'
+  } finally {
+    deleting.value = false
+    confirmingDelete.value = false
   }
 }
 
@@ -177,6 +199,20 @@ watch(() => props.containerId, () => {
         >
           {{ container.state }}
         </span>
+        <!-- Delete button (non-running only) -->
+        <button
+          v-if="container.state !== 'running'"
+          class="shrink-0 rounded-lg p-1.5 transition-colors"
+          :style="{
+            color: confirmingDelete ? 'var(--pb-status-down)' : 'var(--pb-text-muted)',
+            backgroundColor: confirmingDelete ? 'var(--pb-status-down-bg)' : 'transparent',
+          }"
+          :title="confirmingDelete ? 'Click again to confirm deletion' : 'Remove from database'"
+          :disabled="deleting"
+          @click="handleDelete"
+        >
+          <Trash2 :size="14" />
+        </button>
       </div>
 
       <!-- Resource bar (running only) -->

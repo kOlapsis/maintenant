@@ -101,8 +101,8 @@ function getStateStyle(state: string) {
           <span
             v-if="container.has_health_check && container.health_status"
             class="inline-block h-2.5 w-2.5 rounded-full"
-            :style="{ backgroundColor: healthColors[container.health_status] || 'var(--pb-text-muted)' }"
-            :title="container.health_status"
+            :style="{ backgroundColor: container.state === 'running' ? (healthColors[container.health_status] || 'var(--pb-text-muted)') : 'var(--pb-text-muted)' }"
+            :title="container.state === 'running' ? container.health_status : 'stopped'"
           />
         </div>
         <div class="mt-0.5 flex items-center gap-2">
