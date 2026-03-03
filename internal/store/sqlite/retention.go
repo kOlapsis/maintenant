@@ -21,19 +21,17 @@ const (
 	retentionInterval         = 1 * time.Hour
 	defaultRetention          = 90 * 24 * time.Hour // 90 days
 	retentionBatchSize        = 1000
-	archivedRetention         = 30 * 24 * time.Hour // 30 days
-	checkResultRetention      = 30 * 24 * time.Hour // 30 days
-	inactiveEndpointRetention  = 30 * 24 * time.Hour // 30 days
-	heartbeatPingRetention     = 30 * 24 * time.Hour // 30 days
-	heartbeatExecRetention     = 30 * 24 * time.Hour // 30 days
-	certCheckResultRetention   = 30 * 24 * time.Hour // 30 days
-	resourceSnapshotRetention  = 7 * 24 * time.Hour   // 7 days
-	resourceHourlyRetention    = 90 * 24 * time.Hour  // 90 days
-	resourceDailyRetention     = 365 * 24 * time.Hour // 1 year
+	archivedRetention         = 30 * 24 * time.Hour  // 30 days
+	checkResultRetention      = 30 * 24 * time.Hour  // 30 days
+	inactiveEndpointRetention = 30 * 24 * time.Hour  // 30 days
+	heartbeatPingRetention    = 30 * 24 * time.Hour  // 30 days
+	heartbeatExecRetention    = 30 * 24 * time.Hour  // 30 days
+	certCheckResultRetention  = 30 * 24 * time.Hour  // 30 days
+	resourceSnapshotRetention = 7 * 24 * time.Hour   // 7 days
+	resourceHourlyRetention   = 90 * 24 * time.Hour  // 90 days
+	resourceDailyRetention    = 365 * 24 * time.Hour // 1 year
 )
 
-// StartRetentionCleanup starts a background goroutine that periodically
-// cleans up old state transitions, archived containers, check results, and inactive endpoints.
 // RetentionOpts holds optional stores for retention cleanup.
 type RetentionOpts struct {
 	EndpointStore    *EndpointStore

@@ -69,7 +69,9 @@ func (s *SilenceStoreImpl) ListSilenceRules(ctx context.Context, activeOnly bool
 	if err != nil {
 		return nil, fmt.Errorf("list silence rules: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var rules []*alert.SilenceRule
 	for rows.Next() {
@@ -102,7 +104,9 @@ func (s *SilenceStoreImpl) GetActiveSilenceRules(ctx context.Context) ([]*alert.
 	if err != nil {
 		return nil, fmt.Errorf("get active silence rules: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var rules []*alert.SilenceRule
 	for rows.Next() {

@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -153,7 +154,9 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 	if err != nil {
 		return results, fmt.Errorf("osv request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return results, fmt.Errorf("osv returned status %d", resp.StatusCode)

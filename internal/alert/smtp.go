@@ -51,10 +51,12 @@ func (s *SMTPSender) Send(_ context.Context, to, subject, textBody string) error
 
 	c, err := smtp.NewClient(conn, s.cfg.Host)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("smtp client: %w", err)
 	}
-	defer c.Close()
+	defer func(c *smtp.Client) {
+		_ = c.Close()
+	}(c)
 
 	// STARTTLS
 	tlsCfg := &tls.Config{ServerName: s.cfg.Host}

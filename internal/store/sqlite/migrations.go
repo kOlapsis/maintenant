@@ -14,6 +14,7 @@ package sqlite
 import (
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -26,10 +27,10 @@ import (
 var migrationFS embed.FS
 
 // Migrate runs all pending database migrations using golang-migrate v4.
-// On first run after upgrading from the custom migration system, it bootstraps
+// On the first run after upgrading from the custom migration system, it bootstraps
 // the schema_migrations table from the old schema_version table.
 func Migrate(db *sql.DB, logger *slog.Logger) error {
-	// Bootstrap from custom schema_version if upgrading from old system
+	// Bootstrap from custom schema_version if upgrading from an old system
 	if err := bootstrapFromCustomSchema(db, logger); err != nil {
 		return fmt.Errorf("bootstrap from custom schema: %w", err)
 	}
@@ -40,7 +41,7 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 		return fmt.Errorf("create iofs source: %w", err)
 	}
 
-	// Create sqlite3 database driver from existing connection
+	// Create sqlite3 database driver from an existing connection
 	driver, err := sqlite3.WithInstance(db, &sqlite3.Config{
 		NoTxWrap: false,
 	})
@@ -56,10 +57,10 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 
 	// Log current version before applying
 	version, dirty, err := m.Version()
-	if err != nil && err != migrate.ErrNilVersion {
+	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
 		return fmt.Errorf("get current version: %w", err)
 	}
-	if err == migrate.ErrNilVersion {
+	if errors.Is(err, migrate.ErrNilVersion) {
 		logger.Info("database migration", "current_version", 0, "status", "fresh database")
 	} else {
 		logger.Info("database migration", "current_version", version, "dirty", dirty)
@@ -71,7 +72,7 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 
 	// Apply all pending migrations
 	err = m.Up()
-	if err == migrate.ErrNoChange {
+	if errors.Is(err, migrate.ErrNoChange) {
 		logger.Info("database migration", "status", "no pending migrations")
 		return nil
 	}
@@ -97,7 +98,7 @@ func bootstrapFromCustomSchema(db *sql.DB, logger *slog.Logger) error {
 		WHERE type='table' AND name='schema_version'
 	`).Scan(&tableName)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		// No old schema_version table — nothing to bootstrap
 		return nil
 	}
@@ -113,7 +114,7 @@ func bootstrapFromCustomSchema(db *sql.DB, logger *slog.Logger) error {
 	}
 
 	if version == 0 {
-		// Old table exists but is empty — just drop it
+		// An old table exists but is empty — just drop it
 		if _, err := db.Exec("DROP TABLE schema_version"); err != nil {
 			return fmt.Errorf("drop empty schema_version: %w", err)
 		}

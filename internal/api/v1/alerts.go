@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // AlertHandler handles alert-related HTTP endpoints.
@@ -221,7 +222,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 	}
 	ch.ID = id
 
-	h.broker.Broadcast(SSEEvent{Type: EventChannelCreated, Data: ch})
+	h.broker.Broadcast(SSEEvent{Type: event.ChannelCreated, Data: ch})
 	WriteJSON(w, http.StatusCreated, ch)
 }
 
@@ -276,7 +277,7 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.broker.Broadcast(SSEEvent{Type: EventChannelUpdated, Data: ch})
+	h.broker.Broadcast(SSEEvent{Type: event.ChannelUpdated, Data: ch})
 	WriteJSON(w, http.StatusOK, ch)
 }
 
@@ -303,7 +304,7 @@ func (h *AlertHandler) HandleDeleteChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.broker.Broadcast(SSEEvent{Type: EventChannelDeleted, Data: map[string]interface{}{"id": id}})
+	h.broker.Broadcast(SSEEvent{Type: event.ChannelDeleted, Data: map[string]interface{}{"id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -450,7 +451,7 @@ func (h *AlertHandler) HandleCreateSilenceRule(w http.ResponseWriter, r *http.Re
 	rule.ExpiresAt = rule.StartsAt.Add(time.Duration(rule.DurationSeconds) * time.Second)
 	rule.IsActive = true
 
-	h.broker.Broadcast(SSEEvent{Type: EventSilenceCreated, Data: rule})
+	h.broker.Broadcast(SSEEvent{Type: event.SilenceCreated, Data: rule})
 	WriteJSON(w, http.StatusCreated, rule)
 }
 
@@ -467,6 +468,6 @@ func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	h.broker.Broadcast(SSEEvent{Type: EventSilenceCancelled, Data: map[string]interface{}{"id": id}})
+	h.broker.Broadcast(SSEEvent{Type: event.SilenceCancelled, Data: map[string]interface{}{"id": id}})
 	w.WriteHeader(http.StatusNoContent)
 }

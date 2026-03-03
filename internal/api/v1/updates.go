@@ -69,7 +69,7 @@ func (h *UpdateHandler) HandleGetUpdateSummary(w http.ResponseWriter, r *http.Re
 	// the race where the goroutine has started but the ScanRecord doesn't exist yet.
 	var scanStatus string
 	if h.service.IsScanning() {
-		scanStatus = string("running")
+		scanStatus = "running"
 	} else {
 		scanStatus = "idle"
 		if latest, _ := h.service.GetLatestScanRecord(r.Context()); latest != nil {
@@ -227,7 +227,7 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 		Reason string `json:"reason"`
 	}
 	if r.Body != nil {
-		json.NewDecoder(r.Body).Decode(&input)
+		_ = json.NewDecoder(r.Body).Decode(&input)
 	}
 
 	// Get current update info
@@ -252,8 +252,8 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Update the image_updates status to pinned
-	u.Status = update.UpdateStatusPinned
-	h.store.UpdateImageUpdate(r.Context(), u)
+	u.Status = update.StatusPinned
+	_ = h.store.UpdateImageUpdate(r.Context(), u)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"container_id":  containerID,
@@ -280,8 +280,8 @@ func (h *UpdateHandler) HandleUnpinVersion(w http.ResponseWriter, r *http.Reques
 	// Restore update status to available
 	u, _ := h.store.GetImageUpdateByContainer(r.Context(), containerID)
 	if u != nil {
-		u.Status = update.UpdateStatusAvailable
-		h.store.UpdateImageUpdate(r.Context(), u)
+		u.Status = update.StatusAvailable
+		_ = h.store.UpdateImageUpdate(r.Context(), u)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

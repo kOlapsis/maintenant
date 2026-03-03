@@ -34,13 +34,12 @@ const (
 	RiskLevelLow      RiskLevel = "low"
 )
 
-// UpdateStatus represents the lifecycle status of a detected update.
-type UpdateStatus string
+// Status represents the lifecycle status of a detected update.
+type Status string
 
 const (
-	UpdateStatusAvailable UpdateStatus = "available"
-	UpdateStatusPinned    UpdateStatus = "pinned"
-	UpdateStatusDismissed UpdateStatus = "dismissed"
+	StatusAvailable Status = "available"
+	StatusPinned    Status = "pinned"
 )
 
 // ScanStatus represents the lifecycle status of a scan cycle.
@@ -73,26 +72,26 @@ type ScanRecord struct {
 
 // ImageUpdate stores a detected update per container image.
 type ImageUpdate struct {
-	ID            int64        `json:"id"`
-	ScanID        int64        `json:"scan_id"`
-	ContainerID   string       `json:"container_id"`
-	ContainerName string       `json:"container_name"`
-	Image         string       `json:"image"`
-	CurrentTag    string       `json:"current_tag"`
-	CurrentDigest string       `json:"current_digest"`
-	Registry      string       `json:"registry"`
-	LatestTag     string       `json:"latest_tag,omitempty"`
-	LatestDigest  string       `json:"latest_digest,omitempty"`
-	UpdateType         UpdateType   `json:"update_type,omitempty"`
-	PublishedAt        *time.Time   `json:"published_at,omitempty"`
-	ChangelogURL       string       `json:"changelog_url,omitempty"`
-	ChangelogSummary   string       `json:"changelog_summary,omitempty"`
-	HasBreakingChanges bool         `json:"has_breaking_changes"`
-	RiskScore          int          `json:"risk_score"`
-	PreviousDigest     string       `json:"previous_digest,omitempty"`
-	SourceURL          string       `json:"source_url,omitempty"`
-	Status             UpdateStatus `json:"status"`
-	DetectedAt         time.Time    `json:"detected_at"`
+	ID                 int64      `json:"id"`
+	ScanID             int64      `json:"scan_id"`
+	ContainerID        string     `json:"container_id"`
+	ContainerName      string     `json:"container_name"`
+	Image              string     `json:"image"`
+	CurrentTag         string     `json:"current_tag"`
+	CurrentDigest      string     `json:"current_digest"`
+	Registry           string     `json:"registry"`
+	LatestTag          string     `json:"latest_tag,omitempty"`
+	LatestDigest       string     `json:"latest_digest,omitempty"`
+	UpdateType         UpdateType `json:"update_type,omitempty"`
+	PublishedAt        *time.Time `json:"published_at,omitempty"`
+	ChangelogURL       string     `json:"changelog_url,omitempty"`
+	ChangelogSummary   string     `json:"changelog_summary,omitempty"`
+	HasBreakingChanges bool       `json:"has_breaking_changes"`
+	RiskScore          int        `json:"risk_score"`
+	PreviousDigest     string     `json:"previous_digest,omitempty"`
+	SourceURL          string     `json:"source_url,omitempty"`
+	Status             Status     `json:"status"`
+	DetectedAt         time.Time  `json:"detected_at"`
 }
 
 // BaseRiskScore returns a risk score based on semver update type.
@@ -133,14 +132,14 @@ type UpdateExclusion struct {
 
 // UpdateResult is the output of scanning a single container.
 type UpdateResult struct {
-	ContainerID   string
-	ContainerName string
-	Image         string
-	CurrentTag    string
-	CurrentDigest string
-	Registry      string
-	LatestTag     string
-	LatestDigest  string
+	ContainerID        string
+	ContainerName      string
+	Image              string
+	CurrentTag         string
+	CurrentDigest      string
+	Registry           string
+	LatestTag          string
+	LatestDigest       string
 	UpdateType         UpdateType
 	HasUpdate          bool
 	ChangelogURL       string

@@ -14,6 +14,7 @@ package v1
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -177,7 +178,9 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"status":      "delivered",

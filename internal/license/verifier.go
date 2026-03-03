@@ -23,8 +23,7 @@ import (
 )
 
 const (
-	// licenseServerURL = "https://license.maintenant.dev"
-	licenseServerURL = "http://maintenant-web:8090"
+	licenseServerURL = "https://license.maintenant.dev"
 )
 
 // licenseServerOverride can be set via -ldflags to point to a dev/staging server.
@@ -87,7 +86,9 @@ func fetchLicense(ctx context.Context, client *http.Client, serverURL, licenseKe
 	if err != nil {
 		return nil, 0, fmt.Errorf("license server request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {

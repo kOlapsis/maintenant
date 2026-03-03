@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -124,7 +125,9 @@ func (s *EndpointStore) ListEndpoints(ctx context.Context, opts endpoint.ListEnd
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var endpoints []*endpoint.Endpoint
 	for rows.Next() {
@@ -144,7 +147,9 @@ func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, externalI
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints by external_id: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var endpoints []*endpoint.Endpoint
 	for rows.Next() {
@@ -238,7 +243,9 @@ func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID int64, 
 	if err != nil {
 		return nil, 0, fmt.Errorf("list check results: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var results []*endpoint.CheckResult
 	for rows.Next() {
@@ -283,7 +290,7 @@ func (s *EndpointStore) DeleteCheckResultsBefore(ctx context.Context, before tim
 }
 
 func (s *EndpointStore) DeleteInactiveEndpointsBefore(ctx context.Context, before time.Time) (int64, error) {
-	// First delete check results for inactive endpoints
+	// First, delete check results for inactive endpoints
 	_, err := s.writer.Exec(ctx,
 		`DELETE FROM check_results WHERE endpoint_id IN (
 			SELECT id FROM endpoints WHERE active=0 AND last_seen_at<?
@@ -319,7 +326,7 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 		&configJSON, &active, &firstSeen, &lastSeen,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan endpoint: %w", err)
@@ -408,7 +415,9 @@ func (s *EndpointStore) GetSparklineData(ctx context.Context, limit int) (map[in
 	if err != nil {
 		return nil, fmt.Errorf("get sparkline data: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	result := make(map[int64][]float64)
 	for rows.Next() {

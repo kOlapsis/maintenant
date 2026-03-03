@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // RuntimeDiscoverer abstracts container/workload discovery operations.
@@ -195,11 +197,11 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		if err != nil {
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
 		} else if result != nil {
-			s.emitEvent("container.restart_alert", result)
+			s.emitEvent(event.ContainerRestartAlert, result)
 		} else {
 			// Count is below threshold — emit recovery so the alert engine
 			// can resolve any previously active restart_loop alert.
-			s.emitEvent("container.restart_recovery", map[string]interface{}{
+			s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
 				"container_id":   c.ID,
 				"container_name": c.Name,
 				"timestamp":      evt.Timestamp,
@@ -207,7 +209,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		}
 	}
 
-	s.emitEvent("container.state_changed", map[string]interface{}{
+	s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
 		"id":             c.ID,
 		"state":          newState,
 		"previous_state": previousState,
@@ -235,7 +237,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 	}
 
 	s.logger.Info("archived container", "id", c.ID, "name", c.Name)
-	s.emitEvent("container.archived", map[string]interface{}{
+	s.emitEvent(event.ContainerArchived, map[string]interface{}{
 		"id":          c.ID,
 		"archived_at": now,
 	})
@@ -274,7 +276,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		s.logger.Error("insert health transition", "container_id", c.ID, "error", err)
 	}
 
-	s.emitEvent("container.health_changed", map[string]interface{}{
+	s.emitEvent(event.ContainerHealthChanged, map[string]interface{}{
 		"id":              c.ID,
 		"health_status":   newHealth,
 		"previous_health": previousHealth,
@@ -332,7 +334,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			if err := s.store.ArchiveContainer(ctx, sc.ExternalID, now); err != nil {
 				s.logger.Error("reconcile archive", "external_id", sc.ExternalID, "error", err)
 			}
-			s.emitEvent("container.archived", map[string]interface{}{
+			s.emitEvent(event.ContainerArchived, map[string]interface{}{
 				"id": sc.ID, "archived_at": now,
 			})
 			continue
@@ -356,7 +358,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
 			}
 
-			s.emitEvent("container.state_changed", map[string]interface{}{
+			s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
 				"id": sc.ID, "state": dc.State, "previous_state": sc.State, "timestamp": now,
 			})
 		}
@@ -392,7 +394,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				}
 			}
 
-			s.emitEvent("container.discovered", dc)
+			s.emitEvent(event.ContainerDiscovered, dc)
 		}
 	}
 

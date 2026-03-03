@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -111,7 +112,9 @@ func (s *ContainerStore) ListContainers(ctx context.Context, opts container.List
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var containers []*container.Container
 	for rows.Next() {
@@ -202,7 +205,9 @@ func (s *ContainerStore) ListTransitionsByContainer(ctx context.Context, contain
 	if err != nil {
 		return nil, 0, fmt.Errorf("list transitions: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var transitions []*container.StateTransition
 	for rows.Next() {
@@ -238,7 +243,9 @@ func (s *ContainerStore) GetTransitionsInWindow(ctx context.Context, containerID
 	if err != nil {
 		return nil, fmt.Errorf("get transitions in window: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var transitions []*container.StateTransition
 	for rows.Next() {
@@ -310,7 +317,7 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 		&c.RuntimeType, &c.ErrorDetail, &c.ControllerKind, &c.Namespace, &c.PodCount, &c.ReadyCount,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan container: %w", err)

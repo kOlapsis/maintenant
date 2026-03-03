@@ -41,5 +41,5 @@ func getPublicKey() (ed25519.PublicKey, error) {
 		return nil, fmt.Errorf("invalid license public key size: got %d, want %d", len(raw), ed25519.PublicKeySize)
 	}
 
-	return ed25519.PublicKey(raw), nil
+	return raw, nil
 }

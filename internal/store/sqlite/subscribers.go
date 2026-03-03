@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -81,7 +82,7 @@ func (s *SubscriberStoreImpl) getSubscriberBy(ctx context.Context, column, value
 		fmt.Sprintf(`SELECT id, email, confirmed, confirm_token, confirm_expires, unsub_token, created_at
 		FROM status_subscribers WHERE %s = ?`, column), value,
 	).Scan(&sub.ID, &sub.Email, &confirmed, &confirmToken, &confirmExpires, &sub.UnsubToken, &createdAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -124,7 +125,9 @@ func (s *SubscriberStoreImpl) ListConfirmedSubscribers(ctx context.Context) ([]s
 	if err != nil {
 		return nil, fmt.Errorf("list confirmed subscribers: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return scanStatusSubscribers(rows)
 }
 
@@ -135,7 +138,9 @@ func (s *SubscriberStoreImpl) ListSubscribers(ctx context.Context) ([]status.Sta
 	if err != nil {
 		return nil, fmt.Errorf("list subscribers: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return scanStatusSubscribers(rows)
 }
 

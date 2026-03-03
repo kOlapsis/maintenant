@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -64,7 +65,9 @@ func (s *MaintenanceStoreImpl) ListMaintenance(ctx context.Context, statusFilter
 	if err != nil {
 		return nil, fmt.Errorf("list maintenance: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return s.scanMaintenanceWindows(ctx, rows)
 }
 
@@ -79,7 +82,7 @@ func (s *MaintenanceStoreImpl) GetMaintenance(ctx context.Context, id int64) (*s
 		FROM maintenance_windows WHERE id = ?`, id,
 	).Scan(&mw.ID, &mw.Title, &mw.Description, &startsAt, &endsAt,
 		&active, &incidentID, &createdAt, &updatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -174,7 +177,9 @@ func (s *MaintenanceStoreImpl) GetPendingActivation(ctx context.Context, now int
 	if err != nil {
 		return nil, fmt.Errorf("pending activation: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return s.scanMaintenanceWindows(ctx, rows)
 }
 
@@ -186,7 +191,9 @@ func (s *MaintenanceStoreImpl) GetPendingDeactivation(ctx context.Context, now i
 	if err != nil {
 		return nil, fmt.Errorf("pending deactivation: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return s.scanMaintenanceWindows(ctx, rows)
 }
 
@@ -243,7 +250,9 @@ func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw
 	if err != nil {
 		return fmt.Errorf("load maintenance components: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	for rows.Next() {
 		var ref status.IncidentCompRef
 		if err := rows.Scan(&ref.ID, &ref.Name); err != nil {

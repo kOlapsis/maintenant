@@ -18,6 +18,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 const engineChannelBuffer = 256
@@ -503,9 +505,9 @@ func (e *Engine) broadcastAlert(a *Alert, silenced bool) {
 		return
 	}
 
-	eventType := "alert.fired"
+	eventType := event.AlertFired
 	if silenced {
-		eventType = "alert.silenced"
+		eventType = event.AlertSilenced
 	}
 
 	e.broadcaster.Broadcast(eventType, alertToMap(a))
@@ -515,7 +517,7 @@ func (e *Engine) broadcastResolved(a *Alert) {
 	if e.broadcaster == nil {
 		return
 	}
-	e.broadcaster.Broadcast("alert.resolved", alertToMap(a))
+	e.broadcaster.Broadcast(event.AlertResolved, alertToMap(a))
 }
 
 func alertToMap(a *Alert) map[string]interface{} {

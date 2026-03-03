@@ -20,6 +20,8 @@ import (
 
 // Runtime abstracts the container orchestration platform.
 // Implementations: docker.Runtime, kubernetes.Runtime.
+//
+//goland:noinspection GoCommentStart
 type Runtime interface {
 	// Lifecycle
 	Connect(ctx context.Context) error

@@ -17,6 +17,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // MaintenanceScheduler polls for maintenance windows that need activation or deactivation.
@@ -131,7 +133,7 @@ func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *Maintenan
 	}
 
 	// Broadcast
-	s.service.broadcast("status.maintenance_started", map[string]interface{}{
+	s.service.broadcast(event.StatusMaintenanceStart, map[string]interface{}{
 		"id":         mw.ID,
 		"title":      mw.Title,
 		"components": compNames,
@@ -183,7 +185,7 @@ func (s *MaintenanceScheduler) deactivateWindow(ctx context.Context, mw *Mainten
 	}
 
 	// Broadcast
-	s.service.broadcast("status.maintenance_ended", map[string]interface{}{
+	s.service.broadcast(event.StatusMaintenanceEnd, map[string]interface{}{
 		"id":         mw.ID,
 		"title":      mw.Title,
 		"components": compNames,

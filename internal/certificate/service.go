@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 var (
@@ -109,7 +111,7 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID int64, targ
 		return nil, fmt.Errorf("create auto monitor: %w", err)
 	}
 
-	s.emit("certificate.created", map[string]interface{}{
+	s.emit(event.CertificateCreated, map[string]interface{}{
 		"monitor_id": monitor.ID,
 		"hostname":   monitor.Hostname,
 		"port":       monitor.Port,
@@ -193,7 +195,7 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 		return nil, nil, fmt.Errorf("create standalone monitor: %w", err)
 	}
 
-	s.emit("certificate.created", map[string]interface{}{
+	s.emit(event.CertificateCreated, map[string]interface{}{
 		"monitor_id": monitor.ID,
 		"hostname":   monitor.Hostname,
 		"port":       monitor.Port,
@@ -252,7 +254,7 @@ func (s *Service) DeleteMonitor(ctx context.Context, id int64) error {
 		return fmt.Errorf("soft delete: %w", err)
 	}
 
-	s.emit("certificate.deleted", map[string]interface{}{
+	s.emit(event.CertificateDeleted, map[string]interface{}{
 		"monitor_id": id,
 		"hostname":   monitor.Hostname,
 	})
@@ -270,7 +272,7 @@ func (s *Service) DeactivateByEndpointID(ctx context.Context, endpointID int64) 
 		s.logger.Error("deactivate cert monitor for removed endpoint", "monitor_id", monitor.ID, "endpoint_id", endpointID, "error", err)
 		return
 	}
-	s.emit("certificate.deleted", map[string]interface{}{
+	s.emit(event.CertificateDeleted, map[string]interface{}{
 		"monitor_id": monitor.ID,
 		"hostname":   monitor.Hostname,
 	})
@@ -322,7 +324,7 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 		}
 
 		s.logger.Info("created label-discovered cert monitor", "hostname", p.Hostname, "port", p.Port, "container", containerExternalID)
-		s.emit("certificate.created", map[string]interface{}{
+		s.emit(event.CertificateCreated, map[string]interface{}{
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
@@ -358,7 +360,7 @@ func (s *Service) deactivateLabelMonitors(ctx context.Context, externalID string
 		}
 
 		s.logger.Info("deactivated label cert monitor", "hostname", m.Hostname, "port", m.Port, "container", externalID)
-		s.emit("certificate.deleted", map[string]interface{}{
+		s.emit(event.CertificateDeleted, map[string]interface{}{
 			"monitor_id": m.ID,
 			"hostname":   m.Hostname,
 		})
@@ -533,7 +535,7 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 	s.emitCheckCompleted(monitor, result)
 	if previousStatus != monitor.Status {
 		s.logger.Debug("certificate: status changed", "monitor_id", monitor.ID, "hostname", monitor.Hostname, "previous_status", string(previousStatus), "new_status", string(monitor.Status))
-		s.emit("certificate.status_changed", map[string]interface{}{
+		s.emit(event.CertificateStatusChanged, map[string]interface{}{
 			"monitor_id":      monitor.ID,
 			"hostname":        monitor.Hostname,
 			"previous_status": string(previousStatus),
@@ -577,7 +579,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 
 	// Check chain validation alerts
 	if result.ChainValid != nil && !*result.ChainValid {
-		s.emit("certificate.alert", map[string]interface{}{
+		s.emit(event.CertificateAlert, map[string]interface{}{
 			"monitor_id":  monitor.ID,
 			"hostname":    monitor.Hostname,
 			"port":        monitor.Port,
@@ -589,7 +591,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 
 	// Check hostname mismatch alerts
 	if result.HostnameMatch != nil && !*result.HostnameMatch {
-		s.emit("certificate.alert", map[string]interface{}{
+		s.emit(event.CertificateAlert, map[string]interface{}{
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
@@ -606,7 +608,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 
 	// Check if certificate has expired
 	if result.NotAfter.Before(time.Now()) {
-		s.emit("certificate.alert", map[string]interface{}{
+		s.emit(event.CertificateAlert, map[string]interface{}{
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
@@ -636,7 +638,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 		// No threshold crossed — check if we need a recovery alert
 		if monitor.LastAlertedThreshold != nil {
 			// Certificate renewed, past all thresholds
-			s.emit("certificate.recovery", map[string]interface{}{
+			s.emit(event.CertificateRecovery, map[string]interface{}{
 				"monitor_id":          monitor.ID,
 				"hostname":            monitor.Hostname,
 				"port":                monitor.Port,
@@ -654,7 +656,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 
 	// Check if we need to escalate (fire alert at a new, lower threshold)
 	if monitor.LastAlertedThreshold == nil || *crossedThreshold < *monitor.LastAlertedThreshold {
-		s.emit("certificate.alert", map[string]interface{}{
+		s.emit(event.CertificateAlert, map[string]interface{}{
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
@@ -693,7 +695,7 @@ func (s *Service) emitCheckCompleted(monitor *CertMonitor, result *CertCheckResu
 		data["hostname_match"] = *result.HostnameMatch
 	}
 
-	s.emit("certificate.check_completed", data)
+	s.emit(event.CertificateCheckCompleted, data)
 }
 
 // --- Helpers ---
@@ -724,7 +726,7 @@ func extractHostPort(targetURL string) (string, int, error) {
 	return hostname, port, nil
 }
 
-// isHTTPS checks if a target URL uses the HTTPS scheme.
+// IsHTTPS isHTTPS checks if a target URL uses the HTTPS scheme.
 func IsHTTPS(target string) bool {
 	return strings.HasPrefix(target, "https://")
 }

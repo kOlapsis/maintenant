@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,7 +44,9 @@ func (s *WebhookStoreImpl) List(ctx context.Context) ([]*webhook.WebhookSubscrip
 	if err != nil {
 		return nil, fmt.Errorf("list webhooks: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var subs []*webhook.WebhookSubscription
 	for rows.Next() {
@@ -51,7 +54,7 @@ func (s *WebhookStoreImpl) List(ctx context.Context) ([]*webhook.WebhookSubscrip
 		if err != nil {
 			return nil, err
 		}
-		sub.Secret = "" // never expose secret in list
+		sub.Secret = "" // never expose secret in a list
 		subs = append(subs, sub)
 	}
 	return subs, rows.Err()
@@ -65,7 +68,9 @@ func (s *WebhookStoreImpl) ListActive(ctx context.Context) ([]*webhook.WebhookSu
 	if err != nil {
 		return nil, fmt.Errorf("list active webhooks: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var subs []*webhook.WebhookSubscription
 	for rows.Next() {
@@ -94,7 +99,7 @@ func (s *WebhookStoreImpl) GetByID(ctx context.Context, id string) (*webhook.Web
 	err := row.Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.URL, &secret,
 		&eventTypesStr, &sub.IsActive, &lastStatus, &lastDeliveryAt,
 		&sub.FailureCount, &createdAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

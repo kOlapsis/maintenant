@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -73,7 +74,9 @@ func (s *IncidentStoreImpl) ListIncidents(ctx context.Context, opts status.ListI
 	if err != nil {
 		return nil, 0, fmt.Errorf("list incidents: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	incidents, err := s.scanIncidents(ctx, rows)
 	if err != nil {
@@ -91,7 +94,9 @@ func (s *IncidentStoreImpl) ListActiveIncidents(ctx context.Context) ([]status.I
 	if err != nil {
 		return nil, fmt.Errorf("list active incidents: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return s.scanIncidents(ctx, rows)
 }
 
@@ -105,7 +110,9 @@ func (s *IncidentStoreImpl) ListRecentIncidents(ctx context.Context, days int) (
 	if err != nil {
 		return nil, fmt.Errorf("list recent incidents: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return s.scanIncidents(ctx, rows)
 }
 
@@ -121,7 +128,7 @@ func (s *IncidentStoreImpl) GetIncident(ctx context.Context, id int64) (*status.
 		FROM incidents WHERE id = ?`, id,
 	).Scan(&inc.ID, &inc.Title, &inc.Severity, &inc.Status, &isMaint, &maintID,
 		&createdAt, &resolvedAt, &updatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -153,7 +160,7 @@ func (s *IncidentStoreImpl) GetActiveIncidentByComponent(ctx context.Context, co
 		WHERE ic.component_id = ? AND i.status != 'resolved'
 		ORDER BY i.created_at DESC LIMIT 1`, componentID,
 	).Scan(&incID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -248,7 +255,9 @@ func (s *IncidentStoreImpl) ListUpdates(ctx context.Context, incidentID int64) (
 	if err != nil {
 		return nil, fmt.Errorf("list updates: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var updates []status.IncidentUpdate
 	for rows.Next() {
@@ -344,7 +353,9 @@ func (s *IncidentStoreImpl) loadIncidentRelations(ctx context.Context, inc *stat
 	if err != nil {
 		return fmt.Errorf("load incident components: %w", err)
 	}
-	defer compRows.Close()
+	defer func(compRows *sql.Rows) {
+		_ = compRows.Close()
+	}(compRows)
 	for compRows.Next() {
 		var ref status.IncidentCompRef
 		if err := compRows.Scan(&ref.ID, &ref.Name); err != nil {
@@ -364,7 +375,9 @@ func (s *IncidentStoreImpl) loadIncidentRelations(ctx context.Context, inc *stat
 	if err != nil {
 		return fmt.Errorf("load incident updates: %w", err)
 	}
-	defer updRows.Close()
+	defer func(updRows *sql.Rows) {
+		_ = updRows.Close()
+	}(updRows)
 	for updRows.Next() {
 		u, err := scanIncidentUpdate(updRows)
 		if err != nil {

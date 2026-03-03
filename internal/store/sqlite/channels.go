@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -53,7 +54,7 @@ func (s *ChannelStoreImpl) GetChannel(ctx context.Context, id int64) (*alert.Not
 		FROM notification_channels WHERE id = ?`, id)
 
 	ch, err := scanChannel(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -77,7 +78,9 @@ func (s *ChannelStoreImpl) ListChannels(ctx context.Context) ([]*alert.Notificat
 	if err != nil {
 		return nil, fmt.Errorf("list channels: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var channels []*alert.NotificationChannel
 	for rows.Next() {
@@ -138,7 +141,7 @@ func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID int64
 		`SELECT status FROM notification_deliveries
 		WHERE channel_id = ? ORDER BY updated_at DESC LIMIT 1`,
 		channelID).Scan(&status)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "healthy", nil
 	}
 	if err != nil {
@@ -180,7 +183,9 @@ func (s *ChannelStoreImpl) ListRoutingRulesByChannel(ctx context.Context, channe
 	if err != nil {
 		return nil, fmt.Errorf("list routing rules: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var rules []alert.RoutingRule
 	for rows.Next() {
@@ -237,7 +242,9 @@ func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID in
 	if err != nil {
 		return nil, fmt.Errorf("list deliveries: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var deliveries []*alert.NotificationDelivery
 	for rows.Next() {

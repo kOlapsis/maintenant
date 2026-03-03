@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -88,7 +89,9 @@ func (cr *ChangelogResolver) FetchLatestReleases(ctx context.Context, owner, rep
 	if err != nil {
 		return nil, fmt.Errorf("github api: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
@@ -120,7 +123,7 @@ func (cr *ChangelogResolver) FetchLatestReleases(ctx context.Context, owner, rep
 
 // ResolveChangelog resolves changelog data for an image update.
 func (cr *ChangelogResolver) ResolveChangelog(ctx context.Context, imageRef, latestTag string) (changelogURL, summary string, hasBreaking bool, sourceURL string) {
-	// Try to get source URL from OCI labels
+	// Try to get the source URL from OCI labels
 	srcURL, err := cr.ResolveSourceURL(ctx, imageRef)
 	if err != nil || srcURL == "" {
 		return "", "", false, ""

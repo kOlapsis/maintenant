@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // Dispatcher subscribes to SSE events and fans out to webhook subscriptions
@@ -122,18 +123,18 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 // mapSSETypeToWebhookEvent maps internal SSE event types to webhook event types.
 func mapSSETypeToWebhookEvent(sseType string) string {
 	switch {
-	case sseType == "container.state_changed" || sseType == "container.discovered" || sseType == "container.removed":
-		return EventContainerStateChanged
-	case sseType == "endpoint.status_changed" || sseType == "endpoint.discovered" || sseType == "endpoint.removed":
-		return EventEndpointStatusChanged
-	case sseType == "heartbeat.status_changed":
-		return EventHeartbeatStatusChanged
-	case sseType == "certificate.status_changed":
-		return EventCertificateStatusChanged
-	case sseType == "alert.fired":
-		return EventAlertFired
-	case sseType == "alert.resolved":
-		return EventAlertResolved
+	case sseType == event.ContainerStateChanged || sseType == event.ContainerDiscovered || sseType == "container.removed":
+		return event.ContainerStateChanged
+	case sseType == event.EndpointStatusChanged || sseType == event.EndpointDiscovered || sseType == event.EndpointRemoved:
+		return event.EndpointStatusChanged
+	case sseType == event.HeartbeatStatusChanged:
+		return event.HeartbeatStatusChanged
+	case sseType == event.CertificateStatusChanged:
+		return event.CertificateStatusChanged
+	case sseType == event.AlertFired:
+		return event.AlertFired
+	case sseType == event.AlertResolved:
+		return event.AlertResolved
 	default:
 		return ""
 	}

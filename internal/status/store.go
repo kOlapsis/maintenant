@@ -23,13 +23,13 @@ type ComponentStore interface {
 	DeleteGroup(ctx context.Context, id int64) error
 
 	// Components
-	ListComponents(ctx context.Context) ([]StatusComponent, error)
-	ListVisibleComponents(ctx context.Context) ([]StatusComponent, error)
-	GetComponent(ctx context.Context, id int64) (*StatusComponent, error)
-	GetComponentByMonitor(ctx context.Context, monitorType string, monitorID int64) (*StatusComponent, error)
-	ListGlobalComponents(ctx context.Context, monitorType string) ([]StatusComponent, error)
-	CreateComponent(ctx context.Context, c *StatusComponent) (int64, error)
-	UpdateComponent(ctx context.Context, c *StatusComponent) error
+	ListComponents(ctx context.Context) ([]Component, error)
+	ListVisibleComponents(ctx context.Context) ([]Component, error)
+	GetComponent(ctx context.Context, id int64) (*Component, error)
+	GetComponentByMonitor(ctx context.Context, monitorType string, monitorID int64) (*Component, error)
+	ListGlobalComponents(ctx context.Context, monitorType string) ([]Component, error)
+	CreateComponent(ctx context.Context, c *Component) (int64, error)
+	UpdateComponent(ctx context.Context, c *Component) error
 	DeleteComponent(ctx context.Context, id int64) error
 }
 

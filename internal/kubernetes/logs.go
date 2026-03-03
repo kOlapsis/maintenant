@@ -43,7 +43,9 @@ func (r *Runtime) fetchLogs(ctx context.Context, externalID string, lines int, t
 	if err != nil {
 		return nil, fmt.Errorf("get logs %s/%s: %w", ns, podName, err)
 	}
-	defer stream.Close()
+	defer func(stream io.ReadCloser) {
+		_ = stream.Close()
+	}(stream)
 
 	var result []string
 	scanner := bufio.NewScanner(stream)

@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -95,7 +96,9 @@ func (s *AlertStoreImpl) ListAlerts(ctx context.Context, opts alert.ListAlertsOp
 	if err != nil {
 		return nil, fmt.Errorf("list alerts: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var alerts []*alert.Alert
 	for rows.Next() {
@@ -142,7 +145,7 @@ func (s *AlertStoreImpl) GetActiveAlert(ctx context.Context, source, alertType, 
 		LIMIT 1`,
 		source, alertType, entityType, entityID)
 	a, err := scanAlertFromRow(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return a, err
@@ -154,7 +157,9 @@ func (s *AlertStoreImpl) ListActiveAlerts(ctx context.Context) ([]*alert.Alert, 
 	if err != nil {
 		return nil, fmt.Errorf("list active alerts: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var alerts []*alert.Alert
 	for rows.Next() {

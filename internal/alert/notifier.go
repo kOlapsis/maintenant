@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 const (
@@ -114,9 +116,9 @@ func (n *Notifier) worker(ctx context.Context) {
 }
 
 func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
-	eventType := "alert.fired"
+	eventType := event.AlertFired
 	if job.Alert.Status == StatusResolved {
-		eventType = "alert.resolved"
+		eventType = event.AlertResolved
 	}
 
 	channelType := job.Channel.Type

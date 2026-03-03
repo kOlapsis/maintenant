@@ -44,26 +44,26 @@ const (
 
 // Endpoint represents a monitored HTTP or TCP target associated with a container.
 type Endpoint struct {
-	ID                    int64          `json:"id"`
-	ContainerName         string         `json:"container_name"`
-	LabelKey              string         `json:"label_key"`
-	ExternalID            string         `json:"external_id"`
-	EndpointType          EndpointType   `json:"endpoint_type"`
-	Target                string         `json:"target"`
-	Status                EndpointStatus `json:"status"`
-	AlertState            AlertState     `json:"alert_state"`
-	ConsecutiveFailures   int            `json:"consecutive_failures"`
-	ConsecutiveSuccesses  int            `json:"consecutive_successes"`
-	LastCheckAt           *time.Time     `json:"last_check_at,omitempty"`
-	LastResponseTimeMs    *int64         `json:"last_response_time_ms,omitempty"`
-	LastHTTPStatus        *int           `json:"last_http_status,omitempty"`
-	LastError             string         `json:"last_error,omitempty"`
-	Config                EndpointConfig `json:"config"`
-	Active                bool           `json:"active"`
-	FirstSeenAt           time.Time      `json:"first_seen_at"`
-	LastSeenAt            time.Time      `json:"last_seen_at"`
-	OrchestrationGroup    string         `json:"orchestration_group,omitempty"`
-	OrchestrationUnit     string         `json:"orchestration_unit,omitempty"`
+	ID                   int64          `json:"id"`
+	ContainerName        string         `json:"container_name"`
+	LabelKey             string         `json:"label_key"`
+	ExternalID           string         `json:"external_id"`
+	EndpointType         EndpointType   `json:"endpoint_type"`
+	Target               string         `json:"target"`
+	Status               EndpointStatus `json:"status"`
+	AlertState           AlertState     `json:"alert_state"`
+	ConsecutiveFailures  int            `json:"consecutive_failures"`
+	ConsecutiveSuccesses int            `json:"consecutive_successes"`
+	LastCheckAt          *time.Time     `json:"last_check_at,omitempty"`
+	LastResponseTimeMs   *int64         `json:"last_response_time_ms,omitempty"`
+	LastHTTPStatus       *int           `json:"last_http_status,omitempty"`
+	LastError            string         `json:"last_error,omitempty"`
+	Config               EndpointConfig `json:"config"`
+	Active               bool           `json:"active"`
+	FirstSeenAt          time.Time      `json:"first_seen_at"`
+	LastSeenAt           time.Time      `json:"last_seen_at"`
+	OrchestrationGroup   string         `json:"orchestration_group,omitempty"`
+	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
 }
 
 // ConfigJSON returns the JSON-encoded configuration.
@@ -74,14 +74,14 @@ func (e *Endpoint) ConfigJSON() string {
 
 // CheckResult represents a single probe result for an endpoint.
 type CheckResult struct {
-	ID                  int64                `json:"id"`
-	EndpointID          int64                `json:"endpoint_id"`
-	Success             bool                 `json:"success"`
-	ResponseTimeMs      int64                `json:"response_time_ms"`
-	HTTPStatus          *int                 `json:"http_status,omitempty"`
-	ErrorMessage        string               `json:"error_message,omitempty"`
-	Timestamp           time.Time            `json:"timestamp"`
-	TLSPeerCertificates []*x509.Certificate  `json:"-"`
+	ID                  int64               `json:"id"`
+	EndpointID          int64               `json:"endpoint_id"`
+	Success             bool                `json:"success"`
+	ResponseTimeMs      int64               `json:"response_time_ms"`
+	HTTPStatus          *int                `json:"http_status,omitempty"`
+	ErrorMessage        string              `json:"error_message,omitempty"`
+	Timestamp           time.Time           `json:"timestamp"`
+	TLSPeerCertificates []*x509.Certificate `json:"-"`
 }
 
 // EndpointConfig holds the configuration parameters for endpoint checks.
@@ -139,7 +139,7 @@ func (c EndpointConfig) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for EndpointConfig with string durations.
-func (c *EndpointConfig) UnmarshalJSON(data []byte) error {
+func (c EndpointConfig) UnmarshalJSON(data []byte) error {
 	type Alias struct {
 		Interval          string            `json:"interval"`
 		Timeout           string            `json:"timeout"`
@@ -181,11 +181,11 @@ func (c *EndpointConfig) UnmarshalJSON(data []byte) error {
 
 // ListEndpointsOpts configures endpoint listing queries.
 type ListEndpointsOpts struct {
-	Status         string
-	ContainerName  string
+	Status             string
+	ContainerName      string
 	OrchestrationGroup string
-	EndpointType   string
-	IncludeInactive bool
+	EndpointType       string
+	IncludeInactive    bool
 }
 
 // ListChecksOpts configures check result listing queries.

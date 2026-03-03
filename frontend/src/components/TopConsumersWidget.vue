@@ -82,7 +82,7 @@ function formatValue(consumer: TopConsumer): string {
         <button
           v-for="m in (['cpu', 'memory'] as const)"
           :key="m"
-          class="rounded-full px-3 py-1 text-xs font-medium transition"
+          class="rounded-full px-3 py-1 text-xs font-medium transition cursor-pointer"
           :style="{
             backgroundColor: activeMetric === m ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
             color: activeMetric === m ? 'var(--pb-text-inverted)' : 'var(--pb-text-secondary)',
@@ -103,7 +103,7 @@ function formatValue(consumer: TopConsumer): string {
         <button
           v-for="p in cePeriods"
           :key="p"
-          class="rounded-full px-2.5 py-1 text-xs font-medium transition"
+          class="rounded-full px-2.5 py-1 text-xs font-medium transition cursor-pointer"
           :style="{
             backgroundColor: activePeriod === p ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
             color: activePeriod === p ? 'var(--pb-text-inverted)' : 'var(--pb-text-secondary)',

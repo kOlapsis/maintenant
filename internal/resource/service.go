@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/event"
 	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 )
 
@@ -141,7 +142,7 @@ func (s *Service) processSnapshot(snap *ResourceSnapshot) {
 		if snap.MemLimit > 0 {
 			memPercent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
 		}
-		s.eventCallback("resource.snapshot", map[string]interface{}{
+		s.eventCallback(event.ResourceSnapshot, map[string]interface{}{
 			"container_id":      snap.ContainerID,
 			"cpu_percent":       snap.CPUPercent,
 			"mem_used":          snap.MemUsed,
@@ -224,7 +225,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 		cfg.LastAlertedAt = &now
 		if s.eventCallback != nil {
 			if cpuAlert {
-				s.eventCallback("resource.alert", map[string]interface{}{
+				s.eventCallback(event.ResourceAlert, map[string]interface{}{
 					"container_id":   snap.ContainerID,
 					"container_name": containerName,
 					"alert_type":     "cpu",
@@ -234,7 +235,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 				})
 			}
 			if memAlert {
-				s.eventCallback("resource.alert", map[string]interface{}{
+				s.eventCallback(event.ResourceAlert, map[string]interface{}{
 					"container_id":   snap.ContainerID,
 					"container_name": containerName,
 					"alert_type":     "memory",
@@ -255,7 +256,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 			} else if prevState == AlertStateBoth {
 				recoveredType = "both"
 			}
-			s.eventCallback("resource.recovery", map[string]interface{}{
+			s.eventCallback(event.ResourceRecovery, map[string]interface{}{
 				"container_id":   snap.ContainerID,
 				"container_name": containerName,
 				"recovered_type": recoveredType,

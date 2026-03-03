@@ -15,6 +15,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // EventCallback is called when an endpoint event occurs (for SSE broadcasting).
@@ -80,7 +82,7 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 
 	// Emit config errors
 	for _, pe := range parseErrors {
-		s.emitEvent("endpoint.config_error", map[string]interface{}{
+		s.emitEvent(event.EndpointConfigError, map[string]interface{}{
 			"endpoint_id":    nil,
 			"container_name": containerName,
 			"label_key":      pe.LabelKey,
@@ -135,7 +137,7 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 		// Check if this is new (not in existing map) or reconfigured
 		prev, wasExisting := existingByKey[p.LabelKey]
 		if !wasExisting {
-			s.emitEvent("endpoint.discovered", map[string]interface{}{
+			s.emitEvent(event.EndpointDiscovered, map[string]interface{}{
 				"endpoint_id":    id,
 				"container_name": containerName,
 				"endpoint_type":  string(p.EndpointType),
@@ -163,7 +165,7 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 			if s.onEndpointRemoved != nil {
 				s.onEndpointRemoved(ctx, ep.ID)
 			}
-			s.emitEvent("endpoint.removed", map[string]interface{}{
+			s.emitEvent(event.EndpointRemoved, map[string]interface{}{
 				"endpoint_id":    ep.ID,
 				"container_name": containerName,
 				"reason":         "label_removed",
@@ -207,7 +209,7 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, resu
 
 	if newStatus != previousStatus {
 		s.logger.Debug("endpoint: status changed", "endpoint_id", endpointID, "previous_status", string(previousStatus), "new_status", string(newStatus))
-		s.emitEvent("endpoint.status_changed", map[string]interface{}{
+		s.emitEvent(event.EndpointStatusChanged, map[string]interface{}{
 			"endpoint_id":      endpointID,
 			"container_name":   ep.ContainerName,
 			"target":           ep.Target,
@@ -261,7 +263,7 @@ func (s *Service) HandleContainerStop(ctx context.Context, externalID string) {
 			0, nil, "container stopped"); err != nil {
 			s.logger.Error("set endpoint unknown on container stop", "endpoint_id", ep.ID, "error", err)
 		}
-		s.emitEvent("endpoint.status_changed", map[string]interface{}{
+		s.emitEvent(event.EndpointStatusChanged, map[string]interface{}{
 			"endpoint_id":     ep.ID,
 			"container_name":  ep.ContainerName,
 			"target":          ep.Target,
@@ -295,7 +297,7 @@ func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string)
 		if s.onEndpointRemoved != nil {
 			s.onEndpointRemoved(ctx, ep.ID)
 		}
-		s.emitEvent("endpoint.removed", map[string]interface{}{
+		s.emitEvent(event.EndpointRemoved, map[string]interface{}{
 			"endpoint_id":    ep.ID,
 			"container_name": ep.ContainerName,
 			"reason":         "container_destroyed",

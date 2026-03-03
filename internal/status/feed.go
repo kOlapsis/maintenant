@@ -86,6 +86,6 @@ func (h *Handler) HandleAtomFeed(w http.ResponseWriter, r *http.Request) {
 
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
-	w.Write([]byte(xml.Header))
-	enc.Encode(feed)
+	_, _ = w.Write([]byte(xml.Header))
+	_ = enc.Encode(feed)
 }

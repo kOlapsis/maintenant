@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -190,24 +191,28 @@ func (s *UpdateStore) ListImageUpdates(ctx context.Context, opts update.ListImag
 	if err != nil {
 		return nil, fmt.Errorf("list image updates: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return collectImageUpdates(rows)
 }
 
 func (s *UpdateStore) GetUpdateSummary(ctx context.Context) (*update.UpdateSummary, error) {
 	summary := &update.UpdateSummary{}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT status, update_type FROM image_updates`)
+	rows, err := s.db.QueryContext(ctx, `SELECT status, risk_score FROM image_updates`)
 	if err != nil {
 		return nil, fmt.Errorf("get update summary: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	tracked := 0
 	for rows.Next() {
 		var st string
-		var updateType sql.NullString
-		if err := rows.Scan(&st, &updateType); err != nil {
+		var riskScore int
+		if err := rows.Scan(&st, &riskScore); err != nil {
 			return nil, err
 		}
 		tracked++
@@ -215,14 +220,10 @@ func (s *UpdateStore) GetUpdateSummary(ctx context.Context) (*update.UpdateSumma
 		case "pinned":
 			summary.Pinned++
 		case "available", "dismissed":
-			ut := ""
-			if updateType.Valid {
-				ut = updateType.String
-			}
-			switch ut {
-			case "major":
+			switch {
+			case riskScore >= 81:
 				summary.Critical++
-			case "minor":
+			case riskScore >= 31:
 				summary.Recommended++
 			default:
 				summary.Available++
@@ -285,7 +286,9 @@ func (s *UpdateStore) GetCVECacheEntries(ctx context.Context, ecosystem, package
 	if err != nil {
 		return nil, fmt.Errorf("get cve cache entries: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var result []*update.CVECacheEntry
 	for rows.Next() {
@@ -336,7 +339,9 @@ func (s *UpdateStore) ListContainerCVEs(ctx context.Context, containerID string)
 	if err != nil {
 		return nil, fmt.Errorf("list container cves: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return collectContainerCVEs(rows)
 }
 
@@ -359,7 +364,9 @@ func (s *UpdateStore) ListAllActiveCVEs(ctx context.Context, opts update.ListCVE
 	if err != nil {
 		return nil, fmt.Errorf("list all active cves: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return collectContainerCVEs(rows)
 }
 
@@ -389,7 +396,9 @@ func (s *UpdateStore) GetCVESummaryCounts(ctx context.Context) (map[string]int, 
 	if err != nil {
 		return nil, fmt.Errorf("get cve summary counts: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	for rows.Next() {
 		var sev string
@@ -453,7 +462,9 @@ func (s *UpdateStore) ListExclusions(ctx context.Context) ([]*update.UpdateExclu
 	if err != nil {
 		return nil, fmt.Errorf("list exclusions: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var result []*update.UpdateExclusion
 	for rows.Next() {
@@ -502,7 +513,9 @@ func (s *UpdateStore) ListRiskScoreHistory(ctx context.Context, containerID stri
 	if err != nil {
 		return nil, fmt.Errorf("list risk score history: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var result []*update.RiskScoreRecord
 	for rows.Next() {
@@ -560,7 +573,7 @@ func scanScanRecord(row updateRowScanner) (*update.ScanRecord, error) {
 	var completedAt sql.NullInt64
 	var status string
 	err := row.Scan(&r.ID, &startedAt, &completedAt, &r.ContainersScanned, &r.UpdatesFound, &r.Errors, &status)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -591,7 +604,7 @@ func scanImageUpdate(row updateRowScanner) (*update.ImageUpdate, error) {
 		&changelogURL, &changelogSummary, &hasBreakingChanges, &previousDigest, &sourceURL,
 		&status, &detectedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -613,7 +626,7 @@ func scanImageUpdate(row updateRowScanner) (*update.ImageUpdate, error) {
 		u.UpdateType = update.UpdateType(updateType.String)
 	}
 	if status.Valid {
-		u.Status = update.UpdateStatus(status.String)
+		u.Status = update.Status(status.String)
 	}
 	if changelogURL.Valid {
 		u.ChangelogURL = changelogURL.String
@@ -656,7 +669,7 @@ func scanCVECacheEntry(row updateRowScanner) (*update.CVECacheEntry, error) {
 		&cvssScore, &cvssVector, &e.Severity, &summary, &fixedIn, &referencesJSON,
 		&fetchedAt, &expiresAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -694,7 +707,7 @@ func scanContainerCVE(row updateRowScanner) (*update.ContainerCVE, error) {
 		&c.ID, &c.ContainerID, &c.CVEID, &c.Severity,
 		&cvssScore, &summary, &fixedIn, &firstDetectedAt, &resolvedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -736,7 +749,7 @@ func scanVersionPin(row updateRowScanner) (*update.VersionPin, error) {
 	var reason sql.NullString
 
 	err := row.Scan(&p.ID, &p.ContainerID, &p.Image, &p.PinnedTag, &p.PinnedDigest, &reason, &pinnedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

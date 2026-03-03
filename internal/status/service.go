@@ -16,6 +16,7 @@ import (
 	"log/slog"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // MonitorStatusProvider resolves the current health status of a specific monitor.
@@ -98,7 +99,7 @@ func (s *Service) broadcast(eventType string, data interface{}) {
 // --- Status Derivation ---
 
 // DeriveComponentStatus computes the effective status for a single component.
-func (s *Service) DeriveComponentStatus(ctx context.Context, c *StatusComponent) string {
+func (s *Service) DeriveComponentStatus(ctx context.Context, c *Component) string {
 	if c.StatusOverride != nil {
 		return *c.StatusOverride
 	}
@@ -329,7 +330,7 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 				return
 			}
 			s.logger.Info("status: auto-incident resolved", "incident_id", existing.ID, "title", existing.Title)
-			s.broadcast("status.incident_resolved", map[string]interface{}{
+			s.broadcast(event.StatusIncidentResolved, map[string]interface{}{
 				"id":    existing.ID,
 				"title": existing.Title,
 			})
@@ -349,7 +350,7 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 		if _, err := s.incidents.CreateUpdate(ctx, upd); err != nil {
 			s.logger.Error("failed to add auto update", "error", err)
 		}
-		s.broadcast("status.incident_updated", map[string]interface{}{
+		s.broadcast(event.StatusIncidentUpdated, map[string]interface{}{
 			"id":      existing.ID,
 			"status":  existing.Status,
 			"message": evt.Message,
@@ -378,7 +379,7 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 
 	s.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title, "severity", inc.Severity)
 
-	s.broadcast("status.incident_created", map[string]interface{}{
+	s.broadcast(event.StatusIncidentCreated, map[string]interface{}{
 		"id":         incID,
 		"title":      inc.Title,
 		"severity":   inc.Severity,
@@ -391,9 +392,9 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 }
 
 // BroadcastComponentChange notifies public SSE clients of a component status change.
-func (s *Service) BroadcastComponentChange(ctx context.Context, comp *StatusComponent) {
+func (s *Service) BroadcastComponentChange(ctx context.Context, comp *Component) {
 	effective := s.DeriveComponentStatus(ctx, comp)
-	s.broadcast("status.component_changed", map[string]interface{}{
+	s.broadcast(event.StatusComponentChanged, map[string]interface{}{
 		"component_id": comp.ID,
 		"name":         comp.DisplayName,
 		"status":       effective,
@@ -401,7 +402,7 @@ func (s *Service) BroadcastComponentChange(ctx context.Context, comp *StatusComp
 	})
 
 	globalStatus, globalMsg := s.ComputeGlobalStatus(ctx)
-	s.broadcast("status.global_changed", map[string]interface{}{
+	s.broadcast(event.StatusGlobalChanged, map[string]interface{}{
 		"status":  globalStatus,
 		"message": globalMsg,
 	})

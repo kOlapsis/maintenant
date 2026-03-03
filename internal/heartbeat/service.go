@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // EventCallback is called when a heartbeat event occurs (for SSE broadcasting).
@@ -129,7 +131,7 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 		return nil, err
 	}
 
-	s.emitEvent("heartbeat.created", map[string]interface{}{
+	s.emitEvent(event.HeartbeatCreated, map[string]interface{}{
 		"heartbeat_id": created.ID,
 		"name":         created.Name,
 		"uuid":         created.UUID,
@@ -199,7 +201,7 @@ func (s *Service) DeleteHeartbeat(ctx context.Context, id int64) error {
 		return err
 	}
 
-	s.emitEvent("heartbeat.deleted", map[string]interface{}{
+	s.emitEvent(event.HeartbeatDeleted, map[string]interface{}{
 		"heartbeat_id": id,
 	})
 
@@ -286,14 +288,14 @@ func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMe
 	}
 
 	// Emit events
-	s.emitEvent("heartbeat.ping_received", map[string]interface{}{
+	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
 		"heartbeat_id": h.ID,
 		"ping_type":    string(PingSuccess),
 		"status":       string(newStatus),
 	})
 
 	if newStatus != previousStatus {
-		s.emitEvent("heartbeat.status_changed", map[string]interface{}{
+		s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"old_status":   string(previousStatus),
 			"new_status":   string(newStatus),
@@ -302,7 +304,7 @@ func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMe
 
 	// Recovery alert
 	if wasDown {
-		s.emitEvent("heartbeat.recovery", map[string]interface{}{
+		s.emitEvent(event.HeartbeatRecovery, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
 		})
@@ -376,14 +378,14 @@ func (s *Service) ProcessStartPing(ctx context.Context, uuid string, sourceIP, h
 	}
 
 	// Emit events
-	s.emitEvent("heartbeat.ping_received", map[string]interface{}{
+	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
 		"heartbeat_id": h.ID,
 		"ping_type":    string(PingStart),
 		"status":       string(newStatus),
 	})
 
 	if newStatus != previousStatus {
-		s.emitEvent("heartbeat.status_changed", map[string]interface{}{
+		s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"old_status":   string(previousStatus),
 			"new_status":   string(newStatus),
@@ -491,7 +493,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, uuid string, exitCode
 	}
 
 	// Emit events
-	s.emitEvent("heartbeat.ping_received", map[string]interface{}{
+	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
 		"heartbeat_id": h.ID,
 		"ping_type":    string(PingExitCode),
 		"exit_code":    exitCode,
@@ -499,7 +501,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, uuid string, exitCode
 	})
 
 	if newStatus != previousStatus {
-		s.emitEvent("heartbeat.status_changed", map[string]interface{}{
+		s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"old_status":   string(previousStatus),
 			"new_status":   string(newStatus),
@@ -508,7 +510,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, uuid string, exitCode
 
 	// Alert or recovery
 	if exitCode != 0 {
-		s.emitEvent("heartbeat.alert", map[string]interface{}{
+		s.emitEvent(event.HeartbeatAlert, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
 			"alert_type":   "exit_code_failure",
@@ -522,7 +524,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, uuid string, exitCode
 			})
 		}
 	} else if previousStatus == StatusDown || h.AlertState == AlertAlerting {
-		s.emitEvent("heartbeat.recovery", map[string]interface{}{
+		s.emitEvent(event.HeartbeatRecovery, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
 		})
@@ -598,13 +600,13 @@ func (s *Service) checkDeadlines(ctx context.Context) {
 			}
 		}
 
-		s.emitEvent("heartbeat.status_changed", map[string]interface{}{
+		s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"old_status":   string(previousStatus),
 			"new_status":   string(StatusDown),
 		})
 
-		s.emitEvent("heartbeat.alert", map[string]interface{}{
+		s.emitEvent(event.HeartbeatAlert, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
 			"alert_type":   "deadline_missed",
@@ -646,7 +648,7 @@ func (s *Service) PauseHeartbeat(ctx context.Context, id int64) (*Heartbeat, err
 
 	s.logger.Info("heartbeat: paused", "id", id)
 
-	s.emitEvent("heartbeat.status_changed", map[string]interface{}{
+	s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
 		"heartbeat_id": id,
 		"old_status":   string(h.Status),
 		"new_status":   string(StatusPaused),
@@ -675,7 +677,7 @@ func (s *Service) ResumeHeartbeat(ctx context.Context, id int64) (*Heartbeat, er
 
 	s.logger.Info("heartbeat: resumed", "id", id)
 
-	s.emitEvent("heartbeat.status_changed", map[string]interface{}{
+	s.emitEvent(event.HeartbeatStatusChanged, map[string]interface{}{
 		"heartbeat_id": id,
 		"old_status":   string(StatusPaused),
 		"new_status":   string(StatusUp),

@@ -54,7 +54,7 @@ func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointI
 	windowStart := startOfToday.AddDate(0, 0, -(days - 1))
 
 	// Query: aggregate check_results by UTC day.
-	// success column is 1 for success, 0 for failure.
+	// the success column is 1 for success, 0 for failure.
 	// incident_count = number of transitions from success to failure within the day.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
@@ -75,7 +75,9 @@ func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointI
 	if err != nil {
 		return nil, fmt.Errorf("endpoint daily uptime: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	// Build a map of day -> DailyUptime from query results.
 	dayMap := make(map[string]*DailyUptime)
@@ -92,7 +94,7 @@ func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointI
 		return nil, fmt.Errorf("iterate endpoint daily uptime: %w", err)
 	}
 
-	// Generate full day range, filling gaps with null uptime.
+	// Generate a full day range, filling gaps with null uptime.
 	result := make([]DailyUptime, 0, days)
 	for i := 0; i < days; i++ {
 		day := startOfToday.AddDate(0, 0, -i)
@@ -124,7 +126,7 @@ func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbea
 
 	// For heartbeat pings, success pings are ping_type='success'.
 	// We count total pings and success pings per day.
-	// incident_count = transitions from success to non-success ping type.
+	// incident_count = transitions from success to a non-success ping type.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			date(timestamp, 'unixepoch') AS day,
@@ -147,7 +149,9 @@ func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbea
 	if err != nil {
 		return nil, fmt.Errorf("heartbeat daily uptime: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	dayMap := make(map[string]*DailyUptime)
 	for rows.Next() {

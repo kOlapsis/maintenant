@@ -1,20 +1,10 @@
-// Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See LICENSE-COMMERCIAL.md
-//
-// Source: https://github.com/kolapsis/maintenant
-
 package endpoint
 
 import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -93,7 +83,9 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 		result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
 		return result
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	// Extract TLS peer certificates for certificate auto-detection
 	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {

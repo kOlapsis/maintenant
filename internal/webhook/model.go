@@ -11,28 +11,21 @@
 
 package webhook
 
-import "time"
+import (
+	"time"
 
-// Valid event types for webhook subscriptions.
-const (
-	EventAll                     = "*"
-	EventContainerStateChanged   = "container.state_changed"
-	EventEndpointStatusChanged   = "endpoint.status_changed"
-	EventHeartbeatStatusChanged  = "heartbeat.status_changed"
-	EventCertificateStatusChanged = "certificate.status_changed"
-	EventAlertFired              = "alert.fired"
-	EventAlertResolved           = "alert.resolved"
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
-// ValidEventTypes is the set of all valid event type values.
+// ValidEventTypes is the set of all valid event type values for webhook subscriptions.
 var ValidEventTypes = map[string]bool{
-	EventAll:                       true,
-	EventContainerStateChanged:     true,
-	EventEndpointStatusChanged:     true,
-	EventHeartbeatStatusChanged:    true,
-	EventCertificateStatusChanged:  true,
-	EventAlertFired:                true,
-	EventAlertResolved:             true,
+	"*":                            true,
+	event.ContainerStateChanged:    true,
+	event.EndpointStatusChanged:    true,
+	event.HeartbeatStatusChanged:   true,
+	event.CertificateStatusChanged: true,
+	event.AlertFired:               true,
+	event.AlertResolved:            true,
 }
 
 // MaxConsecutiveFailures is the threshold at which a webhook is auto-disabled.

@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -47,7 +48,9 @@ func (s *StatusComponentStoreImpl) ListGroups(ctx context.Context) ([]status.Com
 	if err != nil {
 		return nil, fmt.Errorf("list groups: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var groups []status.ComponentGroup
 	for rows.Next() {
@@ -70,7 +73,7 @@ func (s *StatusComponentStoreImpl) GetGroup(ctx context.Context, id int64) (*sta
 			(SELECT COUNT(*) FROM status_components WHERE group_id = g.id) AS component_count
 		FROM component_groups g WHERE g.id = ?`, id,
 	).Scan(&g.ID, &g.Name, &g.DisplayOrder, &createdAt, &g.ComponentCount)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -117,7 +120,7 @@ func (s *StatusComponentStoreImpl) DeleteGroup(ctx context.Context, id int64) er
 
 // --- Components ---
 
-func (s *StatusComponentStoreImpl) ListComponents(ctx context.Context) ([]status.StatusComponent, error) {
+func (s *StatusComponentStoreImpl) ListComponents(ctx context.Context) ([]status.Component, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT sc.id, sc.monitor_type, sc.monitor_id, sc.display_name,
 			sc.group_id, g.name, sc.display_order, sc.visible,
@@ -128,11 +131,13 @@ func (s *StatusComponentStoreImpl) ListComponents(ctx context.Context) ([]status
 	if err != nil {
 		return nil, fmt.Errorf("list components: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return scanComponents(rows)
 }
 
-func (s *StatusComponentStoreImpl) ListVisibleComponents(ctx context.Context) ([]status.StatusComponent, error) {
+func (s *StatusComponentStoreImpl) ListVisibleComponents(ctx context.Context) ([]status.Component, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT sc.id, sc.monitor_type, sc.monitor_id, sc.display_name,
 			sc.group_id, g.name, sc.display_order, sc.visible,
@@ -144,11 +149,13 @@ func (s *StatusComponentStoreImpl) ListVisibleComponents(ctx context.Context) ([
 	if err != nil {
 		return nil, fmt.Errorf("list visible components: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return scanComponents(rows)
 }
 
-func (s *StatusComponentStoreImpl) GetComponent(ctx context.Context, id int64) (*status.StatusComponent, error) {
+func (s *StatusComponentStoreImpl) GetComponent(ctx context.Context, id int64) (*status.Component, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT sc.id, sc.monitor_type, sc.monitor_id, sc.display_name,
 			sc.group_id, g.name, sc.display_order, sc.visible,
@@ -159,7 +166,7 @@ func (s *StatusComponentStoreImpl) GetComponent(ctx context.Context, id int64) (
 	return scanComponent(row)
 }
 
-func (s *StatusComponentStoreImpl) GetComponentByMonitor(ctx context.Context, monitorType string, monitorID int64) (*status.StatusComponent, error) {
+func (s *StatusComponentStoreImpl) GetComponentByMonitor(ctx context.Context, monitorType string, monitorID int64) (*status.Component, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT sc.id, sc.monitor_type, sc.monitor_id, sc.display_name,
 			sc.group_id, g.name, sc.display_order, sc.visible,
@@ -168,13 +175,13 @@ func (s *StatusComponentStoreImpl) GetComponentByMonitor(ctx context.Context, mo
 		LEFT JOIN component_groups g ON g.id = sc.group_id
 		WHERE sc.monitor_type = ? AND sc.monitor_id = ?`, monitorType, monitorID)
 	c, err := scanComponent(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return c, err
 }
 
-func (s *StatusComponentStoreImpl) ListGlobalComponents(ctx context.Context, monitorType string) ([]status.StatusComponent, error) {
+func (s *StatusComponentStoreImpl) ListGlobalComponents(ctx context.Context, monitorType string) ([]status.Component, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT sc.id, sc.monitor_type, sc.monitor_id, sc.display_name,
 			sc.group_id, g.name, sc.display_order, sc.visible,
@@ -186,11 +193,13 @@ func (s *StatusComponentStoreImpl) ListGlobalComponents(ctx context.Context, mon
 	if err != nil {
 		return nil, fmt.Errorf("list global components: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return scanComponents(rows)
 }
 
-func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *status.StatusComponent) (int64, error) {
+func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *status.Component) (int64, error) {
 	now := time.Now().Unix()
 	res, err := s.writer.Exec(ctx,
 		`INSERT INTO status_components (monitor_type, monitor_id, display_name, group_id,
@@ -209,7 +218,7 @@ func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *statu
 	return res.LastInsertID, nil
 }
 
-func (s *StatusComponentStoreImpl) UpdateComponent(ctx context.Context, c *status.StatusComponent) error {
+func (s *StatusComponentStoreImpl) UpdateComponent(ctx context.Context, c *status.Component) error {
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`UPDATE status_components SET display_name = ?, group_id = ?, display_order = ?,
@@ -236,10 +245,10 @@ func (s *StatusComponentStoreImpl) DeleteComponent(ctx context.Context, id int64
 
 // --- Scan helpers ---
 
-func scanComponents(rows *sql.Rows) ([]status.StatusComponent, error) {
-	var components []status.StatusComponent
+func scanComponents(rows *sql.Rows) ([]status.Component, error) {
+	var components []status.Component
 	for rows.Next() {
-		var c status.StatusComponent
+		var c status.Component
 		var groupID sql.NullInt64
 		var groupName sql.NullString
 		var override sql.NullString
@@ -272,8 +281,8 @@ func scanComponents(rows *sql.Rows) ([]status.StatusComponent, error) {
 	return components, rows.Err()
 }
 
-func scanComponent(row *sql.Row) (*status.StatusComponent, error) {
-	var c status.StatusComponent
+func scanComponent(row *sql.Row) (*status.Component, error) {
+	var c status.Component
 	var groupID sql.NullInt64
 	var groupName sql.NullString
 	var override sql.NullString

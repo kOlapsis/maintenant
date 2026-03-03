@@ -161,6 +161,18 @@ func (e *ProEnricher) enrichRisk(ctx context.Context, r *UpdateResult, cves []*C
 
 	score := e.risk.CalculateScore(u, cves, riskCtx)
 
+	// The Pro score must never downgrade below the CE baseline (semver-based).
+	// CE users see BaseRiskScore; Pro enrichment can only raise it with CVE/context data.
+	baseScore := BaseRiskScore(u.UpdateType)
+	if score.Score < baseScore {
+		e.logger.Debug("risk score floored to CE baseline",
+			"container", r.ContainerName,
+			"pro_score", score.Score, "base_score", baseScore)
+		score.Score = baseScore
+		score.Level = RiskLevelFromScore(baseScore)
+		score.Factors["baseline"] = RiskFactor{Label: string(u.UpdateType) + "_floor", Score: baseScore}
+	}
+
 	e.logger.Debug("risk score calculated",
 		"container", r.ContainerName, "score", score.Score, "level", score.Level)
 

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/status"
 )
 
@@ -137,7 +138,7 @@ func (h *StatusAdminHandler) HandleListComponents(w http.ResponseWriter, r *http
 }
 
 func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *http.Request) {
-	var c status.StatusComponent
+	var c status.Component
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 		return
@@ -289,7 +290,7 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 	for _, c := range inc.Components {
 		compNames = append(compNames, c.Name)
 	}
-	h.broker.Broadcast(SSEEvent{Type: EventStatusIncidentCreated, Data: map[string]interface{}{
+	h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentCreated, Data: map[string]interface{}{
 		"id":         inc.ID,
 		"title":      inc.Title,
 		"severity":   inc.Severity,
@@ -336,12 +337,12 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 	upd.ID = updateID
 
 	if req.Status == status.IncidentResolved {
-		h.broker.Broadcast(SSEEvent{Type: EventStatusIncidentResolved, Data: map[string]interface{}{
+		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentResolved, Data: map[string]interface{}{
 			"id":    id,
 			"title": inc.Title,
 		}})
 	} else {
-		h.broker.Broadcast(SSEEvent{Type: EventStatusIncidentUpdated, Data: map[string]interface{}{
+		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentUpdated, Data: map[string]interface{}{
 			"id":      id,
 			"status":  req.Status,
 			"message": req.Message,

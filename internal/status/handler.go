@@ -184,7 +184,7 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // --- Subscription endpoints ---
@@ -263,7 +263,7 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "confirmation_sent"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmation_sent"})
 }
 
 // HandleConfirm processes a subscription confirmation.
@@ -312,7 +312,7 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 func writeSimpleHTML(w http.ResponseWriter, statusCode int, title, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(statusCode)
-	w.Write([]byte(`<!DOCTYPE html><html><head><title>` + title + `</title>
+	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>` + title + `</title>
 <style>body{font-family:system-ui,sans-serif;max-width:480px;margin:80px auto;text-align:center;color:#333}h1{font-size:1.5rem}</style>
 </head><body><h1>` + title + `</h1><p>` + message + `</p></body></html>`))
 }

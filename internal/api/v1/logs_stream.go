@@ -55,7 +55,7 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 
 	// Look up the container to get its externalID.
 	var externalID string
-	var containerDBID int64 = id
+	var containerDBID = id
 	if h.service != nil {
 		c, err := h.service.GetContainer(r.Context(), id)
 		if err != nil {

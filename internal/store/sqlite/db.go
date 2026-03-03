@@ -36,7 +36,7 @@ func Open(dbPath string, logger *slog.Logger) (*DB, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Set connection pool to 1 for writes (serialized via Writer),
+	// Set a connection pool to 1 for writes (serialized via Writer),
 	// but allow multiple read connections.
 	db.SetMaxOpenConns(4)
 
@@ -47,7 +47,7 @@ func Open(dbPath string, logger *slog.Logger) (*DB, error) {
 	}
 	for _, p := range pragmas {
 		if _, err := db.Exec(p); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("exec pragma %q: %w", p, err)
 		}
 	}
@@ -66,7 +66,7 @@ func (d *DB) StartWriter(ctx context.Context) {
 	d.writer.Start(ctx)
 }
 
-// Writer returns the serialized write channel.
+// Writer returns the serialized to write channel.
 func (d *DB) Writer() *Writer {
 	return d.writer
 }

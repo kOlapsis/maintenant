@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -109,7 +110,9 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 	if err != nil {
 		return nil, fmt.Errorf("list cert monitors: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var monitors []*certificate.CertMonitor
 	for rows.Next() {
@@ -235,7 +238,9 @@ func (s *CertificateStore) ListCheckResults(ctx context.Context, monitorID int64
 	if err != nil {
 		return nil, 0, fmt.Errorf("list cert check results: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var results []*certificate.CertCheckResult
 	for rows.Next() {
@@ -273,7 +278,9 @@ func (s *CertificateStore) GetChainEntries(ctx context.Context, checkResultID in
 	if err != nil {
 		return nil, fmt.Errorf("get chain entries: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var entries []*certificate.CertChainEntry
 	for rows.Next() {
@@ -300,7 +307,9 @@ func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now tim
 	if err != nil {
 		return nil, fmt.Errorf("list due scheduled monitors: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var monitors []*certificate.CertMonitor
 	for rows.Next() {
@@ -322,7 +331,9 @@ func (s *CertificateStore) ListMonitorsByExternalID(ctx context.Context, externa
 	if err != nil {
 		return nil, fmt.Errorf("list monitors by external_id: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var monitors []*certificate.CertMonitor
 	for rows.Next() {
@@ -349,7 +360,7 @@ func (s *CertificateStore) DeactivateMonitor(ctx context.Context, id int64) erro
 func (s *CertificateStore) DeleteCheckResultsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
 	var totalDeleted int64
 	for {
-		// First delete chain entries for the check results we're about to delete
+		// First, delete chain entries for the check results we're about to delete
 		_, err := s.writer.Exec(ctx,
 			`DELETE FROM cert_chain_entries WHERE check_result_id IN (
 				SELECT id FROM cert_check_results WHERE checked_at<? LIMIT ?
@@ -390,7 +401,7 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 		&m.ExternalID,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan cert monitor: %w", err)
@@ -448,7 +459,7 @@ func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertChe
 		&chainValid, &chainError, &hostnameMatch, &errorMessage, &checkedAt,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan cert check result: %w", err)
@@ -466,7 +477,7 @@ func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertChe
 		r.IssuerOrg = issuerOrg.String
 	}
 	if sansJSON.Valid && sansJSON.String != "" {
-		json.Unmarshal([]byte(sansJSON.String), &r.SANs)
+		_ = json.Unmarshal([]byte(sansJSON.String), &r.SANs)
 	}
 	if serialNumber.Valid {
 		r.SerialNumber = serialNumber.String

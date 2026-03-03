@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/event"
 )
 
 // UpdateEnricher enriches raw scan results with additional data.
@@ -233,7 +235,7 @@ func (s *Service) runScan(ctx context.Context) {
 	scanRecord.ID = scanID
 
 	// Broadcast scan started
-	s.emitEvent("update.scan_started", map[string]interface{}{
+	s.emitEvent(event.UpdateScanStarted, map[string]interface{}{
 		"scan_id":    scanID,
 		"started_at": scanRecord.StartedAt,
 	})
@@ -268,7 +270,7 @@ func (s *Service) runScan(ctx context.Context) {
 			LatestDigest:  r.LatestDigest,
 			UpdateType:    r.UpdateType,
 			RiskScore:     BaseRiskScore(r.UpdateType),
-			Status:        UpdateStatusAvailable,
+			Status:        StatusAvailable,
 			DetectedAt:    time.Now(),
 		}
 
@@ -278,7 +280,7 @@ func (s *Service) runScan(ctx context.Context) {
 		}
 
 		updatesFound++
-		s.emitEvent("update.detected", map[string]interface{}{
+		s.emitEvent(event.UpdateDetected, map[string]interface{}{
 			"container_id":   r.ContainerID,
 			"container_name": r.ContainerName,
 			"image":          r.Image,
@@ -312,7 +314,7 @@ func (s *Service) completeScan(ctx context.Context, record *ScanRecord, status S
 		s.logger.Error("update scan: update record", "error", err)
 	}
 
-	s.emitEvent("update.scan_completed", map[string]interface{}{
+	s.emitEvent(event.UpdateScanCompleted, map[string]interface{}{
 		"scan_id":       record.ID,
 		"updates_found": found,
 		"errors":        errors,

@@ -22,14 +22,6 @@ const (
 	StatusUnderMaint    = "under_maintenance"
 )
 
-// Monitor types.
-const (
-	MonitorContainer   = "container"
-	MonitorEndpoint    = "endpoint"
-	MonitorHeartbeat   = "heartbeat"
-	MonitorCertificate = "certificate"
-)
-
 // Incident severity levels.
 const (
 	SeverityMinor    = "minor"
@@ -40,8 +32,6 @@ const (
 // Incident status values.
 const (
 	IncidentInvestigating = "investigating"
-	IncidentIdentified    = "identified"
-	IncidentMonitoring    = "monitoring"
 	IncidentResolved      = "resolved"
 )
 
@@ -56,9 +46,8 @@ const (
 
 // TLS policy values for SMTP.
 const (
-	TLSOpportunistic = "opportunistic"
-	TLSMandatory     = "mandatory"
-	TLSNone          = "none"
+	TLSMandatory = "mandatory"
+	TLSNone      = "none"
 )
 
 // ComponentGroup groups status components into named categories.
@@ -71,19 +60,19 @@ type ComponentGroup struct {
 }
 
 // StatusComponent is a public-facing representation of a monitored service.
-type StatusComponent struct {
-	ID              int64   `json:"id"`
-	MonitorType     string  `json:"monitor_type"`
-	MonitorID       int64   `json:"monitor_id"`
-	MonitorName     string  `json:"monitor_name,omitempty"`
-	DisplayName     string  `json:"display_name"`
-	GroupID         *int64  `json:"group_id"`
-	GroupName       string  `json:"group_name,omitempty"`
-	DisplayOrder    int     `json:"display_order"`
-	Visible         bool    `json:"visible"`
-	DerivedStatus   string  `json:"derived_status,omitempty"`
-	StatusOverride  *string `json:"status_override"`
-	EffectiveStatus string  `json:"effective_status,omitempty"`
+type Component struct {
+	ID              int64     `json:"id"`
+	MonitorType     string    `json:"monitor_type"`
+	MonitorID       int64     `json:"monitor_id"`
+	MonitorName     string    `json:"monitor_name,omitempty"`
+	DisplayName     string    `json:"display_name"`
+	GroupID         *int64    `json:"group_id"`
+	GroupName       string    `json:"group_name,omitempty"`
+	DisplayOrder    int       `json:"display_order"`
+	Visible         bool      `json:"visible"`
+	DerivedStatus   string    `json:"derived_status,omitempty"`
+	StatusOverride  *string   `json:"status_override"`
+	EffectiveStatus string    `json:"effective_status,omitempty"`
 	AutoIncident    bool      `json:"auto_incident"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`

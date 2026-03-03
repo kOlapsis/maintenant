@@ -30,7 +30,7 @@ func setupTestDB(t *testing.T) *DB {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	rawDB, err := sql.Open("sqlite3", ":memory:")
 	require.NoError(t, err)
-	t.Cleanup(func() { rawDB.Close() })
+	t.Cleanup(func() { _ = rawDB.Close() })
 
 	// Create required tables.
 	_, err = rawDB.Exec(`
@@ -125,13 +125,13 @@ func TestEndpointDailyUptime(t *testing.T) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name           string
-		endpointID     int64
-		days           int
-		setup          func(t *testing.T, db *sql.DB)
-		wantLen        int
-		checkFirstDay  func(t *testing.T, du DailyUptime)
-		checkNullDays  bool // expect null uptime for days with no data
+		name          string
+		endpointID    int64
+		days          int
+		setup         func(t *testing.T, db *sql.DB)
+		wantLen       int
+		checkFirstDay func(t *testing.T, du DailyUptime)
+		checkNullDays bool // expect null uptime for days with no data
 	}{
 		{
 			name:       "no checks returns all null days",
@@ -252,7 +252,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 				}
 			}
 
-			// Verify ordering: most recent first.
+			// Verify ordering: the most recent first.
 			if len(result) > 1 {
 				assert.GreaterOrEqual(t, result[0].Date, result[1].Date, "days should be ordered most recent first")
 			}
@@ -306,7 +306,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 			heartbeatID: 2,
 			days:        1,
 			setup: func(t *testing.T, db *sql.DB) {
-				// 3 success + 1 exit_code (not success) = 75%
+				// 3 successes + 1 exit_code (not success) = 75%
 				insertHeartbeatPing(t, db, 2, "success", today.Add(1*time.Hour))
 				insertHeartbeatPing(t, db, 2, "success", today.Add(2*time.Hour))
 				insertHeartbeatPing(t, db, 2, "success", today.Add(3*time.Hour))

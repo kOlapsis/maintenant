@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -90,7 +91,9 @@ func (s *HeartbeatStore) ListHeartbeats(ctx context.Context, opts heartbeat.List
 	if err != nil {
 		return nil, fmt.Errorf("list heartbeats: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var results []*heartbeat.Heartbeat
 	for rows.Next() {
@@ -208,7 +211,9 @@ func (s *HeartbeatStore) ListOverdueHeartbeats(ctx context.Context, now time.Tim
 	if err != nil {
 		return nil, fmt.Errorf("list overdue heartbeats: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var results []*heartbeat.Heartbeat
 	for rows.Next() {
@@ -272,7 +277,9 @@ func (s *HeartbeatStore) ListPings(ctx context.Context, heartbeatID int64, opts 
 	if err != nil {
 		return nil, 0, fmt.Errorf("list pings: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var results []*heartbeat.HeartbeatPing
 	for rows.Next() {
@@ -357,7 +364,9 @@ func (s *HeartbeatStore) ListExecutions(ctx context.Context, heartbeatID int64, 
 	if err != nil {
 		return nil, 0, fmt.Errorf("list executions: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var results []*heartbeat.HeartbeatExecution
 	for rows.Next() {
@@ -425,7 +434,7 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 		&active, &createdAt, &updatedAt,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan heartbeat: %w", err)
@@ -535,7 +544,7 @@ func scanExecutionSingle(row *sql.Row) (*heartbeat.HeartbeatExecution, error) {
 		&durationMs, &exitCode, &e.Outcome, &payload,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan execution: %w", err)

@@ -14,6 +14,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -64,7 +65,9 @@ func (s *ResourceStore) ListSnapshots(ctx context.Context, containerID int64, fr
 	if err != nil {
 		return nil, fmt.Errorf("list snapshots: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return collectSnapshots(rows)
 }
 
@@ -88,7 +91,9 @@ func (s *ResourceStore) ListSnapshotsAggregated(ctx context.Context, containerID
 	if err != nil {
 		return nil, fmt.Errorf("list snapshots aggregated: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 	return collectSnapshots(rows)
 }
 
@@ -148,7 +153,7 @@ func scanSnapshot(row resourceRowScanner) (*resource.ResourceSnapshot, error) {
 	var ts int64
 	err := row.Scan(&s.ID, &s.ContainerID, &s.CPUPercent, &s.MemUsed, &s.MemLimit,
 		&s.NetRxBytes, &s.NetTxBytes, &s.BlockReadBytes, &s.BlockWriteBytes, &ts)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -179,7 +184,7 @@ func scanAlertConfig(row resourceRowScanner) (*resource.ResourceAlertConfig, err
 	err := row.Scan(&cfg.ID, &cfg.ContainerID, &cfg.CPUThreshold, &cfg.MemThreshold,
 		&enabled, &alertState, &cfg.CPUConsecutiveBreaches, &cfg.MemConsecutiveBreaches,
 		&lastAlerted, &createdAt, &updatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -282,7 +287,9 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 	if err != nil {
 		return nil, fmt.Errorf("get top consumers by period: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	var result []resource.TopConsumerRow
 	for rows.Next() {

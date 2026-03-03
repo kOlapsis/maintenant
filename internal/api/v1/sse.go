@@ -20,88 +20,6 @@ import (
 	"sync"
 )
 
-// SSE event type constants for endpoint monitoring.
-const (
-	EventEndpointDiscovered    = "endpoint.discovered"
-	EventEndpointStatusChanged = "endpoint.status_changed"
-	EventEndpointRemoved       = "endpoint.removed"
-	EventEndpointAlert         = "endpoint.alert"
-	EventEndpointRecovery      = "endpoint.recovery"
-	EventEndpointConfigError   = "endpoint.config_error"
-)
-
-// SSE event type constants for heartbeat monitoring.
-const (
-	EventHeartbeatCreated       = "heartbeat.created"
-	EventHeartbeatPingReceived  = "heartbeat.ping_received"
-	EventHeartbeatStatusChanged = "heartbeat.status_changed"
-	EventHeartbeatAlert         = "heartbeat.alert"
-	EventHeartbeatRecovery      = "heartbeat.recovery"
-	EventHeartbeatDeleted       = "heartbeat.deleted"
-)
-
-// SSE event type constants for certificate monitoring.
-const (
-	EventCertificateCreated        = "certificate.created"
-	EventCertificateCheckCompleted = "certificate.check_completed"
-	EventCertificateStatusChanged  = "certificate.status_changed"
-	EventCertificateAlert          = "certificate.alert"
-	EventCertificateRecovery       = "certificate.recovery"
-	EventCertificateDeleted        = "certificate.deleted"
-)
-
-// SSE event type constants for resource monitoring.
-const (
-	EventResourceSnapshot = "resource.snapshot"
-	EventResourceAlert    = "resource.alert"
-	EventResourceRecovery = "resource.recovery"
-)
-
-// SSE event type constants for alert engine.
-const (
-	EventAlertFired    = "alert.fired"
-	EventAlertResolved = "alert.resolved"
-	EventAlertSilenced = "alert.silenced"
-)
-
-// SSE event type constants for channel management.
-const (
-	EventChannelCreated = "channel.created"
-	EventChannelUpdated = "channel.updated"
-	EventChannelDeleted = "channel.deleted"
-)
-
-// SSE event type constants for silence rule management.
-const (
-	EventSilenceCreated   = "silence.created"
-	EventSilenceCancelled = "silence.cancelled"
-)
-
-// SSE event type constants for runtime status.
-const (
-	EventRuntimeStatus = "runtime.status"
-)
-
-// SSE event type constants for update intelligence.
-const (
-	EventUpdateScanStarted   = "update.scan_started"
-	EventUpdateScanCompleted = "update.scan_completed"
-	EventUpdateDetected      = "update.detected"
-	EventUpdatePinned        = "update.pinned"
-	EventUpdateUnpinned      = "update.unpinned"
-)
-
-// SSE event type constants for public status page.
-const (
-	EventStatusComponentChanged = "status.component_changed"
-	EventStatusIncidentCreated  = "status.incident_created"
-	EventStatusIncidentUpdated  = "status.incident_updated"
-	EventStatusIncidentResolved = "status.incident_resolved"
-	EventStatusMaintenanceStart = "status.maintenance_started"
-	EventStatusMaintenanceEnd   = "status.maintenance_ended"
-	EventStatusGlobalChanged    = "status.global_changed"
-)
-
 // SSEBroker manages Server-Sent Event connections and broadcasts events.
 type SSEBroker struct {
 	clients   map[chan SSEEvent]struct{}
@@ -198,7 +116,7 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			eventType := strings.NewReplacer("\n", "", "\r", "").Replace(event.Type)
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, data)
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, data)
 			flusher.Flush()
 		}
 	}

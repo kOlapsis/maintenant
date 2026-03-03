@@ -1,14 +1,3 @@
-// Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See LICENSE-COMMERCIAL.md
-//
-// Source: https://github.com/kolapsis/maintenant
-
 package kubernetes
 
 import (
@@ -43,7 +32,7 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 	}
 
 	// Pod events — primary source for start/stop/die/health.
-	podInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+	_, _ = podInformer.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			pod, ok := obj.(*corev1.Pod)
 			return ok && r.nsFilter.IsAllowed(pod.Namespace)
@@ -84,7 +73,7 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 	})
 
 	// Deployment events — for controller-level rollout tracking.
-	depInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+	_, _ = depInformer.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			dep, ok := obj.(*appsv1.Deployment)
 			return ok && r.nsFilter.IsAllowed(dep.Namespace)
@@ -114,7 +103,7 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 	})
 
 	// StatefulSet events.
-	ssInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+	_, _ = ssInformer.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			ss, ok := obj.(*appsv1.StatefulSet)
 			return ok && r.nsFilter.IsAllowed(ss.Namespace)
@@ -144,7 +133,7 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 	})
 
 	// DaemonSet events.
-	dsInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+	_, _ = dsInformer.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
 			ds, ok := obj.(*appsv1.DaemonSet)
 			return ok && r.nsFilter.IsAllowed(ds.Namespace)
