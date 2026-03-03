@@ -813,6 +813,17 @@ func main() {
 	updateScanner := update.NewScanner(registryClient, updateStore, logger)
 	containerAdapter := update.NewContainerServiceAdapter(svc)
 	updateSvc := update.NewService(updateStore, updateScanner, containerAdapter, logger)
+
+	// Enrichment pipeline: CVE scanning, changelog resolution, risk scoring (Pro only)
+	if extension.CurrentEdition() == extension.Enterprise {
+		cveClient := update.NewCVEClient(updateStore, logger.With("component", "cve"))
+		changelogResolver := update.NewChangelogResolver(registryClient, logger.With("component", "changelog"))
+		riskEngine := update.NewRiskEngine()
+		enricher := update.NewProEnricher(updateStore, cveClient, changelogResolver, riskEngine, logger.With("component", "enricher"))
+		updateSvc.SetEnricher(enricher)
+		logger.Info("update enrichment pipeline enabled (Pro)")
+	}
+
 	router.RegisterUpdateRoutes(updateSvc, updateStore)
 	go updateSvc.Start(ctx)
 
@@ -906,7 +917,7 @@ func main() {
 
 	// --- Start HTTP server ---
 	go func() {
-		logger.Info("starting maintenant HTTP server", "addr", addr)
+		logger.Info("starting HTTP server", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTP server error", "error", err)
 			os.Exit(1)

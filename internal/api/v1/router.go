@@ -174,6 +174,7 @@ func NewRouter(broker *SSEBroker, rt pbruntime.Runtime, svc *container.Service, 
 	// Container REST endpoints
 	r.mux.HandleFunc("GET /api/v1/containers", ch.HandleList)
 	r.mux.HandleFunc("GET /api/v1/containers/{id}", ch.HandleGet)
+	r.mux.HandleFunc("DELETE /api/v1/containers/{id}", ch.HandleDelete)
 	r.mux.HandleFunc("GET /api/v1/containers/{id}/transitions", ch.HandleTransitions)
 	r.mux.HandleFunc("GET /api/v1/containers/{id}/logs", ch.HandleLogs)
 
@@ -213,7 +214,7 @@ func NewRouter(broker *SSEBroker, rt pbruntime.Runtime, svc *container.Service, 
 	if resSvc != nil {
 		rh := NewResourceHandler(resSvc)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/current", rh.HandleGetCurrent)
-		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", rh.HandleGetHistory)
+		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", requireEnterprise(rh.HandleGetHistory))
 		r.mux.HandleFunc("GET /api/v1/resources/summary", rh.HandleGetSummary)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/alerts", rh.HandleGetAlertConfig)
 		r.mux.HandleFunc("PUT /api/v1/containers/{id}/resources/alerts", rh.HandleUpsertAlertConfig)
@@ -285,10 +286,10 @@ func NewRouter(broker *SSEBroker, rt pbruntime.Runtime, svc *container.Service, 
 		if so.Subscribers != nil {
 			r.mux.HandleFunc("GET /api/v1/status/subscribers", sh.HandleListSubscribers)
 		}
-		// SMTP config
-		r.mux.HandleFunc("GET /api/v1/status/smtp", sh.HandleGetSmtpConfig)
-		r.mux.HandleFunc("PUT /api/v1/status/smtp", sh.HandleUpdateSmtpConfig)
-		r.mux.HandleFunc("POST /api/v1/status/smtp/test", sh.HandleTestSmtp)
+		// SMTP config (Pro only)
+		r.mux.HandleFunc("GET /api/v1/status/smtp", requireEnterprise(sh.HandleGetSmtpConfig))
+		r.mux.HandleFunc("PUT /api/v1/status/smtp", requireEnterprise(sh.HandleUpdateSmtpConfig))
+		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requireEnterprise(sh.HandleTestSmtp))
 	}
 
 	// Runtime status endpoint
@@ -403,11 +404,11 @@ func (r *Router) RegisterUpdateRoutes(updateSvc *update.Service, updateStore upd
 	r.mux.HandleFunc("GET /api/v1/cve", ch.HandleListCVEs)
 	r.mux.HandleFunc("GET /api/v1/cve/{container_id}", ch.HandleGetContainerCVEs)
 
-	// Risk scoring routes
+	// Risk scoring routes (Pro only)
 	rh := NewRiskHandler(updateStore)
-	r.mux.HandleFunc("GET /api/v1/risk", rh.HandleListRiskScores)
-	r.mux.HandleFunc("GET /api/v1/risk/{container_id}", rh.HandleGetContainerRisk)
-	r.mux.HandleFunc("GET /api/v1/risk/{container_id}/history", rh.HandleGetRiskHistory)
+	r.mux.HandleFunc("GET /api/v1/risk", requireEnterprise(rh.HandleListRiskScores))
+	r.mux.HandleFunc("GET /api/v1/risk/{container_id}", requireEnterprise(rh.HandleGetContainerRisk))
+	r.mux.HandleFunc("GET /api/v1/risk/{container_id}/history", requireEnterprise(rh.HandleGetRiskHistory))
 
 	// Wire SSE broadcasting
 	updateSvc.SetEventCallback(func(eventType string, data interface{}) {
@@ -477,6 +478,17 @@ func bodySizeLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// requireEnterprise wraps a handler to reject requests in Community edition.
+func requireEnterprise(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if extension.CurrentEdition() != extension.Enterprise {
+			WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+			return
+		}
+		next(w, r)
+	}
+}
+
 // handleGetEdition returns a handler for the current edition and feature flags.
 func handleGetEdition(smtpConfigured bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
@@ -485,16 +497,16 @@ func handleGetEdition(smtpConfigured bool) http.HandlerFunc {
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": organisationName,
 			"features": map[string]bool{
-				"cve_enrichment":      true,
-				"risk_scoring":        true,
-				"changelog":           true,
-				"incidents":           true,
-				"maintenance_windows": true,
-				"subscribers":         true,
-				"smtp":                smtpConfigured,
+				"cve_enrichment":      isEnterprise,
+				"risk_scoring":        isEnterprise,
+				"changelog":           isEnterprise,
+				"incidents":           isEnterprise,
+				"maintenance_windows": isEnterprise,
+				"subscribers":         isEnterprise,
+				"smtp":                smtpConfigured && isEnterprise,
 				"slack":               isEnterprise,
 				"teams":               isEnterprise,
-				"resource_history":    true,
+				"resource_history":    isEnterprise,
 				"alert_escalation":    isEnterprise,
 				"alert_routing":       isEnterprise,
 				"alert_templates":     isEnterprise,

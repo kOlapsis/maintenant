@@ -61,6 +61,8 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 		sc.logger.Error("scanner: load exclusions", "error", err)
 	}
 
+	sc.logger.Info("scanner: starting", "containers", len(containers))
+
 	for i, c := range containers {
 		if ctx.Err() != nil {
 			break
@@ -75,6 +77,10 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 			}
 		}
 
+		sc.logger.Debug("scanner: checking container",
+			"container", c.Name, "image", c.Image,
+			"index", fmt.Sprintf("%d/%d", i+1, len(containers)))
+
 		result, err := sc.scanContainer(ctx, c, exclusions)
 		if err != nil {
 			scanErrors = append(scanErrors, ScanError{
@@ -88,9 +94,18 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 			continue
 		}
 		if result != nil {
+			sc.logger.Info("scanner: update available",
+				"container", c.Name,
+				"current", result.CurrentTag, "latest", result.LatestTag,
+				"type", result.UpdateType)
 			results = append(results, *result)
+		} else {
+			sc.logger.Debug("scanner: up to date", "container", c.Name)
 		}
 	}
+
+	sc.logger.Info("scanner: finished",
+		"scanned", len(containers), "updates", len(results), "errors", len(scanErrors))
 
 	return results, scanErrors
 }
@@ -112,22 +127,26 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	// Parse labels
 	cfg := ParseUpdateLabels(c.Labels, sc.logger)
 	if !cfg.Enabled {
+		sc.logger.Debug("scanner: update tracking disabled", "container", c.Name)
 		return nil, nil
 	}
 
 	// Check if pinned via label
 	if cfg.Pin != "" {
+		sc.logger.Debug("scanner: pinned via label", "container", c.Name, "pin", cfg.Pin)
 		return nil, nil
 	}
 
 	// Check version pins in store
 	pin, _ := sc.store.GetVersionPin(ctx, c.ExternalID)
 	if pin != nil {
+		sc.logger.Debug("scanner: pinned via store", "container", c.Name, "pin", pin.PinnedTag)
 		return nil, nil
 	}
 
 	// Check exclusions
 	if sc.isExcluded(c.Image, currentTag, exclusions) {
+		sc.logger.Debug("scanner: excluded by rule", "container", c.Name, "image", c.Image)
 		return nil, nil
 	}
 
@@ -212,6 +231,11 @@ func (sc *Scanner) isExcluded(image, tag string, exclusions []*UpdateExclusion) 
 //   - "ghcr.io/org/repo:v1.0" -> ("ghcr.io/org/repo", "v1.0", "ghcr.io")
 //   - "myapp:latest" -> ("myapp", "latest", "registry-1.docker.io")
 func parseImageRef(image string) (repo, tag, registry string) {
+	// Strip digest (@sha256:...) — we only need the repository and tag
+	if idx := strings.Index(image, "@sha256:"); idx > 0 {
+		image = image[:idx]
+	}
+
 	// Strip "docker.io/" prefix
 	image = strings.TrimPrefix(image, "docker.io/")
 

@@ -289,8 +289,12 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	// Enrichment pipeline (no-op in CE, runs CVE/changelog/risk in Pro)
-	if err := s.enricher.Enrich(ctx, results); err != nil {
-		s.logger.Warn("update enrichment failed", "error", err)
+	if updatesFound > 0 {
+		s.logger.Info("starting enrichment pipeline", "updates", updatesFound)
+		if err := s.enricher.Enrich(ctx, results); err != nil {
+			s.logger.Warn("update enrichment failed", "error", err)
+		}
+		s.logger.Info("enrichment pipeline completed")
 	}
 
 	s.completeScan(ctx, scanRecord, ScanStatusCompleted, len(containers), updatesFound, len(scanErrors))
