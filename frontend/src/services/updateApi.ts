@@ -29,6 +29,7 @@ export interface ImageUpdate {
   risk_score: number
   status: string
   detected_at: string
+  pin_reason?: string
 }
 
 export interface UpdateSummary {
@@ -64,6 +65,7 @@ export interface ContainerUpdateDetail {
   risk_score: number
   active_cves: CVEInfo[]
   pinned: boolean
+  pin_reason?: string
   source_url: string
   previous_digest: string
   update_command: string

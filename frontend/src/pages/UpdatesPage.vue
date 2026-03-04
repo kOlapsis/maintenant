@@ -68,6 +68,11 @@ function updateTypeColor(type_: string): string {
   }
 }
 
+function shortTag(tag: string): string {
+  if (/^(sha-|sha256:)?[0-9a-f]{12,}$/i.test(tag)) return tag.slice(0, 12)
+  return tag
+}
+
 const formatTime = timeAgo
 
 onMounted(() => {
@@ -187,11 +192,12 @@ onUnmounted(() => {
                   </p>
                   <UpdateBadge :update="u" />
                 </div>
-                <p class="text-[10px] text-slate-600 mt-0.5 truncate">{{ u.image }}</p>
+                <p class="text-[10px] text-slate-600 mt-0.5 truncate">{{ u.image.split('@')[0] }}</p>
+                <p v-if="u.status === 'pinned' && u.pin_reason" class="text-[10px] text-slate-500 mt-0.5 truncate italic">{{ u.pin_reason }}</p>
               </div>
               <div class="text-right shrink-0">
                 <p :class="['text-xs font-bold', updateTypeColor(u.update_type)]">
-                  {{ u.current_tag }} → {{ u.latest_tag }}
+                  {{ shortTag(u.current_tag) }} → {{ shortTag(u.latest_tag) }}
                 </p>
                 <p class="text-[10px] text-slate-600 mt-0.5">{{ formatTime(u.detected_at) }}</p>
               </div>

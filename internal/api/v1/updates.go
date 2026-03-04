@@ -47,7 +47,13 @@ func (h *UpdateHandler) HandleListUpdates(w http.ResponseWriter, r *http.Request
 
 	updateMaps := make([]map[string]interface{}, 0, len(updates))
 	for _, u := range updates {
-		updateMaps = append(updateMaps, imageUpdateToMap(u))
+		m := imageUpdateToMap(u)
+		if u.Status == update.StatusPinned {
+			if pin, _ := h.store.GetVersionPin(r.Context(), u.ContainerID); pin != nil {
+				m["pin_reason"] = pin.Reason
+			}
+		}
+		updateMaps = append(updateMaps, m)
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -116,6 +122,9 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 
 	resp := imageUpdateToMap(u)
 	resp["pinned"] = pin != nil
+	if pin != nil {
+		resp["pin_reason"] = pin.Reason
+	}
 
 	if extension.CurrentEdition() == extension.Enterprise {
 		if cves, err := h.store.ListContainerCVEs(r.Context(), containerID); err == nil {

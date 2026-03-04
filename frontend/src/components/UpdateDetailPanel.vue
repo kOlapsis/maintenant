@@ -121,6 +121,9 @@ onMounted(loadDetail)
           <Pin :size="8" class="inline mr-0.5" /> Pinned
         </span>
       </div>
+      <p v-if="detail.pinned && detail.pin_reason" class="mt-2 text-xs text-slate-400 italic">
+        {{ detail.pin_reason }}
+      </p>
     </div>
 
     <!-- Risk Score (Pro) -->
@@ -191,11 +194,11 @@ onMounted(loadDetail)
           {{ detail.pinned ? 'Unpin this version' : 'Pin this version' }}
         </button>
         <div v-if="showPinInput && !detail.pinned" class="mt-2">
-          <input
+          <textarea
             v-model="pinReason"
-            type="text"
+            rows="2"
             placeholder="Reason (optional)"
-            class="w-full px-3 py-2 bg-[#0B0E13] border border-slate-700 rounded-lg text-xs text-slate-300 placeholder-slate-600 focus:border-pb-green-500 focus:outline-none"
+            class="w-full px-3 py-2 bg-[#0B0E13] border border-slate-700 rounded-lg text-xs text-slate-300 placeholder-slate-600 focus:border-pb-green-500 focus:outline-none resize-none"
           />
           <button
             @click="handlePin"
