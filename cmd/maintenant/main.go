@@ -36,6 +36,7 @@ import (
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/license"
 	pbmcp "github.com/kolapsis/maintenant/internal/mcp"
+	mcpoauth "github.com/kolapsis/maintenant/internal/mcp/oauth"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/resource"
 	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
@@ -43,7 +44,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
+	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/oauthex"
 )
 
 var (
@@ -708,12 +711,44 @@ func main() {
 			return mcpServer
 		}, nil)
 		var mcpHandler http.Handler = mcpHTTPHandler
-		if allowedEmail := os.Getenv("maintenant_MCP_ALLOWED_EMAIL"); allowedEmail != "" {
-			mcpHandler = pbmcp.AuthMiddleware(allowedEmail, mcpHandler)
-			topMux.Handle("/.well-known/oauth-protected-resource", pbmcp.ProtectedResourceMetadataHandler(
-				fmt.Sprintf("http://%s/mcp", addr),
-			))
-			logger.Info("MCP server enabled with auth", "allowed_email", allowedEmail)
+
+		mcpClientID := os.Getenv("MAINTENANT_MCP_CLIENT_ID")
+		mcpClientSecret := os.Getenv("MAINTENANT_MCP_CLIENT_SECRET")
+		if mcpClientID != "" && mcpClientSecret != "" {
+			// OAuth2 server for MCP authentication
+			mcpOAuthStore := sqlite.NewMCPOAuthStore(db)
+			oauthSrv := mcpoauth.NewOAuthServer(mcpoauth.Config{
+				ClientID:     mcpClientID,
+				ClientSecret: mcpClientSecret,
+				IssuerURL:    baseURL,
+			}, mcpOAuthStore, logger.With("component", "mcp-oauth"))
+
+			// Register OAuth routes
+			topMux.HandleFunc("/.well-known/oauth-authorization-server", oauthSrv.HandleAuthServerMetadata)
+			topMux.HandleFunc("/oauth/authorize", oauthSrv.HandleAuthorize)
+			topMux.HandleFunc("/oauth/token", oauthSrv.HandleToken)
+
+			// Protected resource metadata via SDK handler
+			topMux.Handle("/.well-known/oauth-protected-resource",
+				mcpauth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
+					Resource:               baseURL + "/mcp",
+					AuthorizationServers:   []string{baseURL},
+					BearerMethodsSupported: []string{"header"},
+					ResourceName:           "maintenant MCP",
+				}))
+
+			// SDK bearer token middleware with SQLite token verification
+			resourceMetadataURL := baseURL + "/.well-known/oauth-protected-resource"
+			tokenVerifier := mcpoauth.NewTokenVerifier(mcpOAuthStore)
+			authMiddleware := mcpauth.RequireBearerToken(tokenVerifier, &mcpauth.RequireBearerTokenOptions{
+				ResourceMetadataURL: resourceMetadataURL,
+			})
+			mcpHandler = authMiddleware(mcpHTTPHandler)
+
+			// Start token cleanup goroutine
+			go mcpoauth.StartCleanup(ctx, mcpOAuthStore, logger.With("component", "mcp-oauth-cleanup"))
+
+			logger.Info("MCP server enabled with OAuth2 auth", "client_id", mcpClientID)
 		} else {
 			logger.Info("MCP server enabled without auth")
 		}
