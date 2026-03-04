@@ -41,7 +41,7 @@ Subject to the terms of this Agreement, the Licensor grants the Licensee a
 | Pro Monthly   | 9 EUR / month |
 | Pro Annual    | 90 EUR / year |
 
-Subscriptions are managed at [maintenant.dev](https://maintenant.dev).
+Subscriptions are managed directly inside the app or at [maintenant.dev](https://maintenant.dev).
 
 ## 5. Term & Termination
 

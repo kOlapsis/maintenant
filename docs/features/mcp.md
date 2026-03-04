@@ -13,7 +13,7 @@ maintenant embeds an MCP server that provides 18 tools covering every monitoring
 | Transport | Use case | Auth |
 |-----------|----------|------|
 | **Stdio** (`--mcp-stdio`) | Local development, Claude Code | None (trusted local) |
-| **Streamable HTTP** (`/mcp`) | Remote access, Claude Desktop, web clients | Optional JWT |
+| **Streamable HTTP** (`/mcp`) | Remote access, Claude web/mobile, Claude Desktop | OAuth2 (client_id + secret) |
 
 ---
 
@@ -37,21 +37,87 @@ Add to your Claude Code MCP settings:
 }
 ```
 
-### Claude Desktop / Cursor (Streamable HTTP)
+### Claude web / Claude Desktop / Cursor (Streamable HTTP)
 
-1. Enable the MCP server:
+1. Enable the MCP server and configure OAuth2 credentials:
 
 ```bash
 MAINTENANT_MCP=true
+MAINTENANT_MCP_CLIENT_ID=my-mcp-client
+MAINTENANT_MCP_CLIENT_SECRET=a-strong-random-secret
+MAINTENANT_BASE_URL=https://now.example.com
 ```
 
-2. (Optional) Restrict access to a specific email:
+2. In Claude's settings, add your maintenant instance as a remote MCP server:
+   - **URL**: `https://now.example.com/mcp`
+   - **Advanced Settings**: enter the `client_id` and `client_secret` you configured above.
+
+3. Claude will automatically discover the OAuth2 endpoints, authorize, and connect. No manual token exchange required.
+
+---
+
+## Authentication
+
+### Stdio
+
+No authentication. The stdio transport is a local, trusted channel — only the process that spawned maintenant can communicate with it. The `--mcp-stdio` flag is independent of `MAINTENANT_MCP`.
+
+### Streamable HTTP (OAuth2)
+
+When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are both set, maintenant runs a full OAuth2 authorization server implementing the flow required by the MCP specification (2025-11-25):
+
+1. **Discovery** — The client fetches `/.well-known/oauth-protected-resource` ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)) and `/.well-known/oauth-authorization-server` ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)) to discover endpoints.
+2. **Authorization** — The client redirects to `/oauth/authorize` with PKCE (S256). maintenant validates the client credentials and auto-approves (no consent page).
+3. **Token exchange** — The client exchanges the authorization code at `/oauth/token` for an access token (1h) and a refresh token (30d).
+4. **Authenticated requests** — The client sends `Authorization: Bearer <token>` on every `/mcp` request.
+5. **Token refresh** — When the access token expires, the client silently uses the refresh token to obtain new tokens.
+
+**Access control** is based on knowledge of the client secret. The administrator generates the credentials and shares them with authorized users, who enter them in Claude's Advanced Settings. There is no user login page — maintenant has no user authentication system.
+
+When the OAuth2 variables are absent, the HTTP transport is open. Use your reverse proxy's auth layer to protect it.
+
+### OAuth2 Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/.well-known/oauth-protected-resource` | GET | Protected resource metadata (RFC 9728). Public. |
+| `/.well-known/oauth-authorization-server` | GET | Authorization server metadata (RFC 8414). Public. |
+| `/oauth/authorize` | GET | Authorization endpoint. Validates client credentials + PKCE, auto-approves, redirects with code. |
+| `/oauth/token` | POST | Token endpoint. Exchanges code for tokens (`authorization_code`) or refreshes (`refresh_token`). |
+
+### Security Details
+
+- **PKCE S256** is mandatory on all authorization requests.
+- **Tokens are opaque** (random 32 bytes, hex-encoded). They are stored as SHA-256 hashes — even a database leak does not expose usable tokens.
+- **Refresh token rotation** — each use of a refresh token invalidates it and issues a new one.
+- **Replay detection** — reusing an already-consumed refresh token revokes all tokens in the session (family), forcing re-authorization.
+- **Automatic cleanup** — expired tokens and codes are garbage-collected every 15 minutes.
+- **Client secret comparison** uses constant-time comparison to prevent timing attacks.
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAINTENANT_MCP` | `false` | Enable the Streamable HTTP MCP server on `/mcp`. |
+| `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client identifier. Required for authentication. |
+| `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret. Required for authentication. |
+| `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public-facing URL. Used as OAuth2 issuer and in metadata endpoints. |
+
+The `--mcp-stdio` flag is independent of these variables — it runs the MCP server over stdin/stdout and exits when the connection closes.
+
+### Generating Credentials
+
+Use any random string generator for the client ID and secret:
 
 ```bash
-MAINTENANT_MCP_ALLOWED_EMAIL=you@example.com
+# Example using openssl
+export MAINTENANT_MCP_CLIENT_ID="maintenant-mcp"
+export MAINTENANT_MCP_CLIENT_SECRET=$(openssl rand -hex 32)
 ```
 
-3. Connect your client to `http://your-maintenant:8080/mcp`.
+Share the client ID and secret with authorized users. They enter these values in Claude's Advanced Settings when adding the remote MCP server.
 
 ---
 
@@ -89,33 +155,6 @@ Write tools marked **Extended** return an error in the Community Edition.
 
 ---
 
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MAINTENANT_MCP` | `false` | Enable the Streamable HTTP MCP server on `/mcp`. |
-| `MAINTENANT_MCP_ALLOWED_EMAIL` | — | If set, only allow requests with a JWT containing this email claim. |
-
-The `--mcp-stdio` flag is independent of `MAINTENANT_MCP` — it runs the MCP server over stdin/stdout and exits when the connection closes.
-
----
-
-## Authentication
-
-### Stdio
-
-No authentication. The stdio transport is a local, trusted channel — only the process that spawned maintenant can communicate with it.
-
-### Streamable HTTP
-
-When `MAINTENANT_MCP_ALLOWED_EMAIL` is set, maintenant requires a `Bearer` JWT in the `Authorization` header. The email claim (or `sub` claim as fallback) must match the configured address. This is the mechanism used by Claude.ai and other OAuth2-capable MCP clients.
-
-When the variable is empty, the HTTP transport is open. Use your reverse proxy's auth layer to protect it.
-
-maintenant serves [RFC 9728 OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728) at `/.well-known/oauth-protected-resource` to help MCP clients discover auth requirements.
-
----
-
 ## Example Prompts
 
 Once connected, you can ask your AI assistant questions like:
@@ -132,11 +171,11 @@ Once connected, you can ask your AI assistant questions like:
 
 ## Proxy Configuration
 
-If maintenant runs behind a reverse proxy, the `/mcp` path requires special handling:
+If maintenant runs behind a reverse proxy, the `/mcp` and `/oauth/*` paths require special handling:
 
 - **No request timeout** — MCP uses SSE for server-to-client streaming, which requires long-lived connections.
 - **No buffering** — Disable response buffering for `/mcp` to allow real-time SSE delivery.
-- **WebSocket-like headers** — Some proxies need `Connection: keep-alive` and no content-length enforcement.
+- **Pass-through for OAuth** — The `/oauth/authorize` endpoint issues 302 redirects. Ensure your proxy does not intercept them.
 
 ### Traefik Example
 
@@ -145,6 +184,16 @@ labels:
   traefik.http.routers.maintenant-mcp.rule: "Host(`now.example.com`) && PathPrefix(`/mcp`)"
   traefik.http.services.maintenant-mcp.loadbalancer.server.port: "8080"
 ```
+
+### Caddy Example
+
+```
+now.example.com {
+    reverse_proxy maintenant:8080
+}
+```
+
+No special configuration needed — Caddy handles SSE and redirects natively.
 
 ---
 
