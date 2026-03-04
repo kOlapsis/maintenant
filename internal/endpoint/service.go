@@ -241,7 +241,7 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, resu
 					s.logger.Error("update alert state", "endpoint_id", endpointID, "error", err)
 				}
 				s.logger.Debug("endpoint: alert triggered", "endpoint_id", endpointID, "event_type", eventType)
-			s.emitEvent(eventType, eventData)
+				s.emitEvent(eventType, eventData)
 			}
 		}
 	}

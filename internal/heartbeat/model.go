@@ -53,9 +53,9 @@ const (
 
 // Validation constants.
 const (
-	MinIntervalSeconds = 60      // 1 minute
-	MaxIntervalSeconds = 604800  // 7 days
-	MaxPayloadBytes    = 10240   // 10 KB
+	MinIntervalSeconds = 60     // 1 minute
+	MaxIntervalSeconds = 604800 // 7 days
+	MaxPayloadBytes    = 10240  // 10 KB
 	MaxNameLength      = 255
 )
 
@@ -87,13 +87,13 @@ func (h *Heartbeat) PingURL() string {
 
 // HeartbeatPing represents a raw ping event.
 type HeartbeatPing struct {
-	ID          int64    `json:"id"`
-	HeartbeatID int64    `json:"heartbeat_id"`
-	PingType    PingType `json:"ping_type"`
-	ExitCode    *int     `json:"exit_code,omitempty"`
-	SourceIP    string   `json:"source_ip"`
-	HTTPMethod  string   `json:"http_method"`
-	Payload     *string  `json:"payload,omitempty"`
+	ID          int64     `json:"id"`
+	HeartbeatID int64     `json:"heartbeat_id"`
+	PingType    PingType  `json:"ping_type"`
+	ExitCode    *int      `json:"exit_code,omitempty"`
+	SourceIP    string    `json:"source_ip"`
+	HTTPMethod  string    `json:"http_method"`
+	Payload     *string   `json:"payload,omitempty"`
 	Timestamp   time.Time `json:"timestamp"`
 }
 

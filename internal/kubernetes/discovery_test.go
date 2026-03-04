@@ -23,7 +23,7 @@ import (
 )
 
 func int32Ptr(i int32) *int32 { return &i }
-func boolPtr(b bool) *bool   { return &b }
+func boolPtr(b bool) *bool    { return &b }
 
 func TestDiscoverAll_Deployments(t *testing.T) {
 	dep := &appsv1.Deployment{
@@ -225,11 +225,11 @@ func TestDiscoverAll_Annotations(t *testing.T) {
 			Name:      "api",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"maintenant.group":                "backend",
-				"maintenant.alert.severity":       "critical",
+				"maintenant.group":                   "backend",
+				"maintenant.alert.severity":          "critical",
 				"maintenant.alert.restart_threshold": "5",
-				"maintenant.alert.channels":       "slack",
-				"maintenant.ignore":               "true",
+				"maintenant.alert.channels":          "slack",
+				"maintenant.ignore":                  "true",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{

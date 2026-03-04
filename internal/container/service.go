@@ -265,12 +265,12 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 	}
 
 	transition := &StateTransition{
-		ContainerID:   c.ID,
-		PreviousState: c.State,
-		NewState:      c.State,
+		ContainerID:    c.ID,
+		PreviousState:  c.State,
+		NewState:       c.State,
 		PreviousHealth: previousHealth,
 		NewHealth:      &newHealth,
-		Timestamp:     evt.Timestamp,
+		Timestamp:      evt.Timestamp,
 	}
 	if _, err := s.store.InsertTransition(ctx, transition); err != nil {
 		s.logger.Error("insert health transition", "container_id", c.ID, "error", err)

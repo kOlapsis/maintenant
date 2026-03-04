@@ -20,10 +20,10 @@ import (
 type Granularity string
 
 const (
-	GranularityRaw  Granularity = "raw"
-	Granularity1m   Granularity = "1m"
-	Granularity5m   Granularity = "5m"
-	Granularity1h   Granularity = "1h"
+	GranularityRaw Granularity = "raw"
+	Granularity1m  Granularity = "1m"
+	Granularity5m  Granularity = "5m"
+	Granularity1h  Granularity = "1h"
 )
 
 // ResourceStore defines the persistence interface for resource monitoring data.

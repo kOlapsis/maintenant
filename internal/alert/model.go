@@ -49,15 +49,15 @@ const (
 // Event represents a unified alert event sent via Go channel from any monitoring service.
 type Event struct {
 	Source     string         // "container", "endpoint", "heartbeat", "certificate", "resource"
-	AlertType string         // source-specific type
-	Severity  string         // "critical", "warning", "info"
-	IsRecover bool           // true if this is a recovery event
-	Message   string         // human-readable description
-	EntityType string        // "container", "endpoint", "heartbeat", "certificate"
-	EntityID   int64         // ID in source table
-	EntityName string        // display name
+	AlertType  string         // source-specific type
+	Severity   string         // "critical", "warning", "info"
+	IsRecover  bool           // true if this is a recovery event
+	Message    string         // human-readable description
+	EntityType string         // "container", "endpoint", "heartbeat", "certificate"
+	EntityID   int64          // ID in source table
+	EntityName string         // display name
 	Details    map[string]any // source-specific metadata
-	Timestamp  time.Time     // when condition was detected
+	Timestamp  time.Time      // when condition was detected
 }
 
 // Alert represents a persisted alert record.
@@ -80,16 +80,16 @@ type Alert struct {
 
 // NotificationChannel represents a configured delivery target.
 type NotificationChannel struct {
-	ID           int64          `json:"id"`
-	Name         string         `json:"name"`
-	Type         string         `json:"type"`
-	URL          string         `json:"url"`
-	Headers      string         `json:"headers,omitempty"`
-	Enabled      bool           `json:"enabled"`
-	RoutingRules []RoutingRule  `json:"routing_rules,omitempty"`
-	Health       string         `json:"health,omitempty"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	ID           int64         `json:"id"`
+	Name         string        `json:"name"`
+	Type         string        `json:"type"`
+	URL          string        `json:"url"`
+	Headers      string        `json:"headers,omitempty"`
+	Enabled      bool          `json:"enabled"`
+	RoutingRules []RoutingRule `json:"routing_rules,omitempty"`
+	Health       string        `json:"health,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
 }
 
 // RoutingRule represents a filter attached to a channel.

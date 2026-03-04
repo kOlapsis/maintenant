@@ -38,21 +38,21 @@ const (
 
 // CertMonitor represents a monitored SSL/TLS certificate.
 type CertMonitor struct {
-	ID                    int64      `json:"id"`
-	Hostname              string     `json:"hostname"`
-	Port                  int        `json:"port"`
-	Source                CertSource `json:"source"`
-	EndpointID            *int64     `json:"endpoint_id,omitempty"`
-	Status                CertStatus `json:"status"`
-	CheckIntervalSeconds  int        `json:"check_interval_seconds"`
-	WarningThresholds     []int      `json:"warning_thresholds"`
-	LastAlertedThreshold  *int       `json:"last_alerted_threshold,omitempty"`
-	LastCheckAt           *time.Time `json:"last_check_at,omitempty"`
-	NextCheckAt           *time.Time `json:"next_check_at,omitempty"`
-	LastError             string     `json:"last_error,omitempty"`
-	Active                bool       `json:"active"`
-	ExternalID            string     `json:"external_id,omitempty"`
-	CreatedAt             time.Time  `json:"created_at"`
+	ID                   int64      `json:"id"`
+	Hostname             string     `json:"hostname"`
+	Port                 int        `json:"port"`
+	Source               CertSource `json:"source"`
+	EndpointID           *int64     `json:"endpoint_id,omitempty"`
+	Status               CertStatus `json:"status"`
+	CheckIntervalSeconds int        `json:"check_interval_seconds"`
+	WarningThresholds    []int      `json:"warning_thresholds"`
+	LastAlertedThreshold *int       `json:"last_alerted_threshold,omitempty"`
+	LastCheckAt          *time.Time `json:"last_check_at,omitempty"`
+	NextCheckAt          *time.Time `json:"next_check_at,omitempty"`
+	LastError            string     `json:"last_error,omitempty"`
+	Active               bool       `json:"active"`
+	ExternalID           string     `json:"external_id,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 // DefaultWarningThresholds returns the default expiration warning thresholds in days.
@@ -107,7 +107,7 @@ func (r *CertCheckResult) SANsJSON() string {
 // CertChainEntry represents an individual certificate in the presented chain.
 type CertChainEntry struct {
 	ID            int64     `json:"id"`
-	CheckResultID int64    `json:"check_result_id"`
+	CheckResultID int64     `json:"check_result_id"`
 	Position      int       `json:"position"`
 	SubjectCN     string    `json:"subject_cn"`
 	IssuerCN      string    `json:"issuer_cn"`

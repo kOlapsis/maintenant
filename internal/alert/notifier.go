@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	notifierWorkerCount  = 10
+	notifierWorkerCount   = 10
 	notifierChannelBuffer = 256
 	webhookTimeout        = 10 * time.Second
 	maxRetries            = 3

@@ -131,11 +131,11 @@ func processEvent(msg events.Message) *ContainerEvent {
 	}
 
 	evt := &ContainerEvent{
-		Action:    action,
+		Action:     action,
 		ExternalID: msg.Actor.ID,
-		Name:      msg.Actor.Attributes["name"],
-		Timestamp: eventTimestamp(msg.Time, msg.TimeNano),
-		Labels:    msg.Actor.Attributes,
+		Name:       msg.Actor.Attributes["name"],
+		Timestamp:  eventTimestamp(msg.Time, msg.TimeNano),
+		Labels:     msg.Actor.Attributes,
 	}
 
 	// Extract exit code from die events

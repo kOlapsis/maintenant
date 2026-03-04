@@ -47,10 +47,10 @@ func (c *DefaultLicenseChecker) CanStorePayload() bool {
 }
 
 var (
-	ErrHeartbeatNotFound  = errors.New("heartbeat not found")
-	ErrLimitReached       = errors.New("heartbeat limit reached")
-	ErrInvalidInput       = errors.New("invalid input")
-	ErrInvalidExitCode    = errors.New("invalid exit code")
+	ErrHeartbeatNotFound = errors.New("heartbeat not found")
+	ErrLimitReached      = errors.New("heartbeat limit reached")
+	ErrInvalidInput      = errors.New("invalid input")
+	ErrInvalidExitCode   = errors.New("invalid exit code")
 )
 
 // Service orchestrates heartbeat monitoring logic.

@@ -17,23 +17,23 @@ import "time"
 type AlertState string
 
 const (
-	AlertStateNormal   AlertState = "normal"
-	AlertStateCPU      AlertState = "cpu_alert"
-	AlertStateMemory   AlertState = "mem_alert"
-	AlertStateBoth     AlertState = "both_alert"
+	AlertStateNormal AlertState = "normal"
+	AlertStateCPU    AlertState = "cpu_alert"
+	AlertStateMemory AlertState = "mem_alert"
+	AlertStateBoth   AlertState = "both_alert"
 )
 
 // ResourceSnapshot is a point-in-time measurement of a container's resource usage.
 type ResourceSnapshot struct {
-	ID              int64   `json:"id"`
-	ContainerID     int64   `json:"container_id"`
-	CPUPercent      float64 `json:"cpu_percent"`
-	MemUsed         int64   `json:"mem_used"`
-	MemLimit        int64   `json:"mem_limit"`
-	NetRxBytes      int64   `json:"net_rx_bytes"`
-	NetTxBytes      int64   `json:"net_tx_bytes"`
-	BlockReadBytes  int64   `json:"block_read_bytes"`
-	BlockWriteBytes int64   `json:"block_write_bytes"`
+	ID              int64     `json:"id"`
+	ContainerID     int64     `json:"container_id"`
+	CPUPercent      float64   `json:"cpu_percent"`
+	MemUsed         int64     `json:"mem_used"`
+	MemLimit        int64     `json:"mem_limit"`
+	NetRxBytes      int64     `json:"net_rx_bytes"`
+	NetTxBytes      int64     `json:"net_tx_bytes"`
+	BlockReadBytes  int64     `json:"block_read_bytes"`
+	BlockWriteBytes int64     `json:"block_write_bytes"`
 	Timestamp       time.Time `json:"timestamp"`
 }
 

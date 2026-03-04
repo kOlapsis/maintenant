@@ -27,7 +27,7 @@ const engineChannelBuffer = 256
 // activeAlertKey uniquely identifies an active alert for dedup and recovery linking.
 type activeAlertKey struct {
 	Source     string
-	AlertType string
+	AlertType  string
 	EntityType string
 	EntityID   int64
 }
@@ -114,7 +114,7 @@ func (e *Engine) reloadActiveAlerts(ctx context.Context) error {
 	for _, a := range active {
 		key := activeAlertKey{
 			Source:     a.Source,
-			AlertType: a.AlertType,
+			AlertType:  a.AlertType,
 			EntityType: a.EntityType,
 			EntityID:   a.EntityID,
 		}
@@ -133,7 +133,7 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 
 	key := activeAlertKey{
 		Source:     evt.Source,
-		AlertType: evt.AlertType,
+		AlertType:  evt.AlertType,
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
 	}
@@ -168,10 +168,10 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 
 	a := &Alert{
 		Source:     evt.Source,
-		AlertType: evt.AlertType,
-		Severity:  evt.Severity,
-		Status:    StatusActive,
-		Message:   evt.Message,
+		AlertType:  evt.AlertType,
+		Severity:   evt.Severity,
+		Status:     StatusActive,
+		Message:    evt.Message,
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
 		EntityName: evt.EntityName,
@@ -266,7 +266,7 @@ func severityRank(s string) int {
 func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 	key := activeAlertKey{
 		Source:     evt.Source,
-		AlertType: evt.AlertType,
+		AlertType:  evt.AlertType,
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
 	}
@@ -299,10 +299,10 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 
 	recoveryAlert := &Alert{
 		Source:     evt.Source,
-		AlertType: evt.AlertType,
-		Severity:  evt.Severity,
-		Status:    StatusResolved,
-		Message:   evt.Message,
+		AlertType:  evt.AlertType,
+		Severity:   evt.Severity,
+		Status:     StatusResolved,
+		Message:    evt.Message,
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
 		EntityName: evt.EntityName,
