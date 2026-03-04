@@ -52,8 +52,8 @@ MAINTENANT_BASE_URL=https://maintenant.example.com
 # maintenant_K8S_EXCLUDE_NAMESPACES=kube-system
 
 # MCP Server (Model Context Protocol for AI assistants)
-# maintenant_MCP=true
-# maintenant_MCP_ALLOWED_EMAIL=you@example.com
+# MAINTENANT_MCP=true
+# MAINTENANT_MCP_ALLOWED_EMAIL=you@example.com
 ```
 
 ---

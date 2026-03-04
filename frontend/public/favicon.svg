@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="sig" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3ECF8E;stop-opacity:0.5"/>
+      <stop offset="60%" style="stop-color:#3ECF8E"/>
+      <stop offset="100%" style="stop-color:#22D3EE;stop-opacity:0.7"/>
+    </linearGradient>
+    <filter id="gl">
+      <feGaussianBlur stdDeviation="1.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="#12151C"/>
+  <polyline points="6,25 6,7 16,20 26,7 26,25" fill="none" stroke="url(#sig)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" filter="url(#gl)"/>
+  <line x1="26" y1="25" x2="28.5" y2="25" stroke="#3ECF8E" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <circle cx="30" cy="25" r="1.5" fill="#3ECF8E"/>
+</svg>

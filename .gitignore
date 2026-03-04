@@ -47,3 +47,4 @@ CLAUDE.md
 maintenant-*.md
 compose.local.yml
 specs/
+/compose.prod.yml

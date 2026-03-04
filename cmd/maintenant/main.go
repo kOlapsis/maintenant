@@ -705,7 +705,7 @@ func main() {
 
 	// MCP Streamable HTTP handler (mcpServer is assigned later, before srv.ListenAndServe)
 	var mcpServer *gomcp.Server
-	mcpEnabled := envOrDefault("maintenant_MCP", "false")
+	mcpEnabled := envOrDefault("MAINTENANT_MCP", "false")
 	if mcpEnabled == "true" {
 		mcpHTTPHandler := gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
 			return mcpServer
