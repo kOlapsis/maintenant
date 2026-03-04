@@ -14,7 +14,6 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	responseType := q.Get("response_type")
 	clientID := q.Get("client_id")
-	clientSecret := q.Get("client_secret")
 	redirectURI := q.Get("redirect_uri")
 	codeChallenge := q.Get("code_challenge")
 	codeChallengeMethod := q.Get("code_challenge_method")
@@ -49,10 +48,11 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate client credentials
-	if clientID != s.clientID || !s.VerifyClientSecret(clientSecret) {
-		s.logger.Warn("authorization request with invalid client credentials", "client_id", clientID)
-		oauthRedirectError(w, r, redirectURI, state, "unauthorized_client", "invalid client credentials")
+	// Validate client_id only — client_secret is never sent to the authorize endpoint.
+	// Secret verification happens at the /token endpoint.
+	if clientID != s.clientID {
+		s.logger.Warn("authorization request with unknown client_id", "client_id", clientID)
+		oauthRedirectError(w, r, redirectURI, state, "unauthorized_client", "unknown client")
 		return
 	}
 
