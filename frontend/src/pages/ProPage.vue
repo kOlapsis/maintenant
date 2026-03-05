@@ -12,18 +12,18 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
-  Shield,
-  Bell,
-  Mail,
-  MessageSquare,
-  TrendingUp,
-  Clock,
   AlertTriangle,
+  Bell,
   Check,
+  Clock,
   Crown,
   Heart,
+  Mail,
+  MessageSquare,
+  Shield,
+  TrendingUp,
 } from 'lucide-vue-next'
 import { useEdition } from '@/composables/useEdition'
 
@@ -118,6 +118,12 @@ const features = [
               <p class="text-sm text-slate-400 leading-relaxed">
                 Your Pro license is active. Thank you for supporting the development of maintenant —
                 it makes a real difference.
+              </p>
+              <p>
+                Manager your license directly on
+                <a href="https://billing.stripe.com/p/login/8x28wO6dVdVd9UggHX33W00" target="_blank"
+                  >stripe website</a
+                >
               </p>
             </div>
           </div>
