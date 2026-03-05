@@ -91,6 +91,7 @@ services:
       traefik.http.routers.maintenant-mcp.priority: "100"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_DB: "/data/maintenant.db"
@@ -231,6 +232,7 @@ maintenant requires access to the Docker socket to discover and monitor containe
 ```yaml
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock:ro
+  - /proc:/host/proc:ro
 ```
 
 The Docker socket grants root-equivalent access to the host. maintenant only reads container state, metadata, and logs — it never creates, modifies, or deletes containers. The read-only mount is a defense-in-depth measure.

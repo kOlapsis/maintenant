@@ -113,6 +113,7 @@ services:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_DB: "/data/maintenant.db"

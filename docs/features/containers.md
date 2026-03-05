@@ -30,6 +30,7 @@ All state transitions are persisted in the database and pushed to the browser vi
     ```yaml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
     ```
 
     Every running container is discovered automatically. New containers are picked up the moment they start. maintenant never modifies your containers — it is strictly read-only.
