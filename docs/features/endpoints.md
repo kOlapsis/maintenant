@@ -2,6 +2,8 @@
 
 Define HTTP or TCP checks directly as Docker labels — no config files, no UI clicks. maintenant picks them up automatically when a container starts.
 
+![Endpoint Monitoring](../screen-captures/3-endpoints.png)
+
 ---
 
 ## How It Works

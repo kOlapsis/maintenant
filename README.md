@@ -42,6 +42,49 @@ Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, o
 
 ---
 
+## Screenshots
+
+<table>
+  <tr>
+    <td colspan="2" align="center">
+      <a href="./docs/screen-captures/1-dashboard.png"><img src="./docs/screen-captures/1-dashboard.png" alt="Dashboard" width="680" /></a>
+      <br><sub>Dashboard — Uptime, response times, resources, unified monitors</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <a href="./docs/screen-captures/2-containers.png"><img src="./docs/screen-captures/2-containers.png" alt="Containers" width="340" /></a>
+      <br><sub>Container auto-discovery</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="./docs/screen-captures/3-endpoints.png"><img src="./docs/screen-captures/3-endpoints.png" alt="Endpoints" width="340" /></a>
+      <br><sub>Endpoint monitoring</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="./docs/screen-captures/4-certificates.png"><img src="./docs/screen-captures/4-certificates.png" alt="Certificates" width="340" /></a>
+      <br><sub>TLS certificate tracking</sub>
+    </td>
+    <td align="center">
+      <a href="./docs/screen-captures/5-updates.png"><img src="./docs/screen-captures/5-updates.png" alt="Updates" width="340" /></a>
+      <br><sub>Update intelligence</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="./docs/screen-captures/7-status-page-all-ok.png"><img src="./docs/screen-captures/7-status-page-all-ok.png" alt="Status Page — All OK" width="340" /></a>
+      <br><sub>Status page — All operational</sub>
+    </td>
+    <td align="center">
+      <a href="./docs/screen-captures/8-status-page-degraded.png"><img src="./docs/screen-captures/8-status-page-degraded.png" alt="Status Page — Degraded" width="340" /></a>
+      <br><sub>Status page — Degraded state</sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## Quick Start
 
 ### Docker (30 seconds)

@@ -2,6 +2,8 @@
 
 Know when your container images have updates available. maintenant scans OCI registries and compares digests. Stop running `docker pull` blindly.
 
+![Update Intelligence](../screen-captures/5-updates.png)
+
 ---
 
 ## How It Works

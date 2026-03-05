@@ -2,6 +2,8 @@
 
 Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked the moment it starts.
 
+![Container Monitoring](../screen-captures/2-containers.png)
+
 ---
 
 ## How It Works

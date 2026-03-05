@@ -2,6 +2,8 @@
 
 Expose maintenant monitoring data to AI coding assistants (Claude Code, Claude Desktop, Cursor, Windsurf) via the [Model Context Protocol](https://modelcontextprotocol.io/). Query container states, resource metrics, endpoint health, and more — directly from your editor.
 
+![AI assistant querying maintenant via MCP](../screen-captures/9-ai-assistant.png)
+
 ---
 
 ## Overview

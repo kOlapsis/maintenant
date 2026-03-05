@@ -48,3 +48,5 @@ maintenant-*.md
 compose.local.yml
 specs/
 /compose.prod.yml
+/.specify/
+/compose.docs.yml

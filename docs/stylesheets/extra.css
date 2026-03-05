@@ -4,3 +4,26 @@ h3 .twemoji,
 td .twemoji {
   color: #f59e0b;
 }
+
+/* Screenshot styling — standalone images in article content */
+.md-content article > p > img:only-child {
+  display: block;
+  max-width: 720px;
+  margin: 1.5rem auto;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Side-by-side screenshot grid */
+.screenshot-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.screenshot-pair img {
+  width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}

@@ -12,6 +12,8 @@ Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, o
 
 Deploy one container, and maintenant auto-discovers your entire stack. Docker or Kubernetes — it does not matter.
 
+![Dashboard](screen-captures/1-dashboard.png)
+
 ---
 
 ## Key Features

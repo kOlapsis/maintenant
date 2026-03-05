@@ -2,6 +2,11 @@
 
 Give your users a clean status page. Component groups, incident management with timeline updates, scheduled maintenance windows.
 
+<div class="screenshot-pair">
+  <img src="../../screen-captures/7-status-page-all-ok.png" alt="Status Page — All Systems Operational" />
+  <img src="../../screen-captures/8-status-page-degraded.png" alt="Status Page — Degraded Performance" />
+</div>
+
 ---
 
 ## How It Works
@@ -18,6 +23,8 @@ The status page displays:
 ---
 
 ## Component Groups
+
+![Status Page Configuration](../screen-captures/6-status-page-config.png)
 
 Organize your monitored services into logical groups:
 

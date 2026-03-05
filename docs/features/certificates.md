@@ -2,6 +2,8 @@
 
 Automatic certificate detection from your HTTPS endpoints, plus standalone monitors for any domain. Never get surprised by an expired certificate again.
 
+![TLS Certificate Monitoring](../screen-captures/4-certificates.png)
+
 ---
 
 ## How It Works
