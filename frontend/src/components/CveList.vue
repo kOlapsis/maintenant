@@ -13,8 +13,8 @@
 
 <script setup lang="ts">
 import type { CVEInfo } from '@/services/updateApi'
-import { computed } from 'vue'
-import { Shield, ExternalLink } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { Shield, Copy, Check, CheckCircle } from 'lucide-vue-next'
 
 const props = defineProps<{
   cves: CVEInfo[]
@@ -27,8 +27,20 @@ const severityColors: Record<string, { bg: string; text: string }> = {
   low: { bg: 'bg-slate-500/10', text: 'text-slate-400' },
 }
 
-function getSeverityStyle(sev: string) {
-  return severityColors[sev] || severityColors.low
+function getSeverityStyle(sev: string): { bg: string; text: string } {
+  return severityColors[sev] ?? severityColors['low']!
+}
+
+const copiedFixId = ref<string | null>(null)
+
+async function copyFixCommand(cveId: string, command: string) {
+  try {
+    await navigator.clipboard.writeText(command)
+    copiedFixId.value = cveId
+    setTimeout(() => { copiedFixId.value = null }, 2000)
+  } catch {
+    // fallback
+  }
 }
 </script>
 
@@ -57,9 +69,33 @@ function getSeverityStyle(sev: string) {
         <span class="text-[10px] font-mono text-slate-400">CVSS {{ cve.cvss_score?.toFixed(1) || 'N/A' }}</span>
       </div>
       <p v-if="cve.summary" class="text-[11px] text-slate-500 mt-1">{{ cve.summary }}</p>
-      <p v-if="cve.fixed_in" class="text-[10px] text-emerald-500 mt-1 font-medium">
-        Fixed in: {{ cve.fixed_in }}
-      </p>
+      <div v-if="cve.fixed_in" class="mt-1.5">
+        <div class="flex items-center gap-2">
+          <p class="text-[10px] text-emerald-500 font-medium">
+            Fixed in: {{ cve.fixed_in }}
+          </p>
+          <span
+            v-if="cve.is_fixed_by_update"
+            class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex items-center gap-0.5"
+          >
+            <CheckCircle :size="8" />
+            Covered by update
+          </span>
+        </div>
+        <div v-if="cve.fix_command && !cve.is_fixed_by_update" class="mt-1.5">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[9px] text-slate-600 uppercase tracking-wider">Fix command</span>
+            <button
+              @click="copyFixCommand(cve.cve_id, cve.fix_command)"
+              class="text-[9px] text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+            >
+              <component :is="copiedFixId === cve.cve_id ? Check : Copy" :size="9" />
+              {{ copiedFixId === cve.cve_id ? 'Copied!' : 'Copy' }}
+            </button>
+          </div>
+          <pre class="text-[10px] text-slate-300 bg-[#0a0c10] rounded-lg p-2 overflow-x-auto font-mono">{{ cve.fix_command }}</pre>
+        </div>
+      </div>
     </div>
   </div>
 </template>

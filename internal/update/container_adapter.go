@@ -13,6 +13,7 @@ package update
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/container"
 )
@@ -52,4 +53,26 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 		})
 	}
 	return infos, nil
+}
+
+// GetContainerInfo returns container metadata for a single container by external ID.
+func (a *ContainerServiceAdapter) GetContainerInfo(ctx context.Context, externalID string) (ContainerInfo, error) {
+	containers, err := a.svc.ListContainers(ctx, container.ListContainersOpts{})
+	if err != nil {
+		return ContainerInfo{}, fmt.Errorf("get container info: %w", err)
+	}
+	for _, c := range containers {
+		if c.ExternalID == externalID {
+			return ContainerInfo{
+				ExternalID:         c.ExternalID,
+				Name:               c.Name,
+				Image:              c.Image,
+				OrchestrationGroup: c.OrchestrationGroup,
+				OrchestrationUnit:  c.OrchestrationUnit,
+				RuntimeType:        c.RuntimeType,
+				ControllerKind:     c.ControllerKind,
+			}, nil
+		}
+	}
+	return ContainerInfo{}, fmt.Errorf("container not found: %s", externalID)
 }

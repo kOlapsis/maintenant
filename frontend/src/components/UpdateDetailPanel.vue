@@ -20,7 +20,7 @@ import RiskScoreGauge from '@/components/RiskScoreGauge.vue'
 import CveList from '@/components/CveList.vue'
 import ChangelogViewer from '@/components/ChangelogViewer.vue'
 import FeatureGate from '@/components/FeatureGate.vue'
-import { Copy, Check, Pin, PinOff, ArrowRight, ExternalLink } from 'lucide-vue-next'
+import { Copy, Check, Pin, PinOff, ArrowRight, ExternalLink, AlertTriangle } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
 
@@ -32,6 +32,7 @@ const updates = useUpdatesStore()
 const detail = ref<ContainerUpdateDetail | null>(null)
 const loading = ref(true)
 const copied = ref(false)
+const copiedRollback = ref(false)
 const pinReason = ref('')
 const showPinInput = ref(false)
 
@@ -69,6 +70,17 @@ async function copyCommand() {
   }
 }
 
+async function copyRollbackCommand() {
+  if (!detail.value?.rollback_command) return
+  try {
+    await navigator.clipboard.writeText(detail.value.rollback_command)
+    copiedRollback.value = true
+    setTimeout(() => { copiedRollback.value = false }, 2000)
+  } catch {
+    // fallback
+  }
+}
+
 async function handlePin() {
   if (detail.value?.pinned) {
     await updates.unpinVersion(props.containerId)
@@ -93,7 +105,7 @@ onMounted(loadDetail)
   </div>
 
   <div v-else-if="detail" class="space-y-5">
-    <!-- Version info -->
+    <!-- 1. Version info -->
     <div class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
       <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Version</h4>
       <div class="flex items-center gap-3">
@@ -126,7 +138,20 @@ onMounted(loadDetail)
       </p>
     </div>
 
-    <!-- Risk Score (Pro) -->
+    <!-- 2. Breaking changes warning -->
+    <FeatureGate feature="changelog" title="Breaking Changes" description="Know before you break. Breaking changes are detected automatically so you can plan your update safely.">
+      <div v-if="detail.has_breaking_changes" class="bg-rose-500/5 rounded-xl p-4 border border-rose-500/20">
+        <div class="flex items-center gap-2">
+          <AlertTriangle :size="14" class="text-rose-400 shrink-0" />
+          <h4 class="text-xs font-bold text-rose-400">Breaking Changes Detected</h4>
+        </div>
+        <p class="text-[11px] text-rose-300/70 mt-1.5">
+          This update contains breaking changes. Review the changelog carefully before proceeding.
+        </p>
+      </div>
+    </FeatureGate>
+
+    <!-- 3. Risk Score (Pro) -->
     <FeatureGate feature="risk_scoring" title="Risk Score" description="Instantly assess the risk of each update. A smart score combines CVE severity, breaking changes, and version jump to help you prioritize.">
       <div v-if="detail.risk_score > 0" class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
         <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Risk Score</h4>
@@ -134,15 +159,7 @@ onMounted(loadDetail)
       </div>
     </FeatureGate>
 
-    <!-- CVEs (Pro) -->
-    <FeatureGate feature="cve_enrichment" title="Vulnerabilities (CVE)" description="See at a glance if your containers are exposed to known vulnerabilities. CVEs are automatically matched and ranked by severity.">
-      <div class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Vulnerabilities (CVE)</h4>
-        <CveList :cves="detail.active_cves || []" />
-      </div>
-    </FeatureGate>
-
-    <!-- Changelog (Pro) -->
+    <!-- 4. Changelog (Pro) -->
     <FeatureGate feature="changelog" title="Changelog" description="Read what changed before you update. Changelogs are fetched automatically with breaking changes highlighted.">
       <div v-if="detail.changelog_url || detail.changelog_summary">
         <ChangelogViewer
@@ -154,17 +171,15 @@ onMounted(loadDetail)
       </div>
     </FeatureGate>
 
-    <!-- Previous digest (Pro) -->
-    <FeatureGate feature="cve_enrichment" title="Previous Digest" description="Keep a rollback safety net. The previous image digest is saved so you can revert in seconds if an update goes wrong.">
-      <div v-if="detail.previous_digest" class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Previous Digest</h4>
-        <p class="text-[10px] text-slate-400 font-mono break-all">{{ detail.previous_digest }}</p>
-        <p class="text-[10px] text-slate-600 mt-1">For manual rollback:</p>
-        <code class="text-[10px] text-pb-green-400 block mt-0.5">docker pull {{ detail.image.split(':')[0] }}@{{ detail.previous_digest }}</code>
+    <!-- 5. CVEs (Pro) -->
+    <FeatureGate feature="cve_enrichment" title="Vulnerabilities (CVE)" description="See at a glance if your containers are exposed to known vulnerabilities. CVEs are automatically matched and ranked by severity.">
+      <div class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
+        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Vulnerabilities (CVE)</h4>
+        <CveList :cves="detail.active_cves || []" />
       </div>
     </FeatureGate>
 
-    <!-- Update command -->
+    <!-- 6. Update command -->
     <div v-if="detail.update_command" class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
       <div class="flex items-center justify-between mb-2">
         <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Update Command</h4>
@@ -178,6 +193,30 @@ onMounted(loadDetail)
       </div>
       <pre class="text-[11px] text-slate-300 bg-[#0a0c10] rounded-lg p-3 overflow-x-auto font-mono">{{ detail.update_command }}</pre>
     </div>
+
+    <!-- 7. Rollback command -->
+    <div v-if="detail.rollback_command" class="bg-[#0B0E13] rounded-xl p-4 border border-amber-900/30">
+      <div class="flex items-center justify-between mb-2">
+        <h4 class="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest">Rollback Command</h4>
+        <button
+          @click="copyRollbackCommand"
+          class="text-[10px] text-amber-500 hover:text-amber-400 flex items-center gap-1 transition-colors"
+        >
+          <component :is="copiedRollback ? Check : Copy" :size="10" />
+          {{ copiedRollback ? 'Copied!' : 'Copy' }}
+        </button>
+      </div>
+      <pre class="text-[11px] text-slate-300 bg-[#0a0c10] rounded-lg p-3 overflow-x-auto font-mono">{{ detail.rollback_command }}</pre>
+      <p class="text-[9px] text-slate-600 mt-2">Digest availability depends on registry retention policies.</p>
+    </div>
+
+    <!-- 8. Previous digest (Pro) -->
+    <FeatureGate feature="cve_enrichment" title="Previous Digest" description="Keep a rollback safety net. The previous image digest is saved so you can revert in seconds if an update goes wrong.">
+      <div v-if="detail.previous_digest" class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
+        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Previous Digest</h4>
+        <p class="text-[10px] text-slate-400 font-mono break-all">{{ detail.previous_digest }}</p>
+      </div>
+    </FeatureGate>
 
     <!-- Actions -->
     <div class="pt-4 border-t border-slate-800 space-y-3">

@@ -12,6 +12,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -21,15 +22,21 @@ import (
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
+// ContainerInfoProvider returns container metadata needed for command generation.
+type ContainerInfoProvider interface {
+	GetContainerInfo(ctx context.Context, externalID string) (update.ContainerInfo, error)
+}
+
 // UpdateHandler handles update intelligence HTTP endpoints.
 type UpdateHandler struct {
-	service *update.Service
-	store   update.UpdateStore
+	service    *update.Service
+	store      update.UpdateStore
+	containers ContainerInfoProvider
 }
 
 // NewUpdateHandler creates a new update handler.
-func NewUpdateHandler(service *update.Service, store update.UpdateStore) *UpdateHandler {
-	return &UpdateHandler{service: service, store: store}
+func NewUpdateHandler(service *update.Service, store update.UpdateStore, containers ContainerInfoProvider) *UpdateHandler {
+	return &UpdateHandler{service: service, store: store, containers: containers}
 }
 
 // HandleListUpdates handles GET /api/v1/updates.
@@ -126,18 +133,40 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 		resp["pin_reason"] = pin.Reason
 	}
 
+	// Generate commands on-the-fly from container metadata
+	ci, ciErr := h.containers.GetContainerInfo(r.Context(), containerID)
+	if ciErr == nil {
+		resp["update_command"] = h.service.GenerateUpdateCommand(ci, u.LatestTag)
+		if u.PreviousDigest != "" {
+			resp["rollback_command"] = h.service.GenerateRollbackCommand(ci, u.PreviousDigest)
+		}
+	}
+
 	if extension.CurrentEdition() == extension.Enterprise {
+		resp["source_url"] = u.SourceURL
+		resp["previous_digest"] = u.PreviousDigest
+		resp["changelog_url"] = u.ChangelogURL
+		resp["changelog_summary"] = u.ChangelogSummary
+		resp["has_breaking_changes"] = u.HasBreakingChanges
+
 		if cves, err := h.store.ListContainerCVEs(r.Context(), containerID); err == nil {
 			cveMaps := make([]map[string]interface{}, 0, len(cves))
 			for _, c := range cves {
-				cveMaps = append(cveMaps, map[string]interface{}{
+				cveMap := map[string]interface{}{
 					"cve_id":            c.CVEID,
 					"cvss_score":        c.CVSSScore,
 					"severity":          string(c.Severity),
 					"summary":           c.Summary,
 					"fixed_in":          c.FixedIn,
 					"first_detected_at": c.FirstDetectedAt,
-				})
+				}
+				if c.FixedIn != "" {
+					cveMap["is_fixed_by_update"] = h.service.IsFixedByUpdate(u.LatestTag, c.FixedIn)
+					if ciErr == nil {
+						cveMap["fix_command"] = h.service.GenerateFixCommand(ci, u.CurrentTag, c.FixedIn)
+					}
+				}
+				cveMaps = append(cveMaps, cveMap)
 			}
 			resp["active_cves"] = cveMaps
 		}

@@ -69,6 +69,7 @@ export interface ContainerUpdateDetail {
   source_url: string
   previous_digest: string
   update_command: string
+  rollback_command: string
   changelog_url: string
   changelog_summary: string
   has_breaking_changes: boolean
@@ -80,6 +81,8 @@ export interface CVEInfo {
   severity: string
   summary: string
   fixed_in: string
+  fix_command: string
+  is_fixed_by_update: boolean
   first_detected_at?: string
 }
 

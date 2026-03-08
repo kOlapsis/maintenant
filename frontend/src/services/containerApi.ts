@@ -39,6 +39,8 @@ export interface Container {
   namespace?: string
   pod_count?: number
   ready_count?: number
+  security_insight_count?: number
+  security_highest_severity?: string | null
 }
 
 export interface ContainerListResponse {

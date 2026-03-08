@@ -199,6 +199,76 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) strin
 		repo, latestTag, c.Name, c.Name, c.Name, repo, latestTag)
 }
 
+// GenerateRollbackCommand produces a shell command to revert a container to its previous image digest.
+func (s *Service) GenerateRollbackCommand(c ContainerInfo, previousDigest string) string {
+	if previousDigest == "" {
+		return ""
+	}
+
+	repo, _, _ := parseImageRef(c.Image)
+
+	// Kubernetes workloads — use rollout undo
+	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
+		kind := strings.ToLower(c.ControllerKind)
+		return fmt.Sprintf("kubectl rollout undo %s/%s -n %s",
+			kind, c.OrchestrationUnit, c.OrchestrationGroup)
+	}
+
+	// Docker Compose — pull by digest and recreate
+	if c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != "" {
+		return fmt.Sprintf("docker compose pull %s && docker compose up -d %s",
+			c.OrchestrationUnit, c.OrchestrationUnit)
+	}
+
+	// Standalone Docker container — stop/rm/run with digest reference
+	return fmt.Sprintf("docker stop %s && docker rm %s && docker run -d --name %s %s@%s",
+		c.Name, c.Name, c.Name, repo, previousDigest)
+}
+
+// GenerateFixCommand produces a shell command to update a container to a specific CVE fix version.
+// Returns empty string if fixedInVersion is not a valid semver or is <= currentTag (prevents downgrades).
+func (s *Service) GenerateFixCommand(c ContainerInfo, currentTag, fixedInVersion string) string {
+	if fixedInVersion == "" {
+		return ""
+	}
+
+	fixVer, err := ParseTag(fixedInVersion)
+	if err != nil {
+		return ""
+	}
+
+	currentVer, err := ParseTag(currentTag)
+	if err != nil {
+		return ""
+	}
+
+	// Prevent downgrades: only generate command if fix version > current
+	if !fixVer.GreaterThan(currentVer) {
+		return ""
+	}
+
+	return s.GenerateUpdateCommand(c, fixedInVersion)
+}
+
+// IsFixedByUpdate returns true when the latest available tag already covers the CVE fix version.
+func (s *Service) IsFixedByUpdate(latestTag, fixedInVersion string) bool {
+	if fixedInVersion == "" || latestTag == "" {
+		return false
+	}
+
+	latestVer, err := ParseTag(latestTag)
+	if err != nil {
+		return false
+	}
+
+	fixVer, err := ParseTag(fixedInVersion)
+	if err != nil {
+		return false
+	}
+
+	return !latestVer.LessThan(fixVer) // latest >= fixedIn
+}
+
 func (s *Service) runScan(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
@@ -251,6 +321,12 @@ func (s *Service) runScan(ctx context.Context) {
 	// Run scan
 	results, scanErrors := s.scanner.Scan(ctx, containers)
 
+	// Build container lookup for command generation
+	containerByID := make(map[string]ContainerInfo, len(containers))
+	for _, c := range containers {
+		containerByID[c.ExternalID] = c
+	}
+
 	// Persist results
 	updatesFound := 0
 	for _, r := range results {
@@ -258,6 +334,7 @@ func (s *Service) runScan(ctx context.Context) {
 			continue
 		}
 
+		riskScore := BaseRiskScore(r.UpdateType)
 		u := &ImageUpdate{
 			ScanID:        scanID,
 			ContainerID:   r.ContainerID,
@@ -269,7 +346,7 @@ func (s *Service) runScan(ctx context.Context) {
 			LatestTag:     r.LatestTag,
 			LatestDigest:  r.LatestDigest,
 			UpdateType:    r.UpdateType,
-			RiskScore:     BaseRiskScore(r.UpdateType),
+			RiskScore:     riskScore,
 			Status:        StatusAvailable,
 			DetectedAt:    time.Now(),
 		}
@@ -280,14 +357,25 @@ func (s *Service) runScan(ctx context.Context) {
 		}
 
 		updatesFound++
-		s.emitEvent(event.UpdateDetected, map[string]interface{}{
+
+		eventData := map[string]interface{}{
 			"container_id":   r.ContainerID,
 			"container_name": r.ContainerName,
 			"image":          r.Image,
 			"current_tag":    r.CurrentTag,
 			"latest_tag":     r.LatestTag,
 			"update_type":    string(r.UpdateType),
-		})
+			"risk_score":     riskScore,
+		}
+
+		if ci, ok := containerByID[r.ContainerID]; ok {
+			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag)
+			if r.CurrentDigest != "" {
+				eventData["rollback_command"] = s.GenerateRollbackCommand(ci, r.CurrentDigest)
+			}
+		}
+
+		s.emitEvent(event.UpdateDetected, eventData)
 	}
 
 	// Enrichment pipeline (no-op in CE, runs CVE/changelog/risk in Pro)

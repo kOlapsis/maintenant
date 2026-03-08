@@ -33,6 +33,21 @@ const (
 	labelPBChannels     = "maintenant.alert.channels"
 )
 
+// SecurityConfig holds security-relevant fields extracted from Docker's ContainerInspect.
+type SecurityConfig struct {
+	Privileged  bool
+	NetworkMode string
+	PortBindings []PortBindingInfo
+}
+
+// PortBindingInfo represents a single host port binding.
+type PortBindingInfo struct {
+	HostIP       string
+	HostPort     string
+	ContainerPort int
+	Protocol     string
+}
+
 // DiscoveredContainer holds the result of discovering a single container.
 type DiscoveredContainer struct {
 	Container *cmodel.Container
@@ -41,8 +56,9 @@ type DiscoveredContainer struct {
 
 // DiscoveryResult holds a discovered container along with its raw labels for endpoint extraction.
 type DiscoveryResult struct {
-	Container *cmodel.Container
-	Labels    map[string]string
+	Container      *cmodel.Container
+	Labels         map[string]string
+	SecurityConfig *SecurityConfig
 }
 
 // DiscoverAll performs a full container list + inspect pass, returning all discovered containers.
@@ -56,19 +72,20 @@ func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 	containers := make([]*cmodel.Container, 0, len(list))
 
 	for _, dc := range list {
-		cm, err := c.inspectAndMap(ctx, dc, now)
+		result, err := c.inspectAndMap(ctx, dc, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
-			// Still include with basic info from list
-			cm = mapFromList(dc, now)
+			containers = append(containers, mapFromList(dc, now))
+			continue
 		}
-		containers = append(containers, cm)
+		containers = append(containers, result.Container)
 	}
 
 	return containers, nil
 }
 
-// DiscoverAllWithLabels is like DiscoverAll but also returns raw Docker labels for each container.
+// DiscoverAllWithLabels is like DiscoverAll but also returns raw Docker labels
+// and security configuration for each container.
 func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult, error) {
 	list, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
@@ -79,22 +96,33 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 	results := make([]*DiscoveryResult, 0, len(list))
 
 	for _, dc := range list {
-		cm, err := c.inspectAndMap(ctx, dc, now)
+		result, err := c.inspectAndMap(ctx, dc, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
-			cm = mapFromList(dc, now)
+			results = append(results, &DiscoveryResult{
+				Container: mapFromList(dc, now),
+				Labels:    dc.Labels,
+			})
+			continue
 		}
 		results = append(results, &DiscoveryResult{
-			Container: cm,
-			Labels:    dc.Labels,
+			Container:      result.Container,
+			Labels:         dc.Labels,
+			SecurityConfig: result.SecurityConfig,
 		})
 	}
 
 	return results, nil
 }
 
+// inspectResult holds the mapped container along with its extracted security config.
+type inspectResult struct {
+	Container      *cmodel.Container
+	SecurityConfig *SecurityConfig
+}
+
 // inspectAndMap calls ContainerInspect and maps the result to our domain model.
-func (c *Client) inspectAndMap(ctx context.Context, dc types.Container, now time.Time) (*cmodel.Container, error) {
+func (c *Client) inspectAndMap(ctx context.Context, dc types.Container, now time.Time) (*inspectResult, error) {
 	info, err := c.cli.ContainerInspect(ctx, dc.ID)
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s: %w", dc.ID[:12], err)
@@ -117,7 +145,35 @@ func (c *Client) inspectAndMap(ctx context.Context, dc types.Container, now time
 		cm.State = cmodel.StateCompleted
 	}
 
-	return cm, nil
+	// Extract security-relevant config from HostConfig
+	secCfg := extractSecurityConfig(info.HostConfig)
+
+	return &inspectResult{Container: cm, SecurityConfig: secCfg}, nil
+}
+
+// extractSecurityConfig extracts security-relevant fields from Docker's HostConfig.
+func extractSecurityConfig(hc *container.HostConfig) *SecurityConfig {
+	if hc == nil {
+		return &SecurityConfig{}
+	}
+
+	cfg := &SecurityConfig{
+		Privileged:  hc.Privileged,
+		NetworkMode: string(hc.NetworkMode),
+	}
+
+	for port, bindings := range hc.PortBindings {
+		for _, b := range bindings {
+			cfg.PortBindings = append(cfg.PortBindings, PortBindingInfo{
+				HostIP:        b.HostIP,
+				HostPort:      b.HostPort,
+				ContainerPort: port.Int(),
+				Protocol:      port.Proto(),
+			})
+		}
+	}
+
+	return cfg
 }
 
 // mapFromList creates a Container from the docker ContainerList response.

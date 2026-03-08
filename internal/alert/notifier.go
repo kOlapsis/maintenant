@@ -383,23 +383,48 @@ func formatSlackPayload(eventType string, a *Alert) ([]byte, error) {
 		a.Source, a.Severity, a.EntityName, a.Message,
 	)
 
-	payload := map[string]interface{}{
-		"blocks": []map[string]interface{}{
-			{
-				"type": "section",
-				"text": map[string]string{
-					"type": "mrkdwn",
-					"text": title,
-				},
-			},
-			{
-				"type": "section",
-				"text": map[string]string{
-					"type": "mrkdwn",
-					"text": fields,
-				},
+	blocks := []map[string]interface{}{
+		{
+			"type": "section",
+			"text": map[string]string{
+				"type": "mrkdwn",
+				"text": title,
 			},
 		},
+		{
+			"type": "section",
+			"text": map[string]string{
+				"type": "mrkdwn",
+				"text": fields,
+			},
+		},
+	}
+
+	if a.Source == "update" {
+		if details := parseAlertDetails(a.Details); details != nil {
+			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
+				blocks = append(blocks, map[string]interface{}{
+					"type": "section",
+					"text": map[string]string{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*Update command:*\n```%s```", cmd),
+					},
+				})
+			}
+			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
+				blocks = append(blocks, map[string]interface{}{
+					"type": "section",
+					"text": map[string]string{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*Rollback command:*\n```%s```", cmd),
+					},
+				})
+			}
+		}
+	}
+
+	payload := map[string]interface{}{
+		"blocks": blocks,
 	}
 	return json.Marshal(payload)
 }
@@ -407,16 +432,33 @@ func formatSlackPayload(eventType string, a *Alert) ([]byte, error) {
 func formatDiscordPayload(eventType string, a *Alert) ([]byte, error) {
 	color := severityColor(a.Severity)
 
+	fields := []map[string]interface{}{
+		{"name": "Source", "value": a.Source, "inline": true},
+		{"name": "Severity", "value": a.Severity, "inline": true},
+		{"name": "Entity", "value": a.EntityName, "inline": true},
+	}
+
+	if a.Source == "update" {
+		if details := parseAlertDetails(a.Details); details != nil {
+			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
+				fields = append(fields, map[string]interface{}{
+					"name": "Update Command", "value": fmt.Sprintf("```%s```", cmd), "inline": false,
+				})
+			}
+			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
+				fields = append(fields, map[string]interface{}{
+					"name": "Rollback Command", "value": fmt.Sprintf("```%s```", cmd), "inline": false,
+				})
+			}
+		}
+	}
+
 	embed := map[string]interface{}{
 		"title":       eventTitle(eventType, a),
 		"description": a.Message,
 		"color":       color,
 		"timestamp":   time.Now().UTC().Format(time.RFC3339),
-		"fields": []map[string]interface{}{
-			{"name": "Source", "value": a.Source, "inline": true},
-			{"name": "Severity", "value": a.Severity, "inline": true},
-			{"name": "Entity", "value": a.EntityName, "inline": true},
-		},
+		"fields":      fields,
 	}
 
 	payload := map[string]interface{}{
@@ -426,6 +468,24 @@ func formatDiscordPayload(eventType string, a *Alert) ([]byte, error) {
 }
 
 func formatTeamsPayload(eventType string, a *Alert) ([]byte, error) {
+	facts := []map[string]string{
+		{"name": "Source", "value": a.Source},
+		{"name": "Severity", "value": a.Severity},
+		{"name": "Entity", "value": a.EntityName},
+		{"name": "Type", "value": a.AlertType},
+	}
+
+	if a.Source == "update" {
+		if details := parseAlertDetails(a.Details); details != nil {
+			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
+				facts = append(facts, map[string]string{"name": "Update Command", "value": "`" + cmd + "`"})
+			}
+			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
+				facts = append(facts, map[string]string{"name": "Rollback Command", "value": "`" + cmd + "`"})
+			}
+		}
+	}
+
 	payload := map[string]interface{}{
 		"@type":      "MessageCard",
 		"@context":   "http://schema.org/extensions",
@@ -434,12 +494,7 @@ func formatTeamsPayload(eventType string, a *Alert) ([]byte, error) {
 		"sections": []map[string]interface{}{
 			{
 				"activityTitle": a.Message,
-				"facts": []map[string]string{
-					{"name": "Source", "value": a.Source},
-					{"name": "Severity", "value": a.Severity},
-					{"name": "Entity", "value": a.EntityName},
-					{"name": "Type", "value": a.AlertType},
-				},
+				"facts":         facts,
 			},
 		},
 	}
@@ -464,7 +519,31 @@ func formatEmailBody(eventType string, a *Alert) string {
 	b.WriteString(fmt.Sprintf("Entity: %s (%s)\n", a.EntityName, a.EntityType))
 	b.WriteString(fmt.Sprintf("Message: %s\n", a.Message))
 	b.WriteString(fmt.Sprintf("Time: %s\n", a.FiredAt.UTC().Format(time.RFC3339)))
+
+	if a.Source == "update" {
+		if details := parseAlertDetails(a.Details); details != nil {
+			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
+				b.WriteString(fmt.Sprintf("\nUpdate command:\n  %s\n", cmd))
+			}
+			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
+				b.WriteString(fmt.Sprintf("\nRollback command:\n  %s\n", cmd))
+			}
+		}
+	}
+
 	return b.String()
+}
+
+// parseAlertDetails deserializes the JSON details string from a persisted alert.
+func parseAlertDetails(details string) map[string]interface{} {
+	if details == "" || details == "{}" {
+		return nil
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(details), &m); err != nil {
+		return nil
+	}
+	return m
 }
 
 func eventTitle(eventType string, a *Alert) string {

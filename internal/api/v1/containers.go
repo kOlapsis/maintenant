@@ -25,17 +25,28 @@ type ContainerNameLister interface {
 	ListContainerNames(ctx context.Context, externalID string) ([]string, error)
 }
 
+// SecurityInsightProvider provides security insight counts for containers.
+type SecurityInsightProvider interface {
+	InsightCount(containerID int64) (int, string)
+}
+
 // ContainerHandler handles container-related HTTP endpoints.
 type ContainerHandler struct {
-	service         *container.Service
-	uptime          *container.UptimeCalculator
-	logFetcher      LogFetcher
-	containerLister ContainerNameLister
+	service          *container.Service
+	uptime           *container.UptimeCalculator
+	logFetcher       LogFetcher
+	containerLister  ContainerNameLister
+	securityProvider SecurityInsightProvider
 }
 
 // NewContainerHandler creates a new container handler.
 func NewContainerHandler(service *container.Service, uptime *container.UptimeCalculator) *ContainerHandler {
 	return &ContainerHandler{service: service, uptime: uptime}
+}
+
+// SetSecurityProvider sets the security insight provider for enriching container responses.
+func (h *ContainerHandler) SetSecurityProvider(sp SecurityInsightProvider) {
+	h.securityProvider = sp
 }
 
 // SetLogFetcher sets the log fetcher for the logs endpoint.
@@ -72,8 +83,38 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		groups = []*container.ContainerGroup{}
 	}
 
+	// Enrich with security insight counts if provider is available
+	type enrichedContainer struct {
+		*container.Container
+		SecurityInsightCount    int     `json:"security_insight_count"`
+		SecurityHighestSeverity *string `json:"security_highest_severity"`
+	}
+	type enrichedGroup struct {
+		Name       string               `json:"name"`
+		Source     string               `json:"source"`
+		Containers []enrichedContainer  `json:"containers"`
+	}
+
+	enrichedGroups := make([]enrichedGroup, 0, len(groups))
+	for _, g := range groups {
+		eg := enrichedGroup{Name: g.Name, Source: g.Source}
+		eg.Containers = make([]enrichedContainer, 0, len(g.Containers))
+		for _, c := range g.Containers {
+			ec := enrichedContainer{Container: c}
+			if h.securityProvider != nil {
+				count, sev := h.securityProvider.InsightCount(c.ID)
+				ec.SecurityInsightCount = count
+				if sev != "" {
+					ec.SecurityHighestSeverity = &sev
+				}
+			}
+			eg.Containers = append(eg.Containers, ec)
+		}
+		enrichedGroups = append(enrichedGroups, eg)
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"groups":         groups,
+		"groups":         enrichedGroups,
 		"total":          total,
 		"archived_count": archivedCount,
 	})
