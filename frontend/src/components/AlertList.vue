@@ -13,9 +13,11 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
-import type { ListAlertsParams } from '@/services/alertApi'
+import type { Alert, ListAlertsParams } from '@/services/alertApi'
 
+const router = useRouter()
 const store = useAlertsStore()
 
 const sourceFilter = ref('')
@@ -56,6 +58,19 @@ const statusColors: Record<string, { bg: string; color: string }> = {
   active: { bg: 'var(--pb-status-down-bg)', color: 'var(--pb-status-down)' },
   resolved: { bg: 'var(--pb-status-ok-bg)', color: 'var(--pb-status-ok)' },
   silenced: { bg: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)' },
+}
+
+function navigateToEntity(alert: Alert) {
+  const routes: Record<string, string> = {
+    container: 'containers',
+    endpoint: 'endpoints',
+    heartbeat: 'heartbeats',
+    certificate: 'certificates',
+  }
+  const name = routes[alert.entity_type]
+  if (!name) return
+  const query = alert.entity_id ? { selected: String(alert.entity_id) } : undefined
+  router.push({ name, query })
 }
 
 const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)'
@@ -107,8 +122,9 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
       <div
         v-for="alert in store.alerts"
         :key="'m-' + alert.id"
-        class="rounded-lg border p-3"
+        class="rounded-lg border p-3 cursor-pointer transition-colors"
         style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+        @click="navigateToEntity(alert)"
       >
         <div class="flex items-center justify-between gap-2 mb-1.5">
           <div class="flex items-center gap-2">
@@ -160,10 +176,11 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
           <tr
             v-for="alert in store.alerts"
             :key="alert.id"
-            class="transition-colors"
+            class="transition-colors cursor-pointer"
             :style="{ borderBottom: '1px solid var(--pb-border-subtle)' }"
             @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--pb-bg-hover)'"
             @mouseleave="($event.currentTarget as HTMLElement).style.background = 'transparent'"
+            @click="navigateToEntity(alert)"
           >
             <td class="px-4 py-2">
               <span

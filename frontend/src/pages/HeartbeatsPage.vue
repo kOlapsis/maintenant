@@ -12,14 +12,27 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { createHeartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
 import HeartbeatDetail from '@/components/HeartbeatDetail.vue'
 
+const route = useRoute()
 const store = useHeartbeatsStore()
 const selectedId = ref<number | null>(null)
+
+// Auto-open heartbeat from query param (e.g. ?selected=42)
+watch(
+  () => [route.query.selected, store.heartbeats.length] as const,
+  ([selected]) => {
+    if (selected && store.heartbeats.length > 0) {
+      selectedId.value = Number(selected)
+    }
+  },
+  { immediate: true },
+)
 const showCreateForm = ref(false)
 const createError = ref<string | null>(null)
 
@@ -63,7 +76,8 @@ async function handleCreate() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+  <div class="overflow-y-auto p-3 sm:p-6">
+  <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-black text-white">Heartbeats</h1>
@@ -271,5 +285,6 @@ async function handleCreate() {
         @select="selectedId = $event"
       />
     </div>
+  </div>
   </div>
 </template>

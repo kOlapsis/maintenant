@@ -13,11 +13,26 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import { timeAgo } from '@/utils/time'
 import type { Alert } from '@/services/alertApi'
 
+const router = useRouter()
 const store = useAlertsStore()
+
+function navigateToEntity(alert: Alert) {
+  const routes: Record<string, string> = {
+    container: 'containers',
+    endpoint: 'endpoints',
+    heartbeat: 'heartbeats',
+    certificate: 'certificates',
+  }
+  const name = routes[alert.entity_type]
+  if (!name) return
+  const query = alert.entity_id ? { selected: String(alert.entity_id) } : undefined
+  router.push({ name, query })
+}
 
 const severityConfig: Record<string, { label: string; color: string; bg: string; dot: string }> = {
   critical: {
@@ -76,11 +91,12 @@ const sections = computed(() =>
           <div
             v-for="alert in section.alerts"
             :key="alert.id"
-            class="flex items-center justify-between rounded-md border px-3 py-2"
+            class="flex items-center justify-between rounded-md border px-3 py-2 cursor-pointer hover:brightness-110 transition-all"
             :style="{
               background: section.config.bg,
               borderColor: section.config.color,
             }"
+            @click="navigateToEntity(alert)"
           >
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">

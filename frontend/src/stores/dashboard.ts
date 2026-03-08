@@ -41,7 +41,7 @@ export interface UnifiedMonitor {
   sparklineType: 'latency' | 'uptime' | 'cpu' | null
   metricValue: string | null
   metricLabel: string | null
-  link: { name: string; params: Record<string, string> }
+  link: { name: string; params?: Record<string, string>; query?: Record<string, string> }
   updatedAt: string
 }
 
@@ -137,7 +137,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         sparklineType: cpuSpark?.length ? 'cpu' : null,
         metricValue: snap ? `${snap.cpu_percent.toFixed(1)}%` : null,
         metricLabel: snap ? 'cpu' : null,
-        link: { name: 'containers', params: {} },
+        link: { name: 'containers', query: { selected: String(c.id) } },
         updatedAt: c.last_state_change_at,
       })
     }

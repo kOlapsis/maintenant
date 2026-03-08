@@ -12,13 +12,15 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useCertificatesStore } from '@/stores/certificates'
 import { useContainersStore } from '@/stores/containers'
 import { createCertificate } from '@/services/certificateApi'
 import CertificateCard from '@/components/CertificateCard.vue'
 import CertificateDetail from '@/components/CertificateDetail.vue'
 
+const route = useRoute()
 const store = useCertificatesStore()
 const containers = useContainersStore()
 const isK8s = computed(() => containers.runtimeName === 'kubernetes')
@@ -87,10 +89,22 @@ function openDetail(id: number) {
 function closeDetail() {
   selectedId.value = null
 }
+
+// Auto-open certificate from query param (e.g. ?selected=42)
+watch(
+  () => [route.query.selected, store.certificates.length] as const,
+  ([selected]) => {
+    if (selected && store.certificates.length > 0) {
+      openDetail(Number(selected))
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+  <div class="overflow-y-auto p-3 sm:p-6">
+  <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-black text-white">Certificates</h1>
@@ -321,5 +335,6 @@ function closeDetail() {
         />
       </div>
     </div>
+  </div>
   </div>
 </template>

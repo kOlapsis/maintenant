@@ -18,6 +18,7 @@ import { useDashboardStore, type UnifiedMonitor } from '@/stores/dashboard'
 import { useResourcesStore } from '@/stores/resources'
 import { useAlertsStore } from '@/stores/alerts'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
+import { usePostureStore } from '@/stores/posture'
 import type { Alert } from '@/services/alertApi'
 import SparklineChart from '@/components/ui/SparklineChart.vue'
 import SlideOverPanel from '@/components/ui/SlideOverPanel.vue'
@@ -30,6 +31,7 @@ import {
   Zap,
   Cpu,
   Shield,
+  ShieldCheck,
   Server,
   ChevronRight,
   Activity,
@@ -46,6 +48,9 @@ const resources = useResourcesStore()
 const alertsStore = useAlertsStore()
 const statusAdmin = useStatusAdminStore()
 const updatesStore = useUpdatesStore()
+const postureStore = usePostureStore()
+
+const showPosture = computed(() => hasFeature('security_posture') && postureStore.posture !== null)
 
 const selectedService = ref<UnifiedMonitor | null>(null)
 const slideOpen = ref(false)
@@ -296,6 +301,7 @@ onMounted(() => {
   updatesStore.fetchAllUpdates()
   resources.fetchSummary()
   if (hasFeature('incidents')) statusAdmin.fetchIncidents()
+  if (hasFeature('security_posture')) postureStore.fetchPosture()
 
   summaryTimer = setInterval(() => resources.fetchSummary(), 3_000)
 })
@@ -311,7 +317,7 @@ onUnmounted(() => {
       <div class="max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-12">
 
         <!-- Summary Cards -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-5">
+        <div class="grid grid-cols-2 gap-2.5 sm:gap-5" :class="showPosture ? 'lg:grid-cols-5' : 'lg:grid-cols-4'">
           <div
             v-for="card in summaryCards"
             :key="card.title"
@@ -335,6 +341,32 @@ onUnmounted(() => {
             <h4 :class="['text-lg sm:text-2xl font-black mt-0.5', card.valueColor]">{{ card.value }}</h4>
             <p class="text-[9px] sm:text-[10px] text-slate-600 font-bold uppercase tracking-tight mt-0.5 truncate">{{ card.subtitle }}</p>
           </div>
+
+          <!-- Security Posture card (Pro only) -->
+          <RouterLink
+            v-if="showPosture"
+            to="/security"
+            class="bg-[#12151C] p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 hover:border-slate-700 transition-all shadow-lg group cursor-pointer"
+          >
+            <div class="flex justify-between items-start mb-2 sm:mb-4">
+              <div class="p-1.5 sm:p-2.5 bg-[#0B0E13] rounded-lg sm:rounded-xl group-hover:scale-105 transition-transform">
+                <ShieldCheck :size="14" class="sm:!w-[18px] sm:!h-[18px]" :class="{
+                  'text-emerald-500': postureStore.posture!.color === 'green',
+                  'text-amber-500': postureStore.posture!.color === 'yellow',
+                  'text-orange-500': postureStore.posture!.color === 'orange',
+                  'text-red-500': postureStore.posture!.color === 'red',
+                }" />
+              </div>
+            </div>
+            <p class="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-widest">Security Posture</p>
+            <h4 class="text-lg sm:text-2xl font-black mt-0.5" :class="{
+              'text-emerald-400': postureStore.posture!.color === 'green',
+              'text-amber-400': postureStore.posture!.color === 'yellow',
+              'text-orange-400': postureStore.posture!.color === 'orange',
+              'text-red-400': postureStore.posture!.color === 'red',
+            }">{{ postureStore.posture!.score }}<span class="text-sm font-bold text-slate-600">/100</span></h4>
+            <p class="text-[9px] sm:text-[10px] text-slate-600 font-bold uppercase tracking-tight mt-0.5 truncate">{{ postureStore.posture!.scored_count }} containers scored</p>
+          </RouterLink>
         </div>
 
         <!-- Update Summary Strip -->

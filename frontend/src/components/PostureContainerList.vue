@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
 import type { ContainerRisk } from '@/services/postureApi'
 import PostureScoreBadge from './PostureScoreBadge.vue'
 import { ChevronRight } from 'lucide-vue-next'
@@ -8,11 +7,9 @@ defineProps<{
   risks: ContainerRisk[]
 }>()
 
-const router = useRouter()
-
-function goToContainer(id: number) {
-  router.push({ name: 'containers', query: { selected: String(id) } })
-}
+const emit = defineEmits<{
+  select: [containerId: number]
+}>()
 </script>
 
 <template>
@@ -32,7 +29,7 @@ function goToContainer(id: number) {
             v-for="risk in risks"
             :key="risk.container_id"
             class="group hover:bg-slate-800/25 transition-all cursor-pointer"
-            @click="goToContainer(risk.container_id)"
+            @click="emit('select', risk.container_id)"
           >
             <td class="px-6 py-3">
               <PostureScoreBadge :score="risk.score" :color="risk.color" size="sm" />
@@ -62,7 +59,7 @@ function goToContainer(id: number) {
         v-for="risk in risks"
         :key="'m-' + risk.container_id"
         class="px-4 py-3 active:bg-slate-800/25 transition-colors cursor-pointer flex items-center gap-3"
-        @click="goToContainer(risk.container_id)"
+        @click="emit('select', risk.container_id)"
       >
         <PostureScoreBadge :score="risk.score" :color="risk.color" size="sm" />
         <div class="min-w-0 flex-1">

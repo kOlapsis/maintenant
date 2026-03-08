@@ -5,7 +5,7 @@ LICENSE-COMMERCIAL.md Source: https://github.com/kolapsis/maintenant -->
 
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import { useEdition } from '@/composables/useEdition'
@@ -27,7 +27,7 @@ import {
 
 const route = useRoute()
 const { version } = useAppVersion()
-const { isEnterprise, licenseMessage, licenseStatusValue, loadLicenseStatus } = useEdition()
+const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } = useEdition()
 
 onMounted(() => {
   loadLicenseStatus()
@@ -39,18 +39,20 @@ function closeMobileMenu() {
   mobileMenuOpen.value = false
 }
 
-const mainNav = [
+const allNav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
   { to: '/containers', label: 'Containers', icon: Box },
   { to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
   { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
   { to: '/certificates', label: 'SSL Certificates', icon: Shield },
   { to: '/updates', label: 'Updates', icon: ArrowUpCircle },
-  { to: '/posture', label: 'Security Posture', icon: ShieldCheck },
+  { to: '/security', label: 'Security Posture', icon: ShieldCheck, feature: 'security_posture' },
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/webhooks', label: 'Webhooks', icon: Link },
   { to: '/status-admin', label: 'Status Pages', icon: Activity },
 ]
+
+const mainNav = computed(() => allNav.filter(item => !item.feature || hasFeature(item.feature)))
 </script>
 
 <template>

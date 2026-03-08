@@ -12,7 +12,8 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ContainerList from '@/components/ContainerList.vue'
 import ContainerDetail from '@/components/ContainerDetail.vue'
 import ResourceSummary from '@/components/ResourceSummary.vue'
@@ -22,6 +23,8 @@ import { useUpdatesStore } from '@/stores/updates'
 import type { Container } from '@/services/containerApi'
 import { AlertTriangle, Info } from 'lucide-vue-next'
 
+const route = useRoute()
+const router = useRouter()
 const store = useContainersStore()
 const updatesStore = useUpdatesStore()
 
@@ -42,10 +45,30 @@ function openDetail(container: Container) {
   selectedContainer.value = container
   detailOpen.value = true
 }
+
+function openContainerById(id: number) {
+  const container = store.allContainers.find((c) => c.id === id)
+  if (container) {
+    openDetail(container)
+    router.replace({ query: {} })
+  }
+}
+
+// Auto-open container from query param (e.g. ?selected=42)
+watch(
+  () => [route.query.selected, store.allContainers.length] as const,
+  ([selected]) => {
+    if (selected && store.allContainers.length > 0) {
+      openContainerById(Number(selected))
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+  <div class="overflow-y-auto p-3 sm:p-6">
+  <div class="max-w-7xl mx-auto">
     <div class="mb-6">
       <h1 class="text-2xl font-black text-white">Containers</h1>
       <p class="mt-1 text-sm text-slate-500">
@@ -115,5 +138,6 @@ function openDetail(container: Container) {
         @deleted="detailOpen = false; store.fetchContainers()"
       />
     </SlideOverPanel>
+  </div>
   </div>
 </template>
