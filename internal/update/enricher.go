@@ -23,16 +23,18 @@ type ProEnricher struct {
 	cve       *CVEClient
 	changelog *ChangelogResolver
 	risk      *RiskEngine
+	ecosystem *EcosystemResolver
 	logger    *slog.Logger
 }
 
 // NewProEnricher creates the full enrichment pipeline.
-func NewProEnricher(store UpdateStore, cve *CVEClient, changelog *ChangelogResolver, risk *RiskEngine, logger *slog.Logger) *ProEnricher {
+func NewProEnricher(store UpdateStore, cve *CVEClient, changelog *ChangelogResolver, risk *RiskEngine, ecosystem *EcosystemResolver, logger *slog.Logger) *ProEnricher {
 	return &ProEnricher{
 		store:     store,
 		cve:       cve,
 		changelog: changelog,
 		risk:      risk,
+		ecosystem: ecosystem,
 		logger:    logger,
 	}
 }
@@ -100,7 +102,17 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 		return nil
 	}
 
-	query := MapImageToCVEQuery(r.Image, r.CurrentTag)
+	var query *ImageCVEQuery
+	if e.ecosystem != nil {
+		result := e.ecosystem.Resolve(ctx, r.Image, r.CurrentTag, r.CurrentDigest, nil)
+		if result != nil {
+			query = &ImageCVEQuery{
+				PackageName: result.PackageName,
+				Ecosystem:   result.Ecosystem,
+				Version:     r.CurrentTag,
+			}
+		}
+	}
 	if query == nil {
 		e.logger.Debug("cve: no ecosystem mapping", "container", r.ContainerName, "image", r.Image)
 		return nil

@@ -260,6 +260,13 @@ func RiskLevelFromScore(score int) RiskLevel {
 	}
 }
 
+// EcosystemResult holds the resolved CVE ecosystem for a container image.
+type EcosystemResult struct {
+	PackageName     string `json:"package_name"`
+	Ecosystem       string `json:"ecosystem"`
+	DetectionMethod string `json:"detection_method"`
+}
+
 // UpdateConfig holds parsed maintenant.update.* label values.
 type UpdateConfig struct {
 	Enabled     bool

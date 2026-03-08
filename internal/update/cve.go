@@ -208,48 +208,6 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 	return results, nil
 }
 
-// MapImageToCVEQuery maps a container image to an OSV query.
-// This does a best-effort mapping: for well-known images (nginx, postgres, etc.)
-// it maps to the corresponding ecosystem package.
-func MapImageToCVEQuery(image, currentTag string) *ImageCVEQuery {
-	repo, _, _ := parseImageRef(image)
-
-	// Strip registry prefix for mapping
-	name := repo
-	if idx := strings.LastIndex(name, "/"); idx >= 0 {
-		name = name[idx+1:]
-	}
-
-	// Map known images to OSV ecosystem packages
-	ecosystemMap := map[string]struct{ pkg, eco string }{
-		"nginx":      {"nginx", "Debian:12"},
-		"postgres":   {"postgresql-16", "Debian:12"},
-		"redis":      {"redis", "Debian:12"},
-		"mysql":      {"mysql-server-8.0", "Debian:12"},
-		"mariadb":    {"mariadb", "Debian:12"},
-		"node":       {"nodejs", "Debian:12"},
-		"python":     {"python3", "Debian:12"},
-		"golang":     {"golang", "Debian:12"},
-		"httpd":      {"apache2", "Debian:12"},
-		"memcached":  {"memcached", "Debian:12"},
-		"mongo":      {"mongodb", "Debian:12"},
-		"rabbitmq":   {"rabbitmq-server", "Debian:12"},
-		"traefik":    {"traefik", "Go"},
-		"grafana":    {"grafana", "Go"},
-		"prometheus": {"prometheus", "Go"},
-	}
-
-	if mapping, ok := ecosystemMap[name]; ok {
-		return &ImageCVEQuery{
-			PackageName: mapping.pkg,
-			Ecosystem:   mapping.eco,
-			Version:     currentTag,
-		}
-	}
-
-	return nil
-}
-
 func parseSeverity(vuln osvVuln) (CVESeverity, float64) {
 	for _, s := range vuln.Severity {
 		if s.Type == "CVSS_V3" {

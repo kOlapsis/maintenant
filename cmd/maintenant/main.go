@@ -854,7 +854,8 @@ func main() {
 		cveClient := update.NewCVEClient(updateStore, logger.With("component", "cve"))
 		changelogResolver := update.NewChangelogResolver(registryClient, logger.With("component", "changelog"))
 		riskEngine := update.NewRiskEngine()
-		enricher := update.NewProEnricher(updateStore, cveClient, changelogResolver, riskEngine, logger.With("component", "enricher"))
+		ecosystemResolver := update.NewEcosystemResolver(registryClient, logger.With("component", "ecosystem"))
+		enricher := update.NewProEnricher(updateStore, cveClient, changelogResolver, riskEngine, ecosystemResolver, logger.With("component", "enricher"))
 		updateSvc.SetEnricher(enricher)
 		logger.Info("update enrichment pipeline enabled (Pro)")
 	}
