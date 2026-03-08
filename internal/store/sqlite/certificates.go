@@ -81,7 +81,7 @@ func (s *CertificateStore) GetMonitorByID(ctx context.Context, id int64) (*certi
 
 func (s *CertificateStore) GetMonitorByHostPort(ctx context.Context, hostname string, port int) (*certificate.CertMonitor, error) {
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
-		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE hostname=? AND port=? AND active=1`,
+		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE hostname=? AND port=?`,
 		hostname, port))
 }
 
