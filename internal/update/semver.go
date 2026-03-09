@@ -13,9 +13,41 @@ package update
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 )
+
+// knownVariantSuffixes lists OS/distro suffixes that are NOT semver prereleases.
+// Ordered longest-first so "-slim-bookworm" matches before "-bookworm".
+var knownVariantSuffixes = []string{
+	"-slim-bookworm",
+	"-slim-bullseye",
+	"-slim-buster",
+	"-alpine3.21",
+	"-alpine3.20",
+	"-alpine3.19",
+	"-alpine3.18",
+	"-alpine",
+	"-bookworm",
+	"-bullseye",
+	"-buster",
+	"-noble",
+	"-jammy",
+	"-focal",
+}
+
+// splitVariant separates a Docker tag into its version part and variant suffix.
+// e.g. "18.3-alpine" → ("18.3", "-alpine"), "3.19.1" → ("3.19.1", "")
+func splitVariant(tag string) (version, variant string) {
+	lower := strings.ToLower(tag)
+	for _, suffix := range knownVariantSuffixes {
+		if strings.HasSuffix(lower, suffix) {
+			return tag[:len(tag)-len(suffix)], tag[len(tag)-len(suffix):]
+		}
+	}
+	return tag, ""
+}
 
 // ParseTag attempts to parse a Docker tag as a semver version.
 // Returns nil, error for non-semver tags like "latest", "alpine".
@@ -44,6 +76,37 @@ func ClassifyUpdate(current, latest *semver.Version) UpdateType {
 	return UpdateTypeUnknown
 }
 
+// tagVersion pairs a parsed semver version with its original tag string.
+type tagVersion struct {
+	original string
+	version  *semver.Version
+}
+
+// sortTagVersions filters tags to those matching the given variant suffix,
+// parses them as semver, skips prereleases, and returns them sorted ascending.
+func sortTagVersions(tags []string, variant string) []tagVersion {
+	var result []tagVersion
+	for _, tag := range tags {
+		_, tv := splitVariant(tag)
+		if !strings.EqualFold(tv, variant) {
+			continue
+		}
+		versionPart, _ := splitVariant(tag)
+		v, err := semver.NewVersion(versionPart)
+		if err != nil {
+			continue
+		}
+		if v.Prerelease() != "" {
+			continue
+		}
+		result = append(result, tagVersion{original: tag, version: v})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].version.LessThan(result[j].version)
+	})
+	return result
+}
+
 // SortTags filters non-semver tags and returns sorted semver versions (ascending).
 func SortTags(tags []string) []*semver.Version {
 	var versions []*semver.Version
@@ -63,10 +126,12 @@ func SortTags(tags []string) []*semver.Version {
 }
 
 // FindBestUpdate finds the best available update for the given current tag among all tags.
-// For semver tags: finds the highest version within the same major.
+// For semver tags: finds the highest version with the same variant suffix (e.g. -alpine).
 // For non-semver tags: returns the latest tag if digests differ (digest_only mode).
 func FindBestUpdate(currentTag string, allTags []string) (bestTag string, updateType UpdateType) {
-	currentVer, err := semver.NewVersion(currentTag)
+	versionPart, variant := splitVariant(currentTag)
+
+	currentVer, err := semver.NewVersion(versionPart)
 	if err != nil {
 		// Non-semver tag: return "latest" if available, mark as digest_only
 		for _, t := range allTags {
@@ -77,16 +142,16 @@ func FindBestUpdate(currentTag string, allTags []string) (bestTag string, update
 		return "", UpdateTypeUnknown
 	}
 
-	versions := SortTags(allTags)
-	if len(versions) == 0 {
+	candidates := sortTagVersions(allTags, variant)
+	if len(candidates) == 0 {
 		return "", UpdateTypeUnknown
 	}
 
 	// Find the highest version greater than current
-	var best *semver.Version
-	for _, v := range versions {
-		if v.GreaterThan(currentVer) {
-			best = v
+	var best *tagVersion
+	for i := range candidates {
+		if candidates[i].version.GreaterThan(currentVer) {
+			best = &candidates[i]
 		}
 	}
 
@@ -94,5 +159,5 @@ func FindBestUpdate(currentTag string, allTags []string) (bestTag string, update
 		return "", UpdateTypeUnknown
 	}
 
-	return best.Original(), ClassifyUpdate(currentVer, best)
+	return best.original, ClassifyUpdate(currentVer, best.version)
 }
