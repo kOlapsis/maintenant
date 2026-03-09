@@ -143,12 +143,44 @@ func (s *ContainerStore) ArchiveContainer(ctx context.Context, externalID string
 }
 
 func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id int64) error {
-	_, err := s.writer.Exec(ctx, `DELETE FROM state_transitions WHERE container_id = ?`, id)
+	// Look up the external_id for cleaning up tables that reference it.
+	var externalID string
+	err := s.db.QueryRowContext(ctx, `SELECT external_id FROM containers WHERE id = ?`, id).Scan(&externalID)
 	if err != nil {
-		return fmt.Errorf("delete container transitions: %w", err)
+		return fmt.Errorf("get container external_id: %w", err)
 	}
-	_, err = s.writer.Exec(ctx, `DELETE FROM containers WHERE id = ?`, id)
-	if err != nil {
+
+	// Delete records referencing the maintenant integer ID.
+	for _, q := range []struct {
+		sql  string
+		desc string
+	}{
+		{`DELETE FROM state_transitions WHERE container_id = ?`, "transitions"},
+		{`DELETE FROM resource_snapshots WHERE container_id = ?`, "resource snapshots"},
+		{`DELETE FROM resource_alert_configs WHERE container_id = ?`, "resource alert configs"},
+	} {
+		if _, err := s.writer.Exec(ctx, q.sql, id); err != nil {
+			return fmt.Errorf("delete container %s: %w", q.desc, err)
+		}
+	}
+
+	// Delete records referencing the external container ID (text).
+	for _, q := range []struct {
+		sql  string
+		desc string
+	}{
+		{`DELETE FROM image_updates WHERE container_id = ?`, "image updates"},
+		{`DELETE FROM container_cves WHERE container_id = ?`, "container cves"},
+		{`DELETE FROM version_pins WHERE container_id = ?`, "version pins"},
+		{`DELETE FROM risk_score_history WHERE container_id = ?`, "risk score history"},
+	} {
+		if _, err := s.writer.Exec(ctx, q.sql, externalID); err != nil {
+			return fmt.Errorf("delete container %s: %w", q.desc, err)
+		}
+	}
+
+	// Finally delete the container itself.
+	if _, err := s.writer.Exec(ctx, `DELETE FROM containers WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete container: %w", err)
 	}
 	return nil
