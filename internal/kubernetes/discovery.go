@@ -28,12 +28,14 @@ import (
 func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 	now := time.Now()
 	var containers []*cmodel.Container
+	var rbacDenied int
 
 	// Deployments
 	depList, err := r.clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list deployments, skipping", "error", err)
+			rbacDenied++
 		} else {
 			return nil, fmt.Errorf("list deployments: %w", err)
 		}
@@ -52,6 +54,7 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list statefulsets, skipping", "error", err)
+			rbacDenied++
 		} else {
 			return nil, fmt.Errorf("list statefulsets: %w", err)
 		}
@@ -70,6 +73,7 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list daemonsets, skipping", "error", err)
+			rbacDenied++
 		} else {
 			return nil, fmt.Errorf("list daemonsets: %w", err)
 		}
@@ -88,6 +92,7 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list pods, skipping", "error", err)
+			rbacDenied++
 		} else {
 			return nil, fmt.Errorf("list pods: %w", err)
 		}
@@ -102,6 +107,12 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 			}
 			containers = append(containers, r.mapBarePod(pod, now))
 		}
+	}
+
+	if rbacDenied == 4 {
+		r.logger.Error("RBAC: all resource types denied — no workloads will be discovered. " +
+			"Ensure the ServiceAccount has a ClusterRole with get/list/watch on pods, deployments, " +
+			"statefulsets, and daemonsets. See deploy/kubernetes/rbac.yaml")
 	}
 
 	return containers, nil
