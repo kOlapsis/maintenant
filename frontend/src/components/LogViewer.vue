@@ -12,241 +12,143 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-
-const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
+import { computed, ref, watch, nextTick } from 'vue'
+import type { UseLogStreamReturn } from '@/composables/useLogStream'
+import type { UseLogSearchReturn } from '@/composables/useLogSearch'
+import LogToolbar from './LogToolbar.vue'
+import LogNewLinesBadge from './LogNewLinesBadge.vue'
+import LogLineContent from './LogLineContent.vue'
 
 const props = defineProps<{
-  containerId: number
-  containerName?: string
+  logStream: UseLogStreamReturn
+  isExpanded: boolean
+  search: UseLogSearchReturn
 }>()
 
-const lines = ref<string[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-const streaming = ref(false)
-const logContainer = ref<HTMLPreElement | null>(null)
-const autoScroll = ref(true)
+const emit = defineEmits<{
+  'toggle-expand': []
+}>()
 
-let eventSource: EventSource | null = null
+const expandedJsonIds = ref(new Set<number>())
+const scrollContainerRef = ref<HTMLElement | null>(null)
 
-function scrollToBottom() {
-  if (!autoScroll.value || !logContainer.value) return
+const hasTimestamps = computed(() =>
+  props.logStream.lines.value.some(l => l.parsedTimestamp !== null),
+)
+
+function getActiveMatchOffset(lineIndex: number): number | null {
+  const idx = props.search.currentMatchIndex.value
+  if (idx < 0) return null
+  const match = props.search.matches.value[idx]
+  if (!match || match.lineIndex !== lineIndex) return null
+  return match.startOffset
+}
+
+function toggleJsonExpand(lineId: number) {
+  const s = new Set(expandedJsonIds.value)
+  if (s.has(lineId)) {
+    s.delete(lineId)
+  } else {
+    s.add(lineId)
+  }
+  expandedJsonIds.value = s
+}
+
+// Scroll current match into view
+watch(() => props.search.currentMatchIndex.value, () => {
+  const idx = props.search.currentMatchIndex.value
+  if (idx < 0) return
+  const match = props.search.matches.value[idx]
+  if (!match) return
+
   nextTick(() => {
-    if (logContainer.value) {
-      logContainer.value.scrollTop = logContainer.value.scrollHeight
+    const container = scrollContainerRef.value
+    if (!container) return
+    const lineEl = container.querySelector(`[data-line-index="${match.lineIndex}"]`)
+    if (lineEl) {
+      lineEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     }
   })
-}
-
-function startStreaming() {
-  if (eventSource) {
-    eventSource.close()
-  }
-
-  loading.value = true
-  error.value = null
-  streaming.value = true
-
-  let streamUrl = `${API_BASE}/containers/${props.containerId}/logs/stream?lines=100`
-  if (props.containerName) {
-    streamUrl += `&container=${encodeURIComponent(props.containerName)}`
-  }
-  const sseUrl = new URL(streamUrl, window.location.origin)
-  eventSource = new EventSource(sseUrl.toString())
-
-  eventSource.addEventListener('container.log_line', (event: MessageEvent) => {
-    loading.value = false
-    try {
-      const data = JSON.parse(event.data)
-      if (data.line) {
-        lines.value.push(data.line)
-        // Cap at 1000 lines to prevent memory issues
-        if (lines.value.length > 1000) {
-          lines.value = lines.value.slice(-800)
-        }
-        scrollToBottom()
-      }
-    } catch {
-      // If not JSON, treat as raw line
-      lines.value.push(event.data)
-      scrollToBottom()
-    }
-  })
-
-  eventSource.addEventListener('container.log_backlog', (event: MessageEvent) => {
-    loading.value = false
-    try {
-      const data = JSON.parse(event.data)
-      if (data.lines && Array.isArray(data.lines)) {
-        lines.value = data.lines
-        scrollToBottom()
-      }
-    } catch {
-      // ignore
-    }
-  })
-
-  eventSource.addEventListener('container.log_error', (event: MessageEvent) => {
-    loading.value = false
-    try {
-      const data = JSON.parse(event.data)
-      error.value = data.error || 'Log stream ended'
-    } catch {
-      error.value = 'Log stream ended'
-    }
-    streaming.value = false
-  })
-
-  eventSource.onopen = () => {
-    loading.value = false
-  }
-
-  eventSource.onerror = () => {
-    loading.value = false
-    // Close to prevent EventSource auto-reconnect loop
-    // (especially for stopped containers where the stream closes immediately)
-    if (eventSource) {
-      eventSource.close()
-      eventSource = null
-    }
-    streaming.value = false
-    // Fallback to static fetch if we got nothing from SSE
-    if (lines.value.length === 0) {
-      fetchLogsStatic()
-    }
-  }
-}
-
-async function fetchLogsStatic() {
-  loading.value = true
-  error.value = null
-  try {
-    const res = await fetch(
-      `${API_BASE}/containers/${props.containerId}/logs?lines=100&timestamps=true`,
-    )
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body?.error?.message || `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    lines.value = data.lines || []
-    scrollToBottom()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Failed to fetch logs'
-  } finally {
-    loading.value = false
-  }
-}
-
-function handleScroll() {
-  if (!logContainer.value) return
-  const el = logContainer.value
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
-  autoScroll.value = atBottom
-}
-
-onMounted(() => {
-  startStreaming()
 })
 
-onUnmounted(() => {
-  if (eventSource) {
-    eventSource.close()
-    eventSource = null
+// Clear expanded JSON when buffer trims
+watch(() => props.logStream.lines.value.length, (newLen, oldLen) => {
+  if (newLen < oldLen) {
+    expandedJsonIds.value = new Set()
   }
-})
-
-watch([() => props.containerId, () => props.containerName], () => {
-  lines.value = []
-  if (eventSource) {
-    eventSource.close()
-  }
-  startStreaming()
 })
 </script>
 
 <template>
-  <div class="flex flex-col">
-    <div class="mb-2 flex items-center justify-between">
-      <h3 class="text-sm font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">Logs</h3>
-      <div class="flex items-center gap-2">
-        <span
-          v-if="streaming"
-          class="flex items-center gap-1 text-xs"
-          :style="{ color: 'var(--pb-status-ok)' }"
-        >
-          <span
-            :style="{
-              display: 'inline-block',
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--pb-status-ok)',
-            }"
-          />
-          Streaming
-        </span>
-        <button
-          v-if="!streaming"
-          class="rounded px-2 py-1 text-xs"
-          :style="{
-            backgroundColor: 'var(--pb-bg-elevated)',
-            color: 'var(--pb-text-secondary)',
-            borderRadius: 'var(--pb-radius-sm)',
-          }"
-          @click="startStreaming"
-        >
-          Reconnect
-        </button>
-      </div>
-    </div>
+  <div class="flex min-h-0 flex-1 flex-col">
+    <LogToolbar
+      :is-expanded="isExpanded"
+      :status="logStream.status.value"
+      :word-wrap="logStream.wordWrap.value"
+      :search="search"
+      @toggle-expand="emit('toggle-expand')"
+      @toggle-wrap="logStream.wordWrap.value = !logStream.wordWrap.value"
+      @reconnect="logStream.connect()"
+    />
 
-    <div v-if="loading && lines.length === 0" class="flex justify-center py-4">
-      <div
-        class="h-5 w-5 animate-spin rounded-full border-2"
-        :style="{ borderColor: 'var(--pb-border-default)', borderTopColor: 'var(--pb-accent)' }"
-      />
-    </div>
-
+    <!-- Loading -->
     <div
-      v-else-if="error && lines.length === 0"
-      class="rounded p-3 text-sm"
-      :style="{
-        backgroundColor: 'var(--pb-status-down-bg)',
-        color: 'var(--pb-status-down)',
-        borderRadius: 'var(--pb-radius-sm)',
-      }"
+      v-if="logStream.status.value === 'connecting' && logStream.lines.value.length === 0"
+      class="flex justify-center rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] py-4"
     >
-      {{ error }}
+      <div class="h-5 w-5 animate-spin rounded-full border-2 border-slate-700 border-t-pb-green-400" />
     </div>
 
+    <!-- Error (no lines) -->
     <div
-      v-else-if="lines.length === 0"
-      class="py-4 text-center text-sm"
-      :style="{ color: 'var(--pb-text-muted)' }"
+      v-else-if="logStream.error.value && logStream.lines.value.length === 0"
+      class="rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] p-3 text-sm text-red-400"
+    >
+      {{ logStream.error.value }}
+    </div>
+
+    <!-- No logs -->
+    <div
+      v-else-if="logStream.lines.value.length === 0"
+      class="rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] py-4 text-center text-sm text-slate-500"
     >
       No logs available
     </div>
 
-    <pre
-      v-else
-      ref="logContainer"
-      :style="{
-        flex: '1',
-        minHeight: '12rem',
-        overflow: 'auto',
-        backgroundColor: 'var(--pb-bg-primary)',
-        padding: '0.75rem',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        fontSize: '0.7rem',
-        lineHeight: '1.6',
-        color: 'var(--pb-text-primary)',
-        borderRadius: 'var(--pb-radius-md)',
-        border: '1px solid var(--pb-border-subtle)',
-      }"
-      @scroll="handleScroll"
-    ><template v-for="(line, i) in lines" :key="i">{{ line }}
-</template></pre>
+    <!-- Log content -->
+    <div v-else class="relative min-h-0 flex-1">
+      <div
+        ref="scrollContainerRef"
+        class="absolute inset-0 overflow-auto rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] px-2 py-1 font-mono text-[0.7rem] leading-relaxed text-white"
+        :class="logStream.wordWrap.value ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'"
+        @scroll="logStream.handleScroll"
+      >
+        <LogLineContent
+          v-for="(line, idx) in logStream.lines.value"
+          :key="line.id"
+          :data-line-index="idx"
+          :line="line"
+          :line-index="idx"
+          :has-timestamps="hasTimestamps"
+          :search-matches="search.getLineMatches(idx)"
+          :active-match-offset="getActiveMatchOffset(idx)"
+          :expanded="expandedJsonIds.has(line.id)"
+          @toggle-expand="toggleJsonExpand(line.id)"
+        />
+      </div>
+
+      <LogNewLinesBadge
+        :unseen-count="logStream.unseenCount.value"
+        @click="logStream.scrollToBottom()"
+      />
+    </div>
+
+    <!-- Error banner (with lines still visible) -->
+    <div
+      v-if="logStream.error.value && logStream.lines.value.length > 0"
+      class="mt-2 rounded-lg border border-slate-800 bg-[#12151C] px-3 py-2 text-xs text-slate-400"
+    >
+      {{ logStream.error.value }}
+    </div>
   </div>
 </template>

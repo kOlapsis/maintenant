@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, toRef, onMounted, onUnmounted, computed, watch } from 'vue'
 import {
   getContainer,
   listTransitions,
@@ -23,6 +23,9 @@ import {
 import { useResourcesStore } from '@/stores/resources'
 import { timeAgo } from '@/utils/time'
 import LogViewer from './LogViewer.vue'
+import LogExpandedView from './LogExpandedView.vue'
+import { useLogStream } from '@/composables/useLogStream'
+import { useLogSearch } from '@/composables/useLogSearch'
 import ContainerEventTimeline from './ContainerEventTimeline.vue'
 import SecurityInsightList from './SecurityInsightList.vue'
 import PostureScoreBadge from './PostureScoreBadge.vue'
@@ -58,6 +61,13 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedLogContainer = ref<string | undefined>(undefined)
 const activeTab = ref<'logs' | 'info'>('info')
+const isLogExpanded = ref(false)
+
+const logStream = useLogStream({
+  containerId: toRef(props, 'containerId'),
+  containerName: selectedLogContainer,
+})
+const logSearch = useLogSearch(logStream.lines)
 const deleting = ref(false)
 const confirmingDelete = ref(false)
 const resourcesStore = useResourcesStore()
@@ -177,11 +187,28 @@ async function handleDelete() {
   }
 }
 
-onMounted(loadData)
+function onCtrlK(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault()
+    logSearch.open()
+  }
+}
+
+onMounted(() => {
+  loadData()
+  logStream.connect()
+  document.addEventListener('keydown', onCtrlK, true)
+})
+
+onUnmounted(() => {
+  logStream.disconnect()
+  document.removeEventListener('keydown', onCtrlK, true)
+})
 
 watch(() => props.containerId, () => {
   selectedLogContainer.value = undefined
   activeTab.value = 'info'
+  isLogExpanded.value = false
   loadData()
 })
 </script>
@@ -346,13 +373,15 @@ watch(() => props.containerId, () => {
       </div>
 
       <!-- Tab content -->
-      <div class="flex-1 overflow-y-auto">
+      <div class="min-h-0 flex-1" :class="activeTab === 'logs' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'">
         <!-- LOGS TAB -->
-        <div v-if="activeTab === 'logs'" class="flex h-full flex-col p-4">
+        <div v-if="activeTab === 'logs'" class="flex min-h-0 flex-1 flex-col">
           <LogViewer
-            :container-id="containerId"
-            :container-name="selectedLogContainer"
+            :log-stream="logStream"
+            :is-expanded="isLogExpanded"
+            :search="logSearch"
             class="flex-1"
+            @toggle-expand="isLogExpanded = true"
           />
         </div>
 
@@ -479,6 +508,15 @@ watch(() => props.containerId, () => {
           </div>
         </div>
       </div>
+
+      <!-- Expanded log overlay -->
+      <LogExpandedView
+        v-if="isLogExpanded"
+        :container-name="container?.name ?? ''"
+        :log-stream="logStream"
+        :search="logSearch"
+        @close="isLogExpanded = false"
+      />
     </template>
   </div>
 </template>

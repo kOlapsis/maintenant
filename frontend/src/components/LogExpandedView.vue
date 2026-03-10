@@ -1,0 +1,144 @@
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+
+  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
+  or a commercial license. You may not use this file except in compliance
+  with one of these licenses.
+
+  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
+  Commercial: See COMMERCIAL-LICENSE.md
+
+  Source: https://github.com/kolapsis/maintenant
+-->
+
+<script setup lang="ts">
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import type { UseLogStreamReturn } from '@/composables/useLogStream'
+import type { UseLogSearchReturn } from '@/composables/useLogSearch'
+import LogToolbar from './LogToolbar.vue'
+import LogNewLinesBadge from './LogNewLinesBadge.vue'
+import LogLineContent from './LogLineContent.vue'
+
+const props = defineProps<{
+  containerName: string
+  logStream: UseLogStreamReturn
+  search: UseLogSearchReturn
+}>()
+
+const emit = defineEmits<{
+  close: []
+}>()
+
+const expandedJsonIds = ref(new Set<number>())
+const scrollContainerRef = ref<HTMLElement | null>(null)
+
+const hasTimestamps = computed(() =>
+  props.logStream.lines.value.some(l => l.parsedTimestamp !== null),
+)
+
+function getActiveMatchOffset(lineIndex: number): number | null {
+  const idx = props.search.currentMatchIndex.value
+  if (idx < 0) return null
+  const match = props.search.matches.value[idx]
+  if (!match || match.lineIndex !== lineIndex) return null
+  return match.startOffset
+}
+
+function toggleJsonExpand(lineId: number) {
+  const s = new Set(expandedJsonIds.value)
+  if (s.has(lineId)) {
+    s.delete(lineId)
+  } else {
+    s.add(lineId)
+  }
+  expandedJsonIds.value = s
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && !props.search.isOpen.value) {
+    e.stopImmediatePropagation()
+    emit('close')
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown, true)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown, true)
+})
+
+// Scroll current match into view
+watch(() => props.search.currentMatchIndex.value, () => {
+  const idx = props.search.currentMatchIndex.value
+  if (idx < 0) return
+  const match = props.search.matches.value[idx]
+  if (!match) return
+
+  nextTick(() => {
+    const container = scrollContainerRef.value
+    if (!container) return
+    const lineEl = container.querySelector(`[data-line-index="${match.lineIndex}"]`)
+    if (lineEl) {
+      lineEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }
+  })
+})
+
+// Clear expanded JSON when buffer trims
+watch(() => props.logStream.lines.value.length, (newLen, oldLen) => {
+  if (newLen < oldLen) {
+    expandedJsonIds.value = new Set()
+  }
+})
+</script>
+
+<template>
+  <Teleport to="body">
+    <div class="fixed inset-0 z-[10000] flex flex-col bg-[#0B0E13]">
+      <!-- Header -->
+      <div class="flex items-center gap-3 border-b border-slate-800 px-4 py-2">
+        <span class="text-sm font-semibold text-white">{{ containerName }}</span>
+        <span class="flex-1" />
+        <LogToolbar
+          :is-expanded="true"
+          :status="logStream.status.value"
+          :word-wrap="logStream.wordWrap.value"
+          :search="search"
+          @toggle-expand="emit('close')"
+          @toggle-wrap="logStream.wordWrap.value = !logStream.wordWrap.value"
+          @reconnect="logStream.connect()"
+        />
+      </div>
+
+      <!-- Log content -->
+      <div class="relative flex-1">
+        <div
+          ref="scrollContainerRef"
+          class="absolute inset-0 overflow-auto px-2 py-1 font-mono text-[0.7rem] leading-relaxed text-white"
+          :class="logStream.wordWrap.value ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'"
+          @scroll="logStream.handleScroll"
+        >
+          <LogLineContent
+            v-for="(line, idx) in logStream.lines.value"
+            :key="line.id"
+            :data-line-index="idx"
+            :line="line"
+            :line-index="idx"
+            :has-timestamps="hasTimestamps"
+            :search-matches="search.getLineMatches(idx)"
+            :active-match-offset="getActiveMatchOffset(idx)"
+            :expanded="expandedJsonIds.has(line.id)"
+            @toggle-expand="toggleJsonExpand(line.id)"
+          />
+        </div>
+
+        <LogNewLinesBadge
+          :unseen-count="logStream.unseenCount.value"
+          @click="logStream.scrollToBottom()"
+        />
+      </div>
+    </div>
+  </Teleport>
+</template>
