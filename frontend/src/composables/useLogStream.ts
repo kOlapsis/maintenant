@@ -45,6 +45,7 @@ export interface UseLogStreamReturn {
   autoScroll: Ref<boolean>
   unseenCount: Ref<number>
   wordWrap: Ref<boolean>
+  hasTimestamps: Ref<boolean>
   error: Ref<string | null>
   scrollContainerRef: Ref<HTMLElement | null>
   scrollToBottom: () => void
@@ -53,7 +54,7 @@ export interface UseLogStreamReturn {
   disconnect: () => void
 }
 
-const MAX_LINES = 1000
+const MAX_LINES = 1200
 const TRIM_TO = 800
 
 // Strip non-printable characters except common whitespace
@@ -67,6 +68,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
   const autoScroll = ref(true)
   const unseenCount = ref(0)
   const wordWrap = ref(true)
+  const hasTimestamps = ref(false)
   const error = ref<string | null>(null)
 
   let nextLineId = 1
@@ -77,6 +79,10 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     const cleaned = stripBinary(raw)
     const jsonResult = parseJsonLine(cleaned)
     const tokens = parseAnsi(cleaned)
+    const parsedTimestamp = parseTimestamp(cleaned)
+    if (parsedTimestamp && !hasTimestamps.value) {
+      hasTimestamps.value = true
+    }
     return {
       id: nextLineId++,
       raw: cleaned,
@@ -87,7 +93,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
       level: detectLogLevel(cleaned),
       parsedJson: jsonResult?.json ?? null,
       jsonPrefix: jsonResult?.prefix ?? null,
-      parsedTimestamp: parseTimestamp(cleaned),
+      parsedTimestamp,
     }
   }
 
@@ -154,7 +160,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     eventSource = new EventSource(sseUrl.toString())
 
     eventSource.addEventListener('container.log_line', (event: MessageEvent) => {
-      status.value = 'streaming'
+      if (status.value !== 'streaming') status.value = 'streaming'
       try {
         const data = JSON.parse(event.data)
         if (data.line) {
@@ -166,7 +172,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     })
 
     eventSource.addEventListener('container.log_backlog', (event: MessageEvent) => {
-      status.value = 'streaming'
+      if (status.value !== 'streaming') status.value = 'streaming'
       try {
         const data = JSON.parse(event.data)
         if (data.lines && Array.isArray(data.lines)) {
@@ -244,6 +250,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     nextLineId = 1
     unseenCount.value = 0
     autoScroll.value = true
+    hasTimestamps.value = false
     connect()
   })
 
@@ -253,6 +260,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     autoScroll,
     unseenCount,
     wordWrap,
+    hasTimestamps,
     error,
     scrollContainerRef,
     scrollToBottom,
