@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { ChevronUp, ChevronDown, X } from 'lucide-vue-next'
 import type { UseLogSearchReturn } from '@/composables/useLogSearch'
 
@@ -52,10 +52,6 @@ const matchDisplay = computed(() => {
   if (total === 0) return 'No results'
   return `${idx + 1}/${total}`
 })
-</script>
-
-<script lang="ts">
-import { computed } from 'vue'
 </script>
 
 <template>

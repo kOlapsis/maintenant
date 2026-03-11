@@ -12,9 +12,10 @@
 -->
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import type { UseLogStreamReturn } from '@/composables/useLogStream'
 import type { UseLogSearchReturn } from '@/composables/useLogSearch'
+import { useLogViewState } from '@/composables/useLogViewState'
 import LogToolbar from './LogToolbar.vue'
 import LogNewLinesBadge from './LogNewLinesBadge.vue'
 import LogLineContent from './LogLineContent.vue'
@@ -29,29 +30,8 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const expandedJsonIds = ref(new Set<number>())
-
-const hasTimestamps = computed(() =>
-  props.logStream.lines.value.some(l => l.parsedTimestamp !== null),
-)
-
-function getActiveMatchOffset(lineIndex: number): number | null {
-  const idx = props.search.currentMatchIndex.value
-  if (idx < 0) return null
-  const match = props.search.matches.value[idx]
-  if (!match || match.lineIndex !== lineIndex) return null
-  return match.startOffset
-}
-
-function toggleJsonExpand(lineId: number) {
-  const s = new Set(expandedJsonIds.value)
-  if (s.has(lineId)) {
-    s.delete(lineId)
-  } else {
-    s.add(lineId)
-  }
-  expandedJsonIds.value = s
-}
+const { expandedJsonIds, getActiveMatchOffset, toggleJsonExpand } =
+  useLogViewState(props.logStream, props.search)
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && !props.search.isOpen.value) {
@@ -66,30 +46,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown, true)
-})
-
-// Scroll current match into view
-watch(() => props.search.currentMatchIndex.value, () => {
-  const idx = props.search.currentMatchIndex.value
-  if (idx < 0) return
-  const match = props.search.matches.value[idx]
-  if (!match) return
-
-  nextTick(() => {
-    const container = props.logStream.scrollContainerRef.value
-    if (!container) return
-    const lineEl = container.querySelector(`[data-line-index="${match.lineIndex}"]`)
-    if (lineEl) {
-      lineEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    }
-  })
-})
-
-// Clear expanded JSON when buffer trims
-watch(() => props.logStream.lines.value.length, (newLen, oldLen) => {
-  if (newLen < oldLen) {
-    expandedJsonIds.value = new Set()
-  }
 })
 </script>
 
@@ -125,7 +81,7 @@ watch(() => props.logStream.lines.value.length, (newLen, oldLen) => {
             :data-line-index="idx"
             :line="line"
             :line-index="idx"
-            :has-timestamps="hasTimestamps"
+            :has-timestamps="logStream.hasTimestamps.value"
             :search-matches="search.getLineMatches(idx)"
             :active-match-offset="getActiveMatchOffset(idx)"
             :expanded="expandedJsonIds.has(line.id)"

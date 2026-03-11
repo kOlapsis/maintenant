@@ -12,14 +12,7 @@
 */
 
 import type { LogLevel } from './useLogStream'
-
-// ── ANSI stripping (for JSON detection) ──────────────────────────────
-
-const ANSI_RE = /\x1b\[[^a-zA-Z]*[a-zA-Z]/g
-
-function stripAnsi(s: string): string {
-  return s.replace(ANSI_RE, '')
-}
+import { stripAnsi } from './useAnsiParser'
 
 // ── Log level detection ──────────────────────────────────────────────
 

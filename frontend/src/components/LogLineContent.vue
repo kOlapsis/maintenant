@@ -166,18 +166,16 @@ const renderSegments = computed<RenderSegment[]>(() => {
     <!-- Timestamp column -->
     <span
       v-if="hasTimestamps"
-      class="mr-2 inline-block min-w-[5rem] select-none text-right text-slate-500"
+      class="relative mr-2 inline-block min-w-[5rem] select-none text-right text-slate-500"
       style="font-size: 0.65rem;"
       @mouseenter="showTimestampTooltip = true"
       @mouseleave="showTimestampTooltip = false"
     >
-      <span class="relative">
-        {{ shortTimestamp }}
-        <span
-          v-if="showTimestampTooltip && line.parsedTimestamp"
-          class="absolute bottom-full left-1/2 z-50 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-slate-700 bg-[#12151C] px-2 py-1 text-[10px] text-slate-300 shadow-lg"
-        >{{ fullTimestamp }} &mdash; {{ relativeTime }}</span>
-      </span>
+      {{ shortTimestamp }}
+      <span
+        v-if="showTimestampTooltip && line.parsedTimestamp"
+        class="absolute bottom-full left-1/2 z-50 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-slate-700 bg-[#12151C] px-2 py-1 text-[10px] text-slate-300 shadow-lg"
+      >{{ fullTimestamp }} &mdash; {{ relativeTime }}</span>
     </span>
 
     <!-- Content -->

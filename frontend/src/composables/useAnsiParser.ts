@@ -154,8 +154,14 @@ export function parseAnsi(input: string): AnsiToken[] {
 
   // Strip any remaining non-SGR escape sequences from token text
   for (const token of tokens) {
-    token.text = token.text.replace(/\x1b\[[^a-zA-Z]*[a-zA-Z]/g, '')
+    token.text = stripAnsi(token.text)
   }
 
   return tokens.filter(t => t.text.length > 0)
+}
+
+const NON_SGR_RE = /\x1b\[[^a-zA-Z]*[a-zA-Z]/g
+
+export function stripAnsi(s: string): string {
+  return s.replace(NON_SGR_RE, '')
 }
