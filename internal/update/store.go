@@ -57,6 +57,10 @@ type UpdateStore interface {
 	DeleteContainerCVEs(ctx context.Context, containerID string) error
 	GetCVESummaryCounts(ctx context.Context) (map[string]int, error)
 
+	// Digest baselines (non-semver tags)
+	UpsertDigestBaseline(ctx context.Context, b *DigestBaseline) error
+	GetDigestBaseline(ctx context.Context, containerID string) (*DigestBaseline, error)
+
 	// Risk score history
 	InsertRiskScoreRecord(ctx context.Context, r *RiskScoreRecord) (int64, error)
 	ListRiskScoreHistory(ctx context.Context, containerID string, from, to time.Time) ([]*RiskScoreRecord, error)

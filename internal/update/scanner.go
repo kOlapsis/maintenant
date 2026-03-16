@@ -175,19 +175,62 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 
 	// Find best update
 	bestTag, updateType := FindBestUpdate(currentTag, tags)
-	if bestTag == "" || bestTag == currentTag {
-		// No update found — but check for digest-only updates
-		if currentTag != "" {
-			tagRef := fullRef + ":" + currentTag
-			remoteDigest, err := sc.registry.GetDigest(ctx, tagRef)
-			if err == nil && remoteDigest != "" {
-				// We don't have the local digest here yet; the service will compare
-			}
-		}
+	if bestTag == "" {
 		return nil, nil
 	}
 
-	// Get digest for the latest tag
+	// Digest-only mode: non-semver tags like "lts", "alpine", "stable", "latest".
+	// Compare the current remote digest against the stored baseline to detect rebuilds.
+	if bestTag == currentTag && updateType == UpdateTypeDigestOnly {
+		tagRef := fullRef + ":" + currentTag
+		remoteDigest, err := sc.registry.GetDigest(ctx, tagRef)
+		if err != nil || remoteDigest == "" {
+			sc.logger.Debug("scanner: cannot fetch digest for channel tag",
+				"container", c.Name, "tag", currentTag, "error", err)
+			return nil, nil
+		}
+
+		baseline, _ := sc.store.GetDigestBaseline(ctx, c.ExternalID)
+
+		// Store/update the baseline for next scan comparison
+		now := time.Now()
+		if err := sc.store.UpsertDigestBaseline(ctx, &DigestBaseline{
+			ContainerID:  c.ExternalID,
+			Image:        c.Image,
+			Tag:          currentTag,
+			RemoteDigest: remoteDigest,
+			CheckedAt:    now,
+		}); err != nil {
+			sc.logger.Warn("scanner: failed to store digest baseline",
+				"container", c.Name, "error", err)
+		}
+
+		if baseline == nil || baseline.RemoteDigest == remoteDigest {
+			// First scan or digest unchanged — no update
+			return nil, nil
+		}
+
+		// Digest changed — the tag was republished with a new build
+		sc.logger.Info("scanner: digest change detected for channel tag",
+			"container", c.Name, "tag", currentTag,
+			"old_digest", baseline.RemoteDigest[:19], "new_digest", remoteDigest[:19])
+
+		return &UpdateResult{
+			ContainerID:    c.ExternalID,
+			ContainerName:  c.Name,
+			Image:          c.Image,
+			CurrentTag:     currentTag,
+			CurrentDigest:  baseline.RemoteDigest,
+			PreviousDigest: baseline.RemoteDigest,
+			Registry:       registry,
+			LatestTag:      currentTag,
+			LatestDigest:   remoteDigest,
+			UpdateType:     UpdateTypeDigestOnly,
+			HasUpdate:      true,
+		}, nil
+	}
+
+	// Semver update: a newer version tag exists
 	latestRef := fullRef + ":" + bestTag
 	latestDigest, err := sc.registry.GetDigest(ctx, latestRef)
 	if err != nil {

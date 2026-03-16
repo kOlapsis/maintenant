@@ -133,10 +133,12 @@ func FindBestUpdate(currentTag string, allTags []string) (bestTag string, update
 
 	currentVer, err := semver.NewVersion(versionPart)
 	if err != nil {
-		// Non-semver tag: return "latest" if available, mark as digest_only
+		// Non-semver tag (e.g. "lts", "alpine", "stable", "latest"):
+		// return the same tag so the scanner can do digest-only comparison.
+		// Never suggest switching to a different channel like "latest".
 		for _, t := range allTags {
-			if t == "latest" {
-				return "latest", UpdateTypeDigestOnly
+			if t == currentTag {
+				return currentTag, UpdateTypeDigestOnly
 			}
 		}
 		return "", UpdateTypeUnknown

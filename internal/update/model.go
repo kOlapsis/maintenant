@@ -226,6 +226,16 @@ type RiskScore struct {
 	Factors     map[string]RiskFactor `json:"factors"`
 }
 
+// DigestBaseline stores the last-known remote digest for a non-semver tag.
+// Used to detect when a channel tag (e.g. "lts", "alpine") has been republished.
+type DigestBaseline struct {
+	ContainerID  string    `json:"container_id"`
+	Image        string    `json:"image"`
+	Tag          string    `json:"tag"`
+	RemoteDigest string    `json:"remote_digest"`
+	CheckedAt    time.Time `json:"checked_at"`
+}
+
 // ReleaseInfo holds information about a GitHub release.
 type ReleaseInfo struct {
 	TagName            string    `json:"tag_name"`

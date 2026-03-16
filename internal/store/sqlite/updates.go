@@ -786,3 +786,35 @@ func scanVersionPin(row updateRowScanner) (*update.VersionPin, error) {
 	}
 	return &p, nil
 }
+
+// UpsertDigestBaseline inserts or updates the digest baseline for a container.
+func (s *UpdateStore) UpsertDigestBaseline(ctx context.Context, b *update.DigestBaseline) error {
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO digest_baselines (container_id, image, tag, remote_digest, checked_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(container_id) DO UPDATE SET
+		   image = excluded.image,
+		   tag = excluded.tag,
+		   remote_digest = excluded.remote_digest,
+		   checked_at = excluded.checked_at`,
+		b.ContainerID, b.Image, b.Tag, b.RemoteDigest, b.CheckedAt.Unix())
+	return err
+}
+
+// GetDigestBaseline returns the stored digest baseline for a container.
+func (s *UpdateStore) GetDigestBaseline(ctx context.Context, containerID string) (*update.DigestBaseline, error) {
+	var b update.DigestBaseline
+	var checkedAt int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT container_id, image, tag, remote_digest, checked_at
+		 FROM digest_baselines WHERE container_id = ?`, containerID).
+		Scan(&b.ContainerID, &b.Image, &b.Tag, &b.RemoteDigest, &checkedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	b.CheckedAt = time.Unix(checkedAt, 0)
+	return &b, nil
+}
