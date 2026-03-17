@@ -13,6 +13,7 @@ package endpoint
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -199,6 +200,43 @@ func (m *memStore) DeleteCheckResultsBefore(_ context.Context, _ time.Time, _ in
 
 func (m *memStore) DeleteInactiveEndpointsBefore(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
+}
+
+func (m *memStore) InsertStandaloneEndpoint(_ context.Context, e *Endpoint) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := m.nextID
+	m.nextID++
+	ec := m.cloneEp(e)
+	ec.ID = id
+	ec.Active = true
+	ec.Source = SourceStandalone
+	m.endpoints[id] = ec
+	return id, nil
+}
+
+func (m *memStore) UpdateStandaloneEndpoint(_ context.Context, id int64, name, target string, epType EndpointType, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ep, ok := m.endpoints[id]
+	if !ok || ep.Source != SourceStandalone {
+		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+	}
+	ep.Name = name
+	ep.Target = target
+	ep.EndpointType = epType
+	return nil
+}
+
+func (m *memStore) DeleteStandaloneEndpoint(_ context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ep, ok := m.endpoints[id]
+	if !ok || ep.Source != SourceStandalone {
+		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+	}
+	delete(m.endpoints, id)
+	return nil
 }
 
 // ---------------------------------------------------------------------------

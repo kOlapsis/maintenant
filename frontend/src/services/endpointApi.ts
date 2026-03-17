@@ -24,6 +24,8 @@ export interface EndpointConfig {
   max_redirects?: number
 }
 
+export type EndpointSource = 'label' | 'standalone'
+
 export interface Endpoint {
   id: number
   container_name: string
@@ -45,6 +47,8 @@ export interface Endpoint {
   last_seen_at: string
   orchestration_group?: string
   orchestration_unit?: string
+  source: EndpointSource
+  name?: string
 }
 
 export interface CheckResult {
@@ -62,7 +66,28 @@ export interface ListEndpointsParams {
   container?: string
   orchestration_group?: string
   type?: string
+  source?: string
   include_inactive?: boolean
+}
+
+export interface CreateEndpointInput {
+  name: string
+  target: string
+  endpoint_type: 'http' | 'tcp'
+  interval?: string
+  timeout?: string
+  method?: string
+  headers?: Record<string, string>
+}
+
+export interface UpdateEndpointInput {
+  name?: string
+  target?: string
+  endpoint_type?: 'http' | 'tcp'
+  interval?: string
+  timeout?: string
+  method?: string
+  headers?: Record<string, string>
 }
 
 export interface ListChecksParams {
@@ -98,6 +123,7 @@ export function listEndpoints(params?: ListEndpointsParams): Promise<EndpointsRe
   if (params?.container) url.searchParams.set('container', params.container)
   if (params?.orchestration_group) url.searchParams.set('orchestration_group', params.orchestration_group)
   if (params?.type) url.searchParams.set('type', params.type)
+  if (params?.source) url.searchParams.set('source', params.source)
   if (params?.include_inactive) url.searchParams.set('include_inactive', 'true')
   return fetchJSON<EndpointsResponse>(url.toString())
 }
@@ -112,4 +138,26 @@ export function listChecks(id: number, params?: ListChecksParams): Promise<Check
   if (params?.offset) url.searchParams.set('offset', String(params.offset))
   if (params?.since) url.searchParams.set('since', String(params.since))
   return fetchJSON<ChecksResponse>(url.toString())
+}
+
+export function createEndpoint(data: CreateEndpointInput): Promise<{ endpoint: Endpoint }> {
+  return apiFetch<{ endpoint: Endpoint }>(`${API_BASE}/endpoints`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateEndpoint(id: number, data: UpdateEndpointInput): Promise<{ endpoint: Endpoint }> {
+  return apiFetch<{ endpoint: Endpoint }>(`${API_BASE}/endpoints/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteEndpoint(id: number): Promise<void> {
+  return apiFetchVoid(`${API_BASE}/endpoints/${id}`, {
+    method: 'DELETE',
+  })
 }

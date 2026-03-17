@@ -12,9 +12,11 @@
 -->
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useEndpointsStore } from '@/stores/endpoints'
 import { useContainersStore } from '@/stores/containers'
+import { createEndpoint } from '@/services/endpointApi'
+import { createCertificate } from '@/services/certificateApi'
 import EndpointCard from '@/components/EndpointCard.vue'
 import { AlertTriangle, Globe } from 'lucide-vue-next'
 
@@ -23,6 +25,90 @@ const containers = useContainersStore()
 
 const isK8s = computed(() => containers.runtimeName === 'kubernetes')
 const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
+
+const showCreateForm = ref(false)
+const createError = ref<string | null>(null)
+const creating = ref(false)
+
+const form = ref({
+  name: '',
+  target: '',
+  endpoint_type: 'http' as 'http' | 'tcp',
+  interval: '30s',
+  monitorCert: true,
+})
+
+const intervalPresets = [
+  { label: '10s', value: '10s' },
+  { label: '30s', value: '30s' },
+  { label: '1m', value: '1m0s' },
+  { label: '5m', value: '5m0s' },
+  { label: '15m', value: '15m0s' },
+]
+
+const isHttps = computed(() => {
+  return form.value.endpoint_type === 'http' && form.value.target.startsWith('https://')
+})
+
+function resetForm() {
+  form.value = { name: '', target: '', endpoint_type: 'http', interval: '30s', monitorCert: true }
+  createError.value = null
+}
+
+function extractHostFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname
+  } catch {
+    return null
+  }
+}
+
+function extractPortFromUrl(url: string): number {
+  try {
+    const parsed = new URL(url)
+    if (parsed.port) return parseInt(parsed.port, 10)
+    return parsed.protocol === 'https:' ? 443 : 80
+  } catch {
+    return 443
+  }
+}
+
+async function handleCreate() {
+  createError.value = null
+  creating.value = true
+  try {
+    await createEndpoint({
+      name: form.value.name,
+      target: form.value.target,
+      endpoint_type: form.value.endpoint_type,
+      interval: form.value.interval,
+    })
+
+    // Create certificate monitor if requested
+    if (isHttps.value && form.value.monitorCert) {
+      const hostname = extractHostFromUrl(form.value.target)
+      if (hostname) {
+        try {
+          await createCertificate({
+            hostname,
+            port: extractPortFromUrl(form.value.target),
+          })
+        } catch {
+          // Certificate may already be monitored — ignore
+        }
+      }
+    }
+
+    showCreateForm.value = false
+    resetForm()
+    store.fetchEndpoints()
+  } catch (e) {
+    createError.value = e instanceof Error ? e.message : 'Failed to create endpoint'
+  } finally {
+    creating.value = false
+  }
+}
 
 onMounted(() => {
   store.fetchEndpoints()
@@ -37,11 +123,183 @@ onUnmounted(() => {
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
     <div class="mx-auto max-w-7xl">
-    <div class="mb-6">
-      <h1 class="text-2xl font-black text-white">Endpoints</h1>
-      <p class="mt-1 text-sm text-slate-500">
-        HTTP/TCP endpoint health checks
-      </p>
+    <div class="mb-6 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-black text-white">Endpoints</h1>
+        <p class="mt-1 text-sm text-slate-500">
+          HTTP/TCP endpoint health checks
+        </p>
+      </div>
+      <button
+        class="min-h-[44px]"
+        :style="{
+          borderRadius: 'var(--pb-radius-lg)',
+          backgroundColor: 'var(--pb-accent)',
+          color: 'var(--pb-text-inverted)',
+          padding: '0.5rem 1rem',
+          fontSize: '0.875rem',
+          fontWeight: '500',
+        }"
+        @click="showCreateForm = !showCreateForm; if (!showCreateForm) resetForm()"
+      >
+        {{ showCreateForm ? 'Cancel' : 'New Endpoint' }}
+      </button>
+    </div>
+
+    <!-- Create form -->
+    <div
+      v-if="showCreateForm"
+      class="mb-6 p-4"
+      :style="{
+        backgroundColor: 'var(--pb-bg-surface)',
+        border: '1px solid var(--pb-border-default)',
+        borderRadius: 'var(--pb-radius-lg)',
+      }"
+    >
+      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--pb-text-primary)' }">Create Endpoint Monitor</h3>
+      <div
+        v-if="createError"
+        class="mb-3 rounded p-2 text-sm"
+        :style="{
+          backgroundColor: 'var(--pb-status-down-bg)',
+          color: 'var(--pb-status-down)',
+          borderRadius: 'var(--pb-radius-sm)',
+        }"
+      >
+        {{ createError }}
+      </div>
+      <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Name</label>
+            <input
+              v-model="form.name"
+              type="text"
+              placeholder="e.g., Production API"
+              :style="{
+                width: '100%',
+                borderRadius: 'var(--pb-radius-md)',
+                border: '1px solid var(--pb-border-default)',
+                backgroundColor: 'var(--pb-bg-elevated)',
+                color: 'var(--pb-text-primary)',
+                padding: '0.375rem 0.75rem',
+                fontSize: '0.875rem',
+                minHeight: '44px',
+              }"
+              required
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Type</label>
+            <div class="flex gap-2">
+              <button
+                v-for="t in (['http', 'tcp'] as const)"
+                :key="t"
+                type="button"
+                class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition min-h-[44px]"
+                :style="{
+                  border: form.endpoint_type === t
+                    ? '1px solid var(--pb-accent)'
+                    : '1px solid var(--pb-border-default)',
+                  backgroundColor: form.endpoint_type === t
+                    ? 'var(--pb-accent)'
+                    : 'var(--pb-bg-elevated)',
+                  color: form.endpoint_type === t
+                    ? 'var(--pb-text-inverted)'
+                    : 'var(--pb-text-secondary)',
+                  textTransform: 'uppercase',
+                }"
+                @click="form.endpoint_type = t"
+              >
+                {{ t }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">
+            {{ form.endpoint_type === 'http' ? 'URL' : 'Host:Port' }}
+          </label>
+          <input
+            v-model="form.target"
+            type="text"
+            :placeholder="form.endpoint_type === 'http' ? 'https://example.com/health' : 'db.example.com:5432'"
+            :style="{
+              width: '100%',
+              borderRadius: 'var(--pb-radius-md)',
+              border: '1px solid var(--pb-border-default)',
+              backgroundColor: 'var(--pb-bg-elevated)',
+              color: 'var(--pb-text-primary)',
+              padding: '0.375rem 0.75rem',
+              fontSize: '0.875rem',
+              fontFamily: 'monospace',
+              minHeight: '44px',
+            }"
+            required
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Check Interval</label>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="preset in intervalPresets"
+              :key="preset.value"
+              type="button"
+              class="rounded-full px-3 py-1 text-xs font-medium transition"
+              :style="{
+                border: form.interval === preset.value
+                  ? '1px solid var(--pb-accent)'
+                  : '1px solid var(--pb-border-default)',
+                backgroundColor: form.interval === preset.value
+                  ? 'var(--pb-accent)'
+                  : 'transparent',
+                color: form.interval === preset.value
+                  ? 'var(--pb-text-inverted)'
+                  : 'var(--pb-text-secondary)',
+              }"
+              @click="form.interval = preset.value"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Certificate monitoring checkbox -->
+        <label
+          v-if="isHttps"
+          class="flex items-center gap-2 text-sm cursor-pointer"
+          :style="{ color: 'var(--pb-text-secondary)' }"
+        >
+          <input
+            v-model="form.monitorCert"
+            type="checkbox"
+            class="rounded"
+            :style="{
+              accentColor: 'var(--pb-accent)',
+              width: '16px',
+              height: '16px',
+            }"
+          />
+          Monitor TLS certificate
+        </label>
+
+        <button
+          type="submit"
+          :disabled="creating"
+          :style="{
+            alignSelf: 'flex-start',
+            borderRadius: 'var(--pb-radius-lg)',
+            backgroundColor: 'var(--pb-accent)',
+            color: 'var(--pb-text-inverted)',
+            padding: '0.5rem 1rem',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            opacity: creating ? '0.6' : '1',
+          }"
+        >
+          {{ creating ? 'Creating...' : 'Create' }}
+        </button>
+      </form>
     </div>
 
     <!-- Config errors -->
@@ -132,7 +390,8 @@ onUnmounted(() => {
           <Globe :size="48" class="text-slate-600" />
         </div>
         <p class="text-sm mb-2 max-w-md text-slate-500">
-          Monitor HTTP and TCP endpoints by adding {{ labelOrAnnotation }}s to your {{ isK8s ? 'pods' : 'containers' }}.
+          Monitor HTTP and TCP endpoints by adding {{ labelOrAnnotation }}s to your {{ isK8s ? 'pods' : 'containers' }},
+          or create standalone monitors using the button above.
         </p>
         <p class="text-sm max-w-md text-slate-500">
           Add the <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.endpoint.http</code>
@@ -150,6 +409,7 @@ onUnmounted(() => {
           v-for="ep in store.filteredEndpoints"
           :key="ep.id"
           :endpoint="ep"
+          @deleted="store.fetchEndpoints()"
         />
       </div>
     </div>

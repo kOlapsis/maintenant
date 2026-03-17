@@ -18,13 +18,18 @@ import (
 
 // EndpointStore defines the persistence interface for endpoint monitoring data.
 type EndpointStore interface {
-	// Endpoint CRUD
+	// Endpoint CRUD (label-discovered)
 	UpsertEndpoint(ctx context.Context, e *Endpoint) (int64, error)
 	GetEndpointByIdentity(ctx context.Context, containerName, labelKey string) (*Endpoint, error)
 	GetEndpointByID(ctx context.Context, id int64) (*Endpoint, error)
 	ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]*Endpoint, error)
 	ListEndpointsByExternalID(ctx context.Context, externalID string) ([]*Endpoint, error)
 	DeactivateEndpoint(ctx context.Context, id int64) error
+
+	// Standalone endpoint CRUD
+	InsertStandaloneEndpoint(ctx context.Context, e *Endpoint) (int64, error)
+	UpdateStandaloneEndpoint(ctx context.Context, id int64, name, target string, endpointType EndpointType, configJSON string) error
+	DeleteStandaloneEndpoint(ctx context.Context, id int64) error
 
 	// Check result updates on the endpoint record
 	UpdateCheckResult(ctx context.Context, id int64, status EndpointStatus, alertState AlertState,

@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import type { Endpoint } from '@/services/endpointApi'
+import { deleteEndpoint } from '@/services/endpointApi'
 import { fetchEndpointDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import { timeAgo } from '@/utils/time'
 import EndpointStatusBadge from './EndpointStatusBadge.vue'
@@ -22,6 +23,25 @@ import UptimeBar90 from './ui/UptimeBar90.vue'
 const props = defineProps<{
   endpoint: Endpoint
 }>()
+
+const emit = defineEmits<{
+  (e: 'deleted'): void
+}>()
+
+const deleting = ref(false)
+
+async function handleDelete() {
+  if (!confirm('Delete this endpoint monitor?')) return
+  deleting.value = true
+  try {
+    await deleteEndpoint(props.endpoint.id)
+    emit('deleted')
+  } catch {
+    // silently ignore
+  } finally {
+    deleting.value = false
+  }
+}
 
 const uptimeDays = ref<UptimeDay[]>([])
 
@@ -81,7 +101,7 @@ function formatResponseTime(ms: number | undefined): string {
           </h3>
         </div>
         <p class="mt-0.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
-          {{ endpoint.container_name }}
+          {{ endpoint.source === 'standalone' ? (endpoint.name || 'standalone') : endpoint.container_name }}
         </p>
       </div>
       <div class="ml-2 flex items-center gap-1.5">
@@ -134,17 +154,31 @@ function formatResponseTime(ms: number | undefined): string {
     </div>
 
     <!-- Config summary -->
-    <div class="mt-2 flex flex-wrap gap-1.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
-      <span>{{ endpoint.config.interval }}</span>
-      <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.method !== 'GET'">
-        {{ endpoint.config.method }}
-      </span>
-      <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.expected_status !== '2xx'">
-        expect {{ endpoint.config.expected_status }}
-      </span>
-      <span v-if="endpoint.endpoint_type === 'http' && !endpoint.config.tls_verify" :style="{ color: 'var(--pb-status-warn)' }">
-        TLS off
-      </span>
+    <div class="mt-2 flex items-center justify-between text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+      <div class="flex flex-wrap gap-1.5">
+        <span>{{ endpoint.config.interval }}</span>
+        <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.method !== 'GET'">
+          {{ endpoint.config.method }}
+        </span>
+        <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.expected_status !== '2xx'">
+          expect {{ endpoint.config.expected_status }}
+        </span>
+        <span v-if="endpoint.endpoint_type === 'http' && !endpoint.config.tls_verify" :style="{ color: 'var(--pb-status-warn)' }">
+          TLS off
+        </span>
+      </div>
+      <button
+        v-if="endpoint.source === 'standalone'"
+        class="ml-2 rounded px-1.5 py-0.5 text-xs transition hover:opacity-80"
+        :style="{
+          backgroundColor: 'var(--pb-status-down-bg)',
+          color: 'var(--pb-status-down)',
+        }"
+        :disabled="deleting"
+        @click.stop="handleDelete"
+      >
+        {{ deleting ? '...' : 'Delete' }}
+      </button>
     </div>
   </div>
 </template>

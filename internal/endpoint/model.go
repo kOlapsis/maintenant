@@ -17,6 +17,14 @@ import (
 	"time"
 )
 
+// EndpointSource represents the origin of an endpoint definition.
+type EndpointSource string
+
+const (
+	SourceLabel      EndpointSource = "label"
+	SourceStandalone EndpointSource = "standalone"
+)
+
 // EndpointType represents the protocol type of a monitored endpoint.
 type EndpointType string
 
@@ -42,7 +50,7 @@ const (
 	AlertAlerting AlertState = "alerting"
 )
 
-// Endpoint represents a monitored HTTP or TCP target associated with a container.
+// Endpoint represents a monitored HTTP or TCP target.
 type Endpoint struct {
 	ID                   int64          `json:"id"`
 	ContainerName        string         `json:"container_name"`
@@ -64,6 +72,8 @@ type Endpoint struct {
 	LastSeenAt           time.Time      `json:"last_seen_at"`
 	OrchestrationGroup   string         `json:"orchestration_group,omitempty"`
 	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
+	Source               EndpointSource `json:"source"`
+	Name                 string         `json:"name,omitempty"`
 }
 
 // ConfigJSON returns the JSON-encoded configuration.
@@ -185,6 +195,7 @@ type ListEndpointsOpts struct {
 	ContainerName      string
 	OrchestrationGroup string
 	EndpointType       string
+	Source             string
 	IncludeInactive    bool
 }
 

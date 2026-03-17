@@ -155,7 +155,10 @@ func NewRouter(d HandlerDeps) *Router {
 	if d.Endpoints != nil {
 		eh := NewEndpointHandler(d.Endpoints, d.Containers)
 		r.mux.HandleFunc("GET /api/v1/endpoints", eh.HandleListEndpoints)
+		r.mux.HandleFunc("POST /api/v1/endpoints", eh.HandleCreateEndpoint)
 		r.mux.HandleFunc("GET /api/v1/endpoints/{id}", eh.HandleGetEndpoint)
+		r.mux.HandleFunc("PUT /api/v1/endpoints/{id}", eh.HandleUpdateEndpoint)
+		r.mux.HandleFunc("DELETE /api/v1/endpoints/{id}", eh.HandleDeleteEndpoint)
 		r.mux.HandleFunc("GET /api/v1/endpoints/{id}/checks", eh.HandleListChecks)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/endpoints", eh.HandleListContainerEndpoints)
 	}

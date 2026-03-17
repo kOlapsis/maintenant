@@ -13,10 +13,17 @@ package endpoint
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+)
+
+var (
+	ErrNotStandalone   = errors.New("endpoint is not standalone")
+	ErrEndpointNotFound = errors.New("endpoint not found")
 )
 
 // EventCallback is called when an endpoint event occurs (for SSE broadcasting).
@@ -363,6 +370,102 @@ func (s *Service) CalculateUptime(ctx context.Context, endpointID int64) map[str
 		uptimes[label] = float64(successes) / float64(total) * 100
 	}
 	return uptimes
+}
+
+// CreateStandalone creates a manually-defined endpoint and starts monitoring it.
+func (s *Service) CreateStandalone(ctx context.Context, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
+	ep := &Endpoint{
+		Name:         name,
+		Target:       target,
+		EndpointType: epType,
+		Config:       config,
+		Source:       SourceStandalone,
+	}
+
+	id, err := s.store.InsertStandaloneEndpoint(ctx, ep)
+	if err != nil {
+		return nil, fmt.Errorf("create standalone endpoint: %w", err)
+	}
+
+	full, err := s.store.GetEndpointByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("reload standalone endpoint: %w", err)
+	}
+
+	if s.ctx != nil {
+		s.engine.AddEndpoint(s.ctx, full)
+	}
+
+	s.emitEvent(event.EndpointDiscovered, map[string]interface{}{
+		"endpoint_id":   id,
+		"endpoint_type": string(epType),
+		"target":        target,
+		"source":        "standalone",
+		"name":          name,
+	})
+
+	return full, nil
+}
+
+// UpdateStandalone updates a standalone endpoint's configuration and restarts monitoring.
+func (s *Service) UpdateStandalone(ctx context.Context, id int64, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
+	existing, err := s.store.GetEndpointByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get endpoint: %w", err)
+	}
+	if existing == nil {
+		return nil, ErrEndpointNotFound
+	}
+	if existing.Source != SourceStandalone {
+		return nil, ErrNotStandalone
+	}
+
+	configJSON := (&Endpoint{Config: config}).ConfigJSON()
+	if err := s.store.UpdateStandaloneEndpoint(ctx, id, name, target, epType, configJSON); err != nil {
+		return nil, err
+	}
+
+	full, err := s.store.GetEndpointByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("reload updated endpoint: %w", err)
+	}
+
+	if s.ctx != nil {
+		s.engine.ReconfigureEndpoint(s.ctx, full)
+	}
+
+	return full, nil
+}
+
+// DeleteStandalone removes a standalone endpoint and stops monitoring it.
+func (s *Service) DeleteStandalone(ctx context.Context, id int64) error {
+	existing, err := s.store.GetEndpointByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get endpoint: %w", err)
+	}
+	if existing == nil {
+		return ErrEndpointNotFound
+	}
+	if existing.Source != SourceStandalone {
+		return ErrNotStandalone
+	}
+
+	s.engine.RemoveEndpoint(id)
+
+	if s.onEndpointRemoved != nil {
+		s.onEndpointRemoved(ctx, id)
+	}
+
+	if err := s.store.DeleteStandaloneEndpoint(ctx, id); err != nil {
+		return err
+	}
+
+	s.emitEvent(event.EndpointRemoved, map[string]interface{}{
+		"endpoint_id": id,
+		"reason":      "user_deleted",
+	})
+
+	return nil
 }
 
 func (s *Service) emitEvent(eventType string, data interface{}) {

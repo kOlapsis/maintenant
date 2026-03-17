@@ -39,7 +39,7 @@ func NewEndpointStore(d *DB) *EndpointStore {
 const endpointColumns = `id, container_name, label_key, external_id, endpoint_type, target,
 	status, alert_state, consecutive_failures, consecutive_successes,
 	last_check_at, last_response_time_ms, last_http_status, last_error,
-	config_json, active, first_seen_at, last_seen_at`
+	config_json, active, first_seen_at, last_seen_at, source, name`
 
 func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint) (int64, error) {
 	configJSON := e.ConfigJSON()
@@ -72,14 +72,18 @@ func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint
 	if !e.FirstSeenAt.IsZero() {
 		firstSeen = e.FirstSeenAt.Unix()
 	}
+	source := string(e.Source)
+	if source == "" {
+		source = string(endpoint.SourceLabel)
+	}
 	res, err := s.writer.Exec(ctx,
 		`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target,
 			status, alert_state, consecutive_failures, consecutive_successes,
-			config_json, active, first_seen_at, last_seen_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?)`,
+			config_json, active, first_seen_at, last_seen_at, source, name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, ?, ?)`,
 		e.ContainerName, e.LabelKey, e.ExternalID, string(e.EndpointType), e.Target,
 		string(endpoint.StatusUnknown), string(endpoint.AlertNormal),
-		configJSON, firstSeen, now,
+		configJSON, firstSeen, now, source, e.Name,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert endpoint: %w", err)
@@ -117,6 +121,10 @@ func (s *EndpointStore) ListEndpoints(ctx context.Context, opts endpoint.ListEnd
 	if opts.EndpointType != "" {
 		query += ` AND endpoint_type=?`
 		args = append(args, opts.EndpointType)
+	}
+	if opts.Source != "" {
+		query += ` AND source=?`
+		args = append(args, opts.Source)
 	}
 
 	query += ` ORDER BY container_name, label_key`
@@ -307,6 +315,62 @@ func (s *EndpointStore) DeleteInactiveEndpointsBefore(ctx context.Context, befor
 	return res.RowsAffected, nil
 }
 
+// InsertStandaloneEndpoint creates a manually-defined endpoint (not from container labels).
+func (s *EndpointStore) InsertStandaloneEndpoint(ctx context.Context, e *endpoint.Endpoint) (int64, error) {
+	configJSON := e.ConfigJSON()
+	now := time.Now().Unix()
+
+	res, err := s.writer.Exec(ctx,
+		`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target,
+			status, alert_state, consecutive_failures, consecutive_successes,
+			config_json, active, first_seen_at, last_seen_at, source, name)
+		VALUES ('', '', '', ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, 'standalone', ?)`,
+		string(e.EndpointType), e.Target,
+		string(endpoint.StatusUnknown), string(endpoint.AlertNormal),
+		configJSON, now, now, e.Name,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert standalone endpoint: %w", err)
+	}
+	return res.LastInsertID, nil
+}
+
+// UpdateStandaloneEndpoint updates a standalone endpoint's mutable fields.
+func (s *EndpointStore) UpdateStandaloneEndpoint(ctx context.Context, id int64, name, target string, endpointType endpoint.EndpointType, configJSON string) error {
+	now := time.Now().Unix()
+	res, err := s.writer.Exec(ctx,
+		`UPDATE endpoints SET name=?, target=?, endpoint_type=?, config_json=?, last_seen_at=?
+		WHERE id=? AND source='standalone' AND active=1`,
+		name, target, string(endpointType), configJSON, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update standalone endpoint %d: %w", id, err)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+	}
+	return nil
+}
+
+// DeleteStandaloneEndpoint permanently removes a standalone endpoint and its check results.
+func (s *EndpointStore) DeleteStandaloneEndpoint(ctx context.Context, id int64) error {
+	// Delete check results first
+	_, err := s.writer.Exec(ctx, `DELETE FROM check_results WHERE endpoint_id=?`, id)
+	if err != nil {
+		return fmt.Errorf("delete check results for standalone endpoint %d: %w", id, err)
+	}
+
+	res, err := s.writer.Exec(ctx,
+		`DELETE FROM endpoints WHERE id=? AND source='standalone'`, id)
+	if err != nil {
+		return fmt.Errorf("delete standalone endpoint %d: %w", id, err)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+	}
+	return nil
+}
+
 // --- Scanners ---
 
 func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error) {
@@ -316,6 +380,7 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	var configJSON string
 	var active int
 	var firstSeen, lastSeen int64
+	var source, name string
 
 	err := row.Scan(
 		&e.ID, &e.ContainerName, &e.LabelKey, &e.ExternalID,
@@ -324,6 +389,7 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 		&e.ConsecutiveFailures, &e.ConsecutiveSuccesses,
 		&lastCheckAt, &lastResponseTimeMs, &lastHTTPStatus, &lastError,
 		&configJSON, &active, &firstSeen, &lastSeen,
+		&source, &name,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -335,6 +401,8 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	e.Active = active != 0
 	e.FirstSeenAt = time.Unix(firstSeen, 0)
 	e.LastSeenAt = time.Unix(lastSeen, 0)
+	e.Source = endpoint.EndpointSource(source)
+	e.Name = name
 
 	if lastCheckAt.Valid {
 		t := time.Unix(lastCheckAt.Int64, 0)
