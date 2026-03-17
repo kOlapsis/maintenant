@@ -52,11 +52,15 @@ func SPAHandler(apiHandler http.Handler, logger *slog.Logger) http.Handler {
 		if err == nil && !f.IsDir() {
 			if strings.HasPrefix(path, "/assets/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else if path == "/sw.js" || path == "/registerSW.js" || path == "/manifest.webmanifest" {
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}
 
+		// SPA fallback — serve index.html without caching
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
 	})
