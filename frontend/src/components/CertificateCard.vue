@@ -12,9 +12,10 @@
 -->
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { CertMonitor } from '@/services/certificateApi'
 import { deleteCertificate } from '@/services/certificateApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
 
@@ -58,13 +59,25 @@ const expiryProgress = computed(() => {
   return Math.max(0, Math.min(100, (elapsed / total) * 100))
 })
 
+const confirm = useConfirm()
+const deleting = ref(false)
+
 async function handleDelete() {
-  if (!confirm(`Delete certificate monitor for "${props.certificate.hostname}"?`)) return
+  const ok = await confirm({
+    title: 'Delete certificate monitor',
+    message: `Remove the certificate monitor for "${props.certificate.hostname}:${props.certificate.port}"? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!ok) return
+  deleting.value = true
   try {
     await deleteCertificate(props.certificate.id)
     emit('refresh')
   } catch {
     // ignore - auto-detected monitors can't be deleted
+  } finally {
+    deleting.value = false
   }
 }
 </script>
@@ -142,16 +155,17 @@ async function handleDelete() {
     <!-- Actions -->
     <div
       v-if="certificate.source === 'standalone'"
-      class="mt-3 flex items-center gap-2 pt-2"
+      class="mt-3 flex items-center pt-2"
       :style="{ borderTop: '1px solid var(--pb-border-subtle)' }"
       @click.stop
     >
       <button
-        class="rounded px-2 py-0.5 text-xs"
+        class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
         :style="{ color: 'var(--pb-status-down)' }"
+        :disabled="deleting"
         @click="handleDelete"
       >
-        Delete
+        {{ deleting ? 'Deleting...' : 'Delete' }}
       </button>
     </div>
   </div>

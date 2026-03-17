@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   createMaintenance,
   updateMaintenance,
@@ -67,8 +68,16 @@ async function submitForm() {
   store.fetchMaintenance()
 }
 
+const confirm = useConfirm()
+
 async function handleDelete(id: number) {
-  if (!confirm('Delete this maintenance window?')) return
+  const ok = await confirm({
+    title: 'Delete maintenance window',
+    message: 'Remove this maintenance window? This cannot be undone.',
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!ok) return
   await deleteMaintenance(id)
   store.fetchMaintenance()
 }

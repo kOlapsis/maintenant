@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
+import { useConfirm } from '@/composables/useConfirm'
 import { createSilenceRule, cancelSilenceRule, type CreateSilenceRuleInput } from '@/services/alertApi'
 
 const store = useAlertsStore()
@@ -50,8 +51,16 @@ async function submitForm() {
   store.fetchSilenceRules()
 }
 
+const confirm = useConfirm()
+
 async function handleCancel(id: number) {
-  if (!confirm('Cancel this silence rule?')) return
+  const ok = await confirm({
+    title: 'Cancel silence rule',
+    message: 'Cancel this silence rule? Alerts will resume for affected entities.',
+    confirmLabel: 'Cancel rule',
+    destructive: true,
+  })
+  if (!ok) return
   await cancelSilenceRule(id)
   store.fetchSilenceRules()
 }

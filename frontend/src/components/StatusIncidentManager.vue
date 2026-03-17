@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   createIncident,
   postIncidentUpdate,
@@ -54,8 +55,16 @@ async function submitUpdate(incidentId: number) {
   store.fetchIncidents()
 }
 
+const confirm = useConfirm()
+
 async function handleDelete(id: number) {
-  if (!confirm('Delete this incident?')) return
+  const ok = await confirm({
+    title: 'Delete incident',
+    message: 'Remove this incident and all its updates? This cannot be undone.',
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!ok) return
   await deleteIncident(id)
   store.fetchIncidents()
 }

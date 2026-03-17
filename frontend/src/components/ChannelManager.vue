@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   createChannel,
   updateChannel,
@@ -78,8 +79,16 @@ async function submitForm() {
   store.fetchChannels()
 }
 
+const confirm = useConfirm()
+
 async function handleDelete(id: number) {
-  if (!confirm('Delete this channel?')) return
+  const ok = await confirm({
+    title: 'Delete channel',
+    message: 'Remove this notification channel and its routing rules? This cannot be undone.',
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!ok) return
   await deleteChannel(id)
   store.fetchChannels()
 }

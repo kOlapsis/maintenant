@@ -134,7 +134,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { listWebhooks, deleteWebhook, testWebhook, type WebhookSubscription, type TestWebhookResponse } from '@/services/webhookApi'
+import { useConfirm } from '@/composables/useConfirm'
 import WebhookForm from '@/components/WebhookForm.vue'
+
+const confirm = useConfirm()
 
 const webhooks = ref<WebhookSubscription[]>([])
 const loading = ref(false)
@@ -169,12 +172,18 @@ async function handleTest(wh: WebhookSubscription) {
 }
 
 async function handleDelete(wh: WebhookSubscription) {
-  if (!confirm(`Delete webhook "${wh.name}"? This cannot be undone.`)) return
+  const ok = await confirm({
+    title: 'Delete webhook',
+    message: `Remove "${wh.name}"? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!ok) return
   try {
     await deleteWebhook(wh.id)
     await load()
-  } catch (e: unknown) {
-    alert(e instanceof Error ? e.message : 'Failed to delete webhook')
+  } catch {
+    // silently ignore
   }
 }
 

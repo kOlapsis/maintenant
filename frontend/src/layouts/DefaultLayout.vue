@@ -8,8 +8,10 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, provide, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import { useDetailSlideOver, detailSlideOverKey, parseSelectedParam } from '@/composables/useDetailSlideOver'
+import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
 import {
   Activity,
@@ -34,6 +36,8 @@ const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicens
 
 const detailSlideOver = useDetailSlideOver()
 provide(detailSlideOverKey, detailSlideOver)
+
+const { state: confirmState } = provideConfirm()
 
 onMounted(() => {
   loadLicenseStatus()
@@ -233,6 +237,9 @@ const mainNav = computed(() => allNav.filter(item => !item.feature || hasFeature
 
     <!-- Global detail slide-over -->
     <DetailSlideOver />
+
+    <!-- Global confirm dialog -->
+    <ConfirmDialog :state="confirmState" />
   </div>
 </template>
 

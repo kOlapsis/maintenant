@@ -16,6 +16,7 @@ import { ref, onMounted } from 'vue'
 import type { Heartbeat } from '@/services/heartbeatApi'
 import { deleteHeartbeat, pauseHeartbeat, resumeHeartbeat } from '@/services/heartbeatApi'
 import { fetchHeartbeatDailyUptime, type UptimeDay } from '@/services/uptimeApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
 import HeartbeatStatusBadge from './HeartbeatStatusBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
@@ -71,10 +72,26 @@ async function handleResume() {
   emit('refresh')
 }
 
+const confirm = useConfirm()
+const deleting = ref(false)
+
 async function handleDelete() {
-  if (!confirm(`Delete "${props.heartbeat.name}"?`)) return
-  await deleteHeartbeat(props.heartbeat.id)
-  emit('refresh')
+  const ok = await confirm({
+    title: 'Delete heartbeat',
+    message: `Remove "${props.heartbeat.name}" and all its history? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!ok) return
+  deleting.value = true
+  try {
+    await deleteHeartbeat(props.heartbeat.id)
+    emit('refresh')
+  } catch {
+    // silently ignore
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -166,11 +183,12 @@ async function handleDelete() {
         Resume
       </button>
       <button
-        class="rounded px-2 py-0.5 text-xs"
+        class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
         :style="{ color: 'var(--pb-status-down)' }"
+        :disabled="deleting"
         @click="handleDelete"
       >
-        Delete
+        {{ deleting ? 'Deleting...' : 'Delete' }}
       </button>
     </div>
   </div>

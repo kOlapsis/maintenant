@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   createComponent,
   updateComponent,
@@ -152,8 +153,16 @@ async function submitCompForm() {
   store.fetchComponents()
 }
 
+const confirm = useConfirm()
+
 async function handleDeleteComp(id: number) {
-  if (!confirm('Remove this component from the status page?')) return
+  const ok = await confirm({
+    title: 'Remove component',
+    message: 'Remove this component from the status page? This cannot be undone.',
+    confirmLabel: 'Remove',
+    destructive: true,
+  })
+  if (!ok) return
   await deleteComponent(id)
   store.fetchComponents()
 }

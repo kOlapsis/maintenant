@@ -16,6 +16,7 @@ import { ref, onMounted } from 'vue'
 import type { Endpoint } from '@/services/endpointApi'
 import { deleteEndpoint } from '@/services/endpointApi'
 import { fetchEndpointDailyUptime, type UptimeDay } from '@/services/uptimeApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
 import EndpointStatusBadge from './EndpointStatusBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
@@ -28,10 +29,17 @@ const emit = defineEmits<{
   (e: 'deleted'): void
 }>()
 
+const confirm = useConfirm()
 const deleting = ref(false)
 
 async function handleDelete() {
-  if (!confirm('Delete this endpoint monitor?')) return
+  const ok = await confirm({
+    title: 'Delete endpoint',
+    message: `Remove "${props.endpoint.name || props.endpoint.target}" and all its check history? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!ok) return
   deleting.value = true
   try {
     await deleteEndpoint(props.endpoint.id)
@@ -154,30 +162,33 @@ function formatResponseTime(ms: number | undefined): string {
     </div>
 
     <!-- Config summary -->
-    <div class="mt-2 flex items-center justify-between text-xs" :style="{ color: 'var(--pb-text-muted)' }">
-      <div class="flex flex-wrap gap-1.5">
-        <span>{{ endpoint.config.interval }}</span>
-        <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.method !== 'GET'">
-          {{ endpoint.config.method }}
-        </span>
-        <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.expected_status !== '2xx'">
-          expect {{ endpoint.config.expected_status }}
-        </span>
-        <span v-if="endpoint.endpoint_type === 'http' && !endpoint.config.tls_verify" :style="{ color: 'var(--pb-status-warn)' }">
-          TLS off
-        </span>
-      </div>
+    <div class="mt-2 flex flex-wrap gap-1.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+      <span>{{ endpoint.config.interval }}</span>
+      <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.method !== 'GET'">
+        {{ endpoint.config.method }}
+      </span>
+      <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.expected_status !== '2xx'">
+        expect {{ endpoint.config.expected_status }}
+      </span>
+      <span v-if="endpoint.endpoint_type === 'http' && !endpoint.config.tls_verify" :style="{ color: 'var(--pb-status-warn)' }">
+        TLS off
+      </span>
+    </div>
+
+    <!-- Actions -->
+    <div
+      v-if="endpoint.source === 'standalone'"
+      class="mt-3 flex items-center pt-2"
+      :style="{ borderTop: '1px solid var(--pb-border-subtle)' }"
+      @click.stop
+    >
       <button
-        v-if="endpoint.source === 'standalone'"
-        class="ml-2 rounded px-1.5 py-0.5 text-xs transition hover:opacity-80"
-        :style="{
-          backgroundColor: 'var(--pb-status-down-bg)',
-          color: 'var(--pb-status-down)',
-        }"
+        class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
+        :style="{ color: 'var(--pb-status-down)' }"
         :disabled="deleting"
-        @click.stop="handleDelete"
+        @click="handleDelete"
       >
-        {{ deleting ? '...' : 'Delete' }}
+        {{ deleting ? 'Deleting...' : 'Delete' }}
       </button>
     </div>
   </div>
