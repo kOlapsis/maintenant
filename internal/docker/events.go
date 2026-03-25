@@ -20,13 +20,14 @@ import (
 	"github.com/docker/docker/api/types/filters"
 )
 
-// ContainerEvent represents a processed Docker container event.
+// ContainerEvent represents a processed Docker container/service/node event.
 type ContainerEvent struct {
 	Action       string
 	ExternalID   string
 	Name         string
 	ExitCode     string
 	HealthStatus string
+	ResourceType string // "container", "service", or "node"
 	Timestamp    time.Time
 	Labels       map[string]string
 }
@@ -51,6 +52,8 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 			opts := events.ListOptions{
 				Filters: filters.NewArgs(
 					filters.Arg("type", string(events.ContainerEventType)),
+				filters.Arg("type", string(events.ServiceEventType)),
+				filters.Arg("type", string(events.NodeEventType)),
 				),
 			}
 			if since != "" {
@@ -117,8 +120,21 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 
 func processEvent(msg events.Message) *ContainerEvent {
 	action := string(msg.Action)
+	resourceType := string(msg.Type)
 
-	// Check if this is a relevant action
+	// Service and node events (Swarm).
+	if resourceType == string(events.ServiceEventType) || resourceType == string(events.NodeEventType) {
+		return &ContainerEvent{
+			Action:       action,
+			ExternalID:   msg.Actor.ID,
+			Name:         msg.Actor.Attributes["name"],
+			ResourceType: resourceType,
+			Timestamp:    eventTimestamp(msg.Time, msg.TimeNano),
+			Labels:       msg.Actor.Attributes,
+		}
+	}
+
+	// Container events.
 	switch {
 	case action == "start", action == "stop", action == "die",
 		action == "kill", action == "pause", action == "unpause",
@@ -131,11 +147,12 @@ func processEvent(msg events.Message) *ContainerEvent {
 	}
 
 	evt := &ContainerEvent{
-		Action:     action,
-		ExternalID: msg.Actor.ID,
-		Name:       msg.Actor.Attributes["name"],
-		Timestamp:  eventTimestamp(msg.Time, msg.TimeNano),
-		Labels:     msg.Actor.Attributes,
+		Action:       action,
+		ExternalID:   msg.Actor.ID,
+		Name:         msg.Actor.Attributes["name"],
+		ResourceType: "container",
+		Timestamp:    eventTimestamp(msg.Time, msg.TimeNano),
+		Labels:       msg.Actor.Attributes,
 	}
 
 	// Extract exit code from die events

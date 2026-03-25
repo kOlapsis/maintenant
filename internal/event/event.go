@@ -101,6 +101,24 @@ const (
 	SecurityPostureChanged   = "security.posture_changed"
 )
 
+// Swarm monitoring events (CE).
+const (
+	SwarmServiceDiscovered = "swarm.service_discovered"
+	SwarmServiceUpdated    = "swarm.service_updated"
+	SwarmServiceRemoved    = "swarm.service_removed"
+	SwarmStatus            = "swarm.status"
+)
+
+// Swarm monitoring events (Enterprise).
+const (
+	SwarmNodeStatusChanged  = "swarm.node_status_changed"
+	SwarmTaskFailed         = "swarm.task_failed"
+	SwarmCrashLoopDetected  = "swarm.crash_loop_detected"
+	SwarmCrashLoopRecovered = "swarm.crash_loop_recovered"
+	SwarmUpdateProgress     = "swarm.update_progress"
+	SwarmUpdateCompleted    = "swarm.update_completed"
+)
+
 // Public status page events.
 const (
 	StatusComponentChanged = "status.component_changed"

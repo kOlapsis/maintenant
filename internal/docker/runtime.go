@@ -99,6 +99,7 @@ func (r *Runtime) StreamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 				Name:         evt.Name,
 				ExitCode:     evt.ExitCode,
 				HealthStatus: evt.HealthStatus,
+				ResourceType: evt.ResourceType,
 				Timestamp:    evt.Timestamp,
 				Labels:       evt.Labels,
 			}

@@ -70,7 +70,13 @@ type Container struct {
 	Namespace          string         `json:"namespace,omitempty"`
 	PodCount           int            `json:"pod_count"`
 	ReadyCount         int            `json:"ready_count"`
-	ComposeWorkingDir  string         `json:"compose_working_dir,omitempty"`
+	ComposeWorkingDir    string         `json:"compose_working_dir,omitempty"`
+	SwarmServiceID       string         `json:"swarm_service_id,omitempty"`
+	SwarmServiceName     string         `json:"swarm_service_name,omitempty"`
+	SwarmServiceMode     string         `json:"swarm_service_mode,omitempty"`
+	SwarmNodeID          string         `json:"swarm_node_id,omitempty"`
+	SwarmTaskSlot        int            `json:"swarm_task_slot,omitempty"`
+	SwarmDesiredReplicas int            `json:"swarm_desired_replicas,omitempty"`
 }
 
 // StateTransition records a container state change event.
