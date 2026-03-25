@@ -41,6 +41,12 @@ export interface Container {
   ready_count?: number
   security_insight_count?: number
   security_highest_severity?: string | null
+  swarm_service_id?: string
+  swarm_service_name?: string
+  swarm_service_mode?: string
+  swarm_node_id?: string
+  swarm_task_slot?: number
+  swarm_desired_replicas?: number
 }
 
 export interface ContainerListResponse {
