@@ -26,6 +26,7 @@ const UpdatesPage = () => import('../pages/UpdatesPage.vue')
 const PublicStatusPage = () => import('../pages/PublicStatusPage.vue')
 const SecurityPosturePage = () => import('../pages/SecurityPosturePage.vue')
 const ProPage = () => import('../pages/ProPage.vue')
+const SwarmPage = () => import('../pages/SwarmPage.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -45,6 +46,7 @@ const router = createRouter({
         { path: 'webhooks', name: 'webhooks', component: WebhooksPage },
         { path: 'updates', name: 'updates', component: UpdatesPage },
         { path: 'security', name: 'security', component: SecurityPosturePage },
+        { path: 'swarm', name: 'swarm', component: SwarmPage },
         { path: 'pro-edition', name: 'pro-edition', component: ProPage },
       ],
     },

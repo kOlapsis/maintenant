@@ -21,6 +21,7 @@ import {
   Box,
   Globe,
   Heart,
+  Layers,
   LayoutGrid,
   Link,
   Menu,
@@ -29,10 +30,13 @@ import {
   X,
 } from 'lucide-vue-next'
 
+import { useSwarmStore } from '@/stores/swarm'
+
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
 const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } = useEdition()
+const swarmStore = useSwarmStore()
 
 const detailSlideOver = useDetailSlideOver()
 provide(detailSlideOverKey, detailSlideOver)
@@ -41,6 +45,7 @@ const { state: confirmState } = provideConfirm()
 
 onMounted(() => {
   loadLicenseStatus()
+  swarmStore.loadInfo()
   // Parse ?selected=<type>-<id> on initial load
   const parsed = parseSelectedParam(route.query.selected)
   if (parsed) {
@@ -61,6 +66,7 @@ function closeMobileMenu() {
 const allNav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
   { to: '/containers', label: 'Containers', icon: Box },
+  { to: '/swarm', label: 'Swarm Cluster', icon: Layers, swarmOnly: true },
   { to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
   { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
   { to: '/certificates', label: 'SSL Certificates', icon: Shield },
@@ -71,7 +77,11 @@ const allNav = [
   { to: '/status-admin', label: 'Status Pages', icon: Activity },
 ]
 
-const mainNav = computed(() => allNav.filter(item => !item.feature || hasFeature(item.feature)))
+const mainNav = computed(() => allNav.filter(item => {
+  if (item.feature && !hasFeature(item.feature)) return false
+  if (item.swarmOnly && !swarmStore.isActive) return false
+  return true
+}))
 </script>
 
 <template>

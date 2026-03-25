@@ -33,31 +33,38 @@ interface ControllerGroup {
   podCount: number
 }
 
+const hasControllerHierarchy = computed(() => store.isKubernetesMode || store.isSwarmMode)
+
 function getControllerGroups(containers: Container[]): ControllerGroup[] {
   const active = containers.filter(c => !c.archived)
-  if (!store.isKubernetesMode) return []
+  if (!hasControllerHierarchy.value) return []
 
   const map = new Map<string, ControllerGroup>()
   for (const c of active) {
     if (!c.controller_kind) continue
     const key = `${c.controller_kind}/${c.orchestration_unit || c.name}`
     if (!map.has(key)) {
+      const isSwarmService = c.controller_kind === 'swarm-service'
       map.set(key, {
         kind: c.controller_kind,
         name: c.orchestration_unit || c.name,
         containers: [],
-        readyCount: c.ready_count ?? 0,
-        podCount: c.pod_count ?? 0,
+        readyCount: isSwarmService ? 0 : (c.ready_count ?? 0),
+        podCount: isSwarmService ? (c.swarm_desired_replicas ?? 0) : (c.pod_count ?? 0),
       })
     }
-    map.get(key)!.containers.push(c)
+    const group = map.get(key)!
+    group.containers.push(c)
+    if (c.controller_kind === 'swarm-service' && c.state === 'running') {
+      group.readyCount++
+    }
   }
   return Array.from(map.values())
 }
 
 function getUngroupedContainers(containers: Container[]): Container[] {
   const active = containers.filter(c => !c.archived)
-  if (!store.isKubernetesMode) return active
+  if (!hasControllerHierarchy.value) return active
   return active.filter(c => !c.controller_kind)
 }
 
@@ -155,7 +162,7 @@ onMounted(() => {
         </button>
 
         <!-- K8s mode: controller hierarchy within namespace -->
-        <div v-if="!collapsedGroups.has(group.name) && store.isKubernetesMode" class="mt-2 space-y-3">
+        <div v-if="!collapsedGroups.has(group.name) && hasControllerHierarchy" class="mt-2 space-y-3">
           <!-- Controller groups -->
           <div
             v-for="ctrl in getControllerGroups(group.containers)"

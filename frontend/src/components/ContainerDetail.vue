@@ -45,6 +45,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-vue-next'
+import { fetchSwarmServiceDetail, type SwarmServiceDetailResponse } from '@/services/swarmApi'
 
 const props = defineProps<{
   containerId: number
@@ -76,6 +77,7 @@ const postureStore = usePostureStore()
 const { hasFeature } = useEdition()
 
 const containerPosture = ref<SecurityScore | null>(null)
+const swarmServiceDetail = ref<SwarmServiceDetailResponse | null>(null)
 
 const containerInsights = computed(() => {
   const ci = securityStore.getContainerInsights(props.containerId)
@@ -162,6 +164,14 @@ async function loadData() {
     if (hasFeature('security_posture')) {
       containerPosture.value = await postureStore.fetchContainerScore(props.containerId)
       await postureStore.fetchAcknowledgments(props.containerId)
+    }
+    // Fetch Swarm service detail if this is a Swarm task.
+    if (c.swarm_service_id) {
+      fetchSwarmServiceDetail(c.swarm_service_id)
+        .then((svc) => { swarmServiceDetail.value = svc })
+        .catch(() => { swarmServiceDetail.value = null })
+    } else {
+      swarmServiceDetail.value = null
     }
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load'
@@ -437,6 +447,33 @@ watch(() => props.containerId, () => {
               <p class="mt-0.5" :style="{
                 color: container.ready_count === container.pod_count ? 'var(--pb-status-ok)' : 'var(--pb-status-warn)'
               }">{{ container.ready_count }}/{{ container.pod_count }} ready</p>
+            </div>
+          </div>
+
+          <!-- Swarm Networks & Ports -->
+          <div v-if="swarmServiceDetail && (swarmServiceDetail.networks.length > 0 || swarmServiceDetail.ports.length > 0)" class="space-y-3">
+            <div v-if="swarmServiceDetail.networks.length > 0">
+              <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Networks</span>
+              <div class="mt-1 space-y-1">
+                <div v-for="net in swarmServiceDetail.networks" :key="net.network_id" class="flex items-center gap-2">
+                  <span class="text-xs" :style="{ color: 'var(--pb-text-primary)' }">{{ net.network_name || net.network_id }}</span>
+                  <span v-if="net.scope" class="text-[10px] uppercase font-bold tracking-wider px-1 py-0.5 rounded bg-slate-400/10 border border-slate-400/20 text-slate-400">{{ net.scope }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="swarmServiceDetail.ports.length > 0">
+              <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Published Ports</span>
+              <div class="mt-1 space-y-1">
+                <div v-for="(port, idx) in swarmServiceDetail.ports" :key="idx" class="flex items-center gap-2 text-xs">
+                  <span :style="{ color: 'var(--pb-text-primary)' }">{{ port.published_port }}</span>
+                  <span :style="{ color: 'var(--pb-text-muted)' }">→</span>
+                  <span :style="{ color: 'var(--pb-text-primary)' }">{{ port.target_port }}/{{ port.protocol }}</span>
+                  <span class="text-[10px] uppercase font-bold tracking-wider px-1 py-0.5 rounded border"
+                    :class="port.publish_mode === 'ingress' ? 'text-sky-400 bg-sky-400/10 border-sky-400/20' : 'text-amber-400 bg-amber-400/10 border-amber-400/20'">
+                    {{ port.publish_mode }}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 

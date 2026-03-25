@@ -185,6 +185,19 @@ function getStateStyle(state: string) {
       >{{ container.ready_count }}/{{ container.pod_count }} ready</span>
     </div>
 
+    <!-- Swarm service info -->
+    <div
+      v-if="container.controller_kind === 'swarm-service'"
+      class="px-4 pb-1.5 flex items-center gap-2 text-[10px]"
+    >
+      <span class="rounded px-1.5 py-0.5 bg-slate-800 text-slate-400">
+        {{ container.swarm_service_mode }}
+      </span>
+      <span v-if="container.swarm_task_slot" class="text-slate-500">
+        slot {{ container.swarm_task_slot }}
+      </span>
+    </div>
+
     <!-- Error detail -->
     <div
       v-if="container.error_detail"

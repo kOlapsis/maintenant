@@ -20,10 +20,12 @@ import {
   Clock,
   Crown,
   Heart,
+  Layers,
   Mail,
   MessageSquare,
   Shield,
   TrendingUp,
+  Zap,
 } from 'lucide-vue-next'
 import { useEdition } from '@/composables/useEdition'
 
@@ -81,6 +83,18 @@ const features = [
     description:
       'Track CPU, memory, and disk trends over 24h, 7d, and 30d to spot resource drift early.',
   },
+  {
+    icon: Layers,
+    title: 'Swarm Cluster Dashboard',
+    description:
+      'Cluster-wide view with node topology, service health, task distribution, and replica status.',
+  },
+  {
+    icon: Zap,
+    title: 'Swarm Intelligence',
+    description:
+      'Crash-loop detection, rolling update tracking, node health alerting, and replica health alerts.',
+  },
 ]
 </script>
 
@@ -101,7 +115,7 @@ const features = [
         </h1>
         <p class="text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
           Everything in Community, plus incident management, advanced notifications, vulnerability
-          intelligence, and extended resource history.
+          intelligence, Docker Swarm cluster intelligence, and extended resource history.
         </p>
       </div>
 
