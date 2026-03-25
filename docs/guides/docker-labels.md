@@ -103,6 +103,30 @@ labels:
 
 ---
 
+## Swarm Service Labels
+
+When running in Docker Swarm mode, maintenant reads labels from **service definitions** (`deploy.labels`), not from individual containers. The same `maintenant.*` labels apply:
+
+```yaml
+services:
+  api:
+    image: myapp:latest
+    deploy:
+      labels:
+        maintenant.group: "production"
+        maintenant.alert.severity: "critical"
+        maintenant.alert.channels: "ops-webhook"
+```
+
+Stack grouping happens automatically via the `com.docker.stack.namespace` label set by `docker stack deploy`. Use `maintenant.group` to override it.
+
+!!! warning "Use deploy.labels, not labels"
+    Top-level `labels` in a Compose file are applied to containers. For Swarm services, use `deploy.labels` — these are accessible via the Swarm API and are what maintenant reads.
+
+See the [Docker Swarm Monitoring](../features/swarm.md) guide for full details.
+
+---
+
 ## Full Stack Example
 
 ```yaml
@@ -163,3 +187,4 @@ volumes:
 - [Certificate Monitoring](../features/certificates.md) — TLS monitoring details
 - [Container Monitoring](../features/containers.md) — Container labels (ignore, group)
 - [Alert Engine](../features/alerts.md) — Alert routing labels
+- [Docker Swarm Monitoring](../features/swarm.md) — Swarm service labels and grouping

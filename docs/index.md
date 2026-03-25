@@ -19,6 +19,7 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 ## Key Features
 
 - **[Container Monitoring](features/containers.md)** — Zero-config auto-discovery for Docker and Kubernetes. State tracking, health checks, restart loop detection, log streaming.
+- **[Docker Swarm Monitoring](features/swarm.md)** — Automatic Swarm service discovery, stack grouping, node health, crash-loop detection, rolling update tracking. CE + Enterprise.
 - **[Endpoint Monitoring](features/endpoints.md)** — HTTP and TCP checks defined as Docker labels. Response times, uptime history, sparklines.
 - **[Heartbeat & Cron Monitoring](features/heartbeats.md)** — Create a monitor, get a URL, curl from your cron job. Tracks durations, exit codes, missed deadlines.
 - **[TLS Certificate Monitoring](features/certificates.md)** — Auto-detection from HTTPS endpoints. Alerts at 30, 14, 7, 3, and 1 day before expiry. Full chain validation.
@@ -44,6 +45,7 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 | Network security insights | **Yes** | No | No | No |
 | Public status page | **Yes** | Yes | No | No |
 | Alerting (webhook, Discord) | **Yes** | Yes | Limited | No |
+| Docker Swarm monitoring | **Yes** | No | Limited | No |
 | Kubernetes native | **Yes** | No | Yes | No |
 | MCP for AI assistants | **Yes** | No | No | No |
 | Single binary, zero deps | **Yes** | Node.js | Docker API | Docker API |
