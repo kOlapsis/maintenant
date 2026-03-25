@@ -15,8 +15,11 @@ import (
 	"context"
 	"time"
 
+	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
+	"github.com/kolapsis/maintenant/internal/event"
+	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 )
@@ -39,6 +42,27 @@ func (a *App) reconcile(ctx context.Context) {
 				a.alertEngine.ResolveByEntity(ctx, "container", al.EntityID)
 				a.logger.Info("pruned orphan container alert", "alert_id", al.ID, "entity_id", al.EntityID)
 			}
+		}
+	}
+
+	// Swarm service discovery on startup.
+	if a.swarmDiscovery != nil {
+		a.logger.Info("running Swarm service discovery")
+		_, services, err := a.swarmDiscovery.DiscoverAll(ctx)
+		if err != nil {
+			a.logger.Error("Swarm service discovery failed", "error", err)
+		} else {
+			a.logger.Info("Swarm discovery complete", "services", len(services))
+		}
+	}
+
+	// Swarm node reconciliation on startup (Enterprise).
+	if a.swarmNodeSvc != nil {
+		a.logger.Info("running Swarm node reconciliation")
+		if err := a.swarmNodeSvc.Reconcile(ctx); err != nil {
+			a.logger.Error("Swarm node reconciliation failed", "error", err)
+		} else {
+			a.logger.Info("Swarm node reconciliation complete")
 		}
 	}
 
@@ -89,6 +113,19 @@ func (a *App) startEventStream(ctx context.Context) {
 	eventCh := a.rt.StreamEvents(ctx)
 	go func() {
 		for evt := range eventCh {
+			// Route Swarm service/node events to the Swarm event processor.
+			if evt.ResourceType == pbruntime.ResourceService || evt.ResourceType == pbruntime.ResourceNode {
+				if a.swarmEvents != nil {
+					a.swarmEvents.ProcessEvent(ctx, evt)
+
+					// On service update, check rolling update status (Enterprise).
+					if evt.ResourceType == pbruntime.ResourceService && evt.Action == "update" && a.swarmUpdateTracker != nil {
+						go a.swarmUpdateTracker.CheckService(ctx, evt.ExternalID)
+					}
+				}
+				continue
+			}
+
 			a.containerSvc.ProcessEvent(ctx, container.ContainerEvent{
 				Action:       evt.Action,
 				ExternalID:   evt.ExternalID,
@@ -116,12 +153,53 @@ func (a *App) startEventStream(ctx context.Context) {
 				}
 			case "stop", "die", "kill":
 				a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
+
+				// Feed Swarm task failures to crash-loop detector (Enterprise).
+				if evt.Action == "die" && a.swarmCrashLoop != nil {
+					if svcID, ok := evt.Labels["com.docker.swarm.service.id"]; ok && svcID != "" {
+						svcName := evt.Labels["com.docker.swarm.service.name"]
+						a.swarmCrashLoop.RecordFailure(svcID, svcName, evt.ErrorDetail)
+
+						// Emit task_failed SSE event.
+						a.broker.Broadcast(v1.SSEEvent{
+							Type: event.SwarmTaskFailed,
+							Data: map[string]interface{}{
+								"service_id":   svcID,
+								"service_name": svcName,
+								"container_id": evt.ExternalID,
+								"error":        evt.ErrorDetail,
+								"exit_code":    evt.ExitCode,
+								"timestamp":    evt.Timestamp.Format(time.RFC3339),
+							},
+						})
+					}
+				}
 			case "destroy":
 				a.endpointSvc.HandleContainerDestroy(ctx, evt.ExternalID)
 				a.certSvc.HandleContainerDestroy(ctx, evt.ExternalID)
 			}
 		}
 	}()
+}
+
+// startNodeRefresh runs periodic Swarm node reconciliation (Enterprise, 60s).
+func (a *App) startNodeRefresh(ctx context.Context) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.swarmNodeSvc.Reconcile(ctx); err != nil {
+				a.logger.Warn("periodic node reconciliation failed", "error", err)
+			}
+			// Check crash-loop recoveries.
+			if a.swarmCrashLoop != nil {
+				a.swarmCrashLoop.CheckRecoveries()
+			}
+		}
+	}
 }
 
 // startRetentionCleanup starts background retention cleanup goroutines.

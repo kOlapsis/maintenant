@@ -437,6 +437,71 @@ func (a *App) wirePostureCallbacks() {
 	})
 }
 
+// wireSwarmCallbacks wires Swarm event callbacks for SSE broadcasting.
+func (a *App) wireSwarmCallbacks() {
+	if a.swarmEvents == nil {
+		return
+	}
+	a.swarmEvents.SetCallback(func(eventType string, data interface{}) {
+		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+	})
+
+	// Wire replica health alerting (available for all editions with Swarm).
+	{
+		alertCh := a.alertEngine.EventChannel()
+		ctx := context.Background()
+		a.swarmEvents.SetAlertCallback(func(evt alert.Event) {
+			alertCh <- evt
+			a.statusSvc.HandleAlertEvent(ctx, evt)
+		})
+	}
+
+	// Wire node service into event processor and alert pipeline (Enterprise).
+	if a.swarmNodeSvc != nil {
+		a.swarmEvents.SetNodeService(a.swarmNodeSvc)
+
+		alertCh := a.alertEngine.EventChannel()
+		ctx := context.Background()
+
+		sseBroadcast := func(eventType string, data interface{}) {
+			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		}
+		alertForward := func(evt alert.Event) {
+			alertCh <- evt
+			a.statusSvc.HandleAlertEvent(ctx, evt)
+		}
+
+		a.swarmNodeSvc.SetEventCallback(sseBroadcast)
+		a.swarmNodeSvc.SetAlertCallback(alertForward)
+
+		// Wire crash-loop detector (Enterprise).
+		if a.swarmCrashLoop != nil {
+			a.swarmCrashLoop.SetEventCallback(sseBroadcast)
+			a.swarmCrashLoop.SetAlertCallback(alertForward)
+		}
+
+		// Wire update tracker (Enterprise).
+		if a.swarmUpdateTracker != nil {
+			a.swarmUpdateTracker.SetEventCallback(sseBroadcast)
+			a.swarmUpdateTracker.SetAlertCallback(alertForward)
+		}
+	}
+
+	// Broadcast initial Swarm status.
+	if a.swarmCluster != nil {
+		a.broker.Broadcast(v1.SSEEvent{
+			Type: event.SwarmStatus,
+			Data: map[string]interface{}{
+				"active":        true,
+				"is_manager":    a.swarmCluster.IsManager,
+				"cluster_id":    a.swarmCluster.ID,
+				"manager_count": a.swarmCluster.ManagerCount,
+				"worker_count":  a.swarmCluster.WorkerCount,
+			},
+		})
+	}
+}
+
 func toInt64(v interface{}) int64 {
 	switch n := v.(type) {
 	case int64:

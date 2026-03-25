@@ -24,8 +24,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/resource"
-	"github.com/kolapsis/maintenant/internal/security"
 	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
@@ -90,6 +91,14 @@ type HandlerDeps struct {
 
 	// License
 	LicenseMgr *license.LicenseManager
+
+	// Swarm
+	SwarmCluster        func() *swarm.SwarmCluster
+	SwarmDiscovery      func() *swarm.ServiceDiscovery
+	SwarmDetector       func() *swarm.Detector
+	SwarmNodeStore      swarm.NodeStore
+	SwarmUpdateTracker  *swarm.UpdateTracker
+	SwarmCrashLoop      *swarm.CrashLoopDetector
 
 	// HTTP config
 	CORSOrigins      string // comma-separated origins or "*"
@@ -306,6 +315,9 @@ func NewRouter(d HandlerDeps) *Router {
 	// Security posture
 	r.registerPostureRoutes(d)
 
+	// Swarm monitoring
+	r.registerSwarmRoutes(d)
+
 	return r
 }
 
@@ -411,6 +423,26 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("DELETE /api/v1/security/acknowledgments/{id}", requireEnterprise(ph.HandleDeleteAcknowledgment))
 }
 
+func (r *Router) registerSwarmRoutes(d HandlerDeps) {
+	if d.SwarmCluster == nil {
+		return
+	}
+	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop)
+
+	// CE endpoints
+	r.mux.HandleFunc("GET /api/v1/swarm/info", sh.HandleGetInfo)
+	r.mux.HandleFunc("GET /api/v1/swarm/services", sh.HandleListServices)
+	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}", sh.HandleGetService)
+
+	// Enterprise node endpoints
+	r.mux.HandleFunc("GET /api/v1/swarm/nodes", requireEnterprise(sh.HandleListNodes))
+	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", requireEnterprise(sh.HandleGetNodeDetail))
+
+	// Enterprise update status and dashboard endpoints
+	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", requireEnterprise(sh.HandleGetUpdateStatus))
+	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", requireEnterprise(sh.HandleGetDashboard))
+}
+
 // Handler returns the HTTP handler with the full middleware chain applied.
 // Middleware order (outermost to innermost): panicRecovery → requestLogger → requestID → cors → bodyLimit → mux
 func (r *Router) Handler() http.Handler {
@@ -471,6 +503,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool) http.HandlerFunc {
 				"alert_routing":       true,
 				"alert_entity_routing": isEnterprise,
 				"security_posture":    isEnterprise,
+				"swarm_dashboard":     isEnterprise,
 			},
 		})
 	}

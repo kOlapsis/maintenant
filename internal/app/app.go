@@ -24,6 +24,7 @@ import (
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
@@ -35,6 +36,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -90,6 +92,17 @@ type App struct {
 
 	// Webhook
 	webhookDispatcher *webhook.Dispatcher
+
+	// Swarm
+	swarmDetector      *swarm.Detector
+	swarmCluster       *swarm.SwarmCluster
+	swarmDiscovery     *swarm.ServiceDiscovery
+	swarmEvents        *swarm.EventProcessor
+	swarmNodeStore     *sqlite.SwarmNodeStore
+	swarmNodeSvc       *swarm.NodeService
+	swarmCrashLoop     *swarm.CrashLoopDetector
+	swarmUpdateTracker *swarm.UpdateTracker
+	swarmTaskTracker   *swarm.TaskTracker
 }
 
 // New creates and wires all application services.
@@ -172,6 +185,39 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		_ = rt.Close()
 		_ = db.Close()
 		return nil, fmt.Errorf("connect to runtime %s: %w", rt.Name(), err)
+	}
+
+	// --- Swarm detection ---
+	if dr, ok := rt.(*docker.Runtime); ok {
+		detector := swarm.NewDetector(dr.Client(), logger)
+		a.swarmDetector = detector
+		result, err := detector.Detect(ctx)
+		if err != nil {
+			logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
+		} else if result.Active && result.IsManager {
+			a.swarmCluster = &swarm.SwarmCluster{
+				ID:        result.ClusterID,
+				IsManager: result.IsManager,
+			}
+			a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), logger)
+			a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
+				net, err := dr.Client().NetworkInspect(ctx, networkID)
+				if err != nil {
+					return "", "", err
+				}
+				return net.Name, net.Scope, nil
+			})
+			a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
+
+			// Enterprise: node health monitoring, crash-loop detection, update tracking
+			if extension.CurrentEdition() == extension.Enterprise {
+				a.swarmNodeStore = sqlite.NewSwarmNodeStore(db)
+				a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
+				a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
+				a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
+				a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
+			}
+		}
 	}
 
 	// --- Services ---
@@ -318,6 +364,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.wireAlertCallbacks(alertDetector)
 	a.wireUpdateCallback()
 	a.wirePostureCallbacks()
+	a.wireSwarmCallbacks()
 
 	// --- Router ---
 	uptimeDailyStore := sqlite.NewUptimeDailyStore(db)
@@ -361,6 +408,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		AckStore:    ackStore,
 		// License
 		LicenseMgr: a.licenseMgr,
+		// Swarm
+		SwarmCluster:   func() *swarm.SwarmCluster { return a.swarmCluster },
+		SwarmDiscovery: func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
+		SwarmDetector:  func() *swarm.Detector { return a.swarmDetector },
+		SwarmNodeStore:     a.swarmNodeStoreAsInterface(),
+		SwarmUpdateTracker: a.swarmUpdateTracker,
+		SwarmCrashLoop:     a.swarmCrashLoop,
 		// HTTP config
 		CORSOrigins:      cfg.CORSOrigins,
 		MaxBodySize:      cfg.MaxBodySize,
@@ -443,6 +497,11 @@ func (a *App) Start(ctx context.Context) error {
 	go a.subscriberSvc.Start(ctx)
 	go a.updateSvc.Start(ctx)
 
+	// Swarm node periodic refresh (Enterprise, 60s).
+	if a.swarmNodeSvc != nil {
+		go a.startNodeRefresh(ctx)
+	}
+
 	// Retention cleanup
 	a.startRetentionCleanup(ctx)
 
@@ -485,4 +544,12 @@ func (a *App) Shutdown() error {
 
 	a.logger.Info("maintenant stopped")
 	return nil
+}
+
+// swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.
+func (a *App) swarmNodeStoreAsInterface() swarm.NodeStore {
+	if a.swarmNodeStore == nil {
+		return nil
+	}
+	return a.swarmNodeStore
 }
