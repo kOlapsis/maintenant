@@ -85,6 +85,11 @@ const (
 	RuntimeStatus = "runtime.status"
 )
 
+// Runtime context change events.
+const (
+	RuntimeContextChanged = "runtime.context_changed"
+)
+
 // Update intelligence events.
 const (
 	UpdateScanStarted   = "update.scan_started"
@@ -117,6 +122,13 @@ const (
 	SwarmCrashLoopRecovered = "swarm.crash_loop_recovered"
 	SwarmUpdateProgress     = "swarm.update_progress"
 	SwarmUpdateCompleted    = "swarm.update_completed"
+)
+
+// Kubernetes monitoring events.
+const (
+	KubernetesWorkloadChanged = "kubernetes.workload_changed"
+	KubernetesPodChanged      = "kubernetes.pod_changed"
+	KubernetesNodeChanged     = "kubernetes.node_changed"
 )
 
 // Public status page events.

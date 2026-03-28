@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/certificate"
@@ -93,12 +94,13 @@ type HandlerDeps struct {
 	LicenseMgr *license.LicenseManager
 
 	// Swarm
-	SwarmCluster        func() *swarm.SwarmCluster
-	SwarmDiscovery      func() *swarm.ServiceDiscovery
-	SwarmDetector       func() *swarm.Detector
-	SwarmNodeStore      swarm.NodeStore
-	SwarmUpdateTracker  *swarm.UpdateTracker
-	SwarmCrashLoop      *swarm.CrashLoopDetector
+	SwarmCluster         func() *swarm.SwarmCluster
+	SwarmDiscovery       func() *swarm.ServiceDiscovery
+	SwarmDetector        func() *swarm.Detector
+	SwarmNodeStore       swarm.NodeStore
+	SwarmUpdateTracker   *swarm.UpdateTracker
+	SwarmCrashLoop       *swarm.CrashLoopDetector
+	SwarmReplicaChecker  *swarm.ReplicaHealthChecker
 
 	// HTTP config
 	CORSOrigins      string // comma-separated origins or "*"
@@ -282,14 +284,45 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Runtime status endpoint
 	r.mux.HandleFunc("GET /api/v1/runtime/status", func(w http.ResponseWriter, req *http.Request) {
+		runtimeName := d.Runtime.Name()
+		ctx := "docker"
 		label := "Containers"
-		if d.Runtime != nil && d.Runtime.Name() == "kubernetes" {
+		metadata := map[string]interface{}{}
+
+		switch runtimeName {
+		case "kubernetes":
+			ctx = "kubernetes"
 			label = "Workloads"
+			metadata["namespace_count"] = 0
+			metadata["node_count"] = 0
+		default:
+			// Check for Swarm mode.
+			if detector := d.SwarmDetector(); detector != nil {
+				result := detector.Result()
+				if result.Active && result.IsManager {
+					ctx = "swarm"
+					label = "Services"
+
+					metadata["cluster_id"] = result.ClusterID
+					metadata["is_manager"] = true
+					if cluster := d.SwarmCluster(); cluster != nil {
+						metadata["manager_count"] = cluster.ManagerCount
+						metadata["worker_count"] = cluster.WorkerCount
+					} else {
+						metadata["manager_count"] = 0
+						metadata["worker_count"] = 0
+					}
+				}
+			}
 		}
+
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"runtime":   d.Runtime.Name(),
-			"connected": d.Runtime.IsConnected(),
-			"label":     label,
+			"runtime":     runtimeName,
+			"context":     ctx,
+			"connected":   d.Runtime.IsConnected(),
+			"label":       label,
+			"detected_at": time.Now().UTC().Format(time.RFC3339),
+			"metadata":    metadata,
 		})
 	})
 
@@ -317,6 +350,9 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Swarm monitoring
 	r.registerSwarmRoutes(d)
+
+	// Kubernetes monitoring
+	r.registerKubernetesRoutes(d)
 
 	return r
 }
@@ -423,24 +459,54 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("DELETE /api/v1/security/acknowledgments/{id}", requireEnterprise(ph.HandleDeleteAcknowledgment))
 }
 
+func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
+	if d.Runtime == nil || d.Runtime.Name() != "kubernetes" {
+		return
+	}
+
+	k8sProvider, ok := d.Runtime.(KubernetesProvider)
+	if !ok {
+		r.logger.Warn("kubernetes runtime does not implement KubernetesProvider; skipping k8s routes")
+		return
+	}
+
+	kh := NewKubernetesHandler(k8sProvider)
+
+	// CE endpoints
+	r.mux.HandleFunc("GET /api/v1/kubernetes/namespaces", kh.HandleListNamespaces)
+	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads", kh.HandleListWorkloads)
+	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}", kh.HandleGetWorkload)
+	r.mux.HandleFunc("GET /api/v1/kubernetes/pods", kh.HandleListPods)
+	r.mux.HandleFunc("GET /api/v1/kubernetes/pods/{namespace}/{name}", kh.HandleGetPodDetail)
+
+	// Enterprise endpoints
+	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes", requireEnterprise(kh.HandleListNodes))
+	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes/{name}/resources", requireEnterprise(kh.HandleGetNodeResources))
+	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}/resources", requireEnterprise(kh.HandleGetWorkloadResources))
+	r.mux.HandleFunc("GET /api/v1/kubernetes/cluster", requireEnterprise(kh.HandleGetCluster))
+}
+
 func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 	if d.SwarmCluster == nil {
 		return
 	}
-	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop)
+	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop, d.SwarmReplicaChecker, d.Containers, d.Resources)
 
 	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/info", sh.HandleGetInfo)
 	r.mux.HandleFunc("GET /api/v1/swarm/services", sh.HandleListServices)
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}", sh.HandleGetService)
+	r.mux.HandleFunc("GET /api/v1/swarm/tasks", sh.HandleListTasks)
 
 	// Enterprise node endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/nodes", requireEnterprise(sh.HandleListNodes))
 	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", requireEnterprise(sh.HandleGetNodeDetail))
 
-	// Enterprise update status and dashboard endpoints
+	// Enterprise update status, resources, dashboard, and cluster endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", requireEnterprise(sh.HandleGetUpdateStatus))
+	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/resources", requireEnterprise(sh.HandleGetServiceResources))
 	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", requireEnterprise(sh.HandleGetDashboard))
+	r.mux.HandleFunc("GET /api/v1/swarm/cluster", requireEnterprise(sh.HandleGetCluster))
 }
 
 // Handler returns the HTTP handler with the full middleware chain applied.
@@ -504,6 +570,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool) http.HandlerFunc {
 				"alert_entity_routing": isEnterprise,
 				"security_posture":    isEnterprise,
 				"swarm_dashboard":     isEnterprise,
+				"k8s_cluster":         isEnterprise,
 			},
 		})
 	}

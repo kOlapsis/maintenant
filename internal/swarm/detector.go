@@ -60,7 +60,6 @@ func (d *Detector) Detect(ctx context.Context) (DetectionResult, error) {
 	result := DetectionResult{}
 
 	if info.Swarm.LocalNodeState != "active" {
-		d.logger.Info("Swarm mode not active", "state", string(info.Swarm.LocalNodeState))
 		d.setResult(result)
 		return result, nil
 	}

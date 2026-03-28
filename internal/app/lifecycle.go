@@ -22,6 +22,7 @@ import (
 	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/swarm"
 )
 
 // reconcile performs startup reconciliation and endpoint/security discovery.
@@ -198,6 +199,10 @@ func (a *App) startNodeRefresh(ctx context.Context) {
 			if a.swarmCrashLoop != nil {
 				a.swarmCrashLoop.CheckRecoveries()
 			}
+			// Check sustained under-replication.
+			if a.swarmReplicaChecker != nil && a.swarmDiscovery != nil {
+				a.swarmReplicaChecker.Check(a.swarmDiscovery.ListServices())
+			}
 		}
 	}
 }
@@ -251,4 +256,85 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// startSwarmRecheck periodically re-checks Swarm mode and broadcasts context changes.
+func (a *App) startSwarmRecheck(ctx context.Context) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			changed, result, err := a.swarmDetector.Recheck(ctx)
+			if err != nil {
+				a.logger.Warn("swarm recheck failed", "error", err)
+				continue
+			}
+			if !changed {
+				continue
+			}
+
+			now := time.Now().UTC().Format(time.RFC3339)
+			var previousCtx, newCtx, message string
+
+			if result.Active && result.IsManager {
+				// Swarm activated.
+				previousCtx = "docker"
+				newCtx = "swarm"
+				message = "Swarm cluster detected — dashboard adapted."
+
+				a.swarmCluster = &swarm.SwarmCluster{
+					ID:        result.ClusterID,
+					IsManager: true,
+				}
+
+				// Create swarm discovery and event processor if needed.
+				if a.swarmDiscovery == nil {
+					if dr, ok := a.rt.(*docker.Runtime); ok {
+						a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), a.logger)
+						a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
+							net, err := dr.Client().NetworkInspect(ctx, networkID)
+							if err != nil {
+								return "", "", err
+							}
+							return net.Name, net.Scope, nil
+						})
+						a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, a.logger)
+
+						// Run initial discovery.
+						_, services, err := a.swarmDiscovery.DiscoverAll(ctx)
+						if err != nil {
+							a.logger.Error("initial Swarm discovery after activation failed", "error", err)
+						} else {
+							a.logger.Info("Swarm discovery after activation complete", "services", len(services))
+						}
+					}
+				}
+			} else {
+				// Swarm deactivated.
+				previousCtx = "swarm"
+				newCtx = "docker"
+				message = "Swarm cluster deactivated — switched to Docker mode."
+
+				a.swarmCluster = nil
+			}
+
+			a.logger.Info("runtime context changed",
+				"previous", previousCtx,
+				"current", newCtx,
+			)
+
+			a.broker.Broadcast(v1.SSEEvent{
+				Type: event.RuntimeContextChanged,
+				Data: map[string]interface{}{
+					"previous":    previousCtx,
+					"current":     newCtx,
+					"message":     message,
+					"detected_at": now,
+				},
+			})
+		}
+	}
 }

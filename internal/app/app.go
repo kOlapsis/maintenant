@@ -100,9 +100,10 @@ type App struct {
 	swarmEvents        *swarm.EventProcessor
 	swarmNodeStore     *sqlite.SwarmNodeStore
 	swarmNodeSvc       *swarm.NodeService
-	swarmCrashLoop     *swarm.CrashLoopDetector
-	swarmUpdateTracker *swarm.UpdateTracker
-	swarmTaskTracker   *swarm.TaskTracker
+	swarmCrashLoop      *swarm.CrashLoopDetector
+	swarmUpdateTracker  *swarm.UpdateTracker
+	swarmTaskTracker    *swarm.TaskTracker
+	swarmReplicaChecker *swarm.ReplicaHealthChecker
 }
 
 // New creates and wires all application services.
@@ -216,6 +217,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 				a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
 				a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
 				a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
+				a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
 			}
 		}
 	}
@@ -412,9 +414,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SwarmCluster:   func() *swarm.SwarmCluster { return a.swarmCluster },
 		SwarmDiscovery: func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
 		SwarmDetector:  func() *swarm.Detector { return a.swarmDetector },
-		SwarmNodeStore:     a.swarmNodeStoreAsInterface(),
-		SwarmUpdateTracker: a.swarmUpdateTracker,
-		SwarmCrashLoop:     a.swarmCrashLoop,
+		SwarmNodeStore:      a.swarmNodeStoreAsInterface(),
+		SwarmUpdateTracker:  a.swarmUpdateTracker,
+		SwarmCrashLoop:      a.swarmCrashLoop,
+		SwarmReplicaChecker: a.swarmReplicaChecker,
 		// HTTP config
 		CORSOrigins:      cfg.CORSOrigins,
 		MaxBodySize:      cfg.MaxBodySize,
@@ -500,6 +503,11 @@ func (a *App) Start(ctx context.Context) error {
 	// Swarm node periodic refresh (Enterprise, 60s).
 	if a.swarmNodeSvc != nil {
 		go a.startNodeRefresh(ctx)
+	}
+
+	// Swarm context recheck (60s) — detects swarm activation/deactivation.
+	if a.swarmDetector != nil {
+		go a.startSwarmRecheck(ctx)
 	}
 
 	// Retention cleanup
