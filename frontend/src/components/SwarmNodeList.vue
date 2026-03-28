@@ -16,6 +16,10 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { useSwarmStore } from '@/stores/swarm'
 import { timeAgo } from '@/utils/time'
 
+const emit = defineEmits<{
+  select: [nodeId: string]
+}>()
+
 const swarmStore = useSwarmStore()
 
 onMounted(() => {
@@ -93,7 +97,8 @@ function availabilityStyle(availability: string): string {
       <div
         v-for="node in sortedNodes"
         :key="node.node_id"
-        class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all group"
+        class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
+        @click="emit('select', node.node_id)"
       >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3 min-w-0">

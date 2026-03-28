@@ -17,6 +17,9 @@ import SlideOverPanel from './ui/SlideOverPanel.vue'
 import ContainerDetail from './ContainerDetail.vue'
 import HeartbeatDetail from './HeartbeatDetail.vue'
 import CertificateDetail from './CertificateDetail.vue'
+import SwarmServiceDetail from './SwarmServiceDetail.vue'
+import K8sWorkloadDetail from './K8sWorkloadDetail.vue'
+import K8sPodDetail from './K8sPodDetail.vue'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { useContainersStore } from '@/stores/containers'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
@@ -53,7 +56,7 @@ const panelOpen = computed({
 const panelTitle = computed(() => {
   const type = detail.entityType.value
   const id = detail.entityId.value
-  if (!type || !id) return ''
+  if (!type || id === null) return ''
   return resolveTitle(type, id)
 })
 
@@ -61,21 +64,30 @@ const panelWidth = computed(() => {
   return detail.entityType.value === 'container' ? 'max-w-2xl' : 'max-w-lg'
 })
 
-function resolveTitle(type: EntityType, id: number): string {
+function resolveTitle(type: EntityType, id: number | string): string {
   switch (type) {
     case 'container': {
+      if (typeof id !== 'number') return ''
       const c = containersStore.allContainers.find(ct => ct.id === id)
       return c?.name ?? ''
     }
     case 'heartbeat': {
+      if (typeof id !== 'number') return ''
       const h = heartbeatsStore.heartbeats.find(hb => hb.id === id)
       return h?.name ?? ''
     }
     case 'certificate': {
+      if (typeof id !== 'number') return ''
       const cert = certificatesStore.certificates.find(c => c.id === id)
       return cert ? `${cert.hostname}:${cert.port}` : ''
     }
     case 'endpoint':
+      return ''
+    case 'swarm-service':
+      return ''
+    case 'k8s-workload':
+      return ''
+    case 'k8s-pod':
       return ''
   }
 }
@@ -96,19 +108,35 @@ function handleDeleted() {
       <span></span>
     </template>
     <ContainerDetail
-      v-if="detail.entityType.value === 'container' && detail.entityId.value"
-      :container-id="detail.entityId.value"
+      v-if="detail.entityType.value === 'container' && typeof detail.entityId.value === 'number' && detail.entityId.value"
+      :container-id="(detail.entityId.value as number)"
       @close="handleClose"
       @deleted="handleDeleted"
     />
     <HeartbeatDetail
-      v-if="detail.entityType.value === 'heartbeat' && detail.entityId.value"
-      :heartbeat-id="detail.entityId.value"
+      v-if="detail.entityType.value === 'heartbeat' && typeof detail.entityId.value === 'number' && detail.entityId.value"
+      :heartbeat-id="(detail.entityId.value as number)"
       @close="handleClose"
     />
     <CertificateDetail
-      v-if="detail.entityType.value === 'certificate' && detail.entityId.value"
-      :certificate-id="detail.entityId.value"
+      v-if="detail.entityType.value === 'certificate' && typeof detail.entityId.value === 'number' && detail.entityId.value"
+      :certificate-id="(detail.entityId.value as number)"
+      @close="handleClose"
+    />
+    <SwarmServiceDetail
+      v-if="detail.entityType.value === 'swarm-service' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :service-id="(detail.entityId.value as string)"
+      @close="handleClose"
+    />
+    <K8sWorkloadDetail
+      v-if="detail.entityType.value === 'k8s-workload' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :workload-id="(detail.entityId.value as string)"
+      @close="handleClose"
+    />
+    <K8sPodDetail
+      v-if="detail.entityType.value === 'k8s-pod' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :pod-namespace="(detail.entityId.value as string).split('/')[0] ?? ''"
+      :pod-name="(detail.entityId.value as string).split('/').slice(1).join('/') ?? ''"
       @close="handleClose"
     />
   </SlideOverPanel>

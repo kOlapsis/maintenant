@@ -485,6 +485,12 @@ func (a *App) wireSwarmCallbacks() {
 			a.swarmUpdateTracker.SetEventCallback(sseBroadcast)
 			a.swarmUpdateTracker.SetAlertCallback(alertForward)
 		}
+
+		// Wire replica health checker (Enterprise).
+		if a.swarmReplicaChecker != nil {
+			a.swarmReplicaChecker.SetEventCallback(sseBroadcast)
+			a.swarmReplicaChecker.SetAlertCallback(alertForward)
+		}
 	}
 
 	// Broadcast initial Swarm status.

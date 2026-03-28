@@ -12,35 +12,63 @@
 import { ref, readonly, watch, type InjectionKey, type Ref, type DeepReadonly } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-export type EntityType = 'container' | 'heartbeat' | 'certificate' | 'endpoint'
+export type EntityType = 'container' | 'heartbeat' | 'certificate' | 'endpoint' | 'swarm-service' | 'k8s-workload' | 'k8s-pod'
 
 const VALID_ENTITY_TYPES: ReadonlySet<string> = new Set<EntityType>([
   'container',
   'heartbeat',
   'certificate',
   'endpoint',
+  'swarm-service',
+  'k8s-workload',
+  'k8s-pod',
+])
+
+// Entity types that use string IDs (Docker service IDs, K8s composite IDs, etc.)
+const STRING_ID_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
+  'swarm-service',
+  'k8s-workload',
+  'k8s-pod',
 ])
 
 export interface DetailSlideOver {
   isOpen: DeepReadonly<Ref<boolean>>
   entityType: DeepReadonly<Ref<EntityType | null>>
-  entityId: DeepReadonly<Ref<number | null>>
-  openDetail: (type: EntityType, id: number) => void
+  entityId: DeepReadonly<Ref<number | string | null>>
+  openDetail: (type: EntityType, id: number | string) => void
   close: () => void
 }
 
 export const detailSlideOverKey: InjectionKey<DetailSlideOver> = Symbol('detailSlideOver')
 
-export function parseSelectedParam(value: unknown): { type: EntityType; id: number } | null {
+export function parseSelectedParam(value: unknown): { type: EntityType; id: number | string } | null {
   if (typeof value !== 'string') return null
-  const dashIdx = value.indexOf('-')
-  if (dashIdx < 1) return null
-  const type = value.slice(0, dashIdx)
-  const idStr = value.slice(dashIdx + 1)
+
+  // Handle multi-segment types like 'swarm-service' — find the entity type first
+  let type: string | null = null
+  let idStr: string | null = null
+
+  for (const candidate of VALID_ENTITY_TYPES) {
+    if (value.startsWith(`${candidate}-`)) {
+      type = candidate
+      idStr = value.slice(candidate.length + 1)
+      break
+    }
+  }
+
+  if (!type || !idStr) return null
   if (!VALID_ENTITY_TYPES.has(type)) return null
+
+  const entityType = type as EntityType
+
+  if (STRING_ID_TYPES.has(entityType)) {
+    if (idStr.length === 0) return null
+    return { type: entityType, id: idStr }
+  }
+
   const id = Number(idStr)
   if (!Number.isFinite(id) || id <= 0 || Math.floor(id) !== id) return null
-  return { type: type as EntityType, id }
+  return { type: entityType, id }
 }
 
 export function useDetailSlideOver(): DetailSlideOver {
@@ -49,11 +77,11 @@ export function useDetailSlideOver(): DetailSlideOver {
 
   const isOpen = ref(false)
   const entityType = ref<EntityType | null>(null)
-  const entityId = ref<number | null>(null)
+  const entityId = ref<number | string | null>(null)
 
   let updatingUrl = false
 
-  function openDetail(type: EntityType, id: number) {
+  function openDetail(type: EntityType, id: number | string) {
     entityType.value = type
     entityId.value = id
     isOpen.value = true
@@ -67,7 +95,7 @@ export function useDetailSlideOver(): DetailSlideOver {
     removeFromUrl()
   }
 
-  function syncToUrl(type: EntityType, id: number) {
+  function syncToUrl(type: EntityType, id: number | string) {
     updatingUrl = true
     router.replace({
       query: { ...route.query, selected: `${type}-${id}` },

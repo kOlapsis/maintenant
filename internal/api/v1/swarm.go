@@ -16,6 +16,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/swarm"
 )
 
@@ -27,6 +29,9 @@ type SwarmHandler struct {
 	nodeStore      swarm.NodeStore
 	updateTracker  *swarm.UpdateTracker
 	crashLoop      *swarm.CrashLoopDetector
+	replicaChecker *swarm.ReplicaHealthChecker
+	containerSvc   *container.Service
+	resourceSvc    *resource.Service
 }
 
 // NewSwarmHandler creates a new Swarm API handler.
@@ -37,14 +42,20 @@ func NewSwarmHandler(
 	nodeStore swarm.NodeStore,
 	updateTracker *swarm.UpdateTracker,
 	crashLoop *swarm.CrashLoopDetector,
+	replicaChecker *swarm.ReplicaHealthChecker,
+	containerSvc *container.Service,
+	resourceSvc *resource.Service,
 ) *SwarmHandler {
 	return &SwarmHandler{
-		cluster:       clusterFn,
-		discovery:     discoveryFn,
-		detector:      detectorFn,
-		nodeStore:     nodeStore,
-		updateTracker: updateTracker,
-		crashLoop:     crashLoop,
+		cluster:        clusterFn,
+		discovery:      discoveryFn,
+		detector:       detectorFn,
+		nodeStore:      nodeStore,
+		updateTracker:  updateTracker,
+		crashLoop:      crashLoop,
+		replicaChecker: replicaChecker,
+		containerSvc:   containerSvc,
+		resourceSvc:    resourceSvc,
 	}
 }
 
@@ -126,8 +137,23 @@ func (h *SwarmHandler) HandleGetService(w http.ResponseWriter, r *http.Request) 
 	}
 
 	resp := serviceToJSON(svc)
-	// Tasks would be populated from discovery cache in a full implementation.
-	resp["tasks"] = []interface{}{}
+	tasks := make([]map[string]interface{}, 0)
+	for _, t := range disc.GetTasksForService(serviceID) {
+		tasks = append(tasks, map[string]interface{}{
+			"task_id":       t.TaskID,
+			"service_id":    t.ServiceID,
+			"node_id":       t.NodeID,
+			"node_hostname": t.NodeHostname,
+			"slot":          t.Slot,
+			"state":         t.State,
+			"desired_state": t.DesiredState,
+			"container_id":  t.ContainerID,
+			"error":         t.Error,
+			"exit_code":     t.ExitCode,
+			"timestamp":     t.Timestamp.Format(time.RFC3339),
+		})
+	}
+	resp["tasks"] = tasks
 
 	WriteJSON(w, http.StatusOK, resp)
 }
@@ -280,6 +306,56 @@ func (h *SwarmHandler) HandleGetUpdateStatus(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// HandleListTasks handles GET /api/v1/swarm/tasks.
+func (h *SwarmHandler) HandleListTasks(w http.ResponseWriter, r *http.Request) {
+	disc := h.discovery()
+	if disc == nil {
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"tasks": []interface{}{},
+			"total": 0,
+		})
+		return
+	}
+
+	serviceFilter := r.URL.Query().Get("service")
+	nodeFilter := r.URL.Query().Get("node")
+	stateFilter := r.URL.Query().Get("state")
+
+	result := make([]map[string]interface{}, 0)
+	for _, svc := range disc.ListServices() {
+		if serviceFilter != "" && svc.ServiceID != serviceFilter {
+			continue
+		}
+		for _, t := range disc.GetTasksForService(svc.ServiceID) {
+			if nodeFilter != "" && t.NodeID != nodeFilter {
+				continue
+			}
+			if stateFilter != "" && t.State != stateFilter {
+				continue
+			}
+			result = append(result, map[string]interface{}{
+				"task_id":       t.TaskID,
+				"service_id":    t.ServiceID,
+				"service_name":  svc.Name,
+				"node_id":       t.NodeID,
+				"node_hostname": t.NodeHostname,
+				"slot":          t.Slot,
+				"state":         t.State,
+				"desired_state": t.DesiredState,
+				"container_id":  t.ContainerID,
+				"error":         t.Error,
+				"exit_code":     t.ExitCode,
+				"timestamp":     t.Timestamp.Format(time.RFC3339),
+			})
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"tasks": result,
+		"total": len(result),
+	})
+}
+
 // HandleGetDashboard handles GET /api/v1/swarm/dashboard (Enterprise).
 func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request) {
 	cluster := h.cluster()
@@ -355,6 +431,73 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// HandleGetCluster handles GET /api/v1/swarm/cluster (Enterprise).
+func (h *SwarmHandler) HandleGetCluster(w http.ResponseWriter, r *http.Request) {
+	cluster := h.cluster()
+	if cluster == nil {
+		WriteError(w, http.StatusConflict, "SWARM_NOT_ACTIVE", "Swarm mode is not active")
+		return
+	}
+
+	disc := h.discovery()
+
+	// Compute service-level stats.
+	totalServices := 0
+	runningTasks := 0
+	desiredTasks := 0
+	var services []*swarm.SwarmService
+
+	if disc != nil {
+		services = disc.ListServices()
+		totalServices = len(services)
+		for _, svc := range services {
+			runningTasks += svc.RunningReplicas
+			desiredTasks += svc.DesiredReplicas
+		}
+	}
+
+	// Compute node counts by status.
+	readyNodes := 0
+	downNodes := 0
+	disconnectedNodes := 0
+	var nodes []*swarm.SwarmNode
+
+	if h.nodeStore != nil {
+		stored, err := h.nodeStore.ListNodes(r.Context())
+		if err == nil {
+			nodes = stored
+			for _, n := range nodes {
+				switch n.Status {
+				case "ready":
+					readyNodes++
+				case "down":
+					downNodes++
+				case "disconnected":
+					disconnectedNodes++
+				}
+			}
+		}
+	}
+
+	// Compute cluster health.
+	clusterHealth := swarm.ComputeClusterHealth(services, nodes)
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"cluster_id":     cluster.ID,
+		"manager_count":  cluster.ManagerCount,
+		"worker_count":   cluster.WorkerCount,
+		"total_services": totalServices,
+		"running_tasks":  runningTasks,
+		"desired_tasks":  desiredTasks,
+		"cluster_health": clusterHealth,
+		"nodes": map[string]interface{}{
+			"ready":        readyNodes,
+			"down":         downNodes,
+			"disconnected": disconnectedNodes,
+		},
+	})
+}
+
 func nodeToJSON(n *swarm.SwarmNode) map[string]interface{} {
 	return map[string]interface{}{
 		"id":                    n.ID,
@@ -370,6 +513,101 @@ func nodeToJSON(n *swarm.SwarmNode) map[string]interface{} {
 		"last_seen_at":         n.LastSeenAt.Format(time.RFC3339),
 		"last_status_change_at": n.LastStatusChangeAt.Format(time.RFC3339),
 	}
+}
+
+// HandleGetServiceResources handles GET /api/v1/swarm/services/{serviceID}/resources (Enterprise).
+// Returns per-task CPU/RAM/network snapshots for a Swarm service.
+func (h *SwarmHandler) HandleGetServiceResources(w http.ResponseWriter, r *http.Request) {
+	serviceID := r.PathValue("serviceID")
+
+	disc := h.discovery()
+	if disc == nil {
+		WriteError(w, http.StatusConflict, "SWARM_NOT_ACTIVE", "Swarm mode is not active")
+		return
+	}
+
+	svc := disc.GetService(serviceID)
+	if svc == nil {
+		WriteError(w, http.StatusNotFound, "SWARM_SERVICE_NOT_FOUND", "Service "+serviceID+" not found")
+		return
+	}
+
+	if h.containerSvc == nil || h.resourceSvc == nil {
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"service_id":   serviceID,
+			"service_name": svc.Name,
+			"tasks":        []interface{}{},
+		})
+		return
+	}
+
+	tasks := disc.GetTasksForService(serviceID)
+	taskResources := make([]map[string]interface{}, 0, len(tasks))
+
+	containers, err := h.containerSvc.ListContainers(r.Context(), container.ListContainersOpts{})
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list containers")
+		return
+	}
+
+	// Build externalID → internal ID map.
+	extToInternal := make(map[string]int64, len(containers))
+	for _, c := range containers {
+		extToInternal[c.ExternalID] = c.ID
+	}
+
+	for _, t := range tasks {
+		if t.State != "running" || t.ContainerID == "" {
+			continue
+		}
+
+		entry := map[string]interface{}{
+			"task_id":       t.TaskID,
+			"slot":          t.Slot,
+			"node_hostname": t.NodeHostname,
+			"container_id":  t.ContainerID,
+		}
+
+		// Match task container to internal container by prefix (Docker IDs may be truncated).
+		var snap *resource.ResourceSnapshot
+		for extID, intID := range extToInternal {
+			if len(t.ContainerID) >= 12 && len(extID) >= 12 &&
+				extID[:12] == t.ContainerID[:12] {
+				snap = h.resourceSvc.GetCurrentSnapshot(intID)
+				break
+			}
+		}
+
+		if snap != nil {
+			memPercent := 0.0
+			if snap.MemLimit > 0 {
+				memPercent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
+			}
+			entry["cpu_percent"] = snap.CPUPercent
+			entry["mem_used"] = snap.MemUsed
+			entry["mem_limit"] = snap.MemLimit
+			entry["mem_percent"] = memPercent
+			entry["net_rx_bytes"] = snap.NetRxBytes
+			entry["net_tx_bytes"] = snap.NetTxBytes
+			entry["timestamp"] = snap.Timestamp.Format(time.RFC3339)
+		} else {
+			entry["cpu_percent"] = nil
+			entry["mem_used"] = nil
+			entry["mem_limit"] = nil
+			entry["mem_percent"] = nil
+			entry["net_rx_bytes"] = nil
+			entry["net_tx_bytes"] = nil
+			entry["timestamp"] = nil
+		}
+
+		taskResources = append(taskResources, entry)
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"service_id":   serviceID,
+		"service_name": svc.Name,
+		"tasks":        taskResources,
+	})
 }
 
 func serviceToJSON(s *swarm.SwarmService) map[string]interface{} {
