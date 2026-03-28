@@ -150,7 +150,27 @@ onMounted(loadDetail)
       </p>
     </div>
 
-    <!-- 2. Update command -->
+    <!-- 2. Tag Filter (when configured) -->
+    <div
+      v-if="detail.tag_include || detail.tag_exclude"
+      class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800"
+    >
+      <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+        Tag Filter
+      </h4>
+      <div class="space-y-2">
+        <div v-if="detail.tag_include" class="flex items-start gap-2">
+          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest shrink-0 pt-0.5 w-14">Include</span>
+          <code class="text-[11px] text-pb-green-400 font-mono bg-pb-green-500/5 px-2 py-0.5 rounded break-all">{{ detail.tag_include }}</code>
+        </div>
+        <div v-if="detail.tag_exclude" class="flex items-start gap-2">
+          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest shrink-0 pt-0.5 w-14">Exclude</span>
+          <code class="text-[11px] text-rose-400 font-mono bg-rose-500/5 px-2 py-0.5 rounded break-all">{{ detail.tag_exclude }}</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Update command -->
     <div v-if="detail.update_command" class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
       <div class="flex items-center justify-between mb-2">
         <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
@@ -177,7 +197,7 @@ onMounted(loadDetail)
       </p>
     </div>
 
-    <!-- 3. Breaking changes warning (Pro) -->
+    <!-- 4. Breaking changes warning (Pro) -->
     <FeatureGate
       feature="changelog"
       title="Breaking Changes"
@@ -197,7 +217,7 @@ onMounted(loadDetail)
       </div>
     </FeatureGate>
 
-    <!-- 4. Risk Score (Pro) -->
+    <!-- 5. Risk Score (Pro) -->
     <FeatureGate
       feature="risk_scoring"
       title="Risk Score"
@@ -211,7 +231,7 @@ onMounted(loadDetail)
       </div>
     </FeatureGate>
 
-    <!-- 5. Changelog (Pro) -->
+    <!-- 6. Changelog (Pro) -->
     <FeatureGate
       feature="changelog"
       title="Changelog"
@@ -227,7 +247,7 @@ onMounted(loadDetail)
       </div>
     </FeatureGate>
 
-    <!-- 6. CVEs (Pro) -->
+    <!-- 7. CVEs (Pro) -->
     <FeatureGate
       feature="cve_enrichment"
       title="Vulnerabilities (CVE)"
@@ -241,7 +261,7 @@ onMounted(loadDetail)
       </div>
     </FeatureGate>
 
-    <!-- 7. Rollback command -->
+    <!-- 8. Rollback command -->
     <div
       v-if="detail.rollback_command"
       class="bg-[#0B0E13] rounded-xl p-4 border border-amber-900/30"
@@ -274,7 +294,7 @@ onMounted(loadDetail)
       </p>
     </div>
 
-    <!-- 8. Previous digest (Pro) -->
+    <!-- 9. Previous digest (Pro) -->
     <FeatureGate
       feature="cve_enrichment"
       title="Previous Digest"

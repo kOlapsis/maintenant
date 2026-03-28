@@ -78,6 +78,114 @@ DELETE /api/v1/updates/exclusions/{id}
 
 ---
 
+## Tag Filtering
+
+### Default Behavior
+
+By default, maintenant determines update candidates from the OCI registry tag list using two strategies:
+
+- **Semver mode** — For version tags (e.g. `1.24`, `3.19.1-alpine`), maintenant compares semver versions and respects variant suffixes (e.g. `-alpine`, `-bookworm`). A container running `nginx:1.24-alpine` will only be compared against other `-alpine` tags.
+- **Digest-only mode** — For non-semver channel tags (`latest`, `lts`, `stable`, etc.), maintenant compares the remote image digest against a stored baseline. If the digest changes (the image was rebuilt), an update is reported.
+
+### Tag Filter Labels
+
+Two Docker labels let you override the default update candidate selection:
+
+| Label | Type | Description |
+|-------|------|-------------|
+| `maintenant.update.tag-include` | Go regex | Only tags matching this pattern are considered as update candidates |
+| `maintenant.update.tag-exclude` | Go regex | Tags matching this pattern are excluded from update candidates |
+
+Patterns use Go [`regexp`](https://pkg.go.dev/regexp/syntax) syntax. Without anchors (`^`, `$`), the pattern matches anywhere in the tag string — add them for exact matches.
+
+### Priority Rules
+
+1. **`tag-include` replaces the automatic variant filter** — when set, only matching tags are candidates; the `-alpine`/`-bookworm` variant detection is bypassed.
+2. **`tag-exclude` alone preserves the variant filter** — the automatic variant suffix matching still applies; matching tags are removed after.
+3. **Exclude applies after include — exclude always wins** — when both labels are set, include filters first, then exclude removes from the result.
+4. **Invalid regex → warning + label ignored** — a malformed pattern is logged as a warning and treated as absent; default behavior applies.
+5. **Empty string → treated as absent** — an empty label value has no effect.
+
+### Digest-Only Mode
+
+Both `tag-include` and `tag-exclude` are **ignored** for containers using non-semver channel tags (`latest`, `lts`, `stable`, etc.). Digest-only mode compares remote digests directly and does not use a tag list, so filtering has no effect.
+
+### Concrete Examples
+
+**Stay on Node 20 alpine only — never jump to Node 21:**
+
+```yaml
+services:
+  app:
+    image: node:20.12.0-alpine
+    labels:
+      maintenant.update.tag-include: "^20\\.\\d+\\.\\d+-alpine$$"
+```
+
+**Exclude pre-release tags:**
+
+```yaml
+services:
+  redis:
+    image: redis:7.0.0
+    labels:
+      maintenant.update.tag-exclude: "(rc|beta|alpha)"
+```
+
+**Combine include and exclude — Node 20, no pre-releases:**
+
+```yaml
+services:
+  app:
+    image: node:20.0.0
+    labels:
+      maintenant.update.tag-include: "^20\\."
+      maintenant.update.tag-exclude: "(rc|beta|alpha)"
+```
+
+**Pin to a major version:**
+
+```yaml
+services:
+  postgres:
+    image: postgres:15.1
+    labels:
+      maintenant.update.tag-include: "^15\\."
+```
+
+**Only stable semver tags (no channel tags that happen to match):**
+
+```yaml
+services:
+  traefik:
+    image: traefik:2.11.0
+    labels:
+      maintenant.update.tag-include: "^v?[0-9]+\\.[0-9]+\\.[0-9]+$$"
+```
+
+**Only slim-bookworm variants:**
+
+```yaml
+services:
+  python:
+    image: python:3.11-slim-bookworm
+    labels:
+      maintenant.update.tag-include: ".*-slim-bookworm$$"
+```
+
+### Troubleshooting
+
+**No update shown after adding `tag-include`:**
+Test your regex against the actual tag list in the registry. The pattern must match at least one tag that is newer than the current tag. Use a tool like [regex101.com](https://regex101.com) with Go flavor.
+
+**Filter seems to have no effect:**
+Check if the container uses a non-semver channel tag (`latest`, `lts`, `stable`). Digest-only mode containers bypass tag filters.
+
+**Warning in logs: `invalid maintenant.update.tag-include regex, label ignored`:**
+The regex pattern has a syntax error. Check for unbalanced brackets or other Go `regexp` syntax issues.
+
+---
+
 ## Compose-Aware Commands
 
 When maintenant detects that a container belongs to a Docker Compose project, update and rollback commands automatically include the correct `--project-directory` flag. This ensures commands work reliably even when the compose file lives outside the current working directory.
@@ -129,3 +237,4 @@ GET /api/v1/risk
 
 - [Container Monitoring](containers.md) — Container states and image info
 - [Alert Engine](alerts.md) — Update alerts
+- [Docker Labels Reference](../guides/docker-labels.md#update-settings) — Full reference for `maintenant.update.*` labels

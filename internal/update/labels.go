@@ -13,6 +13,7 @@ package update
 
 import (
 	"log/slog"
+	"regexp"
 	"strings"
 )
 
@@ -72,6 +73,28 @@ func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConf
 			case "true", "1", "yes":
 				cfg.DigestOnly = true
 			}
+		case "tag-include":
+			if value == "" {
+				continue
+			}
+			re, err := regexp.Compile(value)
+			if err != nil {
+				logger.Warn("invalid maintenant.update.tag-include regex, label ignored",
+					"pattern", value, "error", err)
+				continue
+			}
+			cfg.TagInclude = re
+		case "tag-exclude":
+			if value == "" {
+				continue
+			}
+			re, err := regexp.Compile(value)
+			if err != nil {
+				logger.Warn("invalid maintenant.update.tag-exclude regex, label ignored",
+					"pattern", value, "error", err)
+				continue
+			}
+			cfg.TagExclude = re
 		}
 	}
 

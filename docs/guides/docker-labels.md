@@ -103,6 +103,33 @@ labels:
 
 ---
 
+## Update Settings
+
+Control how maintenant tracks image updates for each container.
+
+| Label | Type | Default | Description |
+|-------|------|---------|-------------|
+| `maintenant.update.enabled` | `true` / `false` | `true` | Enable or disable update tracking for this container |
+| `maintenant.update.track` | `patch`, `minor`, `major` | — | Minimum update type to report (`patch` = any update, `major` = major only) |
+| `maintenant.update.pin` | tag string | — | Pin updates to this tag string; no updates will be reported |
+| `maintenant.update.ignore_major` | `true` / `false` | `false` | Suppress major version updates |
+| `maintenant.update.registry` | registry URL | — | Override the registry used for scanning (e.g. `ghcr.io`) |
+| `maintenant.update.alert_on` | `available`, `critical` | — | Alert only on specific update types |
+| `maintenant.update.digest_only` | `true` / `false` | `false` | Force digest-only comparison (bypasses semver detection) |
+| `maintenant.update.tag-include` | Go regex | — | Only tags matching this pattern are update candidates |
+| `maintenant.update.tag-exclude` | Go regex | — | Tags matching this pattern are excluded from candidates |
+
+```yaml
+labels:
+  maintenant.update.enabled: "true"
+  maintenant.update.tag-include: "^20\\.\\d+\\.\\d+-alpine$$"  # Node 20 alpine only
+  maintenant.update.tag-exclude: "(rc|beta|alpha)"              # No pre-releases
+```
+
+See [Tag Filtering](../features/updates.md#tag-filtering) in the Update Intelligence guide for full details, examples, and troubleshooting.
+
+---
+
 ## Swarm Service Labels
 
 When running in Docker Swarm mode, maintenant reads labels from **service definitions** (`deploy.labels`), not from individual containers. The same `maintenant.*` labels apply:
@@ -151,6 +178,12 @@ services:
       maintenant.endpoint.interval: "15s"
       maintenant.alert.severity: "critical"
       maintenant.alert.channels: "ops-webhook"
+      maintenant.update.tag-exclude: "(rc|beta|alpha)"         # No pre-releases
+
+  node:
+    image: node:20.12.0-alpine
+    labels:
+      maintenant.update.tag-include: "^20\\.\\d+\\.\\d+-alpine$$"  # Stay on Node 20 alpine
 
   postgres:
     image: postgres:16
@@ -188,3 +221,4 @@ volumes:
 - [Container Monitoring](../features/containers.md) — Container labels (ignore, group)
 - [Alert Engine](../features/alerts.md) — Alert routing labels
 - [Docker Swarm Monitoring](../features/swarm.md) — Swarm service labels and grouping
+- [Update Intelligence — Tag Filtering](../features/updates.md#tag-filtering) — Tag filter labels, priority rules, and examples

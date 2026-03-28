@@ -18,14 +18,29 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 )
 
+// LabelFetcher retrieves raw container labels from the runtime.
+// Returns a map of externalID -> labels. Implemented by docker.Runtime via a thin adapter.
+// Returns nil (not an error) when the runtime doesn't support label fetching (e.g. Kubernetes).
+type LabelFetcher interface {
+	FetchLabels(ctx context.Context) (map[string]map[string]string, error)
+}
+
 // ContainerServiceAdapter adapts container.Service to the ContainerLister interface.
 type ContainerServiceAdapter struct {
-	svc *container.Service
+	svc          *container.Service
+	labelFetcher LabelFetcher // optional — nil when runtime doesn't support label fetching
 }
 
 // NewContainerServiceAdapter creates a new adapter.
 func NewContainerServiceAdapter(svc *container.Service) *ContainerServiceAdapter {
 	return &ContainerServiceAdapter{svc: svc}
+}
+
+// WithLabelFetcher attaches a runtime label fetcher to the adapter.
+// When set, ContainerInfo.Labels is populated with live runtime labels at scan time.
+func (a *ContainerServiceAdapter) WithLabelFetcher(lf LabelFetcher) *ContainerServiceAdapter {
+	a.labelFetcher = lf
+	return a
 }
 
 // ListContainerInfos returns container info for all running containers.
@@ -37,6 +52,12 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 		return nil, err
 	}
 
+	// Fetch live labels from the runtime if a fetcher is wired.
+	var labelsByExtID map[string]map[string]string
+	if a.labelFetcher != nil {
+		labelsByExtID, _ = a.labelFetcher.FetchLabels(ctx)
+	}
+
 	infos := make([]ContainerInfo, 0, len(containers))
 	for _, c := range containers {
 		if c.IsIgnored || c.Archived {
@@ -46,6 +67,7 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 			ExternalID:         c.ExternalID,
 			Name:               c.Name,
 			Image:              c.Image,
+			Labels:             labelsByExtID[c.ExternalID],
 			OrchestrationGroup: c.OrchestrationGroup,
 			OrchestrationUnit:  c.OrchestrationUnit,
 			RuntimeType:        c.RuntimeType,
@@ -62,12 +84,20 @@ func (a *ContainerServiceAdapter) GetContainerInfo(ctx context.Context, external
 	if err != nil {
 		return ContainerInfo{}, fmt.Errorf("get container info: %w", err)
 	}
+
+	// Fetch live labels if a fetcher is wired.
+	var labelsByExtID map[string]map[string]string
+	if a.labelFetcher != nil {
+		labelsByExtID, _ = a.labelFetcher.FetchLabels(ctx)
+	}
+
 	for _, c := range containers {
 		if c.ExternalID == externalID {
 			return ContainerInfo{
 				ExternalID:         c.ExternalID,
 				Name:               c.Name,
 				Image:              c.Image,
+				Labels:             labelsByExtID[c.ExternalID],
 				OrchestrationGroup: c.OrchestrationGroup,
 				OrchestrationUnit:  c.OrchestrationUnit,
 				RuntimeType:        c.RuntimeType,

@@ -140,6 +140,13 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 		if u.PreviousDigest != "" {
 			resp["rollback_command"] = h.service.GenerateRollbackCommand(ci, u.PreviousDigest)
 		}
+		// Tag filter labels (raw pattern strings, shown as configured even if regex was invalid)
+		if v := ci.Labels["maintenant.update.tag-include"]; v != "" {
+			resp["tag_include"] = v
+		}
+		if v := ci.Labels["maintenant.update.tag-exclude"]; v != "" {
+			resp["tag_exclude"] = v
+		}
 	}
 
 	if extension.CurrentEdition() == extension.Enterprise {

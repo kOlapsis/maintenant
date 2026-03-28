@@ -34,8 +34,15 @@ type ContainerInfo struct {
 }
 
 // Scanner checks containers for available updates by comparing tags and digests.
+// registryQuerier abstracts the registry operations needed by Scanner.
+// Satisfied by *RegistryClient in production; replaced by stubs in tests.
+type registryQuerier interface {
+	ListTags(ctx context.Context, imageRef string) ([]string, error)
+	GetDigest(ctx context.Context, imageRef string) (string, error)
+}
+
 type Scanner struct {
-	registry *RegistryClient
+	registry registryQuerier
 	store    UpdateStore
 	logger   *slog.Logger
 	delay    time.Duration
@@ -171,6 +178,22 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list tags: %w", err)
+	}
+
+	// Apply tag filter (include/exclude labels + variant detection).
+	// Tag filters are skipped for non-semver channel tags (digest-only mode) because
+	// the tag filter operates on version tags and would remove channel tags like
+	// "latest", "lts", "stable" from the list, preventing digest comparison.
+	versionPart, variant := splitVariant(currentTag)
+	if _, parseErr := ParseTag(versionPart); parseErr == nil {
+		// Semver tag: apply user-configured tag filters
+		tf := NewTagFilter(cfg.TagInclude, cfg.TagExclude, variant)
+		tags = tf.Filter(tags)
+		if len(tags) == 0 {
+			sc.logger.Warn("scanner: tag filter produced no candidates, skipping update check",
+				"container", c.Name, "image", c.Image)
+			return nil, nil
+		}
 	}
 
 	// Find best update

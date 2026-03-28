@@ -73,6 +73,8 @@ export interface ContainerUpdateDetail {
   changelog_url: string
   changelog_summary: string
   has_breaking_changes: boolean
+  tag_include?: string
+  tag_exclude?: string
 }
 
 export interface CVEInfo {

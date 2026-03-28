@@ -11,7 +11,10 @@
 
 package update
 
-import "time"
+import (
+	"regexp"
+	"time"
+)
 
 // UpdateType classifies the type of version update.
 type UpdateType string
@@ -286,4 +289,6 @@ type UpdateConfig struct {
 	Registry    string // override registry
 	AlertOn     string // "all", "critical", "none"
 	DigestOnly  bool
+	TagInclude  *regexp.Regexp // compiled tag-include regex, nil if absent/invalid
+	TagExclude  *regexp.Regexp // compiled tag-exclude regex, nil if absent/invalid
 }
