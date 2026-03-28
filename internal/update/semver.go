@@ -84,7 +84,10 @@ type tagVersion struct {
 
 // sortTagVersions filters tags to those matching the given variant suffix,
 // parses them as semver, skips prereleases, and returns them sorted ascending.
-func sortTagVersions(tags []string, variant string) []tagVersion {
+// requireDots, when true, skips candidates whose version part has no dots —
+// this filters out pure numeric build IDs (e.g. "608111629") that Masterminds/semver
+// accepts as valid single-component versions but are not real release tags.
+func sortTagVersions(tags []string, variant string, requireDots bool) []tagVersion {
 	var result []tagVersion
 	for _, tag := range tags {
 		_, tv := splitVariant(tag)
@@ -92,6 +95,9 @@ func sortTagVersions(tags []string, variant string) []tagVersion {
 			continue
 		}
 		versionPart, _ := splitVariant(tag)
+		if requireDots && !strings.Contains(strings.TrimPrefix(versionPart, "v"), ".") {
+			continue
+		}
 		v, err := semver.NewVersion(versionPart)
 		if err != nil {
 			continue
@@ -144,7 +150,12 @@ func FindBestUpdate(currentTag string, allTags []string) (bestTag string, update
 		return "", UpdateTypeUnknown
 	}
 
-	candidates := sortTagVersions(allTags, variant)
+	// Determine whether the current version part uses dots (e.g. "1.20.1", "v1.20.1").
+	// Tags without dots (e.g. "608111629") are build IDs or timestamps that happen to be
+	// valid single-component semver — they must be excluded when the current tag is dotted.
+	currentHasDots := strings.Contains(strings.TrimPrefix(versionPart, "v"), ".")
+
+	candidates := sortTagVersions(allTags, variant, currentHasDots)
 	if len(candidates) == 0 {
 		return "", UpdateTypeUnknown
 	}

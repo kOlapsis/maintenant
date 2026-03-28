@@ -118,6 +118,20 @@ func TestFindBestUpdate_VariantSuffix(t *testing.T) {
 			wantType:   UpdateTypeUnknown,
 		},
 		{
+			name:       "numeric build ID tag is not treated as version update",
+			currentTag: "v1.20.1",
+			allTags:    []string{"v1.20.1", "v1.20.2", "608111629", "v1.21.0"},
+			wantTag:    "v1.21.0",
+			wantType:   UpdateTypeMinor,
+		},
+		{
+			name:       "numeric build ID only — no real update available",
+			currentTag: "v1.20.1",
+			allTags:    []string{"v1.20.1", "608111629", "123456789"},
+			wantTag:    "",
+			wantType:   UpdateTypeUnknown,
+		},
+		{
 			name:       "slim-bookworm variant",
 			currentTag: "3.19-slim-bookworm",
 			allTags:    []string{"3.19-slim-bookworm", "3.20-slim-bookworm", "3.20-bookworm", "3.20"},
