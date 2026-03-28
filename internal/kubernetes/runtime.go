@@ -48,9 +48,10 @@ type Runtime struct {
 	factory   informers.SharedInformerFactory
 	stopCh    chan struct{}
 
-	mu        sync.Mutex
-	connected bool
-	prevCPU   map[string]*cpuPrev // CPU delta state keyed by externalID
+	mu               sync.Mutex
+	connected        bool
+	metricsAvailable bool
+	prevCPU          map[string]*cpuPrev // CPU delta state keyed by externalID
 }
 
 type cpuPrev struct {
@@ -92,9 +93,21 @@ func (r *Runtime) Connect(ctx context.Context) error {
 
 	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
 
+	// Probe metrics-server availability.
+	metricsOK := false
+	if metricsClient != nil {
+		metricsOK = probeMetricsAPI(clientset)
+		if !metricsOK {
+			r.logger.Warn("metrics-server API not found; resource metrics will be unavailable")
+		} else {
+			r.logger.Info("metrics-server API detected")
+		}
+	}
+
 	r.mu.Lock()
 	r.clientset = clientset
 	r.metrics = metricsClient
+	r.metricsAvailable = metricsOK
 	r.factory = factory
 	r.connected = true
 	r.mu.Unlock()
@@ -137,6 +150,19 @@ func (r *Runtime) IsConnected() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.connected
+}
+
+// MetricsAvailable reports whether the metrics-server API was detected on startup.
+func (r *Runtime) MetricsAvailable() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.metricsAvailable
+}
+
+// probeMetricsAPI checks whether the metrics.k8s.io/v1beta1 API group is available.
+func probeMetricsAPI(clientset k8s.Interface) bool {
+	_, err := clientset.Discovery().ServerResourcesForGroupVersion("metrics.k8s.io/v1beta1")
+	return err == nil
 }
 
 func (r *Runtime) SetDisconnected() {

@@ -11,7 +11,14 @@
 
 package kubernetes
 
-import "strings"
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // Default namespaces excluded from monitoring.
 var defaultExcluded = map[string]bool{
@@ -68,4 +75,24 @@ func (f *NamespaceFilter) IsAllowed(namespace string) bool {
 		return f.allowlist[namespace]
 	}
 	return !f.blocklist[namespace]
+}
+
+// ListNamespaces returns the allowed namespace names from the cluster.
+// The result respects the allowlist/blocklist configured via env vars.
+func (r *Runtime) ListNamespaces(ctx context.Context) ([]string, error) {
+	nsList, err := r.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list namespaces: %w", err)
+	}
+
+	var result []string
+	for i := range nsList.Items {
+		name := nsList.Items[i].Name
+		if r.nsFilter.IsAllowed(name) {
+			result = append(result, name)
+		}
+	}
+
+	sort.Strings(result)
+	return result, nil
 }
