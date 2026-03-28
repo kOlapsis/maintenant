@@ -14,8 +14,10 @@ import { ref, computed } from 'vue'
 import {
   fetchSwarmInfo,
   fetchSwarmNodes,
+  fetchSwarmCluster,
   type SwarmInfo,
   type SwarmNodeResponse,
+  type SwarmClusterResponse,
 } from '@/services/swarmApi'
 import { sseBus } from '@/services/sseBus'
 
@@ -42,6 +44,9 @@ export interface UpdateProgressState {
 export const useSwarmStore = defineStore('swarm', () => {
   const info = ref<SwarmInfo | null>(null)
   const nodes = ref<SwarmNodeResponse[]>([])
+  const cluster = ref<SwarmClusterResponse | null>(null)
+  const clusterLoading = ref(false)
+  const clusterError = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -88,6 +93,39 @@ export const useSwarmStore = defineStore('swarm', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  async function loadCluster() {
+    clusterLoading.value = true
+    clusterError.value = null
+    try {
+      cluster.value = await fetchSwarmCluster()
+    } catch (e) {
+      clusterError.value = e instanceof Error ? e.message : 'Failed to load cluster data'
+    } finally {
+      clusterLoading.value = false
+    }
+  }
+
+  function onSwarmNodeUpdated(e: MessageEvent) {
+    try {
+      const data = JSON.parse(e.data)
+      const idx = nodes.value.findIndex((n) => n.node_id === data.node_id)
+      if (idx >= 0) {
+        const existing = nodes.value[idx]!
+        nodes.value[idx] = {
+          ...existing,
+          status: (data.new_status ?? data.status ?? existing.status) as string,
+          availability: (data.new_availability ?? data.availability ?? existing.availability) as string,
+          last_seen_at: new Date().toISOString(),
+          last_status_change_at: new Date().toISOString(),
+        }
+      } else {
+        loadNodes()
+      }
+      // Refresh cluster overview when node state changes.
+      loadCluster()
+    } catch { /* ignore */ }
   }
 
   function onSwarmStatus(e: MessageEvent) {
@@ -169,6 +207,7 @@ export const useSwarmStore = defineStore('swarm', () => {
   function startListening() {
     sseBus.on('swarm.status', onSwarmStatus)
     sseBus.on('swarm.node_status_changed', onNodeStatusChanged)
+    sseBus.on('swarm.node_updated', onSwarmNodeUpdated)
     sseBus.on('swarm.crash_loop_detected', onCrashLoopDetected)
     sseBus.on('swarm.crash_loop_recovered', onCrashLoopRecovered)
     sseBus.on('swarm.update_progress', onUpdateProgressEvent)
@@ -178,6 +217,7 @@ export const useSwarmStore = defineStore('swarm', () => {
   function stopListening() {
     sseBus.off('swarm.status', onSwarmStatus)
     sseBus.off('swarm.node_status_changed', onNodeStatusChanged)
+    sseBus.off('swarm.node_updated', onSwarmNodeUpdated)
     sseBus.off('swarm.crash_loop_detected', onCrashLoopDetected)
     sseBus.off('swarm.crash_loop_recovered', onCrashLoopRecovered)
     sseBus.off('swarm.update_progress', onUpdateProgressEvent)
@@ -187,6 +227,9 @@ export const useSwarmStore = defineStore('swarm', () => {
   return {
     info,
     nodes,
+    cluster,
+    clusterLoading,
+    clusterError,
     loading,
     error,
     crashLoops,
@@ -200,6 +243,7 @@ export const useSwarmStore = defineStore('swarm', () => {
     getUpdateProgress,
     loadInfo,
     loadNodes,
+    loadCluster,
     startListening,
     stopListening,
   }
