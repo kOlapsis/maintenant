@@ -411,20 +411,22 @@ func (r *Router) registerUpdateRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("DELETE /api/v1/updates/exclusions/{id}", uh.HandleDeleteExclusion)
 	r.mux.HandleFunc("GET /api/v1/updates/scan/{scan_id}", uh.HandleGetScanStatus)
 	r.mux.HandleFunc("POST /api/v1/updates/scan", uh.HandleTriggerScan)
-	r.mux.HandleFunc("GET /api/v1/updates/container/{container_id}", uh.HandleGetContainerUpdate)
-	r.mux.HandleFunc("POST /api/v1/updates/pin/{container_id}", uh.HandlePinVersion)
-	r.mux.HandleFunc("DELETE /api/v1/updates/pin/{container_id}", uh.HandleUnpinVersion)
+	// {container_id...} captures multiple path segments, required for Kubernetes ExternalIDs
+	// which contain slashes (e.g. "default/Deployment/redis").
+	r.mux.HandleFunc("GET /api/v1/updates/container/{container_id...}", uh.HandleGetContainerUpdate)
+	r.mux.HandleFunc("POST /api/v1/updates/pin/{container_id...}", uh.HandlePinVersion)
+	r.mux.HandleFunc("DELETE /api/v1/updates/pin/{container_id...}", uh.HandleUnpinVersion)
 
 	// CVE routes (edition-gated in handler)
 	ch := NewCVEHandler(d.UpdateStore)
 	r.mux.HandleFunc("GET /api/v1/cve", ch.HandleListCVEs)
-	r.mux.HandleFunc("GET /api/v1/cve/{container_id}", ch.HandleGetContainerCVEs)
+	r.mux.HandleFunc("GET /api/v1/cve/{container_id...}", ch.HandleGetContainerCVEs)
 
 	// Risk scoring routes (Pro only)
+	// Note: history uses a query param (?history=1) to avoid conflict with {container_id...}.
 	rh := NewRiskHandler(d.UpdateStore)
 	r.mux.HandleFunc("GET /api/v1/risk", requireEnterprise(rh.HandleListRiskScores))
-	r.mux.HandleFunc("GET /api/v1/risk/{container_id}", requireEnterprise(rh.HandleGetContainerRisk))
-	r.mux.HandleFunc("GET /api/v1/risk/{container_id}/history", requireEnterprise(rh.HandleGetRiskHistory))
+	r.mux.HandleFunc("GET /api/v1/risk/{container_id...}", requireEnterprise(rh.HandleGetContainerRisk))
 }
 
 func (r *Router) registerSecurityRoutes(d HandlerDeps) {

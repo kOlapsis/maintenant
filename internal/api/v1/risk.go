@@ -58,11 +58,18 @@ func (h *RiskHandler) HandleListRiskScores(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// HandleGetContainerRisk handles GET /api/v1/risk/{container_id}.
+// HandleGetContainerRisk handles GET /api/v1/risk/{container_id...}.
+// When the ?period= query param is present (24h, 7d, 30d), returns risk score history
+// instead of the current risk snapshot.
 func (h *RiskHandler) HandleGetContainerRisk(w http.ResponseWriter, r *http.Request) {
 	containerID := r.PathValue("container_id")
 	if containerID == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Missing container_id")
+		return
+	}
+
+	if period := r.URL.Query().Get("period"); period != "" {
+		h.handleRiskHistory(w, r, containerID, period)
 		return
 	}
 
@@ -84,19 +91,7 @@ func (h *RiskHandler) HandleGetContainerRisk(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// HandleGetRiskHistory handles GET /api/v1/risk/{container_id}/history.
-func (h *RiskHandler) HandleGetRiskHistory(w http.ResponseWriter, r *http.Request) {
-	containerID := r.PathValue("container_id")
-	if containerID == "" {
-		WriteError(w, http.StatusBadRequest, "invalid_id", "Missing container_id")
-		return
-	}
-
-	period := r.URL.Query().Get("period")
-	if period == "" {
-		period = "7d"
-	}
-
+func (h *RiskHandler) handleRiskHistory(w http.ResponseWriter, r *http.Request, containerID, period string) {
 	now := time.Now()
 	var from time.Time
 	switch period {
