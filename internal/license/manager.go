@@ -81,14 +81,27 @@ func NewLicenseManager(licenseKey, dataDir, version string, logger *slog.Logger)
 // Start performs an initial license check, then starts a background ticker.
 // Non-blocking: errors during the initial check are logged, not fatal.
 func (m *LicenseManager) Start(ctx context.Context) {
-	// Try loading from cache first for fast startup
+	// Try loading from cache first for fast startup.
+	// Discard the cache if the licence has already passed its expiry date.
 	if cached, err := readCache(m.dataDir, m.publicKey); err == nil && cached != nil {
-		m.applyPayload(cached)
-		m.logger.Info("license loaded from cache",
-			"status", cached.Status,
-			"plan", cached.Plan,
-			"verified_at", cached.VerifiedAt,
-		)
+		if !cached.ExpiresAt.IsZero() && time.Now().After(cached.ExpiresAt) {
+			m.logger.Warn("cached license has expired, ignoring cache",
+				"expires_at", cached.ExpiresAt,
+			)
+			deleteCache(m.dataDir)
+			m.state.Store(&LicenseState{
+				Status:    "expired",
+				ExpiresAt: cached.ExpiresAt,
+				Message:   "Your license has expired. Pro features have been disabled.",
+			})
+		} else {
+			m.applyPayload(cached)
+			m.logger.Info("license loaded from cache",
+				"status", cached.Status,
+				"plan", cached.Plan,
+				"verified_at", cached.VerifiedAt,
+			)
+		}
 	}
 
 	// Run initial check (non-blocking on failure)
@@ -227,6 +240,21 @@ func (m *LicenseManager) handleNetworkError(err error) {
 		m.state.Store(&LicenseState{
 			Status:  "unreachable",
 			Message: "Cannot reach license server. Please check your network connection.",
+		})
+		return
+	}
+
+	// If the cached license has already passed its expiry date, report it as
+	// expired — not as unreachable. Graceful degradation must not hide expiry.
+	if !current.ExpiresAt.IsZero() && time.Now().After(current.ExpiresAt) {
+		m.logger.Warn("cached license has expired, disabling Pro",
+			"expires_at", current.ExpiresAt,
+		)
+		deleteCache(m.dataDir)
+		m.state.Store(&LicenseState{
+			Status:    "expired",
+			ExpiresAt: current.ExpiresAt,
+			Message:   "Your license has expired. Pro features have been disabled.",
 		})
 		return
 	}
