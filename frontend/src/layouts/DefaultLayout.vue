@@ -9,6 +9,7 @@ import { computed, onMounted, provide, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import ToastContainer from '@/components/ToastContainer.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import { useDetailSlideOver, detailSlideOverKey, parseSelectedParam } from '@/composables/useDetailSlideOver'
 import { provideConfirm } from '@/composables/useConfirm'
@@ -19,24 +20,32 @@ import {
   ArrowUpCircle,
   Bell,
   Box,
+  Cloud,
   Globe,
   Heart,
   Layers,
   LayoutGrid,
   Link,
+  ListChecks,
   Menu,
+  Network,
+  Server,
   Shield,
   ShieldCheck,
   X,
 } from 'lucide-vue-next'
 
 import { useSwarmStore } from '@/stores/swarm'
+import { useRuntime } from '@/composables/useRuntime'
+import { useRuntimeStore } from '@/stores/runtime'
 
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
 const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } = useEdition()
 const swarmStore = useSwarmStore()
+const { runtimeContext, isDocker, isSwarm, isKubernetes } = useRuntime()
+const runtimeStore = useRuntimeStore()
 
 const detailSlideOver = useDetailSlideOver()
 provide(detailSlideOverKey, detailSlideOver)
@@ -46,6 +55,8 @@ const { state: confirmState } = provideConfirm()
 onMounted(() => {
   loadLicenseStatus()
   swarmStore.loadInfo()
+  runtimeStore.fetchStatus()
+  runtimeStore.startListening()
   // Parse ?selected=<type>-<id> on initial load
   const parsed = parseSelectedParam(route.query.selected)
   if (parsed) {
@@ -63,10 +74,28 @@ function closeMobileMenu() {
   mobileMenuOpen.value = false
 }
 
-const allNav = [
+interface NavItem {
+  to: string
+  label: string
+  icon: typeof LayoutGrid
+  feature?: string
+  runtime?: string[]
+}
+
+const allNav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { to: '/containers', label: 'Containers', icon: Box },
-  { to: '/swarm', label: 'Swarm Cluster', icon: Layers, swarmOnly: true },
+  // Docker-only
+  { to: '/containers', label: 'Containers', icon: Box, runtime: ['docker'] },
+  // Swarm Community
+  { to: '/services', label: 'Services', icon: Layers, runtime: ['swarm'] },
+  { to: '/tasks', label: 'Tasks', icon: ListChecks, runtime: ['swarm'] },
+  // K8s Community
+  { to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
+  { to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
+  // Enterprise: Cluster + Nodes (Swarm & K8s)
+  { to: '/cluster', label: 'Cluster Overview', icon: Network, runtime: ['swarm', 'kubernetes'], feature: 'swarm_dashboard' },
+  { to: '/nodes', label: 'Nodes', icon: Server, runtime: ['swarm', 'kubernetes'], feature: 'swarm_dashboard' },
+  // Always visible
   { to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
   { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
   { to: '/certificates', label: 'SSL Certificates', icon: Shield },
@@ -79,7 +108,7 @@ const allNav = [
 
 const mainNav = computed(() => allNav.filter(item => {
   if (item.feature && !hasFeature(item.feature)) return false
-  if (item.swarmOnly && !swarmStore.isActive) return false
+  if (item.runtime && !item.runtime.includes(runtimeContext.value)) return false
   return true
 }))
 </script>
@@ -250,6 +279,9 @@ const mainNav = computed(() => allNav.filter(item => {
 
     <!-- Global confirm dialog -->
     <ConfirmDialog :state="confirmState" />
+
+    <!-- Toast notifications -->
+    <ToastContainer />
   </div>
 </template>
 

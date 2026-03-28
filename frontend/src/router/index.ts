@@ -26,7 +26,12 @@ const UpdatesPage = () => import('../pages/UpdatesPage.vue')
 const PublicStatusPage = () => import('../pages/PublicStatusPage.vue')
 const SecurityPosturePage = () => import('../pages/SecurityPosturePage.vue')
 const ProPage = () => import('../pages/ProPage.vue')
-const SwarmPage = () => import('../pages/SwarmPage.vue')
+const ServicesPage = () => import('../pages/ServicesPage.vue')
+const TasksPage = () => import('../pages/TasksPage.vue')
+const WorkloadsPage = () => import('../pages/WorkloadsPage.vue')
+const PodsPage = () => import('../pages/PodsPage.vue')
+const ClusterOverviewPage = () => import('../pages/ClusterOverviewPage.vue')
+const NodesPage = () => import('../pages/NodesPage.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -46,7 +51,12 @@ const router = createRouter({
         { path: 'webhooks', name: 'webhooks', component: WebhooksPage },
         { path: 'updates', name: 'updates', component: UpdatesPage },
         { path: 'security', name: 'security', component: SecurityPosturePage },
-        { path: 'swarm', name: 'swarm', component: SwarmPage },
+        { path: 'services', name: 'services', component: ServicesPage },
+        { path: 'tasks', name: 'tasks', component: TasksPage },
+        { path: 'workloads', name: 'workloads', component: WorkloadsPage },
+        { path: 'pods', name: 'pods', component: PodsPage },
+        { path: 'cluster', name: 'cluster', component: ClusterOverviewPage },
+        { path: 'nodes', name: 'nodes', component: NodesPage },
         { path: 'pro-edition', name: 'pro-edition', component: ProPage },
       ],
     },

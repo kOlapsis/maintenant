@@ -19,6 +19,7 @@ import { useAlertsStore } from '@/stores/alerts'
 import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
 import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu } from 'lucide-vue-next'
+import RuntimeBadge from '@/components/RuntimeBadge.vue'
 
 const router = useRouter()
 const dashboard = useDashboardStore()
@@ -207,14 +208,8 @@ function barColor(value: number): string {
 
     <!-- Right: runtime badge + bell -->
     <div class="flex items-center gap-4">
-      <!-- Runtime indicator -->
-      <div class="flex items-center gap-2 text-xs">
-        <span
-          class="inline-block h-2 w-2 rounded-full"
-          :style="{ backgroundColor: containers.runtimeConnected ? '#10b981' : '#f43f5e' }"
-        />
-        <span class="font-medium text-slate-400">{{ containers.runtimeLabel }}</span>
-      </div>
+      <!-- Runtime badge with popover -->
+      <RuntimeBadge />
 
       <div
         class="relative"
