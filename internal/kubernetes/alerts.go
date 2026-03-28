@@ -48,8 +48,9 @@ type K8sAlertChecker struct {
 
 // podRestartState tracks restart count observations for crash-loop detection.
 type podRestartState struct {
-	lastCount    int32
-	observations []time.Time
+	lastCount      int32
+	observations   []time.Time
+	alertedCrashLoop bool // true when a CrashLoopBackOff alert was already emitted
 }
 
 // NewK8sAlertChecker creates a new K8sAlertChecker.
@@ -159,13 +160,56 @@ func (c *K8sAlertChecker) CheckCrashLoopBackOff(pods []K8sPod) {
 		key := pod.Namespace + "/" + pod.Name
 		activePods[key] = true
 
+		isCrashLoop := pod.StatusReason == "CrashLoopBackOff"
+
 		state, exists := c.crashLoopPods[key]
 		if !exists {
-			c.crashLoopPods[key] = &podRestartState{
-				lastCount:    pod.RestartCount,
-				observations: nil,
+			state = &podRestartState{
+				lastCount: pod.RestartCount,
+			}
+			c.crashLoopPods[key] = state
+
+			// Pod was already in CrashLoopBackOff when Maintenant first saw it — alert immediately.
+			if isCrashLoop {
+				state.alertedCrashLoop = true
+				c.emitAlert(alert.Event{
+					Source:     "kubernetes",
+					AlertType:  "crash_loop",
+					Severity:   "critical",
+					Message:    fmt.Sprintf("Pod %s/%s is in CrashLoopBackOff (%d restarts)", pod.Namespace, pod.Name, pod.RestartCount),
+					EntityType: "pod",
+					EntityName: key,
+					Details: map[string]any{
+						"namespace":     pod.Namespace,
+						"restart_count": pod.RestartCount,
+						"status_reason": pod.StatusReason,
+						"node_name":     pod.NodeName,
+					},
+					Timestamp: now,
+				})
 			}
 			continue
+		}
+
+		// Recovery: pod left CrashLoopBackOff.
+		if !isCrashLoop && state.alertedCrashLoop {
+			state.alertedCrashLoop = false
+			state.observations = nil
+			c.emitAlert(alert.Event{
+				Source:     "kubernetes",
+				AlertType:  "crash_loop",
+				Severity:   "info",
+				IsRecover:  true,
+				Message:    fmt.Sprintf("Pod %s/%s recovered from CrashLoopBackOff", pod.Namespace, pod.Name),
+				EntityType: "pod",
+				EntityName: key,
+				Details: map[string]any{
+					"namespace":     pod.Namespace,
+					"restart_count": pod.RestartCount,
+					"node_name":     pod.NodeName,
+				},
+				Timestamp: now,
+			})
 		}
 
 		// Detect restart increment.
@@ -174,7 +218,7 @@ func (c *K8sAlertChecker) CheckCrashLoopBackOff(pods []K8sPod) {
 			state.lastCount = pod.RestartCount
 		}
 
-		// Prune old observations.
+		// Prune old observations outside the window.
 		pruned := state.observations[:0]
 		for _, t := range state.observations {
 			if t.After(cutoff) {
@@ -183,8 +227,9 @@ func (c *K8sAlertChecker) CheckCrashLoopBackOff(pods []K8sPod) {
 		}
 		state.observations = pruned
 
-		// Check threshold.
-		if len(state.observations) >= defaultCrashLoopRestarts {
+		// Check increment threshold (catches fast crash loops not yet at CrashLoopBackOff status).
+		if !state.alertedCrashLoop && len(state.observations) >= defaultCrashLoopRestarts {
+			state.alertedCrashLoop = true
 			c.emitAlert(alert.Event{
 				Source:     "kubernetes",
 				AlertType:  "crash_loop",
