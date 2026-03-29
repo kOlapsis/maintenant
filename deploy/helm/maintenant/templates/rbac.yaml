@@ -1,0 +1,36 @@
+{{- if and .Values.serviceAccount.create .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "maintenant.fullname" . }}
+  labels:
+    {{- include "maintenant.labels" . | nindent 4 }}
+rules:
+  # Core resources — read-only
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "namespaces", "events"]
+    verbs: ["get", "list", "watch"]
+  # Apps — read-only
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  # Metrics — read-only (requires metrics-server)
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "maintenant.fullname" . }}
+  labels:
+    {{- include "maintenant.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "maintenant.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "maintenant.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

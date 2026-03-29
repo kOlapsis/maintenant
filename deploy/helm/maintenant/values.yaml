@@ -1,0 +1,70 @@
+## Maintenant Helm Chart — default values
+
+image:
+  repository: ghcr.io/kolapsis/maintenant
+  pullPolicy: IfNotPresent
+  tag: ""  # defaults to Chart.appVersion
+
+imagePullSecrets: []
+
+## Runtime: "kubernetes" or "docker"
+runtime: kubernetes
+
+## License key (Enterprise edition)
+license:
+  key: ""
+  ## Use an existing secret instead of the inline key above.
+  ## The secret must have a key named "license-key".
+  existingSecret: ""
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  ## Use an existing PVC (persistence.enabled is ignored when set)
+  existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: maintenant.example.com
+  tls: []
+  #  - secretName: maintenant-tls
+  #    hosts:
+  #      - maintenant.example.com
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+## Extra environment variables injected into the container
+extraEnv: []
+# - name: MAINTENANT_WEBHOOK_URL
+#   value: "https://hooks.example.com/..."
+
+serviceAccount:
+  ## Set to false to bring your own ServiceAccount
+  create: true
+  name: ""
+  annotations: {}
+
+## ClusterRole & ClusterRoleBinding are always created when serviceAccount.create=true
+rbac:
+  create: true
+
+podAnnotations: {}
+podLabels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
