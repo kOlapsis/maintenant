@@ -233,8 +233,8 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("DELETE /api/v1/channels/{id}", ah.HandleDeleteChannel)
 		r.mux.HandleFunc("POST /api/v1/channels/{id}/test", ah.HandleTestChannel)
 		// Routing rules
-		r.mux.HandleFunc("POST /api/v1/channels/{id}/rules", ah.HandleCreateRoutingRule)
-		r.mux.HandleFunc("DELETE /api/v1/channels/{id}/rules/{rule_id}", ah.HandleDeleteRoutingRule)
+		r.mux.HandleFunc("POST /api/v1/channels/{id}/rules", requireEnterprise(ah.HandleCreateRoutingRule))
+		r.mux.HandleFunc("DELETE /api/v1/channels/{id}/rules/{rule_id}", requireEnterprise(ah.HandleDeleteRoutingRule))
 		// Silence rules
 		r.mux.HandleFunc("GET /api/v1/silence", ah.HandleListSilenceRules)
 		r.mux.HandleFunc("POST /api/v1/silence", ah.HandleCreateSilenceRule)
@@ -246,32 +246,32 @@ func NewRouter(d HandlerDeps) *Router {
 		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker)
 		// Component groups
 		r.mux.HandleFunc("GET /api/v1/status/groups", sh.HandleListGroups)
-		r.mux.HandleFunc("POST /api/v1/status/groups", sh.HandleCreateGroup)
-		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", sh.HandleUpdateGroup)
-		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", sh.HandleDeleteGroup)
+		r.mux.HandleFunc("POST /api/v1/status/groups", requireEnterprise(sh.HandleCreateGroup))
+		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", requireEnterprise(sh.HandleUpdateGroup))
+		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", requireEnterprise(sh.HandleDeleteGroup))
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
-		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
-		r.mux.HandleFunc("PUT /api/v1/status/components/{id}", sh.HandleUpdateComponent)
-		r.mux.HandleFunc("DELETE /api/v1/status/components/{id}", sh.HandleDeleteComponent)
+		r.mux.HandleFunc("POST /api/v1/status/components", requireEnterprise(sh.HandleCreateComponent))
+		r.mux.HandleFunc("PUT /api/v1/status/components/{id}", requireEnterprise(sh.HandleUpdateComponent))
+		r.mux.HandleFunc("DELETE /api/v1/status/components/{id}", requireEnterprise(sh.HandleDeleteComponent))
 		// Incidents
 		if d.StatusIncidents != nil {
 			r.mux.HandleFunc("GET /api/v1/status/incidents", sh.HandleListIncidents)
-			r.mux.HandleFunc("POST /api/v1/status/incidents", sh.HandleCreateIncident)
-			r.mux.HandleFunc("PUT /api/v1/status/incidents/{id}", sh.HandleUpdateIncident)
-			r.mux.HandleFunc("DELETE /api/v1/status/incidents/{id}", sh.HandleDeleteIncident)
-			r.mux.HandleFunc("POST /api/v1/status/incidents/{id}/updates", sh.HandlePostUpdate)
+			r.mux.HandleFunc("POST /api/v1/status/incidents", requireEnterprise(sh.HandleCreateIncident))
+			r.mux.HandleFunc("PUT /api/v1/status/incidents/{id}", requireEnterprise(sh.HandleUpdateIncident))
+			r.mux.HandleFunc("DELETE /api/v1/status/incidents/{id}", requireEnterprise(sh.HandleDeleteIncident))
+			r.mux.HandleFunc("POST /api/v1/status/incidents/{id}/updates", requireEnterprise(sh.HandlePostUpdate))
 		}
 		// Maintenance windows
 		if d.StatusMaintenance != nil {
 			r.mux.HandleFunc("GET /api/v1/status/maintenance", sh.HandleListMaintenance)
-			r.mux.HandleFunc("POST /api/v1/status/maintenance", sh.HandleCreateMaintenance)
-			r.mux.HandleFunc("PUT /api/v1/status/maintenance/{id}", sh.HandleUpdateMaintenance)
-			r.mux.HandleFunc("DELETE /api/v1/status/maintenance/{id}", sh.HandleDeleteMaintenance)
+			r.mux.HandleFunc("POST /api/v1/status/maintenance", requireEnterprise(sh.HandleCreateMaintenance))
+			r.mux.HandleFunc("PUT /api/v1/status/maintenance/{id}", requireEnterprise(sh.HandleUpdateMaintenance))
+			r.mux.HandleFunc("DELETE /api/v1/status/maintenance/{id}", requireEnterprise(sh.HandleDeleteMaintenance))
 		}
 		// Subscribers
 		if d.StatusSubscribers != nil {
-			r.mux.HandleFunc("GET /api/v1/status/subscribers", sh.HandleListSubscribers)
+			r.mux.HandleFunc("GET /api/v1/status/subscribers", requireEnterprise(sh.HandleListSubscribers))
 		}
 		// SMTP config (Pro only)
 		r.mux.HandleFunc("GET /api/v1/status/smtp", requireEnterprise(sh.HandleGetSmtpConfig))

@@ -21,6 +21,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // AlertHandler handles alert-related HTTP endpoints.
@@ -214,6 +215,13 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
 		return
 	}
+
+	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
+	if proChannelTypes[input.Type] && extension.CurrentEdition() != extension.Enterprise {
+		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+		return
+	}
+
 	if input.Name == "" {
 		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "name is required")
 		return
@@ -319,6 +327,12 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		ch.Enabled = *input.Enabled
 	}
 
+	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
+	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Enterprise {
+		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+		return
+	}
+
 	if err := h.channelStore.UpdateChannel(r.Context(), ch); err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update channel")
 		return
@@ -370,6 +384,12 @@ func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request)
 	}
 	if ch == nil {
 		WriteError(w, http.StatusNotFound, "NOT_FOUND", "channel not found")
+		return
+	}
+
+	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
+	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Enterprise {
+		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
 		return
 	}
 

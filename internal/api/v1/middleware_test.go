@@ -8,9 +8,50 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// ---------------------------------------------------------------------------
+// requireEnterprise middleware
+// ---------------------------------------------------------------------------
+
+func TestRequireEnterprise_CommunityBlocked(t *testing.T) {
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Community }
+	defer func() { extension.CurrentEdition = original }()
+
+	handler := requireEnterprise(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("POST", "/api/v1/status/incidents", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+}
+
+func TestRequireEnterprise_EnterpriseAllowed(t *testing.T) {
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	defer func() { extension.CurrentEdition = original }()
+
+	handlerCalled := false
+	handler := requireEnterprise(func(w http.ResponseWriter, r *http.Request) {
+		handlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("POST", "/api/v1/status/incidents", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.True(t, handlerCalled)
+}
 
 // ---------------------------------------------------------------------------
 // parseCORSOrigins
