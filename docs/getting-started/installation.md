@@ -41,14 +41,21 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
 
 ## Kubernetes
 
-Apply the provided manifests from the `deploy/kubernetes/` directory:
+### Helm (recommended)
+
+```bash
+helm install maintenant ./deploy/helm/maintenant \
+  -n maintenant --create-namespace
+```
+
+### Raw manifests
 
 ```bash
 kubectl create namespace maintenant
 kubectl apply -f deploy/kubernetes/
 ```
 
-This deploys:
+Both approaches deploy:
 
 - A **ServiceAccount** with read-only RBAC (pods, logs, services, namespaces, events, deployments, statefulsets, daemonsets, replicasets, pod metrics)
 - A **Deployment** with security hardening (non-root, read-only filesystem, all capabilities dropped)
@@ -61,7 +68,7 @@ maintenant auto-detects the in-cluster Kubernetes API. Namespace filtering and w
     The deployment uses `strategy: Recreate` because SQLite requires a single writer.
     Do not scale beyond 1 replica.
 
-For detailed Kubernetes configuration, see the [Kubernetes Guide](../guides/kubernetes.md).
+For detailed Kubernetes configuration and all Helm values, see the [Kubernetes Guide](../guides/kubernetes.md).
 
 ---
 

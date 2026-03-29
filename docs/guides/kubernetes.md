@@ -6,6 +6,17 @@ maintenant runs natively on Kubernetes with read-only RBAC, namespace filtering,
 
 ## Deployment
 
+### Helm (recommended)
+
+```bash
+helm install maintenant ./deploy/helm/maintenant \
+  -n maintenant --create-namespace
+```
+
+This is the recommended approach for production clusters. See the [Helm section](#helm) below for full options.
+
+### Raw manifests
+
 Apply the provided manifests:
 
 ```bash
@@ -218,6 +229,101 @@ kubectl port-forward -n maintenant svc/maintenant 8080:80
 ```
 
 Open **http://localhost:8080**.
+
+---
+
+## Helm
+
+The chart is located in `deploy/helm/maintenant/`.
+
+### Minimal install
+
+```bash
+helm install maintenant ./deploy/helm/maintenant \
+  -n maintenant --create-namespace
+```
+
+### With Ingress
+
+```bash
+helm install maintenant ./deploy/helm/maintenant \
+  -n maintenant --create-namespace \
+  --set ingress.enabled=true \
+  --set ingress.host=maintenant.example.com \
+  --set ingress.className=nginx
+```
+
+### With TLS
+
+```yaml
+# values-prod.yaml
+ingress:
+  enabled: true
+  className: nginx
+  host: maintenant.example.com
+  tls:
+    - secretName: maintenant-tls
+      hosts:
+        - maintenant.example.com
+```
+
+```bash
+helm install maintenant ./deploy/helm/maintenant \
+  -n maintenant --create-namespace \
+  -f values-prod.yaml
+```
+
+### Enterprise license
+
+Pass the license key directly:
+
+```bash
+helm install maintenant ./deploy/helm/maintenant \
+  --set license.key=YOUR_LICENSE_KEY
+```
+
+Or reference an existing secret (recommended for GitOps):
+
+```bash
+kubectl create secret generic maintenant-license \
+  --from-literal=license-key=YOUR_LICENSE_KEY \
+  -n maintenant
+
+helm install maintenant ./deploy/helm/maintenant \
+  --set license.existingSecret=maintenant-license
+```
+
+### Key values
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `image.tag` | `""` (chart appVersion) | Image tag to deploy |
+| `runtime` | `kubernetes` | `kubernetes` or `docker` |
+| `persistence.size` | `1Gi` | SQLite volume size |
+| `persistence.storageClass` | `""` | Storage class (cluster default if empty) |
+| `persistence.existingClaim` | `""` | Use an existing PVC |
+| `ingress.enabled` | `false` | Enable Ingress resource |
+| `ingress.host` | `maintenant.example.com` | Ingress hostname |
+| `ingress.className` | `""` | Ingress class |
+| `license.key` | `""` | Enterprise license key |
+| `license.existingSecret` | `""` | Existing secret name for the license key |
+| `resources` | see values.yaml | CPU/memory requests and limits |
+
+### Upgrade
+
+```bash
+helm upgrade maintenant ./deploy/helm/maintenant -n maintenant
+```
+
+### Uninstall
+
+```bash
+helm uninstall maintenant -n maintenant
+```
+
+!!! warning "PVC not deleted on uninstall"
+    Helm does not delete PersistentVolumeClaims on uninstall to prevent accidental data loss.
+    Delete it manually if needed: `kubectl delete pvc maintenant-data -n maintenant`
 
 ---
 
