@@ -11,7 +11,11 @@ import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
-import { useDetailSlideOver, detailSlideOverKey, parseSelectedParam } from '@/composables/useDetailSlideOver'
+import {
+  useDetailSlideOver,
+  detailSlideOverKey,
+  parseSelectedParam,
+} from '@/composables/useDetailSlideOver'
 import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
 import {
@@ -42,9 +46,10 @@ import { useRuntimeStore } from '@/stores/runtime'
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
-const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } = useEdition()
+const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } =
+  useEdition()
 const swarmStore = useSwarmStore()
-const { runtimeContext, isDocker, isSwarm, isKubernetes } = useRuntime()
+const { runtimeContext } = useRuntime()
 const runtimeStore = useRuntimeStore()
 
 const detailSlideOver = useDetailSlideOver()
@@ -63,9 +68,18 @@ onMounted(() => {
     detailSlideOver.openDetail(parsed.type, parsed.id)
   } else if (route.query.selected) {
     // Invalid format — silently remove
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { selected: _, ...rest } = route.query
     router.replace({ query: rest })
   }
+})
+
+const licenseMessageParts = computed(() => {
+  const msg = licenseMessage.value
+  if (!msg) return null
+  const match = msg.match(/^(.*?)(Renew|Resubscribe)(.*)$/)
+  if (!match) return { before: msg, word: null, after: '' }
+  return { before: match[1], word: match[2], after: match[3] }
 })
 
 const mobileMenuOpen = ref(false)
@@ -93,8 +107,20 @@ const allNav: NavItem[] = [
   { to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
   { to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
   // Enterprise: Cluster + Nodes (Swarm & K8s)
-  { to: '/cluster', label: 'Cluster Overview', icon: Network, runtime: ['swarm', 'kubernetes'], feature: 'swarm_dashboard' },
-  { to: '/nodes', label: 'Nodes', icon: Server, runtime: ['swarm', 'kubernetes'], feature: 'swarm_dashboard' },
+  {
+    to: '/cluster',
+    label: 'Cluster Overview',
+    icon: Network,
+    runtime: ['swarm', 'kubernetes'],
+    feature: 'swarm_dashboard',
+  },
+  {
+    to: '/nodes',
+    label: 'Nodes',
+    icon: Server,
+    runtime: ['swarm', 'kubernetes'],
+    feature: 'swarm_dashboard',
+  },
   // Always visible
   { to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
   { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
@@ -106,11 +132,13 @@ const allNav: NavItem[] = [
   { to: '/status-admin', label: 'Status Pages', icon: Activity },
 ]
 
-const mainNav = computed(() => allNav.filter(item => {
-  if (item.feature && !hasFeature(item.feature)) return false
-  if (item.runtime && !item.runtime.includes(runtimeContext.value)) return false
-  return true
-}))
+const mainNav = computed(() =>
+  allNav.filter((item) => {
+    if (item.feature && !hasFeature(item.feature)) return false
+    if (item.runtime && !item.runtime.includes(runtimeContext.value)) return false
+    return true
+  }),
+)
 </script>
 
 <template>
@@ -250,7 +278,7 @@ const mainNav = computed(() => allNav.filter(item => {
     <main class="flex-1 flex flex-col overflow-hidden">
       <!-- License warning banner -->
       <div
-        v-if="licenseMessage"
+        v-if="licenseMessageParts"
         class="flex items-center gap-2 px-4 py-2 text-xs font-medium shrink-0"
         :class="{
           'bg-amber-500/10 text-amber-400 border-b border-amber-500/20':
@@ -263,7 +291,13 @@ const mainNav = computed(() => allNav.filter(item => {
         }"
       >
         <AlertTriangle :size="14" class="shrink-0" />
-        <span>{{ licenseMessage }}</span>
+        <span v-if="licenseMessageParts">
+          {{ licenseMessageParts.before }}<RouterLink
+            v-if="licenseMessageParts.word"
+            to="/pro-edition"
+            class="underline underline-offset-2 hover:opacity-80"
+          >{{ licenseMessageParts.word }}</RouterLink>{{ licenseMessageParts.after }}
+        </span>
       </div>
       <AppHeader />
       <div class="flex-1 overflow-y-auto pt-14 md:pt-0">
