@@ -14,6 +14,7 @@ package license
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -147,16 +148,32 @@ func (m *LicenseManager) check(ctx context.Context) {
 	if err != nil {
 		// HTTP 401 = unknown/invalid key
 		if statusCode == http.StatusUnauthorized {
-			m.logger.Error("license key not recognized by server")
+			m.logger.Error("license key not recognized by server", "error", err)
 			deleteCache(m.dataDir)
 			m.state.Store(&LicenseState{
 				Status:  "unknown",
-				Message: "License key not recognized. Please check your license key.",
+				Message: err.Error(),
 			})
 			return
 		}
 
-		// Network error or non-200/401: graceful degradation
+		// HTTP 403 = license no longer active (expired, canceled, etc.)
+		if statusCode == http.StatusForbidden {
+			var srvErr *ServerError
+			status := "expired"
+			if errors.As(err, &srvErr) && srvErr.Status != "" {
+				status = srvErr.Status
+			}
+			m.logger.Warn("license no longer active", "status", status, "error", err)
+			deleteCache(m.dataDir)
+			m.state.Store(&LicenseState{
+				Status:  status,
+				Message: err.Error(),
+			})
+			return
+		}
+
+		// Network error or other non-200: graceful degradation
 		m.handleNetworkError(err)
 		return
 	}

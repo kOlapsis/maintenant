@@ -132,7 +132,7 @@ func TestManager_UnknownKey_HTTP401(t *testing.T) {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error":"unknown key"}`))
+		w.Write([]byte(`{"message":"Invalid license key"}`))
 	}
 
 	m := testManager(t, pub, handler)
@@ -141,7 +141,41 @@ func TestManager_UnknownKey_HTTP401(t *testing.T) {
 	state := m.State()
 	assert.False(t, state.IsProEnabled)
 	assert.Equal(t, "unknown", state.Status)
-	assert.Contains(t, state.Message, "not recognized")
+	assert.Equal(t, "Invalid license key", state.Message)
+}
+
+func TestManager_ExpiredKey_HTTP403(t *testing.T) {
+	pub, _ := generateTestKeyPair(t)
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"status":"expired","message":"Your license has expired. Renew at https://maintenant.dev/pricing"}`))
+	}
+
+	m := testManager(t, pub, handler)
+	m.check(context.Background())
+
+	state := m.State()
+	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, "expired", state.Status)
+	assert.Contains(t, state.Message, "expired")
+}
+
+func TestManager_CanceledKey_HTTP403(t *testing.T) {
+	pub, _ := generateTestKeyPair(t)
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"status":"canceled","message":"Your subscription has been canceled."}`))
+	}
+
+	m := testManager(t, pub, handler)
+	m.check(context.Background())
+
+	state := m.State()
+	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, "canceled", state.Status)
+	assert.Contains(t, state.Message, "canceled")
 }
 
 func TestManager_InvalidSignature(t *testing.T) {

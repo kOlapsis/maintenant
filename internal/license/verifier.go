@@ -42,6 +42,23 @@ type SignedResponse struct {
 	Signature string `json:"signature"`
 }
 
+// errorResponse is the JSON body returned by the license server on non-200 responses.
+type errorResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// ServerError is returned by fetchLicense when the server responds with a
+// non-200 status and a parseable error body. It carries the HTTP status code,
+// the server-provided status string, and the human-readable message.
+type ServerError struct {
+	HTTPStatus int
+	Status     string
+	Message    string
+}
+
+func (e *ServerError) Error() string { return e.Message }
+
 // LicensePayload is the decoded and verified license payload.
 type LicensePayload struct {
 	Status     string    `json:"status"`
@@ -96,6 +113,14 @@ func fetchLicense(ctx context.Context, client *http.Client, serverURL, licenseKe
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		var errResp errorResponse
+		if jsonErr := json.Unmarshal(body, &errResp); jsonErr == nil && errResp.Message != "" {
+			return nil, resp.StatusCode, &ServerError{
+				HTTPStatus: resp.StatusCode,
+				Status:     errResp.Status,
+				Message:    errResp.Message,
+			}
+		}
 		return nil, resp.StatusCode, fmt.Errorf("license server returned HTTP %d", resp.StatusCode)
 	}
 
