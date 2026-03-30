@@ -2,8 +2,8 @@
 
 image:
   repository: ghcr.io/kolapsis/maintenant
-  pullPolicy: IfNotPresent
-  tag: ""  # defaults to Chart.appVersion
+  pullPolicy: Always
+  tag: "latest"
 
 imagePullSecrets: []
 

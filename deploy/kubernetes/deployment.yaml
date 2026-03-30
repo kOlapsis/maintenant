@@ -28,7 +28,8 @@ spec:
         fsGroup: 65534
       containers:
         - name: maintenant
-          image: ghcr.io/kolapsis/maintenant:v0.1.0
+          image: ghcr.io/kolapsis/maintenant:latest
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
