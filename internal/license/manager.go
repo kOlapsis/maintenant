@@ -146,29 +146,32 @@ func (m *LicenseManager) check(ctx context.Context) {
 	resp, statusCode, err := fetchLicense(ctx, m.client, serverURL, m.licenseKey, m.version)
 
 	if err != nil {
-		// HTTP 401 = unknown/invalid key
+		// HTTP 401 = unknown/invalid key — use server message verbatim
 		if statusCode == http.StatusUnauthorized {
+			var srvErr *ServerError
+			if !errors.As(err, &srvErr) {
+				srvErr = &ServerError{Message: err.Error()}
+			}
 			m.logger.Error("license key not recognized by server", "error", err)
 			deleteCache(m.dataDir)
 			m.state.Store(&LicenseState{
 				Status:  "unknown",
-				Message: err.Error(),
+				Message: srvErr.Message,
 			})
 			return
 		}
 
-		// HTTP 403 = license no longer active (expired, canceled, etc.)
+		// HTTP 403 = license no longer active — use server status and message verbatim
 		if statusCode == http.StatusForbidden {
 			var srvErr *ServerError
-			status := "expired"
-			if errors.As(err, &srvErr) && srvErr.Status != "" {
-				status = srvErr.Status
+			if !errors.As(err, &srvErr) {
+				srvErr = &ServerError{Status: "expired", Message: err.Error()}
 			}
-			m.logger.Warn("license no longer active", "status", status, "error", err)
+			m.logger.Warn("license no longer active", "status", srvErr.Status, "error", err)
 			deleteCache(m.dataDir)
 			m.state.Store(&LicenseState{
-				Status:  status,
-				Message: err.Error(),
+				Status:  srvErr.Status,
+				Message: srvErr.Message,
 			})
 			return
 		}

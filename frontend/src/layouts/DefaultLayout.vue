@@ -257,6 +257,7 @@ const mainNav = computed(() => allNav.filter(item => {
             licenseStatusValue === 'grace' || licenseStatusValue === 'unreachable',
           'bg-red-500/10 text-red-400 border-b border-red-500/20':
             licenseStatusValue === 'expired' ||
+            licenseStatusValue === 'canceled' ||
             licenseStatusValue === 'revoked' ||
             licenseStatusValue === 'unknown',
         }"

@@ -144,6 +144,22 @@ func TestManager_UnknownKey_HTTP401(t *testing.T) {
 	assert.Equal(t, "Invalid license key", state.Message)
 }
 
+func TestManager_UnknownKey_HTTP401_NoBody(t *testing.T) {
+	pub, _ := generateTestKeyPair(t)
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+
+	m := testManager(t, pub, handler)
+	m.check(context.Background())
+
+	state := m.State()
+	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, "unknown", state.Status)
+	assert.NotEmpty(t, state.Message)
+}
+
 func TestManager_ExpiredKey_HTTP403(t *testing.T) {
 	pub, _ := generateTestKeyPair(t)
 
