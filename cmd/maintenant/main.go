@@ -32,7 +32,7 @@ var (
 func main() {
 	mcpStdio := len(os.Args) > 1 && os.Args[1] == "--mcp-stdio"
 
-	logLevel := slog.LevelInfo
+	logLevel := logLevelFromEnv()
 	logOutput := os.Stdout
 	if mcpStdio {
 		logOutput = os.Stderr
@@ -68,5 +68,18 @@ func main() {
 	if err := application.Start(ctx); err != nil {
 		logger.Error("application error", "error", err)
 		os.Exit(1)
+	}
+}
+
+func logLevelFromEnv() slog.Level {
+	switch os.Getenv("MAINTENANT_LOG_LEVEL") {
+	case "debug", "DEBUG":
+		return slog.LevelDebug
+	case "warn", "WARN", "warning", "WARNING":
+		return slog.LevelWarn
+	case "error", "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
 	}
 }
