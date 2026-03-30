@@ -48,8 +48,6 @@ RUN apk add --no-cache ca-certificates tzdata \
 
 COPY --from=builder /out/maintenant /app/maintenant
 
-USER 65534
-
 EXPOSE 8080
 VOLUME /data
 
