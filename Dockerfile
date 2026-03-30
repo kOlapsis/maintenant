@@ -43,9 +43,12 @@ RUN xx-verify /out/maintenant
 FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata \
-    && mkdir -p /data
+    && mkdir -p /data \
+    && chown 65534:65534 /data
 
 COPY --from=builder /out/maintenant /app/maintenant
+
+USER 65534
 
 EXPOSE 8080
 VOLUME /data
