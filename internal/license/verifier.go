@@ -42,12 +42,6 @@ type SignedResponse struct {
 	Signature string `json:"signature"`
 }
 
-// errorResponse is the JSON body returned by the license server on non-200 responses.
-type errorResponse struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
 // ServerError is returned by fetchLicense when the server responds with a
 // non-200 status and a parseable error body. It carries the HTTP status code,
 // the server-provided status string, and the human-readable message.
@@ -66,6 +60,7 @@ type LicensePayload struct {
 	Features   []string  `json:"features"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	VerifiedAt time.Time `json:"verified_at"`
+	Message    string    `json:"message"`
 }
 
 // verify checks the Ed25519 signature on a SignedResponse, then decodes the
@@ -113,13 +108,15 @@ func fetchLicense(ctx context.Context, client *http.Client, serverURL, licenseKe
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		var errResp errorResponse
-		if jsonErr := json.Unmarshal(body, &errResp); jsonErr == nil && errResp.Message != "" {
-			return nil, resp.StatusCode, &ServerError{
-				HTTPStatus: resp.StatusCode,
-				Status:     errResp.Status,
-				Message:    errResp.Message,
-			}
+		var p LicensePayload
+		var signed SignedResponse
+		if json.Unmarshal(body, &signed) == nil && signed.Payload != "" {
+			_ = json.Unmarshal([]byte(signed.Payload), &p)
+		} else {
+			_ = json.Unmarshal(body, &p)
+		}
+		if p.Message != "" {
+			return nil, resp.StatusCode, &ServerError{HTTPStatus: resp.StatusCode, Status: p.Status, Message: p.Message}
 		}
 		return nil, resp.StatusCode, fmt.Errorf("license server returned HTTP %d", resp.StatusCode)
 	}
