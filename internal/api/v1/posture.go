@@ -12,13 +12,16 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/security"
 )
 
@@ -27,14 +30,20 @@ type PostureHandler struct {
 	scorer       *security.Scorer
 	containerSvc *container.Service
 	ackStore     security.AcknowledgmentStore
+	alertStore   alert.AlertStore
+	securitySvc  *security.Service
+	broker       *SSEBroker
 }
 
 // NewPostureHandler creates a new posture handler.
-func NewPostureHandler(scorer *security.Scorer, containerSvc *container.Service, ackStore security.AcknowledgmentStore) *PostureHandler {
+func NewPostureHandler(scorer *security.Scorer, containerSvc *container.Service, ackStore security.AcknowledgmentStore, alertStore alert.AlertStore, securitySvc *security.Service, broker *SSEBroker) *PostureHandler {
 	return &PostureHandler{
 		scorer:       scorer,
 		containerSvc: containerSvc,
 		ackStore:     ackStore,
+		alertStore:   alertStore,
+		securitySvc:  securitySvc,
+		broker:       broker,
 	}
 }
 
@@ -240,7 +249,50 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 	// Invalidate cached score for this container
 	h.scorer.InvalidateCache(c.ID)
 
+	// If all security insights for this container are now acknowledged,
+	// acknowledge the corresponding security alert.
+	h.tryAcknowledgeSecurityAlert(r.Context(), c, req.AcknowledgedBy)
+
 	WriteJSON(w, http.StatusCreated, ack)
+}
+
+// tryAcknowledgeSecurityAlert checks if all security insights for a container
+// are acknowledged, and if so, acknowledges the active security alert.
+func (h *PostureHandler) tryAcknowledgeSecurityAlert(ctx context.Context, c *container.Container, by string) {
+	if h.alertStore == nil || h.securitySvc == nil {
+		return
+	}
+
+	ci := h.securitySvc.GetContainerInsights(c.ID)
+	if ci == nil || len(ci.Insights) == 0 {
+		return
+	}
+
+	// Check if every insight is acknowledged
+	for _, insight := range ci.Insights {
+		key := security.InsightFindingKey(insight)
+		acked, err := h.ackStore.IsAcknowledged(ctx, c.ExternalID, string(insight.Type), key)
+		if err != nil || !acked {
+			return
+		}
+	}
+
+	// All insights are acknowledged — acknowledge the security alert
+	a, err := h.alertStore.GetActiveAlert(ctx, alert.SourceSecurity, alert.AlertTypeDangerousConfig, "container", c.ID)
+	if err != nil || a == nil || a.AcknowledgedAt != nil {
+		return
+	}
+
+	now := time.Now().UTC()
+	if err := h.alertStore.AcknowledgeAlert(ctx, a.ID, by, now); err != nil {
+		return
+	}
+	a.AcknowledgedAt = &now
+	a.AcknowledgedBy = by
+
+	if h.broker != nil {
+		h.broker.Broadcast(SSEEvent{Type: event.AlertAcknowledged, Data: a})
+	}
 }
 
 // HandleDeleteAcknowledgment handles DELETE /api/v1/security/acknowledgments/{id}.

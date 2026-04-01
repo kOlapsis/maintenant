@@ -13,17 +13,23 @@
 
 <script setup lang="ts">
 import { computed, inject } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { timeAgo } from '@/utils/time'
 import type { Alert } from '@/services/alertApi'
 
+const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
 const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'endpoint', 'heartbeat', 'certificate'])
 
 function openEntityDetail(alert: Alert) {
+  if (alert.source === 'update') {
+    router.push({ name: 'updates', query: { container: alert.entity_name } })
+    return
+  }
   if (!alert.entity_id || !ENTITY_TYPES.has(alert.entity_type)) return
   detailSlideOver.openDetail(alert.entity_type as EntityType, alert.entity_id)
 }

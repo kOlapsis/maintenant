@@ -736,7 +736,7 @@ func filterAcknowledgedInsights(ctx context.Context, insights []Insight, contain
 	}
 	filtered := make([]Insight, 0, len(insights))
 	for _, i := range insights {
-		key := insightFindingKey(i)
+		key := InsightFindingKey(i)
 		acked, err := acks.IsAcknowledged(ctx, containerExternalID, string(i.Type), key)
 		if err != nil || !acked {
 			filtered = append(filtered, i)
@@ -745,7 +745,8 @@ func filterAcknowledgedInsights(ctx context.Context, insights []Insight, contain
 	return filtered
 }
 
-func insightFindingKey(i Insight) string {
+// InsightFindingKey returns the dedup key for an insight's finding.
+func InsightFindingKey(i Insight) string {
 	if port, ok := i.Details["port"]; ok {
 		proto := "tcp"
 		if p, ok := i.Details["protocol"]; ok {

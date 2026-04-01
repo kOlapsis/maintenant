@@ -12,7 +12,8 @@
 -->
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, ref } from 'vue'
+import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useUpdatesStore } from '@/stores/updates'
 import { useEdition } from '@/composables/useEdition'
 import { timeAgo } from '@/utils/time'
@@ -30,6 +31,8 @@ import {
   ChevronRight,
 } from 'lucide-vue-next'
 
+const route = useRoute()
+const router = useRouter()
 const { edition } = useEdition()
 const updates = useUpdatesStore()
 
@@ -75,6 +78,18 @@ function shortTag(tag: string): string {
 
 const formatTime = timeAgo
 
+function openFromQuery() {
+  const containerName = route.query.container as string | undefined
+  if (!containerName || updates.updates.length === 0) return
+  const match = updates.updates.find(u => u.container_name === containerName)
+  if (match) {
+    selectUpdate(match)
+    router.replace({ query: {} })
+  }
+}
+
+watch(() => updates.updates, openFromQuery)
+
 onMounted(() => {
   updates.fetchAllUpdates()
   updates.fetchSummary()
@@ -93,7 +108,7 @@ onUnmounted(() => {
       <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-bold text-white">Updates</h1>
+          <h1 class="text-xl font-bold text-pb-primary">Updates</h1>
           <p class="text-xs text-slate-500 mt-0.5">
             Automatic container update detection
           </p>
@@ -105,7 +120,7 @@ onUnmounted(() => {
           <button
             @click="updates.startScan()"
             :disabled="updates.scanning"
-            class="px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-pb-green-500/20"
+            class="px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-pb-green-500/20"
           >
             <RefreshCw :size="13" :class="{ 'animate-spin': updates.scanning }" />
             {{ updates.scanning ? 'Scanning...' : 'Check now' }}
@@ -115,34 +130,34 @@ onUnmounted(() => {
 
       <!-- Summary Cards -->
       <div v-if="updates.summary?.counts" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="bg-[#12151C] rounded-xl p-4 border border-slate-800">
+        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
           <div class="flex items-center gap-1.5 mb-1">
             <AlertTriangle :size="11" class="text-rose-500" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Critical</span>
           </div>
-          <p class="text-2xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-rose-400' : 'text-slate-600'">
+          <p class="text-2xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-rose-400' : 'text-slate-500'">
             {{ updates.summary.counts.critical }}
           </p>
         </div>
-        <div class="bg-[#12151C] rounded-xl p-4 border border-slate-800">
+        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
           <div class="flex items-center gap-1.5 mb-1">
             <ArrowUpCircle :size="11" class="text-amber-500" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Recommended</span>
           </div>
-          <p class="text-2xl font-black" :class="updates.summary.counts.recommended > 0 ? 'text-amber-400' : 'text-slate-600'">
+          <p class="text-2xl font-black" :class="updates.summary.counts.recommended > 0 ? 'text-amber-400' : 'text-slate-500'">
             {{ updates.summary.counts.recommended }}
           </p>
         </div>
-        <div class="bg-[#12151C] rounded-xl p-4 border border-slate-800">
+        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
           <div class="flex items-center gap-1.5 mb-1">
             <ArrowUpCircle :size="11" class="text-pb-green-500" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Available</span>
           </div>
-          <p class="text-2xl font-black" :class="updates.summary.counts.available > 0 ? 'text-pb-green-400' : 'text-slate-600'">
+          <p class="text-2xl font-black" :class="updates.summary.counts.available > 0 ? 'text-pb-green-400' : 'text-slate-500'">
             {{ updates.summary.counts.available }}
           </p>
         </div>
-        <div class="bg-[#12151C] rounded-xl p-4 border border-slate-800">
+        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
           <div class="flex items-center gap-1.5 mb-1">
             <CheckCircle :size="11" class="text-emerald-500" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Up to date</span>
@@ -154,7 +169,7 @@ onUnmounted(() => {
       </div>
 
       <!-- CVE summary (Pro) -->
-      <div v-if="enabledCVE && updates.summary?.cve_counts && (updates.summary.cve_counts.critical > 0 || updates.summary.cve_counts.high > 0)" class="flex items-center gap-2 text-xs bg-[#12151C] rounded-xl px-4 py-3 border border-slate-800">
+      <div v-if="enabledCVE && updates.summary?.cve_counts && (updates.summary.cve_counts.critical > 0 || updates.summary.cve_counts.high > 0)" class="flex items-center gap-2 text-xs bg-pb-surface rounded-xl px-4 py-3 border border-slate-800">
         <Shield :size="13" class="text-rose-500" />
         <span class="text-slate-400 font-bold">Active CVEs:</span>
         <span v-if="updates.summary.cve_counts.critical > 0" class="text-rose-400 font-bold">{{ updates.summary.cve_counts.critical }} critical</span>
@@ -168,13 +183,13 @@ onUnmounted(() => {
         'Available': groupedUpdates.available,
         'Pinned': groupedUpdates.pinned,
       }" :key="key">
-        <div v-if="group.length > 0" class="bg-[#12151C] rounded-2xl border border-slate-800 overflow-hidden">
+        <div v-if="group.length > 0" class="bg-pb-surface rounded-2xl border border-slate-800 overflow-hidden">
           <div class="px-5 py-3 border-b border-slate-800 flex items-center gap-2">
             <AlertTriangle v-if="key === 'Critical'" :size="13" class="text-rose-500" />
             <ArrowUpCircle v-else-if="key === 'Recommended'" :size="13" class="text-amber-500" />
             <ArrowUpCircle v-else-if="key === 'Available'" :size="13" class="text-pb-green-500" />
             <Shield v-else :size="13" class="text-slate-500" />
-            <h3 class="text-sm font-bold text-white">{{ key }}</h3>
+            <h3 class="text-sm font-bold text-pb-primary">{{ key }}</h3>
             <span class="text-[10px] text-slate-500 font-bold ml-1">({{ group.length }})</span>
           </div>
 
@@ -187,19 +202,19 @@ onUnmounted(() => {
             >
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <p class="text-sm font-semibold text-slate-100 group-hover:text-pb-green-400 transition-colors truncate">
+                  <p class="text-sm font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors truncate">
                     {{ u.container_name }}
                   </p>
                   <UpdateBadge :update="u" />
                 </div>
-                <p class="text-[10px] text-slate-600 mt-0.5 truncate">{{ u.image.split('@')[0] }}</p>
+                <p class="text-[10px] text-slate-500 mt-0.5 truncate">{{ u.image.split('@')[0] }}</p>
                 <p v-if="u.status === 'pinned' && u.pin_reason" class="text-[10px] text-slate-500 mt-0.5 truncate italic">{{ u.pin_reason }}</p>
               </div>
               <div class="text-right shrink-0">
                 <p :class="['text-xs font-bold', updateTypeColor(u.update_type)]">
                   {{ shortTag(u.current_tag) }} → {{ shortTag(u.latest_tag) }}
                 </p>
-                <p class="text-[10px] text-slate-600 mt-0.5">{{ formatTime(u.detected_at) }}</p>
+                <p class="text-[10px] text-slate-500 mt-0.5">{{ formatTime(u.detected_at) }}</p>
               </div>
               <FeatureGate feature="risk_scoring">
                 <div v-if="u.risk_score > 0" class="shrink-0 w-10 text-center">
@@ -218,7 +233,7 @@ onUnmounted(() => {
       <!-- Empty state -->
       <div v-if="updates.updates.length === 0 && !updates.loading" class="flex flex-col items-center justify-center py-16">
         <CheckCircle :size="40" class="text-emerald-500/30 mb-3" />
-        <p class="text-sm text-slate-600 font-medium">All containers are up to date</p>
+        <p class="text-sm text-slate-500 font-medium">All containers are up to date</p>
         <p class="text-[10px] text-slate-700 mt-1">Run a scan to check for available updates</p>
       </div>
     </div>

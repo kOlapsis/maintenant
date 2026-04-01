@@ -448,7 +448,7 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 	if d.Scorer == nil {
 		return
 	}
-	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore)
+	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore, d.AlertStore, d.SecuritySvc, d.Broker)
 
 	// Posture endpoints
 	r.mux.HandleFunc("GET /api/v1/security/posture", requireEnterprise(ph.HandleGetPosture))
