@@ -139,6 +139,17 @@ export const useAlertsStore = defineStore('alerts', () => {
     removeFromActive(alert.id)
   }
 
+  function onAlertAcknowledged(e: MessageEvent) {
+    let alert: Alert
+    try {
+      alert = JSON.parse(e.data)
+    } catch {
+      return
+    }
+    updateAlertInList(alert)
+    removeFromActive(alert.id)
+  }
+
   function onAlertSilenced(e: MessageEvent) {
     let alert: Alert
     try {
@@ -211,6 +222,7 @@ export const useAlertsStore = defineStore('alerts', () => {
   function connectSSE() {
     sseBus.on('alert.fired', onAlertFired)
     sseBus.on('alert.resolved', onAlertResolved)
+    sseBus.on('alert.acknowledged', onAlertAcknowledged)
     sseBus.on('alert.silenced', onAlertSilenced)
     sseBus.on('channel.created', onChannelCreated)
     sseBus.on('channel.updated', onChannelUpdated)
@@ -224,6 +236,7 @@ export const useAlertsStore = defineStore('alerts', () => {
   function disconnectSSE() {
     sseBus.off('alert.fired', onAlertFired)
     sseBus.off('alert.resolved', onAlertResolved)
+    sseBus.off('alert.acknowledged', onAlertAcknowledged)
     sseBus.off('alert.silenced', onAlertSilenced)
     sseBus.off('channel.created', onChannelCreated)
     sseBus.off('channel.updated', onChannelUpdated)

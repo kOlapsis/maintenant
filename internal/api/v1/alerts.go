@@ -109,6 +109,9 @@ func (h *AlertHandler) HandleGetActiveAlerts(w http.ResponseWriter, r *http.Requ
 		"info":     {},
 	}
 	for _, a := range alerts {
+		if a.AcknowledgedAt != nil {
+			continue
+		}
 		grouped[a.Severity] = append(grouped[a.Severity], a)
 	}
 
