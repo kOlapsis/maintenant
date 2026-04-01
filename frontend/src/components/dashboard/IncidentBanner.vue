@@ -68,7 +68,7 @@ function formatFullTimestamp(ts: string): string {
 <template>
   <div
     v-if="incidents.length > 0 && !dismissed"
-    class="bg-[#12151C] rounded-2xl border border-slate-800 p-4 mb-4 shadow-lg"
+    class="bg-pb-surface rounded-2xl border border-slate-800 p-4 mb-4 shadow-lg"
   >
     <div class="flex items-center justify-between mb-3">
       <span class="text-sm font-bold text-rose-400">
@@ -76,7 +76,7 @@ function formatFullTimestamp(ts: string): string {
       </span>
       <button
         @click="dismissed = true"
-        class="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors"
+        class="p-1.5 rounded-lg text-slate-500 hover:text-pb-primary hover:bg-slate-800 transition-colors"
         aria-label="Dismiss"
       >
         <X :size="14" />
@@ -102,7 +102,7 @@ function formatFullTimestamp(ts: string): string {
 
         <!-- Info -->
         <div class="flex-1 min-w-0">
-          <span class="text-sm font-medium text-white">
+          <span class="text-sm font-medium text-pb-primary">
             {{ incident.monitorName }}
           </span>
           <span class="text-xs ml-2 text-slate-500">
@@ -160,7 +160,7 @@ function formatFullTimestamp(ts: string): string {
               :class="
                 incident.states.some(s => s.status === step)
                   ? severityDotClasses[incident.severity]
-                  : 'bg-[#12151C] border-slate-700'
+                  : 'bg-pb-surface border-slate-700'
               "
             />
 
@@ -169,7 +169,7 @@ function formatFullTimestamp(ts: string): string {
               <div class="flex items-center gap-2">
                 <span
                   class="text-xs font-medium capitalize"
-                  :class="incident.states.some(s => s.status === step) ? 'text-white' : 'text-slate-500'"
+                  :class="incident.states.some(s => s.status === step) ? 'text-pb-primary' : 'text-slate-500'"
                 >
                   {{ step }}
                 </span>

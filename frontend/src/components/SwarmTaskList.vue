@@ -78,11 +78,11 @@ function stateDot(state: string): string {
       <div
         v-for="task in sortedTasks"
         :key="task.task_id"
-        class="bg-[#12151C] rounded-lg border border-slate-800 px-3 py-2 flex items-center justify-between"
+        class="bg-pb-surface rounded-lg border border-slate-800 px-3 py-2 flex items-center justify-between"
       >
         <div class="flex items-center gap-2 min-w-0">
           <div :class="['w-2 h-2 rounded-full flex-shrink-0', stateDot(task.state)]" />
-          <span class="text-xs text-slate-300 font-mono">#{{ task.slot }}</span>
+          <span class="text-xs text-pb-secondary font-mono">#{{ task.slot }}</span>
           <span :class="['text-xs font-medium', stateColor(task.state)]">{{ task.state }}</span>
           <span v-if="task.node_hostname" class="text-xs text-slate-500 truncate">{{ task.node_hostname }}</span>
         </div>
@@ -104,11 +104,11 @@ function stateDot(state: string): string {
           <div
             v-for="task in group.tasks"
             :key="task.task_id"
-            class="bg-[#12151C] rounded-lg border border-slate-800 px-3 py-2 flex items-center justify-between"
+            class="bg-pb-surface rounded-lg border border-slate-800 px-3 py-2 flex items-center justify-between"
           >
             <div class="flex items-center gap-2 min-w-0">
               <div :class="['w-2 h-2 rounded-full flex-shrink-0', stateDot(task.state)]" />
-              <span class="text-xs text-slate-300 font-mono">#{{ task.slot }}</span>
+              <span class="text-xs text-pb-secondary font-mono">#{{ task.slot }}</span>
               <span :class="['text-xs font-medium', stateColor(task.state)]">{{ task.state }}</span>
             </div>
             <div class="flex items-center gap-3 text-xs text-slate-500 flex-shrink-0 ml-2">

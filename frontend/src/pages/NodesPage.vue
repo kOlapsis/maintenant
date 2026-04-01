@@ -24,7 +24,7 @@ function onSwarmNodeSelect(nodeId: string) {
 
 <template>
   <div class="p-6">
-    <h1 class="text-xl font-bold text-white mb-6">Nodes</h1>
+    <h1 class="text-xl font-bold text-pb-primary mb-6">Nodes</h1>
 
     <!-- K8s nodes (Enterprise) -->
     <template v-if="isKubernetes">

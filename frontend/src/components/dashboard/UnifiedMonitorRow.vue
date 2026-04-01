@@ -46,7 +46,7 @@ const typeLabels: Record<string, string> = {
     <StatusBadge :status="badgeStatusMap[monitor.status] || 'unknown'" size="md" />
 
     <div class="flex-1 min-w-0">
-      <div class="text-sm font-medium truncate text-white">
+      <div class="text-sm font-medium truncate text-pb-primary">
         {{ monitor.name }}
       </div>
       <div class="text-xs truncate text-slate-500">
@@ -85,7 +85,7 @@ const typeLabels: Record<string, string> = {
     </span>
 
     <!-- Type pill -->
-    <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-slate-500">
+    <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider" style="background: var(--pb-bg-elevated); color: var(--pb-text-muted)">
       {{ typeLabels[monitor.type] || monitor.type }}
     </span>
   </RouterLink>

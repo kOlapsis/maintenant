@@ -56,32 +56,32 @@ function restartCountStyle(count: number): string {
 </script>
 
 <template>
-  <div class="bg-[#12151C] rounded-xl border border-slate-800 overflow-hidden">
+  <div class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden">
     <!-- Filter bar -->
     <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-800">
       <input
         v-model="filterNamespace"
         type="text"
         placeholder="Namespace…"
-        class="bg-[#0B0E13] border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-slate-700 w-32"
+        class="bg-pb-primary border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder-slate-600 focus:outline-none focus:border-slate-700 w-32"
       />
       <input
         v-model="filterWorkload"
         type="text"
         placeholder="Workload…"
-        class="bg-[#0B0E13] border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-slate-700 w-32"
+        class="bg-pb-primary border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder-slate-600 focus:outline-none focus:border-slate-700 w-32"
       />
       <input
         v-model="filterNode"
         type="text"
         placeholder="Node…"
-        class="bg-[#0B0E13] border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-slate-700 w-28"
+        class="bg-pb-primary border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder-slate-600 focus:outline-none focus:border-slate-700 w-28"
       />
       <input
         v-model="filterStatus"
         type="text"
         placeholder="Status…"
-        class="bg-[#0B0E13] border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-slate-700 w-24"
+        class="bg-pb-primary border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder-slate-600 focus:outline-none focus:border-slate-700 w-24"
       />
       <span class="ml-auto text-xs text-slate-500 tabular-nums">
         {{ filteredPods.length }}/{{ pods.length }}
@@ -105,7 +105,7 @@ function restartCountStyle(count: number): string {
           <!-- Left: name + namespace + status -->
           <div class="flex items-center gap-2 min-w-0">
             <div class="min-w-0">
-              <span class="text-sm text-white font-medium truncate group-hover:text-pb-green-400 transition-colors block">
+              <span class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors block">
                 {{ pod.name }}
               </span>
               <span class="text-xs text-slate-500 font-mono">{{ pod.namespace }}</span>

@@ -24,7 +24,7 @@ const iconMap = {
 } as const
 
 const colorMap = {
-  info: 'border-slate-600 text-slate-200',
+  info: 'border-slate-600 text-pb-primary',
   success: 'border-emerald-500/40 text-emerald-400',
   warning: 'border-amber-500/40 text-amber-400',
 } as const
@@ -44,7 +44,7 @@ const colorMap = {
         <div
           v-for="toast in toasts"
           :key="toast.id"
-          class="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border bg-[#12151C] shadow-2xl shadow-black/50 max-w-sm"
+          class="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border bg-pb-surface shadow-2xl shadow-black/50 max-w-sm"
           :class="colorMap[toast.type]"
         >
           <component :is="iconMap[toast.type]" :size="16" class="shrink-0" />

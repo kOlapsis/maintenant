@@ -109,7 +109,7 @@ const features = [
           <Crown :size="14" />
           Pro Edition
         </div>
-        <h1 class="text-4xl font-bold text-white tracking-tight mb-4">
+        <h1 class="text-4xl font-bold text-pb-primary tracking-tight mb-4">
           <template v-if="isLicenseActive"> You're on the Pro Edition </template>
           <template v-else> Unlock the full power of maintenant </template>
         </h1>
@@ -128,7 +128,7 @@ const features = [
           >
             <Heart :size="20" class="text-pb-green-400 shrink-0 mt-0.5" />
             <div>
-              <h2 class="text-base font-semibold text-white mb-1">Thank you for your support</h2>
+              <h2 class="text-base font-semibold text-pb-primary mb-1">Thank you for your support</h2>
               <p class="text-sm text-slate-400 leading-relaxed">
                 Your Pro license is active. Thank you for supporting the development of maintenant —
                 it makes a real difference.
@@ -168,21 +168,21 @@ const features = [
           <div
             v-for="feature in features"
             :key="feature.title"
-            class="group bg-[#12151C] border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors"
+            class="group bg-pb-surface border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-colors"
           >
             <div
               class="w-9 h-9 rounded-lg bg-pb-green-500/10 border border-pb-green-500/20 flex items-center justify-center mb-3"
             >
               <component :is="feature.icon" :size="18" class="text-pb-green-400" />
             </div>
-            <h3 class="text-sm font-semibold text-white mb-1.5">{{ feature.title }}</h3>
+            <h3 class="text-sm font-semibold text-pb-primary mb-1.5">{{ feature.title }}</h3>
             <p class="text-xs text-slate-400 leading-relaxed">{{ feature.description }}</p>
           </div>
         </div>
 
         <!-- Pricing -->
         <div class="max-w-2xl mx-auto">
-          <h2 class="text-2xl font-bold text-white text-center mb-2">Simple pricing</h2>
+          <h2 class="text-2xl font-bold text-pb-primary text-center mb-2">Simple pricing</h2>
           <p class="text-sm text-slate-400 text-center mb-8">
             One plan, all Pro features. No per-seat or per-host charges.
           </p>
@@ -192,7 +192,7 @@ const features = [
             <button
               class="text-sm font-medium transition-colors"
               :class="
-                billingPeriod === 'monthly' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                billingPeriod === 'monthly' ? 'text-pb-primary' : 'text-slate-500 hover:text-pb-secondary'
               "
               @click="billingPeriod = 'monthly'"
             >
@@ -211,7 +211,7 @@ const features = [
             <button
               class="text-sm font-medium transition-colors flex items-center gap-1.5"
               :class="
-                billingPeriod === 'annual' ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                billingPeriod === 'annual' ? 'text-pb-primary' : 'text-slate-500 hover:text-pb-secondary'
               "
               @click="billingPeriod = 'annual'"
             >
@@ -228,16 +228,16 @@ const features = [
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Monthly -->
             <div
-              class="relative bg-[#12151C] border rounded-xl p-6 transition-colors"
+              class="relative bg-pb-surface border rounded-xl p-6 transition-colors"
               :class="
                 billingPeriod === 'monthly'
                   ? 'border-pb-green-500/40'
                   : 'border-slate-800 opacity-60'
               "
             >
-              <h3 class="text-sm font-semibold text-slate-300 mb-3">Monthly</h3>
+              <h3 class="text-sm font-semibold text-pb-secondary mb-3">Monthly</h3>
               <div class="flex items-baseline gap-1 mb-4">
-                <span class="text-3xl font-bold text-white">9€</span>
+                <span class="text-3xl font-bold text-pb-primary">9€</span>
                 <span class="text-sm text-slate-500">/month</span>
               </div>
               <a
@@ -246,7 +246,7 @@ const features = [
                 class="block w-full py-2 text-center rounded-lg text-sm font-semibold transition-colors"
                 :class="
                   billingPeriod === 'monthly'
-                    ? 'bg-pb-green-600 hover:bg-pb-green-500 text-white shadow-lg shadow-pb-green-500/20'
+                    ? 'bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20'
                     : 'bg-slate-800 text-slate-400'
                 "
               >
@@ -256,7 +256,7 @@ const features = [
 
             <!-- Annual -->
             <div
-              class="relative bg-[#12151C] border rounded-xl p-6 transition-colors"
+              class="relative bg-pb-surface border rounded-xl p-6 transition-colors"
               :class="
                 billingPeriod === 'annual'
                   ? 'border-pb-green-500/40'
@@ -265,13 +265,13 @@ const features = [
             >
               <span
                 v-if="billingPeriod === 'annual'"
-                class="absolute -top-2.5 right-4 text-[10px] font-bold bg-pb-green-600 text-white px-2 py-0.5 rounded"
+                class="absolute -top-2.5 right-4 text-[10px] font-bold bg-pb-green-600 text-slate-950 px-2 py-0.5 rounded"
               >
                 Recommended
               </span>
-              <h3 class="text-sm font-semibold text-slate-300 mb-3">Annual</h3>
+              <h3 class="text-sm font-semibold text-pb-secondary mb-3">Annual</h3>
               <div class="flex items-baseline gap-1 mb-1">
-                <span class="text-3xl font-bold text-white">90€</span>
+                <span class="text-3xl font-bold text-pb-primary">90€</span>
                 <span class="text-sm text-slate-500">/year</span>
               </div>
               <p class="text-xs text-emerald-400 mb-3">7.50€/month — save 18€</p>
@@ -281,7 +281,7 @@ const features = [
                 class="block w-full py-2 text-center rounded-lg text-sm font-semibold transition-colors"
                 :class="
                   billingPeriod === 'annual'
-                    ? 'bg-pb-green-600 hover:bg-pb-green-500 text-white shadow-lg shadow-pb-green-500/20'
+                    ? 'bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20'
                     : 'bg-slate-800 text-slate-400'
                 "
               >
@@ -295,15 +295,15 @@ const features = [
             class="mt-6 flex items-start gap-3 bg-blue-500/5 border border-blue-500/20 rounded-xl px-5 py-4"
           >
             <Mail :size="18" class="text-blue-400 shrink-0 mt-0.5" />
-            <p class="text-sm text-slate-300 leading-relaxed">
+            <p class="text-sm text-pb-secondary leading-relaxed">
               After purchase, your license key will be sent to the email address provided during
               checkout.
             </p>
           </div>
 
           <!-- Feature checklist -->
-          <div class="mt-8 bg-[#12151C] border border-slate-800 rounded-xl p-6">
-            <h3 class="text-sm font-semibold text-white mb-4">Everything in Pro includes:</h3>
+          <div class="mt-8 bg-pb-surface border border-slate-800 rounded-xl p-6">
+            <h3 class="text-sm font-semibold text-pb-primary mb-4">Everything in Pro includes:</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div
                 v-for="feature in features"
@@ -311,11 +311,11 @@ const features = [
                 class="flex items-center gap-2.5"
               >
                 <Check :size="14" class="text-pb-green-400 shrink-0" />
-                <span class="text-sm text-slate-300">{{ feature.title }}</span>
+                <span class="text-sm text-pb-secondary">{{ feature.title }}</span>
               </div>
               <div class="flex items-center gap-2.5">
                 <Check :size="14" class="text-pb-green-400 shrink-0" />
-                <span class="text-sm text-slate-300">All Community features</span>
+                <span class="text-sm text-pb-secondary">All Community features</span>
               </div>
             </div>
           </div>

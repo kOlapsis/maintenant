@@ -91,7 +91,7 @@ function shortId(id: string): string {
     <div class="max-w-7xl mx-auto">
       <!-- Page header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-black text-white">Tasks</h1>
+        <h1 class="text-2xl font-black text-pb-primary">Tasks</h1>
         <p class="mt-1 text-sm text-slate-500">All Swarm tasks</p>
       </div>
 
@@ -101,7 +101,7 @@ function shortId(id: string): string {
           <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Service</label>
           <select
             v-model="filterService"
-            class="bg-[#12151C] border border-slate-800 text-xs text-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
+            class="bg-pb-surface border border-slate-800 text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
           >
             <option value="">All services</option>
             <option v-for="svc in services" :key="svc.service_id" :value="svc.name">
@@ -114,7 +114,7 @@ function shortId(id: string): string {
           <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">State</label>
           <select
             v-model="filterState"
-            class="bg-[#12151C] border border-slate-800 text-xs text-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
+            class="bg-pb-surface border border-slate-800 text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
           >
             <option value="">All states</option>
             <option v-for="state in TASK_STATES" :key="state" :value="state">
@@ -136,7 +136,7 @@ function shortId(id: string): string {
       <!-- Empty -->
       <div
         v-else-if="filteredTasks.length === 0"
-        class="bg-[#12151C] rounded-xl border border-slate-800 px-6 py-12 text-center"
+        class="bg-pb-surface rounded-xl border border-slate-800 px-6 py-12 text-center"
       >
         <ClipboardList :size="32" class="mx-auto mb-3 text-slate-600" />
         <p class="text-sm text-slate-500">
@@ -145,7 +145,7 @@ function shortId(id: string): string {
       </div>
 
       <!-- Task list -->
-      <div v-else class="bg-[#12151C] rounded-xl border border-slate-800 overflow-hidden">
+      <div v-else class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden">
         <!-- Table header -->
         <div class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2 border-b border-slate-800">
           <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Task ID</span>
@@ -167,7 +167,7 @@ function shortId(id: string): string {
             <span class="text-xs text-slate-400 font-mono truncate">{{ shortId(task.task_id) }}</span>
 
             <!-- Service name -->
-            <span class="text-xs text-slate-300 font-medium truncate">{{ task.service_name }}</span>
+            <span class="text-xs text-pb-secondary font-medium truncate">{{ task.service_name }}</span>
 
             <!-- Slot -->
             <span class="text-xs text-slate-400 font-mono">#{{ task.slot }}</span>

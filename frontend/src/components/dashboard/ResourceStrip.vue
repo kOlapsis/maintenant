@@ -77,38 +77,38 @@ function memBarColor(val: number): string {
 <template>
   <div
     v-if="containerCount > 0"
-    class="mb-4 flex flex-wrap items-center gap-5 bg-[#12151C] rounded-2xl border border-slate-800 px-5 py-3"
+    class="mb-4 flex flex-wrap items-center gap-5 bg-pb-surface rounded-2xl border border-slate-800 px-5 py-3"
   >
     <!-- CPU gauge -->
     <div class="flex items-center gap-2.5 min-w-[160px]">
-      <div class="p-1.5 bg-slate-900 rounded-lg">
+      <div class="p-1.5 rounded-lg" style="background: var(--pb-bg-elevated)">
         <Cpu :size="14" class="text-slate-500" />
       </div>
       <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">CPU</span>
-      <div class="h-1.5 flex-1 bg-slate-900 rounded-full border border-slate-800 overflow-hidden" style="min-width: 60px">
+      <div class="h-1.5 flex-1 rounded-full border border-slate-800 overflow-hidden" style="background: var(--pb-bg-elevated); min-width: 60px">
         <div
           class="h-full rounded-full transition-all duration-700"
           :class="cpuBarColor(totalCpu)"
           :style="{ width: `${Math.min(totalCpu, 100)}%` }"
         />
       </div>
-      <span class="text-xs font-mono tabular-nums text-white font-semibold">{{ Math.round(totalCpu) }}%</span>
+      <span class="text-xs font-mono tabular-nums text-pb-primary font-semibold">{{ Math.round(totalCpu) }}%</span>
     </div>
 
     <!-- Memory gauge -->
     <div class="flex items-center gap-2.5 min-w-[200px]">
-      <div class="p-1.5 bg-slate-900 rounded-lg">
+      <div class="p-1.5 rounded-lg" style="background: var(--pb-bg-elevated)">
         <MemoryStick :size="14" class="text-slate-500" />
       </div>
       <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">MEM</span>
-      <div class="h-1.5 flex-1 bg-slate-900 rounded-full border border-slate-800 overflow-hidden" style="min-width: 60px">
+      <div class="h-1.5 flex-1 rounded-full border border-slate-800 overflow-hidden" style="background: var(--pb-bg-elevated); min-width: 60px">
         <div
           class="h-full rounded-full transition-all duration-700"
           :class="memBarColor(memPercent)"
           :style="{ width: `${Math.min(memPercent, 100)}%` }"
         />
       </div>
-      <span class="text-xs font-mono tabular-nums text-white font-semibold whitespace-nowrap">
+      <span class="text-xs font-mono tabular-nums text-pb-primary font-semibold whitespace-nowrap">
         {{ resources.formatBytes(totalMemUsed) }} / {{ resources.formatBytes(totalMemLimit) }}
       </span>
     </div>

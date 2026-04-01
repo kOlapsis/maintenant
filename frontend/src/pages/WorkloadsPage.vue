@@ -56,7 +56,7 @@ const totalWorkloads = () =>
       <!-- Page header -->
       <div class="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-black text-white">Workloads</h1>
+          <h1 class="text-2xl font-black text-pb-primary">Workloads</h1>
           <p class="mt-1 text-sm text-slate-500">Kubernetes workloads grouped by namespace</p>
         </div>
         <NamespaceSelector />
@@ -70,7 +70,7 @@ const totalWorkloads = () =>
       <!-- Error -->
       <div
         v-else-if="store.error"
-        class="bg-[#12151C] rounded-xl border border-red-900/40 px-6 py-4 text-sm text-red-400"
+        class="bg-pb-surface rounded-xl border border-red-900/40 px-6 py-4 text-sm text-red-400"
       >
         {{ store.error }}
       </div>
@@ -78,7 +78,7 @@ const totalWorkloads = () =>
       <!-- Empty -->
       <div
         v-else-if="store.workloadGroups.length === 0"
-        class="bg-[#12151C] rounded-xl border border-slate-800 px-6 py-12 text-center"
+        class="bg-pb-surface rounded-xl border border-slate-800 px-6 py-12 text-center"
       >
         <LayoutGrid :size="32" class="mx-auto mb-3 text-slate-600" />
         <p class="text-sm text-slate-500">No workloads found</p>

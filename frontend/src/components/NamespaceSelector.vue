@@ -51,7 +51,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="containerRef" class="relative">
     <button
-      class="flex items-center gap-2 bg-[#12151C] border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 hover:border-slate-700 hover:text-white transition-all"
+      class="flex items-center gap-2 bg-pb-surface border border-slate-800 rounded-lg px-3 py-2 text-sm text-pb-secondary hover:border-slate-700 hover:text-pb-primary transition-all"
       @click="toggle"
     >
       <Layers :size="14" class="text-slate-500 flex-shrink-0" />
@@ -65,11 +65,11 @@ onBeforeUnmount(() => {
     <!-- Dropdown -->
     <div
       v-if="open"
-      class="absolute right-0 top-full mt-1 z-50 min-w-52 bg-[#12151C] border border-slate-800 rounded-xl shadow-xl overflow-hidden"
+      class="absolute right-0 top-full mt-1 z-50 min-w-52 bg-pb-surface border border-slate-800 rounded-xl shadow-xl overflow-hidden"
     >
       <!-- All namespaces option -->
       <button
-        class="w-full flex items-center justify-between px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800/40 hover:text-white transition-colors"
+        class="w-full flex items-center justify-between px-4 py-2.5 text-sm text-pb-secondary hover:bg-slate-800/40 hover:text-pb-primary transition-colors"
         @click="store.selectAll()"
       >
         <span>All namespaces</span>
@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
           v-for="ns in store.namespaces"
           :key="ns"
           class="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-slate-800/40 transition-colors"
-          :class="store.selectedNamespaces.includes(ns) ? 'text-white' : 'text-slate-400'"
+          :class="store.selectedNamespaces.includes(ns) ? 'text-pb-primary' : 'text-slate-400'"
           @click="store.toggleNamespace(ns)"
         >
           <span class="font-mono">{{ ns }}</span>

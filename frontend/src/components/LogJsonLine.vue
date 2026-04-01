@@ -37,17 +37,17 @@ function tokenizeValue(value: unknown, indent: string, expanded: boolean): JsonS
 
   if (Array.isArray(value)) {
     if (!expanded || value.length === 0) {
-      return [{ text: JSON.stringify(value), cls: 'text-slate-300' }]
+      return [{ text: JSON.stringify(value), cls: 'text-pb-secondary' }]
     }
-    const spans: JsonSpan[] = [{ text: '[\n', cls: 'text-slate-300' }]
+    const spans: JsonSpan[] = [{ text: '[\n', cls: 'text-pb-secondary' }]
     const childIndent = indent + '  '
     for (let i = 0; i < value.length; i++) {
       spans.push({ text: childIndent, cls: '' })
       spans.push(...tokenizeValue(value[i], childIndent, true))
-      if (i < value.length - 1) spans.push({ text: ',', cls: 'text-slate-300' })
+      if (i < value.length - 1) spans.push({ text: ',', cls: 'text-pb-secondary' })
       spans.push({ text: '\n', cls: '' })
     }
-    spans.push({ text: indent + ']', cls: 'text-slate-300' })
+    spans.push({ text: indent + ']', cls: 'text-pb-secondary' })
     return spans
   }
 
@@ -55,37 +55,37 @@ function tokenizeValue(value: unknown, indent: string, expanded: boolean): JsonS
     const obj = value as Record<string, unknown>
     const keys = Object.keys(obj)
     if (!expanded || keys.length === 0) {
-      return [{ text: JSON.stringify(value), cls: 'text-slate-300' }]
+      return [{ text: JSON.stringify(value), cls: 'text-pb-secondary' }]
     }
-    const spans: JsonSpan[] = [{ text: '{\n', cls: 'text-slate-300' }]
+    const spans: JsonSpan[] = [{ text: '{\n', cls: 'text-pb-secondary' }]
     const childIndent = indent + '  '
     for (let i = 0; i < keys.length; i++) {
       const k = keys[i]!
       spans.push({ text: childIndent, cls: '' })
       spans.push({ text: JSON.stringify(k), cls: 'text-cyan-400' })
-      spans.push({ text: ': ', cls: 'text-slate-300' })
+      spans.push({ text: ': ', cls: 'text-pb-secondary' })
       spans.push(...tokenizeValue(obj[k], childIndent, true))
-      if (i < keys.length - 1) spans.push({ text: ',', cls: 'text-slate-300' })
+      if (i < keys.length - 1) spans.push({ text: ',', cls: 'text-pb-secondary' })
       spans.push({ text: '\n', cls: '' })
     }
-    spans.push({ text: indent + '}', cls: 'text-slate-300' })
+    spans.push({ text: indent + '}', cls: 'text-pb-secondary' })
     return spans
   }
 
-  return [{ text: String(value), cls: 'text-slate-300' }]
+  return [{ text: String(value), cls: 'text-pb-secondary' }]
 }
 
 function tokenizeCompact(obj: Record<string, unknown>): JsonSpan[] {
   const keys = Object.keys(obj)
-  const spans: JsonSpan[] = [{ text: '{', cls: 'text-slate-300' }]
+  const spans: JsonSpan[] = [{ text: '{', cls: 'text-pb-secondary' }]
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i]!
-    if (i > 0) spans.push({ text: ', ', cls: 'text-slate-300' })
+    if (i > 0) spans.push({ text: ', ', cls: 'text-pb-secondary' })
     spans.push({ text: JSON.stringify(k), cls: 'text-cyan-400' })
-    spans.push({ text: ': ', cls: 'text-slate-300' })
+    spans.push({ text: ': ', cls: 'text-pb-secondary' })
     spans.push(...tokenizeValue(obj[k], '', false))
   }
-  spans.push({ text: '}', cls: 'text-slate-300' })
+  spans.push({ text: '}', cls: 'text-pb-secondary' })
   return spans
 }
 

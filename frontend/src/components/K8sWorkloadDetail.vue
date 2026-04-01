@@ -156,7 +156,7 @@ function replicaColor(ready: number, desired: number): string {
       <div class="px-6 pt-4 pb-3 border-b border-slate-800">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
-            <h2 class="text-base font-bold text-white truncate">{{ detail.workload.name }}</h2>
+            <h2 class="text-base font-bold text-pb-primary truncate">{{ detail.workload.name }}</h2>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <span class="text-[10px] font-bold uppercase tracking-wider text-sky-400 bg-sky-400/10 border border-sky-400/20 px-1.5 py-0.5 rounded">
                 {{ detail.workload.kind }}
@@ -185,7 +185,7 @@ function replicaColor(ready: number, desired: number): string {
               :key="image"
               class="flex items-center gap-2"
             >
-              <span class="text-xs text-slate-300 font-mono truncate">{{ image }}</span>
+              <span class="text-xs text-pb-secondary font-mono truncate">{{ image }}</span>
             </div>
           </div>
         </div>
@@ -206,7 +206,7 @@ function replicaColor(ready: number, desired: number): string {
             'px-4 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
             activeTab === tab.key
               ? 'border-pb-green-400 text-pb-green-400'
-              : 'border-transparent text-slate-500 hover:text-slate-300',
+              : 'border-transparent text-slate-500 hover:text-pb-secondary',
           ]"
           @click="onTabClick(tab.key)"
         >
@@ -237,10 +237,10 @@ function replicaColor(ready: number, desired: number): string {
             <div
               v-for="pod in detail.pods"
               :key="`${pod.namespace}/${pod.name}`"
-              class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3"
+              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
             >
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-mono text-white truncate">{{ pod.name }}</span>
+                <span class="text-sm font-mono text-pb-primary truncate">{{ pod.name }}</span>
                 <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', podStatusStyle(pod.status)]">
                   {{ pod.status }}
                 </span>
@@ -264,7 +264,7 @@ function replicaColor(ready: number, desired: number): string {
             <div
               v-for="(event, i) in detail.events"
               :key="i"
-              class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3"
+              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
             >
               <div class="flex items-start gap-3">
                 <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0 mt-0.5', eventTypeStyle(event.type)]">
@@ -272,7 +272,7 @@ function replicaColor(ready: number, desired: number): string {
                 </span>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-slate-300">{{ event.reason }}</span>
+                    <span class="text-sm font-semibold text-pb-secondary">{{ event.reason }}</span>
                     <span v-if="event.count > 1" class="text-[10px] text-slate-600 tabular-nums">×{{ event.count }}</span>
                   </div>
                   <p class="text-xs text-slate-400 mt-0.5 leading-relaxed">{{ event.message }}</p>
@@ -295,10 +295,10 @@ function replicaColor(ready: number, desired: number): string {
             <div
               v-for="condition in detail.workload.conditions"
               :key="condition.type"
-              class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3"
+              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
             >
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-semibold text-white">{{ condition.type }}</span>
+                <span class="text-sm font-semibold text-pb-primary">{{ condition.type }}</span>
                 <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', conditionStatusStyle(condition.status)]">
                   {{ condition.status }}
                 </span>
@@ -337,11 +337,11 @@ function replicaColor(ready: number, desired: number): string {
               <div
                 v-for="pr in podResources"
                 :key="`${pr.namespace}/${pr.name}`"
-                class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3"
+                class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
               >
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-mono text-white truncate">{{ pr.name }}</span>
+                    <span class="text-sm font-mono text-pb-primary truncate">{{ pr.name }}</span>
                     <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', podStatusStyle(pr.status)]">
                       {{ pr.status }}
                     </span>
@@ -367,7 +367,7 @@ function replicaColor(ready: number, desired: number): string {
                       <span v-if="pr.mem_percent !== null" class="text-slate-600 ml-1">({{ pr.mem_percent.toFixed(1) }}%)</span>
                     </span>
                   </div>
-                  <div v-if="pr.mem_limit_bytes" class="h-1.5 bg-[#0B0E13] border border-slate-800 rounded-full overflow-hidden">
+                  <div v-if="pr.mem_limit_bytes" class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden">
                     <div
                       :class="['h-full rounded-full transition-all', memColor(pr.mem_percent)]"
                       :style="{ width: memBarWidth(pr.mem_percent) }"

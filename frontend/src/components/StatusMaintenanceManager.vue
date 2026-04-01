@@ -103,7 +103,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
       <h2 class="text-lg font-semibold" style="color: var(--pb-text-primary)">Maintenance Windows</h2>
       <button
         @click="showForm = true"
-        class="rounded-md px-3 py-1.5 text-sm font-medium text-white"
+        class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary"
         style="background: var(--pb-accent)"
       >
         Schedule Maintenance
@@ -144,7 +144,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
           </div>
         </div>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-white" style="background: var(--pb-accent)">
+          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-pb-primary" style="background: var(--pb-accent)">
             {{ editingId ? 'Update' : 'Schedule' }}
           </button>
           <button type="button" @click="resetForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Cancel</button>

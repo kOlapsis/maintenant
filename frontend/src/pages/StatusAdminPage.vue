@@ -44,7 +44,7 @@ onUnmounted(() => {
   <div class="overflow-y-auto p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
     <div class="mb-6">
-      <h1 class="text-2xl font-black text-white">Status Page</h1>
+      <h1 class="text-2xl font-black text-pb-primary">Status Page</h1>
       <p class="mt-1 text-sm" style="color: var(--pb-text-muted)">
         Manage the public status page components, incidents, and maintenance windows
       </p>

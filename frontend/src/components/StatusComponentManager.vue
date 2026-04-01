@@ -219,7 +219,7 @@ const statusOverrideOptions: { value: string; label: string }[] = [
         <h2 class="text-lg font-semibold" style="color: var(--pb-text-primary)">Status Components</h2>
         <button
           @click="startAddComp"
-          class="rounded-md px-3 py-1.5 text-sm font-medium text-white transition-colors"
+          class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary transition-colors"
           style="background: var(--pb-accent)"
           @mouseenter="($event.target as HTMLElement).style.background = 'var(--pb-accent-hover)'"
           @mouseleave="($event.target as HTMLElement).style.background = 'var(--pb-accent)'"
@@ -269,7 +269,7 @@ const statusOverrideOptions: { value: string; label: string }[] = [
             </label>
           </div>
           <div class="flex gap-2">
-            <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-white" style="background: var(--pb-accent)">Save</button>
+            <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-pb-primary" style="background: var(--pb-accent)">Save</button>
             <button type="button" @click="resetCompForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Cancel</button>
           </div>
         </form>

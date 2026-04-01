@@ -90,7 +90,7 @@ function handleSelect(id: number) {
   <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-black text-white">Certificates</h1>
+        <h1 class="text-2xl font-black text-pb-primary">Certificates</h1>
         <p class="mt-1 text-sm" :style="{ color: 'var(--pb-text-muted)' }">
           SSL/TLS certificate monitoring &amp; expiration alerts
         </p>

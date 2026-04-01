@@ -88,16 +88,16 @@ const panelWidth = computed(() => widthMap[props.width] || '32rem')
         <!-- Panel -->
         <div
           ref="panelRef"
-          class="fixed inset-y-0 right-0 flex flex-col bg-[#12151C] shadow-2xl z-[9999]"
+          class="fixed inset-y-0 right-0 flex flex-col bg-pb-surface shadow-2xl z-[9999]"
           :style="{ width: '100%', maxWidth: panelWidth }"
         >
           <!-- Header -->
           <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
             <slot name="header">
-              <h2 class="text-lg font-semibold text-white">{{ title }}</h2>
+              <h2 class="text-lg font-semibold text-pb-primary">{{ title }}</h2>
             </slot>
             <button
-              class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors"
+              class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-pb-primary hover:bg-slate-800 transition-colors"
               @click="close"
               aria-label="Close panel"
             >

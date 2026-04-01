@@ -94,7 +94,7 @@ function getStateStyle(state: string) {
 
 <template>
   <div
-    class="bg-[#12151C] rounded-xl border border-slate-800 hover:border-slate-700 transition-all cursor-pointer overflow-hidden group"
+    class="bg-pb-surface rounded-xl border border-slate-800 hover:border-slate-700 transition-all cursor-pointer overflow-hidden group"
     @click="emit('select', container)"
   >
     <!-- Header: name + state -->
@@ -107,7 +107,7 @@ function getStateStyle(state: string) {
             :style="{ backgroundColor: container.state === 'running' ? (healthColors[container.health_status] || 'var(--pb-text-muted)') : 'var(--pb-text-muted)' }"
             :title="container.state === 'running' ? container.health_status : 'stopped'"
           />
-          <h3 class="truncate text-sm font-semibold text-white group-hover:text-pb-green-400 transition-colors">
+          <h3 class="truncate text-sm font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors">
             {{ container.name }}
           </h3>
         </div>
@@ -149,7 +149,7 @@ function getStateStyle(state: string) {
     <div v-if="container.state === 'running' && metrics" class="px-4 pb-1.5 space-y-1">
       <div class="flex items-center gap-2 text-[10px]">
         <span class="w-7 text-slate-600 font-bold uppercase">CPU</span>
-        <div class="h-1 flex-1 rounded-full bg-[#0B0E13]">
+        <div class="h-1 flex-1 rounded-full bg-pb-primary">
           <div
             class="h-1 rounded-full transition-all"
             :style="{ width: cpuBarWidth + '%', backgroundColor: barColor(cpuBarWidth) }"
@@ -159,7 +159,7 @@ function getStateStyle(state: string) {
       </div>
       <div class="flex items-center gap-2 text-[10px]">
         <span class="w-7 text-slate-600 font-bold uppercase">MEM</span>
-        <div class="h-1 flex-1 rounded-full bg-[#0B0E13]">
+        <div class="h-1 flex-1 rounded-full bg-pb-primary">
           <div
             class="h-1 rounded-full transition-all"
             :style="{ width: memBarWidth + '%', backgroundColor: barColor(memBarWidth) }"

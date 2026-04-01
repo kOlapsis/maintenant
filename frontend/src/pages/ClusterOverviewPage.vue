@@ -14,7 +14,7 @@ const { isSwarm, isKubernetes } = useRuntime()
 
 <template>
   <div class="p-6">
-    <h1 class="text-xl font-bold text-white mb-6">Cluster Overview</h1>
+    <h1 class="text-xl font-bold text-pb-primary mb-6">Cluster Overview</h1>
 
     <!-- K8s cluster overview (Enterprise) -->
     <template v-if="isKubernetes">

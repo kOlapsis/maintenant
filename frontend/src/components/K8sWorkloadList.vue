@@ -89,7 +89,7 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
     <div
       v-for="group in groups"
       :key="group.namespace"
-      class="bg-[#12151C] rounded-xl border border-slate-800 overflow-hidden"
+      class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden"
     >
       <!-- Namespace header -->
       <button
@@ -102,7 +102,7 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
             :size="14"
             class="text-slate-500 flex-shrink-0"
           />
-          <span class="text-sm font-semibold text-white font-mono">{{ group.namespace }}</span>
+          <span class="text-sm font-semibold text-pb-primary font-mono">{{ group.namespace }}</span>
           <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
             {{ group.workloads.length }} workload{{ group.workloads.length === 1 ? '' : 's' }}
           </span>
@@ -137,7 +137,7 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
           <div class="flex items-center justify-between gap-4">
             <!-- Left: name + badges -->
             <div class="flex items-center gap-2 min-w-0">
-              <span class="text-sm text-white font-medium truncate group-hover:text-pb-green-400 transition-colors">
+              <span class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors">
                 {{ workload.name }}
               </span>
               <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', kindStyle(workload.kind)]">

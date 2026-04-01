@@ -102,7 +102,7 @@ function formatCPU(millicores: number): string {
       <div
         v-for="node in sortedNodes"
         :key="node.name"
-        class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
+        class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
         @click="emit('select', node.name)"
       >
         <div class="flex items-center justify-between">
@@ -117,7 +117,7 @@ function formatCPU(millicores: number): string {
             </div>
 
             <!-- Node name -->
-            <span class="text-sm text-white font-medium truncate">{{ node.name }}</span>
+            <span class="text-sm text-pb-primary font-medium truncate">{{ node.name }}</span>
 
             <!-- Role badges -->
             <span

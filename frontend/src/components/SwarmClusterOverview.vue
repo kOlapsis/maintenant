@@ -53,12 +53,12 @@ const alertCount = computed(() => {
       <!-- Summary cards -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <!-- Nodes -->
-        <div class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3">
+        <div class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3">
           <div class="flex items-center gap-2 mb-2">
             <Server class="h-3.5 w-3.5 text-slate-500" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Nodes</span>
           </div>
-          <div class="text-xl font-bold text-white tabular-nums">
+          <div class="text-xl font-bold text-pb-primary tabular-nums">
             {{ store.cluster.manager_count + store.cluster.worker_count }}
           </div>
           <div class="text-xs text-slate-400 mt-1">
@@ -67,24 +67,24 @@ const alertCount = computed(() => {
         </div>
 
         <!-- Services -->
-        <div class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3">
+        <div class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3">
           <div class="flex items-center gap-2 mb-2">
             <Layers class="h-3.5 w-3.5 text-slate-500" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Services</span>
           </div>
-          <div class="text-xl font-bold text-white tabular-nums">
+          <div class="text-xl font-bold text-pb-primary tabular-nums">
             {{ store.cluster.total_services }}
           </div>
         </div>
 
         <!-- Tasks -->
-        <div class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3">
+        <div class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3">
           <div class="flex items-center gap-2 mb-2">
             <Activity class="h-3.5 w-3.5 text-slate-500" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Tasks</span>
           </div>
           <div class="flex items-baseline gap-1">
-            <span class="text-xl font-bold tabular-nums" :class="store.cluster.running_tasks === store.cluster.desired_tasks ? 'text-white' : 'text-amber-400'">
+            <span class="text-xl font-bold tabular-nums" :class="store.cluster.running_tasks === store.cluster.desired_tasks ? 'text-pb-primary' : 'text-amber-400'">
               {{ store.cluster.running_tasks }}
             </span>
             <span class="text-xs text-slate-500">/ {{ store.cluster.desired_tasks }}</span>
@@ -92,7 +92,7 @@ const alertCount = computed(() => {
         </div>
 
         <!-- Node Status -->
-        <div class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3">
+        <div class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3">
           <div class="flex items-center gap-2 mb-2">
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Node Status</span>
           </div>

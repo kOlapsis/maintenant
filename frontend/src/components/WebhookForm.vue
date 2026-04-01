@@ -14,7 +14,7 @@
 <template>
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="$emit('close')">
     <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-      <h2 class="text-lg font-semibold text-white mb-4">Add Webhook</h2>
+      <h2 class="text-lg font-semibold text-pb-primary mb-4">Add Webhook</h2>
 
       <form @submit.prevent="submit" class="space-y-4">
         <div>
@@ -25,7 +25,8 @@
             maxlength="100"
             required
             placeholder="e.g., Slack Integration"
-            class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
+            class="w-full rounded px-3 py-2 text-sm placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
+            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
           />
         </div>
 
@@ -36,7 +37,8 @@
             type="url"
             required
             placeholder="https://hooks.example.com/webhook"
-            class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
+            class="w-full rounded px-3 py-2 text-sm placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
+            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
           />
         </div>
 
@@ -46,7 +48,8 @@
             v-model="secret"
             type="text"
             placeholder="Optional signing secret"
-            class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
+            class="w-full rounded px-3 py-2 text-sm placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
+            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
           />
         </div>
 
@@ -59,9 +62,10 @@
                 value="*"
                 v-model="selectedEvents"
                 @change="onAllEventsToggle"
-                class="rounded border-slate-600 bg-slate-900 text-pb-green-500"
+                class="rounded border-slate-600 text-pb-green-500"
+                style="background: var(--pb-bg-elevated)"
               />
-              <span class="text-sm text-slate-300">All events</span>
+              <span class="text-sm text-pb-secondary">All events</span>
             </label>
             <label v-for="et in specificEventTypes" :key="et.value" class="flex items-center gap-2 ml-4">
               <input
@@ -69,9 +73,10 @@
                 :value="et.value"
                 v-model="selectedEvents"
                 :disabled="selectedEvents.includes('*')"
-                class="rounded border-slate-600 bg-slate-900 text-pb-green-500"
+                class="rounded border-slate-600 text-pb-green-500"
+                style="background: var(--pb-bg-elevated)"
               />
-              <span class="text-sm text-slate-300">{{ et.label }}</span>
+              <span class="text-sm text-pb-secondary">{{ et.label }}</span>
             </label>
           </div>
         </div>
@@ -82,14 +87,14 @@
           <button
             type="button"
             @click="$emit('close')"
-            class="text-sm text-slate-400 hover:text-slate-300 px-4 py-2"
+            class="text-sm text-slate-400 hover:text-pb-secondary px-4 py-2"
           >
             Cancel
           </button>
           <button
             type="submit"
             :disabled="submitting || !name || !url || selectedEvents.length === 0"
-            class="bg-pb-green-600 hover:bg-pb-green-700 disabled:opacity-50 text-white rounded px-4 py-2 text-sm font-medium"
+            class="bg-pb-green-600 hover:bg-pb-green-700 disabled:opacity-50 text-slate-950 rounded px-4 py-2 text-sm font-medium"
           >
             {{ submitting ? 'Creating...' : 'Add Webhook' }}
           </button>

@@ -125,7 +125,7 @@ onUnmounted(() => {
     <div class="mx-auto max-w-7xl">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-black text-white">Endpoints</h1>
+        <h1 class="text-2xl font-black text-pb-primary">Endpoints</h1>
         <p class="mt-1 text-sm text-slate-500">
           HTTP/TCP endpoint health checks
         </p>
@@ -337,7 +337,8 @@ onUnmounted(() => {
     <div class="mb-6 flex flex-wrap gap-3">
       <select
         v-model="store.statusFilter"
-        class="rounded-lg border border-slate-800 bg-slate-900 text-white px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
+        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
+        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
       >
         <option value="">All statuses</option>
         <option value="up">Up</option>
@@ -347,7 +348,8 @@ onUnmounted(() => {
 
       <select
         v-model="store.typeFilter"
-        class="rounded-lg border border-slate-800 bg-slate-900 text-white px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
+        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
+        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
       >
         <option value="">All types</option>
         <option value="http">HTTP</option>
@@ -356,7 +358,8 @@ onUnmounted(() => {
 
       <select
         v-model="store.containerFilter"
-        class="rounded-lg border border-slate-800 bg-slate-900 text-white px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
+        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
+        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
       >
         <option value="">All containers</option>
         <option
@@ -386,7 +389,7 @@ onUnmounted(() => {
     <div v-else class="relative min-h-[300px]">
       <!-- Background hint — always visible -->
       <div class="flex flex-col items-center justify-center py-16 text-center">
-        <div class="p-4 bg-slate-900 rounded-2xl mb-4">
+        <div class="p-4 rounded-2xl mb-4" style="background: var(--pb-bg-elevated)">
           <Globe :size="48" class="text-slate-600" />
         </div>
         <p class="text-sm mb-2 max-w-md text-slate-500">
@@ -394,8 +397,8 @@ onUnmounted(() => {
           or create standalone monitors using the button above.
         </p>
         <p class="text-sm max-w-md text-slate-500">
-          Add the <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.endpoint.http</code>
-          or <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.endpoint.tcp</code>
+          Add the <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.http</code>
+          or <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.tcp</code>
           {{ labelOrAnnotation }} with the target URL.
         </p>
       </div>
@@ -403,7 +406,7 @@ onUnmounted(() => {
       <!-- Endpoint grid — overlays on top -->
       <div
         v-if="store.filteredEndpoints.length > 0"
-        class="absolute inset-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 content-start bg-[#0B0E13]"
+        class="absolute inset-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 content-start bg-pb-primary"
       >
         <EndpointCard
           v-for="ep in store.filteredEndpoints"

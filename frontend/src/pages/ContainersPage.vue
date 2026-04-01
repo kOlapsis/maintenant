@@ -44,7 +44,7 @@ function handleSelect(container: Container) {
   <div class="overflow-y-auto p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
     <div class="mb-6">
-      <h1 class="text-2xl font-black text-white">Containers</h1>
+      <h1 class="text-2xl font-black text-pb-primary">Containers</h1>
       <p class="mt-1 text-sm text-slate-500">
         Auto-discovered {{ store.runtimeLabel }} containers
       </p>
@@ -79,14 +79,14 @@ function handleSelect(container: Container) {
           <h3 class="text-sm font-medium text-pb-green-400">Customize with {{ labelOrAnnotation }}s</h3>
           <p class="mt-1 text-sm text-slate-400">
             Use {{ labelOrAnnotation }}s to configure container behavior:
-            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.ignore</code> to hide a container,
-            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.group</code> to group containers,
-            <code class="rounded-md px-1.5 py-0.5 text-xs bg-slate-900 text-slate-300">maintenant.alert.severity</code> to set alert severity.
+            <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.ignore</code> to hide a container,
+            <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.group</code> to group containers,
+            <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.alert.severity</code> to set alert severity.
           </p>
         </div>
         <button
           @click="dismissLabelTips()"
-          class="text-slate-500 hover:text-slate-300 shrink-0"
+          class="text-slate-500 hover:text-pb-secondary shrink-0"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" /></svg>
         </button>

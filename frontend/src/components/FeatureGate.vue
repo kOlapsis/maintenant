@@ -34,7 +34,7 @@ const enabled = computed(() => edition.value?.features[props.feature] === true)
       <!-- Default placeholder when no custom one is provided -->
       <div
         v-if="title"
-        class="relative w-full rounded-xl border border-zinc-800 bg-[#12151C] px-5 py-5"
+        class="relative w-full rounded-xl border border-zinc-800 bg-pb-surface px-5 py-5"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">

@@ -136,7 +136,7 @@ function handleWizardCreated(id: number) {
       <div class="flex gap-2">
         <button
           @click="showWizard = true; showForm = false"
-          class="rounded-md px-3 py-1.5 text-sm font-medium text-white"
+          class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary"
           style="background: var(--pb-accent)"
         >
           Add Channel
@@ -173,7 +173,7 @@ function handleWizardCreated(id: number) {
           <label for="ch-enabled" class="text-sm" style="color: var(--pb-text-secondary)">Enabled</label>
         </div>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-white" style="background: var(--pb-accent)">Save</button>
+          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-pb-primary" style="background: var(--pb-accent)">Save</button>
           <button type="button" @click="resetForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Cancel</button>
         </div>
       </form>
@@ -288,7 +288,7 @@ function handleWizardCreated(id: number) {
               </div>
             </div>
             <div class="flex gap-2">
-              <button @click="handleAddRule(ch.id)" class="rounded px-2 py-1 text-xs text-white" style="background: var(--pb-accent)">Add</button>
+              <button @click="handleAddRule(ch.id)" class="rounded px-2 py-1 text-xs text-pb-primary" style="background: var(--pb-accent)">Add</button>
               <button @click="showRuleForm = null; selectedSources = []; selectedSeverities = []" class="text-xs" style="color: var(--pb-text-muted)">Cancel</button>
             </div>
           </div>

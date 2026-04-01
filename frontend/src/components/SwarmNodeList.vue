@@ -97,7 +97,7 @@ function availabilityStyle(availability: string): string {
       <div
         v-for="node in sortedNodes"
         :key="node.node_id"
-        class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
+        class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
         @click="emit('select', node.node_id)"
       >
         <div class="flex items-center justify-between">
@@ -112,7 +112,7 @@ function availabilityStyle(availability: string): string {
             </div>
 
             <!-- Hostname -->
-            <span class="text-sm text-white font-medium truncate">{{ node.hostname }}</span>
+            <span class="text-sm text-pb-primary font-medium truncate">{{ node.hostname }}</span>
 
             <!-- Role badge -->
             <span

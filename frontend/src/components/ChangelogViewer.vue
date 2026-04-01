@@ -23,7 +23,7 @@ const props = defineProps<{
 </script>
 
 <template>
-  <div class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
+  <div class="bg-pb-primary rounded-xl p-4 border border-slate-800">
     <div class="flex items-center justify-between mb-2">
       <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Changelog</h4>
       <a

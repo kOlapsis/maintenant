@@ -52,12 +52,12 @@ async function copyFixCommand(cveId: string, command: string) {
     <div
       v-for="cve in cves"
       :key="cve.cve_id"
-      class="bg-[#0B0E13] rounded-xl p-3 border border-slate-800"
+      class="bg-pb-primary rounded-xl p-3 border border-slate-800"
     >
       <div class="flex items-center justify-between mb-1">
         <div class="flex items-center gap-2">
           <Shield :size="11" :class="getSeverityStyle(cve.severity).text" />
-          <span class="text-xs font-bold text-slate-200">{{ cve.cve_id }}</span>
+          <span class="text-xs font-bold text-pb-primary">{{ cve.cve_id }}</span>
           <span
             :class="[
               'px-1.5 py-0.5 rounded text-[9px] font-bold uppercase',
@@ -93,7 +93,7 @@ async function copyFixCommand(cveId: string, command: string) {
               {{ copiedFixId === cve.cve_id ? 'Copied!' : 'Copy' }}
             </button>
           </div>
-          <pre class="text-[10px] text-slate-300 bg-[#0a0c10] rounded-lg p-2 overflow-x-auto font-mono">{{ cve.fix_command }}</pre>
+          <pre class="text-[10px] text-pb-secondary bg-[#0a0c10] rounded-lg p-2 overflow-x-auto font-mono">{{ cve.fix_command }}</pre>
         </div>
       </div>
     </div>

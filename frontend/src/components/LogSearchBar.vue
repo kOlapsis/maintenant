@@ -57,7 +57,7 @@ const matchDisplay = computed(() => {
 <template>
   <div
     v-if="search.isOpen.value"
-    class="flex items-center gap-1.5 rounded-lg border bg-[#0B0E13] px-2 py-1"
+    class="flex items-center gap-1.5 rounded-lg border bg-pb-primary px-2 py-1"
     :class="search.isValid.value ? 'border-slate-800' : 'border-red-500'"
   >
     <input
@@ -65,7 +65,7 @@ const matchDisplay = computed(() => {
       type="text"
       :value="search.query.value"
       placeholder="Search logs..."
-      class="w-32 bg-transparent text-xs text-white placeholder-slate-600 outline-none sm:w-48"
+      class="w-32 bg-transparent text-xs text-pb-primary placeholder-slate-600 outline-none sm:w-48"
       @input="onInput"
       @keydown="onKeydown"
     />
@@ -81,8 +81,8 @@ const matchDisplay = computed(() => {
     <button
       class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
       :class="search.isCaseSensitive.value
-        ? 'bg-slate-700 text-slate-200'
-        : 'text-slate-500 hover:text-slate-300'"
+        ? 'bg-slate-700 text-pb-primary'
+        : 'text-slate-500 hover:text-pb-secondary'"
       title="Match Case"
       @click="search.toggleCaseSensitive()"
     >Aa</button>
@@ -91,15 +91,15 @@ const matchDisplay = computed(() => {
     <button
       class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
       :class="search.isRegex.value
-        ? 'bg-slate-700 text-slate-200'
-        : 'text-slate-500 hover:text-slate-300'"
+        ? 'bg-slate-700 text-pb-primary'
+        : 'text-slate-500 hover:text-pb-secondary'"
       title="Use Regular Expression"
       @click="search.toggleRegex()"
     >.*</button>
 
     <!-- Navigation -->
     <button
-      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-slate-300"
+      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
       title="Previous Match (Shift+Enter)"
       :disabled="search.matches.value.length === 0"
       @click="search.prevMatch()"
@@ -107,7 +107,7 @@ const matchDisplay = computed(() => {
       <ChevronUp :size="12" />
     </button>
     <button
-      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-slate-300"
+      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
       title="Next Match (Enter)"
       :disabled="search.matches.value.length === 0"
       @click="search.nextMatch()"
@@ -117,7 +117,7 @@ const matchDisplay = computed(() => {
 
     <!-- Close -->
     <button
-      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-slate-300"
+      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
       title="Close (Escape)"
       @click="search.close()"
     >

@@ -300,7 +300,7 @@ const summaryCards = computed(() => {
       trendUp: null,
       icon: Activity,
       iconColor: 'text-pb-green-500',
-      valueColor: 'text-white',
+      valueColor: 'text-pb-primary',
     },
     {
       title: 'Response Time',
@@ -310,7 +310,7 @@ const summaryCards = computed(() => {
       trendUp: null,
       icon: Zap,
       iconColor: 'text-amber-500',
-      valueColor: 'text-white',
+      valueColor: 'text-pb-primary',
     },
     {
       title: 'Host Resources',
@@ -320,7 +320,7 @@ const summaryCards = computed(() => {
       trendUp: null,
       icon: Cpu,
       iconColor: 'text-emerald-500',
-      valueColor: cpuVal > 80 ? 'text-rose-400' : cpuVal > 60 ? 'text-amber-400' : 'text-white',
+      valueColor: cpuVal > 80 ? 'text-rose-400' : cpuVal > 60 ? 'text-amber-400' : 'text-pb-primary',
     },
     {
       title: 'SSL Certificates',
@@ -330,7 +330,7 @@ const summaryCards = computed(() => {
       trendUp: null,
       icon: Shield,
       iconColor: 'text-pb-green-400',
-      valueColor: certExpiring > 0 ? 'text-rose-400' : 'text-white',
+      valueColor: certExpiring > 0 ? 'text-rose-400' : 'text-pb-primary',
     },
   ]
 })
@@ -365,10 +365,10 @@ onUnmounted(() => {
           <div
             v-for="card in summaryCards"
             :key="card.title"
-            class="bg-[#12151C] p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 hover:border-slate-700 transition-all shadow-lg group cursor-default"
+            class="bg-pb-surface p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 hover:border-slate-700 transition-all shadow-lg group cursor-default"
           >
             <div class="flex justify-between items-start mb-2 sm:mb-4">
-              <div class="p-1.5 sm:p-2.5 bg-[#0B0E13] rounded-lg sm:rounded-xl group-hover:scale-105 transition-transform">
+              <div class="p-1.5 sm:p-2.5 bg-pb-primary rounded-lg sm:rounded-xl group-hover:scale-105 transition-transform">
                 <component :is="card.icon" :size="14" class="sm:!w-[18px] sm:!h-[18px]" :class="card.iconColor" />
               </div>
               <span
@@ -390,10 +390,10 @@ onUnmounted(() => {
           <RouterLink
             v-if="showPosture"
             to="/security"
-            class="bg-[#12151C] p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 hover:border-slate-700 transition-all shadow-lg group cursor-pointer"
+            class="bg-pb-surface p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 hover:border-slate-700 transition-all shadow-lg group cursor-pointer"
           >
             <div class="flex justify-between items-start mb-2 sm:mb-4">
-              <div class="p-1.5 sm:p-2.5 bg-[#0B0E13] rounded-lg sm:rounded-xl group-hover:scale-105 transition-transform">
+              <div class="p-1.5 sm:p-2.5 bg-pb-primary rounded-lg sm:rounded-xl group-hover:scale-105 transition-transform">
                 <ShieldCheck :size="14" class="sm:!w-[18px] sm:!h-[18px]" :class="{
                   'text-emerald-500': postureStore.posture!.color === 'green',
                   'text-amber-500': postureStore.posture!.color === 'yellow',
@@ -417,11 +417,11 @@ onUnmounted(() => {
         <UpdateSummaryStrip />
 
         <!-- Monitor Table -->
-        <div class="bg-[#12151C] rounded-xl sm:rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
+        <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
           <!-- Table header -->
           <div class="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-800 flex flex-wrap justify-between items-center gap-3">
             <div>
-              <h2 class="text-sm sm:text-base font-bold text-white">Unified Monitors</h2>
+              <h2 class="text-sm sm:text-base font-bold text-pb-primary">Unified Monitors</h2>
               <p class="text-[10px] sm:text-xs text-slate-500 mt-0.5">Docker auto-discovery and external probes</p>
             </div>
             <div class="flex items-center gap-2">
@@ -431,7 +431,7 @@ onUnmounted(() => {
                   'px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 sm:gap-2 border',
                   hasActiveFilters
                     ? 'bg-pb-green-600/20 text-pb-green-400 border-pb-green-500/40 hover:bg-pb-green-600/30'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700',
+                    : 'bg-slate-800 hover:bg-slate-700 text-pb-primary border-slate-700',
                 ]"
               >
                 <Filter :size="13" />
@@ -440,7 +440,7 @@ onUnmounted(() => {
               </button>
               <RouterLink
                 to="/heartbeats"
-                class="px-2.5 sm:px-3.5 py-1.5 bg-pb-green-600 hover:bg-pb-green-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 shadow-lg shadow-pb-green-500/20"
+                class="px-2.5 sm:px-3.5 py-1.5 bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 shadow-lg shadow-pb-green-500/20"
               >
                 <Zap :size="13" class="fill-white" />
                 <span class="hidden sm:inline">Add monitor</span>
@@ -450,16 +450,17 @@ onUnmounted(() => {
           </div>
 
           <!-- Filter bar -->
-          <div v-if="filterOpen" class="px-6 py-4 border-b border-slate-800 bg-[#0B0E13]/40 flex flex-wrap items-center gap-3">
+          <div v-if="filterOpen" class="px-6 py-4 border-b border-slate-800 bg-pb-primary/40 flex flex-wrap items-center gap-3">
             <input
               v-model="filterSearch"
               type="text"
               placeholder="Search monitors..."
-              class="px-3 py-1.5 bg-[#0B0E13] border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-pb-green-500 w-full sm:w-52"
+              class="px-3 py-1.5 bg-pb-primary border border-slate-700 rounded-lg text-xs text-pb-primary placeholder-slate-600 focus:outline-none focus:border-pb-green-500 w-full sm:w-52"
             />
             <select
               v-model="filterType"
-              class="px-3 py-1.5 bg-[#0B0E13] border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-pb-green-500 appearance-none cursor-pointer"
+              class="px-3 py-1.5 rounded-lg text-xs focus:outline-none focus:border-pb-green-500 appearance-none cursor-pointer"
+              style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
             >
               <option value="">All types</option>
               <option value="container">Container</option>
@@ -473,7 +474,7 @@ onUnmounted(() => {
                 'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
                 filterIncidents
                   ? 'bg-rose-500/15 text-rose-400 border-rose-500/40'
-                  : 'bg-[#0B0E13] text-slate-400 border-slate-700 hover:border-slate-600',
+                  : 'bg-pb-primary text-slate-400 border-slate-700 hover:border-slate-600',
               ]"
             >
               Incidents only
@@ -481,7 +482,7 @@ onUnmounted(() => {
             <button
               v-if="hasActiveFilters"
               @click="clearFilters"
-              class="px-3 py-1.5 text-[10px] text-slate-500 hover:text-slate-300 font-bold uppercase tracking-widest transition-colors"
+              class="px-3 py-1.5 text-[10px] text-slate-500 hover:text-pb-secondary font-bold uppercase tracking-widest transition-colors"
             >
               Clear
             </button>
@@ -502,7 +503,7 @@ onUnmounted(() => {
                 <div :class="['w-2.5 h-2.5 rounded-full shrink-0', statusDotClass(service.status)]" />
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center justify-between gap-2">
-                    <p class="text-sm font-semibold text-slate-100 truncate">{{ service.name }}</p>
+                    <p class="text-sm font-semibold text-pb-primary truncate">{{ service.name }}</p>
                     <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[9px] font-bold uppercase tracking-wider border border-slate-700/60 shrink-0">
                       {{ typeLabels[service.type] || service.type }}
                     </span>
@@ -534,7 +535,7 @@ onUnmounted(() => {
           <div class="hidden md:block overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
-                <tr class="bg-[#0B0E13]/60 text-slate-500 text-[10px] uppercase tracking-widest font-bold border-b border-slate-800/60">
+                <tr class="bg-pb-primary/60 text-slate-500 text-[10px] uppercase tracking-widest font-bold border-b border-slate-800/60">
                   <th class="px-6 py-3.5">Status / Name</th>
                   <th class="px-6 py-3.5">Type</th>
                   <th class="px-6 py-3.5">Details / Resources</th>
@@ -554,7 +555,7 @@ onUnmounted(() => {
                     <div class="flex items-center gap-4">
                       <div :class="['w-2.5 h-2.5 rounded-full shrink-0', statusDotClass(service.status)]" />
                       <div class="min-w-0">
-                        <p class="text-sm font-semibold text-slate-100 group-hover:text-pb-green-400 transition-colors truncate">
+                        <p class="text-sm font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors truncate">
                           {{ service.name }}
                         </p>
                         <p class="text-[10px] text-slate-600 mt-0.5 flex items-center gap-1 truncate">
@@ -584,7 +585,7 @@ onUnmounted(() => {
                         :color="service.status === 'down' ? '#475569' : '#3b82f6'"
                       />
                       <div class="text-[9px] space-y-0.5">
-                        <p class="text-slate-200 font-mono font-bold">{{ service.metricValue }}</p>
+                        <p class="text-pb-primary font-mono font-bold">{{ service.metricValue }}</p>
                         <p class="text-slate-600 uppercase tracking-tighter">{{ service.metricLabel }}</p>
                       </div>
                     </div>
@@ -622,7 +623,7 @@ onUnmounted(() => {
                   <!-- Actions -->
                   <td class="px-6 py-4 text-right">
                     <button
-                      class="p-1.5 text-slate-600 hover:text-slate-300 hover:bg-slate-700/60 rounded-lg transition-all"
+                      class="p-1.5 text-slate-600 hover:text-pb-secondary hover:bg-slate-700/60 rounded-lg transition-all"
                       @click.stop="selectService(service)"
                     >
                       <MoreVertical :size="16" />
@@ -649,9 +650,9 @@ onUnmounted(() => {
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-5">
 
           <!-- Incident Activity Feed -->
-          <div class="lg:col-span-2 bg-[#12151C] rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
+          <div class="lg:col-span-2 bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
             <div class="flex justify-between items-center mb-5">
-              <h3 class="text-sm font-bold text-white flex items-center gap-2.5">
+              <h3 class="text-sm font-bold text-pb-primary flex items-center gap-2.5">
                 <Activity :size="15" class="text-pb-green-500" />
                 Incident Activity Feed
               </h3>
@@ -676,7 +677,7 @@ onUnmounted(() => {
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex justify-between items-center mb-0.5">
-                    <span class="text-xs font-semibold text-slate-200 group-hover:text-pb-green-400 transition-colors tracking-tight truncate mr-3">{{ inc.service }}</span>
+                    <span class="text-xs font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors tracking-tight truncate mr-3">{{ inc.service }}</span>
                     <span class="text-[10px] text-slate-600 font-bold shrink-0">{{ inc.time }}</span>
                   </div>
                   <p class="text-[11px] text-slate-500 truncate">{{ inc.message }}</p>
@@ -695,10 +696,10 @@ onUnmounted(() => {
           </div>
 
           <!-- Host Resources -->
-          <div class="bg-[#12151C] rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
+          <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
             <div class="flex items-center gap-2.5 mb-5">
               <Server :size="15" class="text-emerald-500" />
-              <h3 class="text-sm font-bold text-white">Host Resources</h3>
+              <h3 class="text-sm font-bold text-pb-primary">Host Resources</h3>
             </div>
 
             <div class="space-y-5">
@@ -706,9 +707,9 @@ onUnmounted(() => {
               <div class="space-y-1.5">
                 <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
                   <span class="text-slate-500">CPU Usage</span>
-                  <span class="text-slate-200">{{ Math.round(totalCpu) }}%</span>
+                  <span class="text-pb-primary">{{ Math.round(totalCpu) }}%</span>
                 </div>
-                <div class="h-1.5 w-full bg-[#0B0E13] rounded-full border border-slate-800 overflow-hidden">
+                <div class="h-1.5 w-full bg-pb-primary rounded-full border border-slate-800 overflow-hidden">
                   <div
                     class="h-full rounded-full transition-all duration-700"
                     :class="gaugeBarColor(totalCpu)"
@@ -721,11 +722,11 @@ onUnmounted(() => {
               <div class="space-y-1.5">
                 <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
                   <span class="text-slate-500">RAM Memory</span>
-                  <span class="text-slate-200 text-right">
+                  <span class="text-pb-primary text-right">
                     {{ resources.formatBytes(totalMemUsed) }} / {{ resources.formatBytes(totalMemLimit) }}
                   </span>
                 </div>
-                <div class="h-1.5 w-full bg-[#0B0E13] rounded-full border border-slate-800 overflow-hidden">
+                <div class="h-1.5 w-full bg-pb-primary rounded-full border border-slate-800 overflow-hidden">
                   <div
                     class="h-full rounded-full transition-all duration-700"
                     :class="gaugeBarColor(memPercent, { warn: 70, crit: 85 })"
@@ -738,11 +739,11 @@ onUnmounted(() => {
               <div class="pt-4 border-t border-slate-800 space-y-2.5">
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
                   <span class="text-slate-500">Containers</span>
-                  <span class="text-slate-300 font-mono">{{ Object.keys(resources.snapshots).length }} active</span>
+                  <span class="text-pb-secondary font-mono">{{ Object.keys(resources.snapshots).length }} active</span>
                 </div>
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
                   <span class="text-slate-500">Monitors</span>
-                  <span class="text-slate-300 font-mono">{{ dashboard.monitors.length }} total</span>
+                  <span class="text-pb-secondary font-mono">{{ dashboard.monitors.length }} total</span>
                 </div>
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
                   <span class="text-slate-500">Availability</span>

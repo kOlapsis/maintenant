@@ -59,7 +59,7 @@ function shortImage(image: string | undefined): string {
 </script>
 
 <template>
-  <div class="bg-[#12151C] rounded-xl border border-slate-800 p-4">
+  <div class="bg-pb-surface rounded-xl border border-slate-800 p-4">
     <div class="flex items-center justify-between mb-3">
       <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Rolling Update</p>
       <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border', stateStyle(status.state)]">
@@ -73,7 +73,7 @@ function shortImage(image: string | undefined): string {
         <span>{{ status.tasks_updated ?? 0 }}/{{ status.tasks_total }} tasks updated</span>
         <span class="tabular-nums">{{ progressPercent }}%</span>
       </div>
-      <div class="h-1.5 bg-[#0B0E13] border border-slate-800 rounded-full overflow-hidden">
+      <div class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden">
         <div
           class="h-full rounded-full transition-all duration-500"
           :class="status.state === 'updating' ? 'bg-sky-500' : status.state === 'completed' ? 'bg-emerald-500' : 'bg-amber-500'"
@@ -86,7 +86,7 @@ function shortImage(image: string | undefined): string {
     <div v-if="status.old_image || status.new_image" class="flex items-center gap-2 text-xs mb-2">
       <span v-if="status.old_image" class="text-slate-500 truncate max-w-40">{{ shortImage(status.old_image) }}</span>
       <span v-if="status.old_image && status.new_image" class="text-slate-600">→</span>
-      <span v-if="status.new_image" class="text-slate-300 truncate max-w-40">{{ shortImage(status.new_image) }}</span>
+      <span v-if="status.new_image" class="text-pb-secondary truncate max-w-40">{{ shortImage(status.new_image) }}</span>
     </div>
 
     <!-- Timestamps -->

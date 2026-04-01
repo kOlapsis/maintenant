@@ -41,12 +41,12 @@ const iconColorClasses: Record<string, string> = {
 <template>
   <RouterLink
     :to="link"
-    class="block bg-[#12151C] p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all shadow-lg"
+    class="block bg-pb-surface p-5 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all shadow-lg"
   >
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-3">
         <!-- Icon in square container -->
-        <div class="p-2.5 bg-slate-900 rounded-xl">
+        <div class="p-2.5 rounded-xl" style="background: var(--pb-bg-elevated)">
           <component
             :is="iconComponents[icon] || Box"
             :size="20"
@@ -56,7 +56,7 @@ const iconColorClasses: Record<string, string> = {
         <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{{ title }}</span>
       </div>
     </div>
-    <div class="text-2xl font-black text-white mb-3">{{ total }}</div>
+    <div class="text-2xl font-black text-pb-primary mb-3">{{ total }}</div>
     <div class="flex items-center gap-2">
       <span
         v-if="counts.ok > 0"

@@ -18,8 +18,9 @@ import { useDashboardStore } from '@/stores/dashboard'
 import { useAlertsStore } from '@/stores/alerts'
 import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
-import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu } from 'lucide-vue-next'
+import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
+import { useTheme } from '@/composables/useTheme'
 
 const router = useRouter()
 const dashboard = useDashboardStore()
@@ -121,10 +122,25 @@ function barColor(value: number): string {
   if (value >= 70) return '#f59e0b'
   return '#10b981'
 }
+
+const { theme, setTheme } = useTheme()
+
+const themeOrder = ['system', 'light', 'dark'] as const
+
+function cycleTheme() {
+  const idx = themeOrder.indexOf(theme.value)
+  setTheme(themeOrder[(idx + 1) % themeOrder.length]!)
+}
+
+const themeTooltip = computed(() => {
+  if (theme.value === 'light') return 'Light mode'
+  if (theme.value === 'dark') return 'Dark mode'
+  return 'Follow system theme'
+})
 </script>
 
 <template>
-  <header class="hidden md:flex h-16 shrink-0 border-b border-slate-800 items-center justify-between px-6 bg-[#12151C]/60 backdrop-blur-md z-10">
+  <header class="hidden md:flex h-16 shrink-0 border-b border-slate-800 items-center justify-between px-6 bg-pb-surface/60 backdrop-blur-md z-10">
     <div class="flex items-center gap-5">
       <!-- Search -->
       <div class="relative group">
@@ -136,7 +152,7 @@ function barColor(value: number): string {
           v-model="dashboard.searchQuery"
           type="text"
           placeholder="Search services..."
-          class="bg-[#0B0E13] border border-slate-800 rounded-lg py-2 pl-9 pr-4 text-sm w-72 focus:outline-none focus:ring-1 focus:ring-pb-green-500/60 focus:border-pb-green-500/40 transition-all text-slate-200 placeholder:text-slate-600"
+          class="bg-pb-primary border border-slate-800 rounded-lg py-2 pl-9 pr-4 text-sm w-72 focus:outline-none focus:ring-1 focus:ring-pb-green-500/60 focus:border-pb-green-500/40 transition-all text-pb-primary placeholder:text-slate-500"
         />
       </div>
 
@@ -206,10 +222,22 @@ function barColor(value: number): string {
       </div>
     </div>
 
-    <!-- Right: runtime badge + bell -->
+    <!-- Right: runtime badge + theme toggle + bell -->
     <div class="flex items-center gap-4">
       <!-- Runtime badge with popover -->
       <RuntimeBadge />
+
+      <!-- Theme toggle -->
+      <button
+        @click="cycleTheme"
+        :title="themeTooltip"
+        :aria-label="themeTooltip"
+        class="p-2 text-slate-400 hover:text-pb-primary hover:bg-slate-800 rounded-lg transition-all"
+      >
+        <Sun v-if="theme === 'light'" :size="18" />
+        <Moon v-else-if="theme === 'dark'" :size="18" />
+        <Monitor v-else :size="18" />
+      </button>
 
       <div
         class="relative"
@@ -218,7 +246,7 @@ function barColor(value: number): string {
       >
         <button
           @click="onBellClick"
-          class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all relative"
+          class="p-2 text-slate-400 hover:text-pb-primary hover:bg-slate-800 rounded-lg transition-all relative"
         >
           <Bell :size="18" />
           <span
@@ -244,7 +272,7 @@ function barColor(value: number): string {
         >
           <div
             v-if="bellOpen"
-            class="absolute right-0 top-full mt-2 w-56 rounded-xl border border-slate-700 bg-[#12151C] shadow-2xl shadow-black/40 overflow-hidden z-50"
+            class="absolute right-0 top-full mt-2 w-56 rounded-xl border border-slate-700 bg-pb-surface shadow-2xl shadow-black/40 overflow-hidden z-50"
             @mouseenter="onBellEnter"
             @mouseleave="onBellLeave"
           >
@@ -262,7 +290,7 @@ function barColor(value: number): string {
                 v-for="source in sourceKeys"
                 :key="source"
                 @click="navigateToSource(source)"
-                class="w-full flex items-center gap-3 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/60 transition-colors"
+                class="w-full flex items-center gap-3 px-3 py-2 text-sm text-pb-secondary hover:bg-slate-800/60 transition-colors"
               >
                 <component
                   :is="sourceRouteMap[source]?.icon ?? AlertTriangle"
@@ -282,7 +310,7 @@ function barColor(value: number): string {
             <div class="border-t border-slate-800">
               <button
                 @click="navigateToSource('_all')"
-                class="w-full px-3 py-2 text-[11px] font-medium text-slate-500 hover:text-slate-300 hover:bg-slate-800/40 transition-colors text-center"
+                class="w-full px-3 py-2 text-[11px] font-medium text-slate-500 hover:text-pb-secondary hover:bg-slate-800/40 transition-colors text-center"
               >
                 View all alerts
               </button>

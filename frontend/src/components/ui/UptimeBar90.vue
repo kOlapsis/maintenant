@@ -80,7 +80,7 @@ function formatUptime(pct: number | null): string {
     <Teleport to="body">
       <div
         v-if="tooltip.visible && tooltip.day && !compact"
-        class="fixed z-[9999] pointer-events-none whitespace-nowrap bg-[#12151C] text-white border border-slate-800 rounded-lg px-3 py-2 text-xs shadow-xl"
+        class="fixed z-[9999] pointer-events-none whitespace-nowrap bg-pb-surface text-pb-primary border border-slate-800 rounded-lg px-3 py-2 text-xs shadow-xl"
         :style="{
           left: tooltip.x + 'px',
           top: (tooltip.y - 8) + 'px',

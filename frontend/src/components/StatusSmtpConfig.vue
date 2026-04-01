@@ -148,7 +148,7 @@ function onPasswordInput() {
         <button
           type="submit"
           :disabled="saving"
-          class="rounded-md px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          class="rounded-md px-4 py-1.5 text-sm font-medium text-pb-primary disabled:opacity-50"
           style="background: var(--pb-accent)"
         >
           {{ saving ? 'Saving...' : 'Save' }}

@@ -134,7 +134,7 @@ async function save() {
       <!-- Save button -->
       <div class="flex items-center gap-2">
         <button
-          class="rounded bg-pb-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-pb-green-700 disabled:opacity-50"
+          class="rounded bg-pb-green-600 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-pb-green-700 disabled:opacity-50"
           :disabled="saving"
           @click="save"
         >

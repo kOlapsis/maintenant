@@ -55,7 +55,7 @@ onUnmounted(() => {
       <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-bold text-white">Security Posture</h1>
+          <h1 class="text-xl font-bold text-pb-primary">Security Posture</h1>
           <p class="text-xs text-slate-500 mt-0.5">
             <template v-if="posture">{{ posture.scored_count }}/{{ posture.container_count }} containers scored</template>
             <template v-else>Infrastructure-wide security scoring</template>
@@ -93,7 +93,7 @@ onUnmounted(() => {
           <!-- Score + Category summary -->
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <!-- Global score card -->
-            <div class="bg-[#12151C] rounded-xl p-4 border border-slate-800 flex flex-col items-center justify-center">
+            <div class="bg-pb-surface rounded-xl p-4 border border-slate-800 flex flex-col items-center justify-center">
               <PostureScoreBadge :score="posture.score" :color="posture.color" size="md" />
               <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2">Score</p>
             </div>
@@ -102,7 +102,7 @@ onUnmounted(() => {
             <div
               v-for="cat in posture.categories"
               :key="cat.name"
-              class="bg-[#12151C] rounded-xl p-4 border border-slate-800"
+              class="bg-pb-surface rounded-xl p-4 border border-slate-800"
             >
               <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">{{ cat.name.replace('_', ' ') }}</div>
               <p class="text-2xl font-black" :class="cat.total_issues > 0 ? 'text-amber-400' : 'text-slate-600'">
@@ -114,7 +114,7 @@ onUnmounted(() => {
 
           <!-- Top risks -->
           <div v-if="posture.top_risks.length > 0">
-            <h2 class="text-sm font-bold text-white mb-3">Top Risks</h2>
+            <h2 class="text-sm font-bold text-pb-primary mb-3">Top Risks</h2>
             <PostureContainerList :risks="posture.top_risks" @select="handleSelectContainer" />
           </div>
         </template>

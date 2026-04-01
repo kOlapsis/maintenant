@@ -141,9 +141,9 @@ function formatDate(iso: string) {
 </script>
 
 <template>
-  <div class="min-h-screen" style="background: #0B0E13; color: #E8ECF4">
+  <div class="min-h-screen bg-pb-primary text-pb-primary">
     <!-- Header -->
-    <header class="border-b border-slate-800 bg-[#12151C]">
+    <header class="border-b border-slate-800 bg-pb-surface">
       <div class="mx-auto max-w-3xl px-6 py-5 flex items-center justify-between">
         <img src="/logo.svg" alt="maintenant"/>
         <span class="text-xs text-slate-500 font-medium">Public Status Page</span>
@@ -152,7 +152,7 @@ function formatDate(iso: string) {
 
     <!-- Organisation title -->
     <div v-if="organisationName" class="mx-auto max-w-3xl px-6 pt-10 pb-2 text-center">
-      <h1 class="text-3xl font-black text-white tracking-tight">{{ organisationName }}</h1>
+      <h1 class="text-3xl font-black text-pb-primary tracking-tight">{{ organisationName }}</h1>
       <p class="text-sm text-slate-500 mt-1">Service Status</p>
     </div>
 
@@ -168,7 +168,7 @@ function formatDate(iso: string) {
 
     <template v-else-if="data">
       <!-- Global banner -->
-      <div :class="['py-10 text-white text-center', globalBanner.bg]">
+      <div :class="['py-10 text-pb-primary text-center', globalBanner.bg]">
         <div class="mx-auto max-w-3xl px-6">
           <div class="text-3xl font-black tracking-tight mb-1">
             {{ globalBanner.icon }} {{ globalBanner.text }}
@@ -190,13 +190,13 @@ function formatDate(iso: string) {
                 v-if="data.groups.length > 1 && group.name !== 'Other'"
                 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3"
               >{{ group.name }}</h2>
-              <div class="rounded-xl border border-slate-800 bg-[#12151C] divide-y divide-slate-800">
+              <div class="rounded-xl border border-slate-800 bg-pb-surface divide-y divide-slate-800">
                 <div
                   v-for="comp in group.components"
                   :key="comp.id"
                   class="flex items-center justify-between px-5 py-3.5"
                 >
-                  <span class="text-sm font-medium text-slate-200">{{ comp.name }}</span>
+                  <span class="text-sm font-medium text-pb-primary">{{ comp.name }}</span>
                   <div class="flex items-center gap-2">
                     <span :class="['text-xs font-medium', componentStatusStyle(comp.status).text]">
                       {{ componentStatusStyle(comp.status).label }}
@@ -223,7 +223,7 @@ function formatDate(iso: string) {
               :class="['rounded-xl border p-5', incidentSeverityStyle(inc.severity)]"
             >
               <div class="flex items-start justify-between gap-3 mb-2">
-                <span class="font-semibold text-slate-100 text-sm">{{ inc.title }}</span>
+                <span class="font-semibold text-pb-primary text-sm">{{ inc.title }}</span>
                 <span class="shrink-0 text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
                   {{ incidentStatusLabel(inc.status) }}
                 </span>
@@ -255,7 +255,7 @@ function formatDate(iso: string) {
               class="rounded-xl border border-pb-green-500/30 bg-pb-green-500/5 p-5"
             >
               <div class="flex items-start justify-between gap-3 mb-1">
-                <span class="font-semibold text-slate-100 text-sm">{{ maint.title }}</span>
+                <span class="font-semibold text-pb-primary text-sm">{{ maint.title }}</span>
                 <span class="shrink-0 text-[10px] px-2 py-0.5 rounded bg-pb-green-500/15 text-pb-green-400 border border-pb-green-500/30 font-medium">
                   Scheduled
                 </span>

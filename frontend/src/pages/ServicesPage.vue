@@ -104,7 +104,7 @@ function handleSelect(svc: SwarmServiceResponse) {
     <div class="max-w-7xl mx-auto">
       <!-- Page header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-black text-white">Services</h1>
+        <h1 class="text-2xl font-black text-pb-primary">Services</h1>
         <p class="mt-1 text-sm text-slate-500">Swarm services grouped by stack</p>
       </div>
 
@@ -116,7 +116,7 @@ function handleSelect(svc: SwarmServiceResponse) {
       <!-- Empty -->
       <div
         v-else-if="services.length === 0"
-        class="bg-[#12151C] rounded-xl border border-slate-800 px-6 py-12 text-center"
+        class="bg-pb-surface rounded-xl border border-slate-800 px-6 py-12 text-center"
       >
         <Layers :size="32" class="mx-auto mb-3 text-slate-600" />
         <p class="text-sm text-slate-500">No services found</p>
@@ -128,7 +128,7 @@ function handleSelect(svc: SwarmServiceResponse) {
         <div
           v-for="group in groups"
           :key="group.stack"
-          class="bg-[#12151C] rounded-xl border border-slate-800 overflow-hidden"
+          class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden"
         >
           <!-- Group header -->
           <button
@@ -141,7 +141,7 @@ function handleSelect(svc: SwarmServiceResponse) {
                 :size="14"
                 class="text-slate-500 flex-shrink-0"
               />
-              <span class="text-sm font-semibold text-white">{{ group.stack }}</span>
+              <span class="text-sm font-semibold text-pb-primary">{{ group.stack }}</span>
               <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
                 {{ group.services.length }} service{{ group.services.length === 1 ? '' : 's' }}
               </span>
@@ -173,7 +173,7 @@ function handleSelect(svc: SwarmServiceResponse) {
               <div class="flex items-center justify-between gap-4">
                 <!-- Left: name + badges -->
                 <div class="flex items-center gap-2 min-w-0">
-                  <span class="text-sm text-white font-medium truncate group-hover:text-pb-green-400 transition-colors">
+                  <span class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors">
                     {{ svc.name }}
                   </span>
                   <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded flex-shrink-0">

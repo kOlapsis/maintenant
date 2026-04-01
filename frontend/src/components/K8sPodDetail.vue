@@ -78,7 +78,7 @@ function eventTypeStyle(type: string): string {
       <!-- Header -->
       <div class="px-6 pt-4 pb-3 border-b border-slate-800">
         <div class="min-w-0">
-          <h2 class="text-base font-bold text-white truncate font-mono">{{ detail.pod.name }}</h2>
+          <h2 class="text-base font-bold text-pb-primary truncate font-mono">{{ detail.pod.name }}</h2>
           <div class="flex items-center gap-2 mt-1 flex-wrap">
             <span class="text-[10px] font-mono text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
               {{ detail.pod.namespace }}
@@ -99,29 +99,29 @@ function eventTypeStyle(type: string): string {
         <div class="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
           <div>
             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Node</p>
-            <p class="text-slate-300 font-mono">{{ detail.pod.node_name || '—' }}</p>
+            <p class="text-pb-secondary font-mono">{{ detail.pod.node_name || '—' }}</p>
           </div>
           <div>
             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Pod IP</p>
-            <p class="text-slate-300 font-mono">{{ detail.pod.pod_ip || '—' }}</p>
+            <p class="text-pb-secondary font-mono">{{ detail.pod.pod_ip || '—' }}</p>
           </div>
           <div>
             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Host IP</p>
-            <p class="text-slate-300 font-mono">{{ detail.pod.host_ip || '—' }}</p>
+            <p class="text-pb-secondary font-mono">{{ detail.pod.host_ip || '—' }}</p>
           </div>
           <div>
             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Restarts</p>
-            <p :class="detail.pod.restart_count > 0 ? 'text-amber-400' : 'text-slate-300'" class="font-semibold tabular-nums">
+            <p :class="detail.pod.restart_count > 0 ? 'text-amber-400' : 'text-pb-secondary'" class="font-semibold tabular-nums">
               {{ detail.pod.restart_count }}
             </p>
           </div>
           <div v-if="detail.pod.workload_ref">
             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Workload</p>
-            <p class="text-slate-300 font-mono truncate">{{ detail.pod.workload_ref }}</p>
+            <p class="text-pb-secondary font-mono truncate">{{ detail.pod.workload_ref }}</p>
           </div>
           <div>
             <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Age</p>
-            <p class="text-slate-300">{{ timeAgo(detail.pod.created_at) }}</p>
+            <p class="text-pb-secondary">{{ timeAgo(detail.pod.created_at) }}</p>
           </div>
         </div>
       </div>
@@ -135,7 +135,7 @@ function eventTypeStyle(type: string): string {
             'px-4 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
             activeTab === tab.key
               ? 'border-pb-green-400 text-pb-green-400'
-              : 'border-transparent text-slate-500 hover:text-slate-300',
+              : 'border-transparent text-slate-500 hover:text-pb-secondary',
           ]"
           @click="activeTab = tab.key"
         >
@@ -162,10 +162,10 @@ function eventTypeStyle(type: string): string {
             <div
               v-for="container in detail.pod.containers"
               :key="container.name"
-              class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3"
+              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
             >
               <div class="flex items-center justify-between gap-3">
-                <span class="text-sm font-semibold text-white">{{ container.name }}</span>
+                <span class="text-sm font-semibold text-pb-primary">{{ container.name }}</span>
                 <div class="flex items-center gap-2">
                   <span
                     v-if="!container.ready"
@@ -195,7 +195,7 @@ function eventTypeStyle(type: string): string {
             <div
               v-for="(event, i) in detail.events"
               :key="i"
-              class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3"
+              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
             >
               <div class="flex items-start gap-3">
                 <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0 mt-0.5', eventTypeStyle(event.type)]">
@@ -203,7 +203,7 @@ function eventTypeStyle(type: string): string {
                 </span>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-slate-300">{{ event.reason }}</span>
+                    <span class="text-sm font-semibold text-pb-secondary">{{ event.reason }}</span>
                     <span v-if="event.count > 1" class="text-[10px] text-slate-600 tabular-nums">×{{ event.count }}</span>
                   </div>
                   <p class="text-xs text-slate-400 mt-0.5 leading-relaxed">{{ event.message }}</p>

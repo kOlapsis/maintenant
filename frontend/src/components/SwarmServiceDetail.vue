@@ -129,7 +129,7 @@ const tabs = hasFeature('swarm_dashboard')
       <div class="px-6 pt-4 pb-3 border-b border-slate-800">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
-            <h2 class="text-base font-bold text-white truncate">{{ detail.name }}</h2>
+            <h2 class="text-base font-bold text-pb-primary truncate">{{ detail.name }}</h2>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
                 {{ detail.mode }}
@@ -151,7 +151,7 @@ const tabs = hasFeature('swarm_dashboard')
         <div class="mt-3">
           <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Image</p>
           <div class="flex items-center gap-2">
-            <span class="text-xs text-slate-300 font-mono truncate">{{ imageTag(detail.image).name }}</span>
+            <span class="text-xs text-pb-secondary font-mono truncate">{{ imageTag(detail.image).name }}</span>
             <span class="text-[10px] font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded font-mono">
               {{ imageTag(detail.image).tag }}
             </span>
@@ -176,7 +176,7 @@ const tabs = hasFeature('swarm_dashboard')
             'px-4 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
             activeTab === tab.key
               ? 'border-pb-green-400 text-pb-green-400'
-              : 'border-transparent text-slate-500 hover:text-slate-300',
+              : 'border-transparent text-slate-500 hover:text-pb-secondary',
           ]"
           @click="onTabClick(tab.key)"
         >
@@ -200,10 +200,10 @@ const tabs = hasFeature('swarm_dashboard')
             <div
               v-for="(port, i) in detail.ports"
               :key="i"
-              class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3 flex items-center justify-between"
+              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3 flex items-center justify-between"
             >
               <div class="flex items-center gap-3">
-                <span class="text-sm font-mono text-white">
+                <span class="text-sm font-mono text-pb-primary">
                   {{ port.published_port ? `:${port.published_port}` : 'auto' }}
                   <span class="text-slate-500 mx-1">→</span>
                   :{{ port.target_port }}
@@ -228,9 +228,9 @@ const tabs = hasFeature('swarm_dashboard')
             <div
               v-for="net in detail.networks"
               :key="net.network_id"
-              class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3 flex items-center justify-between"
+              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3 flex items-center justify-between"
             >
-              <span class="text-sm text-white font-medium">{{ net.network_name }}</span>
+              <span class="text-sm text-pb-primary font-medium">{{ net.network_name }}</span>
               <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
                 {{ net.scope }}
               </span>
@@ -255,11 +255,11 @@ const tabs = hasFeature('swarm_dashboard')
               <div
                 v-for="tr in taskResources"
                 :key="tr.task_id"
-                class="bg-[#0B0E13] rounded-lg border border-slate-800 px-4 py-3"
+                class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
               >
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-white">Slot {{ tr.slot }}</span>
+                    <span class="text-sm font-semibold text-pb-primary">Slot {{ tr.slot }}</span>
                     <span v-if="tr.node_hostname" class="text-xs text-slate-500 font-mono">{{ tr.node_hostname }}</span>
                   </div>
                   <span v-if="tr.timestamp" class="text-[10px] text-slate-600">{{ timeAgo(tr.timestamp) }}</span>
@@ -273,7 +273,7 @@ const tabs = hasFeature('swarm_dashboard')
                       {{ tr.cpu_percent !== null ? `${tr.cpu_percent.toFixed(1)}%` : '-' }}
                     </span>
                   </div>
-                  <div class="h-1.5 bg-[#0B0E13] border border-slate-800 rounded-full overflow-hidden">
+                  <div class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden">
                     <div
                       :class="['h-full rounded-full transition-all', cpuColor(tr.cpu_percent)]"
                       :style="{ width: cpuBarWidth(tr.cpu_percent) }"
@@ -290,7 +290,7 @@ const tabs = hasFeature('swarm_dashboard')
                       <span v-if="tr.mem_percent !== null" class="text-slate-600 ml-1">({{ tr.mem_percent.toFixed(1) }}%)</span>
                     </span>
                   </div>
-                  <div class="h-1.5 bg-[#0B0E13] border border-slate-800 rounded-full overflow-hidden">
+                  <div class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden">
                     <div
                       :class="['h-full rounded-full transition-all', memColor(tr.mem_percent)]"
                       :style="{ width: tr.mem_percent !== null ? `${Math.min(tr.mem_percent, 100)}%` : '0%' }"

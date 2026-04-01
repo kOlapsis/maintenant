@@ -111,7 +111,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
         </select>
         <button
           @click="showCreateForm = true"
-          class="rounded-md px-3 py-1.5 text-sm font-medium text-white"
+          class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary"
           style="background: var(--pb-accent)"
         >
           Create Incident
@@ -148,7 +148,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
           <textarea v-model="createForm.message" required rows="2" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"></textarea>
         </div>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-white" style="background: var(--pb-accent)">Create</button>
+          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-pb-primary" style="background: var(--pb-accent)">Create</button>
           <button type="button" @click="resetCreateForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Cancel</button>
         </div>
       </form>
@@ -227,7 +227,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
               <textarea v-model="updateForm.message" required rows="2" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default); color: var(--pb-text-primary)"></textarea>
             </div>
             <div class="flex gap-2">
-              <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-white" style="background: var(--pb-accent)">Post Update</button>
+              <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-pb-primary" style="background: var(--pb-accent)">Post Update</button>
               <button type="button" @click="showUpdateForm = null" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Cancel</button>
             </div>
           </form>

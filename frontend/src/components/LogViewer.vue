@@ -48,7 +48,7 @@ const { expandedJsonIds, getActiveMatchOffset, toggleJsonExpand } =
     <!-- Loading -->
     <div
       v-if="logStream.status.value === 'connecting' && logStream.lines.value.length === 0"
-      class="flex justify-center rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] py-4"
+      class="flex justify-center rounded-b-xl border border-t-0 border-slate-800 bg-pb-primary py-4"
     >
       <div class="h-5 w-5 animate-spin rounded-full border-2 border-slate-700 border-t-pb-green-400" />
     </div>
@@ -56,7 +56,7 @@ const { expandedJsonIds, getActiveMatchOffset, toggleJsonExpand } =
     <!-- Error (no lines) -->
     <div
       v-else-if="logStream.error.value && logStream.lines.value.length === 0"
-      class="rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] p-3 text-sm text-red-400"
+      class="rounded-b-xl border border-t-0 border-slate-800 bg-pb-primary p-3 text-sm text-red-400"
     >
       {{ logStream.error.value }}
     </div>
@@ -64,7 +64,7 @@ const { expandedJsonIds, getActiveMatchOffset, toggleJsonExpand } =
     <!-- No logs -->
     <div
       v-else-if="logStream.lines.value.length === 0"
-      class="rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] py-4 text-center text-sm text-slate-500"
+      class="rounded-b-xl border border-t-0 border-slate-800 bg-pb-primary py-4 text-center text-sm text-slate-500"
     >
       No logs available
     </div>
@@ -73,7 +73,7 @@ const { expandedJsonIds, getActiveMatchOffset, toggleJsonExpand } =
     <div v-else class="relative min-h-0 flex-1">
       <div
         :ref="(el: any) => { logStream.scrollContainerRef.value = el }"
-        class="absolute inset-0 overflow-auto rounded-b-xl border border-t-0 border-slate-800 bg-[#0B0E13] px-2 py-1 font-mono text-[0.7rem] leading-relaxed text-white"
+        class="absolute inset-0 overflow-auto rounded-b-xl border border-t-0 border-slate-800 bg-pb-primary px-2 py-1 font-mono text-[0.7rem] leading-relaxed text-pb-primary"
         :class="logStream.wordWrap.value ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'"
         @scroll="logStream.handleScroll"
       >
@@ -100,7 +100,7 @@ const { expandedJsonIds, getActiveMatchOffset, toggleJsonExpand } =
     <!-- Error banner (with lines still visible) -->
     <div
       v-if="logStream.error.value && logStream.lines.value.length > 0"
-      class="mt-2 rounded-lg border border-slate-800 bg-[#12151C] px-3 py-2 text-xs text-slate-400"
+      class="mt-2 rounded-lg border border-slate-800 bg-pb-surface px-3 py-2 text-xs text-slate-400"
     >
       {{ logStream.error.value }}
     </div>

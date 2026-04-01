@@ -163,7 +163,7 @@ onUnmounted(() => {
           <button
             @click="silenceCustom"
             :disabled="submitting"
-            class="w-full rounded px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+            class="w-full rounded px-2 py-1 text-xs font-medium text-pb-primary disabled:opacity-50"
             style="background: var(--pb-accent)"
           >
             {{ submitting ? 'Creating...' : 'Apply Silence' }}

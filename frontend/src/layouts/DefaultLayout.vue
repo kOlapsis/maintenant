@@ -142,15 +142,16 @@ const mainNav = computed(() =>
 </script>
 
 <template>
-  <div class="flex h-screen bg-[#0B0E13] text-slate-200 antialiased overflow-hidden">
+  <div class="flex h-screen bg-pb-primary text-pb-primary antialiased overflow-hidden">
     <!-- Desktop sidebar -->
     <aside
-      class="hidden md:flex md:w-64 md:flex-col md:shrink-0 bg-[#12151C] border-r border-slate-800"
+      class="hidden md:flex md:w-64 md:flex-col md:shrink-0 bg-pb-surface border-r border-slate-800"
     >
       <div class="flex flex-col flex-1 overflow-y-auto">
         <!-- Logo -->
         <div class="p-6 flex items-center gap-3 shrink-0">
-          <img src="/icon.svg" alt="maintenant" />
+          <img src="/icon.svg" alt="" width="32" height="32" />
+          <span class="text-sm font-bold text-pb-primary">maintenant</span>
         </div>
 
         <!-- Main nav -->
@@ -163,7 +164,7 @@ const mainNav = computed(() =>
             :class="[
               route.path.startsWith(item.to)
                 ? 'bg-pb-green-500/10 text-pb-green-400 border-pb-green-500/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border-transparent',
+                : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
             ]"
           >
             <div class="flex items-center gap-3">
@@ -174,7 +175,7 @@ const mainNav = computed(() =>
                 :class="
                   route.path.startsWith(item.to)
                     ? 'text-pb-green-400'
-                    : 'text-slate-500 group-hover:text-slate-300'
+                    : 'text-slate-500 group-hover:text-pb-secondary'
                 "
               />
               <span class="text-sm font-medium">{{ item.label }}</span>
@@ -183,28 +184,30 @@ const mainNav = computed(() =>
         </nav>
 
         <!-- Bottom section: Edition -->
-        <div class="p-4 border-t border-slate-800 space-y-3 shrink-0">
+        <div class="p-4 border-t space-y-3 shrink-0" style="border-color: var(--pb-border-default)">
           <router-link :to="{ name: 'pro-edition' }">
-            <div class="bg-slate-800/40 rounded-xl p-3 border border-slate-700/40">
+            <div class="rounded-xl p-3 border" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)">
               <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isEnterprise }">
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
-                  :class="isEnterprise ? 'text-emerald-400' : 'text-slate-400'"
+                  :class="isEnterprise ? 'text-emerald-600' : 'text-pb-secondary'"
                   >{{ isEnterprise ? 'Pro Edition' : 'Community Edition' }}</span
                 >
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   :class="
                     isEnterprise
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-pb-green-500/20 text-pb-green-400 border border-pb-green-500/30'
+                      ? 'bg-emerald-500/20 text-emerald-600 border border-emerald-500/30'
+                      : 'text-pb-green-600 border border-pb-green-600/40'
                   "
+                  :style="!isEnterprise ? { background: 'var(--pb-bg-surface)' } : {}"
                   >{{ version }}</span
                 >
               </div>
               <button
                 v-if="!isEnterprise"
-                class="cursor-pointer block w-full py-1.5 bg-slate-700/50 text-slate-300 hover:text-slate-200 rounded-lg text-xs font-semibold text-center transition-colors"
+                class="cursor-pointer block w-full py-1.5 rounded-lg text-xs font-semibold text-center transition-colors"
+                style="background: var(--pb-bg-surface); color: var(--pb-text-secondary)"
               >
                 Pro Edition
               </button>
@@ -216,11 +219,11 @@ const mainNav = computed(() =>
 
     <!-- Mobile top bar -->
     <div
-      class="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-[#12151C]/90 backdrop-blur-md border-b border-slate-800"
+      class="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-pb-surface/90 backdrop-blur-md border-b border-slate-800"
     >
       <button
         @click="mobileMenuOpen = !mobileMenuOpen"
-        class="p-3 rounded-md text-slate-400 hover:text-white transition-colors"
+        class="p-3 rounded-md text-slate-400 hover:text-pb-primary transition-colors"
         aria-label="Toggle navigation"
       >
         <Menu v-if="!mobileMenuOpen" :size="20" />
@@ -228,7 +231,7 @@ const mainNav = computed(() =>
       </button>
       <div class="ml-3 flex items-center gap-2">
         <img src="/icon.svg" alt="maintenant" class="w-6 h-6 rounded-md" />
-        <span class="text-sm font-bold text-white">maintenant</span>
+        <span class="text-sm font-bold text-pb-primary">maintenant</span>
       </div>
       <div class="flex-1" />
     </div>
@@ -246,11 +249,11 @@ const mainNav = computed(() =>
     <Transition name="slide-left">
       <div
         v-if="mobileMenuOpen"
-        class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-[#12151C] border-r border-slate-800 flex flex-col"
+        class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-pb-surface border-r border-slate-800 flex flex-col"
       >
         <div class="p-6 flex items-center gap-3">
           <img src="/icon.svg" alt="maintenant" class="w-8 h-8 rounded-lg" />
-          <h1 class="text-xl font-bold tracking-tight text-white">maintenant</h1>
+          <h1 class="text-xl font-bold tracking-tight text-pb-primary">maintenant</h1>
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <RouterLink
@@ -261,7 +264,7 @@ const mainNav = computed(() =>
             :class="[
               route.path.startsWith(item.to)
                 ? 'bg-pb-green-500/10 text-pb-green-400 border-pb-green-500/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border-transparent',
+                : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
             ]"
             @click="closeMobileMenu"
           >

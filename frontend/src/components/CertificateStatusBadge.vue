@@ -23,14 +23,14 @@ const statusColors: Record<CertStatus, string> = {
   expiring: 'bg-yellow-100 text-yellow-800',
   expired: 'bg-red-100 text-red-800',
   error: 'bg-orange-100 text-orange-800',
-  unknown: 'bg-gray-100 text-slate-600',
+  unknown: 'bg-gray-100 text-slate-700',
 }
 </script>
 
 <template>
   <span
     class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-    :class="statusColors[status] || 'bg-gray-100 text-slate-600'"
+    :class="statusColors[status] || 'bg-gray-100 text-slate-700'"
   >
     {{ status }}
   </span>

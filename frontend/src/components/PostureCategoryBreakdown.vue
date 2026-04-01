@@ -43,10 +43,10 @@ function categoryLabel(name: string): string {
     <div
       v-for="cat in categories"
       :key="cat.name"
-      class="bg-[#12151C] rounded-xl p-4 border border-slate-800"
+      class="bg-pb-surface rounded-xl p-4 border border-slate-800"
     >
       <div class="mb-2 flex items-center justify-between">
-        <span class="text-sm font-semibold text-slate-200">
+        <span class="text-sm font-semibold text-pb-primary">
           {{ categoryLabel(cat.name) }}
         </span>
         <span class="text-[10px] text-slate-600 font-bold">{{ cat.weight }}%</span>
@@ -60,7 +60,7 @@ function categoryLabel(name: string): string {
           <span class="text-[10px] text-slate-600 font-bold">/100</span>
         </div>
 
-        <div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-[#0B0E13] border border-slate-800">
+        <div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-pb-primary border border-slate-800">
           <div
             class="h-full rounded-full transition-all duration-700"
             :class="barColorMap[scoreColor(cat.sub_score)]"

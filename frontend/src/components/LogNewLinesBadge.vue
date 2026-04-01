@@ -26,7 +26,7 @@ defineEmits<{
 <template>
   <div
     v-if="unseenCount > 0"
-    class="absolute bottom-4 left-1/2 -translate-x-1/2 cursor-pointer rounded-full bg-pb-green-600 px-3 py-1 text-sm text-white shadow-lg transition-all hover:bg-pb-green-500"
+    class="absolute bottom-4 left-1/2 -translate-x-1/2 cursor-pointer rounded-full bg-pb-green-600 px-3 py-1 text-sm text-slate-950 shadow-lg transition-all hover:bg-pb-green-500"
     @click="$emit('click')"
   >
     <ArrowDown :size="12" class="mr-1 inline-block" />

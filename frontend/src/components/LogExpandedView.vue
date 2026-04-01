@@ -51,10 +51,10 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[10000] flex flex-col bg-[#0B0E13]">
+    <div class="fixed inset-0 z-[10000] flex flex-col bg-pb-primary">
       <!-- Header -->
       <div class="flex items-center gap-3 border-b border-slate-800 px-4 py-2">
-        <span class="text-sm font-semibold text-white">{{ containerName }}</span>
+        <span class="text-sm font-semibold text-pb-primary">{{ containerName }}</span>
         <span class="flex-1" />
         <LogToolbar
           :is-expanded="true"
@@ -71,7 +71,7 @@ onUnmounted(() => {
       <div class="relative flex-1">
         <div
           :ref="(el: any) => { logStream.scrollContainerRef.value = el }"
-          class="absolute inset-0 overflow-auto px-2 py-1 font-mono text-[0.7rem] leading-relaxed text-white"
+          class="absolute inset-0 overflow-auto px-2 py-1 font-mono text-[0.7rem] leading-relaxed text-pb-primary"
           :class="logStream.wordWrap.value ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'"
           @scroll="logStream.handleScroll"
         >

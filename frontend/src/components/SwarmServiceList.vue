@@ -53,11 +53,11 @@ function updateStateStyle(state: string): string {
       <div
         v-for="svc in sortedServices"
         :key="svc.service_id"
-        class="bg-[#12151C] rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all"
+        class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all"
       >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3 min-w-0">
-            <span class="text-sm text-white font-medium truncate">{{ svc.name }}</span>
+            <span class="text-sm text-pb-primary font-medium truncate">{{ svc.name }}</span>
             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
               {{ svc.mode }}
             </span>

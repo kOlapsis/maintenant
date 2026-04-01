@@ -112,12 +112,12 @@ onMounted(loadDetail)
 
   <div v-else-if="detail" class="space-y-5">
     <!-- 1. Version info -->
-    <div class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
+    <div class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
       <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Version</h4>
       <div class="flex items-center gap-3">
         <div class="text-center">
           <p class="text-xs text-slate-500 mb-0.5">Current</p>
-          <p class="text-sm font-bold text-slate-200 font-mono">
+          <p class="text-sm font-bold text-pb-primary font-mono">
             {{ detail.current_tag || 'latest' }}
           </p>
         </div>
@@ -153,7 +153,7 @@ onMounted(loadDetail)
     <!-- 2. Tag Filter (when configured) -->
     <div
       v-if="detail.tag_include || detail.tag_exclude"
-      class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800"
+      class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
     >
       <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
         Tag Filter
@@ -171,7 +171,7 @@ onMounted(loadDetail)
     </div>
 
     <!-- 3. Update command -->
-    <div v-if="detail.update_command" class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
+    <div v-if="detail.update_command" class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
       <div class="flex items-center justify-between mb-2">
         <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
           Update Command
@@ -185,7 +185,7 @@ onMounted(loadDetail)
         </button>
       </div>
       <pre
-        class="text-[11px] text-slate-300 bg-[#0a0c10] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre"
+        class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
         >{{ detail.update_command }}</pre
       >
       <p
@@ -223,7 +223,7 @@ onMounted(loadDetail)
       title="Risk Score"
       description="Instantly assess the risk of each update. A smart score combines CVE severity, breaking changes, and version jump to help you prioritize."
     >
-      <div v-if="detail.risk_score > 0" class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
+      <div v-if="detail.risk_score > 0" class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
         <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
           Risk Score
         </h4>
@@ -253,7 +253,7 @@ onMounted(loadDetail)
       title="Vulnerabilities (CVE)"
       description="See at a glance if your containers are exposed to known vulnerabilities. CVEs are automatically matched and ranked by severity."
     >
-      <div class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800">
+      <div class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
         <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
           Vulnerabilities (CVE)
         </h4>
@@ -264,7 +264,7 @@ onMounted(loadDetail)
     <!-- 8. Rollback command -->
     <div
       v-if="detail.rollback_command"
-      class="bg-[#0B0E13] rounded-xl p-4 border border-amber-900/30"
+      class="bg-pb-primary rounded-xl p-4 border border-amber-900/30"
     >
       <div class="flex items-center justify-between mb-2">
         <h4 class="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest">
@@ -279,7 +279,7 @@ onMounted(loadDetail)
         </button>
       </div>
       <pre
-        class="text-[11px] text-slate-300 bg-[#0a0c10] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre"
+        class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
         >{{ detail.rollback_command }}</pre
       >
       <p
@@ -302,7 +302,7 @@ onMounted(loadDetail)
     >
       <div
         v-if="detail.previous_digest"
-        class="bg-[#0B0E13] rounded-xl p-4 border border-slate-800"
+        class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
       >
         <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
           Previous Digest
@@ -321,7 +321,7 @@ onMounted(loadDetail)
           class="w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
           :class="
             detail.pinned
-              ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+              ? 'bg-slate-700 hover:bg-slate-600 text-pb-secondary'
               : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/20'
           "
         >
@@ -333,11 +333,12 @@ onMounted(loadDetail)
             v-model="pinReason"
             rows="2"
             placeholder="Reason (optional)"
-            class="w-full px-3 py-2 bg-[#0B0E13] border border-slate-700 rounded-lg text-xs text-slate-300 placeholder-slate-600 focus:border-pb-green-500 focus:outline-none resize-none"
+            class="w-full px-3 py-2 rounded-lg text-xs placeholder-slate-600 focus:outline-none resize-none"
+            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
           />
           <button
             @click="handlePin"
-            class="mt-2 w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold transition-all"
+            class="mt-2 w-full py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 rounded-lg text-xs font-bold transition-all"
           >
             Confirm pin
           </button>
@@ -350,7 +351,7 @@ onMounted(loadDetail)
         :href="detail.source_url"
         target="_blank"
         rel="noopener noreferrer"
-        class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+        class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-pb-secondary rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
       >
         <ExternalLink :size="13" />
         View source code

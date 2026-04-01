@@ -326,7 +326,7 @@ function goBack() {
           </button>
           <button
             type="submit"
-            class="rounded-md px-4 py-1.5 text-sm font-medium text-white"
+            class="rounded-md px-4 py-1.5 text-sm font-medium text-pb-primary"
             style="background: var(--pb-accent)"
           >
             Create & Continue
@@ -353,7 +353,7 @@ function goBack() {
       <button
         @click="runTest"
         :disabled="testStatus === 'testing'"
-        class="mb-4 w-full rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 transition-colors"
+        class="mb-4 w-full rounded-md px-4 py-2 text-sm font-medium text-pb-primary disabled:opacity-50 transition-colors"
         style="background: var(--pb-accent)"
       >
         {{ testStatus === 'testing' ? 'Sending test...' : 'Send Test Notification' }}
@@ -395,7 +395,7 @@ function goBack() {
         </button>
         <button
           @click="finish"
-          class="rounded-md px-4 py-1.5 text-sm font-medium text-white"
+          class="rounded-md px-4 py-1.5 text-sm font-medium text-pb-primary"
           style="background: var(--pb-accent)"
         >
           Done

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 /* ===== maintenant Design System ===== */
 
 /* T004: Color primitives + semantic tokens via Tailwind v4 @theme */
@@ -9,9 +11,9 @@
   --color-slate-100: #E8ECF4;
   --color-slate-200: #C8CED9;
   --color-slate-300: #A0A8B8;
-  --color-slate-400: #6B7590;
-  --color-slate-500: #4E5568;
-  --color-slate-600: #363D4E;
+  --color-slate-400: #8892A8;
+  --color-slate-500: #737D99;
+  --color-slate-600: #6E788E;
   --color-slate-700: #252B38;
   --color-slate-800: #1A1F2A;
   --color-slate-900: #12151C;
@@ -38,9 +40,9 @@
   --color-pb-gray-100: #E8ECF4;
   --color-pb-gray-200: #C8CED9;
   --color-pb-gray-300: #A0A8B8;
-  --color-pb-gray-400: #6B7590;
-  --color-pb-gray-500: #4E5568;
-  --color-pb-gray-600: #363D4E;
+  --color-pb-gray-400: #8892A8;
+  --color-pb-gray-500: #737D99;
+  --color-pb-gray-600: #6E788E;
   --color-pb-gray-700: #252B38;
   --color-pb-gray-800: #1A1F2A;
   --color-pb-gray-850: #12151C;
@@ -55,6 +57,54 @@
   --color-pb-blue-500: #22D3EE;
 }
 
+/* Light theme overrides */
+@layer base {
+  :root[data-theme="light"] {
+    /* Gray scale — light equivalents */
+    --color-slate-50: #F0F3FA;
+    --color-slate-100: #E8ECF4;
+    --color-slate-200: #C8CED9;
+    --color-slate-300: #A0A8B8;
+    --color-slate-400: #5E6880;
+    --color-slate-500: #4E5568;
+    --color-slate-600: #4E5568;
+    --color-slate-700: #C8CED9;
+    --color-slate-800: #A0A8B8;
+    --color-slate-900: #12151C;
+    --color-slate-950: #0B0E13;
+
+    /* Semantic: backgrounds */
+    --pb-bg-primary: #F0F3FA;
+    --pb-bg-surface: #E8ECF4;
+    --pb-bg-elevated: #C8CED9;
+    --pb-bg-hover: #A0A8B8;
+
+    /* Semantic: text */
+    --pb-text-primary: #12151C;
+    --pb-text-secondary: #363D4E;
+    --pb-text-muted: #4E5568;
+    --pb-text-inverted: #F0F3FA;
+
+    /* Semantic: borders */
+    --pb-border-default: #A0A8B8;
+    --pb-border-subtle: #C8CED9;
+
+    /* Accent — unchanged (brand colour readable on both backgrounds) */
+    --pb-accent: #2EAF78;
+    --pb-accent-hover: #1A9960;
+
+    /* Status backgrounds (muted) — slightly adjusted for light bg */
+    --pb-status-ok-bg: rgba(46, 175, 120, 0.12);
+    --pb-status-warn-bg: rgba(245, 158, 11, 0.12);
+    --pb-status-critical-bg: rgba(249, 115, 22, 0.12);
+    --pb-status-down-bg: rgba(244, 63, 94, 0.12);
+
+    /* Shadows — lighter for light theme */
+    --pb-shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+    --pb-shadow-elevated: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
+  }
+}
+
 /* Dark theme (default) */
 @layer base {
   :root {
@@ -67,12 +117,12 @@
     /* Semantic: text */
     --pb-text-primary: #E8ECF4;
     --pb-text-secondary: #A0A8B8;
-    --pb-text-muted: #6B7590;
+    --pb-text-muted: #8892A8;
     --pb-text-inverted: #0B0E13;
 
     /* Semantic: borders */
-    --pb-border-default: #1A1F2A;
-    --pb-border-subtle: #161B25;
+    --pb-border-default: #252B38;
+    --pb-border-subtle: #1E2330;
 
     /* Accent — brand green */
     --pb-accent: #3ECF8E;
@@ -132,6 +182,11 @@
       font-size: 16px;
     }
   }
+}
+
+select option {
+  background: var(--pb-bg-surface);
+  color: var(--pb-text-primary);
 }
 
 /* Slide-over panel transition (spec) */
