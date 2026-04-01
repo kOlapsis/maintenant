@@ -299,7 +299,13 @@ func (s *Service) GetContainer(ctx context.Context, id int64) (*Container, error
 
 // DeleteContainer removes a container and its transitions from the database.
 func (s *Service) DeleteContainer(ctx context.Context, id int64) error {
-	return s.store.DeleteContainerByID(ctx, id)
+	if err := s.store.DeleteContainerByID(ctx, id); err != nil {
+		return err
+	}
+	s.emitEvent(event.ContainerArchived, map[string]interface{}{
+		"id": id,
+	})
+	return nil
 }
 
 // ListContainers returns containers matching the given options.
