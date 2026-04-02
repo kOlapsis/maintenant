@@ -58,9 +58,9 @@ const typeLabels: Record<string, string> = {
     <span
       class="hidden sm:inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
       :class="{
-        'text-emerald-400 bg-emerald-500/10': monitor.status === 'ok',
+        'text-pb-status-ok bg-pb-status-ok': monitor.status === 'ok',
         'text-amber-400 bg-amber-500/10': monitor.status === 'warning',
-        'text-rose-400 bg-rose-500/10': monitor.status === 'down',
+        'text-pb-status-down bg-pb-status-down': monitor.status === 'down',
         'text-slate-400 bg-slate-800': monitor.status === 'paused' || monitor.status === 'unknown',
       }"
     >

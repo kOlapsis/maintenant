@@ -34,7 +34,7 @@ const iconColorClasses: Record<string, string> = {
   box: 'text-pb-green-400',
   globe: 'text-indigo-400',
   heart: 'text-pink-400',
-  shield: 'text-emerald-400',
+  shield: 'text-pb-status-ok',
 }
 </script>
 

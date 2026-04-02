@@ -38,8 +38,8 @@ const props = defineProps<{
     </div>
 
     <div v-if="hasBreakingChanges" class="flex items-center gap-1.5 mb-2 px-2 py-1 bg-rose-500/10 rounded-lg border border-rose-500/20">
-      <AlertTriangle :size="11" class="text-rose-400" />
-      <span class="text-[10px] font-bold text-rose-400 uppercase">Breaking Changes</span>
+      <AlertTriangle :size="11" class="text-pb-status-down" />
+      <span class="text-[10px] font-bold text-pb-status-down uppercase">Breaking Changes</span>
     </div>
 
     <p v-if="changelogSummary" class="text-xs text-slate-400 leading-relaxed">

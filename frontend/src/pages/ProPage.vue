@@ -201,6 +201,7 @@ const features = [
             <button
               class="relative w-11 h-6 rounded-full transition-colors"
               :class="billingPeriod === 'annual' ? 'bg-pb-green-600' : 'bg-slate-700'"
+              aria-label="Toggle billing period"
               @click="billingPeriod = billingPeriod === 'monthly' ? 'annual' : 'monthly'"
             >
               <span
@@ -217,7 +218,7 @@ const features = [
             >
               Annual
               <span
-                class="text-[10px] font-bold bg-emerald-500/15 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/25"
+                class="text-[10px] font-bold bg-pb-status-ok text-pb-status-ok px-1.5 py-0.5 rounded border border-emerald-500/25"
               >
                 Save 18€
               </span>
@@ -274,7 +275,7 @@ const features = [
                 <span class="text-3xl font-bold text-pb-primary">90€</span>
                 <span class="text-sm text-slate-500">/year</span>
               </div>
-              <p class="text-xs text-emerald-400 mb-3">7.50€/month — save 18€</p>
+              <p class="text-xs text-pb-status-ok mb-3">7.50€/month — save 18€</p>
               <a
                 href="https://buy.stripe.com/3cI28qgSz6sL9Ug63j33W01"
                 target="_blank"

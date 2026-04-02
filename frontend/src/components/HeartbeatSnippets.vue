@@ -69,6 +69,7 @@ async function copySnippet(code: string) {
           background: copied ? 'var(--pb-status-ok-bg)' : 'var(--pb-bg-hover)',
           color: copied ? 'var(--pb-status-ok)' : 'var(--pb-text-muted)',
         }"
+        aria-label="Copy snippet"
         @click="copySnippet(snippets[activeTab] || '')"
       >
         <!-- Checkmark icon when copied -->

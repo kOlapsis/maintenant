@@ -49,7 +49,7 @@ function ensureExpanded(groups: K8sWorkloadGroup[]) {
 
 function statusStyle(status: K8sWorkload['status']): string {
   switch (status) {
-    case 'healthy': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+    case 'healthy': return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
     case 'degraded': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
     case 'progressing': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
     case 'failed': return 'text-red-400 bg-red-400/10 border-red-400/20'
@@ -57,7 +57,7 @@ function statusStyle(status: K8sWorkload['status']): string {
 }
 
 function replicaColor(ready: number, desired: number): string {
-  if (ready >= desired && desired > 0) return 'text-emerald-400'
+  if (ready >= desired && desired > 0) return 'text-pb-status-ok'
   if (ready > 0) return 'text-amber-400'
   return 'text-red-400'
 }
@@ -112,7 +112,7 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
             :class="[
               'text-xs font-semibold tabular-nums',
               group.workloads.every(w => w.status === 'healthy')
-                ? 'text-emerald-400'
+                ? 'text-pb-status-ok'
                 : group.workloads.some(w => w.status === 'failed')
                   ? 'text-red-400'
                   : 'text-amber-400',

@@ -49,7 +49,7 @@ function statusColor(status: string): string {
 
 function statusText(status: string): string {
   switch (status) {
-    case 'ready': return 'text-emerald-400'
+    case 'ready': return 'text-pb-status-ok'
     case 'down': return 'text-red-400'
     case 'disconnected': return 'text-amber-400'
     default: return 'text-slate-400'
@@ -58,7 +58,7 @@ function statusText(status: string): string {
 
 function availabilityStyle(availability: string): string {
   switch (availability) {
-    case 'active': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+    case 'active': return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
     case 'drain': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
     case 'pause': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
     default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
@@ -75,7 +75,7 @@ function availabilityStyle(availability: string): string {
         <span class="text-slate-600">|</span>
         <span>{{ swarmStore.workerCount }} workers</span>
         <span class="text-slate-600">|</span>
-        <span :class="swarmStore.readyCount === swarmStore.nodes.length ? 'text-emerald-400' : 'text-amber-400'">
+        <span :class="swarmStore.readyCount === swarmStore.nodes.length ? 'text-pb-status-ok' : 'text-amber-400'">
           {{ swarmStore.readyCount }}/{{ swarmStore.nodes.length }} ready
         </span>
       </div>

@@ -20,10 +20,10 @@ const props = defineProps<{
 }>()
 
 const gaugeColor = computed(() => {
-  if (props.score >= 81) return { bar: 'bg-rose-500', text: 'text-rose-400' }
+  if (props.score >= 81) return { bar: 'bg-rose-500', text: 'text-pb-status-down' }
   if (props.score >= 61) return { bar: 'bg-orange-500', text: 'text-orange-400' }
   if (props.score >= 31) return { bar: 'bg-amber-500', text: 'text-amber-400' }
-  return { bar: 'bg-emerald-500', text: 'text-emerald-400' }
+  return { bar: 'bg-emerald-500', text: 'text-pb-status-ok' }
 })
 
 const levelLabel = computed(() => {

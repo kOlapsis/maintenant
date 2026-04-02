@@ -131,7 +131,7 @@ onMounted(loadDetail)
         <span
           class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
           :class="{
-            'bg-rose-500/10 text-rose-400': detail.update_type === 'major',
+            'bg-pb-status-down text-pb-status-down': detail.update_type === 'major',
             'bg-amber-500/10 text-amber-400': detail.update_type === 'minor',
             'bg-pb-green-500/10 text-pb-green-400': detail.update_type === 'patch',
             'bg-slate-500/10 text-slate-400': detail.update_type === 'digest_only',
@@ -179,6 +179,7 @@ onMounted(loadDetail)
         <button
           @click="copyCommand"
           class="text-[10px] text-pb-green-500 hover:text-pb-green-400 flex items-center gap-1 transition-colors"
+          aria-label="Copy update command"
         >
           <component :is="copied ? Check : Copy" :size="10" />
           {{ copied ? 'Copied!' : 'Copy' }}
@@ -208,8 +209,8 @@ onMounted(loadDetail)
         class="bg-rose-500/5 rounded-xl p-4 border border-rose-500/20"
       >
         <div class="flex items-center gap-2">
-          <AlertTriangle :size="14" class="text-rose-400 shrink-0" />
-          <h4 class="text-xs font-bold text-rose-400">Breaking Changes Detected</h4>
+          <AlertTriangle :size="14" class="text-pb-status-down shrink-0" />
+          <h4 class="text-xs font-bold text-pb-status-down">Breaking Changes Detected</h4>
         </div>
         <p class="text-[11px] text-rose-300/70 mt-1.5">
           This update contains breaking changes. Review the changelog carefully before proceeding.
@@ -273,6 +274,7 @@ onMounted(loadDetail)
         <button
           @click="copyRollbackCommand"
           class="text-[10px] text-amber-500 hover:text-amber-400 flex items-center gap-1 transition-colors"
+          aria-label="Copy rollback command"
         >
           <component :is="copiedRollback ? Check : Copy" :size="10" />
           {{ copiedRollback ? 'Copied!' : 'Copy' }}

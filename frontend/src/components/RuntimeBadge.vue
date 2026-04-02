@@ -120,7 +120,7 @@ function formatDetectedAt(iso: string | null): string {
             <span class="text-xs text-slate-500">Status</span>
             <span
               class="text-sm font-medium"
-              :class="connected ? 'text-emerald-400' : 'text-rose-400'"
+              :class="connected ? 'text-pb-status-ok' : 'text-pb-status-down'"
             >{{ connected ? 'Connected' : 'Disconnected' }}</span>
           </div>
 

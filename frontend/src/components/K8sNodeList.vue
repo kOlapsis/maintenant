@@ -45,7 +45,7 @@ function statusColor(status: string): string {
 
 function statusText(status: string): string {
   switch (status) {
-    case 'ready': return 'text-emerald-400'
+    case 'ready': return 'text-pb-status-ok'
     case 'not-ready': return 'text-red-400'
     default: return 'text-slate-400'
   }
@@ -80,7 +80,7 @@ function formatCPU(millicores: number): string {
     <div class="mb-3 flex items-center justify-between">
       <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cluster Nodes</p>
       <div class="flex items-center gap-3 text-xs text-slate-400">
-        <span :class="readyCount === k8sStore.nodes.length ? 'text-emerald-400' : 'text-amber-400'">
+        <span :class="readyCount === k8sStore.nodes.length ? 'text-pb-status-ok' : 'text-amber-400'">
           {{ readyCount }}/{{ k8sStore.nodes.length }} ready
         </span>
       </div>

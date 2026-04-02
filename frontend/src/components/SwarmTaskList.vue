@@ -47,7 +47,7 @@ const tasksByNode = computed(() => {
 
 function stateColor(state: string): string {
   switch (state) {
-    case 'running': return 'text-emerald-400'
+    case 'running': return 'text-pb-status-ok'
     case 'complete': return 'text-slate-400'
     case 'failed': return 'text-red-400'
     case 'rejected': return 'text-red-400'

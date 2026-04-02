@@ -13,7 +13,7 @@ const barColorMap: Record<string, string> = {
 }
 
 const textColorMap: Record<string, string> = {
-  green: 'text-emerald-400',
+  green: 'text-pb-status-ok',
   yellow: 'text-amber-400',
   orange: 'text-orange-400',
   red: 'text-red-400',

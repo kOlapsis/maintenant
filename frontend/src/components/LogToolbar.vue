@@ -62,6 +62,7 @@ const emit = defineEmits<{
         v-if="!search.isOpen.value"
         class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-pb-primary"
         title="Search (Ctrl+K)"
+        aria-label="Search logs"
         @click="search.open()"
       >
         <Search :size="14" />
@@ -71,6 +72,7 @@ const emit = defineEmits<{
         class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-pb-primary"
         :class="{ 'text-pb-primary bg-slate-800': !wordWrap }"
         :title="wordWrap ? 'Disable word wrap' : 'Enable word wrap'"
+        :aria-label="wordWrap ? 'Disable word wrap' : 'Enable word wrap'"
         @click="emit('toggle-wrap')"
       >
         <WrapText :size="14" />
@@ -78,6 +80,7 @@ const emit = defineEmits<{
       <button
         class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-pb-primary"
         :title="isExpanded ? 'Collapse' : 'Expand'"
+        :aria-label="isExpanded ? 'Collapse log viewer' : 'Expand log viewer'"
         @click="emit('toggle-expand')"
       >
         <Maximize2 v-if="!isExpanded" :size="14" />

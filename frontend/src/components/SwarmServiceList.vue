@@ -25,7 +25,7 @@ const sortedServices = computed(() => {
 
 function replicaColor(svc: SwarmDashboardService): string {
   if (svc.crash_loop) return 'text-red-400'
-  if (svc.running_replicas >= svc.desired_replicas) return 'text-emerald-400'
+  if (svc.running_replicas >= svc.desired_replicas) return 'text-pb-status-ok'
   if (svc.running_replicas > 0) return 'text-amber-400'
   return 'text-red-400'
 }

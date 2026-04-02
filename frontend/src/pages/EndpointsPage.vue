@@ -322,10 +322,10 @@ onUnmounted(() => {
 
     <!-- Status summary -->
     <div class="mb-6 flex gap-3 text-sm">
-      <span class="rounded-full bg-emerald-500/15 text-emerald-400 px-3 py-1 font-medium">
+      <span class="rounded-full bg-pb-status-ok text-pb-status-ok px-3 py-1 font-medium">
         {{ store.statusCounts.up }} up
       </span>
-      <span class="rounded-full bg-rose-500/15 text-rose-400 px-3 py-1 font-medium">
+      <span class="rounded-full bg-pb-status-down text-pb-status-down px-3 py-1 font-medium">
         {{ store.statusCounts.down }} down
       </span>
       <span class="rounded-full bg-slate-800 text-slate-400 px-3 py-1 font-medium">
@@ -380,7 +380,7 @@ onUnmounted(() => {
     <!-- Error -->
     <div
       v-else-if="store.error"
-      class="rounded-2xl p-4 text-sm bg-rose-500/10 border border-rose-500/30 text-rose-400"
+      class="rounded-2xl p-4 text-sm bg-pb-status-down border border-rose-500/30 text-pb-status-down"
     >
       {{ store.error }}
     </div>

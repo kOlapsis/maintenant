@@ -21,7 +21,7 @@ const props = defineProps<{
 }>()
 
 const severityColors: Record<string, { bg: string; text: string }> = {
-  critical: { bg: 'bg-rose-500/10', text: 'text-rose-400' },
+  critical: { bg: 'bg-pb-status-down', text: 'text-pb-status-down' },
   high: { bg: 'bg-orange-500/10', text: 'text-orange-400' },
   medium: { bg: 'bg-amber-500/10', text: 'text-amber-400' },
   low: { bg: 'bg-slate-500/10', text: 'text-slate-400' },
@@ -71,12 +71,12 @@ async function copyFixCommand(cveId: string, command: string) {
       <p v-if="cve.summary" class="text-[11px] text-slate-500 mt-1">{{ cve.summary }}</p>
       <div v-if="cve.fixed_in" class="mt-1.5">
         <div class="flex items-center gap-2">
-          <p class="text-[10px] text-emerald-500 font-medium">
+          <p class="text-[10px] text-pb-status-ok font-medium">
             Fixed in: {{ cve.fixed_in }}
           </p>
           <span
             v-if="cve.is_fixed_by_update"
-            class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex items-center gap-0.5"
+            class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-pb-status-ok text-pb-status-ok flex items-center gap-0.5"
           >
             <CheckCircle :size="8" />
             Covered by update
@@ -87,7 +87,8 @@ async function copyFixCommand(cveId: string, command: string) {
             <span class="text-[9px] text-slate-600 uppercase tracking-wider">Fix command</span>
             <button
               @click="copyFixCommand(cve.cve_id, cve.fix_command)"
-              class="text-[9px] text-emerald-500 hover:text-emerald-400 flex items-center gap-1 transition-colors"
+              class="text-[9px] text-pb-status-ok hover:text-pb-accent flex items-center gap-1 transition-colors"
+              aria-label="Copy fix command"
             >
               <component :is="copiedFixId === cve.cve_id ? Check : Copy" :size="9" />
               {{ copiedFixId === cve.cve_id ? 'Copied!' : 'Copy' }}

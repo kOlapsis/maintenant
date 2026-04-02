@@ -319,8 +319,8 @@ const summaryCards = computed(() => {
       trend: null,
       trendUp: null,
       icon: Cpu,
-      iconColor: 'text-emerald-500',
-      valueColor: cpuVal > 80 ? 'text-rose-400' : cpuVal > 60 ? 'text-amber-400' : 'text-pb-primary',
+      iconColor: 'text-pb-status-ok',
+      valueColor: cpuVal > 80 ? 'text-pb-status-down' : cpuVal > 60 ? 'text-amber-400' : 'text-pb-primary',
     },
     {
       title: 'SSL Certificates',
@@ -330,7 +330,7 @@ const summaryCards = computed(() => {
       trendUp: null,
       icon: Shield,
       iconColor: 'text-pb-green-400',
-      valueColor: certExpiring > 0 ? 'text-rose-400' : 'text-pb-primary',
+      valueColor: certExpiring > 0 ? 'text-pb-status-down' : 'text-pb-primary',
     },
   ]
 })
@@ -376,8 +376,8 @@ onUnmounted(() => {
                 :class="[
                   'text-[10px] font-bold px-1.5 py-0.5 rounded',
                   card.trendUp
-                    ? 'bg-emerald-500/10 text-emerald-500'
-                    : 'bg-rose-500/10 text-rose-500',
+                    ? 'bg-pb-status-ok text-pb-status-ok'
+                    : 'bg-pb-status-down text-pb-status-down',
                 ]"
               >{{ card.trend }}</span>
             </div>
@@ -395,7 +395,7 @@ onUnmounted(() => {
             <div class="flex justify-between items-start mb-2 sm:mb-4">
               <div class="p-1.5 sm:p-2.5 bg-pb-primary rounded-lg sm:rounded-xl group-hover:scale-105 transition-transform">
                 <ShieldCheck :size="14" class="sm:!w-[18px] sm:!h-[18px]" :class="{
-                  'text-emerald-500': postureStore.posture!.color === 'green',
+                  'text-pb-status-ok': postureStore.posture!.color === 'green',
                   'text-amber-500': postureStore.posture!.color === 'yellow',
                   'text-orange-500': postureStore.posture!.color === 'orange',
                   'text-red-500': postureStore.posture!.color === 'red',
@@ -404,7 +404,7 @@ onUnmounted(() => {
             </div>
             <p class="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-widest">Security Posture</p>
             <h4 class="text-lg sm:text-2xl font-black mt-0.5" :class="{
-              'text-emerald-400': postureStore.posture!.color === 'green',
+              'text-pb-status-ok': postureStore.posture!.color === 'green',
               'text-amber-400': postureStore.posture!.color === 'yellow',
               'text-orange-400': postureStore.posture!.color === 'orange',
               'text-red-400': postureStore.posture!.color === 'red',
@@ -473,7 +473,7 @@ onUnmounted(() => {
               :class="[
                 'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
                 filterIncidents
-                  ? 'bg-rose-500/15 text-rose-400 border-rose-500/40'
+                  ? 'bg-pb-status-down text-pb-status-down border-rose-500/40'
                   : 'bg-pb-primary text-slate-400 border-slate-700 hover:border-slate-600',
               ]"
             >
@@ -623,6 +623,7 @@ onUnmounted(() => {
                   <!-- Actions -->
                   <td class="px-6 py-4 text-right">
                     <button
+                      :aria-label="`Open details for ${service.name}`"
                       class="p-1.5 text-slate-600 hover:text-pb-secondary hover:bg-slate-700/60 rounded-lg transition-all"
                       @click.stop="selectService(service)"
                     >
@@ -688,7 +689,7 @@ onUnmounted(() => {
 
             <div v-else class="flex flex-col items-center justify-center py-10 gap-3">
               <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                <Activity :size="18" class="text-emerald-500" />
+                <Activity :size="18" class="text-pb-status-ok" />
               </div>
               <p class="text-sm text-slate-600 font-medium">No recent incidents</p>
               <p class="text-[10px] text-slate-700">All services operating normally</p>
@@ -698,7 +699,7 @@ onUnmounted(() => {
           <!-- Host Resources -->
           <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
             <div class="flex items-center gap-2.5 mb-5">
-              <Server :size="15" class="text-emerald-500" />
+              <Server :size="15" class="text-pb-status-ok" />
               <h3 class="text-sm font-bold text-pb-primary">Host Resources</h3>
             </div>
 
@@ -747,7 +748,7 @@ onUnmounted(() => {
                 </div>
                 <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
                   <span class="text-slate-500">Availability</span>
-                  <span class="text-emerald-400 font-mono">
+                  <span class="text-pb-status-ok font-mono">
                     {{ dashboard.monitors.length > 0 ? ((stats.running / dashboard.monitors.length) * 100).toFixed(1) : '—' }}%
                   </span>
                 </div>

@@ -97,7 +97,7 @@ const alertCount = computed(() => {
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Node Status</span>
           </div>
           <div class="flex items-center gap-3 text-xs">
-            <span class="text-emerald-400 tabular-nums">{{ store.cluster.nodes.ready }} ready</span>
+            <span class="text-pb-status-ok tabular-nums">{{ store.cluster.nodes.ready }} ready</span>
             <span v-if="store.cluster.nodes.down > 0" class="text-red-400 tabular-nums">
               {{ store.cluster.nodes.down }} down
             </span>

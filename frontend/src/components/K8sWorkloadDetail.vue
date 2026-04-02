@@ -109,7 +109,7 @@ function memColor(percent: number | null): string {
 
 function statusStyle(status: string): string {
   switch (status) {
-    case 'healthy': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+    case 'healthy': return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
     case 'degraded': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
     case 'progressing': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
     case 'failed': return 'text-red-400 bg-red-400/10 border-red-400/20'
@@ -119,7 +119,7 @@ function statusStyle(status: string): string {
 
 function podStatusStyle(status: string): string {
   const s = status.toLowerCase()
-  if (s === 'running') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+  if (s === 'running') return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
   if (s === 'pending') return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
   if (s === 'succeeded') return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
   if (s === 'failed') return 'text-red-400 bg-red-400/10 border-red-400/20'
@@ -127,7 +127,7 @@ function podStatusStyle(status: string): string {
 }
 
 function conditionStatusStyle(status: string): string {
-  if (status === 'True') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+  if (status === 'True') return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
   if (status === 'False') return 'text-red-400 bg-red-400/10 border-red-400/20'
   return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
 }
@@ -138,7 +138,7 @@ function eventTypeStyle(type: string): string {
 }
 
 function replicaColor(ready: number, desired: number): string {
-  if (ready >= desired && desired > 0) return 'text-emerald-400'
+  if (ready >= desired && desired > 0) return 'text-pb-status-ok'
   if (ready > 0) return 'text-amber-400'
   return 'text-red-400'
 }

@@ -64,7 +64,7 @@ const enabledCVE = computed(() => edition.value?.features['cve_enrichment'] === 
 
 function updateTypeColor(type_: string): string {
   switch (type_) {
-    case 'major': return 'text-rose-400'
+    case 'major': return 'text-pb-status-down'
     case 'minor': return 'text-amber-400'
     case 'patch': return 'text-pb-green-400'
     default: return 'text-slate-400'
@@ -132,10 +132,10 @@ onUnmounted(() => {
       <div v-if="updates.summary?.counts" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
           <div class="flex items-center gap-1.5 mb-1">
-            <AlertTriangle :size="11" class="text-rose-500" />
+            <AlertTriangle :size="11" class="text-pb-status-down" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Critical</span>
           </div>
-          <p class="text-2xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-rose-400' : 'text-slate-500'">
+          <p class="text-2xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-pb-status-down' : 'text-slate-500'">
             {{ updates.summary.counts.critical }}
           </p>
         </div>
@@ -159,10 +159,10 @@ onUnmounted(() => {
         </div>
         <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
           <div class="flex items-center gap-1.5 mb-1">
-            <CheckCircle :size="11" class="text-emerald-500" />
+            <CheckCircle :size="11" class="text-pb-status-ok" />
             <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Up to date</span>
           </div>
-          <p class="text-2xl font-black text-emerald-400">
+          <p class="text-2xl font-black text-pb-status-ok">
             {{ updates.summary.counts.up_to_date }}
           </p>
         </div>
@@ -170,9 +170,9 @@ onUnmounted(() => {
 
       <!-- CVE summary (Pro) -->
       <div v-if="enabledCVE && updates.summary?.cve_counts && (updates.summary.cve_counts.critical > 0 || updates.summary.cve_counts.high > 0)" class="flex items-center gap-2 text-xs bg-pb-surface rounded-xl px-4 py-3 border border-slate-800">
-        <Shield :size="13" class="text-rose-500" />
+        <Shield :size="13" class="text-pb-status-down" />
         <span class="text-slate-400 font-bold">Active CVEs:</span>
-        <span v-if="updates.summary.cve_counts.critical > 0" class="text-rose-400 font-bold">{{ updates.summary.cve_counts.critical }} critical</span>
+        <span v-if="updates.summary.cve_counts.critical > 0" class="text-pb-status-down font-bold">{{ updates.summary.cve_counts.critical }} critical</span>
         <span v-if="updates.summary.cve_counts.high > 0" class="text-amber-400 font-bold">{{ updates.summary.cve_counts.high }} high</span>
       </div>
 
@@ -185,7 +185,7 @@ onUnmounted(() => {
       }" :key="key">
         <div v-if="group.length > 0" class="bg-pb-surface rounded-2xl border border-slate-800 overflow-hidden">
           <div class="px-5 py-3 border-b border-slate-800 flex items-center gap-2">
-            <AlertTriangle v-if="key === 'Critical'" :size="13" class="text-rose-500" />
+            <AlertTriangle v-if="key === 'Critical'" :size="13" class="text-pb-status-down" />
             <ArrowUpCircle v-else-if="key === 'Recommended'" :size="13" class="text-amber-500" />
             <ArrowUpCircle v-else-if="key === 'Available'" :size="13" class="text-pb-green-500" />
             <Shield v-else :size="13" class="text-slate-500" />
@@ -220,7 +220,7 @@ onUnmounted(() => {
                 <div v-if="u.risk_score > 0" class="shrink-0 w-10 text-center">
                   <span
                     class="text-xs font-black"
-                    :class="u.risk_score >= 81 ? 'text-rose-400' : u.risk_score >= 31 ? 'text-amber-400' : 'text-pb-green-400'"
+                    :class="u.risk_score >= 81 ? 'text-pb-status-down' : u.risk_score >= 31 ? 'text-amber-400' : 'text-pb-green-400'"
                   >{{ u.risk_score }}</span>
                 </div>
               </FeatureGate>

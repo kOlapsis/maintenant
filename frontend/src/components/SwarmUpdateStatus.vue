@@ -38,7 +38,7 @@ const progressPercent = computed(() => {
 function stateStyle(state: string): string {
   switch (state) {
     case 'updating': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-    case 'completed': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+    case 'completed': return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
     case 'paused': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
     case 'rollback_started': case 'rollback_paused': return 'text-red-400 bg-red-400/10 border-red-400/20'
     case 'rollback_completed': return 'text-red-400 bg-red-400/10 border-red-400/20'

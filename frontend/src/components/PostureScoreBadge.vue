@@ -18,7 +18,7 @@ const sizes = {
 } as const
 
 const colorMap: Record<string, string> = {
-  green: 'border-emerald-500 text-emerald-400',
+  green: 'border-emerald-500 text-pb-status-ok',
   yellow: 'border-amber-500 text-amber-400',
   orange: 'border-orange-500 text-orange-400',
   red: 'border-red-500 text-red-400',
@@ -32,7 +32,7 @@ const bgMap: Record<string, string> = {
 }
 
 const xsColorMap: Record<string, string> = {
-  green: 'text-emerald-400',
+  green: 'text-pb-status-ok',
   yellow: 'text-amber-400',
   orange: 'text-orange-400',
   red: 'text-red-400',

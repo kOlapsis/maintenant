@@ -125,7 +125,7 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
             >{{ insight.severity }}</span>
             <span
               v-if="getAck(insight)"
-              class="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400"
+              class="flex items-center gap-1 rounded-full bg-pb-status-ok px-1.5 py-0.5 text-[10px] font-medium text-pb-status-ok"
             >
               <CheckCircle :size="10" />
               acknowledged
@@ -151,7 +151,7 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
             </button>
             <button
               v-else
-              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-emerald-400 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-pb-status-ok hover:bg-red-500/10 hover:text-red-400 transition-colors"
               @click.stop="emit('revoke', getAck(insight)!)"
             >
               Revoke

@@ -288,6 +288,7 @@ watch(() => props.containerId, () => {
             backgroundColor: confirmingDelete ? 'var(--pb-status-down-bg)' : 'transparent',
           }"
           :title="confirmingDelete ? 'Click again to confirm deletion' : 'Remove from database'"
+          :aria-label="confirmingDelete ? 'Confirm deletion' : 'Remove container from database'"
           :disabled="deleting"
           @click="handleDelete"
         >

@@ -17,7 +17,7 @@ const config = computed(() => {
       return {
         icon: Heart,
         label: 'Healthy',
-        style: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
+        style: 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20',
       }
     case 'degraded':
       return {

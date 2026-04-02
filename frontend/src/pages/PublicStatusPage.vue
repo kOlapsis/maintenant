@@ -124,10 +124,10 @@ const incidentStatusLabel = (status: string) => {
 
 const componentStatusStyle = (status: string) => {
   const styles: Record<string, { dot: string; label: string; text: string }> = {
-    operational: { dot: 'bg-emerald-500', label: 'Operational', text: 'text-emerald-400' },
+    operational: { dot: 'bg-emerald-500', label: 'Operational', text: 'text-pb-status-ok' },
     degraded: { dot: 'bg-amber-500', label: 'Degraded Performance', text: 'text-amber-400' },
     partial_outage: { dot: 'bg-amber-500', label: 'Partial Outage', text: 'text-amber-400' },
-    major_outage: { dot: 'bg-rose-500', label: 'Major Outage', text: 'text-rose-400' },
+    major_outage: { dot: 'bg-rose-500', label: 'Major Outage', text: 'text-pb-status-down' },
     under_maintenance: { dot: 'bg-pb-green-500', label: 'Under Maintenance', text: 'text-pb-green-400' },
   }
   return styles[status] || { dot: 'bg-slate-500', label: status, text: 'text-slate-400' }
@@ -163,7 +163,7 @@ function formatDate(iso: string) {
 
     <!-- Error -->
     <div v-else-if="error" class="mx-auto max-w-3xl px-6 py-16 text-center">
-      <p class="text-rose-400 text-sm">{{ error }}</p>
+      <p class="text-pb-status-down text-sm">{{ error }}</p>
     </div>
 
     <template v-else-if="data">

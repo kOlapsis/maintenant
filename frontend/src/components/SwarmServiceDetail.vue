@@ -68,7 +68,7 @@ function onTabClick(tab: Tab) {
 }
 
 function replicaColor(running: number, desired: number): string {
-  if (running >= desired) return 'text-emerald-400'
+  if (running >= desired) return 'text-pb-status-ok'
   if (running > 0) return 'text-amber-400'
   return 'text-red-400'
 }
@@ -162,7 +162,7 @@ const tabs = hasFeature('swarm_dashboard')
         <div class="mt-3 flex gap-6 text-xs text-slate-500">
           <span>Created <span class="text-slate-400">{{ timeAgo(detail.created_at) }}</span></span>
           <span v-if="detail.update_status?.state">
-            Update <span :class="detail.update_status.state === 'completed' ? 'text-emerald-400' : 'text-amber-400'">{{ detail.update_status.state }}</span>
+            Update <span :class="detail.update_status.state === 'completed' ? 'text-pb-status-ok' : 'text-amber-400'">{{ detail.update_status.state }}</span>
           </span>
         </div>
       </div>

@@ -71,7 +71,7 @@ function formatFullTimestamp(ts: string): string {
     class="bg-pb-surface rounded-2xl border border-slate-800 p-4 mb-4 shadow-lg"
   >
     <div class="flex items-center justify-between mb-3">
-      <span class="text-sm font-bold text-rose-400">
+      <span class="text-sm font-bold text-pb-status-down">
         {{ incidents.length }} Active Incident{{ incidents.length > 1 ? 's' : '' }}
       </span>
       <button

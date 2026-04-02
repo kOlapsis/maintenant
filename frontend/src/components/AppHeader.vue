@@ -118,9 +118,9 @@ const memPercent = computed(() => {
 const diskPercent = computed(() => resources.summary?.disk_percent ?? 0)
 
 function barColor(value: number): string {
-  if (value >= 90) return '#f43f5e'
-  if (value >= 70) return '#f59e0b'
-  return '#10b981'
+  if (value >= 90) return 'var(--pb-status-down-text)'
+  if (value >= 70) return 'var(--pb-status-warn-text)'
+  return 'var(--pb-status-ok-text)'
 }
 
 const { theme, setTheme } = useTheme()
@@ -160,13 +160,13 @@ const themeTooltip = computed(() => {
       <div class="hidden sm:flex items-center gap-5 border-l border-slate-800 pl-5">
         <div class="flex items-center gap-2">
           <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Running</span>
-          <span class="text-sm font-black text-emerald-500">{{ dashboard.globalStats.running }}</span>
+          <span class="text-sm font-black text-pb-status-ok">{{ dashboard.globalStats.running }}</span>
         </div>
         <div class="flex items-center gap-2">
           <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Incidents</span>
           <span
             class="text-sm font-black"
-            :class="dashboard.globalStats.incidents > 0 ? 'text-rose-500' : 'text-slate-500'"
+            :class="dashboard.globalStats.incidents > 0 ? 'text-pb-status-down' : 'text-slate-500'"
           >{{ dashboard.globalStats.incidents }}</span>
         </div>
         <div class="flex items-center gap-2">
@@ -246,6 +246,7 @@ const themeTooltip = computed(() => {
       >
         <button
           @click="onBellClick"
+          :aria-label="alertsStore.totalActiveCount > 0 ? `View alerts (${alertsStore.totalActiveCount} active)` : 'View alerts'"
           class="p-2 text-slate-400 hover:text-pb-primary hover:bg-slate-800 rounded-lg transition-all relative"
         >
           <Bell :size="18" />
@@ -280,7 +281,7 @@ const themeTooltip = computed(() => {
               <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active alerts</span>
               <span
                 class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
-                :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-rose-500/15 text-rose-400' : 'bg-amber-500/15 text-amber-400'"
+                :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-pb-status-down text-pb-status-down' : 'bg-amber-500/15 text-amber-400'"
               >
                 {{ alertsStore.totalActiveCount }}
               </span>
@@ -296,12 +297,12 @@ const themeTooltip = computed(() => {
                   :is="sourceRouteMap[source]?.icon ?? AlertTriangle"
                   :size="14"
                   class="shrink-0"
-                  :class="alertsBySource[source]?.critical ? 'text-rose-400' : alertsBySource[source]?.warning ? 'text-amber-400' : 'text-pb-green-400'"
+                  :class="alertsBySource[source]?.critical ? 'text-pb-status-down' : alertsBySource[source]?.warning ? 'text-amber-400' : 'text-pb-green-400'"
                 />
                 <span class="flex-1 text-left">{{ sourceRouteMap[source]?.label ?? source }}</span>
                 <span
                   class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
-                  :class="alertsBySource[source]?.critical ? 'bg-rose-500/15 text-rose-400' : alertsBySource[source]?.warning ? 'bg-amber-500/15 text-amber-400' : 'bg-pb-green-500/15 text-pb-green-400'"
+                  :class="alertsBySource[source]?.critical ? 'bg-pb-status-down text-pb-status-down' : alertsBySource[source]?.warning ? 'bg-amber-500/15 text-amber-400' : 'bg-pb-green-500/15 text-pb-green-400'"
                 >
                   {{ alertsBySource[source]?.count }}
                 </span>

@@ -46,7 +46,7 @@ onMounted(async () => {
 
 function podStatusStyle(status: string): string {
   const s = status.toLowerCase()
-  if (s === 'running') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+  if (s === 'running') return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
   if (s === 'pending') return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
   if (s === 'succeeded') return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
   if (s === 'failed' || s === 'crashloopbackoff') return 'text-red-400 bg-red-400/10 border-red-400/20'
@@ -55,7 +55,7 @@ function podStatusStyle(status: string): string {
 
 function containerStateStyle(state: string): string {
   const s = state.toLowerCase()
-  if (s === 'running') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+  if (s === 'running') return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
   if (s === 'waiting') return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
   if (s === 'terminated') return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
   return 'text-slate-400 bg-slate-400/10 border-slate-400/20'

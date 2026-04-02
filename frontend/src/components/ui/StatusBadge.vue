@@ -62,10 +62,10 @@ const statusDotClasses: Record<BadgeStatus, string> = {
 }
 
 const statusTextClasses: Record<BadgeStatus, string> = {
-  ok: 'text-emerald-400',
+  ok: 'text-pb-status-ok',
   warning: 'text-amber-400',
   critical: 'text-orange-400',
-  down: 'text-rose-400',
+  down: 'text-pb-status-down',
   paused: 'text-slate-400',
   unknown: 'text-slate-400',
 }

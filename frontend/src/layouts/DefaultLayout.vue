@@ -163,7 +163,7 @@ const mainNav = computed(() =>
             class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border group"
             :class="[
               route.path.startsWith(item.to)
-                ? 'bg-pb-green-500/10 text-pb-green-400 border-pb-green-500/20'
+                ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
                 : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
             ]"
           >
@@ -174,7 +174,7 @@ const mainNav = computed(() =>
                 class="shrink-0 transition-colors"
                 :class="
                   route.path.startsWith(item.to)
-                    ? 'text-pb-green-400'
+                    ? 'text-pb-nav-active'
                     : 'text-slate-500 group-hover:text-pb-secondary'
                 "
               />
@@ -190,17 +190,19 @@ const mainNav = computed(() =>
               <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isEnterprise }">
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
-                  :class="isEnterprise ? 'text-emerald-600' : 'text-pb-secondary'"
+                  :class="isEnterprise ? 'text-pb-accent' : 'text-pb-secondary'"
                   >{{ isEnterprise ? 'Pro Edition' : 'Community Edition' }}</span
                 >
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   :class="
                     isEnterprise
-                      ? 'bg-emerald-500/20 text-emerald-600 border border-emerald-500/30'
-                      : 'text-pb-green-600 border border-pb-green-600/40'
+                      ? 'bg-emerald-500/20 border border-emerald-500/30'
+                      : 'border'
                   "
-                  :style="!isEnterprise ? { background: 'var(--pb-bg-surface)' } : {}"
+                  :style="isEnterprise
+                    ? { color: 'var(--pb-accent)' }
+                    : { background: 'var(--pb-bg-surface)', color: 'var(--pb-accent)', borderColor: 'color-mix(in srgb, var(--pb-accent) 40%, transparent)' }"
                   >{{ version }}</span
                 >
               </div>
@@ -263,7 +265,7 @@ const mainNav = computed(() =>
             class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border"
             :class="[
               route.path.startsWith(item.to)
-                ? 'bg-pb-green-500/10 text-pb-green-400 border-pb-green-500/20'
+                ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
                 : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
             ]"
             @click="closeMobileMenu"

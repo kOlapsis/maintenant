@@ -93,6 +93,15 @@
     --pb-accent: #2EAF78;
     --pb-accent-hover: #1A9960;
 
+    /* Nav active link text — WCAG AA compliant on light nav active bg */
+    --pb-nav-active-text: #1A7A50;
+
+    /* Status text — WCAG AA compliant on light backgrounds */
+    --pb-status-ok-text: #1A7A50;
+    --pb-status-warn-text: #92530A;
+    --pb-status-down-text: #B91C3C;
+    --pb-status-critical-text: #B91C3C;
+
     /* Status backgrounds (muted) — slightly adjusted for light bg */
     --pb-status-ok-bg: rgba(46, 175, 120, 0.12);
     --pb-status-warn-bg: rgba(245, 158, 11, 0.12);
@@ -134,6 +143,15 @@
     --pb-status-critical: #f97316;
     --pb-status-down: #f43f5e;
     --pb-status-paused: #6B7590;
+
+    /* Nav active link text */
+    --pb-nav-active-text: #4FD89E;
+
+    /* Status text — readable on dark backgrounds */
+    --pb-status-ok-text: #4FD89E;
+    --pb-status-warn-text: #f59e0b;
+    --pb-status-down-text: #fb7185;
+    --pb-status-critical-text: #fb7185;
 
     /* Status backgrounds (muted) */
     --pb-status-ok-bg: rgba(62, 207, 142, 0.15);
@@ -215,4 +233,15 @@ select option {
   .glow-ok { box-shadow: var(--pb-glow-ok); }
   .glow-down { box-shadow: var(--pb-glow-down); }
   .glow-warn { box-shadow: var(--pb-glow-warn); }
+  .text-pb-accent { color: var(--pb-accent); }
+  .border-pb-accent { border-color: var(--pb-accent); }
+  .text-pb-nav-active { color: var(--pb-nav-active-text); }
+  .text-pb-status-ok { color: var(--pb-status-ok-text); }
+  .text-pb-status-warn { color: var(--pb-status-warn-text); }
+  .text-pb-status-down { color: var(--pb-status-down-text); }
+  .text-pb-status-critical { color: var(--pb-status-critical-text); }
+  .bg-pb-status-ok { background-color: var(--pb-status-ok-bg); }
+  .bg-pb-status-warn { background-color: var(--pb-status-warn-bg); }
+  .bg-pb-status-down { background-color: var(--pb-status-down-bg); }
+  .bg-pb-status-critical { background-color: var(--pb-status-critical-bg); }
 }

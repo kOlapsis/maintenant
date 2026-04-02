@@ -59,10 +59,10 @@ const formatTime = timeAgo
       <!-- Critical -->
       <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-slate-800 hover:border-slate-700 transition-colors">
         <div class="flex items-center gap-1.5 mb-1">
-          <AlertTriangle :size="11" class="text-rose-500" />
+          <AlertTriangle :size="11" class="text-pb-status-down" />
           <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Critical</span>
         </div>
-        <p class="text-xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-rose-400' : 'text-slate-500'">
+        <p class="text-xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-pb-status-down' : 'text-slate-500'">
           {{ updates.summary.counts.critical }}
         </p>
       </RouterLink>
@@ -92,10 +92,10 @@ const formatTime = timeAgo
       <!-- Up to date -->
       <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-slate-800 hover:border-slate-700 transition-colors">
         <div class="flex items-center gap-1.5 mb-1">
-          <CheckCircle :size="11" class="text-emerald-500" />
+          <CheckCircle :size="11" class="text-pb-status-ok" />
           <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Up to date</span>
         </div>
-        <p class="text-xl font-black text-emerald-400">
+        <p class="text-xl font-black text-pb-status-ok">
           {{ updates.summary.counts.up_to_date }}
         </p>
       </RouterLink>

@@ -101,6 +101,7 @@ const matchDisplay = computed(() => {
     <button
       class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
       title="Previous Match (Shift+Enter)"
+      aria-label="Previous match"
       :disabled="search.matches.value.length === 0"
       @click="search.prevMatch()"
     >
@@ -109,6 +110,7 @@ const matchDisplay = computed(() => {
     <button
       class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
       title="Next Match (Enter)"
+      aria-label="Next match"
       :disabled="search.matches.value.length === 0"
       @click="search.nextMatch()"
     >
@@ -119,6 +121,7 @@ const matchDisplay = computed(() => {
     <button
       class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
       title="Close (Escape)"
+      aria-label="Close search"
       @click="search.close()"
     >
       <X :size="12" />

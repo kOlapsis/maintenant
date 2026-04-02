@@ -25,7 +25,7 @@ const iconMap = {
 
 const colorMap = {
   info: 'border-slate-600 text-pb-primary',
-  success: 'border-emerald-500/40 text-emerald-400',
+  success: 'border-emerald-500/40 text-pb-status-ok',
   warning: 'border-amber-500/40 text-amber-400',
 } as const
 </script>

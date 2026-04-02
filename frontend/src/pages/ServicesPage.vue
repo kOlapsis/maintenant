@@ -71,7 +71,7 @@ function toggleGroup(stack: string) {
 }
 
 function replicaColor(running: number, desired: number): string {
-  if (running >= desired) return 'text-emerald-400'
+  if (running >= desired) return 'text-pb-status-ok'
   if (running > 0) return 'text-amber-400'
   return 'text-red-400'
 }
@@ -151,7 +151,7 @@ function handleSelect(svc: SwarmServiceResponse) {
                 :class="[
                   'font-semibold tabular-nums',
                   group.services.every(s => s.running_replicas >= s.desired_replicas)
-                    ? 'text-emerald-400'
+                    ? 'text-pb-status-ok'
                     : group.services.some(s => s.running_replicas > 0)
                       ? 'text-amber-400'
                       : 'text-red-400',
