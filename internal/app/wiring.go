@@ -229,10 +229,14 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		switch eventType {
 		case "certificate.alert":
 			certAlertType, _ := m["alert_type"].(string)
+			severity := alert.SeverityCritical
+			if s, ok := m["severity"].(string); ok && s != "" {
+				severity = s
+			}
 			sendAlert(alert.Event{
 				Source:     alert.SourceCertificate,
 				AlertType:  certAlertType,
-				Severity:   alert.SeverityCritical,
+				Severity:   severity,
 				Message:    fmt.Sprintf("Certificate alert (%s) for %v:%v", certAlertType, m["hostname"], m["port"]),
 				EntityType: "certificate",
 				EntityID:   toInt64(m["monitor_id"]),

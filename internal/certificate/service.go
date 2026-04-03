@@ -623,6 +623,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"hostname":    monitor.Hostname,
 			"port":        monitor.Port,
 			"alert_type":  "chain_invalid",
+			"severity":    "critical",
 			"chain_error": result.ChainError,
 			"timestamp":   result.CheckedAt.Format(time.RFC3339),
 		})
@@ -635,6 +636,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
 			"alert_type": "hostname_mismatch",
+			"severity":   "critical",
 			"timestamp":  result.CheckedAt.Format(time.RFC3339),
 		})
 	}
@@ -652,6 +654,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
 			"alert_type":     "expired",
+			"severity":       "critical",
 			"not_after":      result.NotAfter.Format(time.RFC3339),
 			"days_remaining": daysRemaining,
 			"timestamp":      result.CheckedAt.Format(time.RFC3339),
@@ -700,9 +703,12 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
 			"alert_type":     "expiring",
+			"severity":       ExpiringSeverity(daysRemaining, result.IssuerOrg),
 			"threshold_days": *crossedThreshold,
 			"days_remaining": daysRemaining,
 			"not_after":      result.NotAfter.Format(time.RFC3339),
+			"issuer_org":     result.IssuerOrg,
+			"auto_renewable": IsAutoRenewable(result.IssuerOrg),
 			"timestamp":      result.CheckedAt.Format(time.RFC3339),
 		})
 		monitor.LastAlertedThreshold = crossedThreshold

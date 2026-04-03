@@ -13,6 +13,7 @@ package certificate
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -58,6 +59,50 @@ type CertMonitor struct {
 // DefaultWarningThresholds returns the default expiration warning thresholds in days.
 func DefaultWarningThresholds() []int {
 	return []int{30, 14, 7, 3, 1}
+}
+
+// autoRenewableIssuers lists certificate issuers known to support automatic renewal.
+var autoRenewableIssuers = []string{
+	"let's encrypt",
+	"zerossl",
+	"buypass",
+	"google trust services",
+}
+
+// IsAutoRenewable returns true if the certificate issuer is known to support
+// automatic renewal (ACME-based CAs like Let's Encrypt).
+func IsAutoRenewable(issuerOrg string) bool {
+	lower := strings.ToLower(issuerOrg)
+	for _, issuer := range autoRenewableIssuers {
+		if strings.Contains(lower, issuer) {
+			return true
+		}
+	}
+	return false
+}
+
+// ExpiringSeverity determines alert severity for an expiring certificate based
+// on days remaining and whether the issuer supports automatic renewal.
+// Auto-renewable certs get lower severity because renewal is expected.
+func ExpiringSeverity(daysRemaining int, issuerOrg string) string {
+	if IsAutoRenewable(issuerOrg) {
+		switch {
+		case daysRemaining <= 3:
+			return "critical"
+		case daysRemaining <= 7:
+			return "warning"
+		default:
+			return "info"
+		}
+	}
+	switch {
+	case daysRemaining <= 7:
+		return "critical"
+	case daysRemaining <= 14:
+		return "warning"
+	default:
+		return "info"
+	}
 }
 
 // WarningThresholdsJSON returns the JSON-encoded warning thresholds.
