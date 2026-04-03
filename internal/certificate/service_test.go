@@ -111,6 +111,57 @@ func TestComputeStatus_EmptyThresholds_AlwaysValid(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// IsAutoRenewable — detect ACME-based auto-renewable issuers
+// ---------------------------------------------------------------------------
+
+func TestIsAutoRenewable(t *testing.T) {
+	tests := []struct {
+		issuerOrg string
+		want      bool
+	}{
+		{"Let's Encrypt", true},
+		{"let's encrypt", true},
+		{"LET'S ENCRYPT", true},
+		{"ZeroSSL", true},
+		{"Buypass", true},
+		{"Google Trust Services LLC", true},
+		{"DigiCert Inc", false},
+		{"Sectigo Limited", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.issuerOrg, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsAutoRenewable(tt.issuerOrg))
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ExpiringSeverity — severity based on days remaining + issuer
+// ---------------------------------------------------------------------------
+
+func TestExpiringSeverity_AutoRenewable(t *testing.T) {
+	// Let's Encrypt: only escalates when auto-renewal clearly failed
+	assert.Equal(t, "info", ExpiringSeverity(30, "Let's Encrypt"))
+	assert.Equal(t, "info", ExpiringSeverity(14, "Let's Encrypt"))
+	assert.Equal(t, "info", ExpiringSeverity(8, "Let's Encrypt"))
+	assert.Equal(t, "warning", ExpiringSeverity(7, "Let's Encrypt"))
+	assert.Equal(t, "warning", ExpiringSeverity(4, "Let's Encrypt"))
+	assert.Equal(t, "critical", ExpiringSeverity(3, "Let's Encrypt"))
+	assert.Equal(t, "critical", ExpiringSeverity(1, "Let's Encrypt"))
+}
+
+func TestExpiringSeverity_NormalCert(t *testing.T) {
+	// Standard CA: progressive escalation
+	assert.Equal(t, "info", ExpiringSeverity(30, "DigiCert Inc"))
+	assert.Equal(t, "warning", ExpiringSeverity(14, "DigiCert Inc"))
+	assert.Equal(t, "warning", ExpiringSeverity(8, "DigiCert Inc"))
+	assert.Equal(t, "critical", ExpiringSeverity(7, "DigiCert Inc"))
+	assert.Equal(t, "critical", ExpiringSeverity(3, "DigiCert Inc"))
+	assert.Equal(t, "critical", ExpiringSeverity(1, "DigiCert Inc"))
+}
+
+// ---------------------------------------------------------------------------
 // extractHostPort — URL parsing for auto-detection
 // ---------------------------------------------------------------------------
 
