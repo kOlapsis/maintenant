@@ -243,9 +243,23 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		ContainerSvc: a.containerSvc,
 		Logger:       logger,
 	})
+	// --- License checkers for quota enforcement ---
+	var certLicenseChecker certificate.LicenseChecker
+	var endpointLicenseChecker endpoint.LicenseChecker
+	var heartbeatLicenseChecker heartbeat.LicenseChecker
+
+	if extension.CurrentEdition() == extension.Enterprise {
+		// Enterprise: unlimited quotas
+		certLicenseChecker = &certificate.DefaultLicenseChecker{MaxCertificates: 1<<31 - 1}
+		endpointLicenseChecker = &endpoint.DefaultLicenseChecker{MaxEndpoints: 1<<31 - 1}
+		heartbeatLicenseChecker = &heartbeat.DefaultLicenseChecker{MaxHeartbeats: 1<<31 - 1}
+	}
+	// Community: nil checkers use service defaults (10 endpoints, 10 heartbeats, 5 certificates)
+
 	a.certSvc = certificate.NewService(certificate.Deps{
-		Store:  certStore,
-		Logger: logger,
+		Store:          certStore,
+		Logger:         logger,
+		LicenseChecker: certLicenseChecker,
 	})
 
 	// --- Endpoint monitoring ---
@@ -259,17 +273,19 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		}
 	}, logger)
 	a.endpointSvc = endpoint.NewService(endpoint.Deps{
-		Store:  epStore,
-		Engine: a.checkEngine,
-		Logger: logger,
+		Store:          epStore,
+		Engine:         a.checkEngine,
+		Logger:         logger,
+		LicenseChecker: endpointLicenseChecker,
 	})
 	alertDetector := alert.NewEndpointAlertDetector()
 
 	// --- Heartbeat monitoring ---
 	a.heartbeatSvc = heartbeat.NewService(heartbeat.Deps{
-		Store:   hbStore,
-		Logger:  logger,
-		BaseURL: cfg.BaseURL,
+		Store:          hbStore,
+		Logger:         logger,
+		LicenseChecker: heartbeatLicenseChecker,
+		BaseURL:        cfg.BaseURL,
 	})
 
 	// --- SMTP ---
