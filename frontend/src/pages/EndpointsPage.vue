@@ -15,6 +15,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useEndpointsStore } from '@/stores/endpoints'
 import { useContainersStore } from '@/stores/containers'
+import { useEdition } from '@/composables/useEdition'
 import { createEndpoint } from '@/services/endpointApi'
 import { createCertificate } from '@/services/certificateApi'
 import EndpointCard from '@/components/EndpointCard.vue'
@@ -22,6 +23,8 @@ import { AlertTriangle, Globe } from 'lucide-vue-next'
 
 const store = useEndpointsStore()
 const containers = useContainersStore()
+const { getQuota, reload } = useEdition()
+const quota = getQuota('endpoints')
 
 const isK8s = computed(() => containers.runtimeName === 'kubernetes')
 const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
@@ -29,6 +32,10 @@ const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
 const showCreateForm = ref(false)
 const createError = ref<string | null>(null)
 const creating = ref(false)
+
+const isQuotaError = computed(() => {
+  return createError.value?.includes('Upgrade to Pro') || false
+})
 
 const form = ref({
   name: '',
@@ -103,6 +110,7 @@ async function handleCreate() {
     showCreateForm.value = false
     resetForm()
     store.fetchEndpoints()
+    reload()
   } catch (e) {
     createError.value = e instanceof Error ? e.message : 'Failed to create endpoint'
   } finally {
@@ -130,20 +138,44 @@ onUnmounted(() => {
           HTTP/TCP endpoint health checks
         </p>
       </div>
-      <button
-        class="min-h-[44px]"
-        :style="{
-          borderRadius: 'var(--pb-radius-lg)',
-          backgroundColor: 'var(--pb-accent)',
-          color: 'var(--pb-text-inverted)',
-          padding: '0.5rem 1rem',
-          fontSize: '0.875rem',
-          fontWeight: '500',
-        }"
-        @click="showCreateForm = !showCreateForm; if (!showCreateForm) resetForm()"
-      >
-        {{ showCreateForm ? 'Cancel' : 'New Endpoint' }}
-      </button>
+      <div class="flex items-center gap-2">
+        <span
+          v-if="!quota.isUnlimited"
+          class="rounded-full px-2.5 py-1 text-xs font-medium"
+          :style="{
+            backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
+            color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+          }"
+        >
+          {{ quota.used }}/{{ quota.limit }}
+        </span>
+        <router-link
+          v-if="quota.nearLimit && !quota.isAtLimit"
+          :to="{ name: 'pro-edition' }"
+          class="text-xs font-medium transition-opacity hover:opacity-80"
+          style="color: var(--pb-accent)"
+        >
+          Upgrade
+        </router-link>
+        <button
+          class="min-h-[44px]"
+          :disabled="quota.isAtLimit"
+          :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} endpoints` : ''"
+          :style="{
+            borderRadius: 'var(--pb-radius-lg)',
+            backgroundColor: 'var(--pb-accent)',
+            color: 'var(--pb-text-inverted)',
+            padding: '0.5rem 1rem',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            opacity: quota.isAtLimit ? '0.5' : '1',
+            cursor: quota.isAtLimit ? 'not-allowed' : 'pointer',
+          }"
+          @click="showCreateForm = !showCreateForm; if (!showCreateForm) resetForm()"
+        >
+          {{ showCreateForm ? 'Cancel' : 'New Endpoint' }}
+        </button>
+      </div>
     </div>
 
     <!-- Create form -->
@@ -166,7 +198,21 @@ onUnmounted(() => {
           borderRadius: 'var(--pb-radius-sm)',
         }"
       >
-        {{ createError }}
+        <template v-if="isQuotaError">
+          {{ createError.split('Upgrade to Pro')[0] }}
+          <a
+            href="https://maintenant.dev"
+            target="_blank"
+            class="font-medium underline transition-opacity hover:opacity-80"
+            style="color: #a78bfa"
+          >
+            Upgrade to Pro
+          </a>
+          {{ createError.split('Upgrade to Pro')[1] }}
+        </template>
+        <template v-else>
+          {{ createError }}
+        </template>
       </div>
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div class="grid gap-3 sm:grid-cols-2">
@@ -412,7 +458,7 @@ onUnmounted(() => {
           v-for="ep in store.filteredEndpoints"
           :key="ep.id"
           :endpoint="ep"
-          @deleted="store.fetchEndpoints()"
+          @deleted="store.fetchEndpoints(); reload()"
         />
       </div>
     </div>

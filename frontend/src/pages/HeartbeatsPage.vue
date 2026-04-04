@@ -12,17 +12,24 @@
 -->
 
 <script setup lang="ts">
-import { inject, ref, onMounted, onUnmounted } from 'vue'
+import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
+import { useEdition } from '@/composables/useEdition'
 import { createHeartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 
 const store = useHeartbeatsStore()
 const { openDetail } = inject(detailSlideOverKey)!
+const { getQuota, reload } = useEdition()
+const quota = getQuota('heartbeats')
 
 const showCreateForm = ref(false)
 const createError = ref<string | null>(null)
+
+const isQuotaError = computed(() => {
+  return createError.value?.includes('Upgrade to Pro') || false
+})
 
 const form = ref({
   name: '',
@@ -57,6 +64,7 @@ async function handleCreate() {
     showCreateForm.value = false
     form.value = { name: '', interval_seconds: 300, grace_seconds: 60 }
     store.fetchHeartbeats()
+    reload()
   } catch (e) {
     createError.value = e instanceof Error ? e.message : 'Failed to create heartbeat'
   }
@@ -73,19 +81,44 @@ async function handleCreate() {
           Passive cron &amp; scheduled task monitoring
         </p>
       </div>
-      <button
-        :style="{
-          borderRadius: 'var(--pb-radius-lg)',
-          backgroundColor: 'var(--pb-accent)',
-          color: 'var(--pb-text-inverted)',
-          padding: '0.5rem 1rem',
-          fontSize: '0.875rem',
-          fontWeight: '500',
-        }"
-        @click="showCreateForm = !showCreateForm"
-      >
-        {{ showCreateForm ? 'Cancel' : 'New Heartbeat' }}
-      </button>
+      <div class="flex items-center gap-2">
+        <span
+          v-if="!quota.isUnlimited"
+          class="rounded-full px-2.5 py-1 text-xs font-medium"
+          :style="{
+            backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
+            color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+          }"
+        >
+          {{ quota.used }}/{{ quota.limit }}
+        </span>
+        <router-link
+          v-if="quota.nearLimit && !quota.isAtLimit"
+          :to="{ name: 'pro-edition' }"
+          class="text-xs font-medium transition-opacity hover:opacity-80"
+          style="color: var(--pb-accent)"
+        >
+          Upgrade
+        </router-link>
+        <button
+          class="min-h-[44px]"
+          :disabled="quota.isAtLimit"
+          :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} heartbeats` : ''"
+          :style="{
+            borderRadius: 'var(--pb-radius-lg)',
+            backgroundColor: 'var(--pb-accent)',
+            color: 'var(--pb-text-inverted)',
+            padding: '0.5rem 1rem',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            opacity: quota.isAtLimit ? '0.5' : '1',
+            cursor: quota.isAtLimit ? 'not-allowed' : 'pointer',
+          }"
+          @click="showCreateForm = !showCreateForm"
+        >
+          {{ showCreateForm ? 'Cancel' : 'New Heartbeat' }}
+        </button>
+      </div>
     </div>
 
     <!-- Create form -->
@@ -108,7 +141,21 @@ async function handleCreate() {
           borderRadius: 'var(--pb-radius-sm)',
         }"
       >
-        {{ createError }}
+        <template v-if="isQuotaError">
+          {{ createError.split('Upgrade to Pro')[0] }}
+          <a
+            href="https://maintenant.dev"
+            target="_blank"
+            class="font-medium underline transition-opacity hover:opacity-80"
+            style="color: #a78bfa"
+          >
+            Upgrade to Pro
+          </a>
+          {{ createError.split('Upgrade to Pro')[1] }}
+        </template>
+        <template v-else>
+          {{ createError }}
+        </template>
       </div>
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div>
@@ -261,7 +308,7 @@ async function handleCreate() {
         v-for="hb in store.heartbeats"
         :key="hb.id"
         :heartbeat="hb"
-        @refresh="store.fetchHeartbeats()"
+        @refresh="store.fetchHeartbeats(); reload()"
         @select="openDetail('heartbeat', $event)"
       />
     </div>

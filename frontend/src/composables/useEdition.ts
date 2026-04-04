@@ -10,7 +10,7 @@
 // Source: https://github.com/kolapsis/maintenant
 
 import { ref, computed } from 'vue'
-import { fetchEdition, fetchLicenseStatus, type EditionResponse, type LicenseStatus } from '@/services/editionApi'
+import { fetchEdition, fetchLicenseStatus, type EditionResponse, type LicenseStatus, type QuotaResource } from '@/services/editionApi'
 
 const edition = ref<EditionResponse | null>(null)
 const licenseStatus = ref<LicenseStatus | null>(null)
@@ -24,6 +24,11 @@ async function load() {
     edition.value = { edition: 'community', organisation_name: '', features: {} }
   }
   loaded.value = true
+}
+
+async function reload() {
+  loaded.value = false
+  await load()
 }
 
 async function loadLicenseStatus() {
@@ -49,6 +54,25 @@ export function useEdition() {
     return edition.value?.features[name] === true
   }
 
+  function getQuota(resource: QuotaResource) {
+    const quota = edition.value?.quotas?.[resource]
+    const used = quota?.used ?? 0
+    const limit = quota?.limit ?? -1
+    const isUnlimited = limit === -1
+    const remaining = isUnlimited ? Infinity : Math.max(0, limit - used)
+    const isAtLimit = !isUnlimited && used >= limit
+    const nearLimit = !isUnlimited && limit > 0 && used / limit >= 0.8
+
+    return {
+      used,
+      limit,
+      remaining,
+      isUnlimited,
+      isAtLimit,
+      nearLimit,
+    }
+  }
+
   return {
     edition,
     isEnterprise,
@@ -56,6 +80,8 @@ export function useEdition() {
     organisationName,
     hasFeature,
     load,
+    reload,
+    getQuota,
     licenseStatus,
     licenseMessage,
     licenseStatusValue,

@@ -13,10 +13,18 @@ import { apiFetch } from './apiFetch'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
+export interface QuotaEntry {
+  used: number
+  limit: number
+}
+
+export type QuotaResource = 'endpoints' | 'heartbeats' | 'certificates' | 'status_groups' | 'status_components'
+
 export interface EditionResponse {
   edition: string
   organisation_name: string
   features: Record<string, boolean>
+  quotas?: Partial<Record<QuotaResource, QuotaEntry>>
 }
 
 export function fetchEdition(): Promise<EditionResponse> {
