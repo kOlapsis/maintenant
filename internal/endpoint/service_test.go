@@ -13,6 +13,7 @@ package endpoint
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -120,6 +121,18 @@ func (m *memStore) ListEndpointsByExternalID(_ context.Context, externalID strin
 		}
 	}
 	return out, nil
+}
+
+func (m *memStore) CountActiveEndpoints(_ context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, ep := range m.endpoints {
+		if ep.Active {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (m *memStore) DeactivateEndpoint(_ context.Context, id int64) error {
@@ -660,4 +673,37 @@ func TestService_CalculateUptime_NoResults(t *testing.T) {
 	for label, pct := range uptimes {
 		assert.Equal(t, 0.0, pct, "window %s must be 0 when there are no check results", label)
 	}
+}
+
+func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{
+		Store:          store,
+		Engine:         noopEngine(),
+		Logger:         noopLogger(),
+		LicenseChecker: &DefaultLicenseChecker{MaxEndpoints: 2},
+	})
+	ctx := context.Background()
+
+	// Create first endpoint - should succeed
+	ep1, err := svc.CreateStandalone(ctx, "ep1", "http://example.com", TypeHTTP, DefaultConfig())
+	require.NoError(t, err)
+	assert.NotNil(t, ep1)
+	assert.Equal(t, "ep1", ep1.Name)
+
+	// Create second endpoint - should succeed
+	ep2, err := svc.CreateStandalone(ctx, "ep2", "http://example.org", TypeHTTP, DefaultConfig())
+	require.NoError(t, err)
+	assert.NotNil(t, ep2)
+
+	// Create third endpoint - should fail due to quota
+	ep3, err := svc.CreateStandalone(ctx, "ep3", "http://example.net", TypeHTTP, DefaultConfig())
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrLimitReached), "expected ErrLimitReached")
+	assert.Nil(t, ep3)
+
+	// Verify count
+	count, err := store.CountActiveEndpoints(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
 }

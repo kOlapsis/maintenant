@@ -265,6 +265,11 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 
 	ep, err := h.service.CreateStandalone(r.Context(), input.Name, input.Target, epType, config)
 	if err != nil {
+		if errors.Is(err, endpoint.ErrLimitReached) {
+			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
+				"Community edition is limited to 10 endpoints. Upgrade to Pro for unlimited monitoring.")
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create endpoint")
 		return
 	}

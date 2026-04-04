@@ -1,0 +1,17 @@
+services:
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - maintenant-data:/data
+    environment:
+      MAINTENANT_ADDR: "0.0.0.0:8080"
+      MAINTENANT_DB: "/data/maintenant.db"
+      MAINTENANT_LICENSE_KEY: "pb_lic_bb6bf6108406e7496bb4d3498b4aa560"
+    restart: unless-stopped
+
+volumes:
+  maintenant-data:
