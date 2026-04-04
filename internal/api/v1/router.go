@@ -246,14 +246,14 @@ func NewRouter(d HandlerDeps) *Router {
 		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker)
 		// Component groups
 		r.mux.HandleFunc("GET /api/v1/status/groups", sh.HandleListGroups)
-		r.mux.HandleFunc("POST /api/v1/status/groups", requireEnterprise(sh.HandleCreateGroup))
-		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", requireEnterprise(sh.HandleUpdateGroup))
-		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", requireEnterprise(sh.HandleDeleteGroup))
+		r.mux.HandleFunc("POST /api/v1/status/groups", sh.HandleCreateGroup)
+		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", sh.HandleUpdateGroup)
+		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", sh.HandleDeleteGroup)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
-		r.mux.HandleFunc("POST /api/v1/status/components", requireEnterprise(sh.HandleCreateComponent))
-		r.mux.HandleFunc("PUT /api/v1/status/components/{id}", requireEnterprise(sh.HandleUpdateComponent))
-		r.mux.HandleFunc("DELETE /api/v1/status/components/{id}", requireEnterprise(sh.HandleDeleteComponent))
+		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
+		r.mux.HandleFunc("PUT /api/v1/status/components/{id}", sh.HandleUpdateComponent)
+		r.mux.HandleFunc("DELETE /api/v1/status/components/{id}", sh.HandleDeleteComponent)
 		// Incidents
 		if d.StatusIncidents != nil {
 			r.mux.HandleFunc("GET /api/v1/status/incidents", sh.HandleListIncidents)

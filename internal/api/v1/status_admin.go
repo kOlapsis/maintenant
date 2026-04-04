@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/status"
 )
 
@@ -70,6 +71,19 @@ func (h *StatusAdminHandler) HandleCreateGroup(w http.ResponseWriter, r *http.Re
 	if g.Name == "" {
 		WriteError(w, http.StatusBadRequest, "validation", "Name is required")
 		return
+	}
+	// Quota check for Community edition (max 1 group)
+	if extension.CurrentEdition() != extension.Enterprise {
+		groups, err := h.components.ListGroups(r.Context())
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		if len(groups) >= 1 {
+			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
+				"Community edition is limited to 1 status page group. Upgrade to Pro for unlimited groups.")
+			return
+		}
 	}
 	if _, err := h.components.CreateGroup(r.Context(), &g); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
@@ -151,6 +165,19 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 		existing, _ := h.components.GetComponentByMonitor(r.Context(), c.MonitorType, c.MonitorID)
 		if existing != nil {
 			WriteError(w, http.StatusConflict, "conflict", "Component already exists for this monitor")
+			return
+		}
+	}
+	// Quota check for Community edition (max 3 components)
+	if extension.CurrentEdition() != extension.Enterprise {
+		components, err := h.components.ListComponents(r.Context())
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		if len(components) >= 3 {
+			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
+				"Community edition is limited to 3 status page components. Upgrade to Pro for unlimited components.")
 			return
 		}
 	}
