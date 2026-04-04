@@ -445,6 +445,11 @@ func (s *Service) ListMonitors(ctx context.Context, opts ListCertificatesOpts) (
 	return s.store.ListMonitors(ctx, opts)
 }
 
+// CountStandaloneMonitors returns the count of standalone (manually-added) certificate monitors.
+func (s *Service) CountStandaloneMonitors(ctx context.Context) (int, error) {
+	return s.store.CountStandaloneMonitors(ctx)
+}
+
 // GetMonitor returns a certificate monitor by ID.
 func (s *Service) GetMonitor(ctx context.Context, id int64) (*CertMonitor, error) {
 	m, err := s.store.GetMonitorByID(ctx, id)

@@ -361,6 +361,11 @@ func (s *Service) ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]
 	return s.store.ListEndpoints(ctx, opts)
 }
 
+// CountActiveEndpoints returns the count of all active endpoints (both standalone and label-discovered).
+func (s *Service) CountActiveEndpoints(ctx context.Context) (int, error) {
+	return s.store.CountActiveEndpoints(ctx)
+}
+
 // GetEndpoint retrieves an endpoint by ID.
 func (s *Service) GetEndpoint(ctx context.Context, id int64) (*Endpoint, error) {
 	return s.store.GetEndpointByID(ctx, id)
