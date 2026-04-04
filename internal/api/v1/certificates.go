@@ -140,6 +140,11 @@ func (h *CertificateHandler) HandleCreate(w http.ResponseWriter, r *http.Request
 				"hostname:port already monitored")
 			return
 		}
+		if errors.Is(err, certificate.ErrLimitReached) {
+			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
+				"Community edition is limited to 5 certificate monitors. Upgrade to Pro for unlimited monitoring.")
+			return
+		}
 		if errors.Is(err, certificate.ErrInvalidInput) {
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 			return
