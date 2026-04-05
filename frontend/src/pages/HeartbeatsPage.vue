@@ -144,8 +144,7 @@ async function handleCreate() {
         <template v-if="isQuotaError">
           {{ createError.split('Upgrade to Pro')[0] }}
           <a
-            href="https://maintenant.dev"
-            target="_blank"
+            href="/pro-edition"
             class="font-medium underline transition-opacity hover:opacity-80"
             style="color: #a78bfa"
           >
