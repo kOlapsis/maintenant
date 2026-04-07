@@ -71,6 +71,13 @@ These routes provide full read/write access to your monitoring system. **Always 
 services:
   maintenant:
     image: ghcr.io/kolapsis/maintenant:latest
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     labels:
       traefik.enable: "true"
 
@@ -226,6 +233,39 @@ See [MCP Server](features/mcp.md) for full configuration and usage details.
 
 ## Deployment Hardening
 
+### Container Security
+
+The maintenant Docker image runs as **`nobody:nobody`** (uid/gid 65534) — never as root. Combined with the Compose security options, the container operates with minimal privileges:
+
+```yaml
+services:
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
+    read_only: true                    # immutable root filesystem
+    security_opt:
+      - no-new-privileges:true         # prevent privilege escalation
+    group_add:
+      - "${DOCKER_GID:-983}"           # Docker socket access (see below)
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m    # scratch space for SQLite WAL
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - maintenant-data:/data
+```
+
+| Setting | Purpose |
+|---------|---------|
+| `USER 65534:65534` (Dockerfile) | Process runs as `nobody`, not root |
+| `read_only: true` | Root filesystem is immutable — no writes outside mounted volumes |
+| `no-new-privileges` | Blocks `setuid`/`setgid` binaries and privilege escalation |
+| `group_add` | Adds the host Docker group so `nobody` can read the socket |
+| `tmpfs /tmp` | Writable scratch space with `noexec` and `nosuid` flags |
+
+!!! tip "Finding your Docker GID"
+    Run `stat -c '%g' /var/run/docker.sock` on the host to get the Docker group ID.
+    Set it as `DOCKER_GID` in your `.env` file or pass it directly in `group_add`.
+
 ### Docker Socket
 
 maintenant requires access to the Docker socket to discover and monitor containers. Mount it **read-only**:
@@ -236,7 +276,7 @@ volumes:
   - /proc:/host/proc:ro
 ```
 
-The Docker socket grants root-equivalent access to the host. maintenant only reads container state, metadata, and logs — it never creates, modifies, or deletes containers. The read-only mount is a defense-in-depth measure.
+The Docker socket grants root-equivalent access to the host. maintenant only reads container state, metadata, and logs — it never creates, modifies, or deletes containers. The read-only mount and non-root user are defense-in-depth measures — even if the process is compromised, it cannot escalate to root on the host.
 
 For stricter isolation, consider using a Docker socket proxy like [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) to restrict API access to only the endpoints maintenant needs.
 
@@ -276,12 +316,16 @@ When creating webhooks, maintenant enforces **HTTPS-only** URLs. This prevents c
 
 A quick reference for securing your deployment:
 
+- [ ] Container runs as non-root (`USER 65534:65534` — default in the official image)
+- [ ] `read_only: true` — immutable root filesystem
+- [ ] `no-new-privileges:true` — blocks privilege escalation
+- [ ] `group_add` set to host Docker GID (run `stat -c '%g' /var/run/docker.sock`)
+- [ ] Docker socket mounted read-only (`:ro`)
 - [ ] Reverse proxy in front of maintenant with authentication enabled
 - [ ] `/api/v1/*` and `/` require authentication
 - [ ] `/ping/` and `/status/` bypass authentication
 - [ ] If MCP is enabled: OAuth2 credentials configured (`MAINTENANT_MCP_CLIENT_ID` + `MAINTENANT_MCP_CLIENT_SECRET`)
 - [ ] If MCP is enabled: `/mcp`, `/oauth/*`, `/.well-known/*` bypass proxy auth (MCP handles its own)
-- [ ] Docker socket mounted read-only (`:ro`)
 - [ ] HTTPS termination at the proxy level
 - [ ] `MAINTENANT_BASE_URL` set to your public HTTPS URL
 - [ ] Database file has restrictive permissions

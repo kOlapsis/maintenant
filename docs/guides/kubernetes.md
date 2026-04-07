@@ -72,6 +72,8 @@ The default deployment includes:
 ```yaml
 securityContext:
   runAsNonRoot: true
+  runAsUser: 65534       # nobody
+  runAsGroup: 65534
   fsGroup: 65534
 containers:
   - securityContext:
@@ -81,7 +83,9 @@ containers:
         drop: ["ALL"]
 ```
 
-A `/tmp` emptyDir is mounted for SQLite WAL temporary files since the root filesystem is read-only.
+The container runs as `nobody` (uid 65534) with an immutable root filesystem and all Linux capabilities dropped. A `/tmp` emptyDir is mounted for SQLite WAL temporary files since the root filesystem is read-only.
+
+This mirrors the Docker Compose hardening (`read_only: true`, `no-new-privileges`, non-root user). See [Security](../security.md) for the full container security reference.
 
 ---
 

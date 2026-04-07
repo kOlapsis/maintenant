@@ -63,6 +63,13 @@ services:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
       - "8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"  # match host's docker group
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro

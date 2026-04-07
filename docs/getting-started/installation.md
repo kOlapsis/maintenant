@@ -14,6 +14,13 @@ services:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
       - "8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"  # match host's docker group
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
@@ -127,7 +134,7 @@ The official Docker image uses a multi-stage build:
 
 1. **Stage 1** — Node.js 22 builds the Vue 3 SPA
 2. **Stage 2** — Go 1.25 compiles the binary with the frontend embedded
-3. **Stage 3** — Alpine 3.21 minimal runtime (non-root user, health check included)
+3. **Stage 3** — Alpine 3.21 minimal runtime (runs as `nobody:nobody` uid 65534, read-only binary, health check included)
 
 The image is available at `ghcr.io/kolapsis/maintenant`.
 
