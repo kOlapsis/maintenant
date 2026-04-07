@@ -46,7 +46,7 @@ RUN apk add --no-cache ca-certificates tzdata \
     && mkdir -p /data \
     && chown 65534:65534 /data
 
-COPY --from=builder /out/maintenant /app/maintenant
+COPY --from=builder --chmod=555 /out/maintenant /app/maintenant
 
 EXPOSE 8080
 VOLUME /data
@@ -54,4 +54,5 @@ VOLUME /data
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
 
+USER 65534:65534
 ENTRYPOINT ["/app/maintenant"]
