@@ -33,24 +33,41 @@ var (
 	ErrAutoDetectedMonitor = errors.New("hostname:port already monitored via endpoint auto-detection")
 	ErrInvalidInput        = errors.New("invalid input")
 	ErrCannotDeleteAuto    = errors.New("cannot delete auto-detected certificate monitors")
+	ErrLimitReached        = errors.New("certificate monitor limit reached")
 )
+
+// LicenseChecker determines license-gated capabilities for certificate monitors.
+type LicenseChecker interface {
+	CanCreateCertificate(currentCount int) bool
+}
+
+// DefaultLicenseChecker implements Community edition limits.
+type DefaultLicenseChecker struct {
+	MaxCertificates int
+}
+
+func (c *DefaultLicenseChecker) CanCreateCertificate(currentCount int) bool {
+	return currentCount < c.MaxCertificates
+}
 
 // EventCallback is called when a certificate event occurs (for SSE broadcasting).
 type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the certificate Service.
 type Deps struct {
-	Store         CertificateStore // required
-	Logger        *slog.Logger     // required
-	EventCallback EventCallback    // optional — nil-safe
+	Store          CertificateStore // required
+	Logger         *slog.Logger     // required
+	LicenseChecker LicenseChecker   // optional — defaults to community limits
+	EventCallback  EventCallback    // optional — nil-safe
 }
 
 // Service orchestrates certificate monitoring.
 type Service struct {
-	store   CertificateStore
-	logger  *slog.Logger
-	onEvent EventCallback
-	mu      sync.Mutex
+	store          CertificateStore
+	logger         *slog.Logger
+	licenseChecker LicenseChecker
+	onEvent        EventCallback
+	mu             sync.Mutex
 }
 
 // NewService creates a new certificate service.
@@ -61,10 +78,15 @@ func NewService(d Deps) *Service {
 	if d.Logger == nil {
 		panic("certificate.NewService: Logger is required")
 	}
+	lc := d.LicenseChecker
+	if lc == nil {
+		lc = &DefaultLicenseChecker{MaxCertificates: 5}
+	}
 	return &Service{
-		store:   d.Store,
-		logger:  d.Logger,
-		onEvent: d.EventCallback,
+		store:          d.Store,
+		logger:         d.Logger,
+		licenseChecker: lc,
+		onEvent:        d.EventCallback,
 	}
 }
 
@@ -194,6 +216,12 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 		input.WarningThresholds = DefaultWarningThresholds()
 	}
 
+	// Check quota for standalone monitors
+	count, err := s.store.CountStandaloneMonitors(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("count standalone monitors: %w", err)
+	}
+
 	// Check for existing monitor (FR-018)
 	existing, err := s.store.GetMonitorByHostPort(ctx, input.Hostname, input.Port)
 	if err != nil {
@@ -221,6 +249,10 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 			return nil, nil, fmt.Errorf("reactivate monitor: %w", err)
 		}
 	} else {
+		// Check quota for new standalone monitors
+		if !s.licenseChecker.CanCreateCertificate(count) {
+			return nil, nil, ErrLimitReached
+		}
 		_, err = s.store.CreateMonitor(ctx, monitor)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create standalone monitor: %w", err)
@@ -411,6 +443,11 @@ func (s *Service) deactivateLabelMonitors(ctx context.Context, externalID string
 // ListMonitors returns all active certificate monitors.
 func (s *Service) ListMonitors(ctx context.Context, opts ListCertificatesOpts) ([]*CertMonitor, error) {
 	return s.store.ListMonitors(ctx, opts)
+}
+
+// CountStandaloneMonitors returns the count of standalone (manually-added) certificate monitors.
+func (s *Service) CountStandaloneMonitors(ctx context.Context) (int, error) {
+	return s.store.CountStandaloneMonitors(ctx)
 }
 
 // GetMonitor returns a certificate monitor by ID.

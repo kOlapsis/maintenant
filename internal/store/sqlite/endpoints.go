@@ -170,6 +170,15 @@ func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, externalI
 	return endpoints, rows.Err()
 }
 
+func (s *EndpointStore) CountActiveEndpoints(ctx context.Context) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM endpoints WHERE active=1`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count active endpoints: %w", err)
+	}
+	return count, nil
+}
+
 func (s *EndpointStore) DeactivateEndpoint(ctx context.Context, id int64) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE endpoints SET active=0 WHERE id=?`, id)

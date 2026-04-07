@@ -176,6 +176,11 @@ func (s *Service) ListHeartbeats(ctx context.Context, opts ListHeartbeatsOpts) (
 	return s.store.ListHeartbeats(ctx, opts)
 }
 
+// CountActiveHeartbeats returns the count of all active heartbeat monitors.
+func (s *Service) CountActiveHeartbeats(ctx context.Context) (int, error) {
+	return s.store.CountActiveHeartbeats(ctx)
+}
+
 func (s *Service) UpdateHeartbeat(ctx context.Context, id int64, input UpdateHeartbeatInput) (*Heartbeat, error) {
 	h, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {

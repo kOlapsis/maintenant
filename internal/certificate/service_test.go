@@ -1,10 +1,15 @@
 package certificate
 
 import (
+	"context"
+	"errors"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -265,4 +270,143 @@ func TestParseCertificateLabels_StripsSchemeAndPath(t *testing.T) {
 	assert.Len(t, parsed, 1)
 	assert.Equal(t, "example.com", parsed[0].Hostname)
 	assert.Equal(t, 443, parsed[0].Port)
+}
+
+// ---------------------------------------------------------------------------
+// Mock store for quota testing
+// ---------------------------------------------------------------------------
+
+type mockCertStore struct {
+	monitors               map[int64]*CertMonitor
+	nextID                 int64
+	standaloneCount        int
+	getMonitorByHostPortFn func(ctx context.Context, hostname string, port int) (*CertMonitor, error)
+}
+
+func newMockCertStore() *mockCertStore {
+	return &mockCertStore{
+		monitors: make(map[int64]*CertMonitor),
+		nextID:   1,
+	}
+}
+
+func (m *mockCertStore) CreateMonitor(_ context.Context, monitor *CertMonitor) (int64, error) {
+	id := m.nextID
+	m.nextID++
+	monitor.ID = id
+	m.monitors[id] = monitor
+	if monitor.Source == SourceStandalone {
+		m.standaloneCount++
+	}
+	return id, nil
+}
+
+func (m *mockCertStore) GetMonitorByHostPort(ctx context.Context, hostname string, port int) (*CertMonitor, error) {
+	if m.getMonitorByHostPortFn != nil {
+		return m.getMonitorByHostPortFn(ctx, hostname, port)
+	}
+	return nil, nil
+}
+
+func (m *mockCertStore) CountStandaloneMonitors(_ context.Context) (int, error) {
+	return m.standaloneCount, nil
+}
+
+// Stub implementations for required interface methods
+func (m *mockCertStore) GetMonitorByID(_ context.Context, _ int64) (*CertMonitor, error) {
+	return nil, nil
+}
+func (m *mockCertStore) GetMonitorByEndpointID(_ context.Context, _ int64) (*CertMonitor, error) {
+	return nil, nil
+}
+func (m *mockCertStore) ListMonitors(_ context.Context, _ ListCertificatesOpts) ([]*CertMonitor, error) {
+	return nil, nil
+}
+func (m *mockCertStore) UpdateMonitor(_ context.Context, _ *CertMonitor) error {
+	return nil
+}
+func (m *mockCertStore) SoftDeleteMonitor(_ context.Context, _ int64) error {
+	return nil
+}
+func (m *mockCertStore) ReactivateMonitor(_ context.Context, _ int64, _ *CertMonitor) error {
+	return nil
+}
+func (m *mockCertStore) InsertCheckResult(_ context.Context, _ *CertCheckResult) (int64, error) {
+	return 0, nil
+}
+func (m *mockCertStore) GetLatestCheckResult(_ context.Context, _ int64) (*CertCheckResult, error) {
+	return nil, nil
+}
+func (m *mockCertStore) ListCheckResults(_ context.Context, _ int64, _ ListChecksOpts) ([]*CertCheckResult, int, error) {
+	return nil, 0, nil
+}
+func (m *mockCertStore) InsertChainEntries(_ context.Context, _ []*CertChainEntry) error {
+	return nil
+}
+func (m *mockCertStore) GetChainEntries(_ context.Context, _ int64) ([]*CertChainEntry, error) {
+	return nil, nil
+}
+func (m *mockCertStore) ListMonitorsByExternalID(_ context.Context, _ string) ([]*CertMonitor, error) {
+	return nil, nil
+}
+func (m *mockCertStore) DeactivateMonitor(_ context.Context, _ int64) error {
+	return nil
+}
+func (m *mockCertStore) ListDueScheduledMonitors(_ context.Context, _ time.Time) ([]*CertMonitor, error) {
+	return nil, nil
+}
+func (m *mockCertStore) DeleteCheckResultsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
+	return 0, nil
+}
+
+func noopLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+// ---------------------------------------------------------------------------
+// Quota enforcement test
+// ---------------------------------------------------------------------------
+
+func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
+	store := newMockCertStore()
+	svc := NewService(Deps{
+		Store:          store,
+		Logger:         noopLogger(),
+		LicenseChecker: &DefaultLicenseChecker{MaxCertificates: 2},
+	})
+	ctx := context.Background()
+
+	// Create first monitor - should succeed
+	monitor1, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
+		Hostname:             "example.com",
+		Port:                 443,
+		CheckIntervalSeconds: 3600,
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, monitor1)
+	assert.Equal(t, "example.com", monitor1.Hostname)
+
+	// Create second monitor - should succeed
+	monitor2, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
+		Hostname:             "example.org",
+		Port:                 443,
+		CheckIntervalSeconds: 3600,
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, monitor2)
+
+	// Create third monitor - should fail due to quota
+	monitor3, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
+		Hostname:             "example.net",
+		Port:                 443,
+		CheckIntervalSeconds: 3600,
+	})
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrLimitReached), "expected ErrLimitReached")
+	assert.Nil(t, monitor3)
+
+	// Verify count
+	count, err := store.CountStandaloneMonitors(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
 }

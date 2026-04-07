@@ -12,6 +12,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -246,14 +247,14 @@ func NewRouter(d HandlerDeps) *Router {
 		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker)
 		// Component groups
 		r.mux.HandleFunc("GET /api/v1/status/groups", sh.HandleListGroups)
-		r.mux.HandleFunc("POST /api/v1/status/groups", requireEnterprise(sh.HandleCreateGroup))
-		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", requireEnterprise(sh.HandleUpdateGroup))
-		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", requireEnterprise(sh.HandleDeleteGroup))
+		r.mux.HandleFunc("POST /api/v1/status/groups", sh.HandleCreateGroup)
+		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", sh.HandleUpdateGroup)
+		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", sh.HandleDeleteGroup)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
-		r.mux.HandleFunc("POST /api/v1/status/components", requireEnterprise(sh.HandleCreateComponent))
-		r.mux.HandleFunc("PUT /api/v1/status/components/{id}", requireEnterprise(sh.HandleUpdateComponent))
-		r.mux.HandleFunc("DELETE /api/v1/status/components/{id}", requireEnterprise(sh.HandleDeleteComponent))
+		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
+		r.mux.HandleFunc("PUT /api/v1/status/components/{id}", sh.HandleUpdateComponent)
+		r.mux.HandleFunc("DELETE /api/v1/status/components/{id}", sh.HandleDeleteComponent)
 		// Incidents
 		if d.StatusIncidents != nil {
 			r.mux.HandleFunc("GET /api/v1/status/incidents", sh.HandleListIncidents)
@@ -328,7 +329,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Edition endpoint — exposes CE/Pro feature flags for frontend gating
 	smtpConfigured := d.Notifier != nil && d.Notifier.SMTPConfigured()
-	r.mux.HandleFunc("GET /api/v1/edition", r.handleGetEdition(smtpConfigured))
+	r.mux.HandleFunc("GET /api/v1/edition", r.handleGetEdition(smtpConfigured, d))
 
 	// Health endpoint
 	r.mux.HandleFunc("GET /api/v1/health", r.handleHealth)
@@ -550,30 +551,135 @@ func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleGetEdition returns a handler for the current edition and feature flags.
-func (r *Router) handleGetEdition(smtpConfigured bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
+func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
 		isEnterprise := extension.CurrentEdition() == extension.Enterprise
+
+		// Compute quotas
+		quotas := r.computeQuotas(ctx, d, isEnterprise)
+
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": r.organisationName,
 			"features": map[string]bool{
-				"cve_enrichment":      isEnterprise,
-				"risk_scoring":        isEnterprise,
-				"changelog":           isEnterprise,
-				"incidents":           isEnterprise,
-				"maintenance_windows": isEnterprise,
-				"subscribers":         isEnterprise,
-				"smtp":                smtpConfigured && isEnterprise,
-				"slack":               isEnterprise,
-				"teams":               isEnterprise,
-				"resource_history":    isEnterprise,
-				"alert_escalation":    isEnterprise,
-				"alert_routing":       true,
+				"cve_enrichment":       isEnterprise,
+				"risk_scoring":         isEnterprise,
+				"changelog":            isEnterprise,
+				"incidents":            isEnterprise,
+				"maintenance_windows":  isEnterprise,
+				"subscribers":          isEnterprise,
+				"smtp":                 smtpConfigured && isEnterprise,
+				"slack":                isEnterprise,
+				"teams":                isEnterprise,
+				"resource_history":     isEnterprise,
+				"alert_escalation":     isEnterprise,
+				"alert_routing":        true,
 				"alert_entity_routing": isEnterprise,
-				"security_posture":    isEnterprise,
-				"swarm_dashboard":     isEnterprise,
-				"k8s_cluster":         isEnterprise,
+				"security_posture":     isEnterprise,
+				"swarm_dashboard":      isEnterprise,
+				"k8s_cluster":          isEnterprise,
 			},
+			"quotas": quotas,
 		})
 	}
+}
+
+// computeQuotas returns quota information for all gated resources.
+func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise bool) map[string]interface{} {
+	// For Enterprise, all limits are -1 (unlimited)
+	if isEnterprise {
+		return map[string]interface{}{
+			"endpoints": map[string]interface{}{
+				"used":  0,
+				"limit": -1,
+			},
+			"heartbeats": map[string]interface{}{
+				"used":  0,
+				"limit": -1,
+			},
+			"certificates": map[string]interface{}{
+				"used":  0,
+				"limit": -1,
+			},
+			"status_groups": map[string]interface{}{
+				"used":  0,
+				"limit": -1,
+			},
+			"status_components": map[string]interface{}{
+				"used":  0,
+				"limit": -1,
+			},
+		}
+	}
+
+	// Community edition: compute actual usage
+	quotas := make(map[string]interface{})
+
+	// Endpoints: max 10
+	if d.Endpoints != nil {
+		used, err := d.Endpoints.CountActiveEndpoints(ctx)
+		if err != nil {
+			r.logger.Error("failed to count endpoints for quota", "error", err)
+			used = 0
+		}
+		quotas["endpoints"] = map[string]interface{}{
+			"used":  used,
+			"limit": 10,
+		}
+	}
+
+	// Heartbeats: max 10
+	if d.Heartbeats != nil {
+		used, err := d.Heartbeats.CountActiveHeartbeats(ctx)
+		if err != nil {
+			r.logger.Error("failed to count heartbeats for quota", "error", err)
+			used = 0
+		}
+		quotas["heartbeats"] = map[string]interface{}{
+			"used":  used,
+			"limit": 10,
+		}
+	}
+
+	// Certificates (standalone only): max 5
+	if d.Certificates != nil {
+		used, err := d.Certificates.CountStandaloneMonitors(ctx)
+		if err != nil {
+			r.logger.Error("failed to count standalone certificates for quota", "error", err)
+			used = 0
+		}
+		quotas["certificates"] = map[string]interface{}{
+			"used":  used,
+			"limit": 5,
+		}
+	}
+
+	// Status page groups: max 1
+	if d.StatusComponents != nil {
+		groups, err := d.StatusComponents.ListGroups(ctx)
+		if err != nil {
+			r.logger.Error("failed to count status groups for quota", "error", err)
+			groups = nil
+		}
+		quotas["status_groups"] = map[string]interface{}{
+			"used":  len(groups),
+			"limit": 1,
+		}
+	}
+
+	// Status page components: max 3
+	if d.StatusComponents != nil {
+		components, err := d.StatusComponents.ListComponents(ctx)
+		if err != nil {
+			r.logger.Error("failed to count status components for quota", "error", err)
+			components = nil
+		}
+		quotas["status_components"] = map[string]interface{}{
+			"used":  len(components),
+			"limit": 3,
+		}
+	}
+
+	return quotas
 }

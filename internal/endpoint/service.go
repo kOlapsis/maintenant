@@ -22,9 +22,24 @@ import (
 )
 
 var (
-	ErrNotStandalone   = errors.New("endpoint is not standalone")
+	ErrNotStandalone    = errors.New("endpoint is not standalone")
 	ErrEndpointNotFound = errors.New("endpoint not found")
+	ErrLimitReached     = errors.New("endpoint limit reached")
 )
+
+// LicenseChecker determines license-gated capabilities for endpoints.
+type LicenseChecker interface {
+	CanCreateEndpoint(currentCount int) bool
+}
+
+// DefaultLicenseChecker implements Community edition limits.
+type DefaultLicenseChecker struct {
+	MaxEndpoints int
+}
+
+func (c *DefaultLicenseChecker) CanCreateEndpoint(currentCount int) bool {
+	return currentCount < c.MaxEndpoints
+}
 
 // EventCallback is called when an endpoint event occurs (for SSE broadcasting).
 type EventCallback func(eventType string, data interface{})
@@ -42,6 +57,7 @@ type Deps struct {
 	Store                   EndpointStore           // required
 	Engine                  *CheckEngine            // required
 	Logger                  *slog.Logger            // required
+	LicenseChecker          LicenseChecker          // optional — defaults to community limits
 	EventCallback           EventCallback           // optional — nil-safe
 	AlertCallback           AlertCallback           // optional — nil-safe
 	EndpointRemovedCallback EndpointRemovedCallback // optional — nil-safe
@@ -52,6 +68,7 @@ type Service struct {
 	store             EndpointStore
 	engine            *CheckEngine
 	logger            *slog.Logger
+	licenseChecker    LicenseChecker
 	onEvent           EventCallback
 	alertCallback     AlertCallback
 	onEndpointRemoved EndpointRemovedCallback
@@ -69,10 +86,15 @@ func NewService(d Deps) *Service {
 	if d.Logger == nil {
 		panic("endpoint.NewService: Logger is required")
 	}
+	lc := d.LicenseChecker
+	if lc == nil {
+		lc = &DefaultLicenseChecker{MaxEndpoints: 10}
+	}
 	return &Service{
 		store:             d.Store,
 		engine:            d.Engine,
 		logger:            d.Logger,
+		licenseChecker:    lc,
 		onEvent:           d.EventCallback,
 		alertCallback:     d.AlertCallback,
 		onEndpointRemoved: d.EndpointRemovedCallback,
@@ -339,6 +361,11 @@ func (s *Service) ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]
 	return s.store.ListEndpoints(ctx, opts)
 }
 
+// CountActiveEndpoints returns the count of all active endpoints (both standalone and label-discovered).
+func (s *Service) CountActiveEndpoints(ctx context.Context) (int, error) {
+	return s.store.CountActiveEndpoints(ctx)
+}
+
 // GetEndpoint retrieves an endpoint by ID.
 func (s *Service) GetEndpoint(ctx context.Context, id int64) (*Endpoint, error) {
 	return s.store.GetEndpointByID(ctx, id)
@@ -374,6 +401,14 @@ func (s *Service) CalculateUptime(ctx context.Context, endpointID int64) map[str
 
 // CreateStandalone creates a manually-defined endpoint and starts monitoring it.
 func (s *Service) CreateStandalone(ctx context.Context, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
+	count, err := s.store.CountActiveEndpoints(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count endpoints: %w", err)
+	}
+	if !s.licenseChecker.CanCreateEndpoint(count) {
+		return nil, ErrLimitReached
+	}
+
 	ep := &Endpoint{
 		Name:         name,
 		Target:       target,
