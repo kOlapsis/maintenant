@@ -12,8 +12,9 @@
 -->
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
+import { useEdition } from '@/composables/useEdition'
 import { useConfirm } from '@/composables/useConfirm'
 import {
   createComponent,
@@ -27,6 +28,8 @@ import { listHeartbeats, type Heartbeat } from '@/services/heartbeatApi'
 import { listCertificates, type CertMonitor } from '@/services/certificateApi'
 
 const store = useStatusAdminStore()
+const { getQuota, reload } = useEdition()
+const quota = getQuota('status_components')
 
 // --- Monitor options ---
 interface MonitorOption {
@@ -74,6 +77,12 @@ async function loadMonitorOptions(type: string) {
 // --- Components ---
 const showCompForm = ref(false)
 const editingCompId = ref<number | null>(null)
+const createError = ref<string | null>(null)
+
+const isQuotaError = computed(() => {
+  return createError.value?.includes('Upgrade to Pro') || false
+})
+
 const compForm = ref({
   monitor_type: 'container',
   monitor_id: 0,
@@ -115,6 +124,7 @@ function resetCompForm() {
     auto_incident: false,
   }
   editingCompId.value = null
+  createError.value = null
   showCompForm.value = false
 }
 
@@ -139,18 +149,24 @@ function startAddComp() {
 }
 
 async function submitCompForm() {
-  if (editingCompId.value) {
-    await updateComponent(editingCompId.value, {
-      display_name: compForm.value.display_name,
-      group_id: compForm.value.group_id,
-      visible: compForm.value.visible,
-      auto_incident: compForm.value.auto_incident,
-    })
-  } else {
-    await createComponent(compForm.value)
+  createError.value = null
+  try {
+    if (editingCompId.value) {
+      await updateComponent(editingCompId.value, {
+        display_name: compForm.value.display_name,
+        group_id: compForm.value.group_id,
+        visible: compForm.value.visible,
+        auto_incident: compForm.value.auto_incident,
+      })
+    } else {
+      await createComponent(compForm.value)
+    }
+    resetCompForm()
+    store.fetchComponents()
+    reload()
+  } catch (e) {
+    createError.value = e instanceof Error ? e.message : 'Failed to save component'
   }
-  resetCompForm()
-  store.fetchComponents()
 }
 
 const confirm = useConfirm()
@@ -165,6 +181,7 @@ async function handleDeleteComp(id: number) {
   if (!ok) return
   await deleteComponent(id)
   store.fetchComponents()
+  reload()
 }
 
 async function handleOverride(comp: StatusComponent, status: string) {
@@ -217,21 +234,71 @@ const statusOverrideOptions: { value: string; label: string }[] = [
     <div>
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-lg font-semibold" style="color: var(--pb-text-primary)">Status Components</h2>
-        <button
-          @click="startAddComp"
-          class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary transition-colors"
-          style="background: var(--pb-accent)"
-          @mouseenter="($event.target as HTMLElement).style.background = 'var(--pb-accent-hover)'"
-          @mouseleave="($event.target as HTMLElement).style.background = 'var(--pb-accent)'"
-        >
-          Add Component
-        </button>
+        <div class="flex items-center gap-2">
+          <span
+            v-if="!quota.isUnlimited"
+            class="rounded-full px-2.5 py-1 text-xs font-medium"
+            :style="{
+              backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
+              color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+            }"
+          >
+            {{ quota.used }}/{{ quota.limit }}
+          </span>
+          <router-link
+            v-if="quota.nearLimit && !quota.isAtLimit"
+            :to="{ name: 'pro-edition' }"
+            class="text-xs font-medium transition-opacity hover:opacity-80"
+            style="color: var(--pb-accent)"
+          >
+            Upgrade
+          </router-link>
+          <button
+            @click="startAddComp"
+            :disabled="quota.isAtLimit"
+            :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} status components` : ''"
+            class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary transition-colors min-h-[44px]"
+            :style="{
+              background: 'var(--pb-accent)',
+              opacity: quota.isAtLimit ? '0.5' : '1',
+              cursor: quota.isAtLimit ? 'not-allowed' : 'pointer',
+            }"
+            @mouseenter="!quota.isAtLimit && (($event.target as HTMLElement).style.background = 'var(--pb-accent-hover)')"
+            @mouseleave="($event.target as HTMLElement).style.background = 'var(--pb-accent)'"
+          >
+            Add Component
+          </button>
+        </div>
       </div>
 
       <div v-if="showCompForm" class="mb-4 rounded-lg border p-4" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
         <h3 class="mb-3 text-sm font-medium" style="color: var(--pb-text-primary)">
           {{ editingCompId ? 'Edit Component' : 'New Component' }}
         </h3>
+        <div
+          v-if="createError"
+          class="mb-3 rounded p-2 text-sm"
+          :style="{
+            backgroundColor: 'var(--pb-status-down-bg)',
+            color: 'var(--pb-status-down)',
+            borderRadius: 'var(--pb-radius-sm)',
+          }"
+        >
+          <template v-if="isQuotaError">
+            {{ createError.split('Upgrade to Pro')[0] }}
+            <a
+              href="/pro-edition"
+              class="font-medium underline transition-opacity hover:opacity-80"
+              style="color: #a78bfa"
+            >
+              Upgrade to Pro
+            </a>
+            {{ createError.split('Upgrade to Pro')[1] }}
+          </template>
+          <template v-else>
+            {{ createError }}
+          </template>
+        </div>
         <form @submit.prevent="submitCompForm" class="space-y-3">
           <div v-if="!editingCompId" class="space-y-3">
             <div>

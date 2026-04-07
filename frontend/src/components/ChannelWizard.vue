@@ -214,23 +214,36 @@ function goBack() {
 
       <!-- Pro channels -->
       <div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <FeatureGate
+        <div
           v-for="type in proChannelTypes"
           :key="type.key"
-          :feature="type.feature"
-          :title="type.label"
-          :description="type.description"
+          class="relative"
         >
+          <!-- SMTP not configured special case -->
+          <SmtpNotConfigured v-if="type.feature === 'smtp' && isEnterprise && !hasFeature('smtp')" :title="type.label" />
+
+          <!-- Normal pro channel button -->
           <button
-            @click="selectType(type.key)"
+            v-else
+            @click="hasFeature(type.feature) && selectType(type.key)"
             class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all w-full"
+            :class="{ 'opacity-50 cursor-not-allowed': !hasFeature(type.feature) }"
             :style="{
               background: 'var(--pb-bg-elevated)',
               borderColor: selectedType === type.key ? 'var(--pb-accent)' : 'var(--pb-border-default)',
             }"
-            @mouseenter="($event.currentTarget as HTMLElement).style.borderColor = 'var(--pb-accent)'"
+            @mouseenter="hasFeature(type.feature) && (($event.currentTarget as HTMLElement).style.borderColor = 'var(--pb-accent)')"
             @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--pb-accent)' : 'var(--pb-border-default)'"
           >
+            <!-- Pro badge -->
+            <span
+              v-if="!hasFeature(type.feature)"
+              class="absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+              style="background: rgba(139, 92, 246, 0.15); color: #a78bfa"
+            >
+              Pro
+            </span>
+
             <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--pb-bg-hover)">
               <!-- Email -->
               <svg v-if="type.icon === 'email'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--pb-status-ok)">
@@ -250,12 +263,7 @@ function goBack() {
             <span class="text-sm font-medium" style="color: var(--pb-text-primary)">{{ type.label }}</span>
             <span class="text-[11px]" style="color: var(--pb-text-muted)">{{ type.description }}</span>
           </button>
-
-          <!-- Custom placeholder: Pro active but SMTP not configured -->
-          <template v-if="type.feature === 'smtp' && isEnterprise" #placeholder>
-            <SmtpNotConfigured :title="type.label" />
-          </template>
-        </FeatureGate>
+        </div>
       </div>
 
       <div class="mt-4 flex justify-end">
