@@ -128,7 +128,7 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 func (s *CertificateStore) CountStandaloneMonitors(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cert_monitors WHERE source='standalone' AND deleted_at IS NULL`).Scan(&count)
+		`SELECT COUNT(*) FROM cert_monitors WHERE source='standalone'`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count standalone cert monitors: %w", err)
 	}
