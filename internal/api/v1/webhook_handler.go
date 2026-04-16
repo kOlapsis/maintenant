@@ -102,6 +102,7 @@ func (h *WebhookHandler) HandleCreateWebhook(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := h.store.Create(r.Context(), sub); err != nil {
+		slog.Error("failed to create webhook", "error", err, "name", req.Name)
 		WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create webhook")
 		return
 	}

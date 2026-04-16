@@ -14,8 +14,10 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/extension"
@@ -383,6 +385,11 @@ func (h *UpdateHandler) HandleCreateExclusion(w http.ResponseWriter, r *http.Req
 
 	id, err := h.store.InsertExclusion(r.Context(), exc)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			WriteError(w, http.StatusConflict, "DUPLICATE_EXCLUSION", "An exclusion with this pattern already exists")
+			return
+		}
+		slog.Error("failed to create exclusion", "error", err, "pattern", input.Pattern)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create exclusion")
 		return
 	}

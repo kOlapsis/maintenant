@@ -13,10 +13,12 @@ package v1
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -275,6 +277,11 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 
 	id, err := h.channelStore.InsertChannel(r.Context(), ch)
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			WriteError(w, http.StatusConflict, "DUPLICATE_NAME", "A channel with this name already exists")
+			return
+		}
+		slog.Error("failed to create channel", "error", err, "name", input.Name)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create channel")
 		return
 	}
@@ -439,6 +446,7 @@ func (h *AlertHandler) HandleCreateRoutingRule(w http.ResponseWriter, r *http.Re
 
 	ruleID, err := h.channelStore.InsertRoutingRule(r.Context(), rule)
 	if err != nil {
+		slog.Error("failed to create routing rule", "error", err, "channel_id", channelID)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create routing rule")
 		return
 	}
@@ -514,6 +522,7 @@ func (h *AlertHandler) HandleCreateSilenceRule(w http.ResponseWriter, r *http.Re
 
 	silenceID, err := h.silenceStore.InsertSilenceRule(r.Context(), rule)
 	if err != nil {
+		slog.Error("failed to create silence rule", "error", err)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create silence rule")
 		return
 	}

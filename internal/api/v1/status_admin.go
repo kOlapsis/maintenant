@@ -13,8 +13,10 @@ package v1
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -86,7 +88,12 @@ func (h *StatusAdminHandler) HandleCreateGroup(w http.ResponseWriter, r *http.Re
 		}
 	}
 	if _, err := h.components.CreateGroup(r.Context(), &g); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			WriteError(w, http.StatusConflict, "DUPLICATE_NAME", "A group with this name already exists")
+			return
+		}
+		slog.Error("failed to create status group", "error", err, "name", g.Name)
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create group")
 		return
 	}
 	WriteJSON(w, http.StatusCreated, g)
@@ -182,7 +189,12 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 		}
 	}
 	if _, err := h.components.CreateComponent(r.Context(), &c); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			WriteError(w, http.StatusConflict, "DUPLICATE_COMPONENT", "A component for this monitor already exists")
+			return
+		}
+		slog.Error("failed to create status component", "error", err, "monitor_type", c.MonitorType, "monitor_id", c.MonitorID)
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create component")
 		return
 	}
 	c.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), &c)

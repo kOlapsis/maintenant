@@ -14,6 +14,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -241,6 +242,7 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 			WriteError(w, http.StatusConflict, "ALREADY_ACKNOWLEDGED", "finding already acknowledged")
 			return
 		}
+		slog.Error("failed to create acknowledgment", "error", err, "container_id", req.ContainerID, "finding_type", req.FindingType)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create acknowledgment")
 		return
 	}

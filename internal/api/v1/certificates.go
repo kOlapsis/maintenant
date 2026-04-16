@@ -14,6 +14,7 @@ package v1
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -149,6 +150,7 @@ func (h *CertificateHandler) HandleCreate(w http.ResponseWriter, r *http.Request
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 			return
 		}
+		slog.Error("failed to create certificate monitor", "error", err, "hostname", input.Hostname, "port", input.Port)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create certificate monitor")
 		return
 	}

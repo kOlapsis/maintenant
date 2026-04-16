@@ -14,6 +14,7 @@ package v1
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -105,6 +106,7 @@ func (h *HeartbeatHandler) HandleCreate(w http.ResponseWriter, r *http.Request) 
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 			return
 		}
+		slog.Error("failed to create heartbeat", "error", err, "name", input.Name)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create heartbeat")
 		return
 	}
