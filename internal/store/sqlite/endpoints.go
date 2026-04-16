@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 )
 
@@ -328,13 +329,14 @@ func (s *EndpointStore) DeleteInactiveEndpointsBefore(ctx context.Context, befor
 func (s *EndpointStore) InsertStandaloneEndpoint(ctx context.Context, e *endpoint.Endpoint) (int64, error) {
 	configJSON := e.ConfigJSON()
 	now := time.Now().Unix()
+	externalID := uuid.New().String()
 
 	res, err := s.writer.Exec(ctx,
 		`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target,
 			status, alert_state, consecutive_failures, consecutive_successes,
 			config_json, active, first_seen_at, last_seen_at, source, name)
-		VALUES ('', '', '', ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, 'standalone', ?)`,
-		string(e.EndpointType), e.Target,
+		VALUES ('', ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, 'standalone', ?)`,
+		externalID, externalID, string(e.EndpointType), e.Target,
 		string(endpoint.StatusUnknown), string(endpoint.AlertNormal),
 		configJSON, now, now, e.Name,
 	)

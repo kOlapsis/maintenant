@@ -14,6 +14,7 @@ package v1
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -270,6 +271,7 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 				"Community edition is limited to 10 endpoints. Upgrade to Pro for unlimited monitoring.")
 			return
 		}
+		slog.Error("failed to create endpoint", "error", err, "name", input.Name, "target", input.Target)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create endpoint")
 		return
 	}
