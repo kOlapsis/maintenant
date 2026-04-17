@@ -123,8 +123,8 @@ const allNav: NavItem[] = [
   },
   // Always visible
   { to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
-  { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
   { to: '/certificates', label: 'SSL Certificates', icon: Shield },
+  { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
   { to: '/updates', label: 'Updates', icon: ArrowUpCircle },
   { to: '/security', label: 'Security Posture', icon: ShieldCheck, feature: 'security_posture' },
   { to: '/alerts', label: 'Alerts', icon: Bell },
