@@ -38,7 +38,7 @@ func NewCertificateStore(d *DB) *CertificateStore {
 
 const certMonitorColumns = `id, hostname, port, source, endpoint_id, status,
 	check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
-	last_check_at, next_check_at, last_error, active, created_at, external_id`
+	last_check_at, next_check_at, last_error, created_at, external_id`
 
 func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.CertMonitor) (int64, error) {
 	now := time.Now().Unix()
@@ -61,8 +61,8 @@ func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.Cer
 	res, err := s.writer.Exec(ctx,
 		`INSERT INTO cert_monitors (hostname, port, source, endpoint_id, status,
 			check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
-			last_check_at, next_check_at, last_error, active, created_at, external_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, 1, ?, ?)`,
+			last_check_at, next_check_at, last_error, created_at, external_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?)`,
 		m.Hostname, m.Port, string(m.Source), endpointID, string(m.Status),
 		m.CheckIntervalSeconds, thresholdsJSON,
 		nextCheckAt, now, m.ExternalID,
@@ -87,12 +87,12 @@ func (s *CertificateStore) GetMonitorByHostPort(ctx context.Context, hostname st
 
 func (s *CertificateStore) GetMonitorByEndpointID(ctx context.Context, endpointID int64) (*certificate.CertMonitor, error) {
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
-		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE endpoint_id=? AND active=1`,
+		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE endpoint_id=?`,
 		endpointID))
 }
 
 func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.ListCertificatesOpts) ([]*certificate.CertMonitor, error) {
-	query := `SELECT ` + certMonitorColumns + ` FROM cert_monitors WHERE active=1`
+	query := `SELECT ` + certMonitorColumns + ` FROM cert_monitors WHERE 1=1`
 	var args []interface{}
 
 	if opts.Status != "" {
@@ -128,7 +128,7 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 func (s *CertificateStore) CountStandaloneMonitors(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cert_monitors WHERE source='standalone' AND active=1`).Scan(&count)
+		`SELECT COUNT(*) FROM cert_monitors WHERE source='standalone'`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count standalone cert monitors: %w", err)
 	}
@@ -163,32 +163,13 @@ func (s *CertificateStore) UpdateMonitor(ctx context.Context, m *certificate.Cer
 	return nil
 }
 
-func (s *CertificateStore) SoftDeleteMonitor(ctx context.Context, id int64) error {
+// DeleteMonitor hard-deletes a certificate monitor. Associated check results
+// and chain entries are removed via ON DELETE CASCADE.
+func (s *CertificateStore) DeleteMonitor(ctx context.Context, id int64) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE cert_monitors SET active=0 WHERE id=?`, id)
+		`DELETE FROM cert_monitors WHERE id=?`, id)
 	if err != nil {
-		return fmt.Errorf("soft delete cert monitor %d: %w", id, err)
-	}
-	return nil
-}
-
-func (s *CertificateStore) ReactivateMonitor(ctx context.Context, id int64, m *certificate.CertMonitor) error {
-	thresholdsJSON := m.WarningThresholdsJSON()
-	var endpointID interface{}
-	if m.EndpointID != nil {
-		endpointID = *m.EndpointID
-	}
-	_, err := s.writer.Exec(ctx,
-		`UPDATE cert_monitors SET active=1, source=?, endpoint_id=?, status=?,
-			check_interval_seconds=?, warning_thresholds_json=?,
-			last_alerted_threshold=NULL, last_check_at=NULL, next_check_at=NULL,
-			last_error=NULL
-		WHERE id=?`,
-		string(m.Source), endpointID, string(m.Status),
-		m.CheckIntervalSeconds, thresholdsJSON,
-		id)
-	if err != nil {
-		return fmt.Errorf("reactivate cert monitor %d: %w", id, err)
+		return fmt.Errorf("delete cert monitor %d: %w", id, err)
 	}
 	return nil
 }
@@ -332,7 +313,7 @@ func (s *CertificateStore) GetChainEntries(ctx context.Context, checkResultID in
 func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now time.Time) ([]*certificate.CertMonitor, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors
-		WHERE source IN ('standalone','label') AND active=1 AND (next_check_at IS NULL OR next_check_at<=?)
+		WHERE source IN ('standalone','label') AND (next_check_at IS NULL OR next_check_at<=?)
 		ORDER BY next_check_at`,
 		now.Unix())
 	if err != nil {
@@ -357,7 +338,7 @@ func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now tim
 
 func (s *CertificateStore) ListMonitorsByExternalID(ctx context.Context, externalID string) ([]*certificate.CertMonitor, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE external_id=? AND source='label' AND active=1`,
+		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE external_id=? AND source='label'`,
 		externalID)
 	if err != nil {
 		return nil, fmt.Errorf("list monitors by external_id: %w", err)
@@ -375,15 +356,6 @@ func (s *CertificateStore) ListMonitorsByExternalID(ctx context.Context, externa
 		monitors = append(monitors, m)
 	}
 	return monitors, rows.Err()
-}
-
-func (s *CertificateStore) DeactivateMonitor(ctx context.Context, id int64) error {
-	_, err := s.writer.Exec(ctx,
-		`UPDATE cert_monitors SET active=0 WHERE id=?`, id)
-	if err != nil {
-		return fmt.Errorf("deactivate cert monitor %d: %w", id, err)
-	}
-	return nil
 }
 
 // --- Retention ---
@@ -422,13 +394,12 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 	var endpointID, lastAlertedThreshold, lastCheckAt, nextCheckAt sql.NullInt64
 	var lastError sql.NullString
 	var thresholdsJSON string
-	var active int
 	var createdAt int64
 
 	err := row.Scan(
 		&m.ID, &m.Hostname, &m.Port, &m.Source, &endpointID, &m.Status,
 		&m.CheckIntervalSeconds, &thresholdsJSON, &lastAlertedThreshold,
-		&lastCheckAt, &nextCheckAt, &lastError, &active, &createdAt,
+		&lastCheckAt, &nextCheckAt, &lastError, &createdAt,
 		&m.ExternalID,
 	)
 	if err != nil {
@@ -438,7 +409,6 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 		return nil, fmt.Errorf("scan cert monitor: %w", err)
 	}
 
-	m.Active = active != 0
 	m.CreatedAt = time.Unix(createdAt, 0)
 
 	if endpointID.Valid {

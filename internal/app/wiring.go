@@ -183,7 +183,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	})
 
 	// Endpoint removal → certificate monitor cleanup
-	a.endpointSvc.SetEndpointRemovedCallback(a.certSvc.DeactivateByEndpointID)
+	a.endpointSvc.SetEndpointRemovedCallback(a.certSvc.DeleteByEndpointID)
 
 	// Heartbeat alerts
 	a.heartbeatSvc.SetAlertCallback(func(h *heartbeat.Heartbeat, alertType string, details map[string]interface{}) {

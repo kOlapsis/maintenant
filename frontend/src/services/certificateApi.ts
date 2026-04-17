@@ -27,7 +27,6 @@ export interface CertMonitor {
   last_alerted_threshold?: number
   last_check_at?: string
   last_error?: string
-  active: boolean
   created_at: string
   latest_check?: CertCheckResult
 }

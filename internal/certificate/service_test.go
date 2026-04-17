@@ -325,10 +325,7 @@ func (m *mockCertStore) ListMonitors(_ context.Context, _ ListCertificatesOpts) 
 func (m *mockCertStore) UpdateMonitor(_ context.Context, _ *CertMonitor) error {
 	return nil
 }
-func (m *mockCertStore) SoftDeleteMonitor(_ context.Context, _ int64) error {
-	return nil
-}
-func (m *mockCertStore) ReactivateMonitor(_ context.Context, _ int64, _ *CertMonitor) error {
+func (m *mockCertStore) DeleteMonitor(_ context.Context, _ int64) error {
 	return nil
 }
 func (m *mockCertStore) InsertCheckResult(_ context.Context, _ *CertCheckResult) (int64, error) {
@@ -348,9 +345,6 @@ func (m *mockCertStore) GetChainEntries(_ context.Context, _ int64) ([]*CertChai
 }
 func (m *mockCertStore) ListMonitorsByExternalID(_ context.Context, _ string) ([]*CertMonitor, error) {
 	return nil, nil
-}
-func (m *mockCertStore) DeactivateMonitor(_ context.Context, _ int64) error {
-	return nil
 }
 func (m *mockCertStore) ListDueScheduledMonitors(_ context.Context, _ time.Time) ([]*CertMonitor, error) {
 	return nil, nil

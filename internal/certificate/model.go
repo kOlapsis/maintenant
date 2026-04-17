@@ -51,7 +51,6 @@ type CertMonitor struct {
 	LastCheckAt          *time.Time `json:"last_check_at,omitempty"`
 	NextCheckAt          *time.Time `json:"next_check_at,omitempty"`
 	LastError            string     `json:"last_error,omitempty"`
-	Active               bool       `json:"active"`
 	ExternalID           string     `json:"external_id,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 }

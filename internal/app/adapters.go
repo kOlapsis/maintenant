@@ -33,7 +33,7 @@ func (a *CertPostureAdapter) ListCertificatesForContainer(ctx context.Context, c
 
 	var result []security.CertificateInfo
 	for _, m := range monitors {
-		if !m.Active || m.ExternalID != containerExternalID {
+		if m.ExternalID != containerExternalID {
 			continue
 		}
 		info := security.CertificateInfo{

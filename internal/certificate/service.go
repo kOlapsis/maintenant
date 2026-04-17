@@ -121,34 +121,11 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID int64, targ
 		return existing, nil
 	}
 
-	// Check if there's already a monitor for this hostname:port (including inactive)
 	existing, err = s.store.GetMonitorByHostPort(ctx, hostname, port)
 	if err != nil {
 		return nil, fmt.Errorf("get monitor by host:port: %w", err)
 	}
 	if existing != nil {
-		if !existing.Active {
-			// Row exists but is soft-deleted (e.g. a previous standalone
-			// monitor that the user removed). Reactivate it as an
-			// auto-detected monitor tied to the new endpoint so the UNIQUE
-			// constraint on (hostname, port) does not block auto-detection.
-			existing.Active = true
-			existing.Source = SourceAuto
-			existing.EndpointID = &endpointID
-			existing.Status = StatusUnknown
-			existing.CheckIntervalSeconds = 43200
-			existing.WarningThresholds = DefaultWarningThresholds()
-			if err := s.store.ReactivateMonitor(ctx, existing.ID, existing); err != nil {
-				return nil, fmt.Errorf("reactivate auto monitor: %w", err)
-			}
-			s.emit(event.CertificateCreated, map[string]interface{}{
-				"monitor_id": existing.ID,
-				"hostname":   existing.Hostname,
-				"port":       existing.Port,
-				"source":     "auto",
-			})
-			return existing, nil
-		}
 		s.logger.Debug("certificate: auto-detection skipped, monitor exists", "hostname", hostname, "port", port)
 		return existing, nil
 	}
@@ -259,26 +236,17 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 	}
 
 	if existing != nil {
-		if existing.Active {
-			if existing.Source == SourceAuto {
-				return nil, nil, ErrAutoDetectedMonitor
-			}
-			return nil, nil, ErrDuplicateMonitor
+		if existing.Source == SourceAuto {
+			return nil, nil, ErrAutoDetectedMonitor
 		}
-		// Reactivate the soft-deleted monitor with the new settings.
-		monitor.ID = existing.ID
-		if err := s.store.ReactivateMonitor(ctx, existing.ID, monitor); err != nil {
-			return nil, nil, fmt.Errorf("reactivate monitor: %w", err)
-		}
-	} else {
-		// Check quota for new standalone monitors
-		if !s.licenseChecker.CanCreateCertificate(count) {
-			return nil, nil, ErrLimitReached
-		}
-		_, err = s.store.CreateMonitor(ctx, monitor)
-		if err != nil {
-			return nil, nil, fmt.Errorf("create standalone monitor: %w", err)
-		}
+		return nil, nil, ErrDuplicateMonitor
+	}
+
+	if !s.licenseChecker.CanCreateCertificate(count) {
+		return nil, nil, ErrLimitReached
+	}
+	if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
+		return nil, nil, fmt.Errorf("create standalone monitor: %w", err)
 	}
 
 	s.emit(event.CertificateCreated, map[string]interface{}{
@@ -323,7 +291,7 @@ func (s *Service) UpdateMonitor(ctx context.Context, id int64, input UpdateCerti
 	return monitor, nil
 }
 
-// DeleteMonitor soft-deletes a standalone certificate monitor.
+// DeleteMonitor removes a standalone certificate monitor and its history.
 func (s *Service) DeleteMonitor(ctx context.Context, id int64) error {
 	monitor, err := s.store.GetMonitorByID(ctx, id)
 	if err != nil {
@@ -336,8 +304,8 @@ func (s *Service) DeleteMonitor(ctx context.Context, id int64) error {
 		return ErrCannotDeleteAuto
 	}
 
-	if err := s.store.SoftDeleteMonitor(ctx, id); err != nil {
-		return fmt.Errorf("soft delete: %w", err)
+	if err := s.store.DeleteMonitor(ctx, id); err != nil {
+		return fmt.Errorf("delete: %w", err)
 	}
 
 	s.emit(event.CertificateDeleted, map[string]interface{}{
@@ -348,14 +316,14 @@ func (s *Service) DeleteMonitor(ctx context.Context, id int64) error {
 	return nil
 }
 
-// DeactivateByEndpointID soft-deletes the auto-detected cert monitor linked to an endpoint.
-func (s *Service) DeactivateByEndpointID(ctx context.Context, endpointID int64) {
+// DeleteByEndpointID removes the auto-detected cert monitor linked to an endpoint.
+func (s *Service) DeleteByEndpointID(ctx context.Context, endpointID int64) {
 	monitor, err := s.store.GetMonitorByEndpointID(ctx, endpointID)
 	if err != nil || monitor == nil {
 		return
 	}
-	if err := s.store.SoftDeleteMonitor(ctx, monitor.ID); err != nil {
-		s.logger.Error("deactivate cert monitor for removed endpoint", "monitor_id", monitor.ID, "endpoint_id", endpointID, "error", err)
+	if err := s.store.DeleteMonitor(ctx, monitor.ID); err != nil {
+		s.logger.Error("delete cert monitor for removed endpoint", "monitor_id", monitor.ID, "endpoint_id", endpointID, "error", err)
 		return
 	}
 	s.emit(event.CertificateDeleted, map[string]interface{}{
@@ -367,17 +335,15 @@ func (s *Service) DeactivateByEndpointID(ctx context.Context, endpointID int64) 
 // --- Label-discovered monitors ---
 
 // SyncFromLabels reconciles label-discovered certificate monitors for a container.
-// It creates new monitors for hostnames present in labels, and deactivates monitors
+// It creates new monitors for hostnames present in labels, and removes monitors
 // for hostnames that were removed from labels.
 func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string, labels map[string]string) {
 	parsed := ParseCertificateLabels(labels)
 	if len(parsed) == 0 {
-		// No TLS labels — deactivate any existing label monitors for this container
-		s.deactivateLabelMonitors(ctx, containerExternalID, nil)
+		s.deleteLabelMonitors(ctx, containerExternalID, nil)
 		return
 	}
 
-	// Track which hostname:port combos are desired
 	desired := make(map[string]bool)
 	for _, p := range parsed {
 		key := p.Hostname + ":" + strconv.Itoa(p.Port)
@@ -386,6 +352,10 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 		existing, err := s.store.GetMonitorByHostPort(ctx, p.Hostname, p.Port)
 		if err != nil {
 			s.logger.Error("check existing cert monitor", "error", err, "hostname", p.Hostname)
+			continue
+		}
+		if existing != nil {
+			s.logger.Debug("certificate: label monitor exists, skipping", "hostname", p.Hostname, "port", p.Port)
 			continue
 		}
 
@@ -398,19 +368,6 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 			CheckIntervalSeconds: 43200,
 			WarningThresholds:    DefaultWarningThresholds(),
 		}
-
-		if existing != nil {
-			if existing.Active {
-				s.logger.Debug("certificate: label monitor exists, skipping", "hostname", p.Hostname, "port", p.Port)
-				continue
-			}
-			// Reactivate the soft-deleted monitor.
-			if err := s.store.ReactivateMonitor(ctx, existing.ID, monitor); err != nil {
-				s.logger.Error("reactivate label cert monitor", "error", err, "hostname", p.Hostname, "port", p.Port)
-			}
-			continue
-		}
-
 		if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
 			s.logger.Error("create label cert monitor", "error", err, "hostname", p.Hostname, "port", p.Port)
 			continue
@@ -425,16 +382,15 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 		})
 	}
 
-	// Deactivate label monitors for this container that are no longer in labels
-	s.deactivateLabelMonitors(ctx, containerExternalID, desired)
+	s.deleteLabelMonitors(ctx, containerExternalID, desired)
 }
 
-// HandleContainerDestroy deactivates all label-discovered monitors for a destroyed container.
+// HandleContainerDestroy removes all label-discovered monitors for a destroyed container.
 func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string) {
-	s.deactivateLabelMonitors(ctx, externalID, nil)
+	s.deleteLabelMonitors(ctx, externalID, nil)
 }
 
-func (s *Service) deactivateLabelMonitors(ctx context.Context, externalID string, keep map[string]bool) {
+func (s *Service) deleteLabelMonitors(ctx context.Context, externalID string, keep map[string]bool) {
 	monitors, err := s.store.ListMonitorsByExternalID(ctx, externalID)
 	if err != nil {
 		s.logger.Error("list label monitors for container", "error", err, "external_id", externalID)
@@ -447,12 +403,12 @@ func (s *Service) deactivateLabelMonitors(ctx context.Context, externalID string
 			continue
 		}
 
-		if err := s.store.DeactivateMonitor(ctx, m.ID); err != nil {
-			s.logger.Error("deactivate label cert monitor", "error", err, "monitor_id", m.ID)
+		if err := s.store.DeleteMonitor(ctx, m.ID); err != nil {
+			s.logger.Error("delete label cert monitor", "error", err, "monitor_id", m.ID)
 			continue
 		}
 
-		s.logger.Info("deactivated label cert monitor", "hostname", m.Hostname, "port", m.Port, "container", externalID)
+		s.logger.Info("deleted label cert monitor", "hostname", m.Hostname, "port", m.Port, "container", externalID)
 		s.emit(event.CertificateDeleted, map[string]interface{}{
 			"monitor_id": m.ID,
 			"hostname":   m.Hostname,
