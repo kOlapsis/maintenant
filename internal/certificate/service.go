@@ -127,6 +127,28 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID int64, targ
 		return nil, fmt.Errorf("get monitor by host:port: %w", err)
 	}
 	if existing != nil {
+		if !existing.Active {
+			// Row exists but is soft-deleted (e.g. a previous standalone
+			// monitor that the user removed). Reactivate it as an
+			// auto-detected monitor tied to the new endpoint so the UNIQUE
+			// constraint on (hostname, port) does not block auto-detection.
+			existing.Active = true
+			existing.Source = SourceAuto
+			existing.EndpointID = &endpointID
+			existing.Status = StatusUnknown
+			existing.CheckIntervalSeconds = 43200
+			existing.WarningThresholds = DefaultWarningThresholds()
+			if err := s.store.ReactivateMonitor(ctx, existing.ID, existing); err != nil {
+				return nil, fmt.Errorf("reactivate auto monitor: %w", err)
+			}
+			s.emit(event.CertificateCreated, map[string]interface{}{
+				"monitor_id": existing.ID,
+				"hostname":   existing.Hostname,
+				"port":       existing.Port,
+				"source":     "auto",
+			})
+			return existing, nil
+		}
 		s.logger.Debug("certificate: auto-detection skipped, monitor exists", "hostname", hostname, "port", port)
 		return existing, nil
 	}

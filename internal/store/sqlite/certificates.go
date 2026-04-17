@@ -174,13 +174,17 @@ func (s *CertificateStore) SoftDeleteMonitor(ctx context.Context, id int64) erro
 
 func (s *CertificateStore) ReactivateMonitor(ctx context.Context, id int64, m *certificate.CertMonitor) error {
 	thresholdsJSON := m.WarningThresholdsJSON()
+	var endpointID interface{}
+	if m.EndpointID != nil {
+		endpointID = *m.EndpointID
+	}
 	_, err := s.writer.Exec(ctx,
-		`UPDATE cert_monitors SET active=1, source=?, status=?,
+		`UPDATE cert_monitors SET active=1, source=?, endpoint_id=?, status=?,
 			check_interval_seconds=?, warning_thresholds_json=?,
 			last_alerted_threshold=NULL, last_check_at=NULL, next_check_at=NULL,
 			last_error=NULL
 		WHERE id=?`,
-		string(m.Source), string(m.Status),
+		string(m.Source), endpointID, string(m.Status),
 		m.CheckIntervalSeconds, thresholdsJSON,
 		id)
 	if err != nil {
