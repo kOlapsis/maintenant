@@ -126,7 +126,7 @@ const tabs = hasFeature('swarm_dashboard')
 
     <template v-else-if="detail">
       <!-- Header -->
-      <div class="px-6 pt-4 pb-3 border-b border-slate-800">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-800">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <h2 class="text-base font-bold text-pb-primary truncate">{{ detail.name }}</h2>
@@ -168,7 +168,7 @@ const tabs = hasFeature('swarm_dashboard')
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-slate-800 px-6">
+      <div class="flex border-b border-slate-800 px-5">
         <button
           v-for="tab in tabs"
           :key="tab.key"
@@ -185,7 +185,7 @@ const tabs = hasFeature('swarm_dashboard')
       </div>
 
       <!-- Tab content -->
-      <div class="flex-1 overflow-y-auto px-6 py-4">
+      <div class="flex-1 overflow-y-auto px-5 py-4">
         <!-- Tasks tab -->
         <template v-if="activeTab === 'tasks'">
           <SwarmTaskList :tasks="detail.tasks" />

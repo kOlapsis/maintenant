@@ -76,7 +76,7 @@ function eventTypeStyle(type: string): string {
 
     <template v-else-if="detail">
       <!-- Header -->
-      <div class="px-6 pt-4 pb-3 border-b border-slate-800">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-800">
         <div class="min-w-0">
           <h2 class="text-base font-bold text-pb-primary truncate font-mono">{{ detail.pod.name }}</h2>
           <div class="flex items-center gap-2 mt-1 flex-wrap">
@@ -127,7 +127,7 @@ function eventTypeStyle(type: string): string {
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-slate-800 px-6">
+      <div class="flex border-b border-slate-800 px-5">
         <button
           v-for="tab in tabs"
           :key="tab.key"
@@ -152,7 +152,7 @@ function eventTypeStyle(type: string): string {
       </div>
 
       <!-- Tab content -->
-      <div class="flex-1 overflow-y-auto px-6 py-4">
+      <div class="flex-1 overflow-y-auto px-5 py-4">
         <!-- Containers tab -->
         <template v-if="activeTab === 'containers'">
           <div v-if="detail.pod.containers.length === 0" class="text-sm text-slate-500 py-4 text-center">

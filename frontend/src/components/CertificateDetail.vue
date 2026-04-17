@@ -99,7 +99,7 @@ function countdownBgColor(days: number | undefined): string {
 </script>
 
 <template>
-  <div>
+  <div class="h-full overflow-y-auto p-5">
     <div v-if="loading" class="py-8 text-center" :style="{ color: 'var(--pb-text-muted)' }">Loading...</div>
     <div
       v-else-if="error"
@@ -114,8 +114,8 @@ function countdownBgColor(days: number | undefined): string {
     </div>
     <div v-else-if="detail">
       <!-- Monitor info -->
-      <div class="mb-4 flex items-center gap-3">
-        <span class="text-lg font-medium" :style="{ color: 'var(--pb-text-primary)' }">
+      <div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span class="text-lg font-medium break-all" :style="{ color: 'var(--pb-text-primary)' }">
           {{ detail.certificate.hostname }}:{{ detail.certificate.port }}
         </span>
         <CertificateStatusBadge :status="detail.certificate.status" />
@@ -168,39 +168,39 @@ function countdownBgColor(days: number | undefined): string {
       </div>
 
       <!-- Certificate fields -->
-      <div v-if="detail.latest_check" class="mb-4 grid gap-3 sm:grid-cols-2">
-        <div>
+      <div v-if="detail.latest_check" class="mb-4 grid gap-3 grid-cols-1 sm:grid-cols-2">
+        <div class="min-w-0">
           <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Subject CN</span>
-          <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ detail.latest_check.subject_cn || '-' }}</p>
+          <p class="text-sm break-words" :style="{ color: 'var(--pb-text-primary)' }">{{ detail.latest_check.subject_cn || '-' }}</p>
         </div>
-        <div>
+        <div class="min-w-0">
           <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Issuer</span>
-          <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">
+          <p class="text-sm break-words" :style="{ color: 'var(--pb-text-primary)' }">
             {{ detail.latest_check.issuer_cn }}
             <span v-if="detail.latest_check.issuer_org" :style="{ color: 'var(--pb-text-muted)' }">
               ({{ detail.latest_check.issuer_org }})
             </span>
           </p>
         </div>
-        <div>
+        <div class="min-w-0 sm:col-span-2">
           <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">SANs</span>
-          <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">
+          <p class="text-sm break-words" :style="{ color: 'var(--pb-text-primary)' }">
             {{ detail.latest_check.sans?.join(', ') || '-' }}
           </p>
         </div>
-        <div>
+        <div class="min-w-0 sm:col-span-2">
           <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Serial Number</span>
-          <p class="truncate font-mono text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ detail.latest_check.serial_number || '-' }}</p>
+          <p class="break-all font-mono text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ detail.latest_check.serial_number || '-' }}</p>
         </div>
-        <div>
+        <div class="min-w-0">
           <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Signature Algorithm</span>
-          <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ detail.latest_check.signature_algorithm || '-' }}</p>
+          <p class="text-sm break-words" :style="{ color: 'var(--pb-text-primary)' }">{{ detail.latest_check.signature_algorithm || '-' }}</p>
         </div>
-        <div>
+        <div class="min-w-0">
           <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Valid From</span>
           <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ formatDate(detail.latest_check.not_before) }}</p>
         </div>
-        <div>
+        <div class="min-w-0">
           <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Valid Until</span>
           <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ formatDate(detail.latest_check.not_after) }}</p>
         </div>

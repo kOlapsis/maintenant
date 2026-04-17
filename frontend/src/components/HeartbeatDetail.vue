@@ -101,10 +101,7 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
 </script>
 
 <template>
-  <div
-    class="rounded-lg border p-6"
-    style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
-  >
+  <div class="h-full overflow-y-auto p-5">
     <div class="mb-4 flex items-center justify-between">
       <h2 class="text-lg font-bold" style="color: var(--pb-text-primary)">
         {{ detail?.heartbeat.name || 'Loading...' }}

@@ -153,7 +153,7 @@ function replicaColor(ready: number, desired: number): string {
 
     <template v-else-if="detail">
       <!-- Header -->
-      <div class="px-6 pt-4 pb-3 border-b border-slate-800">
+      <div class="px-5 pt-4 pb-3 border-b border-slate-800">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <h2 class="text-base font-bold text-pb-primary truncate">{{ detail.workload.name }}</h2>
@@ -198,7 +198,7 @@ function replicaColor(ready: number, desired: number): string {
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-slate-800 px-6">
+      <div class="flex border-b border-slate-800 px-5">
         <button
           v-for="tab in tabs"
           :key="tab.key"
@@ -227,7 +227,7 @@ function replicaColor(ready: number, desired: number): string {
       </div>
 
       <!-- Tab content -->
-      <div class="flex-1 overflow-y-auto px-6 py-4">
+      <div class="flex-1 overflow-y-auto px-5 py-4">
         <!-- Pods tab -->
         <template v-if="activeTab === 'pods'">
           <div v-if="detail.pods.length === 0" class="text-sm text-slate-500 py-4 text-center">
