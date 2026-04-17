@@ -11,6 +11,7 @@
 
 import { ref, computed } from 'vue'
 import { fetchEdition, fetchLicenseStatus, type EditionResponse, type LicenseStatus, type QuotaResource } from '@/services/editionApi'
+import { sseBus } from '@/services/sseBus'
 
 const edition = ref<EditionResponse | null>(null)
 const licenseStatus = ref<LicenseStatus | null>(null)
@@ -39,6 +40,31 @@ async function loadLicenseStatus() {
   }
 }
 
+// SSE events that change the quota counters — auto-reload on any of them.
+// Covers user-initiated actions AND label/annotation-driven auto-discovery.
+const QUOTA_EVENTS = [
+  'endpoint.discovered',
+  'endpoint.removed',
+  'heartbeat.created',
+  'heartbeat.deleted',
+  'certificate.created',
+  'certificate.deleted',
+  'status.component_changed',
+] as const
+
+let reloadTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleQuotaReload() {
+  if (reloadTimer) clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => {
+    reloadTimer = null
+    void reload()
+  }, 200)
+}
+
+for (const ev of QUOTA_EVENTS) {
+  sseBus.on(ev, scheduleQuotaReload)
+}
+
 // Start loading immediately on first import
 load()
 
@@ -55,22 +81,24 @@ export function useEdition() {
   }
 
   function getQuota(resource: QuotaResource) {
-    const quota = edition.value?.quotas?.[resource]
-    const used = quota?.used ?? 0
-    const limit = quota?.limit ?? -1
-    const isUnlimited = limit === -1
-    const remaining = isUnlimited ? Infinity : Math.max(0, limit - used)
-    const isAtLimit = !isUnlimited && used >= limit
-    const nearLimit = !isUnlimited && limit > 0 && used / limit >= 0.8
+    return computed(() => {
+      const quota = edition.value?.quotas?.[resource]
+      const used = quota?.used ?? 0
+      const limit = quota?.limit ?? -1
+      const isUnlimited = limit === -1
+      const remaining = isUnlimited ? Infinity : Math.max(0, limit - used)
+      const isAtLimit = !isUnlimited && used >= limit
+      const nearLimit = !isUnlimited && limit > 0 && used / limit >= 0.8
 
-    return {
-      used,
-      limit,
-      remaining,
-      isUnlimited,
-      isAtLimit,
-      nearLimit,
-    }
+      return {
+        used,
+        limit,
+        remaining,
+        isUnlimited,
+        isAtLimit,
+        nearLimit,
+      }
+    })
   }
 
   return {
