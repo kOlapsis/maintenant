@@ -17,7 +17,6 @@ import { useEndpointsStore } from '@/stores/endpoints'
 import { useContainersStore } from '@/stores/containers'
 import { useEdition } from '@/composables/useEdition'
 import { createEndpoint } from '@/services/endpointApi'
-import { createCertificate } from '@/services/certificateApi'
 import EndpointCard from '@/components/EndpointCard.vue'
 import { AlertTriangle, Globe } from 'lucide-vue-next'
 
@@ -42,7 +41,6 @@ const form = ref({
   target: '',
   endpoint_type: 'http' as 'http' | 'tcp',
   interval: '30s',
-  monitorCert: true,
 })
 
 const intervalPresets = [
@@ -53,32 +51,9 @@ const intervalPresets = [
   { label: '15m', value: '15m0s' },
 ]
 
-const isHttps = computed(() => {
-  return form.value.endpoint_type === 'http' && form.value.target.startsWith('https://')
-})
-
 function resetForm() {
-  form.value = { name: '', target: '', endpoint_type: 'http', interval: '30s', monitorCert: true }
+  form.value = { name: '', target: '', endpoint_type: 'http', interval: '30s' }
   createError.value = null
-}
-
-function extractHostFromUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url)
-    return parsed.hostname
-  } catch {
-    return null
-  }
-}
-
-function extractPortFromUrl(url: string): number {
-  try {
-    const parsed = new URL(url)
-    if (parsed.port) return parseInt(parsed.port, 10)
-    return parsed.protocol === 'https:' ? 443 : 80
-  } catch {
-    return 443
-  }
 }
 
 async function handleCreate() {
@@ -91,21 +66,9 @@ async function handleCreate() {
       endpoint_type: form.value.endpoint_type,
       interval: form.value.interval,
     })
-
-    // Create certificate monitor if requested
-    if (isHttps.value && form.value.monitorCert) {
-      const hostname = extractHostFromUrl(form.value.target)
-      if (hostname) {
-        try {
-          await createCertificate({
-            hostname,
-            port: extractPortFromUrl(form.value.target),
-          })
-        } catch {
-          // Certificate may already be monitored — ignore
-        }
-      }
-    }
+    // HTTPS endpoints get an auto-detected cert monitor (source='auto')
+    // at first check — it is tied to the endpoint and not counted against
+    // the standalone cert quota.
 
     showCreateForm.value = false
     resetForm()
@@ -308,25 +271,6 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-
-        <!-- Certificate monitoring checkbox -->
-        <label
-          v-if="isHttps"
-          class="flex items-center gap-2 text-sm cursor-pointer"
-          :style="{ color: 'var(--pb-text-secondary)' }"
-        >
-          <input
-            v-model="form.monitorCert"
-            type="checkbox"
-            class="rounded"
-            :style="{
-              accentColor: 'var(--pb-accent)',
-              width: '16px',
-              height: '16px',
-            }"
-          />
-          Monitor TLS certificate
-        </label>
 
         <button
           type="submit"
