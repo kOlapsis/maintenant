@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import {
   AlertTriangle,
   Bell,
@@ -41,7 +41,7 @@ const isLicenseActive = computed(
     (licenseStatusValue.value === 'active' || licenseStatusValue.value === 'grace'),
 )
 
-const billingPeriod = ref<'monthly' | 'annual'>('annual')
+const CHECKOUT_URL = 'https://maintenant.dev/checkout/'
 
 const features = [
   {
@@ -184,111 +184,21 @@ const features = [
         <div class="max-w-2xl mx-auto">
           <h2 class="text-2xl font-bold text-pb-primary text-center mb-2">Simple pricing</h2>
           <p class="text-sm text-slate-400 text-center mb-8">
-            One plan, all Pro features. No per-seat or per-host charges.
+            One plan, all Pro features. No per-seat or per-host charges. From 9€/month.
           </p>
 
-          <!-- Toggle -->
-          <div class="flex items-center justify-center gap-3 mb-8">
-            <button
-              class="text-sm font-medium transition-colors"
-              :class="
-                billingPeriod === 'monthly' ? 'text-pb-primary' : 'text-slate-500 hover:text-pb-secondary'
-              "
-              @click="billingPeriod = 'monthly'"
+          <!-- Upgrade CTA -->
+          <div class="flex flex-col items-center gap-3 mb-6">
+            <a
+              :href="CHECKOUT_URL"
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20 transition-colors"
             >
-              Monthly
-            </button>
-            <button
-              class="relative w-11 h-6 rounded-full transition-colors"
-              :class="billingPeriod === 'annual' ? 'bg-pb-green-600' : 'bg-slate-700'"
-              aria-label="Toggle billing period"
-              @click="billingPeriod = billingPeriod === 'monthly' ? 'annual' : 'monthly'"
-            >
-              <span
-                class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
-                :class="billingPeriod === 'annual' ? 'translate-x-5' : ''"
-              />
-            </button>
-            <button
-              class="text-sm font-medium transition-colors flex items-center gap-1.5"
-              :class="
-                billingPeriod === 'annual' ? 'text-pb-primary' : 'text-slate-500 hover:text-pb-secondary'
-              "
-              @click="billingPeriod = 'annual'"
-            >
-              Annual
-              <span
-                class="text-[10px] font-bold bg-pb-status-ok text-pb-status-ok px-1.5 py-0.5 rounded border border-emerald-500/25"
-              >
-                Save 18€
-              </span>
-            </button>
-          </div>
-
-          <!-- Pricing cards -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <!-- Monthly -->
-            <div
-              class="relative bg-pb-surface border rounded-xl p-6 transition-colors"
-              :class="
-                billingPeriod === 'monthly'
-                  ? 'border-pb-green-500/40'
-                  : 'border-slate-800 opacity-60'
-              "
-            >
-              <h3 class="text-sm font-semibold text-pb-secondary mb-3">Monthly</h3>
-              <div class="flex items-baseline gap-1 mb-4">
-                <span class="text-3xl font-bold text-pb-primary">9€</span>
-                <span class="text-sm text-slate-500">/month</span>
-              </div>
-              <a
-                href="https://buy.stripe.com/8x28wO6dVdVd9UggHX33W00"
-                target="_blank"
-                class="block w-full py-2 text-center rounded-lg text-sm font-semibold transition-colors"
-                :class="
-                  billingPeriod === 'monthly'
-                    ? 'bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20'
-                    : 'bg-slate-800 text-slate-400'
-                "
-              >
-                Get started
-              </a>
-            </div>
-
-            <!-- Annual -->
-            <div
-              class="relative bg-pb-surface border rounded-xl p-6 transition-colors"
-              :class="
-                billingPeriod === 'annual'
-                  ? 'border-pb-green-500/40'
-                  : 'border-slate-800 opacity-60'
-              "
-            >
-              <span
-                v-if="billingPeriod === 'annual'"
-                class="absolute -top-2.5 right-4 text-[10px] font-bold bg-pb-green-600 text-slate-950 px-2 py-0.5 rounded"
-              >
-                Recommended
-              </span>
-              <h3 class="text-sm font-semibold text-pb-secondary mb-3">Annual</h3>
-              <div class="flex items-baseline gap-1 mb-1">
-                <span class="text-3xl font-bold text-pb-primary">90€</span>
-                <span class="text-sm text-slate-500">/year</span>
-              </div>
-              <p class="text-xs text-pb-status-ok mb-3">7.50€/month — save 18€</p>
-              <a
-                href="https://buy.stripe.com/3cI28qgSz6sL9Ug63j33W01"
-                target="_blank"
-                class="block w-full py-2 text-center rounded-lg text-sm font-semibold transition-colors"
-                :class="
-                  billingPeriod === 'annual'
-                    ? 'bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20'
-                    : 'bg-slate-800 text-slate-400'
-                "
-              >
-                Get started
-              </a>
-            </div>
+              <Crown :size="16" />
+              Upgrade to Pro
+            </a>
+            <p class="text-xs text-slate-500">Choose monthly or yearly on the next screen.</p>
           </div>
 
           <!-- License delivery notice -->
