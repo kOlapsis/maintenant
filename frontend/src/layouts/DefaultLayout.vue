@@ -19,6 +19,7 @@ import {
 } from '@/composables/useDetailSlideOver'
 import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
+import { useTimedDismissal } from '@/composables/useTimedDismissal'
 import {
   Activity,
   ArrowRight,
@@ -101,6 +102,13 @@ const licenseLabel = computed(() => {
     default: return 'LICENSE'
   }
 })
+
+const { visible: supportBannerVisible, dismiss: dismissSupportBanner } = useTimedDismissal({
+  storageKey: 'pb:banner:support-prompt',
+  cooldownMs: 30 * 24 * 60 * 60 * 1000,
+})
+
+const showSupportBanner = computed(() => !isEnterprise.value && supportBannerVisible.value)
 
 const mobileMenuOpen = ref(false)
 
@@ -320,6 +328,26 @@ const mainNav = computed(() =>
           </RouterLink>
         </template>
       </AlertBanner>
+      <!-- Support the project banner (CE only) -->
+      <AlertBanner
+        v-if="showSupportBanner"
+        severity="info"
+        label="SUPPORT"
+        dismissible
+        class="shrink-0"
+        @dismiss="dismissSupportBanner"
+      >
+        Support Maintenant's development by purchasing a Pro license — it's what keeps this project sustainable.
+        <template #action>
+          <RouterLink
+            to="/pro-edition"
+            class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+          >
+            Get Pro
+            <ArrowRight :size="12" />
+          </RouterLink>
+        </template>
+      </AlertBanner>
       <AppHeader />
       <div class="flex-1 overflow-y-auto pt-14 md:pt-0">
         <RouterView v-slot="{ Component }">
@@ -377,5 +405,13 @@ const mainNav = computed(() =>
 }
 .license-action--critical:hover {
   background: var(--pb-alert-critical-action-hover);
+}
+.license-action--info {
+  background: var(--pb-alert-info-action-bg);
+  border-color: var(--pb-alert-info-action-border);
+  color: var(--pb-alert-info-action-text);
+}
+.license-action--info:hover {
+  background: var(--pb-alert-info-action-hover);
 }
 </style>
