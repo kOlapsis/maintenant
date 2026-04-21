@@ -27,6 +27,7 @@ import (
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
@@ -52,6 +53,10 @@ type Runtime struct {
 	connected        bool
 	metricsAvailable bool
 	prevCPU          map[string]*cpuPrev // CPU delta state keyed by externalID
+
+	podMetricsMu    sync.Mutex
+	podMetricsCache map[string]*metricsv1beta1.PodMetrics // key: "namespace/name"
+	podMetricsAt    time.Time
 }
 
 type cpuPrev struct {

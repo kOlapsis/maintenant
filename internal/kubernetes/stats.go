@@ -44,9 +44,9 @@ func (r *Runtime) statsSnapshot(ctx context.Context, externalID string) (*pbrunt
 }
 
 func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*pbruntime.RawStats, error) {
-	pm, err := r.metrics.MetricsV1beta1().PodMetricses(ns).Get(ctx, podName, metav1.GetOptions{})
+	pm, err := r.cachedPodMetrics(ctx, ns, podName)
 	if err != nil {
-		return nil, fmt.Errorf("get pod metrics %s/%s: %w", ns, podName, err)
+		return nil, err
 	}
 
 	var totalCPUMilli int64
@@ -97,7 +97,7 @@ func (r *Runtime) controllerStats(ctx context.Context, ns, kind, name string) (*
 
 	var totalCPUMilli, totalMemBytes, totalMemLimit int64
 	for _, pod := range podList.Items {
-		pm, err := r.metrics.MetricsV1beta1().PodMetricses(ns).Get(ctx, pod.Name, metav1.GetOptions{})
+		pm, err := r.cachedPodMetrics(ctx, ns, pod.Name)
 		if err != nil {
 			continue // pod might not have metrics yet
 		}
