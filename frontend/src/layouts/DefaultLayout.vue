@@ -219,7 +219,7 @@ const mainNav = computed(() =>
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
                   :class="isEnterprise ? 'text-pb-accent' : 'text-pb-secondary'"
-                  >{{ isEnterprise ? 'Get Pro Edition' : 'Community Edition' }}</span
+                  >{{ isEnterprise ? 'Pro Edition' : 'Community Edition' }}</span
                 >
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
@@ -239,7 +239,7 @@ const mainNav = computed(() =>
                 class="cursor-pointer block w-full py-1.5 rounded-lg text-xs font-semibold text-center transition-colors"
                 style="background: var(--pb-bg-surface); color: var(--pb-text-secondary)"
               >
-                Pro Edition
+                Get Pro Edition
               </button>
             </div>
           </router-link>
