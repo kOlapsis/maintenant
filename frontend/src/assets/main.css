@@ -111,6 +111,66 @@
     /* Shadows — lighter for light theme */
     --pb-shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
     --pb-shadow-elevated: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
+
+    /* Alert tokens — light theme (dark text on amber/rose/emerald wash) */
+    --pb-alert-scan-color: rgba(0, 0, 0, 0.045);
+
+    --pb-alert-warn-text: #78350F;
+    --pb-alert-warn-tag-text: #78350F;
+    --pb-alert-warn-tag-bg: rgba(245, 158, 11, 0.28);
+    --pb-alert-warn-tag-border: rgba(180, 83, 9, 0.55);
+    --pb-alert-warn-gradient: linear-gradient(to right, rgba(245, 158, 11, 0.32) 0%, rgba(245, 158, 11, 0.12) 45%, rgba(245, 158, 11, 0.04) 85%);
+    --pb-alert-warn-gradient-card: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0.06) 60%, transparent 100%);
+    --pb-alert-warn-border: rgba(180, 83, 9, 0.45);
+    --pb-alert-warn-dot: #D97706;
+    --pb-alert-warn-dot-halo: rgba(217, 119, 6, 0.55);
+    --pb-alert-warn-rail: linear-gradient(to bottom, #fbbf24, #d97706 50%, #92400e);
+    --pb-alert-warn-action-bg: rgba(245, 158, 11, 0.18);
+    --pb-alert-warn-action-border: rgba(180, 83, 9, 0.55);
+    --pb-alert-warn-action-text: #78350F;
+    --pb-alert-warn-action-hover: rgba(245, 158, 11, 0.32);
+    --pb-alert-warn-icon-bg: rgba(245, 158, 11, 0.2);
+    --pb-alert-warn-icon-border: rgba(180, 83, 9, 0.5);
+    --pb-alert-warn-icon-color: #B45309;
+    --pb-alert-warn-title: #78350F;
+
+    --pb-alert-critical-text: #7F1D1D;
+    --pb-alert-critical-tag-text: #881337;
+    --pb-alert-critical-tag-bg: rgba(244, 63, 94, 0.25);
+    --pb-alert-critical-tag-border: rgba(190, 18, 60, 0.55);
+    --pb-alert-critical-gradient: linear-gradient(to right, rgba(244, 63, 94, 0.3) 0%, rgba(244, 63, 94, 0.12) 45%, rgba(244, 63, 94, 0.04) 85%);
+    --pb-alert-critical-gradient-card: linear-gradient(135deg, rgba(244, 63, 94, 0.18) 0%, rgba(244, 63, 94, 0.05) 60%, transparent 100%);
+    --pb-alert-critical-border: rgba(190, 18, 60, 0.5);
+    --pb-alert-critical-dot: #E11D48;
+    --pb-alert-critical-dot-halo: rgba(225, 29, 72, 0.55);
+    --pb-alert-critical-rail: linear-gradient(to bottom, #fb7185, #e11d48 50%, #9f1239);
+    --pb-alert-critical-action-bg: rgba(244, 63, 94, 0.18);
+    --pb-alert-critical-action-border: rgba(190, 18, 60, 0.55);
+    --pb-alert-critical-action-text: #881337;
+    --pb-alert-critical-action-hover: rgba(244, 63, 94, 0.32);
+    --pb-alert-critical-icon-bg: rgba(244, 63, 94, 0.2);
+    --pb-alert-critical-icon-border: rgba(190, 18, 60, 0.5);
+    --pb-alert-critical-icon-color: #BE123C;
+    --pb-alert-critical-title: #881337;
+
+    --pb-alert-info-text: #064E3B;
+    --pb-alert-info-tag-text: #064E3B;
+    --pb-alert-info-tag-bg: rgba(16, 185, 129, 0.22);
+    --pb-alert-info-tag-border: rgba(4, 120, 87, 0.55);
+    --pb-alert-info-gradient: linear-gradient(to right, rgba(16, 185, 129, 0.22) 0%, rgba(16, 185, 129, 0.08) 45%, transparent 85%);
+    --pb-alert-info-gradient-card: linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(16, 185, 129, 0.04) 60%, transparent 100%);
+    --pb-alert-info-border: rgba(4, 120, 87, 0.5);
+    --pb-alert-info-dot: #059669;
+    --pb-alert-info-dot-halo: rgba(5, 150, 105, 0.55);
+    --pb-alert-info-rail: linear-gradient(to bottom, #34d399, #059669 50%, #065f46);
+    --pb-alert-info-action-bg: rgba(16, 185, 129, 0.18);
+    --pb-alert-info-action-border: rgba(4, 120, 87, 0.55);
+    --pb-alert-info-action-text: #064E3B;
+    --pb-alert-info-action-hover: rgba(16, 185, 129, 0.3);
+    --pb-alert-info-icon-bg: rgba(16, 185, 129, 0.2);
+    --pb-alert-info-icon-border: rgba(4, 120, 87, 0.5);
+    --pb-alert-info-icon-color: #047857;
+    --pb-alert-info-title: #064E3B;
   }
 }
 
@@ -172,6 +232,66 @@
     /* Shadows */
     --pb-shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
     --pb-shadow-elevated: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+
+    /* Alert tokens — dark theme (light text on translucent wash) */
+    --pb-alert-scan-color: rgba(255, 255, 255, 0.035);
+
+    --pb-alert-warn-text: #FEF3C7;
+    --pb-alert-warn-tag-text: #FDE68A;
+    --pb-alert-warn-tag-bg: rgba(251, 191, 36, 0.2);
+    --pb-alert-warn-tag-border: rgba(251, 191, 36, 0.5);
+    --pb-alert-warn-gradient: linear-gradient(to right, rgba(251, 191, 36, 0.22) 0%, rgba(251, 191, 36, 0.1) 45%, transparent 85%);
+    --pb-alert-warn-gradient-card: linear-gradient(135deg, rgba(251, 191, 36, 0.14) 0%, rgba(251, 191, 36, 0.04) 60%, transparent 100%);
+    --pb-alert-warn-border: rgba(251, 191, 36, 0.35);
+    --pb-alert-warn-dot: #FBBF24;
+    --pb-alert-warn-dot-halo: rgba(251, 191, 36, 0.6);
+    --pb-alert-warn-rail: linear-gradient(to bottom, #fde68a, #fbbf24 50%, #d97706);
+    --pb-alert-warn-action-bg: rgba(251, 191, 36, 0.14);
+    --pb-alert-warn-action-border: rgba(251, 191, 36, 0.45);
+    --pb-alert-warn-action-text: #FDE68A;
+    --pb-alert-warn-action-hover: rgba(251, 191, 36, 0.24);
+    --pb-alert-warn-icon-bg: rgba(251, 191, 36, 0.15);
+    --pb-alert-warn-icon-border: rgba(251, 191, 36, 0.45);
+    --pb-alert-warn-icon-color: #FBBF24;
+    --pb-alert-warn-title: #FDE68A;
+
+    --pb-alert-critical-text: #FFE4E6;
+    --pb-alert-critical-tag-text: #FECDD3;
+    --pb-alert-critical-tag-bg: rgba(244, 63, 94, 0.2);
+    --pb-alert-critical-tag-border: rgba(244, 63, 94, 0.5);
+    --pb-alert-critical-gradient: linear-gradient(to right, rgba(244, 63, 94, 0.22) 0%, rgba(244, 63, 94, 0.1) 45%, transparent 85%);
+    --pb-alert-critical-gradient-card: linear-gradient(135deg, rgba(244, 63, 94, 0.14) 0%, rgba(244, 63, 94, 0.04) 60%, transparent 100%);
+    --pb-alert-critical-border: rgba(244, 63, 94, 0.35);
+    --pb-alert-critical-dot: #F43F5E;
+    --pb-alert-critical-dot-halo: rgba(244, 63, 94, 0.6);
+    --pb-alert-critical-rail: linear-gradient(to bottom, #fda4af, #f43f5e 50%, #be123c);
+    --pb-alert-critical-action-bg: rgba(244, 63, 94, 0.14);
+    --pb-alert-critical-action-border: rgba(244, 63, 94, 0.45);
+    --pb-alert-critical-action-text: #FECDD3;
+    --pb-alert-critical-action-hover: rgba(244, 63, 94, 0.24);
+    --pb-alert-critical-icon-bg: rgba(244, 63, 94, 0.15);
+    --pb-alert-critical-icon-border: rgba(244, 63, 94, 0.45);
+    --pb-alert-critical-icon-color: #FB7185;
+    --pb-alert-critical-title: #FECDD3;
+
+    --pb-alert-info-text: #D1FAE5;
+    --pb-alert-info-tag-text: #A7F3D0;
+    --pb-alert-info-tag-bg: rgba(62, 207, 142, 0.18);
+    --pb-alert-info-tag-border: rgba(62, 207, 142, 0.45);
+    --pb-alert-info-gradient: linear-gradient(to right, rgba(62, 207, 142, 0.18) 0%, rgba(62, 207, 142, 0.08) 45%, transparent 85%);
+    --pb-alert-info-gradient-card: linear-gradient(135deg, rgba(62, 207, 142, 0.1) 0%, rgba(62, 207, 142, 0.03) 60%, transparent 100%);
+    --pb-alert-info-border: rgba(62, 207, 142, 0.35);
+    --pb-alert-info-dot: #3ECF8E;
+    --pb-alert-info-dot-halo: rgba(62, 207, 142, 0.55);
+    --pb-alert-info-rail: linear-gradient(to bottom, #6ee7b7, #3ecf8e, #2eaf78);
+    --pb-alert-info-action-bg: rgba(62, 207, 142, 0.14);
+    --pb-alert-info-action-border: rgba(62, 207, 142, 0.45);
+    --pb-alert-info-action-text: #A7F3D0;
+    --pb-alert-info-action-hover: rgba(62, 207, 142, 0.24);
+    --pb-alert-info-icon-bg: rgba(62, 207, 142, 0.12);
+    --pb-alert-info-icon-border: rgba(62, 207, 142, 0.35);
+    --pb-alert-info-icon-color: #4FD89E;
+    --pb-alert-info-title: #A7F3D0;
 
     /* T006: Density tokens (comfortable default) */
     --pb-density-row-padding: 0.75rem;
