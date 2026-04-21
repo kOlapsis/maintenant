@@ -22,12 +22,6 @@ const iconMap = {
   success: CheckCircle,
   warning: AlertTriangle,
 } as const
-
-const colorMap = {
-  info: 'border-slate-600 text-pb-primary',
-  success: 'border-emerald-500/40 text-pb-status-ok',
-  warning: 'border-amber-500/40 text-amber-400',
-} as const
 </script>
 
 <template>
@@ -44,13 +38,49 @@ const colorMap = {
         <div
           v-for="toast in toasts"
           :key="toast.id"
-          class="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border bg-pb-surface shadow-2xl shadow-black/50 max-w-sm"
-          :class="colorMap[toast.type]"
+          class="toast pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl shadow-black/40 max-w-sm"
+          :class="`toast--${toast.type}`"
         >
-          <component :is="iconMap[toast.type]" :size="16" class="shrink-0" />
-          <span class="text-sm font-medium">{{ toast.message }}</span>
+          <component :is="iconMap[toast.type]" :size="16" class="toast__icon shrink-0" />
+          <span class="toast__msg text-sm font-medium">{{ toast.message }}</span>
         </div>
       </TransitionGroup>
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.toast {
+  background: var(--pb-bg-surface);
+  backdrop-filter: blur(4px);
+}
+
+.toast--info {
+  border-color: var(--pb-border-default);
+  color: var(--pb-text-primary);
+}
+.toast--info .toast__icon {
+  color: var(--pb-text-muted);
+}
+
+.toast--success {
+  border-color: var(--pb-alert-info-border);
+  color: var(--pb-alert-info-title);
+}
+.toast--success .toast__icon {
+  color: var(--pb-alert-info-icon-color);
+}
+.toast--success .toast__msg {
+  color: var(--pb-alert-info-text);
+}
+
+.toast--warning {
+  border-color: var(--pb-alert-warn-border);
+}
+.toast--warning .toast__icon {
+  color: var(--pb-alert-warn-icon-color);
+}
+.toast--warning .toast__msg {
+  color: var(--pb-alert-warn-text);
+}
+</style>
