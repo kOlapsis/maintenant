@@ -25,6 +25,14 @@
       </button>
     </div>
 
+    <FeatureHint
+      storage-key="webhooks"
+      title="Subscribe to events via outbound HTTP"
+      :doc-href="docUrl('api/reference/#webhooks')"
+    >
+      Webhook subscriptions POST a JSON payload to the URL you configure whenever a matching event occurs (alerts, container state, endpoint status, certificate expiry&hellip;). Filter with event types, use the Test button to verify your receiver, and failing deliveries are retried with exponential backoff.
+    </FeatureHint>
+
     <div v-if="loading" class="text-sm" style="color: var(--pb-text-muted)">Loading...</div>
     <div v-else-if="error" class="text-sm" style="color: var(--pb-status-down)">{{ error }}</div>
     <div
@@ -136,6 +144,8 @@ import { ref, onMounted } from 'vue'
 import { listWebhooks, deleteWebhook, testWebhook, type WebhookSubscription, type TestWebhookResponse } from '@/services/webhookApi'
 import { useConfirm } from '@/composables/useConfirm'
 import WebhookForm from '@/components/WebhookForm.vue'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
+import { docUrl } from '@/utils/docs'
 
 const confirm = useConfirm()
 

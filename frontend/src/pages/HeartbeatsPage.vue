@@ -18,6 +18,8 @@ import { useEdition } from '@/composables/useEdition'
 import { createHeartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
+import { docUrl } from '@/utils/docs'
 
 const store = useHeartbeatsStore()
 const { openDetail } = inject(detailSlideOverKey)!
@@ -120,6 +122,20 @@ async function handleCreate() {
         </button>
       </div>
     </div>
+
+    <FeatureHint
+      storage-key="heartbeats"
+      title="Monitor cron jobs with a single curl"
+      :doc-href="docUrl('features/heartbeats/#ping-url-format')"
+    >
+      Each monitor gets a unique public ping URL
+      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/ping/{uuid}</code>).
+      Hit it from a cron job, systemd timer, or any script to report success &mdash; append
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/$?</code>
+      to forward the exit code, or use
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/start</code>
+      + exit code to track duration. If no ping arrives before the deadline (interval + grace), a <em>deadline missed</em> alert fires.
+    </FeatureHint>
 
     <!-- Create form -->
     <div

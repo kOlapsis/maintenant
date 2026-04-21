@@ -20,6 +20,8 @@ import { timeAgo } from '@/utils/time'
 import PostureScoreBadge from '@/components/PostureScoreBadge.vue'
 import PostureContainerList from '@/components/PostureContainerList.vue'
 import FeatureGate from '@/components/FeatureGate.vue'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
+import { docUrl } from '@/utils/docs'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import { ShieldCheck, AlertTriangle } from 'lucide-vue-next'
 
@@ -71,6 +73,14 @@ onUnmounted(() => {
           </span>
         </div>
       </div>
+
+      <FeatureHint
+        storage-key="posture"
+        title="Scored view of your infrastructure risk"
+        :doc-href="docUrl('features/security/#security-posture-dashboard')"
+      >
+        The posture score weights network exposure, configuration risks (privileged, host network), and pending updates across all {{ containerStore.runtimeLabel }} containers. Drill into individual containers to see the underlying insights, and <em>acknowledge</em> known findings to exclude them from the score with an audit trail.
+      </FeatureHint>
 
       <!-- Enterprise gate -->
       <FeatureGate

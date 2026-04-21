@@ -19,6 +19,8 @@ import { useEdition } from '@/composables/useEdition'
 import { createCertificate } from '@/services/certificateApi'
 import CertificateCard from '@/components/CertificateCard.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
+import { docUrl } from '@/utils/docs'
 
 const store = useCertificatesStore()
 const containers = useContainersStore()
@@ -143,6 +145,16 @@ function handleSelect(id: number) {
         </button>
       </div>
     </div>
+
+    <FeatureHint
+      storage-key="certificates"
+      title="TLS expiry tracking, automatic and standalone"
+      :doc-href="docUrl('features/certificates/#alert-thresholds')"
+    >
+      Any HTTPS endpoint {{ labelOrAnnotation }} auto-creates a certificate monitor &mdash; the full chain (leaf, intermediates, root) is validated on each check. Add standalone monitors for domains outside your stack, or declare extras with
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.tls.certificates</code>.
+      Alerts fire at 30, 14, 7, 3 and 1 day before expiry, plus on chain errors.
+    </FeatureHint>
 
     <!-- Create form -->
     <div

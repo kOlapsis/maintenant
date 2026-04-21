@@ -22,6 +22,8 @@ import UpdateDetailPanel from '@/components/UpdateDetailPanel.vue'
 import SlideOverPanel from '@/components/ui/SlideOverPanel.vue'
 import type { ImageUpdate } from '@/services/updateApi'
 import FeatureGate from '@/components/FeatureGate.vue'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
+import { docUrl } from '@/utils/docs'
 import {
   RefreshCw,
   AlertTriangle,
@@ -127,6 +129,18 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
+
+      <FeatureHint
+        storage-key="updates"
+        title="OCI digest scanning, digest-only or semver"
+        :doc-href="docUrl('features/updates/#tag-filtering')"
+      >
+        maintenant scans the source registry of each image and compares digests. For semver tags, it compares versions while respecting variant suffixes (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">-alpine</code>, <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">-bookworm</code>). Constrain candidates with
+        <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.update.tag-include</code>
+        /
+        <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">tag-exclude</code>
+        (Go regex), pin a container's current version, or exclude whole images entirely.
+      </FeatureHint>
 
       <!-- Summary Cards -->
       <div v-if="updates.summary?.counts" class="grid grid-cols-2 sm:grid-cols-4 gap-3">

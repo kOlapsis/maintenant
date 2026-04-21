@@ -20,6 +20,7 @@ import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
 import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
+import AlertBanner from '@/components/ui/AlertBanner.vue'
 import { useTheme } from '@/composables/useTheme'
 
 const router = useRouter()
@@ -323,13 +324,11 @@ const themeTooltip = computed(() => {
   </header>
 
   <!-- Runtime disconnection banner -->
-  <div
+  <AlertBanner
     v-if="!containers.runtimeConnected"
-    class="flex items-center gap-3 px-6 py-2 bg-amber-500/10 border-b border-amber-500/30"
+    severity="critical"
+    label="RUNTIME OFFLINE"
   >
-    <AlertTriangle :size="16" class="text-amber-500 shrink-0" />
-    <span class="text-sm text-amber-400">
-      {{ containers.runtimeLabel }} runtime disconnected — monitoring paused until connection is restored.
-    </span>
-  </div>
+    <strong class="font-semibold">{{ containers.runtimeLabel }}</strong> runtime disconnected — monitoring paused until connection is restored.
+  </AlertBanner>
 </template>

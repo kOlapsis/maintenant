@@ -18,6 +18,8 @@ import ActiveAlerts from '@/components/ActiveAlerts.vue'
 import AlertList from '@/components/AlertList.vue'
 import ChannelManager from '@/components/ChannelManager.vue'
 import SilenceRuleManager from '@/components/SilenceRuleManager.vue'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
+import { docUrl } from '@/utils/docs'
 
 const store = useAlertsStore()
 const activeTab = ref<'history' | 'channels' | 'silence'>('history')
@@ -134,8 +136,26 @@ onUnmounted(() => {
 
     <!-- Tab content -->
     <AlertList v-if="activeTab === 'history'" />
-    <ChannelManager v-else-if="activeTab === 'channels'" />
-    <SilenceRuleManager v-else-if="activeTab === 'silence'" />
+    <template v-else-if="activeTab === 'channels'">
+      <FeatureHint
+        storage-key="alerts-channels"
+        title="What are notification channels?"
+        :doc-href="docUrl('features/alerts/#notification-channels')"
+      >
+        Channels deliver alerts to where your team is: Discord and generic HTTP webhooks are built-in; Slack, Microsoft Teams and Email (SMTP) are available on Pro. Each channel formats the payload natively, and you can send a test alert to verify delivery.
+      </FeatureHint>
+      <ChannelManager />
+    </template>
+    <template v-else-if="activeTab === 'silence'">
+      <FeatureHint
+        storage-key="alerts-silence"
+        title="What are silence rules?"
+        :doc-href="docUrl('features/alerts/#silence-rules')"
+      >
+        Silence rules suppress alert delivery during planned maintenance windows without discarding the events &mdash; the history still records everything. Match by source (endpoint, container, certificate&hellip;) and optionally by entity, set a time window, and alerts stop paging until it expires.
+      </FeatureHint>
+      <SilenceRuleManager />
+    </template>
   </div>
   </div>
 </template>

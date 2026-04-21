@@ -7,6 +7,7 @@ COMMERCIAL-LICENSE.md Source: https://github.com/kolapsis/maintenant -->
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, provide, ref } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
+import AlertBanner from '@/components/ui/AlertBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
@@ -20,7 +21,7 @@ import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
 import {
   Activity,
-  AlertTriangle,
+  ArrowRight,
   ArrowUpCircle,
   Bell,
   Box,
@@ -77,9 +78,28 @@ onMounted(() => {
 const licenseMessageParts = computed(() => {
   const msg = licenseMessage.value
   if (!msg) return null
-  const match = msg.match(/^(.*?)(Renew|Resubscribe)(.*)$/)
-  if (!match) return { before: msg, word: null, after: '' }
-  return { before: match[1], word: match[2], after: match[3] }
+  const match = msg.match(/^(.*?)\b(renew|resubscribe)\b(.*)$/i)
+  if (!match || !match[2]) return { before: msg, word: null, after: '' }
+  const word = match[2]
+  const capitalized = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  return { before: match[1] ?? '', word: capitalized, after: match[3] ?? '' }
+})
+
+const licenseSeverity = computed<'warning' | 'critical'>(() => {
+  const s = licenseStatusValue.value
+  return s === 'grace' || s === 'unreachable' ? 'warning' : 'critical'
+})
+
+const licenseLabel = computed(() => {
+  switch (licenseStatusValue.value) {
+    case 'grace': return 'GRACE PERIOD'
+    case 'unreachable': return 'LICENSE UNREACHABLE'
+    case 'expired': return 'LICENSE EXPIRED'
+    case 'canceled': return 'LICENSE CANCELED'
+    case 'revoked': return 'LICENSE REVOKED'
+    case 'unknown': return 'LICENSE INVALID'
+    default: return 'LICENSE'
+  }
 })
 
 const mobileMenuOpen = ref(false)
@@ -191,7 +211,7 @@ const mainNav = computed(() =>
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
                   :class="isEnterprise ? 'text-pb-accent' : 'text-pb-secondary'"
-                  >{{ isEnterprise ? 'Pro Edition' : 'Community Edition' }}</span
+                  >{{ isEnterprise ? 'Get Pro Edition' : 'Community Edition' }}</span
                 >
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
@@ -282,28 +302,24 @@ const mainNav = computed(() =>
     <!-- Main content -->
     <main class="flex-1 flex flex-col overflow-hidden">
       <!-- License warning banner -->
-      <div
+      <AlertBanner
         v-if="licenseMessageParts"
-        class="flex items-center gap-2 px-4 py-2 text-xs font-medium shrink-0"
-        :class="{
-          'bg-amber-500/10 text-amber-400 border-b border-amber-500/20':
-            licenseStatusValue === 'grace' || licenseStatusValue === 'unreachable',
-          'bg-red-500/10 text-red-400 border-b border-red-500/20':
-            licenseStatusValue === 'expired' ||
-            licenseStatusValue === 'canceled' ||
-            licenseStatusValue === 'revoked' ||
-            licenseStatusValue === 'unknown',
-        }"
+        :severity="licenseSeverity"
+        :label="licenseLabel"
+        class="shrink-0"
       >
-        <AlertTriangle :size="14" class="shrink-0" />
-        <span v-if="licenseMessageParts">
-          {{ licenseMessageParts.before }}<RouterLink
-            v-if="licenseMessageParts.word"
+        {{ licenseMessage }}
+        <template v-if="licenseMessageParts.word" #action>
+          <RouterLink
             to="/pro-edition"
-            class="underline underline-offset-2 hover:opacity-80"
-          >{{ licenseMessageParts.word }}</RouterLink>{{ licenseMessageParts.after }}
-        </span>
-      </div>
+            class="license-action inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            :class="`license-action--${licenseSeverity}`"
+          >
+            {{ licenseMessageParts.word }}
+            <ArrowRight :size="12" />
+          </RouterLink>
+        </template>
+      </AlertBanner>
       <AppHeader />
       <div class="flex-1 overflow-y-auto pt-14 md:pt-0">
         <RouterView v-slot="{ Component }">
@@ -344,5 +360,22 @@ const mainNav = computed(() =>
 .slide-left-enter-from,
 .slide-left-leave-to {
   transform: translateX(-100%);
+}
+
+.license-action--warning {
+  background: var(--pb-alert-warn-action-bg);
+  border-color: var(--pb-alert-warn-action-border);
+  color: var(--pb-alert-warn-action-text);
+}
+.license-action--warning:hover {
+  background: var(--pb-alert-warn-action-hover);
+}
+.license-action--critical {
+  background: var(--pb-alert-critical-action-bg);
+  border-color: var(--pb-alert-critical-action-border);
+  color: var(--pb-alert-critical-action-text);
+}
+.license-action--critical:hover {
+  background: var(--pb-alert-critical-action-hover);
 }
 </style>

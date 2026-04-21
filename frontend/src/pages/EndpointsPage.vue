@@ -18,7 +18,10 @@ import { useContainersStore } from '@/stores/containers'
 import { useEdition } from '@/composables/useEdition'
 import { createEndpoint } from '@/services/endpointApi'
 import EndpointCard from '@/components/EndpointCard.vue'
-import { AlertTriangle, Globe } from 'lucide-vue-next'
+import { Globe } from 'lucide-vue-next'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
+import { docUrl } from '@/utils/docs'
 
 const store = useEndpointsStore()
 const containers = useContainersStore()
@@ -140,6 +143,20 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+
+    <FeatureHint
+      storage-key="endpoints"
+      title="Define HTTP/TCP checks with labels"
+      :doc-href="docUrl('features/endpoints/#quick-start')"
+    >
+      Declare endpoints directly on your {{ isK8s ? 'pods' : 'containers' }} with
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.http</code>
+      or
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.tcp</code>,
+      and tune the interval, failure/recovery thresholds, expected status codes, or TLS verification via sibling {{ labelOrAnnotation }}s. Use indexed labels
+      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.0.*</code>)
+      to monitor multiple endpoints from the same {{ isK8s ? 'pod' : 'container' }}.
+    </FeatureHint>
 
     <!-- Create form -->
     <div
@@ -292,22 +309,24 @@ onUnmounted(() => {
     </div>
 
     <!-- Config errors -->
-    <div
+    <InlineAlert
       v-if="store.configErrors.length > 0"
-      class="mb-6 rounded-2xl p-4 bg-amber-500/10 border border-amber-500/30"
+      severity="warning"
+      :tag="`${store.configErrors.length} ${store.configErrors.length > 1 ? 'ERRORS' : 'ERROR'}`"
+      class="mb-6 config-errors"
     >
-      <div class="flex items-start gap-3">
-        <AlertTriangle :size="20" class="text-amber-500 shrink-0 mt-0.5" />
-        <div>
-          <h3 class="text-sm font-medium text-amber-400">Label configuration errors</h3>
-          <ul class="mt-1 space-y-0.5 text-sm text-slate-400">
-            <li v-for="(err, i) in store.configErrors" :key="i">
-              <strong>{{ err.container_name }}</strong> ({{ err.label_key }}): {{ err.error }}
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
+      <template #title>Label configuration errors</template>
+      <ul class="space-y-1">
+        <li v-for="(err, i) in store.configErrors" :key="i" class="flex items-start gap-2">
+          <span class="bullet mt-1.5 h-1 w-1 shrink-0 rounded-full" />
+          <span>
+            <strong class="font-semibold" style="color: var(--pb-alert-warn-title)">{{ err.container_name }}</strong>
+            <span class="mx-1 opacity-70">({{ err.label_key }})</span>
+            <span>{{ err.error }}</span>
+          </span>
+        </li>
+      </ul>
+    </InlineAlert>
 
     <!-- Status summary -->
     <div class="mb-6 flex gap-3 text-sm">
@@ -408,3 +427,10 @@ onUnmounted(() => {
   </div>
   </div>
 </template>
+
+<style scoped>
+.config-errors .bullet {
+  background: var(--pb-alert-warn-dot);
+  opacity: 0.7;
+}
+</style>
