@@ -13,11 +13,24 @@
   <a href="https://github.com/kolapsis/maintenant/releases"><img src="https://img.shields.io/github/v/release/kolapsis/maintenant?style=flat-square&color=blue" alt="Release" /></a>
   <a href="https://github.com/kolapsis/maintenant/pkgs/container/maintenant"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fmaintenant-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/maintenant?style=flat-square" alt="License" /></a>
+  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Pro-%E2%82%AC9%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €9/mo, 14-day trial" /></a>
 </p>
 
 <p align="center">
-  <a href="https://kolapsis.github.io/maintenant/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
+  <a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#pricing">Pricing</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
 </p>
+
+---
+
+<table align="center" width="100%">
+  <tr>
+    <td align="center" width="100%">
+      <h3>Keep maintenant alive — <a href="#pricing">go Pro for €9/mo</a></h3>
+      <sub>Built in the open by <strong>one developer in Bordeaux, France</strong> — no VC, no tracking, no dark patterns.<br>If maintenant replaces 3 SaaS tools in your stack, <strong>a Pro subscription pays for itself on day one</strong>.</sub><br><br>
+      <a href="https://maintenant.dev/#pricing"><strong>Start 14-day free trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -154,6 +167,8 @@ Create a monitor, get a unique URL, add one `curl` to your cron job. maintenant 
 curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
+> Community includes up to 5 heartbeats. **[Pro](#pricing)** lifts the cap for unlimited jobs.
+
 ### SSL/TLS Certificate Monitoring
 
 Automatic detection from your HTTPS endpoints, plus standalone monitors for any domain. Alerts at 30, 14, 7, 3, and 1 day before expiry. Full chain validation.
@@ -172,11 +187,15 @@ Knows when your images have updates available. Scans OCI registries, compares di
 
 ### Alert Engine
 
-Unified alerts across all monitoring sources. Webhook and Discord channels included. Silence rules for planned maintenance. Exponential backoff retry on delivery. Slack, Teams, and email channels available with maintenant Pro.
+Unified alerts across all monitoring sources. Webhook and Discord channels included. Silence rules for planned maintenance. Exponential backoff retry on delivery.
+
+> **[Pro](#pricing)** adds Slack, Microsoft Teams, and Email channels, plus escalation chains and maintenance windows.
 
 ### Public Status Page
 
 Give your users a clean, real-time status page. Component groups, live SSE updates, severity aggregation across all monitors.
+
+> **[Pro](#pricing)** adds incident timelines and subscriber notifications (email + webhook) — turn outages into trust-building moments.
 
 ### MCP Server
 
@@ -427,45 +446,176 @@ Full REST API under `/api/v1/` for automation and integration.
 
 ---
 
-## Editions
+## Pricing
 
-maintenant is fully functional out of the box. The **Pro Edition** is available for teams that need advanced alerting, vulnerability intelligence, and extended notification channels.
+<p align="center">
+  <strong>Community Edition is free forever. Pro keeps the project alive.</strong><br>
+  <sub>If you ship real software, <strong>€9/mo is less than one hour of debugging</strong> the outage you didn't see coming.<br>
+  And <strong>100% of revenue funds full-time development</strong> — no investors to pay back, no salespeople to feed.</sub>
+</p>
 
-| Feature | Community | Pro |
-|---------|:---------:|:---:|
-| Container auto-discovery | x | x |
-| Endpoint monitoring (HTTP/TCP) | x | x |
-| Heartbeat/cron monitoring | x (5 max) | x (unlimited) |
-| TLS certificate monitoring | x | x |
-| Resource metrics | x | x |
-| Network security insights | x | x |
-| Update intelligence (digest scan) | x | x |
-| Alert engine (fire, recover, silence) | x | x |
-| Webhook + Discord channels | x | x |
-| Public status page (components, groups) | x | x |
-| REST API + SSE + MCP | x | x |
-| PWA support | x | x |
-| Slack, Teams, Email channels | | x |
-| Alert escalation + routing | | x |
-| Maintenance windows | | x |
-| Security posture dashboard | | x |
-| CVE enrichment + risk scoring | | x |
-| Incident management | | x |
-| Subscriber notifications | | x |
+<table>
+  <tr>
+    <td width="50%" valign="top" align="left">
+      <h3>Community</h3>
+      <p><strong>Free</strong> · AGPL-3.0 · self-hosted forever</p>
+      <ul>
+        <li>Container auto-discovery (Docker + Kubernetes)</li>
+        <li>HTTP / TCP endpoint monitoring</li>
+        <li>Heartbeat &amp; cron monitoring <sub>(up to 5)</sub></li>
+        <li>TLS certificate tracking</li>
+        <li>Resource metrics (CPU, RAM, net, disk)</li>
+        <li>Network security insights</li>
+        <li>Update intelligence (digest scan)</li>
+        <li>Alert engine + webhook + Discord</li>
+        <li>Public status page</li>
+        <li>REST API + SSE + MCP server</li>
+        <li>PWA support</li>
+      </ul>
+      <p><em>Everything a solo self-hoster needs.</em></p>
+    </td>
+    <td width="50%" valign="top" align="left" style="background:#0B0E13">
+      <h3>Pro&nbsp;&nbsp;<sub><code>Recommended · 14-day free trial</code></sub></h3>
+      <p><strong>€9</strong>/month · or <strong>€90</strong>/year <sub>(save 2 months)</sub></p>
+      <p><sub><strong>Founding-subscriber pricing:</strong> lock in €9/mo <em>forever</em> before public pricing moves up.</sub></p>
+      <p><em>Everything in Community, plus:</em></p>
+      <ul>
+        <li><strong>Unlimited</strong> heartbeats</li>
+        <li><strong>Slack, Microsoft Teams, Email</strong> channels</li>
+        <li><strong>Alert escalation &amp; routing</strong> — page the right person, not a dead channel</li>
+        <li><strong>Maintenance windows</strong> — silence cleanly during deploys</li>
+        <li><strong>Unified security posture</strong> dashboard</li>
+        <li><strong>CVE enrichment</strong> + risk scoring per container</li>
+        <li><strong>Incident management</strong> with public timeline</li>
+        <li><strong>Subscriber notifications</strong> (email, webhook)</li>
+        <li><strong>Priority email support</strong></li>
+      </ul>
+      <p><a href="https://maintenant.dev/#pricing"><strong>Start free trial →</strong></a></p>
+    </td>
+  </tr>
+</table>
 
-To activate Pro, set your license key in the environment:
+### Why upgrade to Pro?
+
+- **Sleep through the night.** Escalation chains page the on-call engineer, then the backup, then the lead — instead of dying silently in a muted Discord.
+- **Prioritize the vulnerabilities that matter.** CVE enrichment and per-container risk scoring surface what's critical in *your* environment — not a generic feed.
+- **Turn outages into trust.** Public incident timelines and subscriber notifications keep your users informed automatically.
+- **Get direct answers.** Priority email support, straight to the developer who wrote it.
+- **Fund independent software.** maintenant is built in Bordeaux, France — by one developer, with no VC, no tracking, no dark patterns. Your subscription is the roadmap.
+
+<p align="center">
+  <a href="./docs/screen-captures/11-security-posture.png"><img src="./docs/screen-captures/11-security-posture.png" alt="Pro — Unified Security Posture" width="680" /></a>
+  <br><sub><strong>Pro</strong> — Unified security posture with CVE enrichment &amp; risk scoring</sub>
+</p>
+
+### Flexible billing — your choice of processor
+
+Pick the processor that fits where you are:
+
+| Region          | Processor | Methods                                                 |
+| --------------- | --------- | ------------------------------------------------------- |
+| Global          | **Stripe** | Credit / debit card                                     |
+| European Union  | **Mollie** | Card, SEPA Direct Debit, iDEAL, Bancontact, and more    |
+
+- 14-day free trial — plenty of time to evaluate against a real stack
+- Cancel anytime from your dashboard
+- VAT-compliant invoices issued automatically
+- **Self-hosted means self-hosted** — your monitoring data never leaves your infrastructure
+
+### "Why should I pay for open-source?"
+
+Fair question. Here's the honest answer:
+
+<details>
+<summary><strong>Is the Community Edition really everything I need?</strong></summary>
+
+Yes. Community is not crippleware — it runs production infrastructure every day. Pro exists for teams that need escalation routing, CVE intelligence, and premium channels. If you don't need those, stay on Community, and consider <a href="https://github.com/sponsors/kolapsis">sponsoring</a> instead.
+</details>
+
+<details>
+<summary><strong>If I don't pay, does the project die?</strong></summary>
+
+maintenant is AGPL-3.0 and will always be free. But one developer can only sustain this full-time if users pay. Every Pro subscription is a direct vote for "keep shipping" — no investors to please, no enterprise pivot, no acquisition exit.
+</details>
+
+<details>
+<summary><strong>Will the price go up later?</strong></summary>
+
+Probably. As Pro grows, the price will increase for new subscribers. **Anyone who subscribes today locks in €9/mo forever** — that's the deal.
+</details>
+
+<details>
+<summary><strong>Can I self-host Pro? Does my data leave my infra?</strong></summary>
+
+Yes, self-host Pro exactly like Community — it's the same binary. License validation is stateless and offline-tolerant. Your monitoring data never touches our servers. Ever.
+</details>
+
+<details>
+<summary><strong>Is there an Enterprise plan for larger teams?</strong></summary>
+
+Yes — for teams needing SSO, audit logs, custom SLAs, or on-prem support contracts. Email <a href="mailto:hello@kolapsis.com">hello@kolapsis.com</a>.
+</details>
+
+### Activate Pro
+
+Grab a key from [maintenant.dev/#pricing](https://maintenant.dev/#pricing), set it in your environment, restart — done.
 
 ```bash
 MAINTENANT_LICENSE_KEY=your-license-key
 ```
 
-Learn more at [kolapsis.github.io/maintenant](https://kolapsis.github.io/maintenant/).
+<p align="center">
+  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Start%20your%2014--day%20free%20trial-%E2%82%AC9%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start 14-day free trial — €9/mo" /></a>
+</p>
+
+<p align="center">
+  <sub>14-day free trial · cancel anytime · VAT-compliant invoices · founder pricing locked in forever</sub>
+</p>
+
+---
+
+## Support the project
+
+maintenant is built independently in Bordeaux, France. No VC, no tracking, no telemetry, no data collection, no acquisition exit. The only way this keeps going is if users who benefit from it give back. **Here's how, ranked by impact:**
+
+<table>
+  <tr>
+    <td width="33%" valign="top" align="center">
+      <h3>1. Go Pro</h3>
+      <p><strong>€9/mo</strong> · 14-day trial</p>
+      <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development.</sub></p>
+      <p><a href="https://maintenant.dev/#pricing"><strong>Start trial →</strong></a></p>
+    </td>
+    <td width="33%" valign="top" align="center">
+      <h3>2. Sponsor</h3>
+      <p><strong>Any amount</strong> · one-off or monthly</p>
+      <p><sub>Don't need Pro? Sponsor on GitHub. Every sponsor gets credited in the <a href="#backers">Backers</a> wall below.</sub></p>
+      <p><a href="https://github.com/sponsors/kolapsis"><strong>Sponsor →</strong></a></p>
+    </td>
+    <td width="33%" valign="top" align="center">
+      <h3>3. Spread the word</h3>
+      <p><strong>Free · 10 seconds</strong></p>
+      <p><sub>Star the repo, share on HN / Lobsters / Reddit / LinkedIn. Discoverability is oxygen for indie projects.</sub></p>
+      <p><a href="https://github.com/kolapsis/maintenant"><strong>Star repo →</strong></a></p>
+    </td>
+  </tr>
+</table>
+
+### Backers
+
+<sub>Every Pro subscriber and GitHub sponsor keeps this project independent. Thank you.</sub>
+
+<a href="https://github.com/sponsors/kolapsis"><img src="https://img.shields.io/github/sponsors/kolapsis?style=for-the-badge&label=GitHub%20Sponsors&color=ea4aaa" alt="GitHub Sponsors" /></a>
+
+> Want your company logo here? [Become a corporate sponsor](mailto:hello@kolapsis.com) — visibility for you, runway for the project.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please open an issue first to discuss what you'd like to change.
+Code contributions are welcome. Please open an issue first to discuss bigger changes. Small fixes, typos, docs — just send the PR.
+
+For other ways to contribute (bug reports, feature ideas, feedback), see [Support the project](#support-the-project).
 
 ---
 
@@ -474,3 +624,9 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 Copyright 2025-2026 Benjamin Touchard / kOlapsis — Bordeaux, France
 
 Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) or a commercial license.
+
+---
+
+<p align="center">
+  <sub>Built with care in Bordeaux, France — if maintenant saves you an outage, <a href="https://maintenant.dev/#pricing">buy the developer a coffee (or a year of runway)</a>.</sub>
+</p>
