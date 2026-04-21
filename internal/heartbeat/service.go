@@ -83,7 +83,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxHeartbeats: 10}
+		lc = &DefaultLicenseChecker{MaxHeartbeats: 5}
 	}
 	return &Service{
 		store:          d.Store,

@@ -435,7 +435,7 @@ maintenant is fully functional out of the box. The **Pro Edition** is available 
 |---------|:---------:|:---:|
 | Container auto-discovery | x | x |
 | Endpoint monitoring (HTTP/TCP) | x | x |
-| Heartbeat/cron monitoring | x (10 max) | x (unlimited) |
+| Heartbeat/cron monitoring | x (5 max) | x (unlimited) |
 | TLS certificate monitoring | x | x |
 | Resource metrics | x | x |
 | Network security insights | x | x |

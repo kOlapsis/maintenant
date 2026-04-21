@@ -99,7 +99,7 @@ func (h *HeartbeatHandler) HandleCreate(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrLimitReached) {
 			WriteError(w, http.StatusConflict, "HEARTBEAT_LIMIT_REACHED",
-				"Community edition allows up to 10 heartbeat monitors. Upgrade to Pro for unlimited monitors.")
+				"Community edition allows up to 5 heartbeat monitors. Upgrade to Pro for unlimited monitors.")
 			return
 		}
 		if errors.Is(err, heartbeat.ErrInvalidInput) {

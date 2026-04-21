@@ -254,7 +254,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		endpointLicenseChecker = &endpoint.DefaultLicenseChecker{MaxEndpoints: 1<<31 - 1}
 		heartbeatLicenseChecker = &heartbeat.DefaultLicenseChecker{MaxHeartbeats: 1<<31 - 1}
 	}
-	// Community: nil checkers use service defaults (10 endpoints, 10 heartbeats, 5 certificates)
+	// Community: nil checkers use service defaults (10 endpoints, 5 heartbeats, 5 certificates)
 
 	a.certSvc = certificate.NewService(certificate.Deps{
 		Store:          certStore,

@@ -629,7 +629,7 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise 
 		}
 	}
 
-	// Heartbeats: max 10
+	// Heartbeats: max 5
 	if d.Heartbeats != nil {
 		used, err := d.Heartbeats.CountActiveHeartbeats(ctx)
 		if err != nil {
@@ -638,7 +638,7 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise 
 		}
 		quotas["heartbeats"] = map[string]interface{}{
 			"used":  used,
-			"limit": 10,
+			"limit": 5,
 		}
 	}
 
