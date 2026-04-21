@@ -12,100 +12,191 @@
 -->
 
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="$emit('close')">
-    <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-      <h2 class="text-lg font-semibold text-pb-primary mb-4">Add Webhook</h2>
+  <Teleport to="body">
+    <div
+      class="fixed inset-0 z-[10001] flex items-center justify-center"
+      @keydown.esc="emit('close')"
+    >
+      <div
+        class="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        @click="emit('close')"
+      />
 
-      <form @submit.prevent="submit" class="space-y-4">
-        <div>
-          <label class="block text-sm text-slate-400 mb-1">Name</label>
-          <input
-            v-model="name"
-            type="text"
-            maxlength="100"
-            required
-            placeholder="e.g., Slack Integration"
-            class="w-full rounded px-3 py-2 text-sm placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
-            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm text-slate-400 mb-1">URL (HTTPS)</label>
-          <input
-            v-model="url"
-            type="url"
-            required
-            placeholder="https://hooks.example.com/webhook"
-            class="w-full rounded px-3 py-2 text-sm placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
-            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm text-slate-400 mb-1">Secret (optional, for HMAC signing)</label>
-          <input
-            v-model="secret"
-            type="text"
-            placeholder="Optional signing secret"
-            class="w-full rounded px-3 py-2 text-sm placeholder-slate-500 focus:border-pb-green-500 focus:outline-none"
-            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm text-slate-400 mb-2">Event Types</label>
-          <div class="space-y-2">
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                value="*"
-                v-model="selectedEvents"
-                @change="onAllEventsToggle"
-                class="rounded border-slate-600 text-pb-green-500"
-                style="background: var(--pb-bg-elevated)"
-              />
-              <span class="text-sm text-pb-secondary">All events</span>
-            </label>
-            <label v-for="et in specificEventTypes" :key="et.value" class="flex items-center gap-2 ml-4">
-              <input
-                type="checkbox"
-                :value="et.value"
-                v-model="selectedEvents"
-                :disabled="selectedEvents.includes('*')"
-                class="rounded border-slate-600 text-pb-green-500"
-                style="background: var(--pb-bg-elevated)"
-              />
-              <span class="text-sm text-pb-secondary">{{ et.label }}</span>
-            </label>
-          </div>
-        </div>
-
-        <div v-if="error" class="text-red-400 text-sm">{{ error }}</div>
-
-        <div class="flex gap-2 justify-end">
-          <button
-            type="button"
-            @click="$emit('close')"
-            class="text-sm text-slate-400 hover:text-pb-secondary px-4 py-2"
+      <div
+        class="relative mx-4 w-full max-w-md overflow-hidden"
+        :style="{
+          backgroundColor: 'var(--pb-bg-surface)',
+          border: '1px solid var(--pb-border-default)',
+          borderRadius: 'var(--pb-radius-lg)',
+          boxShadow: 'var(--pb-shadow-elevated)',
+        }"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="webhook-form-title"
+      >
+        <div class="p-6">
+          <h2
+            id="webhook-form-title"
+            class="text-lg font-semibold mb-4"
+            :style="{ color: 'var(--pb-text-primary)' }"
           >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            :disabled="submitting || !name || !url || selectedEvents.length === 0"
-            class="bg-pb-green-600 hover:bg-pb-green-700 disabled:opacity-50 text-slate-950 rounded px-4 py-2 text-sm font-medium"
-          >
-            {{ submitting ? 'Creating...' : 'Add Webhook' }}
-          </button>
+            Add Webhook
+          </h2>
+
+          <form @submit.prevent="submit" class="space-y-4">
+            <div>
+              <label
+                class="block text-sm mb-1"
+                :style="{ color: 'var(--pb-text-muted)' }"
+              >
+                Name
+              </label>
+              <input
+                v-model="name"
+                type="text"
+                maxlength="100"
+                required
+                placeholder="e.g., Slack Integration"
+                class="w-full rounded px-3 py-2 text-sm focus:outline-none"
+                :style="{
+                  backgroundColor: 'var(--pb-bg-elevated)',
+                  border: '1px solid var(--pb-border-default)',
+                  color: 'var(--pb-text-primary)',
+                  borderRadius: 'var(--pb-radius-md)',
+                }"
+              />
+            </div>
+
+            <div>
+              <label
+                class="block text-sm mb-1"
+                :style="{ color: 'var(--pb-text-muted)' }"
+              >
+                URL (HTTPS)
+              </label>
+              <input
+                v-model="url"
+                type="url"
+                required
+                placeholder="https://hooks.example.com/webhook"
+                class="w-full rounded px-3 py-2 text-sm focus:outline-none"
+                :style="{
+                  backgroundColor: 'var(--pb-bg-elevated)',
+                  border: '1px solid var(--pb-border-default)',
+                  color: 'var(--pb-text-primary)',
+                  borderRadius: 'var(--pb-radius-md)',
+                }"
+              />
+            </div>
+
+            <div>
+              <label
+                class="block text-sm mb-1"
+                :style="{ color: 'var(--pb-text-muted)' }"
+              >
+                Secret (optional, for HMAC signing)
+              </label>
+              <input
+                v-model="secret"
+                type="text"
+                placeholder="Optional signing secret"
+                class="w-full rounded px-3 py-2 text-sm focus:outline-none"
+                :style="{
+                  backgroundColor: 'var(--pb-bg-elevated)',
+                  border: '1px solid var(--pb-border-default)',
+                  color: 'var(--pb-text-primary)',
+                  borderRadius: 'var(--pb-radius-md)',
+                }"
+              />
+            </div>
+
+            <div>
+              <label
+                class="block text-sm mb-2"
+                :style="{ color: 'var(--pb-text-muted)' }"
+              >
+                Event Types
+              </label>
+              <div class="space-y-2">
+                <label class="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    value="*"
+                    v-model="selectedEvents"
+                    @change="onAllEventsToggle"
+                    class="rounded accent-pb-green-500"
+                  />
+                  <span
+                    class="text-sm"
+                    :style="{ color: 'var(--pb-text-secondary)' }"
+                  >
+                    All events
+                  </span>
+                </label>
+                <label
+                  v-for="et in specificEventTypes"
+                  :key="et.value"
+                  class="flex items-center gap-2 ml-4"
+                >
+                  <input
+                    type="checkbox"
+                    :value="et.value"
+                    v-model="selectedEvents"
+                    :disabled="selectedEvents.includes('*')"
+                    class="rounded accent-pb-green-500"
+                  />
+                  <span
+                    class="text-sm"
+                    :style="{ color: 'var(--pb-text-secondary)' }"
+                  >
+                    {{ et.label }}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div
+              v-if="error"
+              class="text-sm"
+              :style="{ color: 'var(--pb-status-down-text)' }"
+            >
+              {{ error }}
+            </div>
+
+            <div class="flex gap-2 justify-end">
+              <button
+                type="button"
+                @click="emit('close')"
+                class="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-colors min-h-[36px]"
+                :style="{
+                  color: 'var(--pb-text-secondary)',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--pb-border-default)',
+                }"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                :disabled="submitting || !name || !url || selectedEvents.length === 0"
+                class="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-colors min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed"
+                :style="{
+                  backgroundColor: 'var(--pb-accent)',
+                  color: 'var(--pb-text-inverted)',
+                }"
+              >
+                {{ submitting ? 'Creating...' : 'Add Webhook' }}
+              </button>
+            </div>
+          </form>
         </div>
-      </form>
+      </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { createWebhook } from '@/services/webhookApi'
 
 const emit = defineEmits<{
@@ -152,4 +243,12 @@ async function submit() {
     submitting.value = false
   }
 }
+
+onMounted(() => {
+  document.body.style.overflow = 'hidden'
+})
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = ''
+})
 </script>
