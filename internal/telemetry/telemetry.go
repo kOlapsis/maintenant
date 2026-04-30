@@ -111,7 +111,7 @@ func New(cfg Config, deps Deps, logger *slog.Logger) *Service {
 		)
 		return &Service{cfg: cfg, logger: logger}
 	}
-	client.SetProvider(shm.MetricsProvider(provider))
+	client.SetProvider(provider)
 
 	resolvedEdition := safeEdition(deps.Edition, logger)
 	logger.Info("telemetry enabled",
