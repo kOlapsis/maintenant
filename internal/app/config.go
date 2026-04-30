@@ -14,6 +14,7 @@ package app
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all application configuration parsed from environment variables.
@@ -47,6 +48,9 @@ type Config struct {
 
 	// Security
 	SecurityScoreThreshold int
+
+	// Telemetry
+	DisableTelemetry bool
 
 	// Build info (injected via ldflags)
 	Version      string
@@ -110,7 +114,22 @@ func ConfigFromEnv() Config {
 		}
 	}
 
+	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
+
 	return cfg
+}
+
+// parseTruthy mirrors internal/telemetry/env.go semantics so the config
+// layer does not depend on the telemetry package (avoids an import cycle
+// at app wiring time). Truthy values: 1, t, true, y, yes, on
+// (case-insensitive, whitespace-trimmed).
+func parseTruthy(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "t", "true", "y", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func envOr(key, fallback string) string {

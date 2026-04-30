@@ -37,6 +37,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 	"github.com/kolapsis/maintenant/internal/swarm"
+	"github.com/kolapsis/maintenant/internal/telemetry"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -89,6 +90,9 @@ type App struct {
 	rl             *ratelimit.Limiter
 	licenseMgr     *license.LicenseManager
 	mcpServer      *gomcp.Server
+
+	// Telemetry
+	telemetrySvc *telemetry.Service
 
 	// Webhook
 	webhookDispatcher *webhook.Dispatcher
@@ -467,6 +471,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	a.mcpServer = pbmcp.NewServer(mcpSvc)
 
+	// --- Telemetry (SHM SDK, opt-out via MAINTENANT_DISABLE_TELEMETRY) ---
+	a.telemetrySvc = telemetry.New(telemetry.Config{
+		Disabled:   cfg.DisableTelemetry,
+		AppVersion: cfg.Version,
+	}, telemetry.Deps{
+		Containers:       store,
+		Endpoints:        epStore,
+		Heartbeats:       hbStore,
+		Certificates:     certStore,
+		Webhooks:         webhookStore,
+		StatusComponents: statusCompStore,
+		Edition:          telemetry.EditionFunc(extension.CurrentEdition),
+	}, logger.With("component", "telemetry"))
+
 	// --- Build HTTP server ---
 	a.srv = a.buildHTTPServer()
 
@@ -492,6 +510,10 @@ func (a *App) Start(ctx context.Context) error {
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
+
+	// Telemetry: best-effort. Self-exits on ctx cancellation; panics are
+	// contained inside the package (FR-009/FR-011/FR-012).
+	a.telemetrySvc.Start(ctx)
 
 	// Webhook observer
 	webhookObserverCh := make(chan v1.SSEEvent, 64)
@@ -557,6 +579,8 @@ func (a *App) Shutdown() error {
 	a.endpointSvc.Stop()
 	a.logger.Info("endpoint check engine stopped")
 
+	// 10s shutdown grace covers the SHM SDK's 10s HTTP timeout in flight,
+	// so an in-progress telemetry snapshot does not extend the deadline (FR-011).
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
