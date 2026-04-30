@@ -256,7 +256,7 @@ services:
 
 | Setting | Purpose |
 |---------|---------|
-| `USER 65534:65534` (Dockerfile) | Process runs as `nobody`, not root |
+| Entrypoint drops to uid 65534 via `setpriv` | Process runs as `nobody`, not root |
 | `read_only: true` | Root filesystem is immutable — no writes outside mounted volumes |
 | `no-new-privileges` | Blocks `setuid`/`setgid` binaries and privilege escalation |
 | `group_add` | Adds the host Docker group so `nobody` can read the socket |
@@ -316,7 +316,7 @@ When creating webhooks, maintenant enforces **HTTPS-only** URLs. This prevents c
 
 A quick reference for securing your deployment:
 
-- [ ] Container runs as non-root (`USER 65534:65534` — default in the official image)
+- [ ] Container runs as non-root (uid 65534, dropped via `setpriv` in the entrypoint — default in the official image)
 - [ ] `read_only: true` — immutable root filesystem
 - [ ] `no-new-privileges:true` — blocks privilege escalation
 - [ ] `group_add` set to host Docker GID (run `stat -c '%g' /var/run/docker.sock`)

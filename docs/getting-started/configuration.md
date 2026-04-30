@@ -27,6 +27,7 @@ maintenant is configured entirely through environment variables. No configuratio
 | `MAINTENANT_SMTP_USERNAME` | — | SMTP authentication username. |
 | `MAINTENANT_SMTP_PASSWORD` | — | SMTP authentication password. |
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address for email notifications. |
+| `MAINTENANT_DISABLE_TELEMETRY` | unset (telemetry on) | Disable anonymous install telemetry. Truthy values: `1`, `t`, `true`, `y`, `yes`, `on` (case-insensitive). |
 
 ### Example `.env` File
 
@@ -72,6 +73,79 @@ MAINTENANT_BASE_URL=https://maintenant.example.com
 # MAINTENANT_SMTP_USERNAME=alerts@example.com
 # MAINTENANT_SMTP_PASSWORD=secret
 # MAINTENANT_SMTP_FROM=maintenant@example.com
+
+# Disable anonymous install telemetry (truthy: 1, true, yes, on)
+# MAINTENANT_DISABLE_TELEMETRY=1
+```
+
+---
+
+## Telemetry
+
+maintenant sends an **anonymous, opt-out** usage snapshot once an hour to `https://metrics.kolapsis.com`. No hostnames, IPs, container names, endpoint URLs, certificates, webhook targets, status-page component names, license keys, or operator-supplied free-form strings of any kind are transmitted.
+
+### What is collected
+
+Each snapshot contains only the following fields:
+
+**Application fields:**
+
+- `edition` — `community` or `pro`
+- `containers_total`, `endpoints_total`, `heartbeats_total`, `certificates_total`, `webhooks_total`, `status_components_total` — counts of configured/auto-discovered entities
+
+**Runtime context** (collected automatically by the SHM SDK):
+
+- `sys_os`, `sys_arch`, `sys_cpu_cores`, `sys_go_version`, `sys_mode` (`docker` / `kubernetes` / `standalone`)
+- `app_mem_alloc_mb`, `app_goroutines`, `app_uptime_h`
+- An opaque installation identifier generated on first run and persisted to `/data/shm/shm_identity.json`
+
+### How to disable it
+
+Set `MAINTENANT_DISABLE_TELEMETRY` to a truthy value before the process starts:
+
+```yaml
+services:
+  maintenant:
+    environment:
+      MAINTENANT_DISABLE_TELEMETRY: "1"
+```
+
+Truthy values (case-insensitive, whitespace-trimmed): `1`, `t`, `true`, `y`, `yes`, `on`. Anything else — including empty or unset — leaves telemetry enabled.
+
+When disabled, exactly one log line is emitted at startup and nothing else:
+
+```text
+INFO  telemetry disabled  reason=opt-out
+```
+
+No background goroutine, no DNS lookup of `metrics.kolapsis.com`, no outbound packets.
+
+### Persistent install identity
+
+The SDK persists its identity to `/data/shm/shm_identity.json` on first run. The reference Docker Compose mounts `/data` as a named volume, so `/data/shm` is covered by default. The container entrypoint chowns `/data/shm` at startup, so bind mounts work too without manual permission setup.
+
+For Kubernetes, mount a PVC at `/data/shm`:
+
+```yaml
+volumeMounts:
+  - name: shm-data
+    mountPath: /data/shm
+volumeClaimTemplates:
+  - metadata:
+      name: shm-data
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 100Mi
+```
+
+Without persistence, every restart is counted as a fresh install. The privacy impact is zero (the identifier is opaque), but fleet stats are distorted.
+
+If `/data/shm` is unwritable (read-only mount), telemetry disables itself silently with a single WARN line and the process continues normally:
+
+```text
+WARN  telemetry disabled  reason=datadir-unwritable  datadir=/data/shm  error=...
 ```
 
 ---
