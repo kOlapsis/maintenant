@@ -42,11 +42,12 @@ RUN xx-verify /out/maintenant
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata setpriv \
     && mkdir -p /data \
     && chown 65534:65534 /data
 
 COPY --from=builder --chmod=555 /out/maintenant /app/maintenant
+COPY --chmod=555 docker-entrypoint.sh /docker-entrypoint.sh
 
 EXPOSE 8080
 VOLUME /data
@@ -54,5 +55,5 @@ VOLUME /data
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
 
-USER 65534:65534
-ENTRYPOINT ["/app/maintenant"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["/app/maintenant"]
