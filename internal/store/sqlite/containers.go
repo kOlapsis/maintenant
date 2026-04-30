@@ -273,6 +273,18 @@ func (s *ContainerStore) CountRestartsSince(ctx context.Context, containerID int
 	return count, nil
 }
 
+// CountConfigured returns the number of non-archived auto-discovered
+// containers. Used by the telemetry subsystem; see specs/015-shm-telemetry.
+func (s *ContainerStore) CountConfigured(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM containers WHERE archived = 0`,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count configured containers: %w", err)
+	}
+	return count, nil
+}
+
 func (s *ContainerStore) GetTransitionsInWindow(ctx context.Context, containerID int64, from, to time.Time) ([]*container.StateTransition, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+transitionColumns+` FROM state_transitions

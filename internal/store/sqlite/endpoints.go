@@ -509,3 +509,16 @@ func (s *EndpointStore) GetSparklineData(ctx context.Context, limit int) (map[in
 	}
 	return result, rows.Err()
 }
+
+// CountConfigured returns the number of operator-configured active endpoints.
+// Soft-deleted (active=0) entries pending retention cleanup are excluded.
+// Used by the telemetry subsystem; see specs/015-shm-telemetry.
+func (s *EndpointStore) CountConfigured(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM endpoints WHERE active = 1`,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count configured endpoints: %w", err)
+	}
+	return count, nil
+}

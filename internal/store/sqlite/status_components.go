@@ -313,3 +313,16 @@ func scanComponent(row *sql.Row) (*status.Component, error) {
 	c.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 	return &c, nil
 }
+
+// CountConfigured returns the number of operator-configured status-page
+// components. The table uses hard-delete only, so no soft-delete filter
+// is needed. Used by the telemetry subsystem; see specs/015-shm-telemetry.
+func (s *StatusComponentStoreImpl) CountConfigured(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM status_components`,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count configured status components: %w", err)
+	}
+	return count, nil
+}

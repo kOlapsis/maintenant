@@ -203,3 +203,16 @@ func populateWebhookFields(sub *webhook.WebhookSubscription, secret sql.NullStri
 		sub.CreatedAt = parsed
 	}
 }
+
+// CountConfigured returns the number of operator-configured webhook
+// subscriptions. is_active=0 means operator-paused (still counted per spec).
+// Used by the telemetry subsystem; see specs/015-shm-telemetry.
+func (s *WebhookStoreImpl) CountConfigured(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM webhook_subscriptions`,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count configured webhooks: %w", err)
+	}
+	return count, nil
+}

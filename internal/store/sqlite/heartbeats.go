@@ -236,6 +236,13 @@ func (s *HeartbeatStore) CountActiveHeartbeats(ctx context.Context) (int, error)
 	return count, nil
 }
 
+// CountConfigured satisfies the telemetry counter interface uniformly across
+// stores. Paused heartbeats keep active=1; active=0 is delete-pending.
+// See specs/015-shm-telemetry.
+func (s *HeartbeatStore) CountConfigured(ctx context.Context) (int, error) {
+	return s.CountActiveHeartbeats(ctx)
+}
+
 // --- Pings ---
 
 func (s *HeartbeatStore) InsertPing(ctx context.Context, p *heartbeat.HeartbeatPing) (int64, error) {

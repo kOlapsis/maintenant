@@ -515,3 +515,17 @@ func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertChe
 func (s *CertificateStore) scanCheckResultRow(rows *sql.Rows) (*certificate.CertCheckResult, error) {
 	return s.scanCheckResult(rows)
 }
+
+// CountConfigured returns the number of certificate monitors. Operator-created
+// and auto-detected entries are both counted; the table uses hard-delete only,
+// so no soft-delete filter is needed.
+// Used by the telemetry subsystem; see specs/015-shm-telemetry.
+func (s *CertificateStore) CountConfigured(ctx context.Context) (int, error) {
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM cert_monitors`,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count configured certificates: %w", err)
+	}
+	return count, nil
+}
