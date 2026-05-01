@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -96,4 +97,23 @@ func (s *Server) Stop() {
 	if s.grpc != nil {
 		s.grpc.GracefulStop()
 	}
+}
+
+// StartTokenGC launches a background goroutine that purges unconsumed enrollment
+// tokens older than 7 days. It ticks every hour until ctx is cancelled.
+func (s *Server) StartTokenGC(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := s.deps.AgentStore.GcExpiredTokens(ctx); err != nil {
+					s.deps.Logger.Error("enrollment token GC failed", "err", err)
+				}
+			}
+		}
+	}()
 }

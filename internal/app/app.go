@@ -586,6 +586,24 @@ func (a *App) Start(ctx context.Context) error {
 		a.agentSessions.StartStaleWatcher(ctx, 10*time.Second, threshold, a.agentStore.StaleAgents)
 	}
 
+	// Enrollment token GC: purge unconsumed tokens older than 7 days, every hour.
+	if a.agentStore != nil {
+		go func() {
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := a.agentStore.GcExpiredTokens(ctx); err != nil {
+						a.logger.Error("enrollment token GC failed", "err", err)
+					}
+				}
+			}
+		}()
+	}
+
 	// Swarm node periodic refresh (Enterprise, 60s).
 	if a.swarmNodeSvc != nil {
 		go a.startNodeRefresh(ctx)
