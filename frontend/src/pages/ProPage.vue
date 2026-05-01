@@ -309,7 +309,7 @@ const features = [
         <div class="max-w-2xl mx-auto">
           <h2 class="text-2xl font-bold text-pb-primary text-center mb-2">Simple pricing</h2>
           <p class="text-sm text-slate-400 text-center mb-8">
-            One plan, all Pro features. No per-seat or per-host charges. From 9€/month.
+            One plan, all Pro features. No per-seat or per-host charges. From 29€/month.
           </p>
 
           <div class="flex flex-col items-center gap-3 mb-6">

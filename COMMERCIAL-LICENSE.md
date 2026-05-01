@@ -38,8 +38,8 @@ Subject to the terms of this Agreement, the Licensor grants the Licensee a
 
 | Plan          | Price         |
 |---------------|---------------|
-| Pro Monthly   | 9 EUR / month |
-| Pro Annual    | 90 EUR / year |
+| Pro Monthly   | 29 EUR / month |
+| Pro Annual    | 290 EUR / year |
 
 Subscriptions are managed directly inside the app or at [maintenant.dev](https://maintenant.dev).
 

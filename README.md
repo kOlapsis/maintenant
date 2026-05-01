@@ -13,7 +13,7 @@
   <a href="https://github.com/kolapsis/maintenant/releases"><img src="https://img.shields.io/github/v/release/kolapsis/maintenant?style=flat-square&color=blue" alt="Release" /></a>
   <a href="https://github.com/kolapsis/maintenant/pkgs/container/maintenant"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fmaintenant-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/maintenant?style=flat-square" alt="License" /></a>
-  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Pro-%E2%82%AC9%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €9/mo, 14-day trial" /></a>
+  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Pro-%E2%82%AC29%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €29/mo, 14-day trial" /></a>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 <table align="center" width="100%">
   <tr>
     <td align="center" width="100%">
-      <h3>Keep maintenant alive — <a href="#pricing">go Pro for €9/mo</a></h3>
+      <h3>Keep maintenant alive — <a href="#pricing">go Pro for €29/mo</a></h3>
       <sub>Built in the open by <strong>one developer in Bordeaux, France</strong> — no VC, no tracking, no dark patterns.<br>If maintenant replaces 3 SaaS tools in your stack, <strong>a Pro subscription pays for itself on day one</strong>.</sub><br><br>
       <a href="https://maintenant.dev/#pricing"><strong>Start 14-day free trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
     </td>
@@ -542,7 +542,7 @@ Full REST API under `/api/v1/` for automation and integration.
 
 <p align="center">
   <strong>Community Edition is free forever. Pro keeps the project alive.</strong><br>
-  <sub>If you ship real software, <strong>€9/mo is less than one hour of debugging</strong> the outage you didn't see coming.<br>
+  <sub>If you ship real software, <strong>€29/mo is less than two hours of debugging</strong> the outage you didn't see coming.<br>
   And <strong>100% of revenue funds full-time development</strong> — no investors to pay back, no salespeople to feed.</sub>
 </p>
 
@@ -568,8 +568,7 @@ Full REST API under `/api/v1/` for automation and integration.
     </td>
     <td width="50%" valign="top" align="left" style="background:#0B0E13">
       <h3>Pro&nbsp;&nbsp;<sub><code>Recommended · 14-day free trial</code></sub></h3>
-      <p><strong>€9</strong>/month · or <strong>€90</strong>/year <sub>(save 2 months)</sub></p>
-      <p><sub><strong>Founding-subscriber pricing:</strong> lock in €9/mo <em>forever</em> before public pricing moves up.</sub></p>
+      <p><strong>€29</strong>/month · or <strong>€290</strong>/year <sub>(save 2 months)</sub></p>
       <p><em>Everything in Community, plus:</em></p>
       <ul>
         <li><strong>Unlimited</strong> heartbeats</li>
@@ -631,12 +630,6 @@ maintenant is AGPL-3.0 and will always be free. But one developer can only susta
 </details>
 
 <details>
-<summary><strong>Will the price go up later?</strong></summary>
-
-Probably. As Pro grows, the price will increase for new subscribers. **Anyone who subscribes today locks in €9/mo forever** — that's the deal.
-</details>
-
-<details>
 <summary><strong>Can I self-host Pro? Does my data leave my infra?</strong></summary>
 
 Yes, self-host Pro exactly like Community — it's the same binary. License validation is stateless and offline-tolerant. Your monitoring data never touches our servers. Ever.
@@ -657,11 +650,11 @@ MAINTENANT_LICENSE_KEY=your-license-key
 ```
 
 <p align="center">
-  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Start%20your%2014--day%20free%20trial-%E2%82%AC9%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start 14-day free trial — €9/mo" /></a>
+  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Start%20your%2014--day%20free%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start 14-day free trial — €29/mo" /></a>
 </p>
 
 <p align="center">
-  <sub>14-day free trial · cancel anytime · VAT-compliant invoices · founder pricing locked in forever</sub>
+  <sub>14-day free trial · cancel anytime · VAT-compliant invoices</sub>
 </p>
 
 ---
@@ -674,7 +667,7 @@ maintenant is built independently in Bordeaux, France. No VC, no tracking, no te
   <tr>
     <td width="33%" valign="top" align="center">
       <h3>1. Go Pro</h3>
-      <p><strong>€9/mo</strong> · 14-day trial</p>
+      <p><strong>€29/mo</strong> · 14-day trial</p>
       <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development.</sub></p>
       <p><a href="https://maintenant.dev/#pricing"><strong>Start trial →</strong></a></p>
     </td>
