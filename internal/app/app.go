@@ -23,6 +23,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
+	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
@@ -84,6 +85,7 @@ type App struct {
 	certStore      *sqlite.CertificateStore
 	resStore       *sqlite.ResourceStore
 	agentStore     *sqlite.AgentStore
+	agentSessions  *agentserver.Sessions
 
 	// Background services
 	checkEngine    *endpoint.CheckEngine
@@ -110,6 +112,15 @@ type App struct {
 	swarmUpdateTracker  *swarm.UpdateTracker
 	swarmTaskTracker    *swarm.TaskTracker
 	swarmReplicaChecker *swarm.ReplicaHealthChecker
+}
+
+// sseBroadcaster adapts the SSEBroker to the agentserver.EventBroadcaster interface.
+type sseBroadcaster struct {
+	broker *v1.SSEBroker
+}
+
+func (b *sseBroadcaster) BroadcastEvent(eventType string, data any) {
+	b.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 }
 
 // New creates and wires all application services.
@@ -328,6 +339,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- SSE brokers ---
 	a.broker = v1.NewSSEBroker(logger)
 	a.statusBroker = v1.NewSSEBroker(logger)
+	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
 
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
@@ -458,9 +470,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SwarmCrashLoop:      a.swarmCrashLoop,
 		SwarmReplicaChecker: a.swarmReplicaChecker,
 		// Multi-host agents (Enterprise)
-		AgentStore:    agentStore,
-		GRPCPublicURL: cfg.MultiHost.GRPCPublicURL,
-		GRPCListen:    cfg.MultiHost.GRPCListen,
+		AgentStore:          agentStore,
+		AgentSessions:       a.agentSessions,
+		GRPCPublicURL:       cfg.MultiHost.GRPCPublicURL,
+		GRPCListen:          cfg.MultiHost.GRPCListen,
+		AgentStaleThreshold: time.Duration(cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second,
 		// HTTP config
 		CORSOrigins:          cfg.CORSOrigins,
 		MaxBodySize:          cfg.MaxBodySize,
@@ -561,6 +575,16 @@ func (a *App) Start(ctx context.Context) error {
 	go a.maintScheduler.Start(ctx)
 	go a.subscriberSvc.Start(ctx)
 	go a.updateSvc.Start(ctx)
+
+	// Agent session ring-buffer tick + stale watcher.
+	if a.agentSessions != nil {
+		a.agentSessions.StartRingAdvancer(ctx)
+		threshold := time.Duration(a.cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second
+		if threshold == 0 {
+			threshold = 60 * time.Second
+		}
+		a.agentSessions.StartStaleWatcher(ctx, 10*time.Second, threshold, a.agentStore.StaleAgents)
+	}
 
 	// Swarm node periodic refresh (Enterprise, 60s).
 	if a.swarmNodeSvc != nil {

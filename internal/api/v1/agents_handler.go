@@ -30,45 +30,36 @@ import (
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 )
 
-// AgentHandler handles REST endpoints for agents and enrollment tokens.
 type AgentHandler struct {
-	store       *sqlite.AgentStore
-	broker      *SSEBroker
-	logger      *slog.Logger
-	grpcPublicURL string
-	grpcListen  string
-
-	// connectedIDs is populated by the gRPC server (US2) with currently-connected agent IDs.
-	// Nil or empty means no live sessions data available — all agents show disconnected.
-	connectedIDs func() map[string]struct{}
+	store          *sqlite.AgentStore
+	sessions       AgentSessions
+	broker         *SSEBroker
+	logger         *slog.Logger
+	grpcPublicURL  string
+	grpcListen     string
+	staleThreshold time.Duration
 }
 
-// NewAgentHandler creates a new AgentHandler.
 func NewAgentHandler(
 	store *sqlite.AgentStore,
+	sessions AgentSessions,
 	broker *SSEBroker,
 	logger *slog.Logger,
 	grpcPublicURL string,
 	grpcListen string,
+	staleThreshold time.Duration,
 ) *AgentHandler {
 	return &AgentHandler{
-		store:         store,
-		broker:        broker,
-		logger:        logger,
-		grpcPublicURL: grpcPublicURL,
-		grpcListen:    grpcListen,
-		connectedIDs:  func() map[string]struct{} { return nil },
+		store:          store,
+		sessions:       sessions,
+		broker:         broker,
+		logger:         logger,
+		grpcPublicURL:  grpcPublicURL,
+		grpcListen:     grpcListen,
+		staleThreshold: staleThreshold,
 	}
 }
 
-// SetConnectedIDsFn lets the gRPC server provide live connection state (added in US2).
-func (h *AgentHandler) SetConnectedIDsFn(fn func() map[string]struct{}) {
-	h.connectedIDs = fn
-}
-
-// ─── Enrollment token endpoints ──────────────────────────────────────────────
-
-// HandleCreateEnrollmentToken handles POST /api/v1/agents/enrollment-tokens
 func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TTLHours int `json:"ttl_hours"`
@@ -86,7 +77,6 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		ttl = 168 * time.Hour
 	}
 
-	// Generate 32 random bytes, encode as lowercase base32 (no padding), prefix with "mnt_enr_".
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to generate token")
@@ -94,7 +84,6 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 	}
 	tokenStr := "mnt_enr_" + strings.ToLower(strings.TrimRight(base32.StdEncoding.EncodeToString(raw), "="))
 
-	// token_id = first 16 hex chars of SHA-256(token).
 	sum := sha256.Sum256([]byte(tokenStr))
 	tokenID := hex.EncodeToString(sum[:])[:16]
 
@@ -112,7 +101,6 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Resolve the gRPC public URL and build the install command.
 	publicURL, warnings := agentserver.ResolvePublicURL(r, agentserver.PublicURLConfig{
 		Explicit:   h.grpcPublicURL,
 		ListenAddr: h.grpcListen,
@@ -120,20 +108,19 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 	installCmd := "maintenant --mode=agent --server=" + publicURL + " --enrollment-token=" + tokenStr
 
 	WriteJSON(w, http.StatusCreated, map[string]any{
-		"token_id":        tokenID,
-		"token":           tokenStr,
-		"token_masked":    maskToken(tokenStr),
-		"created_by":      tok.CreatedBy,
-		"created_at":      tok.CreatedAt,
-		"expires_at":      tok.ExpiresAt,
-		"consumed_at":     nil,
+		"token_id":             tokenID,
+		"token":                tokenStr,
+		"token_masked":         maskToken(tokenStr),
+		"created_by":           tok.CreatedBy,
+		"created_at":           tok.CreatedAt,
+		"expires_at":           tok.ExpiresAt,
+		"consumed_at":          nil,
 		"consumed_by_agent_id": nil,
-		"install_command": installCmd,
-		"warnings":        warnings,
+		"install_command":      installCmd,
+		"warnings":             warnings,
 	})
 }
 
-// HandleListEnrollmentTokens handles GET /api/v1/agents/enrollment-tokens
 func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http.Request) {
 	includeExpired := parseBoolQuery(r, "include_expired", false)
 	includeConsumed := parseBoolQuery(r, "include_consumed", false)
@@ -171,7 +158,6 @@ func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http
 	WriteJSON(w, http.StatusOK, map[string]any{"tokens": out})
 }
 
-// HandleGetEnrollmentToken handles GET /api/v1/agents/enrollment-tokens/:token_id
 func (h *AgentHandler) HandleGetEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	tokenID := r.PathValue("token_id")
 	tok, err := h.store.GetTokenByID(r.Context(), tokenID)
@@ -194,7 +180,6 @@ func (h *AgentHandler) HandleGetEnrollmentToken(w http.ResponseWriter, r *http.R
 	})
 }
 
-// HandleDeleteEnrollmentToken handles DELETE /api/v1/agents/enrollment-tokens/:token_id
 func (h *AgentHandler) HandleDeleteEnrollmentToken(w http.ResponseWriter, r *http.Request) {
 	tokenID := r.PathValue("token_id")
 	err := h.store.DeleteToken(r.Context(), tokenID)
@@ -213,9 +198,6 @@ func (h *AgentHandler) HandleDeleteEnrollmentToken(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ─── Agent endpoints ─────────────────────────────────────────────────────────
-
-// HandleListAgents handles GET /api/v1/agents
 func (h *AgentHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("status")
 	connFilter := r.URL.Query().Get("connection_state")
@@ -229,13 +211,9 @@ func (h *AgentHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) 
 		agents = []*agent.Agent{}
 	}
 
-	connected := h.connectedIDs()
 	out := make([]map[string]any, 0, len(agents))
 	for _, a := range agents {
-		connState := "disconnected"
-		if _, ok := connected[a.AgentID]; ok {
-			connState = "connected"
-		}
+		connState := h.resolveConnectionState(a)
 		if connFilter != "" && connFilter != connState {
 			continue
 		}
@@ -245,7 +223,6 @@ func (h *AgentHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) 
 	WriteJSON(w, http.StatusOK, map[string]any{"agents": out})
 }
 
-// HandleGetAgent handles GET /api/v1/agents/:id
 func (h *AgentHandler) HandleGetAgent(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
 	a, err := h.store.Get(r.Context(), agentID)
@@ -257,15 +234,9 @@ func (h *AgentHandler) HandleGetAgent(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get agent")
 		return
 	}
-	connected := h.connectedIDs()
-	connState := "disconnected"
-	if _, ok := connected[a.AgentID]; ok {
-		connState = "connected"
-	}
-	WriteJSON(w, http.StatusOK, agentToMap(a, connState))
+	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a)))
 }
 
-// HandleUpdateAgent handles PATCH /api/v1/agents/:id
 func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
 
@@ -309,15 +280,9 @@ func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request)
 		"label":    *body.Label,
 	}})
 
-	connected := h.connectedIDs()
-	connState := "disconnected"
-	if _, ok := connected[a.AgentID]; ok {
-		connState = "connected"
-	}
-	WriteJSON(w, http.StatusOK, agentToMap(a, connState))
+	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a)))
 }
 
-// HandleRevokeAgent handles POST /api/v1/agents/:id/revoke
 func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
 	if err := h.store.Revoke(r.Context(), agentID, "admin"); err != nil {
@@ -329,6 +294,11 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if h.sessions != nil {
+		h.sessions.Close(agentID, "revoked")
+	}
+
+	h.logger.Info("agent.revoked", "agent_id", agentID, "revoked_by", "admin")
 	h.broker.Broadcast(SSEEvent{Type: event.AgentRevoked, Data: map[string]any{
 		"agent_id": agentID,
 	}})
@@ -341,9 +311,13 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 	WriteJSON(w, http.StatusOK, agentToMap(a, "disconnected"))
 }
 
-// HandleDeleteAgent handles DELETE /api/v1/agents/:id
 func (h *AgentHandler) HandleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
+
+	if h.sessions != nil {
+		h.sessions.Close(agentID, "deleted")
+	}
+
 	if err := h.store.Delete(r.Context(), agentID); err != nil {
 		if errors.Is(err, agent.ErrAgentNotFound) {
 			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Agent not found")
@@ -353,25 +327,35 @@ func (h *AgentHandler) HandleDeleteAgent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	h.logger.Info("agent.deleted", "agent_id", agentID)
 	h.broker.Broadcast(SSEEvent{Type: event.AgentDeleted, Data: map[string]any{
 		"agent_id": agentID,
 	}})
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// HandleGetAgentMetrics handles GET /api/v1/agents/metrics
 func (h *AgentHandler) HandleGetAgentMetrics(w http.ResponseWriter, r *http.Request) {
 	active, revoked, err := h.store.CountByStatus(r.Context())
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch agent metrics")
 		return
 	}
-	docker, swarm, kubernetes, err := h.store.CountByRuntime(r.Context())
+	docker, swarmCount, kubernetes, err := h.store.CountByRuntime(r.Context())
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch agent metrics")
 		return
 	}
-	connected := len(h.connectedIDs())
+
+	connected := 0
+	var epsRate float64
+	if svc, ok := h.sessions.(interface {
+		ListConnected() []string
+		EventsPerSecond5m() float64
+	}); ok {
+		connected = len(svc.ListConnected())
+		epsRate = svc.EventsPerSecond5m()
+	}
+
 	total := active + revoked
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"total": total,
@@ -381,18 +365,28 @@ func (h *AgentHandler) HandleGetAgentMetrics(w http.ResponseWriter, r *http.Requ
 		},
 		"by_runtime": map[string]int{
 			"docker":     docker,
-			"swarm":      swarm,
+			"swarm":      swarmCount,
 			"kubernetes": kubernetes,
 		},
 		"by_connection_state": map[string]int{
 			"connected":    connected,
 			"disconnected": active - connected,
 		},
-		"total_events_per_second_observed_5m": 0,
+		"total_events_per_second_observed_5m": epsRate,
 	})
 }
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+// resolveConnectionState returns "connected" if the agent has an active stream
+// or was last seen within staleThreshold, otherwise "disconnected".
+func (h *AgentHandler) resolveConnectionState(a *agent.Agent) string {
+	if h.sessions != nil && h.sessions.IsConnected(a.AgentID) {
+		return "connected"
+	}
+	if a.LastSeenAt != nil && time.Since(*a.LastSeenAt) < h.staleThreshold {
+		return "connected"
+	}
+	return "disconnected"
+}
 
 func agentToMap(a *agent.Agent, connectionState string) map[string]any {
 	return map[string]any{

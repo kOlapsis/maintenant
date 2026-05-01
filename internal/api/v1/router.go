@@ -35,6 +35,12 @@ import (
 	"github.com/kolapsis/maintenant/internal/webhook"
 )
 
+// AgentSessions provides access to live agent stream state.
+type AgentSessions interface {
+	IsConnected(agentID string) bool
+	Close(agentID, reason string)
+}
+
 // ErrorResponse represents the standard JSON error format.
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
@@ -105,9 +111,11 @@ type HandlerDeps struct {
 	SwarmReplicaChecker  *swarm.ReplicaHealthChecker
 
 	// Multi-host agents (Enterprise)
-	AgentStore    *sqlite.AgentStore
-	GRPCPublicURL string
-	GRPCListen    string
+	AgentStore     *sqlite.AgentStore
+	AgentSessions  AgentSessions
+	GRPCPublicURL  string
+	GRPCListen     string
+	AgentStaleThreshold time.Duration
 
 	// HTTP config
 	CORSOrigins          string // comma-separated origins or "*"
@@ -699,7 +707,11 @@ func (r *Router) registerAgentRoutes(d HandlerDeps) {
 	if d.AgentStore == nil {
 		return
 	}
-	ah := NewAgentHandler(d.AgentStore, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen)
+	staleThreshold := d.AgentStaleThreshold
+	if staleThreshold == 0 {
+		staleThreshold = 60 * time.Second
+	}
+	ah := NewAgentHandler(d.AgentStore, d.AgentSessions, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen, staleThreshold)
 
 	// Enrollment token endpoints (order matters: specific paths before wildcards)
 	r.mux.HandleFunc("GET /api/v1/agents/metrics", requireEnterprise(ah.HandleGetAgentMetrics))

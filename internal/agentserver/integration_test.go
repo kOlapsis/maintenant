@@ -314,7 +314,7 @@ func TestIntegration_PushStream(t *testing.T) {
 		},
 	})
 
-	sessions := agentserver.NewSessions(logger)
+	sessions := agentserver.NewSessions(logger, broadcaster)
 	limiter := agentserver.NewLimiter()
 	dispatcher := agentserver.NewDispatcher(agentserver.DispatchDeps{Container: containerSvc})
 

@@ -97,6 +97,100 @@ func TestConsumeAtomic_Expired(t *testing.T) {
 	assert.ErrorIs(t, err, agent.ErrTokenExpired)
 }
 
+func TestAgentStore_Delete_CascadePurge(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+	ctx := context.Background()
+	rw := db.ReadDB()
+
+	insertAgent := func(id string) {
+		t.Helper()
+		require.NoError(t, store.Insert(ctx, &agent.Agent{
+			AgentID:         id,
+			PublicKey:       []byte("pubkeyplaceholder12345678901234"),
+			Hostname:        "host-" + id,
+			Label:           id,
+			OSArch:          "linux/amd64",
+			AgentVersion:    "1.0.0",
+			DetectedRuntime: "docker",
+			Status:          "active",
+			CreatedAt:       time.Now().UTC(),
+		}))
+	}
+
+	insertRows := func(agentID string) (containerDBID int64) {
+		t.Helper()
+		// container
+		now := time.Now().Unix()
+		res, err := db.Writer().Exec(ctx,
+			`INSERT INTO containers (external_id, name, image, state, first_seen_at, last_state_change_at, agent_id)
+			 VALUES (?, ?, ?, 'running', ?, ?, ?)`,
+			"ext-"+agentID, "ctr-"+agentID, "img", now, now, agentID)
+		require.NoError(t, err)
+		containerDBID = res.LastInsertID
+		// endpoint
+		_, err = db.Writer().Exec(ctx,
+			`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target, first_seen_at, last_seen_at, agent_id)
+			 VALUES (?, 'key', ?, 'http', 'http://localhost', ?, ?, ?)`,
+			"ctr-"+agentID, "ext-ep-"+agentID, now, now, agentID)
+		require.NoError(t, err)
+		// heartbeat
+		_, err = db.Writer().Exec(ctx,
+			`INSERT INTO heartbeats (uuid, name, interval_seconds, grace_seconds, created_at, updated_at, agent_id)
+			 VALUES (?, ?, 60, 30, ?, ?, ?)`,
+			"hb-"+agentID, "hb-name-"+agentID, now, now, agentID)
+		require.NoError(t, err)
+		// resource_snapshot
+		_, err = db.Writer().Exec(ctx,
+			`INSERT INTO resource_snapshots (container_id, cpu_percent, mem_used, mem_limit,
+			  net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp, agent_id)
+			 VALUES (?, 1.0, 100, 200, 0, 0, 0, 0, ?, ?)`,
+			containerDBID, now, agentID)
+		require.NoError(t, err)
+		// cert_monitor
+		_, err = db.Writer().Exec(ctx,
+			`INSERT INTO cert_monitors (hostname, port, source, created_at, agent_id) VALUES (?, 443, 'standalone', ?, ?)`,
+			"host-"+agentID, now, agentID)
+		require.NoError(t, err)
+		return containerDBID
+	}
+
+	countRows := func(table, agentID string) int {
+		t.Helper()
+		var n int
+		require.NoError(t, rw.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM "+table+" WHERE agent_id = ?", agentID).Scan(&n))
+		return n
+	}
+
+	// Insert two agents with events.
+	insertAgent("agent-A")
+	insertAgent("agent-B")
+	insertRows("agent-A")
+	insertRows("agent-B")
+
+	// Verify rows exist before delete.
+	for _, table := range []string{"containers", "endpoints", "heartbeats", "resource_snapshots", "cert_monitors"} {
+		assert.Equal(t, 1, countRows(table, "agent-A"), "table %s before delete", table)
+		assert.Equal(t, 1, countRows(table, "agent-B"), "table %s before delete", table)
+	}
+
+	// Delete agent A — cascade should purge all its rows.
+	require.NoError(t, store.Delete(ctx, "agent-A"))
+
+	for _, table := range []string{"containers", "endpoints", "heartbeats", "resource_snapshots", "cert_monitors"} {
+		assert.Equal(t, 0, countRows(table, "agent-A"), "table %s after delete", table)
+		assert.Equal(t, 1, countRows(table, "agent-B"), "table %s must be intact", table)
+	}
+
+	// agent-A itself must be gone.
+	_, err := store.Get(ctx, "agent-A")
+	assert.ErrorIs(t, err, agent.ErrAgentNotFound)
+	// agent-B must still exist.
+	_, err = store.Get(ctx, "agent-B")
+	assert.NoError(t, err)
+}
+
 func TestAgentStore_InsertGet(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)

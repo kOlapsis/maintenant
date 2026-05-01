@@ -333,6 +333,26 @@ func (s *AgentStore) DeleteToken(ctx context.Context, tokenID string) error {
 }
 
 // GcExpiredTokens removes unconsumed tokens that expired more than 7 days ago.
+// StaleAgents returns IDs of active agents whose last_seen_at is older than threshold.
+func (s *AgentStore) StaleAgents(ctx context.Context, threshold time.Duration) ([]string, error) {
+	cutoff := time.Now().UTC().Add(-threshold)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT agent_id FROM agents WHERE status = 'active' AND last_seen_at < ?`, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("stale agents: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *AgentStore) GcExpiredTokens(ctx context.Context) error {
 	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
 	_, err := s.writer.Exec(ctx,
