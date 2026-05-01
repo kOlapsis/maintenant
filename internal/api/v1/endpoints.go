@@ -253,8 +253,8 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 		}
 		config.Timeout = d
 	}
-	if config.Timeout >= config.Interval {
-		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than interval")
+	if config.Timeout > config.Interval {
+		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than or equal to interval")
 		return
 	}
 	if input.Method != "" {
@@ -351,8 +351,8 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 		}
 		config.Timeout = d
 	}
-	if config.Timeout >= config.Interval {
-		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than interval")
+	if config.Timeout > config.Interval {
+		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than or equal to interval")
 		return
 	}
 	if input.Method != "" {
