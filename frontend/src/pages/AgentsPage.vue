@@ -16,13 +16,22 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useAgentsStore } from '@/stores/agents'
 import FeatureGate from '@/components/FeatureGate.vue'
 import EnrollmentTokenModal from '@/components/EnrollmentTokenModal.vue'
-import type { EnrollmentTokenCreated } from '@/services/agentApi'
+import AgentDetailPanel from '@/components/AgentDetailPanel.vue'
+import type { Agent, EnrollmentTokenCreated } from '@/services/agentApi'
 
 const store = useAgentsStore()
 
 const generatingToken = ref(false)
 const tokenModalData = ref<EnrollmentTokenCreated | null>(null)
 const tokenError = ref<string | null>(null)
+
+const detailOpen = ref(false)
+const selectedAgent = ref<Agent | null>(null)
+
+function openDetail(agent: Agent) {
+  selectedAgent.value = agent
+  detailOpen.value = true
+}
 
 onMounted(() => {
   store.fetchAgents()
@@ -149,6 +158,7 @@ function runtimeLabel(rt: string): string {
                 v-for="agent in store.agents"
                 :key="agent.agent_id"
                 class="hover:bg-slate-800/25 transition-all cursor-pointer group border-b border-slate-800/50 last:border-0"
+                @click="openDetail(agent)"
               >
                 <td class="px-4 py-3">
                   <p class="font-medium text-white">{{ agent.label || agent.hostname }}</p>
@@ -241,5 +251,13 @@ function runtimeLabel(rt: string): string {
     v-if="tokenModalData"
     :token="tokenModalData"
     @close="handleModalClose"
+  />
+
+  <!-- Agent detail panel -->
+  <AgentDetailPanel
+    v-model:open="detailOpen"
+    :agent="selectedAgent"
+    @revoked="detailOpen = false"
+    @deleted="detailOpen = false"
   />
 </template>

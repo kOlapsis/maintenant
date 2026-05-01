@@ -13,6 +13,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
   listAgents,
+  updateAgentLabel as apiUpdateAgentLabel,
   revokeAgent as apiRevokeAgent,
   deleteAgent as apiDeleteAgent,
   listEnrollmentTokens,
@@ -69,6 +70,14 @@ export const useAgentsStore = defineStore('agents', () => {
     // Refresh the masked token list but do NOT persist the cleartext result
     await fetchTokens()
     return result
+  }
+
+  async function updateAgentLabel(id: string, label: string): Promise<void> {
+    const updated = await apiUpdateAgentLabel(id, label)
+    const idx = agents.value.findIndex((a) => a.agent_id === id)
+    if (idx >= 0) {
+      agents.value[idx] = { ...agents.value[idx]!, label: updated.label }
+    }
   }
 
   async function revokeAgent(id: string) {
@@ -200,6 +209,7 @@ export const useAgentsStore = defineStore('agents', () => {
     fetchTokens,
     fetchMetrics,
     createToken,
+    updateAgentLabel,
     revokeAgent,
     deleteAgent,
     deleteToken,
