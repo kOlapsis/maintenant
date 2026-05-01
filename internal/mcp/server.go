@@ -15,6 +15,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -32,6 +33,16 @@ type LogFetcher interface {
 	FetchLogs(ctx context.Context, externalID string, lines int, timestamps bool) ([]string, error)
 }
 
+// AgentLister lists registered agents.
+type AgentLister interface {
+	List(ctx context.Context, statusFilter string) ([]*agent.Agent, error)
+}
+
+// SessionChecker reports whether an agent currently has an active gRPC stream.
+type SessionChecker interface {
+	IsConnected(agentID string) bool
+}
+
 // Services holds all dependencies required by MCP tool handlers.
 type Services struct {
 	Containers   *container.Service
@@ -45,6 +56,8 @@ type Services struct {
 	Maintenance  extension.MaintenanceScheduler
 	Runtime      runtime.Runtime
 	LogFetcher   LogFetcher
+	Agents       AgentLister    // nil when agent server is disabled (CE mode)
+	Sessions     SessionChecker // nil when agent server is disabled (CE mode)
 	Version      string
 	Logger       *slog.Logger
 }

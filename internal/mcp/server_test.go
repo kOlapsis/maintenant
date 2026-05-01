@@ -78,7 +78,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 	require.NotNil(t, result)
 
 	expectedTools := []string{
-		// Read tools (12)
+		// Read tools (13)
 		"list_containers",
 		"get_container",
 		"get_container_logs",
@@ -91,6 +91,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		"list_certificates",
 		"get_updates",
 		"get_health",
+		"list_agents",
 		// Write tools (6)
 		"acknowledge_alert",
 		"create_incident",
@@ -105,7 +106,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 
-	assert.Len(t, result.Tools, 18, "expected exactly 18 tools registered")
+	assert.Len(t, result.Tools, 19, "expected exactly 19 tools registered")
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "expected tool %q to be registered", name)
 	}

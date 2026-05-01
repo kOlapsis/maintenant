@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
+	pbagent "github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/alert"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/agentserver"
@@ -499,6 +501,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Maintenance:  extension.NoopMaintenanceScheduler{},
 		Runtime:      rt,
 		LogFetcher:   rt,
+		Agents:       a.agentStore,
+		Sessions:     a.agentSessions,
 		Version:      cfg.Version,
 		Logger:       logger.With("component", "mcp"),
 	}
@@ -620,6 +624,12 @@ func (a *App) Start(ctx context.Context) error {
 	// Event stream
 	a.startEventStream(ctx)
 
+	// Embedded agent (mode=server + --embedded-agent + Enterprise).
+	// Starts a local agent goroutine that connects to the local gRPC endpoint.
+	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && extension.CurrentEdition() == extension.Enterprise {
+		a.startEmbeddedAgent(ctx)
+	}
+
 	// HTTP server
 	go func() {
 		a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
@@ -658,6 +668,64 @@ func (a *App) Shutdown() error {
 
 	a.logger.Info("maintenant stopped")
 	return nil
+}
+
+// startEmbeddedAgent launches a local agent goroutine connecting to the local gRPC endpoint.
+// If the agent is not yet enrolled, a short-lived enrollment token is auto-created.
+// Called only when mode=server, --embedded-agent, and Enterprise license are all active.
+func (a *App) startEmbeddedAgent(ctx context.Context) {
+	dataDir := filepath.Dir(a.cfg.DBPath)
+	agentDataDir := filepath.Join(dataDir, "embedded-agent")
+	if err := os.MkdirAll(agentDataDir, 0o700); err != nil {
+		a.logger.Error("embedded agent: failed to create data directory", "err", err)
+		return
+	}
+
+	id, err := pbagent.LoadOrCreate(agentDataDir)
+	if err != nil {
+		a.logger.Error("embedded agent: failed to load identity", "err", err)
+		return
+	}
+
+	var enrollToken string
+	if !id.Registered {
+		t := &pbagent.EnrollmentToken{
+			TokenID:   uuid.New().String(),
+			Token:     uuid.New().String(),
+			CreatedBy: "embedded-agent",
+			CreatedAt: time.Now(),
+			ExpiresAt: time.Now().Add(5 * time.Minute),
+		}
+		if err := a.agentStore.InsertToken(ctx, t); err != nil {
+			a.logger.Error("embedded agent: failed to create enrollment token", "err", err)
+			return
+		}
+		enrollToken = t.Token
+	}
+
+	grpcURL := "grpcs://" + a.cfg.MultiHost.GRPCListen
+	agentCfg := pbagent.AgentConfig{
+		DataDir:            agentDataDir,
+		ServerURL:          grpcURL,
+		EnrollmentToken:    enrollToken,
+		Label:              "embedded",
+		AgentVersion:       a.cfg.Version,
+		InsecureSkipVerify: true, // loopback TLS
+	}
+
+	go func() {
+		// Short delay to let the gRPC server open its listener.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+		if err := pbagent.Run(ctx, agentCfg, a.logger.With("component", "embedded-agent")); err != nil && !errors.Is(err, context.Canceled) {
+			a.logger.Error("embedded agent exited", "err", err)
+		}
+	}()
+
+	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
 }
 
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.

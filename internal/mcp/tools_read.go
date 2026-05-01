@@ -99,11 +99,19 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 		Description: "Check maintenant's own health status, version, and runtime information.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getHealthHandler(svc))
+
+	gomcp.AddTool(server, &gomcp.Tool{
+		Name:        "list_agents",
+		Description: "List all registered remote agents with their connection state, runtime type, hostname, and label. Only available in Enterprise edition.",
+		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
+	}, listAgentsHandler(svc))
 }
 
 // --- Input types ---
 
-type listContainersInput struct{}
+type listContainersInput struct {
+	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for resources managed directly by the server. Omit to return all."`
+}
 type getContainerInput struct {
 	ContainerID string `json:"container_id" jsonschema:"Internal container ID"`
 }
@@ -121,25 +129,40 @@ type getTopConsumersInput struct {
 	Period string `json:"period,omitempty" jsonschema:"Time period for ranking: current, 1h, or 24h"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of containers to return, default 10"`
 }
-type listEndpointsInput struct{}
+type listEndpointsInput struct {
+	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for endpoints checked directly by the server. Omit to return all."`
+}
 type getEndpointHistoryInput struct {
 	EndpointID int64 `json:"endpoint_id" jsonschema:"Endpoint ID"`
 	Limit      int   `json:"limit,omitempty" jsonschema:"Number of recent checks to return, default 50"`
 }
-type listHeartbeatsInput struct{}
-type listCertificatesInput struct{}
+type listHeartbeatsInput struct {
+	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for heartbeats received directly by the server. Omit to return all."`
+}
+type listCertificatesInput struct {
+	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for certificates checked directly by the server. Omit to return all."`
+}
 type getUpdatesInput struct{}
 type getHealthInput struct{}
+type listAgentsInput struct{}
 
 // --- Handlers ---
 
 func listContainersHandler(svc *Services) gomcp.ToolHandlerFor[listContainersInput, any] {
-	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listContainersInput) (*gomcp.CallToolResult, any, error) {
-		containers, err := svc.Containers.ListContainers(ctx, container.ListContainersOpts{})
+	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listContainersInput) (*gomcp.CallToolResult, any, error) {
+		opts := container.ListContainersOpts{}
+		if input.AgentID != "" {
+			opts.AgentFilter = &input.AgentID
+		}
+		containers, err := svc.Containers.ListContainers(ctx, opts)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list containers: %w", err)
 		}
-		return jsonResult(containers)
+		enriched, err := enrichWithAgentLabel(ctx, svc, containers)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to enrich containers: %w", err)
+		}
+		return jsonResult(enriched)
 	}
 }
 
@@ -289,12 +312,20 @@ func getTopConsumersHandler(svc *Services) gomcp.ToolHandlerFor[getTopConsumersI
 }
 
 func listEndpointsHandler(svc *Services) gomcp.ToolHandlerFor[listEndpointsInput, any] {
-	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listEndpointsInput) (*gomcp.CallToolResult, any, error) {
-		endpoints, err := svc.Endpoints.ListEndpoints(ctx, endpoint.ListEndpointsOpts{})
+	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listEndpointsInput) (*gomcp.CallToolResult, any, error) {
+		opts := endpoint.ListEndpointsOpts{}
+		if input.AgentID != "" {
+			opts.AgentFilter = &input.AgentID
+		}
+		endpoints, err := svc.Endpoints.ListEndpoints(ctx, opts)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list endpoints: %w", err)
 		}
-		return jsonResult(endpoints)
+		enriched, err := enrichWithAgentLabel(ctx, svc, endpoints)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to enrich endpoints: %w", err)
+		}
+		return jsonResult(enriched)
 	}
 }
 
@@ -313,22 +344,38 @@ func getEndpointHistoryHandler(svc *Services) gomcp.ToolHandlerFor[getEndpointHi
 }
 
 func listHeartbeatsHandler(svc *Services) gomcp.ToolHandlerFor[listHeartbeatsInput, any] {
-	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listHeartbeatsInput) (*gomcp.CallToolResult, any, error) {
-		heartbeats, err := svc.Heartbeats.ListHeartbeats(ctx, heartbeat.ListHeartbeatsOpts{})
+	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listHeartbeatsInput) (*gomcp.CallToolResult, any, error) {
+		opts := heartbeat.ListHeartbeatsOpts{}
+		if input.AgentID != "" {
+			opts.AgentFilter = &input.AgentID
+		}
+		heartbeats, err := svc.Heartbeats.ListHeartbeats(ctx, opts)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list heartbeats: %w", err)
 		}
-		return jsonResult(heartbeats)
+		enriched, err := enrichWithAgentLabel(ctx, svc, heartbeats)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to enrich heartbeats: %w", err)
+		}
+		return jsonResult(enriched)
 	}
 }
 
 func listCertificatesHandler(svc *Services) gomcp.ToolHandlerFor[listCertificatesInput, any] {
-	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listCertificatesInput) (*gomcp.CallToolResult, any, error) {
-		certs, err := svc.Certificates.ListMonitors(ctx, certificate.ListCertificatesOpts{})
+	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listCertificatesInput) (*gomcp.CallToolResult, any, error) {
+		opts := certificate.ListCertificatesOpts{}
+		if input.AgentID != "" {
+			opts.AgentFilter = &input.AgentID
+		}
+		certs, err := svc.Certificates.ListMonitors(ctx, opts)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list certificates: %w", err)
 		}
-		return jsonResult(certs)
+		enriched, err := enrichWithAgentLabel(ctx, svc, certs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to enrich certificates: %w", err)
+		}
+		return jsonResult(enriched)
 	}
 }
 
@@ -353,7 +400,81 @@ func getHealthHandler(svc *Services) gomcp.ToolHandlerFor[getHealthInput, any] {
 	}
 }
 
+func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any] {
+	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listAgentsInput) (*gomcp.CallToolResult, any, error) {
+		if svc.Agents == nil {
+			return jsonResult([]any{})
+		}
+		agents, err := svc.Agents.List(ctx, "active")
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list agents: %w", err)
+		}
+		type agentRow struct {
+			AgentID         string `json:"agent_id"`
+			Label           string `json:"label"`
+			Hostname        string `json:"hostname"`
+			Runtime         string `json:"runtime"`
+			ConnectionState string `json:"connection_state"`
+		}
+		rows := make([]agentRow, len(agents))
+		for i, a := range agents {
+			state := "disconnected"
+			if svc.Sessions != nil && svc.Sessions.IsConnected(a.AgentID) {
+				state = "connected"
+			}
+			rows[i] = agentRow{
+				AgentID:         a.AgentID,
+				Label:           a.Label,
+				Hostname:        a.Hostname,
+				Runtime:         a.DetectedRuntime,
+				ConnectionState: state,
+			}
+		}
+		return jsonResult(rows)
+	}
+}
+
 // --- Helpers ---
+
+// enrichWithAgentLabel adds an "agent_label" field to each item in the slice
+// by looking up the agent from the AgentStore. Items without an agent_id are
+// returned unchanged. When the AgentStore is unavailable (CE), items are
+// returned as-is with no enrichment.
+func enrichWithAgentLabel(ctx context.Context, svc *Services, items any) ([]map[string]any, error) {
+	data, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	var raw []map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if svc.Agents == nil || len(raw) == 0 {
+		return raw, nil
+	}
+	// Build a label cache so we don't call List repeatedly.
+	labelCache := map[string]string{}
+	agents, err := svc.Agents.List(ctx, "")
+	if err == nil {
+		for _, a := range agents {
+			label := a.Label
+			if label == "" {
+				label = a.Hostname
+			}
+			labelCache[a.AgentID] = label
+		}
+	}
+	for _, m := range raw {
+		aid, ok := m["agent_id"].(string)
+		if !ok || aid == "" {
+			continue
+		}
+		if label, found := labelCache[aid]; found {
+			m["agent_label"] = label
+		}
+	}
+	return raw, nil
+}
 
 func jsonResult(v any) (*gomcp.CallToolResult, any, error) {
 	data, err := json.Marshal(v)
