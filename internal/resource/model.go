@@ -35,6 +35,7 @@ type ResourceSnapshot struct {
 	BlockReadBytes  int64     `json:"block_read_bytes"`
 	BlockWriteBytes int64     `json:"block_write_bytes"`
 	Timestamp       time.Time `json:"timestamp"`
+	AgentID         *string   `json:"agent_id,omitempty"`
 }
 
 // ResourceAlertConfig holds per-container resource alert thresholds.

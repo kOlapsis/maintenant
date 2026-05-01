@@ -207,6 +207,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 				"container_id":   c.ID,
 				"container_name": c.Name,
 				"timestamp":      evt.Timestamp,
+				"agent_id":       c.AgentID,
 			})
 		}
 	}
@@ -218,6 +219,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		"health_status":  c.HealthStatus,
 		"exit_code":      transition.ExitCode,
 		"timestamp":      evt.Timestamp,
+		"agent_id":       c.AgentID,
 	})
 }
 
@@ -242,6 +244,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 	s.emitEvent(event.ContainerArchived, map[string]interface{}{
 		"id":          c.ID,
 		"archived_at": now,
+		"agent_id":    c.AgentID,
 	})
 }
 
@@ -283,6 +286,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		"health_status":   newHealth,
 		"previous_health": previousHealth,
 		"timestamp":       evt.Timestamp,
+		"agent_id":        c.AgentID,
 	})
 }
 
@@ -295,6 +299,11 @@ func (s *Service) emitEvent(eventType string, data interface{}) {
 // GetContainer retrieves a container by its maintenant ID.
 func (s *Service) GetContainer(ctx context.Context, id int64) (*Container, error) {
 	return s.store.GetContainerByID(ctx, id)
+}
+
+// GetContainerByExternalID retrieves a container by its runtime-assigned external ID.
+func (s *Service) GetContainerByExternalID(ctx context.Context, externalID string) (*Container, error) {
+	return s.store.GetContainerByExternalID(ctx, externalID)
 }
 
 // DeleteContainer removes a container and its transitions from the database.
@@ -343,7 +352,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				s.logger.Error("reconcile archive", "external_id", sc.ExternalID, "error", err)
 			}
 			s.emitEvent(event.ContainerArchived, map[string]interface{}{
-				"id": sc.ID, "archived_at": now,
+				"id": sc.ID, "archived_at": now, "agent_id": sc.AgentID,
 			})
 			continue
 		}
@@ -367,7 +376,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			}
 
 			s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
-				"id": sc.ID, "state": dc.State, "previous_state": sc.State, "timestamp": now,
+				"id": sc.ID, "state": dc.State, "previous_state": sc.State, "timestamp": now, "agent_id": sc.AgentID,
 			})
 		}
 	}

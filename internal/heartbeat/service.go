@@ -235,7 +235,7 @@ func (s *Service) DeleteHeartbeat(ctx context.Context, id int64) error {
 
 // --- Ping Processing ---
 
-func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMethod string, payload *string) (*Heartbeat, error) {
+func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, error) {
 	h, err := s.store.GetHeartbeatByUUID(ctx, uuid)
 	if err != nil {
 		return nil, err
@@ -317,6 +317,7 @@ func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMe
 		"heartbeat_id": h.ID,
 		"ping_type":    string(PingSuccess),
 		"status":       string(newStatus),
+		"agent_id":     agentID,
 	})
 
 	if newStatus != previousStatus {
@@ -324,6 +325,7 @@ func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMe
 			"heartbeat_id": h.ID,
 			"old_status":   string(previousStatus),
 			"new_status":   string(newStatus),
+			"agent_id":     agentID,
 		})
 	}
 
@@ -332,6 +334,7 @@ func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMe
 		s.emitEvent(event.HeartbeatRecovery, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
+			"agent_id":     agentID,
 		})
 		if s.alertCallback != nil {
 			s.alertCallback(h, "recovery", map[string]interface{}{

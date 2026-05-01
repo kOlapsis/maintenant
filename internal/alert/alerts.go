@@ -51,6 +51,7 @@ type RestartAlert struct {
 	Severity      container.AlertSeverity
 	Channels      string
 	Timestamp     time.Time
+	AgentID       *string
 }
 
 // Check evaluates whether the container has exceeded its restart threshold.
@@ -81,6 +82,7 @@ func (d *RestartDetector) Check(ctx context.Context, c *container.Container) (in
 		Severity:      c.AlertSeverity,
 		Channels:      c.AlertChannels,
 		Timestamp:     time.Now(),
+		AgentID:       c.AgentID,
 	}, nil
 }
 

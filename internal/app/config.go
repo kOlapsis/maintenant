@@ -52,11 +52,34 @@ type Config struct {
 	// Telemetry
 	DisableTelemetry bool
 
+	// Multi-host agent mode (Enterprise only)
+	Mode      string // "embedded" | "server" | "agent"
+	MultiHost MultiHostConfig
+
 	// Build info (injected via ldflags)
 	Version      string
 	Commit       string
 	BuildDate    string
 	PublicKeyB64 string
+}
+
+// MultiHostConfig holds multi-server agent configuration (Enterprise only).
+type MultiHostConfig struct {
+	GRPCPublicURL              string
+	GRPCListen                 string
+	AgentRateLimitPerSecond    int
+	AgentStaleThresholdSeconds int
+	LicenseRecheckIntervalSec  int
+	// TLS (for mode=server)
+	TLSCertFile string
+	TLSKeyFile  string
+	// Agent flags (for mode=agent)
+	ServerURL          string
+	EnrollmentToken    string
+	RuntimeOverride    string
+	Label              string
+	InsecureSkipVerify bool
+	EmbeddedAgent      bool
 }
 
 // SMTPConfig holds SMTP mail server configuration.
@@ -116,6 +139,14 @@ func ConfigFromEnv() Config {
 
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
 
+	cfg.MultiHost = MultiHostConfig{
+		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_PUBLIC_URL"),
+		GRPCListen:                 envOr("MAINTENANT_GRPC_LISTEN", "127.0.0.1:8443"),
+		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000),
+		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60),
+		LicenseRecheckIntervalSec:  envIntOr("MAINTENANT_LICENSE_RECHECK_INTERVAL_SECONDS", 300),
+	}
+
 	return cfg
 }
 
@@ -135,6 +166,15 @@ func parseTruthy(raw string) bool {
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func envIntOr(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
 	}
 	return fallback
 }

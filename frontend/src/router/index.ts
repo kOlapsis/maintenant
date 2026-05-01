@@ -32,6 +32,7 @@ const WorkloadsPage = () => import('../pages/WorkloadsPage.vue')
 const PodsPage = () => import('../pages/PodsPage.vue')
 const ClusterOverviewPage = () => import('../pages/ClusterOverviewPage.vue')
 const NodesPage = () => import('../pages/NodesPage.vue')
+const AgentsPage = () => import('../pages/AgentsPage.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -57,6 +58,7 @@ const router = createRouter({
         { path: 'pods', name: 'pods', component: PodsPage },
         { path: 'cluster', name: 'cluster', component: ClusterOverviewPage },
         { path: 'nodes', name: 'nodes', component: NodesPage },
+        { path: 'agents', name: 'agents', component: AgentsPage, meta: { featureRequired: 'multihost' } },
         { path: 'pro-edition', name: 'pro-edition', component: ProPage },
       ],
     },

@@ -28,8 +28,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/resource"
 	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
-	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
 )
@@ -102,6 +103,11 @@ type HandlerDeps struct {
 	SwarmUpdateTracker   *swarm.UpdateTracker
 	SwarmCrashLoop       *swarm.CrashLoopDetector
 	SwarmReplicaChecker  *swarm.ReplicaHealthChecker
+
+	// Multi-host agents (Enterprise)
+	AgentStore    *sqlite.AgentStore
+	GRPCPublicURL string
+	GRPCListen    string
 
 	// HTTP config
 	CORSOrigins      string // comma-separated origins or "*"
@@ -355,6 +361,9 @@ func NewRouter(d HandlerDeps) *Router {
 	// Kubernetes monitoring
 	r.registerKubernetesRoutes(d)
 
+	// Multi-host agents (Enterprise)
+	r.registerAgentRoutes(d)
+
 	return r
 }
 
@@ -579,6 +588,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 				"security_posture":     isEnterprise,
 				"swarm_dashboard":      isEnterprise,
 				"k8s_cluster":          isEnterprise,
+				"multihost":            isEnterprise,
 			},
 			"quotas": quotas,
 		})
@@ -682,4 +692,25 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise 
 	}
 
 	return quotas
+}
+
+func (r *Router) registerAgentRoutes(d HandlerDeps) {
+	if d.AgentStore == nil {
+		return
+	}
+	ah := NewAgentHandler(d.AgentStore, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen)
+
+	// Enrollment token endpoints (order matters: specific paths before wildcards)
+	r.mux.HandleFunc("GET /api/v1/agents/metrics", requireEnterprise(ah.HandleGetAgentMetrics))
+	r.mux.HandleFunc("POST /api/v1/agents/enrollment-tokens", requireEnterprise(ah.HandleCreateEnrollmentToken))
+	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens", requireEnterprise(ah.HandleListEnrollmentTokens))
+	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens/{token_id}", requireEnterprise(ah.HandleGetEnrollmentToken))
+	r.mux.HandleFunc("DELETE /api/v1/agents/enrollment-tokens/{token_id}", requireEnterprise(ah.HandleDeleteEnrollmentToken))
+
+	// Agent endpoints
+	r.mux.HandleFunc("GET /api/v1/agents", requireEnterprise(ah.HandleListAgents))
+	r.mux.HandleFunc("GET /api/v1/agents/{id}", requireEnterprise(ah.HandleGetAgent))
+	r.mux.HandleFunc("PATCH /api/v1/agents/{id}", requireEnterprise(ah.HandleUpdateAgent))
+	r.mux.HandleFunc("POST /api/v1/agents/{id}/revoke", requireEnterprise(ah.HandleRevokeAgent))
+	r.mux.HandleFunc("DELETE /api/v1/agents/{id}", requireEnterprise(ah.HandleDeleteAgent))
 }

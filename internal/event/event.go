@@ -131,6 +131,16 @@ const (
 	KubernetesNodeChanged     = "kubernetes.node_changed"
 )
 
+// Multi-host agent events (Enterprise).
+const (
+	AgentCreated      = "agent.created"
+	AgentUpdated      = "agent.updated"
+	AgentRevoked      = "agent.revoked"
+	AgentDeleted      = "agent.deleted"
+	AgentConnected    = "agent.connected"
+	AgentDisconnected = "agent.disconnected"
+)
+
 // Public status page events.
 const (
 	StatusComponentChanged = "status.component_changed"

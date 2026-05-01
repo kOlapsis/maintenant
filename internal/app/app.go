@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -82,6 +83,7 @@ type App struct {
 	hbStore        *sqlite.HeartbeatStore
 	certStore      *sqlite.CertificateStore
 	resStore       *sqlite.ResourceStore
+	agentStore     *sqlite.AgentStore
 
 	// Background services
 	checkEngine    *endpoint.CheckEngine
@@ -158,6 +160,18 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	webhookStore := sqlite.NewWebhookStore(db)
 	updateStore := sqlite.NewUpdateStore(db)
 	a.updateStore = updateStore
+	agentStore := sqlite.NewAgentStore(db)
+	a.agentStore = agentStore
+
+	// --- Mode gate: server/agent require Enterprise license ---
+	if cfg.Mode != "" && cfg.Mode != "embedded" {
+		// Evaluate edition now (before license manager starts) using whatever was
+		// set at binary build time or injected via a previous boot.
+		if extension.CurrentEdition() != extension.Enterprise {
+			logger.Error("server/agent mode requires Enterprise license", "mode", cfg.Mode)
+			os.Exit(1)
+		}
+	}
 
 	// --- License manager ---
 	license.InitPublicKey(cfg.PublicKeyB64)
@@ -443,6 +457,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SwarmUpdateTracker:  a.swarmUpdateTracker,
 		SwarmCrashLoop:      a.swarmCrashLoop,
 		SwarmReplicaChecker: a.swarmReplicaChecker,
+		// Multi-host agents (Enterprise)
+		AgentStore:    agentStore,
+		GRPCPublicURL: cfg.MultiHost.GRPCPublicURL,
+		GRPCListen:    cfg.MultiHost.GRPCListen,
 		// HTTP config
 		CORSOrigins:      cfg.CORSOrigins,
 		MaxBodySize:      cfg.MaxBodySize,

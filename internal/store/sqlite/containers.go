@@ -42,8 +42,9 @@ func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Conta
 			restart_threshold, alert_channels, archived, first_seen_at, last_state_change_at,
 			runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
 			compose_working_dir,
-			swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas,
+			agent_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ExternalID, c.Name, c.Image, string(c.State), nullableHealth(c.HealthStatus),
 		boolToInt(c.HasHealthCheck), NullableString(c.OrchestrationGroup), NullableString(c.OrchestrationUnit),
 		NullableString(c.CustomGroup), boolToInt(c.IsIgnored), string(c.AlertSeverity),
@@ -52,6 +53,7 @@ func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Conta
 		c.RuntimeType, c.ErrorDetail, c.ControllerKind, c.Namespace, c.PodCount, c.ReadyCount,
 		c.ComposeWorkingDir,
 		c.SwarmServiceID, c.SwarmServiceName, c.SwarmServiceMode, c.SwarmNodeID, c.SwarmTaskSlot, c.SwarmDesiredReplicas,
+		c.AgentID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert container: %w", err)
@@ -346,7 +348,8 @@ const containerColumns = `id, external_id, name, image, state, health_status, ha
 	restart_threshold, alert_channels, archived, first_seen_at, last_state_change_at, archived_at,
 	runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
 	compose_working_dir,
-	swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas`
+	swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas,
+	agent_id`
 
 const transitionColumns = `id, container_id, previous_state, new_state, previous_health, new_health, exit_code, log_snippet, timestamp`
 
@@ -356,7 +359,7 @@ type rowScanner interface {
 
 func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, error) {
 	var c container.Container
-	var healthStatus, orchestrationGroup, orchestrationUnit, customGroup, alertChannels sql.NullString
+	var healthStatus, orchestrationGroup, orchestrationUnit, customGroup, alertChannels, agentID sql.NullString
 	var hasHealthCheck, isIgnored, archived int
 	var firstSeen, lastChange int64
 	var archivedAt sql.NullInt64
@@ -371,6 +374,7 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 		&c.RuntimeType, &c.ErrorDetail, &c.ControllerKind, &c.Namespace, &c.PodCount, &c.ReadyCount,
 		&c.ComposeWorkingDir,
 		&c.SwarmServiceID, &c.SwarmServiceName, &c.SwarmServiceMode, &c.SwarmNodeID, &c.SwarmTaskSlot, &c.SwarmDesiredReplicas,
+		&agentID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -404,6 +408,9 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 	if archivedAt.Valid {
 		t := time.Unix(archivedAt.Int64, 0)
 		c.ArchivedAt = &t
+	}
+	if agentID.Valid {
+		c.AgentID = &agentID.String
 	}
 
 	return &c, nil

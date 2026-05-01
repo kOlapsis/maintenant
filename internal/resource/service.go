@@ -180,6 +180,7 @@ func (s *Service) processSnapshot(snap *ResourceSnapshot) {
 			"block_read_bytes":  snap.BlockReadBytes,
 			"block_write_bytes": snap.BlockWriteBytes,
 			"timestamp":         snap.Timestamp,
+			"agent_id":          snap.AgentID,
 		})
 	}
 

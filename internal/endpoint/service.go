@@ -270,6 +270,7 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, resu
 			"http_status":      result.HTTPStatus,
 			"error":            result.ErrorMessage,
 			"timestamp":        result.Timestamp,
+			"agent_id":         result.AgentID,
 		})
 	}
 

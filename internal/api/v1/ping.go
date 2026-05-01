@@ -55,7 +55,7 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		sourceIP = fwd
 	}
 
-	_, err := h.svc.ProcessPing(r.Context(), uuid, sourceIP, r.Method, payload)
+	_, err := h.svc.ProcessPing(r.Context(), uuid, sourceIP, r.Method, payload, nil)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
 			WriteError(w, http.StatusNotFound, "HEARTBEAT_NOT_FOUND", "No heartbeat monitor found for this UUID")

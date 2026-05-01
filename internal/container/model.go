@@ -48,6 +48,7 @@ const (
 type Container struct {
 	ID                 int64          `json:"id"`
 	ExternalID         string         `json:"external_id"`
+	AgentID            *string        `json:"agent_id,omitempty"`
 	Name               string         `json:"name"`
 	Image              string         `json:"image"`
 	State              ContainerState `json:"state"`

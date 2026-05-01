@@ -493,7 +493,7 @@ func TestService_ProcessPing_NewToUp(t *testing.T) {
 	h := seedHeartbeat(store, "uuid-ping-1", StatusNew, AlertNormal)
 	before := time.Now()
 
-	result, err := svc.ProcessPing(context.Background(), "uuid-ping-1", "127.0.0.1", "GET", nil)
+	result, err := svc.ProcessPing(context.Background(), "uuid-ping-1", "127.0.0.1", "GET", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -523,7 +523,7 @@ func TestService_ProcessPing_ConsecutiveSuccessesIncrement(t *testing.T) {
 	seedHeartbeat(store, "uuid-ping-2", StatusUp, AlertNormal)
 
 	for i := 1; i <= 3; i++ {
-		result, err := svc.ProcessPing(context.Background(), "uuid-ping-2", "127.0.0.1", "GET", nil)
+		result, err := svc.ProcessPing(context.Background(), "uuid-ping-2", "127.0.0.1", "GET", nil, nil)
 		require.NoError(t, err)
 		assert.Equal(t, i, result.ConsecutiveSuccesses, "ping #%d", i)
 		assert.Equal(t, 0, result.ConsecutiveFailures)
@@ -541,7 +541,7 @@ func TestService_ProcessPing_DownToUpRecovery(t *testing.T) {
 
 	seedHeartbeat(store, "uuid-ping-3", StatusDown, AlertAlerting)
 
-	result, err := svc.ProcessPing(context.Background(), "uuid-ping-3", "127.0.0.1", "POST", nil)
+	result, err := svc.ProcessPing(context.Background(), "uuid-ping-3", "127.0.0.1", "POST", nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, StatusUp, result.Status)
@@ -563,7 +563,7 @@ func TestService_ProcessPing_UpToUpNoRecoveryAlert(t *testing.T) {
 
 	seedHeartbeat(store, "uuid-ping-4", StatusUp, AlertNormal)
 
-	_, err := svc.ProcessPing(context.Background(), "uuid-ping-4", "127.0.0.1", "GET", nil)
+	_, err := svc.ProcessPing(context.Background(), "uuid-ping-4", "127.0.0.1", "GET", nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, alertCalls, "no alert callback for up→up transition")
 }
@@ -594,7 +594,7 @@ func TestService_ProcessPing_StartedToUpCompletionCalculatesDuration(t *testing.
 	require.NoError(t, err)
 	_ = execID
 
-	result, err := svc.ProcessPing(context.Background(), "uuid-ping-5", "127.0.0.1", "GET", nil)
+	result, err := svc.ProcessPing(context.Background(), "uuid-ping-5", "127.0.0.1", "GET", nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, StatusUp, result.Status)
@@ -613,7 +613,7 @@ func TestService_ProcessPing_UnknownUUID(t *testing.T) {
 	store := newMockStore()
 	svc := newService(store, &mockLicense{canCreate: true})
 
-	_, err := svc.ProcessPing(context.Background(), "nonexistent-uuid", "127.0.0.1", "GET", nil)
+	_, err := svc.ProcessPing(context.Background(), "nonexistent-uuid", "127.0.0.1", "GET", nil, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHeartbeatNotFound)
 }
@@ -989,7 +989,7 @@ func TestService_ProcessPing_PayloadDroppedForCommunity(t *testing.T) {
 	seedHeartbeat(store, "uuid-payload-1", StatusUp, AlertNormal)
 
 	payload := "job output"
-	_, err := svc.ProcessPing(context.Background(), "uuid-payload-1", "127.0.0.1", "POST", &payload)
+	_, err := svc.ProcessPing(context.Background(), "uuid-payload-1", "127.0.0.1", "POST", &payload, nil)
 	require.NoError(t, err)
 
 	// Find the ping for this heartbeat.
