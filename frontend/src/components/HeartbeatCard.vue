@@ -19,6 +19,7 @@ import { fetchHeartbeatDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
 import HeartbeatStatusBadge from './HeartbeatStatusBadge.vue'
+import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
 
 const props = defineProps<{
@@ -116,6 +117,7 @@ async function handleDelete() {
         <p class="mt-0.5 truncate font-mono text-xs" :style="{ color: 'var(--pb-text-muted)' }">
           /ping/{{ heartbeat.uuid.slice(0, 8) }}...
         </p>
+        <AgentBadge v-if="heartbeat.agent_id" :agent-id="heartbeat.agent_id" class="mt-1" />
       </div>
       <div class="ml-2 flex items-center gap-1.5">
         <span

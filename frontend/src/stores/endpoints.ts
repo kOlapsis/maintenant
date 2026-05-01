@@ -30,6 +30,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   const statusFilter = ref<string>('')
   const typeFilter = ref<string>('')
   const containerFilter = ref<string>('')
+  const agentFilter = ref<string | null>(null)
 
   const endpointsCount = computed(() => totalCount.value)
 
@@ -68,10 +69,14 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   })
 
   async function fetchEndpoints(params?: ListEndpointsParams) {
+    if (params?.agent_id !== undefined) agentFilter.value = params.agent_id ?? null
+    const mergedParams = agentFilter.value
+      ? { ...params, agent_id: agentFilter.value }
+      : params
     loading.value = true
     error.value = null
     try {
-      const res = await listEndpoints(params)
+      const res = await listEndpoints(mergedParams)
       endpoints.value = res.endpoints || []
       totalCount.value = res.total || 0
     } catch (e) {
@@ -204,6 +209,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     statusFilter,
     typeFilter,
     containerFilter,
+    agentFilter,
     filteredEndpoints,
     endpointsByContainer,
     statusCounts,

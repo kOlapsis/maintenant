@@ -40,7 +40,7 @@ const heartbeatColumns = `id, uuid, name, status, alert_state,
 	last_ping_at, next_deadline_at, current_run_started_at,
 	last_exit_code, last_duration_ms,
 	consecutive_failures, consecutive_successes,
-	active, created_at, updated_at`
+	active, created_at, updated_at, agent_id`
 
 func (s *HeartbeatStore) CreateHeartbeat(ctx context.Context, h *heartbeat.Heartbeat) (int64, error) {
 	now := time.Now().Unix()
@@ -83,6 +83,14 @@ func (s *HeartbeatStore) ListHeartbeats(ctx context.Context, opts heartbeat.List
 	if opts.Status != "" {
 		query += ` AND status=?`
 		args = append(args, opts.Status)
+	}
+	if opts.AgentFilter != nil {
+		if *opts.AgentFilter == "local" {
+			query += ` AND agent_id IS NULL`
+		} else {
+			query += ` AND agent_id=?`
+			args = append(args, *opts.AgentFilter)
+		}
 	}
 
 	query += ` ORDER BY created_at DESC`
@@ -431,6 +439,7 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 	var lastPingAt, nextDeadlineAt, currentRunStartedAt, lastExitCode, lastDurationMs sql.NullInt64
 	var active int
 	var createdAt, updatedAt int64
+	var agentID sql.NullString
 
 	err := row.Scan(
 		&h.ID, &h.UUID, &h.Name, &h.Status, &h.AlertState,
@@ -438,7 +447,7 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 		&lastPingAt, &nextDeadlineAt, &currentRunStartedAt,
 		&lastExitCode, &lastDurationMs,
 		&h.ConsecutiveFailures, &h.ConsecutiveSuccesses,
-		&active, &createdAt, &updatedAt,
+		&active, &createdAt, &updatedAt, &agentID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -470,6 +479,9 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 	if lastDurationMs.Valid {
 		v := lastDurationMs.Int64
 		h.LastDurationMs = &v
+	}
+	if agentID.Valid {
+		h.AgentID = &agentID.String
 	}
 
 	return &h, nil

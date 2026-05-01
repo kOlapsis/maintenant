@@ -53,6 +53,7 @@ type CertMonitor struct {
 	LastError            string     `json:"last_error,omitempty"`
 	ExternalID           string     `json:"external_id,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
+	AgentID              *string    `json:"agent_id,omitempty"`
 }
 
 // DefaultWarningThresholds returns the default expiration warning thresholds in days.
@@ -163,6 +164,8 @@ type CertChainEntry struct {
 type ListCertificatesOpts struct {
 	Status string
 	Source string
+	// AgentFilter filters by agent_id. Nil = no filter; "local" = agent_id IS NULL; UUID = specific agent.
+	AgentFilter *string
 }
 
 // ListChecksOpts configures check result listing queries.

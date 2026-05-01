@@ -78,6 +78,7 @@ type Heartbeat struct {
 	Active               bool            `json:"active"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
+	AgentID              *string         `json:"agent_id,omitempty"`
 }
 
 // PingURL returns the relative ping URL for this heartbeat.
@@ -113,6 +114,8 @@ type HeartbeatExecution struct {
 type ListHeartbeatsOpts struct {
 	Status          string
 	IncludeInactive bool
+	// AgentFilter filters by agent_id. Nil = no filter; "local" = agent_id IS NULL; UUID = specific agent.
+	AgentFilter *string
 }
 
 // ListPingsOpts configures ping listing queries.

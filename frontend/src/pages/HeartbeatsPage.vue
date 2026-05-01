@@ -12,11 +12,12 @@
 -->
 
 <script setup lang="ts">
-import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
+import { inject, ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { useEdition } from '@/composables/useEdition'
 import { createHeartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
+import AgentFilterDropdown from '@/components/AgentFilterDropdown.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
@@ -59,6 +60,11 @@ onUnmounted(() => {
   store.disconnectSSE()
 })
 
+watch(
+  () => store.agentFilter,
+  (val) => store.fetchHeartbeats(val),
+)
+
 async function handleCreate() {
   createError.value = null
   try {
@@ -84,6 +90,7 @@ async function handleCreate() {
         </p>
       </div>
       <div class="flex items-center gap-2">
+        <AgentFilterDropdown v-model="store.agentFilter" />
         <span
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"

@@ -22,6 +22,7 @@ import {getStateStyle as getStateStyleFromUtil} from '@/utils/containerState'
 import UpdateBadge from '@/components/UpdateBadge.vue'
 import SecurityInsightBadge from '@/components/SecurityInsightBadge.vue'
 import PostureScoreBadge from '@/components/PostureScoreBadge.vue'
+import AgentBadge from '@/components/AgentBadge.vue'
 import {computed, onMounted, ref} from 'vue'
 
 const props = defineProps<{
@@ -128,7 +129,7 @@ function getStateStyle(state: string) {
         </div>
       </div>
 
-      <!-- Badges row: image tag, update, security, posture -->
+      <!-- Badges row: image tag, update, security, posture, agent -->
       <div class="mt-1 flex items-center gap-1.5 flex-wrap">
         <span class="text-[10px] text-slate-500 truncate max-w-[140px]">{{ imageTag }}</span>
         <UpdateBadge :update="containerUpdate" />
@@ -142,6 +143,7 @@ function getStateStyle(state: string) {
           :color="containerScore.color"
           size="xs"
         />
+        <AgentBadge v-if="container.agent_id" :agent-id="container.agent_id" />
       </div>
     </div>
 

@@ -72,6 +72,9 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	if s := r.URL.Query().Get("state"); s != "" {
 		opts.StateFilter = s
 	}
+	if a := r.URL.Query().Get("agent_id"); a != "" {
+		opts.AgentFilter = &a
+	}
 
 	groups, total, archivedCount, err := h.service.ListContainersGrouped(r.Context(), opts)
 	if err != nil {

@@ -74,6 +74,7 @@ type Endpoint struct {
 	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
 	Source               EndpointSource `json:"source"`
 	Name                 string         `json:"name,omitempty"`
+	AgentID              *string        `json:"agent_id,omitempty"`
 }
 
 // ConfigJSON returns the JSON-encoded configuration.
@@ -198,6 +199,8 @@ type ListEndpointsOpts struct {
 	EndpointType       string
 	Source             string
 	IncludeInactive    bool
+	// AgentFilter filters by agent_id. Nil = no filter; "local" = agent_id IS NULL; UUID = specific agent.
+	AgentFilter *string
 }
 
 // ListChecksOpts configures check result listing queries.

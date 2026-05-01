@@ -12,12 +12,13 @@
 -->
 
 <script setup lang="ts">
-import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
+import { inject, ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useCertificatesStore } from '@/stores/certificates'
 import { useContainersStore } from '@/stores/containers'
 import { useEdition } from '@/composables/useEdition'
 import { createCertificate } from '@/services/certificateApi'
 import CertificateCard from '@/components/CertificateCard.vue'
+import AgentFilterDropdown from '@/components/AgentFilterDropdown.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
@@ -78,6 +79,11 @@ onUnmounted(() => {
   store.disconnectSSE()
 })
 
+watch(
+  () => store.agentFilter,
+  (val) => store.fetchCertificates(val),
+)
+
 async function handleCreate() {
   createError.value = null
   try {
@@ -107,6 +113,7 @@ function handleSelect(id: number) {
         </p>
       </div>
       <div class="flex items-center gap-2">
+        <AgentFilterDropdown v-model="store.agentFilter" />
         <span
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"

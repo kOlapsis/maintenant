@@ -29,6 +29,7 @@ export interface CertMonitor {
   last_error?: string
   created_at: string
   latest_check?: CertCheckResult
+  agent_id?: string | null
 }
 
 export interface CertCheckResult {
@@ -96,10 +97,11 @@ function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   return apiFetch<T>(url, init)
 }
 
-export function listCertificates(params?: { status?: string; source?: string }): Promise<CertificatesResponse> {
+export function listCertificates(params?: { status?: string; source?: string; agent_id?: string }): Promise<CertificatesResponse> {
   const url = new URL(`${API_BASE}/certificates`, window.location.origin)
   if (params?.status) url.searchParams.set('status', params.status)
   if (params?.source) url.searchParams.set('source', params.source)
+  if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id)
   return fetchJSON<CertificatesResponse>(url.toString())
 }
 

@@ -46,6 +46,8 @@ type ListContainersOpts struct {
 	IncludeIgnored  bool
 	GroupFilter     string
 	StateFilter     string
+	// AgentFilter filters by agent_id. Nil = no filter; "local" = agent_id IS NULL; UUID = specific agent.
+	AgentFilter *string
 }
 
 // ListTransitionsOpts configures transition listing queries.

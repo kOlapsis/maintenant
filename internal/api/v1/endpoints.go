@@ -48,6 +48,9 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 		Source:             q.Get("source"),
 		IncludeInactive:    q.Get("include_inactive") == "true",
 	}
+	if a := q.Get("agent_id"); a != "" {
+		opts.AgentFilter = &a
+	}
 
 	endpoints, err := h.service.ListEndpoints(r.Context(), opts)
 	if err != nil {

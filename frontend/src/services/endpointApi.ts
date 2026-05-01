@@ -49,6 +49,7 @@ export interface Endpoint {
   orchestration_unit?: string
   source: EndpointSource
   name?: string
+  agent_id?: string | null
 }
 
 export interface CheckResult {
@@ -68,6 +69,7 @@ export interface ListEndpointsParams {
   type?: string
   source?: string
   include_inactive?: boolean
+  agent_id?: string
 }
 
 export interface CreateEndpointInput {
@@ -125,6 +127,7 @@ export function listEndpoints(params?: ListEndpointsParams): Promise<EndpointsRe
   if (params?.type) url.searchParams.set('type', params.type)
   if (params?.source) url.searchParams.set('source', params.source)
   if (params?.include_inactive) url.searchParams.set('include_inactive', 'true')
+  if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id)
   return fetchJSON<EndpointsResponse>(url.toString())
 }
 

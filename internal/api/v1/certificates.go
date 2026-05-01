@@ -37,6 +37,9 @@ func (h *CertificateHandler) HandleList(w http.ResponseWriter, r *http.Request) 
 		Status: r.URL.Query().Get("status"),
 		Source: r.URL.Query().Get("source"),
 	}
+	if a := r.URL.Query().Get("agent_id"); a != "" {
+		opts.AgentFilter = &a
+	}
 
 	monitors, err := h.svc.ListMonitors(r.Context(), opts)
 	if err != nil {

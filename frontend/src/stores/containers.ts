@@ -36,6 +36,7 @@ export const useContainersStore = defineStore('containers', () => {
   const archivedCount = ref(0)
 
   const expandedControllers = ref<Set<string>>(new Set())
+  const agentFilter = ref<string | null>(null)
 
   const allContainers = computed(() =>
     groups.value.flatMap((g) => g.containers),
@@ -71,10 +72,14 @@ export const useContainersStore = defineStore('containers', () => {
   }
 
   async function fetchContainers(params?: ListContainersParams) {
+    if (params?.agent_id !== undefined) agentFilter.value = params.agent_id ?? null
+    const mergedParams = agentFilter.value
+      ? { ...params, agent_id: agentFilter.value }
+      : params
     loading.value = true
     error.value = null
     try {
-      const res = await listContainers(params)
+      const res = await listContainers(mergedParams)
       groups.value = res.groups || []
       totalCount.value = res.total || 0
       archivedCount.value = res.archived_count || 0
@@ -217,6 +222,7 @@ export const useContainersStore = defineStore('containers', () => {
     containerCount,
     totalCount,
     archivedCount,
+    agentFilter,
     expandedControllers,
     toggleController,
     isControllerExpanded,

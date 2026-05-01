@@ -19,6 +19,7 @@ import { fetchEndpointDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
 import EndpointStatusBadge from './EndpointStatusBadge.vue'
+import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
 
 const props = defineProps<{
@@ -111,6 +112,7 @@ function formatResponseTime(ms: number | undefined): string {
         <p class="mt-0.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
           {{ endpoint.source === 'standalone' ? (endpoint.name || 'standalone') : endpoint.container_name }}
         </p>
+        <AgentBadge v-if="endpoint.agent_id" :agent-id="endpoint.agent_id" class="mt-1" />
       </div>
       <div class="ml-2 flex items-center gap-1.5">
         <span

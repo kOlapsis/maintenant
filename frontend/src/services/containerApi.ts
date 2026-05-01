@@ -47,6 +47,7 @@ export interface Container {
   swarm_node_id?: string
   swarm_task_slot?: number
   swarm_desired_replicas?: number
+  agent_id?: string | null
 }
 
 export interface ContainerListResponse {
@@ -89,6 +90,7 @@ export interface ListContainersParams {
   archived?: boolean
   group?: string
   state?: string
+  agent_id?: string
 }
 
 export interface ListTransitionsParams {
@@ -109,6 +111,7 @@ export function listContainers(params?: ListContainersParams): Promise<Container
   if (params?.archived) url.searchParams.set('archived', 'true')
   if (params?.group) url.searchParams.set('group', params.group)
   if (params?.state) url.searchParams.set('state', params.state)
+  if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id)
   return fetchJSON<ContainerListResponse>(url.toString())
 }
 

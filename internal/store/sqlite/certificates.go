@@ -38,7 +38,7 @@ func NewCertificateStore(d *DB) *CertificateStore {
 
 const certMonitorColumns = `id, hostname, port, source, endpoint_id, status,
 	check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
-	last_check_at, next_check_at, last_error, created_at, external_id`
+	last_check_at, next_check_at, last_error, created_at, external_id, agent_id`
 
 func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.CertMonitor) (int64, error) {
 	now := time.Now().Unix()
@@ -102,6 +102,14 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 	if opts.Source != "" {
 		query += ` AND source=?`
 		args = append(args, opts.Source)
+	}
+	if opts.AgentFilter != nil {
+		if *opts.AgentFilter == "local" {
+			query += ` AND agent_id IS NULL`
+		} else {
+			query += ` AND agent_id=?`
+			args = append(args, *opts.AgentFilter)
+		}
 	}
 
 	query += ` ORDER BY hostname, port`
@@ -392,7 +400,7 @@ func (s *CertificateStore) DeleteCheckResultsBefore(ctx context.Context, before 
 func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor, error) {
 	var m certificate.CertMonitor
 	var endpointID, lastAlertedThreshold, lastCheckAt, nextCheckAt sql.NullInt64
-	var lastError sql.NullString
+	var lastError, agentID sql.NullString
 	var thresholdsJSON string
 	var createdAt int64
 
@@ -400,7 +408,7 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 		&m.ID, &m.Hostname, &m.Port, &m.Source, &endpointID, &m.Status,
 		&m.CheckIntervalSeconds, &thresholdsJSON, &lastAlertedThreshold,
 		&lastCheckAt, &nextCheckAt, &lastError, &createdAt,
-		&m.ExternalID,
+		&m.ExternalID, &agentID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -429,6 +437,9 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 	}
 	if lastError.Valid {
 		m.LastError = lastError.String
+	}
+	if agentID.Valid {
+		m.AgentID = &agentID.String
 	}
 
 	// Parse warning thresholds

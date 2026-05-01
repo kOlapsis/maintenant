@@ -38,6 +38,9 @@ func (h *HeartbeatHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	opts := heartbeat.ListHeartbeatsOpts{
 		Status: r.URL.Query().Get("status"),
 	}
+	if a := r.URL.Query().Get("agent_id"); a != "" {
+		opts.AgentFilter = &a
+	}
 
 	heartbeats, err := h.svc.ListHeartbeats(r.Context(), opts)
 	if err != nil {

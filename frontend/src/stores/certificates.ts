@@ -24,6 +24,7 @@ export const useCertificatesStore = defineStore('certificates', () => {
   const error = ref<string | null>(null)
   const sseConnected = sseBus.connected
   const statusFilter = ref<CertStatus | ''>('')
+  const agentFilter = ref<string | null>(null)
 
   const statusCounts = computed(() => {
     const counts = { valid: 0, expiring: 0, expired: 0, error: 0, unknown: 0 }
@@ -40,11 +41,12 @@ export const useCertificatesStore = defineStore('certificates', () => {
     return certificates.value.filter((c) => c.status === statusFilter.value)
   })
 
-  async function fetchCertificates() {
+  async function fetchCertificates(filter?: string | null) {
+    if (filter !== undefined) agentFilter.value = filter
     loading.value = true
     error.value = null
     try {
-      const res = await listCertificates()
+      const res = await listCertificates({ agent_id: agentFilter.value ?? undefined })
       certificates.value = res.certificates || []
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch certificates'
@@ -144,6 +146,7 @@ export const useCertificatesStore = defineStore('certificates', () => {
     error,
     sseConnected,
     statusFilter,
+    agentFilter,
     statusCounts,
     filteredCertificates,
     fetchCertificates,

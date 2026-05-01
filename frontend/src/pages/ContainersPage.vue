@@ -12,9 +12,10 @@
 -->
 
 <script setup lang="ts">
-import { inject, computed } from 'vue'
+import { inject, computed, watch } from 'vue'
 import ContainerList from '@/components/ContainerList.vue'
 import ResourceSummary from '@/components/ResourceSummary.vue'
+import AgentFilterDropdown from '@/components/AgentFilterDropdown.vue'
 import { useContainersStore } from '@/stores/containers'
 import { useUpdatesStore } from '@/stores/updates'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
@@ -34,16 +35,24 @@ const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
 function handleSelect(container: Container) {
   openDetail('container', container.id)
 }
+
+watch(
+  () => store.agentFilter,
+  (val) => store.fetchContainers({ agent_id: val ?? undefined }),
+)
 </script>
 
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
-    <div class="mb-6">
-      <h1 class="text-2xl font-black text-pb-primary">Containers</h1>
-      <p class="mt-1 text-sm text-slate-500">
-        Auto-discovered {{ store.runtimeLabel }} containers
-      </p>
+    <div class="mb-6 flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-black text-pb-primary">Containers</h1>
+        <p class="mt-1 text-sm text-slate-500">
+          Auto-discovered {{ store.runtimeLabel }} containers
+        </p>
+      </div>
+      <AgentFilterDropdown v-model="store.agentFilter" class="mt-1" />
     </div>
 
     <!-- Runtime unavailable warning -->

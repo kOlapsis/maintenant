@@ -30,6 +30,7 @@ export interface Heartbeat {
   active: boolean
   created_at: string
   updated_at: string
+  agent_id?: string | null
 }
 
 export interface HeartbeatPing {
@@ -90,8 +91,10 @@ function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   return apiFetch<T>(url, init)
 }
 
-export function listHeartbeats(): Promise<HeartbeatsResponse> {
-  return fetchJSON<HeartbeatsResponse>(`${API_BASE}/heartbeats`)
+export function listHeartbeats(agentId?: string): Promise<HeartbeatsResponse> {
+  const url = new URL(`${API_BASE}/heartbeats`, window.location.origin)
+  if (agentId) url.searchParams.set('agent_id', agentId)
+  return fetchJSON<HeartbeatsResponse>(url.toString())
 }
 
 export function getHeartbeat(id: number): Promise<HeartbeatDetailResponse> {

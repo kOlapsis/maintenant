@@ -40,7 +40,7 @@ func NewEndpointStore(d *DB) *EndpointStore {
 const endpointColumns = `id, container_name, label_key, external_id, endpoint_type, target,
 	status, alert_state, consecutive_failures, consecutive_successes,
 	last_check_at, last_response_time_ms, last_http_status, last_error,
-	config_json, active, first_seen_at, last_seen_at, source, name`
+	config_json, active, first_seen_at, last_seen_at, source, name, agent_id`
 
 func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint) (int64, error) {
 	configJSON := e.ConfigJSON()
@@ -126,6 +126,14 @@ func (s *EndpointStore) ListEndpoints(ctx context.Context, opts endpoint.ListEnd
 	if opts.Source != "" {
 		query += ` AND source=?`
 		args = append(args, opts.Source)
+	}
+	if opts.AgentFilter != nil {
+		if *opts.AgentFilter == "local" {
+			query += ` AND agent_id IS NULL`
+		} else {
+			query += ` AND agent_id=?`
+			args = append(args, *opts.AgentFilter)
+		}
 	}
 
 	query += ` ORDER BY container_name, label_key`
@@ -387,7 +395,7 @@ func (s *EndpointStore) DeleteStandaloneEndpoint(ctx context.Context, id int64) 
 func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error) {
 	var e endpoint.Endpoint
 	var lastCheckAt, lastResponseTimeMs, lastHTTPStatus sql.NullInt64
-	var lastError sql.NullString
+	var lastError, agentID sql.NullString
 	var configJSON string
 	var active int
 	var firstSeen, lastSeen int64
@@ -400,7 +408,7 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 		&e.ConsecutiveFailures, &e.ConsecutiveSuccesses,
 		&lastCheckAt, &lastResponseTimeMs, &lastHTTPStatus, &lastError,
 		&configJSON, &active, &firstSeen, &lastSeen,
-		&source, &name,
+		&source, &name, &agentID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -429,6 +437,9 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	}
 	if lastError.Valid {
 		e.LastError = lastError.String
+	}
+	if agentID.Valid {
+		e.AgentID = &agentID.String
 	}
 
 	// Parse config JSON

@@ -115,6 +115,14 @@ func (s *ContainerStore) ListContainers(ctx context.Context, opts container.List
 		query += ` AND state=?`
 		args = append(args, opts.StateFilter)
 	}
+	if opts.AgentFilter != nil {
+		if *opts.AgentFilter == "local" {
+			query += ` AND agent_id IS NULL`
+		} else {
+			query += ` AND agent_id=?`
+			args = append(args, *opts.AgentFilter)
+		}
+	}
 
 	query += ` ORDER BY name ASC`
 

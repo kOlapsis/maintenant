@@ -18,6 +18,7 @@ import { deleteCertificate } from '@/services/certificateApi'
 import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
+import AgentBadge from './AgentBadge.vue'
 
 const props = defineProps<{
   certificate: CertMonitor
@@ -103,6 +104,7 @@ async function handleDelete() {
         <p class="mt-0.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
           :{{ certificate.port }}
         </p>
+        <AgentBadge v-if="certificate.agent_id" :agent-id="certificate.agent_id" class="mt-1" />
       </div>
       <div class="ml-2 flex items-center gap-1.5">
         <span
