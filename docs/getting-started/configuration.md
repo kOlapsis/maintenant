@@ -28,6 +28,7 @@ maintenant is configured entirely through environment variables. No configuratio
 | `MAINTENANT_SMTP_PASSWORD` | — | SMTP authentication password. |
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address for email notifications. |
 | `MAINTENANT_DISABLE_TELEMETRY` | unset (telemetry on) | Disable anonymous install telemetry. Truthy values: `1`, `t`, `true`, `y`, `yes`, `on` (case-insensitive). |
+| `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` | unset | **Development only.** Bypass the HTTPS requirement and private-IP SSRF protection for alert channels and webhook subscriptions. Allows `http://` URLs and internal Docker hostnames. Never set in production. |
 
 ### Example `.env` File
 
@@ -76,6 +77,10 @@ MAINTENANT_BASE_URL=https://maintenant.example.com
 
 # Disable anonymous install telemetry (truthy: 1, true, yes, on)
 # MAINTENANT_DISABLE_TELEMETRY=1
+
+# [DEV ONLY] Allow http:// URLs and private IPs for webhook/channel targets.
+# Never set in production — disables SSRF protection.
+# MAINTENANT_ALLOW_PRIVATE_WEBHOOKS=true
 ```
 
 ---
