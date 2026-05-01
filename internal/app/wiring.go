@@ -129,6 +129,10 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		if al == nil {
 			return "", nil
 		}
+		entityName := al.ContainerName
+		if entityName == "" {
+			entityName = ep.Name
+		}
 		if al.Type == "alert" {
 			sendAlert(alert.Event{
 				Source:     alert.SourceEndpoint,
@@ -137,7 +141,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				Message:    fmt.Sprintf("Endpoint %s failed %d consecutive checks", al.Target, al.Failures),
 				EntityType: "endpoint",
 				EntityID:   al.EndpointID,
-				EntityName: al.ContainerName,
+				EntityName: entityName,
 				Details: map[string]any{
 					"target":     al.Target,
 					"failures":   al.Failures,
@@ -164,7 +168,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			Message:    fmt.Sprintf("Endpoint %s recovered after %d consecutive successes", al.Target, al.Successes),
 			EntityType: "endpoint",
 			EntityID:   al.EndpointID,
-			EntityName: al.ContainerName,
+			EntityName: entityName,
 			Details: map[string]any{
 				"target":    al.Target,
 				"successes": al.Successes,
