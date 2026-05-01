@@ -52,6 +52,9 @@ type Config struct {
 	// Telemetry
 	DisableTelemetry bool
 
+	// Dev
+	AllowPrivateWebhooks bool
+
 	// Build info (injected via ldflags)
 	Version      string
 	Commit       string
@@ -115,6 +118,7 @@ func ConfigFromEnv() Config {
 	}
 
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
+	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
 	return cfg
 }

@@ -104,10 +104,11 @@ type HandlerDeps struct {
 	SwarmReplicaChecker  *swarm.ReplicaHealthChecker
 
 	// HTTP config
-	CORSOrigins      string // comma-separated origins or "*"
-	MaxBodySize      int64  // 0 = 1MB default
-	BuildVersion     string
-	OrganisationName string
+	CORSOrigins          string // comma-separated origins or "*"
+	MaxBodySize          int64  // 0 = 1MB default
+	BuildVersion         string
+	OrganisationName     string
+	AllowPrivateWebhooks bool // dev only: skip HTTPS + SSRF check on webhook URLs
 }
 
 // Router sets up the /api/v1 route group.
@@ -143,7 +144,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Webhook management
 	if d.WebhookStore != nil {
-		wh := NewWebhookHandler(d.WebhookStore, d.Logger)
+		wh := NewWebhookHandler(d.WebhookStore, d.Logger, d.AllowPrivateWebhooks)
 		r.mux.HandleFunc("GET /api/v1/webhooks", wh.HandleListWebhooks)
 		r.mux.HandleFunc("POST /api/v1/webhooks", wh.HandleCreateWebhook)
 		r.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", wh.HandleDeleteWebhook)
@@ -221,7 +222,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Alert engine endpoints
 	if d.AlertStore != nil {
-		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker)
+		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks)
 		// Alert history
 		r.mux.HandleFunc("GET /api/v1/alerts", ah.HandleListAlerts)
 		r.mux.HandleFunc("GET /api/v1/alerts/active", ah.HandleGetActiveAlerts)

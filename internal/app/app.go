@@ -444,10 +444,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SwarmCrashLoop:      a.swarmCrashLoop,
 		SwarmReplicaChecker: a.swarmReplicaChecker,
 		// HTTP config
-		CORSOrigins:      cfg.CORSOrigins,
-		MaxBodySize:      cfg.MaxBodySize,
-		BuildVersion:     cfg.Version,
-		OrganisationName: cfg.OrgName,
+		CORSOrigins:          cfg.CORSOrigins,
+		MaxBodySize:          cfg.MaxBodySize,
+		BuildVersion:         cfg.Version,
+		OrganisationName:     cfg.OrgName,
+		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 	})
 
 	// --- Rate limiter ---

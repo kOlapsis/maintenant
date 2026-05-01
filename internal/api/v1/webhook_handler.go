@@ -26,13 +26,14 @@ import (
 
 // WebhookHandler handles webhook subscription CRUD endpoints.
 type WebhookHandler struct {
-	store  webhook.WebhookSubscriptionStore
-	logger *slog.Logger
+	store                webhook.WebhookSubscriptionStore
+	logger               *slog.Logger
+	allowPrivateWebhooks bool
 }
 
 // NewWebhookHandler creates a new webhook handler.
-func NewWebhookHandler(store webhook.WebhookSubscriptionStore, logger *slog.Logger) *WebhookHandler {
-	return &WebhookHandler{store: store, logger: logger}
+func NewWebhookHandler(store webhook.WebhookSubscriptionStore, logger *slog.Logger, allowPrivateWebhooks bool) *WebhookHandler {
+	return &WebhookHandler{store: store, logger: logger, allowPrivateWebhooks: allowPrivateWebhooks}
 }
 
 // HandleListWebhooks handles GET /api/v1/webhooks.
@@ -72,8 +73,8 @@ func (h *WebhookHandler) HandleCreateWebhook(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Validate URL (must be HTTPS)
-	if req.URL == "" || !strings.HasPrefix(req.URL, "https://") {
+	// Validate URL (must be HTTPS unless AllowPrivateWebhooks is set for local dev).
+	if !h.allowPrivateWebhooks && (req.URL == "" || !strings.HasPrefix(req.URL, "https://")) {
 		WriteError(w, http.StatusBadRequest, "invalid_input", "URL must be a valid HTTPS URL")
 		return
 	}
