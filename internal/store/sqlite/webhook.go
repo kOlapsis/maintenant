@@ -38,7 +38,7 @@ func NewWebhookStore(d *DB) *WebhookStoreImpl {
 
 func (s *WebhookStoreImpl) List(ctx context.Context) ([]*webhook.WebhookSubscription, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, user_id, name, url, secret, event_types, is_active,
+		`SELECT id, name, url, secret, event_types, is_active,
 		        last_delivery_status, last_delivery_at, failure_count, created_at
 		 FROM webhook_subscriptions ORDER BY created_at DESC`)
 	if err != nil {
@@ -62,7 +62,7 @@ func (s *WebhookStoreImpl) List(ctx context.Context) ([]*webhook.WebhookSubscrip
 
 func (s *WebhookStoreImpl) ListActive(ctx context.Context) ([]*webhook.WebhookSubscription, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, user_id, name, url, secret, event_types, is_active,
+		`SELECT id, name, url, secret, event_types, is_active,
 		        last_delivery_status, last_delivery_at, failure_count, created_at
 		 FROM webhook_subscriptions WHERE is_active = 1`)
 	if err != nil {
@@ -85,7 +85,7 @@ func (s *WebhookStoreImpl) ListActive(ctx context.Context) ([]*webhook.WebhookSu
 
 func (s *WebhookStoreImpl) GetByID(ctx context.Context, id string) (*webhook.WebhookSubscription, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, user_id, name, url, secret, event_types, is_active,
+		`SELECT id, name, url, secret, event_types, is_active,
 		        last_delivery_status, last_delivery_at, failure_count, created_at
 		 FROM webhook_subscriptions WHERE id = ?`, id)
 
@@ -96,7 +96,7 @@ func (s *WebhookStoreImpl) GetByID(ctx context.Context, id string) (*webhook.Web
 	var lastDeliveryAt sql.NullString
 	var createdAt string
 
-	err := row.Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.URL, &secret,
+	err := row.Scan(&sub.ID, &sub.Name, &sub.URL, &secret,
 		&eventTypesStr, &sub.IsActive, &lastStatus, &lastDeliveryAt,
 		&sub.FailureCount, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -116,15 +116,15 @@ func (s *WebhookStoreImpl) Create(ctx context.Context, sub *webhook.WebhookSubsc
 		return fmt.Errorf("marshal event_types: %w", err)
 	}
 
-	var secretVal interface{}
+	var secretVal any
 	if sub.Secret != "" {
 		secretVal = sub.Secret
 	}
 
 	_, err = s.writer.Exec(ctx,
-		`INSERT INTO webhook_subscriptions (id, user_id, name, url, secret, event_types, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sub.ID, sub.UserID, sub.Name, sub.URL, secretVal,
+		`INSERT INTO webhook_subscriptions (id, name, url, secret, event_types, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		sub.ID, sub.Name, sub.URL, secretVal,
 		string(eventTypesJSON), sub.CreatedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("create webhook: %w", err)
@@ -172,7 +172,7 @@ func scanWebhookRow(rows *sql.Rows) (*webhook.WebhookSubscription, error) {
 	var lastDeliveryAt sql.NullString
 	var createdAt string
 
-	err := rows.Scan(&sub.ID, &sub.UserID, &sub.Name, &sub.URL, &secret,
+	err := rows.Scan(&sub.ID, &sub.Name, &sub.URL, &secret,
 		&eventTypesStr, &sub.IsActive, &lastStatus, &lastDeliveryAt,
 		&sub.FailureCount, &createdAt)
 	if err != nil {
