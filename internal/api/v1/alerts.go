@@ -28,21 +28,23 @@ import (
 
 // AlertHandler handles alert-related HTTP endpoints.
 type AlertHandler struct {
-	alertStore   alert.AlertStore
-	channelStore alert.ChannelStore
-	silenceStore alert.SilenceStore
-	notifier     *alert.Notifier
-	broker       *SSEBroker
+	alertStore           alert.AlertStore
+	channelStore         alert.ChannelStore
+	silenceStore         alert.SilenceStore
+	notifier             *alert.Notifier
+	broker               *SSEBroker
+	allowPrivateWebhooks bool
 }
 
 // NewAlertHandler creates a new alert handler.
-func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker) *AlertHandler {
+func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool) *AlertHandler {
 	return &AlertHandler{
-		alertStore:   alertStore,
-		channelStore: channelStore,
-		silenceStore: silenceStore,
-		notifier:     notifier,
-		broker:       broker,
+		alertStore:           alertStore,
+		channelStore:         channelStore,
+		silenceStore:         silenceStore,
+		notifier:             notifier,
+		broker:               broker,
+		allowPrivateWebhooks: allowPrivateWebhooks,
 	}
 }
 
@@ -237,29 +239,32 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Validate webhook URL: require HTTPS and reject internal/private IPs.
+	// Both checks are skipped when AllowPrivateWebhooks is set (local dev only).
 	parsed, err := url.Parse(input.URL)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid URL format")
 		return
 	}
-	if parsed.Scheme != "https" {
-		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must use https scheme")
-		return
-	}
-	hostname := parsed.Hostname()
-	addrs, err := net.DefaultResolver.LookupHost(r.Context(), hostname)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "cannot resolve webhook hostname: "+hostname)
-		return
-	}
-	for _, addr := range addrs {
-		ip := net.ParseIP(addr)
-		if ip == nil {
-			continue
-		}
-		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must not resolve to a private or internal IP address")
+	if !h.allowPrivateWebhooks {
+		if parsed.Scheme != "https" {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must use https scheme")
 			return
+		}
+		hostname := parsed.Hostname()
+		addrs, err := net.DefaultResolver.LookupHost(r.Context(), hostname)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "cannot resolve webhook hostname: "+hostname)
+			return
+		}
+		for _, addr := range addrs {
+			ip := net.ParseIP(addr)
+			if ip == nil {
+				continue
+			}
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() {
+				WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must not resolve to a private or internal IP address")
+				return
+			}
 		}
 	}
 

@@ -14,16 +14,29 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 )
+
+// ErrAgentRevokedServer is returned by RunWithReconnect when the server revokes the agent.
+// The caller should exit without retrying.
+var ErrAgentRevokedServer = errors.New("agent revoked by server")
 
 // Client wraps the gRPC IngestClient with connection lifecycle management.
 type Client struct {
@@ -76,18 +89,208 @@ func (c *Client) Register(ctx context.Context, req *agentpb.RegisterRequest) (*a
 	return resp, nil
 }
 
-// Push opens the bidirectional streaming RPC.
-func (c *Client) Push(ctx context.Context) (agentpb.Ingest_PushClient, error) {
-	stream, err := c.client.Push(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("Push: %w", err)
-	}
-	return stream, nil
-}
-
 // Close closes the underlying gRPC connection.
 func (c *Client) Close() error {
 	return c.conn.Close()
+}
+
+// PushStream wraps an authenticated bidirectional gRPC stream for pushing agent events.
+// Multiple goroutines may call Send concurrently.
+type PushStream struct {
+	mu     sync.Mutex
+	stream agentpb.Ingest_PushClient
+	seq    atomic.Uint64
+	recvCh chan error
+}
+
+// Send wraps evt in a ClientMessage and delivers it, assigning a monotonic seq.
+func (ps *PushStream) Send(evt *agentpb.AgentEvent) error {
+	evt.Seq = ps.seq.Add(1)
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.stream.Send(&agentpb.ClientMessage{
+		Payload: &agentpb.ClientMessage_Event{Event: evt},
+	})
+}
+
+// Close signals the end of the send side of the stream.
+func (ps *PushStream) Close() {
+	_ = ps.stream.CloseSend()
+}
+
+// Wait blocks until the receive goroutine exits and returns its error (nil on clean close).
+func (ps *PushStream) Wait() error {
+	return <-ps.recvCh
+}
+
+func (ps *PushStream) recvLoop(logger *slog.Logger) {
+	var retErr error
+	for {
+		msg, err := ps.stream.Recv()
+		if err != nil {
+			retErr = err
+			break
+		}
+		if errMsg := msg.GetError(); errMsg != nil && logger != nil {
+			logger.Warn("agent: server error",
+				"code", errMsg.GetCode(),
+				"message", errMsg.GetMessage(),
+				"retry_after_ms", errMsg.GetRetryAfterMs(),
+			)
+		}
+	}
+	ps.recvCh <- retErr
+}
+
+// DialPush opens the bidirectional Push stream, performs the Ed25519 auth handshake,
+// and returns a PushStream ready to send events.
+func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger) (*PushStream, error) {
+	stream, err := c.client.Push(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open Push stream: %w", err)
+	}
+
+	// Phase 1: receive auth challenge from server.
+	msg, err := stream.Recv()
+	if err != nil {
+		return nil, fmt.Errorf("recv auth challenge: %w", err)
+	}
+	challengePayload, ok := msg.GetPayload().(*agentpb.ServerMessage_Challenge)
+	if !ok {
+		return nil, fmt.Errorf("expected AuthChallenge as first server message")
+	}
+	nonce := challengePayload.Challenge.GetNonce()
+
+	// Phase 2: build and sign the payload.
+	// Payload (byte-exact, mirrors agentserver/auth.go Verify):
+	// nonce(32) || agent_uuid_bytes(16) || timestamp_be64(8)
+	now := time.Now().Unix()
+	payload, err := buildSignPayload(nonce, id.AgentID, now)
+	if err != nil {
+		return nil, fmt.Errorf("build sign payload: %w", err)
+	}
+
+	// Phase 3: send AuthResponse.
+	if err := stream.Send(&agentpb.ClientMessage{
+		Payload: &agentpb.ClientMessage_Auth{
+			Auth: &agentpb.AuthResponse{
+				AgentId:   id.AgentID,
+				Timestamp: now,
+				Signature: id.Sign(payload),
+			},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("send auth response: %w", err)
+	}
+
+	ps := &PushStream{
+		stream: stream,
+		recvCh: make(chan error, 1),
+	}
+	go ps.recvLoop(logger)
+
+	return ps, nil
+}
+
+// buildSignPayload constructs the Ed25519 signing payload matching agentserver/auth.go Verify.
+func buildSignPayload(nonce []byte, agentID string, ts int64) ([]byte, error) {
+	clean := strings.ReplaceAll(agentID, "-", "")
+	if len(clean) != 32 {
+		return nil, fmt.Errorf("invalid agent ID: expected 32 hex chars after stripping dashes, got %d", len(clean))
+	}
+	uuidBytes, err := hex.DecodeString(clean)
+	if err != nil {
+		return nil, fmt.Errorf("decode agent ID hex: %w", err)
+	}
+	payload := make([]byte, 56)
+	copy(payload[0:32], nonce)
+	copy(payload[32:48], uuidBytes)
+	binary.BigEndian.PutUint64(payload[48:56], uint64(ts))
+	return payload, nil
+}
+
+// RunWithReconnect runs onStream with exponential backoff reconnect.
+// Returns nil when ctx is cancelled, ErrAgentRevokedServer when the server revokes the agent.
+// Backoff: min(60s, 1s * 2^attempt) ±25% jitter. Attempt resets to 0 if stream was stable >30s.
+func RunWithReconnect(
+	ctx context.Context,
+	c *Client,
+	id *Identity,
+	logger *slog.Logger,
+	onStream func(ctx context.Context, stream *PushStream) error,
+) error {
+	const (
+		base   = time.Second
+		capDur = 60 * time.Second
+		stable = 30 * time.Second
+	)
+
+	attempt := 0
+	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		start := time.Now()
+		stream, dialErr := c.DialPush(ctx, id, logger)
+		if dialErr != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			if isRevokedErr(dialErr) {
+				logger.Error("agent: revoked during dial, exiting", "err", dialErr)
+				return ErrAgentRevokedServer
+			}
+			logger.Warn("agent: push dial failed", "err", dialErr, "attempt", attempt)
+		} else {
+			streamErr := onStream(ctx, stream)
+			stream.Close()
+			_ = stream.Wait()
+
+			elapsed := time.Since(start)
+			if elapsed > stable {
+				attempt = 0
+			} else {
+				attempt++
+				if attempt > 6 {
+					attempt = 6
+				}
+			}
+
+			if ctx.Err() != nil {
+				return nil
+			}
+			if isRevokedErr(streamErr) {
+				logger.Error("agent: revoked by server, exiting", "err", streamErr)
+				return ErrAgentRevokedServer
+			}
+			if streamErr != nil {
+				logger.Warn("agent: stream closed, will reconnect", "err", streamErr, "attempt", attempt)
+			}
+		}
+
+		// Compute backoff with ±25% jitter.
+		raw := min(capDur, base*time.Duration(1<<uint(attempt)))
+		jitter := float64(raw) * (0.75 + rand.Float64()*0.5) //nolint:gosec // non-crypto jitter
+		delay := time.Duration(jitter)
+
+		logger.Info("agent: reconnecting", "delay", delay.Round(time.Millisecond))
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(delay):
+		}
+	}
+}
+
+// isRevokedErr reports whether err is a gRPC PermissionDenied "agent_revoked" status.
+func isRevokedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	st, ok := grpcstatus.FromError(err)
+	return ok && st.Code() == codes.PermissionDenied && st.Message() == "agent_revoked"
 }
 
 // parseServerURL extracts the host:port target and whether TLS should be used.
@@ -103,7 +306,7 @@ func parseServerURL(u string) (target string, useTLS bool, err error) {
 	case u == "":
 		return "", false, fmt.Errorf("server URL is empty")
 	default:
-		// Bare host:port — assume TLS
+		// Bare host:port — assume TLS.
 		return u, true, nil
 	}
 }

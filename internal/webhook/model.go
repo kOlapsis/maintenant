@@ -34,7 +34,6 @@ const MaxConsecutiveFailures = 10
 // WebhookSubscription represents a registered webhook URL.
 type WebhookSubscription struct {
 	ID                 string     `json:"id"`
-	UserID             string     `json:"user_id"`
 	Name               string     `json:"name"`
 	URL                string     `json:"url"`
 	Secret             string     `json:"secret,omitempty"`

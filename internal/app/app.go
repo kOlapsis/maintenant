@@ -462,10 +462,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		GRPCPublicURL: cfg.MultiHost.GRPCPublicURL,
 		GRPCListen:    cfg.MultiHost.GRPCListen,
 		// HTTP config
-		CORSOrigins:      cfg.CORSOrigins,
-		MaxBodySize:      cfg.MaxBodySize,
-		BuildVersion:     cfg.Version,
-		OrganisationName: cfg.OrgName,
+		CORSOrigins:          cfg.CORSOrigins,
+		MaxBodySize:          cfg.MaxBodySize,
+		BuildVersion:         cfg.Version,
+		OrganisationName:     cfg.OrgName,
+		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 	})
 
 	// --- Rate limiter ---

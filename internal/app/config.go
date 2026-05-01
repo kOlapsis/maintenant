@@ -56,6 +56,9 @@ type Config struct {
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
 
+	// Dev
+	AllowPrivateWebhooks bool
+
 	// Build info (injected via ldflags)
 	Version      string
 	Commit       string
@@ -138,6 +141,7 @@ func ConfigFromEnv() Config {
 	}
 
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
+	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
 	cfg.MultiHost = MultiHostConfig{
 		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_PUBLIC_URL"),
