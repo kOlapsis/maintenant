@@ -23,11 +23,15 @@ const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
-const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'endpoint', 'heartbeat', 'certificate'])
+const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
 
 function openEntityDetail(alert: Alert) {
   if (alert.source === 'update') {
     router.push({ name: 'updates', query: { container: alert.entity_name } })
+    return
+  }
+  if (alert.entity_type === 'endpoint' && alert.entity_id) {
+    router.push({ name: 'endpoints' })
     return
   }
   if (!alert.entity_id || !ENTITY_TYPES.has(alert.entity_type)) return

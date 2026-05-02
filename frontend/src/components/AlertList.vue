@@ -13,10 +13,12 @@
 
 <script setup lang="ts">
 import { ref, watch, inject } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import type { Alert, ListAlertsParams } from '@/services/alertApi'
 
+const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
@@ -60,9 +62,13 @@ const statusColors: Record<string, { bg: string; color: string }> = {
   silenced: { bg: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)' },
 }
 
-const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'endpoint', 'heartbeat', 'certificate'])
+const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
 
 function openEntityDetail(alert: Alert) {
+  if (alert.entity_type === 'endpoint' && alert.entity_id) {
+    router.push({ name: 'endpoints' })
+    return
+  }
   if (!alert.entity_id || !ENTITY_TYPES.has(alert.entity_type)) return
   detailSlideOver.openDetail(alert.entity_type as EntityType, alert.entity_id)
 }
