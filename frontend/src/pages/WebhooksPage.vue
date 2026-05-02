@@ -31,6 +31,8 @@
       :doc-href="docUrl('api/reference/#webhooks')"
     >
       Webhook subscriptions POST a JSON payload to the URL you configure whenever a matching event occurs (alerts, container state, endpoint status, certificate expiry&hellip;). Filter with event types, use the Test button to verify your receiver, and failing deliveries are retried with exponential backoff.
+      <br /><br />
+      <strong>Using Discord, Slack, or Microsoft Teams?</strong> These platforms expect a specific payload format — use <router-link :to="{ name: 'alerts' }" class="underline">Notification Channels</router-link> instead.
     </FeatureHint>
 
     <div v-if="loading" class="text-sm" style="color: var(--pb-text-muted)">Loading...</div>
