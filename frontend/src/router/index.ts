@@ -46,7 +46,7 @@ const router = createRouter({
         { path: 'endpoints', name: 'endpoints', component: EndpointsPage },
         { path: 'heartbeats', name: 'heartbeats', component: HeartbeatsPage },
         { path: 'certificates', name: 'certificates', component: CertificatesPage },
-        { path: 'alerts', name: 'alerts', component: AlertsPage },
+        { path: 'alerts/:tab(history|channels|silence)?', name: 'alerts', component: AlertsPage },
         { path: 'status-admin', name: 'status-admin', component: StatusAdminPage },
         { path: 'webhooks', name: 'webhooks', component: WebhooksPage },
         { path: 'updates', name: 'updates', component: UpdatesPage },

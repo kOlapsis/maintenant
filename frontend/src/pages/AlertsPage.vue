@@ -12,7 +12,8 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import ActiveAlerts from '@/components/ActiveAlerts.vue'
 import AlertList from '@/components/AlertList.vue'
@@ -21,8 +22,16 @@ import SilenceRuleManager from '@/components/SilenceRuleManager.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
 
+type Tab = 'history' | 'channels' | 'silence'
+
+const route = useRoute()
+const router = useRouter()
 const store = useAlertsStore()
-const activeTab = ref<'history' | 'channels' | 'silence'>('history')
+
+const activeTab = computed<Tab>({
+  get: () => (route.params.tab as Tab) || 'history',
+  set: (tab: Tab) => router.replace({ name: 'alerts', params: { tab } }),
+})
 
 onMounted(() => {
   store.fetchAlerts()
