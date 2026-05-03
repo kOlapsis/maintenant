@@ -12,12 +12,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
-  listGroups,
   listComponents,
   listIncidents,
   listMaintenance,
   listSubscribers,
-  type ComponentGroup,
   type StatusComponent,
   type Incident,
   type MaintenanceWindow,
@@ -28,10 +26,6 @@ import { useEdition } from '@/composables/useEdition'
 
 export const useStatusAdminStore = defineStore('statusAdmin', () => {
   const { hasFeature } = useEdition()
-  // Groups
-  const groups = ref<ComponentGroup[]>([])
-  const groupsLoading = ref(false)
-
   // Components
   const components = ref<StatusComponent[]>([])
   const componentsLoading = ref(false)
@@ -52,17 +46,6 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
   const subscribersLoading = ref(false)
 
   const error = ref<string | null>(null)
-
-  async function fetchGroups() {
-    groupsLoading.value = true
-    try {
-      groups.value = await listGroups()
-    } catch (e) {
-      console.error('Failed to fetch groups:', e)
-    } finally {
-      groupsLoading.value = false
-    }
-  }
 
   async function fetchComponents() {
     componentsLoading.value = true
@@ -167,8 +150,6 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
   }
 
   return {
-    groups,
-    groupsLoading,
     components,
     componentsLoading,
     incidents,
@@ -181,7 +162,6 @@ export const useStatusAdminStore = defineStore('statusAdmin', () => {
     subscriberConfirmed,
     subscribersLoading,
     error,
-    fetchGroups,
     fetchComponents,
     fetchIncidents,
     fetchMaintenance,

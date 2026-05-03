@@ -1,6 +1,6 @@
 # Public Status Page
 
-Give your users a clean status page. Component groups, incident management with timeline updates, scheduled maintenance windows.
+Give your users a clean status page. Incident management with timeline updates, scheduled maintenance windows.
 
 <div class="screenshot-pair">
   <img src="../../screen-captures/7-status-page-all-ok.png" alt="Status Page — All Systems Operational" />
@@ -15,31 +15,15 @@ maintenant serves a standalone public status page at `/status/`. It is a server-
 
 The status page displays:
 
-- **Component groups** — Logical groupings of services (e.g., "API", "Database", "Frontend")
 - **Component status** — Operational, degraded, partial outage, major outage
 - **Active incidents** — Current issues with timeline updates
 - **Scheduled maintenance** — Upcoming planned downtime windows
 
 ---
 
-## Component Groups
+## Components
 
 ![Status Page Configuration](../screen-captures/6-status-page-config.png)
-
-Organize your monitored services into logical groups:
-
-```bash
-# Create a group
-POST /api/v1/status/groups
-{
-  "name": "Core Services",
-  "sort_order": 1
-}
-```
-
----
-
-## Components
 
 Link monitored resources to status page components. Each component maps to a container, endpoint, heartbeat, or certificate monitor.
 
@@ -47,7 +31,6 @@ Link monitored resources to status page components. Each component maps to a con
 # Create a component linked to a container
 POST /api/v1/status/components
 {
-  "group_id": 1,
   "name": "API Server",
   "monitor_type": "container",
   "monitor_id": 42,
@@ -159,10 +142,6 @@ POST /status/subscribe
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/status/groups` | List all component groups |
-| `POST` | `/api/v1/status/groups` | Create a group |
-| `PUT` | `/api/v1/status/groups/{id}` | Update a group |
-| `DELETE` | `/api/v1/status/groups/{id}` | Delete a group |
 | `GET` | `/api/v1/status/components` | List all components |
 | `POST` | `/api/v1/status/components` | Create a component |
 | `PUT` | `/api/v1/status/components/{id}` | Update a component |

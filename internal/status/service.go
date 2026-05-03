@@ -22,15 +22,23 @@ import (
 // MonitorStatusProvider resolves the current health status of a specific monitor.
 type MonitorStatusProvider func(ctx context.Context, monitorType string, monitorID int64) string
 
+// MonitorPopulationProvider returns all monitor refs of a given type (used by match-all components).
+type MonitorPopulationProvider func(ctx context.Context, monitorType string) []MonitorRef
+
+// MonitorNameProvider resolves the display name of a specific monitor.
+type MonitorNameProvider func(ctx context.Context, monitorType string, monitorID int64) string
+
 // Deps holds all dependencies for the status Service.
 type Deps struct {
-	Components      ComponentStore        // required
-	Logger          *slog.Logger          // required
-	Incidents       IncidentStore         // optional — nil-safe
-	Maintenance     MaintenanceStore      // optional — nil-safe
-	MonitorStatus   MonitorStatusProvider // optional — nil-safe
-	Broadcaster     func(eventType string, data interface{}) // optional — nil-safe
-	Subscribers     *SubscriberService    // optional — nil-safe
+	Components       ComponentStore        // required
+	Logger           *slog.Logger          // required
+	Incidents        IncidentStore         // optional — nil-safe
+	Maintenance      MaintenanceStore      // optional — nil-safe
+	MonitorStatus    MonitorStatusProvider // optional — nil-safe
+	MonitorPopulation MonitorPopulationProvider // optional — nil-safe
+	MonitorName      MonitorNameProvider   // optional — nil-safe
+	Broadcaster      func(eventType string, data any) // optional — nil-safe
+	Subscribers      *SubscriberService    // optional — nil-safe
 }
 
 // Service encapsulates public status page business logic.
@@ -39,10 +47,12 @@ type Service struct {
 	incidents   IncidentStore
 	maintenance MaintenanceStore
 
-	monitorStatus MonitorStatusProvider
-	broadcaster   func(eventType string, data interface{})
-	subscribers   *SubscriberService
-	smtpConfig    *SmtpConfig
+	monitorStatus     MonitorStatusProvider
+	monitorPopulation MonitorPopulationProvider
+	monitorName       MonitorNameProvider
+	broadcaster       func(eventType string, data any)
+	subscribers       *SubscriberService
+	smtpConfig        *SmtpConfig
 
 	logger *slog.Logger
 }
@@ -56,13 +66,15 @@ func NewService(d Deps) *Service {
 		panic("status.NewService: Logger is required")
 	}
 	return &Service{
-		components:    d.Components,
-		logger:        d.Logger,
-		incidents:     d.Incidents,
-		maintenance:   d.Maintenance,
-		monitorStatus: d.MonitorStatus,
-		broadcaster:   d.Broadcaster,
-		subscribers:   d.Subscribers,
+		components:        d.Components,
+		logger:            d.Logger,
+		incidents:         d.Incidents,
+		maintenance:       d.Maintenance,
+		monitorStatus:     d.MonitorStatus,
+		monitorPopulation: d.MonitorPopulation,
+		monitorName:       d.MonitorName,
+		broadcaster:       d.Broadcaster,
+		subscribers:       d.Subscribers,
 	}
 }
 
@@ -71,8 +83,18 @@ func (s *Service) SetMonitorStatusProvider(fn MonitorStatusProvider) {
 	s.monitorStatus = fn
 }
 
+// SetMonitorPopulationProvider sets the function used to enumerate all monitors of a given type.
+func (s *Service) SetMonitorPopulationProvider(fn MonitorPopulationProvider) {
+	s.monitorPopulation = fn
+}
+
+// SetMonitorNameProvider sets the function used to resolve monitor display names.
+func (s *Service) SetMonitorNameProvider(fn MonitorNameProvider) {
+	s.monitorName = fn
+}
+
 // SetBroadcaster sets the function used to broadcast SSE events.
-func (s *Service) SetBroadcaster(fn func(eventType string, data interface{})) {
+func (s *Service) SetBroadcaster(fn func(eventType string, data any)) {
 	s.broadcaster = fn
 }
 
@@ -109,7 +131,7 @@ func (s *Service) notifySubscribers(ctx context.Context, subject, message string
 }
 
 // broadcast sends an event if a broadcaster is configured.
-func (s *Service) broadcast(eventType string, data interface{}) {
+func (s *Service) broadcast(eventType string, data any) {
 	if s.broadcaster != nil {
 		s.broadcaster(eventType, data)
 	}
@@ -117,18 +139,81 @@ func (s *Service) broadcast(eventType string, data interface{}) {
 
 // --- Status Derivation ---
 
+// ComputeAggregateStatus applies the fractional aggregation rule over a list of monitor states.
+// Empty list → operational (vacuous case).
+// All major_outage → major_outage.
+// Any major_outage + any non-major → partial_outage.
+// No major_outage, any partial_outage → partial_outage (pass-through).
+// No major_outage, no partial_outage, any degraded → degraded.
+// All operational (or empty string treated as operational) → operational.
+func ComputeAggregateStatus(states []string) string {
+	if len(states) == 0 {
+		return StatusOperational
+	}
+	major := 0
+	hasPartial := false
+	hasNonOperational := false
+	total := len(states)
+	for _, st := range states {
+		switch st {
+		case StatusMajorOutage:
+			major++
+			hasNonOperational = true
+		case StatusPartialOutage:
+			hasPartial = true
+			hasNonOperational = true
+		case StatusDegraded, StatusUnderMaint:
+			hasNonOperational = true
+		}
+	}
+	if major == total {
+		return StatusMajorOutage
+	}
+	if major > 0 {
+		return StatusPartialOutage
+	}
+	if hasPartial {
+		return StatusPartialOutage
+	}
+	if hasNonOperational {
+		return StatusDegraded
+	}
+	return StatusOperational
+}
+
 // DeriveComponentStatus computes the effective status for a single component.
 func (s *Service) DeriveComponentStatus(ctx context.Context, c *Component) string {
 	if c.StatusOverride != nil {
 		return *c.StatusOverride
 	}
-	if s.monitorStatus != nil {
-		derived := s.monitorStatus(ctx, c.MonitorType, c.MonitorID)
-		if derived != "" {
-			return derived
+
+	var states []string
+
+	switch c.CompositionMode {
+	case CompositionMatchAll:
+		if s.monitorPopulation != nil {
+			refs := s.monitorPopulation(ctx, c.MatchAllType)
+			for _, ref := range refs {
+				if s.monitorStatus != nil {
+					st := s.monitorStatus(ctx, ref.Type, ref.ID)
+					states = append(states, st)
+				}
+			}
+		}
+	default: // explicit (and empty/legacy)
+		if len(c.Monitors) == 0 {
+			c.NeedsAttention = true
+			return StatusOperational
+		}
+		for _, ref := range c.Monitors {
+			if s.monitorStatus != nil {
+				st := s.monitorStatus(ctx, ref.Type, ref.ID)
+				states = append(states, st)
+			}
 		}
 	}
-	return StatusOperational
+
+	return ComputeAggregateStatus(states)
 }
 
 // Severity returns a numeric severity for status comparison (higher = worse).
@@ -185,17 +270,10 @@ func (s *Service) ComputeGlobalStatus(ctx context.Context) (string, string) {
 type PageData struct {
 	GlobalStatus    string
 	GlobalMessage   string
-	Groups          []GroupData
-	Ungrouped       []ComponentData
+	Components      []ComponentData
 	ActiveIncidents []Incident
 	RecentIncidents []Incident
 	Maintenance     []MaintenanceWindow
-}
-
-// GroupData holds a component group with its components for rendering.
-type GroupData struct {
-	Name       string
-	Components []ComponentData
 }
 
 // ComponentData holds a component with its effective status for rendering.
@@ -204,6 +282,7 @@ type ComponentData struct {
 	DisplayName     string
 	EffectiveStatus string
 	StatusLabel     string
+	Monitors        []MonitorRef
 }
 
 func statusLabel(s string) string {
@@ -232,41 +311,51 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 		return nil, err
 	}
 
-	groupMap := make(map[string]*GroupData)
-	var groupOrder []string
-	var ungrouped []ComponentData
+	var compData []ComponentData
 
 	for i := range components {
 		c := &components[i]
+		// Skip components that need attention (no monitors configured).
+		if c.NeedsAttention {
+			continue
+		}
+
 		effective := s.DeriveComponentStatus(ctx, c)
-		cd := ComponentData{
+
+		// Build per-monitor status breakdown.
+		var monitorRefs []MonitorRef
+		if c.CompositionMode == CompositionExplicit {
+			for _, ref := range c.Monitors {
+				mr := MonitorRef{Type: ref.Type, ID: ref.ID, Name: ref.Name}
+				if s.monitorStatus != nil {
+					mr.Status = s.monitorStatus(ctx, ref.Type, ref.ID)
+				}
+				monitorRefs = append(monitorRefs, mr)
+			}
+		} else if c.CompositionMode == CompositionMatchAll && s.monitorPopulation != nil {
+			refs := s.monitorPopulation(ctx, c.MatchAllType)
+			for _, ref := range refs {
+				mr := MonitorRef{Type: ref.Type, ID: ref.ID, Name: ref.Name}
+				if s.monitorStatus != nil {
+					mr.Status = s.monitorStatus(ctx, ref.Type, ref.ID)
+				}
+				monitorRefs = append(monitorRefs, mr)
+			}
+		}
+
+		compData = append(compData, ComponentData{
 			ID:              c.ID,
 			DisplayName:     c.DisplayName,
 			EffectiveStatus: effective,
 			StatusLabel:     statusLabel(effective),
-		}
-
-		if c.GroupName != "" {
-			if _, ok := groupMap[c.GroupName]; !ok {
-				groupMap[c.GroupName] = &GroupData{Name: c.GroupName}
-				groupOrder = append(groupOrder, c.GroupName)
-			}
-			groupMap[c.GroupName].Components = append(groupMap[c.GroupName].Components, cd)
-		} else {
-			ungrouped = append(ungrouped, cd)
-		}
-	}
-
-	var groups []GroupData
-	for _, name := range groupOrder {
-		groups = append(groups, *groupMap[name])
+			Monitors:        monitorRefs,
+		})
 	}
 
 	pd := &PageData{
 		GlobalStatus:  globalStatus,
 		GlobalMessage: globalMsg,
-		Groups:        groups,
-		Ungrouped:     ungrouped,
+		Components:    compData,
 	}
 
 	if s.incidents != nil {
@@ -297,20 +386,17 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 	return pd, nil
 }
 
-// NotifyMonitorChanged checks whether a status component is linked to the given
-// monitor and, if so, broadcasts the updated status to public SSE clients.
-// It also notifies any global components (monitor_id=0) of the same type.
+// NotifyMonitorChanged checks whether any status components are linked to the
+// given monitor and, if so, broadcasts updated statuses to public SSE clients.
 func (s *Service) NotifyMonitorChanged(ctx context.Context, monitorType string, monitorID int64) {
-	comp, err := s.components.GetComponentByMonitor(ctx, monitorType, monitorID)
-	if err == nil && comp != nil {
-		s.BroadcastComponentChange(ctx, comp)
+	comps, err := s.components.ListComponentsByMonitor(ctx, monitorType, monitorID)
+	if err != nil {
+		s.logger.Error("failed to list components by monitor", "error", err,
+			"monitor_type", monitorType, "monitor_id", monitorID)
+		return
 	}
-	// Also notify global components (monitor_id=0) that aggregate all monitors of this type.
-	globals, err := s.components.ListGlobalComponents(ctx, monitorType)
-	if err == nil {
-		for i := range globals {
-			s.BroadcastComponentChange(ctx, &globals[i])
-		}
+	for i := range comps {
+		s.BroadcastComponentChange(ctx, &comps[i])
 	}
 }
 
@@ -321,14 +407,23 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 		return
 	}
 
-	monitorType := evt.EntityType
-	monitorID := evt.EntityID
-
-	comp, err := s.components.GetComponentByMonitor(ctx, monitorType, monitorID)
-	if err != nil || comp == nil || !comp.AutoIncident {
-		s.logger.Debug("status: no auto-incident component", "monitor_type", monitorType, "monitor_id", monitorID)
+	comps, err := s.components.ListComponentsByMonitor(ctx, evt.EntityType, evt.EntityID)
+	if err != nil {
+		s.logger.Error("failed to list components by monitor for alert", "error", err,
+			"monitor_type", evt.EntityType, "monitor_id", evt.EntityID)
 		return
 	}
+
+	for _, comp := range comps {
+		if !comp.AutoIncident {
+			continue
+		}
+		s.handleAlertForComponent(ctx, evt, &comp)
+	}
+}
+
+func (s *Service) handleAlertForComponent(ctx context.Context, evt alert.Event, comp *Component) {
+	aggregateStatus := s.DeriveComponentStatus(ctx, comp)
 
 	existing, err := s.incidents.GetActiveIncidentByComponent(ctx, comp.ID)
 	if err != nil {
@@ -336,26 +431,37 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 		return
 	}
 
-	if evt.IsRecover {
+	// Skip if override is set.
+	if comp.StatusOverride != nil {
+		return
+	}
+
+	isNonOperational := aggregateStatus != StatusOperational
+
+	if evt.IsRecover && !isNonOperational {
 		if existing != nil {
 			upd := &IncidentUpdate{
 				IncidentID: existing.ID,
 				Status:     IncidentResolved,
-				Message:    "Auto-resolved: " + evt.Message,
+				Message:    "Auto-resolved: all monitors operational",
 				IsAuto:     true,
 			}
 			if _, err := s.incidents.CreateUpdate(ctx, upd); err != nil {
 				s.logger.Error("failed to auto-resolve incident", "error", err)
 				return
 			}
-			s.logger.Info("status: auto-incident resolved", "incident_id", existing.ID, "title", existing.Title)
-			s.broadcast(event.StatusIncidentResolved, map[string]interface{}{
+			s.logger.Info("status: auto-incident resolved", "incident_id", existing.ID)
+			s.broadcast(event.StatusIncidentResolved, map[string]any{
 				"id":    existing.ID,
 				"title": existing.Title,
 			})
 			s.notifySubscribers(ctx, "Resolved: "+existing.Title,
-				"<p>Incident <strong>"+existing.Title+"</strong> has been resolved.</p><p>"+evt.Message+"</p>")
+				"<p>Incident <strong>"+existing.Title+"</strong> has been resolved.</p>")
 		}
+		return
+	}
+
+	if !isNonOperational {
 		return
 	}
 
@@ -369,7 +475,7 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 		if _, err := s.incidents.CreateUpdate(ctx, upd); err != nil {
 			s.logger.Error("failed to add auto update", "error", err)
 		}
-		s.broadcast(event.StatusIncidentUpdated, map[string]interface{}{
+		s.broadcast(event.StatusIncidentUpdated, map[string]any{
 			"id":      existing.ID,
 			"status":  existing.Status,
 			"message": evt.Message,
@@ -396,16 +502,14 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 		return
 	}
 
-	s.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title, "severity", inc.Severity)
-
-	s.broadcast(event.StatusIncidentCreated, map[string]interface{}{
+	s.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title)
+	s.broadcast(event.StatusIncidentCreated, map[string]any{
 		"id":         incID,
 		"title":      inc.Title,
 		"severity":   inc.Severity,
 		"status":     inc.Status,
 		"components": []string{comp.DisplayName},
 	})
-
 	s.notifySubscribers(ctx, "["+inc.Severity+"] "+inc.Title,
 		"<p><strong>"+inc.Title+"</strong></p><p>Severity: "+inc.Severity+"</p><p>"+evt.Message+"</p>")
 }
@@ -413,15 +517,44 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 // BroadcastComponentChange notifies public SSE clients of a component status change.
 func (s *Service) BroadcastComponentChange(ctx context.Context, comp *Component) {
 	effective := s.DeriveComponentStatus(ctx, comp)
-	s.broadcast(event.StatusComponentChanged, map[string]interface{}{
+
+	var monitorsWithStatus []map[string]any
+	if comp.CompositionMode == CompositionExplicit && len(comp.Monitors) > 0 {
+		for _, ref := range comp.Monitors {
+			m := map[string]any{
+				"type": ref.Type,
+				"id":   ref.ID,
+				"name": ref.Name,
+			}
+			if s.monitorStatus != nil {
+				m["status"] = s.monitorStatus(ctx, ref.Type, ref.ID)
+			}
+			monitorsWithStatus = append(monitorsWithStatus, m)
+		}
+	} else if comp.CompositionMode == CompositionMatchAll && s.monitorPopulation != nil {
+		refs := s.monitorPopulation(ctx, comp.MatchAllType)
+		for _, ref := range refs {
+			m := map[string]any{
+				"type": ref.Type,
+				"id":   ref.ID,
+				"name": ref.Name,
+			}
+			if s.monitorStatus != nil {
+				m["status"] = s.monitorStatus(ctx, ref.Type, ref.ID)
+			}
+			monitorsWithStatus = append(monitorsWithStatus, m)
+		}
+	}
+
+	s.broadcast(event.StatusComponentChanged, map[string]any{
 		"component_id": comp.ID,
 		"name":         comp.DisplayName,
 		"status":       effective,
-		"group":        comp.GroupName,
+		"monitors":     monitorsWithStatus,
 	})
 
 	globalStatus, globalMsg := s.ComputeGlobalStatus(ctx)
-	s.broadcast(event.StatusGlobalChanged, map[string]interface{}{
+	s.broadcast(event.StatusGlobalChanged, map[string]any{
 		"status":  globalStatus,
 		"message": globalMsg,
 	})

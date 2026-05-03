@@ -193,7 +193,7 @@ Unified alerts across all monitoring sources. Webhook and Discord channels inclu
 
 ### Public Status Page
 
-Give your users a clean, real-time status page. Component groups, live SSE updates, severity aggregation across all monitors.
+Give your users a clean, real-time status page. Live SSE updates, severity aggregation across all monitors.
 
 > **[Pro](#pricing)** adds incident timelines and subscriber notifications (email + webhook) — turn outages into trust-building moments.
 
@@ -485,7 +485,7 @@ Full REST API under `/api/v1/` for automation and integration.
 | Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top`                         |
 | Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /silence`                             |
 | Webhooks     | `GET POST /webhooks` `POST /webhooks/{id}/test`                                                         |
-| Status Page  | `GET POST /status/groups\|components\|incidents\|maintenance`                                           |
+| Status Page  | `GET POST /status/components\|incidents\|maintenance`                                                   |
 | Updates      | `GET /updates` `POST /updates/scan`                                                                     |
 | Security     | `GET /security/insights` `GET /security/summary` `GET /security/insights/{id}`                          |
 | Events       | `GET /containers/events` *(SSE stream)*                                                                 |

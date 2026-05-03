@@ -16,7 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -53,92 +52,6 @@ func NewStatusAdminHandler(
 	}
 }
 
-// --- Component Groups ---
-
-func (h *StatusAdminHandler) HandleListGroups(w http.ResponseWriter, r *http.Request) {
-	groups, err := h.components.ListGroups(r.Context())
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	WriteJSON(w, http.StatusOK, groups)
-}
-
-func (h *StatusAdminHandler) HandleCreateGroup(w http.ResponseWriter, r *http.Request) {
-	var g status.ComponentGroup
-	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
-		return
-	}
-	if g.Name == "" {
-		WriteError(w, http.StatusBadRequest, "validation", "Name is required")
-		return
-	}
-	// Quota check for Community edition (max 1 group)
-	if extension.CurrentEdition() != extension.Enterprise {
-		groups, err := h.components.ListGroups(r.Context())
-		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
-			return
-		}
-		if len(groups) >= 1 {
-			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
-				"Community edition is limited to 1 status page group. Upgrade to Pro for unlimited groups.")
-			return
-		}
-	}
-	if _, err := h.components.CreateGroup(r.Context(), &g); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
-			WriteError(w, http.StatusConflict, "DUPLICATE_NAME", "A group with this name already exists")
-			return
-		}
-		slog.Error("failed to create status group", "error", err, "name", g.Name)
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create group")
-		return
-	}
-	WriteJSON(w, http.StatusCreated, g)
-}
-
-func (h *StatusAdminHandler) HandleUpdateGroup(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
-		return
-	}
-	existing, err := h.components.GetGroup(r.Context(), id)
-	if err != nil || existing == nil {
-		WriteError(w, http.StatusNotFound, "not_found", "Group not found")
-		return
-	}
-	var g status.ComponentGroup
-	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
-		return
-	}
-	g.ID = id
-	if g.Name == "" {
-		g.Name = existing.Name
-	}
-	if err := h.components.UpdateGroup(r.Context(), &g); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	WriteJSON(w, http.StatusOK, g)
-}
-
-func (h *StatusAdminHandler) HandleDeleteGroup(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
-		return
-	}
-	if err := h.components.DeleteGroup(r.Context(), id); err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // --- Status Components ---
 
 func (h *StatusAdminHandler) HandleListComponents(w http.ResponseWriter, r *http.Request) {
@@ -159,45 +72,96 @@ func (h *StatusAdminHandler) HandleListComponents(w http.ResponseWriter, r *http
 }
 
 func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *http.Request) {
-	var c status.Component
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+	var req struct {
+		CompositionMode string              `json:"composition_mode"`
+		Monitors        []status.MonitorRef `json:"monitors"`
+		MatchAllType    string              `json:"match_all_type"`
+		DisplayName     string              `json:"display_name"`
+		DisplayOrder    int                 `json:"display_order"`
+		Visible         *bool               `json:"visible"`
+		AutoIncident    bool                `json:"auto_incident"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 		return
 	}
-	if c.MonitorType == "" || c.DisplayName == "" {
-		WriteError(w, http.StatusBadRequest, "validation", "monitor_type and display_name are required")
+
+	// Default to explicit mode if not specified.
+	if req.CompositionMode == "" {
+		req.CompositionMode = "explicit"
+	}
+
+	if req.CompositionMode != "explicit" && req.CompositionMode != "match-all" {
+		WriteError(w, http.StatusBadRequest, "validation", "composition_mode must be 'explicit' or 'match-all'")
 		return
 	}
-	if c.MonitorID != 0 {
-		existing, _ := h.components.GetComponentByMonitor(r.Context(), c.MonitorType, c.MonitorID)
-		if existing != nil {
-			WriteError(w, http.StatusConflict, "conflict", "Component already exists for this monitor")
+	if req.DisplayName == "" {
+		WriteError(w, http.StatusBadRequest, "validation", "display_name is required")
+		return
+	}
+
+	validTypes := map[string]bool{"container": true, "endpoint": true, "heartbeat": true, "certificate": true}
+
+	if req.CompositionMode == "explicit" {
+		if req.MatchAllType != "" {
+			WriteError(w, http.StatusBadRequest, "validation", "match_all_type must be null in explicit mode")
+			return
+		}
+		if len(req.Monitors) == 0 {
+			WriteError(w, http.StatusBadRequest, "validation", "explicit-mode components require at least one monitor")
+			return
+		}
+		for _, m := range req.Monitors {
+			if !validTypes[m.Type] {
+				WriteError(w, http.StatusBadRequest, "validation", "invalid monitor type: "+m.Type)
+				return
+			}
+		}
+	} else { // match-all
+		if !validTypes[req.MatchAllType] {
+			WriteError(w, http.StatusBadRequest, "validation", "match_all_type must be one of container, endpoint, heartbeat, certificate")
+			return
+		}
+		if len(req.Monitors) > 0 {
+			WriteError(w, http.StatusBadRequest, "validation", "monitors must be empty in match-all mode")
 			return
 		}
 	}
-	// Quota check for Community edition (max 3 components)
+
+	// Quota check for Community edition (max 3 components).
 	if extension.CurrentEdition() != extension.Enterprise {
-		components, err := h.components.ListComponents(r.Context())
+		existing, err := h.components.ListComponents(r.Context())
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		if len(components) >= 3 {
+		if len(existing) >= 3 {
 			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
 				"Community edition is limited to 3 status page components. Upgrade to Pro for unlimited components.")
 			return
 		}
 	}
-	if _, err := h.components.CreateComponent(r.Context(), &c); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
-			WriteError(w, http.StatusConflict, "DUPLICATE_COMPONENT", "A component for this monitor already exists")
-			return
-		}
-		slog.Error("failed to create status component", "error", err, "monitor_type", c.MonitorType, "monitor_id", c.MonitorID)
+
+	visible := true
+	if req.Visible != nil {
+		visible = *req.Visible
+	}
+
+	c := &status.Component{
+		CompositionMode: status.CompositionMode(req.CompositionMode),
+		Monitors:        req.Monitors,
+		MatchAllType:    req.MatchAllType,
+		DisplayName:     req.DisplayName,
+		DisplayOrder:    req.DisplayOrder,
+		Visible:         visible,
+		AutoIncident:    req.AutoIncident,
+	}
+	if _, err := h.components.CreateComponent(r.Context(), c); err != nil {
+		slog.Error("failed to create status component", "error", err)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create component")
 		return
 	}
-	c.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), &c)
+	c.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), c)
 	WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -212,45 +176,83 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 		WriteError(w, http.StatusNotFound, "not_found", "Component not found")
 		return
 	}
-	var upd struct {
-		DisplayName    *string `json:"display_name"`
-		GroupID        *int64  `json:"group_id"`
-		DisplayOrder   *int    `json:"display_order"`
-		Visible        *bool   `json:"visible"`
-		StatusOverride *string `json:"status_override"`
-		AutoIncident   *bool   `json:"auto_incident"`
+	var req struct {
+		CompositionMode *string             `json:"composition_mode"`
+		Monitors        []status.MonitorRef `json:"monitors"`
+		MatchAllType    *string             `json:"match_all_type"`
+		DisplayName     *string             `json:"display_name"`
+		DisplayOrder    *int                `json:"display_order"`
+		Visible         *bool               `json:"visible"`
+		StatusOverride  *string             `json:"status_override"`
+		AutoIncident    *bool               `json:"auto_incident"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&upd); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 		return
 	}
-	if upd.DisplayName != nil {
-		existing.DisplayName = *upd.DisplayName
+
+	// Mode immutability.
+	if req.CompositionMode != nil && *req.CompositionMode != string(existing.CompositionMode) {
+		WriteError(w, http.StatusBadRequest, "validation", "composition_mode is immutable; delete and recreate to change")
+		return
 	}
-	if upd.GroupID != nil {
-		existing.GroupID = upd.GroupID
+	if req.MatchAllType != nil && *req.MatchAllType != existing.MatchAllType {
+		WriteError(w, http.StatusBadRequest, "validation", "match_all_type is immutable; delete and recreate to change")
+		return
 	}
-	if upd.DisplayOrder != nil {
-		existing.DisplayOrder = *upd.DisplayOrder
+
+	// Match-all: cannot edit monitors.
+	if existing.CompositionMode == status.CompositionMatchAll && len(req.Monitors) > 0 {
+		WriteError(w, http.StatusBadRequest, "validation", "monitors cannot be edited in match-all mode")
+		return
 	}
-	if upd.Visible != nil {
-		existing.Visible = *upd.Visible
+
+	// Explicit: if monitors provided, validate.
+	if existing.CompositionMode == status.CompositionExplicit && req.Monitors != nil {
+		if len(req.Monitors) == 0 {
+			WriteError(w, http.StatusBadRequest, "validation", "explicit-mode components require at least one monitor")
+			return
+		}
+		validTypes := map[string]bool{"container": true, "endpoint": true, "heartbeat": true, "certificate": true}
+		for _, m := range req.Monitors {
+			if !validTypes[m.Type] {
+				WriteError(w, http.StatusBadRequest, "validation", "invalid monitor type: "+m.Type)
+				return
+			}
+		}
+		existing.Monitors = req.Monitors
 	}
-	if upd.StatusOverride != nil {
-		if *upd.StatusOverride == "" {
+
+	if req.DisplayName != nil {
+		existing.DisplayName = *req.DisplayName
+	}
+	if req.DisplayOrder != nil {
+		existing.DisplayOrder = *req.DisplayOrder
+	}
+	if req.Visible != nil {
+		existing.Visible = *req.Visible
+	}
+	if req.StatusOverride != nil {
+		if *req.StatusOverride == "" {
 			existing.StatusOverride = nil
 		} else {
-			existing.StatusOverride = upd.StatusOverride
+			existing.StatusOverride = req.StatusOverride
 		}
 	}
-	if upd.AutoIncident != nil {
-		existing.AutoIncident = *upd.AutoIncident
+	if req.AutoIncident != nil {
+		existing.AutoIncident = *req.AutoIncident
 	}
+
 	if err := h.components.UpdateComponent(r.Context(), existing); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	existing.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), existing)
+	existing.DerivedStatus = h.statusSvc.DeriveComponentStatus(r.Context(), existing)
+	if existing.StatusOverride != nil {
+		existing.EffectiveStatus = *existing.StatusOverride
+	} else {
+		existing.EffectiveStatus = existing.DerivedStatus
+	}
 	WriteJSON(w, http.StatusOK, existing)
 }
 
@@ -285,7 +287,7 @@ func (h *StatusAdminHandler) HandleListIncidents(w http.ResponseWriter, r *http.
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	WriteJSON(w, http.StatusOK, map[string]any{
 		"incidents": incidents,
 		"total":     total,
 	})
@@ -329,7 +331,7 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 	for _, c := range inc.Components {
 		compNames = append(compNames, c.Name)
 	}
-	h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentCreated, Data: map[string]interface{}{
+	h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentCreated, Data: map[string]any{
 		"id":         inc.ID,
 		"title":      inc.Title,
 		"severity":   inc.Severity,
@@ -376,12 +378,12 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 	upd.ID = updateID
 
 	if req.Status == status.IncidentResolved {
-		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentResolved, Data: map[string]interface{}{
+		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentResolved, Data: map[string]any{
 			"id":    id,
 			"title": inc.Title,
 		}})
 	} else {
-		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentUpdated, Data: map[string]interface{}{
+		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentUpdated, Data: map[string]any{
 			"id":      id,
 			"status":  req.Status,
 			"message": req.Message,
@@ -607,7 +609,7 @@ func (h *StatusAdminHandler) HandleListSubscribers(w http.ResponseWriter, r *htt
 		})
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	WriteJSON(w, http.StatusOK, map[string]any{
 		"subscribers": masked,
 		"total":       stats.Total,
 		"confirmed":   stats.Confirmed,
@@ -677,7 +679,7 @@ func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Reque
 	}
 	client := status.NewSmtpClient(*cfg)
 	if err := client.Send(cfg.FromAddress, "Maintenant SMTP Test", "<p>This is a test email from Maintenant.</p>"); err != nil {
-		WriteJSON(w, http.StatusOK, map[string]interface{}{"status": "error", "error": err.Error()})
+		WriteJSON(w, http.StatusOK, map[string]any{"status": "error", "error": err.Error()})
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "sent"})

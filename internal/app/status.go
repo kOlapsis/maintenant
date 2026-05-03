@@ -13,6 +13,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -85,74 +86,115 @@ func (a *App) wireStatusProvider() {
 	a.statusSvc.SetMonitorStatusProvider(func(ctx context.Context, monitorType string, monitorID int64) string {
 		switch monitorType {
 		case "container":
-			if monitorID != 0 {
-				c, err := a.containerSvc.GetContainer(ctx, monitorID)
-				if err != nil || c == nil {
-					return status.StatusOperational
-				}
-				return ContainerStatus(c)
-			}
-			containers, err := a.containerSvc.ListContainers(ctx, container.ListContainersOpts{})
-			if err != nil {
+			c, err := a.containerSvc.GetContainer(ctx, monitorID)
+			if err != nil || c == nil {
 				return status.StatusOperational
 			}
-			worst := status.StatusOperational
-			for _, c := range containers {
-				worst = WorstStatus(worst, ContainerStatus(c))
-			}
-			return worst
+			return ContainerStatus(c)
 		case "endpoint":
-			if monitorID != 0 {
-				ep, err := a.endpointSvc.GetEndpoint(ctx, monitorID)
-				if err != nil || ep == nil {
-					return status.StatusOperational
-				}
-				return EndpointStatus(ep)
-			}
-			endpoints, err := a.endpointSvc.ListEndpoints(ctx, endpoint.ListEndpointsOpts{})
-			if err != nil {
+			ep, err := a.endpointSvc.GetEndpoint(ctx, monitorID)
+			if err != nil || ep == nil {
 				return status.StatusOperational
 			}
-			worst := status.StatusOperational
-			for _, ep := range endpoints {
-				worst = WorstStatus(worst, EndpointStatus(ep))
-			}
-			return worst
+			return EndpointStatus(ep)
 		case "heartbeat":
-			if monitorID != 0 {
-				hb, err := a.heartbeatSvc.GetHeartbeat(ctx, monitorID)
-				if err != nil || hb == nil {
-					return status.StatusOperational
-				}
-				return HeartbeatStatus(hb)
-			}
-			heartbeats, err := a.heartbeatSvc.ListHeartbeats(ctx, heartbeat.ListHeartbeatsOpts{})
-			if err != nil {
+			hb, err := a.heartbeatSvc.GetHeartbeat(ctx, monitorID)
+			if err != nil || hb == nil {
 				return status.StatusOperational
 			}
-			worst := status.StatusOperational
-			for _, hb := range heartbeats {
-				worst = WorstStatus(worst, HeartbeatStatus(hb))
-			}
-			return worst
+			return HeartbeatStatus(hb)
 		case "certificate":
-			if monitorID != 0 {
-				cert, err := a.certSvc.GetMonitor(ctx, monitorID)
-				if err != nil || cert == nil {
-					return status.StatusOperational
-				}
-				return CertificateStatus(cert)
-			}
-			certs, err := a.certSvc.ListMonitors(ctx, certificate.ListCertificatesOpts{})
-			if err != nil {
+			cert, err := a.certSvc.GetMonitor(ctx, monitorID)
+			if err != nil || cert == nil {
 				return status.StatusOperational
 			}
-			worst := status.StatusOperational
-			for _, cert := range certs {
-				worst = WorstStatus(worst, CertificateStatus(cert))
-			}
-			return worst
+			return CertificateStatus(cert)
 		}
 		return status.StatusOperational
+	})
+
+	a.wireMonitorPopulationProvider()
+	a.wireMonitorNameProvider()
+}
+
+// wireMonitorPopulationProvider sets up the monitor population provider for match-all components.
+func (a *App) wireMonitorPopulationProvider() {
+	a.statusSvc.SetMonitorPopulationProvider(func(ctx context.Context, monitorType string) []status.MonitorRef {
+		switch monitorType {
+		case "container":
+			containers, err := a.containerSvc.ListContainers(ctx, container.ListContainersOpts{})
+			if err != nil {
+				return nil
+			}
+			refs := make([]status.MonitorRef, 0, len(containers))
+			for _, c := range containers {
+				refs = append(refs, status.MonitorRef{Type: "container", ID: c.ID, Name: c.Name})
+			}
+			return refs
+		case "endpoint":
+			endpoints, err := a.endpointSvc.ListEndpoints(ctx, endpoint.ListEndpointsOpts{})
+			if err != nil {
+				return nil
+			}
+			refs := make([]status.MonitorRef, 0, len(endpoints))
+			for _, ep := range endpoints {
+				refs = append(refs, status.MonitorRef{Type: "endpoint", ID: ep.ID, Name: ep.Target})
+			}
+			return refs
+		case "heartbeat":
+			heartbeats, err := a.heartbeatSvc.ListHeartbeats(ctx, heartbeat.ListHeartbeatsOpts{})
+			if err != nil {
+				return nil
+			}
+			refs := make([]status.MonitorRef, 0, len(heartbeats))
+			for _, h := range heartbeats {
+				refs = append(refs, status.MonitorRef{Type: "heartbeat", ID: h.ID, Name: h.Name})
+			}
+			return refs
+		case "certificate":
+			certs, err := a.certSvc.ListMonitors(ctx, certificate.ListCertificatesOpts{})
+			if err != nil {
+				return nil
+			}
+			refs := make([]status.MonitorRef, 0, len(certs))
+			for _, c := range certs {
+				refs = append(refs, status.MonitorRef{Type: "certificate", ID: c.ID, Name: fmt.Sprintf("%s:%d", c.Hostname, c.Port)})
+			}
+			return refs
+		}
+		return nil
+	})
+}
+
+// wireMonitorNameProvider sets up the monitor name provider for enriching monitor refs.
+func (a *App) wireMonitorNameProvider() {
+	a.statusSvc.SetMonitorNameProvider(func(ctx context.Context, monitorType string, monitorID int64) string {
+		switch monitorType {
+		case "container":
+			c, err := a.containerSvc.GetContainer(ctx, monitorID)
+			if err != nil || c == nil {
+				return ""
+			}
+			return c.Name
+		case "endpoint":
+			ep, err := a.endpointSvc.GetEndpoint(ctx, monitorID)
+			if err != nil || ep == nil {
+				return ""
+			}
+			return ep.Target
+		case "heartbeat":
+			hb, err := a.heartbeatSvc.GetHeartbeat(ctx, monitorID)
+			if err != nil || hb == nil {
+				return ""
+			}
+			return hb.Name
+		case "certificate":
+			cert, err := a.certSvc.GetMonitor(ctx, monitorID)
+			if err != nil || cert == nil {
+				return ""
+			}
+			return fmt.Sprintf("%s:%d", cert.Hostname, cert.Port)
+		}
+		return ""
 	})
 }

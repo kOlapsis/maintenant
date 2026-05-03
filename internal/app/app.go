@@ -75,13 +75,14 @@ type App struct {
 	srv           *http.Server
 
 	// Stores (needed for retention cleanup and reconciliation)
-	alertStore     alert.AlertStore
-	updateStore    update.UpdateStore
-	containerStore *sqlite.ContainerStore
-	epStore        *sqlite.EndpointStore
-	hbStore        *sqlite.HeartbeatStore
-	certStore      *sqlite.CertificateStore
-	resStore       *sqlite.ResourceStore
+	alertStore      alert.AlertStore
+	updateStore     update.UpdateStore
+	containerStore  *sqlite.ContainerStore
+	epStore         *sqlite.EndpointStore
+	hbStore         *sqlite.HeartbeatStore
+	certStore       *sqlite.CertificateStore
+	resStore        *sqlite.ResourceStore
+	statusCompStore *sqlite.StatusComponentStoreImpl
 
 	// Background services
 	checkEngine    *endpoint.CheckEngine
@@ -152,6 +153,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	channelStore := sqlite.NewChannelStore(db)
 	silenceStore := sqlite.NewSilenceStore(db)
 	statusCompStore := sqlite.NewStatusComponentStore(db)
+	a.statusCompStore = statusCompStore
 	incidentStore := sqlite.NewIncidentStore(db)
 	maintenanceStore := sqlite.NewMaintenanceStore(db)
 	subscriberStore := sqlite.NewSubscriberStore(db)
@@ -321,7 +323,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SilenceStore: silenceStore,
 		Logger:       logger,
 		Notifier:     a.notifier,
-		Broadcaster: alert.NewSSEBroadcasterFunc(func(eventType string, data interface{}) {
+		Broadcaster: alert.NewSSEBroadcasterFunc(func(eventType string, data any) {
 			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		}),
 	})
@@ -334,7 +336,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Incidents:   incidentStore,
 		Maintenance: maintenanceStore,
 		Subscribers: a.subscriberSvc,
-		Broadcaster: func(eventType string, data interface{}) {
+		Broadcaster: func(eventType string, data any) {
 			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		},
 	})

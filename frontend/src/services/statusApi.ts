@@ -14,28 +14,28 @@ import { apiFetch, apiFetchVoid } from './apiFetch'
 
 // --- Types ---
 
-export interface ComponentGroup {
+export interface MonitorRef {
+  type: string   // 'container' | 'endpoint' | 'heartbeat' | 'certificate'
   id: number
-  name: string
-  display_order: number
-  component_count?: number
-  created_at: string
+  name?: string
+  status?: string
 }
 
 export interface StatusComponent {
   id: number
-  monitor_type: string
-  monitor_id: number
+  composition_mode: 'explicit' | 'match-all'
+  monitors: MonitorRef[]
+  match_all_type: string | null
   display_name: string
-  group_id: number | null
-  group_name?: string
   display_order: number
   visible: boolean
   status_override: string | null
   auto_incident: boolean
   derived_status: string
   effective_status: string
+  needs_attention?: boolean
   created_at: string
+  updated_at?: string
 }
 
 export interface Incident {
@@ -101,32 +101,6 @@ function fetchNoContent(url: string, init?: RequestInit): Promise<void> {
   return apiFetchVoid(url, init)
 }
 
-// --- Component Groups ---
-
-export function listGroups(): Promise<ComponentGroup[]> {
-  return fetchJSON<ComponentGroup[]>(`${API_BASE}/status/groups`)
-}
-
-export function createGroup(data: { name: string; display_order?: number }): Promise<ComponentGroup> {
-  return fetchJSON(`${API_BASE}/status/groups`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-}
-
-export function updateGroup(id: number, data: Partial<{ name: string; display_order: number }>): Promise<ComponentGroup> {
-  return fetchJSON(`${API_BASE}/status/groups/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-}
-
-export function deleteGroup(id: number): Promise<void> {
-  return fetchNoContent(`${API_BASE}/status/groups/${id}`, { method: 'DELETE' })
-}
-
 // --- Status Components ---
 
 export function listComponents(): Promise<StatusComponent[]> {
@@ -134,10 +108,10 @@ export function listComponents(): Promise<StatusComponent[]> {
 }
 
 export function createComponent(data: {
-  monitor_type: string
-  monitor_id: number
+  composition_mode: 'explicit' | 'match-all'
+  monitors?: MonitorRef[]
+  match_all_type?: string | null
   display_name: string
-  group_id?: number | null
   visible?: boolean
   auto_incident?: boolean
 }): Promise<StatusComponent> {
@@ -151,8 +125,8 @@ export function createComponent(data: {
 export function updateComponent(
   id: number,
   data: Partial<{
+    monitors: MonitorRef[]
     display_name: string
-    group_id: number | null
     display_order: number
     visible: boolean
     status_override: string | null

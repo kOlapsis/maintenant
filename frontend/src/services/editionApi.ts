@@ -18,7 +18,7 @@ export interface QuotaEntry {
   limit: number
 }
 
-export type QuotaResource = 'endpoints' | 'heartbeats' | 'certificates' | 'status_groups' | 'status_components'
+export type QuotaResource = 'endpoints' | 'heartbeats' | 'certificates' | 'status_components'
 
 export interface EditionResponse {
   edition: string

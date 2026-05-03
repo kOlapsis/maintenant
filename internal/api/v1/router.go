@@ -246,11 +246,6 @@ func NewRouter(d HandlerDeps) *Router {
 	// Status page admin endpoints
 	if d.StatusComponents != nil {
 		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker)
-		// Component groups
-		r.mux.HandleFunc("GET /api/v1/status/groups", sh.HandleListGroups)
-		r.mux.HandleFunc("POST /api/v1/status/groups", sh.HandleCreateGroup)
-		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", sh.HandleUpdateGroup)
-		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", sh.HandleDeleteGroup)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
 		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
@@ -603,10 +598,6 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise 
 				"used":  0,
 				"limit": -1,
 			},
-			"status_groups": map[string]interface{}{
-				"used":  0,
-				"limit": -1,
-			},
 			"status_components": map[string]interface{}{
 				"used":  0,
 				"limit": -1,
@@ -653,19 +644,6 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise 
 		quotas["certificates"] = map[string]interface{}{
 			"used":  used,
 			"limit": 5,
-		}
-	}
-
-	// Status page groups: max 1
-	if d.StatusComponents != nil {
-		groups, err := d.StatusComponents.ListGroups(ctx)
-		if err != nil {
-			r.logger.Error("failed to count status groups for quota", "error", err)
-			groups = nil
-		}
-		quotas["status_groups"] = map[string]interface{}{
-			"used":  len(groups),
-			"limit": 1,
 		}
 	}
 

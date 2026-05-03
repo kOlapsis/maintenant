@@ -60,18 +60,12 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 
 // StatusAPIResponse is the JSON snapshot of current status.
 type StatusAPIResponse struct {
-	GlobalStatus    string             `json:"global_status"`
-	GlobalMessage   string             `json:"global_message"`
-	UpdatedAt       time.Time          `json:"updated_at"`
-	Groups          []APIGroupResponse `json:"groups"`
-	ActiveIncidents []APIIncidentBrief `json:"active_incidents"`
-	UpcomingMaint   []APIMaintBrief    `json:"upcoming_maintenance"`
-}
-
-// APIGroupResponse is a component group in the JSON API.
-type APIGroupResponse struct {
-	Name       string              `json:"name"`
-	Components []APIComponentBrief `json:"components"`
+	GlobalStatus    string              `json:"global_status"`
+	GlobalMessage   string              `json:"global_message"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+	Components      []APIComponentBrief `json:"components"`
+	ActiveIncidents []APIIncidentBrief  `json:"active_incidents"`
+	UpcomingMaint   []APIMaintBrief     `json:"upcoming_maintenance"`
 }
 
 // APIComponentBrief is a brief component in the JSON API.
@@ -123,28 +117,12 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:     time.Now().UTC(),
 	}
 
-	for _, g := range data.Groups {
-		ag := APIGroupResponse{Name: g.Name}
-		for _, c := range g.Components {
-			ag.Components = append(ag.Components, APIComponentBrief{
-				ID:     c.ID,
-				Name:   c.DisplayName,
-				Status: c.EffectiveStatus,
-			})
-		}
-		resp.Groups = append(resp.Groups, ag)
-	}
-
-	if len(data.Ungrouped) > 0 {
-		ag := APIGroupResponse{Name: "Other"}
-		for _, c := range data.Ungrouped {
-			ag.Components = append(ag.Components, APIComponentBrief{
-				ID:     c.ID,
-				Name:   c.DisplayName,
-				Status: c.EffectiveStatus,
-			})
-		}
-		resp.Groups = append(resp.Groups, ag)
+	for _, c := range data.Components {
+		resp.Components = append(resp.Components, APIComponentBrief{
+			ID:     c.ID,
+			Name:   c.DisplayName,
+			Status: c.EffectiveStatus,
+		})
 	}
 
 	for _, inc := range data.ActiveIncidents {

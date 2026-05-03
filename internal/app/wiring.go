@@ -38,11 +38,11 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	}
 
 	// Container events
-	a.containerSvc.SetEventCallback(func(eventType string, data interface{}) {
+	a.containerSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 
 		if eventType == "container.state_changed" || eventType == "container.health_changed" {
-			if m, ok := data.(map[string]interface{}); ok {
+			if m, ok := data.(map[string]any); ok {
 				a.statusSvc.NotifyMonitorChanged(ctx, "container", toInt64(m["id"]))
 			}
 		}
@@ -70,7 +70,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				})
 			}
 		case "container.restart_recovery":
-			if m, ok := data.(map[string]interface{}); ok {
+			if m, ok := data.(map[string]any); ok {
 				sendAlert(alert.Event{
 					Source:     alert.SourceContainer,
 					AlertType:  "restart_loop",
@@ -84,11 +84,15 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				})
 			}
 		case "container.archived":
-			if m, ok := data.(map[string]interface{}); ok {
-				a.alertEngine.ResolveByEntity(ctx, "container", toInt64(m["id"]))
+			if m, ok := data.(map[string]any); ok {
+				cid := toInt64(m["id"])
+				a.alertEngine.ResolveByEntity(ctx, "container", cid)
+				if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "container", cid); err != nil {
+					a.logger.Error("failed to remove dangling container refs from status components", "container_id", cid, "error", err)
+				}
 			}
 		case "container.health_changed":
-			m, ok := data.(map[string]interface{})
+			m, ok := data.(map[string]any)
 			if !ok {
 				return
 			}
@@ -122,7 +126,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	})
 
 	// Endpoint alerts
-	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, interface{}) {
+	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, any) {
 		a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", ep.ID)
 
 		al := alertDetector.EvaluateCheckResult(ep, result)
@@ -150,7 +154,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				},
 				Timestamp: al.Timestamp,
 			})
-			return "endpoint.alert", map[string]interface{}{
+			return "endpoint.alert", map[string]any{
 				"endpoint_id":          al.EndpointID,
 				"container_name":       al.ContainerName,
 				"target":               al.Target,
@@ -176,7 +180,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			},
 			Timestamp: al.Timestamp,
 		})
-		return "endpoint.recovery", map[string]interface{}{
+		return "endpoint.recovery", map[string]any{
 			"endpoint_id":           al.EndpointID,
 			"container_name":        al.ContainerName,
 			"target":                al.Target,
@@ -186,11 +190,16 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		}
 	})
 
-	// Endpoint removal → certificate monitor cleanup
-	a.endpointSvc.SetEndpointRemovedCallback(a.certSvc.DeleteByEndpointID)
+	// Endpoint removal → certificate monitor cleanup + status component dangling ref cleanup.
+	a.endpointSvc.SetEndpointRemovedCallback(func(callCtx context.Context, endpointID int64) {
+		a.certSvc.DeleteByEndpointID(callCtx, endpointID)
+		if err := a.statusCompStore.RemoveDanglingMonitorRefs(callCtx, "endpoint", endpointID); err != nil {
+			a.logger.Error("failed to remove dangling endpoint refs from status components", "endpoint_id", endpointID, "error", err)
+		}
+	})
 
 	// Heartbeat alerts
-	a.heartbeatSvc.SetAlertCallback(func(h *heartbeat.Heartbeat, alertType string, details map[string]interface{}) {
+	a.heartbeatSvc.SetAlertCallback(func(h *heartbeat.Heartbeat, alertType string, details map[string]any) {
 		a.statusSvc.NotifyMonitorChanged(ctx, "heartbeat", h.ID)
 
 		isRecover := alertType == "recovery"
@@ -218,16 +227,36 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		})
 	})
 
-	// Certificate alerts
-	a.certSvc.SetEventCallback(func(eventType string, data interface{}) {
+	// Heartbeat events
+	a.heartbeatSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-		m, ok := data.(map[string]interface{})
+		if eventType == event.HeartbeatDeleted {
+			if m, ok := data.(map[string]any); ok {
+				hid := toInt64(m["heartbeat_id"])
+				if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "heartbeat", hid); err != nil {
+					a.logger.Error("failed to remove dangling heartbeat refs from status components", "heartbeat_id", hid, "error", err)
+				}
+			}
+		}
+	})
+
+	// Certificate alerts
+	a.certSvc.SetEventCallback(func(eventType string, data any) {
+		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		m, ok := data.(map[string]any)
 		if !ok {
 			return
 		}
 
 		if eventType == "certificate.alert" || eventType == "certificate.recovery" {
 			a.statusSvc.NotifyMonitorChanged(ctx, "certificate", toInt64(m["monitor_id"]))
+		}
+
+		if eventType == event.CertificateDeleted {
+			certID := toInt64(m["monitor_id"])
+			if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "certificate", certID); err != nil {
+				a.logger.Error("failed to remove dangling certificate refs from status components", "certificate_id", certID, "error", err)
+			}
 		}
 
 		switch eventType {
@@ -265,9 +294,9 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	})
 
 	// Resource alerts
-	a.resourceSvc.SetEventCallback(func(eventType string, data interface{}) {
+	a.resourceSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-		m, ok := data.(map[string]interface{})
+		m, ok := data.(map[string]any)
 		if !ok {
 			return
 		}
@@ -350,11 +379,11 @@ func (a *App) wireUpdateCallback() {
 		a.statusSvc.HandleAlertEvent(ctx, evt)
 	}
 
-	a.updateSvc.SetEventCallback(func(eventType string, data interface{}) {
+	a.updateSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 
 		if eventType == event.UpdateDetected {
-			if m, ok := data.(map[string]interface{}); ok {
+			if m, ok := data.(map[string]any); ok {
 				severity := alert.SeverityInfo
 				if rs, ok := m["risk_score"].(int); ok {
 					if rs >= 81 {
@@ -450,7 +479,7 @@ func (a *App) wireSwarmCallbacks() {
 	if a.swarmEvents == nil {
 		return
 	}
-	a.swarmEvents.SetCallback(func(eventType string, data interface{}) {
+	a.swarmEvents.SetCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 	})
 
@@ -471,7 +500,7 @@ func (a *App) wireSwarmCallbacks() {
 		alertCh := a.alertEngine.EventChannel()
 		ctx := context.Background()
 
-		sseBroadcast := func(eventType string, data interface{}) {
+		sseBroadcast := func(eventType string, data any) {
 			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		}
 		alertForward := func(evt alert.Event) {
@@ -505,7 +534,7 @@ func (a *App) wireSwarmCallbacks() {
 	if a.swarmCluster != nil {
 		a.broker.Broadcast(v1.SSEEvent{
 			Type: event.SwarmStatus,
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"active":        true,
 				"is_manager":    a.swarmCluster.IsManager,
 				"cluster_id":    a.swarmCluster.ID,
@@ -516,7 +545,7 @@ func (a *App) wireSwarmCallbacks() {
 	}
 }
 
-func toInt64(v interface{}) int64 {
+func toInt64(v any) int64 {
 	switch n := v.(type) {
 	case int64:
 		return n
@@ -529,7 +558,7 @@ func toInt64(v interface{}) int64 {
 	}
 }
 
-func toString(v interface{}) string {
+func toString(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}

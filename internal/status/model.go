@@ -50,32 +50,39 @@ const (
 	TLSNone      = "none"
 )
 
-// ComponentGroup groups status components into named categories.
-type ComponentGroup struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	DisplayOrder   int       `json:"display_order"`
-	ComponentCount int       `json:"component_count,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+// CompositionMode describes how a status component selects its monitors.
+type CompositionMode string
+
+const (
+	CompositionExplicit CompositionMode = "explicit"
+	CompositionMatchAll CompositionMode = "match-all"
+)
+
+// MonitorRef is a reference to a specific monitor with its type and id.
+// The Name field is populated on reads but ignored on writes.
+type MonitorRef struct {
+	Type   string `json:"type"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
 }
 
-// StatusComponent is a public-facing representation of a monitored service.
+// Component is a public-facing representation of a monitored application or service.
 type Component struct {
-	ID              int64     `json:"id"`
-	MonitorType     string    `json:"monitor_type"`
-	MonitorID       int64     `json:"monitor_id"`
-	MonitorName     string    `json:"monitor_name,omitempty"`
-	DisplayName     string    `json:"display_name"`
-	GroupID         *int64    `json:"group_id"`
-	GroupName       string    `json:"group_name,omitempty"`
-	DisplayOrder    int       `json:"display_order"`
-	Visible         bool      `json:"visible"`
-	DerivedStatus   string    `json:"derived_status,omitempty"`
-	StatusOverride  *string   `json:"status_override"`
-	EffectiveStatus string    `json:"effective_status,omitempty"`
-	AutoIncident    bool      `json:"auto_incident"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              int64           `json:"id"`
+	CompositionMode CompositionMode `json:"composition_mode"`
+	Monitors        []MonitorRef    `json:"monitors,omitempty"`
+	MatchAllType    string          `json:"match_all_type,omitempty"`
+	DisplayName     string          `json:"display_name"`
+	DisplayOrder    int             `json:"display_order"`
+	Visible         bool            `json:"visible"`
+	DerivedStatus   string          `json:"derived_status,omitempty"`
+	StatusOverride  *string         `json:"status_override"`
+	EffectiveStatus string          `json:"effective_status,omitempty"`
+	AutoIncident    bool            `json:"auto_incident"`
+	NeedsAttention  bool            `json:"needs_attention,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 // Incident represents a public-facing incident.

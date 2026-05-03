@@ -148,14 +148,10 @@ These routes do not require authentication:
 
 ## Status Page (Admin)
 
-### Groups & Components
+### Components
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/status/groups` | List component groups |
-| `POST` | `/api/v1/status/groups` | Create a group |
-| `PUT` | `/api/v1/status/groups/{id}` | Update a group |
-| `DELETE` | `/api/v1/status/groups/{id}` | Delete a group |
 | `GET` | `/api/v1/status/components` | List components |
 | `POST` | `/api/v1/status/components` | Create a component |
 | `PUT` | `/api/v1/status/components/{id}` | Update a component |

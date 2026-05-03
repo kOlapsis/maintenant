@@ -14,8 +14,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useEdition } from '@/composables/useEdition'
+import StatusComponentBreakdown from '@/components/StatusComponentBreakdown.vue'
+import type { MonitorRef } from '@/services/statusApi'
 
-const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 const { organisationName } = useEdition()
 
 interface IncidentUpdate {
@@ -43,16 +44,13 @@ interface ComponentBrief {
   id: number
   name: string
   status: string
-}
-interface GroupBrief {
-  name: string
-  components: ComponentBrief[]
+  monitors?: MonitorRef[]
 }
 interface StatusData {
   global_status: string
   global_message: string
   updated_at: string
-  groups: GroupBrief[]
+  components: ComponentBrief[]
   active_incidents: IncidentBrief[]
   upcoming_maintenance: MaintenanceBrief[]
 }
@@ -60,6 +58,27 @@ interface StatusData {
 const data = ref<StatusData | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+// Track expanded component rows
+const expandedComponents = ref<Set<number>>(new Set())
+
+function toggleExpanded(id: number) {
+  if (expandedComponents.value.has(id)) {
+    expandedComponents.value.delete(id)
+  } else {
+    expandedComponents.value.add(id)
+  }
+}
+
+function handleRowKeydown(e: KeyboardEvent, id: number) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    toggleExpanded(id)
+  } else if (e.key === 'Escape') {
+    expandedComponents.value.delete(id)
+    ;(e.currentTarget as HTMLElement).blur()
+  }
+}
 
 let eventSource: EventSource | null = null
 
@@ -75,9 +94,31 @@ async function fetchStatus() {
   }
 }
 
+function handleComponentChangedEvent(e: Event) {
+  const msgEvent = e as MessageEvent
+  if (msgEvent.data) {
+    try {
+      const payload = JSON.parse(msgEvent.data) as { id?: number; monitors?: MonitorRef[]; status?: string; name?: string }
+      if (payload.id !== undefined && data.value) {
+        // Update in-place without a full page re-fetch
+        const comp = data.value.components.find(c => c.id === payload.id)
+        if (comp) {
+          if (payload.status !== undefined) comp.status = payload.status
+          if (payload.name !== undefined) comp.name = payload.name
+          if (payload.monitors !== undefined) comp.monitors = payload.monitors
+          return
+        }
+      }
+    } catch {
+      // If parse fails, fall back to full refresh
+    }
+  }
+  fetchStatus()
+}
+
 function connectSSE() {
   eventSource = new EventSource('/status/events')
-  eventSource.addEventListener('status.component_changed', () => fetchStatus())
+  eventSource.addEventListener('status.component_changed', handleComponentChangedEvent)
   eventSource.addEventListener('status.global_changed', () => fetchStatus())
   eventSource.addEventListener('status.incident_created', () => fetchStatus())
   eventSource.addEventListener('status.incident_updated', () => fetchStatus())
@@ -182,28 +223,40 @@ function formatDate(iso: string) {
 
       <div class="mx-auto max-w-3xl px-6 py-10 space-y-10">
 
-        <!-- Component Groups -->
-        <section v-if="data.groups?.length">
-          <div class="space-y-6">
-            <div v-for="group in data.groups" :key="group.name">
-              <h2
-                v-if="data.groups.length > 1 && group.name !== 'Other'"
-                class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3"
-              >{{ group.name }}</h2>
-              <div class="rounded-xl border border-slate-800 bg-pb-surface divide-y divide-slate-800">
-                <div
-                  v-for="comp in group.components"
-                  :key="comp.id"
-                  class="flex items-center justify-between px-5 py-3.5"
-                >
-                  <span class="text-sm font-medium text-pb-primary">{{ comp.name }}</span>
-                  <div class="flex items-center gap-2">
-                    <span :class="['text-xs font-medium', componentStatusStyle(comp.status).text]">
-                      {{ componentStatusStyle(comp.status).label }}
-                    </span>
-                    <span :class="['h-2 w-2 rounded-full', componentStatusStyle(comp.status).dot]" />
-                  </div>
+        <!-- Components -->
+        <section v-if="data.components?.length">
+          <div class="rounded-xl border border-slate-800 bg-pb-surface divide-y divide-slate-800">
+            <div
+              v-for="comp in data.components"
+              :key="comp.id"
+            >
+              <button
+                type="button"
+                class="flex w-full items-center justify-between px-5 py-3.5 text-left transition-colors hover:bg-slate-800/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+                :aria-expanded="expandedComponents.has(comp.id)"
+                :aria-controls="`breakdown-${comp.id}`"
+                @click="toggleExpanded(comp.id)"
+                @keydown="handleRowKeydown($event, comp.id)"
+              >
+                <span class="text-sm font-medium text-pb-primary">{{ comp.name }}</span>
+                <div class="flex items-center gap-2">
+                  <span :class="['text-xs font-medium', componentStatusStyle(comp.status).text]">
+                    {{ componentStatusStyle(comp.status).label }}
+                  </span>
+                  <span :class="['h-2 w-2 rounded-full', componentStatusStyle(comp.status).dot]" />
+                  <span
+                    v-if="comp.monitors?.length"
+                    class="text-slate-600 transition-transform"
+                    :style="{ transform: expandedComponents.has(comp.id) ? 'rotate(180deg)' : 'rotate(0deg)' }"
+                  >&#8964;</span>
                 </div>
+              </button>
+              <div
+                v-if="expandedComponents.has(comp.id) && comp.monitors?.length"
+                :id="`breakdown-${comp.id}`"
+                class="px-5 pb-3"
+              >
+                <StatusComponentBreakdown :monitors="comp.monitors" />
               </div>
             </div>
           </div>
