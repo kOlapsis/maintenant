@@ -35,6 +35,8 @@ const { hasFeature, isEnterprise } = useEdition()
 const store = useStatusAdminStore()
 const persoStore = usePersonalizationStore()
 
+const brandingRef = ref<InstanceType<typeof BrandingSection> | null>(null)
+
 type Tab = 'components' | 'incidents' | 'maintenance' | 'subscribers' | 'smtp' | 'personalization'
 const activeTab = ref<Tab>('components')
 
@@ -114,6 +116,7 @@ async function savePersonalization() {
       timezone: timezone.value,
       date_format: dateFormat.value,
     })
+    await brandingRef.value?.flushPendingAssets()
     persoSaveSuccess.value = true
     setTimeout(() => (persoSaveSuccess.value = false), 3000)
   } catch (e) {
@@ -280,7 +283,7 @@ onUnmounted(() => {
             class="rounded-xl border p-6"
             style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
           >
-            <BrandingSection v-model:title="title" v-model:subtitle="subtitle" />
+            <BrandingSection ref="brandingRef" v-model:title="title" v-model:subtitle="subtitle" />
           </div>
           <div
             class="rounded-xl border p-6"
