@@ -82,6 +82,18 @@ func (s *PersonalizationStoreImpl) UpdateSettings(ctx context.Context, in status
 	return s.GetSettings(ctx)
 }
 
+func (s *PersonalizationStoreImpl) BumpVersion(ctx context.Context) error {
+	now := time.Now().Unix()
+	_, err := s.writer.Exec(ctx,
+		`UPDATE status_page_settings SET version = version + 1, updated_at = ? WHERE id = 1`,
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("bump version: %w", err)
+	}
+	return nil
+}
+
 func (s *PersonalizationStoreImpl) GetAsset(ctx context.Context, role status.AssetRole) (*status.Asset, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT role, mime, bytes, byte_size, alt_text, updated_at FROM status_page_assets WHERE role = ?`, string(role))

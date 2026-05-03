@@ -37,6 +37,7 @@ interface PublicSettings {
     links: { label: string; url: string }[]
     powered_by: { label: string; url: string }
   }
+  faq: { question: string; answer_html: string }[]
   locale: string
   timezone: string
   date_format: string
@@ -385,7 +386,33 @@ function formatDate(iso: string) {
         </section>
 
         <!-- FAQ -->
-        <section v-if="settings?.footer?.links && settings.footer.links.length > 0 || false">
+        <section v-if="settings?.faq && settings.faq.length > 0">
+          <h2 class="text-xs font-semibold uppercase tracking-wider mb-3 text-slate-400">
+            {{ t('sectionFaq') }}
+          </h2>
+          <div class="space-y-2">
+            <details
+              v-for="(item, idx) in settings.faq"
+              :key="idx"
+              class="group rounded-lg border overflow-hidden"
+              :style="{ background: 'var(--mnt-surface, #12151C)', borderColor: 'var(--mnt-border, #1F2937)' }"
+            >
+              <summary
+                class="cursor-pointer list-none px-4 py-3 flex items-center justify-between gap-3 text-sm font-medium select-none"
+                :style="{ color: 'var(--mnt-text, #fff)' }"
+              >
+                <span>{{ item.question }}</span>
+                <span class="text-[10px] uppercase tracking-wide text-slate-500 group-open:hidden">
+                  {{ t('faqToggleHint') }}
+                </span>
+              </summary>
+              <div
+                class="px-4 pb-4 text-sm leading-relaxed prose prose-invert max-w-none"
+                :style="{ color: 'var(--mnt-text, #fff)' }"
+                v-html="item.answer_html"
+              />
+            </details>
+          </div>
         </section>
 
         <!-- Footer -->

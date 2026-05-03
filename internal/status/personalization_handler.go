@@ -20,16 +20,22 @@ func NewPersonalizationPublicHandler(svc *PersonalizationService, logger *slog.L
 }
 
 type PublicSettingsResponse struct {
-	Version  int64                 `json:"version"`
-	Title    string                `json:"title"`
-	Subtitle string                `json:"subtitle"`
-	Colors   PublicColorsResp      `json:"colors"`
-	Assets   PublicAssetsResp      `json:"assets"`
+	Version      int64              `json:"version"`
+	Title        string             `json:"title"`
+	Subtitle     string             `json:"subtitle"`
+	Colors       PublicColorsResp   `json:"colors"`
+	Assets       PublicAssetsResp   `json:"assets"`
 	Announcement PublicAnnouncement `json:"announcement"`
-	Footer   PublicFooterResp      `json:"footer"`
-	Locale   string                `json:"locale"`
-	Timezone string                `json:"timezone"`
-	DateFormat string              `json:"date_format"`
+	Footer       PublicFooterResp   `json:"footer"`
+	FAQ          []PublicFAQItem    `json:"faq"`
+	Locale       string             `json:"locale"`
+	Timezone     string             `json:"timezone"`
+	DateFormat   string             `json:"date_format"`
+}
+
+type PublicFAQItem struct {
+	Question   string `json:"question"`
+	AnswerHTML string `json:"answer_html"`
 }
 
 type PublicColorsResp struct {
@@ -136,6 +142,7 @@ func (h *PersonalizationPublicHandler) HandleSettingsJSON(w http.ResponseWriter,
 				URL:   "https://maintenant.dev",
 			},
 		},
+		FAQ:        []PublicFAQItem{},
 		Locale:     settings.Locale,
 		Timezone:   settings.Timezone,
 		DateFormat: settings.DateFormat,
@@ -171,6 +178,15 @@ func (h *PersonalizationPublicHandler) HandleSettingsJSON(w http.ResponseWriter,
 		} else {
 			for _, l := range links {
 				resp.Footer.Links = append(resp.Footer.Links, PublicFooterLink{Label: l.Label, URL: l.URL})
+			}
+		}
+
+		faq, err := h.svc.ListFAQItems(ctx)
+		if err != nil {
+			h.logger.Error("failed to list FAQ items", "error", err)
+		} else {
+			for _, f := range faq {
+				resp.FAQ = append(resp.FAQ, PublicFAQItem{Question: f.Question, AnswerHTML: f.AnswerHTML})
 			}
 		}
 	}

@@ -45,6 +45,12 @@ func (m *mockPersoStore) UpdateSettings(_ context.Context, s status.Settings) (s
 	return m.settings, nil
 }
 
+func (m *mockPersoStore) BumpVersion(_ context.Context) error {
+	m.settings.Version++
+	m.settings.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
 func (m *mockPersoStore) GetAsset(_ context.Context, role status.AssetRole) (*status.Asset, error) {
 	return m.assets[role], nil
 }

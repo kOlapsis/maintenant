@@ -39,6 +39,12 @@ func (m *mockPersonalizationStore) UpdateSettings(_ context.Context, s Settings)
 	return m.settings, nil
 }
 
+func (m *mockPersonalizationStore) BumpVersion(_ context.Context) error {
+	m.settings.Version++
+	m.settings.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
 func (m *mockPersonalizationStore) GetAsset(_ context.Context, role AssetRole) (*Asset, error) {
 	return m.assets[role], nil
 }

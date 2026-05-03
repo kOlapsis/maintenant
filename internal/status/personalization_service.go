@@ -64,7 +64,9 @@ func (svc *PersonalizationService) UpdateSettings(ctx context.Context, in Settin
 		return Settings{}, nil, err
 	}
 
-	svc.invalidateCache()
+	// UpdateSettings already bumps the version inside its SQL — only clear the
+	// in-memory cache here to avoid a redundant second bump.
+	svc.clearCache()
 	return out, warnings, nil
 }
 
@@ -82,7 +84,7 @@ func (svc *PersonalizationService) PutAsset(ctx context.Context, role AssetRole,
 	if err := svc.store.PutAsset(ctx, a); err != nil {
 		return err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return nil
 }
 
@@ -90,7 +92,7 @@ func (svc *PersonalizationService) DeleteAsset(ctx context.Context, role AssetRo
 	if err := svc.store.DeleteAsset(ctx, role); err != nil {
 		return err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return nil
 }
 
@@ -106,7 +108,7 @@ func (svc *PersonalizationService) CreateFooterLink(ctx context.Context, label, 
 	if err != nil {
 		return FooterLink{}, err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return link, nil
 }
 
@@ -118,7 +120,7 @@ func (svc *PersonalizationService) UpdateFooterLink(ctx context.Context, id int6
 	if err != nil {
 		return FooterLink{}, err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return link, nil
 }
 
@@ -126,7 +128,7 @@ func (svc *PersonalizationService) DeleteFooterLink(ctx context.Context, id int6
 	if err := svc.store.DeleteFooterLink(ctx, id); err != nil {
 		return err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return nil
 }
 
@@ -135,7 +137,7 @@ func (svc *PersonalizationService) ReorderFooterLinks(ctx context.Context, ids [
 	if err != nil {
 		return nil, err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return links, nil
 }
 
@@ -155,7 +157,7 @@ func (svc *PersonalizationService) CreateFAQItem(ctx context.Context, question, 
 	if err != nil {
 		return FAQItem{}, err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return item, nil
 }
 
@@ -171,7 +173,7 @@ func (svc *PersonalizationService) UpdateFAQItem(ctx context.Context, id int64, 
 	if err != nil {
 		return FAQItem{}, err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return item, nil
 }
 
@@ -179,7 +181,7 @@ func (svc *PersonalizationService) DeleteFAQItem(ctx context.Context, id int64) 
 	if err := svc.store.DeleteFAQItem(ctx, id); err != nil {
 		return err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return nil
 }
 
@@ -188,14 +190,23 @@ func (svc *PersonalizationService) ReorderFAQItems(ctx context.Context, ids []in
 	if err != nil {
 		return nil, err
 	}
-	svc.invalidateCache()
+	svc.invalidateCache(ctx)
 	return items, nil
 }
 
-func (svc *PersonalizationService) invalidateCache() {
+func (svc *PersonalizationService) clearCache() {
 	svc.mu.Lock()
 	svc.cache = nil
 	svc.mu.Unlock()
+}
+
+func (svc *PersonalizationService) invalidateCache(ctx context.Context) {
+	svc.clearCache()
+	// Best-effort: bump the persisted version so the public ETag changes and
+	// CDN/browser caches are invalidated. Failure here is non-fatal — the underlying
+	// mutation already succeeded; clients will catch up on the next version-bumping
+	// write or after the Cache-Control max-age elapses.
+	_ = svc.store.BumpVersion(ctx)
 }
 
 func (svc *PersonalizationService) validateSettings(s Settings) error {

@@ -5,6 +5,7 @@ import "context"
 type PersonalizationStore interface {
 	GetSettings(ctx context.Context) (Settings, error)
 	UpdateSettings(ctx context.Context, s Settings) (Settings, error)
+	BumpVersion(ctx context.Context) error
 
 	GetAsset(ctx context.Context, role AssetRole) (*Asset, error)
 	PutAsset(ctx context.Context, a Asset) error
