@@ -22,9 +22,10 @@ import (
 
 // Handler serves the public status page API and SSE endpoints.
 type Handler struct {
-	service    *Service
-	sseHandler http.Handler
-	logger     *slog.Logger
+	service         *Service
+	sseHandler      http.Handler
+	logger          *slog.Logger
+	personalization *PersonalizationPublicHandler
 
 	rateMu     sync.Mutex
 	rateMap    map[string][]time.Time
@@ -45,6 +46,11 @@ func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger) 
 	}
 }
 
+// SetPersonalizationHandler attaches the personalization public handler.
+func (h *Handler) SetPersonalizationHandler(ph *PersonalizationPublicHandler) {
+	h.personalization = ph
+}
+
 // Middleware wraps an http.Handler (e.g. rate limiter).
 type Middleware func(http.Handler) http.Handler
 
@@ -56,16 +62,20 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 	mux.Handle("POST /status/subscribe", mw(http.HandlerFunc(h.HandleSubscribe)))
 	mux.Handle("GET /status/confirm", mw(http.HandlerFunc(h.HandleConfirm)))
 	mux.Handle("GET /status/unsubscribe", mw(http.HandlerFunc(h.HandleUnsubscribe)))
+	if h.personalization != nil {
+		mux.Handle("GET /status/settings.json", mw(http.HandlerFunc(h.personalization.HandleSettingsJSON)))
+	}
 }
 
 // StatusAPIResponse is the JSON snapshot of current status.
 type StatusAPIResponse struct {
-	GlobalStatus    string              `json:"global_status"`
-	GlobalMessage   string              `json:"global_message"`
-	UpdatedAt       time.Time           `json:"updated_at"`
-	Components      []APIComponentBrief `json:"components"`
-	ActiveIncidents []APIIncidentBrief  `json:"active_incidents"`
-	UpcomingMaint   []APIMaintBrief     `json:"upcoming_maintenance"`
+	GlobalStatus           string              `json:"global_status"`
+	GlobalMessage          string              `json:"global_message"`
+	UpdatedAt              time.Time           `json:"updated_at"`
+	Components             []APIComponentBrief `json:"components"`
+	ActiveIncidents        []APIIncidentBrief  `json:"active_incidents"`
+	UpcomingMaint          []APIMaintBrief     `json:"upcoming_maintenance"`
+	PersonalizationVersion int64               `json:"personalization_version,omitempty"`
 }
 
 // APIComponentBrief is a brief component in the JSON API.
@@ -115,6 +125,9 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 		GlobalStatus:  data.GlobalStatus,
 		GlobalMessage: data.GlobalMessage,
 		UpdatedAt:     time.Now().UTC(),
+	}
+	if h.personalization != nil {
+		resp.PersonalizationVersion = h.personalization.GetVersion(r)
 	}
 
 	for _, c := range data.Components {

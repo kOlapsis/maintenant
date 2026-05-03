@@ -101,12 +101,15 @@ export function useEdition() {
     })
   }
 
+  const personalization = computed(() => hasFeature('personalization'))
+
   return {
     edition,
     isEnterprise,
     isCommunity,
     organisationName,
     hasFeature,
+    personalization,
     load,
     reload,
     getQuota,

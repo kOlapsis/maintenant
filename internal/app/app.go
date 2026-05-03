@@ -53,15 +53,16 @@ type App struct {
 	rt pbruntime.Runtime
 
 	// Core services
-	containerSvc  *container.Service
-	endpointSvc   *endpoint.Service
-	heartbeatSvc  *heartbeat.Service
-	certSvc       *certificate.Service
-	resourceSvc   *resource.Service
-	securitySvc   *security.Service
-	updateSvc     *update.Service
-	statusSvc     *status.Service
-	subscriberSvc *status.SubscriberService
+	containerSvc       *container.Service
+	endpointSvc        *endpoint.Service
+	heartbeatSvc       *heartbeat.Service
+	certSvc            *certificate.Service
+	resourceSvc        *resource.Service
+	securitySvc        *security.Service
+	updateSvc          *update.Service
+	statusSvc          *status.Service
+	subscriberSvc      *status.SubscriberService
+	personalizationSvc *status.PersonalizationService
 
 	// Alert pipeline
 	alertEngine *alert.Engine
@@ -154,6 +155,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	silenceStore := sqlite.NewSilenceStore(db)
 	statusCompStore := sqlite.NewStatusComponentStore(db)
 	a.statusCompStore = statusCompStore
+	personalizationStore := sqlite.NewPersonalizationStore(db)
 	incidentStore := sqlite.NewIncidentStore(db)
 	maintenanceStore := sqlite.NewMaintenanceStore(db)
 	subscriberStore := sqlite.NewSubscriberStore(db)
@@ -342,7 +344,10 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	})
 	a.wireStatusProvider()
 	a.maintScheduler = status.NewMaintenanceScheduler(maintenanceStore, statusCompStore, incidentStore, a.statusSvc, logger)
+	a.personalizationSvc = status.NewPersonalizationService(personalizationStore, logger.With("component", "personalization"))
+	personalizationPublicHandler := status.NewPersonalizationPublicHandler(a.personalizationSvc, logger)
 	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger)
+	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
 	// --- Webhook dispatcher ---
 	a.webhookDispatcher = webhook.NewDispatcher(webhookStore, a.notifier, logger)
@@ -414,12 +419,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SilenceStore: silenceStore,
 		Notifier:     a.notifier,
 		// Status page admin
-		StatusComponents:  statusCompStore,
-		StatusIncidents:   incidentStore,
-		StatusSubscribers: subscriberStore,
-		StatusMaintenance: maintenanceStore,
-		StatusSvc:         a.statusSvc,
-		StatusBroker:      a.statusBroker,
+		StatusComponents:   statusCompStore,
+		StatusIncidents:    incidentStore,
+		StatusSubscribers:  subscriberStore,
+		StatusMaintenance:  maintenanceStore,
+		StatusSvc:          a.statusSvc,
+		StatusBroker:       a.statusBroker,
+		PersonalizationSvc: a.personalizationSvc,
 		// Webhooks
 		WebhookStore: webhookStore,
 		// UI extras

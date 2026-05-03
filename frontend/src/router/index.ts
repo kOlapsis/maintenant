@@ -58,6 +58,7 @@ const router = createRouter({
         { path: 'cluster', name: 'cluster', component: ClusterOverviewPage },
         { path: 'nodes', name: 'nodes', component: NodesPage },
         { path: 'pro-edition', name: 'pro-edition', component: ProPage },
+
       ],
     },
     {

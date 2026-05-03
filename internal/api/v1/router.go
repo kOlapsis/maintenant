@@ -65,12 +65,13 @@ type HandlerDeps struct {
 	Notifier     *alert.Notifier
 
 	// Status page admin
-	StatusComponents  status.ComponentStore
-	StatusIncidents   status.IncidentStore
-	StatusSubscribers status.SubscriberStore
-	StatusMaintenance status.MaintenanceStore
-	StatusSvc         *status.Service
-	StatusBroker      *SSEBroker
+	StatusComponents    status.ComponentStore
+	StatusIncidents     status.IncidentStore
+	StatusSubscribers   status.SubscriberStore
+	StatusMaintenance   status.MaintenanceStore
+	StatusSvc           *status.Service
+	StatusBroker        *SSEBroker
+	PersonalizationSvc  *status.PersonalizationService
 
 	// Webhooks
 	WebhookStore webhook.WebhookSubscriptionStore
@@ -274,6 +275,30 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("GET /api/v1/status/smtp", requireEnterprise(sh.HandleGetSmtpConfig))
 		r.mux.HandleFunc("PUT /api/v1/status/smtp", requireEnterprise(sh.HandleUpdateSmtpConfig))
 		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requireEnterprise(sh.HandleTestSmtp))
+	}
+
+	// Status page personalization (Pro only)
+	if d.PersonalizationSvc != nil {
+		ph := NewPersonalizationHandler(d.PersonalizationSvc)
+		// Settings
+		r.mux.HandleFunc("GET /api/v1/status-page/settings", requireEnterprise(ph.HandleGetSettings))
+		r.mux.HandleFunc("PUT /api/v1/status-page/settings", requireEnterprise(ph.HandlePutSettings))
+		// Assets
+		r.mux.HandleFunc("PUT /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandlePutAsset))
+		r.mux.HandleFunc("GET /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandleGetAsset))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandleDeleteAsset))
+		// Footer links
+		r.mux.HandleFunc("GET /api/v1/status-page/footer-links", requireEnterprise(ph.HandleListFooterLinks))
+		r.mux.HandleFunc("POST /api/v1/status-page/footer-links", requireEnterprise(ph.HandleCreateFooterLink))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/order", requireEnterprise(ph.HandleReorderFooterLinks))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/{id}", requireEnterprise(ph.HandleUpdateFooterLink))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/footer-links/{id}", requireEnterprise(ph.HandleDeleteFooterLink))
+		// FAQ
+		r.mux.HandleFunc("GET /api/v1/status-page/faq", requireEnterprise(ph.HandleListFAQ))
+		r.mux.HandleFunc("POST /api/v1/status-page/faq", requireEnterprise(ph.HandleCreateFAQItem))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/order", requireEnterprise(ph.HandleReorderFAQ))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/{id}", requireEnterprise(ph.HandleUpdateFAQItem))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/faq/{id}", requireEnterprise(ph.HandleDeleteFAQItem))
 	}
 
 	// UI extras
@@ -575,6 +600,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 				"security_posture":     isEnterprise,
 				"swarm_dashboard":      isEnterprise,
 				"k8s_cluster":          isEnterprise,
+				"personalization":      isEnterprise,
 			},
 			"quotas": quotas,
 		})
