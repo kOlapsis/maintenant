@@ -1,0 +1,32 @@
+[Unit]
+Description=Maintenant monitoring
+Documentation=https://docs.maintenant.dev
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maintenant
+Group=maintenant
+EnvironmentFile=-/etc/maintenant/maintenant.env
+ExecStart=/usr/local/bin/maintenant
+WorkingDirectory=/var/lib/maintenant
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/maintenant
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

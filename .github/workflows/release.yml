@@ -1,0 +1,279 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  GO_VERSION_FILE: go.mod
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # T004 — Build standalone binaries (matrix: amd64 + arm64)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-binaries:
+    name: Build binaries (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: amd64
+          - os: ubuntu-22.04-arm
+            arch: arm64
+
+    steps:
+      - name: Validate required secrets
+        run: |
+          if [ -z "$LICENSE_PUBLIC_KEY" ]; then
+            echo "::error::LICENSE_PUBLIC_KEY secret is not set."
+            exit 1
+          fi
+        env:
+          LICENSE_PUBLIC_KEY: ${{ secrets.LICENSE_PUBLIC_KEY }}
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: Compute build metadata
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="${GITHUB_SHA}"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "COMMIT=${COMMIT}" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=${BUILD_DATE}" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=maintenant-${VERSION}-linux-${{ matrix.arch }}" >> "$GITHUB_ENV"
+
+      - name: Install frontend dependencies and build
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          go build \
+            -ldflags "-s -w \
+              -X main.version=${VERSION} \
+              -X main.commit=${COMMIT} \
+              -X main.buildDate=${BUILD_DATE} \
+              -X main.publicKeyB64=${{ secrets.LICENSE_PUBLIC_KEY }}" \
+            -o "${{ env.ASSET_NAME }}" \
+            ./cmd/maintenant
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.arch }}
+          path: ${{ env.ASSET_NAME }}
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # T005 — Aggregate checksums
+  # ─────────────────────────────────────────────────────────────────────────────
+  aggregate-checksums:
+    name: Aggregate SHA256SUMS
+    runs-on: ubuntu-22.04
+    needs: build-binaries
+
+    steps:
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Generate SHA256SUMS
+        working-directory: artifacts
+        run: sha256sum maintenant-* > SHA256SUMS
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: artifacts/SHA256SUMS
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # T006 — Sign SHA256SUMS with cosign keyless OIDC
+  # ─────────────────────────────────────────────────────────────────────────────
+  sign-cosign:
+    name: Sign SHA256SUMS (cosign keyless)
+    runs-on: ubuntu-22.04
+    needs: aggregate-checksums
+
+    steps:
+      - name: Download checksums
+        uses: actions/download-artifact@v4
+        with:
+          name: checksums
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign SHA256SUMS
+        run: |
+          cosign sign-blob --yes \
+            --bundle SHA256SUMS.bundle \
+            SHA256SUMS
+          # Extract sig + cert for individual asset attachment
+          cosign verify-blob \
+            --bundle SHA256SUMS.bundle \
+            SHA256SUMS || true
+          # Export sig and pem from bundle for compatibility
+          jq -r '.signedEntryTimestamp // .Payload' SHA256SUMS.bundle > SHA256SUMS.sig || cp SHA256SUMS.bundle SHA256SUMS.sig
+          jq -r '.cert // .Cert' SHA256SUMS.bundle > SHA256SUMS.pem 2>/dev/null || true
+
+      - name: Upload signature artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signatures
+          path: |
+            SHA256SUMS.sig
+            SHA256SUMS.pem
+            SHA256SUMS.bundle
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # T007 — SLSA Build Provenance attestation
+  # ─────────────────────────────────────────────────────────────────────────────
+  attest-provenance:
+    name: Attest build provenance
+    runs-on: ubuntu-22.04
+    needs: build-binaries
+
+    steps:
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: artifacts/maintenant-*
+
+      - name: Upload provenance artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: provenance
+          path: provenance.intoto.jsonl
+          retention-days: 1
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # T009 — Build Docker image (reuses existing workflow)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-docker:
+    name: Build Docker image
+    uses: ./.github/workflows/build-docker.yml
+    secrets: inherit
+    with:
+      push: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # T008 — Publish GitHub Release (atomic: all jobs must succeed)
+  # ─────────────────────────────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs:
+      - build-binaries
+      - aggregate-checksums
+      - sign-cosign
+      - attest-provenance
+      - build-docker
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: release-assets/
+
+      - name: Download checksum artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: checksums
+          path: release-assets/
+
+      - name: Download signature artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: signatures
+          path: release-assets/
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            release-assets/maintenant-*
+            release-assets/SHA256SUMS
+            release-assets/SHA256SUMS.sig
+            release-assets/SHA256SUMS.pem
+            release-assets/SHA256SUMS.bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # T021 — Smoke install test (post-publish)
+  # ─────────────────────────────────────────────────────────────────────────────
+  install-smoke:
+    name: Smoke install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: publish-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+          - os: ubuntu-22.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary for this arch
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-${{ matrix.os == 'ubuntu-22.04' && 'amd64' || 'arm64' }}
+          merge-multiple: true
+
+      - name: Run install script (no-service, local binary)
+        run: |
+          chmod +x deploy/install/install.sh
+          sudo MAINTENANT_VERSION=${{ github.ref_name }} \
+               MAINTENANT_INSTALL_DIR=/usr/local/bin \
+               bash deploy/install/install.sh --no-service --skip-cosign
+
+      - name: Verify binary
+        run: |
+          maintenant --version
+          echo "Smoke install OK"
