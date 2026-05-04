@@ -15,7 +15,7 @@ run_script() {
         NO_COLOR=1
         export NO_COLOR
         # shellcheck source=/dev/null
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         $*
     "
 }
@@ -26,7 +26,7 @@ run_script() {
     result=$(bash -c "
         uname() { case \"\$1\" in -s) echo Linux;; -m) echo x86_64;; esac; }
         export -f uname
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         detect_platform
         echo \"\$ARCH\"
     ")
@@ -37,7 +37,7 @@ run_script() {
     result=$(bash -c "
         uname() { case \"\$1\" in -s) echo Linux;; -m) echo aarch64;; esac; }
         export -f uname
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         detect_platform
         echo \"\$ARCH\"
     ")
@@ -48,7 +48,7 @@ run_script() {
     run bash -c "
         uname() { case \"\$1\" in -s) echo Linux;; -m) echo armv7l;; esac; }
         export -f uname
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         detect_platform
     "
     [ "$status" -eq 10 ]
@@ -58,7 +58,7 @@ run_script() {
     run bash -c "
         uname() { case \"\$1\" in -s) echo Darwin;; -m) echo x86_64;; esac; }
         export -f uname
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         detect_platform
     "
     [ "$status" -eq 10 ]
@@ -70,7 +70,7 @@ run_script() {
     run bash -c "
         id() { echo '1000'; }
         export -f id
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         check_prereqs
     "
     [ "$status" -eq 11 ]
@@ -82,7 +82,7 @@ run_script() {
         export -f id
         # Remove curl and wget from PATH
         PATH=/usr/bin/no-such-dir
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         check_prereqs
     "
     [ "$status" -eq 12 ]
@@ -97,16 +97,13 @@ run_script() {
     (cd "$FAKE_TMPDIR" && sha256sum maintenant-v1.0.0-linux-amd64 > SHA256SUMS)
 
     run bash -c "
-        # Mock fetch functions
-        fetch_url_to() { cp '$FAKE_TMPDIR/\$(basename \"\$1\")' \"\$2\" 2>/dev/null || true; }
-        export -f fetch_url_to
-        TMPDIR_INSTALL='$FAKE_TMPDIR'
         VERSION='v1.0.0'
         ARCH='amd64'
         SKIP_COSIGN=1
         NO_COLOR=1
-        export TMPDIR_INSTALL VERSION ARCH SKIP_COSIGN NO_COLOR
-        . '$SCRIPT'
+        export VERSION ARCH SKIP_COSIGN NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        fetch_url_to() { cp '$FAKE_TMPDIR/'\"\$(basename \"\$2\")\" \"\$2\" 2>/dev/null || true; }
         download_and_verify
     "
     [ "$status" -eq 0 ]
@@ -119,15 +116,13 @@ run_script() {
     printf 'deadbeef  maintenant-v1.0.0-linux-amd64\n' > "$FAKE_TMPDIR/SHA256SUMS"
 
     run bash -c "
-        fetch_url_to() { cp '$FAKE_TMPDIR/\$(basename \"\$1\")' \"\$2\" 2>/dev/null || true; }
-        export -f fetch_url_to
-        TMPDIR_INSTALL='$FAKE_TMPDIR'
         VERSION='v1.0.0'
         ARCH='amd64'
         SKIP_COSIGN=1
         NO_COLOR=1
-        export TMPDIR_INSTALL VERSION ARCH SKIP_COSIGN NO_COLOR
-        . '$SCRIPT'
+        export VERSION ARCH SKIP_COSIGN NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        fetch_url_to() { cp '$FAKE_TMPDIR/'\"\$(basename \"\$2\")\" \"\$2\" 2>/dev/null || true; }
         download_and_verify
     "
     [ "$status" -eq 21 ]
@@ -146,16 +141,15 @@ run_script() {
     (cd "$FAKE_TMPDIR" && sha256sum maintenant-v1.0.0-linux-amd64 > SHA256SUMS)
 
     run bash -c "
-        # Mock system commands
+        # Mock system commands (before source — these don't conflict with script functions)
         uname() { case \"\$1\" in -s) echo Linux;; -m) echo x86_64;; esac; }
         id()   { echo '0'; }
         useradd() { return 0; }
         getent() { return 1; }
-        fetch_url_to() { cp '$FAKE_TMPDIR/\$(basename \"\$1\")' \"\$2\" 2>/dev/null || true; }
-        fetch_url()    { echo '{\"tag_name\": \"v1.0.0\"}'; }
         chown() { return 0; }
         chmod() { return 0; }
-        export -f uname id useradd getent fetch_url_to fetch_url chown chmod
+        install() { return 0; }
+        export -f uname id useradd getent chown chmod install
         INSTALL_DIR='$FAKE_INSTALL_DIR'
         DATA_DIR='$FAKE_DATA_DIR'
         CONFIG_DIR='$FAKE_CONFIG_DIR'
@@ -163,7 +157,10 @@ run_script() {
         SKIP_COSIGN=1
         NO_COLOR=1
         export INSTALL_DIR DATA_DIR CONFIG_DIR MAINTENANT_VERSION SKIP_COSIGN NO_COLOR
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        # Mock fetch functions after source — source overwrites them otherwise
+        fetch_url_to() { cp '$FAKE_TMPDIR/'\"\$(basename \"\$2\")\" \"\$2\" 2>/dev/null || true; }
+        fetch_url()    { echo '{\"tag_name\": \"v1.0.0\", \"assets\": [{\"name\": \"maintenant-v1.0.0-linux-amd64\", \"size\": 10}]}'; }
         main --no-service
     "
     [ "$status" -eq 0 ]

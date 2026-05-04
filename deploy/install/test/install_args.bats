@@ -10,7 +10,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
 
 @test "parse_maintenant_flags: separates --no-service from binary flags" {
     run bash -c "
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         parse_maintenant_flags --no-service --addr 127.0.0.1:9000
         echo \"NO_SERVICE=\${NO_SERVICE}\"
         echo \"BINARY_FLAG_KEYS=\${BINARY_FLAG_KEYS}\"
@@ -23,7 +23,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
 
 @test "parse_maintenant_flags: --uninstall sets DO_UNINSTALL" {
     run bash -c "
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         parse_maintenant_flags --uninstall
         echo \"DO_UNINSTALL=\${DO_UNINSTALL}\"
     "
@@ -33,7 +33,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
 
 @test "parse_maintenant_flags: --purge sets DO_PURGE" {
     run bash -c "
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         parse_maintenant_flags --uninstall --purge
         echo \"DO_PURGE=\${DO_PURGE}\"
     "
@@ -43,7 +43,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
 
 @test "parse_maintenant_flags: boolean flags stored as true" {
     run bash -c "
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         parse_maintenant_flags --disableTelemetry --mcp
         printf '%s\n' \"\$BINARY_FLAG_KEYS\"
     "
@@ -54,7 +54,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
 
 @test "parse_maintenant_flags: unknown argument exits 2" {
     run bash -c "
-        NO_COLOR=1 . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'
         parse_maintenant_flags --unknownflag
     "
     [ "$status" -eq 2 ]
@@ -63,82 +63,82 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
 # ── flag_to_env ───────────────────────────────────────────────────────────────
 
 @test "flag_to_env: addr -> MAINTENANT_ADDR" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env addr")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env addr")
     [ "$result" = "MAINTENANT_ADDR" ]
 }
 
 @test "flag_to_env: baseUrl -> MAINTENANT_BASE_URL" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env baseUrl")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env baseUrl")
     [ "$result" = "MAINTENANT_BASE_URL" ]
 }
 
 @test "flag_to_env: organisationName -> MAINTENANT_ORGANISATION_NAME" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env organisationName")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env organisationName")
     [ "$result" = "MAINTENANT_ORGANISATION_NAME" ]
 }
 
 @test "flag_to_env: licenseKey -> MAINTENANT_LICENSE_KEY" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env licenseKey")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env licenseKey")
     [ "$result" = "MAINTENANT_LICENSE_KEY" ]
 }
 
 @test "flag_to_env: smtpPassword -> MAINTENANT_SMTP_PASSWORD" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env smtpPassword")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env smtpPassword")
     [ "$result" = "MAINTENANT_SMTP_PASSWORD" ]
 }
 
 @test "flag_to_env: mcpClientSecret -> MAINTENANT_MCP_CLIENT_SECRET" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env mcpClientSecret")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env mcpClientSecret")
     [ "$result" = "MAINTENANT_MCP_CLIENT_SECRET" ]
 }
 
 @test "flag_to_env: k8sNamespaces -> MAINTENANT_K8S_NAMESPACES" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env k8sNamespaces")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env k8sNamespaces")
     [ "$result" = "MAINTENANT_K8S_NAMESPACES" ]
 }
 
 @test "flag_to_env: k8sExcludeNamespaces -> MAINTENANT_K8S_EXCLUDE_NAMESPACES" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env k8sExcludeNamespaces")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env k8sExcludeNamespaces")
     [ "$result" = "MAINTENANT_K8S_EXCLUDE_NAMESPACES" ]
 }
 
 @test "flag_to_env: updateInterval -> MAINTENANT_UPDATE_INTERVAL" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env updateInterval")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env updateInterval")
     [ "$result" = "MAINTENANT_UPDATE_INTERVAL" ]
 }
 
 @test "flag_to_env: securityScoreThreshold -> MAINTENANT_SECURITY_SCORE_THRESHOLD" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env securityScoreThreshold")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env securityScoreThreshold")
     [ "$result" = "MAINTENANT_SECURITY_SCORE_THRESHOLD" ]
 }
 
 @test "flag_to_env: disableTelemetry -> MAINTENANT_DISABLE_TELEMETRY" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env disableTelemetry")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env disableTelemetry")
     [ "$result" = "MAINTENANT_DISABLE_TELEMETRY" ]
 }
 
 @test "flag_to_env: allowPrivateWebhooks -> MAINTENANT_ALLOW_PRIVATE_WEBHOOKS" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env allowPrivateWebhooks")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env allowPrivateWebhooks")
     [ "$result" = "MAINTENANT_ALLOW_PRIVATE_WEBHOOKS" ]
 }
 
 @test "flag_to_env: corsOrigins -> MAINTENANT_CORS_ORIGINS" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env corsOrigins")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env corsOrigins")
     [ "$result" = "MAINTENANT_CORS_ORIGINS" ]
 }
 
 @test "flag_to_env: maxBodySize -> MAINTENANT_MAX_BODY_SIZE" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env maxBodySize")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env maxBodySize")
     [ "$result" = "MAINTENANT_MAX_BODY_SIZE" ]
 }
 
 @test "flag_to_env: logLevel -> MAINTENANT_LOG_LEVEL" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env logLevel")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env logLevel")
     [ "$result" = "MAINTENANT_LOG_LEVEL" ]
 }
 
 @test "flag_to_env: runtime -> MAINTENANT_RUNTIME" {
-    result=$(bash -c "NO_COLOR=1 . '$SCRIPT'; flag_to_env runtime")
+    result=$(bash -c "_INSTALL_SH_TESTING=1 NO_COLOR=1 . '$SCRIPT'; flag_to_env runtime")
     [ "$result" = "MAINTENANT_RUNTIME" ]
 }
 
@@ -156,7 +156,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
         chown() { return 0; }
         export -f chown
         export NO_COLOR TMPDIR_INSTALL CONFIG_DIR SERVICE_USER
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         BINARY_FLAG_KEYS='addr
 '
         BINARY_FLAG_VALS='127.0.0.1:9000
@@ -185,7 +185,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
         chown() { return 0; }
         export -f chown
         export NO_COLOR TMPDIR_INSTALL CONFIG_DIR SERVICE_USER
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         BINARY_FLAG_KEYS='addr
 '
         BINARY_FLAG_VALS='0.0.0.0:9000
@@ -210,8 +210,10 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/install.sh"
         TMPDIR_INSTALL='$FAKE_TMPDIR'
         CONFIG_DIR='$FAKE_CONFIG_DIR'
         SERVICE_USER=nobody
+        chown() { return 0; }
+        export -f chown
         export NO_COLOR TMPDIR_INSTALL CONFIG_DIR SERVICE_USER
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         BINARY_FLAG_KEYS='addr
 '
         BINARY_FLAG_VALS='127.0.0.1:8080

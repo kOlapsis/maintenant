@@ -24,7 +24,7 @@ run_uninstall() {
         DATA_DIR='$FAKE_DATA_DIR'
         CONFIG_DIR='$FAKE_CONFIG_DIR'
         export INSTALL_DIR DATA_DIR CONFIG_DIR NO_COLOR
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         parse_maintenant_flags $(printf '%s ' "$@")
         check_prereqs
         uninstall
@@ -53,7 +53,7 @@ run_uninstall() {
         CONFIG_DIR='$FAKE_CONFIG_DIR'
         SERVICE_FILE='$SERVICE_FILE'
         export INSTALL_DIR DATA_DIR CONFIG_DIR SERVICE_FILE NO_COLOR
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         parse_maintenant_flags --uninstall
         check_prereqs
         uninstall
@@ -87,7 +87,7 @@ run_uninstall() {
         SERVICE_FILE='$SERVICE_FILE'
         DO_PURGE=1
         export INSTALL_DIR DATA_DIR CONFIG_DIR SERVICE_FILE DO_PURGE NO_COLOR
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         parse_maintenant_flags --uninstall --purge
         check_prereqs
         uninstall
@@ -116,7 +116,7 @@ run_uninstall() {
         CONFIG_DIR='$FAKE_CONFIG_DIR'
         SERVICE_FILE='/tmp/no-such-service-$$.service'
         export INSTALL_DIR DATA_DIR CONFIG_DIR SERVICE_FILE NO_COLOR
-        . '$SCRIPT'
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         parse_maintenant_flags --uninstall
         check_prereqs
         uninstall

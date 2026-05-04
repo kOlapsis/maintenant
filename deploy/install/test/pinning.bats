@@ -35,17 +35,17 @@ MOCK_RELEASES_LIST='[
 
 @test "resolve_version: MAINTENANT_VERSION=latest resolves to latest tag" {
     result=$(bash -c "
+        MAINTENANT_VERSION=latest
+        NO_COLOR=1
+        export MAINTENANT_VERSION NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        log_info() { :; }; log_step() { :; }
         fetch_url() {
             case \"\$1\" in
                 *releases/latest) echo '{\"tag_name\": \"v1.5.0\"}' ;;
                 *) echo '[]' ;;
             esac
         }
-        export -f fetch_url
-        MAINTENANT_VERSION=latest
-        NO_COLOR=1
-        export MAINTENANT_VERSION NO_COLOR
-        . '$SCRIPT'
         resolve_version
         echo \"\$VERSION\"
     ")
@@ -54,17 +54,17 @@ MOCK_RELEASES_LIST='[
 
 @test "resolve_version: MAINTENANT_VERSION=v1.5.0 resolves exactly" {
     result=$(bash -c "
+        MAINTENANT_VERSION=v1.5.0
+        NO_COLOR=1
+        export MAINTENANT_VERSION NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        log_info() { :; }; log_step() { :; }
         fetch_url() {
             case \"\$1\" in
                 *releases/tags/v1.5.0) printf '%s' '$MOCK_RELEASE_WITH_BINARIES' ;;
                 *) echo '[]' ;;
             esac
         }
-        export -f fetch_url
-        MAINTENANT_VERSION=v1.5.0
-        NO_COLOR=1
-        export MAINTENANT_VERSION NO_COLOR
-        . '$SCRIPT'
         resolve_version
         echo \"\$VERSION\"
     ")
@@ -73,6 +73,10 @@ MOCK_RELEASES_LIST='[
 
 @test "resolve_version: non-existent version exits 20 with list of recent versions" {
     run bash -c "
+        MAINTENANT_VERSION=v99.99.99
+        NO_COLOR=1
+        export MAINTENANT_VERSION NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         fetch_url() {
             case \"\$1\" in
                 *releases/tags/v99*) return 1 ;;
@@ -80,11 +84,6 @@ MOCK_RELEASES_LIST='[
                 *) echo '{}' ;;
             esac
         }
-        export -f fetch_url
-        MAINTENANT_VERSION=v99.99.99
-        NO_COLOR=1
-        export MAINTENANT_VERSION NO_COLOR
-        . '$SCRIPT'
         resolve_version
     "
     [ "$status" -eq 20 ]
@@ -92,6 +91,10 @@ MOCK_RELEASES_LIST='[
 
 @test "resolve_version: pre-standalone version exits 20 with helpful message" {
     run bash -c "
+        MAINTENANT_VERSION=v1.0.0
+        NO_COLOR=1
+        export MAINTENANT_VERSION NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
         fetch_url() {
             case \"\$1\" in
                 *releases/tags/v1.0.0) printf '%s' '$MOCK_RELEASE_WITHOUT_BINARIES' ;;
@@ -99,11 +102,6 @@ MOCK_RELEASES_LIST='[
                 *) echo '{}' ;;
             esac
         }
-        export -f fetch_url
-        MAINTENANT_VERSION=v1.0.0
-        NO_COLOR=1
-        export MAINTENANT_VERSION NO_COLOR
-        . '$SCRIPT'
         resolve_version
     " 2>&1
     [ "$status" -eq 20 ]
