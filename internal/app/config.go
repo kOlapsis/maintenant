@@ -43,8 +43,8 @@ type Config struct {
 	OrgName string
 
 	// Kubernetes
-	K8sNamespaces  string
-	K8sExcludeNS   string
+	K8sNamespaces string
+	K8sExcludeNS  string
 
 	// Security
 	SecurityScoreThreshold int
@@ -54,6 +54,9 @@ type Config struct {
 
 	// Dev
 	AllowPrivateWebhooks bool
+
+	// Runtime / logging (set via CLI flags; runtime override propagated to env)
+	LogLevel string
 
 	// Build info (injected via ldflags)
 	Version      string
@@ -97,18 +100,20 @@ func ConfigFromEnv() Config {
 		},
 
 		MCP: MCPConfig{
-			Enabled:      os.Getenv("MAINTENANT_MCP") == "true",
+			Enabled:      parseTruthy(os.Getenv("MAINTENANT_MCP")),
 			ClientID:     os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
 			ClientSecret: os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
 		},
 
 		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
-		MaxBodySize: 1048576,
+		MaxBodySize: int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
 
 		OrgName: envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
 
 		K8sNamespaces: os.Getenv("MAINTENANT_K8S_NAMESPACES"),
 		K8sExcludeNS:  os.Getenv("MAINTENANT_K8S_EXCLUDE_NAMESPACES"),
+
+		LogLevel: envOr("MAINTENANT_LOG_LEVEL", "info"),
 	}
 
 	if thresholdStr := os.Getenv("MAINTENANT_SECURITY_SCORE_THRESHOLD"); thresholdStr != "" {
@@ -123,10 +128,15 @@ func ConfigFromEnv() Config {
 	return cfg
 }
 
-// parseTruthy mirrors internal/telemetry/env.go semantics so the config
-// layer does not depend on the telemetry package (avoids an import cycle
-// at app wiring time). Truthy values: 1, t, true, y, yes, on
-// (case-insensitive, whitespace-trimmed).
+func int64OrDefault(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}
+
 func parseTruthy(raw string) bool {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "t", "true", "y", "yes", "on":
