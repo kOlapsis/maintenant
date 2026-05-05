@@ -110,6 +110,13 @@ services:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
       - "8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"  # match host's docker group — see note below
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
@@ -128,6 +135,11 @@ docker compose up -d
 ```
 
 Open **http://localhost:8080** — your containers are already there. No configuration needed.
+
+> **Finding your DOCKER_GID**
+> Run `getent group docker | cut -d: -f3` on the host. The number printed is your Docker group GID. The fallback `983` is not universal — it varies by distribution and installation method. Create a `.env` file next to your `docker-compose.yml` with `DOCKER_GID=<number>` so Compose picks it up automatically.
+>
+> If containers are not discovered (permission error on the socket), see [Troubleshooting](#troubleshooting).
 
 ### Kubernetes
 
@@ -288,6 +300,13 @@ services:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
       - "8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
@@ -434,6 +453,13 @@ Internet  ->  Reverse Proxy (Traefik / Caddy / nginx)
 services:
   maintenant:
     image: ghcr.io/kolapsis/maintenant:latest
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     labels:
       traefik.enable: "true"
       traefik.http.routers.maintenant.rule: "Host(`now.example.com`)"
@@ -451,6 +477,63 @@ services:
 </details>
 
 > **Note:** `/ping/{uuid}` (heartbeat pings) and `/status/` (public status page) are meant to be publicly accessible. Configure your proxy rules accordingly.
+
+---
+
+## Troubleshooting
+
+### Permission denied on /var/run/docker.sock
+
+**Symptom:** maintenant starts but shows no containers, and the logs contain something like:
+
+```text
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock
+```
+
+**Why it happens:** maintenant runs as `nobody` (uid 65534) by design. The Docker socket on the host is owned by `root:docker`. Without `group_add`, the `nobody` user has no group membership that grants access to the socket — even with a read-only mount, the kernel rejects the open call.
+
+**Fix:** find the Docker group GID on the host and pass it via `group_add`.
+
+```bash
+# On the host
+getent group docker | cut -d: -f3
+```
+
+Create a `.env` file next to your `docker-compose.yml`:
+
+```bash
+DOCKER_GID=998   # replace with the number printed above
+```
+
+Then restart:
+
+```bash
+docker compose up -d
+```
+
+The fallback `983` in the Compose template is a common value but not universal — it varies by distribution, Docker install method, and host configuration.
+
+**SELinux (Fedora / RHEL / Rocky / CentOS):** if the GID fix above does not resolve the error, SELinux may be blocking the socket access. Check with:
+
+```bash
+ausearch -m AVC -ts recent
+```
+
+If you see a denial for `docker.sock`, add the `:z` relabel flag to the socket mount:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock:ro,z
+```
+
+**Docker rootless:** the socket is not at `/var/run/docker.sock` but at `$XDG_RUNTIME_DIR/docker.sock` (typically `/run/user/1000/docker.sock`). Adjust the bind mount accordingly:
+
+```yaml
+volumes:
+  - /run/user/1000/docker.sock:/var/run/docker.sock:ro
+```
+
+Replace `1000` with the UID of the user running the rootless Docker daemon (`id -u` on the host).
 
 ---
 

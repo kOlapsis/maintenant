@@ -87,3 +87,4 @@ nav:
       - API Reference: api/reference.md
   - Security: security.md
   - Architecture: architecture.md
+  - Troubleshooting: troubleshooting.md
