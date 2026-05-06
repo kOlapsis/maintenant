@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
@@ -63,6 +64,7 @@ type HandlerDeps struct {
 	ChannelStore alert.ChannelStore
 	SilenceStore alert.SilenceStore
 	Notifier     *alert.Notifier
+	Escalator    alert.Escalator
 
 	// Status page admin
 	StatusComponents    status.ComponentStore
@@ -91,6 +93,9 @@ type HandlerDeps struct {
 	SecuritySvc *security.Service
 	Scorer      *security.Scorer
 	AckStore    security.AcknowledgmentStore
+
+	// Escalation policies
+	EscalationSvc *escalation.Service
 
 	// License
 	LicenseMgr *license.LicenseManager
@@ -223,7 +228,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Alert engine endpoints
 	if d.AlertStore != nil {
-		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks)
+		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks, d.Escalator)
 		// Alert history
 		r.mux.HandleFunc("GET /api/v1/alerts", ah.HandleListAlerts)
 		r.mux.HandleFunc("GET /api/v1/alerts/active", ah.HandleGetActiveAlerts)
@@ -301,6 +306,9 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("DELETE /api/v1/status-page/faq/{id}", requireEnterprise(ph.HandleDeleteFAQItem))
 	}
 
+	// Escalation policies
+	r.registerEscalationRoutes(d)
+
 	// UI extras
 	r.registerUIRoutes(d)
 
@@ -377,6 +385,26 @@ func NewRouter(d HandlerDeps) *Router {
 	r.registerKubernetesRoutes(d)
 
 	return r
+}
+
+// registerEscalationRoutes registers escalation policy CRUD endpoints (Enterprise only).
+// The overlap-probe route must be registered before {id} to avoid path ambiguity.
+func (r *Router) registerEscalationRoutes(d HandlerDeps) {
+	if d.EscalationSvc == nil {
+		return
+	}
+	eh := NewEscalationHandler(d.EscalationSvc)
+	r.mux.HandleFunc("POST /api/v1/escalation-policies", requireEnterprise(eh.HandleCreatePolicy))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies", requireEnterprise(eh.HandleListPolicies))
+	// overlap-probe must be registered before /{id} to avoid the wildcard matching the literal segment.
+	r.mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requireEnterprise(eh.HandleOverlapProbe))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleGetPolicy))
+	r.mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleDeletePolicy))
+	r.mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleUpdatePolicy))
+	r.mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requireEnterprise(eh.HandleSetPolicyActive))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requireEnterprise(eh.HandleListPolicyRuns))
+	r.mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requireEnterprise(eh.HandleGetRun))
+	r.mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requireEnterprise(eh.HandleListAlertRuns))
 }
 
 // registerUIRoutes registers optional UI endpoints (daily uptime, log streaming, top resources).
