@@ -12,16 +12,31 @@
 -->
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { timeAgo } from '@/utils/time'
 import type { Alert } from '@/services/alertApi'
+import EscalationStatusBadge from '@/components/escalation/EscalationStatusBadge.vue'
+import { useEscalationApi } from '@/composables/useEscalationApi'
+import type { EscalationRun } from '@/types/escalation'
 
 const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
+
+const escalationApi = useEscalationApi()
+const escalationRuns = ref<Record<number, EscalationRun[]>>({})
+
+async function loadEscalationRuns(alertId: number) {
+  try {
+    const res = await escalationApi.listRunsForAlert(alertId)
+    escalationRuns.value = { ...escalationRuns.value, [alertId]: res.runs }
+  } catch {
+    // 403 in CE or other errors — ignore silently
+  }
+}
 
 const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
 
@@ -68,6 +83,11 @@ const sections = computed(() =>
     }))
     .filter((s) => s.alerts.length > 0),
 )
+
+onMounted(() => {
+  const allAlerts = Object.values(store.activeAlerts).flat() as Alert[]
+  allAlerts.forEach((alert) => loadEscalationRuns(alert.id))
+})
 </script>
 
 <template>
@@ -113,6 +133,10 @@ const sections = computed(() =>
                 <span class="truncate text-sm" :style="{ color: section.config.color }">
                   {{ alert.message }}
                 </span>
+                <EscalationStatusBadge
+                  v-if="escalationRuns[alert.id]?.length"
+                  :runs="escalationRuns[alert.id]"
+                />
               </div>
               <div v-if="alert.entity_name" class="mt-0.5 text-xs" style="color: var(--pb-text-muted)">
                 {{ alert.entity_name }}
