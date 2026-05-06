@@ -103,6 +103,11 @@ func (e *Engine) SetEscalator(esc Escalator) {
 	e.escalator = esc
 }
 
+// Escalator returns the current escalator implementation.
+func (e *Engine) Escalator() Escalator {
+	return e.escalator
+}
+
 // SetEntityRouter sets the entity routing extension.
 func (e *Engine) SetEntityRouter(r EntityRouter) {
 	e.entityRouter = r
@@ -116,9 +121,12 @@ func (e *Engine) SetMaintenanceSuppressor(s MaintenanceSuppressor) {
 // noopEscalator is the Engine-internal no-op default.
 type noopEscalator struct{}
 
-func (noopEscalator) Evaluate(_ context.Context, _ string, _ time.Duration) (*EscalationAction, error) {
-	return nil, nil
+func (noopEscalator) EvaluateCycle(_ context.Context) error { return nil }
+func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ int64, _ Acknowledgment) error {
+	return nil
 }
+func (noopEscalator) OnAlertResolved(_ context.Context, _ int64, _ time.Time) error { return nil }
+func (noopEscalator) OnEditionDowngraded(_ context.Context) error                   { return nil }
 
 // noopEntityRouter is the Engine-internal no-op default.
 type noopEntityRouter struct{}
@@ -189,60 +197,10 @@ func (e *Engine) runEscalationEvaluator(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			e.evaluateEscalations(ctx)
+			if err := e.escalator.EvaluateCycle(ctx); err != nil {
+				e.logger.ErrorContext(ctx, "alert engine: escalation cycle error", "error", err)
+			}
 		}
-	}
-}
-
-func (e *Engine) evaluateEscalations(ctx context.Context) {
-	alerts, err := e.alertStore.ListUnacknowledgedActiveAlerts(ctx)
-	if err != nil {
-		e.logger.Error("alert engine: list unacked alerts for escalation", "error", err)
-		return
-	}
-
-	now := time.Now()
-	for _, a := range alerts {
-		elapsed := now.Sub(a.FiredAt)
-		action, evalErr := e.escalator.Evaluate(ctx, strconv.FormatInt(a.ID, 10), elapsed)
-		if evalErr != nil {
-			e.logger.Error("alert engine: escalator evaluate error",
-				"error", evalErr, "alert_id", a.ID)
-			continue
-		}
-		if action == nil {
-			continue
-		}
-
-		// Dispatch escalation notification
-		chID, parseErr := strconv.ParseInt(action.ChannelID, 10, 64)
-		if parseErr != nil {
-			e.logger.Error("alert engine: invalid escalation channel ID",
-				"channel_id", action.ChannelID, "alert_id", a.ID)
-			continue
-		}
-
-		ch, chErr := e.channelStore.GetChannel(ctx, chID)
-		if chErr != nil || ch == nil {
-			e.logger.Error("alert engine: get escalation channel",
-				"error", chErr, "channel_id", chID, "alert_id", a.ID)
-			continue
-		}
-
-		e.enqueueDelivery(ctx, ch, a)
-
-		// Mark as escalated to prevent re-escalation
-		if setErr := e.alertStore.SetEscalatedAt(ctx, a.ID, now); setErr != nil {
-			e.logger.Error("alert engine: set escalated_at",
-				"error", setErr, "alert_id", a.ID)
-		}
-
-		e.logger.Info("alert escalated by policy",
-			"alert_id", a.ID,
-			"entity", a.EntityName,
-			"channel_id", chID,
-			"elapsed", elapsed,
-		)
 	}
 }
 
@@ -465,6 +423,10 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 	now := evt.Timestamp
 	if err := e.alertStore.UpdateAlertStatus(ctx, activeAlert.ID, StatusResolved, &now, &recoveryID); err != nil {
 		e.logger.Error("alert engine: resolve original alert", "error", err)
+	}
+
+	if err := e.escalator.OnAlertResolved(ctx, activeAlert.ID, now); err != nil {
+		e.logger.ErrorContext(ctx, "alert engine: OnAlertResolved hook error", "error", err, "alert_id", activeAlert.ID)
 	}
 
 	// Update the resolved alert fields for broadcasting
@@ -764,6 +726,9 @@ func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityI
 		if err := e.alertStore.UpdateAlertStatus(ctx, a.ID, StatusResolved, &now, nil); err != nil {
 			e.logger.Error("alert engine: resolve on entity removal", "error", err, "alert_id", a.ID)
 			continue
+		}
+		if err := e.escalator.OnAlertResolved(ctx, a.ID, now); err != nil {
+			e.logger.ErrorContext(ctx, "alert engine: OnAlertResolved hook error", "error", err, "alert_id", a.ID)
 		}
 		a.Status = StatusResolved
 		a.ResolvedAt = &now

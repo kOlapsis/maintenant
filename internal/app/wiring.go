@@ -564,3 +564,8 @@ func toString(v any) string {
 	}
 	return fmt.Sprintf("%v", v)
 }
+
+// TODO(020): wire escalation.Service + license.changed subscriber (Phase 2 T016).
+// No license.changed event bus exists yet in internal/event/ — add once the Pro event bus is introduced.
+// Pattern: subscribe to license edition transitions, call service.OnEditionDowngraded / OnEditionUpgraded.
+

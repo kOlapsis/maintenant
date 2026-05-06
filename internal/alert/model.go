@@ -147,15 +147,18 @@ type ListAlertsOpts struct {
 	Limit    int
 }
 
-// Escalator evaluates whether an unacknowledged alert should escalate to a secondary channel.
+// Escalator manages Pro escalation policy execution.
 type Escalator interface {
-	Evaluate(ctx context.Context, alertID string, elapsed time.Duration) (*EscalationAction, error)
+	EvaluateCycle(ctx context.Context) error
+	OnAlertAcknowledged(ctx context.Context, alertID int64, ack Acknowledgment) error
+	OnAlertResolved(ctx context.Context, alertID int64, resolvedAt time.Time) error
+	OnEditionDowngraded(ctx context.Context) error
 }
 
-// EscalationAction describes where and what to escalate.
-type EscalationAction struct {
-	ChannelID string
-	Message   string
+// Acknowledgment carries info about an alert ack event.
+type Acknowledgment struct {
+	By string
+	At time.Time
 }
 
 // EntityRouter provides per-entity alert routing.

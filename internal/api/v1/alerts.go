@@ -34,10 +34,11 @@ type AlertHandler struct {
 	notifier             *alert.Notifier
 	broker               *SSEBroker
 	allowPrivateWebhooks bool
+	escalator            alert.Escalator
 }
 
 // NewAlertHandler creates a new alert handler.
-func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool) *AlertHandler {
+func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool, escalator alert.Escalator) *AlertHandler {
 	return &AlertHandler{
 		alertStore:           alertStore,
 		channelStore:         channelStore,
@@ -45,6 +46,7 @@ func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStor
 		notifier:             notifier,
 		broker:               broker,
 		allowPrivateWebhooks: allowPrivateWebhooks,
+		escalator:            escalator,
 	}
 }
 
@@ -187,6 +189,11 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 	a.AcknowledgedBy = input.AcknowledgedBy
 
 	h.broker.Broadcast(SSEEvent{Type: event.AlertAcknowledged, Data: a})
+
+	if err := h.escalator.OnAlertAcknowledged(r.Context(), id, alert.Acknowledgment{By: input.AcknowledgedBy, At: now}); err != nil {
+		slog.ErrorContext(r.Context(), "alert engine: OnAlertAcknowledged hook error", "error", err, "alert_id", id)
+	}
+
 	WriteJSON(w, http.StatusOK, a)
 }
 

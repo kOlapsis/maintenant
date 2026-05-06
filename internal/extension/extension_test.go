@@ -32,12 +32,20 @@ func TestErrNotAvailable(t *testing.T) {
 }
 
 func TestNoopEscalator(t *testing.T) {
-	action, err := NoopEscalator{}.Evaluate(context.Background(), "alert-1", 5*time.Minute)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	ctx := context.Background()
+	n := NoopEscalator{}
+
+	if err := n.EvaluateCycle(ctx); err != nil {
+		t.Fatalf("EvaluateCycle: unexpected error: %v", err)
 	}
-	if action != nil {
-		t.Fatal("expected nil action")
+	if err := n.OnAlertAcknowledged(ctx, 1, alert.Acknowledgment{By: "alice", At: time.Now()}); err != nil {
+		t.Fatalf("OnAlertAcknowledged: unexpected error: %v", err)
+	}
+	if err := n.OnAlertResolved(ctx, 1, time.Now()); err != nil {
+		t.Fatalf("OnAlertResolved: unexpected error: %v", err)
+	}
+	if err := n.OnEditionDowngraded(ctx); err != nil {
+		t.Fatalf("OnEditionDowngraded: unexpected error: %v", err)
 	}
 }
 

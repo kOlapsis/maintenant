@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -65,8 +66,10 @@ type App struct {
 	personalizationSvc *status.PersonalizationService
 
 	// Alert pipeline
-	alertEngine *alert.Engine
-	notifier    *alert.Notifier
+	alertEngine    *alert.Engine
+	notifier       *alert.Notifier
+	escalationStore *sqlite.EscalationStore
+	escalationSvc   *escalation.Service
 
 	// HTTP
 	broker        *v1.SSEBroker
@@ -394,6 +397,17 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger.Info("security posture threshold configured", "threshold", cfg.SecurityScoreThreshold)
 	}
 
+	// --- Escalation policies ---
+	a.escalationStore = sqlite.NewEscalationStore(db)
+	a.escalationSvc = escalation.NewService(
+		a.escalationStore,
+		channelStore,
+		extension.CurrentEdition,
+		extension.CurrentPlanTier,
+		extension.NoopMaintenanceSuppressor{},
+		logger.With("component", "escalation"),
+	)
+
 	// --- Wire alert callbacks ---
 	a.wireAlertCallbacks(alertDetector)
 	a.wireUpdateCallback()
@@ -414,10 +428,12 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Resources:    a.resourceSvc,
 		Logger:       logger,
 		// Alert pipeline
-		AlertStore:   alertStore,
-		ChannelStore: channelStore,
-		SilenceStore: silenceStore,
-		Notifier:     a.notifier,
+		AlertStore:    alertStore,
+		ChannelStore:  channelStore,
+		SilenceStore:  silenceStore,
+		Notifier:      a.notifier,
+		Escalator:     a.alertEngine.Escalator(),
+		EscalationSvc: a.escalationSvc,
 		// Status page admin
 		StatusComponents:   statusCompStore,
 		StatusIncidents:    incidentStore,
@@ -464,19 +480,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// --- MCP Server ---
 	mcpSvc := &pbmcp.Services{
-		Containers:   a.containerSvc,
-		Endpoints:    a.endpointSvc,
-		Heartbeats:   a.heartbeatSvc,
-		Certificates: a.certSvc,
-		Resources:    a.resourceSvc,
-		Alerts:       alertStore,
-		Updates:      a.updateSvc,
-		Incidents:    extension.NoopIncidentManager{},
-		Maintenance:  extension.NoopMaintenanceScheduler{},
-		Runtime:      rt,
-		LogFetcher:   rt,
-		Version:      cfg.Version,
-		Logger:       logger.With("component", "mcp"),
+		Containers:    a.containerSvc,
+		Endpoints:     a.endpointSvc,
+		Heartbeats:    a.heartbeatSvc,
+		Certificates:  a.certSvc,
+		Resources:     a.resourceSvc,
+		Alerts:        alertStore,
+		Updates:       a.updateSvc,
+		Incidents:     extension.NoopIncidentManager{},
+		Maintenance:   extension.NoopMaintenanceScheduler{},
+		Runtime:       rt,
+		LogFetcher:    rt,
+		EscalationSvc: a.escalationSvc,
+		Version:       cfg.Version,
+		Logger:        logger.With("component", "mcp"),
 	}
 	a.mcpServer = pbmcp.NewServer(mcpSvc)
 
