@@ -656,7 +656,7 @@ Full REST API under `/api/v1/` for automation and integration.
       <ul>
         <li><strong>Unlimited</strong> heartbeats</li>
         <li><strong>Slack, Microsoft Teams, Email</strong> channels</li>
-        <li><strong>Alert escalation &amp; routing</strong> — page the right person, not a dead channel</li>
+        <li><strong>Alert escalation &amp; routing</strong> — page the right person, not a dead channel (Solo 3×3 / Team 25×5 / Business 200×5)</li>
         <li><strong>Maintenance windows</strong> — silence cleanly during deploys</li>
         <li><strong>Unified security posture</strong> dashboard</li>
         <li><strong>CVE enrichment</strong> + risk scoring per container</li>
