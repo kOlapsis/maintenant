@@ -16,6 +16,7 @@ import (
 	"log/slog"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
@@ -34,19 +35,20 @@ type LogFetcher interface {
 
 // Services holds all dependencies required by MCP tool handlers.
 type Services struct {
-	Containers   *container.Service
-	Endpoints    *endpoint.Service
-	Heartbeats   *heartbeat.Service
-	Certificates *certificate.Service
-	Resources    *resource.Service
-	Alerts       alert.AlertStore
-	Updates      *update.Service
-	Incidents    extension.IncidentManager
-	Maintenance  extension.MaintenanceScheduler
-	Runtime      runtime.Runtime
-	LogFetcher   LogFetcher
-	Version      string
-	Logger       *slog.Logger
+	Containers    *container.Service
+	Endpoints     *endpoint.Service
+	Heartbeats    *heartbeat.Service
+	Certificates  *certificate.Service
+	Resources     *resource.Service
+	Alerts        alert.AlertStore
+	Updates       *update.Service
+	Incidents     extension.IncidentManager
+	Maintenance   extension.MaintenanceScheduler
+	Runtime       runtime.Runtime
+	LogFetcher    LogFetcher
+	EscalationSvc *escalation.Service
+	Version       string
+	Logger        *slog.Logger
 }
 
 // NewServer creates and configures an MCP server with all maintenant tools registered.
@@ -61,6 +63,7 @@ func NewServer(svc *Services) *gomcp.Server {
 
 	registerReadTools(server, svc)
 	registerWriteTools(server, svc)
+	registerEscalationTools(server, svc)
 
 	return server
 }
