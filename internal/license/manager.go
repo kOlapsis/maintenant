@@ -258,10 +258,10 @@ func (m *LicenseManager) check(ctx context.Context) {
 			"plan", payload.Plan,
 			"expires_at", payload.ExpiresAt,
 		)
-		// Update message for frontend banner
-		state := m.State()
-		state.Message = "Your license is in a grace period. Please renew to avoid service interruption."
-		m.state.Store(state)
+		// Update message for frontend banner without mutating the shared pointer.
+		stateCopy := *m.State()
+		stateCopy.Message = "Your license is in a grace period. Please renew to avoid service interruption."
+		m.state.Store(&stateCopy)
 
 	case "expired":
 		m.logger.Warn("license expired", "expires_at", payload.ExpiresAt)
