@@ -141,7 +141,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Simulate wireLicenseSubscriber: register a callback on a LicenseManager
+	// Simulate wireLicenseSubscriber: register a callback on a Manager
 	// and trigger a Pro→CE transition.
 	var (
 		cbMu      sync.Mutex

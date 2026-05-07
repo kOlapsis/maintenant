@@ -67,8 +67,8 @@ type App struct {
 	personalizationSvc *status.PersonalizationService
 
 	// Alert pipeline
-	alertEngine    *alert.Engine
-	notifier       *alert.Notifier
+	alertEngine     *alert.Engine
+	notifier        *alert.Notifier
 	escalationStore *sqlite.EscalationStore
 	escalationSvc   *escalation.Service
 
@@ -94,7 +94,7 @@ type App struct {
 	maintScheduler *status.MaintenanceScheduler
 	scorer         *security.Scorer
 	rl             *ratelimit.Limiter
-	licenseMgr     *license.LicenseManager
+	licenseMgr     *license.Manager
 	mcpServer      *gomcp.Server
 
 	// Telemetry
@@ -104,12 +104,12 @@ type App struct {
 	webhookDispatcher *webhook.Dispatcher
 
 	// Swarm
-	swarmDetector      *swarm.Detector
-	swarmCluster       *swarm.SwarmCluster
-	swarmDiscovery     *swarm.ServiceDiscovery
-	swarmEvents        *swarm.EventProcessor
-	swarmNodeStore     *sqlite.SwarmNodeStore
-	swarmNodeSvc       *swarm.NodeService
+	swarmDetector       *swarm.Detector
+	swarmCluster        *swarm.SwarmCluster
+	swarmDiscovery      *swarm.ServiceDiscovery
+	swarmEvents         *swarm.EventProcessor
+	swarmNodeStore      *sqlite.SwarmNodeStore
+	swarmNodeSvc        *swarm.NodeService
 	swarmCrashLoop      *swarm.CrashLoopDetector
 	swarmUpdateTracker  *swarm.UpdateTracker
 	swarmTaskTracker    *swarm.TaskTracker
@@ -172,7 +172,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	license.InitPublicKey(cfg.PublicKeyB64)
 	if cfg.LicenseKey != "" {
 		dataDir := filepath.Dir(cfg.DBPath)
-		lm, err := license.NewLicenseManager(cfg.LicenseKey, dataDir, cfg.Version, logger)
+		lm, err := license.NewManager(cfg.LicenseKey, dataDir, cfg.Version, logger)
 		if err != nil {
 			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
 		} else {
@@ -490,9 +490,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		// License
 		LicenseMgr: a.licenseMgr,
 		// Swarm
-		SwarmCluster:   func() *swarm.SwarmCluster { return a.swarmCluster },
-		SwarmDiscovery: func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
-		SwarmDetector:  func() *swarm.Detector { return a.swarmDetector },
+		SwarmCluster:        func() *swarm.SwarmCluster { return a.swarmCluster },
+		SwarmDiscovery:      func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
+		SwarmDetector:       func() *swarm.Detector { return a.swarmDetector },
 		SwarmNodeStore:      a.swarmNodeStoreAsInterface(),
 		SwarmUpdateTracker:  a.swarmUpdateTracker,
 		SwarmCrashLoop:      a.swarmCrashLoop,

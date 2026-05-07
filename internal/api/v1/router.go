@@ -29,8 +29,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/resource"
 	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
-	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
 )
@@ -68,20 +68,20 @@ type HandlerDeps struct {
 	Escalator    alert.Escalator
 
 	// Status page admin
-	StatusComponents    status.ComponentStore
-	StatusIncidents     status.IncidentStore
-	StatusSubscribers   status.SubscriberStore
-	StatusMaintenance   status.MaintenanceStore
-	StatusSvc           *status.Service
-	StatusBroker        *SSEBroker
-	PersonalizationSvc  *status.PersonalizationService
+	StatusComponents   status.ComponentStore
+	StatusIncidents    status.IncidentStore
+	StatusSubscribers  status.SubscriberStore
+	StatusMaintenance  status.MaintenanceStore
+	StatusSvc          *status.Service
+	StatusBroker       *SSEBroker
+	PersonalizationSvc *status.PersonalizationService
 
 	// Webhooks
 	WebhookStore webhook.WebhookSubscriptionStore
 
 	// UI extras
 	UptimeDaily      UptimeDailyFetcher
-	LogStreamer       LogStreamer
+	LogStreamer      LogStreamer
 	ResourceTopSvc   ResourceTopService
 	SparklineFetcher SparklineDataFetcher
 
@@ -99,16 +99,16 @@ type HandlerDeps struct {
 	EscalationSvc *escalation.Service
 
 	// License
-	LicenseMgr *license.LicenseManager
+	LicenseMgr *license.Manager
 
 	// Swarm
-	SwarmCluster         func() *swarm.SwarmCluster
-	SwarmDiscovery       func() *swarm.ServiceDiscovery
-	SwarmDetector        func() *swarm.Detector
-	SwarmNodeStore       swarm.NodeStore
-	SwarmUpdateTracker   *swarm.UpdateTracker
-	SwarmCrashLoop       *swarm.CrashLoopDetector
-	SwarmReplicaChecker  *swarm.ReplicaHealthChecker
+	SwarmCluster        func() *swarm.SwarmCluster
+	SwarmDiscovery      func() *swarm.ServiceDiscovery
+	SwarmDetector       func() *swarm.Detector
+	SwarmNodeStore      swarm.NodeStore
+	SwarmUpdateTracker  *swarm.UpdateTracker
+	SwarmCrashLoop      *swarm.CrashLoopDetector
+	SwarmReplicaChecker *swarm.ReplicaHealthChecker
 
 	// HTTP config
 	CORSOrigins          string // comma-separated origins or "*"
@@ -438,7 +438,7 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 	}
 }
 
-func (r *Router) registerLicenseRoutes(mgr *license.LicenseManager) {
+func (r *Router) registerLicenseRoutes(mgr *license.Manager) {
 	if mgr == nil {
 		return
 	}
