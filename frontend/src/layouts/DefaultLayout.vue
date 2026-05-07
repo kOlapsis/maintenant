@@ -173,7 +173,6 @@ const allNav: NavItem[] = [
     to: '/security',
     label: 'Security Posture',
     icon: ShieldCheck,
-    feature: 'security_posture',
   },
   { type: 'separator' },
   { type: 'item', to: '/channels', label: 'Channels', icon: Send },
