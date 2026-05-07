@@ -262,6 +262,66 @@ func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, er
 	}
 }
 
+// SendNow performs a synchronous send to the given channel with internal retries.
+// Unlike Enqueue, it does not write to the notification_deliveries table — the
+// caller (e.g. the escalation Runner) manages its own delivery row state.
+// Returns nil on success, or the last error after maxRetries attempts.
+func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChannel) error {
+	eventType := event.AlertFired
+	if a.Status == StatusResolved {
+		eventType = event.AlertResolved
+	}
+
+	if ch.Type == "email" {
+		if n.smtpSender == nil {
+			return fmt.Errorf("SMTP not configured")
+		}
+		subject := formatEmailSubject(eventType, a)
+		body := formatEmailBody(eventType, a)
+
+		var lastErr error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if attempt > 0 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(retryBackoffs[attempt-1]):
+				}
+			}
+			lastErr = n.smtpSender.Send(ctx, ch.URL, subject, body)
+			if lastErr == nil {
+				return nil
+			}
+			n.logger.Warn("notifier: email attempt failed",
+				"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
+		}
+		return lastErr
+	}
+
+	body, err := formatPayload(ch.Type, eventType, a)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retryBackoffs[attempt-1]):
+			}
+		}
+		lastErr = n.sendWebhook(ctx, ch, body)
+		if lastErr == nil {
+			return nil
+		}
+		n.logger.Warn("notifier: webhook attempt failed",
+			"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
+	}
+	return lastErr
+}
+
 // SendTestWebhook sends a test notification to verify a channel is reachable.
 func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel) (int, error) {
 	testAlert := &Alert{
