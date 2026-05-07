@@ -73,9 +73,10 @@ type SMTPConfig struct {
 
 // MCPConfig holds Model Context Protocol server configuration.
 type MCPConfig struct {
-	Enabled      bool
-	ClientID     string
-	ClientSecret string
+	Enabled             bool
+	ClientID            string
+	ClientSecret        string
+	AllowedRedirectURIs string
 }
 
 // ConfigFromEnv reads configuration from environment variables.
@@ -97,9 +98,10 @@ func ConfigFromEnv() Config {
 		},
 
 		MCP: MCPConfig{
-			Enabled:      os.Getenv("MAINTENANT_MCP") == "true",
-			ClientID:     os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
-			ClientSecret: os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
+			Enabled:             os.Getenv("MAINTENANT_MCP") == "true",
+			ClientID:            os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
+			ClientSecret:        os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
+			AllowedRedirectURIs: os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
 		},
 
 		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
