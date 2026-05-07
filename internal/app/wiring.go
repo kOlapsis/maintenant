@@ -382,6 +382,26 @@ func (a *App) wireUpdateCallback() {
 	a.updateSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 
+		if eventType == event.UpdateResolved {
+			if m, ok := data.(map[string]any); ok {
+				containerName, _ := m["container_name"].(string)
+				if containerName == "" {
+					return
+				}
+				sendAlert(alert.Event{
+					Source:     "update",
+					AlertType:  "update_available",
+					Severity:   alert.SeverityInfo,
+					IsRecover:  true,
+					Message:    fmt.Sprintf("Update no longer required for %s", containerName),
+					EntityType: "container",
+					EntityName: containerName,
+					Timestamp:  time.Now(),
+				})
+			}
+			return
+		}
+
 		if eventType == event.UpdateDetected {
 			if m, ok := data.(map[string]any); ok {
 				severity := alert.SeverityInfo

@@ -102,6 +102,7 @@ const (
 	UpdateScanStarted   = "update.scan_started"
 	UpdateScanCompleted = "update.scan_completed"
 	UpdateDetected      = "update.detected"
+	UpdateResolved      = "update.resolved"
 	UpdatePinned        = "update.pinned"
 	UpdateUnpinned      = "update.unpinned"
 )
