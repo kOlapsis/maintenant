@@ -209,8 +209,11 @@ GET /api/v1/alerts/{id}
 | `PUT` | `/api/v1/channels/{id}` | Update a channel |
 | `DELETE` | `/api/v1/channels/{id}` | Delete a channel |
 | `POST` | `/api/v1/channels/{id}/test` | Send test alert |
-| `POST` | `/api/v1/channels/{id}/rules` | Create routing rule |
-| `DELETE` | `/api/v1/channels/{id}/rules/{rule_id}` | Delete routing rule |
+| `GET POST` | `/api/v1/alert-triggers` | List / create triggers |
+| `GET PUT DELETE` | `/api/v1/alert-triggers/{id}` | Manage a trigger |
+| `GET POST` | `/api/v1/escalation-policies` | List / create policies (Pro) |
+| `GET PUT PATCH DELETE` | `/api/v1/escalation-policies/{id}` | Manage a policy (Pro) |
+| `GET` | `/api/v1/alerts/{id}/escalation-runs` | List runs for an alert (Pro) |
 | `GET` | `/api/v1/silence` | List silence rules |
 | `POST` | `/api/v1/silence` | Create silence rule |
 | `DELETE` | `/api/v1/silence/{id}` | Cancel silence rule |
@@ -219,6 +222,7 @@ GET /api/v1/alerts/{id}
 
 ## Related
 
+- [Alert Escalation](alert-escalation.md) — Pro: multi-level escalation chains
 - [Container Monitoring](containers.md) — Restart loop and health check alerts
 - [Endpoint Monitoring](endpoints.md) — Consecutive failure alerts
 - [Heartbeat Monitoring](heartbeats.md) — Deadline missed alerts

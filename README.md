@@ -199,9 +199,9 @@ Knows when your images have updates available. Scans OCI registries, compares di
 
 ### Alert Engine
 
-Unified alerts across all monitoring sources. Webhook and Discord channels included. Silence rules for planned maintenance. Exponential backoff retry on delivery.
+Unified alerts across all monitoring sources. Channels are silent by default and routed via **Alert Triggers** (filter by severity / source). Webhook and Discord channels included. Silence rules for planned maintenance, exponential backoff retry on delivery.
 
-> **[Pro](#pricing)** adds Slack, Microsoft Teams, and Email channels, plus escalation chains and maintenance windows.
+> **[Pro](#pricing)** adds Slack, Microsoft Teams, and Email channels, scope/tag trigger filters, multi-level **escalation policies**, and maintenance windows that pause and resume escalation chains.
 
 ### Public Status Page
 
@@ -566,7 +566,7 @@ Full REST API under `/api/v1/` for automation and integration.
 | Heartbeats   | `GET POST /heartbeats` `GET PUT DELETE /heartbeats/{id}` `POST /heartbeats/{id}/pause\|resume`          |
 | Certificates | `GET POST /certificates` `GET PUT DELETE /certificates/{id}`                                            |
 | Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top`                         |
-| Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /silence`                             |
+| Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /alert-triggers` `GET POST /escalation-policies` *(Pro)* `GET POST /silence` |
 | Webhooks     | `GET POST /webhooks` `POST /webhooks/{id}/test`                                                         |
 | Status Page  | `GET POST /status/components\|incidents\|maintenance`                                                   |
 | Updates      | `GET /updates` `POST /updates/scan`                                                                     |
