@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
@@ -41,6 +42,11 @@ type Service struct {
 	collector     *Collector
 	logger        *slog.Logger
 	eventCallback EventCallback
+
+	// noAlertConfigLogged tracks container IDs for which we've already logged
+	// "alerts not configured" once. Set membership is the only signal — values
+	// are unused.
+	noAlertConfigLogged sync.Map
 }
 
 // NewService creates a resource monitoring service.
@@ -193,7 +199,9 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 		return
 	}
 	if cfg == nil || !cfg.Enabled {
-		s.logger.Debug("resource: alerts not configured", "container_id", snap.ContainerID)
+		if _, alreadyLogged := s.noAlertConfigLogged.LoadOrStore(snap.ContainerID, struct{}{}); !alreadyLogged {
+			s.logger.Debug("resource: alerts not configured", "container_id", snap.ContainerID)
+		}
 		return
 	}
 
