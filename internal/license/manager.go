@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -43,6 +44,12 @@ type LicenseState struct {
 	Message      string    `json:"message,omitempty"`
 }
 
+// EditionChangeCallback is invoked after the manager observes a transition in
+// IsProEnabled. prev and next are the old and new values. The callback is invoked
+// from a dedicated goroutine with a 30-second timeout; it must not block.
+// RegisterEditionChangeCallback must be called before Start.
+type EditionChangeCallback func(ctx context.Context, prev, next bool)
+
 // LicenseManager handles license verification, caching, and state management.
 type LicenseManager struct {
 	licenseKey string
@@ -53,6 +60,11 @@ type LicenseManager struct {
 	client     *http.Client
 	state      atomic.Value // *LicenseState
 	stop       chan struct{}
+
+	callbacksMu      sync.Mutex
+	callbacks        []EditionChangeCallback
+	lastIsProEnabled bool
+	baselineSet      bool
 }
 
 // NewLicenseManager creates a new license manager. Call Start() to begin
@@ -96,7 +108,7 @@ func (m *LicenseManager) Start(ctx context.Context) {
 				Message:   "Your license has expired. Pro features have been disabled.",
 			})
 		} else {
-			m.applyPayload(cached)
+			m.applyPayload(ctx, cached)
 			m.logger.Info("license loaded from cache",
 				"status", cached.Status,
 				"plan", cached.Plan,
@@ -124,6 +136,45 @@ func (m *LicenseManager) State() *LicenseState {
 // IsProEnabled returns true if the current license enables Pro features.
 func (m *LicenseManager) IsProEnabled() bool {
 	return m.State().IsProEnabled
+}
+
+// RegisterEditionChangeCallback registers a callback invoked on IsProEnabled
+// transitions. Must be called before Start to avoid missing initial transitions.
+func (m *LicenseManager) RegisterEditionChangeCallback(cb EditionChangeCallback) {
+	m.callbacksMu.Lock()
+	defer m.callbacksMu.Unlock()
+	m.callbacks = append(m.callbacks, cb)
+}
+
+func (m *LicenseManager) dispatchEditionChange(ctx context.Context, prev, next bool) {
+	m.callbacksMu.Lock()
+	cbs := make([]EditionChangeCallback, len(m.callbacks))
+	copy(cbs, m.callbacks)
+	m.callbacksMu.Unlock()
+
+	for _, cb := range cbs {
+		go func(f EditionChangeCallback) {
+			cbCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			defer func() {
+				if r := recover(); r != nil {
+					m.logger.Error("license: callback panic", "recover", r)
+				}
+			}()
+			f(cbCtx, prev, next)
+		}(cb)
+	}
+}
+
+func (m *LicenseManager) setStateAndNotify(ctx context.Context, newState *LicenseState) {
+	prev := m.lastIsProEnabled
+	m.state.Store(newState)
+	next := m.State().IsProEnabled
+	if m.baselineSet && prev != next {
+		m.dispatchEditionChange(ctx, prev, next)
+	}
+	m.lastIsProEnabled = next
+	m.baselineSet = true
 }
 
 func (m *LicenseManager) ticker(ctx context.Context) {
@@ -192,14 +243,14 @@ func (m *LicenseManager) check(ctx context.Context) {
 
 	switch payload.Status {
 	case "active":
-		m.applyPayload(payload)
+		m.applyPayload(ctx, payload)
 		if err := writeCache(m.dataDir, resp); err != nil {
 			m.logger.Error("failed to write license cache", "error", err)
 		}
 		m.logger.Info("license verified", "plan", payload.Plan, "expires_at", payload.ExpiresAt)
 
 	case "grace":
-		m.applyPayload(payload)
+		m.applyPayload(ctx, payload)
 		if err := writeCache(m.dataDir, resp); err != nil {
 			m.logger.Error("failed to write license cache", "error", err)
 		}
@@ -215,7 +266,7 @@ func (m *LicenseManager) check(ctx context.Context) {
 	case "expired":
 		m.logger.Warn("license expired", "expires_at", payload.ExpiresAt)
 		deleteCache(m.dataDir)
-		m.state.Store(&LicenseState{
+		m.setStateAndNotify(ctx, &LicenseState{
 			Status:    "expired",
 			ExpiresAt: payload.ExpiresAt,
 			Message:   "Your license has expired. Pro features have been disabled.",
@@ -224,7 +275,7 @@ func (m *LicenseManager) check(ctx context.Context) {
 	case "revoked":
 		m.logger.Error("license revoked")
 		deleteCache(m.dataDir)
-		m.state.Store(&LicenseState{
+		m.setStateAndNotify(ctx, &LicenseState{
 			Status:  "revoked",
 			Message: "Your license has been revoked.",
 		})
@@ -239,8 +290,8 @@ func (m *LicenseManager) check(ctx context.Context) {
 }
 
 // applyPayload sets the license state from a verified payload.
-func (m *LicenseManager) applyPayload(payload *LicensePayload) {
-	m.state.Store(&LicenseState{
+func (m *LicenseManager) applyPayload(ctx context.Context, payload *LicensePayload) {
+	m.setStateAndNotify(ctx, &LicenseState{
 		IsProEnabled: true,
 		Plan:         payload.Plan,
 		Features:     payload.Features,
