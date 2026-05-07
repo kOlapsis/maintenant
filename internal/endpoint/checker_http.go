@@ -35,6 +35,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: !cfg.TLSVerify,
+			MinVersion:         tls.VersionTLS12,
 		},
 		DialContext: (&net.Dialer{
 			Timeout: timeout,
