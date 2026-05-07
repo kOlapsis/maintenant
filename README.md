@@ -233,6 +233,7 @@ Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Quer
 | `MAINTENANT_MCP`                    | `false`                 | Enable MCP server (Streamable HTTP on `/mcp`)   |
 | `MAINTENANT_MCP_CLIENT_ID`          | —                       | OAuth2 client ID for MCP authentication         |
 | `MAINTENANT_MCP_CLIENT_SECRET`      | —                       | OAuth2 client secret for MCP authentication     |
+| `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | —                    | Comma-separated allowlist of OAuth2 `redirect_uri` values. Required when `MAINTENANT_MCP_CLIENT_*` are set. |
 | `MAINTENANT_K8S_NAMESPACES`         | all                     | Namespace allowlist (comma-separated)           |
 | `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | none                    | Namespace blocklist                             |
 | `MAINTENANT_DISABLE_TELEMETRY`      | unset (telemetry on)    | Set to `1`/`true`/`yes` to disable telemetry    |

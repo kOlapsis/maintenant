@@ -105,7 +105,14 @@ When the OAuth2 variables are absent, the HTTP transport is open. Use your rever
 | `MAINTENANT_MCP` | `false` | Enable the Streamable HTTP MCP server on `/mcp`. |
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client identifier. Required for authentication. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret. Required for authentication. |
+| `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated allowlist of OAuth2 `redirect_uri` values. Required when client credentials are set. |
 | `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public-facing URL. Used as OAuth2 issuer and in metadata endpoints. |
+
+`MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` accepts an exact list of full URIs. Any `redirect_uri` submitted to `/oauth/authorize` that does not match an entry is rejected, closing the open-redirect path. Common values:
+
+- Claude web — `https://claude.ai/api/mcp/auth_callback`
+- Claude Desktop — `http://localhost:33418/oauth/callback`
+- Claude mobile — see Claude documentation for the current callback host.
 
 The `--mcp-stdio` flag is independent of these variables — it runs the MCP server over stdin/stdout and exits when the connection closes.
 
