@@ -22,6 +22,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/kolapsis/maintenant/internal/alert/maintenance"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -401,11 +402,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// --- Escalation policies ---
 	a.escalationStore = sqlite.NewEscalationStore(db)
+
+	// Maintenance suppressor: real implementation in Enterprise, noop in CE.
+	var suppressor alert.MaintenanceSuppressor = extension.NoopMaintenanceSuppressor{}
+	if extension.CurrentEdition() == extension.Enterprise {
+		suppressor = maintenance.NewSuppressor(maintenanceStore, logger.With("component", "maintenance-suppressor"))
+	}
+	// Must be called before alertEngine.Start (invoked in App.Start).
+	a.alertEngine.SetMaintenanceSuppressor(suppressor)
+
 	a.escalationSvc = escalation.NewService(
 		a.escalationStore,
 		channelStore,
 		extension.CurrentEdition,
-		extension.NoopMaintenanceSuppressor{},
+		suppressor,
 		logger.With("component", "escalation"),
 	)
 
@@ -419,7 +429,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			AlertStore:   alertStore,
 			ChannelStore: channelStore,
 			Notifier:     a.notifier,
-			Suppressor:   extension.NoopMaintenanceSuppressor{},
+			Suppressor:   suppressor,
 			Service:      a.escalationSvc,
 			Logger:       logger.With("component", "escalation-runner"),
 		})
@@ -551,10 +561,16 @@ func (a *App) Start(ctx context.Context) error {
 	a.db.StartWriter(ctx)
 
 	if a.licenseMgr != nil {
+		a.wireLicenseSubscriber(ctx)
 		a.licenseMgr.Start(ctx)
 	}
 
 	a.alertEngine.Start(ctx)
+
+	if extension.CurrentEdition() == extension.Enterprise {
+		go a.escalationSvc.RunRetentionLoop(ctx)
+		a.logger.Info("escalation retention loop started (Pro)")
+	}
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)

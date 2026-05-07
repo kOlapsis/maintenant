@@ -585,7 +585,21 @@ func toString(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// TODO(020): wire escalation.Service + license.changed subscriber (Phase 2 T016).
-// No license.changed event bus exists yet in internal/event/ — add once the Pro event bus is introduced.
-// Pattern: subscribe to license edition transitions, call service.OnEditionDowngraded / OnEditionUpgraded.
+// wireLicenseSubscriber registers a callback on the LicenseManager that propagates
+// Pro→CE edition transitions to the escalation service. Must be called before
+// licenseMgr.Start so the initial state transition is never missed.
+func (a *App) wireLicenseSubscriber(_ context.Context) {
+	if a.licenseMgr == nil {
+		return
+	}
+	a.licenseMgr.RegisterEditionChangeCallback(func(ctx context.Context, prev, next bool) {
+		if prev && !next {
+			if err := a.escalationSvc.OnEditionDowngraded(ctx); err != nil {
+				a.logger.ErrorContext(ctx, "escalation: OnEditionDowngraded failed", "error", err)
+			}
+		} else if !prev && next {
+			a.logger.InfoContext(ctx, "license: edition upgraded to Pro (no auto-action on policies)")
+		}
+	})
+}
 

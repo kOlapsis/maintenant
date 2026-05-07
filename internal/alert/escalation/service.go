@@ -124,6 +124,11 @@ func NewService(
 	}
 }
 
+// SetClockFn overrides the clock used by RunRetentionLoop. For testing only.
+func (s *Service) SetClockFn(fn func() time.Time) {
+	s.clockFn = fn
+}
+
 // IsAlertSuppressed delegates to the maintenance suppressor for a given alert.
 // The concrete Pro Escalator uses this to determine if a run should be paused.
 func (s *Service) IsAlertSuppressed(ctx context.Context, alertID int64) (bool, error) {
