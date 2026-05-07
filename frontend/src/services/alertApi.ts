@@ -57,18 +57,9 @@ export interface NotificationChannel {
   url: string
   headers: string
   enabled: boolean
-  routing_rules: RoutingRule[]
   health: string
   created_at: string
   updated_at: string
-}
-
-export interface RoutingRule {
-  id: number
-  channel_id: number
-  source_filter: string
-  severity_filter: string
-  created_at: string
 }
 
 export interface SilenceRule {
@@ -160,23 +151,6 @@ export function deleteChannel(id: number): Promise<void> {
 
 export function testChannel(id: number): Promise<{ status: string; response_code?: number; error?: string }> {
   return fetchJSON(`${API_BASE}/channels/${id}/test`, { method: 'POST' })
-}
-
-// --- Routing Rules ---
-
-export function createRoutingRule(
-  channelId: number,
-  data: { source_filter?: string; severity_filter?: string },
-): Promise<RoutingRule> {
-  return fetchJSON(`${API_BASE}/channels/${channelId}/rules`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-}
-
-export function deleteRoutingRule(channelId: number, ruleId: number): Promise<void> {
-  return fetchNoContent(`${API_BASE}/channels/${channelId}/rules/${ruleId}`, { method: 'DELETE' })
 }
 
 // --- Silence Rules ---

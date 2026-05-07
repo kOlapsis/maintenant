@@ -15,35 +15,44 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
+import { useTriggersStore } from '@/stores/triggers'
 import ActiveAlerts from '@/components/ActiveAlerts.vue'
 import AlertList from '@/components/AlertList.vue'
-import ChannelManager from '@/components/ChannelManager.vue'
+import TriggerManager from '@/components/TriggerManager.vue'
 import SilenceRuleManager from '@/components/SilenceRuleManager.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
 
-type Tab = 'history' | 'channels' | 'silence'
+type Tab = 'history' | 'triggers' | 'silence'
 
 const route = useRoute()
 const router = useRouter()
 const store = useAlertsStore()
+const triggersStore = useTriggersStore()
 
 const activeTab = computed<Tab>({
-  get: () => (route.params.tab as Tab) || 'history',
+  get: () => {
+    const t = route.params.tab as string
+    if (t === 'channels') return 'triggers' // legacy redirect
+    if (t === 'triggers' || t === 'silence' || t === 'history') return t
+    return 'history'
+  },
   set: (tab: Tab) => router.replace({ name: 'alerts', params: { tab } }),
 })
 
 onMounted(() => {
   store.fetchAlerts()
   store.fetchActiveAlerts()
-  store.fetchChannels()
   store.fetchSilenceRules()
+  triggersStore.fetchTriggers()
   store.connectSSE()
+  triggersStore.connectSSE()
   store.clearNewAlertCount()
 })
 
 onUnmounted(() => {
   store.disconnectSSE()
+  triggersStore.disconnectSSE()
 })
 </script>
 
@@ -53,7 +62,7 @@ onUnmounted(() => {
     <div class="mb-6">
       <h1 class="text-2xl font-black text-pb-primary">Alerts</h1>
       <p class="mt-1 text-sm text-slate-500">
-        Alert history, notification channels, and silence rules
+        Alert history, routing triggers, and silence rules
       </p>
     </div>
 
@@ -61,36 +70,6 @@ onUnmounted(() => {
     <div class="mb-6">
       <h2 class="mb-2 text-sm font-medium" style="color: var(--pb-text-secondary)">Active Alerts</h2>
       <ActiveAlerts />
-    </div>
-
-    <!-- Channel health summary -->
-    <div v-if="store.channels.length > 0" class="mb-6 flex flex-wrap gap-2">
-      <div
-        v-for="ch in store.channels"
-        :key="ch.id"
-        class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs"
-        :style="{
-          border: ch.health === 'healthy'
-            ? '1px solid var(--pb-status-ok)'
-            : '1px solid var(--pb-status-down)',
-          backgroundColor: ch.health === 'healthy'
-            ? 'var(--pb-status-ok-bg)'
-            : 'var(--pb-status-down-bg)',
-          color: ch.health === 'healthy'
-            ? 'var(--pb-status-ok)'
-            : 'var(--pb-status-down)',
-        }"
-      >
-        <span
-          class="h-1.5 w-1.5 rounded-full"
-          :style="{
-            backgroundColor: ch.health === 'healthy'
-              ? 'var(--pb-status-ok)'
-              : 'var(--pb-status-down)',
-          }"
-        ></span>
-        {{ ch.name }}
-      </div>
     </div>
 
     <!-- Tab navigation -->
@@ -107,20 +86,20 @@ onUnmounted(() => {
           History
         </button>
         <button
-          @click="activeTab = 'channels'"
+          @click="activeTab = 'triggers'"
           class="pb-2 text-sm font-medium min-h-[44px]"
           :style="{
-            borderBottom: activeTab === 'channels' ? '2px solid var(--pb-accent)' : '2px solid transparent',
-            color: activeTab === 'channels' ? 'var(--pb-accent)' : 'var(--pb-text-muted)',
+            borderBottom: activeTab === 'triggers' ? '2px solid var(--pb-accent)' : '2px solid transparent',
+            color: activeTab === 'triggers' ? 'var(--pb-accent)' : 'var(--pb-text-muted)',
           }"
         >
-          Channels
+          Triggers
           <span
-            v-if="store.channels.length"
+            v-if="triggersStore.triggers.length"
             class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
             style="background-color: var(--pb-bg-elevated); color: var(--pb-text-muted)"
           >
-            {{ store.channels.length }}
+            {{ triggersStore.triggers.length }}
           </span>
         </button>
         <button
@@ -145,15 +124,15 @@ onUnmounted(() => {
 
     <!-- Tab content -->
     <AlertList v-if="activeTab === 'history'" />
-    <template v-else-if="activeTab === 'channels'">
+    <template v-else-if="activeTab === 'triggers'">
       <FeatureHint
-        storage-key="alerts-channels"
-        title="What are notification channels?"
-        :doc-href="docUrl('features/alerts/#notification-channels')"
+        storage-key="alerts-triggers"
+        title="What are alert triggers?"
+        :doc-href="docUrl('features/alerts/#alert-triggers')"
       >
-        Channels deliver alerts to where your team is: Discord and generic HTTP webhooks are built-in; Slack, Microsoft Teams and Email (SMTP) are available on Pro. Each channel formats the payload natively, and you can send a test alert to verify delivery.
+        Triggers are routing rules: each one matches alerts by severity, source, or scope, then dispatches them to one or more channels. A channel without any trigger stays silent — useful when you want to reserve it for an escalation policy. Manage your channels separately in the <RouterLink to="/channels" class="text-pb-green-400 hover:underline">Channels</RouterLink> page.
       </FeatureHint>
-      <ChannelManager />
+      <TriggerManager />
     </template>
     <template v-else-if="activeTab === 'silence'">
       <FeatureHint

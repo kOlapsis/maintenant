@@ -14,10 +14,8 @@ import { ref, computed } from 'vue'
 import {
   listAlerts,
   getActiveAlerts,
-  listChannels,
   listSilenceRules,
   type Alert,
-  type NotificationChannel,
   type SilenceRule,
   type ListAlertsParams,
 } from '@/services/alertApi'
@@ -34,10 +32,6 @@ export const useAlertsStore = defineStore('alerts', () => {
   const hasMore = ref(false)
   const loading = ref(false)
   const error = ref<string | null>(null)
-
-  // Channel state
-  const channels = ref<NotificationChannel[]>([])
-  const channelsLoading = ref(false)
 
   // Silence state
   const silenceRules = ref<SilenceRule[]>([])
@@ -75,18 +69,6 @@ export const useAlertsStore = defineStore('alerts', () => {
       activeAlerts.value = await getActiveAlerts()
     } catch (e) {
       console.error('Failed to fetch active alerts:', e)
-    }
-  }
-
-  async function fetchChannels() {
-    channelsLoading.value = true
-    try {
-      const res = await listChannels()
-      channels.value = res.channels
-    } catch (e) {
-      console.error('Failed to fetch channels:', e)
-    } finally {
-      channelsLoading.value = false
     }
   }
 
@@ -160,37 +142,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     alerts.value = [alert, ...alerts.value]
   }
 
-  function onChannelCreated(e: MessageEvent) {
-    let channel: NotificationChannel
-    try {
-      channel = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    channels.value = [...channels.value, channel]
-  }
-
-  function onChannelUpdated(e: MessageEvent) {
-    let channel: NotificationChannel
-    try {
-      channel = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    const idx = channels.value.findIndex((c) => c.id === channel.id)
-    if (idx >= 0) channels.value[idx] = channel
-  }
-
-  function onChannelDeleted(e: MessageEvent) {
-    let data
-    try {
-      data = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    channels.value = channels.value.filter((c) => c.id !== data.id)
-  }
-
   function onSilenceCreated(e: MessageEvent) {
     let rule: SilenceRule
     try {
@@ -216,7 +167,6 @@ export const useAlertsStore = defineStore('alerts', () => {
 
   function onReconnected() {
     fetchActiveAlerts()
-    fetchChannels()
   }
 
   function connectSSE() {
@@ -224,9 +174,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     sseBus.on('alert.resolved', onAlertResolved)
     sseBus.on('alert.acknowledged', onAlertAcknowledged)
     sseBus.on('alert.silenced', onAlertSilenced)
-    sseBus.on('channel.created', onChannelCreated)
-    sseBus.on('channel.updated', onChannelUpdated)
-    sseBus.on('channel.deleted', onChannelDeleted)
     sseBus.on('silence.created', onSilenceCreated)
     sseBus.on('silence.cancelled', onSilenceCancelled)
     sseBus.on('sse.reconnected', onReconnected)
@@ -238,9 +185,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     sseBus.off('alert.resolved', onAlertResolved)
     sseBus.off('alert.acknowledged', onAlertAcknowledged)
     sseBus.off('alert.silenced', onAlertSilenced)
-    sseBus.off('channel.created', onChannelCreated)
-    sseBus.off('channel.updated', onChannelUpdated)
-    sseBus.off('channel.deleted', onChannelDeleted)
     sseBus.off('silence.created', onSilenceCreated)
     sseBus.off('silence.cancelled', onSilenceCancelled)
     sseBus.off('sse.reconnected', onReconnected)
@@ -288,8 +232,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     hasMore,
     loading,
     error,
-    channels,
-    channelsLoading,
     silenceRules,
     silenceLoading,
     newAlertCount,
@@ -297,7 +239,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     activeSilenceCount,
     fetchAlerts,
     fetchActiveAlerts,
-    fetchChannels,
     fetchSilenceRules,
     clearNewAlertCount,
     connectSSE,

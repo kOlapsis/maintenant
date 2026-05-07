@@ -13,12 +13,15 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useEscalationStore } from '@/stores/escalation'
+import { useTriggersStore } from '@/stores/triggers'
 import { apiFetch } from '@/services/apiFetch'
 import type { EscalationPolicy, OverlapWarning as OverlapWarningType } from '@/types/escalation'
-import { X, Plus, Loader2 } from 'lucide-vue-next'
+import { X, Plus, Loader2, ArrowRight, Shield } from 'lucide-vue-next'
 import LevelEditor from './LevelEditor.vue'
 import OverlapWarningComponent from './OverlapWarning.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 import { useEscalationApi } from '@/composables/useEscalationApi'
 
 interface Channel {
@@ -39,6 +42,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useEscalationStore()
+const triggersStore = useTriggersStore()
 const escalationApi = useEscalationApi()
 
 const name = ref(props.policy?.name ?? '')
@@ -163,8 +167,18 @@ async function handleSave() {
   }
 }
 
+// Channels referenced ONLY by escalation (no trigger serves them) → "reserved escalation"
+const reservedChannelIds = computed(() => {
+  const ids = new Set<number>()
+  for (const lvl of levels.value) {
+    for (const id of lvl.channel_ids) ids.add(id)
+  }
+  return [...ids].filter((id) => triggersStore.triggersForChannel(id).length === 0)
+})
+
 onMounted(() => {
   loadChannels()
+  triggersStore.fetchTriggers()
 })
 </script>
 
@@ -246,6 +260,47 @@ onMounted(() => {
           >
             {{ sev.charAt(0).toUpperCase() + sev.slice(1) }}
           </button>
+        </div>
+      </div>
+
+      <!-- No channels warning -->
+      <InlineAlert
+        v-if="!channelsLoading && channels.length === 0"
+        severity="warning"
+        tag="SETUP REQUIRED"
+      >
+        <template #title>No notification channels configured</template>
+        Escalation policies need at least one notification channel (Webhook, Slack, Teams, Email)
+        to deliver alerts. Create one before defining your levels.
+        <template #action>
+          <RouterLink
+            to="/channels"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-300 hover:bg-amber-500/20 transition-colors"
+          >
+            Configure a channel
+            <ArrowRight :size="12" />
+          </RouterLink>
+        </template>
+      </InlineAlert>
+
+      <!-- Reserved-escalation channels notice -->
+      <div
+        v-if="reservedChannelIds.length > 0"
+        class="rounded-xl border border-pb-green-500/30 bg-pb-green-500/5 px-4 py-3 flex items-start gap-3"
+      >
+        <Shield :size="14" class="text-pb-green-400 mt-0.5 shrink-0" />
+        <div class="text-xs text-slate-300 space-y-1">
+          <p class="font-medium text-pb-green-400">Reserved-escalation channels detected</p>
+          <p class="text-slate-400 leading-relaxed">
+            <template v-for="(id, idx) in reservedChannelIds" :key="id">
+              <span class="text-slate-200 font-medium">
+                {{ channels.find((c) => c.id === id)?.name ?? `Channel #${id}` }}
+              </span>
+              <span v-if="idx < reservedChannelIds.length - 1">, </span>
+            </template>
+            do not appear in any active trigger and will only be notified by this escalation —
+            this is the intended pattern for last-resort destinations (manager, on-call, CTO, etc).
+          </p>
         </div>
       </div>
 

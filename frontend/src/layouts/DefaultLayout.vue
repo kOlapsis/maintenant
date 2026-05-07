@@ -13,9 +13,9 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import {
-  useDetailSlideOver,
   detailSlideOverKey,
   parseSelectedParam,
+  useDetailSlideOver,
 } from '@/composables/useDetailSlideOver'
 import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
@@ -35,9 +35,11 @@ import {
   ListChecks,
   Menu,
   Network,
+  Send,
   Server,
   Shield,
   ShieldCheck,
+  Workflow,
   X,
 } from 'lucide-vue-next'
 
@@ -93,13 +95,20 @@ const licenseSeverity = computed<'warning' | 'critical'>(() => {
 
 const licenseLabel = computed(() => {
   switch (licenseStatusValue.value) {
-    case 'grace': return 'GRACE PERIOD'
-    case 'unreachable': return 'LICENSE UNREACHABLE'
-    case 'expired': return 'LICENSE EXPIRED'
-    case 'canceled': return 'LICENSE CANCELED'
-    case 'revoked': return 'LICENSE REVOKED'
-    case 'unknown': return 'LICENSE INVALID'
-    default: return 'LICENSE'
+    case 'grace':
+      return 'GRACE PERIOD'
+    case 'unreachable':
+      return 'LICENSE UNREACHABLE'
+    case 'expired':
+      return 'LICENSE EXPIRED'
+    case 'canceled':
+      return 'LICENSE CANCELED'
+    case 'revoked':
+      return 'LICENSE REVOKED'
+    case 'unknown':
+      return 'LICENSE INVALID'
+    default:
+      return 'LICENSE'
   }
 })
 
@@ -117,25 +126,28 @@ function closeMobileMenu() {
 }
 
 interface NavItem {
-  to: string
-  label: string
-  icon: typeof LayoutGrid
+  type: string
+  to?: string
+  label?: string
+  icon?: typeof LayoutGrid
   feature?: string
   runtime?: string[]
 }
 
 const allNav: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { type: 'item', to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { type: 'separator' },
   // Docker-only
-  { to: '/containers', label: 'Containers', icon: Box, runtime: ['docker'] },
+  { type: 'item', to: '/containers', label: 'Containers', icon: Box, runtime: ['docker'] },
   // Swarm Community
-  { to: '/services', label: 'Services', icon: Layers, runtime: ['swarm'] },
-  { to: '/tasks', label: 'Tasks', icon: ListChecks, runtime: ['swarm'] },
+  { type: 'item', to: '/services', label: 'Services', icon: Layers, runtime: ['swarm'] },
+  { type: 'item', to: '/tasks', label: 'Tasks', icon: ListChecks, runtime: ['swarm'] },
   // K8s Community
-  { to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
-  { to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
+  { type: 'item', to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
+  { type: 'item', to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
   // Enterprise: Cluster + Nodes (Swarm & K8s)
   {
+    type: 'item',
     to: '/cluster',
     label: 'Cluster Overview',
     icon: Network,
@@ -143,6 +155,7 @@ const allNav: NavItem[] = [
     feature: 'swarm_dashboard',
   },
   {
+    type: 'item',
     to: '/nodes',
     label: 'Nodes',
     icon: Server,
@@ -150,14 +163,25 @@ const allNav: NavItem[] = [
     feature: 'swarm_dashboard',
   },
   // Always visible
-  { to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
-  { to: '/certificates', label: 'SSL Certificates', icon: Shield },
-  { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
-  { to: '/updates', label: 'Updates', icon: ArrowUpCircle },
-  { to: '/security', label: 'Security Posture', icon: ShieldCheck, feature: 'security_posture' },
-  { to: '/alerts', label: 'Alerts', icon: Bell },
-  { to: '/webhooks', label: 'Webhooks', icon: Link },
-  { to: '/status-admin', label: 'Status Pages', icon: Activity },
+  { type: 'item', to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
+  { type: 'item', to: '/certificates', label: 'SSL Certificates', icon: Shield },
+  { type: 'item', to: '/heartbeats', label: 'Heartbeats', icon: Heart },
+  { type: 'separator' },
+  { type: 'item', to: '/updates', label: 'Updates', icon: ArrowUpCircle },
+  {
+    type: 'item',
+    to: '/security',
+    label: 'Security Posture',
+    icon: ShieldCheck,
+    feature: 'security_posture',
+  },
+  { type: 'separator' },
+  { type: 'item', to: '/channels', label: 'Channels', icon: Send },
+  { type: 'item', to: '/alerts', label: 'Alerts', icon: Bell },
+  { type: 'item', to: '/escalation', label: 'Escalation', icon: Workflow },
+  { type: 'item', to: '/webhooks', label: 'Webhooks', icon: Link },
+  { type: 'separator' },
+  { type: 'item', to: '/status-admin', label: 'Status Pages', icon: Activity },
 ]
 
 const mainNav = computed(() =>
@@ -184,37 +208,42 @@ const mainNav = computed(() =>
 
         <!-- Main nav -->
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
-          <RouterLink
-            v-for="item in mainNav"
-            :key="item.to"
-            :to="item.to"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border group"
-            :class="[
-              route.path.startsWith(item.to)
-                ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
-            ]"
-          >
-            <div class="flex items-center gap-3">
-              <component
-                :is="item.icon"
-                :size="16"
-                class="shrink-0 transition-colors"
-                :class="
-                  route.path.startsWith(item.to)
-                    ? 'text-pb-nav-active'
-                    : 'text-slate-500 group-hover:text-pb-secondary'
-                "
-              />
-              <span class="text-sm font-medium">{{ item.label }}</span>
-            </div>
-          </RouterLink>
+          <template v-for="item in mainNav" :key="item.to">
+            <hr v-if="item.type === 'separator'" class="my-2 border-slate-700" />
+            <RouterLink
+              v-else-if="item.type === 'item'"
+              :to="item.to!"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border group"
+              :class="[
+                route.path.startsWith(item.to!)
+                  ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
+                  : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
+              ]"
+            >
+              <div class="flex items-center gap-3">
+                <component
+                  :is="item.icon"
+                  :size="16"
+                  class="shrink-0 transition-colors"
+                  :class="
+                    route.path.startsWith(item.to!)
+                      ? 'text-pb-nav-active'
+                      : 'text-slate-500 group-hover:text-pb-secondary'
+                  "
+                />
+                <span class="text-sm font-medium">{{ item.label }}</span>
+              </div>
+            </RouterLink>
+          </template>
         </nav>
 
         <!-- Bottom section: Edition -->
         <div class="p-4 border-t space-y-3 shrink-0" style="border-color: var(--pb-border-default)">
           <router-link :to="{ name: 'pro-edition' }">
-            <div class="rounded-xl p-3 border" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)">
+            <div
+              class="rounded-xl p-3 border"
+              style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)"
+            >
               <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isEnterprise }">
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
@@ -224,13 +253,17 @@ const mainNav = computed(() =>
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   :class="
-                    isEnterprise
-                      ? 'bg-emerald-500/20 border border-emerald-500/30'
-                      : 'border'
+                    isEnterprise ? 'bg-emerald-500/20 border border-emerald-500/30' : 'border'
                   "
-                  :style="isEnterprise
-                    ? { color: 'var(--pb-accent)' }
-                    : { background: 'var(--pb-bg-surface)', color: 'var(--pb-accent)', borderColor: 'color-mix(in srgb, var(--pb-accent) 40%, transparent)' }"
+                  :style="
+                    isEnterprise
+                      ? { color: 'var(--pb-accent)' }
+                      : {
+                          background: 'var(--pb-bg-surface)',
+                          color: 'var(--pb-accent)',
+                          borderColor: 'color-mix(in srgb, var(--pb-accent) 40%, transparent)',
+                        }
+                  "
                   >{{ version }}</span
                 >
               </div>
@@ -286,23 +319,25 @@ const mainNav = computed(() =>
           <h1 class="text-xl font-bold tracking-tight text-pb-primary">maintenant</h1>
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
-          <RouterLink
-            v-for="item in mainNav"
-            :key="item.to"
-            :to="item.to"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border"
-            :class="[
-              route.path.startsWith(item.to)
-                ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
-            ]"
-            @click="closeMobileMenu"
-          >
-            <div class="flex items-center gap-3">
-              <component :is="item.icon" :size="16" class="shrink-0" />
-              <span class="text-sm font-medium">{{ item.label }}</span>
-            </div>
-          </RouterLink>
+          <template v-for="item in mainNav" :key="item.to">
+            <hr v-if="item.type === 'separator'" class="my-2 border-slate-700" />
+            <RouterLink
+              v-else-if="item.type === 'item'"
+              :to="item.to!"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border"
+              :class="[
+                route.path.startsWith(item.to!)
+                  ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
+                  : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
+              ]"
+              @click="closeMobileMenu"
+            >
+              <div class="flex items-center gap-3">
+                <component :is="item.icon" :size="16" class="shrink-0" />
+                <span class="text-sm font-medium">{{ item.label }}</span>
+              </div>
+            </RouterLink>
+          </template>
         </nav>
       </div>
     </Transition>
@@ -337,7 +372,8 @@ const mainNav = computed(() =>
         class="shrink-0"
         @dismiss="dismissSupportBanner"
       >
-        Support Maintenant's development by purchasing a Pro license — it's what keeps this project sustainable.
+        Support Maintenant's development by purchasing a Pro license — it's what keeps this project
+        sustainable.
         <template #action>
           <RouterLink
             to="/pro-edition"

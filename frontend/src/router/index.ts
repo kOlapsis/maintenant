@@ -33,6 +33,7 @@ const PodsPage = () => import('../pages/PodsPage.vue')
 const ClusterOverviewPage = () => import('../pages/ClusterOverviewPage.vue')
 const NodesPage = () => import('../pages/NodesPage.vue')
 const EscalationPage = () => import('../pages/EscalationPage.vue')
+const ChannelsPage = () => import('../pages/ChannelsPage.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -47,7 +48,8 @@ const router = createRouter({
         { path: 'endpoints', name: 'endpoints', component: EndpointsPage },
         { path: 'heartbeats', name: 'heartbeats', component: HeartbeatsPage },
         { path: 'certificates', name: 'certificates', component: CertificatesPage },
-        { path: 'alerts/:tab(history|channels|silence)?', name: 'alerts', component: AlertsPage },
+        { path: 'alerts/:tab(history|triggers|silence|channels)?', name: 'alerts', component: AlertsPage },
+        { path: 'channels', name: 'channels', component: ChannelsPage },
         { path: 'status-admin', name: 'status-admin', component: StatusAdminPage },
         { path: 'webhooks', name: 'webhooks', component: WebhooksPage },
         { path: 'updates', name: 'updates', component: UpdatesPage },

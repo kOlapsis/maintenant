@@ -135,7 +135,7 @@ onMounted(() => {
                 </span>
                 <EscalationStatusBadge
                   v-if="escalationRuns[alert.id]?.length"
-                  :runs="escalationRuns[alert.id]"
+                  :runs="escalationRuns[alert.id] ?? []"
                 />
               </div>
               <div v-if="alert.entity_name" class="mt-0.5 text-xs" style="color: var(--pb-text-muted)">

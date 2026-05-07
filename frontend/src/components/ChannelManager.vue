@@ -13,48 +13,18 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useAlertsStore } from '@/stores/alerts'
+import { useChannelsStore } from '@/stores/channels'
 import { useConfirm } from '@/composables/useConfirm'
-import {
-  createChannel,
-  updateChannel,
-  deleteChannel,
-  testChannel,
-  createRoutingRule,
-  deleteRoutingRule,
-} from '@/services/alertApi'
+import { createChannel, updateChannel, deleteChannel, testChannel } from '@/services/alertApi'
 import ChannelWizard from '@/components/ChannelWizard.vue'
 
-const store = useAlertsStore()
+const store = useChannelsStore()
 
 const showForm = ref(false)
 const showWizard = ref(false)
 const editingId = ref<number | null>(null)
 const form = ref({ name: '', url: '', headers: '', enabled: true })
 const testResult = ref<{ id: number; status: string; response_code?: number; error?: string } | null>(null)
-
-// Routing rule form
-const showRuleForm = ref<number | null>(null)
-const ruleForm = ref({ source_filter: '' as string, severity_filter: '' as string })
-const selectedSources = ref<string[]>([])
-const selectedSeverities = ref<string[]>([])
-
-const availableSources = ['container', 'endpoint', 'heartbeat', 'certificate', 'resource']
-const availableSeverities = ['critical', 'warning', 'info']
-
-function toggleSource(src: string) {
-  const idx = selectedSources.value.indexOf(src)
-  if (idx >= 0) selectedSources.value.splice(idx, 1)
-  else selectedSources.value.push(src)
-  ruleForm.value.source_filter = selectedSources.value.join(',')
-}
-
-function toggleSeverity(sev: string) {
-  const idx = selectedSeverities.value.indexOf(sev)
-  if (idx >= 0) selectedSeverities.value.splice(idx, 1)
-  else selectedSeverities.value.push(sev)
-  ruleForm.value.severity_filter = selectedSeverities.value.join(',')
-}
 
 function resetForm() {
   form.value = { name: '', url: '', headers: '', enabled: true }
@@ -84,7 +54,8 @@ const confirm = useConfirm()
 async function handleDelete(id: number) {
   const ok = await confirm({
     title: 'Delete channel',
-    message: 'Remove this notification channel and its routing rules? This cannot be undone.',
+    message:
+      'Remove this notification channel? Triggers and escalation policies referencing it will lose this destination.',
     confirmLabel: 'Delete',
     destructive: true,
   })
@@ -99,20 +70,6 @@ async function handleTest(id: number) {
   testResult.value = { id, ...res }
 }
 
-async function handleAddRule(channelId: number) {
-  await createRoutingRule(channelId, ruleForm.value)
-  ruleForm.value = { source_filter: '', severity_filter: '' }
-  selectedSources.value = []
-  selectedSeverities.value = []
-  showRuleForm.value = null
-  store.fetchChannels()
-}
-
-async function handleDeleteRule(channelId: number, ruleId: number) {
-  await deleteRoutingRule(channelId, ruleId)
-  store.fetchChannels()
-}
-
 function maskUrl(url: string): string {
   try {
     const u = new URL(url)
@@ -123,7 +80,7 @@ function maskUrl(url: string): string {
   }
 }
 
-function handleWizardCreated(id: number) {
+function handleWizardCreated(_id: number) {
   showWizard.value = false
   store.fetchChannels()
 }
@@ -132,16 +89,23 @@ function handleWizardCreated(id: number) {
 <template>
   <div>
     <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-lg font-semibold" style="color: var(--pb-text-primary)">Notification Channels</h2>
+      <h2 class="text-lg font-semibold text-white">Notification Channels</h2>
       <div class="flex gap-2">
         <button
           @click="showWizard = true; showForm = false"
-          class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary"
-          style="background: var(--pb-accent)"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
         >
           Add Channel
         </button>
       </div>
+    </div>
+
+    <!-- Pedagogical banner -->
+    <div class="mb-4 rounded-xl border border-slate-800 bg-[#12151C] px-4 py-3 text-xs text-slate-400">
+      Channels are silent by default. To start receiving notifications, wire a channel through an
+      <RouterLink to="/alerts/triggers" class="text-pb-green-400 hover:underline">Alert Trigger</RouterLink>
+      or an
+      <RouterLink to="/escalation" class="text-pb-green-400 hover:underline">Escalation Policy</RouterLink>.
     </div>
 
     <!-- Channel Wizard -->
@@ -153,28 +117,28 @@ function handleWizardCreated(id: number) {
     </div>
 
     <!-- Edit form (for existing channels) -->
-    <div v-if="showForm && editingId" class="mb-4 rounded-lg border p-4" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-      <h3 class="mb-3 text-sm font-medium" style="color: var(--pb-text-primary)">Edit Channel</h3>
+    <div v-if="showForm && editingId" class="mb-4 rounded-xl border border-slate-800 bg-[#12151C] p-4">
+      <h3 class="mb-3 text-sm font-medium text-white">Edit Channel</h3>
       <form @submit.prevent="submitForm" class="space-y-3">
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Name</label>
-          <input v-model="form.name" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Name</label>
+          <input v-model="form.name" required class="mt-1 w-full rounded-lg border border-slate-800 bg-[#0B0E13] px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-600" />
         </div>
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Webhook URL</label>
-          <input v-model="form.url" required type="url" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Webhook URL</label>
+          <input v-model="form.url" required type="url" class="mt-1 w-full rounded-lg border border-slate-800 bg-[#0B0E13] px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-600" />
         </div>
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Custom Headers (JSON)</label>
-          <input v-model="form.headers" placeholder='{"Authorization": "Bearer ..."}' class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Custom Headers (JSON)</label>
+          <input v-model="form.headers" placeholder='{"Authorization": "Bearer ..."}' class="mt-1 w-full rounded-lg border border-slate-800 bg-[#0B0E13] px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-slate-600" />
         </div>
         <div class="flex items-center gap-2">
-          <input v-model="form.enabled" type="checkbox" id="ch-enabled" class="rounded" style="accent-color: var(--pb-accent)" />
-          <label for="ch-enabled" class="text-sm" style="color: var(--pb-text-secondary)">Enabled</label>
+          <input v-model="form.enabled" type="checkbox" id="ch-enabled" class="rounded accent-pb-green-500" />
+          <label for="ch-enabled" class="text-sm text-slate-300">Enabled</label>
         </div>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-pb-primary" style="background: var(--pb-accent)">Save</button>
-          <button type="button" @click="resetForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 rounded-lg text-xs font-bold transition-all">Save</button>
+          <button type="button" @click="resetForm" class="px-4 py-2 rounded-lg border border-slate-700 text-xs text-slate-300 hover:bg-slate-800/50 transition-all">Cancel</button>
         </div>
       </form>
     </div>
@@ -183,17 +147,15 @@ function handleWizardCreated(id: number) {
     <div class="space-y-3">
       <div
         v-if="store.channels.length === 0 && !store.channelsLoading"
-        class="rounded-lg border p-6 text-center"
-        style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+        class="rounded-xl border border-slate-800 bg-[#12151C] p-6 text-center"
       >
-        <p class="text-sm" style="color: var(--pb-text-muted)">No notification channels configured</p>
+        <p class="text-sm text-slate-500">No notification channels configured</p>
       </div>
 
       <div
         v-for="ch in store.channels"
         :key="ch.id"
-        class="rounded-lg border p-4"
-        style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+        class="rounded-xl border border-slate-800 bg-[#12151C] p-4"
       >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
@@ -203,16 +165,17 @@ function handleWizardCreated(id: number) {
             ></span>
             <div>
               <div class="flex items-center gap-2">
-                <span class="text-sm font-medium" style="color: var(--pb-text-primary)">{{ ch.name }}</span>
-                <span v-if="!ch.enabled" class="rounded px-1.5 py-0.5 text-xs" style="background: var(--pb-bg-elevated); color: var(--pb-text-muted)">disabled</span>
+                <span class="text-sm font-medium text-white">{{ ch.name }}</span>
+                <span v-if="!ch.enabled" class="rounded px-1.5 py-0.5 text-xs bg-slate-800 text-slate-500">disabled</span>
+                <span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-400">{{ ch.type }}</span>
               </div>
-              <p class="text-xs" style="color: var(--pb-text-muted)">{{ maskUrl(ch.url) }}</p>
+              <p class="text-xs text-slate-500">{{ maskUrl(ch.url) }}</p>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button @click="handleTest(ch.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Test</button>
-            <button @click="startEdit(ch)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Edit</button>
-            <button @click="handleDelete(ch.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--pb-status-down); color: var(--pb-status-down)">Delete</button>
+            <button @click="handleTest(ch.id)" class="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800/50 transition-all">Test</button>
+            <button @click="startEdit(ch)" class="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800/50 transition-all">Edit</button>
+            <button @click="handleDelete(ch.id)" class="rounded-lg border border-pb-status-down/40 px-2.5 py-1 text-xs text-pb-status-down hover:bg-pb-status-down/10 transition-all">Delete</button>
           </div>
         </div>
 
@@ -227,71 +190,6 @@ function handleWizardCreated(id: number) {
           }"
         >
           {{ testResult.status === 'delivered' ? `Delivered (HTTP ${testResult.response_code})` : `Failed: ${testResult.error}` }}
-        </div>
-
-        <!-- Routing rules -->
-        <div v-if="ch.routing_rules && ch.routing_rules.length > 0" class="mt-3 border-t pt-2" style="border-color: var(--pb-border-subtle)">
-          <p class="mb-1 text-xs font-medium" style="color: var(--pb-text-muted)">Routing Rules</p>
-          <div v-for="rule in ch.routing_rules" :key="rule.id" class="flex items-center justify-between py-0.5">
-            <span class="text-xs" style="color: var(--pb-text-secondary)">
-              {{ rule.source_filter || 'all sources' }} / {{ rule.severity_filter || 'all severities' }}
-            </span>
-            <button @click="handleDeleteRule(ch.id, rule.id)" class="text-xs" style="color: var(--pb-status-down)">Remove</button>
-          </div>
-        </div>
-
-        <!-- Add rule -->
-        <div class="mt-2">
-          <button
-            v-if="showRuleForm !== ch.id"
-            @click="showRuleForm = ch.id"
-            class="text-xs"
-            style="color: var(--pb-accent)"
-          >
-            + Add routing rule
-          </button>
-          <div v-else class="mt-1 space-y-2">
-            <div>
-              <p class="mb-1 text-xs font-medium" style="color: var(--pb-text-muted)">Sources <span style="color: var(--pb-text-secondary)">(empty = all)</span></p>
-              <div class="flex flex-wrap gap-1">
-                <button
-                  v-for="src in availableSources"
-                  :key="src"
-                  @click="toggleSource(src)"
-                  class="rounded-full border px-2.5 py-0.5 text-xs transition-colors"
-                  :style="{
-                    background: selectedSources.includes(src) ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-                    borderColor: selectedSources.includes(src) ? 'var(--pb-accent)' : 'var(--pb-border-default)',
-                    color: selectedSources.includes(src) ? 'white' : 'var(--pb-text-secondary)',
-                  }"
-                >
-                  {{ src }}
-                </button>
-              </div>
-            </div>
-            <div>
-              <p class="mb-1 text-xs font-medium" style="color: var(--pb-text-muted)">Severities <span style="color: var(--pb-text-secondary)">(empty = all)</span></p>
-              <div class="flex flex-wrap gap-1">
-                <button
-                  v-for="sev in availableSeverities"
-                  :key="sev"
-                  @click="toggleSeverity(sev)"
-                  class="rounded-full border px-2.5 py-0.5 text-xs transition-colors"
-                  :style="{
-                    background: selectedSeverities.includes(sev) ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-                    borderColor: selectedSeverities.includes(sev) ? 'var(--pb-accent)' : 'var(--pb-border-default)',
-                    color: selectedSeverities.includes(sev) ? 'white' : 'var(--pb-text-secondary)',
-                  }"
-                >
-                  {{ sev }}
-                </button>
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <button @click="handleAddRule(ch.id)" class="rounded px-2 py-1 text-xs text-pb-primary" style="background: var(--pb-accent)">Add</button>
-              <button @click="showRuleForm = null; selectedSources = []; selectedSeverities = []" class="text-xs" style="color: var(--pb-text-muted)">Cancel</button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
