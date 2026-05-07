@@ -100,6 +100,36 @@ func (m *escalationTestStore) BulkStopActiveRuns(_ context.Context, _ string, _ 
 func (m *escalationTestStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
 	return nil
 }
+func (m *escalationTestStore) InsertRun(_ context.Context, _ *escalation.Run) (int64, error) {
+	return 0, nil
+}
+func (m *escalationTestStore) UpdateRunProgress(_ context.Context, _ int64, _ int, _ *time.Time, _ string) error {
+	return nil
+}
+func (m *escalationTestStore) TerminateRun(_ context.Context, _ int64, _ string, _ time.Time) error {
+	return nil
+}
+func (m *escalationTestStore) SelectActiveRunsByAlert(_ context.Context, _ int64) ([]*escalation.Run, error) {
+	return nil, nil
+}
+func (m *escalationTestStore) SelectDueRuns(_ context.Context, _ time.Time) ([]*escalation.Run, error) {
+	return nil, nil
+}
+func (m *escalationTestStore) PauseRunForMaintenance(_ context.Context, _ int64, _ time.Time) error {
+	return nil
+}
+func (m *escalationTestStore) ResumeRunFromMaintenance(_ context.Context, _ int64, _ time.Time) error {
+	return nil
+}
+func (m *escalationTestStore) InsertDelivery(_ context.Context, _ *escalation.Delivery) (int64, error) {
+	return 0, nil
+}
+func (m *escalationTestStore) UpdateDelivery(_ context.Context, _ *escalation.Delivery) error {
+	return nil
+}
+func (m *escalationTestStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*escalation.Delivery, error) {
+	return nil, nil
+}
 
 // --- in-memory channel store mock ---
 

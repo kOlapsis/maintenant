@@ -97,6 +97,30 @@ func (m *mockStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time)
 func (m *mockStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
 	return nil
 }
+func (m *mockStore) InsertRun(_ context.Context, _ *Run) (int64, error) { return 0, nil }
+func (m *mockStore) UpdateRunProgress(_ context.Context, _ int64, _ int, _ *time.Time, _ string) error {
+	return nil
+}
+func (m *mockStore) TerminateRun(_ context.Context, _ int64, _ string, _ time.Time) error {
+	return nil
+}
+func (m *mockStore) SelectActiveRunsByAlert(_ context.Context, _ int64) ([]*Run, error) {
+	return nil, nil
+}
+func (m *mockStore) SelectDueRuns(_ context.Context, _ time.Time) ([]*Run, error) {
+	return nil, nil
+}
+func (m *mockStore) PauseRunForMaintenance(_ context.Context, _ int64, _ time.Time) error {
+	return nil
+}
+func (m *mockStore) ResumeRunFromMaintenance(_ context.Context, _ int64, _ time.Time) error {
+	return nil
+}
+func (m *mockStore) InsertDelivery(_ context.Context, _ *Delivery) (int64, error) { return 0, nil }
+func (m *mockStore) UpdateDelivery(_ context.Context, _ *Delivery) error          { return nil }
+func (m *mockStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*Delivery, error) {
+	return nil, nil
+}
 
 // --- channel store mock ---
 

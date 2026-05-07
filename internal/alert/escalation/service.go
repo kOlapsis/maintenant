@@ -27,6 +27,12 @@ var (
 	ErrValidationFailed = errors.New("validation_failed")
 	ErrPolicyNotFound   = errors.New("policy_not_found")
 	ErrRunNotFound      = errors.New("run_not_found")
+
+	// ErrDeliveryDuplicate is returned by Store.InsertDelivery when a row
+	// for (run_id, level_index, channel_id) already exists. This signals the
+	// runner that another worker has already reserved this delivery slot
+	// (idempotence guarantee R4 — reserve-then-deliver).
+	ErrDeliveryDuplicate = errors.New("delivery_duplicate")
 )
 
 // PolicyRequest is the input for creating or updating a policy.
@@ -59,6 +65,25 @@ type Store interface {
 	BulkRestorePoliciesFromDowngrade(ctx context.Context) error
 	BulkStopActiveRuns(ctx context.Context, stopStatus string, endedAt time.Time) error
 	PurgeRunsAndDeliveriesOlderThan(ctx context.Context, before time.Time) error
+
+	// Run lifecycle (used by the concrete Pro Runner).
+	InsertRun(ctx context.Context, r *Run) (int64, error)
+	UpdateRunProgress(ctx context.Context, runID int64, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error
+	TerminateRun(ctx context.Context, runID int64, status string, endedAt time.Time) error
+	SelectActiveRunsByAlert(ctx context.Context, alertID int64) ([]*Run, error)
+	// SelectDueRuns returns runs in status 'active' OR 'paused_by_maintenance'
+	// whose next_action_at <= now. The runner re-evaluates the suppressor on
+	// every tick, so paused runs need to surface alongside active ones.
+	SelectDueRuns(ctx context.Context, now time.Time) ([]*Run, error)
+	PauseRunForMaintenance(ctx context.Context, runID int64, recheckAt time.Time) error
+	ResumeRunFromMaintenance(ctx context.Context, runID int64, nextActionAt time.Time) error
+
+	// Delivery lifecycle (used by the concrete Pro Runner).
+	// InsertDelivery returns ErrDeliveryDuplicate when the UNIQUE
+	// (run_id, level_index, channel_id) constraint is violated.
+	InsertDelivery(ctx context.Context, d *Delivery) (int64, error)
+	UpdateDelivery(ctx context.Context, d *Delivery) error
+	SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*Delivery, error)
 }
 
 // Service is the CE-side escalation CRUD service.

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/mattn/go-sqlite3"
 )
 
 // EscalationStore implements escalation.Store using SQLite.
@@ -268,6 +269,210 @@ func (s *EscalationStore) BulkStopActiveRuns(ctx context.Context, stopStatus str
 		return fmt.Errorf("bulk stop active runs: %w", err)
 	}
 	return nil
+}
+
+// InsertRun persists a new escalation run.
+func (s *EscalationStore) InsertRun(ctx context.Context, r *escalation.Run) (int64, error) {
+	var policyID interface{}
+	if r.PolicyID != nil {
+		policyID = *r.PolicyID
+	}
+	var nextActionAt interface{}
+	if r.NextActionAt != nil {
+		nextActionAt = r.NextActionAt.UTC().Format(time.RFC3339)
+	}
+
+	res, err := s.writer.Exec(ctx,
+		`INSERT INTO escalation_runs
+			(policy_id, policy_snapshot_json, alert_id, status,
+			 last_executed_level_index, started_at, next_action_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		policyID, r.PolicySnapshotJSON, r.AlertID, r.Status,
+		r.LastExecutedLevelIndex,
+		r.StartedAt.UTC().Format(time.RFC3339),
+		nextActionAt,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("insert escalation run: %w", err)
+	}
+	r.ID = res.LastInsertID
+	return res.LastInsertID, nil
+}
+
+// UpdateRunProgress advances a run's level cursor and reschedules its next action.
+// Used by the runner after executing a level (R4 reserve-then-deliver).
+func (s *EscalationStore) UpdateRunProgress(ctx context.Context, runID int64, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error {
+	var nextAt interface{}
+	if nextActionAt != nil {
+		nextAt = nextActionAt.UTC().Format(time.RFC3339)
+	}
+	_, err := s.writer.Exec(ctx,
+		`UPDATE escalation_runs
+		 SET last_executed_level_index = ?, next_action_at = ?, status = ?
+		 WHERE id = ?`,
+		lastExecutedLevelIndex, nextAt, status, runID,
+	)
+	if err != nil {
+		return fmt.Errorf("update run progress: %w", err)
+	}
+	return nil
+}
+
+// TerminateRun moves a run to a terminal status (stopped_by_*, exhausted) and stamps ended_at.
+func (s *EscalationStore) TerminateRun(ctx context.Context, runID int64, status string, endedAt time.Time) error {
+	_, err := s.writer.Exec(ctx,
+		`UPDATE escalation_runs
+		 SET status = ?, ended_at = ?, next_action_at = NULL
+		 WHERE id = ?`,
+		status, endedAt.UTC().Format(time.RFC3339), runID,
+	)
+	if err != nil {
+		return fmt.Errorf("terminate run: %w", err)
+	}
+	return nil
+}
+
+// SelectActiveRunsByAlert returns runs in non-terminal state for a given alert.
+// Used by ack/resolve hooks and OnAlertCreated dedup.
+func (s *EscalationStore) SelectActiveRunsByAlert(ctx context.Context, alertID int64) ([]*escalation.Run, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, policy_id, policy_snapshot_json, alert_id, status,
+			last_executed_level_index, started_at, ended_at, next_action_at
+		FROM escalation_runs
+		WHERE alert_id = ? AND status IN ('active','paused_by_maintenance')
+		ORDER BY id ASC`, alertID)
+	if err != nil {
+		return nil, fmt.Errorf("select active runs by alert: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanEscalationRuns(rows)
+}
+
+// SelectDueRuns returns runs in status 'active' or 'paused_by_maintenance' whose
+// next_action_at is at or before now. The partial index covers the active case;
+// paused runs fall back to a small-table scan (acceptable: <200 paused runs per
+// spec hypothesis v1).
+func (s *EscalationStore) SelectDueRuns(ctx context.Context, now time.Time) ([]*escalation.Run, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, policy_id, policy_snapshot_json, alert_id, status,
+			last_executed_level_index, started_at, ended_at, next_action_at
+		FROM escalation_runs
+		WHERE status IN ('active','paused_by_maintenance')
+		  AND next_action_at IS NOT NULL
+		  AND next_action_at <= ?
+		ORDER BY next_action_at ASC`,
+		now.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select due runs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanEscalationRuns(rows)
+}
+
+// PauseRunForMaintenance moves an active run to paused_by_maintenance and
+// schedules a recheck. Returning to active happens via ResumeRunFromMaintenance.
+func (s *EscalationStore) PauseRunForMaintenance(ctx context.Context, runID int64, recheckAt time.Time) error {
+	_, err := s.writer.Exec(ctx,
+		`UPDATE escalation_runs
+		 SET status = 'paused_by_maintenance', next_action_at = ?
+		 WHERE id = ? AND status = 'active'`,
+		recheckAt.UTC().Format(time.RFC3339), runID,
+	)
+	if err != nil {
+		return fmt.Errorf("pause run: %w", err)
+	}
+	return nil
+}
+
+// ResumeRunFromMaintenance flips a paused run back to active with an updated due time.
+func (s *EscalationStore) ResumeRunFromMaintenance(ctx context.Context, runID int64, nextActionAt time.Time) error {
+	_, err := s.writer.Exec(ctx,
+		`UPDATE escalation_runs
+		 SET status = 'active', next_action_at = ?
+		 WHERE id = ? AND status = 'paused_by_maintenance'`,
+		nextActionAt.UTC().Format(time.RFC3339), runID,
+	)
+	if err != nil {
+		return fmt.Errorf("resume run: %w", err)
+	}
+	return nil
+}
+
+// InsertDelivery reserves a delivery slot. Returns escalation.ErrDeliveryDuplicate
+// when (run_id, level_index, channel_id) already exists — the caller treats this
+// as "already attempted" (R4 reserve-then-deliver idempotence).
+func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Delivery) (int64, error) {
+	var channelID interface{}
+	if d.ChannelID != nil {
+		channelID = *d.ChannelID
+	}
+	var sentAt interface{}
+	if d.SentAt != nil {
+		sentAt = d.SentAt.UTC().Format(time.RFC3339)
+	}
+
+	res, err := s.writer.Exec(ctx,
+		`INSERT INTO escalation_deliveries
+			(run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		d.RunID, d.LevelIndex, channelID, d.Status, NullableString(d.Error),
+		d.AttemptStartedAt.UTC().Format(time.RFC3339), sentAt,
+	)
+	if err != nil {
+		var sqliteErr sqlite3.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return 0, escalation.ErrDeliveryDuplicate
+		}
+		return 0, fmt.Errorf("insert delivery: %w", err)
+	}
+	d.ID = res.LastInsertID
+	return res.LastInsertID, nil
+}
+
+// UpdateDelivery persists status/error/sent_at after a send attempt completes.
+func (s *EscalationStore) UpdateDelivery(ctx context.Context, d *escalation.Delivery) error {
+	var sentAt interface{}
+	if d.SentAt != nil {
+		sentAt = d.SentAt.UTC().Format(time.RFC3339)
+	}
+	_, err := s.writer.Exec(ctx,
+		`UPDATE escalation_deliveries
+		 SET status = ?, error = ?, sent_at = ?
+		 WHERE id = ?`,
+		d.Status, NullableString(d.Error), sentAt, d.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update delivery: %w", err)
+	}
+	return nil
+}
+
+// SelectOrphanPendingDeliveries returns deliveries stuck in 'pending' for longer
+// than the runner's orphan timeout. The runner decides whether to retry or abandon.
+func (s *EscalationStore) SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*escalation.Delivery, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, run_id, level_index, channel_id, status, error,
+			attempt_started_at, sent_at
+		FROM escalation_deliveries
+		WHERE status = 'pending' AND attempt_started_at < ?
+		ORDER BY attempt_started_at ASC`,
+		before.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select orphan pending deliveries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var deliveries []*escalation.Delivery
+	for rows.Next() {
+		d, err := scanEscalationDelivery(rows)
+		if err != nil {
+			return nil, err
+		}
+		deliveries = append(deliveries, d)
+	}
+	return deliveries, rows.Err()
 }
 
 // PurgeRunsAndDeliveriesOlderThan deletes terminated runs (ended_at < before) in batches of 1000.
