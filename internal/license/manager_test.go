@@ -28,14 +28,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testManager creates a LicenseManager wired to a test HTTP server.
-func testManager(t *testing.T, pub ed25519.PublicKey, handler http.HandlerFunc) *LicenseManager {
+// testManager creates a Manager wired to a test HTTP server.
+func testManager(t *testing.T, pub ed25519.PublicKey, handler http.HandlerFunc) *Manager {
 	t.Helper()
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	m := &LicenseManager{
+	m := &Manager{
 		licenseKey: "test-key-123",
 		dataDir:    t.TempDir(),
 		version:    "test",
@@ -44,7 +44,7 @@ func testManager(t *testing.T, pub ed25519.PublicKey, handler http.HandlerFunc) 
 		client:     server.Client(),
 		stop:       make(chan struct{}),
 	}
-	m.state.Store(&LicenseState{Status: "unknown"})
+	m.state.Store(&State{Status: "unknown"})
 
 	// Override the server URL for this test
 	origOverride := licenseServerOverride
@@ -212,7 +212,7 @@ func TestManager_InvalidSignature(t *testing.T) {
 	m := testManager(t, pub, handler)
 
 	// Set an existing state to verify it's preserved
-	m.state.Store(&LicenseState{
+	m.state.Store(&State{
 		IsProEnabled: true,
 		Status:       "active",
 		Plan:         "pro",
@@ -276,7 +276,7 @@ func TestManager_NetworkError_CacheFallback(t *testing.T) {
 	assert.True(t, m.IsProEnabled())
 }
 
-func TestManager_CacheLoadOnStart(t *testing.T) {
+func TestManager_CacheLoadOnConstruction(t *testing.T) {
 	pub, priv := generateTestKeyPair(t)
 	dir := t.TempDir()
 
@@ -301,7 +301,7 @@ func TestManager_CacheLoadOnStart(t *testing.T) {
 	licenseServerOverride = server.URL
 	defer func() { licenseServerOverride = origOverride }()
 
-	m := &LicenseManager{
+	m := &Manager{
 		licenseKey: "test-key-123",
 		dataDir:    dir,
 		version:    "test",
@@ -310,15 +310,23 @@ func TestManager_CacheLoadOnStart(t *testing.T) {
 		client:     server.Client(),
 		stop:       make(chan struct{}),
 	}
-	m.state.Store(&LicenseState{Status: "unknown"})
+	m.state.Store(&State{Status: "unknown"})
 
-	// Start should load cache first
+	// Cache load is what NewManager does at construction time. Simulating it
+	// here lets the test exercise the same effect on a manually-built Manager.
 	ctx, cancel := context.WithCancel(context.Background())
-	m.Start(ctx)
 	defer cancel()
+	m.loadCache(ctx)
+
+	// Pro is now enabled from cache, before any network check.
+	assert.True(t, m.IsProEnabled())
+	assert.Equal(t, "active", m.State().Status)
+
+	// Start runs a network check; with the server down, graceful degradation
+	// keeps Pro enabled (cache age is well under the 7-day warn threshold).
+	m.Start(ctx)
 	defer m.Stop()
 
-	// Cache was loaded, Pro enabled despite server being down
 	assert.True(t, m.IsProEnabled())
 	assert.Equal(t, "active", m.State().Status)
 }
