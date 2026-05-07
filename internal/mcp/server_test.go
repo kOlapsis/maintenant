@@ -107,6 +107,12 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		"delete_escalation_policy",
 		"list_alert_escalation_runs",
 		"get_escalation_run",
+		// Trigger tools (5)
+		"list_triggers",
+		"get_trigger",
+		"create_trigger",
+		"update_trigger",
+		"delete_trigger",
 	}
 
 	toolNames := make(map[string]bool)
@@ -114,7 +120,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 
-	assert.Len(t, result.Tools, 26, "expected exactly 26 tools registered")
+	assert.Len(t, result.Tools, 31, "expected exactly 31 tools registered")
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "expected tool %q to be registered", name)
 	}

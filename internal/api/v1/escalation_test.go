@@ -121,13 +121,6 @@ func (m *escalationTestChannelStore) DeleteChannel(_ context.Context, _ int64) e
 func (m *escalationTestChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
 	return "ok", nil
 }
-func (m *escalationTestChannelStore) InsertRoutingRule(_ context.Context, _ *alert.RoutingRule) (int64, error) {
-	return 1, nil
-}
-func (m *escalationTestChannelStore) DeleteRoutingRule(_ context.Context, _ int64) error { return nil }
-func (m *escalationTestChannelStore) ListRoutingRulesByChannel(_ context.Context, _ int64) ([]alert.RoutingRule, error) {
-	return nil, nil
-}
 func (m *escalationTestChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
 	return 1, nil
 }
@@ -148,21 +141,20 @@ func (n noopSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (bool, e
 
 // --- helpers ---
 
-func buildEscalationHandler(tier extension.PlanTier) *EscalationHandler {
+func buildEscalationHandler() *EscalationHandler {
 	svc := escalation.NewService(
 		newEscalationTestStore(),
 		&escalationTestChannelStore{},
 		func() extension.Edition { return extension.Enterprise },
-		func() extension.PlanTier { return tier },
 		noopSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)
 	return NewEscalationHandler(svc)
 }
 
-func escalationMux(t *testing.T, tier extension.PlanTier) *http.ServeMux {
+func escalationMux(t *testing.T) *http.ServeMux {
 	t.Helper()
-	h := buildEscalationHandler(tier)
+	h := buildEscalationHandler()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/escalation-policies", requireEnterprise(h.HandleCreatePolicy))
 	mux.HandleFunc("GET /api/v1/escalation-policies", requireEnterprise(h.HandleListPolicies))
@@ -209,7 +201,7 @@ func TestEscalation_AllEndpoints_Return403_CE(t *testing.T) {
 		{"DELETE", "/api/v1/escalation-policies/1"},
 	}
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	for _, ep := range endpoints {
 		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -227,7 +219,7 @@ func TestEscalation_CreatePolicy_HappyPath(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	b, _ := json.Marshal(validPolicyBody())
 
 	rec := httptest.NewRecorder()
@@ -247,7 +239,7 @@ func TestEscalation_CreatePolicy_ValidationError_EmptyName(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	body := validPolicyBody()
 	body.Name = ""
 	b, _ := json.Marshal(body)
@@ -265,7 +257,7 @@ func TestEscalation_ListPolicies_Empty(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/escalation-policies", nil)
 	mux.ServeHTTP(rec, req)
@@ -277,7 +269,8 @@ func TestEscalation_ListPolicies_Empty(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	assert.Empty(t, resp.Policies)
-	assert.Equal(t, 25, resp.Limits.MaxActive)
+	assert.Equal(t, -1, resp.Limits.MaxActive) // Pro = unlimited
+	assert.Equal(t, -1, resp.Limits.MaxLevels)
 }
 
 func TestEscalation_GetPolicy_NotFound(t *testing.T) {
@@ -285,7 +278,7 @@ func TestEscalation_GetPolicy_NotFound(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/escalation-policies/999", nil)
 	mux.ServeHTTP(rec, req)
@@ -298,7 +291,7 @@ func TestEscalation_DeletePolicy_NotFound(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("DELETE", "/api/v1/escalation-policies/999", nil)
 	mux.ServeHTTP(rec, req)
@@ -311,7 +304,7 @@ func TestEscalation_DeletePolicy_HappyPath(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 
 	// Create first
 	b, _ := json.Marshal(validPolicyBody())
@@ -336,7 +329,7 @@ func TestEscalation_OverlapProbe_ReturnsEmpty(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/v1/escalation-policies/overlap-probe", nil)
 	mux.ServeHTTP(rec, req)
@@ -354,7 +347,7 @@ func TestEscalation_UpdatePolicy_HappyPath(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 
 	// Create first
 	b, _ := json.Marshal(validPolicyBody())
@@ -399,7 +392,7 @@ func TestEscalation_UpdatePolicy_NotFound(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	b, _ := json.Marshal(validPolicyBody())
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("PUT", "/api/v1/escalation-policies/999", bytes.NewReader(b))
@@ -414,7 +407,7 @@ func TestEscalation_UpdatePolicy_ValidationError(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 
 	// Create first
 	b, _ := json.Marshal(validPolicyBody())
@@ -444,7 +437,7 @@ func TestEscalation_SetPolicyActive_HappyPath(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 
 	// Create inactive policy
 	b, _ := json.Marshal(validPolicyBody())
@@ -475,7 +468,7 @@ func TestEscalation_SetPolicyActive_NotFound(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	patchBody, _ := json.Marshal(map[string]bool{"active": true})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("PATCH", "/api/v1/escalation-policies/999/active", bytes.NewReader(patchBody))
@@ -490,7 +483,7 @@ func TestEscalation_GetAlertRuns_Pro_Empty(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/alerts/1/escalation-runs", nil)
 	mux.ServeHTTP(rec, req)
@@ -508,7 +501,7 @@ func TestEscalation_GetAlertRuns_CE_403(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/alerts/1/escalation-runs", nil)
 	mux.ServeHTTP(rec, req)
@@ -521,7 +514,7 @@ func TestEscalation_GetRun_NotFound(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/escalation-runs/999", nil)
 	mux.ServeHTTP(rec, req)
@@ -534,7 +527,7 @@ func TestEscalation_ListPolicyRuns_Pro_Empty(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	mux := escalationMux(t, extension.PlanTierTeam)
+	mux := escalationMux(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v1/escalation-policies/1/runs", nil)
 	mux.ServeHTTP(rec, req)

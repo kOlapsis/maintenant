@@ -62,6 +62,7 @@ type HandlerDeps struct {
 	// Alert pipeline
 	AlertStore   alert.AlertStore
 	ChannelStore alert.ChannelStore
+	TriggerStore alert.TriggerStore
 	SilenceStore alert.SilenceStore
 	Notifier     *alert.Notifier
 	Escalator    alert.Escalator
@@ -240,9 +241,15 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("PUT /api/v1/channels/{id}", ah.HandleUpdateChannel)
 		r.mux.HandleFunc("DELETE /api/v1/channels/{id}", ah.HandleDeleteChannel)
 		r.mux.HandleFunc("POST /api/v1/channels/{id}/test", ah.HandleTestChannel)
-		// Routing rules
-		r.mux.HandleFunc("POST /api/v1/channels/{id}/rules", requireEnterprise(ah.HandleCreateRoutingRule))
-		r.mux.HandleFunc("DELETE /api/v1/channels/{id}/rules/{rule_id}", requireEnterprise(ah.HandleDeleteRoutingRule))
+		// Alert triggers (CRUD; advanced filters scopes/tags gated to Pro inside the handler)
+		if d.TriggerStore != nil {
+			th := NewAlertTriggerHandler(d.TriggerStore, d.ChannelStore, d.Broker)
+			r.mux.HandleFunc("GET /api/v1/alert-triggers", th.HandleListTriggers)
+			r.mux.HandleFunc("POST /api/v1/alert-triggers", th.HandleCreateTrigger)
+			r.mux.HandleFunc("GET /api/v1/alert-triggers/{id}", th.HandleGetTrigger)
+			r.mux.HandleFunc("PUT /api/v1/alert-triggers/{id}", th.HandleUpdateTrigger)
+			r.mux.HandleFunc("DELETE /api/v1/alert-triggers/{id}", th.HandleDeleteTrigger)
+		}
 		// Silence rules
 		r.mux.HandleFunc("GET /api/v1/silence", ah.HandleListSilenceRules)
 		r.mux.HandleFunc("POST /api/v1/silence", ah.HandleCreateSilenceRule)

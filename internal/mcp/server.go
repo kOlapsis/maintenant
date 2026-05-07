@@ -41,6 +41,8 @@ type Services struct {
 	Certificates  *certificate.Service
 	Resources     *resource.Service
 	Alerts        alert.AlertStore
+	Channels      alert.ChannelStore
+	Triggers      alert.TriggerStore
 	Updates       *update.Service
 	Incidents     extension.IncidentManager
 	Maintenance   extension.MaintenanceScheduler
@@ -64,6 +66,7 @@ func NewServer(svc *Services) *gomcp.Server {
 	registerReadTools(server, svc)
 	registerWriteTools(server, svc)
 	registerEscalationTools(server, svc)
+	registerTriggerTools(server, svc)
 
 	return server
 }

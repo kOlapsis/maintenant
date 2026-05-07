@@ -118,13 +118,6 @@ func (m *mockChannelStore) DeleteChannel(_ context.Context, _ int64) error { ret
 func (m *mockChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
 	return "ok", nil
 }
-func (m *mockChannelStore) InsertRoutingRule(_ context.Context, _ *alert.RoutingRule) (int64, error) {
-	return 1, nil
-}
-func (m *mockChannelStore) DeleteRoutingRule(_ context.Context, _ int64) error { return nil }
-func (m *mockChannelStore) ListRoutingRulesByChannel(_ context.Context, _ int64) ([]alert.RoutingRule, error) {
-	return nil, nil
-}
 func (m *mockChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
 	return 1, nil
 }
@@ -145,12 +138,11 @@ func (m *mockSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (bool, 
 
 // --- helpers ---
 
-func newTestService(tier extension.PlanTier, store *mockStore) *Service {
+func newTestService(store *mockStore) *Service {
 	return NewService(
 		store,
 		&mockChannelStore{},
 		func() extension.Edition { return extension.Enterprise },
-		func() extension.PlanTier { return tier },
 		&mockSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)
@@ -174,7 +166,7 @@ func validRequest() PolicyRequest {
 // --- tests ---
 
 func TestCreatePolicy_EmptyName(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Name = ""
 	_, err := svc.CreatePolicy(context.Background(), req)
@@ -183,7 +175,7 @@ func TestCreatePolicy_EmptyName(t *testing.T) {
 }
 
 func TestCreatePolicy_NameTooLong(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Name = string(make([]byte, 121))
 	_, err := svc.CreatePolicy(context.Background(), req)
@@ -192,7 +184,7 @@ func TestCreatePolicy_NameTooLong(t *testing.T) {
 }
 
 func TestCreatePolicy_NoLevels(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Levels = []LevelReq{}
 	_, err := svc.CreatePolicy(context.Background(), req)
@@ -200,22 +192,8 @@ func TestCreatePolicy_NoLevels(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrValidationFailed))
 }
 
-func TestCreatePolicy_TooManyLevels_Solo(t *testing.T) {
-	svc := newTestService(extension.PlanTierSolo, newMockStore())
-	req := validRequest()
-	req.Levels = []LevelReq{
-		{DelaySeconds: 300, ChannelIDs: []int64{1}},
-		{DelaySeconds: 600, ChannelIDs: []int64{1}},
-		{DelaySeconds: 900, ChannelIDs: []int64{1}},
-		{DelaySeconds: 1200, ChannelIDs: []int64{1}}, // 4 > 3 Solo limit
-	}
-	_, err := svc.CreatePolicy(context.Background(), req)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
-}
-
 func TestCreatePolicy_DelayTooShort(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Levels = []LevelReq{{DelaySeconds: 30, ChannelIDs: []int64{1}}}
 	_, err := svc.CreatePolicy(context.Background(), req)
@@ -224,7 +202,7 @@ func TestCreatePolicy_DelayTooShort(t *testing.T) {
 }
 
 func TestCreatePolicy_DelayTooLong(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Levels = []LevelReq{{DelaySeconds: 90000, ChannelIDs: []int64{1}}}
 	_, err := svc.CreatePolicy(context.Background(), req)
@@ -233,7 +211,7 @@ func TestCreatePolicy_DelayTooLong(t *testing.T) {
 }
 
 func TestCreatePolicy_EmptyChannelIDs(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Levels = []LevelReq{{DelaySeconds: 300, ChannelIDs: []int64{}}}
 	_, err := svc.CreatePolicy(context.Background(), req)
@@ -242,7 +220,7 @@ func TestCreatePolicy_EmptyChannelIDs(t *testing.T) {
 }
 
 func TestCreatePolicy_IntervalTooShort(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Levels = []LevelReq{
 		{DelaySeconds: 300, ChannelIDs: []int64{1}},
@@ -253,19 +231,8 @@ func TestCreatePolicy_IntervalTooShort(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrValidationFailed))
 }
 
-func TestCreatePolicy_PlanLimitReached(t *testing.T) {
-	store := newMockStore()
-	store.activeCount = 3 // Solo max is 3
-	svc := newTestService(extension.PlanTierSolo, store)
-	req := validRequest()
-	req.Active = true
-	_, err := svc.CreatePolicy(context.Background(), req)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrPlanLimitReached))
-}
-
 func TestCreatePolicy_TwoToFiveLevels_OK(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	req.Levels = []LevelReq{
 		{DelaySeconds: 300, ChannelIDs: []int64{1}},
@@ -280,7 +247,7 @@ func TestCreatePolicy_TwoToFiveLevels_OK(t *testing.T) {
 }
 
 func TestCreatePolicy_HappyPath(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	req := validRequest()
 	p, err := svc.CreatePolicy(context.Background(), req)
 	require.NoError(t, err)
@@ -290,14 +257,14 @@ func TestCreatePolicy_HappyPath(t *testing.T) {
 }
 
 func TestGetPolicy_NotFound(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	_, err := svc.GetPolicy(context.Background(), 999)
 	assert.True(t, errors.Is(err, ErrPolicyNotFound))
 }
 
 func TestGetPolicy_Found(t *testing.T) {
 	store := newMockStore()
-	svc := newTestService(extension.PlanTierTeam, store)
+	svc := newTestService(store)
 	req := validRequest()
 	created, err := svc.CreatePolicy(context.Background(), req)
 	require.NoError(t, err)
@@ -308,14 +275,14 @@ func TestGetPolicy_Found(t *testing.T) {
 }
 
 func TestDeletePolicy_NotFound(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	err := svc.DeletePolicy(context.Background(), 999)
 	assert.True(t, errors.Is(err, ErrPolicyNotFound))
 }
 
 func TestDeletePolicy_HappyPath(t *testing.T) {
 	store := newMockStore()
-	svc := newTestService(extension.PlanTierTeam, store)
+	svc := newTestService(store)
 	req := validRequest()
 	created, err := svc.CreatePolicy(context.Background(), req)
 	require.NoError(t, err)
@@ -332,7 +299,6 @@ func TestIsAlertSuppressed(t *testing.T) {
 		newMockStore(),
 		&mockChannelStore{},
 		func() extension.Edition { return extension.Enterprise },
-		func() extension.PlanTier { return extension.PlanTierTeam },
 		&mockSuppressor{suppressed: true},
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
@@ -346,7 +312,6 @@ func TestIsAlertSuppressed_NotSuppressed(t *testing.T) {
 		newMockStore(),
 		&mockChannelStore{},
 		func() extension.Edition { return extension.Enterprise },
-		func() extension.PlanTier { return extension.PlanTierTeam },
 		&mockSuppressor{suppressed: false},
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
@@ -355,25 +320,9 @@ func TestIsAlertSuppressed_NotSuppressed(t *testing.T) {
 	assert.False(t, suppressed)
 }
 
-func TestCreatePolicy_SixLevels_Team_Rejected(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
-	req := validRequest()
-	req.Levels = []LevelReq{
-		{DelaySeconds: 300, ChannelIDs: []int64{1}},
-		{DelaySeconds: 600, ChannelIDs: []int64{1}},
-		{DelaySeconds: 900, ChannelIDs: []int64{1}},
-		{DelaySeconds: 1200, ChannelIDs: []int64{1}},
-		{DelaySeconds: 1500, ChannelIDs: []int64{1}},
-		{DelaySeconds: 1800, ChannelIDs: []int64{1}}, // 6 > 5 Team limit
-	}
-	_, err := svc.CreatePolicy(context.Background(), req)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
-}
-
 func TestUpdatePolicy_HappyPath(t *testing.T) {
 	store := newMockStore()
-	svc := newTestService(extension.PlanTierTeam, store)
+	svc := newTestService(store)
 
 	created, err := svc.CreatePolicy(context.Background(), validRequest())
 	require.NoError(t, err)
@@ -398,53 +347,14 @@ func TestUpdatePolicy_HappyPath(t *testing.T) {
 }
 
 func TestUpdatePolicy_NotFound(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	_, err := svc.UpdatePolicy(context.Background(), 999, validRequest())
 	assert.True(t, errors.Is(err, ErrPolicyNotFound))
 }
 
-func TestUpdatePolicy_ValidationError_SixLevels(t *testing.T) {
-	store := newMockStore()
-	svc := newTestService(extension.PlanTierTeam, store)
-
-	created, err := svc.CreatePolicy(context.Background(), validRequest())
-	require.NoError(t, err)
-
-	req := validRequest()
-	req.Levels = []LevelReq{
-		{DelaySeconds: 300, ChannelIDs: []int64{1}},
-		{DelaySeconds: 600, ChannelIDs: []int64{1}},
-		{DelaySeconds: 900, ChannelIDs: []int64{1}},
-		{DelaySeconds: 1200, ChannelIDs: []int64{1}},
-		{DelaySeconds: 1500, ChannelIDs: []int64{1}},
-		{DelaySeconds: 1800, ChannelIDs: []int64{1}},
-	}
-	_, err = svc.UpdatePolicy(context.Background(), created.ID, req)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
-}
-
-func TestUpdatePolicy_PlanLimitReached_OnActivation(t *testing.T) {
-	store := newMockStore()
-	store.activeCount = 3 // Solo max is 3
-	svc := newTestService(extension.PlanTierSolo, store)
-
-	// Create an inactive policy
-	req := validRequest()
-	req.Active = false
-	created, err := svc.CreatePolicy(context.Background(), req)
-	require.NoError(t, err)
-
-	// Try to update with active=true
-	req.Active = true
-	_, err = svc.UpdatePolicy(context.Background(), created.ID, req)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrPlanLimitReached))
-}
-
 func TestSetPolicyActive_HappyPath(t *testing.T) {
 	store := newMockStore()
-	svc := newTestService(extension.PlanTierTeam, store)
+	svc := newTestService(store)
 
 	req := validRequest()
 	req.Active = false
@@ -458,22 +368,8 @@ func TestSetPolicyActive_HappyPath(t *testing.T) {
 }
 
 func TestSetPolicyActive_NotFound(t *testing.T) {
-	svc := newTestService(extension.PlanTierTeam, newMockStore())
+	svc := newTestService(newMockStore())
 	_, err := svc.SetPolicyActive(context.Background(), 999, true)
 	assert.True(t, errors.Is(err, ErrPolicyNotFound))
 }
 
-func TestSetPolicyActive_PlanLimitReached(t *testing.T) {
-	store := newMockStore()
-	store.activeCount = 3 // Solo max is 3
-	svc := newTestService(extension.PlanTierSolo, store)
-
-	req := validRequest()
-	req.Active = false
-	created, err := svc.CreatePolicy(context.Background(), req)
-	require.NoError(t, err)
-
-	_, err = svc.SetPolicyActive(context.Background(), created.ID, true)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrPlanLimitReached))
-}

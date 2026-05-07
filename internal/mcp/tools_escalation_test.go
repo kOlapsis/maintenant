@@ -115,13 +115,6 @@ func (m *mcpChannelStore) DeleteChannel(_ context.Context, _ int64) error { retu
 func (m *mcpChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
 	return "ok", nil
 }
-func (m *mcpChannelStore) InsertRoutingRule(_ context.Context, _ *alert.RoutingRule) (int64, error) {
-	return 1, nil
-}
-func (m *mcpChannelStore) DeleteRoutingRule(_ context.Context, _ int64) error { return nil }
-func (m *mcpChannelStore) ListRoutingRulesByChannel(_ context.Context, _ int64) ([]alert.RoutingRule, error) {
-	return nil, nil
-}
 func (m *mcpChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
 	return 1, nil
 }
@@ -142,12 +135,11 @@ func (mcpNoopSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (bool, 
 
 // --- helpers ---
 
-func buildProEscalationServices(tier extension.PlanTier) *Services {
+func buildProEscalationServices() *Services {
 	svc := escalation.NewService(
 		newMCPEscalationStore(),
 		&mcpChannelStore{},
 		func() extension.Edition { return extension.Enterprise },
-		func() extension.PlanTier { return tier },
 		mcpNoopSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)
@@ -247,7 +239,7 @@ func TestEscalationTools_Pro_ListPolicies(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	svc := buildProEscalationServices(extension.PlanTierTeam)
+	svc := buildProEscalationServices()
 	handler := listEscalationPoliciesHandler(svc)
 	result, _, err := handler(context.Background(), nil, listEscalationPoliciesInput{})
 	require.NoError(t, err)
@@ -260,7 +252,7 @@ func TestEscalationTools_Pro_CreateAndGetPolicy(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	svc := buildProEscalationServices(extension.PlanTierTeam)
+	svc := buildProEscalationServices()
 	createHandler := createEscalationPolicyHandler(svc)
 	result, _, err := createHandler(context.Background(), nil, createEscalationPolicyInput{
 		Name:   "mcp test policy",
@@ -282,7 +274,7 @@ func TestEscalationTools_Pro_DeletePolicy_NotFound(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	svc := buildProEscalationServices(extension.PlanTierTeam)
+	svc := buildProEscalationServices()
 	handler := deleteEscalationPolicyHandler(svc)
 	result, _, err := handler(context.Background(), nil, deleteEscalationPolicyInput{ID: 999})
 	require.NoError(t, err)
@@ -321,7 +313,7 @@ func TestEscalationTools_Pro_SetPolicyActive_HappyPath(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	svc := buildProEscalationServices(extension.PlanTierTeam)
+	svc := buildProEscalationServices()
 
 	// Create an inactive policy first
 	createHandler := createEscalationPolicyHandler(svc)
@@ -348,7 +340,7 @@ func TestEscalationTools_Pro_UpdatePolicy_HappyPath(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	svc := buildProEscalationServices(extension.PlanTierTeam)
+	svc := buildProEscalationServices()
 
 	// First create a policy
 	createHandler := createEscalationPolicyHandler(svc)
@@ -381,7 +373,7 @@ func TestEscalationTools_Pro_ListAlertRuns_Empty(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	svc := buildProEscalationServices(extension.PlanTierTeam)
+	svc := buildProEscalationServices()
 	handler := listAlertEscalationRunsHandler(svc)
 	result, _, err := handler(context.Background(), nil, listAlertEscalationRunsInput{AlertID: 42})
 	require.NoError(t, err)
@@ -394,7 +386,7 @@ func TestEscalationTools_Pro_GetRun_NotFound(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
 	defer func() { extension.CurrentEdition = original }()
 
-	svc := buildProEscalationServices(extension.PlanTierTeam)
+	svc := buildProEscalationServices()
 	handler := getEscalationRunHandler(svc)
 	result, _, err := handler(context.Background(), nil, getEscalationRunInput{ID: 999})
 	require.NoError(t, err)
