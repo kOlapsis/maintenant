@@ -1,8 +1,10 @@
 # Alert Escalation Policies
 
-**Availability**: Maintenant Pro (Solo, Team, Business)
+**Availability**: Maintenant Pro
 
 Escalation policies automatically route unacknowledged alerts through a chain of notification levels, each with a configurable delay and a distinct set of channels.
+
+> **Pattern: reserved-escalation channel.** Since channels are silent by default (they only receive alerts when wired through an [Alert Trigger](alerts.md#alert-triggers)), you can create a channel that exists *only* for an escalation level. The directrice technique's email referenced in Level 3 of a policy, with no trigger using it, will *only* be notified after T+1h of unacknowledged escalation — never at the initial dispatch. This is the cleanest way to model "last-resort" destinations without duplicate notifications.
 
 ---
 
@@ -93,18 +95,6 @@ During a maintenance window that covers the monitored entity, escalation runs ar
 ### Chain exhausted
 
 If all levels fire without an acknowledgment or resolution, the run ends with status `exhausted`. A final notification is sent on the last level's channels.
-
----
-
-## Plan limits
-
-| Plan | Max active policies | Max levels per policy |
-|------|--------------------:|---------------------:|
-| Solo | 3 | 3 |
-| Team | 25 | 5 |
-| Business | 200 | 5 |
-
-Inactive policies do not count toward the quota. Activating a policy that would exceed the limit returns `403 plan_limit_reached`.
 
 ---
 
