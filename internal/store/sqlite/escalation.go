@@ -201,7 +201,7 @@ func (s *EscalationStore) SelectRunsByPolicy(ctx context.Context, policyID int64
 	q := `SELECT id, policy_id, policy_snapshot_json, alert_id, status,
 		last_executed_level_index, started_at, ended_at, next_action_at
 		FROM escalation_runs WHERE policy_id = ?`
-	args := []interface{}{policyID}
+	args := []any{policyID}
 	if cursor > 0 {
 		q += ` AND id < ?`
 		args = append(args, cursor)
@@ -273,11 +273,11 @@ func (s *EscalationStore) BulkStopActiveRuns(ctx context.Context, stopStatus str
 
 // InsertRun persists a new escalation run.
 func (s *EscalationStore) InsertRun(ctx context.Context, r *escalation.Run) (int64, error) {
-	var policyID interface{}
+	var policyID any
 	if r.PolicyID != nil {
 		policyID = *r.PolicyID
 	}
-	var nextActionAt interface{}
+	var nextActionAt any
 	if r.NextActionAt != nil {
 		nextActionAt = r.NextActionAt.UTC().Format(time.RFC3339)
 	}
@@ -302,7 +302,7 @@ func (s *EscalationStore) InsertRun(ctx context.Context, r *escalation.Run) (int
 // UpdateRunProgress advances a run's level cursor and reschedules its next action.
 // Used by the runner after executing a level (R4 reserve-then-deliver).
 func (s *EscalationStore) UpdateRunProgress(ctx context.Context, runID int64, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error {
-	var nextAt interface{}
+	var nextAt any
 	if nextActionAt != nil {
 		nextAt = nextActionAt.UTC().Format(time.RFC3339)
 	}
@@ -376,7 +376,7 @@ func (s *EscalationStore) PauseRunForMaintenance(ctx context.Context, runID int6
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs
 		 SET status = 'paused_by_maintenance', next_action_at = ?
-		 WHERE id = ? AND status = 'active'`,
+		 WHERE id = ? AND status IN ('active','paused_by_maintenance')`,
 		recheckAt.UTC().Format(time.RFC3339), runID,
 	)
 	if err != nil {
@@ -403,11 +403,11 @@ func (s *EscalationStore) ResumeRunFromMaintenance(ctx context.Context, runID in
 // when (run_id, level_index, channel_id) already exists — the caller treats this
 // as "already attempted" (R4 reserve-then-deliver idempotence).
 func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Delivery) (int64, error) {
-	var channelID interface{}
+	var channelID any
 	if d.ChannelID != nil {
 		channelID = *d.ChannelID
 	}
-	var sentAt interface{}
+	var sentAt any
 	if d.SentAt != nil {
 		sentAt = d.SentAt.UTC().Format(time.RFC3339)
 	}
@@ -432,7 +432,7 @@ func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Deli
 
 // UpdateDelivery persists status/error/sent_at after a send attempt completes.
 func (s *EscalationStore) UpdateDelivery(ctx context.Context, d *escalation.Delivery) error {
-	var sentAt interface{}
+	var sentAt any
 	if d.SentAt != nil {
 		sentAt = d.SentAt.UTC().Format(time.RFC3339)
 	}

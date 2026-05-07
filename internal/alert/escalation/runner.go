@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -315,15 +316,8 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 	}
 	if suppressed {
 		recheckAt := now.Add(maintenanceRecheck)
-		if run.Status == RunStatusActive {
-			if err := r.store.PauseRunForMaintenance(ctx, run.ID, recheckAt); err != nil {
-				return fmt.Errorf("pause run: %w", err)
-			}
-		} else {
-			// Already paused — push the recheck deadline forward.
-			if err := r.store.PauseRunForMaintenance(ctx, run.ID, recheckAt); err != nil {
-				return fmt.Errorf("repause run: %w", err)
-			}
+		if err := r.store.PauseRunForMaintenance(ctx, run.ID, recheckAt); err != nil {
+			return fmt.Errorf("pause run: %w", err)
 		}
 		r.logger.DebugContext(ctx, "escalation: run paused by maintenance", "run_id", run.ID)
 		return nil
@@ -345,8 +339,6 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 
 	nextLevel := run.LastExecutedLevelIndex + 1
 	if nextLevel >= len(policy.Levels) {
-		// All levels exhausted: dispatch the final "exhausted" notification on
-		// the channels of the last executed level, then close the run.
 		if run.LastExecutedLevelIndex >= 0 && run.LastExecutedLevelIndex < len(policy.Levels) {
 			exhAlert := formatExhaustedAlert(a, len(policy.Levels))
 			r.dispatchSpecial(ctx, run.ID, specialLevelExhausted,
@@ -373,88 +365,57 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 	return nil
 }
 
-// executeLevel reserves a delivery row per channel (UNIQUE constraint catches
-// crash-recovery duplicates) then dispatches the network send asynchronously.
-// One channel's failure must not block the others (FR-022).
 func (r *Runner) executeLevel(ctx context.Context, run *Run, levelIndex int, channelIDs []int64, a *alert.Alert) {
+	now := r.clock()
 	for _, chID := range channelIDs {
-		now := r.clock()
-		ch, err := r.channelStore.GetChannel(ctx, chID)
-		if err != nil {
-			r.logger.ErrorContext(ctx, "escalation: get channel", "error", err, "channel_id", chID, "run_id", run.ID)
-			continue
-		}
-		if ch == nil {
-			r.logger.WarnContext(ctx, "escalation: channel not found", "channel_id", chID, "run_id", run.ID)
-			continue
-		}
-
-		channelID := chID
-		delivery := &Delivery{
-			RunID:            run.ID,
-			LevelIndex:       levelIndex,
-			ChannelID:        &channelID,
-			Status:           DeliveryStatusPending,
-			AttemptStartedAt: now,
-		}
-		if _, err := r.store.InsertDelivery(ctx, delivery); err != nil {
-			if errors.Is(err, ErrDeliveryDuplicate) {
-				r.logger.DebugContext(ctx, "escalation: delivery already attempted, skipping",
-					"run_id", run.ID, "level_index", levelIndex, "channel_id", chID)
-				continue
-			}
-			r.logger.ErrorContext(ctx, "escalation: insert delivery", "error", err,
-				"run_id", run.ID, "level_index", levelIndex, "channel_id", chID)
-			continue
-		}
-
-		if !ch.Enabled {
-			delivery.Status = DeliveryStatusFailed
-			delivery.Error = "channel disabled"
-			if uErr := r.store.UpdateDelivery(ctx, delivery); uErr != nil {
-				r.logger.ErrorContext(ctx, "escalation: update disabled delivery", "error", uErr, "delivery_id", delivery.ID)
-			}
-			continue
-		}
-
-		go r.deliverAndUpdate(ctx, delivery, a, ch)
+		r.dispatchToChannel(ctx, run.ID, levelIndex, chID, a, now)
 	}
 }
 
-// dispatchSpecial reserves and dispatches a non-step notification (ack,
-// resolve, exhausted). Mirrors executeLevel but uses a special level_index.
 func (r *Runner) dispatchSpecial(ctx context.Context, runID int64, levelIndex int, channelIDs []int64, a *alert.Alert) {
+	now := r.clock()
 	for _, chID := range channelIDs {
-		now := r.clock()
-		ch, err := r.channelStore.GetChannel(ctx, chID)
-		if err != nil || ch == nil {
-			continue
-		}
-
-		channelID := chID
-		delivery := &Delivery{
-			RunID:            runID,
-			LevelIndex:       levelIndex,
-			ChannelID:        &channelID,
-			Status:           DeliveryStatusPending,
-			AttemptStartedAt: now,
-		}
-		if _, err := r.store.InsertDelivery(ctx, delivery); err != nil {
-			if errors.Is(err, ErrDeliveryDuplicate) {
-				continue
-			}
-			r.logger.ErrorContext(ctx, "escalation: insert special delivery", "error", err,
-				"run_id", runID, "level_index", levelIndex)
-			continue
-		}
-		if !ch.Enabled {
-			delivery.Status = DeliveryStatusFailed
-			delivery.Error = "channel disabled"
-			_ = r.store.UpdateDelivery(ctx, delivery)
-			continue
-		}
-		go r.deliverAndUpdate(ctx, delivery, a, ch)
+		r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now)
 	}
+}
+
+// dispatchToChannel reserves a delivery row (UNIQUE constraint catches crash-recovery
+// duplicates, FR-022) and dispatches the send in a goroutine if the channel is enabled.
+// One channel's failure must not block the others.
+func (r *Runner) dispatchToChannel(ctx context.Context, runID int64, levelIndex int, chID int64, a *alert.Alert, now time.Time) {
+	ch, err := r.channelStore.GetChannel(ctx, chID)
+	if err != nil {
+		r.logger.ErrorContext(ctx, "escalation: get channel", "error", err, "channel_id", chID, "run_id", runID)
+		return
+	}
+	if ch == nil {
+		r.logger.WarnContext(ctx, "escalation: channel not found", "channel_id", chID, "run_id", runID)
+		return
+	}
+	chIDCopy := chID
+	delivery := &Delivery{
+		RunID:            runID,
+		LevelIndex:       levelIndex,
+		ChannelID:        &chIDCopy,
+		Status:           DeliveryStatusPending,
+		AttemptStartedAt: now,
+	}
+	if _, err := r.store.InsertDelivery(ctx, delivery); err != nil {
+		if !errors.Is(err, ErrDeliveryDuplicate) {
+			r.logger.ErrorContext(ctx, "escalation: insert delivery", "error", err,
+				"run_id", runID, "level_index", levelIndex, "channel_id", chID)
+		}
+		return
+	}
+	if !ch.Enabled {
+		delivery.Status = DeliveryStatusFailed
+		delivery.Error = "channel disabled"
+		if uErr := r.store.UpdateDelivery(ctx, delivery); uErr != nil {
+			r.logger.ErrorContext(ctx, "escalation: update disabled delivery", "error", uErr, "delivery_id", delivery.ID)
+		}
+		return
+	}
+	go r.deliverAndUpdate(ctx, delivery, a, ch)
 }
 
 // deliverAndUpdate performs the actual network send and persists the outcome.
@@ -473,9 +434,8 @@ func (r *Runner) deliverAndUpdate(ctx context.Context, delivery *Delivery, a *al
 	}
 }
 
-// recoverOrphans handles deliveries stuck in 'pending' beyond the orphan
-// timeout. If the alert is still firing, the delivery is retried; otherwise
-// it is marked abandoned (R4 research).
+// recoverOrphans handles deliveries stuck in 'pending' beyond the orphan timeout.
+// If the alert is still firing, the delivery is retried; otherwise it is abandoned (R4).
 func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 	cutoff := now.Add(-r.orphanTimeout)
 	orphans, err := r.store.SelectOrphanPendingDeliveries(ctx, cutoff)
@@ -485,41 +445,37 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 	for _, d := range orphans {
 		run, err := r.store.SelectRun(ctx, d.RunID)
 		if err != nil || run == nil {
-			d.Status = DeliveryStatusAbandoned
-			d.Error = "run vanished"
-			_ = r.store.UpdateDelivery(ctx, d)
+			r.abandonDelivery(ctx, d, "run vanished")
 			continue
 		}
 		// Run already terminal → abandon the orphan.
 		if run.Status != RunStatusActive && run.Status != RunStatusPausedByMaintenance {
-			d.Status = DeliveryStatusAbandoned
-			d.Error = "run terminated"
-			_ = r.store.UpdateDelivery(ctx, d)
+			r.abandonDelivery(ctx, d, "run terminated")
 			continue
 		}
 		a, err := r.alertStore.GetAlert(ctx, run.AlertID)
 		if err != nil || a == nil || a.Status != alert.StatusActive {
-			d.Status = DeliveryStatusAbandoned
-			d.Error = "alert no longer active"
-			_ = r.store.UpdateDelivery(ctx, d)
+			r.abandonDelivery(ctx, d, "alert no longer active")
 			continue
 		}
 		if d.ChannelID == nil {
-			d.Status = DeliveryStatusAbandoned
-			d.Error = "channel removed"
-			_ = r.store.UpdateDelivery(ctx, d)
+			r.abandonDelivery(ctx, d, "channel removed")
 			continue
 		}
 		ch, err := r.channelStore.GetChannel(ctx, *d.ChannelID)
 		if err != nil || ch == nil {
-			d.Status = DeliveryStatusAbandoned
-			d.Error = "channel unavailable"
-			_ = r.store.UpdateDelivery(ctx, d)
+			r.abandonDelivery(ctx, d, "channel unavailable")
 			continue
 		}
 		go r.deliverAndUpdate(ctx, d, a, ch)
 	}
 	return nil
+}
+
+func (r *Runner) abandonDelivery(ctx context.Context, d *Delivery, reason string) {
+	d.Status = DeliveryStatusAbandoned
+	d.Error = reason
+	_ = r.store.UpdateDelivery(ctx, d)
 }
 
 // --- helpers ---
@@ -528,7 +484,7 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 // Empty filter buckets match everything (universe). Tags are not yet exposed
 // on the Alert entity — treated as no-op (consistent with engine.matchesTrigger).
 func matchPolicyFilters(a *alert.Alert, p *Policy) bool {
-	if len(p.Filters.Severities) > 0 && !contains(p.Filters.Severities, a.Severity) {
+	if len(p.Filters.Severities) > 0 && !slices.Contains(p.Filters.Severities, a.Severity) {
 		return false
 	}
 	if len(p.Filters.Scopes) > 0 {
@@ -544,15 +500,6 @@ func matchPolicyFilters(a *alert.Alert, p *Policy) bool {
 		}
 	}
 	return true
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func unmarshalPolicySnapshot(s string) (*Policy, error) {
