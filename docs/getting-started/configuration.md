@@ -162,7 +162,7 @@ To enable Pro features (Slack/Teams/Email channels, CVE enrichment, incident man
 ```yaml
 services:
   maintenant:
-    image: ghcr.io/kolapsis/maintenant-pro:latest
+    image: ghcr.io/kolapsis/maintenant:latest
     environment:
       MAINTENANT_LICENSE_KEY: "your-license-key"
 ```

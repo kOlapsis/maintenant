@@ -409,6 +409,24 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger.With("component", "escalation"),
 	)
 
+	// Concrete escalator runner: only wired in Enterprise. In CE the engine
+	// keeps its built-in noopEscalator, which means the 60s evaluation ticker
+	// (alert.Engine.Start) does not start either. SetEscalator must run before
+	// alertEngine.Start (called later in App.Start).
+	if extension.CurrentEdition() == extension.Enterprise {
+		runner := escalation.NewRunner(escalation.RunnerDeps{
+			Store:        a.escalationStore,
+			AlertStore:   alertStore,
+			ChannelStore: channelStore,
+			Notifier:     a.notifier,
+			Suppressor:   extension.NoopMaintenanceSuppressor{},
+			Service:      a.escalationSvc,
+			Logger:       logger.With("component", "escalation-runner"),
+		})
+		a.alertEngine.SetEscalator(runner)
+		logger.Info("escalation runner enabled (Pro)")
+	}
+
 	// --- Wire alert callbacks ---
 	a.wireAlertCallbacks(alertDetector)
 	a.wireUpdateCallback()
