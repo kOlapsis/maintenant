@@ -74,6 +74,13 @@ const (
 	ChannelDeleted = "channel.deleted"
 )
 
+// Alert trigger management events.
+const (
+	TriggerCreated = "trigger.created"
+	TriggerUpdated = "trigger.updated"
+	TriggerDeleted = "trigger.deleted"
+)
+
 // Silence rule management events.
 const (
 	SilenceCreated   = "silence.created"

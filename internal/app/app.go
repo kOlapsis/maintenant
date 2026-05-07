@@ -155,6 +155,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	alertStore := sqlite.NewAlertStore(db)
 	a.alertStore = alertStore
 	channelStore := sqlite.NewChannelStore(db)
+	triggerStore := sqlite.NewTriggerStore(db)
 	silenceStore := sqlite.NewSilenceStore(db)
 	statusCompStore := sqlite.NewStatusComponentStore(db)
 	a.statusCompStore = statusCompStore
@@ -325,6 +326,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
 		ChannelStore: channelStore,
+		TriggerStore: triggerStore,
 		SilenceStore: silenceStore,
 		Logger:       logger,
 		Notifier:     a.notifier,
@@ -403,7 +405,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		a.escalationStore,
 		channelStore,
 		extension.CurrentEdition,
-		extension.CurrentPlanTier,
 		extension.NoopMaintenanceSuppressor{},
 		logger.With("component", "escalation"),
 	)
@@ -430,6 +431,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		// Alert pipeline
 		AlertStore:    alertStore,
 		ChannelStore:  channelStore,
+		TriggerStore:  triggerStore,
 		SilenceStore:  silenceStore,
 		Notifier:      a.notifier,
 		Escalator:     a.alertEngine.Escalator(),
@@ -486,6 +488,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Certificates:  a.certSvc,
 		Resources:     a.resourceSvc,
 		Alerts:        alertStore,
+		Channels:      channelStore,
+		Triggers:      triggerStore,
 		Updates:       a.updateSvc,
 		Incidents:     extension.NoopIncidentManager{},
 		Maintenance:   extension.NoopMaintenanceScheduler{},

@@ -89,26 +89,35 @@ type Alert struct {
 }
 
 // NotificationChannel represents a configured delivery target.
+// Channels are silent by default — they only receive alerts when referenced
+// by an active AlertTrigger or by an EscalationLevel.
 type NotificationChannel struct {
-	ID           int64         `json:"id"`
-	Name         string        `json:"name"`
-	Type         string        `json:"type"`
-	URL          string        `json:"url"`
-	Headers      string        `json:"headers,omitempty"`
-	Enabled      bool          `json:"enabled"`
-	RoutingRules []RoutingRule `json:"routing_rules,omitempty"`
-	Health       string        `json:"health,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
+	URL       string    `json:"url"`
+	Headers   string    `json:"headers,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	Health    string    `json:"health,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// RoutingRule represents a filter attached to a channel.
-type RoutingRule struct {
-	ID             int64     `json:"id"`
-	ChannelID      int64     `json:"channel_id"`
-	SourceFilter   string    `json:"source_filter,omitempty"`
-	SeverityFilter string    `json:"severity_filter,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+// AlertTrigger is a routing rule that maps an alert filter to one or more channels.
+// Filters are stored as CSV strings; an empty filter matches anything.
+// Filters are combined in AND between fields, OR within a field.
+// FilterScopes and FilterTags are Pro-only (gated at the handler level).
+type AlertTrigger struct {
+	ID               int64     `json:"id"`
+	Name             string    `json:"name"`
+	FilterSeverities string    `json:"filter_severities"`
+	FilterSources    string    `json:"filter_sources"`
+	FilterScopes     string    `json:"filter_scopes"`
+	FilterTags       string    `json:"filter_tags"`
+	Enabled          bool      `json:"enabled"`
+	ChannelIDs       []int64   `json:"channel_ids"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // NotificationDelivery represents a delivery attempt record.
@@ -195,13 +204,23 @@ type ChannelStore interface {
 	DeleteChannel(ctx context.Context, id int64) error
 	GetChannelHealth(ctx context.Context, channelID int64) (string, error)
 
-	InsertRoutingRule(ctx context.Context, rule *RoutingRule) (int64, error)
-	DeleteRoutingRule(ctx context.Context, id int64) error
-	ListRoutingRulesByChannel(ctx context.Context, channelID int64) ([]RoutingRule, error)
-
 	InsertDelivery(ctx context.Context, d *NotificationDelivery) (int64, error)
 	UpdateDelivery(ctx context.Context, d *NotificationDelivery) error
 	ListDeliveriesByAlert(ctx context.Context, alertID int64) ([]*NotificationDelivery, error)
+}
+
+// TriggerStore defines the persistence interface for AlertTrigger objects
+// and their M:N relationship with channels.
+type TriggerStore interface {
+	InsertTrigger(ctx context.Context, t *AlertTrigger) (int64, error)
+	GetTrigger(ctx context.Context, id int64) (*AlertTrigger, error)
+	ListTriggers(ctx context.Context) ([]*AlertTrigger, error)
+	ListEnabledTriggers(ctx context.Context) ([]*AlertTrigger, error)
+	UpdateTrigger(ctx context.Context, t *AlertTrigger) error
+	DeleteTrigger(ctx context.Context, id int64) error
+	SetChannels(ctx context.Context, triggerID int64, channelIDs []int64) error
+	ListChannelsForTrigger(ctx context.Context, triggerID int64) ([]int64, error)
+	ListTriggersForChannel(ctx context.Context, channelID int64) ([]*AlertTrigger, error)
 }
 
 // SilenceStore defines the persistence interface for silence rules.

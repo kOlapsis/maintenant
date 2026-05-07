@@ -42,6 +42,7 @@ type SSEBroadcaster interface {
 type EngineDeps struct {
 	AlertStore   AlertStore   // required
 	ChannelStore ChannelStore // required
+	TriggerStore TriggerStore // required
 	SilenceStore SilenceStore // required
 	Logger       *slog.Logger // required
 	Notifier     *Notifier      // optional — nil-safe
@@ -54,6 +55,7 @@ type Engine struct {
 	eventCh      chan Event
 	alertStore   AlertStore
 	channelStore ChannelStore
+	triggerStore TriggerStore
 	silenceStore SilenceStore
 	notifier     *Notifier
 	broadcaster  SSEBroadcaster
@@ -77,6 +79,9 @@ func NewEngine(d EngineDeps) *Engine {
 	if d.ChannelStore == nil {
 		panic("alert.NewEngine: ChannelStore is required")
 	}
+	if d.TriggerStore == nil {
+		panic("alert.NewEngine: TriggerStore is required")
+	}
 	if d.SilenceStore == nil {
 		panic("alert.NewEngine: SilenceStore is required")
 	}
@@ -87,6 +92,7 @@ func NewEngine(d EngineDeps) *Engine {
 		eventCh:      make(chan Event, engineChannelBuffer),
 		alertStore:   d.AlertStore,
 		channelStore: d.ChannelStore,
+		triggerStore: d.TriggerStore,
 		silenceStore: d.SilenceStore,
 		notifier:     d.Notifier,
 		broadcaster:  d.Broadcaster,
@@ -510,26 +516,38 @@ func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
 		return
 	}
 
-	channels, err := e.channelStore.ListChannels(ctx)
-	if err != nil {
-		e.logger.Error("alert engine: list channels", "error", err)
-		return
-	}
-
-	// Collect channels matching standard routing rules
 	dispatched := make(map[int64]bool)
-	for _, ch := range channels {
-		if !ch.Enabled {
-			continue
+
+	// Resolve channels from active alert triggers.
+	if e.triggerStore != nil {
+		triggers, err := e.triggerStore.ListEnabledTriggers(ctx)
+		if err != nil {
+			e.logger.Error("alert engine: list triggers", "error", err)
 		}
-		if !matchesRoutingRules(ch, a) {
-			continue
+		for _, t := range triggers {
+			if !matchesTrigger(t, a) {
+				continue
+			}
+			for _, chID := range t.ChannelIDs {
+				if dispatched[chID] {
+					continue
+				}
+				ch, chErr := e.channelStore.GetChannel(ctx, chID)
+				if chErr != nil {
+					e.logger.Error("alert engine: get trigger channel", "error", chErr, "channel_id", chID)
+					continue
+				}
+				if ch == nil || !ch.Enabled {
+					continue
+				}
+				dispatched[chID] = true
+				e.enqueueDelivery(ctx, ch, a)
+			}
 		}
-		dispatched[ch.ID] = true
-		e.enqueueDelivery(ctx, ch, a)
 	}
 
-	// Consult entity router extension for additional channels (Pro: per-entity routing)
+	// Consult entity router extension for additional channels (Pro: per-entity routing).
+	// Continues to operate independently from triggers.
 	extraIDs, err := e.entityRouter.Route(ctx, a.EntityType, fmt.Sprintf("%d", a.EntityID), a.Severity)
 	if err != nil {
 		e.logger.Error("alert engine: entity router error", "error", err)
@@ -581,24 +599,26 @@ func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a
 	})
 }
 
-func matchesRoutingRules(ch *NotificationChannel, a *Alert) bool {
-	if len(ch.RoutingRules) == 0 {
-		// No rules = receive everything
-		return true
+// matchesTrigger reports whether an alert satisfies all of a trigger's
+// non-empty filters (AND between fields, OR within a CSV field). An empty
+// filter matches everything.
+//
+// FilterTags is treated as no-op for now: Alert does not yet expose tags.
+// The match is enforced via filter_severities, filter_sources and filter_scopes.
+func matchesTrigger(t *AlertTrigger, a *Alert) bool {
+	if t.FilterSeverities != "" && !containsCSV(t.FilterSeverities, a.Severity) {
+		return false
 	}
-
-	for _, rule := range ch.RoutingRules {
-		if matchesRule(rule, a) {
-			return true
+	if t.FilterSources != "" && !containsCSV(t.FilterSources, a.Source) {
+		return false
+	}
+	if t.FilterScopes != "" {
+		scope := fmt.Sprintf("%s:%d", a.EntityType, a.EntityID)
+		if !containsCSV(t.FilterScopes, scope) {
+			return false
 		}
 	}
-	return false
-}
-
-func matchesRule(rule RoutingRule, a *Alert) bool {
-	sourceMatch := rule.SourceFilter == "" || containsCSV(rule.SourceFilter, a.Source)
-	severityMatch := rule.SeverityFilter == "" || containsCSV(rule.SeverityFilter, a.Severity)
-	return sourceMatch && severityMatch
+	return true
 }
 
 func containsCSV(csv, value string) bool {
