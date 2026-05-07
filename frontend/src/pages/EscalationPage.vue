@@ -72,8 +72,13 @@ onMounted(() => {
           </p>
         </div>
         <div v-if="store.limits" class="flex items-center gap-3">
-          <span class="text-[10px] text-slate-500 font-bold">
-            {{ store.limits.current_active }}/{{ store.limits.max_active }} active
+          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+            <template v-if="store.limits.max_active === -1">
+              {{ store.limits.current_active }} active
+            </template>
+            <template v-else>
+              {{ store.limits.current_active }}/{{ store.limits.max_active }} active
+            </template>
           </span>
         </div>
       </div>

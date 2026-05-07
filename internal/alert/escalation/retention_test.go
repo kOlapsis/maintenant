@@ -48,7 +48,6 @@ func TestRunRetentionLoop_PurgesOldRuns(t *testing.T) {
 		store,
 		&mockChannelStore{},
 		func() extension.Edition { return extension.Enterprise },
-		func() extension.PlanTier { return extension.PlanTierTeam },
 		&mockSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)

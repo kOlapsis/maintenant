@@ -37,8 +37,6 @@ func mapServiceError(w http.ResponseWriter, err error) {
 		WriteError(w, http.StatusNotFound, "policy_not_found", "Policy not found")
 	} else if errors.Is(err, escalation.ErrRunNotFound) {
 		WriteError(w, http.StatusNotFound, "run_not_found", "Run not found")
-	} else if errors.Is(err, escalation.ErrPlanLimitReached) {
-		WriteError(w, http.StatusForbidden, "plan_limit_reached", "Plan limit reached for active policies")
 	} else if errors.Is(err, escalation.ErrValidationFailed) {
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	} else {

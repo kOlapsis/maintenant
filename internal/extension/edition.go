@@ -27,17 +27,3 @@ var ErrNotAvailable = errors.New("this feature requires an extended edition of m
 // CurrentEdition returns the edition of the running binary.
 // CE always returns Community. Extended editions override this via the build.
 var CurrentEdition = func() Edition { return Community }
-
-// PlanTier identifies the subscription tier of the current Pro installation.
-type PlanTier string
-
-const (
-	PlanTierNone     PlanTier = "none"
-	PlanTierSolo     PlanTier = "solo"
-	PlanTierTeam     PlanTier = "team"
-	PlanTierBusiness PlanTier = "business"
-)
-
-// CurrentPlanTier returns the current plan tier.
-// CE always returns PlanTierNone. Pro overrides this via build.
-var CurrentPlanTier = func() PlanTier { return PlanTierNone }

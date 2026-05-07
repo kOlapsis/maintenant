@@ -25,7 +25,6 @@ import (
 // Sentinel errors returned by Service methods.
 var (
 	ErrValidationFailed = errors.New("validation_failed")
-	ErrPlanLimitReached = errors.New("plan_limit_reached")
 	ErrPolicyNotFound   = errors.New("policy_not_found")
 	ErrRunNotFound      = errors.New("run_not_found")
 )
@@ -78,7 +77,6 @@ type Service struct {
 	store        Store
 	channelStore alert.ChannelStore
 	edition      func() extension.Edition
-	planTier     func() extension.PlanTier
 	suppressor   alert.MaintenanceSuppressor
 	logger       *slog.Logger
 	clockFn      func() time.Time
@@ -89,7 +87,6 @@ func NewService(
 	store Store,
 	channelStore alert.ChannelStore,
 	edition func() extension.Edition,
-	planTier func() extension.PlanTier,
 	suppressor alert.MaintenanceSuppressor,
 	logger *slog.Logger,
 ) *Service {
@@ -97,7 +94,6 @@ func NewService(
 		store:        store,
 		channelStore: channelStore,
 		edition:      edition,
-		planTier:     planTier,
 		suppressor:   suppressor,
 		logger:       logger,
 	}
@@ -131,38 +127,23 @@ func (s *Service) OnEditionUpgraded(ctx context.Context) error {
 	return nil
 }
 
-// planLimits returns the (maxActive, maxLevels) constraints for the current plan tier.
-func planLimits(tier extension.PlanTier) (maxActive, maxLevels int) {
-	switch tier {
-	case extension.PlanTierSolo:
-		return 3, 3
-	case extension.PlanTierTeam:
-		return 25, 5
-	case extension.PlanTierBusiness:
-		return 200, 5
-	default: // PlanTierNone / CE
-		return 0, 0
-	}
-}
-
-// GetPlanLimits returns the plan limits and current active count for the current tier.
+// GetPlanLimits returns escalation usage stats. Pro is unlimited; CE has no
+// access to escalation (routes are gated by requireEnterprise upstream), so
+// the only signal exposed here is the current active count.
 func (s *Service) GetPlanLimits(ctx context.Context) (Limits, error) {
-	maxActive, maxLevels := planLimits(s.planTier())
 	current, err := s.store.CountActivePolicies(ctx)
 	if err != nil {
 		return Limits{}, fmt.Errorf("get plan limits: %w", err)
 	}
 	return Limits{
-		MaxActive:     maxActive,
-		MaxLevels:     maxLevels,
+		MaxActive:     -1,
+		MaxLevels:     -1,
 		CurrentActive: current,
 	}, nil
 }
 
 // CreatePolicy validates and persists a new escalation policy.
 func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy, error) {
-	maxActive, maxLevels := planLimits(s.planTier())
-
 	// Validate name
 	if req.Name == "" {
 		return nil, fmt.Errorf("field=name: %w", ErrValidationFailed)
@@ -174,9 +155,6 @@ func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy,
 	// Validate levels count
 	if len(req.Levels) < 1 {
 		return nil, fmt.Errorf("field=levels: at least one level is required: %w", ErrValidationFailed)
-	}
-	if len(req.Levels) > maxLevels {
-		return nil, fmt.Errorf("field=levels: plan allows at most %d levels: %w", maxLevels, ErrValidationFailed)
 	}
 
 	// Validate each level
@@ -190,17 +168,6 @@ func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy,
 		// Consecutive levels must be at least 60s apart
 		if i > 0 && req.Levels[i].DelaySeconds-req.Levels[i-1].DelaySeconds < 60 {
 			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be at least 60 seconds after the previous level: %w", i, ErrValidationFailed)
-		}
-	}
-
-	// Check plan limit for active policies
-	if req.Active {
-		current, err := s.store.CountActivePolicies(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("create policy: count active: %w", err)
-		}
-		if current >= maxActive {
-			return nil, fmt.Errorf("plan allows at most %d active policies: %w", maxActive, ErrPlanLimitReached)
 		}
 	}
 
@@ -276,8 +243,6 @@ func (s *Service) DeletePolicy(ctx context.Context, id int64) error {
 
 // UpdatePolicy validates and updates an existing escalation policy (last-write-wins).
 func (s *Service) UpdatePolicy(ctx context.Context, id int64, req PolicyRequest) (*Policy, error) {
-	maxActive, maxLevels := planLimits(s.planTier())
-
 	existing, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("update policy: lookup: %w", err)
@@ -295,9 +260,6 @@ func (s *Service) UpdatePolicy(ctx context.Context, id int64, req PolicyRequest)
 	if len(req.Levels) < 1 {
 		return nil, fmt.Errorf("field=levels: at least one level is required: %w", ErrValidationFailed)
 	}
-	if len(req.Levels) > maxLevels {
-		return nil, fmt.Errorf("field=levels: plan allows at most %d levels: %w", maxLevels, ErrValidationFailed)
-	}
 	for i, lvl := range req.Levels {
 		if lvl.DelaySeconds < 60 || lvl.DelaySeconds > 86400 {
 			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be between 60 and 86400: %w", i, ErrValidationFailed)
@@ -307,16 +269,6 @@ func (s *Service) UpdatePolicy(ctx context.Context, id int64, req PolicyRequest)
 		}
 		if i > 0 && req.Levels[i].DelaySeconds-req.Levels[i-1].DelaySeconds < 60 {
 			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be at least 60 seconds after the previous level: %w", i, ErrValidationFailed)
-		}
-	}
-
-	if req.Active && !existing.Active {
-		current, err := s.store.CountActivePolicies(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("update policy: count active: %w", err)
-		}
-		if current >= maxActive {
-			return nil, fmt.Errorf("plan allows at most %d active policies: %w", maxActive, ErrPlanLimitReached)
 		}
 	}
 
@@ -341,24 +293,12 @@ func (s *Service) UpdatePolicy(ctx context.Context, id int64, req PolicyRequest)
 
 // SetPolicyActive activates or deactivates a policy.
 func (s *Service) SetPolicyActive(ctx context.Context, id int64, active bool) (*Policy, error) {
-	maxActive, _ := planLimits(s.planTier())
-
 	existing, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("set policy active: lookup: %w", err)
 	}
 	if existing == nil {
 		return nil, ErrPolicyNotFound
-	}
-
-	if active && !existing.Active {
-		current, err := s.store.CountActivePolicies(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("set policy active: count active: %w", err)
-		}
-		if current >= maxActive {
-			return nil, fmt.Errorf("plan allows at most %d active policies: %w", maxActive, ErrPlanLimitReached)
-		}
 	}
 
 	existing.Active = active
