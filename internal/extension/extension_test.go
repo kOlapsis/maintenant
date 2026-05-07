@@ -38,6 +38,9 @@ func TestNoopEscalator(t *testing.T) {
 	if err := n.EvaluateCycle(ctx); err != nil {
 		t.Fatalf("EvaluateCycle: unexpected error: %v", err)
 	}
+	if err := n.OnAlertCreated(ctx, &alert.Alert{ID: 1}); err != nil {
+		t.Fatalf("OnAlertCreated: unexpected error: %v", err)
+	}
 	if err := n.OnAlertAcknowledged(ctx, 1, alert.Acknowledgment{By: "alice", At: time.Now()}); err != nil {
 		t.Fatalf("OnAlertAcknowledged: unexpected error: %v", err)
 	}

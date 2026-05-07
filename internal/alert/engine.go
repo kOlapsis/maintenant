@@ -127,7 +127,8 @@ func (e *Engine) SetMaintenanceSuppressor(s MaintenanceSuppressor) {
 // noopEscalator is the Engine-internal no-op default.
 type noopEscalator struct{}
 
-func (noopEscalator) EvaluateCycle(_ context.Context) error { return nil }
+func (noopEscalator) EvaluateCycle(_ context.Context) error      { return nil }
+func (noopEscalator) OnAlertCreated(_ context.Context, _ *Alert) error { return nil }
 func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ int64, _ Acknowledgment) error {
 	return nil
 }
@@ -317,6 +318,14 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	// SSE broadcast
 	e.broadcastAlert(a, silenced)
 
+	// Notify the escalator that a new alert is live so it can start any
+	// matching policy runs. Skipped for silenced alerts (suppressed by rule).
+	if !silenced {
+		if err := e.escalator.OnAlertCreated(ctx, a); err != nil {
+			e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", a.ID)
+		}
+	}
+
 	// Dispatch notifications (only if not silenced)
 	if !silenced && e.notifier != nil {
 		e.dispatchNotifications(ctx, a)
@@ -352,6 +361,14 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 
 	// Broadcast the escalation and dispatch notifications at the new severity
 	e.broadcastAlert(existing, false)
+
+	// Re-evaluate escalation policies: a higher severity may match policies
+	// that did not at the previous level. The escalator dedupes per
+	// (alert, policy) so existing runs continue untouched.
+	if err := e.escalator.OnAlertCreated(ctx, existing); err != nil {
+		e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", existing.ID)
+	}
+
 	if e.notifier != nil {
 		e.dispatchNotifications(ctx, existing)
 	}

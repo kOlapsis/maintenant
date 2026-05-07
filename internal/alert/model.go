@@ -159,6 +159,7 @@ type ListAlertsOpts struct {
 // Escalator manages Pro escalation policy execution.
 type Escalator interface {
 	EvaluateCycle(ctx context.Context) error
+	OnAlertCreated(ctx context.Context, a *Alert) error
 	OnAlertAcknowledged(ctx context.Context, alertID int64, ack Acknowledgment) error
 	OnAlertResolved(ctx context.Context, alertID int64, resolvedAt time.Time) error
 	OnEditionDowngraded(ctx context.Context) error

@@ -21,7 +21,8 @@ import (
 // NoopEscalator is the CE default. Implements alert.Escalator.
 type NoopEscalator struct{}
 
-func (NoopEscalator) EvaluateCycle(_ context.Context) error { return nil }
+func (NoopEscalator) EvaluateCycle(_ context.Context) error            { return nil }
+func (NoopEscalator) OnAlertCreated(_ context.Context, _ *alert.Alert) error { return nil }
 func (NoopEscalator) OnAlertAcknowledged(_ context.Context, _ int64, _ alert.Acknowledgment) error {
 	return nil
 }
