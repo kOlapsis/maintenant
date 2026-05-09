@@ -637,14 +637,14 @@ Full REST API under `/api/v1/` for automation and integration.
       <p><strong>Free</strong> · AGPL-3.0 · self-hosted forever</p>
       <ul>
         <li>Container auto-discovery (Docker + Kubernetes)</li>
-        <li>HTTP / TCP endpoint monitoring</li>
+        <li>HTTP / TCP endpoint monitoring <sub>(up to 10)</sub></li>
         <li>Heartbeat &amp; cron monitoring <sub>(up to 5)</sub></li>
-        <li>TLS certificate tracking</li>
+        <li>TLS certificate tracking <sub>(up to 5)</sub></li>
         <li>Resource metrics (CPU, RAM, net, disk)</li>
         <li>Network security insights</li>
         <li>Update intelligence (digest scan)</li>
         <li>Alert engine + webhook + Discord</li>
-        <li>Public status page</li>
+        <li>Public status page <sub>(up to 3 components)</sub></li>
         <li>REST API + SSE + MCP server</li>
         <li>PWA support</li>
       </ul>
@@ -655,7 +655,7 @@ Full REST API under `/api/v1/` for automation and integration.
       <p><strong>€29</strong>/month · or <strong>€290</strong>/year <sub>(save 2 months)</sub></p>
       <p><em>Everything in Community, plus:</em></p>
       <ul>
-        <li><strong>Unlimited</strong> heartbeats</li>
+        <li><strong>Unlimited</strong> monitors — heartbeats, endpoints, certificates, status page components</li>
         <li><strong>Slack, Microsoft Teams, Email</strong> channels</li>
         <li><strong>Advanced trigger filters</strong> — route alerts by entity scope or tag, not just severity</li>
         <li><strong>Alert escalation</strong> — page the right person, not a dead channel</li>
