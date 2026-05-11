@@ -91,6 +91,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	// Extract TLS peer certificates for certificate auto-detection
 	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
 		result.TLSPeerCertificates = resp.TLS.PeerCertificates
+		result.TLSOCSPResponse = resp.TLS.OCSPResponse
 	}
 
 	statusCode := resp.StatusCode

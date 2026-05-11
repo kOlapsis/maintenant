@@ -92,6 +92,7 @@ type CheckResult struct {
 	ErrorMessage        string              `json:"error_message,omitempty"`
 	Timestamp           time.Time           `json:"timestamp"`
 	TLSPeerCertificates []*x509.Certificate `json:"-"`
+	TLSOCSPResponse     []byte              `json:"-"`
 }
 
 // EndpointConfig holds the configuration parameters for endpoint checks.

@@ -127,6 +127,11 @@ type CertCheckResult struct {
 	HostnameMatch      *bool      `json:"hostname_match,omitempty"`
 	ErrorMessage       string     `json:"error_message,omitempty"`
 	CheckedAt          time.Time  `json:"checked_at"`
+	OCSPStapled        bool       `json:"ocsp_stapled,omitempty"`
+	OCSPStatus         string     `json:"ocsp_status,omitempty"`
+	OCSPProducedAt     *time.Time `json:"ocsp_produced_at,omitempty"`
+	OCSPNextUpdate     *time.Time `json:"ocsp_next_update,omitempty"`
+	OCSPError          string     `json:"ocsp_error,omitempty"`
 }
 
 // DaysRemaining returns the number of days until the certificate expires.

@@ -7,6 +7,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ocsp"
 )
 
 // CheckCertificateResult holds the raw result of a TLS certificate check.
@@ -24,6 +26,12 @@ type CheckCertificateResult struct {
 	HostnameMatch      bool
 	Chain              []ChainCert
 	Error              string
+
+	OCSPStapled    bool
+	OCSPStatus     string
+	OCSPProducedAt *time.Time
+	OCSPNextUpdate *time.Time
+	OCSPError      string
 }
 
 // ChainCert represents a certificate in the chain.
@@ -70,12 +78,14 @@ func CheckCertificate(hostname string, port int, timeout time.Duration) *CheckCe
 	// Check hostname match
 	result.HostnameMatch = checkHostnameMatch(leaf, hostname)
 
+	applyOCSPStaple(result, state.OCSPResponse, state.PeerCertificates)
+
 	return result
 }
 
 // CheckCertificateFromPeerCerts processes pre-fetched TLS peer certificates
 // (from an HTTP response) without making a new TLS connection.
-func CheckCertificateFromPeerCerts(certs []*x509.Certificate, hostname string) *CheckCertificateResult {
+func CheckCertificateFromPeerCerts(certs []*x509.Certificate, hostname string, ocspResponse []byte) *CheckCertificateResult {
 	if len(certs) == 0 {
 		return &CheckCertificateResult{
 			Error: "no TLS certificate presented",
@@ -91,7 +101,53 @@ func CheckCertificateFromPeerCerts(certs []*x509.Certificate, hostname string) *
 	// Check hostname match
 	result.HostnameMatch = checkHostnameMatch(leaf, hostname)
 
+	applyOCSPStaple(result, ocspResponse, certs)
+
 	return result
+}
+
+func applyOCSPStaple(result *CheckCertificateResult, ocspResponse []byte, certs []*x509.Certificate) {
+	if len(ocspResponse) == 0 {
+		return
+	}
+	result.OCSPStapled = true
+	if len(certs) < 2 {
+		result.OCSPStatus = "error"
+		result.OCSPError = "issuer certificate not available in chain"
+		return
+	}
+	status, producedAt, nextUpdate, errMsg := parseOCSPResponse(ocspResponse, certs[0], certs[1])
+	result.OCSPStatus = status
+	result.OCSPProducedAt = producedAt
+	result.OCSPNextUpdate = nextUpdate
+	result.OCSPError = errMsg
+}
+
+func parseOCSPResponse(raw []byte, leaf, issuer *x509.Certificate) (string, *time.Time, *time.Time, string) {
+	resp, err := ocsp.ParseResponseForCert(raw, leaf, issuer)
+	if err != nil {
+		return "error", nil, nil, err.Error()
+	}
+
+	producedAt := resp.ProducedAt
+	nextUpdate := resp.NextUpdate
+
+	// A stale staple (NextUpdate in the past) downgrades to "unknown" rather
+	// than the parsed status — stale OCSP data is not authoritative.
+	if !nextUpdate.IsZero() && nextUpdate.Before(time.Now()) {
+		return "unknown", &producedAt, &nextUpdate, ""
+	}
+
+	switch resp.Status {
+	case ocsp.Good:
+		return "good", &producedAt, &nextUpdate, ""
+	case ocsp.Revoked:
+		return "revoked", &producedAt, &nextUpdate, ""
+	case ocsp.Unknown:
+		return "unknown", &producedAt, &nextUpdate, ""
+	default:
+		return "error", nil, nil, fmt.Sprintf("unexpected OCSP status: %d", resp.Status)
+	}
 }
 
 func extractCertDetails(leaf *x509.Certificate, allCerts []*x509.Certificate) *CheckCertificateResult {

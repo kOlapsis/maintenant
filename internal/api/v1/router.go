@@ -633,6 +633,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 				"alert_routing":        true,
 				"alert_entity_routing": isEnterprise,
 				"security_posture":     isEnterprise,
+				"ocsp_stapling":        isEnterprise,
 				"swarm_dashboard":      isEnterprise,
 				"k8s_cluster":          isEnterprise,
 				"personalization":      isEnterprise,

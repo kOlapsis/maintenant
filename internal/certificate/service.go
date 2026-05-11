@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 var (
@@ -168,7 +169,7 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID int64, targ
 }
 
 // ProcessAutoDetectedCerts processes TLS certificates from an HTTP endpoint check.
-func (s *Service) ProcessAutoDetectedCerts(ctx context.Context, endpointID int64, targetURL string, certs []*x509.Certificate) {
+func (s *Service) ProcessAutoDetectedCerts(ctx context.Context, endpointID int64, targetURL string, certs []*x509.Certificate, ocspResponse []byte) {
 	if len(certs) == 0 {
 		return
 	}
@@ -185,7 +186,7 @@ func (s *Service) ProcessAutoDetectedCerts(ctx context.Context, endpointID int64
 		return
 	}
 
-	result := CheckCertificateFromPeerCerts(certs, hostname)
+	result := CheckCertificateFromPeerCerts(certs, hostname, ocspResponse)
 	s.processCheckResult(ctx, monitor, result)
 }
 
@@ -537,6 +538,16 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 		result.ChainError = raw.ChainError
 		result.HostnameMatch = &raw.HostnameMatch
 
+		// OCSP stapling is a Pro feature — capture is free but the fields are only
+		// persisted, exposed and alerted on in Enterprise.
+		if extension.CurrentEdition() == extension.Enterprise {
+			result.OCSPStapled = raw.OCSPStapled
+			result.OCSPStatus = raw.OCSPStatus
+			result.OCSPProducedAt = raw.OCSPProducedAt
+			result.OCSPNextUpdate = raw.OCSPNextUpdate
+			result.OCSPError = raw.OCSPError
+		}
+
 		// Determine status from cert data
 		monitor.Status = s.computeStatus(raw, monitor.WarningThresholds)
 		monitor.LastError = ""
@@ -654,6 +665,23 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"severity":   "critical",
 			"timestamp":  result.CheckedAt.Format(time.RFC3339),
 		})
+	}
+
+	// Only "revoked" triggers an alert. "unknown" and "error" are inconclusive
+	// and do not warrant a critical page.
+	if result.OCSPStatus == "revoked" {
+		alertData := map[string]interface{}{
+			"monitor_id": monitor.ID,
+			"hostname":   monitor.Hostname,
+			"port":       monitor.Port,
+			"alert_type": "ocsp_revoked",
+			"severity":   "critical",
+			"timestamp":  result.CheckedAt.Format(time.RFC3339),
+		}
+		if result.OCSPProducedAt != nil {
+			alertData["ocsp_produced_at"] = result.OCSPProducedAt.Format(time.RFC3339)
+		}
+		s.emit(event.CertificateAlert, alertData)
 	}
 
 	if result.NotAfter == nil {

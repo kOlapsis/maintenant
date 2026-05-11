@@ -281,7 +281,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		if len(result.TLSPeerCertificates) > 0 {
 			ep, err := a.endpointSvc.GetEndpoint(ctx, endpointID)
 			if err == nil && ep != nil && certificate.IsHTTPS(ep.Target) {
-				a.certSvc.ProcessAutoDetectedCerts(ctx, endpointID, ep.Target, result.TLSPeerCertificates)
+				a.certSvc.ProcessAutoDetectedCerts(ctx, endpointID, ep.Target, result.TLSPeerCertificates, result.TLSOCSPResponse)
 			}
 		}
 	}, logger)
