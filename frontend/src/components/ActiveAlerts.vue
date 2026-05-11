@@ -18,6 +18,7 @@ import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { timeAgo } from '@/utils/time'
 import type { Alert } from '@/services/alertApi'
+import { humanizeAlertType } from '@/utils/alertLabels'
 import EscalationStatusBadge from '@/components/escalation/EscalationStatusBadge.vue'
 import { useEscalationApi } from '@/composables/useEscalationApi'
 import type { EscalationRun } from '@/types/escalation'
@@ -39,6 +40,11 @@ async function loadEscalationRuns(alertId: number) {
 }
 
 const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
+
+function alertTitle(alert: Alert): string {
+  const humanized = humanizeAlertType(alert.source, alert.alert_type)
+  return humanized === alert.alert_type ? alert.message : humanized
+}
 
 function openEntityDetail(alert: Alert) {
   if (alert.source === 'update') {
@@ -131,7 +137,7 @@ onMounted(() => {
                   {{ alert.source }}
                 </span>
                 <span class="truncate text-sm" :style="{ color: section.config.color }">
-                  {{ alert.message }}
+                  {{ alertTitle(alert) }}
                 </span>
                 <EscalationStatusBadge
                   v-if="escalationRuns[alert.id]?.length"

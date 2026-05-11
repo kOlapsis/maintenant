@@ -31,6 +31,8 @@ export interface CertMonitor {
   latest_check?: CertCheckResult
 }
 
+export type OCSPStatus = 'good' | 'revoked' | 'unknown' | 'error'
+
 export interface CertCheckResult {
   id: number
   subject_cn: string
@@ -48,6 +50,11 @@ export interface CertCheckResult {
   error_message?: string
   checked_at: string
   chain?: CertChainEntry[]
+  ocsp_stapled?: boolean
+  ocsp_status?: OCSPStatus
+  ocsp_produced_at?: string
+  ocsp_next_update?: string
+  ocsp_error?: string
 }
 
 export interface CertChainEntry {
