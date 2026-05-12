@@ -13,10 +13,7 @@ package status
 
 import (
 	"bytes"
-	"embed"
 	"encoding/json"
-	"html/template"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -24,20 +21,13 @@ import (
 	"time"
 )
 
-//go:embed templates/status.html
-var statusTemplateHTML string
-
-//go:embed static
-var statusStaticFS embed.FS
-
-var statusTmpl = template.Must(template.New("status").Parse(statusTemplateHTML))
-
 // Handler serves the public status page API and SSE endpoints.
 type Handler struct {
 	service         *Service
 	sseHandler      http.Handler
 	logger          *slog.Logger
 	personalization *PersonalizationPublicHandler
+	indexHTML       []byte
 
 	rateMu     sync.Mutex
 	rateMap    map[string][]time.Time
@@ -58,6 +48,11 @@ func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger) 
 	}
 }
 
+// SetIndexHTML provides the Vue SPA index.html used to serve the status page.
+func (h *Handler) SetIndexHTML(data []byte) {
+	h.indexHTML = data
+}
+
 // SetPersonalizationHandler attaches the personalization public handler.
 func (h *Handler) SetPersonalizationHandler(ph *PersonalizationPublicHandler) {
 	h.personalization = ph
@@ -67,16 +62,11 @@ func (h *Handler) SetPersonalizationHandler(ph *PersonalizationPublicHandler) {
 type Middleware func(http.Handler) http.Handler
 
 // Register registers the status page, API, and SSE routes directly on the given mux.
-// /status/ is served as a server-rendered Go template so that the page works
-// transparently on a subdomain (e.g. status.example.com) via Traefik addprefix.
+// /status/ serves the Vue SPA index.html — Traefik rewrites the status subdomain root
+// to /status/ so that Vue Router can initialise at the correct route.
 func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
-	staticSubFS, _ := fs.Sub(statusStaticFS, "static")
-	staticHandler := http.FileServer(http.FS(staticSubFS))
-
 	// Page HTML — catch-all for /status/ (more specific patterns below take precedence).
 	mux.Handle("GET /status/", mw(http.HandlerFunc(h.HandleStatusPage)))
-	// Static assets (CSS). Registered after /status/ but more specific → wins.
-	mux.Handle("GET /status/static/", http.StripPrefix("/status/static/", staticHandler))
 	// API & SSE endpoints.
 	mux.Handle("GET /status/api", mw(http.HandlerFunc(h.HandleStatusAPI)))
 	mux.Handle("GET /status/events", mw(h.sseHandler))
@@ -89,30 +79,28 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 	}
 }
 
-// HandleStatusPage renders the public status page as a server-side Go template.
-// Using a Go template (instead of the Vue SPA) ensures the page works correctly
-// when served from a subdomain via Traefik addprefix — the browser URL stays
-// on the subdomain and all asset paths are resolved relatively.
+// urlFixScript runs before Vue initialises and rewrites "/" to "/status" so that
+// Vue Router renders PublicStatusPage when the status subdomain is accessed at root
+// (Traefik replacepathregex rewrites "/" → "/status/" at the backend level, but the
+// browser URL stays at "/", so Vue Router needs a nudge).
+const urlFixScript = `<script>if(window.location.pathname==='/'){history.replaceState({},'','/status')}</script>`
+
+// HandleStatusPage serves the Vue SPA index.html for the /status/ path.
+// A small inline script is injected so that Vue Router initialises at /status when
+// the page is accessed from the dedicated status subdomain (browser path is "/").
 func (h *Handler) HandleStatusPage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/status/" && r.URL.Path != "/status" {
 		http.NotFound(w, r)
 		return
 	}
-	data, err := h.service.GetPageData(r.Context())
-	if err != nil {
-		h.logger.Error("status page render failed", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	if h.indexHTML == nil {
+		http.Error(w, "Status page not available", http.StatusServiceUnavailable)
 		return
 	}
-	var buf bytes.Buffer
-	if err := statusTmpl.Execute(&buf, data); err != nil {
-		h.logger.Error("status page template execute failed", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	html := bytes.Replace(h.indexHTML, []byte("</head>"), []byte(urlFixScript+"</head>"), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	_, _ = w.Write(buf.Bytes())
+	_, _ = w.Write(html)
 }
 
 // StatusAPIResponse is the JSON snapshot of current status.

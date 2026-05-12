@@ -143,6 +143,13 @@ func (a *App) buildHTTPServer() *http.Server {
 		topMux.Handle("/mcp/", mcpHandler)
 	}
 
+	// Pass the SPA index.html to the status handler so it can serve it for /status/.
+	if distFS, err := fs.Sub(web.FS, "dist"); err == nil {
+		if data, err := fs.ReadFile(distFS, "index.html"); err == nil {
+			a.statusHandler.SetIndexHTML(data)
+		}
+	}
+
 	a.statusHandler.Register(topMux, a.rl.Middleware)
 	topMux.Handle("/api/", a.router.Handler())
 	topMux.Handle("/ping/", a.rl.Middleware(a.router.Handler()))
