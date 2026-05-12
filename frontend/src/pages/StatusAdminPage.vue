@@ -30,7 +30,7 @@ import FaqSection from '@/components/personalization/FaqSection.vue'
 import LocalizationSection from '@/components/personalization/LocalizationSection.vue'
 import type { PalettePayload } from '@/services/personalizationApi'
 
-const { hasFeature, isEnterprise } = useEdition()
+const { hasFeature, isEnterprise, statusURL } = useEdition()
 
 const store = useStatusAdminStore()
 const persoStore = usePersonalizationStore()
@@ -148,7 +148,7 @@ onUnmounted(() => {
         Manage the public status page components, incidents, and maintenance windows
       </p>
       <a
-        href="/status"
+        :href="statusURL || '/status'"
         target="_blank"
         class="mt-1 inline-block text-sm transition-colors"
         style="color: var(--pb-accent)"
