@@ -23,6 +23,7 @@ export type QuotaResource = 'endpoints' | 'heartbeats' | 'certificates' | 'statu
 export interface EditionResponse {
   edition: string
   organisation_name: string
+  status_url?: string
   features: Record<string, boolean>
   quotas?: Partial<Record<QuotaResource, QuotaEntry>>
 }
