@@ -19,7 +19,7 @@ import {
 } from '@/composables/useDetailSlideOver'
 import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
-import { useTimedDismissal } from '@/composables/useTimedDismissal'
+import { useProBanner } from '@/composables/useProBanner'
 import {
   Activity,
   ArrowRight,
@@ -112,12 +112,7 @@ const licenseLabel = computed(() => {
   }
 })
 
-const { visible: supportBannerVisible, dismiss: dismissSupportBanner } = useTimedDismissal({
-  storageKey: 'pb:banner:support-prompt',
-  cooldownMs: 30 * 24 * 60 * 60 * 1000,
-})
-
-const showSupportBanner = computed(() => !isEnterprise.value && supportBannerVisible.value)
+const proBanner = useProBanner()
 
 const mobileMenuOpen = ref(false)
 
@@ -362,25 +357,45 @@ const mainNav = computed(() =>
           </RouterLink>
         </template>
       </AlertBanner>
-      <!-- Support the project banner (CE only) -->
+      <!-- Pro tier banner (CE only, segmented by container count) -->
       <AlertBanner
-        v-if="showSupportBanner"
+        v-if="proBanner.visible.value"
         severity="info"
-        label="SUPPORT"
+        label="PRO"
         dismissible
         class="shrink-0"
-        @dismiss="dismissSupportBanner"
+        @dismiss="proBanner.dismiss()"
       >
-        Support Maintenant's development by purchasing a Pro license — it's what keeps this project
-        sustainable.
+        <template v-if="proBanner.tier.value === 1">
+          Running Maintenant in production? Pro adds Slack/Teams/Email alerts, CVE scanning and
+          incident management — 29€/mo.
+        </template>
+        <template v-else-if="proBanner.tier.value === 2">
+          You're monitoring {{ proBanner.count.value }} containers across production. Pro adds the
+          alerting layer your scale needs — Slack, escalation, incidents, custom public status page,
+          29€/mo.
+        </template>
+        <template v-else-if="proBanner.tier.value === 3">
+          Running 50+ containers in production. Pro adds incident management, alert escalation and
+          Slack routing. Want to discuss your setup with the founder?
+        </template>
         <template #action>
-          <RouterLink
-            to="/pro-edition"
-            class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
-          >
-            Get Pro
-            <ArrowRight :size="12" />
-          </RouterLink>
+          <template v-if="proBanner.tier.value === 1 || proBanner.tier.value === 2">
+            <RouterLink
+              to="/pro-edition"
+              class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            >
+              Get Pro →
+            </RouterLink>
+          </template>
+          <template v-else-if="proBanner.tier.value === 3">
+            <a
+              href="mailto:benjamin@kolapsis.com?subject=Maintenant%20-%2050%2B%20containers%20setup"
+              class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            >
+              Reply →
+            </a>
+          </template>
         </template>
       </AlertBanner>
       <AppHeader />
