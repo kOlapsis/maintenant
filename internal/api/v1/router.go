@@ -116,6 +116,7 @@ type HandlerDeps struct {
 	BuildVersion         string
 	OrganisationName     string
 	AllowPrivateWebhooks bool // dev only: skip HTTPS + SSRF check on webhook URLs
+	StatusURL            string
 }
 
 // Router sets up the /api/v1 route group.
@@ -129,6 +130,7 @@ type Router struct {
 	maxBodySize      int64
 	buildVersion     string
 	organisationName string
+	statusURL        string
 }
 
 // NewRouter creates a new API v1 router from the unified HandlerDeps.
@@ -147,6 +149,7 @@ func NewRouter(d HandlerDeps) *Router {
 		maxBodySize:      maxBody,
 		buildVersion:     d.BuildVersion,
 		organisationName: d.OrganisationName,
+		statusURL:        d.StatusURL,
 	}
 
 	// Webhook management
@@ -618,6 +621,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": r.organisationName,
+			"status_url":        r.statusURL,
 			"features": map[string]bool{
 				"cve_enrichment":       isEnterprise,
 				"risk_scoring":         isEnterprise,

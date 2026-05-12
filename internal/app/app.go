@@ -503,6 +503,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		BuildVersion:         cfg.Version,
 		OrganisationName:     cfg.OrgName,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
+		StatusURL:            cfg.StatusURL,
 	})
 
 	// --- Rate limiter ---

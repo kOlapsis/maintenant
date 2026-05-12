@@ -42,6 +42,9 @@ type Config struct {
 	// Branding
 	OrgName string
 
+	// Status page
+	StatusURL string // public URL of the status page (e.g. https://status.example.com)
+
 	// Kubernetes
 	K8sNamespaces  string
 	K8sExcludeNS   string
@@ -107,7 +110,8 @@ func ConfigFromEnv() Config {
 		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
 		MaxBodySize: 1048576,
 
-		OrgName: envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
+		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
+		StatusURL: os.Getenv("MAINTENANT_STATUS_URL"),
 
 		K8sNamespaces: os.Getenv("MAINTENANT_K8S_NAMESPACES"),
 		K8sExcludeNS:  os.Getenv("MAINTENANT_K8S_EXCLUDE_NAMESPACES"),
