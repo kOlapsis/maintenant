@@ -79,11 +79,7 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 	}
 }
 
-// urlFixScript runs before Vue initialises and rewrites "/" to "/status" so that
-// Vue Router renders PublicStatusPage when the status subdomain is accessed at root
-// (Traefik replacepathregex rewrites "/" → "/status/" at the backend level, but the
-// browser URL stays at "/", so Vue Router needs a nudge).
-const urlFixScript = `<script>if(window.location.pathname==='/'){history.replaceState({},'','/status')}</script>`
+const urlFixScript = `<script>window.__MAINTENANT_STATUS=true</script>`
 
 // HandleStatusPage serves the Vue SPA index.html for the /status/ path.
 // A small inline script is injected so that Vue Router initialises at /status when

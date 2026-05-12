@@ -35,9 +35,20 @@ const NodesPage = () => import('../pages/NodesPage.vue')
 const EscalationPage = () => import('../pages/EscalationPage.vue')
 const ChannelsPage = () => import('../pages/ChannelsPage.vue')
 
+const isStatusSubdomain = (window as unknown as { __MAINTENANT_STATUS?: boolean }).__MAINTENANT_STATUS === true
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    ...(isStatusSubdomain
+      ? [
+          {
+            path: '/',
+            component: PublicLayout,
+            children: [{ path: '', name: 'status-public', component: PublicStatusPage }],
+          },
+        ]
+      : []),
     {
       path: '/',
       component: DefaultLayout,
@@ -68,7 +79,7 @@ const router = createRouter({
     {
       path: '/status',
       component: PublicLayout,
-      children: [{ path: '', name: 'status-public', component: PublicStatusPage }],
+      children: [{ path: '', name: isStatusSubdomain ? 'status-public-admin' : 'status-public', component: PublicStatusPage }],
     },
   ],
 })
