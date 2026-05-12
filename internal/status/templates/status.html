@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>System Status</title>
+    <!-- base ensures relative paths resolve from root regardless of URL path (e.g. after Traefik addprefix redirect) -->
+    <base href="/">
     <link rel="stylesheet" href="static/status.css">
+    <!-- suppress automatic /favicon.ico browser request (would 404 through Traefik addprefix) -->
+    <link rel="icon" href="data:,">
 </head>
 <body>
     <div class="container">
