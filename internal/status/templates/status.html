@@ -3,36 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Status — maintenant</title>
-    <link rel="stylesheet" href="/status/static/status.css">
+    <title>System Status</title>
+    <link rel="stylesheet" href="static/status.css">
 </head>
 <body>
     <div class="container">
         <header>
             <h1>System Status</h1>
-            <p class="org-subtitle">Current service health</p>
         </header>
 
         <div id="global-banner" class="banner banner-{{.GlobalStatus}}">
             <span id="global-message">{{.GlobalMessage}}</span>
         </div>
 
-        {{range .Groups}}
+        {{if .Components}}
         <section class="section component-group">
-            <h2>{{.Name}}</h2>
             {{range .Components}}
-            <div class="component" data-component-id="{{.ID}}">
-                <span class="component-name">{{.DisplayName}}</span>
-                <span class="status-indicator status-{{.EffectiveStatus}}">{{.StatusLabel}}</span>
-            </div>
-            {{end}}
-        </section>
-        {{end}}
-
-        {{if .Ungrouped}}
-        <section class="section component-group">
-            <h2>Other Services</h2>
-            {{range .Ungrouped}}
             <div class="component" data-component-id="{{.ID}}">
                 <span class="component-name">{{.DisplayName}}</span>
                 <span class="status-indicator status-{{.EffectiveStatus}}">{{.StatusLabel}}</span>
@@ -48,7 +34,7 @@
 
     <script>
     (function() {
-        var es = new EventSource('/status/events');
+        var es = new EventSource('events');
 
         es.addEventListener('status.component_changed', function(e) {
             var d = JSON.parse(e.data);

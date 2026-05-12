@@ -12,13 +12,25 @@
 package status
 
 import (
+	"bytes"
+	"embed"
 	"encoding/json"
+	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
+
+//go:embed templates/status.html
+var statusTemplateHTML string
+
+//go:embed static
+var statusStaticFS embed.FS
+
+var statusTmpl = template.Must(template.New("status").Parse(statusTemplateHTML))
 
 // Handler serves the public status page API and SSE endpoints.
 type Handler struct {
@@ -54,8 +66,18 @@ func (h *Handler) SetPersonalizationHandler(ph *PersonalizationPublicHandler) {
 // Middleware wraps an http.Handler (e.g. rate limiter).
 type Middleware func(http.Handler) http.Handler
 
-// Register registers the status API and SSE routes directly on the given mux.
+// Register registers the status page, API, and SSE routes directly on the given mux.
+// /status/ is served as a server-rendered Go template so that the page works
+// transparently on a subdomain (e.g. status.example.com) via Traefik addprefix.
 func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
+	staticSubFS, _ := fs.Sub(statusStaticFS, "static")
+	staticHandler := http.FileServer(http.FS(staticSubFS))
+
+	// Page HTML — catch-all for /status/ (more specific patterns below take precedence).
+	mux.Handle("GET /status/", mw(http.HandlerFunc(h.HandleStatusPage)))
+	// Static assets (CSS). Registered after /status/ but more specific → wins.
+	mux.Handle("GET /status/static/", http.StripPrefix("/status/static/", staticHandler))
+	// API & SSE endpoints.
 	mux.Handle("GET /status/api", mw(http.HandlerFunc(h.HandleStatusAPI)))
 	mux.Handle("GET /status/events", mw(h.sseHandler))
 	mux.Handle("GET /status/feed.atom", mw(http.HandlerFunc(h.HandleAtomFeed)))
@@ -65,6 +87,32 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 	if h.personalization != nil {
 		mux.Handle("GET /status/settings.json", mw(http.HandlerFunc(h.personalization.HandleSettingsJSON)))
 	}
+}
+
+// HandleStatusPage renders the public status page as a server-side Go template.
+// Using a Go template (instead of the Vue SPA) ensures the page works correctly
+// when served from a subdomain via Traefik addprefix — the browser URL stays
+// on the subdomain and all asset paths are resolved relatively.
+func (h *Handler) HandleStatusPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/status/" && r.URL.Path != "/status" {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := h.service.GetPageData(r.Context())
+	if err != nil {
+		h.logger.Error("status page render failed", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	var buf bytes.Buffer
+	if err := statusTmpl.Execute(&buf, data); err != nil {
+		h.logger.Error("status page template execute failed", "error", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	_, _ = w.Write(buf.Bytes())
 }
 
 // StatusAPIResponse is the JSON snapshot of current status.
