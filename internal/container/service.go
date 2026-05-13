@@ -53,11 +53,11 @@ type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the container Service.
 type Deps struct {
-	Store          ContainerStore   // required
-	Logger         *slog.Logger     // required
-	EventCallback  EventCallback    // optional — nil-safe
-	LogFetcher     LogFetcher       // optional — nil-safe
-	RestartChecker RestartChecker   // optional — nil-safe
+	Store          ContainerStore    // required
+	Logger         *slog.Logger      // required
+	EventCallback  EventCallback     // optional — nil-safe
+	LogFetcher     LogFetcher        // optional — nil-safe
+	RestartChecker RestartChecker    // optional — nil-safe
 	Discoverer     RuntimeDiscoverer // optional — nil-safe
 }
 

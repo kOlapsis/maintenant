@@ -46,8 +46,8 @@ type Config struct {
 	StatusURL string // public URL of the status page (e.g. https://status.example.com)
 
 	// Kubernetes
-	K8sNamespaces  string
-	K8sExcludeNS   string
+	K8sNamespaces string
+	K8sExcludeNS  string
 
 	// Security
 	SecurityScoreThreshold int

@@ -81,8 +81,8 @@ func (m *mockResourceStore) ListSnapshotsAggregated(_ context.Context, _ int64, 
 func (m *mockResourceStore) DeleteSnapshotsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
 	return 0, nil
 }
-func (m *mockResourceStore) InsertHourlyRollup(_ context.Context, _ *RollupRow) error  { return nil }
-func (m *mockResourceStore) InsertDailyRollup(_ context.Context, _ *RollupRow) error   { return nil }
+func (m *mockResourceStore) InsertHourlyRollup(_ context.Context, _ *RollupRow) error { return nil }
+func (m *mockResourceStore) InsertDailyRollup(_ context.Context, _ *RollupRow) error  { return nil }
 func (m *mockResourceStore) AggregateHourlyRollup(_ context.Context, _, _ time.Time) error {
 	return nil
 }
@@ -558,7 +558,7 @@ func TestService_evaluateAlerts_MemPercentCalculatedCorrectly(t *testing.T) {
 	store.alertConfigs[containerID] = &ResourceAlertConfig{
 		ContainerID:  containerID,
 		Enabled:      true,
-		CPUThreshold: 99.0,  // high — won't trigger
+		CPUThreshold: 99.0, // high — won't trigger
 		MemThreshold: 70.0,
 		AlertState:   AlertStateNormal,
 	}

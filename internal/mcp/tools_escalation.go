@@ -86,10 +86,10 @@ type getEscalationPolicyInput struct {
 }
 
 type createEscalationPolicyInput struct {
-	Name    string                      `json:"name" jsonschema:"Policy name (1-120 chars)"`
-	Active  bool                        `json:"active" jsonschema:"Whether the policy is active"`
-	Filters escalationFiltersInput      `json:"filters" jsonschema:"Alert matching filters"`
-	Levels  []escalationLevelInput      `json:"levels" jsonschema:"Escalation levels (min 1, max 5)"`
+	Name    string                 `json:"name" jsonschema:"Policy name (1-120 chars)"`
+	Active  bool                   `json:"active" jsonschema:"Whether the policy is active"`
+	Filters escalationFiltersInput `json:"filters" jsonschema:"Alert matching filters"`
+	Levels  []escalationLevelInput `json:"levels" jsonschema:"Escalation levels (min 1, max 5)"`
 }
 
 type escalationFiltersInput struct {

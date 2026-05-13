@@ -46,31 +46,31 @@ const (
 
 // Container represents a discovered container/workload tracked by maintenant.
 type Container struct {
-	ID                 int64          `json:"id"`
-	ExternalID         string         `json:"external_id"`
-	AgentID            *string        `json:"agent_id,omitempty"`
-	Name               string         `json:"name"`
-	Image              string         `json:"image"`
-	State              ContainerState `json:"state"`
-	HealthStatus       *HealthStatus  `json:"health_status"`
-	HasHealthCheck     bool           `json:"has_health_check"`
-	OrchestrationGroup string         `json:"orchestration_group,omitempty"`
-	OrchestrationUnit  string         `json:"orchestration_unit,omitempty"`
-	CustomGroup        string         `json:"custom_group,omitempty"`
-	IsIgnored          bool           `json:"is_ignored"`
-	AlertSeverity      AlertSeverity  `json:"alert_severity"`
-	RestartThreshold   int            `json:"restart_threshold"`
-	AlertChannels      string         `json:"alert_channels,omitempty"`
-	Archived           bool           `json:"archived"`
-	FirstSeenAt        time.Time      `json:"first_seen_at"`
-	LastStateChangeAt  time.Time      `json:"last_state_change_at"`
-	ArchivedAt         *time.Time     `json:"archived_at,omitempty"`
-	RuntimeType        string         `json:"runtime_type"`
-	ErrorDetail        string         `json:"error_detail,omitempty"`
-	ControllerKind     string         `json:"controller_kind,omitempty"`
-	Namespace          string         `json:"namespace,omitempty"`
-	PodCount           int            `json:"pod_count"`
-	ReadyCount         int            `json:"ready_count"`
+	ID                   int64          `json:"id"`
+	ExternalID           string         `json:"external_id"`
+	AgentID              *string        `json:"agent_id,omitempty"`
+	Name                 string         `json:"name"`
+	Image                string         `json:"image"`
+	State                ContainerState `json:"state"`
+	HealthStatus         *HealthStatus  `json:"health_status"`
+	HasHealthCheck       bool           `json:"has_health_check"`
+	OrchestrationGroup   string         `json:"orchestration_group,omitempty"`
+	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
+	CustomGroup          string         `json:"custom_group,omitempty"`
+	IsIgnored            bool           `json:"is_ignored"`
+	AlertSeverity        AlertSeverity  `json:"alert_severity"`
+	RestartThreshold     int            `json:"restart_threshold"`
+	AlertChannels        string         `json:"alert_channels,omitempty"`
+	Archived             bool           `json:"archived"`
+	FirstSeenAt          time.Time      `json:"first_seen_at"`
+	LastStateChangeAt    time.Time      `json:"last_state_change_at"`
+	ArchivedAt           *time.Time     `json:"archived_at,omitempty"`
+	RuntimeType          string         `json:"runtime_type"`
+	ErrorDetail          string         `json:"error_detail,omitempty"`
+	ControllerKind       string         `json:"controller_kind,omitempty"`
+	Namespace            string         `json:"namespace,omitempty"`
+	PodCount             int            `json:"pod_count"`
+	ReadyCount           int            `json:"ready_count"`
 	ComposeWorkingDir    string         `json:"compose_working_dir,omitempty"`
 	SwarmServiceID       string         `json:"swarm_service_id,omitempty"`
 	SwarmServiceName     string         `json:"swarm_service_name,omitempty"`

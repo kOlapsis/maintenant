@@ -213,10 +213,10 @@ func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy,
 
 	now := time.Now().UTC()
 	p := &Policy{
-		Name:    req.Name,
-		Active:  req.Active,
-		Filters: req.Filters,
-		Levels:  levels,
+		Name:      req.Name,
+		Active:    req.Active,
+		Filters:   req.Filters,
+		Levels:    levels,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

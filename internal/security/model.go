@@ -47,11 +47,11 @@ type Insight struct {
 
 // ContainerInsights holds all active insights for a single container.
 type ContainerInsights struct {
-	ContainerID     int64      `json:"container_id"`
-	ContainerName   string     `json:"container_name"`
-	HighestSeverity *string    `json:"highest_severity"`
-	Count           int        `json:"count"`
-	Insights        []Insight  `json:"insights"`
+	ContainerID     int64     `json:"container_id"`
+	ContainerName   string    `json:"container_name"`
+	HighestSeverity *string   `json:"highest_severity"`
+	Count           int       `json:"count"`
+	Insights        []Insight `json:"insights"`
 }
 
 // Summary provides aggregated counts across all containers.

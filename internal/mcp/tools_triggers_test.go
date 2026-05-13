@@ -328,7 +328,7 @@ func TestUpdateTriggerHandler_NotFound(t *testing.T) {
 	handler := updateTriggerHandler(svc)
 
 	result, _, err := handler(context.Background(), nil, updateTriggerInputWithID{
-		ID: 9999,
+		ID:           9999,
 		triggerInput: triggerInput{Name: "Ghost", ChannelIDs: []int64{1}},
 	})
 	require.NoError(t, err)

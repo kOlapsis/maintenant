@@ -28,11 +28,11 @@ import (
 // --- store mock ---
 
 type mockStore struct {
-	policies      map[int64]*Policy
-	nextPolicyID  int64
-	activeCount   int
-	insertErr     error
-	selectErr     error
+	policies     map[int64]*Policy
+	nextPolicyID int64
+	activeCount  int
+	insertErr    error
+	selectErr    error
 }
 
 func newMockStore() *mockStore {
@@ -79,7 +79,7 @@ func (m *mockStore) DeletePolicy(_ context.Context, id int64) error {
 	return nil
 }
 func (m *mockStore) CountActivePolicies(_ context.Context) (int, error) { return m.activeCount, nil }
-func (m *mockStore) SelectRun(_ context.Context, _ int64) (*Run, error)  { return nil, nil }
+func (m *mockStore) SelectRun(_ context.Context, _ int64) (*Run, error) { return nil, nil }
 func (m *mockStore) SelectRunsByAlert(_ context.Context, _ int64) ([]*Run, error) {
 	return []*Run{}, nil
 }
@@ -89,7 +89,7 @@ func (m *mockStore) SelectRunsByPolicy(_ context.Context, _ int64, _ int, _ int6
 func (m *mockStore) SelectRunDeliveries(_ context.Context, _ int64) ([]*Delivery, error) {
 	return []*Delivery{}, nil
 }
-func (m *mockStore) BulkDeactivateAllPolicies(_ context.Context) error       { return nil }
+func (m *mockStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
 func (m *mockStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
 func (m *mockStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
 	return nil
@@ -396,4 +396,3 @@ func TestSetPolicyActive_NotFound(t *testing.T) {
 	_, err := svc.SetPolicyActive(context.Background(), 999, true)
 	assert.True(t, errors.Is(err, ErrPolicyNotFound))
 }
-

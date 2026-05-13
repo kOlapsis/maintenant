@@ -27,7 +27,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/resource"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
@@ -57,7 +57,7 @@ type ErrorDetail struct {
 type HandlerDeps struct {
 	// Core services
 	Broker       *SSEBroker
-	Runtime      pbruntime.Runtime
+	Runtime      runtime.Runtime
 	Containers   *container.Service
 	Uptime       *container.UptimeCalculator
 	Endpoints    *endpoint.Service
@@ -118,10 +118,10 @@ type HandlerDeps struct {
 	SwarmReplicaChecker *swarm.ReplicaHealthChecker
 
 	// Multi-host agents (Enterprise)
-	AgentStore     *sqlite.AgentStore
-	AgentSessions  AgentSessions
-	GRPCPublicURL  string
-	GRPCListen     string
+	AgentStore          *sqlite.AgentStore
+	AgentSessions       AgentSessions
+	GRPCPublicURL       string
+	GRPCListen          string
 	AgentStaleThreshold time.Duration
 
 	// HTTP config
@@ -138,7 +138,7 @@ type Router struct {
 	mux              *http.ServeMux
 	broker           *SSEBroker
 	logger           *slog.Logger
-	runtime          pbruntime.Runtime
+	runtime          runtime.Runtime
 	containerHandler *ContainerHandler
 	corsOrigins      []string
 	maxBodySize      int64
@@ -640,26 +640,26 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 			"organisation_name": r.organisationName,
 			"status_url":        r.statusURL,
 			"features": map[string]bool{
-				"cve_enrichment":       isEnterprise,
-				"risk_scoring":         isEnterprise,
-				"changelog":            isEnterprise,
-				"incidents":            isEnterprise,
-				"maintenance_windows":  isEnterprise,
-				"subscribers":          isEnterprise,
-				"smtp":                 smtpConfigured && isEnterprise,
-				"slack":                isEnterprise,
-				"teams":                isEnterprise,
-				"resource_history":     isEnterprise,
-				"alert_escalation":     isEnterprise,
+				"cve_enrichment":         isEnterprise,
+				"risk_scoring":           isEnterprise,
+				"changelog":              isEnterprise,
+				"incidents":              isEnterprise,
+				"maintenance_windows":    isEnterprise,
+				"subscribers":            isEnterprise,
+				"smtp":                   smtpConfigured && isEnterprise,
+				"slack":                  isEnterprise,
+				"teams":                  isEnterprise,
+				"resource_history":       isEnterprise,
+				"alert_escalation":       isEnterprise,
 				"alert_routing":          true,
 				"alert_advanced_filters": isEnterprise,
 				"alert_entity_routing":   isEnterprise,
-				"security_posture":     isEnterprise,
-				"ocsp_stapling":        isEnterprise,
-				"swarm_dashboard":      isEnterprise,
-				"k8s_cluster":          isEnterprise,
-				"personalization":      isEnterprise,
-				"multihost":            isEnterprise,
+				"security_posture":       isEnterprise,
+				"ocsp_stapling":          isEnterprise,
+				"swarm_dashboard":        isEnterprise,
+				"k8s_cluster":            isEnterprise,
+				"personalization":        isEnterprise,
+				"multihost":              isEnterprise,
 			},
 			"quotas": quotas,
 		})

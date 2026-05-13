@@ -38,11 +38,11 @@ const (
 
 // Delivery statuses (mirror the SQL CHECK constraint on escalation_deliveries).
 const (
-	DeliveryStatusPending             = "pending"
-	DeliveryStatusSent                = "sent"
-	DeliveryStatusFailed              = "failed"
-	DeliveryStatusAbandoned           = "abandoned"
-	DeliveryStatusSkippedMaintenance  = "skipped_maintenance"
+	DeliveryStatusPending            = "pending"
+	DeliveryStatusSent               = "sent"
+	DeliveryStatusFailed             = "failed"
+	DeliveryStatusAbandoned          = "abandoned"
+	DeliveryStatusSkippedMaintenance = "skipped_maintenance"
 )
 
 // Reserved level indices for non-step deliveries (negative values are intentional —

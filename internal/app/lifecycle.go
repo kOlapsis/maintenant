@@ -19,7 +19,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/event"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 	"github.com/kolapsis/maintenant/internal/swarm"
@@ -115,12 +115,12 @@ func (a *App) startEventStream(ctx context.Context) {
 	go func() {
 		for evt := range eventCh {
 			// Route Swarm service/node events to the Swarm event processor.
-			if evt.ResourceType == pbruntime.ResourceService || evt.ResourceType == pbruntime.ResourceNode {
+			if evt.ResourceType == runtime.ResourceService || evt.ResourceType == runtime.ResourceNode {
 				if a.swarmEvents != nil {
 					a.swarmEvents.ProcessEvent(ctx, evt)
 
 					// On service update, check rolling update status (Enterprise).
-					if evt.ResourceType == pbruntime.ResourceService && evt.Action == "update" && a.swarmUpdateTracker != nil {
+					if evt.ResourceType == runtime.ResourceService && evt.Action == "update" && a.swarmUpdateTracker != nil {
 						go a.swarmUpdateTracker.CheckService(ctx, evt.ExternalID)
 					}
 				}

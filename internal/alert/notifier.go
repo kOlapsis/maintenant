@@ -55,18 +55,18 @@ type WebhookPayload struct {
 
 // Notifier dispatches webhook notifications with a bounded worker pool.
 type Notifier struct {
-	jobs           chan NotificationJob
-	channelStore   ChannelStore
-	httpClient     *http.Client
-	smtpSender *SMTPSender
-	logger     *slog.Logger
+	jobs         chan NotificationJob
+	channelStore ChannelStore
+	httpClient   *http.Client
+	smtpSender   *SMTPSender
+	logger       *slog.Logger
 }
 
 // NewNotifier creates a new webhook notifier.
 func NewNotifier(channelStore ChannelStore, logger *slog.Logger) *Notifier {
 	return &Notifier{
-		jobs:           make(chan NotificationJob, notifierChannelBuffer),
-		channelStore:   channelStore,
+		jobs:         make(chan NotificationJob, notifierChannelBuffer),
+		channelStore: channelStore,
 		httpClient: &http.Client{
 			Timeout: webhookTimeout,
 		},

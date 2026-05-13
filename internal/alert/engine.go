@@ -40,11 +40,11 @@ type SSEBroadcaster interface {
 
 // EngineDeps holds all dependencies for the alert Engine.
 type EngineDeps struct {
-	AlertStore   AlertStore   // required
-	ChannelStore ChannelStore // required
-	TriggerStore TriggerStore // required
-	SilenceStore SilenceStore // required
-	Logger       *slog.Logger // required
+	AlertStore   AlertStore     // required
+	ChannelStore ChannelStore   // required
+	TriggerStore TriggerStore   // required
+	SilenceStore SilenceStore   // required
+	Logger       *slog.Logger   // required
 	Notifier     *Notifier      // optional — nil-safe
 	Broadcaster  SSEBroadcaster // optional — nil-safe
 }
@@ -127,7 +127,7 @@ func (e *Engine) SetMaintenanceSuppressor(s MaintenanceSuppressor) {
 // noopEscalator is the Engine-internal no-op default.
 type noopEscalator struct{}
 
-func (noopEscalator) EvaluateCycle(_ context.Context) error      { return nil }
+func (noopEscalator) EvaluateCycle(_ context.Context) error            { return nil }
 func (noopEscalator) OnAlertCreated(_ context.Context, _ *Alert) error { return nil }
 func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ int64, _ Acknowledgment) error {
 	return nil

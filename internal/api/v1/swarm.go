@@ -294,8 +294,8 @@ func (h *SwarmHandler) HandleGetUpdateStatus(w http.ResponseWriter, r *http.Requ
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"service_id":   serviceID,
-		"service_name": svc.Name,
+		"service_id":    serviceID,
+		"service_name":  svc.Name,
 		"update_status": us,
 		"progress": map[string]interface{}{
 			"old_image":     progress.OldImage,
@@ -418,11 +418,11 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"cluster": map[string]interface{}{
-			"cluster_id":        cluster.ID,
-			"manager_count":     cluster.ManagerCount,
-			"worker_count":      cluster.WorkerCount,
-			"service_count":     serviceCount,
-			"task_count":        taskCount,
+			"cluster_id":         cluster.ID,
+			"manager_count":      cluster.ManagerCount,
+			"worker_count":       cluster.WorkerCount,
+			"service_count":      serviceCount,
+			"task_count":         taskCount,
 			"healthy_task_count": healthyTaskCount,
 		},
 		"nodes":         nodeResults,
@@ -501,16 +501,16 @@ func (h *SwarmHandler) HandleGetCluster(w http.ResponseWriter, r *http.Request) 
 func nodeToJSON(n *swarm.SwarmNode) map[string]interface{} {
 	return map[string]interface{}{
 		"id":                    n.ID,
-		"node_id":              n.NodeID,
-		"hostname":             n.Hostname,
-		"role":                 n.Role,
-		"status":               n.Status,
-		"availability":         n.Availability,
-		"engine_version":       n.EngineVersion,
-		"address":              n.Address,
-		"task_count":           n.TaskCount,
-		"first_seen_at":        n.FirstSeenAt.Format(time.RFC3339),
-		"last_seen_at":         n.LastSeenAt.Format(time.RFC3339),
+		"node_id":               n.NodeID,
+		"hostname":              n.Hostname,
+		"role":                  n.Role,
+		"status":                n.Status,
+		"availability":          n.Availability,
+		"engine_version":        n.EngineVersion,
+		"address":               n.Address,
+		"task_count":            n.TaskCount,
+		"first_seen_at":         n.FirstSeenAt.Format(time.RFC3339),
+		"last_seen_at":          n.LastSeenAt.Format(time.RFC3339),
 		"last_status_change_at": n.LastStatusChangeAt.Format(time.RFC3339),
 	}
 }

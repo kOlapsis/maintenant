@@ -96,32 +96,32 @@ func (h *PersonalizationHandler) HandlePutSettings(w http.ResponseWriter, r *htt
 	resp := settingsToResponse(out)
 	if len(warnings) > 0 {
 		type withWarnings struct {
-			Version      int64                      `json:"version"`
-			Title        string                     `json:"title"`
-			Subtitle     string                     `json:"subtitle"`
-			Colors       settingsColorsResp         `json:"colors"`
-			Announcement settingsAnnouncementResp   `json:"announcement"`
-			FooterTextMD string                     `json:"footer_text_md"`
-			FooterTextHTML string                   `json:"footer_text_html"`
-			Locale       string                     `json:"locale"`
-			Timezone     string                     `json:"timezone"`
-			DateFormat   string                     `json:"date_format"`
-			UpdatedAt    string                     `json:"updated_at"`
-			Warnings     map[string][]status.ContrastWarning `json:"warnings"`
+			Version        int64                               `json:"version"`
+			Title          string                              `json:"title"`
+			Subtitle       string                              `json:"subtitle"`
+			Colors         settingsColorsResp                  `json:"colors"`
+			Announcement   settingsAnnouncementResp            `json:"announcement"`
+			FooterTextMD   string                              `json:"footer_text_md"`
+			FooterTextHTML string                              `json:"footer_text_html"`
+			Locale         string                              `json:"locale"`
+			Timezone       string                              `json:"timezone"`
+			DateFormat     string                              `json:"date_format"`
+			UpdatedAt      string                              `json:"updated_at"`
+			Warnings       map[string][]status.ContrastWarning `json:"warnings"`
 		}
 		WriteJSON(w, http.StatusOK, withWarnings{
-			Version:      out.Version,
-			Title:        out.Title,
-			Subtitle:     out.Subtitle,
-			Colors:       resp.Colors,
-			Announcement: resp.Announcement,
+			Version:        out.Version,
+			Title:          out.Title,
+			Subtitle:       out.Subtitle,
+			Colors:         resp.Colors,
+			Announcement:   resp.Announcement,
 			FooterTextMD:   out.FooterTextMD,
 			FooterTextHTML: out.FooterTextHTML,
-			Locale:       out.Locale,
-			Timezone:     out.Timezone,
-			DateFormat:   out.DateFormat,
-			UpdatedAt:    out.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-			Warnings:     map[string][]status.ContrastWarning{"contrast": warnings},
+			Locale:         out.Locale,
+			Timezone:       out.Timezone,
+			DateFormat:     out.DateFormat,
+			UpdatedAt:      out.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+			Warnings:       map[string][]status.ContrastWarning{"contrast": warnings},
 		})
 		return
 	}
@@ -186,10 +186,10 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"role":       string(role),
-		"mime":       mime,
-		"byte_size":  len(data),
-		"alt_text":   altText,
+		"role":      string(role),
+		"mime":      mime,
+		"byte_size": len(data),
+		"alt_text":  altText,
 	})
 }
 

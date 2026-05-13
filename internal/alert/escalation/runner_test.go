@@ -105,16 +105,16 @@ func (s *runStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*Policy
 	}
 	return out, nil
 }
-func (s *runStore) DeletePolicy(_ context.Context, _ int64) error             { return nil }
-func (s *runStore) CountActivePolicies(_ context.Context) (int, error)        { return 0, nil }
+func (s *runStore) DeletePolicy(_ context.Context, _ int64) error      { return nil }
+func (s *runStore) CountActivePolicies(_ context.Context) (int, error) { return 0, nil }
 func (s *runStore) SelectRunsByPolicy(_ context.Context, _ int64, _ int, _ int64) ([]*Run, error) {
 	return nil, nil
 }
 func (s *runStore) SelectRunDeliveries(_ context.Context, _ int64) ([]*Delivery, error) {
 	return nil, nil
 }
-func (s *runStore) BulkDeactivateAllPolicies(_ context.Context) error          { return nil }
-func (s *runStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error   { return nil }
+func (s *runStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
+func (s *runStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
 func (s *runStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
@@ -453,15 +453,15 @@ func (f *fakeSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (bool, 
 // --- harness ---
 
 type harness struct {
-	store     *runStore
-	alerts    *alertStoreMock
-	channels  *channelStoreMock
-	sender    *fakeSender
-	supp      *fakeSuppressor
-	service   *Service
-	runner    *Runner
-	now       time.Time
-	clockMu   sync.Mutex
+	store    *runStore
+	alerts   *alertStoreMock
+	channels *channelStoreMock
+	sender   *fakeSender
+	supp     *fakeSuppressor
+	service  *Service
+	runner   *Runner
+	now      time.Time
+	clockMu  sync.Mutex
 }
 
 func newHarness(t *testing.T) *harness {

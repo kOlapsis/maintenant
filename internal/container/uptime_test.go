@@ -217,18 +217,34 @@ func (m *uptimeStore) GetTransitionsInWindow(_ context.Context, containerID int6
 	return m.transitions[containerID], nil
 }
 
-func (m *uptimeStore) InsertContainer(_ context.Context, _ *Container) (int64, error)     { return 0, nil }
-func (m *uptimeStore) UpdateContainer(_ context.Context, _ *Container) error              { return nil }
-func (m *uptimeStore) GetContainerByExternalID(_ context.Context, _ string) (*Container, error) { return nil, nil }
-func (m *uptimeStore) GetContainerByID(_ context.Context, _ int64) (*Container, error)    { return nil, nil }
-func (m *uptimeStore) ListContainers(_ context.Context, _ ListContainersOpts) ([]*Container, error) { return nil, nil }
-func (m *uptimeStore) ArchiveContainer(_ context.Context, _ string, _ time.Time) error    { return nil }
-func (m *uptimeStore) DeleteContainerByID(_ context.Context, _ int64) error               { return nil }
-func (m *uptimeStore) InsertTransition(_ context.Context, _ *StateTransition) (int64, error) { return 0, nil }
-func (m *uptimeStore) ListTransitionsByContainer(_ context.Context, _ int64, _ ListTransitionsOpts) ([]*StateTransition, int, error) { return nil, 0, nil }
-func (m *uptimeStore) CountRestartsSince(_ context.Context, _ int64, _ time.Time) (int, error) { return 0, nil }
-func (m *uptimeStore) DeleteTransitionsBefore(_ context.Context, _ time.Time, _ int) (int64, error) { return 0, nil }
-func (m *uptimeStore) DeleteArchivedContainersBefore(_ context.Context, _ time.Time) (int64, error) { return 0, nil }
+func (m *uptimeStore) InsertContainer(_ context.Context, _ *Container) (int64, error) { return 0, nil }
+func (m *uptimeStore) UpdateContainer(_ context.Context, _ *Container) error          { return nil }
+func (m *uptimeStore) GetContainerByExternalID(_ context.Context, _ string) (*Container, error) {
+	return nil, nil
+}
+func (m *uptimeStore) GetContainerByID(_ context.Context, _ int64) (*Container, error) {
+	return nil, nil
+}
+func (m *uptimeStore) ListContainers(_ context.Context, _ ListContainersOpts) ([]*Container, error) {
+	return nil, nil
+}
+func (m *uptimeStore) ArchiveContainer(_ context.Context, _ string, _ time.Time) error { return nil }
+func (m *uptimeStore) DeleteContainerByID(_ context.Context, _ int64) error            { return nil }
+func (m *uptimeStore) InsertTransition(_ context.Context, _ *StateTransition) (int64, error) {
+	return 0, nil
+}
+func (m *uptimeStore) ListTransitionsByContainer(_ context.Context, _ int64, _ ListTransitionsOpts) ([]*StateTransition, int, error) {
+	return nil, 0, nil
+}
+func (m *uptimeStore) CountRestartsSince(_ context.Context, _ int64, _ time.Time) (int, error) {
+	return 0, nil
+}
+func (m *uptimeStore) DeleteTransitionsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
+	return 0, nil
+}
+func (m *uptimeStore) DeleteArchivedContainersBefore(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
 
 func TestUptimeCalculator_CommunityOnly24h(t *testing.T) {
 	const containerID int64 = 1

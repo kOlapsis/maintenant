@@ -21,10 +21,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	cmodel "github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	cmodel "github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 const (
@@ -157,9 +157,9 @@ func collectResourceSnapshots(ctx context.Context, id *Identity, rt *docker.Runt
 	return nil
 }
 
-// runtimeEventToProto converts a pbruntime.RuntimeEvent to a ContainerEvent proto.
+// runtimeEventToProto converts a runtime.RuntimeEvent to a ContainerEvent proto.
 // Returns nil for event types that should not be pushed (e.g. destroy, health_status).
-func runtimeEventToProto(ev pbruntime.RuntimeEvent) *agentpb.ContainerEvent {
+func runtimeEventToProto(ev runtime.RuntimeEvent) *agentpb.ContainerEvent {
 	state, ok := actionToContainerState(ev.Action)
 	if !ok {
 		return nil

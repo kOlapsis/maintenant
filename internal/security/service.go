@@ -27,15 +27,15 @@ type EventCallback func(eventType string, data any)
 
 // Deps holds all dependencies for the security Service.
 type Deps struct {
-	Logger        *slog.Logger   // required
-	AlertCallback AlertCallback  // optional — nil-safe
-	EventCallback EventCallback  // optional — nil-safe
+	Logger        *slog.Logger  // required
+	AlertCallback AlertCallback // optional — nil-safe
+	EventCallback EventCallback // optional — nil-safe
 }
 
 // Service manages in-memory security insight state and emits alerts/events on changes.
 type Service struct {
 	mu       sync.RWMutex
-	store    map[int64][]Insight       // containerID → current insights
+	store    map[int64][]Insight            // containerID → current insights
 	previous map[int64]map[InsightType]bool // containerID → set of previously seen insight types
 	logger   *slog.Logger
 

@@ -93,9 +93,9 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		SecurityHighestSeverity *string `json:"security_highest_severity"`
 	}
 	type enrichedGroup struct {
-		Name       string               `json:"name"`
-		Source     string               `json:"source"`
-		Containers []enrichedContainer  `json:"containers"`
+		Name       string              `json:"name"`
+		Source     string              `json:"source"`
+		Containers []enrichedContainer `json:"containers"`
 	}
 
 	enrichedGroups := make([]enrichedGroup, 0, len(groups))

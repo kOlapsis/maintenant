@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 const (
@@ -29,7 +29,7 @@ const (
 
 // Collector periodically collects resource stats from the active runtime.
 type Collector struct {
-	rt           pbruntime.Runtime
+	rt           runtime.Runtime
 	containerSvc *container.Service
 	interval     time.Duration
 	logger       *slog.Logger
@@ -41,7 +41,7 @@ type Collector struct {
 }
 
 // NewCollector creates a resource stats collector.
-func NewCollector(rt pbruntime.Runtime, containerSvc *container.Service, logger *slog.Logger) *Collector {
+func NewCollector(rt runtime.Runtime, containerSvc *container.Service, logger *slog.Logger) *Collector {
 	return &Collector{
 		rt:           rt,
 		containerSvc: containerSvc,

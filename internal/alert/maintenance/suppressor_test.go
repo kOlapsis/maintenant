@@ -26,13 +26,13 @@ import (
 
 // mockStore is a minimal mock for the Store interface.
 type mockStore struct {
-	mu      sync.Mutex
-	calls   int
-	matched bool
+	mu       sync.Mutex
+	calls    int
+	matched  bool
 	windowID int64
-	endsAt  time.Time
-	err     error
-	lastCtx context.Context
+	endsAt   time.Time
+	err      error
+	lastCtx  context.Context
 }
 
 func (m *mockStore) IsEntitySuppressed(ctx context.Context, monitorType string, monitorID int64, now time.Time) (bool, int64, time.Time, error) {

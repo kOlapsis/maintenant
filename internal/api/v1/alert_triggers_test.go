@@ -31,8 +31,8 @@ import (
 // ---------------------------------------------------------------------------
 
 type stubTriggerStore struct {
-	triggers map[int64]*alert.AlertTrigger
-	nextID   int64
+	triggers  map[int64]*alert.AlertTrigger
+	nextID    int64
 	insertErr error
 }
 

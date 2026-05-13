@@ -409,4 +409,3 @@ func scanToken(s scanner) (*agent.EnrollmentToken, error) {
 	}
 	return t, nil
 }
-

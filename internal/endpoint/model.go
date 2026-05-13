@@ -155,7 +155,7 @@ type ListEndpointsOpts struct {
 	EndpointType       string
 	Source             string
 	IncludeInactive    bool
-	AgentFilter *string
+	AgentFilter        *string
 }
 
 // ListChecksOpts configures check result listing queries.

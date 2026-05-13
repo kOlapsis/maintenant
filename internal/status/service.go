@@ -30,15 +30,15 @@ type MonitorNameProvider func(ctx context.Context, monitorType string, monitorID
 
 // Deps holds all dependencies for the status Service.
 type Deps struct {
-	Components       ComponentStore        // required
-	Logger           *slog.Logger          // required
-	Incidents        IncidentStore         // optional — nil-safe
-	Maintenance      MaintenanceStore      // optional — nil-safe
-	MonitorStatus    MonitorStatusProvider // optional — nil-safe
-	MonitorPopulation MonitorPopulationProvider // optional — nil-safe
-	MonitorName      MonitorNameProvider   // optional — nil-safe
-	Broadcaster      func(eventType string, data any) // optional — nil-safe
-	Subscribers      *SubscriberService    // optional — nil-safe
+	Components        ComponentStore                   // required
+	Logger            *slog.Logger                     // required
+	Incidents         IncidentStore                    // optional — nil-safe
+	Maintenance       MaintenanceStore                 // optional — nil-safe
+	MonitorStatus     MonitorStatusProvider            // optional — nil-safe
+	MonitorPopulation MonitorPopulationProvider        // optional — nil-safe
+	MonitorName       MonitorNameProvider              // optional — nil-safe
+	Broadcaster       func(eventType string, data any) // optional — nil-safe
+	Subscribers       *SubscriberService               // optional — nil-safe
 }
 
 // Service encapsulates public status page business logic.

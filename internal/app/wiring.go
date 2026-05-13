@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"time"
 
-	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/alert"
+	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/event"
@@ -602,4 +602,3 @@ func (a *App) wireLicenseSubscriber(_ context.Context) {
 		}
 	})
 }
-

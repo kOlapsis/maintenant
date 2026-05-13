@@ -24,18 +24,18 @@ type SwarmCluster struct {
 
 // SwarmService represents a Swarm service with aggregated state (volatile/in-memory).
 type SwarmService struct {
-	ServiceID       string            `json:"service_id"`
-	Name            string            `json:"name"`
-	Image           string            `json:"image"`
-	Mode            string            `json:"mode"` // "replicated" or "global"
-	DesiredReplicas int               `json:"desired_replicas"`
-	RunningReplicas int               `json:"running_replicas"`
-	Labels          map[string]string `json:"labels,omitempty"`
-	StackName       string            `json:"stack_name,omitempty"`
+	ServiceID       string              `json:"service_id"`
+	Name            string              `json:"name"`
+	Image           string              `json:"image"`
+	Mode            string              `json:"mode"` // "replicated" or "global"
+	DesiredReplicas int                 `json:"desired_replicas"`
+	RunningReplicas int                 `json:"running_replicas"`
+	Labels          map[string]string   `json:"labels,omitempty"`
+	StackName       string              `json:"stack_name,omitempty"`
 	Networks        []NetworkAttachment `json:"networks,omitempty"`
-	Ports           []PortConfig      `json:"ports,omitempty"`
-	UpdateStatus    *UpdateStatus     `json:"update_status,omitempty"`
-	CreatedAt       time.Time         `json:"created_at"`
+	Ports           []PortConfig        `json:"ports,omitempty"`
+	UpdateStatus    *UpdateStatus       `json:"update_status,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
 }
 
 // SwarmTask represents a single instance (replica) of a service (volatile/in-memory).
@@ -63,9 +63,9 @@ type NetworkAttachment struct {
 // PortConfig represents a published port on a Swarm service.
 type PortConfig struct {
 	Protocol      string `json:"protocol"`       // "tcp", "udp", "sctp"
-	TargetPort    uint32 `json:"target_port"`     // container port
-	PublishedPort uint32 `json:"published_port"`  // host/ingress port
-	PublishMode   string `json:"publish_mode"`    // "ingress" or "host"
+	TargetPort    uint32 `json:"target_port"`    // container port
+	PublishedPort uint32 `json:"published_port"` // host/ingress port
+	PublishMode   string `json:"publish_mode"`   // "ingress" or "host"
 }
 
 // UpdateStatus represents the rolling update status of a Swarm service (Enterprise).
@@ -82,8 +82,8 @@ type SwarmNode struct {
 	NodeID             string    `json:"node_id"`
 	Hostname           string    `json:"hostname"`
 	Role               string    `json:"role"`         // "manager" or "worker"
-	Status             string    `json:"status"`        // "ready", "down", "disconnected", "unknown"
-	Availability       string    `json:"availability"`  // "active", "pause", "drain"
+	Status             string    `json:"status"`       // "ready", "down", "disconnected", "unknown"
+	Availability       string    `json:"availability"` // "active", "pause", "drain"
 	EngineVersion      string    `json:"engine_version,omitempty"`
 	Address            string    `json:"address,omitempty"`
 	TaskCount          int       `json:"task_count"`

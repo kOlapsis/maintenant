@@ -22,11 +22,11 @@ import (
 
 	"github.com/docker/docker/pkg/stdcopy"
 	cmodel "github.com/kolapsis/maintenant/internal/container"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 func init() {
-	pbruntime.Register("docker", func(ctx context.Context, logger *slog.Logger) (pbruntime.Runtime, error) {
+	runtime.Register("docker", func(ctx context.Context, logger *slog.Logger) (runtime.Runtime, error) {
 		return NewRuntime(os.Getenv("DOCKER_HOST"), logger)
 	})
 }
@@ -87,13 +87,13 @@ func (r *Runtime) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult
 	return r.client.DiscoverAllWithLabels(ctx)
 }
 
-func (r *Runtime) StreamEvents(ctx context.Context) <-chan pbruntime.RuntimeEvent {
+func (r *Runtime) StreamEvents(ctx context.Context) <-chan runtime.RuntimeEvent {
 	dockerCh := r.client.StreamEvents(ctx)
-	out := make(chan pbruntime.RuntimeEvent, 64)
+	out := make(chan runtime.RuntimeEvent, 64)
 	go func() {
 		defer close(out)
 		for evt := range dockerCh {
-			out <- pbruntime.RuntimeEvent{
+			out <- runtime.RuntimeEvent{
 				Action:       evt.Action,
 				ExternalID:   evt.ExternalID,
 				Name:         evt.Name,
@@ -108,7 +108,7 @@ func (r *Runtime) StreamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 	return out
 }
 
-func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbruntime.RawStats, error) {
+func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*runtime.RawStats, error) {
 	stats, err := r.client.StatsOneShot(ctx, externalID)
 	if err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbrunt
 		cpuPercent = (cpuDelta / systemDelta) * numCPUs * 100.0
 	}
 
-	return &pbruntime.RawStats{
+	return &runtime.RawStats{
 		CPUPercent:      cpuPercent,
 		MemUsed:         memUsed,
 		MemLimit:        int64(stats.MemoryStats.Limit),
@@ -212,12 +212,12 @@ func (r *Runtime) StreamLogs(ctx context.Context, externalID string, lines int, 
 	return newDemuxReader(reader), nil
 }
 
-func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*pbruntime.HealthInfo, error) {
+func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*runtime.HealthInfo, error) {
 	hi, err := r.client.GetHealthInfo(ctx, externalID)
 	if err != nil {
 		return nil, err
 	}
-	result := &pbruntime.HealthInfo{
+	result := &runtime.HealthInfo{
 		HasHealthCheck: hi.HasHealthCheck,
 		Status:         "none",
 	}

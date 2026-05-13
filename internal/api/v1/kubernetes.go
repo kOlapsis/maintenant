@@ -356,15 +356,15 @@ func (h *KubernetesHandler) HandleGetNodeResources(w http.ResponseWriter, r *htt
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"metrics_available":      true,
-		"node_name":              name,
-		"cpu_millicores":         nm.CPUMillicores,
+		"metrics_available":       true,
+		"node_name":               name,
+		"cpu_millicores":          nm.CPUMillicores,
 		"cpu_capacity_millicores": nm.CPUCapacityMillicores,
-		"cpu_percent":            cpuPercent,
-		"mem_bytes":              nm.MemBytes,
-		"mem_capacity_bytes":     nm.MemCapacityBytes,
-		"mem_percent":            memPercent,
-		"timestamp":              nm.Timestamp.Format(time.RFC3339),
+		"cpu_percent":             cpuPercent,
+		"mem_bytes":               nm.MemBytes,
+		"mem_capacity_bytes":      nm.MemCapacityBytes,
+		"mem_percent":             memPercent,
+		"timestamp":               nm.Timestamp.Format(time.RFC3339),
 	})
 }
 

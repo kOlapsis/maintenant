@@ -342,12 +342,12 @@ func (m *mockStore) executionsFor(heartbeatID int64) []*HeartbeatExecution {
 
 // mockLicense implements LicenseChecker.
 type mockLicense struct {
-	canCreate      bool
+	canCreate       bool
 	canStorePayload bool
 }
 
 func (l *mockLicense) CanCreateHeartbeat(_ int) bool { return l.canCreate }
-func (l *mockLicense) CanStorePayload() bool          { return l.canStorePayload }
+func (l *mockLicense) CanStorePayload() bool         { return l.canStorePayload }
 
 func newService(store *mockStore, lc LicenseChecker) *Service {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

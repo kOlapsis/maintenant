@@ -37,14 +37,14 @@ type CategoryScore struct {
 
 // InfrastructurePosture is the top-level aggregation across all containers.
 type InfrastructurePosture struct {
-	Score           int               `json:"score"`
-	ColorLevel      string            `json:"color"`
-	ContainerCount  int               `json:"container_count"`
-	ScoredCount     int               `json:"scored_count"`
-	IsPartial       bool              `json:"is_partial"`
-	Categories      []CategorySummary `json:"categories"`
-	TopRisks        []ContainerRisk   `json:"top_risks"`
-	ComputedAt      time.Time         `json:"computed_at"`
+	Score          int               `json:"score"`
+	ColorLevel     string            `json:"color"`
+	ContainerCount int               `json:"container_count"`
+	ScoredCount    int               `json:"scored_count"`
+	IsPartial      bool              `json:"is_partial"`
+	Categories     []CategorySummary `json:"categories"`
+	TopRisks       []ContainerRisk   `json:"top_risks"`
+	ComputedAt     time.Time         `json:"computed_at"`
 }
 
 // CategorySummary holds aggregated category data across all containers.

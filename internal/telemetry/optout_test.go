@@ -114,7 +114,7 @@ func TestService_DefaultBoot_NotDisabled(t *testing.T) {
 		Containers:       fakeCounter{value: 0},
 		Endpoints:        fakeCounter{value: 0},
 		Heartbeats:       fakeCounter{value: 0},
-		Certificates:    fakeCounter{value: 0},
+		Certificates:     fakeCounter{value: 0},
 		Webhooks:         fakeCounter{value: 0},
 		StatusComponents: fakeCounter{value: 0},
 		Edition:          staticEdition{value: extension.Community},

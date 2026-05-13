@@ -151,8 +151,8 @@ func TestService_SSEEvents(t *testing.T) {
 		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
 	}
 
-	svc.UpdateContainer(1, "test", insights)    // → security.insights_changed
-	svc.UpdateContainer(1, "test", nil)          // → security.insights_resolved
+	svc.UpdateContainer(1, "test", insights) // → security.insights_changed
+	svc.UpdateContainer(1, "test", nil)      // → security.insights_resolved
 
 	require.Len(t, events, 2)
 	assert.Equal(t, "security.insights_changed", events[0])

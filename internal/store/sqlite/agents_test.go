@@ -41,9 +41,9 @@ func TestConsumeAtomic_Concurrent(t *testing.T) {
 
 	const goroutines = 10
 	var (
-		successes atomic.Int32
+		successes       atomic.Int32
 		alreadyConsumed atomic.Int32
-		other     atomic.Int32
+		other           atomic.Int32
 	)
 
 	var wg sync.WaitGroup

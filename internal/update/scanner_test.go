@@ -66,7 +66,7 @@ func (s *stubStore) GetImageUpdateByContainer(_ context.Context, _ string) (*Ima
 func (s *stubStore) ListImageUpdates(_ context.Context, _ ListImageUpdatesOpts) ([]*ImageUpdate, error) {
 	return nil, nil
 }
-func (s *stubStore) GetUpdateSummary(_ context.Context) (*UpdateSummary, error) { return nil, nil }
+func (s *stubStore) GetUpdateSummary(_ context.Context) (*UpdateSummary, error)      { return nil, nil }
 func (s *stubStore) DeleteImageUpdatesByContainer(_ context.Context, _ string) error { return nil }
 func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ int64, _ []string) (int64, error) {
 	return 0, nil
@@ -78,7 +78,7 @@ func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (int64, e
 	return 0, nil
 }
 func (s *stubStore) GetVersionPin(_ context.Context, _ string) (*VersionPin, error) { return nil, nil }
-func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error              { return nil }
+func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error             { return nil }
 func (s *stubStore) InsertExclusion(_ context.Context, _ *UpdateExclusion) (int64, error) {
 	return 0, nil
 }

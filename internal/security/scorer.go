@@ -87,12 +87,12 @@ type cachedScore struct {
 
 // ScorerDeps holds all dependencies for the security Scorer.
 type ScorerDeps struct {
-	Certs              CertificateReader    // optional — nil skips TLS scoring
-	CVEs               CVEReader            // optional — nil skips CVE scoring
-	Updates            UpdateReader         // optional — nil skips update scoring
-	Security           *Service             // optional — nil skips network exposure scoring
-	Acks               AcknowledgmentStore  // required
-	Threshold          int                  // optional — 0 disables alerts
+	Certs                CertificateReader    // optional — nil skips TLS scoring
+	CVEs                 CVEReader            // optional — nil skips CVE scoring
+	Updates              UpdateReader         // optional — nil skips update scoring
+	Security             *Service             // optional — nil skips network exposure scoring
+	Acks                 AcknowledgmentStore  // required
+	Threshold            int                  // optional — 0 disables alerts
 	PostureAlertCallback PostureAlertCallback // optional — nil-safe
 	PostureEventCallback PostureEventCallback // optional — nil-safe
 }

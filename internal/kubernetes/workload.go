@@ -27,7 +27,7 @@ import (
 
 // K8sWorkload represents a Kubernetes controller.
 type K8sWorkload struct {
-	ID              string            // "{namespace}/{kind}/{name}"
+	ID              string // "{namespace}/{kind}/{name}"
 	Name            string
 	Namespace       string
 	Kind            string // Deployment, StatefulSet, DaemonSet, Job

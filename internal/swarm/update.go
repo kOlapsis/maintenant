@@ -26,22 +26,22 @@ import (
 
 // UpdateProgress represents the progress of a rolling update.
 type UpdateProgress struct {
-	ServiceID    string  `json:"service_id"`
-	ServiceName  string  `json:"service_name"`
-	State        string  `json:"state"`
-	OldImage     string  `json:"old_image"`
-	NewImage     string  `json:"new_image"`
-	TasksUpdated int     `json:"tasks_updated"`
-	TasksTotal   int     `json:"tasks_total"`
-	Message      string  `json:"message"`
+	ServiceID    string     `json:"service_id"`
+	ServiceName  string     `json:"service_name"`
+	State        string     `json:"state"`
+	OldImage     string     `json:"old_image"`
+	NewImage     string     `json:"new_image"`
+	TasksUpdated int        `json:"tasks_updated"`
+	TasksTotal   int        `json:"tasks_total"`
+	Message      string     `json:"message"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 }
 
 // trackedUpdate stores the last known state of an in-progress update.
 type trackedUpdate struct {
-	lastState   string
-	oldImage    string
+	lastState string
+	oldImage  string
 }
 
 // UpdateTracker monitors rolling update progress for Swarm services.
@@ -51,8 +51,8 @@ type UpdateTracker struct {
 	callback EventCallback
 	alertCb  NodeAlertCallback
 
-	mu       sync.Mutex
-	tracked  map[string]*trackedUpdate // keyed by service ID
+	mu      sync.Mutex
+	tracked map[string]*trackedUpdate // keyed by service ID
 }
 
 // NewUpdateTracker creates a new rolling update tracker.

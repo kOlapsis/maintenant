@@ -32,9 +32,9 @@ import (
 // --- in-memory mock store for escalation ---
 
 type escalationTestStore struct {
-	policies     map[int64]*escalation.Policy
-	nextID       int64
-	activeCount  int
+	policies    map[int64]*escalation.Policy
+	nextID      int64
+	activeCount int
 }
 
 func newEscalationTestStore() *escalationTestStore {
@@ -92,7 +92,7 @@ func (m *escalationTestStore) SelectRunsByPolicy(_ context.Context, _ int64, _ i
 func (m *escalationTestStore) SelectRunDeliveries(_ context.Context, _ int64) ([]*escalation.Delivery, error) {
 	return []*escalation.Delivery{}, nil
 }
-func (m *escalationTestStore) BulkDeactivateAllPolicies(_ context.Context) error       { return nil }
+func (m *escalationTestStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
 func (m *escalationTestStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
 func (m *escalationTestStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
 	return nil

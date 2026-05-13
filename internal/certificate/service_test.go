@@ -236,7 +236,7 @@ func TestParseCertificateLabels_ValidLabels(t *testing.T) {
 		byHost[p.Hostname] = p
 	}
 
-	assert.Equal(t, 443, byHost["example.com"].Port)   // default port
+	assert.Equal(t, 443, byHost["example.com"].Port)      // default port
 	assert.Equal(t, 8443, byHost["api.example.com"].Port) // explicit port
 }
 

@@ -25,10 +25,10 @@ const identityFile = "identity.json"
 
 // Identity holds the persistent agent identity stored on disk.
 type Identity struct {
-	AgentID      string    `json:"agent_id"`
-	PublicKey    []byte    `json:"public_key"`
-	PrivateKey   []byte    `json:"private_key"`
-	Registered   bool      `json:"registered"`
+	AgentID      string     `json:"agent_id"`
+	PublicKey    []byte     `json:"public_key"`
+	PrivateKey   []byte     `json:"private_key"`
+	Registered   bool       `json:"registered"`
 	RegisteredAt *time.Time `json:"registered_at,omitempty"`
 }
 

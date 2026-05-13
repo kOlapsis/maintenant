@@ -52,8 +52,8 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 			opts := events.ListOptions{
 				Filters: filters.NewArgs(
 					filters.Arg("type", string(events.ContainerEventType)),
-				filters.Arg("type", string(events.ServiceEventType)),
-				filters.Arg("type", string(events.NodeEventType)),
+					filters.Arg("type", string(events.ServiceEventType)),
+					filters.Arg("type", string(events.NodeEventType)),
 				),
 			}
 			if since != "" {

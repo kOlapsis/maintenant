@@ -86,7 +86,7 @@ func (m *mcpEscalationStore) SelectRunsByPolicy(_ context.Context, _ int64, _ in
 func (m *mcpEscalationStore) SelectRunDeliveries(_ context.Context, _ int64) ([]*escalation.Delivery, error) {
 	return []*escalation.Delivery{}, nil
 }
-func (m *mcpEscalationStore) BulkDeactivateAllPolicies(_ context.Context) error       { return nil }
+func (m *mcpEscalationStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
 func (m *mcpEscalationStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
 func (m *mcpEscalationStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
 	return nil

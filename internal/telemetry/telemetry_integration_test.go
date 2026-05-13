@@ -85,7 +85,7 @@ func TestTelemetryIntegration_DefaultBoot_SendsRecord(t *testing.T) {
 		Containers:       fakeCounter{value: 3},
 		Endpoints:        fakeCounter{value: 4},
 		Heartbeats:       fakeCounter{value: 2},
-		Certificates:    fakeCounter{value: 1},
+		Certificates:     fakeCounter{value: 1},
 		Webhooks:         fakeCounter{value: 1},
 		StatusComponents: fakeCounter{value: 5},
 		Edition:          staticEdition{value: extension.Community},

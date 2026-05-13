@@ -17,14 +17,14 @@ import (
 	"strings"
 	"time"
 
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )
 
 // statsSnapshot queries metrics-server for a workload's CPU and memory.
 // externalID format: "namespace/ControllerKind/name" or "namespace/pod-name".
-func (r *Runtime) statsSnapshot(ctx context.Context, externalID string) (*pbruntime.RawStats, error) {
+func (r *Runtime) statsSnapshot(ctx context.Context, externalID string) (*runtime.RawStats, error) {
 	if r.metrics == nil {
 		return nil, fmt.Errorf("metrics-server not available")
 	}
@@ -43,7 +43,7 @@ func (r *Runtime) statsSnapshot(ctx context.Context, externalID string) (*pbrunt
 	return r.podStats(ctx, ns, name)
 }
 
-func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*pbruntime.RawStats, error) {
+func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*runtime.RawStats, error) {
 	pm, err := r.cachedPodMetrics(ctx, ns, podName)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*pbruntime.
 		}
 	}
 
-	return &pbruntime.RawStats{
+	return &runtime.RawStats{
 		CPUPercent:      cpuPercent,
 		MemUsed:         totalMemBytes,
 		MemLimit:        memLimit,
@@ -81,7 +81,7 @@ func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*pbruntime.
 	}, nil
 }
 
-func (r *Runtime) controllerStats(ctx context.Context, ns, kind, name string) (*pbruntime.RawStats, error) {
+func (r *Runtime) controllerStats(ctx context.Context, ns, kind, name string) (*runtime.RawStats, error) {
 	// Build label selector from controller spec.
 	selector, err := r.controllerSelector(ctx, ns, kind, name)
 	if err != nil {
@@ -115,7 +115,7 @@ func (r *Runtime) controllerStats(ctx context.Context, ns, kind, name string) (*
 	externalID := fmt.Sprintf("%s/%s/%s", ns, kind, name)
 	cpuPercent := r.computeCPUPercent(externalID, totalCPUMilli, time.Now())
 
-	return &pbruntime.RawStats{
+	return &runtime.RawStats{
 		CPUPercent:      cpuPercent,
 		MemUsed:         totalMemBytes,
 		MemLimit:        totalMemLimit,

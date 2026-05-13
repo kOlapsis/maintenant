@@ -137,7 +137,6 @@ func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID int64
 	return "healthy", nil
 }
 
-
 // --- Notification Deliveries ---
 
 func (s *ChannelStoreImpl) InsertDelivery(ctx context.Context, d *alert.NotificationDelivery) (int64, error) {

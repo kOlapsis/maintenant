@@ -20,7 +20,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 // EventCallback is the function signature for SSE event broadcasting.
@@ -28,11 +28,11 @@ type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the resource Service.
 type Deps struct {
-	Store        ResourceStore        // required
-	Runtime      pbruntime.Runtime    // required
-	ContainerSvc *container.Service   // required
-	Logger       *slog.Logger         // required
-	EventCallback EventCallback       // optional — nil-safe
+	Store         ResourceStore      // required
+	Runtime       runtime.Runtime    // required
+	ContainerSvc  *container.Service // required
+	Logger        *slog.Logger       // required
+	EventCallback EventCallback      // optional — nil-safe
 }
 
 // Service orchestrates resource collection, persistence, and alerting.

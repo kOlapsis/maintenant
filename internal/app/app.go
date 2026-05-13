@@ -22,12 +22,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	pbagent "github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/alert/maintenance"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
-	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
@@ -35,10 +35,10 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/license"
-	pbmcp "github.com/kolapsis/maintenant/internal/mcp"
+	"github.com/kolapsis/maintenant/internal/mcp"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/resource"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
@@ -56,7 +56,7 @@ type App struct {
 
 	// Infrastructure
 	db *sqlite.DB
-	rt pbruntime.Runtime
+	rt runtime.Runtime
 
 	// Core services
 	containerSvc       *container.Service
@@ -84,15 +84,15 @@ type App struct {
 	srv           *http.Server
 
 	// Stores (needed for retention cleanup and reconciliation)
-	alertStore     alert.AlertStore
-	updateStore    update.UpdateStore
-	containerStore *sqlite.ContainerStore
-	epStore        *sqlite.EndpointStore
-	hbStore        *sqlite.HeartbeatStore
-	certStore      *sqlite.CertificateStore
-	resStore       *sqlite.ResourceStore
-	agentStore     *sqlite.AgentStore
-	agentSessions  *agentserver.Sessions
+	alertStore      alert.AlertStore
+	updateStore     update.UpdateStore
+	containerStore  *sqlite.ContainerStore
+	epStore         *sqlite.EndpointStore
+	hbStore         *sqlite.HeartbeatStore
+	certStore       *sqlite.CertificateStore
+	resStore        *sqlite.ResourceStore
+	agentStore      *sqlite.AgentStore
+	agentSessions   *agentserver.Sessions
 	statusCompStore *sqlite.StatusComponentStoreImpl
 
 	// Background services
@@ -215,7 +215,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// --- Runtime detection ---
 	ctx := context.Background()
-	rt, err := pbruntime.Detect(ctx, logger)
+	rt, err := runtime.Detect(ctx, logger)
 	if err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("detect container runtime: %w", err)
@@ -535,7 +535,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.rl = ratelimit.New(10, 20)
 
 	// --- MCP Server ---
-	mcpSvc := &pbmcp.Services{
+	mcpSvc := &mcp.Services{
 		Containers:    a.containerSvc,
 		Endpoints:     a.endpointSvc,
 		Heartbeats:    a.heartbeatSvc,
@@ -550,12 +550,12 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Runtime:       rt,
 		LogFetcher:    rt,
 		EscalationSvc: a.escalationSvc,
-		Agents:       a.agentStore,
-		Sessions:     a.agentSessions,
+		Agents:        a.agentStore,
+		Sessions:      a.agentSessions,
 		Version:       cfg.Version,
 		Logger:        logger.With("component", "mcp"),
 	}
-	a.mcpServer = pbmcp.NewServer(mcpSvc)
+	a.mcpServer = mcp.NewServer(mcpSvc)
 
 	// --- Telemetry (SHM SDK, opt-out via MAINTENANT_DISABLE_TELEMETRY) ---
 	a.telemetrySvc = telemetry.New(telemetry.Config{
@@ -736,7 +736,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		return
 	}
 
-	id, err := pbagent.LoadOrCreate(agentDataDir)
+	id, err := agent.LoadOrCreate(agentDataDir)
 	if err != nil {
 		a.logger.Error("embedded agent: failed to load identity", "err", err)
 		return
@@ -744,7 +744,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 
 	var enrollToken string
 	if !id.Registered {
-		t := &pbagent.EnrollmentToken{
+		t := &agent.EnrollmentToken{
 			TokenID:   uuid.New().String(),
 			Token:     uuid.New().String(),
 			CreatedBy: "embedded-agent",
@@ -759,7 +759,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}
 
 	grpcURL := "grpcs://" + a.cfg.MultiHost.GRPCListen
-	agentCfg := pbagent.AgentConfig{
+	agentCfg := agent.AgentConfig{
 		DataDir:            agentDataDir,
 		ServerURL:          grpcURL,
 		EnrollmentToken:    enrollToken,
@@ -775,7 +775,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 			return
 		case <-time.After(2 * time.Second):
 		}
-		if err := pbagent.Run(ctx, agentCfg, a.logger.With("component", "embedded-agent")); err != nil && !errors.Is(err, context.Canceled) {
+		if err := agent.Run(ctx, agentCfg, a.logger.With("component", "embedded-agent")); err != nil && !errors.Is(err, context.Canceled) {
 			a.logger.Error("embedded agent exited", "err", err)
 		}
 	}()

@@ -42,17 +42,17 @@ const (
 )
 
 type Settings struct {
-	Version          int64
-	Title            string
-	Subtitle         string
-	Colors           Palette
-	Announcement     Announcement
-	FooterTextMD     string
-	FooterTextHTML   string
-	Locale           string
-	Timezone         string
-	DateFormat       string
-	UpdatedAt        time.Time
+	Version        int64
+	Title          string
+	Subtitle       string
+	Colors         Palette
+	Announcement   Announcement
+	FooterTextMD   string
+	FooterTextHTML string
+	Locale         string
+	Timezone       string
+	DateFormat     string
+	UpdatedAt      time.Time
 }
 
 type Palette struct {
