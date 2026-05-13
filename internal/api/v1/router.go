@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
@@ -68,23 +69,26 @@ type HandlerDeps struct {
 	// Alert pipeline
 	AlertStore   alert.AlertStore
 	ChannelStore alert.ChannelStore
+	TriggerStore alert.TriggerStore
 	SilenceStore alert.SilenceStore
 	Notifier     *alert.Notifier
+	Escalator    alert.Escalator
 
 	// Status page admin
-	StatusComponents  status.ComponentStore
-	StatusIncidents   status.IncidentStore
-	StatusSubscribers status.SubscriberStore
-	StatusMaintenance status.MaintenanceStore
-	StatusSvc         *status.Service
-	StatusBroker      *SSEBroker
+	StatusComponents   status.ComponentStore
+	StatusIncidents    status.IncidentStore
+	StatusSubscribers  status.SubscriberStore
+	StatusMaintenance  status.MaintenanceStore
+	StatusSvc          *status.Service
+	StatusBroker       *SSEBroker
+	PersonalizationSvc *status.PersonalizationService
 
 	// Webhooks
 	WebhookStore webhook.WebhookSubscriptionStore
 
 	// UI extras
 	UptimeDaily      UptimeDailyFetcher
-	LogStreamer       LogStreamer
+	LogStreamer      LogStreamer
 	ResourceTopSvc   ResourceTopService
 	SparklineFetcher SparklineDataFetcher
 
@@ -98,17 +102,20 @@ type HandlerDeps struct {
 	Scorer      *security.Scorer
 	AckStore    security.AcknowledgmentStore
 
+	// Escalation policies
+	EscalationSvc *escalation.Service
+
 	// License
-	LicenseMgr *license.LicenseManager
+	LicenseMgr *license.Manager
 
 	// Swarm
-	SwarmCluster         func() *swarm.SwarmCluster
-	SwarmDiscovery       func() *swarm.ServiceDiscovery
-	SwarmDetector        func() *swarm.Detector
-	SwarmNodeStore       swarm.NodeStore
-	SwarmUpdateTracker   *swarm.UpdateTracker
-	SwarmCrashLoop       *swarm.CrashLoopDetector
-	SwarmReplicaChecker  *swarm.ReplicaHealthChecker
+	SwarmCluster        func() *swarm.SwarmCluster
+	SwarmDiscovery      func() *swarm.ServiceDiscovery
+	SwarmDetector       func() *swarm.Detector
+	SwarmNodeStore      swarm.NodeStore
+	SwarmUpdateTracker  *swarm.UpdateTracker
+	SwarmCrashLoop      *swarm.CrashLoopDetector
+	SwarmReplicaChecker *swarm.ReplicaHealthChecker
 
 	// Multi-host agents (Enterprise)
 	AgentStore     *sqlite.AgentStore
@@ -123,6 +130,7 @@ type HandlerDeps struct {
 	BuildVersion         string
 	OrganisationName     string
 	AllowPrivateWebhooks bool // dev only: skip HTTPS + SSRF check on webhook URLs
+	StatusURL            string
 }
 
 // Router sets up the /api/v1 route group.
@@ -136,6 +144,7 @@ type Router struct {
 	maxBodySize      int64
 	buildVersion     string
 	organisationName string
+	statusURL        string
 }
 
 // NewRouter creates a new API v1 router from the unified HandlerDeps.
@@ -154,6 +163,7 @@ func NewRouter(d HandlerDeps) *Router {
 		maxBodySize:      maxBody,
 		buildVersion:     d.BuildVersion,
 		organisationName: d.OrganisationName,
+		statusURL:        d.StatusURL,
 	}
 
 	// Webhook management
@@ -236,7 +246,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Alert engine endpoints
 	if d.AlertStore != nil {
-		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks)
+		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks, d.Escalator)
 		// Alert history
 		r.mux.HandleFunc("GET /api/v1/alerts", ah.HandleListAlerts)
 		r.mux.HandleFunc("GET /api/v1/alerts/active", ah.HandleGetActiveAlerts)
@@ -248,9 +258,15 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("PUT /api/v1/channels/{id}", ah.HandleUpdateChannel)
 		r.mux.HandleFunc("DELETE /api/v1/channels/{id}", ah.HandleDeleteChannel)
 		r.mux.HandleFunc("POST /api/v1/channels/{id}/test", ah.HandleTestChannel)
-		// Routing rules
-		r.mux.HandleFunc("POST /api/v1/channels/{id}/rules", requireEnterprise(ah.HandleCreateRoutingRule))
-		r.mux.HandleFunc("DELETE /api/v1/channels/{id}/rules/{rule_id}", requireEnterprise(ah.HandleDeleteRoutingRule))
+		// Alert triggers (CRUD; advanced filters scopes/tags gated to Pro inside the handler)
+		if d.TriggerStore != nil {
+			th := NewAlertTriggerHandler(d.TriggerStore, d.ChannelStore, d.Broker)
+			r.mux.HandleFunc("GET /api/v1/alert-triggers", th.HandleListTriggers)
+			r.mux.HandleFunc("POST /api/v1/alert-triggers", th.HandleCreateTrigger)
+			r.mux.HandleFunc("GET /api/v1/alert-triggers/{id}", th.HandleGetTrigger)
+			r.mux.HandleFunc("PUT /api/v1/alert-triggers/{id}", th.HandleUpdateTrigger)
+			r.mux.HandleFunc("DELETE /api/v1/alert-triggers/{id}", th.HandleDeleteTrigger)
+		}
 		// Silence rules
 		r.mux.HandleFunc("GET /api/v1/silence", ah.HandleListSilenceRules)
 		r.mux.HandleFunc("POST /api/v1/silence", ah.HandleCreateSilenceRule)
@@ -260,11 +276,6 @@ func NewRouter(d HandlerDeps) *Router {
 	// Status page admin endpoints
 	if d.StatusComponents != nil {
 		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker)
-		// Component groups
-		r.mux.HandleFunc("GET /api/v1/status/groups", sh.HandleListGroups)
-		r.mux.HandleFunc("POST /api/v1/status/groups", sh.HandleCreateGroup)
-		r.mux.HandleFunc("PUT /api/v1/status/groups/{id}", sh.HandleUpdateGroup)
-		r.mux.HandleFunc("DELETE /api/v1/status/groups/{id}", sh.HandleDeleteGroup)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
 		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
@@ -294,6 +305,33 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("PUT /api/v1/status/smtp", requireEnterprise(sh.HandleUpdateSmtpConfig))
 		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requireEnterprise(sh.HandleTestSmtp))
 	}
+
+	// Status page personalization (Pro only)
+	if d.PersonalizationSvc != nil {
+		ph := NewPersonalizationHandler(d.PersonalizationSvc)
+		// Settings
+		r.mux.HandleFunc("GET /api/v1/status-page/settings", requireEnterprise(ph.HandleGetSettings))
+		r.mux.HandleFunc("PUT /api/v1/status-page/settings", requireEnterprise(ph.HandlePutSettings))
+		// Assets
+		r.mux.HandleFunc("PUT /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandlePutAsset))
+		r.mux.HandleFunc("GET /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandleGetAsset))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandleDeleteAsset))
+		// Footer links
+		r.mux.HandleFunc("GET /api/v1/status-page/footer-links", requireEnterprise(ph.HandleListFooterLinks))
+		r.mux.HandleFunc("POST /api/v1/status-page/footer-links", requireEnterprise(ph.HandleCreateFooterLink))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/order", requireEnterprise(ph.HandleReorderFooterLinks))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/{id}", requireEnterprise(ph.HandleUpdateFooterLink))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/footer-links/{id}", requireEnterprise(ph.HandleDeleteFooterLink))
+		// FAQ
+		r.mux.HandleFunc("GET /api/v1/status-page/faq", requireEnterprise(ph.HandleListFAQ))
+		r.mux.HandleFunc("POST /api/v1/status-page/faq", requireEnterprise(ph.HandleCreateFAQItem))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/order", requireEnterprise(ph.HandleReorderFAQ))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/{id}", requireEnterprise(ph.HandleUpdateFAQItem))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/faq/{id}", requireEnterprise(ph.HandleDeleteFAQItem))
+	}
+
+	// Escalation policies
+	r.registerEscalationRoutes(d)
 
 	// UI extras
 	r.registerUIRoutes(d)
@@ -376,6 +414,26 @@ func NewRouter(d HandlerDeps) *Router {
 	return r
 }
 
+// registerEscalationRoutes registers escalation policy CRUD endpoints (Enterprise only).
+// The overlap-probe route must be registered before {id} to avoid path ambiguity.
+func (r *Router) registerEscalationRoutes(d HandlerDeps) {
+	if d.EscalationSvc == nil {
+		return
+	}
+	eh := NewEscalationHandler(d.EscalationSvc)
+	r.mux.HandleFunc("POST /api/v1/escalation-policies", requireEnterprise(eh.HandleCreatePolicy))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies", requireEnterprise(eh.HandleListPolicies))
+	// overlap-probe must be registered before /{id} to avoid the wildcard matching the literal segment.
+	r.mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requireEnterprise(eh.HandleOverlapProbe))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleGetPolicy))
+	r.mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleDeletePolicy))
+	r.mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleUpdatePolicy))
+	r.mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requireEnterprise(eh.HandleSetPolicyActive))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requireEnterprise(eh.HandleListPolicyRuns))
+	r.mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requireEnterprise(eh.HandleGetRun))
+	r.mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requireEnterprise(eh.HandleListAlertRuns))
+}
+
 // registerUIRoutes registers optional UI endpoints (daily uptime, log streaming, top resources).
 func (r *Router) registerUIRoutes(d HandlerDeps) {
 	if d.UptimeDaily != nil {
@@ -400,7 +458,7 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 	}
 }
 
-func (r *Router) registerLicenseRoutes(mgr *license.LicenseManager) {
+func (r *Router) registerLicenseRoutes(mgr *license.Manager) {
 	if mgr == nil {
 		return
 	}
@@ -580,6 +638,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": r.organisationName,
+			"status_url":        r.statusURL,
 			"features": map[string]bool{
 				"cve_enrichment":       isEnterprise,
 				"risk_scoring":         isEnterprise,
@@ -592,11 +651,14 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 				"teams":                isEnterprise,
 				"resource_history":     isEnterprise,
 				"alert_escalation":     isEnterprise,
-				"alert_routing":        true,
-				"alert_entity_routing": isEnterprise,
+				"alert_routing":          true,
+				"alert_advanced_filters": isEnterprise,
+				"alert_entity_routing":   isEnterprise,
 				"security_posture":     isEnterprise,
+				"ocsp_stapling":        isEnterprise,
 				"swarm_dashboard":      isEnterprise,
 				"k8s_cluster":          isEnterprise,
+				"personalization":      isEnterprise,
 				"multihost":            isEnterprise,
 			},
 			"quotas": quotas,
@@ -618,10 +680,6 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise 
 				"limit": -1,
 			},
 			"certificates": map[string]interface{}{
-				"used":  0,
-				"limit": -1,
-			},
-			"status_groups": map[string]interface{}{
 				"used":  0,
 				"limit": -1,
 			},
@@ -671,19 +729,6 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise 
 		quotas["certificates"] = map[string]interface{}{
 			"used":  used,
 			"limit": 5,
-		}
-	}
-
-	// Status page groups: max 1
-	if d.StatusComponents != nil {
-		groups, err := d.StatusComponents.ListGroups(ctx)
-		if err != nil {
-			r.logger.Error("failed to count status groups for quota", "error", err)
-			groups = nil
-		}
-		quotas["status_groups"] = map[string]interface{}{
-			"used":  len(groups),
-			"limit": 1,
 		}
 	}
 

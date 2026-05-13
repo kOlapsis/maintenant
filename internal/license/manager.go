@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -32,8 +33,8 @@ const (
 	graceDegradationDisabled = 60 * 24 * time.Hour // 60 days
 )
 
-// LicenseState represents the current license status, safe to read concurrently.
-type LicenseState struct {
+// State represents the current license status, safe to read concurrently.
+type State struct {
 	IsProEnabled bool      `json:"is_pro_enabled"`
 	Plan         string    `json:"plan,omitempty"`
 	Features     []string  `json:"features,omitempty"`
@@ -43,27 +44,41 @@ type LicenseState struct {
 	Message      string    `json:"message,omitempty"`
 }
 
-// LicenseManager handles license verification, caching, and state management.
-type LicenseManager struct {
+// EditionChangeCallback is invoked after the manager observes a transition in
+// IsProEnabled. prev and next are the old and new values. The callback is invoked
+// from a dedicated goroutine with a 30-second timeout; it must not block.
+// RegisterEditionChangeCallback must be called before Start.
+type EditionChangeCallback func(ctx context.Context, prev, next bool)
+
+// Manager handles license verification, caching, and state management.
+type Manager struct {
 	licenseKey string
 	dataDir    string
 	version    string
 	logger     *slog.Logger
 	publicKey  ed25519.PublicKey
 	client     *http.Client
-	state      atomic.Value // *LicenseState
+	state      atomic.Value // *State
 	stop       chan struct{}
+
+	callbacksMu      sync.Mutex
+	callbacks        []EditionChangeCallback
+	lastIsProEnabled bool
+	baselineSet      bool
 }
 
-// NewLicenseManager creates a new license manager. Call Start() to begin
-// periodic verification.
-func NewLicenseManager(licenseKey, dataDir, version string, logger *slog.Logger) (*LicenseManager, error) {
+// NewManager creates a new license manager and synchronously loads the
+// disk cache so IsProEnabled() reflects the persisted Pro/CE state immediately.
+// This matters because edition-gated wiring runs before Start (e.g.
+// extension.CurrentEdition() checks during app construction). Call Start() to
+// begin periodic verification.
+func NewManager(licenseKey, dataDir, version string, logger *slog.Logger) (*Manager, error) {
 	pubKey, err := getPublicKey()
 	if err != nil {
 		return nil, err
 	}
 
-	m := &LicenseManager{
+	m := &Manager{
 		licenseKey: licenseKey,
 		dataDir:    dataDir,
 		version:    version,
@@ -73,60 +88,107 @@ func NewLicenseManager(licenseKey, dataDir, version string, logger *slog.Logger)
 		stop:       make(chan struct{}),
 	}
 
-	// Start in community mode
-	m.state.Store(&LicenseState{Status: "unknown"})
+	// Default community mode; loadCache may upgrade us if a valid cache exists.
+	m.state.Store(&State{Status: "unknown"})
+
+	// No callbacks are registered yet, so this never dispatches edition-change
+	// notifications — it only establishes the baseline.
+	m.loadCache(context.Background())
 
 	return m, nil
 }
 
 // Start performs an initial license check, then starts a background ticker.
-// Non-blocking: errors during the initial check are logged, not fatal.
-func (m *LicenseManager) Start(ctx context.Context) {
-	// Try loading from cache first for fast startup.
-	// Discard the cache if the licence has already passed its expiry date.
-	if cached, err := readCache(m.dataDir, m.publicKey); err == nil && cached != nil {
-		if !cached.ExpiresAt.IsZero() && time.Now().After(cached.ExpiresAt) {
-			m.logger.Warn("cached license has expired, ignoring cache",
-				"expires_at", cached.ExpiresAt,
-			)
-			deleteCache(m.dataDir)
-			m.state.Store(&LicenseState{
-				Status:    "expired",
-				ExpiresAt: cached.ExpiresAt,
-				Message:   "Your license has expired. Pro features have been disabled.",
-			})
-		} else {
-			m.applyPayload(cached)
-			m.logger.Info("license loaded from cache",
-				"status", cached.Status,
-				"plan", cached.Plan,
-				"verified_at", cached.VerifiedAt,
-			)
-		}
-	}
-
+// Non-blocking: errors during the initial check are logged, not fatal. The
+// disk cache has already been loaded by NewManager.
+func (m *Manager) Start(ctx context.Context) {
 	// Run initial check (non-blocking on failure)
 	m.check(ctx)
 
 	go m.ticker(ctx)
 }
 
+// loadCache populates state from the disk cache, if a valid one exists.
+func (m *Manager) loadCache(ctx context.Context) {
+	cached, err := readCache(m.dataDir, m.publicKey)
+	if err != nil || cached == nil {
+		return
+	}
+	if !cached.ExpiresAt.IsZero() && time.Now().After(cached.ExpiresAt) {
+		m.logger.Warn("cached license has expired, ignoring cache",
+			"expires_at", cached.ExpiresAt,
+		)
+		deleteCache(m.dataDir)
+		m.state.Store(&State{
+			Status:    "expired",
+			ExpiresAt: cached.ExpiresAt,
+			Message:   "Your license has expired. Pro features have been disabled.",
+		})
+		return
+	}
+	m.applyPayload(ctx, cached)
+	m.logger.Info("license loaded from cache",
+		"status", cached.Status,
+		"plan", cached.Plan,
+		"verified_at", cached.VerifiedAt,
+	)
+}
+
 // Stop stops the background ticker.
-func (m *LicenseManager) Stop() {
+func (m *Manager) Stop() {
 	close(m.stop)
 }
 
 // State returns the current license state (thread-safe).
-func (m *LicenseManager) State() *LicenseState {
-	return m.state.Load().(*LicenseState)
+func (m *Manager) State() *State {
+	return m.state.Load().(*State)
 }
 
 // IsProEnabled returns true if the current license enables Pro features.
-func (m *LicenseManager) IsProEnabled() bool {
+func (m *Manager) IsProEnabled() bool {
 	return m.State().IsProEnabled
 }
 
-func (m *LicenseManager) ticker(ctx context.Context) {
+// RegisterEditionChangeCallback registers a callback invoked on IsProEnabled
+// transitions. Must be called before Start to avoid missing initial transitions.
+func (m *Manager) RegisterEditionChangeCallback(cb EditionChangeCallback) {
+	m.callbacksMu.Lock()
+	defer m.callbacksMu.Unlock()
+	m.callbacks = append(m.callbacks, cb)
+}
+
+func (m *Manager) dispatchEditionChange(ctx context.Context, prev, next bool) {
+	m.callbacksMu.Lock()
+	cbs := make([]EditionChangeCallback, len(m.callbacks))
+	copy(cbs, m.callbacks)
+	m.callbacksMu.Unlock()
+
+	for _, cb := range cbs {
+		go func(f EditionChangeCallback) {
+			cbCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			defer func() {
+				if r := recover(); r != nil {
+					m.logger.Error("license: callback panic", "recover", r)
+				}
+			}()
+			f(cbCtx, prev, next)
+		}(cb)
+	}
+}
+
+func (m *Manager) setStateAndNotify(ctx context.Context, newState *State) {
+	prev := m.lastIsProEnabled
+	m.state.Store(newState)
+	next := m.State().IsProEnabled
+	if m.baselineSet && prev != next {
+		m.dispatchEditionChange(ctx, prev, next)
+	}
+	m.lastIsProEnabled = next
+	m.baselineSet = true
+}
+
+func (m *Manager) ticker(ctx context.Context) {
 	t := time.NewTicker(checkInterval)
 	defer t.Stop()
 	for {
@@ -141,7 +203,7 @@ func (m *LicenseManager) ticker(ctx context.Context) {
 	}
 }
 
-func (m *LicenseManager) check(ctx context.Context) {
+func (m *Manager) check(ctx context.Context) {
 	serverURL := getLicenseServerURL()
 	resp, statusCode, err := fetchLicense(ctx, m.client, serverURL, m.licenseKey, m.version)
 
@@ -154,7 +216,7 @@ func (m *LicenseManager) check(ctx context.Context) {
 			}
 			m.logger.Error("license key not recognized by server", "error", err)
 			deleteCache(m.dataDir)
-			m.state.Store(&LicenseState{
+			m.state.Store(&State{
 				Status:  "unknown",
 				Message: srvErr.Message,
 			})
@@ -169,7 +231,7 @@ func (m *LicenseManager) check(ctx context.Context) {
 			}
 			m.logger.Warn("license no longer active", "status", srvErr.Status, "error", err)
 			deleteCache(m.dataDir)
-			m.state.Store(&LicenseState{
+			m.state.Store(&State{
 				Status:  srvErr.Status,
 				Message: srvErr.Message,
 			})
@@ -192,14 +254,14 @@ func (m *LicenseManager) check(ctx context.Context) {
 
 	switch payload.Status {
 	case "active":
-		m.applyPayload(payload)
+		m.applyPayload(ctx, payload)
 		if err := writeCache(m.dataDir, resp); err != nil {
 			m.logger.Error("failed to write license cache", "error", err)
 		}
 		m.logger.Info("license verified", "plan", payload.Plan, "expires_at", payload.ExpiresAt)
 
 	case "grace":
-		m.applyPayload(payload)
+		m.applyPayload(ctx, payload)
 		if err := writeCache(m.dataDir, resp); err != nil {
 			m.logger.Error("failed to write license cache", "error", err)
 		}
@@ -207,15 +269,15 @@ func (m *LicenseManager) check(ctx context.Context) {
 			"plan", payload.Plan,
 			"expires_at", payload.ExpiresAt,
 		)
-		// Update message for frontend banner
-		state := m.State()
-		state.Message = "Your license is in a grace period. Please renew to avoid service interruption."
-		m.state.Store(state)
+		// Update message for frontend banner without mutating the shared pointer.
+		stateCopy := *m.State()
+		stateCopy.Message = "Your license is in a grace period. Please renew to avoid service interruption."
+		m.state.Store(&stateCopy)
 
 	case "expired":
 		m.logger.Warn("license expired", "expires_at", payload.ExpiresAt)
 		deleteCache(m.dataDir)
-		m.state.Store(&LicenseState{
+		m.setStateAndNotify(ctx, &State{
 			Status:    "expired",
 			ExpiresAt: payload.ExpiresAt,
 			Message:   "Your license has expired. Pro features have been disabled.",
@@ -224,14 +286,14 @@ func (m *LicenseManager) check(ctx context.Context) {
 	case "revoked":
 		m.logger.Error("license revoked")
 		deleteCache(m.dataDir)
-		m.state.Store(&LicenseState{
+		m.setStateAndNotify(ctx, &State{
 			Status:  "revoked",
 			Message: "Your license has been revoked.",
 		})
 
 	default:
 		m.logger.Warn("unknown license status from server", "status", payload.Status)
-		m.state.Store(&LicenseState{
+		m.state.Store(&State{
 			Status:  payload.Status,
 			Message: "Unexpected license status: " + payload.Status,
 		})
@@ -239,8 +301,8 @@ func (m *LicenseManager) check(ctx context.Context) {
 }
 
 // applyPayload sets the license state from a verified payload.
-func (m *LicenseManager) applyPayload(payload *LicensePayload) {
-	m.state.Store(&LicenseState{
+func (m *Manager) applyPayload(ctx context.Context, payload *LicensePayload) {
+	m.setStateAndNotify(ctx, &State{
 		IsProEnabled: true,
 		Plan:         payload.Plan,
 		Features:     payload.Features,
@@ -251,13 +313,13 @@ func (m *LicenseManager) applyPayload(payload *LicensePayload) {
 }
 
 // handleNetworkError applies graceful degradation based on cache age.
-func (m *LicenseManager) handleNetworkError(err error) {
+func (m *Manager) handleNetworkError(err error) {
 	current := m.State()
 
 	// If we have no valid state, just log and remain in community mode
 	if current.VerifiedAt.IsZero() {
 		m.logger.Error("license server unreachable and no cached license", "error", err)
-		m.state.Store(&LicenseState{
+		m.state.Store(&State{
 			Status:  "unreachable",
 			Message: "Cannot reach license server. Please check your network connection.",
 		})
@@ -271,7 +333,7 @@ func (m *LicenseManager) handleNetworkError(err error) {
 			"expires_at", current.ExpiresAt,
 		)
 		deleteCache(m.dataDir)
-		m.state.Store(&LicenseState{
+		m.state.Store(&State{
 			Status:    "expired",
 			ExpiresAt: current.ExpiresAt,
 			Message:   "Your license has expired. Pro features have been disabled.",
@@ -288,7 +350,7 @@ func (m *LicenseManager) handleNetworkError(err error) {
 			"verified_at", current.VerifiedAt,
 		)
 		deleteCache(m.dataDir)
-		m.state.Store(&LicenseState{
+		m.state.Store(&State{
 			Status:     "unreachable",
 			VerifiedAt: current.VerifiedAt,
 			Message:    "License server unreachable for over 60 days. Pro features have been disabled.",

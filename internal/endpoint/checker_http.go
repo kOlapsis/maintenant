@@ -24,7 +24,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	}
 
 	cfg := ep.Config
-	timeout := cfg.Timeout
+	timeout := time.Duration(cfg.Timeout)
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
@@ -35,6 +35,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: !cfg.TLSVerify,
+			MinVersion:         tls.VersionTLS12,
 		},
 		DialContext: (&net.Dialer{
 			Timeout: timeout,
@@ -90,6 +91,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	// Extract TLS peer certificates for certificate auto-detection
 	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
 		result.TLSPeerCertificates = resp.TLS.PeerCertificates
+		result.TLSOCSPResponse = resp.TLS.OCSPResponse
 	}
 
 	statusCode := resp.StatusCode

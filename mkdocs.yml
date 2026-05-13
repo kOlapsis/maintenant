@@ -78,6 +78,7 @@ nav:
       - Update Intelligence: features/updates.md
       - Network Security Insights: features/security.md
       - Alert Engine: features/alerts.md
+      - Alert Escalation: features/alert-escalation.md
       - Public Status Page: features/status-page.md
       - MCP Server: features/mcp.md
   - Guides:
@@ -87,3 +88,4 @@ nav:
       - API Reference: api/reference.md
   - Security: security.md
   - Architecture: architecture.md
+  - Troubleshooting: troubleshooting.md

@@ -42,6 +42,9 @@ type Config struct {
 	// Branding
 	OrgName string
 
+	// Status page
+	StatusURL string // public URL of the status page (e.g. https://status.example.com)
+
 	// Kubernetes
 	K8sNamespaces  string
 	K8sExcludeNS   string
@@ -96,9 +99,10 @@ type SMTPConfig struct {
 
 // MCPConfig holds Model Context Protocol server configuration.
 type MCPConfig struct {
-	Enabled      bool
-	ClientID     string
-	ClientSecret string
+	Enabled             bool
+	ClientID            string
+	ClientSecret        string
+	AllowedRedirectURIs string
 }
 
 // ConfigFromEnv reads configuration from environment variables.
@@ -120,15 +124,17 @@ func ConfigFromEnv() Config {
 		},
 
 		MCP: MCPConfig{
-			Enabled:      os.Getenv("MAINTENANT_MCP") == "true",
-			ClientID:     os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
-			ClientSecret: os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
+			Enabled:             os.Getenv("MAINTENANT_MCP") == "true",
+			ClientID:            os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
+			ClientSecret:        os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
+			AllowedRedirectURIs: os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
 		},
 
 		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
 		MaxBodySize: 1048576,
 
-		OrgName: envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
+		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
+		StatusURL: os.Getenv("MAINTENANT_STATUS_URL"),
 
 		K8sNamespaces: os.Getenv("MAINTENANT_K8S_NAMESPACES"),
 		K8sExcludeNS:  os.Getenv("MAINTENANT_K8S_EXCLUDE_NAMESPACES"),

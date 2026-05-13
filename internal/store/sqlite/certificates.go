@@ -201,18 +201,32 @@ func (s *CertificateStore) InsertCheckResult(ctx context.Context, result *certif
 		hostnameMatch = boolToInt(*result.HostnameMatch)
 	}
 
+	var ocspStapled, ocspProducedAt, ocspNextUpdate interface{}
+	if result.OCSPStapled {
+		ocspStapled = 1
+	}
+	if result.OCSPProducedAt != nil {
+		ocspProducedAt = result.OCSPProducedAt.Unix()
+	}
+	if result.OCSPNextUpdate != nil {
+		ocspNextUpdate = result.OCSPNextUpdate.Unix()
+	}
+
 	sansJSON := result.SANsJSON()
 
 	res, err := s.writer.Exec(ctx,
 		`INSERT INTO cert_check_results (monitor_id, subject_cn, issuer_cn, issuer_org,
 			sans_json, serial_number, signature_algorithm, not_before, not_after,
-			chain_valid, chain_error, hostname_match, error_message, checked_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			chain_valid, chain_error, hostname_match, error_message, checked_at,
+			ocsp_stapled, ocsp_status, ocsp_produced_at, ocsp_next_update, ocsp_error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		result.MonitorID, NullableString(result.SubjectCN), NullableString(result.IssuerCN),
 		NullableString(result.IssuerOrg), sansJSON, NullableString(result.SerialNumber),
 		NullableString(result.SignatureAlgorithm), notBefore, notAfter,
 		chainValid, NullableString(result.ChainError), hostnameMatch,
 		NullableString(result.ErrorMessage), result.CheckedAt.Unix(),
+		ocspStapled, NullableString(result.OCSPStatus), ocspProducedAt, ocspNextUpdate,
+		NullableString(result.OCSPError),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert cert check result: %w", err)
@@ -225,7 +239,8 @@ func (s *CertificateStore) GetLatestCheckResult(ctx context.Context, monitorID i
 	return s.scanCheckResult(s.db.QueryRowContext(ctx,
 		`SELECT id, monitor_id, subject_cn, issuer_cn, issuer_org, sans_json,
 			serial_number, signature_algorithm, not_before, not_after,
-			chain_valid, chain_error, hostname_match, error_message, checked_at
+			chain_valid, chain_error, hostname_match, error_message, checked_at,
+			ocsp_stapled, ocsp_status, ocsp_produced_at, ocsp_next_update, ocsp_error
 		FROM cert_check_results WHERE monitor_id=? ORDER BY checked_at DESC LIMIT 1`,
 		monitorID))
 }
@@ -247,7 +262,8 @@ func (s *CertificateStore) ListCheckResults(ctx context.Context, monitorID int64
 
 	query := `SELECT id, monitor_id, subject_cn, issuer_cn, issuer_org, sans_json,
 		serial_number, signature_algorithm, not_before, not_after,
-		chain_valid, chain_error, hostname_match, error_message, checked_at
+		chain_valid, chain_error, hostname_match, error_message, checked_at,
+		ocsp_stapled, ocsp_status, ocsp_produced_at, ocsp_next_update, ocsp_error
 	FROM cert_check_results WHERE monitor_id=? ORDER BY checked_at DESC`
 	query += fmt.Sprintf(` LIMIT %d`, limit)
 	if opts.Offset > 0 {
@@ -464,11 +480,15 @@ func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertChe
 	var chainValid, hostnameMatch sql.NullInt64
 	var chainError, errorMessage sql.NullString
 	var checkedAt int64
+	var ocspStapled sql.NullInt64
+	var ocspStatus, ocspError sql.NullString
+	var ocspProducedAt, ocspNextUpdate sql.NullInt64
 
 	err := row.Scan(
 		&r.ID, &r.MonitorID, &subjectCN, &issuerCN, &issuerOrg, &sansJSON,
 		&serialNumber, &sigAlgo, &notBefore, &notAfter,
 		&chainValid, &chainError, &hostnameMatch, &errorMessage, &checkedAt,
+		&ocspStapled, &ocspStatus, &ocspProducedAt, &ocspNextUpdate, &ocspError,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -518,6 +538,23 @@ func (s *CertificateStore) scanCheckResult(row rowScanner) (*certificate.CertChe
 	}
 	if errorMessage.Valid {
 		r.ErrorMessage = errorMessage.String
+	}
+	if ocspStapled.Valid && ocspStapled.Int64 != 0 {
+		r.OCSPStapled = true
+	}
+	if ocspStatus.Valid {
+		r.OCSPStatus = ocspStatus.String
+	}
+	if ocspProducedAt.Valid {
+		t := time.Unix(ocspProducedAt.Int64, 0)
+		r.OCSPProducedAt = &t
+	}
+	if ocspNextUpdate.Valid {
+		t := time.Unix(ocspNextUpdate.Int64, 0)
+		r.OCSPNextUpdate = &t
+	}
+	if ocspError.Valid {
+		r.OCSPError = ocspError.String
 	}
 
 	return &r, nil

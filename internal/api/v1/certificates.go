@@ -101,7 +101,7 @@ func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		if chain == nil {
 			chain = []*certificate.CertChainEntry{}
 		}
-		response["latest_check"] = map[string]interface{}{
+		latestCheckMap := map[string]interface{}{
 			"id":                  latest.ID,
 			"subject_cn":          latest.SubjectCN,
 			"issuer_cn":           latest.IssuerCN,
@@ -119,6 +119,20 @@ func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 			"checked_at":          latest.CheckedAt,
 			"chain":               chain,
 		}
+		if latest.OCSPStapled {
+			latestCheckMap["ocsp_stapled"] = true
+			latestCheckMap["ocsp_status"] = latest.OCSPStatus
+			if latest.OCSPProducedAt != nil {
+				latestCheckMap["ocsp_produced_at"] = latest.OCSPProducedAt
+			}
+			if latest.OCSPNextUpdate != nil {
+				latestCheckMap["ocsp_next_update"] = latest.OCSPNextUpdate
+			}
+			if latest.OCSPError != "" {
+				latestCheckMap["ocsp_error"] = latest.OCSPError
+			}
+		}
+		response["latest_check"] = latestCheckMap
 	}
 
 	WriteJSON(w, http.StatusOK, response)
@@ -254,13 +268,35 @@ func (h *CertificateHandler) HandleListChecks(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if checks == nil {
-		checks = []*certificate.CertCheckResult{}
+	enriched := make([]map[string]interface{}, 0, len(checks))
+	for _, c := range checks {
+		m := map[string]interface{}{
+			"id":             c.ID,
+			"checked_at":     c.CheckedAt,
+			"days_remaining": c.DaysRemaining(),
+		}
+		if c.ErrorMessage != "" {
+			m["error_message"] = c.ErrorMessage
+		}
+		if c.NotAfter != nil {
+			m["not_after"] = c.NotAfter
+		}
+		if c.ChainValid != nil {
+			m["chain_valid"] = *c.ChainValid
+		}
+		if c.HostnameMatch != nil {
+			m["hostname_match"] = *c.HostnameMatch
+		}
+		if c.OCSPStapled {
+			m["ocsp_stapled"] = true
+			m["ocsp_status"] = c.OCSPStatus
+		}
+		enriched = append(enriched, m)
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"monitor_id": id,
-		"checks":     checks,
+		"checks":     enriched,
 		"total":      total,
 		"has_more":   opts.Offset+len(checks) < total,
 	})

@@ -61,13 +61,6 @@ func (s *ChannelStoreImpl) GetChannel(ctx context.Context, id int64) (*alert.Not
 		return nil, err
 	}
 
-	// Load routing rules
-	rules, err := s.ListRoutingRulesByChannel(ctx, ch.ID)
-	if err != nil {
-		return nil, err
-	}
-	ch.RoutingRules = rules
-
 	return ch, nil
 }
 
@@ -92,15 +85,6 @@ func (s *ChannelStoreImpl) ListChannels(ctx context.Context) ([]*alert.Notificat
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
-	}
-
-	// Load routing rules for each channel
-	for _, ch := range channels {
-		rules, err := s.ListRoutingRulesByChannel(ctx, ch.ID)
-		if err != nil {
-			return nil, err
-		}
-		ch.RoutingRules = rules
 	}
 
 	// Compute health for each channel
@@ -153,59 +137,6 @@ func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID int64
 	return "healthy", nil
 }
 
-// --- Routing Rules ---
-
-func (s *ChannelStoreImpl) InsertRoutingRule(ctx context.Context, rule *alert.RoutingRule) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO routing_rules (channel_id, source_filter, severity_filter)
-		VALUES (?, ?, ?)`,
-		rule.ChannelID, NullableString(rule.SourceFilter), NullableString(rule.SeverityFilter),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("insert routing rule: %w", err)
-	}
-	rule.ID = res.LastInsertID
-	return res.LastInsertID, nil
-}
-
-func (s *ChannelStoreImpl) DeleteRoutingRule(ctx context.Context, id int64) error {
-	_, err := s.writer.Exec(ctx, `DELETE FROM routing_rules WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("delete routing rule: %w", err)
-	}
-	return nil
-}
-
-func (s *ChannelStoreImpl) ListRoutingRulesByChannel(ctx context.Context, channelID int64) ([]alert.RoutingRule, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, channel_id, source_filter, severity_filter, created_at
-		FROM routing_rules WHERE channel_id = ?`, channelID)
-	if err != nil {
-		return nil, fmt.Errorf("list routing rules: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-
-	var rules []alert.RoutingRule
-	for rows.Next() {
-		var r alert.RoutingRule
-		var sourceFilter, severityFilter sql.NullString
-		var createdAt string
-		if err := rows.Scan(&r.ID, &r.ChannelID, &sourceFilter, &severityFilter, &createdAt); err != nil {
-			return nil, err
-		}
-		if sourceFilter.Valid {
-			r.SourceFilter = sourceFilter.String
-		}
-		if severityFilter.Valid {
-			r.SeverityFilter = severityFilter.String
-		}
-		r.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		rules = append(rules, r)
-	}
-	return rules, rows.Err()
-}
 
 // --- Notification Deliveries ---
 

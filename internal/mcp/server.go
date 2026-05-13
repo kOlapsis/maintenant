@@ -17,6 +17,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
@@ -45,21 +46,24 @@ type SessionChecker interface {
 
 // Services holds all dependencies required by MCP tool handlers.
 type Services struct {
-	Containers   *container.Service
-	Endpoints    *endpoint.Service
-	Heartbeats   *heartbeat.Service
-	Certificates *certificate.Service
-	Resources    *resource.Service
-	Alerts       alert.AlertStore
-	Updates      *update.Service
-	Incidents    extension.IncidentManager
-	Maintenance  extension.MaintenanceScheduler
-	Runtime      runtime.Runtime
-	LogFetcher   LogFetcher
-	Agents       AgentLister    // nil when agent server is disabled (CE mode)
-	Sessions     SessionChecker // nil when agent server is disabled (CE mode)
-	Version      string
-	Logger       *slog.Logger
+	Containers    *container.Service
+	Endpoints     *endpoint.Service
+	Heartbeats    *heartbeat.Service
+	Certificates  *certificate.Service
+	Resources     *resource.Service
+	Alerts        alert.AlertStore
+	Channels      alert.ChannelStore
+	Triggers      alert.TriggerStore
+	Updates       *update.Service
+	Incidents     extension.IncidentManager
+	Maintenance   extension.MaintenanceScheduler
+	Runtime       runtime.Runtime
+	LogFetcher    LogFetcher
+	EscalationSvc *escalation.Service
+	Agents        AgentLister
+	Sessions      SessionChecker
+	Version       string
+	Logger        *slog.Logger
 }
 
 // NewServer creates and configures an MCP server with all maintenant tools registered.
@@ -74,6 +78,8 @@ func NewServer(svc *Services) *gomcp.Server {
 
 	registerReadTools(server, svc)
 	registerWriteTools(server, svc)
+	registerEscalationTools(server, svc)
+	registerTriggerTools(server, svc)
 
 	return server
 }

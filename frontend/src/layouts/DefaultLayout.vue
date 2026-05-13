@@ -13,13 +13,13 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import {
-  useDetailSlideOver,
   detailSlideOverKey,
   parseSelectedParam,
+  useDetailSlideOver,
 } from '@/composables/useDetailSlideOver'
 import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
-import { useTimedDismissal } from '@/composables/useTimedDismissal'
+import { useProBanner } from '@/composables/useProBanner'
 import {
   Activity,
   ArrowRight,
@@ -36,9 +36,11 @@ import {
   Menu,
   MonitorDot,
   Network,
+  Send,
   Server,
   Shield,
   ShieldCheck,
+  Workflow,
   X,
 } from 'lucide-vue-next'
 
@@ -94,22 +96,24 @@ const licenseSeverity = computed<'warning' | 'critical'>(() => {
 
 const licenseLabel = computed(() => {
   switch (licenseStatusValue.value) {
-    case 'grace': return 'GRACE PERIOD'
-    case 'unreachable': return 'LICENSE UNREACHABLE'
-    case 'expired': return 'LICENSE EXPIRED'
-    case 'canceled': return 'LICENSE CANCELED'
-    case 'revoked': return 'LICENSE REVOKED'
-    case 'unknown': return 'LICENSE INVALID'
-    default: return 'LICENSE'
+    case 'grace':
+      return 'GRACE PERIOD'
+    case 'unreachable':
+      return 'LICENSE UNREACHABLE'
+    case 'expired':
+      return 'LICENSE EXPIRED'
+    case 'canceled':
+      return 'LICENSE CANCELED'
+    case 'revoked':
+      return 'LICENSE REVOKED'
+    case 'unknown':
+      return 'LICENSE INVALID'
+    default:
+      return 'LICENSE'
   }
 })
 
-const { visible: supportBannerVisible, dismiss: dismissSupportBanner } = useTimedDismissal({
-  storageKey: 'pb:banner:support-prompt',
-  cooldownMs: 30 * 24 * 60 * 60 * 1000,
-})
-
-const showSupportBanner = computed(() => !isEnterprise.value && supportBannerVisible.value)
+const proBanner = useProBanner()
 
 const mobileMenuOpen = ref(false)
 
@@ -118,25 +122,28 @@ function closeMobileMenu() {
 }
 
 interface NavItem {
-  to: string
-  label: string
-  icon: typeof LayoutGrid
+  type: string
+  to?: string
+  label?: string
+  icon?: typeof LayoutGrid
   feature?: string
   runtime?: string[]
 }
 
 const allNav: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { type: 'item', to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { type: 'separator' },
   // Docker-only
-  { to: '/containers', label: 'Containers', icon: Box, runtime: ['docker'] },
+  { type: 'item', to: '/containers', label: 'Containers', icon: Box, runtime: ['docker'] },
   // Swarm Community
-  { to: '/services', label: 'Services', icon: Layers, runtime: ['swarm'] },
-  { to: '/tasks', label: 'Tasks', icon: ListChecks, runtime: ['swarm'] },
+  { type: 'item', to: '/services', label: 'Services', icon: Layers, runtime: ['swarm'] },
+  { type: 'item', to: '/tasks', label: 'Tasks', icon: ListChecks, runtime: ['swarm'] },
   // K8s Community
-  { to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
-  { to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
+  { type: 'item', to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
+  { type: 'item', to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
   // Enterprise: Cluster + Nodes (Swarm & K8s)
   {
+    type: 'item',
     to: '/cluster',
     label: 'Cluster Overview',
     icon: Network,
@@ -144,6 +151,7 @@ const allNav: NavItem[] = [
     feature: 'swarm_dashboard',
   },
   {
+    type: 'item',
     to: '/nodes',
     label: 'Nodes',
     icon: Server,
@@ -151,15 +159,20 @@ const allNav: NavItem[] = [
     feature: 'swarm_dashboard',
   },
   // Always visible
-  { to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
-  { to: '/certificates', label: 'SSL Certificates', icon: Shield },
-  { to: '/heartbeats', label: 'Heartbeats', icon: Heart },
-  { to: '/updates', label: 'Updates', icon: ArrowUpCircle },
-  { to: '/security', label: 'Security Posture', icon: ShieldCheck, feature: 'security_posture' },
-  { to: '/agents', label: 'Agents', icon: MonitorDot, feature: 'multihost' },
-  { to: '/alerts', label: 'Alerts', icon: Bell },
-  { to: '/webhooks', label: 'Webhooks', icon: Link },
-  { to: '/status-admin', label: 'Status Pages', icon: Activity },
+  { type: 'item', to: '/endpoints', label: 'HTTP Endpoints', icon: Globe },
+  { type: 'item', to: '/certificates', label: 'SSL Certificates', icon: Shield },
+  { type: 'item', to: '/heartbeats', label: 'Heartbeats', icon: Heart },
+  { type: 'separator' },
+  { type: 'item', to: '/updates', label: 'Updates', icon: ArrowUpCircle },
+  { type: 'item', to: '/security', label: 'Security Posture', icon: ShieldCheck },
+  { type: 'separator' },
+  { type: 'item', to: '/channels', label: 'Channels', icon: Send },
+  { type: 'item', to: '/alerts', label: 'Alerts', icon: Bell },
+  { type: 'item', to: '/escalation', label: 'Escalation', icon: Workflow },
+  { type: 'item', to: '/webhooks', label: 'Webhooks', icon: Link },
+  { type: 'separator' },
+  { type: 'item', to: '/status-admin', label: 'Status Pages', icon: Activity },
+  { type: 'item', to: '/agents', label: 'Agents', icon: MonitorDot, feature: 'multihost' },
 ]
 
 const mainNav = computed(() =>
@@ -186,37 +199,42 @@ const mainNav = computed(() =>
 
         <!-- Main nav -->
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
-          <RouterLink
-            v-for="item in mainNav"
-            :key="item.to"
-            :to="item.to"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border group"
-            :class="[
-              route.path.startsWith(item.to)
-                ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
-            ]"
-          >
-            <div class="flex items-center gap-3">
-              <component
-                :is="item.icon"
-                :size="16"
-                class="shrink-0 transition-colors"
-                :class="
-                  route.path.startsWith(item.to)
-                    ? 'text-pb-nav-active'
-                    : 'text-slate-500 group-hover:text-pb-secondary'
-                "
-              />
-              <span class="text-sm font-medium">{{ item.label }}</span>
-            </div>
-          </RouterLink>
+          <template v-for="item in mainNav" :key="item.to">
+            <hr v-if="item.type === 'separator'" class="my-2 border-slate-700" />
+            <RouterLink
+              v-else-if="item.type === 'item'"
+              :to="item.to!"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border group"
+              :class="[
+                route.path.startsWith(item.to!)
+                  ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
+                  : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
+              ]"
+            >
+              <div class="flex items-center gap-3">
+                <component
+                  :is="item.icon"
+                  :size="16"
+                  class="shrink-0 transition-colors"
+                  :class="
+                    route.path.startsWith(item.to!)
+                      ? 'text-pb-nav-active'
+                      : 'text-slate-500 group-hover:text-pb-secondary'
+                  "
+                />
+                <span class="text-sm font-medium">{{ item.label }}</span>
+              </div>
+            </RouterLink>
+          </template>
         </nav>
 
         <!-- Bottom section: Edition -->
         <div class="p-4 border-t space-y-3 shrink-0" style="border-color: var(--pb-border-default)">
           <router-link :to="{ name: 'pro-edition' }">
-            <div class="rounded-xl p-3 border" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)">
+            <div
+              class="rounded-xl p-3 border"
+              style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)"
+            >
               <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isEnterprise }">
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
@@ -226,13 +244,17 @@ const mainNav = computed(() =>
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   :class="
-                    isEnterprise
-                      ? 'bg-emerald-500/20 border border-emerald-500/30'
-                      : 'border'
+                    isEnterprise ? 'bg-emerald-500/20 border border-emerald-500/30' : 'border'
                   "
-                  :style="isEnterprise
-                    ? { color: 'var(--pb-accent)' }
-                    : { background: 'var(--pb-bg-surface)', color: 'var(--pb-accent)', borderColor: 'color-mix(in srgb, var(--pb-accent) 40%, transparent)' }"
+                  :style="
+                    isEnterprise
+                      ? { color: 'var(--pb-accent)' }
+                      : {
+                          background: 'var(--pb-bg-surface)',
+                          color: 'var(--pb-accent)',
+                          borderColor: 'color-mix(in srgb, var(--pb-accent) 40%, transparent)',
+                        }
+                  "
                   >{{ version }}</span
                 >
               </div>
@@ -288,23 +310,25 @@ const mainNav = computed(() =>
           <h1 class="text-xl font-bold tracking-tight text-pb-primary">maintenant</h1>
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
-          <RouterLink
-            v-for="item in mainNav"
-            :key="item.to"
-            :to="item.to"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border"
-            :class="[
-              route.path.startsWith(item.to)
-                ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
-            ]"
-            @click="closeMobileMenu"
-          >
-            <div class="flex items-center gap-3">
-              <component :is="item.icon" :size="16" class="shrink-0" />
-              <span class="text-sm font-medium">{{ item.label }}</span>
-            </div>
-          </RouterLink>
+          <template v-for="item in mainNav" :key="item.to">
+            <hr v-if="item.type === 'separator'" class="my-2 border-slate-700" />
+            <RouterLink
+              v-else-if="item.type === 'item'"
+              :to="item.to!"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border"
+              :class="[
+                route.path.startsWith(item.to!)
+                  ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
+                  : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
+              ]"
+              @click="closeMobileMenu"
+            >
+              <div class="flex items-center gap-3">
+                <component :is="item.icon" :size="16" class="shrink-0" />
+                <span class="text-sm font-medium">{{ item.label }}</span>
+              </div>
+            </RouterLink>
+          </template>
         </nav>
       </div>
     </Transition>
@@ -330,24 +354,45 @@ const mainNav = computed(() =>
           </RouterLink>
         </template>
       </AlertBanner>
-      <!-- Support the project banner (CE only) -->
+      <!-- Pro tier banner (CE only, segmented by container count) -->
       <AlertBanner
-        v-if="showSupportBanner"
+        v-if="proBanner.visible.value"
         severity="info"
-        label="SUPPORT"
+        label="PRO"
         dismissible
         class="shrink-0"
-        @dismiss="dismissSupportBanner"
+        @dismiss="proBanner.dismiss()"
       >
-        Support Maintenant's development by purchasing a Pro license — it's what keeps this project sustainable.
+        <template v-if="proBanner.tier.value === 1">
+          Running Maintenant in production? Pro adds Slack/Teams/Email alerts, CVE scanning and
+          incident management — 29€/mo.
+        </template>
+        <template v-else-if="proBanner.tier.value === 2">
+          You're monitoring {{ proBanner.count.value }} containers across production. Pro adds the
+          alerting layer your scale needs — Slack, escalation, incidents, custom public status page,
+          29€/mo.
+        </template>
+        <template v-else-if="proBanner.tier.value === 3">
+          Running 50+ containers in production. Pro adds incident management, alert escalation and
+          Slack routing. Want to discuss your setup with the founder?
+        </template>
         <template #action>
-          <RouterLink
-            to="/pro-edition"
-            class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
-          >
-            Get Pro
-            <ArrowRight :size="12" />
-          </RouterLink>
+          <template v-if="proBanner.tier.value === 1 || proBanner.tier.value === 2">
+            <RouterLink
+              to="/pro-edition"
+              class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            >
+              Get Pro →
+            </RouterLink>
+          </template>
+          <template v-else-if="proBanner.tier.value === 3">
+            <a
+              href="mailto:benjamin@kolapsis.com?subject=Maintenant%20-%2050%2B%20containers%20setup"
+              class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
+            >
+              Reply →
+            </a>
+          </template>
         </template>
       </AlertBanner>
       <AppHeader />

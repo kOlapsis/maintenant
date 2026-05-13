@@ -19,6 +19,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { timeAgo } from '@/utils/time'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
+import OCSPStatusBadge from './OCSPStatusBadge.vue'
 
 const props = defineProps<{
   certificate: CertMonitor
@@ -107,6 +108,18 @@ async function handleDelete() {
         <AgentBadge v-if="certificate.agent_id" :agent-id="certificate.agent_id" class="mt-1" />
       </div>
       <div class="ml-2 flex items-center gap-1.5">
+        <OCSPStatusBadge
+          v-if="
+            certificate.latest_check?.ocsp_status === 'revoked' ||
+            certificate.latest_check?.ocsp_status === 'error'
+          "
+          :status="certificate.latest_check.ocsp_status"
+          :title="
+            certificate.latest_check.ocsp_status === 'revoked'
+              ? 'Certificate revoked — see details'
+              : 'OCSP staple could not be validated'
+          "
+        />
         <span
           class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium"
           :style="{

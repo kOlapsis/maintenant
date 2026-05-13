@@ -34,10 +34,11 @@ type AlertHandler struct {
 	notifier             *alert.Notifier
 	broker               *SSEBroker
 	allowPrivateWebhooks bool
+	escalator            alert.Escalator
 }
 
 // NewAlertHandler creates a new alert handler.
-func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool) *AlertHandler {
+func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool, escalator alert.Escalator) *AlertHandler {
 	return &AlertHandler{
 		alertStore:           alertStore,
 		channelStore:         channelStore,
@@ -45,6 +46,7 @@ func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStor
 		notifier:             notifier,
 		broker:               broker,
 		allowPrivateWebhooks: allowPrivateWebhooks,
+		escalator:            escalator,
 	}
 }
 
@@ -187,6 +189,11 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 	a.AcknowledgedBy = input.AcknowledgedBy
 
 	h.broker.Broadcast(SSEEvent{Type: event.AlertAcknowledged, Data: a})
+
+	if err := h.escalator.OnAlertAcknowledged(r.Context(), id, alert.Acknowledgment{By: input.AcknowledgedBy, At: now}); err != nil {
+		slog.ErrorContext(r.Context(), "alert engine: OnAlertAcknowledged hook error", "error", err, "alert_id", id)
+	}
+
 	WriteJSON(w, http.StatusOK, a)
 }
 
@@ -422,58 +429,6 @@ func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request)
 		"status":        "delivered",
 		"response_code": statusCode,
 	})
-}
-
-// --- Routing Rule handlers ---
-
-// HandleCreateRoutingRule handles POST /api/v1/channels/{id}/rules.
-func (h *AlertHandler) HandleCreateRoutingRule(w http.ResponseWriter, r *http.Request) {
-	channelID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
-		return
-	}
-
-	var input struct {
-		SourceFilter   string `json:"source_filter"`
-		SeverityFilter string `json:"severity_filter"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
-		return
-	}
-
-	rule := &alert.RoutingRule{
-		ChannelID:      channelID,
-		SourceFilter:   input.SourceFilter,
-		SeverityFilter: input.SeverityFilter,
-	}
-
-	ruleID, err := h.channelStore.InsertRoutingRule(r.Context(), rule)
-	if err != nil {
-		slog.Error("failed to create routing rule", "error", err, "channel_id", channelID)
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create routing rule")
-		return
-	}
-	rule.ID = ruleID
-
-	WriteJSON(w, http.StatusCreated, rule)
-}
-
-// HandleDeleteRoutingRule handles DELETE /api/v1/channels/{id}/rules/{rule_id}.
-func (h *AlertHandler) HandleDeleteRoutingRule(w http.ResponseWriter, r *http.Request) {
-	ruleID, err := strconv.ParseInt(r.PathValue("rule_id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid rule ID")
-		return
-	}
-
-	if err := h.channelStore.DeleteRoutingRule(r.Context(), ruleID); err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete routing rule")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Silence Rule handlers ---

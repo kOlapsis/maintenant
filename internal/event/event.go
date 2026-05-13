@@ -74,6 +74,13 @@ const (
 	ChannelDeleted = "channel.deleted"
 )
 
+// Alert trigger management events.
+const (
+	TriggerCreated = "trigger.created"
+	TriggerUpdated = "trigger.updated"
+	TriggerDeleted = "trigger.deleted"
+)
+
 // Silence rule management events.
 const (
 	SilenceCreated   = "silence.created"
@@ -95,6 +102,7 @@ const (
 	UpdateScanStarted   = "update.scan_started"
 	UpdateScanCompleted = "update.scan_completed"
 	UpdateDetected      = "update.detected"
+	UpdateResolved      = "update.resolved"
 	UpdatePinned        = "update.pinned"
 	UpdateUnpinned      = "update.unpinned"
 )

@@ -282,6 +282,40 @@ func (s *UpdateStore) DeleteStaleImageUpdates(ctx context.Context, scanID int64,
 	return res.RowsAffected, nil
 }
 
+// ListStaleImageUpdates returns the container names that had a pending update
+// before this scan but are no longer in the latest results — i.e. containers
+// that were upgraded between scans. Used to emit recovery alerts.
+func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID int64, scannedContainerNames []string) ([]string, error) {
+	if len(scannedContainerNames) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(scannedContainerNames))
+	args := make([]interface{}, 0, len(scannedContainerNames)+1)
+	args = append(args, scanID)
+	for i, name := range scannedContainerNames {
+		placeholders[i] = "?"
+		args = append(args, name)
+	}
+	query := fmt.Sprintf(
+		`SELECT DISTINCT container_name FROM image_updates WHERE scan_id != ? AND container_name IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list stale image updates: %w", err)
+	}
+	defer func(rows *sql.Rows) { _ = rows.Close() }(rows)
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 // --- CVE cache ---
 
 func (s *UpdateStore) InsertCVECacheEntry(ctx context.Context, e *update.CVECacheEntry) (int64, error) {

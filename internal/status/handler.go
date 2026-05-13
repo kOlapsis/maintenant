@@ -12,6 +12,7 @@
 package status
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -22,9 +23,11 @@ import (
 
 // Handler serves the public status page API and SSE endpoints.
 type Handler struct {
-	service    *Service
-	sseHandler http.Handler
-	logger     *slog.Logger
+	service         *Service
+	sseHandler      http.Handler
+	logger          *slog.Logger
+	personalization *PersonalizationPublicHandler
+	indexHTML       []byte
 
 	rateMu     sync.Mutex
 	rateMap    map[string][]time.Time
@@ -45,33 +48,66 @@ func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger) 
 	}
 }
 
+// SetIndexHTML provides the Vue SPA index.html used to serve the status page.
+func (h *Handler) SetIndexHTML(data []byte) {
+	h.indexHTML = data
+}
+
+// SetPersonalizationHandler attaches the personalization public handler.
+func (h *Handler) SetPersonalizationHandler(ph *PersonalizationPublicHandler) {
+	h.personalization = ph
+}
+
 // Middleware wraps an http.Handler (e.g. rate limiter).
 type Middleware func(http.Handler) http.Handler
 
-// Register registers the status API and SSE routes directly on the given mux.
+// Register registers the status page, API, and SSE routes directly on the given mux.
+// /status/ serves the Vue SPA index.html — Traefik rewrites the status subdomain root
+// to /status/ so that Vue Router can initialise at the correct route.
 func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
+	// Page HTML — catch-all for /status/ (more specific patterns below take precedence).
+	mux.Handle("GET /status/", mw(http.HandlerFunc(h.HandleStatusPage)))
+	// API & SSE endpoints.
 	mux.Handle("GET /status/api", mw(http.HandlerFunc(h.HandleStatusAPI)))
 	mux.Handle("GET /status/events", mw(h.sseHandler))
 	mux.Handle("GET /status/feed.atom", mw(http.HandlerFunc(h.HandleAtomFeed)))
 	mux.Handle("POST /status/subscribe", mw(http.HandlerFunc(h.HandleSubscribe)))
 	mux.Handle("GET /status/confirm", mw(http.HandlerFunc(h.HandleConfirm)))
 	mux.Handle("GET /status/unsubscribe", mw(http.HandlerFunc(h.HandleUnsubscribe)))
+	if h.personalization != nil {
+		mux.Handle("GET /status/settings.json", mw(http.HandlerFunc(h.personalization.HandleSettingsJSON)))
+	}
+}
+
+const urlFixScript = `<script>window.__MAINTENANT_STATUS=true</script>`
+
+// HandleStatusPage serves the Vue SPA index.html for the /status/ path.
+// A small inline script is injected so that Vue Router initialises at /status when
+// the page is accessed from the dedicated status subdomain (browser path is "/").
+func (h *Handler) HandleStatusPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/status/" && r.URL.Path != "/status" {
+		http.NotFound(w, r)
+		return
+	}
+	if h.indexHTML == nil {
+		http.Error(w, "Status page not available", http.StatusServiceUnavailable)
+		return
+	}
+	html := bytes.Replace(h.indexHTML, []byte("</head>"), []byte(urlFixScript+"</head>"), 1)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	_, _ = w.Write(html)
 }
 
 // StatusAPIResponse is the JSON snapshot of current status.
 type StatusAPIResponse struct {
-	GlobalStatus    string             `json:"global_status"`
-	GlobalMessage   string             `json:"global_message"`
-	UpdatedAt       time.Time          `json:"updated_at"`
-	Groups          []APIGroupResponse `json:"groups"`
-	ActiveIncidents []APIIncidentBrief `json:"active_incidents"`
-	UpcomingMaint   []APIMaintBrief    `json:"upcoming_maintenance"`
-}
-
-// APIGroupResponse is a component group in the JSON API.
-type APIGroupResponse struct {
-	Name       string              `json:"name"`
-	Components []APIComponentBrief `json:"components"`
+	GlobalStatus           string              `json:"global_status"`
+	GlobalMessage          string              `json:"global_message"`
+	UpdatedAt              time.Time           `json:"updated_at"`
+	Components             []APIComponentBrief `json:"components"`
+	ActiveIncidents        []APIIncidentBrief  `json:"active_incidents"`
+	UpcomingMaint          []APIMaintBrief     `json:"upcoming_maintenance"`
+	PersonalizationVersion int64               `json:"personalization_version,omitempty"`
 }
 
 // APIComponentBrief is a brief component in the JSON API.
@@ -122,29 +158,16 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 		GlobalMessage: data.GlobalMessage,
 		UpdatedAt:     time.Now().UTC(),
 	}
-
-	for _, g := range data.Groups {
-		ag := APIGroupResponse{Name: g.Name}
-		for _, c := range g.Components {
-			ag.Components = append(ag.Components, APIComponentBrief{
-				ID:     c.ID,
-				Name:   c.DisplayName,
-				Status: c.EffectiveStatus,
-			})
-		}
-		resp.Groups = append(resp.Groups, ag)
+	if h.personalization != nil {
+		resp.PersonalizationVersion = h.personalization.GetVersion(r)
 	}
 
-	if len(data.Ungrouped) > 0 {
-		ag := APIGroupResponse{Name: "Other"}
-		for _, c := range data.Ungrouped {
-			ag.Components = append(ag.Components, APIComponentBrief{
-				ID:     c.ID,
-				Name:   c.DisplayName,
-				Status: c.EffectiveStatus,
-			})
-		}
-		resp.Groups = append(resp.Groups, ag)
+	for _, c := range data.Components {
+		resp.Components = append(resp.Components, APIComponentBrief{
+			ID:     c.ID,
+			Name:   c.DisplayName,
+			Status: c.EffectiveStatus,
+		})
 	}
 
 	for _, inc := range data.ActiveIncidents {

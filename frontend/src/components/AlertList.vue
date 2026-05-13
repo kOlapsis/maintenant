@@ -13,10 +13,13 @@
 
 <script setup lang="ts">
 import { ref, watch, inject } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import type { Alert, ListAlertsParams } from '@/services/alertApi'
+import { humanizeAlertType } from '@/utils/alertLabels'
 
+const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
@@ -60,9 +63,18 @@ const statusColors: Record<string, { bg: string; color: string }> = {
   silenced: { bg: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)' },
 }
 
-const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'endpoint', 'heartbeat', 'certificate'])
+const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
+
+function alertTitle(alert: Alert): string {
+  const humanized = humanizeAlertType(alert.source, alert.alert_type)
+  return humanized === alert.alert_type ? alert.message : humanized
+}
 
 function openEntityDetail(alert: Alert) {
+  if (alert.entity_type === 'endpoint' && alert.entity_id) {
+    router.push({ name: 'endpoints' })
+    return
+  }
   if (!alert.entity_id || !ENTITY_TYPES.has(alert.entity_type)) return
   detailSlideOver.openDetail(alert.entity_type as EntityType, alert.entity_id)
 }
@@ -139,7 +151,7 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
             }"
           >{{ alert.status }}</span>
         </div>
-        <p class="text-sm truncate" style="color: var(--pb-text-primary)">{{ alert.message }}</p>
+        <p class="text-sm truncate" style="color: var(--pb-text-primary)">{{ alertTitle(alert) }}</p>
         <div class="flex items-center justify-between mt-1.5 text-xs" style="color: var(--pb-text-muted)">
           <span>{{ alert.entity_name || '-' }}</span>
           <span>{{ formatTime(alert.fired_at) }}</span>
@@ -195,7 +207,7 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
                 {{ alert.source }}
               </span>
             </td>
-            <td class="max-w-md truncate px-4 py-2 text-sm" style="color: var(--pb-text-primary)">{{ alert.message }}</td>
+            <td class="max-w-md truncate px-4 py-2 text-sm" style="color: var(--pb-text-primary)">{{ alertTitle(alert) }}</td>
             <td class="px-4 py-2 text-sm" style="color: var(--pb-text-muted)">{{ alert.entity_name || '-' }}</td>
             <td class="whitespace-nowrap px-4 py-2 text-xs" style="color: var(--pb-text-muted)">{{ formatTime(alert.fired_at) }}</td>
             <td class="px-4 py-2">

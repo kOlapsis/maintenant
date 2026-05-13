@@ -10,7 +10,8 @@ maintenant is configured entirely through environment variables. No configuratio
 |----------|---------|-------------|
 | `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers. |
 | `MAINTENANT_DB` | `./maintenant.db` | SQLite database file path. |
-| `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and status page links. |
+| `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and as the fallback target for the status page link. |
+| `MAINTENANT_STATUS_URL` | — | Canonical public URL of the status page (e.g. `https://status.example.com`). When set, the admin UI's *View public status page* link points here. Optional — falls back to `{MAINTENANT_BASE_URL}/status` when unset. See [Public Status Page → Status URL](../features/status-page.md#status-url). |
 | `MAINTENANT_CORS_ORIGINS` | same-origin | CORS allowed origins (comma-separated). Empty means same-origin only. Set to `*` for wildcard. |
 | `MAINTENANT_RUNTIME` | auto-detect | Force container runtime: `docker` or `kubernetes`. Auto-detected by default. |
 | `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes for POST/PUT requests (default: 1 MB). |
@@ -21,6 +22,7 @@ maintenant is configured entirely through environment variables. No configuratio
 | `MAINTENANT_MCP` | `false` | Enable the MCP server on `/mcp` (Streamable HTTP transport). |
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client ID for MCP authentication. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret for MCP authentication. |
+| `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated allowlist of OAuth2 `redirect_uri` values accepted by `/oauth/authorize`. Required when MCP credentials are set. |
 | `MAINTENANT_ORGANISATION_NAME` | `Maintenant` | Organisation name displayed on the public status page. |
 | `MAINTENANT_SMTP_HOST` | — | SMTP server hostname for email notifications. |
 | `MAINTENANT_SMTP_PORT` | `587` | SMTP server port. |
@@ -39,8 +41,13 @@ MAINTENANT_ADDR=127.0.0.1:8080
 # SQLite database path
 MAINTENANT_DB=./maintenant.db
 
-# Public base URL (used for heartbeat ping URLs and status page links)
+# Public base URL (used for heartbeat ping URLs and as the status page fallback)
 MAINTENANT_BASE_URL=https://maintenant.example.com
+
+# Canonical public URL of the status page (optional).
+# When set, the admin UI links to this URL instead of {BASE_URL}/status.
+# Use this when serving the status page on its own subdomain.
+# MAINTENANT_STATUS_URL=https://status.example.com
 
 # CORS allowed origins (comma-separated, empty = same-origin only)
 # MAINTENANT_CORS_ORIGINS=http://localhost:5173
@@ -162,7 +169,7 @@ To enable Pro features (Slack/Teams/Email channels, CVE enrichment, incident man
 ```yaml
 services:
   maintenant:
-    image: ghcr.io/kolapsis/maintenant-pro:latest
+    image: ghcr.io/kolapsis/maintenant:latest
     environment:
       MAINTENANT_LICENSE_KEY: "your-license-key"
 ```

@@ -113,15 +113,52 @@ These routes do not require authentication:
 
 ## Notification Channels
 
+Channels are silent by default — they only fire when referenced by an [Alert Trigger](#alert-triggers) or an [Escalation Policy](#escalation-policies-pro).
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/channels` | List notification channels |
-| `POST` | `/api/v1/channels` | Create a channel (slack, discord, teams, webhook) |
+| `POST` | `/api/v1/channels` | Create a channel (slack, discord, teams, webhook, email) |
 | `PUT` | `/api/v1/channels/{id}` | Update a channel |
 | `DELETE` | `/api/v1/channels/{id}` | Delete a channel |
 | `POST` | `/api/v1/channels/{id}/test` | Send a test alert |
-| `POST` | `/api/v1/channels/{id}/rules` | Create a routing rule |
-| `DELETE` | `/api/v1/channels/{id}/rules/{rule_id}` | Delete a routing rule |
+
+---
+
+## Alert Triggers
+
+Triggers route alerts to channels based on filters (severity, source, scope, tag).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/alert-triggers` | List all triggers |
+| `POST` | `/api/v1/alert-triggers` | Create a trigger |
+| `GET` | `/api/v1/alert-triggers/{id}` | Get trigger details |
+| `PUT` | `/api/v1/alert-triggers/{id}` | Update a trigger |
+| `DELETE` | `/api/v1/alert-triggers/{id}` | Delete a trigger |
+
+Filters `filter_scopes` and `filter_tags` require Pro; `filter_severities` and `filter_sources` are available on every edition.
+
+---
+
+## Escalation Policies (Pro)
+
+Multi-level escalation chains for unacknowledged alerts.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/escalation-policies` | List all policies |
+| `POST` | `/api/v1/escalation-policies` | Create a policy |
+| `GET` | `/api/v1/escalation-policies/{id}` | Get a policy |
+| `PUT` | `/api/v1/escalation-policies/{id}` | Update a policy |
+| `PATCH` | `/api/v1/escalation-policies/{id}/active` | Activate / deactivate |
+| `DELETE` | `/api/v1/escalation-policies/{id}` | Delete a policy |
+| `POST` | `/api/v1/escalation-policies/overlap-probe` | Detect overlapping policies |
+| `GET` | `/api/v1/escalation-policies/{id}/runs` | List recent runs for a policy |
+| `GET` | `/api/v1/alerts/{id}/escalation-runs` | List runs for an alert |
+| `GET` | `/api/v1/escalation-runs/{id}` | Get run detail and deliveries |
+
+Endpoints return `403 edition_required` on Community.
 
 ---
 
@@ -148,14 +185,10 @@ These routes do not require authentication:
 
 ## Status Page (Admin)
 
-### Groups & Components
+### Components
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/status/groups` | List component groups |
-| `POST` | `/api/v1/status/groups` | Create a group |
-| `PUT` | `/api/v1/status/groups/{id}` | Update a group |
-| `DELETE` | `/api/v1/status/groups/{id}` | Delete a group |
 | `GET` | `/api/v1/status/components` | List components |
 | `POST` | `/api/v1/status/components` | Create a component |
 | `PUT` | `/api/v1/status/components/{id}` | Update a component |

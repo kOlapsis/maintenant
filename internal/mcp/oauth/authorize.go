@@ -32,8 +32,8 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := url.ParseRequestURI(redirectURI); err != nil {
-		s.logger.Warn("authorization request with invalid redirect_uri", "redirect_uri", redirectURI, "client_id", clientID)
+	if _, err := url.ParseRequestURI(redirectURI); err != nil || !s.isRedirectURIAllowed(redirectURI) {
+		s.logger.Warn("authorization request with invalid or disallowed redirect_uri", "redirect_uri", redirectURI, "client_id", clientID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{

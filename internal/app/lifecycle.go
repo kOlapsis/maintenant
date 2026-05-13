@@ -256,6 +256,14 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 			}
 		}
 	}()
+
+	// Escalation run retention (90 days, nightly at 03:00).
+	if a.escalationSvc != nil {
+		go func() {
+			a.escalationSvc.RunRetentionLoop(ctx)
+			a.logger.ErrorContext(ctx, "escalation: retention loop exited unexpectedly")
+		}()
+	}
 }
 
 // startSwarmRecheck periodically re-checks Swarm mode and broadcasts context changes.

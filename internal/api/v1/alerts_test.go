@@ -47,13 +47,6 @@ func (s *stubChannelStore) DeleteChannel(_ context.Context, _ int64) error { ret
 func (s *stubChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
 	return "ok", nil
 }
-func (s *stubChannelStore) InsertRoutingRule(_ context.Context, _ *alert.RoutingRule) (int64, error) {
-	return 1, nil
-}
-func (s *stubChannelStore) DeleteRoutingRule(_ context.Context, _ int64) error { return nil }
-func (s *stubChannelStore) ListRoutingRulesByChannel(_ context.Context, _ int64) ([]alert.RoutingRule, error) {
-	return nil, nil
-}
 func (s *stubChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
 	return 1, nil
 }

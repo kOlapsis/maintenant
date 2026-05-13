@@ -15,6 +15,9 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { getCertificate, type CertificateDetailResponse, type CertChainEntry } from '@/services/certificateApi'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
+import OCSPStatusBadge from './OCSPStatusBadge.vue'
+import CertificateChecksHistory from './CertificateChecksHistory.vue'
+import FeatureGate from './FeatureGate.vue'
 
 const props = defineProps<{
   certificateId: number
@@ -27,6 +30,7 @@ const emit = defineEmits<{
 const detail = ref<CertificateDetailResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const activeTab = ref<'details' | 'history'>('details')
 
 async function load() {
   loading.value = true
@@ -130,6 +134,42 @@ function countdownBgColor(days: number | undefined): string {
         </span>
       </div>
 
+      <!-- Tabs -->
+      <div
+        class="mb-4 flex gap-4"
+        :style="{ borderBottom: '1px solid var(--pb-border-default)' }"
+      >
+        <button
+          type="button"
+          class="cursor-pointer text-sm font-medium transition"
+          :style="{
+            padding: '0.5rem 0',
+            color: activeTab === 'details' ? 'var(--pb-text-primary)' : 'var(--pb-text-muted)',
+            borderBottom: activeTab === 'details' ? '2px solid var(--pb-accent)' : '2px solid transparent',
+            marginBottom: '-1px',
+          }"
+          @click="activeTab = 'details'"
+        >
+          Details
+        </button>
+        <button
+          type="button"
+          class="cursor-pointer text-sm font-medium transition"
+          :style="{
+            padding: '0.5rem 0',
+            color: activeTab === 'history' ? 'var(--pb-text-primary)' : 'var(--pb-text-muted)',
+            borderBottom: activeTab === 'history' ? '2px solid var(--pb-accent)' : '2px solid transparent',
+            marginBottom: '-1px',
+          }"
+          @click="activeTab = 'history'"
+        >
+          History
+        </button>
+      </div>
+
+      <CertificateChecksHistory v-if="activeTab === 'history'" :certificate-id="certificateId" />
+
+      <template v-else>
       <!-- Days remaining countdown badge -->
       <div
         v-if="detail.latest_check"
@@ -234,6 +274,50 @@ function countdownBgColor(days: number | undefined): string {
         {{ detail.latest_check.error_message }}
       </div>
 
+      <FeatureGate
+        feature="ocsp_stapling"
+        title="OCSP Revocation Detection"
+        description="Detect revoked TLS certificates in real time via OCSP stapling, with critical alerts before traffic hits a compromised cert."
+      >
+        <div v-if="detail.latest_check?.ocsp_stapled === true" class="mt-4">
+          <h4 class="mb-2 text-sm font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">OCSP</h4>
+          <div
+            class="rounded-lg p-3"
+            :style="{
+              border: '1px solid var(--pb-border-default)',
+              backgroundColor: 'var(--pb-bg-elevated)',
+              borderRadius: 'var(--pb-radius-md)',
+            }"
+          >
+            <div class="mb-2">
+              <OCSPStatusBadge v-if="detail.latest_check.ocsp_status" :status="detail.latest_check.ocsp_status" />
+            </div>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div v-if="detail.latest_check.ocsp_produced_at" class="min-w-0">
+                <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Produced at</span>
+                <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ formatDate(detail.latest_check.ocsp_produced_at) }}</p>
+              </div>
+              <div v-if="detail.latest_check.ocsp_next_update" class="min-w-0">
+                <span class="text-xs font-medium" :style="{ color: 'var(--pb-text-muted)' }">Next update</span>
+                <p class="text-sm" :style="{ color: 'var(--pb-text-primary)' }">{{ formatDate(detail.latest_check.ocsp_next_update) }}</p>
+              </div>
+            </div>
+            <div
+              v-if="detail.latest_check.ocsp_status === 'error' && detail.latest_check.ocsp_error"
+              class="mt-2 rounded text-sm"
+              :style="{
+                backgroundColor: 'var(--pb-status-down-bg)',
+                color: 'var(--pb-status-down)',
+                borderRadius: 'var(--pb-radius-sm)',
+                padding: '0.5rem 0.75rem',
+              }"
+            >
+              {{ detail.latest_check.ocsp_error }}
+            </div>
+          </div>
+        </div>
+      </FeatureGate>
+
       <!-- Chain visualization -->
       <div v-if="detail.latest_check?.chain?.length" class="mt-4">
         <h4 class="mb-2 text-sm font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">Certificate Chain</h4>
@@ -261,6 +345,7 @@ function countdownBgColor(days: number | undefined): string {
           </div>
         </div>
       </div>
+      </template>
     </div>
   </div>
 </template>

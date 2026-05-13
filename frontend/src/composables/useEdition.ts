@@ -72,6 +72,7 @@ export function useEdition() {
   const isEnterprise = computed(() => edition.value?.edition === 'enterprise')
   const isCommunity = computed(() => !isEnterprise.value)
   const organisationName = computed(() => edition.value?.organisation_name || '')
+  const statusURL = computed(() => edition.value?.status_url || '')
 
   const licenseMessage = computed(() => licenseStatus.value?.message || '')
   const licenseStatusValue = computed(() => licenseStatus.value?.status || '')
@@ -101,12 +102,16 @@ export function useEdition() {
     })
   }
 
+  const personalization = computed(() => hasFeature('personalization'))
+
   return {
     edition,
     isEnterprise,
     isCommunity,
     organisationName,
+    statusURL,
     hasFeature,
+    personalization,
     load,
     reload,
     getQuota,

@@ -107,9 +107,10 @@ func (a *App) buildHTTPServer() *http.Server {
 		if a.cfg.MCP.ClientID != "" && a.cfg.MCP.ClientSecret != "" {
 			mcpOAuthStore := sqlite.NewMCPOAuthStore(a.db)
 			oauthSrv := mcpoauth.NewOAuthServer(mcpoauth.Config{
-				ClientID:     a.cfg.MCP.ClientID,
-				ClientSecret: a.cfg.MCP.ClientSecret,
-				IssuerURL:    a.cfg.BaseURL,
+				ClientID:            a.cfg.MCP.ClientID,
+				ClientSecret:        a.cfg.MCP.ClientSecret,
+				IssuerURL:           a.cfg.BaseURL,
+				AllowedRedirectURIs: a.cfg.MCP.AllowedRedirectURIs,
 			}, mcpOAuthStore, a.logger.With("component", "mcp-oauth"))
 
 			topMux.HandleFunc("/.well-known/oauth-authorization-server", oauthSrv.HandleAuthServerMetadata)
@@ -140,6 +141,13 @@ func (a *App) buildHTTPServer() *http.Server {
 		mcpHandler = a.rl.Middleware(mcpHandler)
 		topMux.Handle("/mcp", mcpHandler)
 		topMux.Handle("/mcp/", mcpHandler)
+	}
+
+	// Pass the SPA index.html to the status handler so it can serve it for /status/.
+	if distFS, err := fs.Sub(web.FS, "dist"); err == nil {
+		if data, err := fs.ReadFile(distFS, "index.html"); err == nil {
+			a.statusHandler.SetIndexHTML(data)
+		}
 	}
 
 	a.statusHandler.Register(topMux, a.rl.Middleware)

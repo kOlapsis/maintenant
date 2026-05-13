@@ -24,6 +24,8 @@ import (
 	"github.com/google/uuid"
 	pbagent "github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/kolapsis/maintenant/internal/alert/maintenance"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/certificate"
@@ -57,19 +59,22 @@ type App struct {
 	rt pbruntime.Runtime
 
 	// Core services
-	containerSvc  *container.Service
-	endpointSvc   *endpoint.Service
-	heartbeatSvc  *heartbeat.Service
-	certSvc       *certificate.Service
-	resourceSvc   *resource.Service
-	securitySvc   *security.Service
-	updateSvc     *update.Service
-	statusSvc     *status.Service
-	subscriberSvc *status.SubscriberService
+	containerSvc       *container.Service
+	endpointSvc        *endpoint.Service
+	heartbeatSvc       *heartbeat.Service
+	certSvc            *certificate.Service
+	resourceSvc        *resource.Service
+	securitySvc        *security.Service
+	updateSvc          *update.Service
+	statusSvc          *status.Service
+	subscriberSvc      *status.SubscriberService
+	personalizationSvc *status.PersonalizationService
 
 	// Alert pipeline
-	alertEngine *alert.Engine
-	notifier    *alert.Notifier
+	alertEngine     *alert.Engine
+	notifier        *alert.Notifier
+	escalationStore *sqlite.EscalationStore
+	escalationSvc   *escalation.Service
 
 	// HTTP
 	broker        *v1.SSEBroker
@@ -88,13 +93,14 @@ type App struct {
 	resStore       *sqlite.ResourceStore
 	agentStore     *sqlite.AgentStore
 	agentSessions  *agentserver.Sessions
+	statusCompStore *sqlite.StatusComponentStoreImpl
 
 	// Background services
 	checkEngine    *endpoint.CheckEngine
 	maintScheduler *status.MaintenanceScheduler
 	scorer         *security.Scorer
 	rl             *ratelimit.Limiter
-	licenseMgr     *license.LicenseManager
+	licenseMgr     *license.Manager
 	mcpServer      *gomcp.Server
 
 	// Telemetry
@@ -104,12 +110,12 @@ type App struct {
 	webhookDispatcher *webhook.Dispatcher
 
 	// Swarm
-	swarmDetector      *swarm.Detector
-	swarmCluster       *swarm.SwarmCluster
-	swarmDiscovery     *swarm.ServiceDiscovery
-	swarmEvents        *swarm.EventProcessor
-	swarmNodeStore     *sqlite.SwarmNodeStore
-	swarmNodeSvc       *swarm.NodeService
+	swarmDetector       *swarm.Detector
+	swarmCluster        *swarm.SwarmCluster
+	swarmDiscovery      *swarm.ServiceDiscovery
+	swarmEvents         *swarm.EventProcessor
+	swarmNodeStore      *sqlite.SwarmNodeStore
+	swarmNodeSvc        *swarm.NodeService
 	swarmCrashLoop      *swarm.CrashLoopDetector
 	swarmUpdateTracker  *swarm.UpdateTracker
 	swarmTaskTracker    *swarm.TaskTracker
@@ -165,8 +171,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	alertStore := sqlite.NewAlertStore(db)
 	a.alertStore = alertStore
 	channelStore := sqlite.NewChannelStore(db)
+	triggerStore := sqlite.NewTriggerStore(db)
 	silenceStore := sqlite.NewSilenceStore(db)
 	statusCompStore := sqlite.NewStatusComponentStore(db)
+	a.statusCompStore = statusCompStore
+	personalizationStore := sqlite.NewPersonalizationStore(db)
 	incidentStore := sqlite.NewIncidentStore(db)
 	maintenanceStore := sqlite.NewMaintenanceStore(db)
 	subscriberStore := sqlite.NewSubscriberStore(db)
@@ -190,7 +199,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	license.InitPublicKey(cfg.PublicKeyB64)
 	if cfg.LicenseKey != "" {
 		dataDir := filepath.Dir(cfg.DBPath)
-		lm, err := license.NewLicenseManager(cfg.LicenseKey, dataDir, cfg.Version, logger)
+		lm, err := license.NewManager(cfg.LicenseKey, dataDir, cfg.Version, logger)
 		if err != nil {
 			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
 		} else {
@@ -299,7 +308,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		if len(result.TLSPeerCertificates) > 0 {
 			ep, err := a.endpointSvc.GetEndpoint(ctx, endpointID)
 			if err == nil && ep != nil && certificate.IsHTTPS(ep.Target) {
-				a.certSvc.ProcessAutoDetectedCerts(ctx, endpointID, ep.Target, result.TLSPeerCertificates)
+				a.certSvc.ProcessAutoDetectedCerts(ctx, endpointID, ep.Target, result.TLSPeerCertificates, result.TLSOCSPResponse)
 			}
 		}
 	}, logger)
@@ -341,7 +350,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- SSE brokers ---
 	a.broker = v1.NewSSEBroker(logger)
 	a.statusBroker = v1.NewSSEBroker(logger)
-	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
 
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
@@ -349,7 +357,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SilenceStore: silenceStore,
 		Logger:       logger,
 		Notifier:     a.notifier,
-		Broadcaster: alert.NewSSEBroadcasterFunc(func(eventType string, data interface{}) {
+		Broadcaster: alert.NewSSEBroadcasterFunc(func(eventType string, data any) {
 			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		}),
 	})
@@ -362,13 +370,16 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Incidents:   incidentStore,
 		Maintenance: maintenanceStore,
 		Subscribers: a.subscriberSvc,
-		Broadcaster: func(eventType string, data interface{}) {
+		Broadcaster: func(eventType string, data any) {
 			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		},
 	})
 	a.wireStatusProvider()
 	a.maintScheduler = status.NewMaintenanceScheduler(maintenanceStore, statusCompStore, incidentStore, a.statusSvc, logger)
+	a.personalizationSvc = status.NewPersonalizationService(personalizationStore, logger.With("component", "personalization"))
+	personalizationPublicHandler := status.NewPersonalizationPublicHandler(a.personalizationSvc, logger)
 	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger)
+	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
 	// --- Webhook dispatcher ---
 	a.webhookDispatcher = webhook.NewDispatcher(webhookStore, a.notifier, logger)
@@ -415,6 +426,43 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger.Info("security posture threshold configured", "threshold", cfg.SecurityScoreThreshold)
 	}
 
+	// --- Escalation policies ---
+	a.escalationStore = sqlite.NewEscalationStore(db)
+
+	// Maintenance suppressor: real implementation in Enterprise, noop in CE.
+	var suppressor alert.MaintenanceSuppressor = extension.NoopMaintenanceSuppressor{}
+	if extension.CurrentEdition() == extension.Enterprise {
+		suppressor = maintenance.NewSuppressor(maintenanceStore, logger.With("component", "maintenance-suppressor"))
+	}
+	// Must be called before alertEngine.Start (invoked in App.Start).
+	a.alertEngine.SetMaintenanceSuppressor(suppressor)
+
+	a.escalationSvc = escalation.NewService(
+		a.escalationStore,
+		channelStore,
+		extension.CurrentEdition,
+		suppressor,
+		logger.With("component", "escalation"),
+	)
+
+	// Concrete escalator runner: only wired in Enterprise. In CE the engine
+	// keeps its built-in noopEscalator, which means the 60s evaluation ticker
+	// (alert.Engine.Start) does not start either. SetEscalator must run before
+	// alertEngine.Start (called later in App.Start).
+	if extension.CurrentEdition() == extension.Enterprise {
+		runner := escalation.NewRunner(escalation.RunnerDeps{
+			Store:        a.escalationStore,
+			AlertStore:   alertStore,
+			ChannelStore: channelStore,
+			Notifier:     a.notifier,
+			Suppressor:   suppressor,
+			Service:      a.escalationSvc,
+			Logger:       logger.With("component", "escalation-runner"),
+		})
+		a.alertEngine.SetEscalator(runner)
+		logger.Info("escalation runner enabled (Pro)")
+	}
+
 	// --- Wire alert callbacks ---
 	a.wireAlertCallbacks(alertDetector)
 	a.wireUpdateCallback()
@@ -435,17 +483,21 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Resources:    a.resourceSvc,
 		Logger:       logger,
 		// Alert pipeline
-		AlertStore:   alertStore,
-		ChannelStore: channelStore,
-		SilenceStore: silenceStore,
-		Notifier:     a.notifier,
+		AlertStore:    alertStore,
+		ChannelStore:  channelStore,
+		TriggerStore:  triggerStore,
+		SilenceStore:  silenceStore,
+		Notifier:      a.notifier,
+		Escalator:     a.alertEngine.Escalator(),
+		EscalationSvc: a.escalationSvc,
 		// Status page admin
-		StatusComponents:  statusCompStore,
-		StatusIncidents:   incidentStore,
-		StatusSubscribers: subscriberStore,
-		StatusMaintenance: maintenanceStore,
-		StatusSvc:         a.statusSvc,
-		StatusBroker:      a.statusBroker,
+		StatusComponents:   statusCompStore,
+		StatusIncidents:    incidentStore,
+		StatusSubscribers:  subscriberStore,
+		StatusMaintenance:  maintenanceStore,
+		StatusSvc:          a.statusSvc,
+		StatusBroker:       a.statusBroker,
+		PersonalizationSvc: a.personalizationSvc,
 		// Webhooks
 		WebhookStore: webhookStore,
 		// UI extras
@@ -464,19 +516,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		// License
 		LicenseMgr: a.licenseMgr,
 		// Swarm
-		SwarmCluster:   func() *swarm.SwarmCluster { return a.swarmCluster },
-		SwarmDiscovery: func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
-		SwarmDetector:  func() *swarm.Detector { return a.swarmDetector },
+		SwarmCluster:        func() *swarm.SwarmCluster { return a.swarmCluster },
+		SwarmDiscovery:      func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
+		SwarmDetector:       func() *swarm.Detector { return a.swarmDetector },
 		SwarmNodeStore:      a.swarmNodeStoreAsInterface(),
 		SwarmUpdateTracker:  a.swarmUpdateTracker,
 		SwarmCrashLoop:      a.swarmCrashLoop,
 		SwarmReplicaChecker: a.swarmReplicaChecker,
-		// Multi-host agents (Enterprise)
-		AgentStore:          agentStore,
-		AgentSessions:       a.agentSessions,
-		GRPCPublicURL:       cfg.MultiHost.GRPCPublicURL,
-		GRPCListen:          cfg.MultiHost.GRPCListen,
-		AgentStaleThreshold: time.Duration(cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second,
 		// HTTP config
 		CORSOrigins:          cfg.CORSOrigins,
 		MaxBodySize:          cfg.MaxBodySize,
@@ -490,21 +536,24 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// --- MCP Server ---
 	mcpSvc := &pbmcp.Services{
-		Containers:   a.containerSvc,
-		Endpoints:    a.endpointSvc,
-		Heartbeats:   a.heartbeatSvc,
-		Certificates: a.certSvc,
-		Resources:    a.resourceSvc,
-		Alerts:       alertStore,
-		Updates:      a.updateSvc,
-		Incidents:    extension.NoopIncidentManager{},
-		Maintenance:  extension.NoopMaintenanceScheduler{},
-		Runtime:      rt,
-		LogFetcher:   rt,
+		Containers:    a.containerSvc,
+		Endpoints:     a.endpointSvc,
+		Heartbeats:    a.heartbeatSvc,
+		Certificates:  a.certSvc,
+		Resources:     a.resourceSvc,
+		Alerts:        alertStore,
+		Channels:      channelStore,
+		Triggers:      triggerStore,
+		Updates:       a.updateSvc,
+		Incidents:     extension.NoopIncidentManager{},
+		Maintenance:   extension.NoopMaintenanceScheduler{},
+		Runtime:       rt,
+		LogFetcher:    rt,
+		EscalationSvc: a.escalationSvc,
 		Agents:       a.agentStore,
 		Sessions:     a.agentSessions,
-		Version:      cfg.Version,
-		Logger:       logger.With("component", "mcp"),
+		Version:       cfg.Version,
+		Logger:        logger.With("component", "mcp"),
 	}
 	a.mcpServer = pbmcp.NewServer(mcpSvc)
 
@@ -540,10 +589,16 @@ func (a *App) Start(ctx context.Context) error {
 	a.db.StartWriter(ctx)
 
 	if a.licenseMgr != nil {
+		a.wireLicenseSubscriber(ctx)
 		a.licenseMgr.Start(ctx)
 	}
 
 	a.alertEngine.Start(ctx)
+
+	if extension.CurrentEdition() == extension.Enterprise {
+		go a.escalationSvc.RunRetentionLoop(ctx)
+		a.logger.Info("escalation retention loop started (Pro)")
+	}
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)

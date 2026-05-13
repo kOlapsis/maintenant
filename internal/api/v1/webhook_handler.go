@@ -79,6 +79,14 @@ func (h *WebhookHandler) HandleCreateWebhook(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Reject platform-specific webhook URLs — they expect a proprietary payload format
+	// that the generic webhook dispatcher never sends. Use a notification channel instead.
+	if isPlatformWebhookURL(req.URL) {
+		WriteError(w, http.StatusBadRequest, "invalid_input",
+			"Discord, Slack, and Teams URLs must be configured as notification channels (/api/v1/channels), not webhook subscriptions. Webhook subscriptions send a generic JSON payload that these platforms do not accept.")
+		return
+	}
+
 	// Default event types
 	if len(req.EventTypes) == 0 {
 		req.EventTypes = []string{"*"}
@@ -184,8 +192,29 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 		_ = Body.Close()
 	}(resp.Body)
 
+	status := "delivered"
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		status = "failed"
+	}
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"status":      "delivered",
+		"status":      status,
 		"http_status": resp.StatusCode,
 	})
+}
+
+var platformWebhookPrefixes = []string{
+	"https://discord.com/api/webhooks/",
+	"https://discordapp.com/api/webhooks/",
+	"https://hooks.slack.com/",
+	"https://outlook.office.com/webhook/",
+	"https://outlook.office365.com/webhook/",
+}
+
+func isPlatformWebhookURL(url string) bool {
+	for _, prefix := range platformWebhookPrefixes {
+		if strings.HasPrefix(url, prefix) {
+			return true
+		}
+	}
+	return false
 }

@@ -67,7 +67,10 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 	}
 
 	if dirty {
-		return fmt.Errorf("database is in dirty state at version %d — manual intervention required", version)
+		logger.Warn("dirty migration state detected — auto-recovering", "version", version)
+		if forceErr := m.Force(int(version) - 1); forceErr != nil {
+			return fmt.Errorf("database is in dirty state at version %d and auto-recovery failed: %w", version, forceErr)
+		}
 	}
 
 	// Apply all pending migrations

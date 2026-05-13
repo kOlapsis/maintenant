@@ -23,6 +23,7 @@ import {
   Layers,
   Mail,
   MessageSquare,
+  Palette,
   RefreshCw,
   Shield,
   TrendingUp,
@@ -149,6 +150,12 @@ const features = [
     title: 'Swarm Intelligence',
     description:
       'Crash-loop detection, rolling update tracking, node health alerting, and replica health alerts.',
+  },
+  {
+    icon: Palette,
+    title: 'Status Page Personalization',
+    description:
+      'Brand your public status page with custom colors, logo, announcement banner, custom footer, FAQ, and localization.',
   },
 ]
 </script>

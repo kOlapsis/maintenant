@@ -157,25 +157,26 @@ const themeTooltip = computed(() => {
         />
       </div>
 
-      <!-- Health counters -->
+      <!-- Monitor health counters (containers + endpoints + heartbeats + certificates) -->
       <div class="hidden sm:flex items-center gap-5 border-l border-slate-800 pl-5">
+        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Monitors</span>
         <div class="flex items-center gap-2">
-          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Running</span>
+          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">OK</span>
           <span class="text-sm font-black text-pb-status-ok">{{ dashboard.globalStats.running }}</span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Incidents</span>
-          <span
-            class="text-sm font-black"
-            :class="dashboard.globalStats.incidents > 0 ? 'text-pb-status-down' : 'text-slate-500'"
-          >{{ dashboard.globalStats.incidents }}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Warnings</span>
+          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Warning</span>
           <span
             class="text-sm font-black"
             :class="dashboard.globalStats.warnings > 0 ? 'text-amber-500' : 'text-slate-500'"
           >{{ dashboard.globalStats.warnings }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Incident</span>
+          <span
+            class="text-sm font-black"
+            :class="dashboard.globalStats.incidents > 0 ? 'text-pb-status-down' : 'text-slate-500'"
+          >{{ dashboard.globalStats.incidents }}</span>
         </div>
       </div>
 

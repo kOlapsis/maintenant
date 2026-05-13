@@ -1,0 +1,3 @@
+-- No-op: SQLite < 3.35 does not support DROP COLUMN.
+-- Migration rollback is intentionally a no-op per the project convention.
+-- See specs/019-ocsp-stapling/research.md §3.

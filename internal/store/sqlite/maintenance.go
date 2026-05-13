@@ -262,3 +262,45 @@ func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw
 	}
 	return rows.Err()
 }
+
+// IsEntitySuppressed returns true (with the matching window ID and end time) if at
+// least one active maintenance window currently covers the given monitor. Active
+// means starts_at ≤ now < ends_at regardless of the window's `active` flag (which
+// controls Status Page display, not suppressor logic).
+func (s *MaintenanceStoreImpl) IsEntitySuppressed(
+	ctx context.Context, monitorType string, monitorID int64, now time.Time,
+) (matched bool, windowID int64, endsAt time.Time, err error) {
+	const q = `
+SELECT mw.id, mw.ends_at
+FROM maintenance_windows mw
+JOIN maintenance_components mc ON mc.maintenance_id = mw.id
+JOIN status_components sc ON sc.id = mc.component_id
+LEFT JOIN status_component_monitors scm
+    ON scm.component_id = sc.id
+   AND scm.monitor_type = ?
+   AND scm.monitor_id   = ?
+WHERE mw.starts_at <= ?
+  AND mw.ends_at   >  ?
+  AND (
+    (sc.composition_mode = 'match-all' AND sc.match_all_type = ?)
+    OR
+    (sc.composition_mode = 'explicit'  AND scm.component_id IS NOT NULL)
+  )
+LIMIT 1`
+
+	nowUnix := now.Unix()
+	var endsAtUnix int64
+	scanErr := s.db.QueryRowContext(ctx, q,
+		monitorType, monitorID,
+		nowUnix, nowUnix,
+		monitorType,
+	).Scan(&windowID, &endsAtUnix)
+
+	if errors.Is(scanErr, sql.ErrNoRows) {
+		return false, 0, time.Time{}, nil
+	}
+	if scanErr != nil {
+		return false, 0, time.Time{}, fmt.Errorf("maintenance: scan suppressed entity: %w", scanErr)
+	}
+	return true, windowID, time.Unix(endsAtUnix, 0), nil
+}

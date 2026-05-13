@@ -23,7 +23,8 @@ import FeatureGate from '@/components/FeatureGate.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
-import { ShieldCheck, AlertTriangle } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
+import { ShieldCheck, AlertTriangle, CheckCircle2, BarChart3 } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
 const store = usePostureStore()
@@ -83,11 +84,7 @@ onUnmounted(() => {
       </FeatureHint>
 
       <!-- Enterprise gate -->
-      <FeatureGate
-        feature="security_posture"
-        title="Security Posture"
-        description="View infrastructure-wide security scoring with per-container breakdown, category analysis, and risk acknowledgments."
-      >
+      <FeatureGate feature="security_posture">
 
         <!-- Loading -->
         <template v-if="store.loading && !posture">
@@ -135,6 +132,49 @@ onUnmounted(() => {
           <p class="text-sm text-slate-600 font-medium">No posture data available</p>
           <p class="text-[10px] text-slate-700 mt-1">Make sure containers are being monitored</p>
         </div>
+
+        <!-- Placeholder slot (Community Edition) -->
+        <template #placeholder>
+          <div class="bg-[#12151C] rounded-2xl border border-slate-800 overflow-hidden">
+            <div class="px-6 py-10 flex flex-col items-center text-center">
+              <div class="w-12 h-12 rounded-xl bg-pb-green-500/10 border border-pb-green-500/20 flex items-center justify-center mb-4">
+                <ShieldCheck :size="22" class="text-pb-green-400" />
+              </div>
+              <h2 class="text-base font-bold text-white mb-1">Security Posture</h2>
+              <p class="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
+                Get an infrastructure-wide security score that weights network exposure, configuration risks, and pending updates across every monitored container.
+              </p>
+
+              <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
+                <li class="flex items-start gap-3">
+                  <CheckCircle2 :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-slate-300">
+                    Single weighted score with per-category breakdown (network, config, updates)
+                  </span>
+                </li>
+                <li class="flex items-start gap-3">
+                  <BarChart3 :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-slate-300">
+                    Drill into the riskiest containers, sorted by impact on the global score
+                  </span>
+                </li>
+                <li class="flex items-start gap-3">
+                  <AlertTriangle :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-slate-300">
+                    Acknowledge known findings to exclude them from the score with full audit trail
+                  </span>
+                </li>
+              </ul>
+
+              <RouterLink
+                to="/pro-edition"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20 transition-colors"
+              >
+                Unlock with Pro
+              </RouterLink>
+            </div>
+          </div>
+        </template>
 
       </FeatureGate>
 

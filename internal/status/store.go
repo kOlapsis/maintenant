@@ -13,21 +13,13 @@ package status
 
 import "context"
 
-// ComponentStore defines the persistence interface for component groups and status components.
+// ComponentStore defines the persistence interface for status components.
 type ComponentStore interface {
-	// Groups
-	ListGroups(ctx context.Context) ([]ComponentGroup, error)
-	GetGroup(ctx context.Context, id int64) (*ComponentGroup, error)
-	CreateGroup(ctx context.Context, g *ComponentGroup) (int64, error)
-	UpdateGroup(ctx context.Context, g *ComponentGroup) error
-	DeleteGroup(ctx context.Context, id int64) error
-
-	// Components
 	ListComponents(ctx context.Context) ([]Component, error)
 	ListVisibleComponents(ctx context.Context) ([]Component, error)
 	GetComponent(ctx context.Context, id int64) (*Component, error)
-	GetComponentByMonitor(ctx context.Context, monitorType string, monitorID int64) (*Component, error)
-	ListGlobalComponents(ctx context.Context, monitorType string) ([]Component, error)
+	ListComponentsByMonitor(ctx context.Context, monitorType string, monitorID int64) ([]Component, error)
+	RemoveDanglingMonitorRefs(ctx context.Context, monitorType string, monitorID int64) error
 	CreateComponent(ctx context.Context, c *Component) (int64, error)
 	UpdateComponent(ctx context.Context, c *Component) error
 	DeleteComponent(ctx context.Context, id int64) error

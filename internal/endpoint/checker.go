@@ -108,7 +108,7 @@ func (e *CheckEngine) ActiveCount() int {
 func (e *CheckEngine) runLoop(ctx context.Context, ep *Endpoint, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	interval := ep.Config.Interval
+	interval := time.Duration(ep.Config.Interval)
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}

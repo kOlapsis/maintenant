@@ -110,6 +110,13 @@ services:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
       - "8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"  # match host's docker group — see note below
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
@@ -128,6 +135,11 @@ docker compose up -d
 ```
 
 Open **http://localhost:8080** — your containers are already there. No configuration needed.
+
+> **Finding your DOCKER_GID**
+> Run `getent group docker | cut -d: -f3` on the host. The number printed is your Docker group GID. The fallback `983` is not universal — it varies by distribution and installation method. Create a `.env` file next to your `docker-compose.yml` with `DOCKER_GID=<number>` so Compose picks it up automatically.
+>
+> If containers are not discovered (permission error on the socket), see [Troubleshooting](#troubleshooting).
 
 ### Kubernetes
 
@@ -187,13 +199,13 @@ Knows when your images have updates available. Scans OCI registries, compares di
 
 ### Alert Engine
 
-Unified alerts across all monitoring sources. Webhook and Discord channels included. Silence rules for planned maintenance. Exponential backoff retry on delivery.
+Unified alerts across all monitoring sources. Channels are silent by default and routed via **Alert Triggers** (filter by severity / source). Webhook and Discord channels included. Silence rules for planned maintenance, exponential backoff retry on delivery.
 
-> **[Pro](#pricing)** adds Slack, Microsoft Teams, and Email channels, plus escalation chains and maintenance windows.
+> **[Pro](#pricing)** adds Slack, Microsoft Teams, and Email channels, scope/tag trigger filters, multi-level **escalation policies**, and maintenance windows that pause and resume escalation chains.
 
 ### Public Status Page
 
-Give your users a clean, real-time status page. Component groups, live SSE updates, severity aggregation across all monitors.
+Give your users a clean, real-time status page. Live SSE updates, severity aggregation across all monitors.
 
 > **[Pro](#pricing)** adds incident timelines and subscriber notifications (email + webhook) — turn outages into trust-building moments.
 
@@ -211,7 +223,8 @@ Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Quer
 | ----------------------------------- | ----------------------- | ----------------------------------------------- |
 | `MAINTENANT_ADDR`                   | `127.0.0.1:8080`        | HTTP bind address                               |
 | `MAINTENANT_DB`                     | `./maintenant.db`       | SQLite database path                            |
-| `MAINTENANT_BASE_URL`               | `http://localhost:8080` | Base URL (used for heartbeat ping URLs)         |
+| `MAINTENANT_BASE_URL`               | `http://localhost:8080` | Base URL (used for heartbeat ping URLs and as the status page fallback) |
+| `MAINTENANT_STATUS_URL`             | —                       | Canonical public URL of the status page (e.g. `https://status.example.com`). Optional — falls back to `{BASE_URL}/status`. |
 | `MAINTENANT_ORGANISATION_NAME`      | `Maintenant`            | Organisation name on the status page            |
 | `MAINTENANT_CORS_ORIGINS`           | same-origin             | CORS allowed origins (comma-separated)          |
 | `MAINTENANT_RUNTIME`                | auto-detect             | Force `docker` or `kubernetes`                  |
@@ -221,6 +234,7 @@ Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Quer
 | `MAINTENANT_MCP`                    | `false`                 | Enable MCP server (Streamable HTTP on `/mcp`)   |
 | `MAINTENANT_MCP_CLIENT_ID`          | —                       | OAuth2 client ID for MCP authentication         |
 | `MAINTENANT_MCP_CLIENT_SECRET`      | —                       | OAuth2 client secret for MCP authentication     |
+| `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | —                    | Comma-separated allowlist of OAuth2 `redirect_uri` values. Required when `MAINTENANT_MCP_CLIENT_*` are set. |
 | `MAINTENANT_K8S_NAMESPACES`         | all                     | Namespace allowlist (comma-separated)           |
 | `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | none                    | Namespace blocklist                             |
 | `MAINTENANT_DISABLE_TELEMETRY`      | unset (telemetry on)    | Set to `1`/`true`/`yes` to disable telemetry    |
@@ -288,6 +302,13 @@ services:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
       - "8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
@@ -434,6 +455,13 @@ Internet  ->  Reverse Proxy (Traefik / Caddy / nginx)
 services:
   maintenant:
     image: ghcr.io/kolapsis/maintenant:latest
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID:-983}"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     labels:
       traefik.enable: "true"
       traefik.http.routers.maintenant.rule: "Host(`now.example.com`)"
@@ -451,6 +479,63 @@ services:
 </details>
 
 > **Note:** `/ping/{uuid}` (heartbeat pings) and `/status/` (public status page) are meant to be publicly accessible. Configure your proxy rules accordingly.
+
+---
+
+## Troubleshooting
+
+### Permission denied on /var/run/docker.sock
+
+**Symptom:** maintenant starts but shows no containers, and the logs contain something like:
+
+```text
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock
+```
+
+**Why it happens:** maintenant runs as `nobody` (uid 65534) by design. The Docker socket on the host is owned by `root:docker`. Without `group_add`, the `nobody` user has no group membership that grants access to the socket — even with a read-only mount, the kernel rejects the open call.
+
+**Fix:** find the Docker group GID on the host and pass it via `group_add`.
+
+```bash
+# On the host
+getent group docker | cut -d: -f3
+```
+
+Create a `.env` file next to your `docker-compose.yml`:
+
+```bash
+DOCKER_GID=998   # replace with the number printed above
+```
+
+Then restart:
+
+```bash
+docker compose up -d
+```
+
+The fallback `983` in the Compose template is a common value but not universal — it varies by distribution, Docker install method, and host configuration.
+
+**SELinux (Fedora / RHEL / Rocky / CentOS):** if the GID fix above does not resolve the error, SELinux may be blocking the socket access. Check with:
+
+```bash
+ausearch -m AVC -ts recent
+```
+
+If you see a denial for `docker.sock`, add the `:z` relabel flag to the socket mount:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock:ro,z
+```
+
+**Docker rootless:** the socket is not at `/var/run/docker.sock` but at `$XDG_RUNTIME_DIR/docker.sock` (typically `/run/user/1000/docker.sock`). Adjust the bind mount accordingly:
+
+```yaml
+volumes:
+  - /run/user/1000/docker.sock:/var/run/docker.sock:ro
+```
+
+Replace `1000` with the UID of the user running the rootless Docker daemon (`id -u` on the host).
 
 ---
 
@@ -483,9 +568,9 @@ Full REST API under `/api/v1/` for automation and integration.
 | Heartbeats   | `GET POST /heartbeats` `GET PUT DELETE /heartbeats/{id}` `POST /heartbeats/{id}/pause\|resume`          |
 | Certificates | `GET POST /certificates` `GET PUT DELETE /certificates/{id}`                                            |
 | Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top`                         |
-| Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /silence`                             |
+| Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /alert-triggers` `GET POST /escalation-policies` *(Pro)* `GET POST /silence` |
 | Webhooks     | `GET POST /webhooks` `POST /webhooks/{id}/test`                                                         |
-| Status Page  | `GET POST /status/groups\|components\|incidents\|maintenance`                                           |
+| Status Page  | `GET POST /status/components\|incidents\|maintenance`                                                   |
 | Updates      | `GET /updates` `POST /updates/scan`                                                                     |
 | Security     | `GET /security/insights` `GET /security/summary` `GET /security/insights/{id}`                          |
 | Events       | `GET /containers/events` *(SSE stream)*                                                                 |
@@ -553,14 +638,14 @@ Full REST API under `/api/v1/` for automation and integration.
       <p><strong>Free</strong> · AGPL-3.0 · self-hosted forever</p>
       <ul>
         <li>Container auto-discovery (Docker + Kubernetes)</li>
-        <li>HTTP / TCP endpoint monitoring</li>
+        <li>HTTP / TCP endpoint monitoring <sub>(up to 10)</sub></li>
         <li>Heartbeat &amp; cron monitoring <sub>(up to 5)</sub></li>
-        <li>TLS certificate tracking</li>
+        <li>TLS certificate tracking <sub>(up to 5)</sub></li>
         <li>Resource metrics (CPU, RAM, net, disk)</li>
         <li>Network security insights</li>
         <li>Update intelligence (digest scan)</li>
         <li>Alert engine + webhook + Discord</li>
-        <li>Public status page</li>
+        <li>Public status page <sub>(up to 3 components)</sub></li>
         <li>REST API + SSE + MCP server</li>
         <li>PWA support</li>
       </ul>
@@ -571,9 +656,10 @@ Full REST API under `/api/v1/` for automation and integration.
       <p><strong>€29</strong>/month · or <strong>€290</strong>/year <sub>(save 2 months)</sub></p>
       <p><em>Everything in Community, plus:</em></p>
       <ul>
-        <li><strong>Unlimited</strong> heartbeats</li>
+        <li><strong>Unlimited</strong> monitors — heartbeats, endpoints, certificates, status page components</li>
         <li><strong>Slack, Microsoft Teams, Email</strong> channels</li>
-        <li><strong>Alert escalation &amp; routing</strong> — page the right person, not a dead channel</li>
+        <li><strong>Advanced trigger filters</strong> — route alerts by entity scope or tag, not just severity</li>
+        <li><strong>Alert escalation</strong> — page the right person, not a dead channel</li>
         <li><strong>Maintenance windows</strong> — silence cleanly during deploys</li>
         <li><strong>Unified security posture</strong> dashboard</li>
         <li><strong>CVE enrichment</strong> + risk scoring per container</li>

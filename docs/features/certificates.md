@@ -19,6 +19,7 @@ maintenant connects to the domain, performs a full TLS handshake, parses the cer
 - Expiry date
 - Days until expiration
 - Chain validity
+- OCSP staple (Pro — see [OCSP Stapling](#ocsp-stapling) below)
 
 ---
 
@@ -58,6 +59,47 @@ If any certificate in the chain is invalid, expired, or missing, maintenant fire
 | `expiring` | Certificate approaching expiry (30, 14, 7, 3, 1 day thresholds) | Critical |
 | `expired` | Certificate has expired | Critical |
 | `chain_invalid` | Certificate chain validation failed | Critical |
+| `ocsp_revoked` | OCSP responder reports the certificate as revoked (Pro) | Critical |
+
+---
+
+## OCSP Stapling :material-crown:{ title="Pro" }
+
+Expired isn't the only way a certificate goes bad — it can also be **revoked** by the issuing CA while still well within its validity period (private key compromise, mis-issuance, decommissioned service). maintenant catches this by reading the **OCSP staple** delivered by the server during the TLS handshake.
+
+### How it works
+
+On every certificate check — for both standalone monitors and HTTPS endpoints — maintenant inspects the `CertificateStatusResponses` field returned by the TLS handshake, parses the OCSP response, validates its signature against the issuer chain, and persists the result alongside the other check fields.
+
+| Status | Meaning | Behavior |
+|--------|---------|----------|
+| `good` | OCSP responder confirms the certificate is valid | Silent |
+| `revoked` | OCSP responder reports the certificate as revoked | Emits `ocsp_revoked` critical alert |
+| `unknown` | No staple presented, or staple is stale (`NextUpdate` in the past) | Silent — avoids false alerts during responder outages |
+| `error` | Staple is present but cannot be parsed or validated | Silent on alerts, surfaced in the UI for diagnosis |
+
+The `ocsp_revoked` alert is wired into the standard pipeline, so existing **Alert Triggers**, **Escalation Policies**, **silence rules**, and **acknowledgments** apply without extra configuration. The alert is resolved automatically the moment a subsequent check returns `good` — typically right after a fresh certificate is deployed.
+
+### Persisted fields
+
+The following fields are added to each row in the certificate check history:
+
+| Field | Meaning |
+|-------|---------|
+| `ocsp_status` | `good`, `revoked`, `unknown` or `error` |
+| `ocsp_produced_at` | Timestamp the OCSP response was issued by the responder |
+| `ocsp_next_update` | Timestamp until which the staple is considered fresh |
+| `ocsp_revoked_at` | Set when the responder reports a revocation (with the revocation timestamp) |
+| `ocsp_parse_error` | Set when the staple is present but unparseable (signature mismatch, malformed payload, etc.) |
+
+They are exposed via `GET /api/v1/certificates/{id}/checks` and surfaced in the UI through the **OCSP block** in the certificate slideover and the **History** tab.
+
+!!! note "Out-of-band OCSP queries"
+    maintenant only reads staples delivered by the server — it does not actively contact the OCSP responder. Servers that do not staple are reported as `unknown` and never alert. Enable OCSP stapling on your server (Caddy and modern nginx do this by default) to get full coverage.
+
+### Pro gating
+
+OCSP stapling is a **Pro** feature. Capture runs in Community to keep the code path uniform, but persistence, API exposure, and `ocsp_revoked` alert emission are skipped on Community installs. The `ocsp_stapling` feature flag is exposed on `GET /api/v1/edition` so the frontend can render a Pro teaser instead of an empty OCSP block.
 
 ---
 

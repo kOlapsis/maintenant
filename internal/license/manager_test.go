@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,14 +28,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testManager creates a LicenseManager wired to a test HTTP server.
-func testManager(t *testing.T, pub ed25519.PublicKey, handler http.HandlerFunc) *LicenseManager {
+// testManager creates a Manager wired to a test HTTP server.
+func testManager(t *testing.T, pub ed25519.PublicKey, handler http.HandlerFunc) *Manager {
 	t.Helper()
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	m := &LicenseManager{
+	m := &Manager{
 		licenseKey: "test-key-123",
 		dataDir:    t.TempDir(),
 		version:    "test",
@@ -43,7 +44,7 @@ func testManager(t *testing.T, pub ed25519.PublicKey, handler http.HandlerFunc) 
 		client:     server.Client(),
 		stop:       make(chan struct{}),
 	}
-	m.state.Store(&LicenseState{Status: "unknown"})
+	m.state.Store(&State{Status: "unknown"})
 
 	// Override the server URL for this test
 	origOverride := licenseServerOverride
@@ -211,7 +212,7 @@ func TestManager_InvalidSignature(t *testing.T) {
 	m := testManager(t, pub, handler)
 
 	// Set an existing state to verify it's preserved
-	m.state.Store(&LicenseState{
+	m.state.Store(&State{
 		IsProEnabled: true,
 		Status:       "active",
 		Plan:         "pro",
@@ -275,7 +276,7 @@ func TestManager_NetworkError_CacheFallback(t *testing.T) {
 	assert.True(t, m.IsProEnabled())
 }
 
-func TestManager_CacheLoadOnStart(t *testing.T) {
+func TestManager_CacheLoadOnConstruction(t *testing.T) {
 	pub, priv := generateTestKeyPair(t)
 	dir := t.TempDir()
 
@@ -300,7 +301,7 @@ func TestManager_CacheLoadOnStart(t *testing.T) {
 	licenseServerOverride = server.URL
 	defer func() { licenseServerOverride = origOverride }()
 
-	m := &LicenseManager{
+	m := &Manager{
 		licenseKey: "test-key-123",
 		dataDir:    dir,
 		version:    "test",
@@ -309,15 +310,23 @@ func TestManager_CacheLoadOnStart(t *testing.T) {
 		client:     server.Client(),
 		stop:       make(chan struct{}),
 	}
-	m.state.Store(&LicenseState{Status: "unknown"})
+	m.state.Store(&State{Status: "unknown"})
 
-	// Start should load cache first
+	// Cache load is what NewManager does at construction time. Simulating it
+	// here lets the test exercise the same effect on a manually-built Manager.
 	ctx, cancel := context.WithCancel(context.Background())
-	m.Start(ctx)
 	defer cancel()
+	m.loadCache(ctx)
+
+	// Pro is now enabled from cache, before any network check.
+	assert.True(t, m.IsProEnabled())
+	assert.Equal(t, "active", m.State().Status)
+
+	// Start runs a network check; with the server down, graceful degradation
+	// keeps Pro enabled (cache age is well under the 7-day warn threshold).
+	m.Start(ctx)
 	defer m.Stop()
 
-	// Cache was loaded, Pro enabled despite server being down
 	assert.True(t, m.IsProEnabled())
 	assert.Equal(t, "active", m.State().Status)
 }
@@ -361,4 +370,245 @@ func TestGetPublicKey_WrongSize(t *testing.T) {
 	_, err := getPublicKey()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid license public key size")
+}
+
+func TestLicenseManagerEditionChangeCallback(t *testing.T) {
+	makeProPayload := func(t *testing.T, priv ed25519.PrivateKey) LicensePayload {
+		return LicensePayload{
+			Status:     "active",
+			Plan:       "pro",
+			Features:   []string{"all"},
+			ExpiresAt:  time.Now().Add(365 * 24 * time.Hour),
+			VerifiedAt: time.Now(),
+		}
+	}
+
+	t.Run("pro_to_ce_triggers_callback", func(t *testing.T) {
+		pub, priv := generateTestKeyPair(t)
+		callCount := 0
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			payload := makeProPayload(t, priv)
+			signed := signPayload(t, priv, payload)
+			json.NewEncoder(w).Encode(signed)
+		}
+		m := testManager(t, pub, handler)
+
+		var mu sync.Mutex
+		var callArgs []struct{ prev, next bool }
+		m.RegisterEditionChangeCallback(func(ctx context.Context, prev, next bool) {
+			mu.Lock()
+			callArgs = append(callArgs, struct{ prev, next bool }{prev, next})
+			callCount++
+			mu.Unlock()
+		})
+
+		// First check: sets baseline (Pro), no dispatch
+		m.check(context.Background())
+		time.Sleep(10 * time.Millisecond)
+		mu.Lock()
+		assert.Equal(t, 0, callCount, "baseline should not trigger callback")
+		mu.Unlock()
+
+		// Simulate Pro→CE: override server to return expired
+		origOverride := licenseServerOverride
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
+			signed := signPayload(t, priv, payload)
+			json.NewEncoder(w).Encode(signed)
+		}))
+		defer ts.Close()
+		licenseServerOverride = ts.URL
+		defer func() { licenseServerOverride = origOverride }()
+
+		m.check(context.Background())
+		time.Sleep(50 * time.Millisecond)
+
+		mu.Lock()
+		assert.Equal(t, 1, callCount, "Pro→CE should trigger callback")
+		if len(callArgs) > 0 {
+			assert.True(t, callArgs[0].prev)
+			assert.False(t, callArgs[0].next)
+		}
+		mu.Unlock()
+	})
+
+	t.Run("ce_to_pro_triggers_callback", func(t *testing.T) {
+		pub, priv := generateTestKeyPair(t)
+		// First make it expired (CE state)
+		callCount := 0
+		expiredCalls := 0
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			expiredCalls++
+			if expiredCalls <= 1 {
+				payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
+				signed := signPayload(t, priv, payload)
+				json.NewEncoder(w).Encode(signed)
+				return
+			}
+			payload := makeProPayload(t, priv)
+			signed := signPayload(t, priv, payload)
+			json.NewEncoder(w).Encode(signed)
+		}
+		m := testManager(t, pub, handler)
+
+		var mu sync.Mutex
+		var callArgs []struct{ prev, next bool }
+		m.RegisterEditionChangeCallback(func(ctx context.Context, prev, next bool) {
+			mu.Lock()
+			callArgs = append(callArgs, struct{ prev, next bool }{prev, next})
+			callCount++
+			mu.Unlock()
+		})
+
+		// First check: sets baseline (expired → CE)
+		m.check(context.Background())
+		time.Sleep(10 * time.Millisecond)
+		mu.Lock()
+		assert.Equal(t, 0, callCount, "baseline should not trigger")
+		mu.Unlock()
+
+		// Second check: CE→Pro
+		m.check(context.Background())
+		time.Sleep(50 * time.Millisecond)
+
+		mu.Lock()
+		assert.Equal(t, 1, callCount, "CE→Pro should trigger callback")
+		if len(callArgs) > 0 {
+			assert.False(t, callArgs[0].prev)
+			assert.True(t, callArgs[0].next)
+		}
+		mu.Unlock()
+	})
+
+	t.Run("initial_state_not_transition", func(t *testing.T) {
+		pub, priv := generateTestKeyPair(t)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			payload := makeProPayload(t, priv)
+			signed := signPayload(t, priv, payload)
+			json.NewEncoder(w).Encode(signed)
+		}
+		m := testManager(t, pub, handler)
+
+		var mu sync.Mutex
+		callCount := 0
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+			mu.Lock()
+			callCount++
+			mu.Unlock()
+		})
+
+		// Single applyPayload — sets baseline, no dispatch
+		m.check(context.Background())
+		time.Sleep(50 * time.Millisecond)
+
+		mu.Lock()
+		assert.Equal(t, 0, callCount, "initial state must not trigger callback")
+		mu.Unlock()
+	})
+
+	t.Run("pro_to_pro_no_dispatch", func(t *testing.T) {
+		pub, priv := generateTestKeyPair(t)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			payload := makeProPayload(t, priv)
+			signed := signPayload(t, priv, payload)
+			json.NewEncoder(w).Encode(signed)
+		}
+		m := testManager(t, pub, handler)
+
+		var mu sync.Mutex
+		callCount := 0
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+			mu.Lock()
+			callCount++
+			mu.Unlock()
+		})
+
+		// Both checks return Pro — no transition, no dispatch
+		m.check(context.Background())
+		m.check(context.Background())
+		time.Sleep(50 * time.Millisecond)
+
+		mu.Lock()
+		assert.Equal(t, 0, callCount, "Pro→Pro must not trigger callback")
+		mu.Unlock()
+	})
+
+	t.Run("two_callbacks_both_invoked", func(t *testing.T) {
+		pub, priv := generateTestKeyPair(t)
+		callCount := 0
+		expiredCalled := 0
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			expiredCalled++
+			if expiredCalled <= 1 {
+				payload := makeProPayload(t, priv)
+				signed := signPayload(t, priv, payload)
+				json.NewEncoder(w).Encode(signed)
+				return
+			}
+			payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
+			signed := signPayload(t, priv, payload)
+			json.NewEncoder(w).Encode(signed)
+		}
+		m := testManager(t, pub, handler)
+
+		var mu sync.Mutex
+		invoked := make([]int, 0, 2)
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+			mu.Lock()
+			invoked = append(invoked, 1)
+			callCount++
+			mu.Unlock()
+		})
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+			mu.Lock()
+			invoked = append(invoked, 2)
+			callCount++
+			mu.Unlock()
+		})
+
+		m.check(context.Background()) // baseline Pro
+		m.check(context.Background()) // transition → expired (CE)
+		time.Sleep(50 * time.Millisecond)
+
+		mu.Lock()
+		assert.Equal(t, 2, callCount, "both callbacks should be invoked")
+		mu.Unlock()
+	})
+
+	t.Run("panic_in_callback_recovered", func(t *testing.T) {
+		pub, priv := generateTestKeyPair(t)
+		expiredCalled := 0
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			expiredCalled++
+			if expiredCalled <= 1 {
+				payload := makeProPayload(t, priv)
+				signed := signPayload(t, priv, payload)
+				json.NewEncoder(w).Encode(signed)
+				return
+			}
+			payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
+			signed := signPayload(t, priv, payload)
+			json.NewEncoder(w).Encode(signed)
+		}
+		m := testManager(t, pub, handler)
+
+		var mu sync.Mutex
+		secondCalled := false
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+			panic("intentional panic for test")
+		})
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+			mu.Lock()
+			secondCalled = true
+			mu.Unlock()
+		})
+
+		m.check(context.Background()) // baseline
+		m.check(context.Background()) // transition
+		time.Sleep(100 * time.Millisecond)
+
+		mu.Lock()
+		assert.True(t, secondCalled, "second callback must run even after first panicked")
+		mu.Unlock()
+	})
 }

@@ -18,11 +18,12 @@ export interface QuotaEntry {
   limit: number
 }
 
-export type QuotaResource = 'endpoints' | 'heartbeats' | 'certificates' | 'status_groups' | 'status_components'
+export type QuotaResource = 'endpoints' | 'heartbeats' | 'certificates' | 'status_components'
 
 export interface EditionResponse {
   edition: string
   organisation_name: string
+  status_url?: string
   features: Record<string, boolean>
   quotas?: Partial<Record<QuotaResource, QuotaEntry>>
 }
