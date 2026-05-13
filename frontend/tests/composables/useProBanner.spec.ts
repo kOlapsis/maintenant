@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createApp, defineComponent, nextTick, ref } from 'vue'
+import { createApp, defineComponent, nextTick, reactive, ref } from 'vue'
 import { tierFromCount, useProBanner, type ProBannerHandle } from '@/composables/useProBanner'
 import { useContainersStore as _useContainersStore } from '@/stores/containers'
 import { useEdition as _useEdition } from '@/composables/useEdition'
@@ -93,16 +93,33 @@ describe('useProBanner — tier 1 & 2 visibility', () => {
     unmount()
   })
 
-  it('FR-006/FR-014 — snapshot frozen: count stays 15 after store changes', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
+  it('reactive — tier becomes visible when store hydrates after mount', async () => {
+    const store = reactive<ContainerMock>({ containerCount: 0, groups: [] })
+    const { handle, unmount } = mountProBanner(store)
+    await nextTick()
+    expect(handle.tier.value).toBeNull()
+    expect(handle.count.value).toBeNull()
+    expect(handle.visible.value).toBe(false)
+    // Store hydrates asynchronously (e.g. after layout mount, fetchContainers resolves).
+    store.containerCount = 48
+    store.groups = groups(48)
+    await nextTick()
+    expect(handle.tier.value).toBe(2)
+    expect(handle.count.value).toBe(48)
+    expect(handle.visible.value).toBe(true)
+    unmount()
+  })
+
+  it('reactive — tier updates when container count grows past a tier boundary', async () => {
+    const store = reactive<ContainerMock>({ containerCount: 15, groups: groups(15) })
+    const { handle, unmount } = mountProBanner(store)
     await nextTick()
     expect(handle.tier.value).toBe(1)
-    expect(handle.count.value).toBe(15)
-    // Changing the mock after mount has no effect (onMounted already ran)
-    mockedUseContainersStore.mockReturnValue({ containerCount: 30, groups: groups(30) } as ReturnType<typeof _useContainersStore>)
+    store.containerCount = 30
+    store.groups = groups(30)
     await nextTick()
-    expect(handle.tier.value).toBe(1)
-    expect(handle.count.value).toBe(15)
+    expect(handle.tier.value).toBe(2)
+    expect(handle.count.value).toBe(30)
     unmount()
   })
 })

@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, type ComputedRef } from 'vue'
 import { useContainersStore } from '@/stores/containers'
 import { useEdition } from '@/composables/useEdition'
 
@@ -18,8 +18,8 @@ function storageKey(tier: Tier): string {
 }
 
 export interface ProBannerHandle {
-  tier: Readonly<Ref<Tier | null>>
-  count: Readonly<Ref<number | null>>
+  tier: ComputedRef<Tier | null>
+  count: ComputedRef<number | null>
   visible: ComputedRef<boolean>
   dismiss: () => void
 }
@@ -28,24 +28,26 @@ export function useProBanner(): ProBannerHandle {
   const containers = useContainersStore()
   const { isEnterprise } = useEdition()
 
-  const tier = ref<Tier | null>(null)
-  const count = ref<number | null>(null)
-  const dismissed = ref(false)
+  // localStorage isn't reactive — bump this to force dismissed recompute after dismiss().
+  const dismissNonce = ref(0)
 
-  onMounted(() => {
+  const tier = computed<Tier | null>(() => {
     const c = containers.containerCount
-    const groups = containers.groups
+    if (c === 0 && containers.groups.length === 0) return null
+    return tierFromCount(c)
+  })
 
-    if (c === 0 && groups.length === 0) return
+  const count = computed<number | null>(() =>
+    tier.value === null ? null : containers.containerCount,
+  )
 
-    tier.value = tierFromCount(c)
-    count.value = c
-
-    if (tier.value !== 0) {
-      const raw = localStorage.getItem(storageKey(tier.value))
-      const ts = Number(raw)
-      dismissed.value = Number.isFinite(ts) && Date.now() - ts < COOLDOWN_MS
-    }
+  const dismissed = computed<boolean>(() => {
+    dismissNonce.value
+    const t = tier.value
+    if (t === null || t === 0) return false
+    const raw = localStorage.getItem(storageKey(t))
+    const ts = Number(raw)
+    return Number.isFinite(ts) && Date.now() - ts < COOLDOWN_MS
   })
 
   const visible = computed(
@@ -53,9 +55,10 @@ export function useProBanner(): ProBannerHandle {
   )
 
   function dismiss(): void {
-    if (tier.value === null || tier.value === 0) return
-    dismissed.value = true
-    localStorage.setItem(storageKey(tier.value), String(Date.now()))
+    const t = tier.value
+    if (t === null || t === 0) return
+    localStorage.setItem(storageKey(t), String(Date.now()))
+    dismissNonce.value++
   }
 
   return { tier, count, visible, dismiss }
