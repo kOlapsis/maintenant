@@ -15,7 +15,7 @@ func CheckTCP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string, 
 		Timestamp:  start,
 	}
 
-	timeout := ep.Config.Timeout
+	timeout := time.Duration(ep.Config.Timeout)
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}

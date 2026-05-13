@@ -243,7 +243,7 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= 5s")
 			return
 		}
-		config.Interval = d
+		config.Interval = endpoint.Duration(d)
 	}
 	if input.Timeout != "" {
 		d, err := time.ParseDuration(input.Timeout)
@@ -251,7 +251,7 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be a valid duration >= 1s")
 			return
 		}
-		config.Timeout = d
+		config.Timeout = endpoint.Duration(d)
 	}
 	if config.Timeout > config.Interval {
 		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than or equal to interval")
@@ -341,7 +341,7 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= 5s")
 			return
 		}
-		config.Interval = d
+		config.Interval = endpoint.Duration(d)
 	}
 	if input.Timeout != "" {
 		d, err := time.ParseDuration(input.Timeout)
@@ -349,7 +349,7 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be a valid duration >= 1s")
 			return
 		}
-		config.Timeout = d
+		config.Timeout = endpoint.Duration(d)
 	}
 	if config.Timeout > config.Interval {
 		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than or equal to interval")

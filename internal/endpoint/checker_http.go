@@ -24,7 +24,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	}
 
 	cfg := ep.Config
-	timeout := cfg.Timeout
+	timeout := time.Duration(cfg.Timeout)
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}

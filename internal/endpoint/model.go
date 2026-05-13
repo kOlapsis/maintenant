@@ -17,6 +17,28 @@ import (
 	"time"
 )
 
+// Duration is a time.Duration that marshals to/from a human-readable string (e.g., "30s").
+type Duration time.Duration
+
+func (d Duration) String() string { return time.Duration(d).String() }
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(dur)
+	return nil
+}
+
 // EndpointSource represents the origin of an endpoint definition.
 type EndpointSource string
 
@@ -97,8 +119,8 @@ type CheckResult struct {
 
 // EndpointConfig holds the configuration parameters for endpoint checks.
 type EndpointConfig struct {
-	Interval          time.Duration     `json:"interval"`
-	Timeout           time.Duration     `json:"timeout"`
+	Interval          Duration          `json:"interval"`
+	Timeout           Duration          `json:"timeout"`
 	FailureThreshold  int               `json:"failure_threshold"`
 	RecoveryThreshold int               `json:"recovery_threshold"`
 	Method            string            `json:"method,omitempty"`
@@ -111,8 +133,8 @@ type EndpointConfig struct {
 // DefaultConfig returns an EndpointConfig with sensible defaults.
 func DefaultConfig() EndpointConfig {
 	return EndpointConfig{
-		Interval:          30 * time.Second,
-		Timeout:           10 * time.Second,
+		Interval:          Duration(30 * time.Second),
+		Timeout:           Duration(10 * time.Second),
 		FailureThreshold:  3,
 		RecoveryThreshold: 2,
 		Method:            "GET",
@@ -121,73 +143,6 @@ func DefaultConfig() EndpointConfig {
 		Headers:           make(map[string]string),
 		MaxRedirects:      5,
 	}
-}
-
-// MarshalJSON implements custom JSON marshaling for EndpointConfig to use string durations.
-func (c EndpointConfig) MarshalJSON() ([]byte, error) {
-	type Alias struct {
-		Interval          string            `json:"interval"`
-		Timeout           string            `json:"timeout"`
-		FailureThreshold  int               `json:"failure_threshold"`
-		RecoveryThreshold int               `json:"recovery_threshold"`
-		Method            string            `json:"method,omitempty"`
-		ExpectedStatus    string            `json:"expected_status,omitempty"`
-		TLSVerify         bool              `json:"tls_verify"`
-		Headers           map[string]string `json:"headers,omitempty"`
-		MaxRedirects      int               `json:"max_redirects,omitempty"`
-	}
-	return json.Marshal(Alias{
-		Interval:          c.Interval.String(),
-		Timeout:           c.Timeout.String(),
-		FailureThreshold:  c.FailureThreshold,
-		RecoveryThreshold: c.RecoveryThreshold,
-		Method:            c.Method,
-		ExpectedStatus:    c.ExpectedStatus,
-		TLSVerify:         c.TLSVerify,
-		Headers:           c.Headers,
-		MaxRedirects:      c.MaxRedirects,
-	})
-}
-
-// UnmarshalJSON implements custom JSON unmarshaling for EndpointConfig with string durations.
-func (c EndpointConfig) UnmarshalJSON(data []byte) error {
-	type Alias struct {
-		Interval          string            `json:"interval"`
-		Timeout           string            `json:"timeout"`
-		FailureThreshold  int               `json:"failure_threshold"`
-		RecoveryThreshold int               `json:"recovery_threshold"`
-		Method            string            `json:"method,omitempty"`
-		ExpectedStatus    string            `json:"expected_status,omitempty"`
-		TLSVerify         bool              `json:"tls_verify"`
-		Headers           map[string]string `json:"headers,omitempty"`
-		MaxRedirects      int               `json:"max_redirects,omitempty"`
-	}
-	var a Alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return err
-	}
-	if a.Interval != "" {
-		d, err := time.ParseDuration(a.Interval)
-		if err != nil {
-			return err
-		}
-		c.Interval = d
-	}
-	if a.Timeout != "" {
-		d, err := time.ParseDuration(a.Timeout)
-		if err != nil {
-			return err
-		}
-		c.Timeout = d
-	}
-	c.FailureThreshold = a.FailureThreshold
-	c.RecoveryThreshold = a.RecoveryThreshold
-	c.Method = a.Method
-	c.ExpectedStatus = a.ExpectedStatus
-	c.TLSVerify = a.TLSVerify
-	c.Headers = a.Headers
-	c.MaxRedirects = a.MaxRedirects
-	return nil
 }
 
 // ListEndpointsOpts configures endpoint listing queries.
