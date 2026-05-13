@@ -215,7 +215,6 @@ function runtimeLabel(rt: string): string {
             <thead>
               <tr class="border-b border-slate-800">
                 <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Token</th>
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Created by</th>
                 <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Expires</th>
                 <th class="px-4 py-3"></th>
               </tr>
@@ -227,7 +226,6 @@ function runtimeLabel(rt: string): string {
                 class="border-b border-slate-800/50 last:border-0"
               >
                 <td class="px-4 py-3 font-mono text-xs text-slate-400">{{ tok.token_masked }}</td>
-                <td class="px-4 py-3 text-xs text-slate-500">{{ tok.created_by }}</td>
                 <td class="px-4 py-3 text-xs text-slate-500">{{ formatDate(tok.expires_at) }}</td>
                 <td class="px-4 py-3 text-right">
                   <button

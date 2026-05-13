@@ -231,7 +231,6 @@ func TestIntegration_Enrollment(t *testing.T) {
 	tok := &agent.EnrollmentToken{
 		TokenID:   "inttest001",
 		Token:     "mnt_enr_integrationtest01",
-		CreatedBy: "test",
 		CreatedAt: time.Now().UTC(),
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}
@@ -356,7 +355,6 @@ func TestIntegration_PushStream(t *testing.T) {
 	enrollTok := &agent.EnrollmentToken{
 		TokenID:   "push-test-tok",
 		Token:     "mnt_enr_pushtest00000001",
-		CreatedBy: "test",
 		CreatedAt: time.Now().UTC(),
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}

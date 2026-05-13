@@ -30,7 +30,6 @@ export interface Agent {
 export interface EnrollmentTokenMasked {
   token_id: string
   token_masked: string
-  created_by: string
   created_at: string
   expires_at: string
   consumed_at: string | null

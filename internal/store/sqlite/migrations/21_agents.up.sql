@@ -30,7 +30,6 @@ CREATE INDEX IF NOT EXISTS idx_agents_last_seen_at ON agents(last_seen_at);
 CREATE TABLE IF NOT EXISTS enrollment_tokens (
     token_id              TEXT PRIMARY KEY NOT NULL,       -- hex(sha256(token))[:16]
     token                 TEXT NOT NULL UNIQUE,            -- "mnt_enr_" + base32(32 bytes random)
-    created_by            TEXT NOT NULL,
     created_at            DATETIME NOT NULL DEFAULT (datetime('now')),
     expires_at            DATETIME NOT NULL,
     consumed_at           DATETIME,

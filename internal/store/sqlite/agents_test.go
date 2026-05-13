@@ -33,7 +33,6 @@ func TestConsumeAtomic_Concurrent(t *testing.T) {
 	tok := &agent.EnrollmentToken{
 		TokenID:   "testtoken01",
 		Token:     "mnt_enr_testtoken",
-		CreatedBy: "test",
 		CreatedAt: time.Now().UTC(),
 		ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}
@@ -87,7 +86,6 @@ func TestConsumeAtomic_Expired(t *testing.T) {
 	tok := &agent.EnrollmentToken{
 		TokenID:   "expiredtoken01",
 		Token:     "mnt_enr_expired",
-		CreatedBy: "test",
 		CreatedAt: time.Now().UTC().Add(-2 * time.Hour),
 		ExpiresAt: time.Now().UTC().Add(-1 * time.Hour), // already expired
 	}

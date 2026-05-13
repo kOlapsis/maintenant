@@ -36,7 +36,6 @@ type Agent struct {
 type EnrollmentToken struct {
 	TokenID           string
 	Token             string // cleartext (only stored, never returned via API after creation)
-	CreatedBy         string
 	CreatedAt         time.Time
 	ExpiresAt         time.Time
 	ConsumedAt        *time.Time

@@ -351,10 +351,14 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.broker = v1.NewSSEBroker(logger)
 	a.statusBroker = v1.NewSSEBroker(logger)
 
+	// Agent session registry (depends on broker)
+	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
+
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
 		ChannelStore: channelStore,
 		SilenceStore: silenceStore,
+		TriggerStore: triggerStore,
 		Logger:       logger,
 		Notifier:     a.notifier,
 		Broadcaster: alert.NewSSEBroadcasterFunc(func(eventType string, data any) {
@@ -523,6 +527,12 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SwarmUpdateTracker:  a.swarmUpdateTracker,
 		SwarmCrashLoop:      a.swarmCrashLoop,
 		SwarmReplicaChecker: a.swarmReplicaChecker,
+		// Multi-host agents (Enterprise)
+		AgentStore:          a.agentStore,
+		AgentSessions:       a.agentSessions,
+		GRPCPublicURL:       cfg.MultiHost.GRPCPublicURL,
+		GRPCListen:          cfg.MultiHost.GRPCListen,
+		AgentStaleThreshold: time.Duration(cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second,
 		// HTTP config
 		CORSOrigins:          cfg.CORSOrigins,
 		MaxBodySize:          cfg.MaxBodySize,
@@ -747,7 +757,6 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		t := &agent.EnrollmentToken{
 			TokenID:   uuid.New().String(),
 			Token:     uuid.New().String(),
-			CreatedBy: "embedded-agent",
 			CreatedAt: time.Now(),
 			ExpiresAt: time.Now().Add(5 * time.Minute),
 		}

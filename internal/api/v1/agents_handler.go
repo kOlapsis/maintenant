@@ -91,7 +91,6 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 	tok := &agent.EnrollmentToken{
 		TokenID:   tokenID,
 		Token:     tokenStr,
-		CreatedBy: "admin",
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
 	}
@@ -110,7 +109,6 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		"token_id":             tokenID,
 		"token":                tokenStr,
 		"token_masked":         maskToken(tokenStr),
-		"created_by":           tok.CreatedBy,
 		"created_at":           tok.CreatedAt,
 		"expires_at":           tok.ExpiresAt,
 		"consumed_at":          nil,
@@ -264,7 +262,6 @@ func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http
 	type masked struct {
 		TokenID           string     `json:"token_id"`
 		TokenMasked       string     `json:"token_masked"`
-		CreatedBy         string     `json:"created_by"`
 		CreatedAt         time.Time  `json:"created_at"`
 		ExpiresAt         time.Time  `json:"expires_at"`
 		ConsumedAt        *time.Time `json:"consumed_at"`
@@ -275,7 +272,6 @@ func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http
 		out[i] = masked{
 			TokenID:           t.TokenID,
 			TokenMasked:       maskToken(t.Token),
-			CreatedBy:         t.CreatedBy,
 			CreatedAt:         t.CreatedAt,
 			ExpiresAt:         t.ExpiresAt,
 			ConsumedAt:        t.ConsumedAt,
@@ -299,7 +295,6 @@ func (h *AgentHandler) HandleGetEnrollmentToken(w http.ResponseWriter, r *http.R
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"token_id":             tok.TokenID,
 		"token_masked":         maskToken(tok.Token),
-		"created_by":           tok.CreatedBy,
 		"created_at":           tok.CreatedAt,
 		"expires_at":           tok.ExpiresAt,
 		"consumed_at":          tok.ConsumedAt,

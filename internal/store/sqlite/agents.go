@@ -201,9 +201,9 @@ func (s *AgentStore) CountByRuntime(ctx context.Context) (docker, swarm, kuberne
 // InsertToken persists a new enrollment token.
 func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO enrollment_tokens (token_id, token, created_by, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		t.TokenID, t.Token, t.CreatedBy, t.CreatedAt.UTC(), t.ExpiresAt.UTC(),
+		`INSERT INTO enrollment_tokens (token_id, token, created_at, expires_at)
+		VALUES (?, ?, ?, ?)`,
+		t.TokenID, t.Token, t.CreatedAt.UTC(), t.ExpiresAt.UTC(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert token: %w", err)
@@ -252,7 +252,7 @@ func (s *AgentStore) ConsumeAtomic(ctx context.Context, tokenCleartext, agentID 
 // GetByToken retrieves a token by its cleartext value.
 func (s *AgentStore) GetByToken(ctx context.Context, tokenCleartext string) (*agent.EnrollmentToken, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT token_id, token, created_by, created_at, expires_at, consumed_at, consumed_by_agent_id
+		`SELECT token_id, token, created_at, expires_at, consumed_at, consumed_by_agent_id
 		FROM enrollment_tokens WHERE token = ?`, tokenCleartext)
 	t, err := scanToken(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -264,7 +264,7 @@ func (s *AgentStore) GetByToken(ctx context.Context, tokenCleartext string) (*ag
 // GetTokenByID retrieves a token by its opaque token_id.
 func (s *AgentStore) GetTokenByID(ctx context.Context, tokenID string) (*agent.EnrollmentToken, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT token_id, token, created_by, created_at, expires_at, consumed_at, consumed_by_agent_id
+		`SELECT token_id, token, created_at, expires_at, consumed_at, consumed_by_agent_id
 		FROM enrollment_tokens WHERE token_id = ?`, tokenID)
 	t, err := scanToken(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -278,7 +278,7 @@ func (s *AgentStore) GetTokenByID(ctx context.Context, tokenID string) (*agent.E
 // When includeConsumed=false, consumed tokens are excluded.
 func (s *AgentStore) ListTokens(ctx context.Context, includeExpired, includeConsumed bool) ([]*agent.EnrollmentToken, error) {
 	now := time.Now().UTC()
-	query := `SELECT token_id, token, created_by, created_at, expires_at, consumed_at, consumed_by_agent_id
+	query := `SELECT token_id, token, created_at, expires_at, consumed_at, consumed_by_agent_id
 	FROM enrollment_tokens WHERE 1=1`
 	args := []any{}
 	if !includeExpired {
@@ -396,7 +396,7 @@ func scanToken(s scanner) (*agent.EnrollmentToken, error) {
 	var consumedAt sql.NullTime
 	var consumedBy sql.NullString
 	err := s.Scan(
-		&t.TokenID, &t.Token, &t.CreatedBy, &t.CreatedAt, &t.ExpiresAt, &consumedAt, &consumedBy,
+		&t.TokenID, &t.Token, &t.CreatedAt, &t.ExpiresAt, &consumedAt, &consumedBy,
 	)
 	if err != nil {
 		return nil, err
