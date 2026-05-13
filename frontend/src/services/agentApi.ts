@@ -37,9 +37,13 @@ export interface EnrollmentTokenMasked {
   consumed_by_agent_id: string | null
 }
 
+export type InstallMode = 'standalone' | 'docker_run' | 'docker_compose' | 'kubernetes'
+
+export type InstallTemplates = Record<InstallMode, string>
+
 export interface EnrollmentTokenCreated extends EnrollmentTokenMasked {
   token: string
-  install_command: string
+  install_templates: InstallTemplates
   warnings?: string[]
 }
 

@@ -12,8 +12,8 @@
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import type { EnrollmentTokenCreated } from '@/services/agentApi'
+import { computed, onMounted, ref } from 'vue'
+import type { EnrollmentTokenCreated, InstallMode } from '@/services/agentApi'
 
 const props = defineProps<{
   token: EnrollmentTokenCreated
@@ -22,6 +22,42 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
 }>()
+
+const STORAGE_KEY = 'pb:enrollment-modal-mode'
+const MODES: Array<{ id: InstallMode; label: string }> = [
+  { id: 'standalone', label: 'Standalone' },
+  { id: 'docker_run', label: 'Docker run' },
+  { id: 'docker_compose', label: 'Compose' },
+  { id: 'kubernetes', label: 'Kubernetes' },
+]
+
+function isValidMode(value: unknown): value is InstallMode {
+  return typeof value === 'string' && MODES.some((m) => m.id === value)
+}
+
+const selectedMode = ref<InstallMode>('standalone')
+
+onMounted(() => {
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY)
+    if (isValidMode(saved)) {
+      selectedMode.value = saved
+    }
+  } catch {
+    /* localStorage unavailable — keep default */
+  }
+})
+
+function selectMode(mode: InstallMode) {
+  selectedMode.value = mode
+  try {
+    window.localStorage.setItem(STORAGE_KEY, mode)
+  } catch {
+    /* ignore */
+  }
+}
+
+const currentTemplate = computed(() => props.token.install_templates[selectedMode.value] ?? '')
 
 const copiedCommand = ref(false)
 const copiedToken = ref(false)
@@ -52,7 +88,7 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
       />
 
       <div
-        class="relative mx-4 w-full max-w-lg overflow-hidden"
+        class="relative mx-4 w-full max-w-2xl overflow-hidden"
         :style="{
           backgroundColor: 'var(--pb-bg-surface)',
           border: '1px solid var(--pb-border-default)',
@@ -108,16 +144,43 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
             </div>
           </div>
 
-          <!-- Install command -->
+          <!-- Install mode selector + command -->
           <div>
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Install command</p>
+            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Install command</p>
+
+            <!-- Segmented control -->
             <div
-              class="rounded-lg bg-[#0B0E13] border border-slate-800 px-3 py-2 font-mono text-xs text-slate-300 break-all"
-            >{{ token.install_command }}</div>
+              role="tablist"
+              aria-label="Install mode"
+              class="flex flex-wrap gap-1 rounded-lg border border-slate-800 bg-[#0B0E13] p-1 mb-2"
+            >
+              <button
+                v-for="mode in MODES"
+                :key="mode.id"
+                type="button"
+                role="tab"
+                :aria-selected="selectedMode === mode.id"
+                class="flex-1 min-w-[5rem] rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+                :class="
+                  selectedMode === mode.id
+                    ? 'bg-slate-800 text-white'
+                    : 'text-slate-500 hover:bg-slate-800/40 hover:text-slate-300'
+                "
+                @click="selectMode(mode.id)"
+              >
+                {{ mode.label }}
+              </button>
+            </div>
+
+            <!-- Template body -->
+            <pre
+              class="rounded-lg bg-[#0B0E13] border border-slate-800 px-3 py-2 font-mono text-xs text-slate-300 whitespace-pre overflow-auto max-h-80"
+            >{{ currentTemplate }}</pre>
+
             <button
               type="button"
               class="mt-2 w-full rounded-lg border border-slate-700 bg-[#0B0E13] px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors"
-              @click="copyText(token.install_command, 'command')"
+              @click="copyText(currentTemplate, 'command')"
             >
               {{ copiedCommand ? 'Copied!' : 'Copy install command' }}
             </button>

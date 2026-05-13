@@ -105,7 +105,6 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		Explicit:   h.grpcPublicURL,
 		ListenAddr: h.grpcListen,
 	})
-	installCmd := "maintenant --mode=agent --server=" + publicURL + " --enrollment-token=" + tokenStr
 
 	WriteJSON(w, http.StatusCreated, map[string]any{
 		"token_id":             tokenID,
@@ -116,9 +115,137 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		"expires_at":           tok.ExpiresAt,
 		"consumed_at":          nil,
 		"consumed_by_agent_id": nil,
-		"install_command":      installCmd,
+		"install_templates":    buildInstallTemplates(publicURL, tokenStr),
 		"warnings":             warnings,
 	})
+}
+
+func buildInstallTemplates(serverURL, token string) map[string]string {
+	return map[string]string{
+		"standalone":     buildInstallStandalone(serverURL, token),
+		"docker_run":     buildInstallDockerRun(serverURL, token),
+		"docker_compose": buildInstallDockerCompose(serverURL, token),
+		"kubernetes":     buildInstallKubernetes(serverURL, token),
+	}
+}
+
+func buildInstallStandalone(serverURL, token string) string {
+	return "curl -fsSL https://install.maintenant.dev | sudo bash -s -- \\\n" +
+		"  --mode=agent \\\n" +
+		"  --server=" + serverURL + " \\\n" +
+		"  --enrollment-token=" + token
+}
+
+func buildInstallDockerRun(serverURL, token string) string {
+	return "docker run -d \\\n" +
+		"  --name maintenant-agent \\\n" +
+		"  --restart unless-stopped \\\n" +
+		"  -v /var/run/docker.sock:/var/run/docker.sock:ro \\\n" +
+		"  -v /proc:/host/proc:ro \\\n" +
+		"  -v maintenant-agent-data:/var/lib/maintenant \\\n" +
+		"  ghcr.io/kolapsis/maintenant:latest \\\n" +
+		"  --mode=agent \\\n" +
+		"  --server=" + serverURL + " \\\n" +
+		"  --enrollment-token=" + token
+}
+
+func buildInstallDockerCompose(serverURL, token string) string {
+	return "services:\n" +
+		"  maintenant-agent:\n" +
+		"    image: ghcr.io/kolapsis/maintenant:latest\n" +
+		"    restart: unless-stopped\n" +
+		"    volumes:\n" +
+		"      - /var/run/docker.sock:/var/run/docker.sock:ro\n" +
+		"      - /proc:/host/proc:ro\n" +
+		"      - maintenant-agent-data:/var/lib/maintenant\n" +
+		"    command:\n" +
+		"      - --mode=agent\n" +
+		"      - --server=" + serverURL + "\n" +
+		"      - --enrollment-token=" + token + "\n" +
+		"\n" +
+		"volumes:\n" +
+		"  maintenant-agent-data:\n"
+}
+
+func buildInstallKubernetes(serverURL, token string) string {
+	return "apiVersion: v1\n" +
+		"kind: Namespace\n" +
+		"metadata:\n" +
+		"  name: maintenant\n" +
+		"---\n" +
+		"apiVersion: v1\n" +
+		"kind: Secret\n" +
+		"metadata:\n" +
+		"  name: maintenant-agent-enrollment\n" +
+		"  namespace: maintenant\n" +
+		"stringData:\n" +
+		"  token: " + token + "\n" +
+		"---\n" +
+		"apiVersion: v1\n" +
+		"kind: ServiceAccount\n" +
+		"metadata:\n" +
+		"  name: maintenant-agent\n" +
+		"  namespace: maintenant\n" +
+		"---\n" +
+		"apiVersion: rbac.authorization.k8s.io/v1\n" +
+		"kind: ClusterRole\n" +
+		"metadata:\n" +
+		"  name: maintenant-agent\n" +
+		"rules:\n" +
+		"  - apiGroups: [\"\"]\n" +
+		"    resources: [pods, nodes, services, events]\n" +
+		"    verbs: [get, list, watch]\n" +
+		"---\n" +
+		"apiVersion: rbac.authorization.k8s.io/v1\n" +
+		"kind: ClusterRoleBinding\n" +
+		"metadata:\n" +
+		"  name: maintenant-agent\n" +
+		"roleRef:\n" +
+		"  apiGroup: rbac.authorization.k8s.io\n" +
+		"  kind: ClusterRole\n" +
+		"  name: maintenant-agent\n" +
+		"subjects:\n" +
+		"  - kind: ServiceAccount\n" +
+		"    name: maintenant-agent\n" +
+		"    namespace: maintenant\n" +
+		"---\n" +
+		"apiVersion: apps/v1\n" +
+		"kind: DaemonSet\n" +
+		"metadata:\n" +
+		"  name: maintenant-agent\n" +
+		"  namespace: maintenant\n" +
+		"spec:\n" +
+		"  selector:\n" +
+		"    matchLabels: { app: maintenant-agent }\n" +
+		"  template:\n" +
+		"    metadata:\n" +
+		"      labels: { app: maintenant-agent }\n" +
+		"    spec:\n" +
+		"      serviceAccountName: maintenant-agent\n" +
+		"      containers:\n" +
+		"        - name: agent\n" +
+		"          image: ghcr.io/kolapsis/maintenant:latest\n" +
+		"          args:\n" +
+		"            - --mode=agent\n" +
+		"            - --server=" + serverURL + "\n" +
+		"            - --enrollment-token=$(MAINTENANT_ENROLLMENT_TOKEN)\n" +
+		"            - --runtime=kubernetes\n" +
+		"          env:\n" +
+		"            - name: MAINTENANT_ENROLLMENT_TOKEN\n" +
+		"              valueFrom:\n" +
+		"                secretKeyRef:\n" +
+		"                  name: maintenant-agent-enrollment\n" +
+		"                  key: token\n" +
+		"            - name: MAINTENANT_LABEL\n" +
+		"              valueFrom:\n" +
+		"                fieldRef: { fieldPath: spec.nodeName }\n" +
+		"          volumeMounts:\n" +
+		"            - { name: identity, mountPath: /var/lib/maintenant }\n" +
+		"      volumes:\n" +
+		"        - name: identity\n" +
+		"          hostPath:\n" +
+		"            path: /var/lib/maintenant-agent\n" +
+		"            type: DirectoryOrCreate\n"
 }
 
 func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http.Request) {

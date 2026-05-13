@@ -71,12 +71,27 @@ Content-Type: application/json
 
 The response contains:
 - `token` — the cleartext token, shown **once only**
-- `install_command` — a ready-to-run command for the remote host
+- `install_templates` — a map of ready-to-run install snippets, one per environment. Keys:
+  - `standalone` — `curl … | sudo bash` invocation of the install script (binary + systemd unit)
+  - `docker_run` — single `docker run` command with the right socket/proc mounts
+  - `docker_compose` — `compose.yml` snippet
+  - `kubernetes` — Namespace + Secret + RBAC + DaemonSet manifest
 - `warnings` — present if the server URL appears to be a private/local address
 
 > The token cannot be retrieved again after creation. If lost, delete it and generate a new one.
 
 ### 2. Run the install command on the remote host
+
+Pick the snippet matching the host environment (the UI exposes these as tabs in the modal). For a bare-metal/VM host, the standalone snippet is:
+
+```bash
+curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+  --mode=agent \
+  --server=grpcs://monitoring.example.com:8443 \
+  --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
+```
+
+For a host where the binary is already installed, the equivalent invocation is:
 
 ```bash
 maintenant \
