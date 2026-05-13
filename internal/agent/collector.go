@@ -23,7 +23,6 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	cmodel "github.com/kolapsis/maintenant/internal/container"
-	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
@@ -32,38 +31,31 @@ const (
 )
 
 // RunCollector starts collecting events from the local runtime and pushing them to stream.
-// It blocks until ctx is cancelled or a fatal push error occurs.
-func RunCollector(ctx context.Context, id *Identity, rt Runtime, stream *PushStream, logger *slog.Logger) error {
-	switch rt {
+// rt is the already-connected runtime resolved by agent.Run; label is the reported
+// runtime kind ("docker", "swarm" or "kubernetes").
+// Blocks until ctx is cancelled or a fatal push error occurs.
+func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label string, stream *PushStream, logger *slog.Logger) error {
+	switch label {
 	case RuntimeDocker, RuntimeSwarm:
-		return collectDocker(ctx, id, stream, logger)
+		return collectContainerRuntime(ctx, id, rt, stream, logger)
 	case RuntimeKubernetes:
 		// K8s collector is not yet implemented; block until context is cancelled.
 		logger.Warn("collector: kubernetes event collection not yet implemented")
 		<-ctx.Done()
 		return nil
 	default:
-		return fmt.Errorf("collector: unsupported runtime %q", rt)
+		return fmt.Errorf("collector: unsupported runtime %q", label)
 	}
 }
 
-func collectDocker(ctx context.Context, id *Identity, stream *PushStream, logger *slog.Logger) error {
-	rt, err := docker.NewRuntime("", logger)
-	if err != nil {
-		return fmt.Errorf("collector: create docker runtime: %w", err)
-	}
-	if err := rt.Connect(ctx); err != nil {
-		return fmt.Errorf("collector: connect to docker: %w", err)
-	}
-	defer rt.Close()
-
+func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
 	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error { return watchDockerEvents(gCtx, id, rt, stream, logger) })
-	g.Go(func() error { return sampleDockerResources(gCtx, id, rt, stream, logger) })
+	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, stream, logger) })
+	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, stream, logger) })
 	return g.Wait()
 }
 
-func watchDockerEvents(ctx context.Context, id *Identity, rt *docker.Runtime, stream *PushStream, logger *slog.Logger) error {
+func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
 	evCh := rt.StreamEvents(ctx)
 	for {
 		select {
@@ -91,7 +83,7 @@ func watchDockerEvents(ctx context.Context, id *Identity, rt *docker.Runtime, st
 	}
 }
 
-func sampleDockerResources(ctx context.Context, id *Identity, rt *docker.Runtime, stream *PushStream, logger *slog.Logger) error {
+func sampleRuntimeResources(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
 	ticker := time.NewTicker(resourceSampleInterval)
 	defer ticker.Stop()
 
@@ -107,7 +99,7 @@ func sampleDockerResources(ctx context.Context, id *Identity, rt *docker.Runtime
 	}
 }
 
-func collectResourceSnapshots(ctx context.Context, id *Identity, rt *docker.Runtime, stream *PushStream, logger *slog.Logger) error {
+func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
 	containers, err := rt.DiscoverAll(ctx)
 	if err != nil {
 		logger.Warn("collector: list containers for stats", "err", err)

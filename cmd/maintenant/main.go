@@ -92,12 +92,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	application, err := app.New(cfg, logger)
-	if err != nil {
-		logger.Error("failed to initialize application", "error", err)
-		os.Exit(1)
-	}
-
 	// mode=agent: run enrollment then exit — no HTTP server needed.
 	if cfg.Mode == "agent" {
 		dataDir := os.Getenv("MAINTENANT_DATA_DIR")
@@ -118,6 +112,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+
+	application, err := app.New(cfg, logger)
+	if err != nil {
+		logger.Error("failed to initialize application", "error", err)
+		os.Exit(1)
 	}
 
 	if mcpStdio {

@@ -14,13 +14,11 @@ package agentserver
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/binary"
-	"encoding/hex"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/agentauth"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 )
 
@@ -62,28 +60,14 @@ func Verify(req *agentpb.AuthResponse, nonce []byte, ag *agent.Agent, serverNow 
 		return ErrClockSkew
 	}
 
-	// Build signing payload: nonce(32) || uuid_bytes(16) || timestamp_be64(8).
-	uuidBytes, err := uuidToBytes(req.GetAgentId())
+	// Build signing payload (shared byte format via internal/agentauth).
+	payload, err := agentauth.BuildSignPayload(nonce, req.GetAgentId(), clientUnix)
 	if err != nil {
 		return ErrBadSignature
 	}
-
-	payload := make([]byte, 56)
-	copy(payload[0:32], nonce)
-	copy(payload[32:48], uuidBytes)
-	binary.BigEndian.PutUint64(payload[48:56], uint64(clientUnix))
 
 	if !ed25519.Verify(ed25519.PublicKey(ag.PublicKey), payload, req.GetSignature()) {
 		return ErrBadSignature
 	}
 	return nil
-}
-
-// uuidToBytes decodes a UUID-like hex string (with dashes) to 16 raw bytes.
-func uuidToBytes(uuid string) ([]byte, error) {
-	clean := strings.ReplaceAll(uuid, "-", "")
-	if len(clean) != 32 {
-		return nil, errors.New("invalid uuid length")
-	}
-	return hex.DecodeString(clean)
 }

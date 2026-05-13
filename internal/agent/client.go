@@ -14,12 +14,9 @@ package agent
 import (
 	"context"
 	"crypto/tls"
-	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,7 +28,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	grpcstatus "google.golang.org/grpc/status"
 
+	"github.com/kolapsis/maintenant/internal/agentauth"
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/retry"
 )
 
 // ErrAgentRevokedServer is returned by RunWithReconnect when the server revokes the agent.
@@ -119,8 +118,16 @@ func (ps *PushStream) Close() {
 }
 
 // Wait blocks until the receive goroutine exits and returns its error (nil on clean close).
-func (ps *PushStream) Wait() error {
-	return <-ps.recvCh
+// If ctx is cancelled before recvLoop exits, it returns ctx.Err() immediately so the caller
+// can proceed with shutdown. The leaked recvLoop goroutine terminates when the underlying
+// gRPC stream is finally closed (typically by the deferred grpcClient.Close()).
+func (ps *PushStream) Wait(ctx context.Context) error {
+	select {
+	case err := <-ps.recvCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (ps *PushStream) recvLoop(logger *slog.Logger) {
@@ -161,11 +168,10 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 	}
 	nonce := challengePayload.Challenge.GetNonce()
 
-	// Phase 2: build and sign the payload.
-	// Payload (byte-exact, mirrors agentserver/auth.go Verify):
-	// nonce(32) || agent_uuid_bytes(16) || timestamp_be64(8)
+	// Phase 2: build and sign the payload (byte format shared with the server
+	// via internal/agentauth).
 	now := time.Now().Unix()
-	payload, err := buildSignPayload(nonce, id.AgentID, now)
+	payload, err := agentauth.BuildSignPayload(nonce, id.AgentID, now)
 	if err != nil {
 		return nil, fmt.Errorf("build sign payload: %w", err)
 	}
@@ -192,23 +198,6 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 	return ps, nil
 }
 
-// buildSignPayload constructs the Ed25519 signing payload matching agentserver/auth.go Verify.
-func buildSignPayload(nonce []byte, agentID string, ts int64) ([]byte, error) {
-	clean := strings.ReplaceAll(agentID, "-", "")
-	if len(clean) != 32 {
-		return nil, fmt.Errorf("invalid agent ID: expected 32 hex chars after stripping dashes, got %d", len(clean))
-	}
-	uuidBytes, err := hex.DecodeString(clean)
-	if err != nil {
-		return nil, fmt.Errorf("decode agent ID hex: %w", err)
-	}
-	payload := make([]byte, 56)
-	copy(payload[0:32], nonce)
-	copy(payload[32:48], uuidBytes)
-	binary.BigEndian.PutUint64(payload[48:56], uint64(ts))
-	return payload, nil
-}
-
 // RunWithReconnect runs onStream with exponential backoff reconnect.
 // Returns nil when ctx is cancelled, ErrAgentRevokedServer when the server revokes the agent.
 // Backoff: min(60s, 1s * 2^attempt) ±25% jitter. Attempt resets to 0 if stream was stable >30s.
@@ -219,13 +208,9 @@ func RunWithReconnect(
 	logger *slog.Logger,
 	onStream func(ctx context.Context, stream *PushStream) error,
 ) error {
-	const (
-		base   = time.Second
-		capDur = 60 * time.Second
-		stable = 30 * time.Second
-	)
+	const stable = 30 * time.Second
+	backoff := retry.New(time.Second, 60*time.Second, 0.25)
 
-	attempt := 0
 	for {
 		if ctx.Err() != nil {
 			return nil
@@ -241,20 +226,14 @@ func RunWithReconnect(
 				logger.Error("agent: revoked during dial, exiting", "err", dialErr)
 				return ErrAgentRevokedServer
 			}
-			logger.Warn("agent: push dial failed", "err", dialErr, "attempt", attempt)
+			logger.Warn("agent: push dial failed", "err", dialErr, "attempt", backoff.Attempt())
 		} else {
 			streamErr := onStream(ctx, stream)
 			stream.Close()
-			_ = stream.Wait()
+			_ = stream.Wait(ctx)
 
-			elapsed := time.Since(start)
-			if elapsed > stable {
-				attempt = 0
-			} else {
-				attempt++
-				if attempt > 6 {
-					attempt = 6
-				}
+			if time.Since(start) > stable {
+				backoff.Reset()
 			}
 
 			if ctx.Err() != nil {
@@ -265,17 +244,12 @@ func RunWithReconnect(
 				return ErrAgentRevokedServer
 			}
 			if streamErr != nil {
-				logger.Warn("agent: stream closed, will reconnect", "err", streamErr, "attempt", attempt)
+				logger.Warn("agent: stream closed, will reconnect", "err", streamErr, "attempt", backoff.Attempt())
 			}
 		}
 
-		// Compute backoff with ±25% jitter.
-		raw := min(capDur, base*time.Duration(1<<uint(attempt)))
-		jitter := float64(raw) * (0.75 + rand.Float64()*0.5) //nolint:gosec // non-crypto jitter
-		delay := time.Duration(jitter)
-
+		delay := backoff.Next()
 		logger.Info("agent: reconnecting", "delay", delay.Round(time.Millisecond))
-
 		select {
 		case <-ctx.Done():
 			return nil

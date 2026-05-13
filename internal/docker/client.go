@@ -11,6 +11,8 @@ import (
 
 	dtypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+
+	"github.com/kolapsis/maintenant/internal/retry"
 )
 
 const (
@@ -70,27 +72,21 @@ func (c *Client) Connect(ctx context.Context) error {
 
 // ConnectWithRetry attempts to connect with exponential backoff.
 func (c *Client) ConnectWithRetry(ctx context.Context) error {
-	backoff := initialBackoff
+	b := retry.New(initialBackoff, maxBackoff, 0)
 	for {
 		err := c.Connect(ctx)
 		if err == nil {
 			return nil
 		}
-
+		delay := b.Next()
 		c.logger.Warn("Docker connection failed, retrying",
 			"error", err,
-			"retry_in", backoff,
+			"retry_in", delay,
 		)
-
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(backoff):
-		}
-
-		backoff *= 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
+		case <-time.After(delay):
 		}
 	}
 }

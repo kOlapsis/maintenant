@@ -89,7 +89,7 @@ function runtimeLabel(rt: string): string {
       <div class="mb-6 flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-black text-pb-primary">Agents</h1>
-          <p class="mt-1 text-sm" :style="{ color: 'var(--pb-text-muted)' }">
+          <p class="mt-1 text-sm text-pb-muted">
             Remote monitoring agents enrolled on this server
           </p>
         </div>
@@ -105,30 +105,30 @@ function runtimeLabel(rt: string): string {
           v-if="store.metrics"
           class="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3"
         >
-          <div class="rounded-xl border border-slate-800 bg-[#12151C] px-4 py-3">
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Total</p>
-            <p class="mt-1 text-2xl font-black text-white">{{ store.metrics.total }}</p>
+          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
+            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Total</p>
+            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.total }}</p>
           </div>
-          <div class="rounded-xl border border-slate-800 bg-[#12151C] px-4 py-3">
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Active</p>
-            <p class="mt-1 text-2xl font-black text-white">{{ store.metrics.by_status.active }}</p>
+          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
+            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Active</p>
+            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.by_status.active }}</p>
           </div>
-          <div class="rounded-xl border border-slate-800 bg-[#12151C] px-4 py-3">
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Connected</p>
-            <p class="mt-1 text-2xl font-black text-white">{{ store.metrics.by_connection_state.connected }}</p>
+          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
+            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Connected</p>
+            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.by_connection_state.connected }}</p>
           </div>
-          <div class="rounded-xl border border-slate-800 bg-[#12151C] px-4 py-3">
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Events/s (5m)</p>
-            <p class="mt-1 text-2xl font-black text-white">{{ store.metrics.total_events_per_second_observed_5m }}</p>
+          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
+            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Events/s (5m)</p>
+            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.total_events_per_second_observed_5m }}</p>
           </div>
         </div>
 
         <!-- Agents table -->
         <div
-          class="overflow-hidden overflow-x-auto rounded-xl border border-slate-800 bg-[#12151C] mb-6"
+          class="overflow-hidden overflow-x-auto rounded-xl border border-pb-default bg-pb-surface mb-6"
         >
-          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-            <p class="text-sm font-semibold text-white">Enrolled Agents</p>
+          <div class="flex items-center justify-between px-4 py-3 border-b border-pb-subtle">
+            <p class="text-sm font-semibold text-pb-primary">Enrolled Agents</p>
             <button
               :disabled="generatingToken"
               class="min-h-[36px] rounded-lg px-4 text-sm font-medium transition-opacity disabled:opacity-50"
@@ -139,31 +139,31 @@ function runtimeLabel(rt: string): string {
             </button>
           </div>
 
-          <div v-if="tokenError" class="px-4 py-2 text-xs text-red-400">{{ tokenError }}</div>
+          <div v-if="tokenError" class="px-4 py-2 text-xs" :style="{ color: 'var(--pb-status-down-text)' }">{{ tokenError }}</div>
 
-          <div v-if="store.loading" class="px-4 py-8 text-center text-sm text-slate-500">Loading…</div>
-          <div v-else-if="store.error" class="px-4 py-4 text-sm text-red-400">{{ store.error }}</div>
+          <div v-if="store.loading" class="px-4 py-8 text-center text-sm text-pb-muted">Loading…</div>
+          <div v-else-if="store.error" class="px-4 py-4 text-sm" :style="{ color: 'var(--pb-status-down-text)' }">{{ store.error }}</div>
           <table v-else class="w-full text-sm min-w-[640px]">
             <thead>
-              <tr class="border-b border-slate-800">
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Hostname / Label</th>
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Runtime</th>
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Status</th>
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Connection</th>
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest hidden md:table-cell">Last seen</th>
+              <tr class="border-b border-pb-subtle">
+                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Hostname / Label</th>
+                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Runtime</th>
+                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Status</th>
+                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Connection</th>
+                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest hidden md:table-cell">Last seen</th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="agent in store.agents"
                 :key="agent.agent_id"
-                class="hover:bg-slate-800/25 transition-all cursor-pointer group border-b border-slate-800/50 last:border-0"
+                class="transition-all cursor-pointer group border-b border-pb-subtle last:border-0 agent-row"
                 @click="openDetail(agent)"
               >
                 <td class="px-4 py-3">
-                  <p class="font-medium text-white">{{ agent.label || agent.hostname }}</p>
-                  <p v-if="agent.label && agent.label !== agent.hostname" class="text-xs text-slate-500">{{ agent.hostname }}</p>
-                  <p class="text-xs text-slate-600 font-mono">{{ agent.os_arch }} · v{{ agent.agent_version }}</p>
+                  <p class="font-medium text-pb-primary">{{ agent.label || agent.hostname }}</p>
+                  <p v-if="agent.label && agent.label !== agent.hostname" class="text-xs text-pb-muted">{{ agent.hostname }}</p>
+                  <p class="text-xs text-pb-muted font-mono">{{ agent.os_arch }} · v{{ agent.agent_version }}</p>
                 </td>
                 <td class="px-4 py-3">
                   <span
@@ -176,7 +176,7 @@ function runtimeLabel(rt: string): string {
                     class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :style="{
                       backgroundColor: agent.status === 'active' ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-down-bg)',
-                      color: agent.status === 'active' ? 'var(--pb-status-ok)' : 'var(--pb-status-down)',
+                      color: agent.status === 'active' ? 'var(--pb-status-ok-text)' : 'var(--pb-status-down-text)',
                     }"
                   >{{ agent.status }}</span>
                 </td>
@@ -185,16 +185,16 @@ function runtimeLabel(rt: string): string {
                     class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :style="{
                       backgroundColor: agent.connection_state === 'connected' ? 'var(--pb-status-ok-bg)' : 'var(--pb-bg-elevated)',
-                      color: agent.connection_state === 'connected' ? 'var(--pb-status-ok)' : 'var(--pb-text-muted)',
+                      color: agent.connection_state === 'connected' ? 'var(--pb-status-ok-text)' : 'var(--pb-text-muted)',
                     }"
                   >{{ agent.connection_state ?? 'disconnected' }}</span>
                 </td>
-                <td class="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">
+                <td class="px-4 py-3 text-xs text-pb-muted hidden md:table-cell">
                   {{ formatDate(agent.last_seen_at) }}
                 </td>
               </tr>
               <tr v-if="store.agents.length === 0">
-                <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500">
+                <td colspan="5" class="px-4 py-8 text-center text-sm text-pb-muted">
                   No agents enrolled yet. Generate an enrollment token to get started.
                 </td>
               </tr>
@@ -205,17 +205,17 @@ function runtimeLabel(rt: string): string {
         <!-- Pending tokens -->
         <div
           v-if="store.tokens.length > 0"
-          class="overflow-hidden rounded-xl border border-slate-800 bg-[#12151C]"
+          class="overflow-hidden rounded-xl border border-pb-default bg-pb-surface"
         >
-          <div class="px-4 py-3 border-b border-slate-800">
-            <p class="text-sm font-semibold text-white">Pending Enrollment Tokens</p>
-            <p class="text-xs text-slate-500 mt-0.5">Tokens that have not yet been consumed by an agent</p>
+          <div class="px-4 py-3 border-b border-pb-subtle">
+            <p class="text-sm font-semibold text-pb-primary">Pending Enrollment Tokens</p>
+            <p class="text-xs text-pb-muted mt-0.5">Tokens that have not yet been consumed by an agent</p>
           </div>
           <table class="w-full text-sm min-w-[480px]">
             <thead>
-              <tr class="border-b border-slate-800">
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Token</th>
-                <th class="text-left px-4 py-3 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Expires</th>
+              <tr class="border-b border-pb-subtle">
+                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Token</th>
+                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Expires</th>
                 <th class="px-4 py-3"></th>
               </tr>
             </thead>
@@ -223,13 +223,14 @@ function runtimeLabel(rt: string): string {
               <tr
                 v-for="tok in store.tokens"
                 :key="tok.token_id"
-                class="border-b border-slate-800/50 last:border-0"
+                class="border-b border-pb-subtle last:border-0"
               >
-                <td class="px-4 py-3 font-mono text-xs text-slate-400">{{ tok.token_masked }}</td>
-                <td class="px-4 py-3 text-xs text-slate-500">{{ formatDate(tok.expires_at) }}</td>
+                <td class="px-4 py-3 font-mono text-xs text-pb-secondary">{{ tok.token_masked }}</td>
+                <td class="px-4 py-3 text-xs text-pb-muted">{{ formatDate(tok.expires_at) }}</td>
                 <td class="px-4 py-3 text-right">
                   <button
-                    class="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                    class="rounded px-2 py-1 text-xs transition-colors revoke-btn"
+                    :style="{ color: 'var(--pb-status-down-text)' }"
                     @click="handleDeleteToken(tok.token_id)"
                   >
                     Revoke
@@ -259,3 +260,12 @@ function runtimeLabel(rt: string): string {
     @deleted="detailOpen = false"
   />
 </template>
+
+<style scoped>
+.agent-row:hover {
+  background-color: var(--pb-bg-hover);
+}
+.revoke-btn:hover {
+  background-color: var(--pb-status-down-bg);
+}
+</style>

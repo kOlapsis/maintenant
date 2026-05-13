@@ -21,8 +21,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentpb"
 )
 
-func runtimeToProto(rt Runtime) agentpb.Runtime {
-	switch rt {
+func runtimeToProto(label string) agentpb.Runtime {
+	switch label {
 	case RuntimeDocker:
 		return agentpb.Runtime_RUNTIME_DOCKER
 	case RuntimeSwarm:
@@ -41,7 +41,7 @@ func RunEnrollment(
 	id *Identity,
 	dataDir string,
 	enrollmentToken string,
-	rt Runtime,
+	runtimeLabel string,
 	label string,
 	agentVersion string,
 	client *Client,
@@ -59,7 +59,7 @@ func RunEnrollment(
 		Label:           label,
 		OsArch:          runtime.GOOS + "/" + runtime.GOARCH,
 		AgentVersion:    agentVersion,
-		DetectedRuntime: runtimeToProto(rt),
+		DetectedRuntime: runtimeToProto(runtimeLabel),
 	}
 
 	if _, err := client.Register(ctx, req); err != nil {

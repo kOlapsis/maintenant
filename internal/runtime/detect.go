@@ -35,10 +35,19 @@ func Register(name string, f Factory) {
 	factoryMu.Unlock()
 }
 
-// Detect auto-detects the container runtime or uses the MAINTENANT_RUNTIME override.
+// Detect auto-detects the container runtime or uses the MAINTENANT_RUNTIME env override.
 // Detection order: env override → KUBERNETES_SERVICE_HOST → KUBECONFIG → Docker socket.
 func Detect(ctx context.Context, logger *slog.Logger) (Runtime, error) {
-	override := os.Getenv("MAINTENANT_RUNTIME")
+	return DetectWithOverride(ctx, logger, "")
+}
+
+// DetectWithOverride is like Detect but allows the caller to pass an explicit
+// override (e.g. from a CLI flag). When override is empty, the MAINTENANT_RUNTIME
+// env variable is consulted as a fallback.
+func DetectWithOverride(ctx context.Context, logger *slog.Logger, override string) (Runtime, error) {
+	if override == "" {
+		override = os.Getenv("MAINTENANT_RUNTIME")
+	}
 
 	if override != "" {
 		f, ok := factories[override]

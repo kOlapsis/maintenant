@@ -55,3 +55,4 @@ specs/
 /codeql_*-diagnostics/
 /codeql_1-results/
 /codeql-extensions/
+/compose.agent.yml
