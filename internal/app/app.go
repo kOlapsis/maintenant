@@ -16,9 +16,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,6 +95,7 @@ type App struct {
 	resStore        *sqlite.ResourceStore
 	agentStore      *sqlite.AgentStore
 	agentSessions   *agentserver.Sessions
+	agentSrv        *agentserver.Server
 	statusCompStore *sqlite.StatusComponentStoreImpl
 
 	// Background services
@@ -353,6 +356,15 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// Agent session registry (depends on broker)
 	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
+
+	// Agent gRPC server (Enterprise-gated at Start time).
+	a.agentSrv = agentserver.New(agentserver.Deps{
+		AgentStore:  a.agentStore,
+		Sessions:    a.agentSessions,
+		Broadcaster: &sseBroadcaster{broker: a.broker},
+		Limiter:     agentserver.NewLimiter(),
+		Logger:      logger.With("component", "agentserver"),
+	})
 
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
@@ -689,6 +701,13 @@ func (a *App) Start(ctx context.Context) error {
 	// Event stream
 	a.startEventStream(ctx)
 
+	// Agent gRPC server — Enterprise only, server/embedded modes only.
+	if extension.CurrentEdition() == extension.Enterprise && a.cfg.Mode != "agent" {
+		if err := a.startAgentGRPC(ctx); err != nil {
+			return fmt.Errorf("start agent gRPC server: %w", err)
+		}
+	}
+
 	// Embedded agent (mode=server + --embedded-agent + Enterprise).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
 	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && extension.CurrentEdition() == extension.Enterprise {
@@ -790,6 +809,74 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}()
 
 	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
+}
+
+// startAgentGRPC binds and serves the agent-facing gRPC server in a background
+// goroutine. TLS is required (FR-031); if no keypair is configured a
+// self-signed dev cert is generated in-memory and a warning is logged.
+func (a *App) startAgentGRPC(ctx context.Context) error {
+	listen := a.cfg.MultiHost.GRPCListen
+	if listen == "" {
+		listen = "127.0.0.1:8443"
+	}
+
+	hosts := collectGRPCTLSHosts(a.cfg.MultiHost.GRPCPublicURL, listen)
+	tlsCfg, err := agentserver.LoadOrGenerateTLS(
+		a.cfg.MultiHost.TLSCertFile,
+		a.cfg.MultiHost.TLSKeyFile,
+		hosts,
+		a.logger.With("component", "agentserver"),
+	)
+	if err != nil {
+		return err
+	}
+
+	a.agentSrv.StartTokenGC(ctx)
+	go func() {
+		if err := a.agentSrv.Start(ctx, listen, tlsCfg); err != nil && !errors.Is(err, context.Canceled) {
+			a.logger.Error("agentserver: stopped", "err", err)
+		}
+	}()
+	a.logger.Info("agent gRPC server scheduled", "listen", listen)
+	return nil
+}
+
+// collectGRPCTLSHosts returns the SAN list used for the self-signed dev TLS
+// cert. It pulls the host out of the public URL (when set) and the listen
+// address; wildcards like 0.0.0.0/:: are filtered. Empty result is handled
+// downstream by falling back to 127.0.0.1 + localhost.
+func collectGRPCTLSHosts(publicURL, listen string) []string {
+	var hosts []string
+	add := func(raw string) {
+		if raw == "" {
+			return
+		}
+		h := raw
+		if hh, _, err := net.SplitHostPort(raw); err == nil {
+			h = hh
+		}
+		if h == "" || h == "0.0.0.0" || h == "::" || h == "[::]" {
+			return
+		}
+		hosts = append(hosts, h)
+	}
+
+	if publicURL != "" {
+		stripped := publicURL
+		for _, scheme := range []string{"grpcs://", "grpc://", "https://", "http://"} {
+			if rest, ok := strings.CutPrefix(stripped, scheme); ok {
+				stripped = rest
+				break
+			}
+		}
+		// stripped may carry a trailing path/query — keep only the authority.
+		if i := strings.IndexAny(stripped, "/?#"); i >= 0 {
+			stripped = stripped[:i]
+		}
+		add(stripped)
+	}
+	add(listen)
+	return hosts
 }
 
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.
