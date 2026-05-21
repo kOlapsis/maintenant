@@ -43,7 +43,7 @@ jobs:
             exit 1
           fi
         env:
-          LICENSE_PUBLIC_KEY: ${{ secrets.LICENSE_PUBLIC_KEY }}
+          LICENSE_PUBLIC_KEY: ${{ vars.LICENSE_PUBLIC_KEY }}
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,7 +95,7 @@ jobs:
             VERSION=${{ env.BUILD_VERSION }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ env.BUILD_DATE }}
-            LICENSE_PUBLIC_KEY=${{ secrets.LICENSE_PUBLIC_KEY }}
+            LICENSE_PUBLIC_KEY=${{ vars.LICENSE_PUBLIC_KEY }}
 
       - name: Build (PR validation)
         if: steps.push_decision.outputs.should_push != 'true'
@@ -111,7 +111,7 @@ jobs:
             VERSION=${{ env.BUILD_VERSION }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ env.BUILD_DATE }}
-            LICENSE_PUBLIC_KEY=${{ secrets.LICENSE_PUBLIC_KEY }}
+            LICENSE_PUBLIC_KEY=${{ vars.LICENSE_PUBLIC_KEY }}
 
       - name: Export digest
         if: steps.push_decision.outputs.should_push == 'true'
