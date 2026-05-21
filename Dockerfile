@@ -47,6 +47,19 @@ RUN apk add --no-cache ca-certificates tzdata setpriv \
 COPY --from=builder --chmod=555 /out/maintenant /app/maintenant
 COPY --chmod=555 docker-entrypoint.sh /docker-entrypoint.sh
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="maintenant" \
+      org.opencontainers.image.description="Monitor everything. Manage nothing." \
+      org.opencontainers.image.url="https://github.com/kOlapsis/maintenant" \
+      org.opencontainers.image.source="https://github.com/kOlapsis/maintenant" \
+      org.opencontainers.image.vendor="kOlapsis" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
 EXPOSE 8080
 VOLUME /data
 
