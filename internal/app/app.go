@@ -363,7 +363,14 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Sessions:    a.agentSessions,
 		Broadcaster: &sseBroadcaster{broker: a.broker},
 		Limiter:     agentserver.NewLimiter(),
-		Logger:      logger.With("component", "agentserver"),
+		Dispatcher: agentserver.NewDispatcher(agentserver.DispatchDeps{
+			Container:   a.containerSvc,
+			Resource:    a.resourceSvc,
+			Endpoint:    a.endpointSvc,
+			Certificate: a.certSvc,
+			Heartbeat:   a.heartbeatSvc,
+		}),
+		Logger: logger.With("component", "agentserver"),
 	})
 
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{

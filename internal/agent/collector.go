@@ -23,6 +23,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	cmodel "github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
@@ -49,10 +50,87 @@ func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label s
 }
 
 func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+	if err := syncInventory(ctx, id, rt, stream, logger); err != nil {
+		return err
+	}
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, stream, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, stream, logger) })
 	return g.Wait()
+}
+
+// labeledDiscoverer is satisfied by the docker runtime, exposing raw labels so the
+// inventory carries compose grouping.
+type labeledDiscoverer interface {
+	DiscoverAllWithLabels(ctx context.Context) ([]*docker.DiscoveryResult, error)
+}
+
+// syncInventory pushes a container event for every container the runtime currently
+// knows about. The live event stream only carries state transitions, so without this
+// containers already running at connect time would never reach the server.
+func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+	send := func(c *cmodel.Container, labels map[string]string) error {
+		state, ok := containerStateToProto(c.State)
+		if !ok {
+			return nil
+		}
+		return stream.Send(&agentpb.AgentEvent{
+			AgentId:    id.AgentID,
+			EventId:    uuid.NewString(),
+			ObservedAt: timestamppb.Now(),
+			Body: &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{
+				ContainerId: c.ExternalID,
+				Name:        c.Name,
+				State:       state,
+				Labels:      labels,
+			}},
+		})
+	}
+
+	if ld, ok := rt.(labeledDiscoverer); ok {
+		results, err := ld.DiscoverAllWithLabels(ctx)
+		if err != nil {
+			logger.Warn("collector: inventory discovery failed", "err", err)
+			return nil
+		}
+		for _, res := range results {
+			if err := send(res.Container, res.Labels); err != nil {
+				return fmt.Errorf("send inventory event: %w", err)
+			}
+		}
+		return nil
+	}
+
+	containers, err := rt.DiscoverAll(ctx)
+	if err != nil {
+		logger.Warn("collector: inventory discovery failed", "err", err)
+		return nil
+	}
+	for _, c := range containers {
+		if err := send(c, nil); err != nil {
+			return fmt.Errorf("send inventory event: %w", err)
+		}
+	}
+	return nil
+}
+
+func containerStateToProto(s cmodel.ContainerState) (agentpb.ContainerState, bool) {
+	switch s {
+	case cmodel.StateRunning:
+		return agentpb.ContainerState_CONTAINER_STATE_RUNNING, true
+	case cmodel.StateExited, cmodel.StateCompleted:
+		return agentpb.ContainerState_CONTAINER_STATE_EXITED, true
+	case cmodel.StatePaused:
+		return agentpb.ContainerState_CONTAINER_STATE_PAUSED, true
+	case cmodel.StateRestarting:
+		return agentpb.ContainerState_CONTAINER_STATE_RESTARTING, true
+	case cmodel.StateCreated:
+		return agentpb.ContainerState_CONTAINER_STATE_CREATED, true
+	case cmodel.StateDead:
+		return agentpb.ContainerState_CONTAINER_STATE_DEAD, true
+	default:
+		return agentpb.ContainerState_CONTAINER_STATE_UNSPECIFIED, false
+	}
 }
 
 func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {

@@ -178,6 +178,12 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		defer sessions.Close(ag.AgentID, "stream_ended")
 	}
 
+	// Mark live on auth so the stale watcher can't reap a freshly (re)connected stream.
+	connectedAt := time.Now()
+	if err := impl.deps.AgentStore.UpdateLastSeen(stream.Context(), ag.AgentID, connectedAt); err != nil {
+		logger.Error("Push: initial UpdateLastSeen failed", "agent_id", ag.AgentID, "err", err)
+	}
+
 	// Phase 4: async recv so we can select on session cancellation.
 	type recvResult struct {
 		msg *agentpb.ClientMessage
@@ -199,7 +205,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		eventCount  uint64
 		lastSeenSeq uint64
 		lastAck     = time.Now()
-		lastSeenUpd time.Time
+		lastSeenUpd = connectedAt
 	)
 
 	maybeAck := func(force bool) error {
@@ -258,7 +264,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 			eventCount++
 			lastSeenSeq = evt.GetSeq()
 
-			if time.Since(lastSeenUpd) > time.Minute {
+			if time.Since(lastSeenUpd) > 20*time.Second {
 				if err := impl.deps.AgentStore.UpdateLastSeen(stream.Context(), ag.AgentID, time.Now()); err != nil {
 					logger.Error("Push: UpdateLastSeen failed", "agent_id", ag.AgentID, "err", err)
 				}
