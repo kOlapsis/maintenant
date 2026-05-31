@@ -69,6 +69,23 @@ func (c *Client) Connect(ctx context.Context) error {
 }
 
 // ConnectWithRetry attempts to connect with exponential backoff.
+func (c *Client) TryConnect(ctx context.Context) error {
+	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err := c.cli.Ping(tctx)
+	if err != nil {
+		c.mu.Lock()
+		c.connected = false
+		c.mu.Unlock()
+		return fmt.Errorf("docker ping failed: %w", err)
+	}
+	c.mu.Lock()
+	c.connected = true
+	c.mu.Unlock()
+	c.logger.Info("connected to Docker daemon")
+	return nil
+}
+
 func (c *Client) ConnectWithRetry(ctx context.Context) error {
 	backoff := initialBackoff
 	for {

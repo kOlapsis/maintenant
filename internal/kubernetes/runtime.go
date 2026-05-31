@@ -125,6 +125,12 @@ func (r *Runtime) Connect(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runtime) TryConnect(ctx context.Context) error {
+	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return r.Connect(tctx)
+}
+
 func buildConfig() (*rest.Config, error) {
 	// In-cluster first.
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {

@@ -34,8 +34,9 @@ type LogStreamer interface {
 
 // LogStreamHandler handles SSE log streaming endpoints.
 type LogStreamHandler struct {
-	streamer LogStreamer
-	service  *container.Service
+	streamer       LogStreamer
+	service        *container.Service
+	runtimeChecker RuntimeChecker
 }
 
 // NewLogStreamHandler creates a new log stream handler.
@@ -43,9 +44,21 @@ func NewLogStreamHandler(streamer LogStreamer, svc *container.Service) *LogStrea
 	return &LogStreamHandler{streamer: streamer, service: svc}
 }
 
+// SetRuntimeChecker injects the runtime availability checker.
+func (h *LogStreamHandler) SetRuntimeChecker(rc RuntimeChecker) {
+	h.runtimeChecker = rc
+}
+
 // HandleLogStream handles GET /api/v1/containers/{id}/logs/stream.
 // It opens an SSE connection and streams container logs in real-time.
 func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Request) {
+	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"container monitoring unavailable"}`))
+		return
+	}
+
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {

@@ -24,6 +24,8 @@ import type { Alert } from '@/services/alertApi'
 import SparklineChart from '@/components/ui/SparklineChart.vue'
 import UpdateSummaryStrip from '@/components/dashboard/UpdateSummaryStrip.vue'
 import UpdateBadge from '@/components/UpdateBadge.vue'
+import RuntimeDegradedBanner from '@/components/RuntimeDegradedBanner.vue'
+import { useContainersStore } from '@/stores/containers'
 import { useUpdatesStore } from '@/stores/updates'
 import { useEdition } from '@/composables/useEdition'
 import { timeAgo } from '@/utils/time'
@@ -50,6 +52,7 @@ const alertsStore = useAlertsStore()
 const statusAdmin = useStatusAdminStore()
 const updatesStore = useUpdatesStore()
 const postureStore = usePostureStore()
+const containersStore = useContainersStore()
 
 const showPosture = computed(() => hasFeature('security_posture') && postureStore.posture !== null)
 
@@ -359,6 +362,9 @@ onUnmounted(() => {
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
       <div class="max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-12">
+
+        <!-- Degraded mode banner (container monitoring unavailable) -->
+        <RuntimeDegradedBanner v-if="!containersStore.isContainerMonitoringAvailable" />
 
         <!-- Summary Cards -->
         <div class="grid grid-cols-2 gap-2.5 sm:gap-5" :class="showPosture ? 'lg:grid-cols-5' : 'lg:grid-cols-4'">

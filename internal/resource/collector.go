@@ -107,6 +107,9 @@ func (c *Collector) GetHostStat() *HostStatReader {
 }
 
 func (c *Collector) collect(ctx context.Context) {
+	if !c.rt.IsConnected() {
+		return
+	}
 	containers, err := c.containerSvc.ListContainers(ctx, container.ListContainersOpts{})
 	if err != nil {
 		c.logger.Error("resource collector: list containers", "error", err)

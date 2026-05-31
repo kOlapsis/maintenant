@@ -30,6 +30,11 @@ type SecurityInsightProvider interface {
 	InsightCount(containerID int64) (int, string)
 }
 
+// RuntimeChecker reports whether the container runtime is currently connected.
+type RuntimeChecker interface {
+	IsConnected() bool
+}
+
 // ContainerHandler handles container-related HTTP endpoints.
 type ContainerHandler struct {
 	service          *container.Service
@@ -37,11 +42,17 @@ type ContainerHandler struct {
 	logFetcher       LogFetcher
 	containerLister  ContainerNameLister
 	securityProvider SecurityInsightProvider
+	runtimeChecker   RuntimeChecker
 }
 
 // NewContainerHandler creates a new container handler.
 func NewContainerHandler(service *container.Service, uptime *container.UptimeCalculator) *ContainerHandler {
 	return &ContainerHandler{service: service, uptime: uptime}
+}
+
+// SetRuntimeChecker injects the runtime availability checker.
+func (h *ContainerHandler) SetRuntimeChecker(rc RuntimeChecker) {
+	h.runtimeChecker = rc
 }
 
 // SetSecurityProvider sets the security insight provider for enriching container responses.
@@ -113,11 +124,15 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		enrichedGroups = append(enrichedGroups, eg)
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"groups":         enrichedGroups,
 		"total":          total,
 		"archived_count": archivedCount,
-	})
+	}
+	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+		resp["stale"] = true
+	}
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 // HandleGet handles GET /api/v1/containers/{id}.
@@ -183,6 +198,10 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+		detail["stale"] = true
+	}
+
 	WriteJSON(w, http.StatusOK, detail)
 }
 
@@ -234,12 +253,16 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"container_id": id,
 		"transitions":  transitions,
 		"total":        total,
 		"has_more":     opts.Offset+len(transitions) < total,
-	})
+	}
+	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+		resp["stale"] = true
+	}
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 // HandleDelete handles DELETE /api/v1/containers/{id}.

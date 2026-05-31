@@ -26,7 +26,11 @@ import (
 )
 
 // reconcile performs startup reconciliation and endpoint/security discovery.
+// Must only be called when the runtime is connected.
 func (a *App) reconcile(ctx context.Context) {
+	if !a.rt.IsConnected() {
+		return
+	}
 	a.logger.Info("running startup container reconciliation")
 	if err := a.containerSvc.Reconcile(ctx, a.rt); err != nil {
 		a.logger.Error("startup reconciliation failed", "error", err)
@@ -110,9 +114,12 @@ func (a *App) reconcile(ctx context.Context) {
 }
 
 // startEventStream consumes runtime events and dispatches to services.
-func (a *App) startEventStream(ctx context.Context) {
+// Returns a channel that closes when the event stream ends (daemon disconnected).
+func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
+	done := make(chan struct{})
 	eventCh := a.rt.StreamEvents(ctx)
 	go func() {
+		defer close(done)
 		for evt := range eventCh {
 			// Route Swarm service/node events to the Swarm event processor.
 			if evt.ResourceType == pbruntime.ResourceService || evt.ResourceType == pbruntime.ResourceNode {
@@ -181,6 +188,7 @@ func (a *App) startEventStream(ctx context.Context) {
 			}
 		}
 	}()
+	return done
 }
 
 // startNodeRefresh runs periodic Swarm node reconciliation (Enterprise, 60s).
@@ -344,5 +352,77 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 				},
 			})
 		}
+	}
+}
+
+// wireContainerMonitoring câbles la surveillance conteneur pour un cycle de connexion :
+// réconciliation initiale et flux d'événements.
+// Retourne un canal fermé quand le flux d'événements se termine (perte daemon).
+// Appelée exactement une fois par cycle de connexion (la garde est le superviseur).
+func (a *App) wireContainerMonitoring(ctx context.Context) <-chan struct{} {
+	a.reconcile(ctx)
+	return a.startEventStream(ctx)
+}
+
+// broadcastRuntimeAvailability diffuse l'état runtime courant via SSE.
+func (a *App) broadcastRuntimeAvailability() {
+	a.broker.Broadcast(v1.SSEEvent{
+		Type: event.RuntimeAvailabilityChanged,
+		Data: map[string]interface{}{
+			"name":      a.rt.Name(),
+			"connected": a.rt.IsConnected(),
+		},
+	})
+}
+
+// startRuntimeSupervisor orchestre la surveillance du runtime en tâche de fond.
+// Si connecté au boot : câble immédiatement, puis supervise la perte.
+// Si dégradé au boot : goroutine de reconnexion de fond (ConnectWithRetry).
+// Garantie : wireContainerMonitoring est appelée exactement une fois par cycle de connexion.
+func (a *App) startRuntimeSupervisor(ctx context.Context) {
+	a.broadcastRuntimeAvailability()
+
+	if a.rt.IsConnected() {
+		// Comportement nominal : câblage immédiat + supervision de fond.
+		streamDone := a.wireContainerMonitoring(ctx)
+		go a.supervisorLoop(ctx, streamDone)
+	} else {
+		// Dégradé au boot : reconnexion de fond.
+		a.logger.Info("container runtime unavailable, monitoring suspended", "runtime", a.rt.Name())
+		go a.supervisorLoop(ctx, nil)
+	}
+}
+
+// supervisorLoop gère le cycle reconnexion → câblage → détection de perte.
+// streamDone est non-nil si une connexion est déjà active (fermeture = perte).
+func (a *App) supervisorLoop(ctx context.Context, streamDone <-chan struct{}) {
+	lossNotify := streamDone
+
+	for {
+		if lossNotify != nil {
+			// Attendre la perte du daemon ou l'annulation du contexte.
+			select {
+			case <-ctx.Done():
+				return
+			case <-lossNotify:
+				// T025 : flux fermé = daemon perdu.
+				a.rt.SetDisconnected()
+				a.broadcastRuntimeAvailability()
+				a.logger.Warn("container runtime lost, entering degraded mode", "runtime", a.rt.Name())
+				lossNotify = nil
+			}
+		}
+
+		// Tentative de reconnexion (avec retry de fond, respecte ctx.Done).
+		if err := a.rt.Connect(ctx); err != nil {
+			// ctx annulé — arrêt propre.
+			return
+		}
+
+		// T026 : garde idempotente par cycle — le superviseur lui-même garantit
+		// qu'on passe ici une seule fois par reconnexion.
+		a.broadcastRuntimeAvailability()
+		a.logger.Info("container runtime reconnected, resuming container monitoring", "runtime", a.rt.Name())
+		lossNotify = a.wireContainerMonitoring(ctx)
 	}
 }

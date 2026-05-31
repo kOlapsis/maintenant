@@ -195,42 +195,43 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	a.rt = rt
 
-	if err := rt.Connect(ctx); err != nil {
-		_ = rt.Close()
-		_ = db.Close()
-		return nil, fmt.Errorf("connect to runtime %s: %w", rt.Name(), err)
+	if err := rt.TryConnect(ctx); err != nil {
+		logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name())
+		rt.SetDisconnected()
 	}
 
-	// --- Swarm detection ---
-	if dr, ok := rt.(*docker.Runtime); ok {
-		detector := swarm.NewDetector(dr.Client(), logger)
-		a.swarmDetector = detector
-		result, err := detector.Detect(ctx)
-		if err != nil {
-			logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
-		} else if result.Active && result.IsManager {
-			a.swarmCluster = &swarm.SwarmCluster{
-				ID:        result.ClusterID,
-				IsManager: result.IsManager,
-			}
-			a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), logger)
-			a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
-				net, err := dr.Client().NetworkInspect(ctx, networkID)
-				if err != nil {
-					return "", "", err
+	// --- Swarm detection (only when runtime is connected) ---
+	if rt.IsConnected() {
+		if dr, ok := rt.(*docker.Runtime); ok {
+			detector := swarm.NewDetector(dr.Client(), logger)
+			a.swarmDetector = detector
+			result, err := detector.Detect(ctx)
+			if err != nil {
+				logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
+			} else if result.Active && result.IsManager {
+				a.swarmCluster = &swarm.SwarmCluster{
+					ID:        result.ClusterID,
+					IsManager: result.IsManager,
 				}
-				return net.Name, net.Scope, nil
-			})
-			a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
+				a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), logger)
+				a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
+					net, err := dr.Client().NetworkInspect(ctx, networkID)
+					if err != nil {
+						return "", "", err
+					}
+					return net.Name, net.Scope, nil
+				})
+				a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
 
-			// Enterprise: node health monitoring, crash-loop detection, update tracking
-			if extension.CurrentEdition() == extension.Enterprise {
-				a.swarmNodeStore = sqlite.NewSwarmNodeStore(db)
-				a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
-				a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
-				a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
-				a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
-				a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
+				// Enterprise: node health monitoring, crash-loop detection, update tracking
+				if extension.CurrentEdition() == extension.Enterprise {
+					a.swarmNodeStore = sqlite.NewSwarmNodeStore(db)
+					a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
+					a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
+					a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
+					a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
+					a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
+				}
 			}
 		}
 	}
@@ -597,10 +598,7 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Startup reconciliation
-	a.reconcile(ctx)
-
-	// Background services
+	// Background services (always run, regardless of runtime availability)
 	go a.rl.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
@@ -621,8 +619,9 @@ func (a *App) Start(ctx context.Context) error {
 	// Retention cleanup
 	a.startRetentionCleanup(ctx)
 
-	// Event stream
-	a.startEventStream(ctx)
+	// Container monitoring supervisor: wires reconcile + event stream when connected,
+	// and manages reconnection in background when degraded (Phase 5).
+	a.startRuntimeSupervisor(ctx)
 
 	// HTTP server
 	go func() {
