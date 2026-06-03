@@ -62,6 +62,10 @@ func (r *Runtime) Connect(ctx context.Context) error {
 	return r.client.ConnectWithRetry(ctx)
 }
 
+func (r *Runtime) TryConnect(ctx context.Context) error {
+	return r.client.TryConnect(ctx)
+}
+
 func (r *Runtime) IsConnected() bool {
 	return r.client.IsConnected()
 }

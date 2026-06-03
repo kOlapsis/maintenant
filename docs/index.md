@@ -8,7 +8,7 @@ Drop a single container. Watch everything. Sleep at night.
 
 ## What is maintenant?
 
-Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, one for uptime, one for certs, one for metrics, and yet another for a status page. maintenant replaces all of them with a single binary, zero external dependencies, and zero configuration to get started.
+Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, one for uptime, one for certs, one for metrics, and yet another for a status page. maintenant replaces all of them with a single binary, zero external dependencies on the datastore layer (no Redis, no Postgres, no message queue — SQLite only), and zero configuration to get started. The container runtime (Docker socket or Kubernetes API) is **optional**: endpoint, SSL, and heartbeat monitors work fully without it.
 
 Deploy one container, and maintenant auto-discovers your entire stack. Docker or Kubernetes — it does not matter.
 
@@ -49,6 +49,7 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 | Kubernetes native | **Yes** | No | Yes | No |
 | MCP for AI assistants | **Yes** | No | No | No |
 | Single binary, zero deps | **Yes** | Node.js | Docker API | Docker API |
+| Container runtime optional | **Yes** | No | No | No |
 
 ---
 

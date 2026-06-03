@@ -15,12 +15,12 @@
 import { inject, computed, watch } from 'vue'
 import ContainerList from '@/components/ContainerList.vue'
 import ResourceSummary from '@/components/ResourceSummary.vue'
+import RuntimeDegradedBanner from '@/components/RuntimeDegradedBanner.vue'
 import AgentFilterDropdown from '@/components/AgentFilterDropdown.vue'
 import { useContainersStore } from '@/stores/containers'
 import { useUpdatesStore } from '@/stores/updates'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import type { Container } from '@/services/containerApi'
-import InlineAlert from '@/components/ui/InlineAlert.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
 
@@ -55,19 +55,14 @@ watch(
       <AgentFilterDropdown v-model="store.agentFilter" class="mt-1" />
     </div>
 
-    <!-- Runtime unavailable warning -->
-    <InlineAlert
-      v-if="!store.runtimeConnected"
-      severity="critical"
-      tag="OFFLINE"
-      class="mb-6"
-    >
-      <template #title>{{ store.runtimeLabel }} runtime unavailable</template>
-      Cannot connect to the container runtime. Check that maintenant has access to the {{ store.runtimeLabel }} API.
-    </InlineAlert>
+    <!-- Degraded mode banner -->
+    <RuntimeDegradedBanner
+      v-if="!store.isContainerMonitoringAvailable"
+      class="mb-4"
+    />
 
     <FeatureHint
-      v-if="store.runtimeConnected"
+      v-if="store.isContainerMonitoringAvailable"
       storage-key="containers"
       legacy-storage-key="pb:hideLabelTips"
       :title="`Customize with ${labelOrAnnotation}s`"

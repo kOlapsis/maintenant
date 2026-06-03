@@ -94,7 +94,8 @@ const (
 
 // Runtime context change events.
 const (
-	RuntimeContextChanged = "runtime.context_changed"
+	RuntimeContextChanged     = "runtime.context_changed"
+	RuntimeAvailabilityChanged = "runtime.availability_changed"
 )
 
 // Update intelligence events.

@@ -180,6 +180,9 @@ func NewRouter(d HandlerDeps) *Router {
 	if cl, ok := d.Runtime.(ContainerNameLister); ok {
 		ch.SetContainerNameLister(cl)
 	}
+	if d.Runtime != nil {
+		ch.SetRuntimeChecker(d.Runtime)
+	}
 
 	// Container REST endpoints
 	r.mux.HandleFunc("GET /api/v1/containers", ch.HandleList)
@@ -444,6 +447,9 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 
 	if d.LogStreamer != nil && d.Containers != nil {
 		lsh := NewLogStreamHandler(d.LogStreamer, d.Containers)
+		if d.Runtime != nil {
+			lsh.SetRuntimeChecker(d.Runtime)
+		}
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/logs/stream", lsh.HandleLogStream)
 	}
 
@@ -619,9 +625,17 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 
 // handleHealth returns the health check response.
 func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	resp := map[string]string{"status": "ok"}
+	resp := map[string]interface{}{
+		"status": "ok",
+	}
 	if r.buildVersion != "" {
 		resp["version"] = r.buildVersion
+	}
+	if r.runtime != nil {
+		resp["runtime"] = map[string]interface{}{
+			"name":      r.runtime.Name(),
+			"connected": r.runtime.IsConnected(),
+		}
 	}
 	WriteJSON(w, http.StatusOK, resp)
 }

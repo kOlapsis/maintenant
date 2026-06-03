@@ -79,12 +79,21 @@ export const useRuntimeStore = defineStore('runtime', () => {
     } catch { /* ignore */ }
   }
 
+  function onAvailabilityChanged(e: MessageEvent) {
+    try {
+      const data = JSON.parse(e.data) as { name: string; connected: boolean }
+      connected.value = data.connected
+    } catch { /* ignore */ }
+  }
+
   function startListening() {
     sseBus.on('runtime.context_changed', onContextChanged)
+    sseBus.on('runtime.availability_changed', onAvailabilityChanged)
   }
 
   function stopListening() {
     sseBus.off('runtime.context_changed', onContextChanged)
+    sseBus.off('runtime.availability_changed', onAvailabilityChanged)
   }
 
   return {

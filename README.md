@@ -51,6 +51,7 @@ Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, o
 | Alerting (webhook, Discord)  | **Yes**    | Yes         | Limited    | No         |
 | Kubernetes native            | **Yes**    | No          | Yes        | No         |
 | Single binary, zero deps     | **Yes**    | Node.js     | Docker API | Docker API |
+| Container runtime optional   | **Yes**    | No          | No         | No         |
 
 **One container. One dashboard. Everything monitored.**
 
@@ -615,7 +616,7 @@ Full REST API under `/api/v1/` for automation and integration.
 ```
 
 - **Single binary** — Frontend embedded via `embed.FS`. One file to deploy.
-- **Zero dependencies** — SQLite is the only database. No Redis, no Postgres, no message queue.
+- **Zero dependencies** — SQLite is the only required datastore. No Redis, no Postgres, no message queue. The container runtime (Docker / Kubernetes) is **optional**: maintenant starts and serves endpoints, SSL, and heartbeat monitors even without a runtime socket — container monitoring resumes automatically when the runtime becomes available.
 - **Real-time** — SSE pushes every state change to the browser instantly.
 - **Read-only** — maintenant never touches your containers. Observe only.
 - **Label-driven** — Configure monitoring through Docker labels. No YAML to maintain.

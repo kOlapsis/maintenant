@@ -17,6 +17,7 @@ import {
   type ListContainersParams,
 } from '@/services/containerApi'
 import { sseBus } from '@/services/sseBus'
+import { useRuntimeStore } from '@/stores/runtime'
 
 export interface ContainerGroup {
   name: string
@@ -37,6 +38,12 @@ export const useContainersStore = defineStore('containers', () => {
 
   const expandedControllers = ref<Set<string>>(new Set())
   const agentFilter = ref<string | null>(null)
+
+  // Derived from the runtime store: false when container monitoring is unavailable.
+  const isContainerMonitoringAvailable = computed(() => {
+    const runtimeStore = useRuntimeStore()
+    return runtimeStore.connected
+  })
 
   const allContainers = computed(() =>
     groups.value.flatMap((g) => g.containers),
@@ -215,6 +222,7 @@ export const useContainersStore = defineStore('containers', () => {
     runtimeConnected,
     runtimeName,
     runtimeLabel,
+    isContainerMonitoringAvailable,
     isKubernetesMode,
     isSwarmMode,
     allContainers,

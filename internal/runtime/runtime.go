@@ -25,6 +25,8 @@ import (
 type Runtime interface {
 	// Lifecycle
 	Connect(ctx context.Context) error
+	// TryConnect attempts a single bounded connection (~3s). Non-fatal: returns error without retrying.
+	TryConnect(ctx context.Context) error
 	IsConnected() bool
 	SetDisconnected()
 	Close() error
