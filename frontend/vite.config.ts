@@ -24,7 +24,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
-        navigateFallbackDenylist: [/\/api\//, /\/ping\//, /\/status\//],
+        navigateFallbackDenylist: [/\/api\//, /\/ping\//, /\/status\//, /\/oauth\//, /\/\.well-known\//, /\/mcp/],
         runtimeCaching: [
           {
             urlPattern: /\/api\/v1\/(?!containers\/events|status\/smtp|channels|webhooks)/,
