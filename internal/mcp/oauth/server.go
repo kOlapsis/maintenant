@@ -5,14 +5,15 @@ import (
 	"crypto/subtle"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
 
-// defaultAllowedRedirectOrigins is intentionally empty.
+// defaultAllowedRedirectURIs is intentionally empty.
 // Loopback (localhost / 127.0.0.1 / ::1) is always accepted for local clients.
-// Remote origins must be added explicitly via MAINTENANT_MCP_ALLOWED_REDIRECT_URIS.
-var defaultAllowedRedirectOrigins []string
+// Remote redirect URIs must be added explicitly via MAINTENANT_MCP_ALLOWED_REDIRECT_URIS.
+var defaultAllowedRedirectURIs []string
 
 // Config holds the OAuth server configuration.
 type Config struct {
@@ -21,8 +22,8 @@ type Config struct {
 	IssuerURL    string
 	AccessTTL    time.Duration
 	RefreshTTL   time.Duration
-	// AllowedRedirectURIs is a comma-separated list of additional allowed redirect
-	// URI origins (scheme://host) appended to the built-in defaults.
+	// AllowedRedirectURIs is a comma-separated list of full redirect URIs that
+	// are matched exactly (RFC 6749 §3.1.2.3). Loopback is always allowed.
 	// Set via MAINTENANT_MCP_ALLOWED_REDIRECT_URIS.
 	AllowedRedirectURIs string
 }
@@ -34,7 +35,7 @@ type OAuthServer struct {
 	issuerURL              string
 	accessTTL              time.Duration
 	refreshTTL             time.Duration
-	allowedRedirectOrigins []string
+	allowedRedirectURIs    []string
 	store                  MCPOAuthStore
 	logger                 *slog.Logger
 }
@@ -50,11 +51,11 @@ func NewOAuthServer(cfg Config, store MCPOAuthStore, logger *slog.Logger) *OAuth
 		refreshTTL = 30 * 24 * time.Hour
 	}
 
-	allowed := make([]string, len(defaultAllowedRedirectOrigins))
-	copy(allowed, defaultAllowedRedirectOrigins)
-	for _, raw := range strings.Split(cfg.AllowedRedirectURIs, ",") {
-		if origin := strings.TrimSpace(raw); origin != "" {
-			allowed = append(allowed, origin)
+	allowed := make([]string, len(defaultAllowedRedirectURIs))
+	copy(allowed, defaultAllowedRedirectURIs)
+	for raw := range strings.SplitSeq(cfg.AllowedRedirectURIs, ",") {
+		if uri := strings.TrimSpace(raw); uri != "" {
+			allowed = append(allowed, uri)
 		}
 	}
 
@@ -64,14 +65,14 @@ func NewOAuthServer(cfg Config, store MCPOAuthStore, logger *slog.Logger) *OAuth
 		issuerURL:              strings.TrimRight(cfg.IssuerURL, "/"),
 		accessTTL:              accessTTL,
 		refreshTTL:             refreshTTL,
-		allowedRedirectOrigins: allowed,
+		allowedRedirectURIs:    allowed,
 		store:                  store,
 		logger:                 logger,
 	}
 }
 
-// isRedirectURIAllowed returns true when uri is a loopback address or its
-// origin (scheme://host) is in the server's allowed list.
+// isRedirectURIAllowed returns true when uri is a loopback address or matches
+// an allowed redirect URI exactly (simple string comparison, RFC 6749 §3.1.2.3).
 func (s *OAuthServer) isRedirectURIAllowed(rawURI string) bool {
 	u, err := url.Parse(rawURI)
 	if err != nil {
@@ -81,13 +82,7 @@ func (s *OAuthServer) isRedirectURIAllowed(rawURI string) bool {
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
 		return u.Scheme == "http" || u.Scheme == "https"
 	}
-	origin := u.Scheme + "://" + u.Host
-	for _, allowed := range s.allowedRedirectOrigins {
-		if strings.EqualFold(origin, allowed) {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.allowedRedirectURIs, rawURI)
 }
 
 // VerifyClientSecret checks the provided secret against the stored hash

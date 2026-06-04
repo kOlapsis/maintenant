@@ -108,10 +108,12 @@ When the OAuth2 variables are absent, the HTTP transport is open. Use your rever
 | `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated allowlist of OAuth2 `redirect_uri` values. Required when client credentials are set. |
 | `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public-facing URL. Used as OAuth2 issuer and in metadata endpoints. |
 
-`MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` accepts an exact list of full URIs. Any `redirect_uri` submitted to `/oauth/authorize` that does not match an entry is rejected, closing the open-redirect path. Common values:
+`MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` accepts an exact list of full URIs. Any `redirect_uri` submitted to `/oauth/authorize` is matched against the list with simple string comparison ([RFC 6749 §3.1.2.3](https://www.rfc-editor.org/rfc/rfc6749#section-3.1.2.3)); anything that does not match an entry exactly is rejected, closing the open-redirect path. Use the full callback URI, not just the origin.
+
+Loopback callbacks (`localhost` / `127.0.0.1` / `::1`, any port or path, `http` or `https`) are **always accepted** without configuration, so local clients such as Claude Desktop and Claude Code work out of the box. Only remote callbacks (Claude web/mobile) need to be listed. Common values:
 
 - Claude web — `https://claude.ai/api/mcp/auth_callback`
-- Claude Desktop — `http://localhost:33418/oauth/callback`
+- Claude Desktop — `http://localhost:33418/oauth/callback` (loopback, accepted automatically)
 - Claude mobile — see Claude documentation for the current callback host.
 
 The `--mcp-stdio` flag is independent of these variables — it runs the MCP server over stdin/stdout and exits when the connection closes.
