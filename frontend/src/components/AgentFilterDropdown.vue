@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAgentsStore } from '@/stores/agents'
 
 const props = defineProps<{
@@ -25,6 +25,12 @@ const emit = defineEmits<{
 
 const store = useAgentsStore()
 const open = ref(false)
+
+// The agents store isn't loaded on container/endpoint/etc. pages — fetch it so
+// the filter (and agent badges) can resolve agent identities.
+onMounted(() => {
+  if (store.agents.length === 0) store.fetchAgents()
+})
 
 const activeAgents = computed(() => store.agents.filter((a) => a.status === 'active'))
 

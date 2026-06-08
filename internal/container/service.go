@@ -48,6 +48,13 @@ type RestartChecker interface {
 	Check(ctx context.Context, c *Container) (interface{}, error)
 }
 
+// AgentRuntimeResolver resolves the detected runtime kind ("docker"/"swarm"/
+// "kubernetes") of a remote agent, so containers it reports are tagged correctly.
+// Defined here (consumer side) to avoid an import cycle with internal/agent.
+type AgentRuntimeResolver interface {
+	DetectedRuntime(ctx context.Context, agentID string) (string, error)
+}
+
 // EventCallback is called when a container event occurs (for SSE broadcasting).
 type EventCallback func(eventType string, data interface{})
 
@@ -55,10 +62,11 @@ type EventCallback func(eventType string, data interface{})
 type Deps struct {
 	Store          ContainerStore    // required
 	Logger         *slog.Logger      // required
-	EventCallback  EventCallback     // optional — nil-safe
-	LogFetcher     LogFetcher        // optional — nil-safe
-	RestartChecker RestartChecker    // optional — nil-safe
-	Discoverer     RuntimeDiscoverer // optional — nil-safe
+	EventCallback  EventCallback        // optional — nil-safe
+	LogFetcher     LogFetcher           // optional — nil-safe
+	RestartChecker RestartChecker       // optional — nil-safe
+	Discoverer     RuntimeDiscoverer    // optional — nil-safe
+	AgentRuntime   AgentRuntimeResolver // optional — nil-safe, fallback "docker"
 }
 
 // Service orchestrates container discovery, event processing, and persistence.
@@ -69,6 +77,7 @@ type Service struct {
 	logFetcher     LogFetcher
 	restartChecker RestartChecker
 	discoverer     RuntimeDiscoverer
+	agentRuntime   AgentRuntimeResolver
 }
 
 // NewService creates a new container service with all dependencies.
@@ -86,7 +95,21 @@ func NewService(d Deps) *Service {
 		logFetcher:     d.LogFetcher,
 		restartChecker: d.RestartChecker,
 		discoverer:     d.Discoverer,
+		agentRuntime:   d.AgentRuntime,
 	}
+}
+
+// resolveAgentRuntime returns the runtime kind for a remote agent, defaulting to
+// "docker" when no resolver is wired or the lookup fails.
+func (s *Service) resolveAgentRuntime(ctx context.Context, agentID string) string {
+	if s.agentRuntime == nil {
+		return "docker"
+	}
+	rt, err := s.agentRuntime.DetectedRuntime(ctx, agentID)
+	if err != nil || rt == "" {
+		return "docker"
+	}
+	return rt
 }
 
 // SetEventCallback sets the callback for broadcasting container events.
@@ -176,8 +199,10 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		transition.ExitCode = &ec
 	}
 
-	// Capture log snippet on die events with non-zero exit code (T028)
-	if evt.Action == "die" && s.logFetcher != nil {
+	// Capture log snippet on die events with non-zero exit code (T028).
+	// Only for local containers: logFetcher targets the server's own runtime and
+	// cannot read logs of a container living on a remote agent's host.
+	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == nil {
 		snippet, err := s.logFetcher.FetchLogSnippet(ctx, evt.ExternalID)
 		if err != nil {
 			s.logger.Warn("fetch log snippet", "external_id", evt.ExternalID[:12], "error", err)

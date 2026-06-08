@@ -16,6 +16,7 @@ import type {Container} from '@/services/containerApi'
 import {useResourcesStore} from '@/stores/resources'
 import {useUpdatesStore} from '@/stores/updates'
 import {usePostureStore} from '@/stores/posture'
+import {useContainersStore} from '@/stores/containers'
 import {useEdition} from '@/composables/useEdition'
 import {timeAgo} from '@/utils/time'
 import {getStateStyle as getStateStyleFromUtil} from '@/utils/containerState'
@@ -36,7 +37,12 @@ const emit = defineEmits<{
 const resourcesStore = useResourcesStore()
 const updatesStore = useUpdatesStore()
 const postureStore = usePostureStore()
+const containersStore = useContainersStore()
 const { hasFeature } = useEdition()
+
+// Only surface the host badge when more than one host is present — otherwise
+// it is the same value on every card and adds nothing.
+const showHostBadge = computed(() => !!props.container.agent_id && containersStore.hostCount > 1)
 
 const metrics = computed(() => resourcesStore.formattedSnapshot(props.container.id))
 const containerUpdate = computed(() => updatesStore.updates.find(u => u.container_id === props.container.external_id) ?? null)
@@ -143,7 +149,12 @@ function getStateStyle(state: string) {
           :color="containerScore.color"
           size="xs"
         />
-        <AgentBadge v-if="container.agent_id" :agent-id="container.agent_id" />
+        <AgentBadge
+          v-if="showHostBadge"
+          :agent-id="container.agent_id"
+          :hostname="container.agent_hostname"
+          :label="container.agent_label"
+        />
       </div>
     </div>
 

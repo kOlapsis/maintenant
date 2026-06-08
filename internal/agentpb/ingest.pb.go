@@ -1219,16 +1219,19 @@ func (x *HeartbeatEvent) GetSourceIp() string {
 
 type ResourceSample struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	ContainerId      string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"` // empty for host-level samples
-	CpuPercent       float64                `protobuf:"fixed64,2,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
-	MemoryBytes      uint64                 `protobuf:"varint,3,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
-	MemoryLimitBytes uint64                 `protobuf:"varint,4,opt,name=memory_limit_bytes,json=memoryLimitBytes,proto3" json:"memory_limit_bytes,omitempty"`
+	ContainerId      string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`                   // empty for host-level samples
+	CpuPercent       float64                `protobuf:"fixed64,2,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`                    // host CPU% when container_id empty
+	MemoryBytes      uint64                 `protobuf:"varint,3,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`                  // host mem used when container_id empty
+	MemoryLimitBytes uint64                 `protobuf:"varint,4,opt,name=memory_limit_bytes,json=memoryLimitBytes,proto3" json:"memory_limit_bytes,omitempty"` // host mem total when container_id empty
 	NetworkRxBytes   uint64                 `protobuf:"varint,5,opt,name=network_rx_bytes,json=networkRxBytes,proto3" json:"network_rx_bytes,omitempty"`
 	NetworkTxBytes   uint64                 `protobuf:"varint,6,opt,name=network_tx_bytes,json=networkTxBytes,proto3" json:"network_tx_bytes,omitempty"`
 	DiskReadBytes    uint64                 `protobuf:"varint,7,opt,name=disk_read_bytes,json=diskReadBytes,proto3" json:"disk_read_bytes,omitempty"`
 	DiskWriteBytes   uint64                 `protobuf:"varint,8,opt,name=disk_write_bytes,json=diskWriteBytes,proto3" json:"disk_write_bytes,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Host-level only (container_id empty): root filesystem capacity.
+	HostDiskTotalBytes uint64 `protobuf:"varint,9,opt,name=host_disk_total_bytes,json=hostDiskTotalBytes,proto3" json:"host_disk_total_bytes,omitempty"`
+	HostDiskUsedBytes  uint64 `protobuf:"varint,10,opt,name=host_disk_used_bytes,json=hostDiskUsedBytes,proto3" json:"host_disk_used_bytes,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ResourceSample) Reset() {
@@ -1313,6 +1316,20 @@ func (x *ResourceSample) GetDiskReadBytes() uint64 {
 func (x *ResourceSample) GetDiskWriteBytes() uint64 {
 	if x != nil {
 		return x.DiskWriteBytes
+	}
+	return 0
+}
+
+func (x *ResourceSample) GetHostDiskTotalBytes() uint64 {
+	if x != nil {
+		return x.HostDiskTotalBytes
+	}
+	return 0
+}
+
+func (x *ResourceSample) GetHostDiskUsedBytes() uint64 {
+	if x != nil {
+		return x.HostDiskUsedBytes
 	}
 	return 0
 }
@@ -1502,7 +1519,7 @@ const file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc = "" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"V\n" +
 	"\x0eHeartbeatEvent\x12'\n" +
 	"\x0fheartbeat_token\x18\x01 \x01(\tR\x0eheartbeatToken\x12\x1b\n" +
-	"\tsource_ip\x18\x02 \x01(\tR\bsourceIp\"\xcb\x02\n" +
+	"\tsource_ip\x18\x02 \x01(\tR\bsourceIp\"\xaf\x03\n" +
 	"\x0eResourceSample\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
@@ -1512,7 +1529,10 @@ const file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc = "" +
 	"\x10network_rx_bytes\x18\x05 \x01(\x04R\x0enetworkRxBytes\x12(\n" +
 	"\x10network_tx_bytes\x18\x06 \x01(\x04R\x0enetworkTxBytes\x12&\n" +
 	"\x0fdisk_read_bytes\x18\a \x01(\x04R\rdiskReadBytes\x12(\n" +
-	"\x10disk_write_bytes\x18\b \x01(\x04R\x0ediskWriteBytes\"\xb1\x02\n" +
+	"\x10disk_write_bytes\x18\b \x01(\x04R\x0ediskWriteBytes\x121\n" +
+	"\x15host_disk_total_bytes\x18\t \x01(\x04R\x12hostDiskTotalBytes\x12/\n" +
+	"\x14host_disk_used_bytes\x18\n" +
+	" \x01(\x04R\x11hostDiskUsedBytes\"\xb1\x02\n" +
 	"\x0fCertificateInfo\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\rR\x04port\x12\x1d\n" +

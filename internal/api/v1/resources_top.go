@@ -24,7 +24,7 @@ import (
 type ResourceTopService interface {
 	GetAllLatestSnapshots() map[int64]*resource.ResourceSnapshot
 	GetContainerName(containerID int64) string
-	GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int) ([]resource.TopConsumerRow, error)
+	GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]resource.TopConsumerRow, error)
 }
 
 // ResourceTopHandler handles top resource consumers endpoints.
@@ -64,17 +64,19 @@ func (h *ResourceTopHandler) HandleGetTopConsumers(w http.ResponseWriter, r *htt
 		}
 	}
 
+	hostFilter := parseHostFilter(r)
+
 	period := r.URL.Query().Get("period")
 	if period == "1h" || period == "24h" || period == "7d" || period == "30d" {
-		h.handlePeriodQuery(w, r, metric, period, limit)
+		h.handlePeriodQuery(w, r, metric, period, limit, hostFilter)
 		return
 	}
 
-	h.handleRealtimeQuery(w, metric, limit)
+	h.handleRealtimeQuery(w, metric, limit, hostFilter)
 }
 
-func (h *ResourceTopHandler) handlePeriodQuery(w http.ResponseWriter, r *http.Request, metric, period string, limit int) {
-	rows, err := h.svc.GetTopConsumersByPeriod(r.Context(), metric, period, limit)
+func (h *ResourceTopHandler) handlePeriodQuery(w http.ResponseWriter, r *http.Request, metric, period string, limit int, agentID *string) {
+	rows, err := h.svc.GetTopConsumersByPeriod(r.Context(), metric, period, limit, agentID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch top consumers")
 		return
@@ -98,7 +100,7 @@ func (h *ResourceTopHandler) handlePeriodQuery(w http.ResponseWriter, r *http.Re
 	})
 }
 
-func (h *ResourceTopHandler) handleRealtimeQuery(w http.ResponseWriter, metric string, limit int) {
+func (h *ResourceTopHandler) handleRealtimeQuery(w http.ResponseWriter, metric string, limit int, agentID *string) {
 	all := h.svc.GetAllLatestSnapshots()
 
 	type entry struct {
@@ -108,6 +110,9 @@ func (h *ResourceTopHandler) handleRealtimeQuery(w http.ResponseWriter, metric s
 	}
 	entries := make([]entry, 0, len(all))
 	for cID, snap := range all {
+		if !hostMatches(snap.AgentID, agentID) {
+			continue
+		}
 		var value, pct float64
 		switch metric {
 		case "cpu":

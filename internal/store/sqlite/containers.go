@@ -69,7 +69,8 @@ func (s *ContainerStore) UpdateContainer(ctx context.Context, c *container.Conta
 			restart_threshold=?, alert_channels=?, archived=?, last_state_change_at=?, archived_at=?,
 			runtime_type=?, error_detail=?, controller_kind=?, namespace=?, pod_count=?, ready_count=?,
 			compose_working_dir=?,
-			swarm_service_id=?, swarm_service_name=?, swarm_service_mode=?, swarm_node_id=?, swarm_task_slot=?, swarm_desired_replicas=?
+			swarm_service_id=?, swarm_service_name=?, swarm_service_mode=?, swarm_node_id=?, swarm_task_slot=?, swarm_desired_replicas=?,
+			agent_id=?
 		WHERE id=?`,
 		c.Name, c.Image, string(c.State), nullableHealth(c.HealthStatus),
 		boolToInt(c.HasHealthCheck), NullableString(c.OrchestrationGroup), NullableString(c.OrchestrationUnit),
@@ -79,6 +80,7 @@ func (s *ContainerStore) UpdateContainer(ctx context.Context, c *container.Conta
 		c.RuntimeType, c.ErrorDetail, c.ControllerKind, c.Namespace, c.PodCount, c.ReadyCount,
 		c.ComposeWorkingDir,
 		c.SwarmServiceID, c.SwarmServiceName, c.SwarmServiceMode, c.SwarmNodeID, c.SwarmTaskSlot, c.SwarmDesiredReplicas,
+		c.AgentID,
 		c.ID,
 	)
 	if err != nil {

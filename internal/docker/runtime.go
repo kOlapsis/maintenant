@@ -101,6 +101,7 @@ func (r *Runtime) StreamEvents(ctx context.Context) <-chan runtime.RuntimeEvent 
 				Action:       evt.Action,
 				ExternalID:   evt.ExternalID,
 				Name:         evt.Name,
+				Image:        evt.Image,
 				ExitCode:     evt.ExitCode,
 				HealthStatus: evt.HealthStatus,
 				ResourceType: evt.ResourceType,

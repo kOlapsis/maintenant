@@ -37,11 +37,11 @@ func NewResourceStore(d *DB) *ResourceStore {
 
 func (s *ResourceStore) InsertSnapshot(ctx context.Context, snap *resource.ResourceSnapshot) (int64, error) {
 	res, err := s.writer.Exec(ctx,
-		`INSERT INTO resource_snapshots (container_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO resource_snapshots (container_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp, agent_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		snap.ContainerID, snap.CPUPercent, snap.MemUsed, snap.MemLimit,
 		snap.NetRxBytes, snap.NetTxBytes, snap.BlockReadBytes, snap.BlockWriteBytes,
-		snap.Timestamp.Unix(),
+		snap.Timestamp.Unix(), snap.AgentID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert resource snapshot: %w", err)
@@ -225,65 +225,70 @@ func (s *ResourceStore) InsertDailyRollup(ctx context.Context, r *resource.Rollu
 	return nil
 }
 
-func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int) ([]resource.TopConsumerRow, error) {
+// GetTopConsumersByPeriod ranks containers by average resource usage over a
+// period. agentID filters by host: nil = all hosts, a pointer to "" = the local
+// server (containers with NULL agent_id), a pointer to an id = that agent.
+func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string) ([]resource.TopConsumerRow, error) {
 	now := time.Now()
-	var query string
 
+	var table, timeCol, valExpr, pctExpr string
+	var from int64
 	switch period {
 	case "1h":
-		from := now.Add(-1 * time.Hour).Unix()
+		table, timeCol, from = "resource_snapshots", "timestamp", now.Add(-1*time.Hour).Unix()
 		switch metric {
 		case "cpu":
-			query = fmt.Sprintf(
-				`SELECT container_id, AVG(cpu_percent) AS avg_val, AVG(cpu_percent) AS avg_pct
-				FROM resource_snapshots WHERE timestamp >= %d
-				GROUP BY container_id ORDER BY avg_val DESC LIMIT %d`, from, limit)
+			valExpr, pctExpr = "AVG(cpu_percent)", "AVG(cpu_percent)"
 		case "memory":
-			query = fmt.Sprintf(
-				`SELECT container_id, CAST(AVG(mem_used) AS REAL) AS avg_val,
-					CASE WHEN AVG(mem_limit) > 0 THEN AVG(mem_used) * 100.0 / AVG(mem_limit) ELSE 0 END AS avg_pct
-				FROM resource_snapshots WHERE timestamp >= %d
-				GROUP BY container_id ORDER BY avg_val DESC LIMIT %d`, from, limit)
+			valExpr = "CAST(AVG(mem_used) AS REAL)"
+			pctExpr = "CASE WHEN AVG(mem_limit) > 0 THEN AVG(mem_used) * 100.0 / AVG(mem_limit) ELSE 0 END"
+		default:
+			return nil, fmt.Errorf("invalid metric: %s", metric)
 		}
-	case "24h":
-		from := now.Add(-24 * time.Hour).Unix()
+	case "24h", "7d", "30d":
+		table, timeCol = "resource_daily", "bucket"
+		if period == "24h" {
+			table = "resource_hourly"
+			from = now.Add(-24 * time.Hour).Unix()
+		} else if period == "7d" {
+			from = now.Add(-7 * 24 * time.Hour).Unix()
+		} else {
+			from = now.Add(-30 * 24 * time.Hour).Unix()
+		}
 		switch metric {
 		case "cpu":
-			query = fmt.Sprintf(
-				`SELECT container_id, AVG(avg_cpu_percent) AS avg_val, AVG(avg_cpu_percent) AS avg_pct
-				FROM resource_hourly WHERE bucket >= %d
-				GROUP BY container_id ORDER BY avg_val DESC LIMIT %d`, from, limit)
+			valExpr, pctExpr = "AVG(avg_cpu_percent)", "AVG(avg_cpu_percent)"
 		case "memory":
-			query = fmt.Sprintf(
-				`SELECT container_id, CAST(AVG(avg_mem_used) AS REAL) AS avg_val,
-					CASE WHEN AVG(avg_mem_limit) > 0 THEN AVG(avg_mem_used) * 100.0 / AVG(avg_mem_limit) ELSE 0 END AS avg_pct
-				FROM resource_hourly WHERE bucket >= %d
-				GROUP BY container_id ORDER BY avg_val DESC LIMIT %d`, from, limit)
-		}
-	case "7d", "30d":
-		days := 7
-		if period == "30d" {
-			days = 30
-		}
-		from := now.Add(-time.Duration(days) * 24 * time.Hour).Unix()
-		switch metric {
-		case "cpu":
-			query = fmt.Sprintf(
-				`SELECT container_id, AVG(avg_cpu_percent) AS avg_val, AVG(avg_cpu_percent) AS avg_pct
-				FROM resource_daily WHERE bucket >= %d
-				GROUP BY container_id ORDER BY avg_val DESC LIMIT %d`, from, limit)
-		case "memory":
-			query = fmt.Sprintf(
-				`SELECT container_id, CAST(AVG(avg_mem_used) AS REAL) AS avg_val,
-					CASE WHEN AVG(avg_mem_limit) > 0 THEN AVG(avg_mem_used) * 100.0 / AVG(avg_mem_limit) ELSE 0 END AS avg_pct
-				FROM resource_daily WHERE bucket >= %d
-				GROUP BY container_id ORDER BY avg_val DESC LIMIT %d`, from, limit)
+			valExpr = "CAST(AVG(avg_mem_used) AS REAL)"
+			pctExpr = "CASE WHEN AVG(avg_mem_limit) > 0 THEN AVG(avg_mem_used) * 100.0 / AVG(avg_mem_limit) ELSE 0 END"
+		default:
+			return nil, fmt.Errorf("invalid metric: %s", metric)
 		}
 	default:
 		return nil, fmt.Errorf("invalid period: %s", period)
 	}
 
-	rows, err := s.db.QueryContext(ctx, query)
+	// Filter by host through the container's owning agent so it works across
+	// the snapshot and rollup tables alike (rollups carry no agent_id column).
+	args := []any{from}
+	hostClause := ""
+	if agentID != nil {
+		if *agentID == "" {
+			hostClause = " AND container_id IN (SELECT id FROM containers WHERE agent_id IS NULL)"
+		} else {
+			hostClause = " AND container_id IN (SELECT id FROM containers WHERE agent_id = ?)"
+			args = append(args, *agentID)
+		}
+	}
+	args = append(args, limit)
+
+	query := fmt.Sprintf(
+		`SELECT container_id, %s AS avg_val, %s AS avg_pct
+		FROM %s WHERE %s >= ?%s
+		GROUP BY container_id ORDER BY avg_val DESC LIMIT ?`,
+		valExpr, pctExpr, table, timeCol, hostClause)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get top consumers by period: %w", err)
 	}

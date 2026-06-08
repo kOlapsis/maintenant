@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/resource"
@@ -25,11 +24,46 @@ import (
 // ResourceHandler handles resource monitoring HTTP endpoints.
 type ResourceHandler struct {
 	service *resource.Service
+	agents  AgentDirectory // optional — names hosts in the /resources/hosts list
 }
 
 // NewResourceHandler creates a new resource handler.
 func NewResourceHandler(service *resource.Service) *ResourceHandler {
 	return &ResourceHandler{service: service}
+}
+
+// SetAgentDirectory wires the agent directory so /resources/hosts can label
+// remote hosts with their hostname/label. Nil-safe (falls back to ids).
+func (h *ResourceHandler) SetAgentDirectory(d AgentDirectory) {
+	h.agents = d
+}
+
+// parseHostFilter reads the ?agent_id= query param into a host filter:
+//   - absent or empty  => nil  (caller decides default: "all" or "local")
+//   - "local"          => pointer to "" (the local server host, NULL agent_id)
+//   - "<agent_id>"     => pointer to that agent id
+func parseHostFilter(r *http.Request) *string {
+	v := r.URL.Query().Get("agent_id")
+	if v == "" {
+		return nil
+	}
+	if v == "local" {
+		empty := ""
+		return &empty
+	}
+	return &v
+}
+
+// hostMatches reports whether a snapshot owned by snapAgent belongs to the host
+// described by filter (nil = all, "" = local/NULL, id = that agent).
+func hostMatches(snapAgent *string, filter *string) bool {
+	if filter == nil {
+		return true
+	}
+	if *filter == "" {
+		return snapAgent == nil
+	}
+	return snapAgent != nil && *snapAgent == *filter
 }
 
 // HandleGetCurrent handles GET /api/v1/containers/{id}/resources/current.
@@ -65,55 +99,151 @@ func (h *ResourceHandler) HandleGetCurrent(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// HandleGetSummary handles GET /api/v1/resources/summary.
+// HandleGetSummary handles GET /api/v1/resources/summary[?agent_id=local|<id>].
+// Without agent_id it reports the local server host (preserving prior behaviour).
 func (h *ResourceHandler) HandleGetSummary(w http.ResponseWriter, r *http.Request) {
-	all := h.service.GetAllLatestSnapshots()
+	filter := parseHostFilter(r)
+	// Summary is always scoped to one host; default to the local server.
+	if filter == nil {
+		empty := ""
+		filter = &empty
+	}
 
+	// Net rates and container count for the selected host only.
 	var totalNetRxRate, totalNetTxRate int64
-	for _, snap := range all {
+	containerCount := 0
+	for _, snap := range h.service.GetAllLatestSnapshots() {
+		if !hostMatches(snap.AgentID, filter) {
+			continue
+		}
 		totalNetRxRate += snap.NetRxBytes
 		totalNetTxRate += snap.NetTxBytes
+		containerCount++
 	}
 
-	// Host CPU and memory from /proc/stat and /proc/meminfo (real host values).
-	hostStat := h.service.GetHostStat()
-	hostCPUPercent := hostStat.CPUPercent()
-	totalMemUsed := hostStat.MemUsed()
-	totalMemLimit := hostStat.MemTotal()
-	cpuCount := runtime.NumCPU()
+	sample := h.service.HostStatForAgent(*filter)
+	available := sample != nil
 
-	totalMemPercent := 0.0
-	if totalMemLimit > 0 {
-		totalMemPercent = float64(totalMemUsed) / float64(totalMemLimit) * 100.0
-	}
-
-	// Host disk usage (root filesystem)
+	var cpuPercent, memPercent, diskPercent float64
+	var memUsed, memLimit int64
 	var diskTotal, diskUsed uint64
-	var diskPercent float64
-	var fs syscall.Statfs_t
-	if err := syscall.Statfs("/", &fs); err == nil {
-		diskTotal = fs.Blocks * uint64(fs.Bsize)
-		diskFree := fs.Bavail * uint64(fs.Bsize)
-		diskUsed = diskTotal - diskFree
+	if available {
+		cpuPercent = sample.CPUPercent
+		memUsed, memLimit = sample.MemUsed, sample.MemTotal
+		if memLimit > 0 {
+			memPercent = float64(memUsed) / float64(memLimit) * 100.0
+		}
+		diskTotal, diskUsed = sample.DiskTotal, sample.DiskUsed
 		if diskTotal > 0 {
 			diskPercent = float64(diskUsed) / float64(diskTotal) * 100.0
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"total_cpu_percent": hostCPUPercent,
+	// CPU core count is only known for the local server host.
+	cpuCount := 0
+	if *filter == "" {
+		cpuCount = runtime.NumCPU()
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"agent_id":          *filter,
+		"available":         available,
+		"total_cpu_percent": cpuPercent,
 		"cpu_count":         cpuCount,
-		"total_mem_used":    totalMemUsed,
-		"total_mem_limit":   totalMemLimit,
-		"total_mem_percent": totalMemPercent,
+		"total_mem_used":    memUsed,
+		"total_mem_limit":   memLimit,
+		"total_mem_percent": memPercent,
 		"total_net_rx_rate": totalNetRxRate,
 		"total_net_tx_rate": totalNetTxRate,
-		"container_count":   len(all),
+		"container_count":   containerCount,
 		"disk_total":        diskTotal,
 		"disk_used":         diskUsed,
 		"disk_percent":      diskPercent,
 		"timestamp":         time.Now(),
 	})
+}
+
+// HandleGetHosts handles GET /api/v1/resources/hosts. It lists every known host
+// (the local server plus each remote agent) with its current CPU/mem/disk and
+// running-container count, so the UI can offer a host selector.
+func (h *ResourceHandler) HandleGetHosts(w http.ResponseWriter, r *http.Request) {
+	// Running-container count per host, from the in-memory latest snapshots.
+	counts := map[string]int{}
+	for _, snap := range h.service.GetAllLatestSnapshots() {
+		key := ""
+		if snap.AgentID != nil {
+			key = *snap.AgentID
+		}
+		counts[key]++
+	}
+
+	var names map[string]AgentName
+	if h.agents != nil {
+		if m, err := h.agents.AgentNames(r.Context()); err == nil {
+			names = m
+		}
+	}
+
+	type hostDTO struct {
+		AgentID        string  `json:"agent_id"` // "" for the local server
+		Hostname       string  `json:"hostname"`
+		Label          string  `json:"label"`
+		IsLocal        bool    `json:"is_local"`
+		Available      bool    `json:"available"`
+		CPUPercent     float64 `json:"cpu_percent"`
+		MemUsed        int64   `json:"mem_used"`
+		MemTotal       int64   `json:"mem_total"`
+		MemPercent     float64 `json:"mem_percent"`
+		DiskTotal      uint64  `json:"disk_total"`
+		DiskUsed       uint64  `json:"disk_used"`
+		DiskPercent    float64 `json:"disk_percent"`
+		ContainerCount int     `json:"container_count"`
+	}
+
+	now := time.Now()
+	build := func(agentID string, sample *resource.HostSample) hostDTO {
+		dto := hostDTO{
+			AgentID:        agentID,
+			IsLocal:        agentID == "",
+			ContainerCount: counts[agentID],
+		}
+		if agentID == "" {
+			dto.Hostname = "Local"
+			dto.Label = "Local"
+		} else if n, ok := names[agentID]; ok {
+			dto.Hostname = n.Hostname
+			dto.Label = n.Label
+		}
+		if resource.IsHostSampleFresh(sample, now) {
+			dto.Available = true
+			dto.CPUPercent = sample.CPUPercent
+			dto.MemUsed, dto.MemTotal = sample.MemUsed, sample.MemTotal
+			if sample.MemTotal > 0 {
+				dto.MemPercent = float64(sample.MemUsed) / float64(sample.MemTotal) * 100.0
+			}
+			dto.DiskTotal, dto.DiskUsed = sample.DiskTotal, sample.DiskUsed
+			if sample.DiskTotal > 0 {
+				dto.DiskPercent = float64(sample.DiskUsed) / float64(sample.DiskTotal) * 100.0
+			}
+		}
+		return dto
+	}
+
+	hosts := []hostDTO{}
+	seen := map[string]bool{}
+	for _, sample := range h.service.ListHostStats() {
+		hosts = append(hosts, build(sample.AgentID, sample))
+		seen[sample.AgentID] = true
+	}
+	// Include enrolled agents that have not reported a host sample yet so the
+	// selector still lists them (as unavailable).
+	for agentID := range names {
+		if !seen[agentID] {
+			hosts = append(hosts, build(agentID, nil))
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{"hosts": hosts})
 }
 
 // HandleGetHistory handles GET /api/v1/containers/{id}/resources/history.

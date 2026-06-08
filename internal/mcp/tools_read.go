@@ -303,7 +303,7 @@ func getTopConsumersHandler(svc *Services) gomcp.ToolHandlerFor[getTopConsumersI
 		if limit <= 0 {
 			limit = 10
 		}
-		rows, err := svc.Resources.GetTopConsumersByPeriod(ctx, input.Metric, period, limit)
+		rows, err := svc.Resources.GetTopConsumersByPeriod(ctx, input.Metric, period, limit, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get top consumers: %w", err)
 		}

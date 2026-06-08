@@ -12,14 +12,22 @@
 -->
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAgentsStore } from '@/stores/agents'
+import { useEdition } from '@/composables/useEdition'
 import FeatureGate from '@/components/FeatureGate.vue'
+import FeatureHint from '@/components/ui/FeatureHint.vue'
 import EnrollmentTokenModal from '@/components/EnrollmentTokenModal.vue'
 import AgentDetailPanel from '@/components/AgentDetailPanel.vue'
+import { docUrl } from '@/utils/docs'
+import { MonitorDot, Server, Boxes, ShieldCheck } from 'lucide-vue-next'
 import type { Agent, EnrollmentTokenCreated } from '@/services/agentApi'
 
+const { hasFeature } = useEdition()
 const store = useAgentsStore()
+
+const isAvailable = computed(() => hasFeature('multihost'))
 
 const generatingToken = ref(false)
 const tokenModalData = ref<EnrollmentTokenCreated | null>(null)
@@ -34,10 +42,12 @@ function openDetail(agent: Agent) {
 }
 
 onMounted(() => {
-  store.fetchAgents()
-  store.fetchTokens()
-  store.fetchMetrics()
-  store.connectSSE()
+  if (isAvailable.value) {
+    store.fetchAgents()
+    store.fetchTokens()
+    store.fetchMetrics()
+    store.connectSSE()
+  }
 })
 
 onUnmounted(() => {
@@ -95,11 +105,16 @@ function runtimeLabel(rt: string): string {
         </div>
       </div>
 
-      <FeatureGate
-        feature="multihost"
-        title="Multi-host Agents"
-        description="Enroll remote agents to monitor Docker, Swarm and Kubernetes hosts from a single server."
+      <FeatureHint
+        storage-key="agents"
+        title="Monitor remote hosts from a single server"
+        :doc-href="docUrl('features/multihost/#agent-enrollment')"
       >
+        Enroll lightweight agents on remote machines to stream their Docker, Swarm and Kubernetes state back to this server. Generate an enrollment token, run the install command on the host, and the agent appears below.
+      </FeatureHint>
+
+      <!-- Enterprise gate -->
+      <FeatureGate feature="multihost">
         <!-- Metrics strip -->
         <div
           v-if="store.metrics"
@@ -240,6 +255,49 @@ function runtimeLabel(rt: string): string {
             </tbody>
           </table>
         </div>
+
+        <!-- Placeholder slot (Community Edition) -->
+        <template #placeholder>
+          <div class="bg-[#12151C] rounded-2xl border border-slate-800 overflow-hidden">
+            <div class="px-6 py-10 flex flex-col items-center text-center">
+              <div class="w-12 h-12 rounded-xl bg-pb-green-500/10 border border-pb-green-500/20 flex items-center justify-center mb-4">
+                <MonitorDot :size="22" class="text-pb-green-400" />
+              </div>
+              <h2 class="text-base font-bold text-white mb-1">Multi-host Agents</h2>
+              <p class="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
+                Enroll lightweight agents on remote hosts to monitor Docker, Swarm and Kubernetes from this single server — no extra dashboards, no per-host setup.
+              </p>
+
+              <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
+                <li class="flex items-start gap-3">
+                  <Server :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-slate-300">
+                    Monitor unlimited remote hosts from one server with token-based enrollment
+                  </span>
+                </li>
+                <li class="flex items-start gap-3">
+                  <Boxes :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-slate-300">
+                    Auto-detect Docker, Swarm and Kubernetes runtimes on each agent
+                  </span>
+                </li>
+                <li class="flex items-start gap-3">
+                  <ShieldCheck :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-slate-300">
+                    Secure, expiring enrollment tokens you can revoke at any time
+                  </span>
+                </li>
+              </ul>
+
+              <RouterLink
+                to="/pro-edition"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20 transition-colors"
+              >
+                Unlock with Pro
+              </RouterLink>
+            </div>
+          </div>
+        </template>
       </FeatureGate>
 
     </div>

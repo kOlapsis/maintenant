@@ -41,7 +41,7 @@ func (m *mockResourceTopService) GetContainerName(containerID int64) string {
 	return ""
 }
 
-func (m *mockResourceTopService) GetTopConsumersByPeriod(_ context.Context, _ string, _ string, _ int) ([]resource.TopConsumerRow, error) {
+func (m *mockResourceTopService) GetTopConsumersByPeriod(_ context.Context, _ string, _ string, _ int, _ *string) ([]resource.TopConsumerRow, error) {
 	return nil, nil
 }
 

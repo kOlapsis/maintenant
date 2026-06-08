@@ -13,10 +13,15 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Server } from 'lucide-vue-next'
 import { useAgentsStore } from '@/stores/agents'
 
 const props = defineProps<{
   agentId: string | null | undefined
+  // Optional identity provided directly by the API (agent_hostname / agent_label),
+  // preferred over the store lookup so the badge works without the agents store loaded.
+  hostname?: string | null
+  label?: string | null
 }>()
 
 const store = useAgentsStore()
@@ -26,20 +31,29 @@ const agent = computed(() => {
   return store.agents.find((a) => a.agent_id === props.agentId) ?? null
 })
 
-const label = computed(() => {
-  if (!agent.value) return props.agentId ?? '—'
-  return agent.value.label || agent.value.hostname
+const displayName = computed(() => {
+  if (props.label) return props.label
+  if (props.hostname) return props.hostname
+  if (agent.value) return agent.value.label || agent.value.hostname
+  return props.agentId ?? '—'
+})
+
+// Explicit tooltip so the badge reads as a host, and exposes the raw agent id.
+const tooltip = computed(() => {
+  const parts = [`Hôte : ${displayName.value}`]
+  if (props.agentId && props.agentId !== displayName.value) parts.push(props.agentId)
+  return parts.join(' · ')
 })
 </script>
 
 <template>
   <span
     v-if="agentId"
-    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium max-w-[160px]"
     :style="{ backgroundColor: 'var(--pb-bg-elevated)', color: 'var(--pb-text-secondary)' }"
-    :title="agentId"
+    :title="tooltip"
   >
-    <span class="w-1.5 h-1.5 rounded-full bg-pb-green-500 shrink-0" />
-    {{ label }}
+    <Server :size="11" class="shrink-0 text-pb-green-500" />
+    <span class="truncate">{{ displayName }}</span>
   </span>
 </template>

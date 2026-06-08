@@ -24,6 +24,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	cmodel "github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
+	"github.com/kolapsis/maintenant/internal/hoststat"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
@@ -56,6 +57,7 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, stream, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, stream, logger) })
+	g.Go(func() error { return sampleHostResources(gCtx, id, stream, logger) })
 	return g.Wait()
 }
 
@@ -81,6 +83,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream
 			Body: &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{
 				ContainerId: c.ExternalID,
 				Name:        c.Name,
+				Image:       c.Image,
 				State:       state,
 				Labels:      labels,
 			}},
@@ -177,6 +180,51 @@ func sampleRuntimeResources(ctx context.Context, id *Identity, rt runtime.Runtim
 	}
 }
 
+// sampleHostResources periodically reports host-level CPU, memory and disk of
+// the machine the agent runs on. These samples carry an empty container_id so
+// the server routes them to the per-agent host registry. Requires host /proc
+// access inside a container (mount -v /proc:/host/proc:ro).
+func sampleHostResources(ctx context.Context, id *Identity, stream *PushStream, logger *slog.Logger) error {
+	reader := hoststat.NewReader()
+	// The reader maintains its own 1s sampling loop for accurate CPU deltas.
+	go reader.Start(ctx)
+
+	ticker := time.NewTicker(resourceSampleInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			evt := hostResourceEvent(id.AgentID, reader)
+			if err := stream.Send(evt); err != nil {
+				logger.Debug("collector: send host sample failed", "err", err)
+				return fmt.Errorf("send host sample: %w", err)
+			}
+		}
+	}
+}
+
+// hostResourceEvent builds a host-level AgentEvent from the current reader state.
+// Split out so it can be unit-tested without a live stream.
+func hostResourceEvent(agentID string, reader *hoststat.Reader) *agentpb.AgentEvent {
+	diskTotal, diskUsed := hoststat.DiskUsage("/")
+	return &agentpb.AgentEvent{
+		AgentId:    agentID,
+		EventId:    uuid.NewString(),
+		ObservedAt: timestamppb.Now(),
+		Body: &agentpb.AgentEvent_Resource{Resource: &agentpb.ResourceSample{
+			ContainerId:        "", // empty => host-level sample
+			CpuPercent:         reader.CPUPercent(),
+			MemoryBytes:        clampUint(reader.MemUsed()),
+			MemoryLimitBytes:   clampUint(reader.MemTotal()),
+			HostDiskTotalBytes: diskTotal,
+			HostDiskUsedBytes:  diskUsed,
+		}},
+	}
+}
+
 func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
 	containers, err := rt.DiscoverAll(ctx)
 	if err != nil {
@@ -237,6 +285,7 @@ func runtimeEventToProto(ev runtime.RuntimeEvent) *agentpb.ContainerEvent {
 	return &agentpb.ContainerEvent{
 		ContainerId:   ev.ExternalID,
 		Name:          ev.Name,
+		Image:         ev.Image,
 		State:         state,
 		StatusMessage: ev.ExitCode,
 		Labels:        ev.Labels,

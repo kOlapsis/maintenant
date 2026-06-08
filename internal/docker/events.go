@@ -27,6 +27,7 @@ type ContainerEvent struct {
 	Action       string
 	ExternalID   string
 	Name         string
+	Image        string
 	ExitCode     string
 	HealthStatus string
 	ResourceType string // "container", "service", or "node"
@@ -148,6 +149,7 @@ func processEvent(msg events.Message) *ContainerEvent {
 		Action:       action,
 		ExternalID:   msg.Actor.ID,
 		Name:         msg.Actor.Attributes["name"],
+		Image:        msg.Actor.Attributes["image"],
 		ResourceType: "container",
 		Timestamp:    eventTimestamp(msg.Time, msg.TimeNano),
 		Labels:       msg.Actor.Attributes,

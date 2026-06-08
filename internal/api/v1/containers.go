@@ -35,6 +35,18 @@ type RuntimeChecker interface {
 	IsConnected() bool
 }
 
+// AgentName holds the display identity of a remote agent.
+type AgentName struct {
+	Hostname string
+	Label    string
+}
+
+// AgentDirectory resolves agent_id → display identity so container responses can
+// show which agent a remote container belongs to.
+type AgentDirectory interface {
+	AgentNames(ctx context.Context) (map[string]AgentName, error)
+}
+
 // ContainerHandler handles container-related HTTP endpoints.
 type ContainerHandler struct {
 	service          *container.Service
@@ -43,6 +55,7 @@ type ContainerHandler struct {
 	containerLister  ContainerNameLister
 	securityProvider SecurityInsightProvider
 	runtimeChecker   RuntimeChecker
+	agentDirectory   AgentDirectory
 }
 
 // NewContainerHandler creates a new container handler.
@@ -58,6 +71,12 @@ func (h *ContainerHandler) SetRuntimeChecker(rc RuntimeChecker) {
 // SetSecurityProvider sets the security insight provider for enriching container responses.
 func (h *ContainerHandler) SetSecurityProvider(sp SecurityInsightProvider) {
 	h.securityProvider = sp
+}
+
+// SetAgentDirectory sets the agent directory for enriching remote containers with
+// their originating agent's hostname/label.
+func (h *ContainerHandler) SetAgentDirectory(ad AgentDirectory) {
+	h.agentDirectory = ad
 }
 
 // SetLogFetcher sets the log fetcher for the logs endpoint.
@@ -97,16 +116,26 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		groups = []*container.ContainerGroup{}
 	}
 
-	// Enrich with security insight counts if provider is available
+	// Enrich with security insight counts and remote-agent identity if available.
 	type enrichedContainer struct {
 		*container.Container
 		SecurityInsightCount    int     `json:"security_insight_count"`
 		SecurityHighestSeverity *string `json:"security_highest_severity"`
+		AgentHostname           *string `json:"agent_hostname,omitempty"`
+		AgentLabel              *string `json:"agent_label,omitempty"`
 	}
 	type enrichedGroup struct {
 		Name       string              `json:"name"`
 		Source     string              `json:"source"`
 		Containers []enrichedContainer `json:"containers"`
+	}
+
+	// Resolve agent identities once for the whole response.
+	var agentNames map[string]AgentName
+	if h.agentDirectory != nil {
+		if names, err := h.agentDirectory.AgentNames(r.Context()); err == nil {
+			agentNames = names
+		}
 	}
 
 	enrichedGroups := make([]enrichedGroup, 0, len(groups))
@@ -120,6 +149,15 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 				ec.SecurityInsightCount = count
 				if sev != "" {
 					ec.SecurityHighestSeverity = &sev
+				}
+			}
+			if c.AgentID != nil && agentNames != nil {
+				if an, ok := agentNames[*c.AgentID]; ok {
+					hostname, label := an.Hostname, an.Label
+					ec.AgentHostname = &hostname
+					if label != "" {
+						ec.AgentLabel = &label
+					}
 				}
 			}
 			eg.Containers = append(eg.Containers, ec)

@@ -353,6 +353,33 @@ func TestService_ProcessEvent_StartTransitionsToRunning(t *testing.T) {
 	assert.Equal(t, StateRunning, transitions[0].NewState)
 }
 
+func TestService_HandleStateChange_LogFetcherSkippedForRemote(t *testing.T) {
+	// Remote container (AgentID set): logFetcher must NOT be called — it targets
+	// the server's local runtime and cannot read a remote agent's container logs.
+	store := newSvcStore()
+	lf := &mockLogFetcher{}
+	svc := newTestService(store, func(d *Deps) { d.LogFetcher = lf })
+
+	agentID := "agent-remote"
+	c := makeTestContainer(extID("remote"), StateRunning)
+	c.AgentID = &agentID
+	store.seed(c)
+
+	svc.handleStateChange(context.Background(), makeTestEvent("die", c.ExternalID), StateExited)
+	assert.Equal(t, 0, lf.calls, "logFetcher should not be called for remote containers")
+
+	// Local container (AgentID nil): logFetcher IS called on die.
+	store2 := newSvcStore()
+	lf2 := &mockLogFetcher{}
+	svc2 := newTestService(store2, func(d *Deps) { d.LogFetcher = lf2 })
+
+	c2 := makeTestContainer(extID("local"), StateRunning)
+	store2.seed(c2)
+
+	svc2.handleStateChange(context.Background(), makeTestEvent("die", c2.ExternalID), StateExited)
+	assert.Equal(t, 1, lf2.calls, "logFetcher should be called for local containers")
+}
+
 func TestService_ProcessEvent_DieWithZeroExitCodeSetsCompleted(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("b"), StateRunning)

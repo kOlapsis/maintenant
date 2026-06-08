@@ -277,6 +277,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		LogFetcher:     logFetcher,
 		RestartChecker: alert.NewRestartDetector(store, logger),
 		Discoverer:     rt,
+		AgentRuntime:   agentRuntimeResolver{store: agentStore},
 	})
 	uptimeCalc := container.NewUptimeCalculator(store)
 
@@ -720,13 +721,19 @@ func (a *App) Start(ctx context.Context) error {
 		a.startEmbeddedAgent(ctx)
 	}
 
-	// HTTP server
-	go func() {
-		a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
-		if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.logger.Error("HTTP server error", "error", err)
-		}
-	}()
+	// HTTP server — never in agent mode: an agent only streams to the server and
+	// must not expose the UI/API. (main.go already exits before app.Start in agent
+	// mode; this is a defensive invariant.)
+	if a.cfg.Mode == "agent" {
+		a.logger.Warn("agent mode: HTTP server disabled")
+	} else {
+		go func() {
+			a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
+			if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				a.logger.Error("HTTP server error", "error", err)
+			}
+		}()
+	}
 
 	// Wait for shutdown
 	<-ctx.Done()

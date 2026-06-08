@@ -38,6 +38,19 @@ type ResourceSnapshot struct {
 	AgentID         *string   `json:"agent_id,omitempty"`
 }
 
+// HostSample is the latest host-level resource measurement for a single host:
+// the local server (AgentID == "") or a remote agent's machine. CPU is a
+// percentage 0-100; memory and disk are bytes for the root filesystem.
+type HostSample struct {
+	AgentID    string    `json:"agent_id"`
+	CPUPercent float64   `json:"cpu_percent"`
+	MemUsed    int64     `json:"mem_used"`
+	MemTotal   int64     `json:"mem_total"`
+	DiskTotal  uint64    `json:"disk_total"`
+	DiskUsed   uint64    `json:"disk_used"`
+	Timestamp  time.Time `json:"timestamp"`
+}
+
 // ResourceAlertConfig holds per-container resource alert thresholds.
 type ResourceAlertConfig struct {
 	ID                     int64      `json:"id"`

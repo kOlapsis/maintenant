@@ -89,7 +89,7 @@ func (m *mockResourceStore) AggregateHourlyRollup(_ context.Context, _, _ time.T
 func (m *mockResourceStore) AggregateDailyRollup(_ context.Context, _, _ time.Time) error {
 	return nil
 }
-func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, _ int) ([]TopConsumerRow, error) {
+func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, _ int, _ *string) ([]TopConsumerRow, error) {
 	return nil, nil
 }
 func (m *mockResourceStore) DeleteHourlyBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
@@ -104,13 +104,20 @@ func (m *mockResourceStore) DeleteDailyBefore(_ context.Context, _ time.Time, _ 
 // ---------------------------------------------------------------------------
 
 type mockContainerStore struct {
-	containers map[int64]*container.Container
+	containers   map[int64]*container.Container
+	byExternalID map[string]*container.Container
 }
 
 func newMockContainerStore(containers ...*container.Container) *mockContainerStore {
-	s := &mockContainerStore{containers: make(map[int64]*container.Container)}
+	s := &mockContainerStore{
+		containers:   make(map[int64]*container.Container),
+		byExternalID: make(map[string]*container.Container),
+	}
 	for _, c := range containers {
 		s.containers[c.ID] = c
+		if c.ExternalID != "" {
+			s.byExternalID[c.ExternalID] = c
+		}
 	}
 	return s
 }
@@ -131,7 +138,10 @@ func (m *mockContainerStore) InsertContainer(_ context.Context, _ *container.Con
 func (m *mockContainerStore) UpdateContainer(_ context.Context, _ *container.Container) error {
 	return nil
 }
-func (m *mockContainerStore) GetContainerByExternalID(_ context.Context, _ string) (*container.Container, error) {
+func (m *mockContainerStore) GetContainerByExternalID(_ context.Context, externalID string) (*container.Container, error) {
+	if c, ok := m.byExternalID[externalID]; ok {
+		return c, nil
+	}
 	return nil, nil
 }
 func (m *mockContainerStore) ListContainers(_ context.Context, _ container.ListContainersOpts) ([]*container.Container, error) {
@@ -181,6 +191,7 @@ func newTestService(store ResourceStore, containerSvc *container.Service, cb Eve
 		containerSvc:  containerSvc,
 		logger:        slog.Default(),
 		eventCallback: cb,
+		hosts:         newHostRegistry(),
 	}
 }
 

@@ -43,6 +43,9 @@ type Service struct {
 	logger        *slog.Logger
 	eventCallback EventCallback
 
+	// hosts holds the latest host-level sample reported by each remote agent.
+	hosts *hostRegistry
+
 	// noAlertConfigLogged tracks container IDs for which we've already logged
 	// "alerts not configured" once. Set membership is the only signal — values
 	// are unused.
@@ -68,6 +71,7 @@ func NewService(d Deps) *Service {
 		containerSvc:  d.ContainerSvc,
 		logger:        d.Logger,
 		eventCallback: d.EventCallback,
+		hosts:         newHostRegistry(),
 	}
 
 	s.collector = NewCollector(d.Runtime, d.ContainerSvc, d.Logger)
@@ -150,9 +154,11 @@ func (s *Service) UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfi
 	return s.store.UpsertAlertConfig(ctx, cfg)
 }
 
-// GetTopConsumersByPeriod returns the top resource consumers averaged over a period.
-func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int) ([]TopConsumerRow, error) {
-	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, limit)
+// GetTopConsumersByPeriod returns the top resource consumers averaged over a
+// period. agentID filters by host: nil = all hosts, *agentID == "" = the local
+// server, *agentID == id = that agent.
+func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]TopConsumerRow, error) {
+	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, limit, agentID)
 	if err != nil {
 		return nil, fmt.Errorf("get top consumers by period: %w", err)
 	}

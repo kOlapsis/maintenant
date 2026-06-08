@@ -172,7 +172,7 @@ const allNav: NavItem[] = [
   { type: 'item', to: '/webhooks', label: 'Webhooks', icon: Link },
   { type: 'separator' },
   { type: 'item', to: '/status-admin', label: 'Status Pages', icon: Activity },
-  { type: 'item', to: '/agents', label: 'Agents', icon: MonitorDot, feature: 'multihost' },
+  { type: 'item', to: '/agents', label: 'Agents', icon: MonitorDot },
 ]
 
 const mainNav = computed(() =>

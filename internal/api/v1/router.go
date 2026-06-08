@@ -133,6 +133,24 @@ type HandlerDeps struct {
 	StatusURL            string
 }
 
+// agentStoreDirectory adapts the sqlite agent store to AgentDirectory so the
+// container handler can resolve agent_id → hostname/label for remote containers.
+type agentStoreDirectory struct {
+	store *sqlite.AgentStore
+}
+
+func (d agentStoreDirectory) AgentNames(ctx context.Context) (map[string]AgentName, error) {
+	agents, err := d.store.List(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]AgentName, len(agents))
+	for _, a := range agents {
+		m[a.AgentID] = AgentName{Hostname: a.Hostname, Label: a.Label}
+	}
+	return m, nil
+}
+
 // Router sets up the /api/v1 route group.
 type Router struct {
 	mux              *http.ServeMux
@@ -183,6 +201,9 @@ func NewRouter(d HandlerDeps) *Router {
 	if d.Runtime != nil {
 		ch.SetRuntimeChecker(d.Runtime)
 	}
+	if d.AgentStore != nil {
+		ch.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
+	}
 
 	// Container REST endpoints
 	r.mux.HandleFunc("GET /api/v1/containers", ch.HandleList)
@@ -229,9 +250,13 @@ func NewRouter(d HandlerDeps) *Router {
 	// Resource monitoring endpoints
 	if d.Resources != nil {
 		rh := NewResourceHandler(d.Resources)
+		if d.AgentStore != nil {
+			rh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
+		}
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/current", rh.HandleGetCurrent)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", requireEnterprise(rh.HandleGetHistory))
 		r.mux.HandleFunc("GET /api/v1/resources/summary", rh.HandleGetSummary)
+		r.mux.HandleFunc("GET /api/v1/resources/hosts", rh.HandleGetHosts)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/alerts", rh.HandleGetAlertConfig)
 		r.mux.HandleFunc("PUT /api/v1/containers/{id}/resources/alerts", rh.HandleUpsertAlertConfig)
 	}

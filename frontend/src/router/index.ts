@@ -73,7 +73,7 @@ const router = createRouter({
         { path: 'cluster', name: 'cluster', component: ClusterOverviewPage },
         { path: 'nodes', name: 'nodes', component: NodesPage },
         { path: 'escalation', name: 'escalation', component: EscalationPage },
-        { path: 'agents', name: 'agents', component: AgentsPage, meta: { featureRequired: 'multihost' } },
+        { path: 'agents', name: 'agents', component: AgentsPage },
         { path: 'pro-edition', name: 'pro-edition', component: ProPage },
       ],
     },

@@ -48,6 +48,8 @@ export interface Container {
   swarm_task_slot?: number
   swarm_desired_replicas?: number
   agent_id?: string | null
+  agent_hostname?: string | null
+  agent_label?: string | null
 }
 
 export interface ContainerListResponse {

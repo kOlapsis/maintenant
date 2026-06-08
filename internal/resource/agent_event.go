@@ -24,7 +24,18 @@ import (
 func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample) error {
 	containerExternalID := ev.GetContainerId()
 	if containerExternalID == "" {
-		return nil // host-level samples not yet supported
+		// Host-level sample: record the agent machine's CPU/mem/disk so the
+		// resources view can switch between hosts.
+		s.RecordHostSample(&HostSample{
+			AgentID:    agentID,
+			CPUPercent: ev.GetCpuPercent(),
+			MemUsed:    int64(ev.GetMemoryBytes()),
+			MemTotal:   int64(ev.GetMemoryLimitBytes()),
+			DiskTotal:  ev.GetHostDiskTotalBytes(),
+			DiskUsed:   ev.GetHostDiskUsedBytes(),
+			Timestamp:  time.Now(),
+		})
+		return nil
 	}
 
 	c, err := s.containerSvc.GetContainerByExternalID(ctx, containerExternalID)

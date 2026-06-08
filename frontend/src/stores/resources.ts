@@ -13,10 +13,15 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   getSummary,
+  getResourceHosts,
   type ResourceSnapshot,
   type ResourceSummary,
+  type ResourceHost,
 } from '@/services/resourceApi'
 import { sseBus } from '@/services/sseBus'
+
+// Persisted selected host for the resources view ('' === local server).
+const SELECTED_HOST_KEY = 'pb:resources:selected-host'
 
 export interface ResourceAlert {
   container_id: number
@@ -34,6 +39,22 @@ export const useResourcesStore = defineStore('resources', () => {
   const alerts = ref<Record<number, ResourceAlert>>({})
   const summary = ref<ResourceSummary | null>(null)
   const cpuSparklines = ref<Record<number, number[]>>({})
+
+  // Multi-host: list of selectable hosts and the current selection ('' = local).
+  const hosts = ref<ResourceHost[]>([])
+  const selectedHostId = ref<string>(localStorage.getItem(SELECTED_HOST_KEY) ?? '')
+
+  // The selector is only meaningful when more than one host exists.
+  const multiHost = computed(() => hosts.value.length > 1)
+
+  // Query value to scope API calls: undefined when there is a single host
+  // (preserve prior behaviour), else 'local' or the agent id.
+  const hostQuery = computed<string | undefined>(() => {
+    if (!multiHost.value) return undefined
+    return selectedHostId.value === '' ? 'local' : selectedHostId.value
+  })
+
+  const selectedHost = computed(() => hosts.value.find((h) => h.agent_id === selectedHostId.value) ?? null)
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B'
@@ -129,10 +150,33 @@ export const useResourcesStore = defineStore('resources', () => {
 
   async function fetchSummary() {
     try {
-      summary.value = await getSummary()
+      summary.value = await getSummary(hostQuery.value)
     } catch {
       // ignore
     }
+  }
+
+  async function fetchHosts() {
+    try {
+      const res = await getResourceHosts()
+      hosts.value = res.hosts || []
+      // Reset to local if the previously selected host disappeared.
+      if (selectedHostId.value && !hosts.value.some((h) => h.agent_id === selectedHostId.value)) {
+        selectHost('')
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function selectHost(agentId: string) {
+    selectedHostId.value = agentId
+    try {
+      localStorage.setItem(SELECTED_HOST_KEY, agentId)
+    } catch {
+      // ignore (private mode)
+    }
+    fetchSummary()
   }
 
   return {
@@ -140,6 +184,11 @@ export const useResourcesStore = defineStore('resources', () => {
     alerts,
     summary,
     cpuSparklines,
+    hosts,
+    selectedHostId,
+    selectedHost,
+    multiHost,
+    hostQuery,
     getSnapshot,
     getAlert,
     formattedSnapshot,
@@ -148,5 +197,7 @@ export const useResourcesStore = defineStore('resources', () => {
     connectSSE,
     disconnectSSE,
     fetchSummary,
+    fetchHosts,
+    selectHost,
   }
 })
