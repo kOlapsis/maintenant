@@ -90,6 +90,24 @@ GET /api/v1/resources/summary
 
 ---
 
+## Multi-Host
+
+In a [multi-host](multihost.md) deployment (Pro), resource metrics are reported per machine:
+
+- Each agent streams its host's **machine-level CPU, memory and disk**, in addition to per-container stats.
+- The resource header gains a **host selector** (hidden when there is a single host). Selecting a host scopes the CPU / MEM / DISK gauges and the top consumers widget to that machine.
+- Scope any resources call to one host with `?agent_id=local` (the central server) or `?agent_id=<id>` (a remote agent). Omitting it returns the local server for the summary, and aggregates all hosts for top consumers.
+
+```
+GET /api/v1/resources/hosts                       # list hosts + current metrics
+GET /api/v1/resources/summary?agent_id=<id>       # summary for one host
+GET /api/v1/resources/top?metric=cpu&agent_id=<id># top consumers for one host
+```
+
+See [Multi-Host Monitoring](multihost.md) for the full agent/server setup.
+
+---
+
 ## Alert Events
 
 | Event | Description | Default Severity |

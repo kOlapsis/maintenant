@@ -96,8 +96,28 @@ These routes do not require authentication:
 | `GET` | `/api/v1/containers/{id}/resources/history` | Historical metrics (`?range=24h`) | Pro |
 | `GET` | `/api/v1/containers/{id}/resources/alerts` | Get alert thresholds | |
 | `PUT` | `/api/v1/containers/{id}/resources/alerts` | Set alert thresholds | |
-| `GET` | `/api/v1/resources/summary` | Aggregate resource summary | |
-| `GET` | `/api/v1/resources/top` | Top consumers (`?sort=cpu&limit=10`) | |
+| `GET` | `/api/v1/resources/summary` | Aggregate resource summary (`?agent_id=local\|<id>` to scope to a host) | |
+| `GET` | `/api/v1/resources/top` | Top consumers (`?sort=cpu&limit=10`, `?agent_id=` to scope to a host) | |
+| `GET` | `/api/v1/resources/hosts` | List hosts (local + agents) with current CPU/memory/disk | Pro |
+
+---
+
+## Agents
+
+Multi-host agent management (`--mode=server`). All endpoints require **Pro** — they return `402 pro_required` in Community Edition. See [Multi-Host Monitoring](../features/multihost.md).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/agents` | List enrolled agents and their connection state |
+| `GET` | `/api/v1/agents/{id}` | Get an agent |
+| `PATCH` | `/api/v1/agents/{id}` | Update an agent's display label |
+| `POST` | `/api/v1/agents/{id}/revoke` | Revoke an agent (closes its stream, stops retries) |
+| `DELETE` | `/api/v1/agents/{id}` | Delete an agent and purge all its events |
+| `GET` | `/api/v1/agents/metrics` | Aggregate fleet metrics (counts by status) |
+| `POST` | `/api/v1/agents/enrollment-tokens` | Create a one-time enrollment token (`{ "ttl_hours": 24 }`) |
+| `GET` | `/api/v1/agents/enrollment-tokens` | List enrollment tokens (masked) |
+| `GET` | `/api/v1/agents/enrollment-tokens/{token_id}` | Get an enrollment token (masked) |
+| `DELETE` | `/api/v1/agents/enrollment-tokens/{token_id}` | Delete an enrollment token |
 
 ---
 

@@ -1,4 +1,4 @@
-# Multi-Host Monitoring (Enterprise)
+# Multi-Host Monitoring (Pro)
 
 Maintenant can monitor containers and workloads running on multiple remote hosts from a single central server. Remote hosts run a lightweight **agent** process that streams events to the server over a persistent gRPC connection.
 
@@ -11,8 +11,8 @@ The `maintenant` binary supports three operating modes via the `--mode=` flag:
 | Mode | Description |
 |------|-------------|
 | `embedded` | Default. Monitors the local runtime and stores data in local SQLite. No network exposure. |
-| `server` | Central server. Receives events from remote agents via gRPC. Exposes the web UI and REST API. Enterprise only. |
-| `agent` | Remote agent. Monitors the local runtime and pushes events to a central server. Enterprise only. |
+| `server` | Central server. Receives events from remote agents via gRPC. Exposes the web UI and REST API. Pro only. |
+| `agent` | Remote agent. Monitors the local runtime and pushes events to a central server. Pro only. |
 
 > Community Edition enforces `--mode=embedded` at boot. Starting with `--mode=server` or `--mode=agent` exits with an error.
 
@@ -137,7 +137,8 @@ After authentication the agent collects and pushes events continuously:
 | Event type | Frequency |
 |------------|-----------|
 | Container start/stop/die/pause | Real-time |
-| Resource metrics (CPU, memory, network, disk) | Every 10 s |
+| Per-container resource metrics (CPU, memory, network, disk) | Every 10 s |
+| Host-level metrics (machine CPU, memory, disk) | Every 10 s |
 | Certificate scans | Every 60 s |
 
 ### Reconnection
@@ -156,6 +157,36 @@ The server enforces a per-agent limit of **1 000 events/second** (token bucket).
 
 ---
 
+## Per-Host Resource Metrics
+
+In addition to per-container stats, each agent reports the **machine-level** CPU, memory and disk usage of the host it runs on. The central server keeps the latest sample for every host in memory (local server + each agent) and exposes it to the UI.
+
+### Host selector
+
+The dashboard's resource header (CPU / MEM / DISK gauges) shows a **host selector** as soon as more than one host is present. Pick a host to scope the gauges to that machine; the **top consumers** widget follows the same selection. With a single host the selector is hidden and behaviour is unchanged.
+
+Each container card carries a host badge (hostname / label) so you can tell at a glance which machine a workload runs on. The badge is hidden when every visible container lives on the same host — there is nothing to disambiguate.
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/resources/hosts` | Lists every host (local + agents) with its current CPU / memory / disk and running-container count. |
+| `GET /api/v1/resources/summary?agent_id=local\|<id>` | Resource summary scoped to one host. Omitting `agent_id` returns the local server. |
+| `GET /api/v1/resources/top?...&agent_id=local\|<id>` | Top consumers scoped to one host. Omitting `agent_id` aggregates all hosts. |
+
+### Requirements
+
+Host CPU and memory are read from `/proc`. When the agent runs inside a container it needs the host `/proc` mounted read-only:
+
+```bash
+-v /proc:/host/proc:ro
+```
+
+The generated `docker run`, Compose and Kubernetes install snippets already include this mount, so no extra configuration is needed when you use them. Bare-metal/systemd agents read `/proc` natively.
+
+---
+
 ## Data Model
 
 All monitored entities (`containers`, `endpoints`, `heartbeats`, `resources`, `certificates`) carry an `agent_id` column:
@@ -171,7 +202,7 @@ Deleting an agent purges all its associated rows via SQL `ON DELETE CASCADE`.
 
 ## Agent Management
 
-From **Agents** in the web UI (Enterprise):
+From **Agents** in the web UI (Pro):
 
 | Action | Effect |
 |--------|--------|

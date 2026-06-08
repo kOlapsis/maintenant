@@ -160,6 +160,26 @@ maintenant auto-detects the in-cluster API. Read-only RBAC, namespace filtering,
 
 Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked the moment it starts — state changes, health checks, restart loops, log streaming with stdout/stderr demux. Compose projects are auto-grouped. Kubernetes workloads (Deployments, DaemonSets, StatefulSets) are first-class citizens.
 
+### Multi-Host Monitoring
+
+Monitor your entire fleet from a single pane of glass. One central **server** receives events from lightweight **agents** running on your remote hosts, over a persistent, mutually-authenticated gRPC stream — no shared database, no message queue.
+
+```bash
+# On each remote host — one command, generated for you in the UI
+curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+  --mode=agent \
+  --server=grpcs://monitoring.example.com \
+  --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX \
+  --label="prod-worker-01"
+```
+
+- **Agents are read-only and tiny** — they detect the local runtime (Docker, Swarm, or Kubernetes), stream container state, endpoints, certificates and resource metrics, and reconnect on their own with backoff.
+- **Per-host resource metrics** — each agent reports its machine's CPU, memory and disk. The dashboard's resource header gets a **host selector** to switch between machines; top consumers can be scoped to a single host.
+- **Zero-PKI security** — agents enroll with a one-time token and an Ed25519 keypair generated locally; every stream is challenge-response authenticated. Revoke or delete an agent from the UI at any time.
+- Every monitored entity is attributed to its origin host, so containers, alerts and metrics are never mixed across machines.
+
+> **[Pro](#pricing)** feature. Community Edition runs in single-host (`embedded`) mode. See the [Multi-Host guide](./docs/features/multihost.md) for server setup, enrollment and the streaming protocol.
+
 ### Endpoint Monitoring
 
 Define HTTP or TCP checks directly as Docker labels — no config files, no UI clicks. maintenant picks them up automatically when a container starts. Response times, uptime history, 90-day sparklines, configurable failure/recovery thresholds.
@@ -188,7 +208,7 @@ Automatic detection from your HTTPS endpoints, plus standalone monitors for any 
 
 ### Resource Metrics
 
-Real-time CPU, memory, network I/O, and disk I/O per container. Historical charts from 1 hour to 30 days (Pro). Per-container alert thresholds with debounce to avoid noise. Top consumers view for instant triage.
+Real-time CPU, memory, network I/O, and disk I/O per container. Historical charts from 1 hour to 30 days (Pro). Per-container alert thresholds with debounce to avoid noise. Top consumers view for instant triage. In [multi-host](#multi-host-monitoring) deployments, host-level CPU/memory/disk is reported per machine and the resource header offers a host selector.
 
 ### Network Security Insights
 
@@ -568,7 +588,8 @@ Full REST API under `/api/v1/` for automation and integration.
 | Endpoints    | `GET /endpoints` `GET /endpoints/{id}` `GET /endpoints/{id}/checks` `GET /endpoints/{id}/uptime/daily`  |
 | Heartbeats   | `GET POST /heartbeats` `GET PUT DELETE /heartbeats/{id}` `POST /heartbeats/{id}/pause\|resume`          |
 | Certificates | `GET POST /certificates` `GET PUT DELETE /certificates/{id}`                                            |
-| Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top`                         |
+| Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top\|hosts`                  |
+| Agents       | `GET /agents` `GET PATCH DELETE /agents/{id}` `POST /agents/{id}/revoke` `GET POST /agents/enrollment-tokens` *(Pro)* |
 | Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /alert-triggers` `GET POST /escalation-policies` *(Pro)* `GET POST /silence` |
 | Webhooks     | `GET POST /webhooks` `POST /webhooks/{id}/test`                                                         |
 | Status Page  | `GET POST /status/components\|incidents\|maintenance`                                                   |
@@ -615,7 +636,7 @@ Full REST API under `/api/v1/` for automation and integration.
 └──────────────────────────────────────────────────────┘
 ```
 
-- **Single binary** — Frontend embedded via `embed.FS`. One file to deploy.
+- **Single binary** — Frontend embedded via `embed.FS`. One file to deploy. The same binary runs in three modes: `embedded` (single host, default), `server` (central ingestion), and `agent` (remote host) — see [Multi-Host Monitoring](#multi-host-monitoring).
 - **Zero dependencies** — SQLite is the only required datastore. No Redis, no Postgres, no message queue. The container runtime (Docker / Kubernetes) is **optional**: maintenant starts and serves endpoints, SSL, and heartbeat monitors even without a runtime socket — container monitoring resumes automatically when the runtime becomes available.
 - **Real-time** — SSE pushes every state change to the browser instantly.
 - **Read-only** — maintenant never touches your containers. Observe only.
@@ -657,6 +678,7 @@ Full REST API under `/api/v1/` for automation and integration.
       <p><strong>€29</strong>/month · or <strong>€290</strong>/year <sub>(save 2 months)</sub></p>
       <p><em>Everything in Community, plus:</em></p>
       <ul>
+        <li><strong>Multi-host monitoring</strong> — one server, many remote agents over authenticated gRPC</li>
         <li><strong>Unlimited</strong> monitors — heartbeats, endpoints, certificates, status page components</li>
         <li><strong>Slack, Microsoft Teams, Email</strong> channels</li>
         <li><strong>Advanced trigger filters</strong> — route alerts by entity scope or tag, not just severity</li>
