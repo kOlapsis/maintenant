@@ -32,8 +32,10 @@ The server exposes two interfaces:
 The gRPC port must be reachable from agent hosts. Configure the public URL so that generated install commands point to the right address:
 
 ```bash
-MAINTENANT_GRPC_PUBLIC_URL=grpcs://monitoring.example.com:8443
+MAINTENANT_GRPC_PUBLIC_URL=grpcs://monitoring.example.com
 ```
+
+The port is optional and defaults to `443` — only add it (e.g. `:8443`) if agents reach gRPC directly instead of through a reverse proxy/DNS terminating TLS on 443.
 
 If not set, the server infers the URL from the HTTP request headers (`X-Forwarded-Host`, `Host`). A warning is shown in the UI if the resolved URL appears to be a private address.
 
@@ -87,7 +89,7 @@ Pick the snippet matching the host environment (the UI exposes these as tabs in 
 ```bash
 curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
   --mode=agent \
-  --server=grpcs://monitoring.example.com:8443 \
+  --server=grpcs://monitoring.example.com \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
 ```
 
@@ -96,7 +98,7 @@ For a host where the binary is already installed, the equivalent invocation is:
 ```bash
 maintenant \
   --mode=agent \
-  --server=grpcs://monitoring.example.com:8443 \
+  --server=grpcs://monitoring.example.com \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX \
   --label="prod-worker-01"
 ```
@@ -240,7 +242,7 @@ Available for development and testing against self-signed certificates. A boot-t
 | `--grpc-tls-cert` | — | Path to TLS certificate (server mode) |
 | `--grpc-tls-key` | — | Path to TLS private key (server mode) |
 | `--grpc-insecure-skip-tls-verify` | `false` | Skip TLS cert verification (agent mode, dev only) |
-| `--server` | — | Server gRPC URL (agent mode, e.g. `grpcs://host:8443`) |
+| `--server` | — | Server gRPC URL (agent mode, e.g. `grpcs://monitoring.example.com`; port defaults to 443) |
 | `--enrollment-token` | — | One-time enrollment token (agent mode, first boot only) |
 | `--label` | _(hostname)_ | Display label for this agent |
 | `--runtime` | _(auto-detected)_ | Override runtime detection: `docker`, `swarm`, `kubernetes` |
