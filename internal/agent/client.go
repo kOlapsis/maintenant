@@ -55,6 +55,7 @@ func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, l
 	var creds credentials.TransportCredentials
 	if useTLS {
 		tlsCfg := &tls.Config{
+			MinVersion:         tls.VersionTLS12,
 			InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // explicit opt-in with warning at boot
 		}
 		if insecureSkipVerify {

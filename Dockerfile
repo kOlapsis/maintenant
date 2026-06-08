@@ -66,5 +66,9 @@ VOLUME /data
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
 
+# Entrypoint runs as root only to chown root-owned volume mounts, then drops to
+# uid 65534 via setpriv (see docker-entrypoint.sh); a build-time USER would break that chown.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/docker-entrypoint.sh"]
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["/app/maintenant"]

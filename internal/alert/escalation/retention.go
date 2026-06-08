@@ -25,10 +25,12 @@ const RetentionDays = 90
 func (s *Service) RunRetentionLoop(ctx context.Context) {
 	for {
 		next := nextRetentionTick(s.clock())
+		timer := time.NewTimer(next)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(next):
+		case <-timer.C:
 		}
 		before := s.clock().Add(-RetentionDays * 24 * time.Hour)
 		if err := s.store.PurgeRunsAndDeliveriesOlderThan(ctx, before); err != nil {

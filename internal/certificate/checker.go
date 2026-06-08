@@ -52,6 +52,7 @@ func CheckCertificate(hostname string, port int, timeout time.Duration) *CheckCe
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
 		InsecureSkipVerify: true,
 		ServerName:         hostname,
+		MinVersion:         tls.VersionTLS10, // inspection dial: reach legacy hosts down to TLS 1.0
 	})
 	if err != nil {
 		return &CheckCertificateResult{
