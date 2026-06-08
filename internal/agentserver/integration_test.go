@@ -314,7 +314,7 @@ func TestIntegration_PushStream(t *testing.T) {
 	})
 
 	sessions := agentserver.NewSessions(logger, broadcaster)
-	limiter := agentserver.NewLimiter()
+	limiter := agentserver.NewLimiter(1000)
 	dispatcher := agentserver.NewDispatcher(agentserver.DispatchDeps{Container: containerSvc})
 
 	tlsCfg := selfSignedTLS(t)

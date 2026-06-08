@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	agentEventsPerSecond = 1000
-	agentBurst           = 1000
-	limiterIdleTimeout   = time.Hour
+	// defaultAgentEventsPerSecond is used when the configured rate is <= 0.
+	defaultAgentEventsPerSecond = 1000
+	limiterIdleTimeout          = time.Hour
 )
 
 type agentLimiter struct {
@@ -31,14 +31,23 @@ type agentLimiter struct {
 
 // Limiter manages per-agent token-bucket rate limiters.
 type Limiter struct {
-	mu       sync.Mutex
-	limiters map[string]*agentLimiter
+	mu           sync.Mutex
+	limiters     map[string]*agentLimiter
+	eventsPerSec rate.Limit
+	burst        int
 }
 
-// NewLimiter creates a new per-agent Limiter.
-func NewLimiter() *Limiter {
+// NewLimiter creates a per-agent Limiter allowing eventsPerSecond events per
+// second for each agent, with an equal burst. A value <= 0 falls back to the
+// default (1000/s). Driven by MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND.
+func NewLimiter(eventsPerSecond int) *Limiter {
+	if eventsPerSecond <= 0 {
+		eventsPerSecond = defaultAgentEventsPerSecond
+	}
 	return &Limiter{
-		limiters: make(map[string]*agentLimiter),
+		limiters:     make(map[string]*agentLimiter),
+		eventsPerSec: rate.Limit(eventsPerSecond),
+		burst:        eventsPerSecond,
 	}
 }
 
@@ -49,7 +58,7 @@ func (l *Limiter) Allow(agentID string) (bool, time.Duration) {
 	al, ok := l.limiters[agentID]
 	if !ok {
 		al = &agentLimiter{
-			limiter: rate.NewLimiter(agentEventsPerSecond, agentBurst),
+			limiter: rate.NewLimiter(l.eventsPerSec, l.burst),
 		}
 		l.limiters[agentID] = al
 	}

@@ -105,6 +105,35 @@ func TestSessions_ReOpenAfterClose(t *testing.T) {
 	require.True(t, sessions.IsConnected("agent-A"), "should be connected after re-open")
 }
 
+func TestSessions_LifecycleAlertHook(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
+	sessions := agentserver.NewSessions(logger, nil)
+
+	type call struct {
+		agentID   string
+		reason    string
+		connected bool
+	}
+	var mu sync.Mutex
+	var calls []call
+	sessions.SetLifecycleAlertHook(func(agentID, reason string, connected bool) {
+		mu.Lock()
+		calls = append(calls, call{agentID, reason, connected})
+		mu.Unlock()
+	})
+
+	sessions.Open("agent-A", func() {}, "addr")
+	sessions.Close("agent-A", "stream_ended")
+	// Closing an agent that was never opened must NOT fire the hook (no phantom alert).
+	sessions.Close("ghost", "deleted")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, calls, 2, "ghost close must not fire the lifecycle hook")
+	assert.Equal(t, call{"agent-A", "", true}, calls[0], "Open should fire connected=true")
+	assert.Equal(t, call{"agent-A", "stream_ended", false}, calls[1], "Close should pass reason and connected=false")
+}
+
 func TestSessions_EventsPerSecond5m(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
 	sessions := agentserver.NewSessions(logger, nil)

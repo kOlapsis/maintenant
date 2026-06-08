@@ -20,7 +20,7 @@ import (
 )
 
 func TestLimiter_NewLimiterIsNotNil(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(defaultAgentEventsPerSecond)
 
 	require.NotNil(t, l)
 }
@@ -34,7 +34,7 @@ func TestLimiter_NewLimiterIsNotNil(t *testing.T) {
 //   - the burst guarantees at least 1000 are allowed;
 //   - any call that is denied must carry a positive retry-after duration.
 func TestLimiter_BurstOf1000AllowedThenDenied(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(defaultAgentEventsPerSecond)
 	agentID := "agent-burst"
 
 	var firstDeniedRetryAfter time.Duration
@@ -54,8 +54,8 @@ func TestLimiter_BurstOf1000AllowedThenDenied(t *testing.T) {
 	}
 
 	// At least burst-many calls must have been allowed.
-	assert.GreaterOrEqual(t, allowed, agentBurst,
-		"at least %d calls should be allowed (burst)", agentBurst)
+	assert.GreaterOrEqual(t, allowed, defaultAgentEventsPerSecond,
+		"at least %d calls should be allowed (burst)", defaultAgentEventsPerSecond)
 
 	// After the burst is exhausted some calls must be denied.
 	assert.Positive(t, denied, "some calls should be denied after burst is exhausted")
@@ -68,11 +68,11 @@ func TestLimiter_BurstOf1000AllowedThenDenied(t *testing.T) {
 // TestLimiter_DeniedCallReturnsPositiveRetryAfter drains the bucket with a very
 // large call count so that denial is certain regardless of refill timing.
 func TestLimiter_DeniedCallReturnsPositiveRetryAfter(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(defaultAgentEventsPerSecond)
 	agentID := "agent-retry"
 
 	// Consume burst + a generous margin to guarantee denial.
-	for range agentBurst {
+	for range defaultAgentEventsPerSecond {
 		l.Allow(agentID)
 	}
 
@@ -93,13 +93,13 @@ func TestLimiter_DeniedCallReturnsPositiveRetryAfter(t *testing.T) {
 }
 
 func TestLimiter_DifferentAgentsAreIndependent(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(defaultAgentEventsPerSecond)
 	agentA := "agent-indep-a"
 	agentB := "agent-indep-b"
 
 	// Deplete agent-a's budget. Continue until we observe a denial.
 	var agentADenied bool
-	for range agentBurst + 10 {
+	for range defaultAgentEventsPerSecond + 10 {
 		ok, _ := l.Allow(agentA)
 		if !ok {
 			agentADenied = true
@@ -114,7 +114,7 @@ func TestLimiter_DifferentAgentsAreIndependent(t *testing.T) {
 }
 
 func TestLimiter_RetryAfterIsZeroWhenAllowed(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(defaultAgentEventsPerSecond)
 	agentID := "agent-retrycheck"
 
 	allowed, retryAfter := l.Allow(agentID)
@@ -126,12 +126,12 @@ func TestLimiter_RetryAfterIsZeroWhenAllowed(t *testing.T) {
 // TestLimiter_SameAgentSharesSingleBucket verifies that calls for the same
 // agentID always draw from the same bucket across multiple invocations.
 func TestLimiter_SameAgentSharesSingleBucket(t *testing.T) {
-	l := NewLimiter()
+	l := NewLimiter(defaultAgentEventsPerSecond)
 	agentID := "agent-shared"
 
 	// Drain the shared bucket until we observe a denial.
 	var denied bool
-	for range agentBurst + 10 {
+	for range defaultAgentEventsPerSecond + 10 {
 		ok, _ := l.Allow(agentID)
 		if !ok {
 			denied = true
@@ -140,4 +140,35 @@ func TestLimiter_SameAgentSharesSingleBucket(t *testing.T) {
 	}
 
 	assert.True(t, denied, "repeated calls for the same agentID share one bucket and exhaust it")
+}
+
+// TestLimiter_RespectsConfiguredRate verifies the per-second rate passed to
+// NewLimiter is honoured (burst equals the configured value), so
+// MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND actually drives the limiter.
+func TestLimiter_RespectsConfiguredRate(t *testing.T) {
+	l := NewLimiter(5)
+	agentID := "agent-configured"
+
+	allowed := 0
+	for range 5 {
+		if ok, _ := l.Allow(agentID); ok {
+			allowed++
+		}
+	}
+	assert.Equal(t, 5, allowed, "burst should equal the configured rate (5)")
+
+	// The next call (issued immediately, before any refill) exhausts the burst.
+	ok, retryAfter := l.Allow(agentID)
+	assert.False(t, ok, "6th call must be denied with rate/burst=5")
+	assert.Positive(t, retryAfter, "denied call must carry a positive retry-after")
+}
+
+// TestLimiter_NonPositiveRateFallsBackToDefault verifies that a zero/negative
+// configured rate falls back to the default rather than denying all events.
+func TestLimiter_NonPositiveRateFallsBackToDefault(t *testing.T) {
+	l := NewLimiter(0)
+
+	allowed, _ := l.Allow("agent-default")
+
+	assert.True(t, allowed, "a zero/negative configured rate must fall back to the default, not deny everything")
 }

@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,6 +97,9 @@ type App struct {
 	agentStore      *sqlite.AgentStore
 	agentSessions   *agentserver.Sessions
 	agentSrv        *agentserver.Server
+	// shuttingDown suppresses agent-disconnect alerts during graceful shutdown,
+	// where every stream ends at once and would otherwise page for the whole fleet.
+	shuttingDown    atomic.Bool
 	statusCompStore *sqlite.StatusComponentStoreImpl
 
 	// Background services
@@ -364,7 +368,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		AgentStore:  a.agentStore,
 		Sessions:    a.agentSessions,
 		Broadcaster: &sseBroadcaster{broker: a.broker},
-		Limiter:     agentserver.NewLimiter(),
+		Limiter:     agentserver.NewLimiter(cfg.MultiHost.AgentRateLimitPerSecond),
 		Dispatcher: agentserver.NewDispatcher(agentserver.DispatchDeps{
 			Container:   a.containerSvc,
 			Resource:    a.resourceSvc,
@@ -493,6 +497,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.wireUpdateCallback()
 	a.wirePostureCallbacks()
 	a.wireSwarmCallbacks()
+	a.wireAgentLifecycleAlerts()
 
 	// --- Router ---
 	uptimeDailyStore := sqlite.NewUptimeDailyStore(db)
@@ -742,6 +747,7 @@ func (a *App) Start(ctx context.Context) error {
 
 // Shutdown performs a graceful shutdown of all services.
 func (a *App) Shutdown() error {
+	a.shuttingDown.Store(true)
 	a.logger.Info("shutting down maintenant")
 
 	a.endpointSvc.Stop()

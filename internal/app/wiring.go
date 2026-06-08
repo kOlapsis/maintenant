@@ -14,6 +14,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -563,6 +564,75 @@ func (a *App) wireSwarmCallbacks() {
 			},
 		})
 	}
+}
+
+// wireAgentLifecycleAlerts raises a Warning alert when a remote agent's stream
+// drops unexpectedly (network outage, or stale liveness past the threshold) and
+// resolves it when the agent reconnects. Intentional removals (revoke/delete)
+// and graceful shutdown never page. Agents are keyed by UUID, so a stable int64
+// entity id is derived for the alert engine's dedup/recovery map.
+func (a *App) wireAgentLifecycleAlerts() {
+	if a.agentSessions == nil {
+		return
+	}
+	ctx := context.Background()
+	alertCh := a.alertEngine.EventChannel()
+
+	a.agentSessions.SetLifecycleAlertHook(func(agentID, reason string, connected bool) {
+		// Suppress the disconnect storm when the whole server is going down.
+		if a.shuttingDown.Load() {
+			return
+		}
+
+		name := agentID
+		if ag, err := a.agentStore.Get(ctx, agentID); err == nil && ag != nil {
+			if ag.Label != "" {
+				name = ag.Label
+			} else if ag.Hostname != "" {
+				name = ag.Hostname
+			}
+		}
+
+		evt := alert.Event{
+			Source:     "agent",
+			AlertType:  "disconnected",
+			EntityType: "agent",
+			EntityID:   agentEntityID(agentID),
+			EntityName: name,
+			Timestamp:  time.Now(),
+		}
+
+		switch {
+		case connected:
+			// Reconnection clears a pending disconnect alert (no-op if none).
+			evt.Severity = alert.SeverityInfo
+			evt.IsRecover = true
+			evt.Message = fmt.Sprintf("Agent %s reconnected", name)
+		case reason == "revoked" || reason == "deleted":
+			// Intentional removal: clear any pending alert, never raise one.
+			evt.Severity = alert.SeverityInfo
+			evt.IsRecover = true
+			evt.Message = fmt.Sprintf("Agent %s %s", name, reason)
+		default:
+			// stream_ended (drop) or stale (liveness) → genuine outage.
+			evt.Severity = alert.SeverityWarning
+			evt.Message = fmt.Sprintf("Agent %s disconnected (%s)", name, reason)
+			evt.Details = map[string]any{"agent_id": agentID, "reason": reason}
+		}
+
+		alertCh <- evt
+		a.statusSvc.HandleAlertEvent(ctx, evt)
+	})
+}
+
+// agentEntityID derives a stable, non-negative int64 entity id from an agent's
+// UUID. The alert engine keys dedup/recovery by int64 EntityID, but agents have
+// no numeric id, so we hash the UUID (FNV-1a). Collisions are negligible for a
+// fleet, and the value is stable across restarts so recovery still links up.
+func agentEntityID(agentID string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(agentID))
+	return int64(h.Sum64() >> 1)
 }
 
 func toInt64(v any) int64 {

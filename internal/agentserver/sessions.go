@@ -67,6 +67,12 @@ type Sessions struct {
 	logger      *slog.Logger
 	broadcaster EventBroadcaster
 	ring        ringBuffer
+
+	// alertHook, if set, is invoked on every connect/disconnect transition so
+	// the app layer can raise an alert (connected=false) or clear one
+	// (connected=true). reason carries the disconnect cause ("stream_ended",
+	// "stale", "revoked", "deleted"). Always called WITHOUT s.mu held.
+	alertHook func(agentID, reason string, connected bool)
 }
 
 // NewSessions creates an empty Sessions registry.
@@ -77,6 +83,12 @@ func NewSessions(logger *slog.Logger, broadcaster EventBroadcaster) *Sessions {
 		logger:      logger,
 		broadcaster: broadcaster,
 	}
+}
+
+// SetLifecycleAlertHook registers a callback fired on connect/disconnect
+// transitions. Must be called once at wiring time, before any agent connects.
+func (s *Sessions) SetLifecycleAlertHook(fn func(agentID, reason string, connected bool)) {
+	s.alertHook = fn
 }
 
 // Open registers an active stream for agentID and cancels any pre-existing one.
@@ -98,6 +110,9 @@ func (s *Sessions) Open(agentID string, cancel context.CancelFunc, addr string) 
 			"agent_id": agentID,
 		})
 	}
+	if s.alertHook != nil {
+		s.alertHook(agentID, "", true)
+	}
 }
 
 // Close removes and cancels the active stream for agentID.
@@ -116,6 +131,9 @@ func (s *Sessions) Close(agentID, reason string) {
 			s.broadcaster.BroadcastEvent(event.AgentDisconnected, map[string]any{
 				"agent_id": agentID,
 			})
+		}
+		if s.alertHook != nil {
+			s.alertHook(agentID, reason, false)
 		}
 	}
 }
@@ -214,6 +232,9 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold ti
 						s.broadcaster.BroadcastEvent(event.AgentDisconnected, map[string]any{
 							"agent_id": agentID,
 						})
+						if s.alertHook != nil {
+							s.alertHook(agentID, "stale", false)
+						}
 					} else {
 						s.mu.Unlock()
 					}

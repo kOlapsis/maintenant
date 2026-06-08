@@ -75,7 +75,6 @@ type MultiHostConfig struct {
 	GRPCListen                 string
 	AgentRateLimitPerSecond    int
 	AgentStaleThresholdSeconds int
-	LicenseRecheckIntervalSec  int
 	// TLS (for mode=server)
 	TLSCertFile string
 	TLSKeyFile  string
@@ -154,7 +153,6 @@ func ConfigFromEnv() Config {
 		GRPCListen:                 envOr("MAINTENANT_GRPC_LISTEN", "127.0.0.1:8443"),
 		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000),
 		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60),
-		LicenseRecheckIntervalSec:  envIntOr("MAINTENANT_LICENSE_RECHECK_INTERVAL_SECONDS", 300),
 	}
 
 	return cfg
