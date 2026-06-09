@@ -46,8 +46,17 @@ func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint
 	configJSON := e.ConfigJSON()
 	now := time.Now().Unix()
 
-	// Try to find existing by identity
-	existing, err := s.GetEndpointByIdentity(ctx, e.ContainerName, e.LabelKey)
+	var agentID interface{}
+	if e.AgentID != nil {
+		agentID = *e.AgentID
+	}
+
+	// Identity lookup is agent-scoped: a remote agent's "web/maintenant.endpoint.http"
+	// must not match the server's own (or another agent's) endpoint of the same name.
+	existing, err := s.scanEndpoint(s.db.QueryRowContext(ctx,
+		`SELECT `+endpointColumns+` FROM endpoints
+		WHERE container_name=? AND label_key=? AND COALESCE(agent_id,'')=COALESCE(?,'')`,
+		e.ContainerName, e.LabelKey, agentID))
 	if err != nil {
 		return 0, err
 	}
@@ -80,11 +89,11 @@ func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint
 	res, err := s.writer.Exec(ctx,
 		`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target,
 			status, alert_state, consecutive_failures, consecutive_successes,
-			config_json, active, first_seen_at, last_seen_at, source, name)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, ?, ?)`,
+			config_json, active, first_seen_at, last_seen_at, source, name, agent_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, ?, ?, ?)`,
 		e.ContainerName, e.LabelKey, e.ExternalID, string(e.EndpointType), e.Target,
 		string(endpoint.StatusUnknown), string(endpoint.AlertNormal),
-		configJSON, firstSeen, now, source, e.Name,
+		configJSON, firstSeen, now, source, e.Name, agentID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert endpoint: %w", err)
@@ -97,6 +106,16 @@ func (s *EndpointStore) GetEndpointByIdentity(ctx context.Context, containerName
 	return s.scanEndpoint(s.db.QueryRowContext(ctx,
 		`SELECT `+endpointColumns+` FROM endpoints WHERE container_name=? AND label_key=?`,
 		containerName, labelKey))
+}
+
+// GetActiveAgentEndpointByTarget resolves an active endpoint pushed by a remote
+// agent, keyed by (agent_id, target). Used to attach a pushed probe result to
+// the endpoint the server provisioned from that agent's container labels.
+func (s *EndpointStore) GetActiveAgentEndpointByTarget(ctx context.Context, agentID, target string) (*endpoint.Endpoint, error) {
+	return s.scanEndpoint(s.db.QueryRowContext(ctx,
+		`SELECT `+endpointColumns+` FROM endpoints
+		WHERE agent_id=? AND target=? AND active=1`,
+		agentID, target))
 }
 
 func (s *EndpointStore) GetEndpointByID(ctx context.Context, id int64) (*endpoint.Endpoint, error) {

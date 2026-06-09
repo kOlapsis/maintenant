@@ -58,14 +58,19 @@ func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.Cer
 		nextCheckAt = m.NextCheckAt.Unix()
 	}
 
+	var agentID interface{}
+	if m.AgentID != nil {
+		agentID = *m.AgentID
+	}
+
 	res, err := s.writer.Exec(ctx,
 		`INSERT INTO cert_monitors (hostname, port, source, endpoint_id, status,
 			check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
-			last_check_at, next_check_at, last_error, created_at, external_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?)`,
+			last_check_at, next_check_at, last_error, created_at, external_id, agent_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?)`,
 		m.Hostname, m.Port, string(m.Source), endpointID, string(m.Status),
 		m.CheckIntervalSeconds, thresholdsJSON,
-		nextCheckAt, now, m.ExternalID,
+		nextCheckAt, now, m.ExternalID, agentID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert cert monitor: %w", err)
@@ -83,6 +88,21 @@ func (s *CertificateStore) GetMonitorByHostPort(ctx context.Context, hostname st
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE hostname=? AND port=?`,
 		hostname, port))
+}
+
+// GetMonitorByHostPortAgent resolves a monitor scoped to a given agent (or the
+// local server when agentID is nil). Matches the agent-aware identity index
+// (hostname, port, COALESCE(agent_id,'')) so a remote agent's localhost:443 does
+// not collide with the server's own or another agent's.
+func (s *CertificateStore) GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int) (*certificate.CertMonitor, error) {
+	var aid interface{}
+	if agentID != nil {
+		aid = *agentID
+	}
+	return s.scanMonitor(s.db.QueryRowContext(ctx,
+		`SELECT `+certMonitorColumns+` FROM cert_monitors
+		WHERE hostname=? AND port=? AND COALESCE(agent_id,'')=COALESCE(?,'')`,
+		hostname, port, aid))
 }
 
 func (s *CertificateStore) GetMonitorByEndpointID(ctx context.Context, endpointID int64) (*certificate.CertMonitor, error) {
@@ -337,7 +357,7 @@ func (s *CertificateStore) GetChainEntries(ctx context.Context, checkResultID in
 func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now time.Time) ([]*certificate.CertMonitor, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors
-		WHERE source IN ('standalone','label') AND (next_check_at IS NULL OR next_check_at<=?)
+		WHERE source IN ('standalone','label') AND agent_id IS NULL AND (next_check_at IS NULL OR next_check_at<=?)
 		ORDER BY next_check_at`,
 		now.Unix())
 	if err != nil {

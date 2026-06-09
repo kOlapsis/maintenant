@@ -43,6 +43,12 @@ type CertificateHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.CertificateInfo) error
 }
 
+// LabelSyncFunc provisions label-discovered endpoint/cert monitors for a remote
+// agent's container. Invoked for every container event so monitors track label
+// changes: created on first sight, deprovisioned when a label is removed. The
+// agent itself probes them and pushes the results.
+type LabelSyncFunc func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string)
+
 // DispatchDeps groups the optional per-domain handlers the dispatcher calls.
 // A nil handler means that event type is silently ignored.
 type DispatchDeps struct {
@@ -51,6 +57,9 @@ type DispatchDeps struct {
 	Heartbeat   HeartbeatHandler
 	Resource    ResourceHandler
 	Certificate CertificateHandler
+	// LabelSync, if set, provisions endpoint/cert monitors from a container's
+	// labels after each container event. Optional (nil = no label discovery).
+	LabelSync LabelSyncFunc
 }
 
 // Dispatcher routes AgentEvents to the appropriate domain handler.
@@ -75,6 +84,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, evt *agentpb.AgentEvent) erro
 			if err := d.deps.Container.HandleAgentEvent(ctx, agentID, body.Container); err != nil {
 				return fmt.Errorf("dispatch container event: %w", err)
 			}
+		}
+		if d.deps.LabelSync != nil {
+			d.deps.LabelSync(ctx, agentID, body.Container.GetName(), body.Container.GetContainerId(), body.Container.GetLabels())
 		}
 	case *agentpb.AgentEvent_Endpoint:
 		if d.deps.Endpoint != nil {

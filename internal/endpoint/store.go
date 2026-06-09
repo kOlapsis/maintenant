@@ -21,6 +21,7 @@ type EndpointStore interface {
 	// Endpoint CRUD (label-discovered)
 	UpsertEndpoint(ctx context.Context, e *Endpoint) (int64, error)
 	GetEndpointByIdentity(ctx context.Context, containerName, labelKey string) (*Endpoint, error)
+	GetActiveAgentEndpointByTarget(ctx context.Context, agentID, target string) (*Endpoint, error)
 	GetEndpointByID(ctx context.Context, id int64) (*Endpoint, error)
 	ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]*Endpoint, error)
 	ListEndpointsByExternalID(ctx context.Context, externalID string) ([]*Endpoint, error)

@@ -22,6 +22,7 @@ type CertificateStore interface {
 	CreateMonitor(ctx context.Context, m *CertMonitor) (int64, error)
 	GetMonitorByID(ctx context.Context, id int64) (*CertMonitor, error)
 	GetMonitorByHostPort(ctx context.Context, hostname string, port int) (*CertMonitor, error)
+	GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int) (*CertMonitor, error)
 	GetMonitorByEndpointID(ctx context.Context, endpointID int64) (*CertMonitor, error)
 	ListMonitors(ctx context.Context, opts ListCertificatesOpts) ([]*CertMonitor, error)
 	CountStandaloneMonitors(ctx context.Context) (int, error)

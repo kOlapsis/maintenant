@@ -88,6 +88,17 @@ func (m *memStore) GetEndpointByIdentity(_ context.Context, containerName, label
 	return nil, nil
 }
 
+func (m *memStore) GetActiveAgentEndpointByTarget(_ context.Context, agentID, target string) (*Endpoint, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ep := range m.endpoints {
+		if ep.AgentID != nil && *ep.AgentID == agentID && ep.Target == target && ep.Active {
+			return m.cloneEp(ep), nil
+		}
+	}
+	return nil, nil
+}
+
 func (m *memStore) GetEndpointByID(_ context.Context, id int64) (*Endpoint, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

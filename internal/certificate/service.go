@@ -417,6 +417,85 @@ func (s *Service) deleteLabelMonitors(ctx context.Context, externalID string, ke
 	}
 }
 
+// --- Agent label-discovered monitors ---
+
+// SyncAgentCerts provisions label-discovered cert monitors for a REMOTE agent's
+// container. Mirrors SyncFromLabels but attributes monitors to agentID; those
+// are never dialled by the local scheduler (ListDueScheduledMonitors skips
+// agent_id IS NOT NULL) — the agent scans them and pushes results. Reconciles
+// removed labels (FR-018a).
+func (s *Service) SyncAgentCerts(ctx context.Context, agentID, containerExternalID string, labels map[string]string) {
+	parsed := ParseCertificateLabels(labels)
+	if len(parsed) == 0 {
+		s.deleteAgentLabelMonitors(ctx, agentID, containerExternalID, nil)
+		return
+	}
+
+	desired := make(map[string]bool)
+	for _, p := range parsed {
+		desired[p.Hostname+":"+strconv.Itoa(p.Port)] = true
+
+		existing, err := s.store.GetMonitorByHostPortAgent(ctx, &agentID, p.Hostname, p.Port)
+		if err != nil {
+			s.logger.Error("check existing agent cert monitor", "error", err, "hostname", p.Hostname)
+			continue
+		}
+		if existing != nil {
+			continue
+		}
+
+		monitor := &CertMonitor{
+			Hostname:             p.Hostname,
+			Port:                 p.Port,
+			Source:               SourceLabel,
+			ExternalID:           containerExternalID,
+			Status:               StatusUnknown,
+			CheckIntervalSeconds: 43200,
+			WarningThresholds:    DefaultWarningThresholds(),
+			AgentID:              &agentID,
+		}
+		if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
+			s.logger.Error("create agent cert monitor", "error", err, "hostname", p.Hostname, "port", p.Port)
+			continue
+		}
+		s.emit(event.CertificateCreated, map[string]interface{}{
+			"monitor_id": monitor.ID,
+			"hostname":   monitor.Hostname,
+			"port":       monitor.Port,
+			"source":     string(SourceLabel),
+			"agent_id":   agentID,
+		})
+	}
+
+	s.deleteAgentLabelMonitors(ctx, agentID, containerExternalID, desired)
+}
+
+// deleteAgentLabelMonitors removes this agent's label monitors for a container
+// that are no longer in `keep` (nil keep = remove all of them).
+func (s *Service) deleteAgentLabelMonitors(ctx context.Context, agentID, externalID string, keep map[string]bool) {
+	monitors, err := s.store.ListMonitorsByExternalID(ctx, externalID)
+	if err != nil {
+		s.logger.Error("list agent label monitors", "error", err, "external_id", externalID)
+		return
+	}
+	for _, m := range monitors {
+		if m.AgentID == nil || *m.AgentID != agentID {
+			continue // only this agent's monitors
+		}
+		if keep != nil && keep[m.Hostname+":"+strconv.Itoa(m.Port)] {
+			continue
+		}
+		if err := s.store.DeleteMonitor(ctx, m.ID); err != nil {
+			s.logger.Error("delete agent cert monitor", "error", err, "monitor_id", m.ID)
+			continue
+		}
+		s.emit(event.CertificateDeleted, map[string]interface{}{
+			"monitor_id": m.ID,
+			"hostname":   m.Hostname,
+		})
+	}
+}
+
 // --- Query methods ---
 
 // ListMonitors returns all active certificate monitors.

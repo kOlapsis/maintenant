@@ -13,29 +13,31 @@ package endpoint
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 )
 
-// HandleAgentEvent records an endpoint check result pushed by a remote agent.
-// The EndpointEvent.endpoint_id is the server-assigned integer ID (distributed
-// to the agent via AgentConfig). If the endpoint is not found, the event is
-// silently dropped (the agent may be running an outdated config).
+// HandleAgentEvent records an endpoint probe result pushed by a remote agent.
+//
+// The endpoint is provisioned server-side from the agent container's labels
+// (SyncAgentEndpoints), so the result is attached by resolving (agent_id, target)
+// — the agent reports its probe target in EndpointEvent.url. If no matching
+// endpoint exists yet (a result that raced ahead of the container label sync),
+// the event is dropped; the next probe lands once the endpoint is provisioned.
 func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.EndpointEvent) error {
-	endpointIDStr := ev.GetEndpointId()
-	if endpointIDStr == "" {
+	target := ev.GetUrl()
+	if target == "" {
 		return nil
 	}
-	endpointID, err := strconv.ParseInt(endpointIDStr, 10, 64)
-	if err != nil {
-		return nil // non-integer IDs are not yet supported
+	ep, err := s.store.GetActiveAgentEndpointByTarget(ctx, agentID, target)
+	if err != nil || ep == nil {
+		return err
 	}
 
 	statusCode := int(ev.GetStatusCode())
 	result := CheckResult{
-		EndpointID:     endpointID,
+		EndpointID:     ep.ID,
 		Success:        ev.GetStatus() == agentpb.EndpointStatus_ENDPOINT_STATUS_UP,
 		ResponseTimeMs: int64(ev.GetLatencyMs()),
 		HTTPStatus:     &statusCode,
@@ -43,6 +45,6 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		Timestamp:      time.Now(),
 		AgentID:        &agentID,
 	}
-	s.ProcessCheckResult(ctx, endpointID, result)
+	s.ProcessCheckResult(ctx, ep.ID, result)
 	return nil
 }

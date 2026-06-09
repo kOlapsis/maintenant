@@ -58,6 +58,7 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, stream, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, stream, logger) })
 	g.Go(func() error { return sampleHostResources(gCtx, id, stream, logger) })
+	g.Go(func() error { return runLabelProbers(gCtx, id, rt, stream, logger) })
 	return g.Wait()
 }
 

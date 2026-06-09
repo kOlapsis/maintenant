@@ -13,15 +13,19 @@ package certificate
 
 import (
 	"context"
-	"time"
+	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
-// HandleAgentEvent records a TLS certificate scan result from a remote agent.
-// If no monitor exists for the reported host:port, the event is silently
-// dropped — monitor creation from agent events is a future capability.
+// HandleAgentEvent records a TLS certificate scan pushed by a remote agent.
+//
+// Push-create: the first scan an agent reports for a labelled host provisions
+// the monitor, attributed to that agent. Agent monitors are never dialled by the
+// local scheduler (the host lives on the agent's network, FR-018a) — their state
+// is driven entirely by pushed scans. The result then flows through the same
+// post-check pipeline as a local scan (status, alert evaluation, persistence).
 func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.CertificateInfo) error {
 	host := ev.GetHost()
 	port := int(ev.GetPort())
@@ -29,42 +33,53 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return nil
 	}
 
-	monitor, err := s.store.GetMonitorByHostPort(ctx, host, port)
-	if err != nil || monitor == nil {
+	monitor, err := s.store.GetMonitorByHostPortAgent(ctx, &agentID, host, port)
+	if err != nil {
 		return err
 	}
+	if monitor == nil {
+		monitor = &CertMonitor{
+			Hostname:             host,
+			Port:                 port,
+			Source:               SourceLabel,
+			Status:               StatusUnknown,
+			CheckIntervalSeconds: 43200,
+			WarningThresholds:    DefaultWarningThresholds(),
+			AgentID:              &agentID,
+		}
+		if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
+			return fmt.Errorf("create agent cert monitor %s:%d: %w", host, port, err)
+		}
+		s.emit(event.CertificateCreated, map[string]interface{}{
+			"monitor_id": monitor.ID,
+			"hostname":   host,
+			"port":       port,
+			"source":     string(SourceLabel),
+			"agent_id":   agentID,
+		})
+	}
 
-	result := &CertCheckResult{
-		MonitorID: monitor.ID,
-		SubjectCN: ev.GetSubjectCn(),
-		IssuerCN:  ev.GetIssuerCn(),
-		SANs:      ev.GetSanDns(),
-		CheckedAt: time.Now(),
+	s.processCheckResult(ctx, monitor, agentCertToRaw(ev))
+	return nil
+}
+
+// agentCertToRaw adapts a pushed CertificateInfo into the raw scan-result shape
+// the local pipeline expects. The agent reports the leaf certificate only (no
+// full chain or OCSP validation); chain and hostname are treated as acceptable
+// because the agent could not have read the cert without a successful handshake.
+func agentCertToRaw(ev *agentpb.CertificateInfo) *CheckCertificateResult {
+	raw := &CheckCertificateResult{
+		SubjectCN:     ev.GetSubjectCn(),
+		IssuerCN:      ev.GetIssuerCn(),
+		SANs:          ev.GetSanDns(),
+		ChainValid:    true,
+		HostnameMatch: true,
 	}
 	if nb := ev.GetNotBefore(); nb != nil {
-		t := nb.AsTime()
-		result.NotBefore = &t
+		raw.NotBefore = nb.AsTime()
 	}
 	if na := ev.GetNotAfter(); na != nil {
-		t := na.AsTime()
-		result.NotAfter = &t
+		raw.NotAfter = na.AsTime()
 	}
-
-	if _, err = s.store.InsertCheckResult(ctx, result); err != nil {
-		return err
-	}
-
-	data := map[string]interface{}{
-		"monitor_id": monitor.ID,
-		"hostname":   monitor.Hostname,
-		"status":     string(monitor.Status),
-		"checked_at": result.CheckedAt.Format(time.RFC3339),
-		"agent_id":   agentID,
-	}
-	if result.NotAfter != nil {
-		data["not_after"] = result.NotAfter.Format(time.RFC3339)
-		data["days_remaining"] = result.DaysRemaining()
-	}
-	s.emit(event.CertificateCheckCompleted, data)
-	return nil
+	return raw
 }

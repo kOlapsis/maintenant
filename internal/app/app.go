@@ -375,6 +375,12 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			Endpoint:    a.endpointSvc,
 			Certificate: a.certSvc,
 			Heartbeat:   a.heartbeatSvc,
+			// Provision endpoint/cert monitors from a remote container's labels
+			// (the agent probes them itself; the server never dials them).
+			LabelSync: func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
+				a.endpointSvc.SyncAgentEndpoints(ctx, agentID, containerName, externalID, labels)
+				a.certSvc.SyncAgentCerts(ctx, agentID, externalID, labels)
+			},
 		}),
 		Logger: logger.With("component", "agentserver"),
 	})

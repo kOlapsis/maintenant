@@ -225,6 +225,85 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 	}
 }
 
+// SyncAgentEndpoints provisions label-discovered endpoints for a REMOTE agent's
+// container. Mirrors SyncEndpoints but (a) attributes every endpoint to agentID
+// and (b) never enrolls them in the local check engine — the agent probes them
+// on its own host and pushes results (FR-018a). Reconciles removed labels.
+func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
+	parsed, parseErrors := ParseEndpointLabels(labels, s.logger)
+	for _, pe := range parseErrors {
+		s.emitEvent(event.EndpointConfigError, map[string]interface{}{
+			"endpoint_id":    nil,
+			"container_name": containerName,
+			"label_key":      pe.LabelKey,
+			"error":          pe.Message,
+			"agent_id":       agentID,
+			"timestamp":      time.Now(),
+		})
+	}
+
+	// external_id is unique per container, so this scopes to this agent's container.
+	existing, err := s.store.ListEndpointsByExternalID(ctx, externalID)
+	if err != nil {
+		s.logger.Error("list agent endpoints by external ID", "external_id", externalID, "error", err)
+		return
+	}
+	existingByKey := make(map[string]*Endpoint, len(existing))
+	for _, ep := range existing {
+		existingByKey[ep.LabelKey] = ep
+	}
+	parsedKeys := make(map[string]bool, len(parsed))
+
+	for _, p := range parsed {
+		parsedKeys[p.LabelKey] = true
+		ep := &Endpoint{
+			ContainerName: containerName,
+			LabelKey:      p.LabelKey,
+			ExternalID:    externalID,
+			EndpointType:  p.EndpointType,
+			Target:        p.Target,
+			Config:        p.Config,
+			Source:        SourceLabel,
+			AgentID:       &agentID,
+		}
+		id, err := s.store.UpsertEndpoint(ctx, ep)
+		if err != nil {
+			s.logger.Error("upsert agent endpoint", "container", containerName, "label", p.LabelKey, "agent_id", agentID, "error", err)
+			continue
+		}
+		if _, wasExisting := existingByKey[p.LabelKey]; !wasExisting {
+			s.emitEvent(event.EndpointDiscovered, map[string]interface{}{
+				"endpoint_id":    id,
+				"container_name": containerName,
+				"endpoint_type":  string(p.EndpointType),
+				"target":         p.Target,
+				"agent_id":       agentID,
+			})
+		}
+		// Intentionally NOT enrolled in s.engine: the agent owns probing.
+	}
+
+	// Deactivate endpoints whose label was removed.
+	for key, ep := range existingByKey {
+		if parsedKeys[key] {
+			continue
+		}
+		if err := s.store.DeactivateEndpoint(ctx, ep.ID); err != nil {
+			s.logger.Error("deactivate agent endpoint", "id", ep.ID, "error", err)
+			continue
+		}
+		if s.onEndpointRemoved != nil {
+			s.onEndpointRemoved(ctx, ep.ID)
+		}
+		s.emitEvent(event.EndpointRemoved, map[string]interface{}{
+			"endpoint_id":    ep.ID,
+			"container_name": containerName,
+			"reason":         "label_removed",
+			"agent_id":       agentID,
+		})
+	}
+}
+
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.
 func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, result CheckResult) {
 	ep, err := s.store.GetEndpointByID(ctx, endpointID)

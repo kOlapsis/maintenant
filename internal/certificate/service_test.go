@@ -308,6 +308,13 @@ func (m *mockCertStore) GetMonitorByHostPort(ctx context.Context, hostname strin
 	return nil, nil
 }
 
+func (m *mockCertStore) GetMonitorByHostPortAgent(ctx context.Context, _ *string, hostname string, port int) (*CertMonitor, error) {
+	if m.getMonitorByHostPortFn != nil {
+		return m.getMonitorByHostPortFn(ctx, hostname, port)
+	}
+	return nil, nil
+}
+
 func (m *mockCertStore) CountStandaloneMonitors(_ context.Context) (int, error) {
 	return m.standaloneCount, nil
 }
