@@ -28,12 +28,12 @@ const (
 
 // ResourceStore defines the persistence interface for resource monitoring data.
 type ResourceStore interface {
-	InsertSnapshot(ctx context.Context, s *ResourceSnapshot) (int64, error)
-	GetLatestSnapshot(ctx context.Context, containerID int64) (*ResourceSnapshot, error)
-	ListSnapshots(ctx context.Context, containerID int64, from, to time.Time) ([]*ResourceSnapshot, error)
-	ListSnapshotsAggregated(ctx context.Context, containerID int64, from, to time.Time, granularity Granularity) ([]*ResourceSnapshot, error)
+	InsertSnapshot(ctx context.Context, s *ResourceSnapshot) (string, error)
+	GetLatestSnapshot(ctx context.Context, containerID string) (*ResourceSnapshot, error)
+	ListSnapshots(ctx context.Context, containerID string, from, to time.Time) ([]*ResourceSnapshot, error)
+	ListSnapshotsAggregated(ctx context.Context, containerID string, from, to time.Time, granularity Granularity) ([]*ResourceSnapshot, error)
 
-	GetAlertConfig(ctx context.Context, containerID int64) (*ResourceAlertConfig, error)
+	GetAlertConfig(ctx context.Context, containerID string) (*ResourceAlertConfig, error)
 	UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfig) error
 
 	DeleteSnapshotsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error)

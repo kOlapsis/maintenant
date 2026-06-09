@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // AlertStoreImpl implements alert.AlertStore using SQLite.
@@ -40,24 +41,27 @@ const alertColumns = `id, source, alert_type, severity, status, message,
 	resolved_by_id, fired_at, resolved_at,
 	acknowledged_at, acknowledged_by, escalated_at, created_at`
 
-func (s *AlertStoreImpl) InsertAlert(ctx context.Context, a *alert.Alert) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO alerts (source, alert_type, severity, status, message,
+func (s *AlertStoreImpl) InsertAlert(ctx context.Context, a *alert.Alert) (string, error) {
+	a.ID = uid.New()
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO alerts (id, source, alert_type, severity, status, message,
 			entity_type, entity_id, entity_name, details,
-			resolved_by_id, fired_at, resolved_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.Source, a.AlertType, a.Severity, a.Status, a.Message,
+			resolved_by_id, fired_at, resolved_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Source, a.AlertType, a.Severity, a.Status, a.Message,
 		a.EntityType, a.EntityID, a.EntityName, a.Details,
-		a.ResolvedByID, a.FiredAt.UTC().Format(time.RFC3339), nullableTimeStr(a.ResolvedAt),
+		nullableStrPtr(a.ResolvedByID), a.FiredAt.Unix(), nullableTime(a.ResolvedAt), a.CreatedAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert alert: %w", err)
+		return "", fmt.Errorf("insert alert: %w", err)
 	}
-	a.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return a.ID, nil
 }
 
-func (s *AlertStoreImpl) GetAlert(ctx context.Context, id int64) (*alert.Alert, error) {
+func (s *AlertStoreImpl) GetAlert(ctx context.Context, id string) (*alert.Alert, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+alertColumns+` FROM alerts WHERE id = ?`, id)
 	return scanAlertFromRow(row)
@@ -81,7 +85,7 @@ func (s *AlertStoreImpl) ListAlerts(ctx context.Context, opts alert.ListAlertsOp
 	}
 	if opts.Before != nil {
 		query += ` AND fired_at < ?`
-		args = append(args, opts.Before.UTC().Format(time.RFC3339))
+		args = append(args, opts.Before.Unix())
 	}
 
 	query += ` ORDER BY fired_at DESC`
@@ -112,15 +116,10 @@ func (s *AlertStoreImpl) ListAlerts(ctx context.Context, opts alert.ListAlertsOp
 	return alerts, rows.Err()
 }
 
-func (s *AlertStoreImpl) UpdateAlertStatus(ctx context.Context, id int64, status string, resolvedAt *time.Time, resolvedByID *int64) error {
-	var resolvedAtStr *string
-	if resolvedAt != nil {
-		s := resolvedAt.UTC().Format(time.RFC3339)
-		resolvedAtStr = &s
-	}
+func (s *AlertStoreImpl) UpdateAlertStatus(ctx context.Context, id string, status string, resolvedAt *time.Time, resolvedByID *string) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE alerts SET status = ?, resolved_at = ?, resolved_by_id = ? WHERE id = ?`,
-		status, resolvedAtStr, resolvedByID, id,
+		status, nullableTime(resolvedAt), nullableStrPtr(resolvedByID), id,
 	)
 	if err != nil {
 		return fmt.Errorf("update alert status: %w", err)
@@ -128,7 +127,7 @@ func (s *AlertStoreImpl) UpdateAlertStatus(ctx context.Context, id int64, status
 	return nil
 }
 
-func (s *AlertStoreImpl) UpdateAlertSeverity(ctx context.Context, id int64, severity, message string) error {
+func (s *AlertStoreImpl) UpdateAlertSeverity(ctx context.Context, id string, severity, message string) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE alerts SET severity = ?, message = ? WHERE id = ?`,
 		severity, message, id,
@@ -139,7 +138,7 @@ func (s *AlertStoreImpl) UpdateAlertSeverity(ctx context.Context, id int64, seve
 	return nil
 }
 
-func (s *AlertStoreImpl) GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID int64) (*alert.Alert, error) {
+func (s *AlertStoreImpl) GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID string) (*alert.Alert, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+alertColumns+` FROM alerts
 		WHERE source = ? AND alert_type = ? AND entity_type = ? AND entity_id = ? AND status = 'active'
@@ -176,7 +175,7 @@ func (s *AlertStoreImpl) ListActiveAlerts(ctx context.Context) ([]*alert.Alert, 
 func (s *AlertStoreImpl) DeleteAlertsOlderThan(ctx context.Context, before time.Time) (int64, error) {
 	res, err := s.writer.Exec(ctx,
 		`DELETE FROM alerts WHERE created_at < ?`,
-		before.UTC().Format(time.RFC3339),
+		before.Unix(),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("delete old alerts: %w", err)
@@ -187,10 +186,10 @@ func (s *AlertStoreImpl) DeleteAlertsOlderThan(ctx context.Context, before time.
 // scanAlertFromRow scans a single alert from any type implementing rowScanner.
 func scanAlertFromRow(scanner rowScanner) (*alert.Alert, error) {
 	a := &alert.Alert{}
-	var firedAt, createdAt string
-	var resolvedAt, details sql.NullString
-	var resolvedByID sql.NullInt64
-	var acknowledgedAt, acknowledgedBy, escalatedAt sql.NullString
+	var firedAt, createdAt int64
+	var details, acknowledgedBy sql.NullString
+	var resolvedByID sql.NullString
+	var resolvedAt, acknowledgedAt, escalatedAt sql.NullInt64
 
 	err := scanner.Scan(
 		&a.ID, &a.Source, &a.AlertType, &a.Severity, &a.Status, &a.Message,
@@ -202,38 +201,38 @@ func scanAlertFromRow(scanner rowScanner) (*alert.Alert, error) {
 		return nil, err
 	}
 
-	a.FiredAt, _ = time.Parse(time.RFC3339, firedAt)
-	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	a.FiredAt = time.Unix(firedAt, 0)
+	a.CreatedAt = time.Unix(createdAt, 0)
 	if details.Valid {
 		a.Details = details.String
 	}
 	if resolvedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, resolvedAt.String)
+		t := time.Unix(resolvedAt.Int64, 0)
 		a.ResolvedAt = &t
 	}
 	if resolvedByID.Valid {
-		v := resolvedByID.Int64
+		v := resolvedByID.String
 		a.ResolvedByID = &v
 	}
 	if acknowledgedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, acknowledgedAt.String)
+		t := time.Unix(acknowledgedAt.Int64, 0)
 		a.AcknowledgedAt = &t
 	}
 	if acknowledgedBy.Valid {
 		a.AcknowledgedBy = acknowledgedBy.String
 	}
 	if escalatedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, escalatedAt.String)
+		t := time.Unix(escalatedAt.Int64, 0)
 		a.EscalatedAt = &t
 	}
 	return a, nil
 }
 
-func (s *AlertStoreImpl) AcknowledgeAlert(ctx context.Context, id int64, by string, at time.Time) error {
+func (s *AlertStoreImpl) AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE alerts SET acknowledged_at = ?, acknowledged_by = ?
 		WHERE id = ? AND status = 'active' AND acknowledged_at IS NULL`,
-		at.UTC().Format(time.RFC3339), by, id,
+		at.Unix(), by, id,
 	)
 	if err != nil {
 		return fmt.Errorf("acknowledge alert: %w", err)
@@ -241,10 +240,10 @@ func (s *AlertStoreImpl) AcknowledgeAlert(ctx context.Context, id int64, by stri
 	return nil
 }
 
-func (s *AlertStoreImpl) SetEscalatedAt(ctx context.Context, id int64, at time.Time) error {
+func (s *AlertStoreImpl) SetEscalatedAt(ctx context.Context, id string, at time.Time) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE alerts SET escalated_at = ? WHERE id = ?`,
-		at.UTC().Format(time.RFC3339), id,
+		at.Unix(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("set escalated_at: %w", err)
@@ -275,10 +274,10 @@ func (s *AlertStoreImpl) ListUnacknowledgedActiveAlerts(ctx context.Context) ([]
 	return alerts, rows.Err()
 }
 
-func nullableTimeStr(t *time.Time) *string {
-	if t == nil {
+// nullableStrPtr binds a *string FK column: NULL when nil, otherwise the value.
+func nullableStrPtr(s *string) interface{} {
+	if s == nil {
 		return nil
 	}
-	s := t.UTC().Format(time.RFC3339)
-	return &s
+	return *s
 }

@@ -14,7 +14,7 @@ async function addItem() {
   }
 }
 
-async function removeItem(id: number) {
+async function removeItem(id: string) {
   await store.deleteFAQItem(id)
 }
 

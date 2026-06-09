@@ -22,9 +22,9 @@ const store = useChannelsStore()
 
 const showForm = ref(false)
 const showWizard = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const form = ref({ name: '', url: '', headers: '', enabled: true })
-const testResult = ref<{ id: number; status: string; response_code?: number; error?: string } | null>(null)
+const testResult = ref<{ id: string; status: string; response_code?: number; error?: string } | null>(null)
 
 function resetForm() {
   form.value = { name: '', url: '', headers: '', enabled: true }
@@ -32,7 +32,7 @@ function resetForm() {
   showForm.value = false
 }
 
-function startEdit(ch: { id: number; name: string; url: string; headers: string; enabled: boolean }) {
+function startEdit(ch: { id: string; name: string; url: string; headers: string; enabled: boolean }) {
   editingId.value = ch.id
   form.value = { name: ch.name, url: ch.url, headers: ch.headers, enabled: ch.enabled }
   showForm.value = true
@@ -51,7 +51,7 @@ async function submitForm() {
 
 const confirm = useConfirm()
 
-async function handleDelete(id: number) {
+async function handleDelete(id: string) {
   const ok = await confirm({
     title: 'Delete channel',
     message:
@@ -64,7 +64,7 @@ async function handleDelete(id: number) {
   store.fetchChannels()
 }
 
-async function handleTest(id: number) {
+async function handleTest(id: string) {
   testResult.value = null
   const res = await testChannel(id)
   testResult.value = { id, ...res }
@@ -80,7 +80,7 @@ function maskUrl(url: string): string {
   }
 }
 
-function handleWizardCreated(_id: number) {
+function handleWizardCreated(_id: string) {
   showWizard.value = false
   store.fetchChannels()
 }

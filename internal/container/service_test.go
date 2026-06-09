@@ -21,6 +21,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ---------------------------------------------------------------------------
@@ -31,10 +33,8 @@ import (
 type svcStore struct {
 	mu          sync.Mutex
 	containers  map[string]*Container // keyed by ExternalID
-	byID        map[int64]*Container
+	byID        map[string]*Container
 	transitions []*StateTransition
-	nextID      int64
-	nextTxnID   int64
 
 	// injection points for error simulation
 	errGetByExternalID  error
@@ -46,34 +46,31 @@ type svcStore struct {
 func newSvcStore() *svcStore {
 	return &svcStore{
 		containers: make(map[string]*Container),
-		byID:       make(map[int64]*Container),
-		nextID:     1,
-		nextTxnID:  1,
+		byID:       make(map[string]*Container),
 	}
 }
 
 func (m *svcStore) seed(c *Container) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if c.ID == 0 {
-		c.ID = m.nextID
-		m.nextID++
+	c.AgentID = uid.Agent(c.AgentID)
+	if c.ID == "" {
+		c.ID = uid.Container(c.AgentID, c.ExternalID)
 	}
 	clone := *c
 	m.containers[c.ExternalID] = &clone
 	m.byID[clone.ID] = &clone
 }
 
-func (m *svcStore) InsertContainer(_ context.Context, c *Container) (int64, error) {
+func (m *svcStore) InsertContainer(_ context.Context, c *Container) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := m.nextID
-	m.nextID++
+	c.AgentID = uid.Agent(c.AgentID)
+	c.ID = uid.Container(c.AgentID, c.ExternalID)
 	clone := *c
-	clone.ID = id
 	m.containers[c.ExternalID] = &clone
-	m.byID[id] = &clone
-	return id, nil
+	m.byID[clone.ID] = &clone
+	return c.ID, nil
 }
 
 func (m *svcStore) UpdateContainer(_ context.Context, c *Container) error {
@@ -102,7 +99,7 @@ func (m *svcStore) GetContainerByExternalID(_ context.Context, externalID string
 	return &clone, nil
 }
 
-func (m *svcStore) GetContainerByID(_ context.Context, id int64) (*Container, error) {
+func (m *svcStore) GetContainerByID(_ context.Context, id string) (*Container, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	c, ok := m.byID[id]
@@ -144,7 +141,7 @@ func (m *svcStore) ArchiveContainer(_ context.Context, externalID string, archiv
 	return nil
 }
 
-func (m *svcStore) DeleteContainerByID(_ context.Context, id int64) error {
+func (m *svcStore) DeleteContainerByID(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	c, ok := m.byID[id]
@@ -156,20 +153,19 @@ func (m *svcStore) DeleteContainerByID(_ context.Context, id int64) error {
 	return nil
 }
 
-func (m *svcStore) InsertTransition(_ context.Context, t *StateTransition) (int64, error) {
+func (m *svcStore) InsertTransition(_ context.Context, t *StateTransition) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.errInsertTransition != nil {
-		return 0, m.errInsertTransition
+		return "", m.errInsertTransition
 	}
 	clone := *t
-	clone.ID = m.nextTxnID
-	m.nextTxnID++
+	clone.ID = uid.New()
 	m.transitions = append(m.transitions, &clone)
 	return clone.ID, nil
 }
 
-func (m *svcStore) ListTransitionsByContainer(_ context.Context, containerID int64, _ ListTransitionsOpts) ([]*StateTransition, int, error) {
+func (m *svcStore) ListTransitionsByContainer(_ context.Context, containerID string, _ ListTransitionsOpts) ([]*StateTransition, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []*StateTransition
@@ -182,11 +178,11 @@ func (m *svcStore) ListTransitionsByContainer(_ context.Context, containerID int
 	return result, len(result), nil
 }
 
-func (m *svcStore) CountRestartsSince(_ context.Context, _ int64, _ time.Time) (int, error) {
+func (m *svcStore) CountRestartsSince(_ context.Context, _ string, _ time.Time) (int, error) {
 	return 0, nil
 }
 
-func (m *svcStore) GetTransitionsInWindow(_ context.Context, _ int64, _, _ time.Time) ([]*StateTransition, error) {
+func (m *svcStore) GetTransitionsInWindow(_ context.Context, _ string, _, _ time.Time) ([]*StateTransition, error) {
 	return nil, nil
 }
 
@@ -211,7 +207,7 @@ func (m *svcStore) storedState(externalID string) ContainerState {
 }
 
 // transitionsFor returns all recorded transitions for a given container ID.
-func (m *svcStore) transitionsFor(containerID int64) []*StateTransition {
+func (m *svcStore) transitionsFor(containerID string) []*StateTransition {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []*StateTransition
@@ -339,7 +335,7 @@ func extID(label string) string {
 func TestService_ProcessEvent_StartTransitionsToRunning(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("a"), StateExited)
-	c.ID = 10
+	c.ID = "10"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -360,9 +356,8 @@ func TestService_HandleStateChange_LogFetcherSkippedForRemote(t *testing.T) {
 	lf := &mockLogFetcher{}
 	svc := newTestService(store, func(d *Deps) { d.LogFetcher = lf })
 
-	agentID := "agent-remote"
 	c := makeTestContainer(extID("remote"), StateRunning)
-	c.AgentID = &agentID
+	c.AgentID = "agent-remote"
 	store.seed(c)
 
 	svc.handleStateChange(context.Background(), makeTestEvent("die", c.ExternalID), StateExited)
@@ -383,7 +378,7 @@ func TestService_HandleStateChange_LogFetcherSkippedForRemote(t *testing.T) {
 func TestService_ProcessEvent_DieWithZeroExitCodeSetsCompleted(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("b"), StateRunning)
-	c.ID = 11
+	c.ID = "11"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -398,7 +393,7 @@ func TestService_ProcessEvent_DieWithZeroExitCodeSetsCompleted(t *testing.T) {
 func TestService_ProcessEvent_DieWithNonZeroExitCodeSetsExited(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("c"), StateRunning)
-	c.ID = 12
+	c.ID = "12"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -415,7 +410,7 @@ func TestService_ProcessEvent_StopAfterCompletedIsNoop(t *testing.T) {
 	// becomes Completed; the subsequent stop must not overwrite it with Exited.
 	store := newSvcStore()
 	c := makeTestContainer(extID("d"), StateCompleted)
-	c.ID = 13
+	c.ID = "13"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -428,7 +423,7 @@ func TestService_ProcessEvent_StopAfterCompletedIsNoop(t *testing.T) {
 func TestService_ProcessEvent_StopWhenNotCompletedSetsExited(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("e"), StateRunning)
-	c.ID = 14
+	c.ID = "14"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -445,7 +440,7 @@ func TestService_ProcessEvent_SameStateSuppressesDuplicate(t *testing.T) {
 	// no state update and no transition recorded.
 	store := newSvcStore()
 	c := makeTestContainer(extID("f"), StateRunning)
-	c.ID = 15
+	c.ID = "15"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -489,7 +484,7 @@ func TestService_ProcessEvent_UnknownContainerStopIsIgnored(t *testing.T) {
 func TestService_ProcessEvent_HealthChangeUpdatesContainer(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("g"), StateRunning)
-	c.ID = 20
+	c.ID = "20"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -506,7 +501,7 @@ func TestService_ProcessEvent_HealthChangeUpdatesContainer(t *testing.T) {
 func TestService_ProcessEvent_HealthChangeRecordsTransition(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("h"), StateRunning)
-	c.ID = 21
+	c.ID = "21"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -531,7 +526,7 @@ func TestService_ProcessEvent_HealthChangeRecordsTransition(t *testing.T) {
 func TestService_ProcessEvent_RestartFromExitedTriggersCheck(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("i"), StateExited)
-	c.ID = 30
+	c.ID = "30"
 	store.seed(c)
 
 	checker := &mockRestartChecker{result: nil} // nil = below threshold
@@ -547,7 +542,7 @@ func TestService_ProcessEvent_RestartFromExitedTriggersCheck(t *testing.T) {
 func TestService_ProcessEvent_RestartCheckBelowThresholdEmitsRecovery(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("j"), StateExited)
-	c.ID = 31
+	c.ID = "31"
 	store.seed(c)
 
 	checker := &mockRestartChecker{result: nil}
@@ -569,10 +564,10 @@ func TestService_ProcessEvent_RestartCheckBelowThresholdEmitsRecovery(t *testing
 func TestService_ProcessEvent_RestartCheckAboveThresholdEmitsAlert(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("k"), StateRestarting)
-	c.ID = 32
+	c.ID = "32"
 	store.seed(c)
 
-	alertPayload := map[string]interface{}{"container_id": int64(32), "restarts": 10}
+	alertPayload := map[string]interface{}{"container_id": "c32", "restarts": 10}
 	checker := &mockRestartChecker{result: alertPayload}
 
 	var emittedEvents []string
@@ -596,7 +591,7 @@ func TestService_ProcessEvent_RestartCheckAboveThresholdEmitsAlert(t *testing.T)
 func TestService_ProcessEvent_DestroyArchivesContainer(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("l"), StateExited)
-	c.ID = 40
+	c.ID = "40"
 	store.seed(c)
 
 	var archivedEvents []interface{}
@@ -638,7 +633,7 @@ func TestService_ProcessEvent_DestroyUnknownContainerIsNoop(t *testing.T) {
 func TestService_ProcessEvent_DieCapturesLogSnippet(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("m"), StateRunning)
-	c.ID = 50
+	c.ID = "50"
 	store.seed(c)
 
 	fetcher := &mockLogFetcher{snippet: "panic: runtime error\ngoroutine 1 ...", err: nil}
@@ -660,7 +655,7 @@ func TestService_ProcessEvent_DieCapturesLogSnippet(t *testing.T) {
 func TestService_ProcessEvent_DieFetchLogSnippetErrorIsNonFatal(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("n"), StateRunning)
-	c.ID = 51
+	c.ID = "51"
 	store.seed(c)
 
 	fetcher := &mockLogFetcher{err: errors.New("docker daemon unavailable")}
@@ -683,7 +678,7 @@ func TestService_ProcessEvent_DieWithoutLogFetcherLeavesEmptySnippet(t *testing.
 	// transition with an empty LogSnippet.
 	store := newSvcStore()
 	c := makeTestContainer(extID("o"), StateRunning)
-	c.ID = 52
+	c.ID = "52"
 	store.seed(c)
 
 	svc := newTestService(store) // no LogFetcher
@@ -723,18 +718,18 @@ func TestService_ListContainersGrouped_GroupsByOrchestration(t *testing.T) {
 
 	// Two containers belonging to the same compose project.
 	c1 := makeTestContainer(extID("aa"), StateRunning)
-	c1.ID = 60
+	c1.ID = "60"
 	c1.OrchestrationGroup = "myapp"
 	c1.RuntimeType = "docker"
 
 	c2 := makeTestContainer(extID("bb"), StateRunning)
-	c2.ID = 61
+	c2.ID = "61"
 	c2.OrchestrationGroup = "myapp"
 	c2.RuntimeType = "docker"
 
 	// One container without any group.
 	c3 := makeTestContainer(extID("cc"), StateRunning)
-	c3.ID = 62
+	c3.ID = "62"
 
 	store.seed(c1)
 	store.seed(c2)
@@ -775,9 +770,9 @@ func TestService_ListContainersGrouped_CountsArchived(t *testing.T) {
 	store := newSvcStore()
 
 	c1 := makeTestContainer(extID("dd"), StateRunning)
-	c1.ID = 70
+	c1.ID = "70"
 	c2 := makeTestContainer(extID("ee"), StateExited)
-	c2.ID = 71
+	c2.ID = "71"
 	c2.Archived = true
 	now := time.Now()
 	c2.ArchivedAt = &now
@@ -797,7 +792,7 @@ func TestService_ListContainersGrouped_CustomGroupTakesPrecedence(t *testing.T) 
 	store := newSvcStore()
 
 	c := makeTestContainer(extID("ff"), StateRunning)
-	c.ID = 80
+	c.ID = "80"
 	c.OrchestrationGroup = "compose-project"
 	c.CustomGroup = "my-custom-label"
 
@@ -819,7 +814,7 @@ func TestService_ListContainersGrouped_CustomGroupTakesPrecedence(t *testing.T) 
 func TestService_ProcessEvent_StateChangedEventIsEmitted(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("gg"), StateExited)
-	c.ID = 90
+	c.ID = "90"
 	store.seed(c)
 
 	var emitted []string
@@ -837,7 +832,7 @@ func TestService_ProcessEvent_StateChangedEventIsEmitted(t *testing.T) {
 func TestService_ProcessEvent_NoEventCallbackIsNilSafe(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("hh"), StateExited)
-	c.ID = 91
+	c.ID = "91"
 	store.seed(c)
 
 	// No EventCallback configured — must not panic.
@@ -879,7 +874,7 @@ func TestParseExitCode_ValidAndInvalid(t *testing.T) {
 func TestService_ProcessEvent_DieWithSIGKILL137SetsCompleted(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("ii"), StateRunning)
-	c.ID = 100
+	c.ID = "100"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -894,7 +889,7 @@ func TestService_ProcessEvent_DieWithSIGKILL137SetsCompleted(t *testing.T) {
 func TestService_ProcessEvent_DieWithSIGTERM143SetsCompleted(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("jj"), StateRunning)
-	c.ID = 101
+	c.ID = "101"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -913,7 +908,7 @@ func TestService_ProcessEvent_DieWithSIGTERM143SetsCompleted(t *testing.T) {
 func TestService_ProcessEvent_KillSetsExited(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("kk"), StateRunning)
-	c.ID = 110
+	c.ID = "110"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -929,7 +924,7 @@ func TestService_ProcessEvent_KillSetsExited(t *testing.T) {
 func TestService_ProcessEvent_PauseSetsStatePaused(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("ll"), StateRunning)
-	c.ID = 120
+	c.ID = "120"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -941,7 +936,7 @@ func TestService_ProcessEvent_PauseSetsStatePaused(t *testing.T) {
 func TestService_ProcessEvent_UnpauseSetsStateRunning(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("mm"), StatePaused)
-	c.ID = 121
+	c.ID = "121"
 	store.seed(c)
 
 	svc := newTestService(store)
@@ -957,7 +952,7 @@ func TestService_ProcessEvent_UnpauseSetsStateRunning(t *testing.T) {
 func TestService_ProcessEvent_ExitCodeStoredInTransition(t *testing.T) {
 	store := newSvcStore()
 	c := makeTestContainer(extID("nn"), StateRunning)
-	c.ID = 130
+	c.ID = "130"
 	store.seed(c)
 
 	svc := newTestService(store)

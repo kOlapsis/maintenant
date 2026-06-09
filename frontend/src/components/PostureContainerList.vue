@@ -8,7 +8,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  select: [containerId: number]
+  select: [containerId: string]
 }>()
 </script>
 

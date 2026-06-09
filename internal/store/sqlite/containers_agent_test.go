@@ -47,7 +47,7 @@ func TestUpdateContainer_PersistsAgentID(t *testing.T) {
 	now := time.Now()
 	c := &container.Container{
 		ExternalID:        "ext-agent-1",
-		AgentID:           &agentID,
+		AgentID:           agentID,
 		Name:              "demo",
 		Image:             "img:v1",
 		State:             container.StateRunning,
@@ -68,7 +68,6 @@ func TestUpdateContainer_PersistsAgentID(t *testing.T) {
 	got, err := cstore.GetContainerByExternalID(ctx, "ext-agent-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	require.NotNil(t, got.AgentID, "agent_id must survive UpdateContainer")
-	assert.Equal(t, agentID, *got.AgentID)
+	assert.Equal(t, agentID, got.AgentID, "agent_id must survive UpdateContainer")
 	assert.Equal(t, "img:v2", got.Image)
 }

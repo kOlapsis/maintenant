@@ -31,10 +31,10 @@ type stubChannelStore struct {
 	ch *alert.NotificationChannel
 }
 
-func (s *stubChannelStore) InsertChannel(_ context.Context, ch *alert.NotificationChannel) (int64, error) {
-	return 1, nil
+func (s *stubChannelStore) InsertChannel(_ context.Context, ch *alert.NotificationChannel) (string, error) {
+	return "1", nil
 }
-func (s *stubChannelStore) GetChannel(_ context.Context, _ int64) (*alert.NotificationChannel, error) {
+func (s *stubChannelStore) GetChannel(_ context.Context, _ string) (*alert.NotificationChannel, error) {
 	return s.ch, nil
 }
 func (s *stubChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
@@ -43,17 +43,17 @@ func (s *stubChannelStore) ListChannels(_ context.Context) ([]*alert.Notificatio
 func (s *stubChannelStore) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
 	return nil
 }
-func (s *stubChannelStore) DeleteChannel(_ context.Context, _ int64) error { return nil }
-func (s *stubChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
+func (s *stubChannelStore) DeleteChannel(_ context.Context, _ string) error { return nil }
+func (s *stubChannelStore) GetChannelHealth(_ context.Context, _ string) (string, error) {
 	return "ok", nil
 }
-func (s *stubChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
-	return 1, nil
+func (s *stubChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (string, error) {
+	return "1", nil
 }
 func (s *stubChannelStore) UpdateDelivery(_ context.Context, _ *alert.NotificationDelivery) error {
 	return nil
 }
-func (s *stubChannelStore) ListDeliveriesByAlert(_ context.Context, _ int64) ([]*alert.NotificationDelivery, error) {
+func (s *stubChannelStore) ListDeliveriesByAlert(_ context.Context, _ string) ([]*alert.NotificationDelivery, error) {
 	return nil, nil
 }
 
@@ -137,7 +137,7 @@ func TestHandleTestChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: 1, Type: "slack"}}
+	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "slack"}}
 	h := &AlertHandler{channelStore: store}
 
 	req := httptest.NewRequest("POST", "/api/v1/channels/1/test", nil)
@@ -159,7 +159,7 @@ func TestHandleUpdateChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: 1, Type: "webhook"}}
+	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "webhook"}}
 	h := &AlertHandler{channelStore: store}
 
 	body := `{"type":"slack"}`
@@ -180,7 +180,7 @@ func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
 	defer func() { extension.CurrentEdition = original }()
 
 	// Channel already has type "slack" (created under Enterprise, now downgraded)
-	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: 1, Type: "slack"}}
+	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "slack"}}
 	h := &AlertHandler{channelStore: store}
 
 	body := `{"name":"renamed"}`

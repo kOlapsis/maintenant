@@ -24,24 +24,17 @@ const VALID_ENTITY_TYPES: ReadonlySet<string> = new Set<EntityType>([
   'k8s-pod',
 ])
 
-// Entity types that use string IDs (Docker service IDs, K8s composite IDs, etc.)
-const STRING_ID_TYPES: ReadonlySet<EntityType> = new Set<EntityType>([
-  'swarm-service',
-  'k8s-workload',
-  'k8s-pod',
-])
-
 export interface DetailSlideOver {
   isOpen: DeepReadonly<Ref<boolean>>
   entityType: DeepReadonly<Ref<EntityType | null>>
-  entityId: DeepReadonly<Ref<number | string | null>>
-  openDetail: (type: EntityType, id: number | string) => void
+  entityId: DeepReadonly<Ref<string | null>>
+  openDetail: (type: EntityType, id: string) => void
   close: () => void
 }
 
 export const detailSlideOverKey: InjectionKey<DetailSlideOver> = Symbol('detailSlideOver')
 
-export function parseSelectedParam(value: unknown): { type: EntityType; id: number | string } | null {
+export function parseSelectedParam(value: unknown): { type: EntityType; id: string } | null {
   if (typeof value !== 'string') return null
 
   // Handle multi-segment types like 'swarm-service' — find the entity type first
@@ -59,16 +52,9 @@ export function parseSelectedParam(value: unknown): { type: EntityType; id: numb
   if (!type || !idStr) return null
   if (!VALID_ENTITY_TYPES.has(type)) return null
 
-  const entityType = type as EntityType
-
-  if (STRING_ID_TYPES.has(entityType)) {
-    if (idStr.length === 0) return null
-    return { type: entityType, id: idStr }
-  }
-
-  const id = Number(idStr)
-  if (!Number.isFinite(id) || id <= 0 || Math.floor(id) !== id) return null
-  return { type: entityType, id }
+  // All entity ids are now opaque strings (UUIDs or composite ids); any
+  // non-empty id segment is valid.
+  return { type: type as EntityType, id: idStr }
 }
 
 export function useDetailSlideOver(): DetailSlideOver {
@@ -77,11 +63,11 @@ export function useDetailSlideOver(): DetailSlideOver {
 
   const isOpen = ref(false)
   const entityType = ref<EntityType | null>(null)
-  const entityId = ref<number | string | null>(null)
+  const entityId = ref<string | null>(null)
 
   let updatingUrl = false
 
-  function openDetail(type: EntityType, id: number | string) {
+  function openDetail(type: EntityType, id: string) {
     entityType.value = type
     entityId.value = id
     isOpen.value = true
@@ -95,7 +81,7 @@ export function useDetailSlideOver(): DetailSlideOver {
     removeFromUrl()
   }
 
-  function syncToUrl(type: EntityType, id: number | string) {
+  function syncToUrl(type: EntityType, id: string) {
     updatingUrl = true
     router.replace({
       query: { ...route.query, selected: `${type}-${id}` },

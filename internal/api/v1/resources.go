@@ -15,10 +15,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"runtime"
-	"strconv"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/resource"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ResourceHandler handles resource monitoring HTTP endpoints.
@@ -55,21 +55,22 @@ func parseHostFilter(r *http.Request) *string {
 }
 
 // hostMatches reports whether a snapshot owned by snapAgent belongs to the host
-// described by filter (nil = all, "" = local/NULL, id = that agent).
-func hostMatches(snapAgent *string, filter *string) bool {
+// described by filter (nil = all, "" = local, id = that agent). A snapshot is
+// "local" when its agent id is empty or the LocalAgent sentinel.
+func hostMatches(snapAgent string, filter *string) bool {
 	if filter == nil {
 		return true
 	}
 	if *filter == "" {
-		return snapAgent == nil
+		return snapAgent == "" || snapAgent == uid.LocalAgent
 	}
-	return snapAgent != nil && *snapAgent == *filter
+	return snapAgent == *filter
 }
 
 // HandleGetCurrent handles GET /api/v1/containers/{id}/resources/current.
 func (h *ResourceHandler) HandleGetCurrent(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid container ID")
 		return
 	}
@@ -170,9 +171,11 @@ func (h *ResourceHandler) HandleGetHosts(w http.ResponseWriter, r *http.Request)
 	// Running-container count per host, from the in-memory latest snapshots.
 	counts := map[string]int{}
 	for _, snap := range h.service.GetAllLatestSnapshots() {
-		key := ""
-		if snap.AgentID != nil {
-			key = *snap.AgentID
+		// Normalize the LocalAgent sentinel to "" — this handler keys the local
+		// server host as "" throughout.
+		key := snap.AgentID
+		if key == uid.LocalAgent {
+			key = ""
 		}
 		counts[key]++
 	}
@@ -248,8 +251,8 @@ func (h *ResourceHandler) HandleGetHosts(w http.ResponseWriter, r *http.Request)
 
 // HandleGetHistory handles GET /api/v1/containers/{id}/resources/history.
 func (h *ResourceHandler) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid container ID")
 		return
 	}
@@ -296,8 +299,8 @@ func (h *ResourceHandler) HandleGetHistory(w http.ResponseWriter, r *http.Reques
 
 // HandleGetAlertConfig handles GET /api/v1/containers/{id}/resources/alerts.
 func (h *ResourceHandler) HandleGetAlertConfig(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid container ID")
 		return
 	}
@@ -332,8 +335,8 @@ func (h *ResourceHandler) HandleGetAlertConfig(w http.ResponseWriter, r *http.Re
 
 // HandleUpsertAlertConfig handles PUT /api/v1/containers/{id}/resources/alerts.
 func (h *ResourceHandler) HandleUpsertAlertConfig(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid container ID")
 		return
 	}

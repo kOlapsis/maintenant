@@ -19,7 +19,7 @@ import (
 )
 
 // CheckResultCallback is called when a check completes.
-type CheckResultCallback func(endpointID int64, result CheckResult)
+type CheckResultCallback func(endpointID string, result CheckResult)
 
 // endpointRunner tracks a running per-endpoint goroutine.
 type endpointRunner struct {
@@ -29,7 +29,7 @@ type endpointRunner struct {
 
 // CheckEngine manages per-endpoint check goroutines.
 type CheckEngine struct {
-	runners  sync.Map // map[int64]*endpointRunner
+	runners  sync.Map // map[string]*endpointRunner
 	callback CheckResultCallback
 	logger   *slog.Logger
 	wg       sync.WaitGroup
@@ -67,7 +67,7 @@ func (e *CheckEngine) AddEndpoint(ctx context.Context, ep *Endpoint) {
 }
 
 // RemoveEndpoint stops the check goroutine for the given endpoint ID.
-func (e *CheckEngine) RemoveEndpoint(endpointID int64) {
+func (e *CheckEngine) RemoveEndpoint(endpointID string) {
 	if val, loaded := e.runners.LoadAndDelete(endpointID); loaded {
 		runner := val.(*endpointRunner)
 		runner.cancel()

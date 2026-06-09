@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // SilenceStoreImpl implements alert.SilenceStore using SQLite.
@@ -34,24 +35,22 @@ func NewSilenceStore(d *DB) *SilenceStoreImpl {
 	}
 }
 
-func (s *SilenceStoreImpl) InsertSilenceRule(ctx context.Context, rule *alert.SilenceRule) (int64, error) {
-	var entityID *int64
-	if rule.EntityID != nil {
-		entityID = rule.EntityID
+func (s *SilenceStoreImpl) InsertSilenceRule(ctx context.Context, rule *alert.SilenceRule) (string, error) {
+	rule.ID = uid.New()
+	if rule.CreatedAt.IsZero() {
+		rule.CreatedAt = time.Now().UTC()
 	}
-
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO silence_rules (entity_type, entity_id, source, reason, starts_at, duration_seconds)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		NullableString(rule.EntityType), entityID, NullableString(rule.Source),
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO silence_rules (id, entity_type, entity_id, source, reason, starts_at, duration_seconds, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		rule.ID, NullableString(rule.EntityType), nullableStrPtr(rule.EntityID), NullableString(rule.Source),
 		NullableString(rule.Reason),
-		rule.StartsAt.UTC().Format(time.RFC3339), rule.DurationSeconds,
+		rule.StartsAt.Unix(), rule.DurationSeconds, rule.CreatedAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert silence rule: %w", err)
+		return "", fmt.Errorf("insert silence rule: %w", err)
 	}
-	rule.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return rule.ID, nil
 }
 
 func (s *SilenceStoreImpl) ListSilenceRules(ctx context.Context, activeOnly bool) ([]*alert.SilenceRule, error) {
@@ -60,7 +59,7 @@ func (s *SilenceStoreImpl) ListSilenceRules(ctx context.Context, activeOnly bool
 
 	if activeOnly {
 		query += ` WHERE cancelled_at IS NULL
-			AND datetime(starts_at, '+' || duration_seconds || ' seconds') > datetime('now')`
+			AND (starts_at + duration_seconds) > strftime('%s','now')`
 	}
 
 	query += ` ORDER BY created_at DESC`
@@ -84,10 +83,10 @@ func (s *SilenceStoreImpl) ListSilenceRules(ctx context.Context, activeOnly bool
 	return rules, rows.Err()
 }
 
-func (s *SilenceStoreImpl) CancelSilenceRule(ctx context.Context, id int64) error {
+func (s *SilenceStoreImpl) CancelSilenceRule(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE silence_rules SET cancelled_at = ? WHERE id = ?`,
-		time.Now().UTC().Format(time.RFC3339), id,
+		time.Now().Unix(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("cancel silence rule: %w", err)
@@ -100,7 +99,7 @@ func (s *SilenceStoreImpl) GetActiveSilenceRules(ctx context.Context) ([]*alert.
 		`SELECT id, entity_type, entity_id, source, reason, starts_at, duration_seconds, cancelled_at, created_at
 		FROM silence_rules
 		WHERE cancelled_at IS NULL
-			AND datetime(starts_at, '+' || duration_seconds || ' seconds') > datetime('now')`)
+			AND (starts_at + duration_seconds) > strftime('%s','now')`)
 	if err != nil {
 		return nil, fmt.Errorf("get active silence rules: %w", err)
 	}
@@ -121,9 +120,9 @@ func (s *SilenceStoreImpl) GetActiveSilenceRules(ctx context.Context) ([]*alert.
 
 func scanSilenceRow(rows *sql.Rows) (*alert.SilenceRule, error) {
 	r := &alert.SilenceRule{}
-	var entityType, source, reason, cancelledAt sql.NullString
-	var entityID sql.NullInt64
-	var startsAt, createdAt string
+	var entityType, source, reason, entityID sql.NullString
+	var startsAt, createdAt int64
+	var cancelledAt sql.NullInt64
 
 	err := rows.Scan(&r.ID, &entityType, &entityID, &source, &reason,
 		&startsAt, &r.DurationSeconds, &cancelledAt, &createdAt)
@@ -135,7 +134,7 @@ func scanSilenceRow(rows *sql.Rows) (*alert.SilenceRule, error) {
 		r.EntityType = entityType.String
 	}
 	if entityID.Valid {
-		v := entityID.Int64
+		v := entityID.String
 		r.EntityID = &v
 	}
 	if source.Valid {
@@ -144,10 +143,10 @@ func scanSilenceRow(rows *sql.Rows) (*alert.SilenceRule, error) {
 	if reason.Valid {
 		r.Reason = reason.String
 	}
-	r.StartsAt, _ = time.Parse(time.RFC3339, startsAt)
-	r.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	r.StartsAt = time.Unix(startsAt, 0)
+	r.CreatedAt = time.Unix(createdAt, 0)
 	if cancelledAt.Valid {
-		t, _ := time.Parse(time.RFC3339, cancelledAt.String)
+		t := time.Unix(cancelledAt.Int64, 0)
 		r.CancelledAt = &t
 	}
 

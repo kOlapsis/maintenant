@@ -23,11 +23,11 @@ type NoopEscalator struct{}
 
 func (NoopEscalator) EvaluateCycle(_ context.Context) error                  { return nil }
 func (NoopEscalator) OnAlertCreated(_ context.Context, _ *alert.Alert) error { return nil }
-func (NoopEscalator) OnAlertAcknowledged(_ context.Context, _ int64, _ alert.Acknowledgment) error {
+func (NoopEscalator) OnAlertAcknowledged(_ context.Context, _ string, _ alert.Acknowledgment) error {
 	return nil
 }
-func (NoopEscalator) OnAlertResolved(_ context.Context, _ int64, _ time.Time) error { return nil }
-func (NoopEscalator) OnEditionDowngraded(_ context.Context) error                   { return nil }
+func (NoopEscalator) OnAlertResolved(_ context.Context, _ string, _ time.Time) error { return nil }
+func (NoopEscalator) OnEditionDowngraded(_ context.Context) error                    { return nil }
 
 // NoopEntityRouter is the CE default. Implements alert.EntityRouter.
 type NoopEntityRouter struct{}

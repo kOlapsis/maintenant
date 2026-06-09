@@ -65,7 +65,7 @@ async function loadAllMonitorOptions() {
 // --- Form state ---
 
 const showCompForm = ref(false)
-const editingCompId = ref<number | null>(null)
+const editingCompId = ref<string | null>(null)
 const createError = ref<string | null>(null)
 
 // Composition mode — locked in edit mode
@@ -219,7 +219,7 @@ async function submitCompForm() {
 
 const confirm = useConfirm()
 
-async function handleDeleteComp(id: number) {
+async function handleDeleteComp(id: string) {
   const ok = await confirm({
     title: 'Remove component',
     message: 'Remove this component from the status page? This cannot be undone.',

@@ -74,8 +74,8 @@ func (h *CertificateHandler) HandleList(w http.ResponseWriter, r *http.Request) 
 
 // HandleGet handles GET /api/v1/certificates/{id}
 func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}
@@ -180,8 +180,8 @@ func (h *CertificateHandler) HandleCreate(w http.ResponseWriter, r *http.Request
 
 // HandleUpdate handles PUT /api/v1/certificates/{id}
 func (h *CertificateHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}
@@ -213,8 +213,8 @@ func (h *CertificateHandler) HandleUpdate(w http.ResponseWriter, r *http.Request
 
 // HandleDelete handles DELETE /api/v1/certificates/{id}
 func (h *CertificateHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}
@@ -238,8 +238,8 @@ func (h *CertificateHandler) HandleDelete(w http.ResponseWriter, r *http.Request
 
 // HandleListChecks handles GET /api/v1/certificates/{id}/checks
 func (h *CertificateHandler) HandleListChecks(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}

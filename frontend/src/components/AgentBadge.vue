@@ -15,6 +15,7 @@
 import { computed } from 'vue'
 import { Server } from 'lucide-vue-next'
 import { useAgentsStore } from '@/stores/agents'
+import { isLocalAgent } from '@/services/apiFetch'
 
 const props = defineProps<{
   agentId: string | null | undefined
@@ -26,8 +27,12 @@ const props = defineProps<{
 
 const store = useAgentsStore()
 
+// Server-local entities carry the sentinel agent id; treat them as "no agent"
+// so the badge stays hidden (matching the prior behaviour when agent_id was unset).
+const isRemote = computed(() => !isLocalAgent(props.agentId))
+
 const agent = computed(() => {
-  if (!props.agentId) return null
+  if (!isRemote.value) return null
   return store.agents.find((a) => a.agent_id === props.agentId) ?? null
 })
 
@@ -48,7 +53,7 @@ const tooltip = computed(() => {
 
 <template>
   <span
-    v-if="agentId"
+    v-if="isRemote"
     class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium max-w-[160px]"
     :style="{ backgroundColor: 'var(--pb-bg-elevated)', color: 'var(--pb-text-secondary)' }"
     :title="tooltip"

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -38,17 +39,17 @@ func NewUpdateStore(d *DB) *UpdateStore {
 
 // --- Scan records ---
 
-func (s *UpdateStore) InsertScanRecord(ctx context.Context, r *update.ScanRecord) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO image_update_scans (started_at, containers_scanned, updates_found, errors, status)
-		VALUES (?, ?, ?, ?, ?)`,
-		r.StartedAt.Unix(), r.ContainersScanned, r.UpdatesFound, r.Errors, string(r.Status),
+func (s *UpdateStore) InsertScanRecord(ctx context.Context, r *update.ScanRecord) (string, error) {
+	r.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO image_update_scans (id, started_at, containers_scanned, updates_found, errors, status)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		r.ID, r.StartedAt.Unix(), r.ContainersScanned, r.UpdatesFound, r.Errors, string(r.Status),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert scan record: %w", err)
+		return "", fmt.Errorf("insert scan record: %w", err)
 	}
-	r.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return r.ID, nil
 }
 
 func (s *UpdateStore) UpdateScanRecord(ctx context.Context, r *update.ScanRecord) error {
@@ -67,7 +68,7 @@ func (s *UpdateStore) UpdateScanRecord(ctx context.Context, r *update.ScanRecord
 	return nil
 }
 
-func (s *UpdateStore) GetScanRecord(ctx context.Context, id int64) (*update.ScanRecord, error) {
+func (s *UpdateStore) GetScanRecord(ctx context.Context, id string) (*update.ScanRecord, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, started_at, completed_at, containers_scanned, updates_found, errors, status
 		FROM image_update_scans WHERE id = ?`, id)
@@ -83,19 +84,20 @@ func (s *UpdateStore) GetLatestScanRecord(ctx context.Context) (*update.ScanReco
 
 // --- Image updates ---
 
-func (s *UpdateStore) InsertImageUpdate(ctx context.Context, u *update.ImageUpdate) (int64, error) {
+func (s *UpdateStore) InsertImageUpdate(ctx context.Context, u *update.ImageUpdate) (string, error) {
 	var publishedAt *int64
 	if u.PublishedAt != nil {
 		v := u.PublishedAt.Unix()
 		publishedAt = &v
 	}
-	res, err := s.writer.Exec(ctx,
+	u.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
 		`INSERT INTO image_updates
-		(scan_id, container_id, container_name, image, current_tag, current_digest, registry,
+		(id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
 		 status, detected_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(container_name, image, latest_tag) DO UPDATE SET
 			scan_id=excluded.scan_id,
 			container_id=excluded.container_id,
@@ -111,16 +113,15 @@ func (s *UpdateStore) InsertImageUpdate(ctx context.Context, u *update.ImageUpda
 			previous_digest=excluded.previous_digest,
 			source_url=excluded.source_url,
 			detected_at=excluded.detected_at`,
-		u.ScanID, u.ContainerID, u.ContainerName, u.Image, u.CurrentTag, u.CurrentDigest, u.Registry,
+		u.ID, u.ScanID, u.ContainerID, u.ContainerName, u.Image, u.CurrentTag, u.CurrentDigest, u.Registry,
 		u.LatestTag, u.LatestDigest, string(u.UpdateType), u.RiskScore, publishedAt,
 		u.ChangelogURL, u.ChangelogSummary, boolToInt(u.HasBreakingChanges), u.PreviousDigest, u.SourceURL,
 		string(u.Status), u.DetectedAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert image update: %w", err)
+		return "", fmt.Errorf("insert image update: %w", err)
 	}
-	u.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return u.ID, nil
 }
 
 func (s *UpdateStore) UpdateImageUpdate(ctx context.Context, u *update.ImageUpdate) error {
@@ -147,7 +148,7 @@ func (s *UpdateStore) UpdateImageUpdate(ctx context.Context, u *update.ImageUpda
 	return nil
 }
 
-func (s *UpdateStore) GetImageUpdate(ctx context.Context, id int64) (*update.ImageUpdate, error) {
+func (s *UpdateStore) GetImageUpdate(ctx context.Context, id string) (*update.ImageUpdate, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, scan_id, container_id, container_name, image, current_tag, current_digest, registry,
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
@@ -260,7 +261,7 @@ func (s *UpdateStore) DeleteImageUpdatesByContainer(ctx context.Context, contain
 	return nil
 }
 
-func (s *UpdateStore) DeleteStaleImageUpdates(ctx context.Context, scanID int64, scannedContainerNames []string) (int64, error) {
+func (s *UpdateStore) DeleteStaleImageUpdates(ctx context.Context, scanID string, scannedContainerNames []string) (int64, error) {
 	if len(scannedContainerNames) == 0 {
 		return 0, nil
 	}
@@ -285,7 +286,7 @@ func (s *UpdateStore) DeleteStaleImageUpdates(ctx context.Context, scanID int64,
 // ListStaleImageUpdates returns the container names that had a pending update
 // before this scan but are no longer in the latest results — i.e. containers
 // that were upgraded between scans. Used to emit recovery alerts.
-func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID int64, scannedContainerNames []string) ([]string, error) {
+func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID string, scannedContainerNames []string) ([]string, error) {
 	if len(scannedContainerNames) == 0 {
 		return nil, nil
 	}
@@ -318,21 +319,30 @@ func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID int64, s
 
 // --- CVE cache ---
 
-func (s *UpdateStore) InsertCVECacheEntry(ctx context.Context, e *update.CVECacheEntry) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT OR REPLACE INTO cve_cache
-		(ecosystem, package_name, package_version, cve_id, cvss_score, cvss_vector, severity,
+func (s *UpdateStore) InsertCVECacheEntry(ctx context.Context, e *update.CVECacheEntry) (string, error) {
+	e.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO cve_cache
+		(id, ecosystem, package_name, package_version, cve_id, cvss_score, cvss_vector, severity,
 		 summary, fixed_in, references_json, fetched_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.Ecosystem, e.PackageName, e.PackageVersion, e.CVEID, e.CVSSScore, e.CVSSVector,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(ecosystem, package_name, package_version, cve_id) DO UPDATE SET
+			cvss_score=excluded.cvss_score,
+			cvss_vector=excluded.cvss_vector,
+			severity=excluded.severity,
+			summary=excluded.summary,
+			fixed_in=excluded.fixed_in,
+			references_json=excluded.references_json,
+			fetched_at=excluded.fetched_at,
+			expires_at=excluded.expires_at`,
+		e.ID, e.Ecosystem, e.PackageName, e.PackageVersion, e.CVEID, e.CVSSScore, e.CVSSVector,
 		string(e.Severity), e.Summary, e.FixedIn, e.ReferencesJSON,
 		e.FetchedAt.Unix(), e.ExpiresAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert cve cache entry: %w", err)
+		return "", fmt.Errorf("insert cve cache entry: %w", err)
 	}
-	e.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return e.ID, nil
 }
 
 func (s *UpdateStore) GetCVECacheEntries(ctx context.Context, ecosystem, packageName, packageVersion string) ([]*update.CVECacheEntry, error) {
@@ -375,13 +385,14 @@ func (s *UpdateStore) IsCVECacheFresh(ctx context.Context, ecosystem, packageNam
 // --- Container CVEs ---
 
 func (s *UpdateStore) UpsertContainerCVE(ctx context.Context, c *update.ContainerCVE) error {
+	c.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO container_cves (container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO container_cves (id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(container_id, cve_id) DO UPDATE SET
 			severity=excluded.severity, cvss_score=excluded.cvss_score,
 			summary=excluded.summary, fixed_in=excluded.fixed_in`,
-		c.ContainerID, c.CVEID, string(c.Severity), c.CVSSScore, c.Summary, c.FixedIn,
+		c.ID, c.ContainerID, c.CVEID, string(c.Severity), c.CVSSScore, c.Summary, c.FixedIn,
 		c.FirstDetectedAt.Unix(),
 	)
 	if err != nil {
@@ -471,17 +482,23 @@ func (s *UpdateStore) GetCVESummaryCounts(ctx context.Context) (map[string]int, 
 
 // --- Version pins ---
 
-func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT OR REPLACE INTO version_pins (container_id, image, pinned_tag, pinned_digest, reason, pinned_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		p.ContainerID, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
+func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin) (string, error) {
+	p.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO version_pins (id, container_id, image, pinned_tag, pinned_digest, reason, pinned_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(container_id) DO UPDATE SET
+			image=excluded.image,
+			pinned_tag=excluded.pinned_tag,
+			pinned_digest=excluded.pinned_digest,
+			reason=excluded.reason,
+			pinned_at=excluded.pinned_at`,
+		p.ID, p.ContainerID, p.Image, p.PinnedTag, p.PinnedDigest, p.Reason, p.PinnedAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert version pin: %w", err)
+		return "", fmt.Errorf("insert version pin: %w", err)
 	}
-	p.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return p.ID, nil
 }
 
 func (s *UpdateStore) GetVersionPin(ctx context.Context, containerID string) (*update.VersionPin, error) {
@@ -501,17 +518,18 @@ func (s *UpdateStore) DeleteVersionPin(ctx context.Context, containerID string) 
 
 // --- Update exclusions ---
 
-func (s *UpdateStore) InsertExclusion(ctx context.Context, e *update.UpdateExclusion) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO update_exclusions (pattern, pattern_type, created_at)
-		VALUES (?, ?, ?)`,
-		e.Pattern, string(e.PatternType), e.CreatedAt.Unix(),
+func (s *UpdateStore) InsertExclusion(ctx context.Context, e *update.UpdateExclusion) (string, error) {
+	e.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO update_exclusions (id, pattern, pattern_type, created_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(pattern, pattern_type) DO UPDATE SET created_at=excluded.created_at`,
+		e.ID, e.Pattern, string(e.PatternType), e.CreatedAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert exclusion: %w", err)
+		return "", fmt.Errorf("insert exclusion: %w", err)
 	}
-	e.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return e.ID, nil
 }
 
 func (s *UpdateStore) ListExclusions(ctx context.Context) ([]*update.UpdateExclusion, error) {
@@ -537,7 +555,7 @@ func (s *UpdateStore) ListExclusions(ctx context.Context) ([]*update.UpdateExclu
 	return result, rows.Err()
 }
 
-func (s *UpdateStore) DeleteExclusion(ctx context.Context, id int64) error {
+func (s *UpdateStore) DeleteExclusion(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx, `DELETE FROM update_exclusions WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete exclusion: %w", err)
@@ -547,17 +565,17 @@ func (s *UpdateStore) DeleteExclusion(ctx context.Context, id int64) error {
 
 // --- Risk score history ---
 
-func (s *UpdateStore) InsertRiskScoreRecord(ctx context.Context, r *update.RiskScoreRecord) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO risk_score_history (container_id, score, factors_json, recorded_at)
-		VALUES (?, ?, ?, ?)`,
-		r.ContainerID, r.Score, r.FactorsJSON, r.RecordedAt.Unix(),
+func (s *UpdateStore) InsertRiskScoreRecord(ctx context.Context, r *update.RiskScoreRecord) (string, error) {
+	r.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO risk_score_history (id, container_id, score, factors_json, recorded_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		r.ID, r.ContainerID, r.Score, r.FactorsJSON, r.RecordedAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert risk score record: %w", err)
+		return "", fmt.Errorf("insert risk score record: %w", err)
 	}
-	r.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return r.ID, nil
 }
 
 func (s *UpdateStore) ListRiskScoreHistory(ctx context.Context, containerID string, from, to time.Time) ([]*update.RiskScoreRecord, error) {

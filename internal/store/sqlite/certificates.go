@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // CertificateStore implements certificate.CertificateStore using SQLite.
@@ -40,11 +41,16 @@ const certMonitorColumns = `id, hostname, port, source, endpoint_id, status,
 	check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
 	last_check_at, next_check_at, last_error, created_at, external_id, agent_id`
 
-func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.CertMonitor) (int64, error) {
+// CreateMonitor upserts a cert monitor. Its id is derived deterministically from
+// (agent_id, hostname, port) so the agent and server mint the same id; a repeat
+// report for the same host updates the existing row's mutable settings.
+func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.CertMonitor) (string, error) {
 	now := time.Now().Unix()
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now()
 	}
+	m.AgentID = uid.Agent(m.AgentID)
+	m.ID = uid.CertMonitor(m.AgentID, m.Hostname, m.Port)
 
 	thresholdsJSON := m.WarningThresholdsJSON()
 
@@ -58,28 +64,27 @@ func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.Cer
 		nextCheckAt = m.NextCheckAt.Unix()
 	}
 
-	var agentID interface{}
-	if m.AgentID != nil {
-		agentID = *m.AgentID
-	}
-
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO cert_monitors (hostname, port, source, endpoint_id, status,
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO cert_monitors (id, agent_id, hostname, port, source, endpoint_id, status,
 			check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
-			last_check_at, next_check_at, last_error, created_at, external_id, agent_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?)`,
-		m.Hostname, m.Port, string(m.Source), endpointID, string(m.Status),
+			last_check_at, next_check_at, last_error, created_at, external_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			source=excluded.source, endpoint_id=excluded.endpoint_id,
+			check_interval_seconds=excluded.check_interval_seconds,
+			warning_thresholds_json=excluded.warning_thresholds_json,
+			external_id=excluded.external_id`,
+		m.ID, m.AgentID, m.Hostname, m.Port, string(m.Source), endpointID, string(m.Status),
 		m.CheckIntervalSeconds, thresholdsJSON,
-		nextCheckAt, now, m.ExternalID, agentID,
+		nextCheckAt, now, m.ExternalID,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert cert monitor: %w", err)
+		return "", fmt.Errorf("insert cert monitor: %w", err)
 	}
-	m.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return m.ID, nil
 }
 
-func (s *CertificateStore) GetMonitorByID(ctx context.Context, id int64) (*certificate.CertMonitor, error) {
+func (s *CertificateStore) GetMonitorByID(ctx context.Context, id string) (*certificate.CertMonitor, error) {
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE id=?`, id))
 }
@@ -91,21 +96,21 @@ func (s *CertificateStore) GetMonitorByHostPort(ctx context.Context, hostname st
 }
 
 // GetMonitorByHostPortAgent resolves a monitor scoped to a given agent (or the
-// local server when agentID is nil). Matches the agent-aware identity index
-// (hostname, port, COALESCE(agent_id,'')) so a remote agent's localhost:443 does
-// not collide with the server's own or another agent's.
+// local server when agentID is nil/empty). Matches the agent-aware identity
+// (agent_id, hostname, port) so a remote agent's localhost:443 does not collide
+// with the server's own or another agent's.
 func (s *CertificateStore) GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int) (*certificate.CertMonitor, error) {
-	var aid interface{}
+	aid := uid.LocalAgent
 	if agentID != nil {
-		aid = *agentID
+		aid = uid.Agent(*agentID)
 	}
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors
-		WHERE hostname=? AND port=? AND COALESCE(agent_id,'')=COALESCE(?,'')`,
+		WHERE hostname=? AND port=? AND agent_id=?`,
 		hostname, port, aid))
 }
 
-func (s *CertificateStore) GetMonitorByEndpointID(ctx context.Context, endpointID int64) (*certificate.CertMonitor, error) {
+func (s *CertificateStore) GetMonitorByEndpointID(ctx context.Context, endpointID string) (*certificate.CertMonitor, error) {
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE endpoint_id=?`,
 		endpointID))
@@ -125,7 +130,8 @@ func (s *CertificateStore) ListMonitors(ctx context.Context, opts certificate.Li
 	}
 	if opts.AgentFilter != nil {
 		if *opts.AgentFilter == "local" {
-			query += ` AND agent_id IS NULL`
+			query += ` AND agent_id=?`
+			args = append(args, uid.LocalAgent)
 		} else {
 			query += ` AND agent_id=?`
 			args = append(args, *opts.AgentFilter)
@@ -186,25 +192,25 @@ func (s *CertificateStore) UpdateMonitor(ctx context.Context, m *certificate.Cer
 		m.ID,
 	)
 	if err != nil {
-		return fmt.Errorf("update cert monitor %d: %w", m.ID, err)
+		return fmt.Errorf("update cert monitor %s: %w", m.ID, err)
 	}
 	return nil
 }
 
 // DeleteMonitor hard-deletes a certificate monitor. Associated check results
 // and chain entries are removed via ON DELETE CASCADE.
-func (s *CertificateStore) DeleteMonitor(ctx context.Context, id int64) error {
+func (s *CertificateStore) DeleteMonitor(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx,
 		`DELETE FROM cert_monitors WHERE id=?`, id)
 	if err != nil {
-		return fmt.Errorf("delete cert monitor %d: %w", id, err)
+		return fmt.Errorf("delete cert monitor %s: %w", id, err)
 	}
 	return nil
 }
 
 // --- Check results ---
 
-func (s *CertificateStore) InsertCheckResult(ctx context.Context, result *certificate.CertCheckResult) (int64, error) {
+func (s *CertificateStore) InsertCheckResult(ctx context.Context, result *certificate.CertCheckResult) (string, error) {
 	var notBefore, notAfter interface{}
 	if result.NotBefore != nil {
 		notBefore = result.NotBefore.Unix()
@@ -233,14 +239,15 @@ func (s *CertificateStore) InsertCheckResult(ctx context.Context, result *certif
 	}
 
 	sansJSON := result.SANsJSON()
+	result.ID = uid.New()
 
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO cert_check_results (monitor_id, subject_cn, issuer_cn, issuer_org,
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO cert_check_results (id, monitor_id, subject_cn, issuer_cn, issuer_org,
 			sans_json, serial_number, signature_algorithm, not_before, not_after,
 			chain_valid, chain_error, hostname_match, error_message, checked_at,
 			ocsp_stapled, ocsp_status, ocsp_produced_at, ocsp_next_update, ocsp_error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		result.MonitorID, NullableString(result.SubjectCN), NullableString(result.IssuerCN),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		result.ID, result.MonitorID, NullableString(result.SubjectCN), NullableString(result.IssuerCN),
 		NullableString(result.IssuerOrg), sansJSON, NullableString(result.SerialNumber),
 		NullableString(result.SignatureAlgorithm), notBefore, notAfter,
 		chainValid, NullableString(result.ChainError), hostnameMatch,
@@ -249,13 +256,12 @@ func (s *CertificateStore) InsertCheckResult(ctx context.Context, result *certif
 		NullableString(result.OCSPError),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert cert check result: %w", err)
+		return "", fmt.Errorf("insert cert check result: %w", err)
 	}
-	result.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return result.ID, nil
 }
 
-func (s *CertificateStore) GetLatestCheckResult(ctx context.Context, monitorID int64) (*certificate.CertCheckResult, error) {
+func (s *CertificateStore) GetLatestCheckResult(ctx context.Context, monitorID string) (*certificate.CertCheckResult, error) {
 	return s.scanCheckResult(s.db.QueryRowContext(ctx,
 		`SELECT id, monitor_id, subject_cn, issuer_cn, issuer_org, sans_json,
 			serial_number, signature_algorithm, not_before, not_after,
@@ -265,7 +271,7 @@ func (s *CertificateStore) GetLatestCheckResult(ctx context.Context, monitorID i
 		monitorID))
 }
 
-func (s *CertificateStore) ListCheckResults(ctx context.Context, monitorID int64, opts certificate.ListChecksOpts) ([]*certificate.CertCheckResult, int, error) {
+func (s *CertificateStore) ListCheckResults(ctx context.Context, monitorID string, opts certificate.ListChecksOpts) ([]*certificate.CertCheckResult, int, error) {
 	var total int
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM cert_check_results WHERE monitor_id=?`, monitorID).Scan(&total); err != nil {
@@ -313,10 +319,11 @@ func (s *CertificateStore) ListCheckResults(ctx context.Context, monitorID int64
 
 func (s *CertificateStore) InsertChainEntries(ctx context.Context, entries []*certificate.CertChainEntry) error {
 	for _, e := range entries {
+		e.ID = uid.New()
 		_, err := s.writer.Exec(ctx,
-			`INSERT INTO cert_chain_entries (check_result_id, position, subject_cn, issuer_cn, not_before, not_after)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			e.CheckResultID, e.Position, e.SubjectCN, e.IssuerCN,
+			`INSERT INTO cert_chain_entries (id, check_result_id, position, subject_cn, issuer_cn, not_before, not_after)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			e.ID, e.CheckResultID, e.Position, e.SubjectCN, e.IssuerCN,
 			e.NotBefore.Unix(), e.NotAfter.Unix(),
 		)
 		if err != nil {
@@ -326,7 +333,7 @@ func (s *CertificateStore) InsertChainEntries(ctx context.Context, entries []*ce
 	return nil
 }
 
-func (s *CertificateStore) GetChainEntries(ctx context.Context, checkResultID int64) ([]*certificate.CertChainEntry, error) {
+func (s *CertificateStore) GetChainEntries(ctx context.Context, checkResultID string) ([]*certificate.CertChainEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, check_result_id, position, subject_cn, issuer_cn, not_before, not_after
 		FROM cert_chain_entries WHERE check_result_id=? ORDER BY position`,
@@ -357,9 +364,9 @@ func (s *CertificateStore) GetChainEntries(ctx context.Context, checkResultID in
 func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now time.Time) ([]*certificate.CertMonitor, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors
-		WHERE source IN ('standalone','label') AND agent_id IS NULL AND (next_check_at IS NULL OR next_check_at<=?)
+		WHERE source IN ('standalone','label') AND agent_id=? AND (next_check_at IS NULL OR next_check_at<=?)
 		ORDER BY next_check_at`,
-		now.Unix())
+		uid.LocalAgent, now.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("list due scheduled monitors: %w", err)
 	}
@@ -435,8 +442,8 @@ func (s *CertificateStore) DeleteCheckResultsBefore(ctx context.Context, before 
 
 func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor, error) {
 	var m certificate.CertMonitor
-	var endpointID, lastAlertedThreshold, lastCheckAt, nextCheckAt sql.NullInt64
-	var lastError, agentID sql.NullString
+	var lastAlertedThreshold, lastCheckAt, nextCheckAt sql.NullInt64
+	var endpointID, lastError sql.NullString
 	var thresholdsJSON string
 	var createdAt int64
 
@@ -444,7 +451,7 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 		&m.ID, &m.Hostname, &m.Port, &m.Source, &endpointID, &m.Status,
 		&m.CheckIntervalSeconds, &thresholdsJSON, &lastAlertedThreshold,
 		&lastCheckAt, &nextCheckAt, &lastError, &createdAt,
-		&m.ExternalID, &agentID,
+		&m.ExternalID, &m.AgentID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -456,7 +463,7 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 	m.CreatedAt = time.Unix(createdAt, 0)
 
 	if endpointID.Valid {
-		v := endpointID.Int64
+		v := endpointID.String
 		m.EndpointID = &v
 	}
 	if lastAlertedThreshold.Valid {
@@ -473,9 +480,6 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 	}
 	if lastError.Valid {
 		m.LastError = lastError.String
-	}
-	if agentID.Valid {
-		m.AgentID = &agentID.String
 	}
 
 	// Parse warning thresholds

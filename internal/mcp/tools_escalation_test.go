@@ -15,6 +15,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,18 +29,18 @@ import (
 // --- mock store for MCP tests ---
 
 type mcpEscalationStore struct {
-	policies    map[int64]*escalation.Policy
+	policies    map[string]*escalation.Policy
 	nextID      int64
 	activeCount int
 }
 
 func newMCPEscalationStore() *mcpEscalationStore {
-	return &mcpEscalationStore{policies: map[int64]*escalation.Policy{}}
+	return &mcpEscalationStore{policies: map[string]*escalation.Policy{}}
 }
 
-func (m *mcpEscalationStore) InsertPolicy(_ context.Context, p *escalation.Policy) (int64, error) {
+func (m *mcpEscalationStore) InsertPolicy(_ context.Context, p *escalation.Policy) (string, error) {
 	m.nextID++
-	p.ID = m.nextID
+	p.ID = strconv.FormatInt(m.nextID, 10)
 	cp := *p
 	m.policies[p.ID] = &cp
 	if p.Active {
@@ -51,7 +52,7 @@ func (m *mcpEscalationStore) UpdatePolicy(_ context.Context, p *escalation.Polic
 	m.policies[p.ID] = p
 	return nil
 }
-func (m *mcpEscalationStore) SelectPolicy(_ context.Context, id int64) (*escalation.Policy, error) {
+func (m *mcpEscalationStore) SelectPolicy(_ context.Context, id string) (*escalation.Policy, error) {
 	return m.policies[id], nil
 }
 func (m *mcpEscalationStore) SelectPolicies(_ context.Context, _ bool) ([]*escalation.Policy, error) {
@@ -64,7 +65,7 @@ func (m *mcpEscalationStore) SelectPolicies(_ context.Context, _ bool) ([]*escal
 	}
 	return out, nil
 }
-func (m *mcpEscalationStore) DeletePolicy(_ context.Context, id int64) error {
+func (m *mcpEscalationStore) DeletePolicy(_ context.Context, id string) error {
 	if p, ok := m.policies[id]; ok && p.Active {
 		m.activeCount--
 	}
@@ -74,16 +75,16 @@ func (m *mcpEscalationStore) DeletePolicy(_ context.Context, id int64) error {
 func (m *mcpEscalationStore) CountActivePolicies(_ context.Context) (int, error) {
 	return m.activeCount, nil
 }
-func (m *mcpEscalationStore) SelectRun(_ context.Context, _ int64) (*escalation.Run, error) {
+func (m *mcpEscalationStore) SelectRun(_ context.Context, _ string) (*escalation.Run, error) {
 	return nil, nil
 }
-func (m *mcpEscalationStore) SelectRunsByAlert(_ context.Context, _ int64) ([]*escalation.Run, error) {
+func (m *mcpEscalationStore) SelectRunsByAlert(_ context.Context, _ string) ([]*escalation.Run, error) {
 	return []*escalation.Run{}, nil
 }
-func (m *mcpEscalationStore) SelectRunsByPolicy(_ context.Context, _ int64, _ int, _ int64) ([]*escalation.Run, error) {
+func (m *mcpEscalationStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*escalation.Run, error) {
 	return []*escalation.Run{}, nil
 }
-func (m *mcpEscalationStore) SelectRunDeliveries(_ context.Context, _ int64) ([]*escalation.Delivery, error) {
+func (m *mcpEscalationStore) SelectRunDeliveries(_ context.Context, _ string) ([]*escalation.Delivery, error) {
 	return []*escalation.Delivery{}, nil
 }
 func (m *mcpEscalationStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
@@ -94,29 +95,29 @@ func (m *mcpEscalationStore) BulkStopActiveRuns(_ context.Context, _ string, _ t
 func (m *mcpEscalationStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
 	return nil
 }
-func (m *mcpEscalationStore) InsertRun(_ context.Context, _ *escalation.Run) (int64, error) {
-	return 0, nil
+func (m *mcpEscalationStore) InsertRun(_ context.Context, _ *escalation.Run) (string, error) {
+	return "", nil
 }
-func (m *mcpEscalationStore) UpdateRunProgress(_ context.Context, _ int64, _ int, _ *time.Time, _ string) error {
+func (m *mcpEscalationStore) UpdateRunProgress(_ context.Context, _ string, _ int, _ *time.Time, _ string) error {
 	return nil
 }
-func (m *mcpEscalationStore) TerminateRun(_ context.Context, _ int64, _ string, _ time.Time) error {
+func (m *mcpEscalationStore) TerminateRun(_ context.Context, _ string, _ string, _ time.Time) error {
 	return nil
 }
-func (m *mcpEscalationStore) SelectActiveRunsByAlert(_ context.Context, _ int64) ([]*escalation.Run, error) {
+func (m *mcpEscalationStore) SelectActiveRunsByAlert(_ context.Context, _ string) ([]*escalation.Run, error) {
 	return nil, nil
 }
 func (m *mcpEscalationStore) SelectDueRuns(_ context.Context, _ time.Time) ([]*escalation.Run, error) {
 	return nil, nil
 }
-func (m *mcpEscalationStore) PauseRunForMaintenance(_ context.Context, _ int64, _ time.Time) error {
+func (m *mcpEscalationStore) PauseRunForMaintenance(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
-func (m *mcpEscalationStore) ResumeRunFromMaintenance(_ context.Context, _ int64, _ time.Time) error {
+func (m *mcpEscalationStore) ResumeRunFromMaintenance(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
-func (m *mcpEscalationStore) InsertDelivery(_ context.Context, _ *escalation.Delivery) (int64, error) {
-	return 0, nil
+func (m *mcpEscalationStore) InsertDelivery(_ context.Context, _ *escalation.Delivery) (string, error) {
+	return "", nil
 }
 func (m *mcpEscalationStore) UpdateDelivery(_ context.Context, _ *escalation.Delivery) error {
 	return nil
@@ -129,10 +130,10 @@ func (m *mcpEscalationStore) SelectOrphanPendingDeliveries(_ context.Context, _ 
 
 type mcpChannelStore struct{}
 
-func (m *mcpChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (int64, error) {
-	return 1, nil
+func (m *mcpChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (string, error) {
+	return "1", nil
 }
-func (m *mcpChannelStore) GetChannel(_ context.Context, id int64) (*alert.NotificationChannel, error) {
+func (m *mcpChannelStore) GetChannel(_ context.Context, id string) (*alert.NotificationChannel, error) {
 	return &alert.NotificationChannel{ID: id, Name: "chan", Enabled: true}, nil
 }
 func (m *mcpChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
@@ -141,17 +142,17 @@ func (m *mcpChannelStore) ListChannels(_ context.Context) ([]*alert.Notification
 func (m *mcpChannelStore) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
 	return nil
 }
-func (m *mcpChannelStore) DeleteChannel(_ context.Context, _ int64) error { return nil }
-func (m *mcpChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
+func (m *mcpChannelStore) DeleteChannel(_ context.Context, _ string) error { return nil }
+func (m *mcpChannelStore) GetChannelHealth(_ context.Context, _ string) (string, error) {
 	return "ok", nil
 }
-func (m *mcpChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
-	return 1, nil
+func (m *mcpChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (string, error) {
+	return "1", nil
 }
 func (m *mcpChannelStore) UpdateDelivery(_ context.Context, _ *alert.NotificationDelivery) error {
 	return nil
 }
-func (m *mcpChannelStore) ListDeliveriesByAlert(_ context.Context, _ int64) ([]*alert.NotificationDelivery, error) {
+func (m *mcpChannelStore) ListDeliveriesByAlert(_ context.Context, _ string) ([]*alert.NotificationDelivery, error) {
 	return nil, nil
 }
 
@@ -204,7 +205,7 @@ func TestEscalationTools_CE_GetPolicy(t *testing.T) {
 
 	svc := buildCEEscalationServices()
 	handler := getEscalationPolicyHandler(svc)
-	result, _, err := handler(context.Background(), nil, getEscalationPolicyInput{ID: 1})
+	result, _, err := handler(context.Background(), nil, getEscalationPolicyInput{ID: "1"})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
@@ -230,7 +231,7 @@ func TestEscalationTools_CE_DeletePolicy(t *testing.T) {
 
 	svc := buildCEEscalationServices()
 	handler := deleteEscalationPolicyHandler(svc)
-	result, _, err := handler(context.Background(), nil, deleteEscalationPolicyInput{ID: 1})
+	result, _, err := handler(context.Background(), nil, deleteEscalationPolicyInput{ID: "1"})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
@@ -243,7 +244,7 @@ func TestEscalationTools_CE_ListAlertRuns(t *testing.T) {
 
 	svc := buildCEEscalationServices()
 	handler := listAlertEscalationRunsHandler(svc)
-	result, _, err := handler(context.Background(), nil, listAlertEscalationRunsInput{AlertID: 1})
+	result, _, err := handler(context.Background(), nil, listAlertEscalationRunsInput{AlertID: "1"})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
@@ -256,7 +257,7 @@ func TestEscalationTools_CE_GetRun(t *testing.T) {
 
 	svc := buildCEEscalationServices()
 	handler := getEscalationRunHandler(svc)
-	result, _, err := handler(context.Background(), nil, getEscalationRunInput{ID: 1})
+	result, _, err := handler(context.Background(), nil, getEscalationRunInput{ID: "1"})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
@@ -288,7 +289,7 @@ func TestEscalationTools_Pro_CreateAndGetPolicy(t *testing.T) {
 		Name:   "mcp test policy",
 		Active: false,
 		Levels: []escalationLevelInput{
-			{DelaySeconds: 300, ChannelIDs: []int64{1}},
+			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
 		},
 	})
 	require.NoError(t, err)
@@ -306,7 +307,7 @@ func TestEscalationTools_Pro_DeletePolicy_NotFound(t *testing.T) {
 
 	svc := buildProEscalationServices()
 	handler := deleteEscalationPolicyHandler(svc)
-	result, _, err := handler(context.Background(), nil, deleteEscalationPolicyInput{ID: 999})
+	result, _, err := handler(context.Background(), nil, deleteEscalationPolicyInput{ID: "999"})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "policy_not_found")
@@ -319,7 +320,7 @@ func TestEscalationTools_CE_UpdatePolicy(t *testing.T) {
 
 	svc := buildCEEscalationServices()
 	handler := updateEscalationPolicyHandler(svc)
-	result, _, err := handler(context.Background(), nil, updateEscalationPolicyInput{ID: 1})
+	result, _, err := handler(context.Background(), nil, updateEscalationPolicyInput{ID: "1"})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
@@ -332,7 +333,7 @@ func TestEscalationTools_CE_SetPolicyActive(t *testing.T) {
 
 	svc := buildCEEscalationServices()
 	handler := setEscalationPolicyActiveHandler(svc)
-	result, _, err := handler(context.Background(), nil, setEscalationPolicyActiveInput{ID: 1, Active: true})
+	result, _, err := handler(context.Background(), nil, setEscalationPolicyActiveInput{ID: "1", Active: true})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
@@ -350,14 +351,14 @@ func TestEscalationTools_Pro_SetPolicyActive_HappyPath(t *testing.T) {
 	createResult, _, err := createHandler(context.Background(), nil, createEscalationPolicyInput{
 		Name:   "policy to activate",
 		Active: false,
-		Levels: []escalationLevelInput{{DelaySeconds: 300, ChannelIDs: []int64{1}}},
+		Levels: []escalationLevelInput{{DelaySeconds: 300, ChannelIDs: []string{"1"}}},
 	})
 	require.NoError(t, err)
 	require.False(t, createResult.IsError)
 
 	// Activate it
 	handler := setEscalationPolicyActiveHandler(svc)
-	result, _, err := handler(context.Background(), nil, setEscalationPolicyActiveInput{ID: 1, Active: true})
+	result, _, err := handler(context.Background(), nil, setEscalationPolicyActiveInput{ID: "1", Active: true})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.False(t, result.IsError)
@@ -377,7 +378,7 @@ func TestEscalationTools_Pro_UpdatePolicy_HappyPath(t *testing.T) {
 	createResult, _, err := createHandler(context.Background(), nil, createEscalationPolicyInput{
 		Name:   "original name",
 		Active: false,
-		Levels: []escalationLevelInput{{DelaySeconds: 300, ChannelIDs: []int64{1}}},
+		Levels: []escalationLevelInput{{DelaySeconds: 300, ChannelIDs: []string{"1"}}},
 	})
 	require.NoError(t, err)
 	require.False(t, createResult.IsError)
@@ -385,12 +386,12 @@ func TestEscalationTools_Pro_UpdatePolicy_HappyPath(t *testing.T) {
 	// Update it
 	updateHandler := updateEscalationPolicyHandler(svc)
 	result, _, err := updateHandler(context.Background(), nil, updateEscalationPolicyInput{
-		ID:     1,
+		ID:     "1",
 		Name:   "updated name",
 		Active: false,
 		Levels: []escalationLevelInput{
-			{DelaySeconds: 300, ChannelIDs: []int64{1}},
-			{DelaySeconds: 600, ChannelIDs: []int64{1}},
+			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
+			{DelaySeconds: 600, ChannelIDs: []string{"1"}},
 		},
 	})
 	require.NoError(t, err)
@@ -405,7 +406,7 @@ func TestEscalationTools_Pro_ListAlertRuns_Empty(t *testing.T) {
 
 	svc := buildProEscalationServices()
 	handler := listAlertEscalationRunsHandler(svc)
-	result, _, err := handler(context.Background(), nil, listAlertEscalationRunsInput{AlertID: 42})
+	result, _, err := handler(context.Background(), nil, listAlertEscalationRunsInput{AlertID: "42"})
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "runs")
@@ -418,7 +419,7 @@ func TestEscalationTools_Pro_GetRun_NotFound(t *testing.T) {
 
 	svc := buildProEscalationServices()
 	handler := getEscalationRunHandler(svc)
-	result, _, err := handler(context.Background(), nil, getEscalationRunInput{ID: 999})
+	result, _, err := handler(context.Background(), nil, getEscalationRunInput{ID: "999"})
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "run_not_found")

@@ -25,6 +25,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/maintenance"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
@@ -60,20 +61,20 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	now := time.Now()
 	rawDB := db.ReadDB()
 
-	var componentID int64
-	err = rawDB.QueryRowContext(ctx,
-		`INSERT INTO status_components (composition_mode, match_all_type, display_name, display_order, visible, created_at, updated_at)
-		 VALUES ('explicit', NULL, 'Test', 0, 1, ?, ?) RETURNING id`,
-		now.Unix(), now.Unix(),
-	).Scan(&componentID)
+	componentID := uid.New()
+	_, err = rawDB.ExecContext(ctx,
+		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name, display_order, visible, created_at, updated_at)
+		 VALUES (?, 'explicit', NULL, 'Test', 0, 1, ?, ?)`,
+		componentID, now.Unix(), now.Unix(),
+	)
 	require.NoError(t, err)
 
-	var windowID int64
-	err = rawDB.QueryRowContext(ctx,
-		`INSERT INTO maintenance_windows (title, description, starts_at, ends_at, active, created_at, updated_at)
-		 VALUES ('Test', '', ?, ?, 0, ?, ?) RETURNING id`,
-		now.Add(-time.Hour).Unix(), now.Add(time.Hour).Unix(), now.Unix(), now.Unix(),
-	).Scan(&windowID)
+	windowID := uid.New()
+	_, err = rawDB.ExecContext(ctx,
+		`INSERT INTO maintenance_windows (id, title, description, starts_at, ends_at, active, created_at, updated_at)
+		 VALUES (?, 'Test', '', ?, ?, 0, ?, ?)`,
+		windowID, now.Add(-time.Hour).Unix(), now.Add(time.Hour).Unix(), now.Unix(), now.Unix(),
+	)
 	require.NoError(t, err)
 
 	_, err = rawDB.ExecContext(ctx,
@@ -82,8 +83,9 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	// container:42 — entity_id is now a TEXT UUID; this test uses '42' as the id.
 	_, err = rawDB.ExecContext(ctx,
-		`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id) VALUES (?, 'container', 42)`,
+		`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id) VALUES (?, 'container', '42')`,
 		componentID,
 	)
 	require.NoError(t, err)
@@ -91,7 +93,7 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	// Push event for container:42 (covered by maintenance window)
 	engine.EventChannel() <- alert.Event{
 		Source: "container", AlertType: "restart", Severity: "warning",
-		EntityType: "container", EntityID: 42, EntityName: "c42", Timestamp: now,
+		EntityType: "container", EntityID: "42", EntityName: "c42", Timestamp: now,
 	}
 	time.Sleep(100 * time.Millisecond)
 
@@ -99,7 +101,7 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	activeAlerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	for _, a := range activeAlerts {
-		if a.EntityType == "container" && a.EntityID == 42 {
+		if a.EntityType == "container" && a.EntityID == "42" {
 			t.Fatal("container:42 should not have an active alert during maintenance window")
 		}
 	}
@@ -109,7 +111,7 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	require.NoError(t, err)
 	found := false
 	for _, a := range silenced {
-		if a.EntityType == "container" && a.EntityID == 42 {
+		if a.EntityType == "container" && a.EntityID == "42" {
 			found = true
 			assert.Equal(t, "silenced", a.Status)
 		}
@@ -119,7 +121,7 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	// Push event for container:99 (not covered) — must produce an active alert
 	engine.EventChannel() <- alert.Event{
 		Source: "container", AlertType: "restart", Severity: "warning",
-		EntityType: "container", EntityID: 99, EntityName: "c99", Timestamp: now,
+		EntityType: "container", EntityID: "99", EntityName: "c99", Timestamp: now,
 	}
 	time.Sleep(100 * time.Millisecond)
 
@@ -127,7 +129,7 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	require.NoError(t, err)
 	found99 := false
 	for _, a := range activeAlerts {
-		if a.EntityType == "container" && a.EntityID == 99 {
+		if a.EntityType == "container" && a.EntityID == "99" {
 			found99 = true
 			assert.Equal(t, "active", a.Status)
 		}

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/uid"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ func setupTestDB(t *testing.T) *DB {
 	// Create required tables.
 	_, err = rawDB.Exec(`
 		CREATE TABLE IF NOT EXISTS endpoints (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY NOT NULL,
 			container_name TEXT NOT NULL,
 			label_key TEXT NOT NULL,
 			external_id TEXT NOT NULL DEFAULT '',
@@ -55,8 +56,8 @@ func setupTestDB(t *testing.T) *DB {
 			last_seen_at INTEGER NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS check_results (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			endpoint_id INTEGER NOT NULL,
+			id TEXT PRIMARY KEY NOT NULL,
+			endpoint_id TEXT NOT NULL,
 			success INTEGER NOT NULL,
 			response_time_ms INTEGER NOT NULL DEFAULT 0,
 			http_status INTEGER,
@@ -64,7 +65,7 @@ func setupTestDB(t *testing.T) *DB {
 			timestamp INTEGER NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS heartbeats (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY NOT NULL,
 			uuid TEXT NOT NULL,
 			name TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'new',
@@ -83,8 +84,8 @@ func setupTestDB(t *testing.T) *DB {
 			updated_at INTEGER NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS heartbeat_pings (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			heartbeat_id INTEGER NOT NULL,
+			id TEXT PRIMARY KEY NOT NULL,
+			heartbeat_id TEXT NOT NULL,
 			ping_type TEXT NOT NULL,
 			exit_code INTEGER,
 			source_ip TEXT NOT NULL DEFAULT '',
@@ -102,20 +103,20 @@ func setupTestDB(t *testing.T) *DB {
 	return db
 }
 
-func insertCheckResult(t *testing.T, db *sql.DB, endpointID int64, success int, ts time.Time) {
+func insertCheckResult(t *testing.T, db *sql.DB, endpointID string, success int, ts time.Time) {
 	t.Helper()
 	_, err := db.Exec(
-		`INSERT INTO check_results (endpoint_id, success, response_time_ms, timestamp) VALUES (?, ?, 100, ?)`,
-		endpointID, success, ts.Unix(),
+		`INSERT INTO check_results (id, endpoint_id, success, response_time_ms, timestamp) VALUES (?, ?, ?, 100, ?)`,
+		uid.New(), endpointID, success, ts.Unix(),
 	)
 	require.NoError(t, err)
 }
 
-func insertHeartbeatPing(t *testing.T, db *sql.DB, heartbeatID int64, pingType string, ts time.Time) {
+func insertHeartbeatPing(t *testing.T, db *sql.DB, heartbeatID string, pingType string, ts time.Time) {
 	t.Helper()
 	_, err := db.Exec(
-		`INSERT INTO heartbeat_pings (heartbeat_id, ping_type, source_ip, http_method, timestamp) VALUES (?, ?, '127.0.0.1', 'GET', ?)`,
-		heartbeatID, pingType, ts.Unix(),
+		`INSERT INTO heartbeat_pings (id, heartbeat_id, ping_type, source_ip, http_method, timestamp) VALUES (?, ?, ?, '127.0.0.1', 'GET', ?)`,
+		uid.New(), heartbeatID, pingType, ts.Unix(),
 	)
 	require.NoError(t, err)
 }
@@ -126,7 +127,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		endpointID    int64
+		endpointID    string
 		days          int
 		setup         func(t *testing.T, db *sql.DB)
 		wantLen       int
@@ -135,7 +136,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 	}{
 		{
 			name:       "no checks returns all null days",
-			endpointID: 1,
+			endpointID: "1",
 			days:       3,
 			setup:      func(t *testing.T, db *sql.DB) {},
 			wantLen:    3,
@@ -148,11 +149,11 @@ func TestEndpointDailyUptime(t *testing.T) {
 		},
 		{
 			name:       "100% uptime day",
-			endpointID: 1,
+			endpointID: "1",
 			days:       1,
 			setup: func(t *testing.T, db *sql.DB) {
 				for i := 0; i < 10; i++ {
-					insertCheckResult(t, db, 1, 1, today.Add(time.Duration(i)*time.Hour))
+					insertCheckResult(t, db, "1", 1, today.Add(time.Duration(i)*time.Hour))
 				}
 			},
 			wantLen: 1,
@@ -164,11 +165,11 @@ func TestEndpointDailyUptime(t *testing.T) {
 		},
 		{
 			name:       "0% uptime day",
-			endpointID: 2,
+			endpointID: "2",
 			days:       1,
 			setup: func(t *testing.T, db *sql.DB) {
 				for i := 0; i < 5; i++ {
-					insertCheckResult(t, db, 2, 0, today.Add(time.Duration(i)*time.Hour))
+					insertCheckResult(t, db, "2", 0, today.Add(time.Duration(i)*time.Hour))
 				}
 			},
 			wantLen: 1,
@@ -179,14 +180,14 @@ func TestEndpointDailyUptime(t *testing.T) {
 		},
 		{
 			name:       "partial uptime with incident",
-			endpointID: 3,
+			endpointID: "3",
 			days:       1,
 			setup: func(t *testing.T, db *sql.DB) {
 				// 4 success, then 1 failure = 80% uptime, 1 incident
 				for i := 0; i < 4; i++ {
-					insertCheckResult(t, db, 3, 1, today.Add(time.Duration(i)*time.Hour))
+					insertCheckResult(t, db, "3", 1, today.Add(time.Duration(i)*time.Hour))
 				}
-				insertCheckResult(t, db, 3, 0, today.Add(4*time.Hour))
+				insertCheckResult(t, db, "3", 0, today.Add(4*time.Hour))
 			},
 			wantLen: 1,
 			checkFirstDay: func(t *testing.T, du DailyUptime) {
@@ -197,16 +198,16 @@ func TestEndpointDailyUptime(t *testing.T) {
 		},
 		{
 			name:       "multi-day with gap",
-			endpointID: 4,
+			endpointID: "4",
 			days:       3,
 			setup: func(t *testing.T, db *sql.DB) {
 				// Today: 2 checks both success
-				insertCheckResult(t, db, 4, 1, today.Add(1*time.Hour))
-				insertCheckResult(t, db, 4, 1, today.Add(2*time.Hour))
+				insertCheckResult(t, db, "4", 1, today.Add(1*time.Hour))
+				insertCheckResult(t, db, "4", 1, today.Add(2*time.Hour))
 				// Yesterday: no checks (should be null)
 				// Day before: 1 check, failure
 				twoDaysAgo := today.AddDate(0, 0, -2)
-				insertCheckResult(t, db, 4, 0, twoDaysAgo.Add(5*time.Hour))
+				insertCheckResult(t, db, "4", 0, twoDaysAgo.Add(5*time.Hour))
 			},
 			wantLen: 3,
 			checkFirstDay: func(t *testing.T, du DailyUptime) {
@@ -218,14 +219,14 @@ func TestEndpointDailyUptime(t *testing.T) {
 		},
 		{
 			name:       "default days clamped from 0 to 90",
-			endpointID: 1,
+			endpointID: "1",
 			days:       0,
 			setup:      func(t *testing.T, db *sql.DB) {},
 			wantLen:    90,
 		},
 		{
 			name:       "max days clamped to 365",
-			endpointID: 1,
+			endpointID: "1",
 			days:       500,
 			setup:      func(t *testing.T, db *sql.DB) {},
 			wantLen:    365,
@@ -266,7 +267,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		heartbeatID   int64
+		heartbeatID   string
 		days          int
 		setup         func(t *testing.T, db *sql.DB)
 		wantLen       int
@@ -275,7 +276,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 	}{
 		{
 			name:        "no pings returns null days",
-			heartbeatID: 1,
+			heartbeatID: "1",
 			days:        3,
 			setup:       func(t *testing.T, db *sql.DB) {},
 			wantLen:     3,
@@ -287,11 +288,11 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 		},
 		{
 			name:        "all success pings = 100%",
-			heartbeatID: 1,
+			heartbeatID: "1",
 			days:        1,
 			setup: func(t *testing.T, db *sql.DB) {
 				for i := 0; i < 6; i++ {
-					insertHeartbeatPing(t, db, 1, "success", today.Add(time.Duration(i)*time.Hour))
+					insertHeartbeatPing(t, db, "1", "success", today.Add(time.Duration(i)*time.Hour))
 				}
 			},
 			wantLen: 1,
@@ -303,14 +304,14 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 		},
 		{
 			name:        "mixed pings with exit_code type",
-			heartbeatID: 2,
+			heartbeatID: "2",
 			days:        1,
 			setup: func(t *testing.T, db *sql.DB) {
 				// 3 successes + 1 exit_code (not success) = 75%
-				insertHeartbeatPing(t, db, 2, "success", today.Add(1*time.Hour))
-				insertHeartbeatPing(t, db, 2, "success", today.Add(2*time.Hour))
-				insertHeartbeatPing(t, db, 2, "success", today.Add(3*time.Hour))
-				insertHeartbeatPing(t, db, 2, "exit_code", today.Add(4*time.Hour))
+				insertHeartbeatPing(t, db, "2", "success", today.Add(1*time.Hour))
+				insertHeartbeatPing(t, db, "2", "success", today.Add(2*time.Hour))
+				insertHeartbeatPing(t, db, "2", "success", today.Add(3*time.Hour))
+				insertHeartbeatPing(t, db, "2", "exit_code", today.Add(4*time.Hour))
 			},
 			wantLen: 1,
 			checkFirstDay: func(t *testing.T, du DailyUptime) {
@@ -321,7 +322,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 		},
 		{
 			name:        "90 day window default",
-			heartbeatID: 1,
+			heartbeatID: "1",
 			days:        0,
 			setup:       func(t *testing.T, db *sql.DB) {},
 			wantLen:     90,

@@ -35,7 +35,7 @@ export interface LogLine {
 }
 
 export interface UseLogStreamOptions {
-  containerId: Ref<number>
+  containerId: Ref<string>
   containerName?: Ref<string | undefined>
 }
 

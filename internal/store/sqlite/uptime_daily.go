@@ -40,7 +40,7 @@ func NewUptimeDailyStore(d *DB) *UptimeDailyStore {
 // GetEndpointDailyUptime aggregates endpoint check results by UTC day.
 // Returns up to `days` days of data, most recent first.
 // Days with no checks have UptimePercent = nil.
-func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointID int64, days int) ([]DailyUptime, error) {
+func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointID string, days int) ([]DailyUptime, error) {
 	if days <= 0 {
 		days = 90
 	}
@@ -112,7 +112,7 @@ func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointI
 // GetHeartbeatDailyUptime aggregates heartbeat pings by UTC day.
 // Returns up to `days` days of data, most recent first.
 // Days with no pings have UptimePercent = nil.
-func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbeatID int64, days int) ([]DailyUptime, error) {
+func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int) ([]DailyUptime, error) {
 	if days <= 0 {
 		days = 90
 	}

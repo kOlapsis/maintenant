@@ -15,7 +15,7 @@
 import { Plus, Minus } from 'lucide-vue-next'
 
 interface Channel {
-  id: number
+  id: string
   name: string
   type: string
   enabled: boolean
@@ -23,7 +23,7 @@ interface Channel {
 
 interface LevelData {
   delay_seconds: number
-  channel_ids: number[]
+  channel_ids: string[]
 }
 
 const props = defineProps<{
@@ -50,7 +50,7 @@ function setDelay(v: number) {
   emit('update:modelValue', { ...props.modelValue, delay_seconds: v })
 }
 
-function toggleChannel(id: number) {
+function toggleChannel(id: string) {
   const ids = props.modelValue.channel_ids
   const next = ids.includes(id) ? ids.filter((c) => c !== id) : [...ids, id]
   emit('update:modelValue', { ...props.modelValue, channel_ids: next })

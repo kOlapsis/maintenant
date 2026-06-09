@@ -28,16 +28,17 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // noopChannelStore satisfies alert.ChannelStore for tests that do not exercise
 // channel operations.
 type noopChannelStore struct{}
 
-func (n *noopChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (int64, error) {
-	return 0, nil
+func (n *noopChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (string, error) {
+	return "", nil
 }
-func (n *noopChannelStore) GetChannel(_ context.Context, _ int64) (*alert.NotificationChannel, error) {
+func (n *noopChannelStore) GetChannel(_ context.Context, _ string) (*alert.NotificationChannel, error) {
 	return nil, nil
 }
 func (n *noopChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
@@ -46,17 +47,17 @@ func (n *noopChannelStore) ListChannels(_ context.Context) ([]*alert.Notificatio
 func (n *noopChannelStore) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
 	return nil
 }
-func (n *noopChannelStore) DeleteChannel(_ context.Context, _ int64) error { return nil }
-func (n *noopChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
+func (n *noopChannelStore) DeleteChannel(_ context.Context, _ string) error { return nil }
+func (n *noopChannelStore) GetChannelHealth(_ context.Context, _ string) (string, error) {
 	return "ok", nil
 }
-func (n *noopChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
-	return 0, nil
+func (n *noopChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (string, error) {
+	return "", nil
 }
 func (n *noopChannelStore) UpdateDelivery(_ context.Context, _ *alert.NotificationDelivery) error {
 	return nil
 }
-func (n *noopChannelStore) ListDeliveriesByAlert(_ context.Context, _ int64) ([]*alert.NotificationDelivery, error) {
+func (n *noopChannelStore) ListDeliveriesByAlert(_ context.Context, _ string) ([]*alert.NotificationDelivery, error) {
 	return nil, nil
 }
 
@@ -112,14 +113,13 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	now := time.Now()
 
 	// Seed: one alert (required by FK on escalation_runs.alert_id).
-	var alertID int64
-	err = db.ReadDB().QueryRowContext(ctx,
-		`INSERT INTO alerts (source, alert_type, severity, status, message,
+	alertID := uid.New()
+	_, err = db.Writer().Exec(ctx,
+		`INSERT INTO alerts (id, source, alert_type, severity, status, message,
 		 entity_type, entity_id, entity_name, fired_at, created_at)
-		 VALUES ('test','test','warning','active','test','container',1,'c1',?,?) RETURNING id`,
-		now.UTC().Format("2006-01-02T15:04:05Z"),
-		now.UTC().Format("2006-01-02T15:04:05Z"),
-	).Scan(&alertID)
+		 VALUES (?,'test','test','warning','active','test','container','1','c1',?,?)`,
+		alertID, now.Unix(), now.Unix(),
+	)
 	require.NoError(t, err)
 
 	// Seed: one active policy.
@@ -178,7 +178,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	assert.False(t, policies[0].Active, "policy must be inactive after edition downgrade")
 
 	// Run must be stopped.
-	runs, err := store.SelectRunsByPolicy(ctx, policyID, 10, 0)
+	runs, err := store.SelectRunsByPolicy(ctx, policyID, 10, "")
 	require.NoError(t, err)
 	require.Len(t, runs, 1)
 	assert.Equal(t, "stopped_by_edition_downgrade", runs[0].Status)

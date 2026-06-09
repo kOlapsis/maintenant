@@ -35,7 +35,7 @@ func TestAcknowledgeAlertHandler_ReturnsNotAvailable(t *testing.T) {
 	svc := newCEServices()
 	handler := acknowledgeAlertHandler(svc)
 
-	result, _, err := handler(context.Background(), nil, acknowledgeAlertInput{AlertID: 1})
+	result, _, err := handler(context.Background(), nil, acknowledgeAlertInput{AlertID: "1"})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.IsError)
@@ -64,7 +64,7 @@ func TestUpdateIncidentHandler_CE_ReturnsNotAvailable(t *testing.T) {
 	handler := updateIncidentHandler(svc)
 
 	input := updateIncidentInput{
-		IncidentID: 1,
+		IncidentID: "1",
 		Status:     "resolved",
 		Message:    "Fixed",
 	}
@@ -98,7 +98,7 @@ func TestPauseMonitorHandler_InvalidType(t *testing.T) {
 
 	input := pauseMonitorInput{
 		MonitorType: "endpoint",
-		MonitorID:   1,
+		MonitorID:   "1",
 	}
 	result, _, err := handler(context.Background(), nil, input)
 	require.NoError(t, err)
@@ -113,7 +113,7 @@ func TestPauseMonitorHandler_EmptyType(t *testing.T) {
 
 	input := pauseMonitorInput{
 		MonitorType: "",
-		MonitorID:   1,
+		MonitorID:   "1",
 	}
 	result, _, err := handler(context.Background(), nil, input)
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ func TestResumeMonitorHandler_InvalidType(t *testing.T) {
 
 	input := resumeMonitorInput{
 		MonitorType: "container",
-		MonitorID:   1,
+		MonitorID:   "1",
 	}
 	result, _, err := handler(context.Background(), nil, input)
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestResumeMonitorHandler_EmptyType(t *testing.T) {
 
 	input := resumeMonitorInput{
 		MonitorType: "",
-		MonitorID:   1,
+		MonitorID:   "1",
 	}
 	result, _, err := handler(context.Background(), nil, input)
 	require.NoError(t, err)

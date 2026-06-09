@@ -24,8 +24,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/resource"
 )
 
-// seedHostContainer inserts a container owned by agentID (nil => local server).
-func seedHostContainer(t *testing.T, cstore *ContainerStore, extID string, agentID *string) int64 {
+// seedHostContainer inserts a container owned by agentID ("" => local server).
+func seedHostContainer(t *testing.T, cstore *ContainerStore, extID string, agentID string) string {
 	t.Helper()
 	now := time.Now()
 	c := &container.Container{
@@ -60,19 +60,18 @@ func TestInsertSnapshot_PersistsAgentID(t *testing.T) {
 		OSArch: "linux/amd64", AgentVersion: "dev", DetectedRuntime: "docker",
 		Status: "active", CreatedAt: time.Now(),
 	}))
-	cid := seedHostContainer(t, cstore, "ext-snap", &agentID)
+	cid := seedHostContainer(t, cstore, "ext-snap", agentID)
 
 	id, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
 		ContainerID: cid, CPUPercent: 12.5, MemUsed: 100, MemLimit: 200,
-		Timestamp: time.Now(), AgentID: &agentID,
+		Timestamp: time.Now(), AgentID: agentID,
 	})
 	require.NoError(t, err)
 
-	var got *string
+	var got string
 	require.NoError(t, db.ReadDB().QueryRowContext(ctx,
 		`SELECT agent_id FROM resource_snapshots WHERE id = ?`, id).Scan(&got))
-	require.NotNil(t, got, "agent_id must be persisted")
-	assert.Equal(t, agentID, *got)
+	assert.Equal(t, agentID, got)
 }
 
 // GetTopConsumersByPeriod must scope by host via the owning container's agent.
@@ -90,8 +89,8 @@ func TestGetTopConsumersByPeriod_HostFilter(t *testing.T) {
 		Status: "active", CreatedAt: time.Now(),
 	}))
 
-	localCID := seedHostContainer(t, cstore, "ext-local", nil)
-	agentCID := seedHostContainer(t, cstore, "ext-agent", &agentID)
+	localCID := seedHostContainer(t, cstore, "ext-local", "")
+	agentCID := seedHostContainer(t, cstore, "ext-agent", agentID)
 
 	now := time.Now()
 	_, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
@@ -99,12 +98,12 @@ func TestGetTopConsumersByPeriod_HostFilter(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
-		ContainerID: agentCID, CPUPercent: 80, MemUsed: 90, MemLimit: 100, Timestamp: now, AgentID: &agentID,
+		ContainerID: agentCID, CPUPercent: 80, MemUsed: 90, MemLimit: 100, Timestamp: now, AgentID: agentID,
 	})
 	require.NoError(t, err)
 
-	ids := func(rows []resource.TopConsumerRow) []int64 {
-		out := make([]int64, len(rows))
+	ids := func(rows []resource.TopConsumerRow) []string {
+		out := make([]string, len(rows))
 		for i, r := range rows {
 			out[i] = r.ContainerID
 		}
@@ -114,16 +113,16 @@ func TestGetTopConsumersByPeriod_HostFilter(t *testing.T) {
 	// nil => all hosts.
 	all, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, nil)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []int64{localCID, agentCID}, ids(all))
+	assert.ElementsMatch(t, []string{localCID, agentCID}, ids(all))
 
 	// "" => local server only.
 	local := ""
 	localRows, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, &local)
 	require.NoError(t, err)
-	assert.Equal(t, []int64{localCID}, ids(localRows))
+	assert.Equal(t, []string{localCID}, ids(localRows))
 
 	// specific agent.
 	agentRows, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, &agentID)
 	require.NoError(t, err)
-	assert.Equal(t, []int64{agentCID}, ids(agentRows))
+	assert.Equal(t, []string{agentCID}, ids(agentRows))
 }

@@ -59,10 +59,9 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
@@ -81,7 +80,7 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 		}
 		externalID = c.ExternalID
 	} else {
-		externalID = idStr
+		externalID = id
 	}
 
 	lines := 100

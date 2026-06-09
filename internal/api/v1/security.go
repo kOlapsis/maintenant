@@ -13,7 +13,6 @@ package v1
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/security"
@@ -50,10 +49,9 @@ func (h *SecurityHandler) HandleListInsights(w http.ResponseWriter, r *http.Requ
 
 // HandleGetContainerInsights handles GET /api/v1/security/insights/{container_id}.
 func (h *SecurityHandler) HandleGetContainerInsights(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("container_id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("container_id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 

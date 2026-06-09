@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // SubscriberStoreImpl implements status.SubscriberStore using SQLite.
@@ -35,7 +36,7 @@ func NewSubscriberStore(d *DB) *SubscriberStoreImpl {
 	}
 }
 
-func (s *SubscriberStoreImpl) CreateSubscriber(ctx context.Context, sub *status.StatusSubscriber) (int64, error) {
+func (s *SubscriberStoreImpl) CreateSubscriber(ctx context.Context, sub *status.StatusSubscriber) (string, error) {
 	now := time.Now().Unix()
 	var confirmExpires *int64
 	if sub.ConfirmExpires != nil {
@@ -43,17 +44,17 @@ func (s *SubscriberStoreImpl) CreateSubscriber(ctx context.Context, sub *status.
 		confirmExpires = &v
 	}
 
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO status_subscribers (email, confirmed, confirm_token, confirm_expires, unsub_token, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		sub.Email, boolToInt(sub.Confirmed), sub.ConfirmToken, confirmExpires, sub.UnsubToken, now,
+	sub.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO status_subscribers (id, email, confirmed, confirm_token, confirm_expires, unsub_token, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sub.ID, sub.Email, boolToInt(sub.Confirmed), sub.ConfirmToken, confirmExpires, sub.UnsubToken, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("create subscriber: %w", err)
+		return "", fmt.Errorf("create subscriber: %w", err)
 	}
-	sub.ID = res.LastInsertID
 	sub.CreatedAt = time.Unix(now, 0).UTC()
-	return res.LastInsertID, nil
+	return sub.ID, nil
 }
 
 func (s *SubscriberStoreImpl) GetSubscriberByToken(ctx context.Context, confirmToken string) (*status.StatusSubscriber, error) {
@@ -101,7 +102,7 @@ func (s *SubscriberStoreImpl) getSubscriberBy(ctx context.Context, column, value
 	return &sub, nil
 }
 
-func (s *SubscriberStoreImpl) ConfirmSubscriber(ctx context.Context, id int64) error {
+func (s *SubscriberStoreImpl) ConfirmSubscriber(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE status_subscribers SET confirmed = 1, confirm_token = NULL, confirm_expires = NULL WHERE id = ?`, id)
 	if err != nil {
@@ -110,7 +111,7 @@ func (s *SubscriberStoreImpl) ConfirmSubscriber(ctx context.Context, id int64) e
 	return nil
 }
 
-func (s *SubscriberStoreImpl) DeleteSubscriber(ctx context.Context, id int64) error {
+func (s *SubscriberStoreImpl) DeleteSubscriber(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx, `DELETE FROM status_subscribers WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete subscriber: %w", err)

@@ -43,7 +43,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		HTTPStatus:     &statusCode,
 		ErrorMessage:   ev.GetErrorMessage(),
 		Timestamp:      time.Now(),
-		AgentID:        &agentID,
+		AgentID:        agentID,
 	}
 	s.ProcessCheckResult(ctx, ep.ID, result)
 	return nil

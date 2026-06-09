@@ -88,8 +88,8 @@ func (h *EscalationHandler) HandleListPolicies(w http.ResponseWriter, r *http.Re
 
 // HandleGetPolicy handles GET /api/v1/escalation-policies/{id}.
 func (h *EscalationHandler) HandleGetPolicy(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid policy ID")
 		return
 	}
@@ -105,8 +105,8 @@ func (h *EscalationHandler) HandleGetPolicy(w http.ResponseWriter, r *http.Reque
 
 // HandleDeletePolicy handles DELETE /api/v1/escalation-policies/{id}.
 func (h *EscalationHandler) HandleDeletePolicy(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid policy ID")
 		return
 	}
@@ -121,8 +121,8 @@ func (h *EscalationHandler) HandleDeletePolicy(w http.ResponseWriter, r *http.Re
 
 // HandleUpdatePolicy handles PUT /api/v1/escalation-policies/{id}.
 func (h *EscalationHandler) HandleUpdatePolicy(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid policy ID")
 		return
 	}
@@ -141,8 +141,8 @@ func (h *EscalationHandler) HandleUpdatePolicy(w http.ResponseWriter, r *http.Re
 
 // HandleSetPolicyActive handles PATCH /api/v1/escalation-policies/{id}/active.
 func (h *EscalationHandler) HandleSetPolicyActive(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid policy ID")
 		return
 	}
@@ -167,8 +167,8 @@ func (h *EscalationHandler) HandleSetPolicyActive(w http.ResponseWriter, r *http
 
 // HandleListAlertRuns handles GET /api/v1/alerts/{alert_id}/escalation-runs.
 func (h *EscalationHandler) HandleListAlertRuns(w http.ResponseWriter, r *http.Request) {
-	alertID, err := strconv.ParseInt(r.PathValue("alert_id"), 10, 64)
-	if err != nil {
+	alertID := r.PathValue("alert_id")
+	if alertID == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid alert ID")
 		return
 	}
@@ -186,8 +186,8 @@ func (h *EscalationHandler) HandleListAlertRuns(w http.ResponseWriter, r *http.R
 
 // HandleGetRun handles GET /api/v1/escalation-runs/{run_id}.
 func (h *EscalationHandler) HandleGetRun(w http.ResponseWriter, r *http.Request) {
-	runID, err := strconv.ParseInt(r.PathValue("run_id"), 10, 64)
-	if err != nil {
+	runID := r.PathValue("run_id")
+	if runID == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid run ID")
 		return
 	}
@@ -203,8 +203,8 @@ func (h *EscalationHandler) HandleGetRun(w http.ResponseWriter, r *http.Request)
 
 // HandleListPolicyRuns handles GET /api/v1/escalation-policies/{id}/runs.
 func (h *EscalationHandler) HandleListPolicyRuns(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid policy ID")
 		return
 	}
@@ -219,12 +219,7 @@ func (h *EscalationHandler) HandleListPolicyRuns(w http.ResponseWriter, r *http.
 		limit = 200
 	}
 
-	var cursor int64
-	if v := r.URL.Query().Get("cursor"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cursor = n
-		}
-	}
+	cursor := r.URL.Query().Get("cursor")
 
 	runs, err := h.svc.ListPolicyRuns(r.Context(), id, limit, cursor)
 	if err != nil {

@@ -88,7 +88,7 @@ func (a *App) reconcile(ctx context.Context) {
 				a.certSvc.SyncFromLabels(ctx, r.Container.ExternalID, r.Labels)
 
 				dbC := dbByExtID[r.Container.ExternalID]
-				if r.SecurityConfig != nil && dbC != nil && dbC.ID > 0 {
+				if r.SecurityConfig != nil && dbC != nil && dbC.ID != "" {
 					bindings := make([]security.PortBinding, 0, len(r.SecurityConfig.PortBindings))
 					for _, pb := range r.SecurityConfig.PortBindings {
 						bindings = append(bindings, security.PortBinding{

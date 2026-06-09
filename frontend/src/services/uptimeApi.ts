@@ -18,10 +18,10 @@ export interface UptimeDay {
   incident_count: number
 }
 
-export function fetchEndpointDailyUptime(id: number, days = 90): Promise<UptimeDay[]> {
+export function fetchEndpointDailyUptime(id: string, days = 90): Promise<UptimeDay[]> {
   return apiFetch<UptimeDay[]>(`${API_BASE}/endpoints/${id}/uptime/daily?days=${days}`)
 }
 
-export function fetchHeartbeatDailyUptime(id: number, days = 90): Promise<UptimeDay[]> {
+export function fetchHeartbeatDailyUptime(id: string, days = 90): Promise<UptimeDay[]> {
   return apiFetch<UptimeDay[]>(`${API_BASE}/heartbeats/${id}/uptime/daily?days=${days}`)
 }

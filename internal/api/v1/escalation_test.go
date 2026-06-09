@@ -32,18 +32,18 @@ import (
 // --- in-memory mock store for escalation ---
 
 type escalationTestStore struct {
-	policies    map[int64]*escalation.Policy
+	policies    map[string]*escalation.Policy
 	nextID      int64
 	activeCount int
 }
 
 func newEscalationTestStore() *escalationTestStore {
-	return &escalationTestStore{policies: map[int64]*escalation.Policy{}}
+	return &escalationTestStore{policies: map[string]*escalation.Policy{}}
 }
 
-func (m *escalationTestStore) InsertPolicy(_ context.Context, p *escalation.Policy) (int64, error) {
+func (m *escalationTestStore) InsertPolicy(_ context.Context, p *escalation.Policy) (string, error) {
 	m.nextID++
-	p.ID = m.nextID
+	p.ID = itoa(int(m.nextID))
 	cp := *p
 	m.policies[p.ID] = &cp
 	if p.Active {
@@ -55,7 +55,7 @@ func (m *escalationTestStore) UpdatePolicy(_ context.Context, p *escalation.Poli
 	m.policies[p.ID] = p
 	return nil
 }
-func (m *escalationTestStore) SelectPolicy(_ context.Context, id int64) (*escalation.Policy, error) {
+func (m *escalationTestStore) SelectPolicy(_ context.Context, id string) (*escalation.Policy, error) {
 	return m.policies[id], nil
 }
 func (m *escalationTestStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*escalation.Policy, error) {
@@ -70,7 +70,7 @@ func (m *escalationTestStore) SelectPolicies(_ context.Context, activeOnly bool)
 	}
 	return out, nil
 }
-func (m *escalationTestStore) DeletePolicy(_ context.Context, id int64) error {
+func (m *escalationTestStore) DeletePolicy(_ context.Context, id string) error {
 	if p, ok := m.policies[id]; ok && p.Active {
 		m.activeCount--
 	}
@@ -80,16 +80,16 @@ func (m *escalationTestStore) DeletePolicy(_ context.Context, id int64) error {
 func (m *escalationTestStore) CountActivePolicies(_ context.Context) (int, error) {
 	return m.activeCount, nil
 }
-func (m *escalationTestStore) SelectRun(_ context.Context, _ int64) (*escalation.Run, error) {
+func (m *escalationTestStore) SelectRun(_ context.Context, _ string) (*escalation.Run, error) {
 	return nil, nil
 }
-func (m *escalationTestStore) SelectRunsByAlert(_ context.Context, _ int64) ([]*escalation.Run, error) {
+func (m *escalationTestStore) SelectRunsByAlert(_ context.Context, _ string) ([]*escalation.Run, error) {
 	return []*escalation.Run{}, nil
 }
-func (m *escalationTestStore) SelectRunsByPolicy(_ context.Context, _ int64, _ int, _ int64) ([]*escalation.Run, error) {
+func (m *escalationTestStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*escalation.Run, error) {
 	return []*escalation.Run{}, nil
 }
-func (m *escalationTestStore) SelectRunDeliveries(_ context.Context, _ int64) ([]*escalation.Delivery, error) {
+func (m *escalationTestStore) SelectRunDeliveries(_ context.Context, _ string) ([]*escalation.Delivery, error) {
 	return []*escalation.Delivery{}, nil
 }
 func (m *escalationTestStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
@@ -100,29 +100,29 @@ func (m *escalationTestStore) BulkStopActiveRuns(_ context.Context, _ string, _ 
 func (m *escalationTestStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
 	return nil
 }
-func (m *escalationTestStore) InsertRun(_ context.Context, _ *escalation.Run) (int64, error) {
-	return 0, nil
+func (m *escalationTestStore) InsertRun(_ context.Context, _ *escalation.Run) (string, error) {
+	return "", nil
 }
-func (m *escalationTestStore) UpdateRunProgress(_ context.Context, _ int64, _ int, _ *time.Time, _ string) error {
+func (m *escalationTestStore) UpdateRunProgress(_ context.Context, _ string, _ int, _ *time.Time, _ string) error {
 	return nil
 }
-func (m *escalationTestStore) TerminateRun(_ context.Context, _ int64, _ string, _ time.Time) error {
+func (m *escalationTestStore) TerminateRun(_ context.Context, _ string, _ string, _ time.Time) error {
 	return nil
 }
-func (m *escalationTestStore) SelectActiveRunsByAlert(_ context.Context, _ int64) ([]*escalation.Run, error) {
+func (m *escalationTestStore) SelectActiveRunsByAlert(_ context.Context, _ string) ([]*escalation.Run, error) {
 	return nil, nil
 }
 func (m *escalationTestStore) SelectDueRuns(_ context.Context, _ time.Time) ([]*escalation.Run, error) {
 	return nil, nil
 }
-func (m *escalationTestStore) PauseRunForMaintenance(_ context.Context, _ int64, _ time.Time) error {
+func (m *escalationTestStore) PauseRunForMaintenance(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
-func (m *escalationTestStore) ResumeRunFromMaintenance(_ context.Context, _ int64, _ time.Time) error {
+func (m *escalationTestStore) ResumeRunFromMaintenance(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
-func (m *escalationTestStore) InsertDelivery(_ context.Context, _ *escalation.Delivery) (int64, error) {
-	return 0, nil
+func (m *escalationTestStore) InsertDelivery(_ context.Context, _ *escalation.Delivery) (string, error) {
+	return "", nil
 }
 func (m *escalationTestStore) UpdateDelivery(_ context.Context, _ *escalation.Delivery) error {
 	return nil
@@ -135,10 +135,10 @@ func (m *escalationTestStore) SelectOrphanPendingDeliveries(_ context.Context, _
 
 type escalationTestChannelStore struct{}
 
-func (m *escalationTestChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (int64, error) {
-	return 1, nil
+func (m *escalationTestChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (string, error) {
+	return "1", nil
 }
-func (m *escalationTestChannelStore) GetChannel(_ context.Context, id int64) (*alert.NotificationChannel, error) {
+func (m *escalationTestChannelStore) GetChannel(_ context.Context, id string) (*alert.NotificationChannel, error) {
 	return &alert.NotificationChannel{ID: id, Name: "test-channel", Enabled: true}, nil
 }
 func (m *escalationTestChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
@@ -147,17 +147,17 @@ func (m *escalationTestChannelStore) ListChannels(_ context.Context) ([]*alert.N
 func (m *escalationTestChannelStore) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
 	return nil
 }
-func (m *escalationTestChannelStore) DeleteChannel(_ context.Context, _ int64) error { return nil }
-func (m *escalationTestChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
+func (m *escalationTestChannelStore) DeleteChannel(_ context.Context, _ string) error { return nil }
+func (m *escalationTestChannelStore) GetChannelHealth(_ context.Context, _ string) (string, error) {
 	return "ok", nil
 }
-func (m *escalationTestChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
-	return 1, nil
+func (m *escalationTestChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (string, error) {
+	return "1", nil
 }
 func (m *escalationTestChannelStore) UpdateDelivery(_ context.Context, _ *alert.NotificationDelivery) error {
 	return nil
 }
-func (m *escalationTestChannelStore) ListDeliveriesByAlert(_ context.Context, _ int64) ([]*alert.NotificationDelivery, error) {
+func (m *escalationTestChannelStore) ListDeliveriesByAlert(_ context.Context, _ string) ([]*alert.NotificationDelivery, error) {
 	return nil, nil
 }
 
@@ -209,7 +209,7 @@ func validPolicyBody() escalation.PolicyRequest {
 			Tags:       []string{},
 		},
 		Levels: []escalation.LevelReq{
-			{DelaySeconds: 300, ChannelIDs: []int64{1}},
+			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
 		},
 	}
 }
@@ -349,7 +349,7 @@ func TestEscalation_DeletePolicy_HappyPath(t *testing.T) {
 
 	// Delete
 	recDel := httptest.NewRecorder()
-	reqDel := httptest.NewRequest("DELETE", "/api/v1/escalation-policies/"+itoa(int(created.ID)), nil)
+	reqDel := httptest.NewRequest("DELETE", "/api/v1/escalation-policies/"+created.ID, nil)
 	mux.ServeHTTP(recDel, reqDel)
 	assert.Equal(t, http.StatusNoContent, recDel.Code)
 }
@@ -400,13 +400,13 @@ func TestEscalation_UpdatePolicy_HappyPath(t *testing.T) {
 			Tags:       []string{},
 		},
 		Levels: []escalation.LevelReq{
-			{DelaySeconds: 300, ChannelIDs: []int64{1}},
-			{DelaySeconds: 600, ChannelIDs: []int64{1}},
+			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
+			{DelaySeconds: 600, ChannelIDs: []string{"1"}},
 		},
 	}
 	bUpdate, _ := json.Marshal(updateBody)
 	recUpdate := httptest.NewRecorder()
-	reqUpdate := httptest.NewRequest("PUT", "/api/v1/escalation-policies/"+itoa(int(created.ID)), bytes.NewReader(bUpdate))
+	reqUpdate := httptest.NewRequest("PUT", "/api/v1/escalation-policies/"+created.ID, bytes.NewReader(bUpdate))
 	reqUpdate.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recUpdate, reqUpdate)
 
@@ -455,7 +455,7 @@ func TestEscalation_UpdatePolicy_ValidationError(t *testing.T) {
 	invalidBody.Name = ""
 	bUpdate, _ := json.Marshal(invalidBody)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("PUT", "/api/v1/escalation-policies/"+itoa(int(created.ID)), bytes.NewReader(bUpdate))
+	req := httptest.NewRequest("PUT", "/api/v1/escalation-policies/"+created.ID, bytes.NewReader(bUpdate))
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
 
@@ -483,7 +483,7 @@ func TestEscalation_SetPolicyActive_HappyPath(t *testing.T) {
 	// Activate
 	patchBody, _ := json.Marshal(map[string]bool{"active": true})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("PATCH", "/api/v1/escalation-policies/"+itoa(int(created.ID))+"/active", bytes.NewReader(patchBody))
+	req := httptest.NewRequest("PATCH", "/api/v1/escalation-policies/"+created.ID+"/active", bytes.NewReader(patchBody))
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
 

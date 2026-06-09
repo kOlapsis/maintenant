@@ -93,12 +93,12 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // GetCurrentSnapshot returns the latest in-memory snapshot for a container.
-func (s *Service) GetCurrentSnapshot(containerID int64) *ResourceSnapshot {
+func (s *Service) GetCurrentSnapshot(containerID string) *ResourceSnapshot {
 	return s.collector.GetLatestSnapshot(containerID)
 }
 
 // GetAllLatestSnapshots returns the latest snapshots for all containers.
-func (s *Service) GetAllLatestSnapshots() map[int64]*ResourceSnapshot {
+func (s *Service) GetAllLatestSnapshots() map[string]*ResourceSnapshot {
 	return s.collector.GetAllLatest()
 }
 
@@ -108,16 +108,16 @@ func (s *Service) GetHostStat() *HostStatReader {
 }
 
 // GetContainerName resolves a container ID to its name via the container service.
-func (s *Service) GetContainerName(containerID int64) string {
+func (s *Service) GetContainerName(containerID string) string {
 	c, err := s.containerSvc.GetContainer(context.Background(), containerID)
 	if err != nil || c == nil {
-		return fmt.Sprintf("container-%d", containerID)
+		return fmt.Sprintf("container-%s", containerID)
 	}
 	return c.Name
 }
 
 // GetHistory returns historical resource snapshots for charting.
-func (s *Service) GetHistory(ctx context.Context, containerID int64, timeRange string) ([]*ResourceSnapshot, Granularity, error) {
+func (s *Service) GetHistory(ctx context.Context, containerID string, timeRange string) ([]*ResourceSnapshot, Granularity, error) {
 	now := time.Now()
 	var from time.Time
 	var granularity Granularity
@@ -145,7 +145,7 @@ func (s *Service) GetHistory(ctx context.Context, containerID int64, timeRange s
 }
 
 // GetAlertConfig returns the alert configuration for a container.
-func (s *Service) GetAlertConfig(ctx context.Context, containerID int64) (*ResourceAlertConfig, error) {
+func (s *Service) GetAlertConfig(ctx context.Context, containerID string) (*ResourceAlertConfig, error) {
 	return s.store.GetAlertConfig(ctx, containerID)
 }
 

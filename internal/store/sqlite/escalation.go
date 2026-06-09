@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -37,37 +38,40 @@ func NewEscalationStore(d *DB) *EscalationStore {
 	}
 }
 
-func (s *EscalationStore) InsertPolicy(ctx context.Context, p *escalation.Policy) (int64, error) {
+func (s *EscalationStore) InsertPolicy(ctx context.Context, p *escalation.Policy) (string, error) {
 	sevJSON, err := json.Marshal(p.Filters.Severities)
 	if err != nil {
-		return 0, fmt.Errorf("marshal severities: %w", err)
+		return "", fmt.Errorf("marshal severities: %w", err)
 	}
 	scopesJSON, err := json.Marshal(p.Filters.Scopes)
 	if err != nil {
-		return 0, fmt.Errorf("marshal scopes: %w", err)
+		return "", fmt.Errorf("marshal scopes: %w", err)
 	}
 	tagsJSON, err := json.Marshal(p.Filters.Tags)
 	if err != nil {
-		return 0, fmt.Errorf("marshal tags: %w", err)
+		return "", fmt.Errorf("marshal tags: %w", err)
 	}
 	levelsJSON, err := json.Marshal(p.Levels)
 	if err != nil {
-		return 0, fmt.Errorf("marshal levels: %w", err)
+		return "", fmt.Errorf("marshal levels: %w", err)
 	}
 
-	res, err := s.writer.Exec(ctx,
+	p.ID = uid.New()
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = time.Now().UTC()
+	}
+	_, err = s.writer.Exec(ctx,
 		`INSERT INTO escalation_policies
-			(name, active, active_before_downgrade, severities_json, scopes_json, tags_json, levels_json, created_by, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.Name, boolToInt(p.Active), boolToInt(p.ActiveBeforeDowngrade),
+			(id, name, active, active_before_downgrade, severities_json, scopes_json, tags_json, levels_json, created_at, created_by, updated_at, updated_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, boolToInt(p.Active), boolToInt(p.ActiveBeforeDowngrade),
 		string(sevJSON), string(scopesJSON), string(tagsJSON), string(levelsJSON),
-		NullableString(p.CreatedBy), NullableString(p.UpdatedBy),
+		p.CreatedAt.Unix(), NullableString(p.CreatedBy), p.CreatedAt.Unix(), NullableString(p.UpdatedBy),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert escalation policy: %w", err)
+		return "", fmt.Errorf("insert escalation policy: %w", err)
 	}
-	p.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return p.ID, nil
 }
 
 func (s *EscalationStore) UpdatePolicy(ctx context.Context, p *escalation.Policy) error {
@@ -96,7 +100,7 @@ func (s *EscalationStore) UpdatePolicy(ctx context.Context, p *escalation.Policy
 		WHERE id=?`,
 		p.Name, boolToInt(p.Active), boolToInt(p.ActiveBeforeDowngrade),
 		string(sevJSON), string(scopesJSON), string(tagsJSON), string(levelsJSON),
-		time.Now().UTC().Format(time.RFC3339), NullableString(p.UpdatedBy),
+		time.Now().Unix(), NullableString(p.UpdatedBy),
 		p.ID,
 	)
 	if err != nil {
@@ -105,7 +109,7 @@ func (s *EscalationStore) UpdatePolicy(ctx context.Context, p *escalation.Policy
 	return nil
 }
 
-func (s *EscalationStore) SelectPolicy(ctx context.Context, id int64) (*escalation.Policy, error) {
+func (s *EscalationStore) SelectPolicy(ctx context.Context, id string) (*escalation.Policy, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, active, active_before_downgrade,
 			severities_json, scopes_json, tags_json, levels_json,
@@ -145,8 +149,8 @@ func (s *EscalationStore) SelectPolicies(ctx context.Context, activeOnly bool) (
 	return policies, rows.Err()
 }
 
-func (s *EscalationStore) DeletePolicy(ctx context.Context, id int64) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+func (s *EscalationStore) DeletePolicy(ctx context.Context, id string) error {
+	now := time.Now().Unix()
 	// Stop active runs before deleting; runs retain history via ended_at.
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs SET status='stopped_by_policy_deletion', ended_at=?, next_action_at=NULL
@@ -173,7 +177,7 @@ func (s *EscalationStore) CountActivePolicies(ctx context.Context) (int, error) 
 	return n, nil
 }
 
-func (s *EscalationStore) SelectRun(ctx context.Context, id int64) (*escalation.Run, error) {
+func (s *EscalationStore) SelectRun(ctx context.Context, id string) (*escalation.Run, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, policy_id, policy_snapshot_json, alert_id, status,
 			last_executed_level_index, started_at, ended_at, next_action_at
@@ -185,7 +189,7 @@ func (s *EscalationStore) SelectRun(ctx context.Context, id int64) (*escalation.
 	return r, err
 }
 
-func (s *EscalationStore) SelectRunsByAlert(ctx context.Context, alertID int64) ([]*escalation.Run, error) {
+func (s *EscalationStore) SelectRunsByAlert(ctx context.Context, alertID string) ([]*escalation.Run, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, policy_id, policy_snapshot_json, alert_id, status,
 			last_executed_level_index, started_at, ended_at, next_action_at
@@ -197,12 +201,12 @@ func (s *EscalationStore) SelectRunsByAlert(ctx context.Context, alertID int64) 
 	return scanEscalationRuns(rows)
 }
 
-func (s *EscalationStore) SelectRunsByPolicy(ctx context.Context, policyID int64, limit int, cursor int64) ([]*escalation.Run, error) {
+func (s *EscalationStore) SelectRunsByPolicy(ctx context.Context, policyID string, limit int, cursor string) ([]*escalation.Run, error) {
 	q := `SELECT id, policy_id, policy_snapshot_json, alert_id, status,
 		last_executed_level_index, started_at, ended_at, next_action_at
 		FROM escalation_runs WHERE policy_id = ?`
 	args := []any{policyID}
-	if cursor > 0 {
+	if cursor != "" {
 		q += ` AND id < ?`
 		args = append(args, cursor)
 	}
@@ -220,7 +224,7 @@ func (s *EscalationStore) SelectRunsByPolicy(ctx context.Context, policyID int64
 	return scanEscalationRuns(rows)
 }
 
-func (s *EscalationStore) SelectRunDeliveries(ctx context.Context, runID int64) ([]*escalation.Delivery, error) {
+func (s *EscalationStore) SelectRunDeliveries(ctx context.Context, runID string) ([]*escalation.Delivery, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, run_id, level_index, channel_id, status, error,
 			attempt_started_at, sent_at
@@ -263,7 +267,7 @@ func (s *EscalationStore) BulkStopActiveRuns(ctx context.Context, stopStatus str
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs SET status = ?, ended_at = ?, next_action_at = NULL
 		WHERE status IN ('active','paused_by_maintenance')`,
-		stopStatus, endedAt.UTC().Format(time.RFC3339),
+		stopStatus, endedAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("bulk stop active runs: %w", err)
@@ -272,45 +276,37 @@ func (s *EscalationStore) BulkStopActiveRuns(ctx context.Context, stopStatus str
 }
 
 // InsertRun persists a new escalation run.
-func (s *EscalationStore) InsertRun(ctx context.Context, r *escalation.Run) (int64, error) {
+func (s *EscalationStore) InsertRun(ctx context.Context, r *escalation.Run) (string, error) {
 	var policyID any
 	if r.PolicyID != nil {
 		policyID = *r.PolicyID
 	}
-	var nextActionAt any
-	if r.NextActionAt != nil {
-		nextActionAt = r.NextActionAt.UTC().Format(time.RFC3339)
-	}
 
-	res, err := s.writer.Exec(ctx,
+	r.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
 		`INSERT INTO escalation_runs
-			(policy_id, policy_snapshot_json, alert_id, status,
+			(id, policy_id, policy_snapshot_json, alert_id, status,
 			 last_executed_level_index, started_at, next_action_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		policyID, r.PolicySnapshotJSON, r.AlertID, r.Status,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, policyID, r.PolicySnapshotJSON, r.AlertID, r.Status,
 		r.LastExecutedLevelIndex,
-		r.StartedAt.UTC().Format(time.RFC3339),
-		nextActionAt,
+		r.StartedAt.Unix(),
+		nullableTime(r.NextActionAt),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert escalation run: %w", err)
+		return "", fmt.Errorf("insert escalation run: %w", err)
 	}
-	r.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return r.ID, nil
 }
 
 // UpdateRunProgress advances a run's level cursor and reschedules its next action.
 // Used by the runner after executing a level (R4 reserve-then-deliver).
-func (s *EscalationStore) UpdateRunProgress(ctx context.Context, runID int64, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error {
-	var nextAt any
-	if nextActionAt != nil {
-		nextAt = nextActionAt.UTC().Format(time.RFC3339)
-	}
+func (s *EscalationStore) UpdateRunProgress(ctx context.Context, runID string, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs
 		 SET last_executed_level_index = ?, next_action_at = ?, status = ?
 		 WHERE id = ?`,
-		lastExecutedLevelIndex, nextAt, status, runID,
+		lastExecutedLevelIndex, nullableTime(nextActionAt), status, runID,
 	)
 	if err != nil {
 		return fmt.Errorf("update run progress: %w", err)
@@ -319,12 +315,12 @@ func (s *EscalationStore) UpdateRunProgress(ctx context.Context, runID int64, la
 }
 
 // TerminateRun moves a run to a terminal status (stopped_by_*, exhausted) and stamps ended_at.
-func (s *EscalationStore) TerminateRun(ctx context.Context, runID int64, status string, endedAt time.Time) error {
+func (s *EscalationStore) TerminateRun(ctx context.Context, runID string, status string, endedAt time.Time) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs
 		 SET status = ?, ended_at = ?, next_action_at = NULL
 		 WHERE id = ?`,
-		status, endedAt.UTC().Format(time.RFC3339), runID,
+		status, endedAt.Unix(), runID,
 	)
 	if err != nil {
 		return fmt.Errorf("terminate run: %w", err)
@@ -334,7 +330,7 @@ func (s *EscalationStore) TerminateRun(ctx context.Context, runID int64, status 
 
 // SelectActiveRunsByAlert returns runs in non-terminal state for a given alert.
 // Used by ack/resolve hooks and OnAlertCreated dedup.
-func (s *EscalationStore) SelectActiveRunsByAlert(ctx context.Context, alertID int64) ([]*escalation.Run, error) {
+func (s *EscalationStore) SelectActiveRunsByAlert(ctx context.Context, alertID string) ([]*escalation.Run, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, policy_id, policy_snapshot_json, alert_id, status,
 			last_executed_level_index, started_at, ended_at, next_action_at
@@ -361,7 +357,7 @@ func (s *EscalationStore) SelectDueRuns(ctx context.Context, now time.Time) ([]*
 		  AND next_action_at IS NOT NULL
 		  AND next_action_at <= ?
 		ORDER BY next_action_at ASC`,
-		now.UTC().Format(time.RFC3339),
+		now.Unix(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("select due runs: %w", err)
@@ -372,12 +368,12 @@ func (s *EscalationStore) SelectDueRuns(ctx context.Context, now time.Time) ([]*
 
 // PauseRunForMaintenance moves an active run to paused_by_maintenance and
 // schedules a recheck. Returning to active happens via ResumeRunFromMaintenance.
-func (s *EscalationStore) PauseRunForMaintenance(ctx context.Context, runID int64, recheckAt time.Time) error {
+func (s *EscalationStore) PauseRunForMaintenance(ctx context.Context, runID string, recheckAt time.Time) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs
 		 SET status = 'paused_by_maintenance', next_action_at = ?
 		 WHERE id = ? AND status IN ('active','paused_by_maintenance')`,
-		recheckAt.UTC().Format(time.RFC3339), runID,
+		recheckAt.Unix(), runID,
 	)
 	if err != nil {
 		return fmt.Errorf("pause run: %w", err)
@@ -386,12 +382,12 @@ func (s *EscalationStore) PauseRunForMaintenance(ctx context.Context, runID int6
 }
 
 // ResumeRunFromMaintenance flips a paused run back to active with an updated due time.
-func (s *EscalationStore) ResumeRunFromMaintenance(ctx context.Context, runID int64, nextActionAt time.Time) error {
+func (s *EscalationStore) ResumeRunFromMaintenance(ctx context.Context, runID string, nextActionAt time.Time) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_runs
 		 SET status = 'active', next_action_at = ?
 		 WHERE id = ? AND status = 'paused_by_maintenance'`,
-		nextActionAt.UTC().Format(time.RFC3339), runID,
+		nextActionAt.Unix(), runID,
 	)
 	if err != nil {
 		return fmt.Errorf("resume run: %w", err)
@@ -402,45 +398,37 @@ func (s *EscalationStore) ResumeRunFromMaintenance(ctx context.Context, runID in
 // InsertDelivery reserves a delivery slot. Returns escalation.ErrDeliveryDuplicate
 // when (run_id, level_index, channel_id) already exists — the caller treats this
 // as "already attempted" (R4 reserve-then-deliver idempotence).
-func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Delivery) (int64, error) {
+func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Delivery) (string, error) {
 	var channelID any
 	if d.ChannelID != nil {
 		channelID = *d.ChannelID
 	}
-	var sentAt any
-	if d.SentAt != nil {
-		sentAt = d.SentAt.UTC().Format(time.RFC3339)
-	}
 
-	res, err := s.writer.Exec(ctx,
+	d.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
 		`INSERT INTO escalation_deliveries
-			(run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		d.RunID, d.LevelIndex, channelID, d.Status, NullableString(d.Error),
-		d.AttemptStartedAt.UTC().Format(time.RFC3339), sentAt,
+			(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.RunID, d.LevelIndex, channelID, d.Status, NullableString(d.Error),
+		d.AttemptStartedAt.Unix(), nullableTime(d.SentAt),
 	)
 	if err != nil {
 		var sqliteErr sqlite3.Error
 		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
-			return 0, escalation.ErrDeliveryDuplicate
+			return "", escalation.ErrDeliveryDuplicate
 		}
-		return 0, fmt.Errorf("insert delivery: %w", err)
+		return "", fmt.Errorf("insert delivery: %w", err)
 	}
-	d.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return d.ID, nil
 }
 
 // UpdateDelivery persists status/error/sent_at after a send attempt completes.
 func (s *EscalationStore) UpdateDelivery(ctx context.Context, d *escalation.Delivery) error {
-	var sentAt any
-	if d.SentAt != nil {
-		sentAt = d.SentAt.UTC().Format(time.RFC3339)
-	}
 	_, err := s.writer.Exec(ctx,
 		`UPDATE escalation_deliveries
 		 SET status = ?, error = ?, sent_at = ?
 		 WHERE id = ?`,
-		d.Status, NullableString(d.Error), sentAt, d.ID,
+		d.Status, NullableString(d.Error), nullableTime(d.SentAt), d.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update delivery: %w", err)
@@ -457,7 +445,7 @@ func (s *EscalationStore) SelectOrphanPendingDeliveries(ctx context.Context, bef
 		FROM escalation_deliveries
 		WHERE status = 'pending' AND attempt_started_at < ?
 		ORDER BY attempt_started_at ASC`,
-		before.UTC().Format(time.RFC3339),
+		before.Unix(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("select orphan pending deliveries: %w", err)
@@ -478,7 +466,7 @@ func (s *EscalationStore) SelectOrphanPendingDeliveries(ctx context.Context, bef
 // PurgeRunsAndDeliveriesOlderThan deletes terminated runs (ended_at < before) in batches of 1000.
 // Cascade delete handles escalation_deliveries automatically.
 func (s *EscalationStore) PurgeRunsAndDeliveriesOlderThan(ctx context.Context, before time.Time) error {
-	cutoff := before.UTC().Format(time.RFC3339)
+	cutoff := before.Unix()
 	for {
 		res, err := s.writer.Exec(ctx,
 			`DELETE FROM escalation_runs WHERE id IN (
@@ -502,9 +490,9 @@ func (s *EscalationStore) PurgeRunsAndDeliveriesOlderThan(ctx context.Context, b
 
 func scanEscalationPolicy(scanner rowScanner) (*escalation.Policy, error) {
 	var p escalation.Policy
-	var active, activeBeforeDowngrade bool
+	var active, activeBeforeDowngrade int
 	var sevJSON, scopesJSON, tagsJSON, levelsJSON string
-	var createdAt, updatedAt string
+	var createdAt, updatedAt int64
 	var createdBy, updatedBy sql.NullString
 
 	err := scanner.Scan(
@@ -516,10 +504,10 @@ func scanEscalationPolicy(scanner rowScanner) (*escalation.Policy, error) {
 		return nil, err
 	}
 
-	p.Active = active
-	p.ActiveBeforeDowngrade = activeBeforeDowngrade
-	p.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	p.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	p.Active = active != 0
+	p.ActiveBeforeDowngrade = activeBeforeDowngrade != 0
+	p.CreatedAt = time.Unix(createdAt, 0)
+	p.UpdatedAt = time.Unix(updatedAt, 0)
 	if createdBy.Valid {
 		p.CreatedBy = createdBy.String
 	}
@@ -550,9 +538,9 @@ func scanEscalationPolicy(scanner rowScanner) (*escalation.Policy, error) {
 
 func scanEscalationRun(scanner rowScanner) (*escalation.Run, error) {
 	var r escalation.Run
-	var policyID sql.NullInt64
-	var endedAt, nextActionAt sql.NullString
-	var startedAt string
+	var policyID sql.NullString
+	var endedAt, nextActionAt sql.NullInt64
+	var startedAt int64
 
 	err := scanner.Scan(
 		&r.ID, &policyID, &r.PolicySnapshotJSON, &r.AlertID, &r.Status,
@@ -563,16 +551,16 @@ func scanEscalationRun(scanner rowScanner) (*escalation.Run, error) {
 	}
 
 	if policyID.Valid {
-		v := policyID.Int64
+		v := policyID.String
 		r.PolicyID = &v
 	}
-	r.StartedAt, _ = time.Parse(time.RFC3339, startedAt)
+	r.StartedAt = time.Unix(startedAt, 0)
 	if endedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, endedAt.String)
+		t := time.Unix(endedAt.Int64, 0)
 		r.EndedAt = &t
 	}
 	if nextActionAt.Valid {
-		t, _ := time.Parse(time.RFC3339, nextActionAt.String)
+		t := time.Unix(nextActionAt.Int64, 0)
 		r.NextActionAt = &t
 	}
 	return &r, nil
@@ -592,10 +580,10 @@ func scanEscalationRuns(rows *sql.Rows) ([]*escalation.Run, error) {
 
 func scanEscalationDelivery(scanner rowScanner) (*escalation.Delivery, error) {
 	var d escalation.Delivery
-	var channelID sql.NullInt64
+	var channelID sql.NullString
 	var errStr sql.NullString
-	var sentAt sql.NullString
-	var attemptStartedAt string
+	var sentAt sql.NullInt64
+	var attemptStartedAt int64
 
 	err := scanner.Scan(
 		&d.ID, &d.RunID, &d.LevelIndex, &channelID, &d.Status, &errStr,
@@ -606,15 +594,15 @@ func scanEscalationDelivery(scanner rowScanner) (*escalation.Delivery, error) {
 	}
 
 	if channelID.Valid {
-		v := channelID.Int64
+		v := channelID.String
 		d.ChannelID = &v
 	}
 	if errStr.Valid {
 		d.Error = errStr.String
 	}
-	d.AttemptStartedAt, _ = time.Parse(time.RFC3339, attemptStartedAt)
+	d.AttemptStartedAt = time.Unix(attemptStartedAt, 0)
 	if sentAt.Valid {
-		t, _ := time.Parse(time.RFC3339, sentAt.String)
+		t := time.Unix(sentAt.Int64, 0)
 		d.SentAt = &t
 	}
 	return &d, nil

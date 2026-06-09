@@ -13,7 +13,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch, apiFetchVoid } from './apiFetch'
 
 export interface Heartbeat {
-  id: number
+  id: string
   uuid: string
   name: string
   status: 'new' | 'up' | 'down' | 'started' | 'paused'
@@ -34,8 +34,8 @@ export interface Heartbeat {
 }
 
 export interface HeartbeatPing {
-  id: number
-  heartbeat_id: number
+  id: string
+  heartbeat_id: string
   ping_type: 'success' | 'start' | 'exit_code'
   exit_code?: number
   source_ip: string
@@ -45,8 +45,8 @@ export interface HeartbeatPing {
 }
 
 export interface HeartbeatExecution {
-  id: number
-  heartbeat_id: number
+  id: string
+  heartbeat_id: string
   started_at?: string
   completed_at?: string
   duration_ms?: number
@@ -97,7 +97,7 @@ export function listHeartbeats(agentId?: string): Promise<HeartbeatsResponse> {
   return fetchJSON<HeartbeatsResponse>(url.toString())
 }
 
-export function getHeartbeat(id: number): Promise<HeartbeatDetailResponse> {
+export function getHeartbeat(id: string): Promise<HeartbeatDetailResponse> {
   return fetchJSON<HeartbeatDetailResponse>(`${API_BASE}/heartbeats/${id}`)
 }
 
@@ -109,7 +109,7 @@ export function createHeartbeat(data: CreateHeartbeatInput): Promise<Heartbeat> 
   })
 }
 
-export function updateHeartbeat(id: number, data: UpdateHeartbeatInput): Promise<Heartbeat> {
+export function updateHeartbeat(id: string, data: UpdateHeartbeatInput): Promise<Heartbeat> {
   return fetchJSON<Heartbeat>(`${API_BASE}/heartbeats/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -117,26 +117,26 @@ export function updateHeartbeat(id: number, data: UpdateHeartbeatInput): Promise
   })
 }
 
-export function deleteHeartbeat(id: number): Promise<void> {
+export function deleteHeartbeat(id: string): Promise<void> {
   return fetchJSON<void>(`${API_BASE}/heartbeats/${id}`, { method: 'DELETE' })
 }
 
-export function pauseHeartbeat(id: number): Promise<Heartbeat> {
+export function pauseHeartbeat(id: string): Promise<Heartbeat> {
   return fetchJSON<Heartbeat>(`${API_BASE}/heartbeats/${id}/pause`, { method: 'POST' })
 }
 
-export function resumeHeartbeat(id: number): Promise<Heartbeat> {
+export function resumeHeartbeat(id: string): Promise<Heartbeat> {
   return fetchJSON<Heartbeat>(`${API_BASE}/heartbeats/${id}/resume`, { method: 'POST' })
 }
 
-export function listExecutions(id: number, params?: { limit?: number; offset?: number }): Promise<ExecutionsResponse> {
+export function listExecutions(id: string, params?: { limit?: number; offset?: number }): Promise<ExecutionsResponse> {
   const url = new URL(`${API_BASE}/heartbeats/${id}/executions`, window.location.origin)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   if (params?.offset) url.searchParams.set('offset', String(params.offset))
   return fetchJSON<ExecutionsResponse>(url.toString())
 }
 
-export function listPings(id: number, params?: { limit?: number; offset?: number }): Promise<PingsResponse> {
+export function listPings(id: string, params?: { limit?: number; offset?: number }): Promise<PingsResponse> {
   const url = new URL(`${API_BASE}/heartbeats/${id}/pings`, window.location.origin)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   if (params?.offset) url.searchParams.set('offset', String(params.offset))

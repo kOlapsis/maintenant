@@ -26,7 +26,7 @@ import type { HeartbeatTimelineEntry } from './HeartbeatGantt.vue'
 import { formatInterval, nextExpectedPing } from '@/utils/scheduleFormat'
 
 const props = defineProps<{
-  heartbeatId: number
+  heartbeatId: string
 }>()
 
 const emit = defineEmits<{
@@ -36,7 +36,7 @@ const emit = defineEmits<{
 const detail = ref<HeartbeatDetailResponse | null>(null)
 const executions = ref<HeartbeatExecution[]>([])
 const loading = ref(true)
-const expandedPayload = ref<number | null>(null)
+const expandedPayload = ref<string | null>(null)
 
 onMounted(async () => {
   try {

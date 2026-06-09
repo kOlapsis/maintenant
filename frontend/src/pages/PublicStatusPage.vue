@@ -84,13 +84,13 @@ watch(settings, (s) => {
 // --- Status data ---
 interface IncidentUpdate { status: string; message: string; created_at: string }
 interface IncidentBrief {
-  id: number; title: string; severity: string; status: string
+  id: string; title: string; severity: string; status: string
   components: string[]; created_at: string; latest_update?: IncidentUpdate
 }
 interface MaintenanceBrief {
-  id: number; title: string; starts_at: string; ends_at: string; components: string[]
+  id: string; title: string; starts_at: string; ends_at: string; components: string[]
 }
-interface ComponentBrief { id: number; name: string; status: string; monitors?: MonitorRef[] }
+interface ComponentBrief { id: string; name: string; status: string; monitors?: MonitorRef[] }
 interface StatusData {
   global_status: string; global_message: string; updated_at: string
   components: ComponentBrief[]; active_incidents: IncidentBrief[]; upcoming_maintenance: MaintenanceBrief[]
@@ -99,14 +99,14 @@ interface StatusData {
 const data = ref<StatusData | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const expandedComponents = ref<Set<number>>(new Set())
+const expandedComponents = ref<Set<string>>(new Set())
 
-function toggleExpanded(id: number) {
+function toggleExpanded(id: string) {
   if (expandedComponents.value.has(id)) expandedComponents.value.delete(id)
   else expandedComponents.value.add(id)
 }
 
-function handleRowKeydown(e: KeyboardEvent, id: number) {
+function handleRowKeydown(e: KeyboardEvent, id: string) {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(id) }
   else if (e.key === 'Escape') { expandedComponents.value.delete(id); (e.currentTarget as HTMLElement).blur() }
 }
@@ -129,7 +129,7 @@ function handleComponentChangedEvent(e: Event) {
   const msgEvent = e as MessageEvent
   if (msgEvent.data) {
     try {
-      const payload = JSON.parse(msgEvent.data) as { id?: number; monitors?: MonitorRef[]; status?: string; name?: string }
+      const payload = JSON.parse(msgEvent.data) as { id?: string; monitors?: MonitorRef[]; status?: string; name?: string }
       if (payload.id !== undefined && data.value) {
         const comp = data.value.components.find(c => c.id === payload.id)
         if (comp) {

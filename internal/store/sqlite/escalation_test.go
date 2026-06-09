@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 func setupEscalationTestDB(t *testing.T) (*EscalationStore, *sql.DB) {
@@ -36,73 +37,73 @@ func setupEscalationTestDB(t *testing.T) (*EscalationStore, *sql.DB) {
 
 	_, err = rawDB.Exec(`
 		CREATE TABLE IF NOT EXISTS alerts (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY NOT NULL,
 			source TEXT NOT NULL DEFAULT '',
 			alert_type TEXT NOT NULL DEFAULT '',
 			severity TEXT NOT NULL DEFAULT 'warning',
 			status TEXT NOT NULL DEFAULT 'active',
 			message TEXT NOT NULL DEFAULT '',
 			entity_type TEXT NOT NULL DEFAULT '',
-			entity_id INTEGER NOT NULL DEFAULT 0,
+			entity_id TEXT NOT NULL DEFAULT '',
 			entity_name TEXT NOT NULL DEFAULT '',
 			details TEXT,
-			resolved_by_id INTEGER,
-			fired_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			resolved_at DATETIME,
-			acknowledged_at DATETIME,
+			resolved_by_id TEXT,
+			fired_at BIGINT NOT NULL DEFAULT 0,
+			resolved_at BIGINT,
+			acknowledged_at BIGINT,
 			acknowledged_by TEXT,
-			escalated_at DATETIME,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			escalated_at BIGINT,
+			created_at BIGINT NOT NULL DEFAULT 0
 		);
 		CREATE TABLE IF NOT EXISTS notification_channels (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY NOT NULL,
 			name TEXT NOT NULL UNIQUE,
 			type TEXT NOT NULL DEFAULT 'webhook',
 			url TEXT NOT NULL DEFAULT '',
 			headers TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			created_at BIGINT NOT NULL DEFAULT 0,
+			updated_at BIGINT NOT NULL DEFAULT 0
 		);
 		CREATE TABLE IF NOT EXISTS escalation_policies (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY NOT NULL,
 			name TEXT NOT NULL,
-			active BOOLEAN NOT NULL DEFAULT 1,
-			active_before_downgrade BOOLEAN NOT NULL DEFAULT 0,
+			active INTEGER NOT NULL DEFAULT 1,
+			active_before_downgrade INTEGER NOT NULL DEFAULT 0,
 			severities_json TEXT NOT NULL DEFAULT '[]',
 			scopes_json TEXT NOT NULL DEFAULT '[]',
 			tags_json TEXT NOT NULL DEFAULT '[]',
 			levels_json TEXT NOT NULL,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			created_at BIGINT NOT NULL DEFAULT 0,
 			created_by TEXT,
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at BIGINT NOT NULL DEFAULT 0,
 			updated_by TEXT
 		);
 		CREATE INDEX IF NOT EXISTS idx_escalation_policies_active ON escalation_policies(active);
 		CREATE TABLE IF NOT EXISTS escalation_runs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			policy_id INTEGER REFERENCES escalation_policies(id) ON DELETE SET NULL,
+			id TEXT PRIMARY KEY NOT NULL,
+			policy_id TEXT REFERENCES escalation_policies(id) ON DELETE SET NULL,
 			policy_snapshot_json TEXT NOT NULL,
-			alert_id INTEGER NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+			alert_id TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
 			status TEXT NOT NULL CHECK (status IN (
 				'active','paused_by_maintenance','stopped_by_ack','stopped_by_resolution',
 				'stopped_by_policy_deletion','stopped_by_policy_disabled',
 				'stopped_by_edition_downgrade','exhausted'
 			)),
 			last_executed_level_index INTEGER NOT NULL DEFAULT -1,
-			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME,
-			next_action_at DATETIME
+			started_at BIGINT NOT NULL DEFAULT 0,
+			ended_at BIGINT,
+			next_action_at BIGINT
 		);
 		CREATE TABLE IF NOT EXISTS escalation_deliveries (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			run_id INTEGER NOT NULL REFERENCES escalation_runs(id) ON DELETE CASCADE,
+			id TEXT PRIMARY KEY NOT NULL,
+			run_id TEXT NOT NULL REFERENCES escalation_runs(id) ON DELETE CASCADE,
 			level_index INTEGER NOT NULL,
-			channel_id INTEGER REFERENCES notification_channels(id) ON DELETE SET NULL,
+			channel_id TEXT REFERENCES notification_channels(id) ON DELETE SET NULL,
 			status TEXT NOT NULL CHECK (status IN ('pending','sent','failed','abandoned','skipped_maintenance')),
 			error TEXT,
-			attempt_started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			sent_at DATETIME
+			attempt_started_at BIGINT NOT NULL DEFAULT 0,
+			sent_at BIGINT
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_escalation_deliveries_run_level
 			ON escalation_deliveries(run_id, level_index, channel_id);
@@ -125,26 +126,26 @@ func makeTestPolicy(name string, active bool) *escalation.Policy {
 		Active: active,
 		Filters: escalation.Filters{
 			Severities: []string{"critical"},
-			Scopes:     []escalation.Scope{{Kind: "container", RefID: 1}},
+			Scopes:     []escalation.Scope{{Kind: "container", RefID: "1"}},
 			Tags:       []string{"prod"},
 		},
 		Levels: []escalation.Level{
-			{Order: 0, DelaySeconds: 300, ChannelIDs: []int64{1, 2}},
-			{Order: 1, DelaySeconds: 600, ChannelIDs: []int64{3}},
+			{Order: 0, DelaySeconds: 300, ChannelIDs: []string{"1", "2"}},
+			{Order: 1, DelaySeconds: 600, ChannelIDs: []string{"3"}},
 		},
 		CreatedBy: "alice",
 		UpdatedBy: "alice",
 	}
 }
 
-func insertTestAlert(t *testing.T, rawDB *sql.DB) int64 {
+func insertTestAlert(t *testing.T, rawDB *sql.DB) string {
 	t.Helper()
-	var alertID int64
-	err := rawDB.QueryRowContext(context.Background(),
-		`INSERT INTO alerts (source, alert_type, severity, status, message, entity_type, entity_id, entity_name, fired_at)
-		VALUES ('test','t','warning','active','msg','container',1,'c1', ?) RETURNING id`,
-		time.Now().UTC().Format(time.RFC3339),
-	).Scan(&alertID)
+	alertID := uid.New()
+	_, err := rawDB.ExecContext(context.Background(),
+		`INSERT INTO alerts (id, source, alert_type, severity, status, message, entity_type, entity_id, entity_name, fired_at)
+		VALUES (?, 'test','t','warning','active','msg','container','1','c1', ?)`,
+		alertID, time.Now().Unix(),
+	)
 	require.NoError(t, err)
 	return alertID
 }
@@ -156,7 +157,7 @@ func TestEscalationStore_InsertSelectPolicy(t *testing.T) {
 	p := makeTestPolicy("on-call critical", true)
 	id, err := store.InsertPolicy(ctx, p)
 	require.NoError(t, err)
-	assert.Positive(t, id)
+	assert.NotEmpty(t, id)
 
 	got, err := store.SelectPolicy(ctx, id)
 	require.NoError(t, err)
@@ -175,7 +176,7 @@ func TestEscalationStore_SelectPolicy_NotFound(t *testing.T) {
 	store, _ := setupEscalationTestDB(t)
 	ctx := context.Background()
 
-	got, err := store.SelectPolicy(ctx, 9999)
+	got, err := store.SelectPolicy(ctx, "9999")
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -192,7 +193,7 @@ func TestEscalationStore_UpdatePolicy(t *testing.T) {
 	p.Name = "updated-name"
 	p.Active = false
 	p.UpdatedBy = "bob"
-	p.Levels = []escalation.Level{{Order: 0, DelaySeconds: 900, ChannelIDs: []int64{5}}}
+	p.Levels = []escalation.Level{{Order: 0, DelaySeconds: 900, ChannelIDs: []string{"5"}}}
 
 	err = store.UpdatePolicy(ctx, p)
 	require.NoError(t, err)
@@ -274,12 +275,12 @@ func TestEscalationStore_BulkStopActiveRuns(t *testing.T) {
 
 	alertID := insertTestAlert(t, rawDB)
 
-	var runID int64
-	err := rawDB.QueryRowContext(ctx,
-		`INSERT INTO escalation_runs (policy_snapshot_json, alert_id, status, started_at)
-		VALUES ('{}', ?, 'active', ?) RETURNING id`,
-		alertID, time.Now().UTC().Format(time.RFC3339),
-	).Scan(&runID)
+	runID := uid.New()
+	_, err := rawDB.ExecContext(ctx,
+		`INSERT INTO escalation_runs (id, policy_snapshot_json, alert_id, status, started_at)
+		VALUES (?, '{}', ?, 'active', ?)`,
+		runID, alertID, time.Now().Unix(),
+	)
 	require.NoError(t, err)
 
 	err = store.BulkStopActiveRuns(ctx, "stopped_by_edition_downgrade", time.Now())
@@ -300,22 +301,22 @@ func TestEscalationStore_PurgeRunsAndDeliveries(t *testing.T) {
 	// Run that ended 10 days ago — should be purged
 	old := time.Now().Add(-10 * 24 * time.Hour)
 	_, err := rawDB.ExecContext(ctx,
-		`INSERT INTO escalation_runs (policy_snapshot_json, alert_id, status, started_at, ended_at)
-		VALUES ('{}', ?, 'exhausted', ?, ?)`,
-		alertID,
-		old.UTC().Format(time.RFC3339),
-		old.UTC().Format(time.RFC3339),
+		`INSERT INTO escalation_runs (id, policy_snapshot_json, alert_id, status, started_at, ended_at)
+		VALUES (?, '{}', ?, 'exhausted', ?, ?)`,
+		uid.New(), alertID,
+		old.Unix(),
+		old.Unix(),
 	)
 	require.NoError(t, err)
 
 	// Run that ended 1 day ago — should survive a 5-day retention cutoff
 	recent := time.Now().Add(-1 * 24 * time.Hour)
 	_, err = rawDB.ExecContext(ctx,
-		`INSERT INTO escalation_runs (policy_snapshot_json, alert_id, status, started_at, ended_at)
-		VALUES ('{}', ?, 'exhausted', ?, ?)`,
-		alertID,
-		recent.UTC().Format(time.RFC3339),
-		recent.UTC().Format(time.RFC3339),
+		`INSERT INTO escalation_runs (id, policy_snapshot_json, alert_id, status, started_at, ended_at)
+		VALUES (?, '{}', ?, 'exhausted', ?, ?)`,
+		uid.New(), alertID,
+		recent.Unix(),
+		recent.Unix(),
 	)
 	require.NoError(t, err)
 
@@ -334,32 +335,34 @@ func TestEscalationStore_UniqueDeliveryConstraint(t *testing.T) {
 	ctx := context.Background()
 
 	// Insert FK dependencies
+	channelID := uid.New()
 	_, err := rawDB.ExecContext(ctx,
-		`INSERT INTO notification_channels (name, type, url, enabled) VALUES ('test-ch', 'webhook', 'http://test', 1)`)
+		`INSERT INTO notification_channels (id, name, type, url, enabled) VALUES (?, 'test-ch', 'webhook', 'http://test', 1)`,
+		channelID)
 	require.NoError(t, err)
 
 	alertID := insertTestAlert(t, rawDB)
 
-	var runID int64
-	err = rawDB.QueryRowContext(ctx,
-		`INSERT INTO escalation_runs (policy_snapshot_json, alert_id, status, started_at)
-		VALUES ('{}', ?, 'active', ?) RETURNING id`,
-		alertID, time.Now().UTC().Format(time.RFC3339),
-	).Scan(&runID)
+	runID := uid.New()
+	_, err = rawDB.ExecContext(ctx,
+		`INSERT INTO escalation_runs (id, policy_snapshot_json, alert_id, status, started_at)
+		VALUES (?, '{}', ?, 'active', ?)`,
+		runID, alertID, time.Now().Unix(),
+	)
 	require.NoError(t, err)
 
 	// First delivery — should succeed
 	_, err = rawDB.ExecContext(ctx,
-		`INSERT INTO escalation_deliveries (run_id, level_index, channel_id, status, attempt_started_at)
-		VALUES (?, 0, 1, 'pending', ?)`,
-		runID, time.Now().UTC().Format(time.RFC3339))
+		`INSERT INTO escalation_deliveries (id, run_id, level_index, channel_id, status, attempt_started_at)
+		VALUES (?, ?, 0, ?, 'pending', ?)`,
+		uid.New(), runID, channelID, time.Now().Unix())
 	require.NoError(t, err, "first delivery insert should succeed")
 
 	// Duplicate (same run_id, level_index, channel_id) — must fail on UNIQUE constraint
 	_, err = rawDB.ExecContext(ctx,
-		`INSERT INTO escalation_deliveries (run_id, level_index, channel_id, status, attempt_started_at)
-		VALUES (?, 0, 1, 'sent', ?)`,
-		runID, time.Now().UTC().Format(time.RFC3339))
+		`INSERT INTO escalation_deliveries (id, run_id, level_index, channel_id, status, attempt_started_at)
+		VALUES (?, ?, 0, ?, 'sent', ?)`,
+		uid.New(), runID, channelID, time.Now().Unix())
 	require.Error(t, err, "duplicate delivery must violate unique constraint")
 }
 

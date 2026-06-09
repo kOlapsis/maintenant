@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -116,41 +117,41 @@ func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 		}))
 	}
 
-	insertRows := func(agentID string) (containerDBID int64) {
+	insertRows := func(agentID string) (containerID string) {
 		t.Helper()
-		// container
 		now := time.Now().Unix()
-		res, err := db.Writer().Exec(ctx,
-			`INSERT INTO containers (external_id, name, image, state, first_seen_at, last_state_change_at, agent_id)
-			 VALUES (?, ?, ?, 'running', ?, ?, ?)`,
-			"ext-"+agentID, "ctr-"+agentID, "img", now, now, agentID)
+		// container
+		containerID = uid.Container(agentID, "ext-"+agentID)
+		_, err := db.Writer().Exec(ctx,
+			`INSERT INTO containers (id, external_id, name, image, state, first_seen_at, last_state_change_at, agent_id)
+			 VALUES (?, ?, ?, 'img', 'running', ?, ?, ?)`,
+			containerID, "ext-"+agentID, "ctr-"+agentID, now, now, agentID)
 		require.NoError(t, err)
-		containerDBID = res.LastInsertID
 		// endpoint
 		_, err = db.Writer().Exec(ctx,
-			`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target, first_seen_at, last_seen_at, agent_id)
-			 VALUES (?, 'key', ?, 'http', 'http://localhost', ?, ?, ?)`,
-			"ctr-"+agentID, "ext-ep-"+agentID, now, now, agentID)
+			`INSERT INTO endpoints (id, container_name, label_key, external_id, endpoint_type, target, first_seen_at, last_seen_at, agent_id)
+			 VALUES (?, ?, 'key', ?, 'http', 'http://localhost', ?, ?, ?)`,
+			uid.EndpointLabel(agentID, "ctr-"+agentID, "key"), "ctr-"+agentID, "ext-ep-"+agentID, now, now, agentID)
 		require.NoError(t, err)
-		// heartbeat
+		// heartbeat (id is the ping token)
 		_, err = db.Writer().Exec(ctx,
-			`INSERT INTO heartbeats (uuid, name, interval_seconds, grace_seconds, created_at, updated_at, agent_id)
+			`INSERT INTO heartbeats (id, name, interval_seconds, grace_seconds, created_at, updated_at, agent_id)
 			 VALUES (?, ?, 60, 30, ?, ?, ?)`,
 			"hb-"+agentID, "hb-name-"+agentID, now, now, agentID)
 		require.NoError(t, err)
 		// resource_snapshot
 		_, err = db.Writer().Exec(ctx,
-			`INSERT INTO resource_snapshots (container_id, cpu_percent, mem_used, mem_limit,
+			`INSERT INTO resource_snapshots (id, container_id, cpu_percent, mem_used, mem_limit,
 			  net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp, agent_id)
-			 VALUES (?, 1.0, 100, 200, 0, 0, 0, 0, ?, ?)`,
-			containerDBID, now, agentID)
+			 VALUES (?, ?, 1.0, 100, 200, 0, 0, 0, 0, ?, ?)`,
+			uid.New(), containerID, now, agentID)
 		require.NoError(t, err)
 		// cert_monitor
 		_, err = db.Writer().Exec(ctx,
-			`INSERT INTO cert_monitors (hostname, port, source, created_at, agent_id) VALUES (?, 443, 'standalone', ?, ?)`,
-			"host-"+agentID, now, agentID)
+			`INSERT INTO cert_monitors (id, hostname, port, source, created_at, agent_id) VALUES (?, ?, 443, 'standalone', ?, ?)`,
+			uid.CertMonitor(agentID, "host-"+agentID, 443), "host-"+agentID, now, agentID)
 		require.NoError(t, err)
-		return containerDBID
+		return containerID
 	}
 
 	countRows := func(table, agentID string) int {

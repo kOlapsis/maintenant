@@ -39,11 +39,11 @@ const (
 
 // CertMonitor represents a monitored SSL/TLS certificate.
 type CertMonitor struct {
-	ID                   int64      `json:"id"`
+	ID                   string     `json:"id"`
 	Hostname             string     `json:"hostname"`
 	Port                 int        `json:"port"`
 	Source               CertSource `json:"source"`
-	EndpointID           *int64     `json:"endpoint_id,omitempty"`
+	EndpointID           *string    `json:"endpoint_id,omitempty"`
 	Status               CertStatus `json:"status"`
 	CheckIntervalSeconds int        `json:"check_interval_seconds"`
 	WarningThresholds    []int      `json:"warning_thresholds"`
@@ -53,7 +53,7 @@ type CertMonitor struct {
 	LastError            string     `json:"last_error,omitempty"`
 	ExternalID           string     `json:"external_id,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
-	AgentID              *string    `json:"agent_id,omitempty"`
+	AgentID              string     `json:"agent_id"`
 }
 
 // DefaultWarningThresholds returns the default expiration warning thresholds in days.
@@ -113,8 +113,8 @@ func (m *CertMonitor) WarningThresholdsJSON() string {
 
 // CertCheckResult represents a single certificate check execution.
 type CertCheckResult struct {
-	ID                 int64      `json:"id"`
-	MonitorID          int64      `json:"monitor_id"`
+	ID                 string     `json:"id"`
+	MonitorID          string     `json:"monitor_id"`
 	SubjectCN          string     `json:"subject_cn,omitempty"`
 	IssuerCN           string     `json:"issuer_cn,omitempty"`
 	IssuerOrg          string     `json:"issuer_org,omitempty"`
@@ -156,8 +156,8 @@ func (r *CertCheckResult) SANsJSON() string {
 
 // CertChainEntry represents an individual certificate in the presented chain.
 type CertChainEntry struct {
-	ID            int64     `json:"id"`
-	CheckResultID int64     `json:"check_result_id"`
+	ID            string    `json:"id"`
+	CheckResultID string    `json:"check_result_id"`
 	Position      int       `json:"position"`
 	SubjectCN     string    `json:"subject_cn"`
 	IssuerCN      string    `json:"issuer_cn"`

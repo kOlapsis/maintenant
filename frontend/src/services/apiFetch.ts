@@ -13,6 +13,14 @@
  * Shared fetch wrapper for all API services.
  */
 
+// Sentinel agent id the backend sends for server-local entities. Treat it as
+// "local" everywhere a host is grouped or displayed.
+export const LOCAL_AGENT = '00000000-0000-0000-0000-000000000000'
+
+export function isLocalAgent(id?: string | null): boolean {
+  return !id || id === LOCAL_AGENT
+}
+
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
 

@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -30,7 +29,7 @@ type activeAlertKey struct {
 	Source     string
 	AlertType  string
 	EntityType string
-	EntityID   int64
+	EntityID   string
 }
 
 // SSEBroadcaster is the interface for broadcasting SSE events.
@@ -129,11 +128,11 @@ type noopEscalator struct{}
 
 func (noopEscalator) EvaluateCycle(_ context.Context) error            { return nil }
 func (noopEscalator) OnAlertCreated(_ context.Context, _ *Alert) error { return nil }
-func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ int64, _ Acknowledgment) error {
+func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ string, _ Acknowledgment) error {
 	return nil
 }
-func (noopEscalator) OnAlertResolved(_ context.Context, _ int64, _ time.Time) error { return nil }
-func (noopEscalator) OnEditionDowngraded(_ context.Context) error                   { return nil }
+func (noopEscalator) OnAlertResolved(_ context.Context, _ string, _ time.Time) error { return nil }
+func (noopEscalator) OnEditionDowngraded(_ context.Context) error                    { return nil }
 
 // noopEntityRouter is the Engine-internal no-op default.
 type noopEntityRouter struct{}
@@ -489,7 +488,7 @@ func (e *Engine) checkSilenceRules(ctx context.Context, evt Event) bool {
 	}
 
 	// Consult maintenance suppressor extension (Pro: calendar-based suppression)
-	suppressed, err := e.suppressor.IsSuppressed(ctx, evt.Source, evt.EntityType, fmt.Sprintf("%d", evt.EntityID))
+	suppressed, err := e.suppressor.IsSuppressed(ctx, evt.Source, evt.EntityType, evt.EntityID)
 	if err != nil {
 		e.logger.Error("alert engine: maintenance suppressor error", "error", err)
 	} else if suppressed {
@@ -533,7 +532,7 @@ func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
 		return
 	}
 
-	dispatched := make(map[int64]bool)
+	dispatched := make(map[string]bool)
 
 	// Resolve channels from active alert triggers.
 	if e.triggerStore != nil {
@@ -565,16 +564,11 @@ func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
 
 	// Consult entity router extension for additional channels (Pro: per-entity routing).
 	// Continues to operate independently from triggers.
-	extraIDs, err := e.entityRouter.Route(ctx, a.EntityType, fmt.Sprintf("%d", a.EntityID), a.Severity)
+	extraIDs, err := e.entityRouter.Route(ctx, a.EntityType, a.EntityID, a.Severity)
 	if err != nil {
 		e.logger.Error("alert engine: entity router error", "error", err)
 	}
-	for _, chIDStr := range extraIDs {
-		chID, parseErr := strconv.ParseInt(chIDStr, 10, 64)
-		if parseErr != nil {
-			e.logger.Error("alert engine: invalid entity-routed channel ID", "channel_id", chIDStr)
-			continue
-		}
+	for _, chID := range extraIDs {
 		if dispatched[chID] {
 			continue // dedup
 		}
@@ -630,7 +624,7 @@ func matchesTrigger(t *AlertTrigger, a *Alert) bool {
 		return false
 	}
 	if t.FilterScopes != "" {
-		scope := fmt.Sprintf("%s:%d", a.EntityType, a.EntityID)
+		scope := fmt.Sprintf("%s:%s", a.EntityType, a.EntityID)
 		if !containsCSV(t.FilterScopes, scope) {
 			return false
 		}
@@ -746,7 +740,7 @@ func alertToMap(a *Alert) map[string]interface{} {
 // ResolveByEntity resolves all active alerts for a given entity (e.g. when a
 // container is destroyed). This prevents stale alerts from accumulating when
 // containers are recreated with new internal IDs.
-func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityID int64) {
+func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityID string) {
 	now := time.Now()
 
 	e.mu.Lock()
@@ -803,5 +797,5 @@ func NewSSEBroadcasterFunc(fn func(eventType string, data interface{})) SSEBroad
 var _ fmt.Stringer = (*activeAlertKey)(nil) // removed — not needed
 
 func (k activeAlertKey) String() string {
-	return fmt.Sprintf("%s/%s/%s/%d", k.Source, k.AlertType, k.EntityType, k.EntityID)
+	return fmt.Sprintf("%s/%s/%s/%s", k.Source, k.AlertType, k.EntityType, k.EntityID)
 }

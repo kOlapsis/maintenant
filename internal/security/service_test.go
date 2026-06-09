@@ -31,17 +31,17 @@ func TestService_NewInsights_TriggersAlert(t *testing.T) {
 	var alertInsights []Insight
 	var alertIsRecover bool
 
-	svc.SetAlertCallback(func(containerID int64, containerName string, insights []Insight, isRecover bool) {
+	svc.SetAlertCallback(func(containerID string, containerName string, insights []Insight, isRecover bool) {
 		alertCalled = true
 		alertInsights = insights
 		alertIsRecover = isRecover
 	})
 
 	insights := []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	}
 
-	svc.UpdateContainer(1, "test", insights)
+	svc.UpdateContainer("c1", "test", insights)
 
 	require.True(t, alertCalled)
 	require.Len(t, alertInsights, 1)
@@ -52,16 +52,16 @@ func TestService_UnchangedInsights_NoDuplicateAlert(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 
 	alertCount := 0
-	svc.SetAlertCallback(func(containerID int64, containerName string, insights []Insight, isRecover bool) {
+	svc.SetAlertCallback(func(containerID string, containerName string, insights []Insight, isRecover bool) {
 		alertCount++
 	})
 
 	insights := []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	}
 
-	svc.UpdateContainer(1, "test", insights)
-	svc.UpdateContainer(1, "test", insights) // Same insights again
+	svc.UpdateContainer("c1", "test", insights)
+	svc.UpdateContainer("c1", "test", insights) // Same insights again
 
 	assert.Equal(t, 1, alertCount) // Only one alert, not two
 }
@@ -71,19 +71,19 @@ func TestService_FullResolution_TriggersRecovery(t *testing.T) {
 
 	var lastIsRecover bool
 	alertCount := 0
-	svc.SetAlertCallback(func(containerID int64, containerName string, insights []Insight, isRecover bool) {
+	svc.SetAlertCallback(func(containerID string, containerName string, insights []Insight, isRecover bool) {
 		alertCount++
 		lastIsRecover = isRecover
 	})
 
 	// First: insights detected
 	insights := []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	}
-	svc.UpdateContainer(1, "test", insights)
+	svc.UpdateContainer("c1", "test", insights)
 
 	// Then: all insights resolved
-	svc.UpdateContainer(1, "test", nil)
+	svc.UpdateContainer("c1", "test", nil)
 
 	assert.Equal(t, 2, alertCount) // Alert + Recovery
 	assert.True(t, lastIsRecover)
@@ -94,23 +94,23 @@ func TestService_PartialResolution_NoRecovery(t *testing.T) {
 
 	alertCount := 0
 	var lastIsRecover bool
-	svc.SetAlertCallback(func(containerID int64, containerName string, insights []Insight, isRecover bool) {
+	svc.SetAlertCallback(func(containerID string, containerName string, insights []Insight, isRecover bool) {
 		alertCount++
 		lastIsRecover = isRecover
 	})
 
 	// Two insights
 	insights := []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
+		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	}
-	svc.UpdateContainer(1, "test", insights)
+	svc.UpdateContainer("c1", "test", insights)
 
 	// One resolved, one remains
 	partial := []Insight{
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	}
-	svc.UpdateContainer(1, "test", partial)
+	svc.UpdateContainer("c1", "test", partial)
 
 	// 2 alerts: initial + update (changed set). Neither should be recovery.
 	assert.Equal(t, 2, alertCount)
@@ -121,19 +121,19 @@ func TestService_NewInsightAdded_TriggersUpdate(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 
 	alertCount := 0
-	svc.SetAlertCallback(func(containerID int64, containerName string, insights []Insight, isRecover bool) {
+	svc.SetAlertCallback(func(containerID string, containerName string, insights []Insight, isRecover bool) {
 		alertCount++
 	})
 
 	// Start with one insight
-	svc.UpdateContainer(1, "test", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+	svc.UpdateContainer("c1", "test", []Insight{
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	})
 
 	// Add another
-	svc.UpdateContainer(1, "test", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+	svc.UpdateContainer("c1", "test", []Insight{
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
+		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	})
 
 	assert.Equal(t, 2, alertCount) // Initial + Updated
@@ -148,11 +148,11 @@ func TestService_SSEEvents(t *testing.T) {
 	})
 
 	insights := []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	}
 
-	svc.UpdateContainer(1, "test", insights) // → security.insights_changed
-	svc.UpdateContainer(1, "test", nil)      // → security.insights_resolved
+	svc.UpdateContainer("c1", "test", insights) // → security.insights_changed
+	svc.UpdateContainer("c1", "test", nil)      // → security.insights_resolved
 
 	require.Len(t, events, 2)
 	assert.Equal(t, "security.insights_changed", events[0])
@@ -163,12 +163,12 @@ func TestService_GetContainerInsights(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 
 	insights := []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
+		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	}
-	svc.UpdateContainer(1, "test", insights)
+	svc.UpdateContainer("c1", "test", insights)
 
-	ci := svc.GetContainerInsights(1)
+	ci := svc.GetContainerInsights("c1")
 	assert.Equal(t, 2, ci.Count)
 	assert.NotNil(t, ci.HighestSeverity)
 	assert.Equal(t, SeverityCritical, *ci.HighestSeverity)
@@ -177,7 +177,7 @@ func TestService_GetContainerInsights(t *testing.T) {
 func TestService_GetContainerInsights_NoInsights(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 
-	ci := svc.GetContainerInsights(99)
+	ci := svc.GetContainerInsights("c99")
 	assert.Equal(t, 0, ci.Count)
 	assert.Empty(t, ci.Insights)
 }
@@ -185,11 +185,11 @@ func TestService_GetContainerInsights_NoInsights(t *testing.T) {
 func TestService_GetSummary(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 
-	svc.UpdateContainer(1, "c1", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "c1"},
+	svc.UpdateContainer("c1", "c1", []Insight{
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "c1"},
 	})
-	svc.UpdateContainer(2, "c2", []Insight{
-		{Type: HostNetworkMode, Severity: SeverityHigh, ContainerID: 2, ContainerName: "c2"},
+	svc.UpdateContainer("c2", "c2", []Insight{
+		{Type: HostNetworkMode, Severity: SeverityHigh, ContainerID: "c2", ContainerName: "c2"},
 	})
 
 	summary := svc.GetSummary(10)
@@ -203,16 +203,16 @@ func TestService_GetSummary(t *testing.T) {
 func TestService_InsightCount(t *testing.T) {
 	svc := NewService(Deps{Logger: testLogger()})
 
-	svc.UpdateContainer(1, "test", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: 1, ContainerName: "test"},
+	svc.UpdateContainer("c1", "test", []Insight{
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
+		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1", ContainerName: "test"},
 	})
 
-	count, sev := svc.InsightCount(1)
+	count, sev := svc.InsightCount("c1")
 	assert.Equal(t, 2, count)
 	assert.Equal(t, SeverityCritical, sev)
 
-	count, sev = svc.InsightCount(99)
+	count, sev = svc.InsightCount("c99")
 	assert.Equal(t, 0, count)
 	assert.Equal(t, "", sev)
 }

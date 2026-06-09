@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // RuntimeDiscoverer abstracts container/workload discovery operations.
@@ -60,8 +61,8 @@ type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the container Service.
 type Deps struct {
-	Store          ContainerStore    // required
-	Logger         *slog.Logger      // required
+	Store          ContainerStore       // required
+	Logger         *slog.Logger         // required
 	EventCallback  EventCallback        // optional — nil-safe
 	LogFetcher     LogFetcher           // optional — nil-safe
 	RestartChecker RestartChecker       // optional — nil-safe
@@ -202,7 +203,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	// Capture log snippet on die events with non-zero exit code (T028).
 	// Only for local containers: logFetcher targets the server's own runtime and
 	// cannot read logs of a container living on a remote agent's host.
-	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == nil {
+	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == uid.LocalAgent {
 		snippet, err := s.logFetcher.FetchLogSnippet(ctx, evt.ExternalID)
 		if err != nil {
 			s.logger.Warn("fetch log snippet", "external_id", evt.ExternalID[:12], "error", err)
@@ -322,7 +323,7 @@ func (s *Service) emitEvent(eventType string, data interface{}) {
 }
 
 // GetContainer retrieves a container by its maintenant ID.
-func (s *Service) GetContainer(ctx context.Context, id int64) (*Container, error) {
+func (s *Service) GetContainer(ctx context.Context, id string) (*Container, error) {
 	return s.store.GetContainerByID(ctx, id)
 }
 
@@ -332,7 +333,7 @@ func (s *Service) GetContainerByExternalID(ctx context.Context, externalID strin
 }
 
 // DeleteContainer removes a container and its transitions from the database.
-func (s *Service) DeleteContainer(ctx context.Context, id int64) error {
+func (s *Service) DeleteContainer(ctx context.Context, id string) error {
 	if err := s.store.DeleteContainerByID(ctx, id); err != nil {
 		return err
 	}
@@ -480,7 +481,7 @@ func (s *Service) ListContainersGrouped(ctx context.Context, opts ListContainers
 }
 
 // ListTransitions returns state transitions for a container.
-func (s *Service) ListTransitions(ctx context.Context, containerID int64, opts ListTransitionsOpts) ([]*StateTransition, int, error) {
+func (s *Service) ListTransitions(ctx context.Context, containerID string, opts ListTransitionsOpts) ([]*StateTransition, int, error) {
 	return s.store.ListTransitionsByContainer(ctx, containerID, opts)
 }
 

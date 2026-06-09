@@ -16,11 +16,11 @@ export type CertStatus = 'valid' | 'expiring' | 'expired' | 'error' | 'unknown'
 export type CertSource = 'auto' | 'standalone'
 
 export interface CertMonitor {
-  id: number
+  id: string
   hostname: string
   port: number
   source: CertSource
-  endpoint_id?: number
+  endpoint_id?: string
   status: CertStatus
   check_interval_seconds: number
   warning_thresholds: number[]
@@ -35,7 +35,7 @@ export interface CertMonitor {
 export type OCSPStatus = 'good' | 'revoked' | 'unknown' | 'error'
 
 export interface CertCheckResult {
-  id: number
+  id: string
   subject_cn: string
   issuer_cn: string
   issuer_org: string
@@ -94,7 +94,7 @@ export interface CertificateCreateResponse {
 }
 
 export interface ChecksResponse {
-  monitor_id: number
+  monitor_id: string
   checks: CertCheckResult[]
   total: number
   has_more: boolean
@@ -112,7 +112,7 @@ export function listCertificates(params?: { status?: string; source?: string; ag
   return fetchJSON<CertificatesResponse>(url.toString())
 }
 
-export function getCertificate(id: number): Promise<CertificateDetailResponse> {
+export function getCertificate(id: string): Promise<CertificateDetailResponse> {
   return fetchJSON<CertificateDetailResponse>(`${API_BASE}/certificates/${id}`)
 }
 
@@ -124,7 +124,7 @@ export function createCertificate(data: CreateCertificateInput): Promise<Certifi
   })
 }
 
-export function updateCertificate(id: number, data: UpdateCertificateInput): Promise<{ certificate: CertMonitor }> {
+export function updateCertificate(id: string, data: UpdateCertificateInput): Promise<{ certificate: CertMonitor }> {
   return fetchJSON<{ certificate: CertMonitor }>(`${API_BASE}/certificates/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -132,11 +132,11 @@ export function updateCertificate(id: number, data: UpdateCertificateInput): Pro
   })
 }
 
-export function deleteCertificate(id: number): Promise<void> {
+export function deleteCertificate(id: string): Promise<void> {
   return fetchJSON<void>(`${API_BASE}/certificates/${id}`, { method: 'DELETE' })
 }
 
-export function listChecks(id: number, params?: { limit?: number; offset?: number }): Promise<ChecksResponse> {
+export function listChecks(id: string, params?: { limit?: number; offset?: number }): Promise<ChecksResponse> {
   const url = new URL(`${API_BASE}/certificates/${id}/checks`, window.location.origin)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   if (params?.offset) url.searchParams.set('offset', String(params.offset))

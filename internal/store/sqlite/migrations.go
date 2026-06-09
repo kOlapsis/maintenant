@@ -12,6 +12,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -75,17 +76,21 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 
 	// Apply all pending migrations
 	err = m.Up()
-	if errors.Is(err, migrate.ErrNoChange) {
-		logger.Info("database migration", "status", "no pending migrations")
-		return nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
+	if errors.Is(err, migrate.ErrNoChange) {
+		logger.Info("database migration", "status", "no pending migrations")
+	} else {
+		newVersion, _, _ := m.Version()
+		logger.Info("database migration", "status", "migrations applied", "new_version", newVersion)
+	}
 
-	// Log the new version after applying
-	newVersion, _, _ := m.Version()
-	logger.Info("database migration", "status", "migrations applied", "new_version", newVersion)
+	// One-time, in-place conversion of the integer-keyed schema to the
+	// UUID-native schema. Guarded by the schema_meta marker it creates.
+	if err := convertToUUID(context.Background(), db, logger); err != nil {
+		return fmt.Errorf("uuid conversion: %w", err)
+	}
 
 	return nil
 }

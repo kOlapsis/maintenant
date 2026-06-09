@@ -16,7 +16,7 @@ import { ref } from 'vue'
 import { X, ChevronDown } from 'lucide-vue-next'
 
 export interface IncidentTimelineEntry {
-  id: number
+  id: string
   monitorType: string
   monitorName: string
   severity: 'critical' | 'warning' | 'info'
@@ -30,7 +30,7 @@ defineProps<{
 }>()
 
 const dismissed = ref(false)
-const expandedId = ref<number | null>(null)
+const expandedId = ref<string | null>(null)
 
 const severityDotClasses: Record<string, string> = {
   critical: 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]',
@@ -46,7 +46,7 @@ const severityBorderClasses: Record<string, string> = {
 
 const timelineSteps = ['detected', 'alerted', 'acknowledged', 'resolved']
 
-function toggleExpand(id: number) {
+function toggleExpand(id: string) {
   expandedId.value = expandedId.value === id ? null : id
 }
 

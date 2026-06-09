@@ -82,7 +82,7 @@ type listEscalationPoliciesInput struct {
 }
 
 type getEscalationPolicyInput struct {
-	ID int64 `json:"id" jsonschema:"Policy ID"`
+	ID string `json:"id" jsonschema:"Policy ID"`
 }
 
 type createEscalationPolicyInput struct {
@@ -100,28 +100,28 @@ type escalationFiltersInput struct {
 
 type escalationScopeInput struct {
 	Kind  string `json:"kind" jsonschema:"Scope kind: container, endpoint, heartbeat, certificate, monitor"`
-	RefID int64  `json:"ref_id" jsonschema:"Referenced entity ID"`
+	RefID string `json:"ref_id" jsonschema:"Referenced entity ID"`
 }
 
 type escalationLevelInput struct {
-	DelaySeconds int     `json:"delay_seconds" jsonschema:"Delay in seconds (60-86400)"`
-	ChannelIDs   []int64 `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
+	DelaySeconds int      `json:"delay_seconds" jsonschema:"Delay in seconds (60-86400)"`
+	ChannelIDs   []string `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
 }
 
 type deleteEscalationPolicyInput struct {
-	ID int64 `json:"id" jsonschema:"Policy ID to delete"`
+	ID string `json:"id" jsonschema:"Policy ID to delete"`
 }
 
 type listAlertEscalationRunsInput struct {
-	AlertID int64 `json:"alert_id" jsonschema:"Alert ID"`
+	AlertID string `json:"alert_id" jsonschema:"Alert ID"`
 }
 
 type getEscalationRunInput struct {
-	ID int64 `json:"id" jsonschema:"Run ID"`
+	ID string `json:"id" jsonschema:"Run ID"`
 }
 
 type updateEscalationPolicyInput struct {
-	ID      int64                  `json:"id" jsonschema:"Policy ID to update"`
+	ID      string                 `json:"id" jsonschema:"Policy ID to update"`
 	Name    string                 `json:"name" jsonschema:"Policy name (1-120 chars)"`
 	Active  bool                   `json:"active" jsonschema:"Whether the policy is active"`
 	Filters escalationFiltersInput `json:"filters" jsonschema:"Alert matching filters"`
@@ -129,8 +129,8 @@ type updateEscalationPolicyInput struct {
 }
 
 type setEscalationPolicyActiveInput struct {
-	ID     int64 `json:"id" jsonschema:"Policy ID"`
-	Active bool  `json:"active" jsonschema:"New active status"`
+	ID     string `json:"id" jsonschema:"Policy ID"`
+	Active bool   `json:"active" jsonschema:"New active status"`
 }
 
 // --- edition check helper ---

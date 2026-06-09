@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ContainerNameLister lists container names in a K8s workload pod spec.
@@ -27,7 +28,7 @@ type ContainerNameLister interface {
 
 // SecurityInsightProvider provides security insight counts for containers.
 type SecurityInsightProvider interface {
-	InsightCount(containerID int64) (int, string)
+	InsightCount(containerID string) (int, string)
 }
 
 // RuntimeChecker reports whether the container runtime is currently connected.
@@ -103,6 +104,12 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		opts.StateFilter = s
 	}
 	if a := r.URL.Query().Get("agent_id"); a != "" {
+		// The container store matches agent_id verbatim, so resolve the "local"
+		// alias to the sentinel id here (unlike the cert/endpoint/heartbeat
+		// stores, which special-case "local" internally).
+		if a == "local" {
+			a = uid.LocalAgent
+		}
 		opts.AgentFilter = &a
 	}
 
@@ -151,8 +158,8 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 					ec.SecurityHighestSeverity = &sev
 				}
 			}
-			if c.AgentID != nil && agentNames != nil {
-				if an, ok := agentNames[*c.AgentID]; ok {
+			if c.AgentID != "" && c.AgentID != uid.LocalAgent && agentNames != nil {
+				if an, ok := agentNames[c.AgentID]; ok {
 					hostname, label := an.Hostname, an.Label
 					ec.AgentHostname = &hostname
 					if label != "" {
@@ -178,10 +185,9 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /api/v1/containers/{id}.
 func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
@@ -248,10 +254,9 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 // HandleTransitions handles GET /api/v1/containers/{id}/transitions.
 func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
@@ -309,10 +314,9 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 // HandleDelete handles DELETE /api/v1/containers/{id}.
 // Only allows deletion of non-running containers.
 func (h *ContainerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
@@ -346,10 +350,9 @@ type LogFetcher interface {
 
 // HandleLogs handles GET /api/v1/containers/{id}/logs.
 func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 

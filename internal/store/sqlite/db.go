@@ -28,6 +28,12 @@ type DB struct {
 }
 
 // Open creates and configures a SQLite database connection with WAL mode.
+//
+// This is the only SQLite-specific seam: the schema (uuid_schema.sql) and all
+// queries use the portable common subset (TEXT/BIGINT/INTEGER/REAL/BLOB ids and
+// timestamps, ON CONFLICT upserts, `?` placeholders, no AUTOINCREMENT/PRAGMA).
+// A Postgres backend is a drop-in: its own Open (pgx DSN), a `?`→`$n` placeholder
+// rewrite, and a Postgres migrations dir — no schema or query changes.
 func Open(dbPath string, logger *slog.Logger) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=-8000&_foreign_keys=ON", dbPath)
 

@@ -154,11 +154,11 @@ func (s *Service) Start(ctx context.Context) {
 // TriggerScan starts an immediate scan. Returns the scan ID.
 // The scan runs with the application-scoped context (not the HTTP request context),
 // so it survives after the triggering request completes.
-func (s *Service) TriggerScan(_ context.Context) (int64, error) {
+func (s *Service) TriggerScan(_ context.Context) (string, error) {
 	s.mu.RLock()
 	if s.scanning {
 		s.mu.RUnlock()
-		return 0, fmt.Errorf("scan already in progress")
+		return "", fmt.Errorf("scan already in progress")
 	}
 	s.mu.RUnlock()
 
@@ -167,7 +167,7 @@ func (s *Service) TriggerScan(_ context.Context) (int64, error) {
 		ctx = context.Background()
 	}
 	go s.runScan(ctx)
-	return 0, nil
+	return "", nil
 }
 
 // GetLastScanTime returns when the last scan completed.
@@ -484,7 +484,7 @@ func (s *Service) emitEvent(eventType string, data interface{}) {
 }
 
 // GetScanRecord returns a scan record by ID.
-func (s *Service) GetScanRecord(ctx context.Context, id int64) (*ScanRecord, error) {
+func (s *Service) GetScanRecord(ctx context.Context, id string) (*ScanRecord, error) {
 	return s.store.GetScanRecord(ctx, id)
 }
 

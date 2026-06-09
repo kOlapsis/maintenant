@@ -92,7 +92,7 @@ func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *Maintenan
 	s.logger.Info("activating maintenance window", "id", mw.ID, "title", mw.Title)
 
 	// Create maintenance incident
-	compIDs := make([]int64, 0, len(mw.Components))
+	compIDs := make([]string, 0, len(mw.Components))
 	compNames := make([]string, 0, len(mw.Components))
 	for _, c := range mw.Components {
 		compIDs = append(compIDs, c.ID)

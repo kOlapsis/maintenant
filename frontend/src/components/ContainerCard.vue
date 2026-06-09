@@ -13,6 +13,7 @@
 
 <script setup lang="ts">
 import type {Container} from '@/services/containerApi'
+import {isLocalAgent} from '@/services/apiFetch'
 import {useResourcesStore} from '@/stores/resources'
 import {useUpdatesStore} from '@/stores/updates'
 import {usePostureStore} from '@/stores/posture'
@@ -42,7 +43,7 @@ const { hasFeature } = useEdition()
 
 // Only surface the host badge when more than one host is present — otherwise
 // it is the same value on every card and adds nothing.
-const showHostBadge = computed(() => !!props.container.agent_id && containersStore.hostCount > 1)
+const showHostBadge = computed(() => !isLocalAgent(props.container.agent_id) && containersStore.hostCount > 1)
 
 const metrics = computed(() => resourcesStore.formattedSnapshot(props.container.id))
 const containerUpdate = computed(() => updatesStore.updates.find(u => u.container_id === props.container.external_id) ?? null)

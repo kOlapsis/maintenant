@@ -46,9 +46,9 @@ const (
 
 // Container represents a discovered container/workload tracked by maintenant.
 type Container struct {
-	ID                   int64          `json:"id"`
+	ID                   string         `json:"id"`
 	ExternalID           string         `json:"external_id"`
-	AgentID              *string        `json:"agent_id,omitempty"`
+	AgentID              string         `json:"agent_id"`
 	Name                 string         `json:"name"`
 	Image                string         `json:"image"`
 	State                ContainerState `json:"state"`
@@ -82,8 +82,8 @@ type Container struct {
 
 // StateTransition records a container state change event.
 type StateTransition struct {
-	ID             int64          `json:"id"`
-	ContainerID    int64          `json:"container_id"`
+	ID             string         `json:"id"`
+	ContainerID    string         `json:"container_id"`
 	PreviousState  ContainerState `json:"previous_state"`
 	NewState       ContainerState `json:"new_state"`
 	PreviousHealth *HealthStatus  `json:"previous_health,omitempty"`

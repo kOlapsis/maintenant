@@ -83,7 +83,7 @@ func WorstStatus(a, b string) string {
 
 // wireStatusProvider sets up the monitor status provider for the status page.
 func (a *App) wireStatusProvider() {
-	a.statusSvc.SetMonitorStatusProvider(func(ctx context.Context, monitorType string, monitorID int64) string {
+	a.statusSvc.SetMonitorStatusProvider(func(ctx context.Context, monitorType string, monitorID string) string {
 		switch monitorType {
 		case "container":
 			c, err := a.containerSvc.GetContainer(ctx, monitorID)
@@ -168,7 +168,7 @@ func (a *App) wireMonitorPopulationProvider() {
 
 // wireMonitorNameProvider sets up the monitor name provider for enriching monitor refs.
 func (a *App) wireMonitorNameProvider() {
-	a.statusSvc.SetMonitorNameProvider(func(ctx context.Context, monitorType string, monitorID int64) string {
+	a.statusSvc.SetMonitorNameProvider(func(ctx context.Context, monitorType string, monitorID string) string {
 		switch monitorType {
 		case "container":
 			c, err := a.containerSvc.GetContainer(ctx, monitorID)

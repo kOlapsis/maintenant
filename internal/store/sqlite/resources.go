@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/resource"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ResourceStore implements resource.ResourceStore using SQLite.
@@ -35,31 +36,31 @@ func NewResourceStore(d *DB) *ResourceStore {
 	}
 }
 
-func (s *ResourceStore) InsertSnapshot(ctx context.Context, snap *resource.ResourceSnapshot) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO resource_snapshots (container_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp, agent_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		snap.ContainerID, snap.CPUPercent, snap.MemUsed, snap.MemLimit,
+func (s *ResourceStore) InsertSnapshot(ctx context.Context, snap *resource.ResourceSnapshot) (string, error) {
+	snap.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO resource_snapshots (id, container_id, agent_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		snap.ID, snap.ContainerID, uid.Agent(snap.AgentID), snap.CPUPercent, snap.MemUsed, snap.MemLimit,
 		snap.NetRxBytes, snap.NetTxBytes, snap.BlockReadBytes, snap.BlockWriteBytes,
-		snap.Timestamp.Unix(), snap.AgentID,
+		snap.Timestamp.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert resource snapshot: %w", err)
+		return "", fmt.Errorf("insert resource snapshot: %w", err)
 	}
-	snap.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return snap.ID, nil
 }
 
-func (s *ResourceStore) GetLatestSnapshot(ctx context.Context, containerID int64) (*resource.ResourceSnapshot, error) {
+func (s *ResourceStore) GetLatestSnapshot(ctx context.Context, containerID string) (*resource.ResourceSnapshot, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, container_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp
+		`SELECT id, container_id, agent_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp
 		FROM resource_snapshots WHERE container_id = ? ORDER BY timestamp DESC LIMIT 1`, containerID)
 	return scanSnapshot(row)
 }
 
-func (s *ResourceStore) ListSnapshots(ctx context.Context, containerID int64, from, to time.Time) ([]*resource.ResourceSnapshot, error) {
+func (s *ResourceStore) ListSnapshots(ctx context.Context, containerID string, from, to time.Time) ([]*resource.ResourceSnapshot, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, container_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp
+		`SELECT id, container_id, agent_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp
 		FROM resource_snapshots WHERE container_id = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp`,
 		containerID, from.Unix(), to.Unix())
 	if err != nil {
@@ -71,14 +72,14 @@ func (s *ResourceStore) ListSnapshots(ctx context.Context, containerID int64, fr
 	return collectSnapshots(rows)
 }
 
-func (s *ResourceStore) ListSnapshotsAggregated(ctx context.Context, containerID int64, from, to time.Time, granularity resource.Granularity) ([]*resource.ResourceSnapshot, error) {
+func (s *ResourceStore) ListSnapshotsAggregated(ctx context.Context, containerID string, from, to time.Time, granularity resource.Granularity) ([]*resource.ResourceSnapshot, error) {
 	if granularity == resource.GranularityRaw {
 		return s.ListSnapshots(ctx, containerID, from, to)
 	}
 
 	bucketSec := granularityToSeconds(granularity)
 	rows, err := s.db.QueryContext(ctx,
-		fmt.Sprintf(`SELECT 0 AS id, container_id,
+		fmt.Sprintf(`SELECT '' AS id, container_id, MAX(agent_id) AS agent_id,
 			AVG(cpu_percent), CAST(AVG(mem_used) AS INTEGER), CAST(AVG(mem_limit) AS INTEGER),
 			CAST(AVG(net_rx_bytes) AS INTEGER), CAST(AVG(net_tx_bytes) AS INTEGER),
 			CAST(AVG(block_read_bytes) AS INTEGER), CAST(AVG(block_write_bytes) AS INTEGER),
@@ -97,7 +98,7 @@ func (s *ResourceStore) ListSnapshotsAggregated(ctx context.Context, containerID
 	return collectSnapshots(rows)
 }
 
-func (s *ResourceStore) GetAlertConfig(ctx context.Context, containerID int64) (*resource.ResourceAlertConfig, error) {
+func (s *ResourceStore) GetAlertConfig(ctx context.Context, containerID string) (*resource.ResourceAlertConfig, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, container_id, cpu_threshold, mem_threshold, enabled, alert_state,
 			cpu_consecutive_breaches, mem_consecutive_breaches, last_alerted_at, created_at, updated_at
@@ -113,16 +114,16 @@ func (s *ResourceStore) UpsertAlertConfig(ctx context.Context, cfg *resource.Res
 		lastAlerted = &v
 	}
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO resource_alert_configs (container_id, cpu_threshold, mem_threshold, enabled, alert_state,
+		`INSERT INTO resource_alert_configs (id, container_id, cpu_threshold, mem_threshold, enabled, alert_state,
 			cpu_consecutive_breaches, mem_consecutive_breaches, last_alerted_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(container_id) DO UPDATE SET
 			cpu_threshold=excluded.cpu_threshold, mem_threshold=excluded.mem_threshold,
 			enabled=excluded.enabled, alert_state=excluded.alert_state,
 			cpu_consecutive_breaches=excluded.cpu_consecutive_breaches,
 			mem_consecutive_breaches=excluded.mem_consecutive_breaches,
 			last_alerted_at=excluded.last_alerted_at, updated_at=excluded.updated_at`,
-		cfg.ContainerID, cfg.CPUThreshold, cfg.MemThreshold,
+		uid.New(), cfg.ContainerID, cfg.CPUThreshold, cfg.MemThreshold,
 		boolToInt(cfg.Enabled), string(cfg.AlertState),
 		cfg.CPUConsecutiveBreaches, cfg.MemConsecutiveBreaches,
 		lastAlerted, now, now,
@@ -151,7 +152,7 @@ type resourceRowScanner interface {
 func scanSnapshot(row resourceRowScanner) (*resource.ResourceSnapshot, error) {
 	var s resource.ResourceSnapshot
 	var ts int64
-	err := row.Scan(&s.ID, &s.ContainerID, &s.CPUPercent, &s.MemUsed, &s.MemLimit,
+	err := row.Scan(&s.ID, &s.ContainerID, &s.AgentID, &s.CPUPercent, &s.MemUsed, &s.MemLimit,
 		&s.NetRxBytes, &s.NetTxBytes, &s.BlockReadBytes, &s.BlockWriteBytes, &ts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -203,9 +204,13 @@ func scanAlertConfig(row resourceRowScanner) (*resource.ResourceAlertConfig, err
 
 func (s *ResourceStore) InsertHourlyRollup(ctx context.Context, r *resource.RollupRow) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT OR REPLACE INTO resource_hourly (container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ContainerID, r.Bucket.Unix(), r.AvgCPUPercent, r.AvgMemUsed, r.AvgMemLimit, r.AvgNetRx, r.AvgNetTx, r.SampleCount,
+		`INSERT INTO resource_hourly (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(container_id, bucket) DO UPDATE SET
+			avg_cpu_percent=excluded.avg_cpu_percent, avg_mem_used=excluded.avg_mem_used,
+			avg_mem_limit=excluded.avg_mem_limit, avg_net_rx_bytes=excluded.avg_net_rx_bytes,
+			avg_net_tx_bytes=excluded.avg_net_tx_bytes, sample_count=excluded.sample_count`,
+		uid.New(), r.ContainerID, r.Bucket.Unix(), r.AvgCPUPercent, r.AvgMemUsed, r.AvgMemLimit, r.AvgNetRx, r.AvgNetTx, r.SampleCount,
 	)
 	if err != nil {
 		return fmt.Errorf("insert hourly rollup: %w", err)
@@ -215,9 +220,13 @@ func (s *ResourceStore) InsertHourlyRollup(ctx context.Context, r *resource.Roll
 
 func (s *ResourceStore) InsertDailyRollup(ctx context.Context, r *resource.RollupRow) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT OR REPLACE INTO resource_daily (container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ContainerID, r.Bucket.Unix(), r.AvgCPUPercent, r.AvgMemUsed, r.AvgMemLimit, r.AvgNetRx, r.AvgNetTx, r.SampleCount,
+		`INSERT INTO resource_daily (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(container_id, bucket) DO UPDATE SET
+			avg_cpu_percent=excluded.avg_cpu_percent, avg_mem_used=excluded.avg_mem_used,
+			avg_mem_limit=excluded.avg_mem_limit, avg_net_rx_bytes=excluded.avg_net_rx_bytes,
+			avg_net_tx_bytes=excluded.avg_net_tx_bytes, sample_count=excluded.sample_count`,
+		uid.New(), r.ContainerID, r.Bucket.Unix(), r.AvgCPUPercent, r.AvgMemUsed, r.AvgMemLimit, r.AvgNetRx, r.AvgNetTx, r.SampleCount,
 	)
 	if err != nil {
 		return fmt.Errorf("insert daily rollup: %w", err)
@@ -227,7 +236,7 @@ func (s *ResourceStore) InsertDailyRollup(ctx context.Context, r *resource.Rollu
 
 // GetTopConsumersByPeriod ranks containers by average resource usage over a
 // period. agentID filters by host: nil = all hosts, a pointer to "" = the local
-// server (containers with NULL agent_id), a pointer to an id = that agent.
+// server (containers owned by the LocalAgent sentinel), a pointer to an id = that agent.
 func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string) ([]resource.TopConsumerRow, error) {
 	now := time.Now()
 
@@ -273,12 +282,8 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 	args := []any{from}
 	hostClause := ""
 	if agentID != nil {
-		if *agentID == "" {
-			hostClause = " AND container_id IN (SELECT id FROM containers WHERE agent_id IS NULL)"
-		} else {
-			hostClause = " AND container_id IN (SELECT id FROM containers WHERE agent_id = ?)"
-			args = append(args, *agentID)
-		}
+		hostClause = " AND container_id IN (SELECT id FROM containers WHERE agent_id = ?)"
+		args = append(args, uid.Agent(*agentID))
 	}
 	args = append(args, limit)
 
@@ -309,14 +314,18 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 
 func (s *ResourceStore) AggregateHourlyRollup(ctx context.Context, bucketStart, bucketEnd time.Time) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT OR REPLACE INTO resource_hourly (container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
-		SELECT container_id, ? AS bucket,
+		`INSERT INTO resource_hourly (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
+		SELECT `+rollupRowID+`, container_id, ? AS bucket,
 			AVG(cpu_percent), CAST(AVG(mem_used) AS INTEGER), CAST(AVG(mem_limit) AS INTEGER),
 			CAST(AVG(net_rx_bytes) AS INTEGER), CAST(AVG(net_tx_bytes) AS INTEGER),
 			COUNT(*)
 		FROM resource_snapshots
 		WHERE timestamp >= ? AND timestamp < ?
-		GROUP BY container_id`,
+		GROUP BY container_id
+		ON CONFLICT(container_id, bucket) DO UPDATE SET
+			avg_cpu_percent=excluded.avg_cpu_percent, avg_mem_used=excluded.avg_mem_used,
+			avg_mem_limit=excluded.avg_mem_limit, avg_net_rx_bytes=excluded.avg_net_rx_bytes,
+			avg_net_tx_bytes=excluded.avg_net_tx_bytes, sample_count=excluded.sample_count`,
 		bucketStart.Unix(), bucketStart.Unix(), bucketEnd.Unix(),
 	)
 	if err != nil {
@@ -327,14 +336,18 @@ func (s *ResourceStore) AggregateHourlyRollup(ctx context.Context, bucketStart, 
 
 func (s *ResourceStore) AggregateDailyRollup(ctx context.Context, bucketStart, bucketEnd time.Time) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT OR REPLACE INTO resource_daily (container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
-		SELECT container_id, ? AS bucket,
+		`INSERT INTO resource_daily (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
+		SELECT `+rollupRowID+`, container_id, ? AS bucket,
 			AVG(avg_cpu_percent), CAST(AVG(avg_mem_used) AS INTEGER), CAST(AVG(avg_mem_limit) AS INTEGER),
 			CAST(AVG(avg_net_rx_bytes) AS INTEGER), CAST(AVG(avg_net_tx_bytes) AS INTEGER),
 			SUM(sample_count)
 		FROM resource_hourly
 		WHERE bucket >= ? AND bucket < ?
-		GROUP BY container_id`,
+		GROUP BY container_id
+		ON CONFLICT(container_id, bucket) DO UPDATE SET
+			avg_cpu_percent=excluded.avg_cpu_percent, avg_mem_used=excluded.avg_mem_used,
+			avg_mem_limit=excluded.avg_mem_limit, avg_net_rx_bytes=excluded.avg_net_rx_bytes,
+			avg_net_tx_bytes=excluded.avg_net_tx_bytes, sample_count=excluded.sample_count`,
 		bucketStart.Unix(), bucketStart.Unix(), bucketEnd.Unix(),
 	)
 	if err != nil {
@@ -342,6 +355,15 @@ func (s *ResourceStore) AggregateDailyRollup(ctx context.Context, bucketStart, b
 	}
 	return nil
 }
+
+// rollupRowID generates a unique, well-formed UUID string per aggregated row.
+// Set-based INSERT...SELECT cannot mint ids in Go, so the PK is built in SQL
+// from randomblob bytes; only the INSERT branch uses it (the DO UPDATE path
+// keeps the existing row's id).
+const rollupRowID = `lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-' || ` +
+	`'7' || substr(lower(hex(randomblob(2))), 2) || '-' || ` +
+	`substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' || ` +
+	`lower(hex(randomblob(6)))`
 
 func (s *ResourceStore) DeleteHourlyBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
 	res, err := s.writer.Exec(ctx,

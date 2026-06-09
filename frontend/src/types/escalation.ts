@@ -11,7 +11,7 @@
 
 export interface EscalationScope {
   kind: 'container' | 'endpoint' | 'heartbeat' | 'certificate' | 'monitor'
-  ref_id: number
+  ref_id: string
 }
 
 export interface EscalationFilters {
@@ -23,11 +23,11 @@ export interface EscalationFilters {
 export interface EscalationLevel {
   order: number
   delay_seconds: number
-  channel_ids: number[]
+  channel_ids: string[]
 }
 
 export interface EscalationPolicy {
-  id: number
+  id: string
   name: string
   active: boolean
   filters: EscalationFilters
@@ -43,10 +43,10 @@ export interface EscalationLimits {
 }
 
 export interface EscalationRun {
-  id: number
-  policy_id: number | null
-  policy: { id: number | null; name: string } | null
-  alert_id: number
+  id: string
+  policy_id: string | null
+  policy: { id: string | null; name: string } | null
+  alert_id: string
   status: string
   last_executed_level_index: number
   started_at: string
@@ -60,10 +60,10 @@ export interface EscalationRun {
 }
 
 export interface EscalationDelivery {
-  id: number
-  run_id: number
+  id: string
+  run_id: string
   level_index: number
-  channel_id: number | null
+  channel_id: string | null
   channel_name?: string
   status: string
   error?: string
@@ -75,11 +75,11 @@ export interface PolicyRequest {
   name: string
   active: boolean
   filters: EscalationFilters
-  levels: Array<{ delay_seconds: number; channel_ids: number[] }>
+  levels: Array<{ delay_seconds: number; channel_ids: string[] }>
 }
 
 export interface OverlapWarning {
-  policy_id: number
+  policy_id: string
   policy_name: string
   shared_channels: number[]
   filter_intersection: string

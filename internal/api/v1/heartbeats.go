@@ -60,8 +60,8 @@ func (h *HeartbeatHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /api/v1/heartbeats/{id}
 func (h *HeartbeatHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -83,7 +83,7 @@ func (h *HeartbeatHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	// Include snippets
 	baseURL := h.svc.BaseURL()
 	if baseURL != "" {
-		response["snippets"] = heartbeat.GenerateSnippets(baseURL, hb.UUID)
+		response["snippets"] = heartbeat.GenerateSnippets(baseURL, hb.ID)
 	}
 
 	WriteJSON(w, http.StatusOK, response)
@@ -119,8 +119,8 @@ func (h *HeartbeatHandler) HandleCreate(w http.ResponseWriter, r *http.Request) 
 
 // HandleUpdate handles PUT /api/v1/heartbeats/{id}
 func (h *HeartbeatHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -150,8 +150,8 @@ func (h *HeartbeatHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) 
 
 // HandleDelete handles DELETE /api/v1/heartbeats/{id}
 func (h *HeartbeatHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -170,8 +170,8 @@ func (h *HeartbeatHandler) HandleDelete(w http.ResponseWriter, r *http.Request) 
 
 // HandlePause handles POST /api/v1/heartbeats/{id}/pause
 func (h *HeartbeatHandler) HandlePause(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -191,8 +191,8 @@ func (h *HeartbeatHandler) HandlePause(w http.ResponseWriter, r *http.Request) {
 
 // HandleResume handles POST /api/v1/heartbeats/{id}/resume
 func (h *HeartbeatHandler) HandleResume(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -216,8 +216,8 @@ func (h *HeartbeatHandler) HandleResume(w http.ResponseWriter, r *http.Request) 
 
 // HandleListExecutions handles GET /api/v1/heartbeats/{id}/executions
 func (h *HeartbeatHandler) HandleListExecutions(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -265,8 +265,8 @@ type EnrichedPing struct {
 
 // HandleListPings handles GET /api/v1/heartbeats/{id}/pings
 func (h *HeartbeatHandler) HandleListPings(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}

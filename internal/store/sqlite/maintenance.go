@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // MaintenanceStoreImpl implements status.MaintenanceStore using SQLite.
@@ -71,10 +72,10 @@ func (s *MaintenanceStoreImpl) ListMaintenance(ctx context.Context, statusFilter
 	return s.scanMaintenanceWindows(ctx, rows)
 }
 
-func (s *MaintenanceStoreImpl) GetMaintenance(ctx context.Context, id int64) (*status.MaintenanceWindow, error) {
+func (s *MaintenanceStoreImpl) GetMaintenance(ctx context.Context, id string) (*status.MaintenanceWindow, error) {
 	var mw status.MaintenanceWindow
 	var active int
-	var incidentID sql.NullInt64
+	var incidentID sql.NullString
 	var startsAt, endsAt, createdAt, updatedAt int64
 
 	err := s.db.QueryRowContext(ctx,
@@ -91,7 +92,7 @@ func (s *MaintenanceStoreImpl) GetMaintenance(ctx context.Context, id int64) (*s
 
 	mw.Active = active != 0
 	if incidentID.Valid {
-		mw.IncidentID = &incidentID.Int64
+		mw.IncidentID = &incidentID.String
 	}
 	mw.StartsAt = time.Unix(startsAt, 0).UTC()
 	mw.EndsAt = time.Unix(endsAt, 0).UTC()
@@ -104,17 +105,17 @@ func (s *MaintenanceStoreImpl) GetMaintenance(ctx context.Context, id int64) (*s
 	return &mw, nil
 }
 
-func (s *MaintenanceStoreImpl) CreateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []int64) (int64, error) {
+func (s *MaintenanceStoreImpl) CreateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []string) (string, error) {
 	now := time.Now().Unix()
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO maintenance_windows (title, description, starts_at, ends_at, active, incident_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 0, NULL, ?, ?)`,
-		mw.Title, mw.Description, mw.StartsAt.Unix(), mw.EndsAt.Unix(), now, now,
+	mw.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO maintenance_windows (id, title, description, starts_at, ends_at, active, incident_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?)`,
+		mw.ID, mw.Title, mw.Description, mw.StartsAt.Unix(), mw.EndsAt.Unix(), now, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("create maintenance: %w", err)
+		return "", fmt.Errorf("create maintenance: %w", err)
 	}
-	mw.ID = res.LastInsertID
 	mw.CreatedAt = time.Unix(now, 0).UTC()
 	mw.UpdatedAt = mw.CreatedAt
 
@@ -123,14 +124,14 @@ func (s *MaintenanceStoreImpl) CreateMaintenance(ctx context.Context, mw *status
 			`INSERT INTO maintenance_components (maintenance_id, component_id) VALUES (?, ?)`,
 			mw.ID, cid,
 		); err != nil {
-			return 0, fmt.Errorf("link maintenance component: %w", err)
+			return "", fmt.Errorf("link maintenance component: %w", err)
 		}
 	}
 
 	return mw.ID, nil
 }
 
-func (s *MaintenanceStoreImpl) UpdateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []int64) error {
+func (s *MaintenanceStoreImpl) UpdateMaintenance(ctx context.Context, mw *status.MaintenanceWindow, componentIDs []string) error {
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`UPDATE maintenance_windows SET title = ?, description = ?, starts_at = ?, ends_at = ?, updated_at = ?
@@ -161,7 +162,7 @@ func (s *MaintenanceStoreImpl) UpdateMaintenance(ctx context.Context, mw *status
 	return nil
 }
 
-func (s *MaintenanceStoreImpl) DeleteMaintenance(ctx context.Context, id int64) error {
+func (s *MaintenanceStoreImpl) DeleteMaintenance(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx, `DELETE FROM maintenance_windows WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete maintenance: %w", err)
@@ -197,7 +198,7 @@ func (s *MaintenanceStoreImpl) GetPendingDeactivation(ctx context.Context, now i
 	return s.scanMaintenanceWindows(ctx, rows)
 }
 
-func (s *MaintenanceStoreImpl) SetActive(ctx context.Context, id int64, active bool, incidentID *int64) error {
+func (s *MaintenanceStoreImpl) SetActive(ctx context.Context, id string, active bool, incidentID *string) error {
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`UPDATE maintenance_windows SET active = ?, incident_id = ?, updated_at = ? WHERE id = ?`,
@@ -216,7 +217,7 @@ func (s *MaintenanceStoreImpl) scanMaintenanceWindows(ctx context.Context, rows 
 	for rows.Next() {
 		var mw status.MaintenanceWindow
 		var active int
-		var incidentID sql.NullInt64
+		var incidentID sql.NullString
 		var startsAt, endsAt, createdAt, updatedAt int64
 
 		if err := rows.Scan(&mw.ID, &mw.Title, &mw.Description,
@@ -227,7 +228,7 @@ func (s *MaintenanceStoreImpl) scanMaintenanceWindows(ctx context.Context, rows 
 
 		mw.Active = active != 0
 		if incidentID.Valid {
-			mw.IncidentID = &incidentID.Int64
+			mw.IncidentID = &incidentID.String
 		}
 		mw.StartsAt = time.Unix(startsAt, 0).UTC()
 		mw.EndsAt = time.Unix(endsAt, 0).UTC()
@@ -268,8 +269,8 @@ func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw
 // means starts_at ≤ now < ends_at regardless of the window's `active` flag (which
 // controls Status Page display, not suppressor logic).
 func (s *MaintenanceStoreImpl) IsEntitySuppressed(
-	ctx context.Context, monitorType string, monitorID int64, now time.Time,
-) (matched bool, windowID int64, endsAt time.Time, err error) {
+	ctx context.Context, monitorType string, monitorID string, now time.Time,
+) (matched bool, windowID string, endsAt time.Time, err error) {
 	const q = `
 SELECT mw.id, mw.ends_at
 FROM maintenance_windows mw
@@ -297,10 +298,10 @@ LIMIT 1`
 	).Scan(&windowID, &endsAtUnix)
 
 	if errors.Is(scanErr, sql.ErrNoRows) {
-		return false, 0, time.Time{}, nil
+		return false, "", time.Time{}, nil
 	}
 	if scanErr != nil {
-		return false, 0, time.Time{}, fmt.Errorf("maintenance: scan suppressed entity: %w", scanErr)
+		return false, "", time.Time{}, fmt.Errorf("maintenance: scan suppressed entity: %w", scanErr)
 	}
 	return true, windowID, time.Unix(endsAtUnix, 0), nil
 }

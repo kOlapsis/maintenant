@@ -16,11 +16,13 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // HandleAgentEvent records a resource sample pushed by a remote agent.
-// The container is looked up by its Docker external_id so we can obtain
-// the internal container_id FK required by the resource_snapshots table.
+// The container must already exist (verified via external_id lookup, so an
+// orphan FK is never written); its id is the deterministic uid.Container of the
+// reporting agent and the Docker external_id, identical to what the agent mints.
 func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample) error {
 	containerExternalID := ev.GetContainerId()
 	if containerExternalID == "" {
@@ -44,7 +46,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	snap := &ResourceSnapshot{
-		ContainerID:     c.ID,
+		ContainerID:     uid.Container(uid.Agent(agentID), containerExternalID),
 		CPUPercent:      ev.GetCpuPercent(),
 		MemUsed:         int64(ev.GetMemoryBytes()),
 		MemLimit:        int64(ev.GetMemoryLimitBytes()),
@@ -53,7 +55,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		BlockReadBytes:  int64(ev.GetDiskReadBytes()),
 		BlockWriteBytes: int64(ev.GetDiskWriteBytes()),
 		Timestamp:       time.Now(),
-		AgentID:         &agentID,
+		AgentID:         uid.Agent(agentID),
 	}
 
 	s.processSnapshot(snap)

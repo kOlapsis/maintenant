@@ -13,13 +13,12 @@ package v1
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 )
 
 // SparklineDataFetcher abstracts the endpoint store for sparkline data.
 type SparklineDataFetcher interface {
-	GetSparklineData(ctx context.Context, limit int) (map[int64][]float64, error)
+	GetSparklineData(ctx context.Context, limit int) (map[string][]float64, error)
 }
 
 // SparklineHandler handles the batch sparkline endpoint.
@@ -42,7 +41,7 @@ func (h *SparklineHandler) HandleGetSparklines(w http.ResponseWriter, r *http.Re
 
 	result := make(map[string][]float64, len(data))
 	for epID, vals := range data {
-		result[fmt.Sprintf("endpoint:%d", epID)] = vals
+		result["endpoint:"+epID] = vals
 	}
 
 	WriteJSON(w, http.StatusOK, result)

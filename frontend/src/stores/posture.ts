@@ -26,7 +26,7 @@ import { sseBus } from '@/services/sseBus'
 export const usePostureStore = defineStore('posture', () => {
   const posture = ref<InfrastructurePosture | null>(null)
   const loading = ref(false)
-  const acknowledgments = ref<Record<number, RiskAcknowledgment[]>>({})
+  const acknowledgments = ref<Record<string, RiskAcknowledgment[]>>({})
 
   function onPostureChanged() {
     fetchPosture()
@@ -53,7 +53,7 @@ export const usePostureStore = defineStore('posture', () => {
     }
   }
 
-  async function fetchContainerScore(containerId: number): Promise<SecurityScore | null> {
+  async function fetchContainerScore(containerId: string): Promise<SecurityScore | null> {
     try {
       return await getContainerPosture(containerId)
     } catch {
@@ -61,7 +61,7 @@ export const usePostureStore = defineStore('posture', () => {
     }
   }
 
-  async function fetchAcknowledgments(containerId?: number) {
+  async function fetchAcknowledgments(containerId?: string) {
     try {
       const data = await listAcknowledgments(containerId)
       if (containerId) {
@@ -73,7 +73,7 @@ export const usePostureStore = defineStore('posture', () => {
   }
 
   async function acknowledgeRisk(body: {
-    container_id: number
+    container_id: string
     finding_type: string
     finding_key: string
     acknowledged_by: string
@@ -83,7 +83,7 @@ export const usePostureStore = defineStore('posture', () => {
     await fetchPosture()
   }
 
-  async function revokeAcknowledgment(id: number) {
+  async function revokeAcknowledgment(id: string) {
     await deleteAcknowledgment(id)
     await fetchPosture()
   }

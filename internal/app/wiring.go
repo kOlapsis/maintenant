@@ -14,7 +14,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -44,7 +43,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 
 		if eventType == "container.state_changed" || eventType == "container.health_changed" {
 			if m, ok := data.(map[string]any); ok {
-				a.statusSvc.NotifyMonitorChanged(ctx, "container", toInt64(m["id"]))
+				a.statusSvc.NotifyMonitorChanged(ctx, "container", toString(m["id"]))
 			}
 		}
 
@@ -79,14 +78,14 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					IsRecover:  true,
 					Message:    fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"])),
 					EntityType: "container",
-					EntityID:   toInt64(m["container_id"]),
+					EntityID:   toString(m["container_id"]),
 					EntityName: toString(m["container_name"]),
 					Timestamp:  time.Now(),
 				})
 			}
 		case "container.archived":
 			if m, ok := data.(map[string]any); ok {
-				cid := toInt64(m["id"])
+				cid := toString(m["id"])
 				a.alertEngine.ResolveByEntity(ctx, "container", cid)
 				if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "container", cid); err != nil {
 					a.logger.Error("failed to remove dangling container refs from status components", "container_id", cid, "error", err)
@@ -106,7 +105,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					Severity:   alert.SeverityWarning,
 					Message:    "Container became unhealthy",
 					EntityType: "container",
-					EntityID:   toInt64(m["id"]),
+					EntityID:   toString(m["id"]),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})
@@ -118,7 +117,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					IsRecover:  true,
 					Message:    "Container recovered to healthy",
 					EntityType: "container",
-					EntityID:   toInt64(m["id"]),
+					EntityID:   toString(m["id"]),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})
@@ -192,7 +191,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	})
 
 	// Endpoint removal → certificate monitor cleanup + status component dangling ref cleanup.
-	a.endpointSvc.SetEndpointRemovedCallback(func(callCtx context.Context, endpointID int64) {
+	a.endpointSvc.SetEndpointRemovedCallback(func(callCtx context.Context, endpointID string) {
 		a.certSvc.DeleteByEndpointID(callCtx, endpointID)
 		if err := a.statusCompStore.RemoveDanglingMonitorRefs(callCtx, "endpoint", endpointID); err != nil {
 			a.logger.Error("failed to remove dangling endpoint refs from status components", "endpoint_id", endpointID, "error", err)
@@ -233,7 +232,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		if eventType == event.HeartbeatDeleted {
 			if m, ok := data.(map[string]any); ok {
-				hid := toInt64(m["heartbeat_id"])
+				hid := toString(m["heartbeat_id"])
 				if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "heartbeat", hid); err != nil {
 					a.logger.Error("failed to remove dangling heartbeat refs from status components", "heartbeat_id", hid, "error", err)
 				}
@@ -250,11 +249,11 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		}
 
 		if eventType == "certificate.alert" || eventType == "certificate.recovery" {
-			a.statusSvc.NotifyMonitorChanged(ctx, "certificate", toInt64(m["monitor_id"]))
+			a.statusSvc.NotifyMonitorChanged(ctx, "certificate", toString(m["monitor_id"]))
 		}
 
 		if eventType == event.CertificateDeleted {
-			certID := toInt64(m["monitor_id"])
+			certID := toString(m["monitor_id"])
 			if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "certificate", certID); err != nil {
 				a.logger.Error("failed to remove dangling certificate refs from status components", "certificate_id", certID, "error", err)
 			}
@@ -273,7 +272,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				Severity:   severity,
 				Message:    fmt.Sprintf("Certificate alert (%s) for %v:%v", certAlertType, m["hostname"], m["port"]),
 				EntityType: "certificate",
-				EntityID:   toInt64(m["monitor_id"]),
+				EntityID:   toString(m["monitor_id"]),
 				EntityName: toString(m["hostname"]),
 				Details:    m,
 				Timestamp:  time.Now(),
@@ -286,7 +285,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				IsRecover:  true,
 				Message:    fmt.Sprintf("Certificate renewed for %v", m["hostname"]),
 				EntityType: "certificate",
-				EntityID:   toInt64(m["monitor_id"]),
+				EntityID:   toString(m["monitor_id"]),
 				EntityName: toString(m["hostname"]),
 				Details:    m,
 				Timestamp:  time.Now(),
@@ -310,7 +309,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				Severity:   alert.SeverityWarning,
 				Message:    fmt.Sprintf("Resource %s threshold exceeded for container %v", resAlertType, m["container_name"]),
 				EntityType: "container",
-				EntityID:   toInt64(m["container_id"]),
+				EntityID:   toString(m["container_id"]),
 				EntityName: toString(m["container_name"]),
 				Details:    m,
 				Timestamp:  time.Now(),
@@ -324,7 +323,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				IsRecover:  true,
 				Message:    fmt.Sprintf("Resource usage returned to normal for container %v", m["container_name"]),
 				EntityType: "container",
-				EntityID:   toInt64(m["container_id"]),
+				EntityID:   toString(m["container_id"]),
 				EntityName: toString(m["container_name"]),
 				Details:    m,
 				Timestamp:  time.Now(),
@@ -333,7 +332,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	})
 
 	// Security insight alerts
-	a.securitySvc.SetAlertCallback(func(containerID int64, containerName string, insights []security.Insight, isRecover bool) {
+	a.securitySvc.SetAlertCallback(func(containerID string, containerName string, insights []security.Insight, isRecover bool) {
 		if isRecover {
 			sendAlert(alert.Event{
 				Source:     alert.SourceSecurity,
@@ -480,7 +479,7 @@ func (a *App) wirePostureCallbacks() {
 			IsRecover:  !isBreach,
 			Message:    msg,
 			EntityType: "infrastructure",
-			EntityID:   0,
+			EntityID:   "",
 			EntityName: "infrastructure",
 			Details: map[string]any{
 				"score":          score,
@@ -569,8 +568,7 @@ func (a *App) wireSwarmCallbacks() {
 // wireAgentLifecycleAlerts raises a Warning alert when a remote agent's stream
 // drops unexpectedly (network outage, or stale liveness past the threshold) and
 // resolves it when the agent reconnects. Intentional removals (revoke/delete)
-// and graceful shutdown never page. Agents are keyed by UUID, so a stable int64
-// entity id is derived for the alert engine's dedup/recovery map.
+// and graceful shutdown never page. The agent UUID is the alert entity id.
 func (a *App) wireAgentLifecycleAlerts() {
 	if a.agentSessions == nil {
 		return
@@ -597,7 +595,7 @@ func (a *App) wireAgentLifecycleAlerts() {
 			Source:     "agent",
 			AlertType:  "disconnected",
 			EntityType: "agent",
-			EntityID:   agentEntityID(agentID),
+			EntityID:   agentID,
 			EntityName: name,
 			Timestamp:  time.Now(),
 		}
@@ -623,29 +621,6 @@ func (a *App) wireAgentLifecycleAlerts() {
 		alertCh <- evt
 		a.statusSvc.HandleAlertEvent(ctx, evt)
 	})
-}
-
-// agentEntityID derives a stable, non-negative int64 entity id from an agent's
-// UUID. The alert engine keys dedup/recovery by int64 EntityID, but agents have
-// no numeric id, so we hash the UUID (FNV-1a). Collisions are negligible for a
-// fleet, and the value is stable across restarts so recovery still links up.
-func agentEntityID(agentID string) int64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(agentID))
-	return int64(h.Sum64() >> 1)
-}
-
-func toInt64(v any) int64 {
-	switch n := v.(type) {
-	case int64:
-		return n
-	case int:
-		return int64(n)
-	case float64:
-		return int64(n)
-	default:
-		return 0
-	}
 }
 
 func toString(v any) string {

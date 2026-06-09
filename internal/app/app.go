@@ -87,16 +87,16 @@ type App struct {
 	srv           *http.Server
 
 	// Stores (needed for retention cleanup and reconciliation)
-	alertStore      alert.AlertStore
-	updateStore     update.UpdateStore
-	containerStore  *sqlite.ContainerStore
-	epStore         *sqlite.EndpointStore
-	hbStore         *sqlite.HeartbeatStore
-	certStore       *sqlite.CertificateStore
-	resStore        *sqlite.ResourceStore
-	agentStore      *sqlite.AgentStore
-	agentSessions   *agentserver.Sessions
-	agentSrv        *agentserver.Server
+	alertStore     alert.AlertStore
+	updateStore    update.UpdateStore
+	containerStore *sqlite.ContainerStore
+	epStore        *sqlite.EndpointStore
+	hbStore        *sqlite.HeartbeatStore
+	certStore      *sqlite.CertificateStore
+	resStore       *sqlite.ResourceStore
+	agentStore     *sqlite.AgentStore
+	agentSessions  *agentserver.Sessions
+	agentSrv       *agentserver.Server
 	// shuttingDown suppresses agent-disconnect alerts during graceful shutdown,
 	// where every stream ends at once and would otherwise page for the whole fleet.
 	shuttingDown    atomic.Bool
@@ -312,7 +312,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	})
 
 	// --- Endpoint monitoring ---
-	a.checkEngine = endpoint.NewCheckEngine(func(endpointID int64, result endpoint.CheckResult) {
+	a.checkEngine = endpoint.NewCheckEngine(func(endpointID string, result endpoint.CheckResult) {
 		a.endpointSvc.ProcessCheckResult(ctx, endpointID, result)
 		if len(result.TLSPeerCertificates) > 0 {
 			ep, err := a.endpointSvc.GetEndpoint(ctx, endpointID)

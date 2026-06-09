@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/kolapsis/maintenant/internal/status"
@@ -249,8 +248,8 @@ func (h *PersonalizationHandler) HandleCreateFooterLink(w http.ResponseWriter, r
 }
 
 func (h *PersonalizationHandler) HandleUpdateFooterLink(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -276,8 +275,8 @@ func (h *PersonalizationHandler) HandleUpdateFooterLink(w http.ResponseWriter, r
 }
 
 func (h *PersonalizationHandler) HandleDeleteFooterLink(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -294,7 +293,7 @@ func (h *PersonalizationHandler) HandleDeleteFooterLink(w http.ResponseWriter, r
 
 func (h *PersonalizationHandler) HandleReorderFooterLinks(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		IDs []int64 `json:"ids"`
+		IDs []string `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
@@ -338,8 +337,8 @@ func (h *PersonalizationHandler) HandleCreateFAQItem(w http.ResponseWriter, r *h
 }
 
 func (h *PersonalizationHandler) HandleUpdateFAQItem(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -365,8 +364,8 @@ func (h *PersonalizationHandler) HandleUpdateFAQItem(w http.ResponseWriter, r *h
 }
 
 func (h *PersonalizationHandler) HandleDeleteFAQItem(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -383,7 +382,7 @@ func (h *PersonalizationHandler) HandleDeleteFAQItem(w http.ResponseWriter, r *h
 
 func (h *PersonalizationHandler) HandleReorderFAQ(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		IDs []int64 `json:"ids"`
+		IDs []string `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
@@ -464,7 +463,7 @@ func settingsToResponse(s status.Settings) settingsResp {
 }
 
 type footerLinkResp struct {
-	ID        int64  `json:"id"`
+	ID        string `json:"id"`
 	Position  int    `json:"position"`
 	Label     string `json:"label"`
 	URL       string `json:"url"`
@@ -492,7 +491,7 @@ func footerLinksToResponse(links []status.FooterLink) []footerLinkResp {
 }
 
 type faqItemResp struct {
-	ID         int64  `json:"id"`
+	ID         string `json:"id"`
 	Position   int    `json:"position"`
 	Question   string `json:"question"`
 	AnswerMD   string `json:"answer_md"`

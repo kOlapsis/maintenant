@@ -28,9 +28,9 @@ const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
 const escalationApi = useEscalationApi()
-const escalationRuns = ref<Record<number, EscalationRun[]>>({})
+const escalationRuns = ref<Record<string, EscalationRun[]>>({})
 
-async function loadEscalationRuns(alertId: number) {
+async function loadEscalationRuns(alertId: string) {
   try {
     const res = await escalationApi.listRunsForAlert(alertId)
     escalationRuns.value = { ...escalationRuns.value, [alertId]: res.runs }

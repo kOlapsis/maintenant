@@ -22,7 +22,7 @@ const store = useAlertsStore()
 const showForm = ref(false)
 const form = ref({
   entity_type: '',
-  entity_id: undefined as number | undefined,
+  entity_id: undefined as string | undefined,
   source: '',
   reason: '',
   duration_seconds: 1800,
@@ -53,7 +53,7 @@ async function submitForm() {
 
 const confirm = useConfirm()
 
-async function handleCancel(id: number) {
+async function handleCancel(id: string) {
   const ok = await confirm({
     title: 'Cancel silence rule',
     message: 'Cancel this silence rule? Alerts will resume for affected entities.',

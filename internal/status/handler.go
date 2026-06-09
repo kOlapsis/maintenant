@@ -112,14 +112,14 @@ type StatusAPIResponse struct {
 
 // APIComponentBrief is a brief component in the JSON API.
 type APIComponentBrief struct {
-	ID     int64  `json:"id"`
+	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
 }
 
 // APIIncidentBrief is a brief incident in the JSON API.
 type APIIncidentBrief struct {
-	ID           int64           `json:"id"`
+	ID           string          `json:"id"`
 	Title        string          `json:"title"`
 	Severity     string          `json:"severity"`
 	Status       string          `json:"status"`
@@ -137,7 +137,7 @@ type APIUpdateBrief struct {
 
 // APIMaintBrief is a brief maintenance window in the JSON API.
 type APIMaintBrief struct {
-	ID         int64     `json:"id"`
+	ID         string    `json:"id"`
 	Title      string    `json:"title"`
 	StartsAt   time.Time `json:"starts_at"`
 	EndsAt     time.Time `json:"ends_at"`

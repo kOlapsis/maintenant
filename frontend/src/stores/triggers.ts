@@ -44,19 +44,19 @@ export const useTriggersStore = defineStore('triggers', () => {
     return t
   }
 
-  async function update(id: number, req: TriggerRequest): Promise<AlertTrigger> {
+  async function update(id: string, req: TriggerRequest): Promise<AlertTrigger> {
     const t = await updateTrigger(id, req)
     const idx = triggers.value.findIndex((x) => x.id === id)
     if (idx >= 0) triggers.value[idx] = t
     return t
   }
 
-  async function remove(id: number): Promise<void> {
+  async function remove(id: string): Promise<void> {
     await deleteTrigger(id)
     triggers.value = triggers.value.filter((t) => t.id !== id)
   }
 
-  function triggersForChannel(channelId: number): AlertTrigger[] {
+  function triggersForChannel(channelId: string): AlertTrigger[] {
     return triggers.value.filter((t) => t.enabled && t.channel_ids.includes(channelId))
   }
 

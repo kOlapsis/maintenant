@@ -28,11 +28,11 @@ const showCreateForm = ref(false)
 const createForm = ref({
   title: '',
   severity: 'minor',
-  component_ids: [] as number[],
+  component_ids: [] as string[],
   message: '',
 })
 
-const showUpdateForm = ref<number | null>(null)
+const showUpdateForm = ref<string | null>(null)
 const updateForm = ref({ status: 'identified', message: '' })
 
 const statusFilter = ref('')
@@ -48,7 +48,7 @@ async function submitCreate() {
   store.fetchIncidents()
 }
 
-async function submitUpdate(incidentId: number) {
+async function submitUpdate(incidentId: string) {
   await postIncidentUpdate(incidentId, updateForm.value)
   showUpdateForm.value = null
   updateForm.value = { status: 'identified', message: '' }
@@ -57,7 +57,7 @@ async function submitUpdate(incidentId: number) {
 
 const confirm = useConfirm()
 
-async function handleDelete(id: number) {
+async function handleDelete(id: string) {
   const ok = await confirm({
     title: 'Delete incident',
     message: 'Remove this incident and all its updates? This cannot be undone.',

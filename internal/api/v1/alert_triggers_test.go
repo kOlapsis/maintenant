@@ -31,28 +31,28 @@ import (
 // ---------------------------------------------------------------------------
 
 type stubTriggerStore struct {
-	triggers  map[int64]*alert.AlertTrigger
+	triggers  map[string]*alert.AlertTrigger
 	nextID    int64
 	insertErr error
 }
 
 func newStubTriggerStore() *stubTriggerStore {
-	return &stubTriggerStore{triggers: map[int64]*alert.AlertTrigger{}}
+	return &stubTriggerStore{triggers: map[string]*alert.AlertTrigger{}}
 }
 
-func (s *stubTriggerStore) InsertTrigger(_ context.Context, t *alert.AlertTrigger) (int64, error) {
+func (s *stubTriggerStore) InsertTrigger(_ context.Context, t *alert.AlertTrigger) (string, error) {
 	if s.insertErr != nil {
-		return 0, s.insertErr
+		return "", s.insertErr
 	}
 	s.nextID++
-	t.ID = s.nextID
+	t.ID = fmt.Sprintf("%d", s.nextID)
 	t.CreatedAt = time.Now()
 	t.UpdatedAt = time.Now()
 	cp := *t
 	s.triggers[t.ID] = &cp
 	return t.ID, nil
 }
-func (s *stubTriggerStore) GetTrigger(_ context.Context, id int64) (*alert.AlertTrigger, error) {
+func (s *stubTriggerStore) GetTrigger(_ context.Context, id string) (*alert.AlertTrigger, error) {
 	return s.triggers[id], nil
 }
 func (s *stubTriggerStore) ListTriggers(_ context.Context) ([]*alert.AlertTrigger, error) {
@@ -73,15 +73,15 @@ func (s *stubTriggerStore) UpdateTrigger(_ context.Context, t *alert.AlertTrigge
 	s.triggers[t.ID] = &cp
 	return nil
 }
-func (s *stubTriggerStore) DeleteTrigger(_ context.Context, id int64) error {
+func (s *stubTriggerStore) DeleteTrigger(_ context.Context, id string) error {
 	delete(s.triggers, id)
 	return nil
 }
-func (s *stubTriggerStore) SetChannels(_ context.Context, _ int64, _ []int64) error { return nil }
-func (s *stubTriggerStore) ListChannelsForTrigger(_ context.Context, _ int64) ([]int64, error) {
-	return []int64{}, nil
+func (s *stubTriggerStore) SetChannels(_ context.Context, _ string, _ []string) error { return nil }
+func (s *stubTriggerStore) ListChannelsForTrigger(_ context.Context, _ string) ([]string, error) {
+	return []string{}, nil
 }
-func (s *stubTriggerStore) ListTriggersForChannel(_ context.Context, _ int64) ([]*alert.AlertTrigger, error) {
+func (s *stubTriggerStore) ListTriggersForChannel(_ context.Context, _ string) ([]*alert.AlertTrigger, error) {
 	return nil, nil
 }
 
@@ -93,15 +93,15 @@ func newTriggerHandler(channelExists bool) (*AlertTriggerHandler, *stubTriggerSt
 	ts := newStubTriggerStore()
 	var ch *alert.NotificationChannel
 	if channelExists {
-		ch = &alert.NotificationChannel{ID: 1, Name: "test-ch", Enabled: true}
+		ch = &alert.NotificationChannel{ID: "1", Name: "test-ch", Enabled: true}
 	}
 	cs := &stubChannelStore{ch: ch}
 	return NewAlertTriggerHandler(ts, cs, nil), ts
 }
 
-func seedTrigger(t *testing.T, ts *stubTriggerStore, name string) int64 {
+func seedTrigger(t *testing.T, ts *stubTriggerStore, name string) string {
 	t.Helper()
-	trig := &alert.AlertTrigger{Name: name, Enabled: true, ChannelIDs: []int64{1}}
+	trig := &alert.AlertTrigger{Name: name, Enabled: true, ChannelIDs: []string{"1"}}
 	id, err := ts.InsertTrigger(context.Background(), trig)
 	require.NoError(t, err)
 	return id
@@ -140,7 +140,7 @@ func TestHandleGetTrigger_Found(t *testing.T) {
 	h, ts := newTriggerHandler(true)
 	id := seedTrigger(t, ts, "MyTrigger")
 	req := httptest.NewRequest("GET", "/api/v1/alert-triggers/1", nil)
-	req.SetPathValue("id", fmt.Sprintf("%d", id))
+	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
 	h.HandleGetTrigger(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -163,7 +163,7 @@ func TestHandleGetTrigger_NotFound(t *testing.T) {
 
 func TestHandleCreateTrigger_Happy(t *testing.T) {
 	h, _ := newTriggerHandler(true)
-	body := `{"name":"Critical","filter_severities":"critical","filter_sources":"container","enabled":true,"channel_ids":[1]}`
+	body := `{"name":"Critical","filter_severities":"critical","filter_sources":"container","enabled":true,"channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -174,7 +174,7 @@ func TestHandleCreateTrigger_Happy(t *testing.T) {
 
 func TestHandleCreateTrigger_EmptyName(t *testing.T) {
 	h, _ := newTriggerHandler(true)
-	body := `{"name":"","channel_ids":[1]}`
+	body := `{"name":"","channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -196,7 +196,7 @@ func TestHandleCreateTrigger_EmptyChannelIDs(t *testing.T) {
 
 func TestHandleCreateTrigger_ChannelNotFound(t *testing.T) {
 	h, _ := newTriggerHandler(false) // channel store returns nil
-	body := `{"name":"My trigger","channel_ids":[99]}`
+	body := `{"name":"My trigger","channel_ids":["99"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -208,7 +208,7 @@ func TestHandleCreateTrigger_ChannelNotFound(t *testing.T) {
 func TestHandleCreateTrigger_NameConflict(t *testing.T) {
 	h, ts := newTriggerHandler(true)
 	ts.insertErr = fmt.Errorf("UNIQUE constraint failed: alert_triggers.name")
-	body := `{"name":"Existing","channel_ids":[1]}`
+	body := `{"name":"Existing","channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -223,7 +223,7 @@ func TestHandleCreateTrigger_ProFilterScopes_CommunityBlocked(t *testing.T) {
 	defer func() { extension.CurrentEdition = original }()
 
 	h, _ := newTriggerHandler(true)
-	body := `{"name":"Scoped","filter_scopes":"container:42","channel_ids":[1]}`
+	body := `{"name":"Scoped","filter_scopes":"container:42","channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -238,7 +238,7 @@ func TestHandleCreateTrigger_ProFilterTags_CommunityBlocked(t *testing.T) {
 	defer func() { extension.CurrentEdition = original }()
 
 	h, _ := newTriggerHandler(true)
-	body := `{"name":"Tagged","filter_tags":"prod","channel_ids":[1]}`
+	body := `{"name":"Tagged","filter_tags":"prod","channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -253,7 +253,7 @@ func TestHandleCreateTrigger_ProFilterAllowed_Enterprise(t *testing.T) {
 	defer func() { extension.CurrentEdition = original }()
 
 	h, _ := newTriggerHandler(true)
-	body := `{"name":"EntScoped","filter_scopes":"container:7","channel_ids":[1]}`
+	body := `{"name":"EntScoped","filter_scopes":"container:7","channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -268,10 +268,10 @@ func TestHandleCreateTrigger_ProFilterAllowed_Enterprise(t *testing.T) {
 func TestHandleUpdateTrigger_Happy(t *testing.T) {
 	h, ts := newTriggerHandler(true)
 	id := seedTrigger(t, ts, "Original")
-	body := `{"name":"Updated","filter_severities":"warning","enabled":true,"channel_ids":[1]}`
+	body := `{"name":"Updated","filter_severities":"warning","enabled":true,"channel_ids":["1"]}`
 	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", fmt.Sprintf("%d", id))
+	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
 	h.HandleUpdateTrigger(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
@@ -280,7 +280,7 @@ func TestHandleUpdateTrigger_Happy(t *testing.T) {
 
 func TestHandleUpdateTrigger_NotFound(t *testing.T) {
 	h, _ := newTriggerHandler(true)
-	body := `{"name":"X","channel_ids":[1]}`
+	body := `{"name":"X","channel_ids":["1"]}`
 	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/999", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "999")
@@ -293,10 +293,10 @@ func TestHandleUpdateTrigger_NotFound(t *testing.T) {
 func TestHandleUpdateTrigger_ValidationFailed(t *testing.T) {
 	h, ts := newTriggerHandler(true)
 	id := seedTrigger(t, ts, "ForUpdate")
-	body := `{"name":"","channel_ids":[1]}`
+	body := `{"name":"","channel_ids":["1"]}`
 	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", fmt.Sprintf("%d", id))
+	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
 	h.HandleUpdateTrigger(rec, req)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -311,7 +311,7 @@ func TestHandleDeleteTrigger_Happy(t *testing.T) {
 	h, ts := newTriggerHandler(true)
 	id := seedTrigger(t, ts, "ToDel")
 	req := httptest.NewRequest("DELETE", "/api/v1/alert-triggers/1", nil)
-	req.SetPathValue("id", fmt.Sprintf("%d", id))
+	req.SetPathValue("id", id)
 	rec := httptest.NewRecorder()
 	h.HandleDeleteTrigger(rec, req)
 	assert.Equal(t, http.StatusNoContent, rec.Code)

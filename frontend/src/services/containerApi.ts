@@ -14,7 +14,7 @@ import type { ContainerGroup } from '@/stores/containers.ts'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
 export interface Container {
-  id: number
+  id: string
   external_id: string
   name: string
   image: string
@@ -71,7 +71,7 @@ export interface ContainerDetailResponse extends Container {
 }
 
 export interface StateTransition {
-  id: number
+  id: string
   previous_state: string
   new_state: string
   previous_health?: string
@@ -82,7 +82,7 @@ export interface StateTransition {
 }
 
 export interface TransitionsResponse {
-  container_id: number
+  container_id: string
   transitions: StateTransition[]
   total: number
   has_more: boolean
@@ -117,16 +117,16 @@ export function listContainers(params?: ListContainersParams): Promise<Container
   return fetchJSON<ContainerListResponse>(url.toString())
 }
 
-export function getContainer(id: number): Promise<ContainerDetailResponse> {
+export function getContainer(id: string): Promise<ContainerDetailResponse> {
   return fetchJSON<ContainerDetailResponse>(`${API_BASE}/containers/${id}`)
 }
 
-export async function deleteContainer(id: number): Promise<void> {
+export async function deleteContainer(id: string): Promise<void> {
   await fetch(`${API_BASE}/containers/${id}`, { method: 'DELETE' })
 }
 
 export function listTransitions(
-  id: number,
+  id: string,
   params?: ListTransitionsParams,
 ): Promise<TransitionsResponse> {
   const url = new URL(`${API_BASE}/containers/${id}/transitions`, window.location.origin)

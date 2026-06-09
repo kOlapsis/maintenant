@@ -26,12 +26,12 @@ import (
 
 // mockUptimeDailyStore is a test double for UptimeDailyFetcher.
 type mockUptimeDailyStore struct {
-	endpointResults  map[int64][]sqlite.DailyUptime
-	heartbeatResults map[int64][]sqlite.DailyUptime
+	endpointResults  map[string][]sqlite.DailyUptime
+	heartbeatResults map[string][]sqlite.DailyUptime
 	err              error
 }
 
-func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpointID int64, days int) ([]sqlite.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpointID string, days int) ([]sqlite.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -49,7 +49,7 @@ func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpoin
 	return result, nil
 }
 
-func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartbeatID int64, days int) ([]sqlite.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartbeatID string, days int) ([]sqlite.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -80,8 +80,8 @@ func TestHandleEndpointDailyUptime(t *testing.T) {
 			name: "valid endpoint with data",
 			url:  "/api/v1/endpoints/5/uptime/daily",
 			store: &mockUptimeDailyStore{
-				endpointResults: map[int64][]sqlite.DailyUptime{
-					5: {
+				endpointResults: map[string][]sqlite.DailyUptime{
+					"5": {
 						{Date: "2026-02-25", UptimePercent: ptrFloat(100.0), IncidentCount: 0},
 						{Date: "2026-02-24", UptimePercent: ptrFloat(95.5), IncidentCount: 1},
 					},
@@ -89,7 +89,7 @@ func TestHandleEndpointDailyUptime(t *testing.T) {
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body map[string]interface{}) {
-				assert.Equal(t, float64(5), body["monitor_id"])
+				assert.Equal(t, "5", body["monitor_id"])
 				assert.Equal(t, "endpoint", body["monitor_type"])
 				days := body["days"].([]interface{})
 				assert.Len(t, days, 2)
@@ -100,10 +100,13 @@ func TestHandleEndpointDailyUptime(t *testing.T) {
 			},
 		},
 		{
-			name:       "invalid endpoint ID",
+			name:       "non-numeric endpoint ID is a valid string id",
 			url:        "/api/v1/endpoints/abc/uptime/daily",
 			store:      &mockUptimeDailyStore{},
-			wantStatus: http.StatusBadRequest,
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body map[string]interface{}) {
+				assert.Equal(t, "abc", body["monitor_id"])
+			},
 		},
 		{
 			name:       "custom days param",
@@ -168,25 +171,28 @@ func TestHandleHeartbeatDailyUptime(t *testing.T) {
 			name: "valid heartbeat with data",
 			url:  "/api/v1/heartbeats/3/uptime/daily",
 			store: &mockUptimeDailyStore{
-				heartbeatResults: map[int64][]sqlite.DailyUptime{
-					3: {
+				heartbeatResults: map[string][]sqlite.DailyUptime{
+					"3": {
 						{Date: "2026-02-25", UptimePercent: ptrFloat(100.0), IncidentCount: 0},
 					},
 				},
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body map[string]interface{}) {
-				assert.Equal(t, float64(3), body["monitor_id"])
+				assert.Equal(t, "3", body["monitor_id"])
 				assert.Equal(t, "heartbeat", body["monitor_type"])
 				days := body["days"].([]interface{})
 				assert.Len(t, days, 1)
 			},
 		},
 		{
-			name:       "invalid heartbeat ID",
+			name:       "non-numeric heartbeat ID is a valid string id",
 			url:        "/api/v1/heartbeats/xyz/uptime/daily",
 			store:      &mockUptimeDailyStore{},
-			wantStatus: http.StatusBadRequest,
+			wantStatus: http.StatusOK,
+			checkBody: func(t *testing.T, body map[string]interface{}) {
+				assert.Equal(t, "xyz", body["monitor_id"])
+			},
 		},
 		{
 			name:       "default 90 days for heartbeat",

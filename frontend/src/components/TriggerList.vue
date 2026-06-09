@@ -28,7 +28,7 @@ const emit = defineEmits<{
 
 const channelsStore = useChannelsStore()
 
-function channelNames(ids: number[]): string {
+function channelNames(ids: string[]): string {
   if (ids.length === 0) return '—'
   const names = ids
     .map((id) => channelsStore.channels.find((c) => c.id === id)?.name)

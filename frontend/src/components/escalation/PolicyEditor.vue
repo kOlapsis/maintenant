@@ -25,7 +25,7 @@ import InlineAlert from '@/components/ui/InlineAlert.vue'
 import { useEscalationApi } from '@/composables/useEscalationApi'
 
 interface Channel {
-  id: number
+  id: string
   name: string
   type: string
   enabled: boolean
@@ -50,7 +50,7 @@ const active = ref(props.policy?.active ?? true)
 const severities = ref<string[]>(props.policy?.filters.severities ?? [])
 
 const maxLevels = computed(() => props.maxLevels ?? 5)
-const levels = ref<Array<{ delay_seconds: number; channel_ids: number[] }>>(
+const levels = ref<Array<{ delay_seconds: number; channel_ids: string[] }>>(
   props.policy?.levels.map((l) => ({ delay_seconds: l.delay_seconds, channel_ids: [...l.channel_ids] })) ??
     [{ delay_seconds: 300, channel_ids: [] }],
 )
@@ -169,7 +169,7 @@ async function handleSave() {
 
 // Channels referenced ONLY by escalation (no trigger serves them) → "reserved escalation"
 const reservedChannelIds = computed(() => {
-  const ids = new Set<number>()
+  const ids = new Set<string>()
   for (const lvl of levels.value) {
     for (const id of lvl.channel_ids) ids.add(id)
   }

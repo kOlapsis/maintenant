@@ -45,43 +45,43 @@ type PolicyRequest struct {
 
 // LevelReq is one escalation step in a request (order is assigned by service).
 type LevelReq struct {
-	DelaySeconds int     `json:"delay_seconds"`
-	ChannelIDs   []int64 `json:"channel_ids"`
+	DelaySeconds int      `json:"delay_seconds"`
+	ChannelIDs   []string `json:"channel_ids"`
 }
 
 // Store defines the persistence interface for escalation data.
 type Store interface {
-	InsertPolicy(ctx context.Context, p *Policy) (int64, error)
+	InsertPolicy(ctx context.Context, p *Policy) (string, error)
 	UpdatePolicy(ctx context.Context, p *Policy) error
-	SelectPolicy(ctx context.Context, id int64) (*Policy, error)
+	SelectPolicy(ctx context.Context, id string) (*Policy, error)
 	SelectPolicies(ctx context.Context, activeOnly bool) ([]*Policy, error)
-	DeletePolicy(ctx context.Context, id int64) error
+	DeletePolicy(ctx context.Context, id string) error
 	CountActivePolicies(ctx context.Context) (int, error)
-	SelectRun(ctx context.Context, id int64) (*Run, error)
-	SelectRunsByAlert(ctx context.Context, alertID int64) ([]*Run, error)
-	SelectRunsByPolicy(ctx context.Context, policyID int64, limit int, cursor int64) ([]*Run, error)
-	SelectRunDeliveries(ctx context.Context, runID int64) ([]*Delivery, error)
+	SelectRun(ctx context.Context, id string) (*Run, error)
+	SelectRunsByAlert(ctx context.Context, alertID string) ([]*Run, error)
+	SelectRunsByPolicy(ctx context.Context, policyID string, limit int, cursor string) ([]*Run, error)
+	SelectRunDeliveries(ctx context.Context, runID string) ([]*Delivery, error)
 	BulkDeactivateAllPolicies(ctx context.Context) error
 	BulkRestorePoliciesFromDowngrade(ctx context.Context) error
 	BulkStopActiveRuns(ctx context.Context, stopStatus string, endedAt time.Time) error
 	PurgeRunsAndDeliveriesOlderThan(ctx context.Context, before time.Time) error
 
 	// Run lifecycle (used by the concrete Pro Runner).
-	InsertRun(ctx context.Context, r *Run) (int64, error)
-	UpdateRunProgress(ctx context.Context, runID int64, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error
-	TerminateRun(ctx context.Context, runID int64, status string, endedAt time.Time) error
-	SelectActiveRunsByAlert(ctx context.Context, alertID int64) ([]*Run, error)
+	InsertRun(ctx context.Context, r *Run) (string, error)
+	UpdateRunProgress(ctx context.Context, runID string, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error
+	TerminateRun(ctx context.Context, runID string, status string, endedAt time.Time) error
+	SelectActiveRunsByAlert(ctx context.Context, alertID string) ([]*Run, error)
 	// SelectDueRuns returns runs in status 'active' OR 'paused_by_maintenance'
 	// whose next_action_at <= now. The runner re-evaluates the suppressor on
 	// every tick, so paused runs need to surface alongside active ones.
 	SelectDueRuns(ctx context.Context, now time.Time) ([]*Run, error)
-	PauseRunForMaintenance(ctx context.Context, runID int64, recheckAt time.Time) error
-	ResumeRunFromMaintenance(ctx context.Context, runID int64, nextActionAt time.Time) error
+	PauseRunForMaintenance(ctx context.Context, runID string, recheckAt time.Time) error
+	ResumeRunFromMaintenance(ctx context.Context, runID string, nextActionAt time.Time) error
 
 	// Delivery lifecycle (used by the concrete Pro Runner).
 	// InsertDelivery returns ErrDeliveryDuplicate when the UNIQUE
 	// (run_id, level_index, channel_id) constraint is violated.
-	InsertDelivery(ctx context.Context, d *Delivery) (int64, error)
+	InsertDelivery(ctx context.Context, d *Delivery) (string, error)
 	UpdateDelivery(ctx context.Context, d *Delivery) error
 	SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*Delivery, error)
 }
@@ -131,8 +131,8 @@ func (s *Service) SetClockFn(fn func() time.Time) {
 
 // IsAlertSuppressed delegates to the maintenance suppressor for a given alert.
 // The concrete Pro Escalator uses this to determine if a run should be paused.
-func (s *Service) IsAlertSuppressed(ctx context.Context, alertID int64) (bool, error) {
-	return s.suppressor.IsSuppressed(ctx, "", "", fmt.Sprint(alertID))
+func (s *Service) IsAlertSuppressed(ctx context.Context, alertID string) (bool, error) {
+	return s.suppressor.IsSuppressed(ctx, "", "", alertID)
 }
 
 // OnEditionDowngraded deactivates all active policies and stops all active runs.
@@ -232,10 +232,10 @@ func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy,
 }
 
 // GetPolicy retrieves a policy by ID. Returns (nil, ErrPolicyNotFound) if not found.
-func (s *Service) GetPolicy(ctx context.Context, id int64) (*Policy, error) {
+func (s *Service) GetPolicy(ctx context.Context, id string) (*Policy, error) {
 	p, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("get policy %d: %w", id, err)
+		return nil, fmt.Errorf("get policy %s: %w", id, err)
 	}
 	if p == nil {
 		return nil, ErrPolicyNotFound
@@ -256,7 +256,7 @@ func (s *Service) ListPolicies(ctx context.Context, activeOnly bool) ([]*Policy,
 }
 
 // DeletePolicy removes a policy and stops active runs (stopped_by_policy_deletion).
-func (s *Service) DeletePolicy(ctx context.Context, id int64) error {
+func (s *Service) DeletePolicy(ctx context.Context, id string) error {
 	p, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete policy: lookup: %w", err)
@@ -265,14 +265,14 @@ func (s *Service) DeletePolicy(ctx context.Context, id int64) error {
 		return ErrPolicyNotFound
 	}
 	if err := s.store.DeletePolicy(ctx, id); err != nil {
-		return fmt.Errorf("delete policy %d: %w", id, err)
+		return fmt.Errorf("delete policy %s: %w", id, err)
 	}
 	s.logger.Info("escalation: policy deleted", "id", id)
 	return nil
 }
 
 // UpdatePolicy validates and updates an existing escalation policy (last-write-wins).
-func (s *Service) UpdatePolicy(ctx context.Context, id int64, req PolicyRequest) (*Policy, error) {
+func (s *Service) UpdatePolicy(ctx context.Context, id string, req PolicyRequest) (*Policy, error) {
 	existing, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("update policy: lookup: %w", err)
@@ -314,7 +314,7 @@ func (s *Service) UpdatePolicy(ctx context.Context, id int64, req PolicyRequest)
 	existing.UpdatedAt = time.Now().UTC()
 
 	if err := s.store.UpdatePolicy(ctx, existing); err != nil {
-		return nil, fmt.Errorf("update policy %d: %w", id, err)
+		return nil, fmt.Errorf("update policy %s: %w", id, err)
 	}
 
 	s.logger.Info("escalation: policy updated", "id", id, "name", existing.Name, "active", existing.Active)
@@ -322,7 +322,7 @@ func (s *Service) UpdatePolicy(ctx context.Context, id int64, req PolicyRequest)
 }
 
 // SetPolicyActive activates or deactivates a policy.
-func (s *Service) SetPolicyActive(ctx context.Context, id int64, active bool) (*Policy, error) {
+func (s *Service) SetPolicyActive(ctx context.Context, id string, active bool) (*Policy, error) {
 	existing, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("set policy active: lookup: %w", err)
@@ -335,7 +335,7 @@ func (s *Service) SetPolicyActive(ctx context.Context, id int64, active bool) (*
 	existing.UpdatedAt = time.Now().UTC()
 
 	if err := s.store.UpdatePolicy(ctx, existing); err != nil {
-		return nil, fmt.Errorf("set policy active %d: %w", id, err)
+		return nil, fmt.Errorf("set policy active %s: %w", id, err)
 	}
 
 	s.logger.Info("escalation: policy active status changed", "id", id, "active", active)
@@ -343,10 +343,10 @@ func (s *Service) SetPolicyActive(ctx context.Context, id int64, active bool) (*
 }
 
 // ListRunsForAlert returns runs attached to an alert.
-func (s *Service) ListRunsForAlert(ctx context.Context, alertID int64) ([]*Run, error) {
+func (s *Service) ListRunsForAlert(ctx context.Context, alertID string) ([]*Run, error) {
 	runs, err := s.store.SelectRunsByAlert(ctx, alertID)
 	if err != nil {
-		return nil, fmt.Errorf("list runs for alert %d: %w", alertID, err)
+		return nil, fmt.Errorf("list runs for alert %s: %w", alertID, err)
 	}
 	if runs == nil {
 		runs = []*Run{}
@@ -355,24 +355,24 @@ func (s *Service) ListRunsForAlert(ctx context.Context, alertID int64) ([]*Run, 
 }
 
 // GetRun returns a run with its deliveries. Returns (nil, ErrRunNotFound) if not found.
-func (s *Service) GetRun(ctx context.Context, id int64) (*Run, error) {
+func (s *Service) GetRun(ctx context.Context, id string) (*Run, error) {
 	r, err := s.store.SelectRun(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("get run %d: %w", id, err)
+		return nil, fmt.Errorf("get run %s: %w", id, err)
 	}
 	if r == nil {
 		return nil, ErrRunNotFound
 	}
 	deliveries, err := s.store.SelectRunDeliveries(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("get run deliveries %d: %w", id, err)
+		return nil, fmt.Errorf("get run deliveries %s: %w", id, err)
 	}
 	r.Deliveries = deliveries
 	return r, nil
 }
 
 // ListPolicyRuns returns paginated runs for a policy.
-func (s *Service) ListPolicyRuns(ctx context.Context, policyID int64, limit int, cursor int64) ([]*Run, error) {
+func (s *Service) ListPolicyRuns(ctx context.Context, policyID string, limit int, cursor string) ([]*Run, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -381,7 +381,7 @@ func (s *Service) ListPolicyRuns(ctx context.Context, policyID int64, limit int,
 	}
 	runs, err := s.store.SelectRunsByPolicy(ctx, policyID, limit, cursor)
 	if err != nil {
-		return nil, fmt.Errorf("list policy runs %d: %w", policyID, err)
+		return nil, fmt.Errorf("list policy runs %s: %w", policyID, err)
 	}
 	if runs == nil {
 		runs = []*Run{}

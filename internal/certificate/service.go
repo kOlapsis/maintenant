@@ -106,7 +106,7 @@ func (s *Service) emit(eventType string, data interface{}) {
 
 // EnsureAutoDetected creates or returns the existing auto-detected cert monitor
 // for the given HTTPS endpoint.
-func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID int64, targetURL string) (*CertMonitor, error) {
+func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID string, targetURL string) (*CertMonitor, error) {
 	hostname, port, err := extractHostPort(targetURL)
 	if err != nil {
 		return nil, err
@@ -169,7 +169,7 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID int64, targ
 }
 
 // ProcessAutoDetectedCerts processes TLS certificates from an HTTP endpoint check.
-func (s *Service) ProcessAutoDetectedCerts(ctx context.Context, endpointID int64, targetURL string, certs []*x509.Certificate, ocspResponse []byte) {
+func (s *Service) ProcessAutoDetectedCerts(ctx context.Context, endpointID string, targetURL string, certs []*x509.Certificate, ocspResponse []byte) {
 	if len(certs) == 0 {
 		return
 	}
@@ -265,7 +265,7 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 }
 
 // UpdateMonitor updates a certificate monitor's settings.
-func (s *Service) UpdateMonitor(ctx context.Context, id int64, input UpdateCertificateInput) (*CertMonitor, error) {
+func (s *Service) UpdateMonitor(ctx context.Context, id string, input UpdateCertificateInput) (*CertMonitor, error) {
 	monitor, err := s.store.GetMonitorByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get monitor: %w", err)
@@ -293,7 +293,7 @@ func (s *Service) UpdateMonitor(ctx context.Context, id int64, input UpdateCerti
 }
 
 // DeleteMonitor removes a standalone certificate monitor and its history.
-func (s *Service) DeleteMonitor(ctx context.Context, id int64) error {
+func (s *Service) DeleteMonitor(ctx context.Context, id string) error {
 	monitor, err := s.store.GetMonitorByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get monitor: %w", err)
@@ -318,7 +318,7 @@ func (s *Service) DeleteMonitor(ctx context.Context, id int64) error {
 }
 
 // DeleteByEndpointID removes the auto-detected cert monitor linked to an endpoint.
-func (s *Service) DeleteByEndpointID(ctx context.Context, endpointID int64) {
+func (s *Service) DeleteByEndpointID(ctx context.Context, endpointID string) {
 	monitor, err := s.store.GetMonitorByEndpointID(ctx, endpointID)
 	if err != nil || monitor == nil {
 		return
@@ -452,7 +452,7 @@ func (s *Service) SyncAgentCerts(ctx context.Context, agentID, containerExternal
 			Status:               StatusUnknown,
 			CheckIntervalSeconds: 43200,
 			WarningThresholds:    DefaultWarningThresholds(),
-			AgentID:              &agentID,
+			AgentID:              agentID,
 		}
 		if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
 			s.logger.Error("create agent cert monitor", "error", err, "hostname", p.Hostname, "port", p.Port)
@@ -479,7 +479,7 @@ func (s *Service) deleteAgentLabelMonitors(ctx context.Context, agentID, externa
 		return
 	}
 	for _, m := range monitors {
-		if m.AgentID == nil || *m.AgentID != agentID {
+		if m.AgentID != agentID {
 			continue // only this agent's monitors
 		}
 		if keep != nil && keep[m.Hostname+":"+strconv.Itoa(m.Port)] {
@@ -509,7 +509,7 @@ func (s *Service) CountStandaloneMonitors(ctx context.Context) (int, error) {
 }
 
 // GetMonitor returns a certificate monitor by ID.
-func (s *Service) GetMonitor(ctx context.Context, id int64) (*CertMonitor, error) {
+func (s *Service) GetMonitor(ctx context.Context, id string) (*CertMonitor, error) {
 	m, err := s.store.GetMonitorByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -521,17 +521,17 @@ func (s *Service) GetMonitor(ctx context.Context, id int64) (*CertMonitor, error
 }
 
 // GetLatestCheckResult returns the latest check result for a monitor.
-func (s *Service) GetLatestCheckResult(ctx context.Context, monitorID int64) (*CertCheckResult, error) {
+func (s *Service) GetLatestCheckResult(ctx context.Context, monitorID string) (*CertCheckResult, error) {
 	return s.store.GetLatestCheckResult(ctx, monitorID)
 }
 
 // GetChainEntries returns the chain entries for a check result.
-func (s *Service) GetChainEntries(ctx context.Context, checkResultID int64) ([]*CertChainEntry, error) {
+func (s *Service) GetChainEntries(ctx context.Context, checkResultID string) ([]*CertChainEntry, error) {
 	return s.store.GetChainEntries(ctx, checkResultID)
 }
 
 // ListCheckResults returns check result history for a monitor.
-func (s *Service) ListCheckResults(ctx context.Context, monitorID int64, opts ListChecksOpts) ([]*CertCheckResult, int, error) {
+func (s *Service) ListCheckResults(ctx context.Context, monitorID string, opts ListChecksOpts) ([]*CertCheckResult, int, error) {
 	return s.store.ListCheckResults(ctx, monitorID, opts)
 }
 
@@ -647,7 +647,7 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 	}
 
 	// Store chain entries
-	if len(raw.Chain) > 0 && checkID > 0 {
+	if len(raw.Chain) > 0 && checkID != "" {
 		entries := make([]*CertChainEntry, len(raw.Chain))
 		for i, c := range raw.Chain {
 			entries[i] = &CertChainEntry{

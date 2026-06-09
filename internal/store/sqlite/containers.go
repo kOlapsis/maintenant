@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ContainerStore implements container.ContainerStore using SQLite.
@@ -35,17 +36,35 @@ func NewContainerStore(d *DB) *ContainerStore {
 	}
 }
 
-func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Container) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO containers (external_id, name, image, state, health_status, has_health_check,
+// InsertContainer upserts a container. Its id is derived deterministically from
+// (agent_id, external_id) so the agent and server mint the same id; a repeat
+// report updates the existing row.
+func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Container) (string, error) {
+	c.AgentID = uid.Agent(c.AgentID)
+	c.ID = uid.Container(c.AgentID, c.ExternalID)
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO containers (id, agent_id, external_id, name, image, state, health_status, has_health_check,
 			orchestration_group, orchestration_unit, custom_group, is_ignored, alert_severity,
 			restart_threshold, alert_channels, archived, first_seen_at, last_state_change_at,
 			runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
 			compose_working_dir,
-			swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas,
-			agent_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ExternalID, c.Name, c.Image, string(c.State), nullableHealth(c.HealthStatus),
+			swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name=excluded.name, image=excluded.image, state=excluded.state, health_status=excluded.health_status,
+			has_health_check=excluded.has_health_check, orchestration_group=excluded.orchestration_group,
+			orchestration_unit=excluded.orchestration_unit, custom_group=excluded.custom_group,
+			is_ignored=excluded.is_ignored, alert_severity=excluded.alert_severity,
+			restart_threshold=excluded.restart_threshold, alert_channels=excluded.alert_channels,
+			archived=excluded.archived, last_state_change_at=excluded.last_state_change_at,
+			runtime_type=excluded.runtime_type, error_detail=excluded.error_detail,
+			controller_kind=excluded.controller_kind, namespace=excluded.namespace,
+			pod_count=excluded.pod_count, ready_count=excluded.ready_count,
+			compose_working_dir=excluded.compose_working_dir,
+			swarm_service_id=excluded.swarm_service_id, swarm_service_name=excluded.swarm_service_name,
+			swarm_service_mode=excluded.swarm_service_mode, swarm_node_id=excluded.swarm_node_id,
+			swarm_task_slot=excluded.swarm_task_slot, swarm_desired_replicas=excluded.swarm_desired_replicas`,
+		c.ID, c.AgentID, c.ExternalID, c.Name, c.Image, string(c.State), nullableHealth(c.HealthStatus),
 		boolToInt(c.HasHealthCheck), NullableString(c.OrchestrationGroup), NullableString(c.OrchestrationUnit),
 		NullableString(c.CustomGroup), boolToInt(c.IsIgnored), string(c.AlertSeverity),
 		c.RestartThreshold, NullableString(c.AlertChannels), boolToInt(c.Archived),
@@ -53,16 +72,15 @@ func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Conta
 		c.RuntimeType, c.ErrorDetail, c.ControllerKind, c.Namespace, c.PodCount, c.ReadyCount,
 		c.ComposeWorkingDir,
 		c.SwarmServiceID, c.SwarmServiceName, c.SwarmServiceMode, c.SwarmNodeID, c.SwarmTaskSlot, c.SwarmDesiredReplicas,
-		c.AgentID,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert container: %w", err)
+		return "", fmt.Errorf("insert container: %w", err)
 	}
-	c.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return c.ID, nil
 }
 
 func (s *ContainerStore) UpdateContainer(ctx context.Context, c *container.Container) error {
+	c.AgentID = uid.Agent(c.AgentID)
 	_, err := s.writer.Exec(ctx,
 		`UPDATE containers SET name=?, image=?, state=?, health_status=?, has_health_check=?,
 			orchestration_group=?, orchestration_unit=?, custom_group=?, is_ignored=?, alert_severity=?,
@@ -84,7 +102,7 @@ func (s *ContainerStore) UpdateContainer(ctx context.Context, c *container.Conta
 		c.ID,
 	)
 	if err != nil {
-		return fmt.Errorf("update container %d: %w", c.ID, err)
+		return fmt.Errorf("update container %s: %w", c.ID, err)
 	}
 	return nil
 }
@@ -94,7 +112,7 @@ func (s *ContainerStore) GetContainerByExternalID(ctx context.Context, externalI
 		`SELECT `+containerColumns+` FROM containers WHERE external_id=?`, externalID))
 }
 
-func (s *ContainerStore) GetContainerByID(ctx context.Context, id int64) (*container.Container, error) {
+func (s *ContainerStore) GetContainerByID(ctx context.Context, id string) (*container.Container, error) {
 	return s.scanContainer(s.db.QueryRowContext(ctx,
 		`SELECT `+containerColumns+` FROM containers WHERE id=?`, id))
 }
@@ -118,12 +136,8 @@ func (s *ContainerStore) ListContainers(ctx context.Context, opts container.List
 		args = append(args, opts.StateFilter)
 	}
 	if opts.AgentFilter != nil {
-		if *opts.AgentFilter == "local" {
-			query += ` AND agent_id IS NULL`
-		} else {
-			query += ` AND agent_id=?`
-			args = append(args, *opts.AgentFilter)
-		}
+		query += ` AND agent_id=?`
+		args = append(args, *opts.AgentFilter)
 	}
 
 	query += ` ORDER BY name ASC`
@@ -158,29 +172,16 @@ func (s *ContainerStore) ArchiveContainer(ctx context.Context, externalID string
 	return nil
 }
 
-func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id int64) error {
-	// Look up the external_id for cleaning up tables that reference it.
+func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id string) error {
+	// Look up the external_id for cleaning up tables keyed by it (soft refs,
+	// no FK). The FK-constrained children (transitions, snapshots, alert configs)
+	// are removed automatically by ON DELETE CASCADE.
 	var externalID string
 	err := s.db.QueryRowContext(ctx, `SELECT external_id FROM containers WHERE id = ?`, id).Scan(&externalID)
 	if err != nil {
 		return fmt.Errorf("get container external_id: %w", err)
 	}
 
-	// Delete records referencing the maintenant integer ID.
-	for _, q := range []struct {
-		sql  string
-		desc string
-	}{
-		{`DELETE FROM state_transitions WHERE container_id = ?`, "transitions"},
-		{`DELETE FROM resource_snapshots WHERE container_id = ?`, "resource snapshots"},
-		{`DELETE FROM resource_alert_configs WHERE container_id = ?`, "resource alert configs"},
-	} {
-		if _, err := s.writer.Exec(ctx, q.sql, id); err != nil {
-			return fmt.Errorf("delete container %s: %w", q.desc, err)
-		}
-	}
-
-	// Delete records referencing the external container ID (text).
 	for _, q := range []struct {
 		sql  string
 		desc string
@@ -195,7 +196,6 @@ func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id int64) erro
 		}
 	}
 
-	// Finally delete the container itself.
 	if _, err := s.writer.Exec(ctx, `DELETE FROM containers WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete container: %w", err)
 	}
@@ -203,22 +203,22 @@ func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id int64) erro
 }
 
 // InsertTransition records a state transition.
-func (s *ContainerStore) InsertTransition(ctx context.Context, t *container.StateTransition) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO state_transitions (container_id, previous_state, new_state, previous_health, new_health, exit_code, log_snippet, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ContainerID, string(t.PreviousState), string(t.NewState),
+func (s *ContainerStore) InsertTransition(ctx context.Context, t *container.StateTransition) (string, error) {
+	t.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO state_transitions (id, container_id, previous_state, new_state, previous_health, new_health, exit_code, log_snippet, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.ContainerID, string(t.PreviousState), string(t.NewState),
 		nullableHealth(t.PreviousHealth), nullableHealth(t.NewHealth),
 		t.ExitCode, NullableString(t.LogSnippet), t.Timestamp.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert transition: %w", err)
+		return "", fmt.Errorf("insert transition: %w", err)
 	}
-	t.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return t.ID, nil
 }
 
-func (s *ContainerStore) ListTransitionsByContainer(ctx context.Context, containerID int64, opts container.ListTransitionsOpts) ([]*container.StateTransition, int, error) {
+func (s *ContainerStore) ListTransitionsByContainer(ctx context.Context, containerID string, opts container.ListTransitionsOpts) ([]*container.StateTransition, int, error) {
 	countQuery := `SELECT COUNT(*) FROM state_transitions WHERE container_id=?`
 	var countArgs []interface{}
 	countArgs = append(countArgs, containerID)
@@ -272,7 +272,7 @@ func (s *ContainerStore) ListTransitionsByContainer(ctx context.Context, contain
 	return transitions, total, rows.Err()
 }
 
-func (s *ContainerStore) CountRestartsSince(ctx context.Context, containerID int64, since time.Time) (int, error) {
+func (s *ContainerStore) CountRestartsSince(ctx context.Context, containerID string, since time.Time) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM state_transitions
@@ -297,7 +297,7 @@ func (s *ContainerStore) CountConfigured(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-func (s *ContainerStore) GetTransitionsInWindow(ctx context.Context, containerID int64, from, to time.Time) ([]*container.StateTransition, error) {
+func (s *ContainerStore) GetTransitionsInWindow(ctx context.Context, containerID string, from, to time.Time) ([]*container.StateTransition, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+transitionColumns+` FROM state_transitions
 		WHERE container_id=? AND timestamp>=? AND timestamp<=?
@@ -353,13 +353,12 @@ func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, bef
 
 // --- Column lists and scanners ---
 
-const containerColumns = `id, external_id, name, image, state, health_status, has_health_check,
+const containerColumns = `id, agent_id, external_id, name, image, state, health_status, has_health_check,
 	orchestration_group, orchestration_unit, custom_group, is_ignored, alert_severity,
 	restart_threshold, alert_channels, archived, first_seen_at, last_state_change_at, archived_at,
 	runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
 	compose_working_dir,
-	swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas,
-	agent_id`
+	swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas`
 
 const transitionColumns = `id, container_id, previous_state, new_state, previous_health, new_health, exit_code, log_snippet, timestamp`
 
@@ -369,13 +368,13 @@ type rowScanner interface {
 
 func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, error) {
 	var c container.Container
-	var healthStatus, orchestrationGroup, orchestrationUnit, customGroup, alertChannels, agentID sql.NullString
+	var healthStatus, orchestrationGroup, orchestrationUnit, customGroup, alertChannels sql.NullString
 	var hasHealthCheck, isIgnored, archived int
 	var firstSeen, lastChange int64
 	var archivedAt sql.NullInt64
 
 	err := row.Scan(
-		&c.ID, &c.ExternalID, &c.Name, &c.Image, &c.State,
+		&c.ID, &c.AgentID, &c.ExternalID, &c.Name, &c.Image, &c.State,
 		&healthStatus, &hasHealthCheck,
 		&orchestrationGroup, &orchestrationUnit, &customGroup,
 		&isIgnored, &c.AlertSeverity,
@@ -384,7 +383,6 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 		&c.RuntimeType, &c.ErrorDetail, &c.ControllerKind, &c.Namespace, &c.PodCount, &c.ReadyCount,
 		&c.ComposeWorkingDir,
 		&c.SwarmServiceID, &c.SwarmServiceName, &c.SwarmServiceMode, &c.SwarmNodeID, &c.SwarmTaskSlot, &c.SwarmDesiredReplicas,
-		&agentID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -418,9 +416,6 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 	if archivedAt.Valid {
 		t := time.Unix(archivedAt.Int64, 0)
 		c.ArchivedAt = &t
-	}
-	if agentID.Valid {
-		c.AgentID = &agentID.String
 	}
 
 	return &c, nil

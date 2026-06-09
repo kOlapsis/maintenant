@@ -23,6 +23,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -133,8 +134,8 @@ type listEndpointsInput struct {
 	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for endpoints checked directly by the server. Omit to return all."`
 }
 type getEndpointHistoryInput struct {
-	EndpointID int64 `json:"endpoint_id" jsonschema:"Endpoint ID"`
-	Limit      int   `json:"limit,omitempty" jsonschema:"Number of recent checks to return, default 50"`
+	EndpointID string `json:"endpoint_id" jsonschema:"Endpoint ID"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Number of recent checks to return, default 50"`
 }
 type listHeartbeatsInput struct {
 	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for heartbeats received directly by the server. Omit to return all."`
@@ -151,8 +152,8 @@ type listAgentsInput struct{}
 func listContainersHandler(svc *Services) gomcp.ToolHandlerFor[listContainersInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listContainersInput) (*gomcp.CallToolResult, any, error) {
 		opts := container.ListContainersOpts{}
-		if input.AgentID != "" {
-			opts.AgentFilter = &input.AgentID
+		if f := agentFilter(input.AgentID); f != nil {
+			opts.AgentFilter = f
 		}
 		containers, err := svc.Containers.ListContainers(ctx, opts)
 		if err != nil {
@@ -168,11 +169,10 @@ func listContainersHandler(svc *Services) gomcp.ToolHandlerFor[listContainersInp
 
 func getContainerHandler(svc *Services) gomcp.ToolHandlerFor[getContainerInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input getContainerInput) (*gomcp.CallToolResult, any, error) {
-		id, err := parseContainerID(input.ContainerID)
-		if err != nil {
-			return errResult("invalid input: container_id must be a valid integer")
+		if input.ContainerID == "" {
+			return errResult("invalid input: container_id is required")
 		}
-		c, err := svc.Containers.GetContainer(ctx, id)
+		c, err := svc.Containers.GetContainer(ctx, input.ContainerID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get container: %w", err)
 		}
@@ -197,11 +197,10 @@ func getContainerLogsHandler(svc *Services) gomcp.ToolHandlerFor[getContainerLog
 		if svc.LogFetcher == nil {
 			return errResult("logs unavailable: no container runtime connected")
 		}
-		id, err := parseContainerID(input.ContainerID)
-		if err != nil {
-			return errResult("invalid input: container_id must be a valid integer")
+		if input.ContainerID == "" {
+			return errResult("invalid input: container_id is required")
 		}
-		c, err := svc.Containers.GetContainer(ctx, id)
+		c, err := svc.Containers.GetContainer(ctx, input.ContainerID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get container: %w", err)
 		}
@@ -314,8 +313,8 @@ func getTopConsumersHandler(svc *Services) gomcp.ToolHandlerFor[getTopConsumersI
 func listEndpointsHandler(svc *Services) gomcp.ToolHandlerFor[listEndpointsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listEndpointsInput) (*gomcp.CallToolResult, any, error) {
 		opts := endpoint.ListEndpointsOpts{}
-		if input.AgentID != "" {
-			opts.AgentFilter = &input.AgentID
+		if f := agentFilter(input.AgentID); f != nil {
+			opts.AgentFilter = f
 		}
 		endpoints, err := svc.Endpoints.ListEndpoints(ctx, opts)
 		if err != nil {
@@ -346,8 +345,8 @@ func getEndpointHistoryHandler(svc *Services) gomcp.ToolHandlerFor[getEndpointHi
 func listHeartbeatsHandler(svc *Services) gomcp.ToolHandlerFor[listHeartbeatsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listHeartbeatsInput) (*gomcp.CallToolResult, any, error) {
 		opts := heartbeat.ListHeartbeatsOpts{}
-		if input.AgentID != "" {
-			opts.AgentFilter = &input.AgentID
+		if f := agentFilter(input.AgentID); f != nil {
+			opts.AgentFilter = f
 		}
 		heartbeats, err := svc.Heartbeats.ListHeartbeats(ctx, opts)
 		if err != nil {
@@ -364,8 +363,8 @@ func listHeartbeatsHandler(svc *Services) gomcp.ToolHandlerFor[listHeartbeatsInp
 func listCertificatesHandler(svc *Services) gomcp.ToolHandlerFor[listCertificatesInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listCertificatesInput) (*gomcp.CallToolResult, any, error) {
 		opts := certificate.ListCertificatesOpts{}
-		if input.AgentID != "" {
-			opts.AgentFilter = &input.AgentID
+		if f := agentFilter(input.AgentID); f != nil {
+			opts.AgentFilter = f
 		}
 		certs, err := svc.Certificates.ListMonitors(ctx, opts)
 		if err != nil {
@@ -499,8 +498,16 @@ func errResult(msg string) (*gomcp.CallToolResult, any, error) {
 	}, nil, nil
 }
 
-func parseContainerID(s string) (int64, error) {
-	var id int64
-	_, err := fmt.Sscanf(s, "%d", &id)
-	return id, err
+// agentFilter resolves the agent_id input into a store filter pointer.
+// Empty means no filter (nil). The literal "local" maps to the local-agent
+// sentinel so server-managed entities are matched uniformly across stores.
+func agentFilter(agentID string) *string {
+	if agentID == "" {
+		return nil
+	}
+	if agentID == "local" {
+		v := uid.LocalAgent
+		return &v
+	}
+	return &agentID
 }

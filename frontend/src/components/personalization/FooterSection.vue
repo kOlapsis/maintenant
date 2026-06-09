@@ -15,7 +15,7 @@ async function addLink() {
   }
 }
 
-async function removeLink(id: number) {
+async function removeLink(id: string) {
   await store.deleteFooterLink(id)
 }
 

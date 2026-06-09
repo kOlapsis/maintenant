@@ -15,7 +15,7 @@ import "time"
 
 // Policy represents a stored escalation policy.
 type Policy struct {
-	ID                    int64     `json:"id"`
+	ID                    string    `json:"id"`
 	Name                  string    `json:"name"`
 	Active                bool      `json:"active"`
 	ActiveBeforeDowngrade bool      `json:"active_before_downgrade,omitempty"`
@@ -37,22 +37,22 @@ type Filters struct {
 // Scope identifies a specific monitored entity.
 type Scope struct {
 	Kind  string `json:"kind"`
-	RefID int64  `json:"ref_id"`
+	RefID string `json:"ref_id"`
 }
 
 // Level defines one escalation step.
 type Level struct {
-	Order        int     `json:"order"`
-	DelaySeconds int     `json:"delay_seconds"`
-	ChannelIDs   []int64 `json:"channel_ids"`
+	Order        int      `json:"order"`
+	DelaySeconds int      `json:"delay_seconds"`
+	ChannelIDs   []string `json:"channel_ids"`
 }
 
 // Run represents an active or completed escalation run for an alert.
 type Run struct {
-	ID                     int64       `json:"id"`
-	PolicyID               *int64      `json:"policy_id"`
+	ID                     string      `json:"id"`
+	PolicyID               *string     `json:"policy_id"`
 	PolicySnapshotJSON     string      `json:"-"`
-	AlertID                int64       `json:"alert_id"`
+	AlertID                string      `json:"alert_id"`
 	Status                 string      `json:"status"`
 	LastExecutedLevelIndex int         `json:"last_executed_level_index"`
 	StartedAt              time.Time   `json:"started_at"`
@@ -64,8 +64,8 @@ type Run struct {
 
 // RunPolicy is the minimal policy info embedded in run responses.
 type RunPolicy struct {
-	ID   *int64 `json:"id"`
-	Name string `json:"name"`
+	ID   *string `json:"id"`
+	Name string  `json:"name"`
 }
 
 // DeliveriesSummary aggregates delivery counts for a run.
@@ -77,10 +77,10 @@ type DeliveriesSummary struct {
 
 // Delivery represents a single notification attempt within a run.
 type Delivery struct {
-	ID               int64      `json:"id"`
-	RunID            int64      `json:"run_id"`
+	ID               string     `json:"id"`
+	RunID            string     `json:"run_id"`
 	LevelIndex       int        `json:"level_index"`
-	ChannelID        *int64     `json:"channel_id"`
+	ChannelID        *string    `json:"channel_id"`
 	ChannelName      string     `json:"channel_name,omitempty"`
 	Status           string     `json:"status"`
 	Error            string     `json:"error,omitempty"`
@@ -97,8 +97,8 @@ type Limits struct {
 
 // OverlapWarning describes a conflict between two policies.
 type OverlapWarning struct {
-	PolicyID           int64   `json:"policy_id"`
-	PolicyName         string  `json:"policy_name"`
-	SharedChannels     []int64 `json:"shared_channels"`
-	FilterIntersection string  `json:"filter_intersection"`
+	PolicyID           string   `json:"policy_id"`
+	PolicyName         string   `json:"policy_name"`
+	SharedChannels     []string `json:"shared_channels"`
+	FilterIntersection string   `json:"filter_intersection"`
 }

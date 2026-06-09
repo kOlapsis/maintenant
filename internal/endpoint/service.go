@@ -50,7 +50,7 @@ type EventCallback func(eventType string, data interface{})
 type AlertCallback func(ep *Endpoint, result CheckResult) (eventType string, eventData interface{})
 
 // EndpointRemovedCallback is called when an endpoint is deactivated (label removed or container destroyed).
-type EndpointRemovedCallback func(ctx context.Context, endpointID int64)
+type EndpointRemovedCallback func(ctx context.Context, endpointID string)
 
 // Deps holds all dependencies for the endpoint Service.
 type Deps struct {
@@ -264,7 +264,7 @@ func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName
 			Target:        p.Target,
 			Config:        p.Config,
 			Source:        SourceLabel,
-			AgentID:       &agentID,
+			AgentID:       agentID,
 		}
 		id, err := s.store.UpsertEndpoint(ctx, ep)
 		if err != nil {
@@ -305,7 +305,7 @@ func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName
 }
 
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.
-func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, result CheckResult) {
+func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, result CheckResult) {
 	ep, err := s.store.GetEndpointByID(ctx, endpointID)
 	if err != nil || ep == nil {
 		s.logger.Error("get endpoint for check result", "endpoint_id", endpointID, "error", err)
@@ -447,17 +447,17 @@ func (s *Service) CountActiveEndpoints(ctx context.Context) (int, error) {
 }
 
 // GetEndpoint retrieves an endpoint by ID.
-func (s *Service) GetEndpoint(ctx context.Context, id int64) (*Endpoint, error) {
+func (s *Service) GetEndpoint(ctx context.Context, id string) (*Endpoint, error) {
 	return s.store.GetEndpointByID(ctx, id)
 }
 
 // ListCheckResults returns check results for an endpoint.
-func (s *Service) ListCheckResults(ctx context.Context, endpointID int64, opts ListChecksOpts) ([]*CheckResult, int, error) {
+func (s *Service) ListCheckResults(ctx context.Context, endpointID string, opts ListChecksOpts) ([]*CheckResult, int, error) {
 	return s.store.ListCheckResults(ctx, endpointID, opts)
 }
 
 // CalculateUptime computes uptime percentages for an endpoint across multiple time windows.
-func (s *Service) CalculateUptime(ctx context.Context, endpointID int64) map[string]float64 {
+func (s *Service) CalculateUptime(ctx context.Context, endpointID string) map[string]float64 {
 	now := time.Now()
 	windows := map[string]time.Duration{
 		"1h":  1 * time.Hour,
@@ -523,7 +523,7 @@ func (s *Service) CreateStandalone(ctx context.Context, name, target string, epT
 }
 
 // UpdateStandalone updates a standalone endpoint's configuration and restarts monitoring.
-func (s *Service) UpdateStandalone(ctx context.Context, id int64, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
+func (s *Service) UpdateStandalone(ctx context.Context, id string, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
 	existing, err := s.store.GetEndpointByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get endpoint: %w", err)
@@ -553,7 +553,7 @@ func (s *Service) UpdateStandalone(ctx context.Context, id int64, name, target s
 }
 
 // DeleteStandalone removes a standalone endpoint and stops monitoring it.
-func (s *Service) DeleteStandalone(ctx context.Context, id int64) error {
+func (s *Service) DeleteStandalone(ctx context.Context, id string) error {
 	existing, err := s.store.GetEndpointByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get endpoint: %w", err)

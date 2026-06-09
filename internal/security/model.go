@@ -37,7 +37,7 @@ const (
 type Insight struct {
 	Type          InsightType    `json:"type"`
 	Severity      string         `json:"severity"`
-	ContainerID   int64          `json:"container_id"`
+	ContainerID   string         `json:"container_id"`
 	ContainerName string         `json:"container_name"`
 	Title         string         `json:"title"`
 	Description   string         `json:"description"`
@@ -47,7 +47,7 @@ type Insight struct {
 
 // ContainerInsights holds all active insights for a single container.
 type ContainerInsights struct {
-	ContainerID     int64     `json:"container_id"`
+	ContainerID     string    `json:"container_id"`
 	ContainerName   string    `json:"container_name"`
 	HighestSeverity *string   `json:"highest_severity"`
 	Count           int       `json:"count"`

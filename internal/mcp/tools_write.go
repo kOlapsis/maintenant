@@ -55,7 +55,7 @@ func registerWriteTools(server *gomcp.Server, svc *Services) {
 // --- Input types ---
 
 type acknowledgeAlertInput struct {
-	AlertID int64 `json:"alert_id" jsonschema:"Alert ID to acknowledge"`
+	AlertID string `json:"alert_id" jsonschema:"Alert ID to acknowledge"`
 }
 
 type createIncidentInput struct {
@@ -65,7 +65,7 @@ type createIncidentInput struct {
 }
 
 type updateIncidentInput struct {
-	IncidentID int64  `json:"incident_id" jsonschema:"Incident ID to update"`
+	IncidentID string `json:"incident_id" jsonschema:"Incident ID to update"`
 	Status     string `json:"status" jsonschema:"New status: investigating, identified, monitoring, or resolved"`
 	Message    string `json:"message" jsonschema:"Update message"`
 }
@@ -79,12 +79,12 @@ type createMaintenanceInput struct {
 
 type pauseMonitorInput struct {
 	MonitorType string `json:"monitor_type" jsonschema:"Type of monitor, only heartbeat is supported"`
-	MonitorID   int64  `json:"monitor_id" jsonschema:"Monitor ID to pause"`
+	MonitorID   string `json:"monitor_id" jsonschema:"Monitor ID to pause"`
 }
 
 type resumeMonitorInput struct {
 	MonitorType string `json:"monitor_type" jsonschema:"Type of monitor, only heartbeat is supported"`
-	MonitorID   int64  `json:"monitor_id" jsonschema:"Monitor ID to resume"`
+	MonitorID   string `json:"monitor_id" jsonschema:"Monitor ID to resume"`
 }
 
 // --- Handlers ---

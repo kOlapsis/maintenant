@@ -14,14 +14,13 @@ package maintenance
 import (
 	"context"
 	"log/slog"
-	"strconv"
 	"time"
 )
 
 // Store is the minimal persistence interface needed by Suppressor.
 // Implemented by *sqlite.MaintenanceStoreImpl.
 type Store interface {
-	IsEntitySuppressed(ctx context.Context, monitorType string, monitorID int64, now time.Time) (matched bool, windowID int64, endsAt time.Time, err error)
+	IsEntitySuppressed(ctx context.Context, monitorType string, monitorID string, now time.Time) (matched bool, windowID string, endsAt time.Time, err error)
 }
 
 // Suppressor implements alert.MaintenanceSuppressor by consulting the maintenance
@@ -46,14 +45,10 @@ func NewSuppressor(store Store, logger *slog.Logger) *Suppressor {
 // any error (fail-open per FR-007): a suppressor failure must never block alert
 // creation.
 func (s *Suppressor) IsSuppressed(ctx context.Context, source, entityType, entityID string) (bool, error) {
-	if entityType == "" {
+	if entityType == "" || entityID == "" {
 		return false, nil
 	}
-	id, err := strconv.ParseInt(entityID, 10, 64)
-	if err != nil {
-		return false, nil
-	}
-	matched, windowID, endsAt, err := s.store.IsEntitySuppressed(ctx, entityType, id, s.clock())
+	matched, windowID, endsAt, err := s.store.IsEntitySuppressed(ctx, entityType, entityID, s.clock())
 	if err != nil {
 		s.logger.ErrorContext(ctx, "maintenance: suppressor store error",
 			"error", err,

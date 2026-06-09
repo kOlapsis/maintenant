@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 type PersonalizationStoreImpl struct {
@@ -115,9 +116,11 @@ func (s *PersonalizationStoreImpl) GetAsset(ctx context.Context, role status.Ass
 
 func (s *PersonalizationStoreImpl) PutAsset(ctx context.Context, a status.Asset) error {
 	now := time.Now().Unix()
-	// INSERT OR REPLACE is atomic in SQLite
 	_, err := s.writer.Exec(ctx,
-		`INSERT OR REPLACE INTO status_page_assets (role, mime, bytes, byte_size, alt_text, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO status_page_assets (role, mime, bytes, byte_size, alt_text, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(role) DO UPDATE SET
+			mime = excluded.mime, bytes = excluded.bytes, byte_size = excluded.byte_size,
+			alt_text = excluded.alt_text, updated_at = excluded.updated_at`,
 		string(a.Role), a.MIME, a.Bytes, len(a.Bytes), a.AltText, now)
 	if err != nil {
 		return fmt.Errorf("put asset %s: %w", a.Role, err)
@@ -149,14 +152,15 @@ func (s *PersonalizationStoreImpl) CreateFooterLink(ctx context.Context, label, 
 		pos = int(maxPos.Int64) + 1
 	}
 
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO status_page_footer_links (position, label, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		pos, label, url, now, now)
+	id := uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO status_page_footer_links (id, position, label, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, pos, label, url, now, now)
 	if err != nil {
 		return status.FooterLink{}, fmt.Errorf("create footer link: %w", err)
 	}
 	return status.FooterLink{
-		ID:        res.LastInsertID,
+		ID:        id,
 		Position:  pos,
 		Label:     label,
 		URL:       url,
@@ -165,7 +169,7 @@ func (s *PersonalizationStoreImpl) CreateFooterLink(ctx context.Context, label, 
 	}, nil
 }
 
-func (s *PersonalizationStoreImpl) UpdateFooterLink(ctx context.Context, id int64, label, url string) (status.FooterLink, error) {
+func (s *PersonalizationStoreImpl) UpdateFooterLink(ctx context.Context, id string, label, url string) (status.FooterLink, error) {
 	now := time.Now().Unix()
 	res, err := s.writer.Exec(ctx,
 		`UPDATE status_page_footer_links SET label = ?, url = ?, updated_at = ? WHERE id = ?`,
@@ -181,7 +185,7 @@ func (s *PersonalizationStoreImpl) UpdateFooterLink(ctx context.Context, id int6
 	return scanFooterLink(row)
 }
 
-func (s *PersonalizationStoreImpl) DeleteFooterLink(ctx context.Context, id int64) error {
+func (s *PersonalizationStoreImpl) DeleteFooterLink(ctx context.Context, id string) error {
 	res, err := s.writer.Exec(ctx, `DELETE FROM status_page_footer_links WHERE id = ?`, id)
 	if err != nil {
 		return err
@@ -192,15 +196,15 @@ func (s *PersonalizationStoreImpl) DeleteFooterLink(ctx context.Context, id int6
 	return nil
 }
 
-func (s *PersonalizationStoreImpl) ReorderFooterLinks(ctx context.Context, ids []int64) ([]status.FooterLink, error) {
+func (s *PersonalizationStoreImpl) ReorderFooterLinks(ctx context.Context, ids []string) ([]status.FooterLink, error) {
 	for pos, id := range ids {
 		res, err := s.writer.Exec(ctx,
 			`UPDATE status_page_footer_links SET position = ? WHERE id = ?`, pos, id)
 		if err != nil {
-			return nil, fmt.Errorf("reorder footer link %d: %w", id, err)
+			return nil, fmt.Errorf("reorder footer link %s: %w", id, err)
 		}
 		if res.RowsAffected == 0 {
-			return nil, fmt.Errorf("footer link %d not found", id)
+			return nil, fmt.Errorf("footer link %s not found", id)
 		}
 	}
 	return s.ListFooterLinks(ctx)
@@ -225,14 +229,15 @@ func (s *PersonalizationStoreImpl) CreateFAQItem(ctx context.Context, question, 
 		pos = int(maxPos.Int64) + 1
 	}
 
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO status_page_faq_items (position, question, answer_md, answer_html, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		pos, question, answerMD, answerHTML, now, now)
+	id := uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO status_page_faq_items (id, position, question, answer_md, answer_html, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, pos, question, answerMD, answerHTML, now, now)
 	if err != nil {
 		return status.FAQItem{}, fmt.Errorf("create faq item: %w", err)
 	}
 	return status.FAQItem{
-		ID:         res.LastInsertID,
+		ID:         id,
 		Position:   pos,
 		Question:   question,
 		AnswerMD:   answerMD,
@@ -242,7 +247,7 @@ func (s *PersonalizationStoreImpl) CreateFAQItem(ctx context.Context, question, 
 	}, nil
 }
 
-func (s *PersonalizationStoreImpl) UpdateFAQItem(ctx context.Context, id int64, question, answerMD, answerHTML string) (status.FAQItem, error) {
+func (s *PersonalizationStoreImpl) UpdateFAQItem(ctx context.Context, id string, question, answerMD, answerHTML string) (status.FAQItem, error) {
 	now := time.Now().Unix()
 	res, err := s.writer.Exec(ctx,
 		`UPDATE status_page_faq_items SET question = ?, answer_md = ?, answer_html = ?, updated_at = ? WHERE id = ?`,
@@ -258,7 +263,7 @@ func (s *PersonalizationStoreImpl) UpdateFAQItem(ctx context.Context, id int64, 
 	return scanFAQItem(row)
 }
 
-func (s *PersonalizationStoreImpl) DeleteFAQItem(ctx context.Context, id int64) error {
+func (s *PersonalizationStoreImpl) DeleteFAQItem(ctx context.Context, id string) error {
 	res, err := s.writer.Exec(ctx, `DELETE FROM status_page_faq_items WHERE id = ?`, id)
 	if err != nil {
 		return err
@@ -269,15 +274,15 @@ func (s *PersonalizationStoreImpl) DeleteFAQItem(ctx context.Context, id int64) 
 	return nil
 }
 
-func (s *PersonalizationStoreImpl) ReorderFAQItems(ctx context.Context, ids []int64) ([]status.FAQItem, error) {
+func (s *PersonalizationStoreImpl) ReorderFAQItems(ctx context.Context, ids []string) ([]status.FAQItem, error) {
 	for pos, id := range ids {
 		res, err := s.writer.Exec(ctx,
 			`UPDATE status_page_faq_items SET position = ? WHERE id = ?`, pos, id)
 		if err != nil {
-			return nil, fmt.Errorf("reorder faq item %d: %w", id, err)
+			return nil, fmt.Errorf("reorder faq item %s: %w", id, err)
 		}
 		if res.RowsAffected == 0 {
-			return nil, fmt.Errorf("faq item %d not found", id)
+			return nil, fmt.Errorf("faq item %s not found", id)
 		}
 	}
 	return s.ListFAQItems(ctx)

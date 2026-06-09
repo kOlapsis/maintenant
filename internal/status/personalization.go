@@ -84,7 +84,7 @@ type Asset struct {
 }
 
 type FooterLink struct {
-	ID        int64
+	ID        string
 	Position  int
 	Label     string
 	URL       string
@@ -93,7 +93,7 @@ type FooterLink struct {
 }
 
 type FAQItem struct {
-	ID         int64
+	ID         string
 	Position   int
 	Question   string
 	AnswerMD   string

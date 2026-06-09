@@ -551,7 +551,7 @@ func (h *SwarmHandler) HandleGetServiceResources(w http.ResponseWriter, r *http.
 	}
 
 	// Build externalID → internal ID map.
-	extToInternal := make(map[string]int64, len(containers))
+	extToInternal := make(map[string]string, len(containers))
 	for _, c := range containers {
 		extToInternal[c.ExternalID] = c.ID
 	}

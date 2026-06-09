@@ -50,31 +50,30 @@ func TestParseHostFilter(t *testing.T) {
 func TestHostMatches(t *testing.T) {
 	local := ""
 	agent := "a1"
-	other := "a2"
 
 	// nil filter => all hosts match.
-	assert.True(t, hostMatches(nil, nil))
-	assert.True(t, hostMatches(&agent, nil))
+	assert.True(t, hostMatches("", nil))
+	assert.True(t, hostMatches(agent, nil))
 
-	// local filter ("") => only NULL-agent (local) snapshots.
-	assert.True(t, hostMatches(nil, &local))
-	assert.False(t, hostMatches(&agent, &local))
+	// local filter ("") => only local (empty / sentinel) snapshots.
+	assert.True(t, hostMatches("", &local))
+	assert.False(t, hostMatches(agent, &local))
 
 	// specific agent filter.
-	assert.True(t, hostMatches(&agent, &agent))
-	assert.False(t, hostMatches(&other, &agent))
-	assert.False(t, hostMatches(nil, &agent))
+	assert.True(t, hostMatches(agent, &agent))
+	assert.False(t, hostMatches("a2", &agent))
+	assert.False(t, hostMatches("", &agent))
 }
 
 // The realtime top-consumers path must honour the ?agent_id host filter.
 func TestHandleGetTopConsumers_RealtimeHostFilter(t *testing.T) {
 	agentID := "a1"
 	svc := &mockResourceTopService{
-		snapshots: map[int64]*resource.ResourceSnapshot{
-			1: {ContainerID: 1, CPUPercent: 10, AgentID: nil},      // local
-			2: {ContainerID: 2, CPUPercent: 20, AgentID: &agentID}, // agent
+		snapshots: map[string]*resource.ResourceSnapshot{
+			"1": {ContainerID: "1", CPUPercent: 10, AgentID: ""},      // local
+			"2": {ContainerID: "2", CPUPercent: 20, AgentID: agentID}, // agent
 		},
-		names: map[int64]string{1: "local-ctr", 2: "agent-ctr"},
+		names: map[string]string{"1": "local-ctr", "2": "agent-ctr"},
 	}
 	h := NewResourceTopHandler(svc)
 
@@ -95,9 +94,9 @@ func TestHandleGetTopConsumers_RealtimeHostFilter(t *testing.T) {
 
 	local := get("agent_id=local")
 	require.Len(t, local, 1)
-	assert.Equal(t, float64(1), local[0]["container_id"])
+	assert.Equal(t, "1", local[0]["container_id"])
 
 	agent := get("agent_id=a1")
 	require.Len(t, agent, 1)
-	assert.Equal(t, float64(2), agent[0]["container_id"])
+	assert.Equal(t, "2", agent[0]["container_id"])
 }

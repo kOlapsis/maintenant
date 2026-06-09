@@ -19,9 +19,10 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/swarm"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
-const swarmNodeColumns = `id, node_id, hostname, role, status, availability,
+const swarmNodeColumns = `id, agent_id, node_id, hostname, role, status, availability,
 	engine_version, address, task_count, first_seen_at, last_seen_at, last_status_change_at`
 
 // SwarmNodeStore implements swarm node persistence using SQLite.
@@ -38,13 +39,16 @@ func NewSwarmNodeStore(d *DB) *SwarmNodeStore {
 	}
 }
 
-// UpsertNode inserts or updates a swarm node by node_id.
+// UpsertNode inserts or updates a swarm node. Its id is derived deterministically
+// from (agent_id, node_id) so the agent and server mint the same id.
 func (s *SwarmNodeStore) UpsertNode(ctx context.Context, node *swarm.SwarmNode) error {
+	node.AgentID = uid.Agent(node.AgentID)
+	node.ID = uid.SwarmNode(node.AgentID, node.NodeID)
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO swarm_nodes (node_id, hostname, role, status, availability,
+		`INSERT INTO swarm_nodes (id, agent_id, node_id, hostname, role, status, availability,
 			engine_version, address, task_count, first_seen_at, last_seen_at, last_status_change_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(node_id) DO UPDATE SET
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(agent_id, node_id) DO UPDATE SET
 			hostname=excluded.hostname,
 			role=excluded.role,
 			status=excluded.status,
@@ -58,7 +62,7 @@ func (s *SwarmNodeStore) UpsertNode(ctx context.Context, node *swarm.SwarmNode) 
 				THEN excluded.last_status_change_at
 				ELSE swarm_nodes.last_status_change_at
 			END`,
-		node.NodeID, node.Hostname, node.Role, node.Status, node.Availability,
+		node.ID, node.AgentID, node.NodeID, node.Hostname, node.Role, node.Status, node.Availability,
 		node.EngineVersion, node.Address, node.TaskCount,
 		node.FirstSeenAt.Unix(), node.LastSeenAt.Unix(), node.LastStatusChangeAt.Unix(),
 	)
@@ -126,7 +130,7 @@ func scanNode(row rowScanner) (*swarm.SwarmNode, error) {
 	var firstSeen, lastSeen, lastStatusChange int64
 
 	err := row.Scan(
-		&n.ID, &n.NodeID, &n.Hostname, &n.Role, &n.Status, &n.Availability,
+		&n.ID, &n.AgentID, &n.NodeID, &n.Hostname, &n.Role, &n.Status, &n.Availability,
 		&n.EngineVersion, &n.Address, &n.TaskCount,
 		&firstSeen, &lastSeen, &lastStatusChange,
 	)

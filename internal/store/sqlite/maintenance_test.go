@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/uid"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,35 +33,35 @@ func setupMaintenanceTestDB(t *testing.T) (*MaintenanceStoreImpl, *sql.DB) {
 
 	_, err = rawDB.Exec(`
 		CREATE TABLE maintenance_windows (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY NOT NULL,
 			title TEXT NOT NULL DEFAULT '',
 			description TEXT NOT NULL DEFAULT '',
 			starts_at INTEGER NOT NULL,
 			ends_at INTEGER NOT NULL,
 			active INTEGER NOT NULL DEFAULT 0,
-			incident_id INTEGER,
+			incident_id TEXT,
 			created_at INTEGER NOT NULL DEFAULT 0,
 			updated_at INTEGER NOT NULL DEFAULT 0
 		);
 		CREATE INDEX idx_maintenance_windows_schedule ON maintenance_windows(starts_at, ends_at);
 
 		CREATE TABLE status_components (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY NOT NULL,
 			composition_mode TEXT NOT NULL DEFAULT 'explicit',
 			match_all_type TEXT,
 			display_name TEXT NOT NULL DEFAULT ''
 		);
 
 		CREATE TABLE maintenance_components (
-			maintenance_id INTEGER NOT NULL REFERENCES maintenance_windows(id) ON DELETE CASCADE,
-			component_id INTEGER NOT NULL REFERENCES status_components(id) ON DELETE CASCADE,
+			maintenance_id TEXT NOT NULL REFERENCES maintenance_windows(id) ON DELETE CASCADE,
+			component_id TEXT NOT NULL REFERENCES status_components(id) ON DELETE CASCADE,
 			PRIMARY KEY (maintenance_id, component_id)
 		);
 
 		CREATE TABLE status_component_monitors (
-			component_id INTEGER NOT NULL REFERENCES status_components(id) ON DELETE CASCADE,
+			component_id TEXT NOT NULL REFERENCES status_components(id) ON DELETE CASCADE,
 			monitor_type TEXT NOT NULL,
-			monitor_id INTEGER NOT NULL,
+			monitor_id TEXT NOT NULL,
 			PRIMARY KEY (component_id, monitor_type, monitor_id)
 		);
 		CREATE INDEX idx_status_component_monitors_lookup ON status_component_monitors(monitor_type, monitor_id);
@@ -78,42 +79,43 @@ func setupMaintenanceTestDB(t *testing.T) (*MaintenanceStoreImpl, *sql.DB) {
 }
 
 // insertWindow inserts a maintenance window with the given start/end (unix seconds).
-func insertWindow(t *testing.T, db *sql.DB, startsAt, endsAt int64) int64 {
+func insertWindow(t *testing.T, db *sql.DB, startsAt, endsAt int64) string {
 	t.Helper()
-	var id int64
-	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO maintenance_windows (title, description, starts_at, ends_at, active, created_at, updated_at)
-		VALUES ('Test', '', ?, ?, 0, 0, 0) RETURNING id`,
-		startsAt, endsAt,
-	).Scan(&id)
+	id := uid.New()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO maintenance_windows (id, title, description, starts_at, ends_at, active, created_at, updated_at)
+		VALUES (?, 'Test', '', ?, ?, 0, 0, 0)`,
+		id, startsAt, endsAt,
+	)
 	require.NoError(t, err)
 	return id
 }
 
 // insertExplicitComponent inserts a status_component with composition_mode='explicit'.
-func insertExplicitComponent(t *testing.T, db *sql.DB) int64 {
+func insertExplicitComponent(t *testing.T, db *sql.DB) string {
 	t.Helper()
-	var id int64
-	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO status_components (composition_mode, match_all_type, display_name) VALUES ('explicit', NULL, 'Test') RETURNING id`,
-	).Scan(&id)
+	id := uid.New()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name) VALUES (?, 'explicit', NULL, 'Test')`,
+		id,
+	)
 	require.NoError(t, err)
 	return id
 }
 
 // insertMatchAllComponent inserts a status_component with composition_mode='match-all'.
-func insertMatchAllComponent(t *testing.T, db *sql.DB, matchAllType string) int64 {
+func insertMatchAllComponent(t *testing.T, db *sql.DB, matchAllType string) string {
 	t.Helper()
-	var id int64
-	err := db.QueryRowContext(context.Background(),
-		`INSERT INTO status_components (composition_mode, match_all_type, display_name) VALUES ('match-all', ?, 'Test') RETURNING id`,
-		matchAllType,
-	).Scan(&id)
+	id := uid.New()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name) VALUES (?, 'match-all', ?, 'Test')`,
+		id, matchAllType,
+	)
 	require.NoError(t, err)
 	return id
 }
 
-func linkWindowComponent(t *testing.T, db *sql.DB, windowID, componentID int64) {
+func linkWindowComponent(t *testing.T, db *sql.DB, windowID, componentID string) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO maintenance_components (maintenance_id, component_id) VALUES (?, ?)`,
@@ -122,7 +124,7 @@ func linkWindowComponent(t *testing.T, db *sql.DB, windowID, componentID int64) 
 	require.NoError(t, err)
 }
 
-func linkComponentMonitor(t *testing.T, db *sql.DB, componentID int64, monitorType string, monitorID int64) {
+func linkComponentMonitor(t *testing.T, db *sql.DB, componentID string, monitorType string, monitorID string) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id) VALUES (?, ?, ?)`,
@@ -142,9 +144,9 @@ func TestIsEntitySuppressed(t *testing.T) {
 		wid := insertWindow(t, db, now.Unix()-3600, now.Unix()+3600)
 		cid := insertExplicitComponent(t, db)
 		linkWindowComponent(t, db, wid, cid)
-		linkComponentMonitor(t, db, cid, "endpoint", 42)
+		linkComponentMonitor(t, db, cid, "endpoint", "42")
 
-		matched, windowID, endsAt, err := store.IsEntitySuppressed(ctx, "endpoint", 42, now)
+		matched, windowID, endsAt, err := store.IsEntitySuppressed(ctx, "endpoint", "42", now)
 		require.NoError(t, err)
 		assert.True(t, matched)
 		assert.Equal(t, wid, windowID)
@@ -159,12 +161,12 @@ func TestIsEntitySuppressed(t *testing.T) {
 		// No status_component_monitors row needed for match-all
 
 		// Same type → match
-		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", 999, now)
+		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", "999", now)
 		require.NoError(t, err)
 		assert.True(t, matched)
 
 		// Different type → no match
-		matched2, _, _, err2 := store.IsEntitySuppressed(ctx, "endpoint", 999, now)
+		matched2, _, _, err2 := store.IsEntitySuppressed(ctx, "endpoint", "999", now)
 		require.NoError(t, err2)
 		assert.False(t, matched2)
 	})
@@ -175,9 +177,9 @@ func TestIsEntitySuppressed(t *testing.T) {
 		wid := insertWindow(t, db, now.Unix()-7200, now.Unix()-3600)
 		cid := insertExplicitComponent(t, db)
 		linkWindowComponent(t, db, wid, cid)
-		linkComponentMonitor(t, db, cid, "container", 42)
+		linkComponentMonitor(t, db, cid, "container", "42")
 
-		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", 42, now)
+		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", "42", now)
 		require.NoError(t, err)
 		assert.False(t, matched)
 	})
@@ -188,9 +190,9 @@ func TestIsEntitySuppressed(t *testing.T) {
 		wid := insertWindow(t, db, now.Unix()+3600, now.Unix()+7200)
 		cid := insertExplicitComponent(t, db)
 		linkWindowComponent(t, db, wid, cid)
-		linkComponentMonitor(t, db, cid, "container", 42)
+		linkComponentMonitor(t, db, cid, "container", "42")
 
-		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", 42, now)
+		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", "42", now)
 		require.NoError(t, err)
 		assert.False(t, matched)
 	})
@@ -200,7 +202,7 @@ func TestIsEntitySuppressed(t *testing.T) {
 		// Window with no components linked
 		_ = insertWindow(t, db, now.Unix()-3600, now.Unix()+3600)
 
-		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", 42, now)
+		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", "42", now)
 		require.NoError(t, err)
 		assert.False(t, matched)
 	})
@@ -212,7 +214,7 @@ func TestIsEntitySuppressed(t *testing.T) {
 		linkWindowComponent(t, db, wid, cid)
 		// No monitors linked to explicit component
 
-		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", 42, now)
+		matched, _, _, err := store.IsEntitySuppressed(ctx, "container", "42", now)
 		require.NoError(t, err)
 		assert.False(t, matched)
 	})
@@ -223,12 +225,12 @@ func TestIsEntitySuppressed(t *testing.T) {
 		wid1 := insertWindow(t, db, now.Unix()-3600, now.Unix()+3600)
 		cid1 := insertExplicitComponent(t, db)
 		linkWindowComponent(t, db, wid1, cid1)
-		linkComponentMonitor(t, db, cid1, "container", 42)
+		linkComponentMonitor(t, db, cid1, "container", "42")
 
 		// Window 2: active but no components
 		_ = insertWindow(t, db, now.Unix()-3600, now.Unix()+3600)
 
-		matched, windowID, _, err := store.IsEntitySuppressed(ctx, "container", 42, now)
+		matched, windowID, _, err := store.IsEntitySuppressed(ctx, "container", "42", now)
 		require.NoError(t, err)
 		assert.True(t, matched)
 		assert.Equal(t, wid1, windowID)

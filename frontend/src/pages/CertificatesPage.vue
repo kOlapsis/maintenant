@@ -97,7 +97,7 @@ async function handleCreate() {
   }
 }
 
-function handleSelect(id: number) {
+function handleSelect(id: string) {
   openDetail('certificate', id)
 }
 </script>

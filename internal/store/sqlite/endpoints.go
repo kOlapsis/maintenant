@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // EndpointStore implements endpoint.EndpointStore using SQLite.
@@ -37,47 +37,20 @@ func NewEndpointStore(d *DB) *EndpointStore {
 	}
 }
 
-const endpointColumns = `id, container_name, label_key, external_id, endpoint_type, target,
+const endpointColumns = `id, agent_id, container_name, label_key, external_id, endpoint_type, target,
 	status, alert_state, consecutive_failures, consecutive_successes,
 	last_check_at, last_response_time_ms, last_http_status, last_error,
-	config_json, active, first_seen_at, last_seen_at, source, name, agent_id`
+	config_json, active, first_seen_at, last_seen_at, source, name`
 
-func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint) (int64, error) {
+// UpsertEndpoint upserts a label-discovered endpoint. Its id is derived
+// deterministically from (agent_id, container_name, label_key) so the agent and
+// server mint the same id; a repeat report updates the existing row.
+func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint) (string, error) {
+	e.AgentID = uid.Agent(e.AgentID)
+	e.ID = uid.EndpointLabel(e.AgentID, e.ContainerName, e.LabelKey)
 	configJSON := e.ConfigJSON()
 	now := time.Now().Unix()
 
-	var agentID interface{}
-	if e.AgentID != nil {
-		agentID = *e.AgentID
-	}
-
-	// Identity lookup is agent-scoped: a remote agent's "web/maintenant.endpoint.http"
-	// must not match the server's own (or another agent's) endpoint of the same name.
-	existing, err := s.scanEndpoint(s.db.QueryRowContext(ctx,
-		`SELECT `+endpointColumns+` FROM endpoints
-		WHERE container_name=? AND label_key=? AND COALESCE(agent_id,'')=COALESCE(?,'')`,
-		e.ContainerName, e.LabelKey, agentID))
-	if err != nil {
-		return 0, err
-	}
-
-	if existing != nil {
-		// Update existing endpoint
-		_, err := s.writer.Exec(ctx,
-			`UPDATE endpoints SET external_id=?, endpoint_type=?, target=?, config_json=?,
-				active=1, last_seen_at=?
-			WHERE id=?`,
-			e.ExternalID, string(e.EndpointType), e.Target, configJSON,
-			now, existing.ID,
-		)
-		if err != nil {
-			return 0, fmt.Errorf("update endpoint: %w", err)
-		}
-		e.ID = existing.ID
-		return existing.ID, nil
-	}
-
-	// Insert new endpoint
 	firstSeen := now
 	if !e.FirstSeenAt.IsZero() {
 		firstSeen = e.FirstSeenAt.Unix()
@@ -86,20 +59,23 @@ func (s *EndpointStore) UpsertEndpoint(ctx context.Context, e *endpoint.Endpoint
 	if source == "" {
 		source = string(endpoint.SourceLabel)
 	}
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target,
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO endpoints (id, agent_id, container_name, label_key, external_id, endpoint_type, target,
 			status, alert_state, consecutive_failures, consecutive_successes,
-			config_json, active, first_seen_at, last_seen_at, source, name, agent_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, ?, ?, ?)`,
-		e.ContainerName, e.LabelKey, e.ExternalID, string(e.EndpointType), e.Target,
+			config_json, active, first_seen_at, last_seen_at, source, name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			external_id=excluded.external_id, endpoint_type=excluded.endpoint_type,
+			target=excluded.target, config_json=excluded.config_json,
+			active=1, last_seen_at=excluded.last_seen_at`,
+		e.ID, e.AgentID, e.ContainerName, e.LabelKey, e.ExternalID, string(e.EndpointType), e.Target,
 		string(endpoint.StatusUnknown), string(endpoint.AlertNormal),
-		configJSON, firstSeen, now, source, e.Name, agentID,
+		configJSON, firstSeen, now, source, e.Name,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert endpoint: %w", err)
+		return "", fmt.Errorf("upsert endpoint: %w", err)
 	}
-	e.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return e.ID, nil
 }
 
 func (s *EndpointStore) GetEndpointByIdentity(ctx context.Context, containerName, labelKey string) (*endpoint.Endpoint, error) {
@@ -115,10 +91,10 @@ func (s *EndpointStore) GetActiveAgentEndpointByTarget(ctx context.Context, agen
 	return s.scanEndpoint(s.db.QueryRowContext(ctx,
 		`SELECT `+endpointColumns+` FROM endpoints
 		WHERE agent_id=? AND target=? AND active=1`,
-		agentID, target))
+		uid.Agent(agentID), target))
 }
 
-func (s *EndpointStore) GetEndpointByID(ctx context.Context, id int64) (*endpoint.Endpoint, error) {
+func (s *EndpointStore) GetEndpointByID(ctx context.Context, id string) (*endpoint.Endpoint, error) {
 	return s.scanEndpoint(s.db.QueryRowContext(ctx,
 		`SELECT `+endpointColumns+` FROM endpoints WHERE id=?`, id))
 }
@@ -147,10 +123,10 @@ func (s *EndpointStore) ListEndpoints(ctx context.Context, opts endpoint.ListEnd
 		args = append(args, opts.Source)
 	}
 	if opts.AgentFilter != nil {
+		query += ` AND agent_id=?`
 		if *opts.AgentFilter == "local" {
-			query += ` AND agent_id IS NULL`
+			args = append(args, uid.LocalAgent)
 		} else {
-			query += ` AND agent_id=?`
 			args = append(args, *opts.AgentFilter)
 		}
 	}
@@ -207,16 +183,16 @@ func (s *EndpointStore) CountActiveEndpoints(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-func (s *EndpointStore) DeactivateEndpoint(ctx context.Context, id int64) error {
+func (s *EndpointStore) DeactivateEndpoint(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE endpoints SET active=0 WHERE id=?`, id)
 	if err != nil {
-		return fmt.Errorf("deactivate endpoint %d: %w", id, err)
+		return fmt.Errorf("deactivate endpoint %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *EndpointStore) UpdateCheckResult(ctx context.Context, id int64, status endpoint.EndpointStatus,
+func (s *EndpointStore) UpdateCheckResult(ctx context.Context, id string, status endpoint.EndpointStatus,
 	alertState endpoint.AlertState, consecutiveFailures, consecutiveSuccesses int,
 	responseTimeMs int64, httpStatus *int, lastError string) error {
 
@@ -232,26 +208,26 @@ func (s *EndpointStore) UpdateCheckResult(ctx context.Context, id int64, status 
 		id,
 	)
 	if err != nil {
-		return fmt.Errorf("update check result for endpoint %d: %w", id, err)
+		return fmt.Errorf("update check result for endpoint %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *EndpointStore) InsertCheckResult(ctx context.Context, result *endpoint.CheckResult) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO check_results (endpoint_id, success, response_time_ms, http_status, error_message, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		result.EndpointID, boolToInt(result.Success), result.ResponseTimeMs,
+func (s *EndpointStore) InsertCheckResult(ctx context.Context, result *endpoint.CheckResult) (string, error) {
+	result.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO check_results (id, endpoint_id, success, response_time_ms, http_status, error_message, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		result.ID, result.EndpointID, boolToInt(result.Success), result.ResponseTimeMs,
 		result.HTTPStatus, NullableString(result.ErrorMessage), result.Timestamp.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert check result: %w", err)
+		return "", fmt.Errorf("insert check result: %w", err)
 	}
-	result.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return result.ID, nil
 }
 
-func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID int64, opts endpoint.ListChecksOpts) ([]*endpoint.CheckResult, int, error) {
+func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID string, opts endpoint.ListChecksOpts) ([]*endpoint.CheckResult, int, error) {
 	countQuery := `SELECT COUNT(*) FROM check_results WHERE endpoint_id=?`
 	countArgs := []interface{}{endpointID}
 
@@ -303,7 +279,7 @@ func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID int64, 
 	return results, total, rows.Err()
 }
 
-func (s *EndpointStore) GetCheckResultsInWindow(ctx context.Context, endpointID int64, from, to time.Time) (int, int, error) {
+func (s *EndpointStore) GetCheckResultsInWindow(ctx context.Context, endpointID string, from, to time.Time) (int, int, error) {
 	var total, successes int
 	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*), COALESCE(SUM(success), 0) FROM check_results
@@ -353,28 +329,35 @@ func (s *EndpointStore) DeleteInactiveEndpointsBefore(ctx context.Context, befor
 }
 
 // InsertStandaloneEndpoint creates a manually-defined endpoint (not from container labels).
-func (s *EndpointStore) InsertStandaloneEndpoint(ctx context.Context, e *endpoint.Endpoint) (int64, error) {
+// Its identity is (agent_id, empty container_name, label_key=external_id) where the
+// external_id is a freshly minted unique key, so the derived id is stable.
+func (s *EndpointStore) InsertStandaloneEndpoint(ctx context.Context, e *endpoint.Endpoint) (string, error) {
+	e.AgentID = uid.Agent(e.AgentID)
 	configJSON := e.ConfigJSON()
 	now := time.Now().Unix()
-	externalID := uuid.New().String()
+	externalID := uid.New()
+	e.ID = uid.EndpointLabel(e.AgentID, "", externalID)
 
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO endpoints (container_name, label_key, external_id, endpoint_type, target,
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO endpoints (id, agent_id, container_name, label_key, external_id, endpoint_type, target,
 			status, alert_state, consecutive_failures, consecutive_successes,
 			config_json, active, first_seen_at, last_seen_at, source, name)
-		VALUES ('', ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, 'standalone', ?)`,
-		externalID, externalID, string(e.EndpointType), e.Target,
+		VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, ?, ?, 'standalone', ?)
+		ON CONFLICT(id) DO UPDATE SET
+			endpoint_type=excluded.endpoint_type, target=excluded.target,
+			config_json=excluded.config_json, active=1, last_seen_at=excluded.last_seen_at, name=excluded.name`,
+		e.ID, e.AgentID, externalID, externalID, string(e.EndpointType), e.Target,
 		string(endpoint.StatusUnknown), string(endpoint.AlertNormal),
 		configJSON, now, now, e.Name,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert standalone endpoint: %w", err)
+		return "", fmt.Errorf("insert standalone endpoint: %w", err)
 	}
-	return res.LastInsertID, nil
+	return e.ID, nil
 }
 
 // UpdateStandaloneEndpoint updates a standalone endpoint's mutable fields.
-func (s *EndpointStore) UpdateStandaloneEndpoint(ctx context.Context, id int64, name, target string, endpointType endpoint.EndpointType, configJSON string) error {
+func (s *EndpointStore) UpdateStandaloneEndpoint(ctx context.Context, id string, name, target string, endpointType endpoint.EndpointType, configJSON string) error {
 	now := time.Now().Unix()
 	res, err := s.writer.Exec(ctx,
 		`UPDATE endpoints SET name=?, target=?, endpoint_type=?, config_json=?, last_seen_at=?
@@ -382,29 +365,29 @@ func (s *EndpointStore) UpdateStandaloneEndpoint(ctx context.Context, id int64, 
 		name, target, string(endpointType), configJSON, now, id,
 	)
 	if err != nil {
-		return fmt.Errorf("update standalone endpoint %d: %w", id, err)
+		return fmt.Errorf("update standalone endpoint %s: %w", id, err)
 	}
 	if res.RowsAffected == 0 {
-		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+		return fmt.Errorf("standalone endpoint %s not found or not standalone", id)
 	}
 	return nil
 }
 
 // DeleteStandaloneEndpoint permanently removes a standalone endpoint and its check results.
-func (s *EndpointStore) DeleteStandaloneEndpoint(ctx context.Context, id int64) error {
+func (s *EndpointStore) DeleteStandaloneEndpoint(ctx context.Context, id string) error {
 	// Delete check results first
 	_, err := s.writer.Exec(ctx, `DELETE FROM check_results WHERE endpoint_id=?`, id)
 	if err != nil {
-		return fmt.Errorf("delete check results for standalone endpoint %d: %w", id, err)
+		return fmt.Errorf("delete check results for standalone endpoint %s: %w", id, err)
 	}
 
 	res, err := s.writer.Exec(ctx,
 		`DELETE FROM endpoints WHERE id=? AND source='standalone'`, id)
 	if err != nil {
-		return fmt.Errorf("delete standalone endpoint %d: %w", id, err)
+		return fmt.Errorf("delete standalone endpoint %s: %w", id, err)
 	}
 	if res.RowsAffected == 0 {
-		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+		return fmt.Errorf("standalone endpoint %s not found or not standalone", id)
 	}
 	return nil
 }
@@ -414,20 +397,20 @@ func (s *EndpointStore) DeleteStandaloneEndpoint(ctx context.Context, id int64) 
 func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error) {
 	var e endpoint.Endpoint
 	var lastCheckAt, lastResponseTimeMs, lastHTTPStatus sql.NullInt64
-	var lastError, agentID sql.NullString
+	var lastError sql.NullString
 	var configJSON string
 	var active int
 	var firstSeen, lastSeen int64
 	var source, name string
 
 	err := row.Scan(
-		&e.ID, &e.ContainerName, &e.LabelKey, &e.ExternalID,
+		&e.ID, &e.AgentID, &e.ContainerName, &e.LabelKey, &e.ExternalID,
 		&e.EndpointType, &e.Target,
 		&e.Status, &e.AlertState,
 		&e.ConsecutiveFailures, &e.ConsecutiveSuccesses,
 		&lastCheckAt, &lastResponseTimeMs, &lastHTTPStatus, &lastError,
 		&configJSON, &active, &firstSeen, &lastSeen,
-		&source, &name, &agentID,
+		&source, &name,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -456,9 +439,6 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 	}
 	if lastError.Valid {
 		e.LastError = lastError.String
-	}
-	if agentID.Valid {
-		e.AgentID = &agentID.String
 	}
 
 	// Parse config JSON
@@ -505,7 +485,7 @@ func scanCheckResultRow(row rowScanner) (*endpoint.CheckResult, error) {
 }
 
 // GetSparklineData returns the last N response_time_ms values per active endpoint.
-func (s *EndpointStore) GetSparklineData(ctx context.Context, limit int) (map[int64][]float64, error) {
+func (s *EndpointStore) GetSparklineData(ctx context.Context, limit int) (map[string][]float64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -528,9 +508,9 @@ func (s *EndpointStore) GetSparklineData(ctx context.Context, limit int) (map[in
 		_ = rows.Close()
 	}(rows)
 
-	result := make(map[int64][]float64)
+	result := make(map[string][]float64)
 	for rows.Next() {
-		var epID int64
+		var epID string
 		var ms float64
 		if err := rows.Scan(&epID, &ms); err != nil {
 			return nil, fmt.Errorf("scan sparkline row: %w", err)

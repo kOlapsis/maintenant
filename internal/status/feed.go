@@ -73,7 +73,7 @@ func (h *Handler) HandleAtomFeed(w http.ResponseWriter, r *http.Request) {
 
 		feed.Entries = append(feed.Entries, AtomEntry{
 			Title:   fmt.Sprintf("[%s] %s", inc.Severity, inc.Title),
-			ID:      fmt.Sprintf("%s/status/incidents/%d", baseURL, inc.ID),
+			ID:      fmt.Sprintf("%s/status/incidents/%s", baseURL, inc.ID),
 			Link:    AtomLink{Href: baseURL + "/status", Rel: "alternate"},
 			Updated: inc.UpdatedAt.UTC().Format(time.RFC3339),
 			Summary: summary,

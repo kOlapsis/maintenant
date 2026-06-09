@@ -42,7 +42,7 @@ const severities = ref<string[]>(toCsvArray(props.trigger?.filter_severities ?? 
 const sources = ref<string[]>(toCsvArray(props.trigger?.filter_sources ?? ''))
 const scopesCsv = ref(props.trigger?.filter_scopes ?? '')
 const tagsCsv = ref(props.trigger?.filter_tags ?? '')
-const selectedChannelIds = ref<number[]>(props.trigger?.channel_ids ?? [])
+const selectedChannelIds = ref<string[]>(props.trigger?.channel_ids ?? [])
 
 const saving = ref(false)
 const saveError = ref<string | null>(null)
@@ -78,7 +78,7 @@ function toggleSource(s: string) {
   sources.value = toggleArray(sources.value, s)
 }
 
-function toggleChannel(id: number) {
+function toggleChannel(id: string) {
   if (selectedChannelIds.value.includes(id)) {
     selectedChannelIds.value = selectedChannelIds.value.filter((x) => x !== id)
   } else {

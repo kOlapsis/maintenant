@@ -45,19 +45,19 @@ type stubStore struct {
 	baseline *DigestBaseline
 }
 
-func (s *stubStore) InsertScanRecord(_ context.Context, _ *ScanRecord) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertScanRecord(_ context.Context, _ *ScanRecord) (string, error) {
+	return "", nil
 }
 func (s *stubStore) UpdateScanRecord(_ context.Context, _ *ScanRecord) error { return nil }
-func (s *stubStore) GetScanRecord(_ context.Context, _ int64) (*ScanRecord, error) {
+func (s *stubStore) GetScanRecord(_ context.Context, _ string) (*ScanRecord, error) {
 	return nil, nil
 }
 func (s *stubStore) GetLatestScanRecord(_ context.Context) (*ScanRecord, error) { return nil, nil }
-func (s *stubStore) InsertImageUpdate(_ context.Context, _ *ImageUpdate) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertImageUpdate(_ context.Context, _ *ImageUpdate) (string, error) {
+	return "", nil
 }
 func (s *stubStore) UpdateImageUpdate(_ context.Context, _ *ImageUpdate) error { return nil }
-func (s *stubStore) GetImageUpdate(_ context.Context, _ int64) (*ImageUpdate, error) {
+func (s *stubStore) GetImageUpdate(_ context.Context, _ string) (*ImageUpdate, error) {
 	return nil, nil
 }
 func (s *stubStore) GetImageUpdateByContainer(_ context.Context, _ string) (*ImageUpdate, error) {
@@ -68,24 +68,24 @@ func (s *stubStore) ListImageUpdates(_ context.Context, _ ListImageUpdatesOpts) 
 }
 func (s *stubStore) GetUpdateSummary(_ context.Context) (*UpdateSummary, error)      { return nil, nil }
 func (s *stubStore) DeleteImageUpdatesByContainer(_ context.Context, _ string) error { return nil }
-func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ int64, _ []string) (int64, error) {
+func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ string, _ []string) (int64, error) {
 	return 0, nil
 }
-func (s *stubStore) ListStaleImageUpdates(_ context.Context, _ int64, _ []string) ([]string, error) {
+func (s *stubStore) ListStaleImageUpdates(_ context.Context, _ string, _ []string) ([]string, error) {
 	return nil, nil
 }
-func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, error) {
+	return "", nil
 }
 func (s *stubStore) GetVersionPin(_ context.Context, _ string) (*VersionPin, error) { return nil, nil }
 func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error             { return nil }
-func (s *stubStore) InsertExclusion(_ context.Context, _ *UpdateExclusion) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertExclusion(_ context.Context, _ *UpdateExclusion) (string, error) {
+	return "", nil
 }
 func (s *stubStore) ListExclusions(_ context.Context) ([]*UpdateExclusion, error) { return nil, nil }
-func (s *stubStore) DeleteExclusion(_ context.Context, _ int64) error             { return nil }
-func (s *stubStore) InsertCVECacheEntry(_ context.Context, _ *CVECacheEntry) (int64, error) {
-	return 0, nil
+func (s *stubStore) DeleteExclusion(_ context.Context, _ string) error            { return nil }
+func (s *stubStore) InsertCVECacheEntry(_ context.Context, _ *CVECacheEntry) (string, error) {
+	return "", nil
 }
 func (s *stubStore) GetCVECacheEntries(_ context.Context, _, _, _ string) ([]*CVECacheEntry, error) {
 	return nil, nil
@@ -109,8 +109,8 @@ func (s *stubStore) UpsertDigestBaseline(_ context.Context, _ *DigestBaseline) e
 func (s *stubStore) GetDigestBaseline(_ context.Context, _ string) (*DigestBaseline, error) {
 	return s.baseline, nil
 }
-func (s *stubStore) InsertRiskScoreRecord(_ context.Context, _ *RiskScoreRecord) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertRiskScoreRecord(_ context.Context, _ *RiskScoreRecord) (string, error) {
+	return "", nil
 }
 func (s *stubStore) ListRiskScoreHistory(_ context.Context, _ string, _, _ time.Time) ([]*RiskScoreRecord, error) {
 	return nil, nil

@@ -13,7 +13,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch } from './apiFetch'
 
 export interface ResourceSnapshot {
-  container_id: number
+  container_id: string
   cpu_percent: number
   mem_used: number
   mem_limit: number
@@ -72,14 +72,14 @@ export interface HistoryPoint {
 }
 
 export interface HistoryResponse {
-  container_id: number
+  container_id: string
   range: string
   granularity: string
   points: HistoryPoint[]
 }
 
 export interface ResourceAlertConfig {
-  container_id: number
+  container_id: string
   cpu_threshold: number
   mem_threshold: number
   enabled: boolean
@@ -97,7 +97,7 @@ function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   return apiFetch<T>(url, init)
 }
 
-export function getCurrentResources(containerId: number): Promise<ResourceSnapshot> {
+export function getCurrentResources(containerId: string): Promise<ResourceSnapshot> {
   return fetchJSON<ResourceSnapshot>(`${API_BASE}/containers/${containerId}/resources/current`)
 }
 
@@ -112,16 +112,16 @@ export function getResourceHosts(): Promise<{ hosts: ResourceHost[] }> {
   return fetchJSON<{ hosts: ResourceHost[] }>(`${API_BASE}/resources/hosts`)
 }
 
-export function getResourceHistory(containerId: number, range: string): Promise<HistoryResponse> {
+export function getResourceHistory(containerId: string, range: string): Promise<HistoryResponse> {
   return fetchJSON<HistoryResponse>(`${API_BASE}/containers/${containerId}/resources/history?range=${range}`)
 }
 
-export function getAlertConfig(containerId: number): Promise<ResourceAlertConfig> {
+export function getAlertConfig(containerId: string): Promise<ResourceAlertConfig> {
   return fetchJSON<ResourceAlertConfig>(`${API_BASE}/containers/${containerId}/resources/alerts`)
 }
 
 export interface TopConsumerApi {
-  container_id: number
+  container_id: string
   container_name: string
   value: number
   percent: number
@@ -141,7 +141,7 @@ export function getTopConsumers(metric: string, period: string, limit = 5, agent
   return fetchJSON<TopConsumerResponse>(`${API_BASE}/resources/top?metric=${metric}&period=${period}&limit=${limit}${host}`)
 }
 
-export function updateAlertConfig(containerId: number, input: UpdateAlertConfigInput): Promise<ResourceAlertConfig> {
+export function updateAlertConfig(containerId: string, input: UpdateAlertConfigInput): Promise<ResourceAlertConfig> {
   return fetchJSON<ResourceAlertConfig>(`${API_BASE}/containers/${containerId}/resources/alerts`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

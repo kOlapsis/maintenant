@@ -155,6 +155,6 @@ func isMetadataAddress(ip net.IP) bool {
 }
 
 // ClearLinkLocalWarning removes the link-local warning state for an endpoint (e.g., on reconfigure).
-func ClearLinkLocalWarning(endpointID int64) {
+func ClearLinkLocalWarning(endpointID string) {
 	warnedLinkLocal.Delete(endpointID)
 }

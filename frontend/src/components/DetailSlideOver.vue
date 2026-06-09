@@ -64,20 +64,17 @@ const panelWidth = computed(() => {
   return detail.entityType.value === 'container' ? 'max-w-2xl' : 'max-w-lg'
 })
 
-function resolveTitle(type: EntityType, id: number | string): string {
+function resolveTitle(type: EntityType, id: string): string {
   switch (type) {
     case 'container': {
-      if (typeof id !== 'number') return ''
       const c = containersStore.allContainers.find(ct => ct.id === id)
       return c?.name ?? ''
     }
     case 'heartbeat': {
-      if (typeof id !== 'number') return ''
       const h = heartbeatsStore.heartbeats.find(hb => hb.id === id)
       return h?.name ?? ''
     }
     case 'certificate': {
-      if (typeof id !== 'number') return ''
       const cert = certificatesStore.certificates.find(c => c.id === id)
       return cert ? `${cert.hostname}:${cert.port}` : ''
     }
@@ -108,19 +105,19 @@ function handleDeleted() {
       <span></span>
     </template>
     <ContainerDetail
-      v-if="detail.entityType.value === 'container' && typeof detail.entityId.value === 'number' && detail.entityId.value"
-      :container-id="(detail.entityId.value as number)"
+      v-if="detail.entityType.value === 'container' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :container-id="(detail.entityId.value as string)"
       @close="handleClose"
       @deleted="handleDeleted"
     />
     <HeartbeatDetail
-      v-if="detail.entityType.value === 'heartbeat' && typeof detail.entityId.value === 'number' && detail.entityId.value"
-      :heartbeat-id="(detail.entityId.value as number)"
+      v-if="detail.entityType.value === 'heartbeat' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :heartbeat-id="(detail.entityId.value as string)"
       @close="handleClose"
     />
     <CertificateDetail
-      v-if="detail.entityType.value === 'certificate' && typeof detail.entityId.value === 'number' && detail.entityId.value"
-      :certificate-id="(detail.entityId.value as number)"
+      v-if="detail.entityType.value === 'certificate' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :certificate-id="(detail.entityId.value as string)"
       @close="handleClose"
     />
     <SwarmServiceDetail

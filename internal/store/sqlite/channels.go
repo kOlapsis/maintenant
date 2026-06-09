@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ChannelStoreImpl implements alert.ChannelStore using SQLite.
@@ -35,20 +36,21 @@ func NewChannelStore(d *DB) *ChannelStoreImpl {
 	}
 }
 
-func (s *ChannelStoreImpl) InsertChannel(ctx context.Context, ch *alert.NotificationChannel) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO notification_channels (name, type, url, headers, enabled)
-		VALUES (?, ?, ?, ?, ?)`,
-		ch.Name, ch.Type, ch.URL, NullableString(ch.Headers), boolToInt(ch.Enabled),
+func (s *ChannelStoreImpl) InsertChannel(ctx context.Context, ch *alert.NotificationChannel) (string, error) {
+	ch.ID = uid.New()
+	now := time.Now().Unix()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO notification_channels (id, name, type, url, headers, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		ch.ID, ch.Name, ch.Type, ch.URL, NullableString(ch.Headers), boolToInt(ch.Enabled), now, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert channel: %w", err)
+		return "", fmt.Errorf("insert channel: %w", err)
 	}
-	ch.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return ch.ID, nil
 }
 
-func (s *ChannelStoreImpl) GetChannel(ctx context.Context, id int64) (*alert.NotificationChannel, error) {
+func (s *ChannelStoreImpl) GetChannel(ctx context.Context, id string) (*alert.NotificationChannel, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, type, url, headers, enabled, created_at, updated_at
 		FROM notification_channels WHERE id = ?`, id)
@@ -103,7 +105,7 @@ func (s *ChannelStoreImpl) UpdateChannel(ctx context.Context, ch *alert.Notifica
 		`UPDATE notification_channels SET name=?, type=?, url=?, headers=?, enabled=?, updated_at=?
 		WHERE id=?`,
 		ch.Name, ch.Type, ch.URL, NullableString(ch.Headers), boolToInt(ch.Enabled),
-		time.Now().UTC().Format(time.RFC3339), ch.ID,
+		time.Now().Unix(), ch.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update channel: %w", err)
@@ -111,7 +113,7 @@ func (s *ChannelStoreImpl) UpdateChannel(ctx context.Context, ch *alert.Notifica
 	return nil
 }
 
-func (s *ChannelStoreImpl) DeleteChannel(ctx context.Context, id int64) error {
+func (s *ChannelStoreImpl) DeleteChannel(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx, `DELETE FROM notification_channels WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete channel: %w", err)
@@ -119,7 +121,7 @@ func (s *ChannelStoreImpl) DeleteChannel(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID int64) (string, error) {
+func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID string) (string, error) {
 	var status string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT status FROM notification_deliveries
@@ -139,17 +141,18 @@ func (s *ChannelStoreImpl) GetChannelHealth(ctx context.Context, channelID int64
 
 // --- Notification Deliveries ---
 
-func (s *ChannelStoreImpl) InsertDelivery(ctx context.Context, d *alert.NotificationDelivery) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO notification_deliveries (alert_id, channel_id, status, attempts)
-		VALUES (?, ?, ?, ?)`,
-		d.AlertID, d.ChannelID, d.Status, d.Attempts,
+func (s *ChannelStoreImpl) InsertDelivery(ctx context.Context, d *alert.NotificationDelivery) (string, error) {
+	d.ID = uid.New()
+	now := time.Now().Unix()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO notification_deliveries (id, alert_id, channel_id, status, attempts, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.AlertID, d.ChannelID, d.Status, d.Attempts, now, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert delivery: %w", err)
+		return "", fmt.Errorf("insert delivery: %w", err)
 	}
-	d.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return d.ID, nil
 }
 
 func (s *ChannelStoreImpl) UpdateDelivery(ctx context.Context, d *alert.NotificationDelivery) error {
@@ -157,7 +160,7 @@ func (s *ChannelStoreImpl) UpdateDelivery(ctx context.Context, d *alert.Notifica
 		`UPDATE notification_deliveries SET status=?, attempts=?, last_error=?, updated_at=?
 		WHERE id=?`,
 		d.Status, d.Attempts, NullableString(d.LastError),
-		time.Now().UTC().Format(time.RFC3339), d.ID,
+		time.Now().Unix(), d.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update delivery: %w", err)
@@ -165,7 +168,7 @@ func (s *ChannelStoreImpl) UpdateDelivery(ctx context.Context, d *alert.Notifica
 	return nil
 }
 
-func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID int64) ([]*alert.NotificationDelivery, error) {
+func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID string) ([]*alert.NotificationDelivery, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, alert_id, channel_id, status, attempts, last_error, created_at, updated_at
 		FROM notification_deliveries WHERE alert_id = ? ORDER BY created_at ASC`, alertID)
@@ -180,15 +183,15 @@ func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID in
 	for rows.Next() {
 		d := &alert.NotificationDelivery{}
 		var lastError sql.NullString
-		var createdAt, updatedAt string
+		var createdAt, updatedAt int64
 		if err := rows.Scan(&d.ID, &d.AlertID, &d.ChannelID, &d.Status, &d.Attempts, &lastError, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		if lastError.Valid {
 			d.LastError = lastError.String
 		}
-		d.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		d.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		d.CreatedAt = time.Unix(createdAt, 0)
+		d.UpdatedAt = time.Unix(updatedAt, 0)
 		deliveries = append(deliveries, d)
 	}
 	return deliveries, rows.Err()
@@ -200,7 +203,7 @@ func scanChannel(row *sql.Row) (*alert.NotificationChannel, error) {
 	ch := &alert.NotificationChannel{}
 	var headers sql.NullString
 	var enabled int
-	var createdAt, updatedAt string
+	var createdAt, updatedAt int64
 
 	err := row.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &enabled, &createdAt, &updatedAt)
 	if err != nil {
@@ -211,8 +214,8 @@ func scanChannel(row *sql.Row) (*alert.NotificationChannel, error) {
 	if headers.Valid {
 		ch.Headers = headers.String
 	}
-	ch.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	ch.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	ch.CreatedAt = time.Unix(createdAt, 0)
+	ch.UpdatedAt = time.Unix(updatedAt, 0)
 	return ch, nil
 }
 
@@ -220,7 +223,7 @@ func scanChannelRow(rows *sql.Rows) (*alert.NotificationChannel, error) {
 	ch := &alert.NotificationChannel{}
 	var headers sql.NullString
 	var enabled int
-	var createdAt, updatedAt string
+	var createdAt, updatedAt int64
 
 	err := rows.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &enabled, &createdAt, &updatedAt)
 	if err != nil {
@@ -231,7 +234,7 @@ func scanChannelRow(rows *sql.Rows) (*alert.NotificationChannel, error) {
 	if headers.Valid {
 		ch.Headers = headers.String
 	}
-	ch.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	ch.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	ch.CreatedAt = time.Unix(createdAt, 0)
+	ch.UpdatedAt = time.Unix(updatedAt, 0)
 	return ch, nil
 }

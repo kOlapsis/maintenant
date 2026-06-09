@@ -64,9 +64,9 @@ const filterIncidents = ref(false)
 const SLIDEOVER_TYPES = new Set(['container', 'heartbeat', 'certificate'])
 
 function selectService(monitor: UnifiedMonitor) {
-  const numericId = Number(monitor.id.split(':')[1])
-  if (SLIDEOVER_TYPES.has(monitor.type) && numericId > 0) {
-    detailSlideOver.openDetail(monitor.type as EntityType, numericId)
+  const entityId = monitor.id.split(':')[1] ?? ''
+  if (SLIDEOVER_TYPES.has(monitor.type) && entityId) {
+    detailSlideOver.openDetail(monitor.type as EntityType, entityId)
   } else {
     router.push(monitor.link)
   }
@@ -263,7 +263,7 @@ function alertEntityType(alert: Alert): EntityType | null {
 
 function navigateToIncident(inc: IncidentFeedItem) {
   if (inc.entityType && inc.entityId) {
-    detailSlideOver.openDetail(inc.entityType, Number(inc.entityId))
+    detailSlideOver.openDetail(inc.entityType, inc.entityId)
   } else {
     router.push(inc.route)
   }

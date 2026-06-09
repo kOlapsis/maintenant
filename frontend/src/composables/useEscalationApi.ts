@@ -30,7 +30,7 @@ export function useEscalationApi() {
     return apiFetch(url.toString())
   }
 
-  function getPolicy(id: number): Promise<EscalationPolicy> {
+  function getPolicy(id: string): Promise<EscalationPolicy> {
     return apiFetch(`${API_BASE}/escalation-policies/${id}`)
   }
 
@@ -42,7 +42,7 @@ export function useEscalationApi() {
     })
   }
 
-  function updatePolicy(id: number, req: PolicyRequest): Promise<EscalationPolicy> {
+  function updatePolicy(id: string, req: PolicyRequest): Promise<EscalationPolicy> {
     return apiFetch(`${API_BASE}/escalation-policies/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -51,9 +51,9 @@ export function useEscalationApi() {
   }
 
   function setPolicyActive(
-    id: number,
+    id: string,
     active: boolean,
-  ): Promise<{ id: number; active: boolean; updated_at: string }> {
+  ): Promise<{ id: string; active: boolean; updated_at: string }> {
     return apiFetch(`${API_BASE}/escalation-policies/${id}/active`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -61,16 +61,16 @@ export function useEscalationApi() {
     })
   }
 
-  function deletePolicy(id: number): Promise<void> {
+  function deletePolicy(id: string): Promise<void> {
     return apiFetchVoid(`${API_BASE}/escalation-policies/${id}`, { method: 'DELETE' })
   }
 
-  function listRunsForAlert(alertId: number): Promise<{ runs: EscalationRun[] }> {
+  function listRunsForAlert(alertId: string): Promise<{ runs: EscalationRun[] }> {
     return apiFetch(`${API_BASE}/alerts/${alertId}/escalation-runs`)
   }
 
   function getEscalationRun(
-    id: number,
+    id: string,
   ): Promise<EscalationRun & { deliveries: EscalationDelivery[] }> {
     return apiFetch(`${API_BASE}/escalation-runs/${id}`)
   }

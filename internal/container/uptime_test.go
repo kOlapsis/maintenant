@@ -201,42 +201,44 @@ func TestIsUp_ExitedState_IsDown(t *testing.T) {
 
 // uptimeStore is a minimal ContainerStore for uptime calculator tests.
 type uptimeStore struct {
-	transitions map[int64][]*StateTransition
-	callCount   map[int64]int
+	transitions map[string][]*StateTransition
+	callCount   map[string]int
 }
 
-func newUptimeStore(containerID int64, data []*StateTransition) *uptimeStore {
+func newUptimeStore(containerID string, data []*StateTransition) *uptimeStore {
 	return &uptimeStore{
-		transitions: map[int64][]*StateTransition{containerID: data},
-		callCount:   make(map[int64]int),
+		transitions: map[string][]*StateTransition{containerID: data},
+		callCount:   make(map[string]int),
 	}
 }
 
-func (m *uptimeStore) GetTransitionsInWindow(_ context.Context, containerID int64, _, _ time.Time) ([]*StateTransition, error) {
+func (m *uptimeStore) GetTransitionsInWindow(_ context.Context, containerID string, _, _ time.Time) ([]*StateTransition, error) {
 	m.callCount[containerID]++
 	return m.transitions[containerID], nil
 }
 
-func (m *uptimeStore) InsertContainer(_ context.Context, _ *Container) (int64, error) { return 0, nil }
-func (m *uptimeStore) UpdateContainer(_ context.Context, _ *Container) error          { return nil }
+func (m *uptimeStore) InsertContainer(_ context.Context, _ *Container) (string, error) {
+	return "", nil
+}
+func (m *uptimeStore) UpdateContainer(_ context.Context, _ *Container) error { return nil }
 func (m *uptimeStore) GetContainerByExternalID(_ context.Context, _ string) (*Container, error) {
 	return nil, nil
 }
-func (m *uptimeStore) GetContainerByID(_ context.Context, _ int64) (*Container, error) {
+func (m *uptimeStore) GetContainerByID(_ context.Context, _ string) (*Container, error) {
 	return nil, nil
 }
 func (m *uptimeStore) ListContainers(_ context.Context, _ ListContainersOpts) ([]*Container, error) {
 	return nil, nil
 }
 func (m *uptimeStore) ArchiveContainer(_ context.Context, _ string, _ time.Time) error { return nil }
-func (m *uptimeStore) DeleteContainerByID(_ context.Context, _ int64) error            { return nil }
-func (m *uptimeStore) InsertTransition(_ context.Context, _ *StateTransition) (int64, error) {
-	return 0, nil
+func (m *uptimeStore) DeleteContainerByID(_ context.Context, _ string) error           { return nil }
+func (m *uptimeStore) InsertTransition(_ context.Context, _ *StateTransition) (string, error) {
+	return "", nil
 }
-func (m *uptimeStore) ListTransitionsByContainer(_ context.Context, _ int64, _ ListTransitionsOpts) ([]*StateTransition, int, error) {
+func (m *uptimeStore) ListTransitionsByContainer(_ context.Context, _ string, _ ListTransitionsOpts) ([]*StateTransition, int, error) {
 	return nil, 0, nil
 }
-func (m *uptimeStore) CountRestartsSince(_ context.Context, _ int64, _ time.Time) (int, error) {
+func (m *uptimeStore) CountRestartsSince(_ context.Context, _ string, _ time.Time) (int, error) {
 	return 0, nil
 }
 func (m *uptimeStore) DeleteTransitionsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
@@ -247,7 +249,7 @@ func (m *uptimeStore) DeleteArchivedContainersBefore(_ context.Context, _ time.T
 }
 
 func TestUptimeCalculator_CommunityOnly24h(t *testing.T) {
-	const containerID int64 = 1
+	const containerID = "1"
 	store := newUptimeStore(containerID, nil) // no transitions → 100%
 	calc := NewUptimeCalculator(store)
 
@@ -267,7 +269,7 @@ func TestUptimeCalculator_CommunityOnly24h(t *testing.T) {
 }
 
 func TestUptimeCalculator_ProAllWindows(t *testing.T) {
-	const containerID int64 = 2
+	const containerID = "2"
 	store := newUptimeStore(containerID, nil) // no transitions → 100% everywhere
 	calc := NewUptimeCalculator(store)
 
@@ -288,7 +290,7 @@ func TestUptimeCalculator_ProAllWindows(t *testing.T) {
 }
 
 func TestUptimeCalculator_CachesResult(t *testing.T) {
-	const containerID int64 = 3
+	const containerID = "3"
 	store := newUptimeStore(containerID, nil)
 	calc := NewUptimeCalculator(store)
 

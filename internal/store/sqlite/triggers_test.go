@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 func setupTriggerTestDB(t *testing.T) (*TriggerStoreImpl, *sql.DB) {
@@ -35,30 +36,30 @@ func setupTriggerTestDB(t *testing.T) (*TriggerStoreImpl, *sql.DB) {
 
 	_, err = rawDB.Exec(`
 		CREATE TABLE IF NOT EXISTS notification_channels (
-			id      INTEGER PRIMARY KEY AUTOINCREMENT,
+			id      TEXT    PRIMARY KEY NOT NULL,
 			name    TEXT    NOT NULL UNIQUE,
 			type    TEXT    NOT NULL DEFAULT 'webhook',
 			url     TEXT    NOT NULL DEFAULT '',
 			headers TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			created_at BIGINT NOT NULL DEFAULT 0,
+			updated_at BIGINT NOT NULL DEFAULT 0
 		);
 		CREATE TABLE IF NOT EXISTS alert_triggers (
-			id                INTEGER PRIMARY KEY AUTOINCREMENT,
+			id                TEXT    PRIMARY KEY NOT NULL,
 			name              TEXT    NOT NULL UNIQUE,
 			filter_severities TEXT    NOT NULL DEFAULT '',
 			filter_sources    TEXT    NOT NULL DEFAULT '',
 			filter_scopes     TEXT    NOT NULL DEFAULT '',
 			filter_tags       TEXT    NOT NULL DEFAULT '',
 			enabled           INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
-			created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-			updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+			created_at        BIGINT  NOT NULL DEFAULT 0,
+			updated_at        BIGINT  NOT NULL DEFAULT 0
 		);
 		CREATE INDEX IF NOT EXISTS idx_alert_triggers_enabled ON alert_triggers(enabled);
 		CREATE TABLE IF NOT EXISTS alert_trigger_channels (
-			trigger_id INTEGER NOT NULL,
-			channel_id INTEGER NOT NULL,
+			trigger_id TEXT NOT NULL,
+			channel_id TEXT NOT NULL,
 			PRIMARY KEY (trigger_id, channel_id),
 			FOREIGN KEY (trigger_id) REFERENCES alert_triggers(id) ON DELETE CASCADE,
 			FOREIGN KEY (channel_id) REFERENCES notification_channels(id) ON DELETE CASCADE
@@ -76,11 +77,11 @@ func setupTriggerTestDB(t *testing.T) (*TriggerStoreImpl, *sql.DB) {
 	return NewTriggerStore(d), rawDB
 }
 
-func seedChannelForTrigger(t *testing.T, rawDB *sql.DB, name string) int64 {
+func seedChannelForTrigger(t *testing.T, rawDB *sql.DB, name string) string {
 	t.Helper()
-	var id int64
-	err := rawDB.QueryRowContext(context.Background(),
-		`INSERT INTO notification_channels (name) VALUES (?) RETURNING id`, name).Scan(&id)
+	id := uid.New()
+	_, err := rawDB.ExecContext(context.Background(),
+		`INSERT INTO notification_channels (id, name) VALUES (?, ?)`, id, name)
 	require.NoError(t, err)
 	return id
 }
@@ -96,11 +97,11 @@ func TestTriggerStore_InsertAndGet(t *testing.T) {
 		FilterSeverities: "critical",
 		FilterSources:    "container",
 		Enabled:          true,
-		ChannelIDs:       []int64{chID},
+		ChannelIDs:       []string{chID},
 	}
 	id, err := store.InsertTrigger(ctx, trig)
 	require.NoError(t, err)
-	assert.Greater(t, id, int64(0))
+	assert.NotEmpty(t, id)
 
 	got, err := store.GetTrigger(ctx, id)
 	require.NoError(t, err)
@@ -109,12 +110,12 @@ func TestTriggerStore_InsertAndGet(t *testing.T) {
 	assert.Equal(t, "critical", got.FilterSeverities)
 	assert.Equal(t, "container", got.FilterSources)
 	assert.True(t, got.Enabled)
-	assert.Equal(t, []int64{chID}, got.ChannelIDs)
+	assert.Equal(t, []string{chID}, got.ChannelIDs)
 }
 
 func TestTriggerStore_GetNotFound(t *testing.T) {
 	store, _ := setupTriggerTestDB(t)
-	got, err := store.GetTrigger(context.Background(), 99999)
+	got, err := store.GetTrigger(context.Background(), "99999")
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -125,7 +126,7 @@ func TestTriggerStore_ListTriggers(t *testing.T) {
 
 	chID := seedChannelForTrigger(t, rawDB, "list-ch")
 	for _, name := range []string{"Alpha", "Beta"} {
-		_, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: name, Enabled: true, ChannelIDs: []int64{chID}})
+		_, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: name, Enabled: true, ChannelIDs: []string{chID}})
 		require.NoError(t, err)
 	}
 
@@ -139,9 +140,9 @@ func TestTriggerStore_ListEnabledTriggersFiltersDisabled(t *testing.T) {
 	ctx := context.Background()
 
 	chID := seedChannelForTrigger(t, rawDB, "enabled-ch")
-	_, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "Active", Enabled: true, ChannelIDs: []int64{chID}})
+	_, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "Active", Enabled: true, ChannelIDs: []string{chID}})
 	require.NoError(t, err)
-	_, err = store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "Inactive", Enabled: false, ChannelIDs: []int64{chID}})
+	_, err = store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "Inactive", Enabled: false, ChannelIDs: []string{chID}})
 	require.NoError(t, err)
 
 	triggers, err := store.ListEnabledTriggers(ctx)
@@ -157,21 +158,21 @@ func TestTriggerStore_Update(t *testing.T) {
 	chID1 := seedChannelForTrigger(t, rawDB, "upd-ch1")
 	chID2 := seedChannelForTrigger(t, rawDB, "upd-ch2")
 
-	trig := &alert.AlertTrigger{Name: "Original", Enabled: true, ChannelIDs: []int64{chID1}}
+	trig := &alert.AlertTrigger{Name: "Original", Enabled: true, ChannelIDs: []string{chID1}}
 	id, err := store.InsertTrigger(ctx, trig)
 	require.NoError(t, err)
 
 	trig.ID = id
 	trig.Name = "Updated"
 	trig.FilterSeverities = "warning"
-	trig.ChannelIDs = []int64{chID1, chID2}
+	trig.ChannelIDs = []string{chID1, chID2}
 	require.NoError(t, store.UpdateTrigger(ctx, trig))
 
 	got, err := store.GetTrigger(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, "Updated", got.Name)
 	assert.Equal(t, "warning", got.FilterSeverities)
-	assert.ElementsMatch(t, []int64{chID1, chID2}, got.ChannelIDs)
+	assert.ElementsMatch(t, []string{chID1, chID2}, got.ChannelIDs)
 }
 
 func TestTriggerStore_Delete(t *testing.T) {
@@ -179,7 +180,7 @@ func TestTriggerStore_Delete(t *testing.T) {
 	ctx := context.Background()
 
 	chID := seedChannelForTrigger(t, rawDB, "del-ch")
-	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "ToDelete", Enabled: true, ChannelIDs: []int64{chID}})
+	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "ToDelete", Enabled: true, ChannelIDs: []string{chID}})
 	require.NoError(t, err)
 
 	require.NoError(t, store.DeleteTrigger(ctx, id))
@@ -197,14 +198,14 @@ func TestTriggerStore_SetChannels_AtomicReplace(t *testing.T) {
 	chID2 := seedChannelForTrigger(t, rawDB, "set-ch2")
 	chID3 := seedChannelForTrigger(t, rawDB, "set-ch3")
 
-	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "SetCh", Enabled: true, ChannelIDs: []int64{chID1, chID2}})
+	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "SetCh", Enabled: true, ChannelIDs: []string{chID1, chID2}})
 	require.NoError(t, err)
 
-	require.NoError(t, store.SetChannels(ctx, id, []int64{chID3}))
+	require.NoError(t, store.SetChannels(ctx, id, []string{chID3}))
 
 	got, err := store.GetTrigger(ctx, id)
 	require.NoError(t, err)
-	assert.Equal(t, []int64{chID3}, got.ChannelIDs)
+	assert.Equal(t, []string{chID3}, got.ChannelIDs)
 }
 
 func TestTriggerStore_ListTriggersForChannel(t *testing.T) {
@@ -212,9 +213,9 @@ func TestTriggerStore_ListTriggersForChannel(t *testing.T) {
 	ctx := context.Background()
 
 	chID := seedChannelForTrigger(t, rawDB, "for-ch")
-	_, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "T1", Enabled: true, ChannelIDs: []int64{chID}})
+	_, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "T1", Enabled: true, ChannelIDs: []string{chID}})
 	require.NoError(t, err)
-	_, err = store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "T2", Enabled: true, ChannelIDs: []int64{chID}})
+	_, err = store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "T2", Enabled: true, ChannelIDs: []string{chID}})
 	require.NoError(t, err)
 
 	triggers, err := store.ListTriggersForChannel(ctx, chID)
@@ -227,7 +228,7 @@ func TestTriggerStore_CascadeDeleteTrigger_RemovesLinks(t *testing.T) {
 	ctx := context.Background()
 
 	chID := seedChannelForTrigger(t, rawDB, "casc-trig-ch")
-	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "CascT", Enabled: true, ChannelIDs: []int64{chID}})
+	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "CascT", Enabled: true, ChannelIDs: []string{chID}})
 	require.NoError(t, err)
 
 	var count int
@@ -247,7 +248,7 @@ func TestTriggerStore_CascadeDeleteChannel_RemovesLinks(t *testing.T) {
 	ctx := context.Background()
 
 	chID := seedChannelForTrigger(t, rawDB, "casc-chan-ch")
-	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "CascC", Enabled: true, ChannelIDs: []int64{chID}})
+	id, err := store.InsertTrigger(ctx, &alert.AlertTrigger{Name: "CascC", Enabled: true, ChannelIDs: []string{chID}})
 	require.NoError(t, err)
 
 	_, err = rawDB.ExecContext(ctx, `DELETE FROM notification_channels WHERE id = ?`, chID)

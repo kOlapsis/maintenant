@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // StatusComponentStoreImpl implements status.ComponentStore using SQLite.
@@ -87,7 +88,7 @@ func (s *StatusComponentStoreImpl) ListVisibleComponents(ctx context.Context) ([
 	return comps, nil
 }
 
-func (s *StatusComponentStoreImpl) GetComponent(ctx context.Context, id int64) (*status.Component, error) {
+func (s *StatusComponentStoreImpl) GetComponent(ctx context.Context, id string) (*status.Component, error) {
 	rows, err := s.db.QueryContext(ctx,
 		componentSelectCols+`
 		WHERE sc.id = ?`, id)
@@ -112,7 +113,7 @@ func (s *StatusComponentStoreImpl) GetComponent(ctx context.Context, id int64) (
 	return &comps[0], nil
 }
 
-func (s *StatusComponentStoreImpl) ListComponentsByMonitor(ctx context.Context, monitorType string, monitorID int64) ([]status.Component, error) {
+func (s *StatusComponentStoreImpl) ListComponentsByMonitor(ctx context.Context, monitorType string, monitorID string) ([]status.Component, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT DISTINCT sc.id, sc.composition_mode, sc.match_all_type, sc.display_name,
 			sc.display_order, sc.visible,
@@ -141,7 +142,7 @@ func (s *StatusComponentStoreImpl) ListComponentsByMonitor(ctx context.Context, 
 	return comps, nil
 }
 
-func (s *StatusComponentStoreImpl) RemoveDanglingMonitorRefs(ctx context.Context, monitorType string, monitorID int64) error {
+func (s *StatusComponentStoreImpl) RemoveDanglingMonitorRefs(ctx context.Context, monitorType string, monitorID string) error {
 	_, err := s.writer.Exec(ctx,
 		`DELETE FROM status_component_monitors WHERE monitor_type = ? AND monitor_id = ?`,
 		monitorType, monitorID,
@@ -152,7 +153,7 @@ func (s *StatusComponentStoreImpl) RemoveDanglingMonitorRefs(ctx context.Context
 	return nil
 }
 
-func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *status.Component) (int64, error) {
+func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *status.Component) (string, error) {
 	now := time.Now().Unix()
 
 	if c.CompositionMode == "" {
@@ -164,18 +165,18 @@ func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *statu
 		matchAllType = c.MatchAllType
 	}
 
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO status_components (composition_mode, match_all_type, display_name,
+	c.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name,
 			display_order, visible, status_override, auto_incident, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		string(c.CompositionMode), matchAllType, c.DisplayName,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, string(c.CompositionMode), matchAllType, c.DisplayName,
 		c.DisplayOrder, boolToInt(c.Visible), c.StatusOverride, boolToInt(c.AutoIncident),
 		now, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("create component: %w", err)
+		return "", fmt.Errorf("create component: %w", err)
 	}
-	c.ID = res.LastInsertID
 	c.CreatedAt = time.Unix(now, 0).UTC()
 	c.UpdatedAt = c.CreatedAt
 
@@ -186,12 +187,12 @@ func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *statu
 				`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id) VALUES (?, ?, ?)`,
 				c.ID, ref.Type, ref.ID,
 			); err != nil {
-				return 0, fmt.Errorf("insert monitor ref: %w", err)
+				return "", fmt.Errorf("insert monitor ref: %w", err)
 			}
 		}
 	}
 
-	return res.LastInsertID, nil
+	return c.ID, nil
 }
 
 func (s *StatusComponentStoreImpl) UpdateComponent(ctx context.Context, c *status.Component) error {
@@ -227,7 +228,7 @@ func (s *StatusComponentStoreImpl) UpdateComponent(ctx context.Context, c *statu
 
 // deltaApplyMonitorRefs computes the diff between stored refs and desired refs,
 // deletes removed entries, and inserts new ones.
-func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, componentID int64, desired []status.MonitorRef) error {
+func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, componentID string, desired []status.MonitorRef) error {
 	// Load current refs.
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT monitor_type, monitor_id FROM status_component_monitors WHERE component_id = ?`,
@@ -241,7 +242,7 @@ func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, co
 
 	type refKey struct {
 		t string
-		i int64
+		i string
 	}
 	current := make(map[refKey]struct{})
 	for rows.Next() {
@@ -287,7 +288,7 @@ func (s *StatusComponentStoreImpl) deltaApplyMonitorRefs(ctx context.Context, co
 	return nil
 }
 
-func (s *StatusComponentStoreImpl) DeleteComponent(ctx context.Context, id int64) error {
+func (s *StatusComponentStoreImpl) DeleteComponent(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx, `DELETE FROM status_components WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete component: %w", err)
@@ -321,7 +322,7 @@ func (s *StatusComponentStoreImpl) hydrateMonitorRefs(ctx context.Context, comps
 		_ = rows.Close()
 	}(rows)
 
-	idx := make(map[int64]int, len(comps))
+	idx := make(map[string]int, len(comps))
 	for i, c := range comps {
 		idx[c.ID] = i
 		// Initialize to empty slice (not nil) for explicit mode so JSON encodes as [].
@@ -331,7 +332,7 @@ func (s *StatusComponentStoreImpl) hydrateMonitorRefs(ctx context.Context, comps
 	}
 
 	for rows.Next() {
-		var compID int64
+		var compID string
 		var ref status.MonitorRef
 		if err := rows.Scan(&compID, &ref.Type, &ref.ID); err != nil {
 			return fmt.Errorf("scan monitor ref: %w", err)

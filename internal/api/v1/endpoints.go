@@ -70,10 +70,9 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 
 // HandleGetEndpoint handles GET /api/v1/endpoints/{id}.
 func (h *EndpointHandler) HandleGetEndpoint(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
@@ -97,10 +96,9 @@ func (h *EndpointHandler) HandleGetEndpoint(w http.ResponseWriter, r *http.Reque
 
 // HandleListContainerEndpoints handles GET /api/v1/containers/{id}/endpoints.
 func (h *EndpointHandler) HandleListContainerEndpoints(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
@@ -147,10 +145,9 @@ func (h *EndpointHandler) HandleListContainerEndpoints(w http.ResponseWriter, r 
 
 // HandleListChecks handles GET /api/v1/endpoints/{id}/checks.
 func (h *EndpointHandler) HandleListChecks(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
@@ -297,9 +294,9 @@ type updateEndpointInput struct {
 
 // HandleUpdateEndpoint handles PUT /api/v1/endpoints/{id}.
 func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
@@ -387,9 +384,9 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 
 // HandleDeleteEndpoint handles DELETE /api/v1/endpoints/{id}.
 func (h *EndpointHandler) HandleDeleteEndpoint(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 

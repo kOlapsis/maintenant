@@ -25,13 +25,13 @@ import {
 const store = useStatusAdminStore()
 
 const showForm = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const form = ref({
   title: '',
   description: '',
   starts_at: '',
   ends_at: '',
-  component_ids: [] as number[],
+  component_ids: [] as string[],
 })
 
 function resetForm() {
@@ -70,7 +70,7 @@ async function submitForm() {
 
 const confirm = useConfirm()
 
-async function handleDelete(id: number) {
+async function handleDelete(id: string) {
   const ok = await confirm({
     title: 'Delete maintenance window',
     message: 'Remove this maintenance window? This cannot be undone.',

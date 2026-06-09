@@ -29,7 +29,7 @@ import (
 func baseEndpoint() *endpoint.Endpoint {
 	cfg := endpoint.DefaultConfig()
 	return &endpoint.Endpoint{
-		ID:            1,
+		ID:            "1",
 		ContainerName: "test-container",
 		Target:        "https://example.com/health",
 		Config:        cfg,
@@ -40,7 +40,7 @@ func baseEndpoint() *endpoint.Endpoint {
 
 func failureResult(msg string) endpoint.CheckResult {
 	return endpoint.CheckResult{
-		EndpointID:   1,
+		EndpointID:   "1",
 		Success:      false,
 		ErrorMessage: msg,
 		Timestamp:    time.Now(),
@@ -49,7 +49,7 @@ func failureResult(msg string) endpoint.CheckResult {
 
 func successResult() endpoint.CheckResult {
 	return endpoint.CheckResult{
-		EndpointID: 1,
+		EndpointID: "1",
 		Success:    true,
 		Timestamp:  time.Now(),
 	}

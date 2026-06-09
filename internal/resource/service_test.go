@@ -30,17 +30,17 @@ import (
 
 type mockResourceStore struct {
 	mu           sync.Mutex
-	alertConfigs map[int64]*ResourceAlertConfig
+	alertConfigs map[string]*ResourceAlertConfig
 	snapshots    []*ResourceSnapshot
 }
 
 func newMockResourceStore() *mockResourceStore {
 	return &mockResourceStore{
-		alertConfigs: make(map[int64]*ResourceAlertConfig),
+		alertConfigs: make(map[string]*ResourceAlertConfig),
 	}
 }
 
-func (m *mockResourceStore) GetAlertConfig(_ context.Context, containerID int64) (*ResourceAlertConfig, error) {
+func (m *mockResourceStore) GetAlertConfig(_ context.Context, containerID string) (*ResourceAlertConfig, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cfg, ok := m.alertConfigs[containerID]
@@ -60,22 +60,22 @@ func (m *mockResourceStore) UpsertAlertConfig(_ context.Context, cfg *ResourceAl
 	return nil
 }
 
-func (m *mockResourceStore) InsertSnapshot(_ context.Context, s *ResourceSnapshot) (int64, error) {
+func (m *mockResourceStore) InsertSnapshot(_ context.Context, s *ResourceSnapshot) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.snapshots = append(m.snapshots, s)
-	return int64(len(m.snapshots)), nil
+	return s.ID, nil
 }
 
 // Stubbed methods — not exercised by these tests.
 
-func (m *mockResourceStore) GetLatestSnapshot(_ context.Context, _ int64) (*ResourceSnapshot, error) {
+func (m *mockResourceStore) GetLatestSnapshot(_ context.Context, _ string) (*ResourceSnapshot, error) {
 	return nil, nil
 }
-func (m *mockResourceStore) ListSnapshots(_ context.Context, _ int64, _, _ time.Time) ([]*ResourceSnapshot, error) {
+func (m *mockResourceStore) ListSnapshots(_ context.Context, _ string, _, _ time.Time) ([]*ResourceSnapshot, error) {
 	return nil, nil
 }
-func (m *mockResourceStore) ListSnapshotsAggregated(_ context.Context, _ int64, _, _ time.Time, _ Granularity) ([]*ResourceSnapshot, error) {
+func (m *mockResourceStore) ListSnapshotsAggregated(_ context.Context, _ string, _, _ time.Time, _ Granularity) ([]*ResourceSnapshot, error) {
 	return nil, nil
 }
 func (m *mockResourceStore) DeleteSnapshotsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
@@ -104,13 +104,13 @@ func (m *mockResourceStore) DeleteDailyBefore(_ context.Context, _ time.Time, _ 
 // ---------------------------------------------------------------------------
 
 type mockContainerStore struct {
-	containers   map[int64]*container.Container
+	containers   map[string]*container.Container
 	byExternalID map[string]*container.Container
 }
 
 func newMockContainerStore(containers ...*container.Container) *mockContainerStore {
 	s := &mockContainerStore{
-		containers:   make(map[int64]*container.Container),
+		containers:   make(map[string]*container.Container),
 		byExternalID: make(map[string]*container.Container),
 	}
 	for _, c := range containers {
@@ -122,7 +122,7 @@ func newMockContainerStore(containers ...*container.Container) *mockContainerSto
 	return s
 }
 
-func (m *mockContainerStore) GetContainerByID(_ context.Context, id int64) (*container.Container, error) {
+func (m *mockContainerStore) GetContainerByID(_ context.Context, id string) (*container.Container, error) {
 	c, ok := m.containers[id]
 	if !ok {
 		return nil, nil
@@ -132,8 +132,8 @@ func (m *mockContainerStore) GetContainerByID(_ context.Context, id int64) (*con
 
 // All other ContainerStore methods are stubs.
 
-func (m *mockContainerStore) InsertContainer(_ context.Context, _ *container.Container) (int64, error) {
-	return 0, nil
+func (m *mockContainerStore) InsertContainer(_ context.Context, _ *container.Container) (string, error) {
+	return "", nil
 }
 func (m *mockContainerStore) UpdateContainer(_ context.Context, _ *container.Container) error {
 	return nil
@@ -150,17 +150,17 @@ func (m *mockContainerStore) ListContainers(_ context.Context, _ container.ListC
 func (m *mockContainerStore) ArchiveContainer(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
-func (m *mockContainerStore) DeleteContainerByID(_ context.Context, _ int64) error { return nil }
-func (m *mockContainerStore) InsertTransition(_ context.Context, _ *container.StateTransition) (int64, error) {
-	return 0, nil
+func (m *mockContainerStore) DeleteContainerByID(_ context.Context, _ string) error { return nil }
+func (m *mockContainerStore) InsertTransition(_ context.Context, _ *container.StateTransition) (string, error) {
+	return "", nil
 }
-func (m *mockContainerStore) ListTransitionsByContainer(_ context.Context, _ int64, _ container.ListTransitionsOpts) ([]*container.StateTransition, int, error) {
+func (m *mockContainerStore) ListTransitionsByContainer(_ context.Context, _ string, _ container.ListTransitionsOpts) ([]*container.StateTransition, int, error) {
 	return nil, 0, nil
 }
-func (m *mockContainerStore) CountRestartsSince(_ context.Context, _ int64, _ time.Time) (int, error) {
+func (m *mockContainerStore) CountRestartsSince(_ context.Context, _ string, _ time.Time) (int, error) {
 	return 0, nil
 }
-func (m *mockContainerStore) GetTransitionsInWindow(_ context.Context, _ int64, _, _ time.Time) ([]*container.StateTransition, error) {
+func (m *mockContainerStore) GetTransitionsInWindow(_ context.Context, _ string, _, _ time.Time) ([]*container.StateTransition, error) {
 	return nil, nil
 }
 func (m *mockContainerStore) DeleteTransitionsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
@@ -204,7 +204,7 @@ func buildContainerSvc(cs *mockContainerStore) *container.Service {
 }
 
 // baseConfig returns a minimal enabled alert config.
-func baseConfig(containerID int64) *ResourceAlertConfig {
+func baseConfig(containerID string) *ResourceAlertConfig {
 	return &ResourceAlertConfig{
 		ContainerID:  containerID,
 		Enabled:      true,
@@ -215,7 +215,7 @@ func baseConfig(containerID int64) *ResourceAlertConfig {
 }
 
 // snap builds a snapshot with the given CPU/memory values.
-func snap(containerID int64, cpu float64, memUsed, memLimit int64) *ResourceSnapshot {
+func snap(containerID string, cpu float64, memUsed, memLimit int64) *ResourceSnapshot {
 	return &ResourceSnapshot{
 		ContainerID: containerID,
 		CPUPercent:  cpu,
@@ -226,7 +226,7 @@ func snap(containerID int64, cpu float64, memUsed, memLimit int64) *ResourceSnap
 }
 
 // storedConfig reads the alert config back from the mock store.
-func storedConfig(t *testing.T, store *mockResourceStore, containerID int64) *ResourceAlertConfig {
+func storedConfig(t *testing.T, store *mockResourceStore, containerID string) *ResourceAlertConfig {
 	t.Helper()
 	cfg, err := store.GetAlertConfig(context.Background(), containerID)
 	require.NoError(t, err)
@@ -239,7 +239,7 @@ func storedConfig(t *testing.T, store *mockResourceStore, containerID int64) *Re
 // ---------------------------------------------------------------------------
 
 func TestService_evaluateAlerts_CPUBreachTransitionsToAlertAfterTwoConsecutive(t *testing.T) {
-	const containerID = int64(1)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000001"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = baseConfig(containerID)
 
@@ -260,7 +260,7 @@ func TestService_evaluateAlerts_CPUBreachTransitionsToAlertAfterTwoConsecutive(t
 }
 
 func TestService_evaluateAlerts_MemoryBreachTransitionsToAlertAfterTwoConsecutive(t *testing.T) {
-	const containerID = int64(2)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000002"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = baseConfig(containerID)
 
@@ -282,7 +282,7 @@ func TestService_evaluateAlerts_MemoryBreachTransitionsToAlertAfterTwoConsecutiv
 }
 
 func TestService_evaluateAlerts_BothBreachingTransitionsToBothAlert(t *testing.T) {
-	const containerID = int64(3)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000003"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = baseConfig(containerID)
 
@@ -302,7 +302,7 @@ func TestService_evaluateAlerts_BothBreachingTransitionsToBothAlert(t *testing.T
 }
 
 func TestService_evaluateAlerts_BreachCountResetsOnRecovery(t *testing.T) {
-	const containerID = int64(4)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000004"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = baseConfig(containerID)
 
@@ -326,7 +326,7 @@ func TestService_evaluateAlerts_BreachCountResetsOnRecovery(t *testing.T) {
 }
 
 func TestService_evaluateAlerts_RecoveryEventFiredOnReturnToNormal(t *testing.T) {
-	const containerID = int64(5)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000005"
 	store := newMockResourceStore()
 
 	// Start already in AlertStateCPU with 2 consecutive breaches.
@@ -365,7 +365,7 @@ func TestService_evaluateAlerts_RecoveryEventFiredOnReturnToNormal(t *testing.T)
 }
 
 func TestService_evaluateAlerts_AlertEventFiredOnCPUTransition(t *testing.T) {
-	const containerID = int64(6)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000006"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = baseConfig(containerID)
 
@@ -397,7 +397,7 @@ func TestService_evaluateAlerts_AlertEventFiredOnCPUTransition(t *testing.T) {
 }
 
 func TestService_evaluateAlerts_AlertEventFiredOnMemoryTransition(t *testing.T) {
-	const containerID = int64(7)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000007"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = baseConfig(containerID)
 
@@ -425,7 +425,7 @@ func TestService_evaluateAlerts_AlertEventFiredOnMemoryTransition(t *testing.T) 
 }
 
 func TestService_evaluateAlerts_BothAlertsEmittedOnBothTransition(t *testing.T) {
-	const containerID = int64(8)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000008"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = baseConfig(containerID)
 
@@ -453,7 +453,7 @@ func TestService_evaluateAlerts_BothAlertsEmittedOnBothTransition(t *testing.T) 
 }
 
 func TestService_evaluateAlerts_NoEventWhenStateUnchanged(t *testing.T) {
-	const containerID = int64(9)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000009"
 	store := newMockResourceStore()
 
 	// Pre-set to AlertStateCPU so the state is already alerting.
@@ -485,7 +485,7 @@ func TestService_evaluateAlerts_NoEventWhenStateUnchanged(t *testing.T) {
 }
 
 func TestService_evaluateAlerts_DisabledConfigSkipsEvaluation(t *testing.T) {
-	const containerID = int64(10)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000010"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = &ResourceAlertConfig{
 		ContainerID:  containerID,
@@ -518,7 +518,7 @@ func TestService_evaluateAlerts_DisabledConfigSkipsEvaluation(t *testing.T) {
 }
 
 func TestService_evaluateAlerts_NilConfigSkipsEvaluation(t *testing.T) {
-	const containerID = int64(11)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000011"
 	store := newMockResourceStore()
 	// No config stored for this container.
 
@@ -540,7 +540,7 @@ func TestService_evaluateAlerts_NilConfigSkipsEvaluation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestService_evaluateAlerts_MemLimitZeroNoDivisionByZero(t *testing.T) {
-	const containerID = int64(12)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000012"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = &ResourceAlertConfig{
 		ContainerID:  containerID,
@@ -564,7 +564,7 @@ func TestService_evaluateAlerts_MemLimitZeroNoDivisionByZero(t *testing.T) {
 }
 
 func TestService_evaluateAlerts_MemPercentCalculatedCorrectly(t *testing.T) {
-	const containerID = int64(13)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000013"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = &ResourceAlertConfig{
 		ContainerID:  containerID,
@@ -587,7 +587,7 @@ func TestService_evaluateAlerts_MemPercentCalculatedCorrectly(t *testing.T) {
 }
 
 func TestService_evaluateAlerts_RecoveryTypeIsBothWhenPrevStateWasBoth(t *testing.T) {
-	const containerID = int64(14)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000014"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = &ResourceAlertConfig{
 		ContainerID:            containerID,
@@ -621,7 +621,7 @@ func TestService_evaluateAlerts_RecoveryTypeIsBothWhenPrevStateWasBoth(t *testin
 }
 
 func TestService_evaluateAlerts_RecoveryTypeIsMemoryWhenPrevStateWasMemory(t *testing.T) {
-	const containerID = int64(15)
+	const containerID = "ctr-00000000-0000-0000-0000-000000000015"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = &ResourceAlertConfig{
 		ContainerID:            containerID,
@@ -674,7 +674,7 @@ func TestService_GetHistory_TimeRangeToGranularityMapping(t *testing.T) {
 			store := &granularityCapturingStore{}
 			svc := newTestService(store, nil, nil)
 
-			_, gran, err := svc.GetHistory(context.Background(), 1, tc.timeRange)
+			_, gran, err := svc.GetHistory(context.Background(), "ctr-1", tc.timeRange)
 			require.NoError(t, err)
 			assert.Equal(t, tc.expectedGranularity, gran)
 			assert.Equal(t, tc.expectedGranularity, store.capturedGranularity,
@@ -689,7 +689,7 @@ type granularityCapturingStore struct {
 	capturedGranularity Granularity
 }
 
-func (s *granularityCapturingStore) ListSnapshotsAggregated(_ context.Context, _ int64, _, _ time.Time, g Granularity) ([]*ResourceSnapshot, error) {
+func (s *granularityCapturingStore) ListSnapshotsAggregated(_ context.Context, _ string, _, _ time.Time, g Granularity) ([]*ResourceSnapshot, error) {
 	s.capturedGranularity = g
 	return nil, nil
 }

@@ -19,7 +19,7 @@ import (
 
 // HandleAgentEvent processes a heartbeat ping forwarded by a remote agent.
 // The agent_id tracks which agent relayed the ping, but the heartbeat monitor
-// is identified by its UUID token (heartbeat_token in the proto).
+// is identified by its ping token (heartbeat_token in the proto), which is its id.
 func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.HeartbeatEvent) error {
 	token := ev.GetHeartbeatToken()
 	if token == "" {

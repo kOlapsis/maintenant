@@ -81,7 +81,7 @@ export function fetchSwarmServiceDetail(serviceID: string): Promise<SwarmService
 }
 
 export interface SwarmNodeResponse {
-  id: number
+  id: string
   node_id: string
   hostname: string
   role: string

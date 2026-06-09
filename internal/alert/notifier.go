@@ -151,7 +151,7 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		lastErr = n.sendWebhook(ctx, job.Channel, body)
 		if lastErr == nil {
 			job.Delivery.Status = DeliveryDelivered
-			if job.Delivery.ID != 0 {
+			if job.Delivery.ID != "" {
 				if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
 					n.logger.Error("notifier: update delivery status", "error", updateErr)
 				}
@@ -197,7 +197,7 @@ func (n *Notifier) processEmailJob(ctx context.Context, job NotificationJob, eve
 		err := n.smtpSender.Send(ctx, to, subject, body)
 		if err == nil {
 			job.Delivery.Status = DeliveryDelivered
-			if job.Delivery.ID != 0 {
+			if job.Delivery.ID != "" {
 				if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
 					n.logger.Error("notifier: update delivery status", "error", updateErr)
 				}
@@ -255,7 +255,7 @@ func (n *Notifier) sendWebhook(ctx context.Context, ch *NotificationChannel, bod
 func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, errMsg string) {
 	d.Status = DeliveryFailed
 	d.LastError = errMsg
-	if d.ID != 0 {
+	if d.ID != "" {
 		if updateErr := n.channelStore.UpdateDelivery(ctx, d); updateErr != nil {
 			n.logger.Error("notifier: update failed delivery", "error", updateErr)
 		}

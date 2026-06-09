@@ -20,7 +20,7 @@ import {
 } from '@/services/resourceApi'
 
 const props = defineProps<{
-  containerId: number
+  containerId: string
 }>()
 
 const config = ref<ResourceAlertConfig | null>(null)

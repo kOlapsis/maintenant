@@ -13,7 +13,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch, apiFetchVoid } from './apiFetch'
 
 export interface ImageUpdate {
-  id: number
+  id: string
   container_id: string
   container_name: string
   image: string
@@ -120,7 +120,7 @@ export interface RiskListResponse {
 }
 
 export interface ScanStatus {
-  scan_id: number
+  scan_id: string
   status: string
   started_at: string
   completed_at?: string
@@ -130,7 +130,7 @@ export interface ScanStatus {
 }
 
 export interface Exclusion {
-  id: number
+  id: string
   pattern: string
   pattern_type: string
   created_at: string
@@ -158,7 +158,7 @@ export function triggerScan(): Promise<{ status: string; started_at: string }> {
   return apiFetch(`${API_BASE}/updates/scan`, { method: 'POST' })
 }
 
-export function fetchScanStatus(scanId: number): Promise<ScanStatus> {
+export function fetchScanStatus(scanId: string): Promise<ScanStatus> {
   return apiFetch(`${API_BASE}/updates/scan/${scanId}`)
 }
 
@@ -196,7 +196,7 @@ export function addExclusion(pattern: string, patternType: string): Promise<Excl
   })
 }
 
-export function removeExclusion(id: number): Promise<void> {
+export function removeExclusion(id: string): Promise<void> {
   return apiFetchVoid(`${API_BASE}/updates/exclusions/${id}`, { method: 'DELETE' })
 }
 

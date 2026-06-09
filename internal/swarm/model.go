@@ -78,7 +78,8 @@ type UpdateStatus struct {
 
 // SwarmNode represents a machine in the Swarm cluster (persisted for Enterprise).
 type SwarmNode struct {
-	ID                 int64     `json:"id"`
+	ID                 string    `json:"id"`
+	AgentID            string    `json:"agent_id"`
 	NodeID             string    `json:"node_id"`
 	Hostname           string    `json:"hostname"`
 	Role               string    `json:"role"`         // "manager" or "worker"

@@ -33,28 +33,28 @@ type agentEnrichStore struct{ containers []*container.Container }
 func (s *agentEnrichStore) ListContainers(_ context.Context, _ container.ListContainersOpts) ([]*container.Container, error) {
 	return s.containers, nil
 }
-func (s *agentEnrichStore) InsertContainer(context.Context, *container.Container) (int64, error) {
-	return 0, nil
+func (s *agentEnrichStore) InsertContainer(context.Context, *container.Container) (string, error) {
+	return "", nil
 }
 func (s *agentEnrichStore) UpdateContainer(context.Context, *container.Container) error { return nil }
 func (s *agentEnrichStore) GetContainerByExternalID(context.Context, string) (*container.Container, error) {
 	return nil, nil
 }
-func (s *agentEnrichStore) GetContainerByID(context.Context, int64) (*container.Container, error) {
+func (s *agentEnrichStore) GetContainerByID(context.Context, string) (*container.Container, error) {
 	return nil, nil
 }
 func (s *agentEnrichStore) ArchiveContainer(context.Context, string, time.Time) error { return nil }
-func (s *agentEnrichStore) DeleteContainerByID(context.Context, int64) error          { return nil }
-func (s *agentEnrichStore) InsertTransition(context.Context, *container.StateTransition) (int64, error) {
-	return 0, nil
+func (s *agentEnrichStore) DeleteContainerByID(context.Context, string) error         { return nil }
+func (s *agentEnrichStore) InsertTransition(context.Context, *container.StateTransition) (string, error) {
+	return "", nil
 }
-func (s *agentEnrichStore) ListTransitionsByContainer(context.Context, int64, container.ListTransitionsOpts) ([]*container.StateTransition, int, error) {
+func (s *agentEnrichStore) ListTransitionsByContainer(context.Context, string, container.ListTransitionsOpts) ([]*container.StateTransition, int, error) {
 	return nil, 0, nil
 }
-func (s *agentEnrichStore) CountRestartsSince(context.Context, int64, time.Time) (int, error) {
+func (s *agentEnrichStore) CountRestartsSince(context.Context, string, time.Time) (int, error) {
 	return 0, nil
 }
-func (s *agentEnrichStore) GetTransitionsInWindow(context.Context, int64, time.Time, time.Time) ([]*container.StateTransition, error) {
+func (s *agentEnrichStore) GetTransitionsInWindow(context.Context, string, time.Time, time.Time) ([]*container.StateTransition, error) {
 	return nil, nil
 }
 func (s *agentEnrichStore) DeleteTransitionsBefore(context.Context, time.Time, int) (int64, error) {
@@ -73,8 +73,8 @@ func (s stubAgentDirectory) AgentNames(context.Context) (map[string]AgentName, e
 func TestHandleList_EnrichesAgentIdentity(t *testing.T) {
 	agentID := "agent-1"
 	store := &agentEnrichStore{containers: []*container.Container{
-		{ID: 1, ExternalID: "ext-local", Name: "local-app", State: container.StateRunning},
-		{ID: 2, ExternalID: "ext-remote", Name: "remote-app", State: container.StateRunning, AgentID: &agentID},
+		{ID: "1", ExternalID: "ext-local", Name: "local-app", State: container.StateRunning},
+		{ID: "2", ExternalID: "ext-remote", Name: "remote-app", State: container.StateRunning, AgentID: agentID},
 	}}
 	svc := container.NewService(container.Deps{Store: store, Logger: slog.Default()})
 
@@ -132,7 +132,7 @@ func TestHandleList_EnrichesAgentIdentity(t *testing.T) {
 func TestHandleList_NoAgentDirectoryIsSafe(t *testing.T) {
 	agentID := "agent-1"
 	store := &agentEnrichStore{containers: []*container.Container{
-		{ID: 2, ExternalID: "ext-remote", Name: "remote-app", State: container.StateRunning, AgentID: &agentID},
+		{ID: "2", ExternalID: "ext-remote", Name: "remote-app", State: container.StateRunning, AgentID: agentID},
 	}}
 	svc := container.NewService(container.Deps{Store: store, Logger: slog.Default()})
 	h := NewContainerHandler(svc, nil) // no agent directory wired

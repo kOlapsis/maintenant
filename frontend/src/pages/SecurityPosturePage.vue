@@ -34,7 +34,7 @@ const { openDetail } = inject(detailSlideOverKey)!
 const isAvailable = computed(() => hasFeature('security_posture'))
 const posture = computed(() => store.posture)
 
-function handleSelectContainer(containerId: number) {
+function handleSelectContainer(containerId: string) {
   openDetail('container', containerId)
 }
 

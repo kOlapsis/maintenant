@@ -53,7 +53,7 @@ export interface AssetMeta {
 }
 
 export interface FooterLink {
-  id: number
+  id: string
   position: number
   label: string
   url: string
@@ -62,7 +62,7 @@ export interface FooterLink {
 }
 
 export interface FAQItem {
-  id: number
+  id: string
   position: number
   question: string
   answer_md: string
@@ -114,13 +114,13 @@ export const personalizationApi = {
   createFooterLink: (label: string, url: string) =>
     request<FooterLink>('POST', `${BASE}/footer-links`, { label, url }),
 
-  updateFooterLink: (id: number, label: string, url: string) =>
+  updateFooterLink: (id: string, label: string, url: string) =>
     request<FooterLink>('PUT', `${BASE}/footer-links/${id}`, { label, url }),
 
-  deleteFooterLink: (id: number) =>
+  deleteFooterLink: (id: string) =>
     request<void>('DELETE', `${BASE}/footer-links/${id}`),
 
-  reorderFooterLinks: (ids: number[]) =>
+  reorderFooterLinks: (ids: string[]) =>
     request<{ items: FooterLink[] }>('PUT', `${BASE}/footer-links/order`, { ids }),
 
   listFAQ: () =>
@@ -129,12 +129,12 @@ export const personalizationApi = {
   createFAQItem: (question: string, answer_md: string) =>
     request<FAQItem>('POST', `${BASE}/faq`, { question, answer_md }),
 
-  updateFAQItem: (id: number, question: string, answer_md: string) =>
+  updateFAQItem: (id: string, question: string, answer_md: string) =>
     request<FAQItem>('PUT', `${BASE}/faq/${id}`, { question, answer_md }),
 
-  deleteFAQItem: (id: number) =>
+  deleteFAQItem: (id: string) =>
     request<void>('DELETE', `${BASE}/faq/${id}`),
 
-  reorderFAQ: (ids: number[]) =>
+  reorderFAQ: (ids: string[]) =>
     request<{ items: FAQItem[] }>('PUT', `${BASE}/faq/order`, { ids }),
 }

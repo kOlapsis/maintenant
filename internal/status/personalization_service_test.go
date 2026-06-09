@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
@@ -19,6 +20,11 @@ type mockPersonalizationStore struct {
 	footerLinks []FooterLink
 	faqItems    []FAQItem
 	nextID      int64
+}
+
+func (m *mockPersonalizationStore) mintID() string {
+	m.nextID++
+	return fmt.Sprintf("id-%d", m.nextID)
 }
 
 func newMockPersonalizationStore() *mockPersonalizationStore {
@@ -64,13 +70,12 @@ func (m *mockPersonalizationStore) ListFooterLinks(_ context.Context) ([]FooterL
 }
 
 func (m *mockPersonalizationStore) CreateFooterLink(_ context.Context, label, url string) (FooterLink, error) {
-	m.nextID++
-	l := FooterLink{ID: m.nextID, Label: label, URL: url, Position: len(m.footerLinks) + 1}
+	l := FooterLink{ID: m.mintID(), Label: label, URL: url, Position: len(m.footerLinks) + 1}
 	m.footerLinks = append(m.footerLinks, l)
 	return l, nil
 }
 
-func (m *mockPersonalizationStore) UpdateFooterLink(_ context.Context, id int64, label, url string) (FooterLink, error) {
+func (m *mockPersonalizationStore) UpdateFooterLink(_ context.Context, id string, label, url string) (FooterLink, error) {
 	for i, l := range m.footerLinks {
 		if l.ID == id {
 			m.footerLinks[i].Label = label
@@ -81,7 +86,7 @@ func (m *mockPersonalizationStore) UpdateFooterLink(_ context.Context, id int64,
 	return FooterLink{}, ErrNotFound
 }
 
-func (m *mockPersonalizationStore) DeleteFooterLink(_ context.Context, id int64) error {
+func (m *mockPersonalizationStore) DeleteFooterLink(_ context.Context, id string) error {
 	for i, l := range m.footerLinks {
 		if l.ID == id {
 			m.footerLinks = append(m.footerLinks[:i], m.footerLinks[i+1:]...)
@@ -91,7 +96,7 @@ func (m *mockPersonalizationStore) DeleteFooterLink(_ context.Context, id int64)
 	return ErrNotFound
 }
 
-func (m *mockPersonalizationStore) ReorderFooterLinks(_ context.Context, _ []int64) ([]FooterLink, error) {
+func (m *mockPersonalizationStore) ReorderFooterLinks(_ context.Context, _ []string) ([]FooterLink, error) {
 	return m.footerLinks, nil
 }
 
@@ -100,13 +105,12 @@ func (m *mockPersonalizationStore) ListFAQItems(_ context.Context) ([]FAQItem, e
 }
 
 func (m *mockPersonalizationStore) CreateFAQItem(_ context.Context, question, answerMD, answerHTML string) (FAQItem, error) {
-	m.nextID++
-	item := FAQItem{ID: m.nextID, Question: question, AnswerMD: answerMD, AnswerHTML: answerHTML, Position: len(m.faqItems) + 1}
+	item := FAQItem{ID: m.mintID(), Question: question, AnswerMD: answerMD, AnswerHTML: answerHTML, Position: len(m.faqItems) + 1}
 	m.faqItems = append(m.faqItems, item)
 	return item, nil
 }
 
-func (m *mockPersonalizationStore) UpdateFAQItem(_ context.Context, id int64, question, answerMD, answerHTML string) (FAQItem, error) {
+func (m *mockPersonalizationStore) UpdateFAQItem(_ context.Context, id string, question, answerMD, answerHTML string) (FAQItem, error) {
 	for i, item := range m.faqItems {
 		if item.ID == id {
 			m.faqItems[i].Question = question
@@ -118,7 +122,7 @@ func (m *mockPersonalizationStore) UpdateFAQItem(_ context.Context, id int64, qu
 	return FAQItem{}, ErrNotFound
 }
 
-func (m *mockPersonalizationStore) DeleteFAQItem(_ context.Context, id int64) error {
+func (m *mockPersonalizationStore) DeleteFAQItem(_ context.Context, id string) error {
 	for i, item := range m.faqItems {
 		if item.ID == id {
 			m.faqItems = append(m.faqItems[:i], m.faqItems[i+1:]...)
@@ -128,7 +132,7 @@ func (m *mockPersonalizationStore) DeleteFAQItem(_ context.Context, id int64) er
 	return ErrNotFound
 }
 
-func (m *mockPersonalizationStore) ReorderFAQItems(_ context.Context, _ []int64) ([]FAQItem, error) {
+func (m *mockPersonalizationStore) ReorderFAQItems(_ context.Context, _ []string) ([]FAQItem, error) {
 	return m.faqItems, nil
 }
 

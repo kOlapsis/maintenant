@@ -19,7 +19,7 @@ import { useResourcesStore } from '@/stores/resources'
 import type uPlot from 'uplot'
 
 const props = defineProps<{
-  containerId: number
+  containerId: string
 }>()
 
 const resourcesStore = useResourcesStore()

@@ -21,7 +21,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 )
 
-// AgentStore handles persistence for agents and enrollment tokens.
+// AgentStore handles persistence for agents and enrollment tokens. The agents
+// table primary key is `id` (the agent-generated UUID); timestamps are stored as
+// epoch-second BIGINTs.
 type AgentStore struct {
 	db     *sql.DB
 	writer *Writer
@@ -38,11 +40,11 @@ func NewAgentStore(d *DB) *AgentStore {
 // Insert persists a new agent record.
 func (s *AgentStore) Insert(ctx context.Context, a *agent.Agent) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO agents (agent_id, public_key, hostname, label, os_arch, agent_version,
+		`INSERT INTO agents (id, public_key, hostname, label, os_arch, agent_version,
 			detected_runtime, status, last_seen_at, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.AgentID, a.PublicKey, a.Hostname, a.Label, a.OSArch, a.AgentVersion,
-		a.DetectedRuntime, a.Status, nullableTime(a.LastSeenAt), a.CreatedAt.UTC(),
+		a.DetectedRuntime, a.Status, nullableTime(a.LastSeenAt), a.CreatedAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert agent: %w", err)
@@ -50,12 +52,13 @@ func (s *AgentStore) Insert(ctx context.Context, a *agent.Agent) error {
 	return nil
 }
 
+const agentColumns = `id, public_key, hostname, label, os_arch, agent_version,
+	detected_runtime, status, last_seen_at, created_at, revoked_at, revoked_by`
+
 // Get retrieves an agent by ID.
 func (s *AgentStore) Get(ctx context.Context, agentID string) (*agent.Agent, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT agent_id, public_key, hostname, label, os_arch, agent_version,
-			detected_runtime, status, last_seen_at, created_at, revoked_at, revoked_by
-		FROM agents WHERE agent_id = ?`, agentID)
+		`SELECT `+agentColumns+` FROM agents WHERE id = ?`, agentID)
 	a, err := scanAgent(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, agent.ErrAgentNotFound
@@ -63,12 +66,9 @@ func (s *AgentStore) Get(ctx context.Context, agentID string) (*agent.Agent, err
 	return a, err
 }
 
-// List retrieves agents with optional filters.
-// status="" means all statuses. connectedIDs is the set of currently connected agent_ids (for connection_state filter).
+// List retrieves agents with an optional status filter ("" or "all" = all).
 func (s *AgentStore) List(ctx context.Context, statusFilter string) ([]*agent.Agent, error) {
-	query := `SELECT agent_id, public_key, hostname, label, os_arch, agent_version,
-		detected_runtime, status, last_seen_at, created_at, revoked_at, revoked_by
-	FROM agents`
+	query := `SELECT ` + agentColumns + ` FROM agents`
 	args := []any{}
 	if statusFilter != "" && statusFilter != "all" {
 		query += " WHERE status = ?"
@@ -99,12 +99,11 @@ func (s *AgentStore) UpdateLabel(ctx context.Context, agentID, label string) err
 		return agent.ErrLabelTooLong
 	}
 	res, err := s.writer.Exec(ctx,
-		`UPDATE agents SET label = ? WHERE agent_id = ?`, label, agentID)
+		`UPDATE agents SET label = ? WHERE id = ?`, label, agentID)
 	if err != nil {
 		return fmt.Errorf("update agent label: %w", err)
 	}
-	n := res.RowsAffected
-	if n == 0 {
+	if res.RowsAffected == 0 {
 		return agent.ErrAgentNotFound
 	}
 	return nil
@@ -113,7 +112,7 @@ func (s *AgentStore) UpdateLabel(ctx context.Context, agentID, label string) err
 // UpdateLastSeen updates the last_seen_at timestamp.
 func (s *AgentStore) UpdateLastSeen(ctx context.Context, agentID string, t time.Time) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE agents SET last_seen_at = ? WHERE agent_id = ?`, t.UTC(), agentID)
+		`UPDATE agents SET last_seen_at = ? WHERE id = ?`, t.Unix(), agentID)
 	if err != nil {
 		return fmt.Errorf("update agent last_seen: %w", err)
 	}
@@ -122,15 +121,13 @@ func (s *AgentStore) UpdateLastSeen(ctx context.Context, agentID string, t time.
 
 // Revoke marks an agent as revoked.
 func (s *AgentStore) Revoke(ctx context.Context, agentID, revokedBy string) error {
-	now := time.Now().UTC()
 	res, err := s.writer.Exec(ctx,
 		`UPDATE agents SET status = 'revoked', revoked_at = ?, revoked_by = ?
-		WHERE agent_id = ?`, now, revokedBy, agentID)
+		WHERE id = ?`, time.Now().Unix(), revokedBy, agentID)
 	if err != nil {
 		return fmt.Errorf("revoke agent: %w", err)
 	}
-	n := res.RowsAffected
-	if n == 0 {
+	if res.RowsAffected == 0 {
 		return agent.ErrAgentNotFound
 	}
 	return nil
@@ -138,18 +135,17 @@ func (s *AgentStore) Revoke(ctx context.Context, agentID, revokedBy string) erro
 
 // Delete hard-deletes an agent and all its events via FK ON DELETE CASCADE.
 func (s *AgentStore) Delete(ctx context.Context, agentID string) error {
-	res, err := s.writer.Exec(ctx, `DELETE FROM agents WHERE agent_id = ?`, agentID)
+	res, err := s.writer.Exec(ctx, `DELETE FROM agents WHERE id = ?`, agentID)
 	if err != nil {
 		return fmt.Errorf("delete agent: %w", err)
 	}
-	n := res.RowsAffected
-	if n == 0 {
+	if res.RowsAffected == 0 {
 		return agent.ErrAgentNotFound
 	}
 	return nil
 }
 
-// CountByStatus returns agent counts grouped by status and runtime.
+// CountByStatus returns agent counts grouped by status.
 func (s *AgentStore) CountByStatus(ctx context.Context) (active, revoked int, err error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM agents GROUP BY status`)
 	if err != nil {
@@ -172,7 +168,7 @@ func (s *AgentStore) CountByStatus(ctx context.Context) (active, revoked int, er
 	return active, revoked, rows.Err()
 }
 
-// CountByRuntime returns agent counts grouped by detected_runtime.
+// CountByRuntime returns active agent counts grouped by detected_runtime.
 func (s *AgentStore) CountByRuntime(ctx context.Context) (docker, swarm, kubernetes int, err error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT detected_runtime, COUNT(*) FROM agents WHERE status = 'active' GROUP BY detected_runtime`)
@@ -201,9 +197,9 @@ func (s *AgentStore) CountByRuntime(ctx context.Context) (docker, swarm, kuberne
 // InsertToken persists a new enrollment token.
 func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO enrollment_tokens (token_id, token, created_at, expires_at)
+		`INSERT INTO enrollment_tokens (id, token, created_at, expires_at)
 		VALUES (?, ?, ?, ?)`,
-		t.TokenID, t.Token, t.CreatedAt.UTC(), t.ExpiresAt.UTC(),
+		t.TokenID, t.Token, t.CreatedAt.Unix(), t.ExpiresAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert token: %w", err)
@@ -214,7 +210,7 @@ func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) 
 // ConsumeAtomic atomically marks a token as consumed. Returns ErrTokenNotFound,
 // ErrTokenAlreadyConsumed, or ErrTokenExpired on failure.
 func (s *AgentStore) ConsumeAtomic(ctx context.Context, tokenCleartext, agentID string) error {
-	now := time.Now().UTC()
+	now := time.Now().Unix()
 	res, err := s.writer.Exec(ctx,
 		`UPDATE enrollment_tokens
 		SET consumed_at = ?, consumed_by_agent_id = ?
@@ -224,13 +220,12 @@ func (s *AgentStore) ConsumeAtomic(ctx context.Context, tokenCleartext, agentID 
 	if err != nil {
 		return fmt.Errorf("consume token: %w", err)
 	}
-	n := res.RowsAffected
-	if n == 1 {
+	if res.RowsAffected == 1 {
 		return nil
 	}
-	// Determine why it failed
-	var consumed sql.NullTime
-	var expiresAt time.Time
+	// Determine why it failed.
+	var consumed sql.NullInt64
+	var expiresAt int64
 	err = s.db.QueryRowContext(ctx,
 		`SELECT consumed_at, expires_at FROM enrollment_tokens WHERE token = ?`, tokenCleartext,
 	).Scan(&consumed, &expiresAt)
@@ -243,17 +238,18 @@ func (s *AgentStore) ConsumeAtomic(ctx context.Context, tokenCleartext, agentID 
 	if consumed.Valid {
 		return agent.ErrTokenAlreadyConsumed
 	}
-	if expiresAt.Before(now) {
+	if expiresAt < now {
 		return agent.ErrTokenExpired
 	}
 	return agent.ErrTokenNotFound
 }
 
+const tokenColumns = `id, token, created_at, expires_at, consumed_at, consumed_by_agent_id`
+
 // GetByToken retrieves a token by its cleartext value.
 func (s *AgentStore) GetByToken(ctx context.Context, tokenCleartext string) (*agent.EnrollmentToken, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT token_id, token, created_at, expires_at, consumed_at, consumed_by_agent_id
-		FROM enrollment_tokens WHERE token = ?`, tokenCleartext)
+		`SELECT `+tokenColumns+` FROM enrollment_tokens WHERE token = ?`, tokenCleartext)
 	t, err := scanToken(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, agent.ErrTokenNotFound
@@ -261,11 +257,10 @@ func (s *AgentStore) GetByToken(ctx context.Context, tokenCleartext string) (*ag
 	return t, err
 }
 
-// GetTokenByID retrieves a token by its opaque token_id.
+// GetTokenByID retrieves a token by its opaque id.
 func (s *AgentStore) GetTokenByID(ctx context.Context, tokenID string) (*agent.EnrollmentToken, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT token_id, token, created_at, expires_at, consumed_at, consumed_by_agent_id
-		FROM enrollment_tokens WHERE token_id = ?`, tokenID)
+		`SELECT `+tokenColumns+` FROM enrollment_tokens WHERE id = ?`, tokenID)
 	t, err := scanToken(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, agent.ErrTokenNotFound
@@ -274,12 +269,9 @@ func (s *AgentStore) GetTokenByID(ctx context.Context, tokenID string) (*agent.E
 }
 
 // ListTokens returns all tokens with optional filters.
-// When includeExpired=false, only non-expired (or consumed) tokens are returned.
-// When includeConsumed=false, consumed tokens are excluded.
 func (s *AgentStore) ListTokens(ctx context.Context, includeExpired, includeConsumed bool) ([]*agent.EnrollmentToken, error) {
-	now := time.Now().UTC()
-	query := `SELECT token_id, token, created_at, expires_at, consumed_at, consumed_by_agent_id
-	FROM enrollment_tokens WHERE 1=1`
+	now := time.Now().Unix()
+	query := `SELECT ` + tokenColumns + ` FROM enrollment_tokens WHERE 1=1`
 	args := []any{}
 	if !includeExpired {
 		query += " AND (expires_at > ? OR consumed_at IS NOT NULL)"
@@ -310,16 +302,14 @@ func (s *AgentStore) ListTokens(ctx context.Context, includeExpired, includeCons
 // DeleteToken removes an unconsumed token.
 func (s *AgentStore) DeleteToken(ctx context.Context, tokenID string) error {
 	res, err := s.writer.Exec(ctx,
-		`DELETE FROM enrollment_tokens WHERE token_id = ? AND consumed_at IS NULL`, tokenID)
+		`DELETE FROM enrollment_tokens WHERE id = ? AND consumed_at IS NULL`, tokenID)
 	if err != nil {
 		return fmt.Errorf("delete token: %w", err)
 	}
-	n := res.RowsAffected
-	if n == 0 {
-		// Distinguish between not found and already consumed
+	if res.RowsAffected == 0 {
 		var count int
 		queryErr := s.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM enrollment_tokens WHERE token_id = ?`, tokenID,
+			`SELECT COUNT(*) FROM enrollment_tokens WHERE id = ?`, tokenID,
 		).Scan(&count)
 		if queryErr != nil {
 			return fmt.Errorf("check token existence: %w", queryErr)
@@ -332,12 +322,11 @@ func (s *AgentStore) DeleteToken(ctx context.Context, tokenID string) error {
 	return nil
 }
 
-// GcExpiredTokens removes unconsumed tokens that expired more than 7 days ago.
 // StaleAgents returns IDs of active agents whose last_seen_at is older than threshold.
 func (s *AgentStore) StaleAgents(ctx context.Context, threshold time.Duration) ([]string, error) {
-	cutoff := time.Now().UTC().Add(-threshold)
+	cutoff := time.Now().Add(-threshold).Unix()
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT agent_id FROM agents WHERE status = 'active' AND last_seen_at < ?`, cutoff)
+		`SELECT id FROM agents WHERE status = 'active' AND last_seen_at < ?`, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("stale agents: %w", err)
 	}
@@ -353,8 +342,9 @@ func (s *AgentStore) StaleAgents(ctx context.Context, threshold time.Duration) (
 	return ids, rows.Err()
 }
 
+// GcExpiredTokens removes unconsumed tokens that expired more than 7 days ago.
 func (s *AgentStore) GcExpiredTokens(ctx context.Context) error {
-	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	cutoff := time.Now().Add(-7 * 24 * time.Hour).Unix()
 	_, err := s.writer.Exec(ctx,
 		`DELETE FROM enrollment_tokens WHERE expires_at < ? AND consumed_at IS NULL`, cutoff)
 	if err != nil {
@@ -370,20 +360,24 @@ type scanner interface {
 
 func scanAgent(s scanner) (*agent.Agent, error) {
 	a := &agent.Agent{}
-	var lastSeen, revokedAt sql.NullTime
+	var lastSeen, revokedAt sql.NullInt64
 	var revokedBy sql.NullString
+	var createdAt int64
 	err := s.Scan(
 		&a.AgentID, &a.PublicKey, &a.Hostname, &a.Label, &a.OSArch, &a.AgentVersion,
-		&a.DetectedRuntime, &a.Status, &lastSeen, &a.CreatedAt, &revokedAt, &revokedBy,
+		&a.DetectedRuntime, &a.Status, &lastSeen, &createdAt, &revokedAt, &revokedBy,
 	)
 	if err != nil {
 		return nil, err
 	}
+	a.CreatedAt = time.Unix(createdAt, 0)
 	if lastSeen.Valid {
-		a.LastSeenAt = &lastSeen.Time
+		t := time.Unix(lastSeen.Int64, 0)
+		a.LastSeenAt = &t
 	}
 	if revokedAt.Valid {
-		a.RevokedAt = &revokedAt.Time
+		t := time.Unix(revokedAt.Int64, 0)
+		a.RevokedAt = &t
 	}
 	if revokedBy.Valid {
 		a.RevokedBy = &revokedBy.String
@@ -393,16 +387,20 @@ func scanAgent(s scanner) (*agent.Agent, error) {
 
 func scanToken(s scanner) (*agent.EnrollmentToken, error) {
 	t := &agent.EnrollmentToken{}
-	var consumedAt sql.NullTime
+	var consumedAt sql.NullInt64
 	var consumedBy sql.NullString
+	var createdAt, expiresAt int64
 	err := s.Scan(
-		&t.TokenID, &t.Token, &t.CreatedAt, &t.ExpiresAt, &consumedAt, &consumedBy,
+		&t.TokenID, &t.Token, &createdAt, &expiresAt, &consumedAt, &consumedBy,
 	)
 	if err != nil {
 		return nil, err
 	}
+	t.CreatedAt = time.Unix(createdAt, 0)
+	t.ExpiresAt = time.Unix(expiresAt, 0)
 	if consumedAt.Valid {
-		t.ConsumedAt = &consumedAt.Time
+		ts := time.Unix(consumedAt.Int64, 0)
+		t.ConsumedAt = &ts
 	}
 	if consumedBy.Valid {
 		t.ConsumedByAgentID = &consumedBy.String

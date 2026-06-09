@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // TriggerStoreImpl implements alert.TriggerStore using SQLite.
@@ -36,24 +37,25 @@ func NewTriggerStore(d *DB) *TriggerStoreImpl {
 	}
 }
 
-func (s *TriggerStoreImpl) InsertTrigger(ctx context.Context, t *alert.AlertTrigger) (int64, error) {
-	res, err := s.writer.Exec(ctx,
+func (s *TriggerStoreImpl) InsertTrigger(ctx context.Context, t *alert.AlertTrigger) (string, error) {
+	t.ID = uid.New()
+	now := time.Now().Unix()
+	_, err := s.writer.Exec(ctx,
 		`INSERT INTO alert_triggers
-			(name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-		t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags, boolToInt(t.Enabled),
+			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags, boolToInt(t.Enabled), now, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert trigger: %w", err)
+		return "", fmt.Errorf("insert trigger: %w", err)
 	}
-	t.ID = res.LastInsertID
 	if err := s.replaceChannels(ctx, t.ID, t.ChannelIDs); err != nil {
-		return 0, err
+		return "", err
 	}
 	return t.ID, nil
 }
 
-func (s *TriggerStoreImpl) GetTrigger(ctx context.Context, id int64) (*alert.AlertTrigger, error) {
+func (s *TriggerStoreImpl) GetTrigger(ctx context.Context, id string) (*alert.AlertTrigger, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, filter_severities, filter_sources, filter_scopes, filter_tags,
 			enabled, created_at, updated_at
@@ -126,7 +128,7 @@ func (s *TriggerStoreImpl) UpdateTrigger(ctx context.Context, t *alert.AlertTrig
 				enabled=?, updated_at=?
 			WHERE id=?`,
 		t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags,
-		boolToInt(t.Enabled), time.Now().UTC().Format(time.RFC3339), t.ID,
+		boolToInt(t.Enabled), time.Now().Unix(), t.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update trigger: %w", err)
@@ -134,7 +136,7 @@ func (s *TriggerStoreImpl) UpdateTrigger(ctx context.Context, t *alert.AlertTrig
 	return s.replaceChannels(ctx, t.ID, t.ChannelIDs)
 }
 
-func (s *TriggerStoreImpl) DeleteTrigger(ctx context.Context, id int64) error {
+func (s *TriggerStoreImpl) DeleteTrigger(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx, `DELETE FROM alert_triggers WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete trigger: %w", err)
@@ -144,11 +146,11 @@ func (s *TriggerStoreImpl) DeleteTrigger(ctx context.Context, id int64) error {
 
 // SetChannels replaces all channel links for a trigger atomically (within
 // the writer's serialization guarantee).
-func (s *TriggerStoreImpl) SetChannels(ctx context.Context, triggerID int64, channelIDs []int64) error {
+func (s *TriggerStoreImpl) SetChannels(ctx context.Context, triggerID string, channelIDs []string) error {
 	return s.replaceChannels(ctx, triggerID, channelIDs)
 }
 
-func (s *TriggerStoreImpl) replaceChannels(ctx context.Context, triggerID int64, channelIDs []int64) error {
+func (s *TriggerStoreImpl) replaceChannels(ctx context.Context, triggerID string, channelIDs []string) error {
 	if _, err := s.writer.Exec(ctx,
 		`DELETE FROM alert_trigger_channels WHERE trigger_id = ?`, triggerID); err != nil {
 		return fmt.Errorf("clear channel links: %w", err)
@@ -171,7 +173,7 @@ func (s *TriggerStoreImpl) replaceChannels(ctx context.Context, triggerID int64,
 	return nil
 }
 
-func (s *TriggerStoreImpl) ListChannelsForTrigger(ctx context.Context, triggerID int64) ([]int64, error) {
+func (s *TriggerStoreImpl) ListChannelsForTrigger(ctx context.Context, triggerID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT channel_id FROM alert_trigger_channels WHERE trigger_id = ? ORDER BY channel_id ASC`,
 		triggerID)
@@ -182,21 +184,21 @@ func (s *TriggerStoreImpl) ListChannelsForTrigger(ctx context.Context, triggerID
 		_ = rows.Close()
 	}(rows)
 
-	var ids []int64
+	var ids []string
 	for rows.Next() {
-		var id int64
+		var id string
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
 		ids = append(ids, id)
 	}
 	if ids == nil {
-		ids = []int64{}
+		ids = []string{}
 	}
 	return ids, rows.Err()
 }
 
-func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID int64) ([]*alert.AlertTrigger, error) {
+func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID string) ([]*alert.AlertTrigger, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT t.id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes, t.filter_tags,
 			t.enabled, t.created_at, t.updated_at
@@ -238,29 +240,29 @@ func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID
 func scanTrigger(row *sql.Row) (*alert.AlertTrigger, error) {
 	t := &alert.AlertTrigger{}
 	var enabled int
-	var createdAt, updatedAt string
+	var createdAt, updatedAt int64
 	err := row.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
 		&t.FilterScopes, &t.FilterTags, &enabled, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
 	t.Enabled = enabled == 1
-	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	t.CreatedAt = time.Unix(createdAt, 0)
+	t.UpdatedAt = time.Unix(updatedAt, 0)
 	return t, nil
 }
 
 func scanTriggerRow(rows *sql.Rows) (*alert.AlertTrigger, error) {
 	t := &alert.AlertTrigger{}
 	var enabled int
-	var createdAt, updatedAt string
+	var createdAt, updatedAt int64
 	err := rows.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
 		&t.FilterScopes, &t.FilterTags, &enabled, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
 	t.Enabled = enabled == 1
-	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	t.CreatedAt = time.Unix(createdAt, 0)
+	t.UpdatedAt = time.Unix(updatedAt, 0)
 	return t, nil
 }

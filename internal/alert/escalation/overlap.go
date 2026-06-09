@@ -23,7 +23,7 @@ import (
 func DetectOverlap(candidate *Policy, existing []*Policy) []OverlapWarning {
 	var warnings []OverlapWarning
 	for _, p := range existing {
-		if candidate.ID != 0 && p.ID == candidate.ID {
+		if candidate.ID != "" && p.ID == candidate.ID {
 			continue
 		}
 		if !filtersIntersect(candidate.Filters, p.Filters) {
@@ -83,15 +83,15 @@ func scopeSetsIntersect(a, b []Scope) bool {
 }
 
 // sharedChannels returns the channel IDs present in any level of both policies.
-func sharedChannels(a, b *Policy) []int64 {
-	aChans := make(map[int64]struct{})
+func sharedChannels(a, b *Policy) []string {
+	aChans := make(map[string]struct{})
 	for _, lvl := range a.Levels {
 		for _, id := range lvl.ChannelIDs {
 			aChans[id] = struct{}{}
 		}
 	}
-	seen := make(map[int64]struct{})
-	var shared []int64
+	seen := make(map[string]struct{})
+	var shared []string
 	for _, lvl := range b.Levels {
 		for _, id := range lvl.ChannelIDs {
 			if _, ok := aChans[id]; ok {

@@ -27,7 +27,7 @@ export interface EndpointConfig {
 export type EndpointSource = 'label' | 'standalone'
 
 export interface Endpoint {
-  id: number
+  id: string
   container_name: string
   external_id: string
   endpoint_type: 'http' | 'tcp'
@@ -53,8 +53,8 @@ export interface Endpoint {
 }
 
 export interface CheckResult {
-  id: number
-  endpoint_id: number
+  id: string
+  endpoint_id: string
   success: boolean
   response_time_ms: number
   http_status?: number
@@ -109,7 +109,7 @@ export interface EndpointDetailResponse {
 }
 
 export interface ChecksResponse {
-  endpoint_id: number
+  endpoint_id: string
   checks: CheckResult[]
   total: number
   has_more: boolean
@@ -131,11 +131,11 @@ export function listEndpoints(params?: ListEndpointsParams): Promise<EndpointsRe
   return fetchJSON<EndpointsResponse>(url.toString())
 }
 
-export function getEndpoint(id: number): Promise<EndpointDetailResponse> {
+export function getEndpoint(id: string): Promise<EndpointDetailResponse> {
   return fetchJSON<EndpointDetailResponse>(`${API_BASE}/endpoints/${id}`)
 }
 
-export function listChecks(id: number, params?: ListChecksParams): Promise<ChecksResponse> {
+export function listChecks(id: string, params?: ListChecksParams): Promise<ChecksResponse> {
   const url = new URL(`${API_BASE}/endpoints/${id}/checks`, window.location.origin)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   if (params?.offset) url.searchParams.set('offset', String(params.offset))
@@ -151,7 +151,7 @@ export function createEndpoint(data: CreateEndpointInput): Promise<{ endpoint: E
   })
 }
 
-export function updateEndpoint(id: number, data: UpdateEndpointInput): Promise<{ endpoint: Endpoint }> {
+export function updateEndpoint(id: string, data: UpdateEndpointInput): Promise<{ endpoint: Endpoint }> {
   return apiFetch<{ endpoint: Endpoint }>(`${API_BASE}/endpoints/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -159,7 +159,7 @@ export function updateEndpoint(id: number, data: UpdateEndpointInput): Promise<{
   })
 }
 
-export function deleteEndpoint(id: number): Promise<void> {
+export function deleteEndpoint(id: string): Promise<void> {
   return apiFetchVoid(`${API_BASE}/endpoints/${id}`, {
     method: 'DELETE',
   })

@@ -28,7 +28,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refresh: []
-  select: [id: number]
+  select: [id: string]
 }>()
 
 const copied = ref(false)

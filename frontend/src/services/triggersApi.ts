@@ -18,7 +18,7 @@ export function listTriggers(): Promise<{ triggers: AlertTrigger[] }> {
   return apiFetch(`${API_BASE}/alert-triggers`)
 }
 
-export function getTrigger(id: number): Promise<AlertTrigger> {
+export function getTrigger(id: string): Promise<AlertTrigger> {
   return apiFetch(`${API_BASE}/alert-triggers/${id}`)
 }
 
@@ -30,7 +30,7 @@ export function createTrigger(data: TriggerRequest): Promise<AlertTrigger> {
   })
 }
 
-export function updateTrigger(id: number, data: TriggerRequest): Promise<AlertTrigger> {
+export function updateTrigger(id: string, data: TriggerRequest): Promise<AlertTrigger> {
   return apiFetch(`${API_BASE}/alert-triggers/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -38,6 +38,6 @@ export function updateTrigger(id: number, data: TriggerRequest): Promise<AlertTr
   })
 }
 
-export function deleteTrigger(id: number): Promise<void> {
+export function deleteTrigger(id: string): Promise<void> {
   return apiFetchVoid(`${API_BASE}/alert-triggers/${id}`, { method: 'DELETE' })
 }

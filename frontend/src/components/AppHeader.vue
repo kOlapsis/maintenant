@@ -203,7 +203,7 @@ const themeTooltip = computed(() => {
           title="Choisir l'hôte à afficher"
           @change="onHostChange"
         >
-          <option v-for="h in resources.hosts" :key="h.agent_id" :value="h.agent_id">
+          <option v-for="h in resources.hosts" :key="h.agent_id" :value="resources.hostKey(h)">
             {{ hostName(h) }}<template v-if="!h.available"> (hors-ligne)</template>
           </option>
         </select>

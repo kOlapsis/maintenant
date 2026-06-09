@@ -144,7 +144,7 @@ func (noopRunnerSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (boo
 // per (alertID, policyID) tuple — safe to call multiple times (e.g. on severity
 // escalation, when new policies become applicable).
 func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
-	if a == nil || a.ID == 0 {
+	if a == nil || a.ID == "" {
 		return nil
 	}
 
@@ -152,7 +152,7 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 	if err != nil {
 		return fmt.Errorf("escalation: list existing runs: %w", err)
 	}
-	covered := make(map[int64]struct{}, len(existing))
+	covered := make(map[string]struct{}, len(existing))
 	for _, run := range existing {
 		if run.PolicyID != nil {
 			covered[*run.PolicyID] = struct{}{}
@@ -206,7 +206,7 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 
 // OnAlertAcknowledged terminates every active run attached to the alert and
 // dispatches an ack notification on the channels of the last executed level.
-func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID int64, ack alert.Acknowledgment) error {
+func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack alert.Acknowledgment) error {
 	runs, err := r.store.SelectActiveRunsByAlert(ctx, alertID)
 	if err != nil {
 		return fmt.Errorf("escalation: list runs for ack: %w", err)
@@ -250,7 +250,7 @@ func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID int64, ack ale
 // recovery broadcast already covers user-visible feedback; we do not send a
 // per-channel "resolved" notification (avoids dedup work — channels usually
 // receive the recovery via the standard alert pipeline).
-func (r *Runner) OnAlertResolved(ctx context.Context, alertID int64, resolvedAt time.Time) error {
+func (r *Runner) OnAlertResolved(ctx context.Context, alertID string, resolvedAt time.Time) error {
 	runs, err := r.store.SelectActiveRunsByAlert(ctx, alertID)
 	if err != nil {
 		return fmt.Errorf("escalation: list runs for resolve: %w", err)
@@ -309,7 +309,7 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 		return r.store.TerminateRun(ctx, run.ID, RunStatusStoppedByResolution, now)
 	}
 
-	suppressed, sErr := r.suppressor.IsSuppressed(ctx, a.Source, a.EntityType, fmt.Sprint(a.EntityID))
+	suppressed, sErr := r.suppressor.IsSuppressed(ctx, a.Source, a.EntityType, a.EntityID)
 	if sErr != nil {
 		r.logger.ErrorContext(ctx, "escalation: suppressor", "error", sErr, "run_id", run.ID)
 		// Fail-open on suppressor errors to avoid stalling escalations.
@@ -365,14 +365,14 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 	return nil
 }
 
-func (r *Runner) executeLevel(ctx context.Context, run *Run, levelIndex int, channelIDs []int64, a *alert.Alert) {
+func (r *Runner) executeLevel(ctx context.Context, run *Run, levelIndex int, channelIDs []string, a *alert.Alert) {
 	now := r.clock()
 	for _, chID := range channelIDs {
 		r.dispatchToChannel(ctx, run.ID, levelIndex, chID, a, now)
 	}
 }
 
-func (r *Runner) dispatchSpecial(ctx context.Context, runID int64, levelIndex int, channelIDs []int64, a *alert.Alert) {
+func (r *Runner) dispatchSpecial(ctx context.Context, runID string, levelIndex int, channelIDs []string, a *alert.Alert) {
 	now := r.clock()
 	for _, chID := range channelIDs {
 		r.dispatchToChannel(ctx, runID, levelIndex, chID, a, now)
@@ -382,7 +382,7 @@ func (r *Runner) dispatchSpecial(ctx context.Context, runID int64, levelIndex in
 // dispatchToChannel reserves a delivery row (UNIQUE constraint catches crash-recovery
 // duplicates, FR-022) and dispatches the send in a goroutine if the channel is enabled.
 // One channel's failure must not block the others.
-func (r *Runner) dispatchToChannel(ctx context.Context, runID int64, levelIndex int, chID int64, a *alert.Alert, now time.Time) {
+func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex int, chID string, a *alert.Alert, now time.Time) {
 	ch, err := r.channelStore.GetChannel(ctx, chID)
 	if err != nil {
 		r.logger.ErrorContext(ctx, "escalation: get channel", "error", err, "channel_id", chID, "run_id", runID)

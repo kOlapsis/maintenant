@@ -46,11 +46,11 @@ async function handleSaved() {
   await store.fetchPolicies()
 }
 
-async function handleDelete(id: number) {
+async function handleDelete(id: string) {
   await store.deletePolicy(id)
 }
 
-async function handleToggleActive(id: number, active: boolean) {
+async function handleToggleActive(id: string, active: boolean) {
   await store.setPolicyActive(id, active)
 }
 

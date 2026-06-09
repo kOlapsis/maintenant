@@ -19,6 +19,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 const (
@@ -36,7 +37,7 @@ type Collector struct {
 	onSnapshot   func(snap *ResourceSnapshot)
 
 	mu       sync.Mutex
-	latest   map[int64]*ResourceSnapshot // keyed by container_id
+	latest   map[string]*ResourceSnapshot // keyed by container_id
 	hostStat *HostStatReader
 }
 
@@ -47,7 +48,7 @@ func NewCollector(rt runtime.Runtime, containerSvc *container.Service, logger *s
 		containerSvc: containerSvc,
 		interval:     defaultCollectInterval,
 		logger:       logger,
-		latest:       make(map[int64]*ResourceSnapshot),
+		latest:       make(map[string]*ResourceSnapshot),
 		hostStat:     NewHostStatReader(),
 	}
 }
@@ -63,17 +64,17 @@ func (c *Collector) SetOnSnapshot(fn func(snap *ResourceSnapshot)) {
 }
 
 // GetLatestSnapshot returns the most recent in-memory snapshot for a container.
-func (c *Collector) GetLatestSnapshot(containerID int64) *ResourceSnapshot {
+func (c *Collector) GetLatestSnapshot(containerID string) *ResourceSnapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.latest[containerID]
 }
 
 // GetAllLatest returns the latest snapshots for all containers.
-func (c *Collector) GetAllLatest() map[int64]*ResourceSnapshot {
+func (c *Collector) GetAllLatest() map[string]*ResourceSnapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	result := make(map[int64]*ResourceSnapshot, len(c.latest))
+	result := make(map[string]*ResourceSnapshot, len(c.latest))
 	for k, v := range c.latest {
 		result[k] = v
 	}
@@ -163,6 +164,7 @@ func (c *Collector) collect(ctx context.Context) {
 				BlockReadBytes:  raw.BlockReadBytes,
 				BlockWriteBytes: raw.BlockWriteBytes,
 				Timestamp:       raw.Timestamp,
+				AgentID:         uid.LocalAgent,
 			}
 
 			c.mu.Lock()
@@ -182,7 +184,7 @@ func (c *Collector) collect(ctx context.Context) {
 }
 
 func (c *Collector) cleanStale(running []*container.Container) {
-	runningIDs := make(map[int64]struct{}, len(running))
+	runningIDs := make(map[string]struct{}, len(running))
 	for _, ct := range running {
 		runningIDs[ct.ID] = struct{}{}
 	}

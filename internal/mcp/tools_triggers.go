@@ -63,26 +63,26 @@ func registerTriggerTools(server *gomcp.Server, svc *Services) {
 type listTriggersInput struct{}
 
 type getTriggerInput struct {
-	ID int64 `json:"id" jsonschema:"Trigger ID"`
+	ID string `json:"id" jsonschema:"Trigger ID"`
 }
 
 type triggerInput struct {
-	Name             string  `json:"name" jsonschema:"Trigger name (1-120 chars)"`
-	FilterSeverities string  `json:"filter_severities" jsonschema:"CSV severity filter (e.g. 'critical,warning'). Empty matches everything."`
-	FilterSources    string  `json:"filter_sources" jsonschema:"CSV source filter (e.g. 'container,endpoint'). Empty matches everything."`
-	FilterScopes     string  `json:"filter_scopes" jsonschema:"CSV scope filter (e.g. 'container:42,endpoint:7'). Pro only. Empty matches everything."`
-	FilterTags       string  `json:"filter_tags" jsonschema:"CSV tag filter. Pro only. Empty matches everything."`
-	Enabled          bool    `json:"enabled" jsonschema:"Whether the trigger is active"`
-	ChannelIDs       []int64 `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
+	Name             string   `json:"name" jsonschema:"Trigger name (1-120 chars)"`
+	FilterSeverities string   `json:"filter_severities" jsonschema:"CSV severity filter (e.g. 'critical,warning'). Empty matches everything."`
+	FilterSources    string   `json:"filter_sources" jsonschema:"CSV source filter (e.g. 'container,endpoint'). Empty matches everything."`
+	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter (e.g. 'container:42,endpoint:7'). Pro only. Empty matches everything."`
+	FilterTags       string   `json:"filter_tags" jsonschema:"CSV tag filter. Pro only. Empty matches everything."`
+	Enabled          bool     `json:"enabled" jsonschema:"Whether the trigger is active"`
+	ChannelIDs       []string `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
 }
 
 type updateTriggerInputWithID struct {
-	ID int64 `json:"id" jsonschema:"Trigger ID to update"`
+	ID string `json:"id" jsonschema:"Trigger ID to update"`
 	triggerInput
 }
 
 type deleteTriggerInput struct {
-	ID int64 `json:"id" jsonschema:"Trigger ID to delete"`
+	ID string `json:"id" jsonschema:"Trigger ID to delete"`
 }
 
 // --- helpers ---
@@ -166,7 +166,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 				return nil, nil, fmt.Errorf("validate channel: %w", err)
 			}
 			if ch == nil {
-				return errResult(fmt.Sprintf("channel %d does not exist", id))
+				return errResult(fmt.Sprintf("channel %s does not exist", id))
 			}
 		}
 
@@ -214,7 +214,7 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 				return nil, nil, fmt.Errorf("validate channel: %w", err)
 			}
 			if ch == nil {
-				return errResult(fmt.Sprintf("channel %d does not exist", id))
+				return errResult(fmt.Sprintf("channel %s does not exist", id))
 			}
 		}
 

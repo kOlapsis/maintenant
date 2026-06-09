@@ -252,7 +252,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     }
   }
 
-  async function removeExclusionAction(id: number) {
+  async function removeExclusionAction(id: string) {
     try {
       await apiRemoveExclusion(id)
       await fetchExclusionsAction()

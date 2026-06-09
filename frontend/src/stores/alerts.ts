@@ -213,7 +213,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
-  function removeFromActive(alertId: number) {
+  function removeFromActive(alertId: string) {
     for (const key of ['critical', 'warning', 'info'] as const) {
       activeAlerts.value[key] = activeAlerts.value[key].filter((a) => a.id !== alertId)
     }

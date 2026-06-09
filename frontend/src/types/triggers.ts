@@ -10,14 +10,14 @@
 // Source: https://github.com/kolapsis/maintenant
 
 export interface AlertTrigger {
-  id: number
+  id: string
   name: string
   filter_severities: string
   filter_sources: string
   filter_scopes: string
   filter_tags: string
   enabled: boolean
-  channel_ids: number[]
+  channel_ids: string[]
   created_at: string
   updated_at: string
 }
@@ -29,5 +29,5 @@ export interface TriggerRequest {
   filter_scopes: string
   filter_tags: string
   enabled: boolean
-  channel_ids: number[]
+  channel_ids: string[]
 }

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // AcknowledgmentStoreImpl implements security.AcknowledgmentStore using SQLite.
@@ -34,21 +35,21 @@ func NewAcknowledgmentStore(d *DB) *AcknowledgmentStoreImpl {
 	}
 }
 
-func (s *AcknowledgmentStoreImpl) InsertAcknowledgment(ctx context.Context, ack *security.RiskAcknowledgment) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO risk_acknowledgments (container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		ack.ContainerExternalID, ack.FindingType, ack.FindingKey,
+func (s *AcknowledgmentStoreImpl) InsertAcknowledgment(ctx context.Context, ack *security.RiskAcknowledgment) (string, error) {
+	ack.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO risk_acknowledgments (id, container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		ack.ID, ack.ContainerExternalID, ack.FindingType, ack.FindingKey,
 		ack.AcknowledgedBy, ack.Reason, ack.AcknowledgedAt.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert acknowledgment: %w", err)
+		return "", fmt.Errorf("insert acknowledgment: %w", err)
 	}
-	ack.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return ack.ID, nil
 }
 
-func (s *AcknowledgmentStoreImpl) DeleteAcknowledgment(ctx context.Context, id int64) error {
+func (s *AcknowledgmentStoreImpl) DeleteAcknowledgment(ctx context.Context, id string) error {
 	_, err := s.writer.Exec(ctx,
 		`DELETE FROM risk_acknowledgments WHERE id = ?`, id,
 	)
@@ -86,7 +87,7 @@ func (s *AcknowledgmentStoreImpl) ListAcknowledgments(ctx context.Context, conta
 	return result, rows.Err()
 }
 
-func (s *AcknowledgmentStoreImpl) GetAcknowledgment(ctx context.Context, id int64) (*security.RiskAcknowledgment, error) {
+func (s *AcknowledgmentStoreImpl) GetAcknowledgment(ctx context.Context, id string) (*security.RiskAcknowledgment, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, container_external_id, finding_type, finding_key, acknowledged_by, reason, acknowledged_at
 		FROM risk_acknowledgments WHERE id = ?`, id)

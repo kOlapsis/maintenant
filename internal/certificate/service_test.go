@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -277,28 +278,24 @@ func TestParseCertificateLabels_StripsSchemeAndPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type mockCertStore struct {
-	monitors               map[int64]*CertMonitor
-	nextID                 int64
+	monitors               map[string]*CertMonitor
 	standaloneCount        int
 	getMonitorByHostPortFn func(ctx context.Context, hostname string, port int) (*CertMonitor, error)
 }
 
 func newMockCertStore() *mockCertStore {
 	return &mockCertStore{
-		monitors: make(map[int64]*CertMonitor),
-		nextID:   1,
+		monitors: make(map[string]*CertMonitor),
 	}
 }
 
-func (m *mockCertStore) CreateMonitor(_ context.Context, monitor *CertMonitor) (int64, error) {
-	id := m.nextID
-	m.nextID++
-	monitor.ID = id
-	m.monitors[id] = monitor
+func (m *mockCertStore) CreateMonitor(_ context.Context, monitor *CertMonitor) (string, error) {
+	monitor.ID = uid.New()
+	m.monitors[monitor.ID] = monitor
 	if monitor.Source == SourceStandalone {
 		m.standaloneCount++
 	}
-	return id, nil
+	return monitor.ID, nil
 }
 
 func (m *mockCertStore) GetMonitorByHostPort(ctx context.Context, hostname string, port int) (*CertMonitor, error) {
@@ -320,10 +317,10 @@ func (m *mockCertStore) CountStandaloneMonitors(_ context.Context) (int, error) 
 }
 
 // Stub implementations for required interface methods
-func (m *mockCertStore) GetMonitorByID(_ context.Context, _ int64) (*CertMonitor, error) {
+func (m *mockCertStore) GetMonitorByID(_ context.Context, _ string) (*CertMonitor, error) {
 	return nil, nil
 }
-func (m *mockCertStore) GetMonitorByEndpointID(_ context.Context, _ int64) (*CertMonitor, error) {
+func (m *mockCertStore) GetMonitorByEndpointID(_ context.Context, _ string) (*CertMonitor, error) {
 	return nil, nil
 }
 func (m *mockCertStore) ListMonitors(_ context.Context, _ ListCertificatesOpts) ([]*CertMonitor, error) {
@@ -332,22 +329,22 @@ func (m *mockCertStore) ListMonitors(_ context.Context, _ ListCertificatesOpts) 
 func (m *mockCertStore) UpdateMonitor(_ context.Context, _ *CertMonitor) error {
 	return nil
 }
-func (m *mockCertStore) DeleteMonitor(_ context.Context, _ int64) error {
+func (m *mockCertStore) DeleteMonitor(_ context.Context, _ string) error {
 	return nil
 }
-func (m *mockCertStore) InsertCheckResult(_ context.Context, _ *CertCheckResult) (int64, error) {
-	return 0, nil
+func (m *mockCertStore) InsertCheckResult(_ context.Context, _ *CertCheckResult) (string, error) {
+	return "", nil
 }
-func (m *mockCertStore) GetLatestCheckResult(_ context.Context, _ int64) (*CertCheckResult, error) {
+func (m *mockCertStore) GetLatestCheckResult(_ context.Context, _ string) (*CertCheckResult, error) {
 	return nil, nil
 }
-func (m *mockCertStore) ListCheckResults(_ context.Context, _ int64, _ ListChecksOpts) ([]*CertCheckResult, int, error) {
+func (m *mockCertStore) ListCheckResults(_ context.Context, _ string, _ ListChecksOpts) ([]*CertCheckResult, int, error) {
 	return nil, 0, nil
 }
 func (m *mockCertStore) InsertChainEntries(_ context.Context, _ []*CertChainEntry) error {
 	return nil
 }
-func (m *mockCertStore) GetChainEntries(_ context.Context, _ int64) ([]*CertChainEntry, error) {
+func (m *mockCertStore) GetChainEntries(_ context.Context, _ string) ([]*CertChainEntry, error) {
 	return nil, nil
 }
 func (m *mockCertStore) ListMonitorsByExternalID(_ context.Context, _ string) ([]*CertMonitor, error) {

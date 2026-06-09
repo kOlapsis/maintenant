@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/kolapsis/maintenant/internal/uid"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,39 +30,16 @@ func textFromContent(t *testing.T, content []gomcp.Content) string {
 	return tc.Text
 }
 
-func TestParseContainerID_ValidInt(t *testing.T) {
-	id, err := parseContainerID("42")
-	require.NoError(t, err)
-	assert.Equal(t, int64(42), id)
-}
+func TestAgentFilter(t *testing.T) {
+	assert.Nil(t, agentFilter(""))
 
-func TestParseContainerID_Zero(t *testing.T) {
-	id, err := parseContainerID("0")
-	require.NoError(t, err)
-	assert.Equal(t, int64(0), id)
-}
+	local := agentFilter("local")
+	require.NotNil(t, local)
+	assert.Equal(t, uid.LocalAgent, *local)
 
-func TestParseContainerID_NegativeValue(t *testing.T) {
-	id, err := parseContainerID("-1")
-	require.NoError(t, err)
-	assert.Equal(t, int64(-1), id)
-}
-
-func TestParseContainerID_InvalidString(t *testing.T) {
-	_, err := parseContainerID("abc")
-	assert.Error(t, err)
-}
-
-func TestParseContainerID_EmptyString(t *testing.T) {
-	_, err := parseContainerID("")
-	assert.Error(t, err)
-}
-
-func TestParseContainerID_FloatString(t *testing.T) {
-	// Sscanf with %d will parse the integer portion, which is valid behavior
-	id, err := parseContainerID("42.5")
-	require.NoError(t, err)
-	assert.Equal(t, int64(42), id)
+	specific := agentFilter("agent-123")
+	require.NotNil(t, specific)
+	assert.Equal(t, "agent-123", *specific)
 }
 
 func TestJsonResult_MarshalMap(t *testing.T) {
@@ -193,7 +171,7 @@ func TestGetTopConsumersInput_Validation(t *testing.T) {
 }
 
 func TestGetEndpointHistoryInput_DefaultLimit(t *testing.T) {
-	input := getEndpointHistoryInput{EndpointID: 5}
-	assert.Equal(t, int64(5), input.EndpointID)
+	input := getEndpointHistoryInput{EndpointID: "5"}
+	assert.Equal(t, "5", input.EndpointID)
 	assert.Equal(t, 0, input.Limit, "Limit should default to zero (handler applies default of 50)")
 }

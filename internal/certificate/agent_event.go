@@ -45,7 +45,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 			Status:               StatusUnknown,
 			CheckIntervalSeconds: 43200,
 			WarningThresholds:    DefaultWarningThresholds(),
-			AgentID:              &agentID,
+			AgentID:              agentID,
 		}
 		if _, err := s.store.CreateMonitor(ctx, monitor); err != nil {
 			return fmt.Errorf("create agent cert monitor %s:%d: %w", host, port, err)

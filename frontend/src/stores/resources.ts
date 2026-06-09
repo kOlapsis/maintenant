@@ -19,12 +19,13 @@ import {
   type ResourceHost,
 } from '@/services/resourceApi'
 import { sseBus } from '@/services/sseBus'
+import { isLocalAgent } from '@/services/apiFetch'
 
 // Persisted selected host for the resources view ('' === local server).
 const SELECTED_HOST_KEY = 'pb:resources:selected-host'
 
 export interface ResourceAlert {
-  container_id: number
+  container_id: string
   container_name: string
   alert_type: string
   current_value: number
@@ -35,10 +36,10 @@ export interface ResourceAlert {
 const SPARKLINE_BUFFER_SIZE = 20
 
 export const useResourcesStore = defineStore('resources', () => {
-  const snapshots = ref<Record<number, ResourceSnapshot>>({})
-  const alerts = ref<Record<number, ResourceAlert>>({})
+  const snapshots = ref<Record<string, ResourceSnapshot>>({})
+  const alerts = ref<Record<string, ResourceAlert>>({})
   const summary = ref<ResourceSummary | null>(null)
-  const cpuSparklines = ref<Record<number, number[]>>({})
+  const cpuSparklines = ref<Record<string, number[]>>({})
 
   // Multi-host: list of selectable hosts and the current selection ('' = local).
   const hosts = ref<ResourceHost[]>([])
@@ -47,6 +48,12 @@ export const useResourcesStore = defineStore('resources', () => {
   // The selector is only meaningful when more than one host exists.
   const multiHost = computed(() => hosts.value.length > 1)
 
+  // Selection key for a host: '' for the local server (the backend now sends the
+  // sentinel agent id for local entities; older builds sent ''), else the agent id.
+  function hostKey(h: ResourceHost): string {
+    return h.is_local || isLocalAgent(h.agent_id) ? '' : h.agent_id
+  }
+
   // Query value to scope API calls: undefined when there is a single host
   // (preserve prior behaviour), else 'local' or the agent id.
   const hostQuery = computed<string | undefined>(() => {
@@ -54,7 +61,7 @@ export const useResourcesStore = defineStore('resources', () => {
     return selectedHostId.value === '' ? 'local' : selectedHostId.value
   })
 
-  const selectedHost = computed(() => hosts.value.find((h) => h.agent_id === selectedHostId.value) ?? null)
+  const selectedHost = computed(() => hosts.value.find((h) => hostKey(h) === selectedHostId.value) ?? null)
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B'
@@ -69,15 +76,15 @@ export const useResourcesStore = defineStore('resources', () => {
   }
 
   const getSnapshot = computed(() => {
-    return (containerId: number) => snapshots.value[containerId] || null
+    return (containerId: string) => snapshots.value[containerId] || null
   })
 
   const getAlert = computed(() => {
-    return (containerId: number) => alerts.value[containerId] || null
+    return (containerId: string) => alerts.value[containerId] || null
   })
 
   const formattedSnapshot = computed(() => {
-    return (containerId: number) => {
+    return (containerId: string) => {
       const snap = snapshots.value[containerId]
       if (!snap) return null
       return {
@@ -161,7 +168,7 @@ export const useResourcesStore = defineStore('resources', () => {
       const res = await getResourceHosts()
       hosts.value = res.hosts || []
       // Reset to local if the previously selected host disappeared.
-      if (selectedHostId.value && !hosts.value.some((h) => h.agent_id === selectedHostId.value)) {
+      if (selectedHostId.value && !hosts.value.some((h) => hostKey(h) === selectedHostId.value)) {
         selectHost('')
       }
     } catch {
@@ -188,6 +195,7 @@ export const useResourcesStore = defineStore('resources', () => {
     selectedHostId,
     selectedHost,
     multiHost,
+    hostKey,
     hostQuery,
     getSnapshot,
     getAlert,

@@ -26,15 +26,15 @@ import (
 
 // mockResourceTopService is a test double for ResourceTopService.
 type mockResourceTopService struct {
-	snapshots map[int64]*resource.ResourceSnapshot
-	names     map[int64]string
+	snapshots map[string]*resource.ResourceSnapshot
+	names     map[string]string
 }
 
-func (m *mockResourceTopService) GetAllLatestSnapshots() map[int64]*resource.ResourceSnapshot {
+func (m *mockResourceTopService) GetAllLatestSnapshots() map[string]*resource.ResourceSnapshot {
 	return m.snapshots
 }
 
-func (m *mockResourceTopService) GetContainerName(containerID int64) string {
+func (m *mockResourceTopService) GetContainerName(containerID string) string {
 	if name, ok := m.names[containerID]; ok {
 		return name
 	}
@@ -47,15 +47,15 @@ func (m *mockResourceTopService) GetTopConsumersByPeriod(_ context.Context, _ st
 
 func TestHandleGetTopConsumers(t *testing.T) {
 	baseSvc := &mockResourceTopService{
-		snapshots: map[int64]*resource.ResourceSnapshot{
-			1: {ContainerID: 1, CPUPercent: 65.2, MemUsed: 500 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
-			2: {ContainerID: 2, CPUPercent: 34.1, MemUsed: 200 * 1024 * 1024, MemLimit: 512 * 1024 * 1024, Timestamp: time.Now()},
-			3: {ContainerID: 3, CPUPercent: 90.5, MemUsed: 800 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
+		snapshots: map[string]*resource.ResourceSnapshot{
+			"1": {ContainerID: "1", CPUPercent: 65.2, MemUsed: 500 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
+			"2": {ContainerID: "2", CPUPercent: 34.1, MemUsed: 200 * 1024 * 1024, MemLimit: 512 * 1024 * 1024, Timestamp: time.Now()},
+			"3": {ContainerID: "3", CPUPercent: 90.5, MemUsed: 800 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
 		},
-		names: map[int64]string{
-			1: "postgres",
-			2: "redis",
-			3: "app",
+		names: map[string]string{
+			"1": "postgres",
+			"2": "redis",
+			"3": "app",
 		},
 	}
 
@@ -132,8 +132,8 @@ func TestHandleGetTopConsumers(t *testing.T) {
 			name: "empty snapshots",
 			url:  "/api/v1/resources/top?metric=cpu",
 			svc: &mockResourceTopService{
-				snapshots: map[int64]*resource.ResourceSnapshot{},
-				names:     map[int64]string{},
+				snapshots: map[string]*resource.ResourceSnapshot{},
+				names:     map[string]string{},
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body map[string]interface{}) {

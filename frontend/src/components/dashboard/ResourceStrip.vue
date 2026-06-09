@@ -40,7 +40,7 @@ const memPercent = computed(() => {
 })
 
 // Resolve container names from containers store
-function getContainerName(containerId: number): string {
+function getContainerName(containerId: string): string {
   const c = containers.allContainers.find((ct) => ct.id === containerId)
   return c?.name || `container-${containerId}`
 }
@@ -51,8 +51,8 @@ const topConsumers = computed(() => {
   if (entries.length === 0) return []
   return entries
     .map(([idStr, snap]) => ({
-      id: Number(idStr),
-      name: getContainerName(Number(idStr)),
+      id: idStr,
+      name: getContainerName(idStr),
       cpu: snap.cpu_percent,
     }))
     .sort((a, b) => b.cpu - a.cpu)

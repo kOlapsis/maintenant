@@ -71,12 +71,12 @@ func (m *mockPersoStore) ListFooterLinks(_ context.Context) ([]status.FooterLink
 
 func (m *mockPersoStore) CreateFooterLink(_ context.Context, label, url string) (status.FooterLink, error) {
 	m.nextID++
-	l := status.FooterLink{ID: m.nextID, Label: label, URL: url, Position: len(m.footerLinks) + 1}
+	l := status.FooterLink{ID: itoa(int(m.nextID)), Label: label, URL: url, Position: len(m.footerLinks) + 1}
 	m.footerLinks = append(m.footerLinks, l)
 	return l, nil
 }
 
-func (m *mockPersoStore) UpdateFooterLink(_ context.Context, id int64, label, url string) (status.FooterLink, error) {
+func (m *mockPersoStore) UpdateFooterLink(_ context.Context, id string, label, url string) (status.FooterLink, error) {
 	for i, l := range m.footerLinks {
 		if l.ID == id {
 			m.footerLinks[i].Label = label
@@ -87,7 +87,7 @@ func (m *mockPersoStore) UpdateFooterLink(_ context.Context, id int64, label, ur
 	return status.FooterLink{}, status.ErrNotFound
 }
 
-func (m *mockPersoStore) DeleteFooterLink(_ context.Context, id int64) error {
+func (m *mockPersoStore) DeleteFooterLink(_ context.Context, id string) error {
 	for i, l := range m.footerLinks {
 		if l.ID == id {
 			m.footerLinks = append(m.footerLinks[:i], m.footerLinks[i+1:]...)
@@ -97,7 +97,7 @@ func (m *mockPersoStore) DeleteFooterLink(_ context.Context, id int64) error {
 	return status.ErrNotFound
 }
 
-func (m *mockPersoStore) ReorderFooterLinks(_ context.Context, _ []int64) ([]status.FooterLink, error) {
+func (m *mockPersoStore) ReorderFooterLinks(_ context.Context, _ []string) ([]status.FooterLink, error) {
 	return m.footerLinks, nil
 }
 
@@ -107,12 +107,12 @@ func (m *mockPersoStore) ListFAQItems(_ context.Context) ([]status.FAQItem, erro
 
 func (m *mockPersoStore) CreateFAQItem(_ context.Context, question, answerMD, answerHTML string) (status.FAQItem, error) {
 	m.nextID++
-	item := status.FAQItem{ID: m.nextID, Question: question, AnswerMD: answerMD, AnswerHTML: answerHTML, Position: len(m.faqItems) + 1}
+	item := status.FAQItem{ID: itoa(int(m.nextID)), Question: question, AnswerMD: answerMD, AnswerHTML: answerHTML, Position: len(m.faqItems) + 1}
 	m.faqItems = append(m.faqItems, item)
 	return item, nil
 }
 
-func (m *mockPersoStore) UpdateFAQItem(_ context.Context, id int64, question, answerMD, answerHTML string) (status.FAQItem, error) {
+func (m *mockPersoStore) UpdateFAQItem(_ context.Context, id string, question, answerMD, answerHTML string) (status.FAQItem, error) {
 	for i, item := range m.faqItems {
 		if item.ID == id {
 			m.faqItems[i].Question = question
@@ -124,7 +124,7 @@ func (m *mockPersoStore) UpdateFAQItem(_ context.Context, id int64, question, an
 	return status.FAQItem{}, status.ErrNotFound
 }
 
-func (m *mockPersoStore) DeleteFAQItem(_ context.Context, id int64) error {
+func (m *mockPersoStore) DeleteFAQItem(_ context.Context, id string) error {
 	for i, item := range m.faqItems {
 		if item.ID == id {
 			m.faqItems = append(m.faqItems[:i], m.faqItems[i+1:]...)
@@ -134,7 +134,7 @@ func (m *mockPersoStore) DeleteFAQItem(_ context.Context, id int64) error {
 	return status.ErrNotFound
 }
 
-func (m *mockPersoStore) ReorderFAQItems(_ context.Context, _ []int64) ([]status.FAQItem, error) {
+func (m *mockPersoStore) ReorderFAQItems(_ context.Context, _ []string) ([]status.FAQItem, error) {
 	return m.faqItems, nil
 }
 
@@ -327,7 +327,7 @@ func TestPersonalizationV1_FooterLinks_Reorder(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/status-page/footer-links/order",
-		strings.NewReader(`{"ids": [2, 1]}`))
+		strings.NewReader(`{"ids": ["2", "1"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.HandleReorderFooterLinks(rec, req)
@@ -428,7 +428,7 @@ func TestPersonalizationV1_FAQ_Reorder(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/status-page/faq/order",
-		strings.NewReader(`{"ids": [2, 1]}`))
+		strings.NewReader(`{"ids": ["2", "1"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.HandleReorderFAQ(rec, req)

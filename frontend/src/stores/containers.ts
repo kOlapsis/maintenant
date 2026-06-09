@@ -17,6 +17,7 @@ import {
   type ListContainersParams,
 } from '@/services/containerApi'
 import { sseBus } from '@/services/sseBus'
+import { isLocalAgent } from '@/services/apiFetch'
 import { useRuntimeStore } from '@/stores/runtime'
 
 export interface ContainerGroup {
@@ -61,7 +62,7 @@ export const useContainersStore = defineStore('containers', () => {
   const hostCount = computed(() => {
     const hosts = new Set<string>()
     for (const c of allContainers.value) {
-      hosts.add(c.agent_id ?? 'local')
+      hosts.add(isLocalAgent(c.agent_id) ? 'local' : c.agent_id!)
     }
     return hosts.size
   })
@@ -81,7 +82,7 @@ export const useContainersStore = defineStore('containers', () => {
     return expandedControllers.value.has(key)
   }
 
-  function findContainerIndex(id: number): { groupIdx: number; containerIdx: number } | null {
+  function findContainerIndex(id: string): { groupIdx: number; containerIdx: number } | null {
     for (let gi = 0; gi < groups.value.length; gi++) {
       const ci = groups.value[gi]!.containers.findIndex((c) => c.id === id)
       if (ci >= 0) return { groupIdx: gi, containerIdx: ci }

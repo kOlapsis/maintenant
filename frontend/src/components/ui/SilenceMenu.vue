@@ -17,7 +17,7 @@ import { createSilenceRule, type CreateSilenceRuleInput } from '@/services/alert
 
 const props = defineProps<{
   entityType?: string
-  entityId?: number
+  entityId?: string
   source?: string
 }>()
 

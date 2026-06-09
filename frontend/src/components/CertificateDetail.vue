@@ -20,7 +20,7 @@ import CertificateChecksHistory from './CertificateChecksHistory.vue'
 import FeatureGate from './FeatureGate.vue'
 
 const props = defineProps<{
-  certificateId: number
+  certificateId: string
 }>()
 
 const emit = defineEmits<{

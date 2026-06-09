@@ -80,8 +80,7 @@ func TestHandleAgentEvent_InsertsNewContainer(t *testing.T) {
 	c, err := store.GetContainerByExternalID(context.Background(), id)
 	require.NoError(t, err)
 	require.NotNil(t, c)
-	require.NotNil(t, c.AgentID)
-	assert.Equal(t, "agent-123", *c.AgentID)
+	assert.Equal(t, "agent-123", c.AgentID)
 	assert.Equal(t, "adminer:latest", c.Image)
 	assert.Equal(t, StateRunning, c.State)
 	assert.Equal(t, "demo", c.OrchestrationGroup)
@@ -144,7 +143,7 @@ func TestHandleAgentEvent_UpdatesExistingState(t *testing.T) {
 	agentID := "agent-1"
 	id := extID("svc")
 	seed := makeTestContainer(id, StateRunning)
-	seed.AgentID = &agentID
+	seed.AgentID = agentID
 	store.seed(seed)
 
 	ev := &agentpb.ContainerEvent{
@@ -157,8 +156,7 @@ func TestHandleAgentEvent_UpdatesExistingState(t *testing.T) {
 	assert.Equal(t, StateExited, store.storedState(id))
 	c, _ := store.GetContainerByExternalID(context.Background(), id)
 	require.NotNil(t, c)
-	require.NotNil(t, c.AgentID)
-	assert.Equal(t, agentID, *c.AgentID)
+	assert.Equal(t, agentID, c.AgentID)
 }
 
 func TestHandleAgentEvent_BackfillsAgentID(t *testing.T) {
@@ -178,8 +176,7 @@ func TestHandleAgentEvent_BackfillsAgentID(t *testing.T) {
 
 	c, _ := store.GetContainerByExternalID(context.Background(), id)
 	require.NotNil(t, c)
-	require.NotNil(t, c.AgentID, "agent_id should be backfilled on existing row")
-	assert.Equal(t, "agent-77", *c.AgentID)
+	assert.Equal(t, "agent-77", c.AgentID, "agent_id should be backfilled on existing row")
 }
 
 func TestHandleAgentEvent_UpdatesImageOnRedeploy(t *testing.T) {
@@ -189,7 +186,7 @@ func TestHandleAgentEvent_UpdatesImageOnRedeploy(t *testing.T) {
 	agentID := "agent-1"
 	id := extID("redeploy")
 	seed := makeTestContainer(id, StateRunning)
-	seed.AgentID = &agentID
+	seed.AgentID = agentID
 	seed.Image = "app:v1"
 	store.seed(seed)
 
@@ -304,7 +301,7 @@ func TestHandleAgentEvent_DieNonZeroExitBecomesExited(t *testing.T) {
 
 	agentID := "agent-1"
 	seed := makeTestContainer(id, StateRunning)
-	seed.AgentID = &agentID
+	seed.AgentID = agentID
 	store.seed(seed)
 
 	// Exit code 1 is a genuine crash (137/143 would be graceful → completed).
@@ -324,7 +321,7 @@ func TestHandleAgentEvent_PreservesImageWhenEventImageEmpty(t *testing.T) {
 
 	agentID := "agent-1"
 	seed := makeTestContainer(id, StateRunning)
-	seed.AgentID = &agentID
+	seed.AgentID = agentID
 	seed.Image = "keep:me"
 	store.seed(seed)
 
@@ -346,7 +343,7 @@ func TestHandleAgentEvent_EmitsStateChangedWithAgentID(t *testing.T) {
 
 	agentID := "agent-xyz"
 	seed := makeTestContainer(id, StateRunning)
-	seed.AgentID = &agentID
+	seed.AgentID = agentID
 	store.seed(seed)
 
 	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
@@ -360,10 +357,9 @@ func TestHandleAgentEvent_EmitsStateChangedWithAgentID(t *testing.T) {
 		}
 		data, ok := e.data.(map[string]interface{})
 		require.True(t, ok)
-		aid, ok := data["agent_id"].(*string)
-		require.True(t, ok, "agent_id should be a *string in the event payload")
-		require.NotNil(t, aid)
-		assert.Equal(t, agentID, *aid)
+		aid, ok := data["agent_id"].(string)
+		require.True(t, ok, "agent_id should be a string in the event payload")
+		assert.Equal(t, agentID, aid)
 		found = true
 	}
 	assert.True(t, found, "expected a ContainerStateChanged event carrying agent_id")

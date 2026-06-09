@@ -20,13 +20,13 @@ import (
 )
 
 // MonitorStatusProvider resolves the current health status of a specific monitor.
-type MonitorStatusProvider func(ctx context.Context, monitorType string, monitorID int64) string
+type MonitorStatusProvider func(ctx context.Context, monitorType string, monitorID string) string
 
 // MonitorPopulationProvider returns all monitor refs of a given type (used by match-all components).
 type MonitorPopulationProvider func(ctx context.Context, monitorType string) []MonitorRef
 
 // MonitorNameProvider resolves the display name of a specific monitor.
-type MonitorNameProvider func(ctx context.Context, monitorType string, monitorID int64) string
+type MonitorNameProvider func(ctx context.Context, monitorType string, monitorID string) string
 
 // Deps holds all dependencies for the status Service.
 type Deps struct {
@@ -278,7 +278,7 @@ type PageData struct {
 
 // ComponentData holds a component with its effective status for rendering.
 type ComponentData struct {
-	ID              int64
+	ID              string
 	DisplayName     string
 	EffectiveStatus string
 	StatusLabel     string
@@ -388,7 +388,7 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 
 // NotifyMonitorChanged checks whether any status components are linked to the
 // given monitor and, if so, broadcasts updated statuses to public SSE clients.
-func (s *Service) NotifyMonitorChanged(ctx context.Context, monitorType string, monitorID int64) {
+func (s *Service) NotifyMonitorChanged(ctx context.Context, monitorType string, monitorID string) {
 	comps, err := s.components.ListComponentsByMonitor(ctx, monitorType, monitorID)
 	if err != nil {
 		s.logger.Error("failed to list components by monitor", "error", err,
@@ -496,7 +496,7 @@ func (s *Service) handleAlertForComponent(ctx context.Context, evt alert.Event, 
 		Severity: severity,
 		Status:   IncidentInvestigating,
 	}
-	incID, err := s.incidents.CreateIncident(ctx, inc, []int64{comp.ID}, evt.Message)
+	incID, err := s.incidents.CreateIncident(ctx, inc, []string{comp.ID}, evt.Message)
 	if err != nil {
 		s.logger.Error("failed to create auto incident", "error", err)
 		return

@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -205,9 +204,8 @@ func (h *UpdateHandler) HandleTriggerScan(w http.ResponseWriter, r *http.Request
 
 // HandleGetScanStatus handles GET /api/v1/updates/scan/{scan_id}.
 func (h *UpdateHandler) HandleGetScanStatus(w http.ResponseWriter, r *http.Request) {
-	scanIDStr := r.PathValue("scan_id")
-	scanID, err := strconv.ParseInt(scanIDStr, 10, 64)
-	if err != nil {
+	scanID := r.PathValue("scan_id")
+	if scanID == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid scan ID")
 		return
 	}
@@ -404,8 +402,8 @@ func (h *UpdateHandler) HandleCreateExclusion(w http.ResponseWriter, r *http.Req
 
 // HandleDeleteExclusion handles DELETE /api/v1/updates/exclusions/{id}.
 func (h *UpdateHandler) HandleDeleteExclusion(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid exclusion ID")
 		return
 	}

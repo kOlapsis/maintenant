@@ -19,7 +19,7 @@ import { Lock } from 'lucide-vue-next'
 export type Period = '1h' | '24h' | '7d' | '30d'
 
 export interface TopConsumer {
-  containerId: number
+  containerId: string
   containerName: string
   value: number
   percent: number

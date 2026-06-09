@@ -22,8 +22,8 @@ import (
 
 // ResourceTopService abstracts the resource service for top consumers.
 type ResourceTopService interface {
-	GetAllLatestSnapshots() map[int64]*resource.ResourceSnapshot
-	GetContainerName(containerID int64) string
+	GetAllLatestSnapshots() map[string]*resource.ResourceSnapshot
+	GetContainerName(containerID string) string
 	GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]resource.TopConsumerRow, error)
 }
 
@@ -39,7 +39,7 @@ func NewResourceTopHandler(svc ResourceTopService) *ResourceTopHandler {
 
 // TopConsumer represents a ranked container in the top consumers response.
 type TopConsumer struct {
-	ContainerID   int64   `json:"container_id"`
+	ContainerID   string  `json:"container_id"`
 	ContainerName string  `json:"container_name"`
 	Value         float64 `json:"value"`
 	Percent       float64 `json:"percent"`
@@ -104,7 +104,7 @@ func (h *ResourceTopHandler) handleRealtimeQuery(w http.ResponseWriter, metric s
 	all := h.svc.GetAllLatestSnapshots()
 
 	type entry struct {
-		id      int64
+		id      string
 		value   float64
 		percent float64
 	}

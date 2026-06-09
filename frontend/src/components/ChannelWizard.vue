@@ -21,13 +21,13 @@ import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
 const { hasFeature, isEnterprise } = useEdition()
 
 const emit = defineEmits<{
-  created: [id: number]
+  created: [id: string]
   cancel: []
 }>()
 
 const step = ref<1 | 2 | 3>(1)
 const selectedType = ref<string | null>(null)
-const createdChannelId = ref<number | null>(null)
+const createdChannelId = ref<string | null>(null)
 const testStatus = ref<'idle' | 'testing' | 'success' | 'failed'>('idle')
 const testError = ref('')
 

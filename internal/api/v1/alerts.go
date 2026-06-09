@@ -126,8 +126,8 @@ func (h *AlertHandler) HandleGetActiveAlerts(w http.ResponseWriter, r *http.Requ
 
 // HandleGetAlert handles GET /api/v1/alerts/{id}.
 func (h *AlertHandler) HandleGetAlert(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid alert ID")
 		return
 	}
@@ -147,8 +147,8 @@ func (h *AlertHandler) HandleGetAlert(w http.ResponseWriter, r *http.Request) {
 
 // HandleAcknowledgeAlert handles POST /api/v1/alerts/{id}/acknowledge.
 func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid alert ID")
 		return
 	}
@@ -305,8 +305,8 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 
 // HandleUpdateChannel handles PUT /api/v1/channels/{id}.
 func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
 		return
 	}
@@ -366,8 +366,8 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 
 // HandleDeleteChannel handles DELETE /api/v1/channels/{id}.
 func (h *AlertHandler) HandleDeleteChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
 		return
 	}
@@ -393,8 +393,8 @@ func (h *AlertHandler) HandleDeleteChannel(w http.ResponseWriter, r *http.Reques
 
 // HandleTestChannel handles POST /api/v1/channels/{id}/test.
 func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
 		return
 	}
@@ -455,11 +455,11 @@ func (h *AlertHandler) HandleListSilenceRules(w http.ResponseWriter, r *http.Req
 // HandleCreateSilenceRule handles POST /api/v1/silence.
 func (h *AlertHandler) HandleCreateSilenceRule(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		EntityType      string `json:"entity_type"`
-		EntityID        *int64 `json:"entity_id"`
-		Source          string `json:"source"`
-		Reason          string `json:"reason"`
-		DurationSeconds int    `json:"duration_seconds"`
+		EntityType      string  `json:"entity_type"`
+		EntityID        *string `json:"entity_id"`
+		Source          string  `json:"source"`
+		Reason          string  `json:"reason"`
+		DurationSeconds int     `json:"duration_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
@@ -496,8 +496,8 @@ func (h *AlertHandler) HandleCreateSilenceRule(w http.ResponseWriter, r *http.Re
 
 // HandleCancelSilenceRule handles DELETE /api/v1/silence/{id}.
 func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid silence rule ID")
 		return
 	}

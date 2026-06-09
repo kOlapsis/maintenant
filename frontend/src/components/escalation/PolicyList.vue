@@ -25,8 +25,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   create: []
   edit: [policy: EscalationPolicy]
-  delete: [id: number]
-  toggleActive: [id: number, active: boolean]
+  delete: [id: string]
+  toggleActive: [id: string, active: boolean]
 }>()
 
 const confirm = useConfirm()

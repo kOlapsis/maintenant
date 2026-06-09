@@ -112,7 +112,7 @@ func (svc *PersonalizationService) CreateFooterLink(ctx context.Context, label, 
 	return link, nil
 }
 
-func (svc *PersonalizationService) UpdateFooterLink(ctx context.Context, id int64, label, url string) (FooterLink, error) {
+func (svc *PersonalizationService) UpdateFooterLink(ctx context.Context, id string, label, url string) (FooterLink, error) {
 	if err := validateFooterLink(label, url); err != nil {
 		return FooterLink{}, err
 	}
@@ -124,7 +124,7 @@ func (svc *PersonalizationService) UpdateFooterLink(ctx context.Context, id int6
 	return link, nil
 }
 
-func (svc *PersonalizationService) DeleteFooterLink(ctx context.Context, id int64) error {
+func (svc *PersonalizationService) DeleteFooterLink(ctx context.Context, id string) error {
 	if err := svc.store.DeleteFooterLink(ctx, id); err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (svc *PersonalizationService) DeleteFooterLink(ctx context.Context, id int6
 	return nil
 }
 
-func (svc *PersonalizationService) ReorderFooterLinks(ctx context.Context, ids []int64) ([]FooterLink, error) {
+func (svc *PersonalizationService) ReorderFooterLinks(ctx context.Context, ids []string) ([]FooterLink, error) {
 	links, err := svc.store.ReorderFooterLinks(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func (svc *PersonalizationService) CreateFAQItem(ctx context.Context, question, 
 	return item, nil
 }
 
-func (svc *PersonalizationService) UpdateFAQItem(ctx context.Context, id int64, question, answerMD string) (FAQItem, error) {
+func (svc *PersonalizationService) UpdateFAQItem(ctx context.Context, id string, question, answerMD string) (FAQItem, error) {
 	if err := validateFAQItem(question, answerMD); err != nil {
 		return FAQItem{}, err
 	}
@@ -177,7 +177,7 @@ func (svc *PersonalizationService) UpdateFAQItem(ctx context.Context, id int64, 
 	return item, nil
 }
 
-func (svc *PersonalizationService) DeleteFAQItem(ctx context.Context, id int64) error {
+func (svc *PersonalizationService) DeleteFAQItem(ctx context.Context, id string) error {
 	if err := svc.store.DeleteFAQItem(ctx, id); err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func (svc *PersonalizationService) DeleteFAQItem(ctx context.Context, id int64) 
 	return nil
 }
 
-func (svc *PersonalizationService) ReorderFAQItems(ctx context.Context, ids []int64) ([]FAQItem, error) {
+func (svc *PersonalizationService) ReorderFAQItems(ctx context.Context, ids []string) ([]FAQItem, error) {
 	items, err := svc.store.ReorderFAQItems(ctx, ids)
 	if err != nil {
 		return nil, err

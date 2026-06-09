@@ -74,7 +74,7 @@ const (
 
 // Endpoint represents a monitored HTTP or TCP target.
 type Endpoint struct {
-	ID                   int64          `json:"id"`
+	ID                   string         `json:"id"`
 	ContainerName        string         `json:"container_name"`
 	LabelKey             string         `json:"label_key"`
 	ExternalID           string         `json:"external_id"`
@@ -96,7 +96,7 @@ type Endpoint struct {
 	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
 	Source               EndpointSource `json:"source"`
 	Name                 string         `json:"name,omitempty"`
-	AgentID              *string        `json:"agent_id,omitempty"`
+	AgentID              string         `json:"agent_id"`
 }
 
 // ConfigJSON returns the JSON-encoded configuration.
@@ -107,8 +107,8 @@ func (e *Endpoint) ConfigJSON() string {
 
 // CheckResult represents a single probe result for an endpoint.
 type CheckResult struct {
-	ID                  int64               `json:"id"`
-	EndpointID          int64               `json:"endpoint_id"`
+	ID                  string              `json:"id"`
+	EndpointID          string              `json:"endpoint_id"`
 	Success             bool                `json:"success"`
 	ResponseTimeMs      int64               `json:"response_time_ms"`
 	HTTPStatus          *int                `json:"http_status,omitempty"`
@@ -116,7 +116,7 @@ type CheckResult struct {
 	Timestamp           time.Time           `json:"timestamp"`
 	TLSPeerCertificates []*x509.Certificate `json:"-"`
 	TLSOCSPResponse     []byte              `json:"-"`
-	AgentID             *string             `json:"agent_id,omitempty"`
+	AgentID             string              `json:"agent_id"`
 }
 
 // EndpointConfig holds the configuration parameters for endpoint checks.

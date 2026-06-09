@@ -45,7 +45,7 @@ export const useEscalationStore = defineStore('escalation', () => {
     return created
   }
 
-  async function updatePolicy(id: number, req: PolicyRequest) {
+  async function updatePolicy(id: string, req: PolicyRequest) {
     const updated = await api.updatePolicy(id, req)
     const idx = policies.value.findIndex((p) => p.id === id)
     const existing = idx !== -1 ? policies.value[idx] : undefined
@@ -63,7 +63,7 @@ export const useEscalationStore = defineStore('escalation', () => {
     return updated
   }
 
-  async function setPolicyActive(id: number, active: boolean) {
+  async function setPolicyActive(id: string, active: boolean) {
     await api.setPolicyActive(id, active)
     const idx = policies.value.findIndex((p) => p.id === id)
     const existing = idx !== -1 ? policies.value[idx] : undefined
@@ -80,7 +80,7 @@ export const useEscalationStore = defineStore('escalation', () => {
     }
   }
 
-  async function deletePolicy(id: number) {
+  async function deletePolicy(id: string) {
     await api.deletePolicy(id)
     const removed = policies.value.find((p) => p.id === id)
     policies.value = policies.value.filter((p) => p.id !== id)

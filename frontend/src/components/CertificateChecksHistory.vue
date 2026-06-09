@@ -17,7 +17,7 @@ import { listChecks, type CertCheckResult } from '@/services/certificateApi'
 import OCSPStatusBadge from './OCSPStatusBadge.vue'
 
 const props = defineProps<{
-  certificateId: number
+  certificateId: string
 }>()
 
 const checks = ref<CertCheckResult[]>([])

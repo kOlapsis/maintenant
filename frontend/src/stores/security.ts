@@ -21,7 +21,7 @@ import {
 import { sseBus } from '@/services/sseBus'
 
 export const useSecurityStore = defineStore('security', () => {
-  const insightsByContainer = ref<Record<number, ContainerInsights>>({})
+  const insightsByContainer = ref<Record<string, ContainerInsights>>({})
   const summary = ref<InsightSummary | null>(null)
   const loading = ref(false)
 
@@ -52,7 +52,7 @@ export const useSecurityStore = defineStore('security', () => {
     loading.value = true
     try {
       const data = await fetchInsights()
-      const map: Record<number, ContainerInsights> = {}
+      const map: Record<string, ContainerInsights> = {}
       for (const ci of data.containers) {
         map[ci.container_id] = ci
       }
@@ -65,7 +65,7 @@ export const useSecurityStore = defineStore('security', () => {
     }
   }
 
-  async function fetchForContainer(containerId: number) {
+  async function fetchForContainer(containerId: string) {
     try {
       const data = await fetchContainerInsights(containerId)
       insightsByContainer.value[containerId] = data
@@ -82,7 +82,7 @@ export const useSecurityStore = defineStore('security', () => {
     }
   }
 
-  function getContainerInsights(containerId: number): ContainerInsights | null {
+  function getContainerInsights(containerId: string): ContainerInsights | null {
     return insightsByContainer.value[containerId] ?? null
   }
 

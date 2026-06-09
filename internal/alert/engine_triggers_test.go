@@ -74,7 +74,7 @@ func engineTestSetup(t *testing.T) (
 	return
 }
 
-func seedWebhookChannel(t *testing.T, cs alert.ChannelStore, name string, enabled bool) int64 {
+func seedWebhookChannel(t *testing.T, cs alert.ChannelStore, name string, enabled bool) string {
 	t.Helper()
 	ch := &alert.NotificationChannel{
 		Name:    name,
@@ -87,7 +87,7 @@ func seedWebhookChannel(t *testing.T, cs alert.ChannelStore, name string, enable
 	return id
 }
 
-func seedTriggerForChannel(t *testing.T, ts alert.TriggerStore, name string, enabled bool, severities, sources string, channelIDs []int64) int64 {
+func seedTriggerForChannel(t *testing.T, ts alert.TriggerStore, name string, enabled bool, severities, sources string, channelIDs []string) string {
 	t.Helper()
 	trig := &alert.AlertTrigger{
 		Name:             name,
@@ -101,7 +101,7 @@ func seedTriggerForChannel(t *testing.T, ts alert.TriggerStore, name string, ena
 	return id
 }
 
-func countDeliveriesForChannel(t *testing.T, cs alert.ChannelStore, alertID, channelID int64) int {
+func countDeliveriesForChannel(t *testing.T, cs alert.ChannelStore, alertID, channelID string) int {
 	t.Helper()
 	deliveries, err := cs.ListDeliveriesByAlert(context.Background(), alertID)
 	require.NoError(t, err)
@@ -114,7 +114,7 @@ func countDeliveriesForChannel(t *testing.T, cs alert.ChannelStore, alertID, cha
 	return count
 }
 
-func fireEvent(eng *alert.Engine, severity, source, entityType string, entityID int64) {
+func fireEvent(eng *alert.Engine, severity, source, entityType string, entityID string) {
 	eng.EventChannel() <- alert.Event{
 		Source:     source,
 		AlertType:  "test",
@@ -135,9 +135,9 @@ func TestEngineDispatch_TriggerMatch_DeliveriesCreated(t *testing.T) {
 
 	ch1 := seedWebhookChannel(t, channelStore, "slack-1", true)
 	ch2 := seedWebhookChannel(t, channelStore, "slack-2", true)
-	seedTriggerForChannel(t, triggerStore, "CritAll", true, "critical", "container", []int64{ch1, ch2})
+	seedTriggerForChannel(t, triggerStore, "CritAll", true, "critical", "container", []string{ch1, ch2})
 
-	fireEvent(eng, "critical", "container", "container", 10)
+	fireEvent(eng, "critical", "container", "container", "10")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
@@ -155,9 +155,9 @@ func TestEngineDispatch_DisabledChannel_NoDelivery(t *testing.T) {
 	_ = db
 
 	chID := seedWebhookChannel(t, channelStore, "disabled-ch", false)
-	seedTriggerForChannel(t, triggerStore, "TrigDisCh", true, "critical", "endpoint", []int64{chID})
+	seedTriggerForChannel(t, triggerStore, "TrigDisCh", true, "critical", "endpoint", []string{chID})
 
-	fireEvent(eng, "critical", "endpoint", "endpoint", 20)
+	fireEvent(eng, "critical", "endpoint", "endpoint", "20")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
@@ -173,9 +173,9 @@ func TestEngineDispatch_DisabledTrigger_NoDelivery(t *testing.T) {
 	_ = db
 
 	chID := seedWebhookChannel(t, channelStore, "ch-dis-trig", true)
-	seedTriggerForChannel(t, triggerStore, "DisabledTrigger", false, "", "", []int64{chID})
+	seedTriggerForChannel(t, triggerStore, "DisabledTrigger", false, "", "", []string{chID})
 
-	fireEvent(eng, "warning", "container", "container", 30)
+	fireEvent(eng, "warning", "container", "container", "30")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
@@ -191,10 +191,10 @@ func TestEngineDispatch_TwoTriggersOneChannel_Dedup(t *testing.T) {
 	_ = db
 
 	chID := seedWebhookChannel(t, channelStore, "dedup-ch", true)
-	seedTriggerForChannel(t, triggerStore, "Trigger-A", true, "critical", "", []int64{chID})
-	seedTriggerForChannel(t, triggerStore, "Trigger-B", true, "critical", "", []int64{chID})
+	seedTriggerForChannel(t, triggerStore, "Trigger-A", true, "critical", "", []string{chID})
+	seedTriggerForChannel(t, triggerStore, "Trigger-B", true, "critical", "", []string{chID})
 
-	fireEvent(eng, "critical", "heartbeat", "heartbeat", 40)
+	fireEvent(eng, "critical", "heartbeat", "heartbeat", "40")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
@@ -211,9 +211,9 @@ func TestEngineDispatch_NoMatchingTrigger_NoDelivery(t *testing.T) {
 
 	chID := seedWebhookChannel(t, channelStore, "no-match-ch", true)
 	// Trigger only fires on "critical"; we fire "warning" → no match.
-	seedTriggerForChannel(t, triggerStore, "CritOnly", true, "critical", "", []int64{chID})
+	seedTriggerForChannel(t, triggerStore, "CritOnly", true, "critical", "", []string{chID})
 
-	fireEvent(eng, "warning", "container", "container", 50)
+	fireEvent(eng, "warning", "container", "container", "50")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
@@ -231,11 +231,11 @@ func TestEngineDispatch_SourceFilter_OnlyMatchesCorrectSource(t *testing.T) {
 	chContainer := seedWebhookChannel(t, channelStore, "ch-container", true)
 	chEndpoint := seedWebhookChannel(t, channelStore, "ch-endpoint", true)
 
-	seedTriggerForChannel(t, triggerStore, "ContainerOnly", true, "", "container", []int64{chContainer})
-	seedTriggerForChannel(t, triggerStore, "EndpointOnly", true, "", "endpoint", []int64{chEndpoint})
+	seedTriggerForChannel(t, triggerStore, "ContainerOnly", true, "", "container", []string{chContainer})
+	seedTriggerForChannel(t, triggerStore, "EndpointOnly", true, "", "endpoint", []string{chEndpoint})
 
 	// Fire a container alert.
-	fireEvent(eng, "critical", "container", "container", 60)
+	fireEvent(eng, "critical", "container", "container", "60")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
@@ -257,9 +257,9 @@ func TestEngineDispatch_ReservedEscalationChannel_NoInitialDelivery(t *testing.T
 
 	// A different channel receives initial alerts via a trigger.
 	slackOps := seedWebhookChannel(t, channelStore, "slack-ops", true)
-	seedTriggerForChannel(t, triggerStore, "AllAlerts", true, "", "", []int64{slackOps})
+	seedTriggerForChannel(t, triggerStore, "AllAlerts", true, "", "", []string{slackOps})
 
-	fireEvent(eng, "critical", "container", "container", 70)
+	fireEvent(eng, "critical", "container", "container", "70")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)

@@ -117,7 +117,8 @@ func (s *Service) BaseURL() string {
 
 // --- CRUD ---
 
-func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInput, uuid string) (*Heartbeat, error) {
+// CreateHeartbeat creates a heartbeat whose id is the supplied ping token.
+func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInput, token string) (*Heartbeat, error) {
 	if err := validateCreateInput(input); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
 	}
@@ -131,7 +132,7 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 	}
 
 	h := &Heartbeat{
-		UUID:            uuid,
+		ID:              token,
 		Name:            input.Name,
 		Status:          StatusNew,
 		AlertState:      AlertNormal,
@@ -145,7 +146,6 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 		return nil, fmt.Errorf("create heartbeat: %w", err)
 	}
 
-	h.ID = id
 	created, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -154,14 +154,13 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 	s.emitEvent(event.HeartbeatCreated, map[string]interface{}{
 		"heartbeat_id": created.ID,
 		"name":         created.Name,
-		"uuid":         created.UUID,
 		"status":       string(created.Status),
 	})
 
 	return created, nil
 }
 
-func (s *Service) GetHeartbeat(ctx context.Context, id int64) (*Heartbeat, error) {
+func (s *Service) GetHeartbeat(ctx context.Context, id string) (*Heartbeat, error) {
 	h, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -181,7 +180,7 @@ func (s *Service) CountActiveHeartbeats(ctx context.Context) (int, error) {
 	return s.store.CountActiveHeartbeats(ctx)
 }
 
-func (s *Service) UpdateHeartbeat(ctx context.Context, id int64, input UpdateHeartbeatInput) (*Heartbeat, error) {
+func (s *Service) UpdateHeartbeat(ctx context.Context, id string, input UpdateHeartbeatInput) (*Heartbeat, error) {
 	h, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -213,7 +212,7 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, id int64, input UpdateHea
 	return s.store.GetHeartbeatByID(ctx, id)
 }
 
-func (s *Service) DeleteHeartbeat(ctx context.Context, id int64) error {
+func (s *Service) DeleteHeartbeat(ctx context.Context, id string) error {
 	h, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {
 		return err
@@ -235,8 +234,8 @@ func (s *Service) DeleteHeartbeat(ctx context.Context, id int64) error {
 
 // --- Ping Processing ---
 
-func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, error) {
-	h, err := s.store.GetHeartbeatByUUID(ctx, uuid)
+func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, error) {
+	h, err := s.store.GetHeartbeatByUUID(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +243,7 @@ func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMe
 		return nil, ErrHeartbeatNotFound
 	}
 
-	s.logger.Debug("heartbeat: ping received", "uuid", uuid, "heartbeat_id", h.ID, "source_ip", sourceIP)
+	s.logger.Debug("heartbeat: ping received", "heartbeat_id", h.ID, "source_ip", sourceIP)
 
 	now := time.Now()
 	previousStatus := h.Status
@@ -349,8 +348,8 @@ func (s *Service) ProcessPing(ctx context.Context, uuid string, sourceIP, httpMe
 	return h, nil
 }
 
-func (s *Service) ProcessStartPing(ctx context.Context, uuid string, sourceIP, httpMethod string) (*Heartbeat, error) {
-	h, err := s.store.GetHeartbeatByUUID(ctx, uuid)
+func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, httpMethod string) (*Heartbeat, error) {
+	h, err := s.store.GetHeartbeatByUUID(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +357,7 @@ func (s *Service) ProcessStartPing(ctx context.Context, uuid string, sourceIP, h
 		return nil, ErrHeartbeatNotFound
 	}
 
-	s.logger.Debug("heartbeat: start ping received", "uuid", uuid, "heartbeat_id", h.ID)
+	s.logger.Debug("heartbeat: start ping received", "heartbeat_id", h.ID)
 
 	now := time.Now()
 
@@ -426,12 +425,12 @@ func (s *Service) ProcessStartPing(ctx context.Context, uuid string, sourceIP, h
 	return h, nil
 }
 
-func (s *Service) ProcessExitCodePing(ctx context.Context, uuid string, exitCode int, sourceIP, httpMethod string, payload *string) (*Heartbeat, error) {
+func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCode int, sourceIP, httpMethod string, payload *string) (*Heartbeat, error) {
 	if exitCode < 0 || exitCode > 255 {
 		return nil, ErrInvalidExitCode
 	}
 
-	h, err := s.store.GetHeartbeatByUUID(ctx, uuid)
+	h, err := s.store.GetHeartbeatByUUID(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +438,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, uuid string, exitCode
 		return nil, ErrHeartbeatNotFound
 	}
 
-	s.logger.Debug("heartbeat: exit code ping received", "uuid", uuid, "heartbeat_id", h.ID, "exit_code", exitCode)
+	s.logger.Debug("heartbeat: exit code ping received", "heartbeat_id", h.ID, "exit_code", exitCode)
 
 	now := time.Now()
 	previousStatus := h.Status
@@ -661,7 +660,7 @@ func (s *Service) checkDeadlines(ctx context.Context) {
 
 // --- Pause / Resume ---
 
-func (s *Service) PauseHeartbeat(ctx context.Context, id int64) (*Heartbeat, error) {
+func (s *Service) PauseHeartbeat(ctx context.Context, id string) (*Heartbeat, error) {
 	h, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -685,7 +684,7 @@ func (s *Service) PauseHeartbeat(ctx context.Context, id int64) (*Heartbeat, err
 	return s.store.GetHeartbeatByID(ctx, id)
 }
 
-func (s *Service) ResumeHeartbeat(ctx context.Context, id int64) (*Heartbeat, error) {
+func (s *Service) ResumeHeartbeat(ctx context.Context, id string) (*Heartbeat, error) {
 	h, err := s.store.GetHeartbeatByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -716,11 +715,11 @@ func (s *Service) ResumeHeartbeat(ctx context.Context, id int64) (*Heartbeat, er
 
 // --- Pings & Executions listing ---
 
-func (s *Service) ListPings(ctx context.Context, heartbeatID int64, opts ListPingsOpts) ([]*HeartbeatPing, int, error) {
+func (s *Service) ListPings(ctx context.Context, heartbeatID string, opts ListPingsOpts) ([]*HeartbeatPing, int, error) {
 	return s.store.ListPings(ctx, heartbeatID, opts)
 }
 
-func (s *Service) ListExecutions(ctx context.Context, heartbeatID int64, opts ListExecutionsOpts) ([]*HeartbeatExecution, int, error) {
+func (s *Service) ListExecutions(ctx context.Context, heartbeatID string, opts ListExecutionsOpts) ([]*HeartbeatExecution, int, error) {
 	return s.store.ListExecutions(ctx, heartbeatID, opts)
 }
 

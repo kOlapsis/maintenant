@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,28 +33,24 @@ import (
 // exercise the runtime state machine.
 type runStore struct {
 	mu             sync.Mutex
-	policies       map[int64]*Policy
-	nextPolicy     int64
-	runs           map[int64]*Run
-	nextRun        int64
-	deliveries     map[int64]*Delivery
-	nextDelivery   int64
+	policies       map[string]*Policy
+	runs           map[string]*Run
+	deliveries     map[string]*Delivery
 	insertDelivErr error // injectable to simulate UNIQUE violation
 }
 
 func newRunStore() *runStore {
 	return &runStore{
-		policies:   map[int64]*Policy{},
-		runs:       map[int64]*Run{},
-		deliveries: map[int64]*Delivery{},
+		policies:   map[string]*Policy{},
+		runs:       map[string]*Run{},
+		deliveries: map[string]*Delivery{},
 	}
 }
 
 func (s *runStore) addPolicy(p *Policy) *Policy {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.nextPolicy++
-	p.ID = s.nextPolicy
+	p.ID = uid.New()
 	if !p.Active {
 		// default to active when caller leaves the field unset
 		p.Active = true
@@ -82,14 +79,24 @@ func (s *runStore) listDeliveries() []*Delivery {
 	return out
 }
 
+// onlyRunID returns the id of the sole run in the store (tests create exactly one).
+func (s *runStore) onlyRunID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range s.runs {
+		return id
+	}
+	return ""
+}
+
 // Policy methods (subset needed by Runner; the rest panic to surface
 // unexpected calls during tests).
 
-func (s *runStore) InsertPolicy(_ context.Context, _ *Policy) (int64, error) {
+func (s *runStore) InsertPolicy(_ context.Context, _ *Policy) (string, error) {
 	panic("not used in runner tests")
 }
 func (s *runStore) UpdatePolicy(_ context.Context, _ *Policy) error { return nil }
-func (s *runStore) SelectPolicy(_ context.Context, id int64) (*Policy, error) {
+func (s *runStore) SelectPolicy(_ context.Context, id string) (*Policy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.policies[id], nil
@@ -105,12 +112,12 @@ func (s *runStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*Policy
 	}
 	return out, nil
 }
-func (s *runStore) DeletePolicy(_ context.Context, _ int64) error      { return nil }
+func (s *runStore) DeletePolicy(_ context.Context, _ string) error     { return nil }
 func (s *runStore) CountActivePolicies(_ context.Context) (int, error) { return 0, nil }
-func (s *runStore) SelectRunsByPolicy(_ context.Context, _ int64, _ int, _ int64) ([]*Run, error) {
+func (s *runStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*Run, error) {
 	return nil, nil
 }
-func (s *runStore) SelectRunDeliveries(_ context.Context, _ int64) ([]*Delivery, error) {
+func (s *runStore) SelectRunDeliveries(_ context.Context, _ string) ([]*Delivery, error) {
 	return nil, nil
 }
 func (s *runStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
@@ -124,17 +131,16 @@ func (s *runStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Tim
 
 // Run lifecycle.
 
-func (s *runStore) InsertRun(_ context.Context, r *Run) (int64, error) {
+func (s *runStore) InsertRun(_ context.Context, r *Run) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.nextRun++
-	r.ID = s.nextRun
+	r.ID = uid.New()
 	cp := *r
 	s.runs[r.ID] = &cp
 	return r.ID, nil
 }
 
-func (s *runStore) SelectRun(_ context.Context, id int64) (*Run, error) {
+func (s *runStore) SelectRun(_ context.Context, id string) (*Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r, ok := s.runs[id]; ok {
@@ -144,7 +150,7 @@ func (s *runStore) SelectRun(_ context.Context, id int64) (*Run, error) {
 	return nil, nil
 }
 
-func (s *runStore) SelectRunsByAlert(_ context.Context, alertID int64) ([]*Run, error) {
+func (s *runStore) SelectRunsByAlert(_ context.Context, alertID string) ([]*Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*Run
@@ -157,7 +163,7 @@ func (s *runStore) SelectRunsByAlert(_ context.Context, alertID int64) ([]*Run, 
 	return out, nil
 }
 
-func (s *runStore) SelectActiveRunsByAlert(_ context.Context, alertID int64) ([]*Run, error) {
+func (s *runStore) SelectActiveRunsByAlert(_ context.Context, alertID string) ([]*Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*Run
@@ -190,7 +196,7 @@ func (s *runStore) SelectDueRuns(_ context.Context, now time.Time) ([]*Run, erro
 	return out, nil
 }
 
-func (s *runStore) UpdateRunProgress(_ context.Context, runID int64, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error {
+func (s *runStore) UpdateRunProgress(_ context.Context, runID string, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, ok := s.runs[runID]
@@ -203,7 +209,7 @@ func (s *runStore) UpdateRunProgress(_ context.Context, runID int64, lastExecute
 	return nil
 }
 
-func (s *runStore) TerminateRun(_ context.Context, runID int64, status string, endedAt time.Time) error {
+func (s *runStore) TerminateRun(_ context.Context, runID string, status string, endedAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, ok := s.runs[runID]
@@ -216,7 +222,7 @@ func (s *runStore) TerminateRun(_ context.Context, runID int64, status string, e
 	return nil
 }
 
-func (s *runStore) PauseRunForMaintenance(_ context.Context, runID int64, recheckAt time.Time) error {
+func (s *runStore) PauseRunForMaintenance(_ context.Context, runID string, recheckAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, ok := s.runs[runID]
@@ -228,7 +234,7 @@ func (s *runStore) PauseRunForMaintenance(_ context.Context, runID int64, rechec
 	return nil
 }
 
-func (s *runStore) ResumeRunFromMaintenance(_ context.Context, runID int64, nextActionAt time.Time) error {
+func (s *runStore) ResumeRunFromMaintenance(_ context.Context, runID string, nextActionAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, ok := s.runs[runID]
@@ -242,25 +248,24 @@ func (s *runStore) ResumeRunFromMaintenance(_ context.Context, runID int64, next
 
 // Delivery lifecycle.
 
-func (s *runStore) InsertDelivery(_ context.Context, d *Delivery) (int64, error) {
+func (s *runStore) InsertDelivery(_ context.Context, d *Delivery) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.insertDelivErr != nil {
 		err := s.insertDelivErr
 		s.insertDelivErr = nil
-		return 0, err
+		return "", err
 	}
 	// Enforce UNIQUE (run_id, level_index, channel_id) like the SQL constraint.
 	for _, existing := range s.deliveries {
 		if existing.RunID == d.RunID && existing.LevelIndex == d.LevelIndex {
 			if (existing.ChannelID == nil && d.ChannelID == nil) ||
 				(existing.ChannelID != nil && d.ChannelID != nil && *existing.ChannelID == *d.ChannelID) {
-				return 0, ErrDeliveryDuplicate
+				return "", ErrDeliveryDuplicate
 			}
 		}
 	}
-	s.nextDelivery++
-	d.ID = s.nextDelivery
+	d.ID = uid.New()
 	cp := *d
 	s.deliveries[d.ID] = &cp
 	return d.ID, nil
@@ -294,18 +299,18 @@ func (s *runStore) SelectOrphanPendingDeliveries(_ context.Context, before time.
 
 type alertStoreMock struct {
 	mu     sync.Mutex
-	alerts map[int64]*alert.Alert
+	alerts map[string]*alert.Alert
 }
 
 func newAlertStoreMock() *alertStoreMock {
-	return &alertStoreMock{alerts: map[int64]*alert.Alert{}}
+	return &alertStoreMock{alerts: map[string]*alert.Alert{}}
 }
 func (m *alertStoreMock) put(a *alert.Alert) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.alerts[a.ID] = a
 }
-func (m *alertStoreMock) GetAlert(_ context.Context, id int64) (*alert.Alert, error) {
+func (m *alertStoreMock) GetAlert(_ context.Context, id string) (*alert.Alert, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if a, ok := m.alerts[id]; ok {
@@ -314,19 +319,19 @@ func (m *alertStoreMock) GetAlert(_ context.Context, id int64) (*alert.Alert, er
 	}
 	return nil, nil
 }
-func (m *alertStoreMock) InsertAlert(_ context.Context, _ *alert.Alert) (int64, error) {
-	return 0, nil
+func (m *alertStoreMock) InsertAlert(_ context.Context, _ *alert.Alert) (string, error) {
+	return "", nil
 }
 func (m *alertStoreMock) ListAlerts(_ context.Context, _ alert.ListAlertsOpts) ([]*alert.Alert, error) {
 	return nil, nil
 }
-func (m *alertStoreMock) UpdateAlertStatus(_ context.Context, _ int64, _ string, _ *time.Time, _ *int64) error {
+func (m *alertStoreMock) UpdateAlertStatus(_ context.Context, _ string, _ string, _ *time.Time, _ *string) error {
 	return nil
 }
-func (m *alertStoreMock) UpdateAlertSeverity(_ context.Context, _ int64, _, _ string) error {
+func (m *alertStoreMock) UpdateAlertSeverity(_ context.Context, _ string, _, _ string) error {
 	return nil
 }
-func (m *alertStoreMock) GetActiveAlert(_ context.Context, _, _, _ string, _ int64) (*alert.Alert, error) {
+func (m *alertStoreMock) GetActiveAlert(_ context.Context, _, _, _ string, _ string) (*alert.Alert, error) {
 	return nil, nil
 }
 func (m *alertStoreMock) ListActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
@@ -335,10 +340,10 @@ func (m *alertStoreMock) ListActiveAlerts(_ context.Context) ([]*alert.Alert, er
 func (m *alertStoreMock) DeleteAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
-func (m *alertStoreMock) AcknowledgeAlert(_ context.Context, _ int64, _ string, _ time.Time) error {
+func (m *alertStoreMock) AcknowledgeAlert(_ context.Context, _ string, _ string, _ time.Time) error {
 	return nil
 }
-func (m *alertStoreMock) SetEscalatedAt(_ context.Context, _ int64, _ time.Time) error {
+func (m *alertStoreMock) SetEscalatedAt(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
 func (m *alertStoreMock) ListUnacknowledgedActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
@@ -348,24 +353,24 @@ func (m *alertStoreMock) ListUnacknowledgedActiveAlerts(_ context.Context) ([]*a
 // --- channel store mock ---
 
 type channelStoreMock struct {
-	channels map[int64]*alert.NotificationChannel
+	channels map[string]*alert.NotificationChannel
 }
 
 func newChannelStoreMock() *channelStoreMock {
-	return &channelStoreMock{channels: map[int64]*alert.NotificationChannel{}}
+	return &channelStoreMock{channels: map[string]*alert.NotificationChannel{}}
 }
 func (m *channelStoreMock) put(c *alert.NotificationChannel) {
 	m.channels[c.ID] = c
 }
-func (m *channelStoreMock) GetChannel(_ context.Context, id int64) (*alert.NotificationChannel, error) {
+func (m *channelStoreMock) GetChannel(_ context.Context, id string) (*alert.NotificationChannel, error) {
 	if c, ok := m.channels[id]; ok {
 		cp := *c
 		return &cp, nil
 	}
 	return nil, nil
 }
-func (m *channelStoreMock) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (int64, error) {
-	return 0, nil
+func (m *channelStoreMock) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (string, error) {
+	return "", nil
 }
 func (m *channelStoreMock) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
 	return nil, nil
@@ -373,38 +378,38 @@ func (m *channelStoreMock) ListChannels(_ context.Context) ([]*alert.Notificatio
 func (m *channelStoreMock) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
 	return nil
 }
-func (m *channelStoreMock) DeleteChannel(_ context.Context, _ int64) error { return nil }
-func (m *channelStoreMock) GetChannelHealth(_ context.Context, _ int64) (string, error) {
+func (m *channelStoreMock) DeleteChannel(_ context.Context, _ string) error { return nil }
+func (m *channelStoreMock) GetChannelHealth(_ context.Context, _ string) (string, error) {
 	return "ok", nil
 }
-func (m *channelStoreMock) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
-	return 0, nil
+func (m *channelStoreMock) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (string, error) {
+	return "", nil
 }
 func (m *channelStoreMock) UpdateDelivery(_ context.Context, _ *alert.NotificationDelivery) error {
 	return nil
 }
-func (m *channelStoreMock) ListDeliveriesByAlert(_ context.Context, _ int64) ([]*alert.NotificationDelivery, error) {
+func (m *channelStoreMock) ListDeliveriesByAlert(_ context.Context, _ string) ([]*alert.NotificationDelivery, error) {
 	return nil, nil
 }
 
 // --- sender mock ---
 
 type senderCall struct {
-	AlertID   int64
-	ChannelID int64
+	AlertID   string
+	ChannelID string
 	Message   string
 }
 
 type fakeSender struct {
 	mu       sync.Mutex
 	calls    []senderCall
-	failFor  map[int64]bool // channel IDs that should fail
+	failFor  map[string]bool // channel IDs that should fail
 	sendErr  error
 	delivers atomic.Int32
 }
 
 func newFakeSender() *fakeSender {
-	return &fakeSender{failFor: map[int64]bool{}}
+	return &fakeSender{failFor: map[string]bool{}}
 }
 
 func (f *fakeSender) SendNow(_ context.Context, a *alert.Alert, ch *alert.NotificationChannel) error {
@@ -526,7 +531,7 @@ func (h *harness) waitForDeliveries(t *testing.T, n int) {
 
 // --- shared fixtures ---
 
-func criticalAlert(id int64) *alert.Alert {
+func criticalAlert(id string) *alert.Alert {
 	return &alert.Alert{
 		ID:         id,
 		Source:     alert.SourceContainer,
@@ -535,7 +540,7 @@ func criticalAlert(id int64) *alert.Alert {
 		Status:     alert.StatusActive,
 		Message:    "container x stopped",
 		EntityType: "container",
-		EntityID:   42,
+		EntityID:   "42",
 		EntityName: "x",
 		FiredAt:    time.Now().UTC(),
 	}
@@ -549,21 +554,21 @@ func policyTwoLevels() *Policy {
 			Severities: []string{alert.SeverityCritical},
 		},
 		Levels: []Level{
-			{Order: 0, DelaySeconds: 60, ChannelIDs: []int64{1}},
-			{Order: 1, DelaySeconds: 180, ChannelIDs: []int64{1}},
+			{Order: 0, DelaySeconds: 60, ChannelIDs: []string{"1"}},
+			{Order: 1, DelaySeconds: 180, ChannelIDs: []string{"1"}},
 		},
 	}
 }
 
 func defaultChannel() *alert.NotificationChannel {
-	return &alert.NotificationChannel{ID: 1, Name: "slack-test", Type: "slack", URL: "https://example.test/x", Enabled: true}
+	return &alert.NotificationChannel{ID: "1", Name: "slack-test", Type: "slack", URL: "https://example.test/x", Enabled: true}
 }
 
 // --- tests ---
 
 func TestRunner_OnAlertCreated_NoMatch(t *testing.T) {
 	h := newHarness(t)
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	a.Severity = alert.SeverityWarning // policy filter is critical-only
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
@@ -574,7 +579,7 @@ func TestRunner_OnAlertCreated_NoMatch(t *testing.T) {
 
 func TestRunner_OnAlertCreated_StartsRun(t *testing.T) {
 	h := newHarness(t)
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	p := h.store.addPolicy(policyTwoLevels())
 
@@ -593,7 +598,7 @@ func TestRunner_OnAlertCreated_StartsRun(t *testing.T) {
 
 func TestRunner_OnAlertCreated_Idempotent(t *testing.T) {
 	h := newHarness(t)
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 
@@ -605,7 +610,7 @@ func TestRunner_OnAlertCreated_Idempotent(t *testing.T) {
 func TestRunner_EvaluateCycle_FiresLevelAndAdvances(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
@@ -625,14 +630,14 @@ func TestRunner_EvaluateCycle_FiresLevelAndAdvances(t *testing.T) {
 
 	calls := h.sender.snapshot()
 	require.Len(t, calls, 1)
-	assert.Equal(t, int64(1), calls[0].ChannelID)
-	assert.Equal(t, int64(1), calls[0].AlertID)
+	assert.Equal(t, "1", calls[0].ChannelID)
+	assert.Equal(t, "1", calls[0].AlertID)
 }
 
 func TestRunner_EvaluateCycle_ExhaustedAfterLastLevel(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
@@ -671,7 +676,7 @@ func TestRunner_EvaluateCycle_ExhaustedAfterLastLevel(t *testing.T) {
 func TestRunner_OnAlertAcknowledged_StopsRunsAndDispatchesAck(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
@@ -681,7 +686,7 @@ func TestRunner_OnAlertAcknowledged_StopsRunsAndDispatchesAck(t *testing.T) {
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
 	h.waitForDeliveries(t, 1)
 
-	require.NoError(t, h.runner.OnAlertAcknowledged(context.Background(), 1, alert.Acknowledgment{By: "alice", At: h.now}))
+	require.NoError(t, h.runner.OnAlertAcknowledged(context.Background(), "1", alert.Acknowledgment{By: "alice", At: h.now}))
 	h.waitForDeliveries(t, 2) // ack notification
 
 	runs := h.store.listRuns()
@@ -702,12 +707,12 @@ func TestRunner_OnAlertAcknowledged_StopsRunsAndDispatchesAck(t *testing.T) {
 func TestRunner_OnAlertResolved_StopsRunsNoNotif(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
-	require.NoError(t, h.runner.OnAlertResolved(context.Background(), 1, h.now))
+	require.NoError(t, h.runner.OnAlertResolved(context.Background(), "1", h.now))
 
 	runs := h.store.listRuns()
 	require.Len(t, runs, 1)
@@ -720,7 +725,7 @@ func TestRunner_OnAlertResolved_StopsRunsNoNotif(t *testing.T) {
 func TestRunner_MaintenancePauseAndResume(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
@@ -751,15 +756,15 @@ func TestRunner_MaintenancePauseAndResume(t *testing.T) {
 func TestRunner_DeliveryDuplicateIdempotence(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
 	// Pre-insert a delivery row to simulate a pre-crash reservation.
-	chID := int64(1)
+	chID := "1"
 	_, err := h.store.InsertDelivery(context.Background(), &Delivery{
-		RunID:            1,
+		RunID:            h.store.onlyRunID(),
 		LevelIndex:       0,
 		ChannelID:        &chID,
 		Status:           DeliveryStatusSent, // already done before crash
@@ -780,25 +785,25 @@ func TestRunner_DeliveryDuplicateIdempotence(t *testing.T) {
 
 func TestRunner_OneChannelFailureDoesNotBlockOthers(t *testing.T) {
 	h := newHarness(t)
-	h.channels.put(&alert.NotificationChannel{ID: 1, Name: "good", Type: "slack", URL: "u1", Enabled: true})
-	h.channels.put(&alert.NotificationChannel{ID: 2, Name: "bad", Type: "slack", URL: "u2", Enabled: true})
-	a := criticalAlert(1)
+	h.channels.put(&alert.NotificationChannel{ID: "1", Name: "good", Type: "slack", URL: "u1", Enabled: true})
+	h.channels.put(&alert.NotificationChannel{ID: "2", Name: "bad", Type: "slack", URL: "u2", Enabled: true})
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(&Policy{
 		Name: "p", Active: true,
 		Filters: Filters{Severities: []string{alert.SeverityCritical}},
-		Levels:  []Level{{Order: 0, DelaySeconds: 60, ChannelIDs: []int64{1, 2}}},
+		Levels:  []Level{{Order: 0, DelaySeconds: 60, ChannelIDs: []string{"1", "2"}}},
 	})
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
-	h.sender.failFor[2] = true
+	h.sender.failFor["2"] = true
 	h.advance(61 * time.Second)
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
 	h.waitForDeliveries(t, 2)
 
 	deliveries := h.store.listDeliveries()
 	require.Len(t, deliveries, 2)
-	statuses := map[int64]string{}
+	statuses := map[string]string{}
 	for _, d := range deliveries {
 		require.NotNil(t, d.ChannelID)
 		statuses[*d.ChannelID] = d.Status
@@ -822,14 +827,14 @@ func TestRunner_OneChannelFailureDoesNotBlockOthers(t *testing.T) {
 		require.NotNil(t, d.ChannelID)
 		statuses[*d.ChannelID] = d.Status
 	}
-	assert.Equal(t, DeliveryStatusSent, statuses[1])
-	assert.Equal(t, DeliveryStatusFailed, statuses[2])
+	assert.Equal(t, DeliveryStatusSent, statuses["1"])
+	assert.Equal(t, DeliveryStatusFailed, statuses["2"])
 }
 
 func TestRunner_DisabledChannelMarksDeliveryFailed(t *testing.T) {
 	h := newHarness(t)
-	h.channels.put(&alert.NotificationChannel{ID: 1, Name: "off", Type: "slack", URL: "u", Enabled: false})
-	a := criticalAlert(1)
+	h.channels.put(&alert.NotificationChannel{ID: "1", Name: "off", Type: "slack", URL: "u", Enabled: false})
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
@@ -850,16 +855,16 @@ func TestRunner_DisabledChannelMarksDeliveryFailed(t *testing.T) {
 func TestRunner_OrphanRecoveryRetries(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
 	// Manually insert a stale pending delivery (simulating a crash mid-send).
 	stale := h.now.Add(-5 * time.Minute)
-	chID := int64(1)
+	chID := "1"
 	_, err := h.store.InsertDelivery(context.Background(), &Delivery{
-		RunID:            1,
+		RunID:            h.store.onlyRunID(),
 		LevelIndex:       0,
 		ChannelID:        &chID,
 		Status:           DeliveryStatusPending,
@@ -883,15 +888,15 @@ func TestRunner_OrphanRecoveryRetries(t *testing.T) {
 func TestRunner_OrphanAbandonedWhenAlertResolved(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
-	a := criticalAlert(1)
+	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
 	// Stale pending row.
-	chID := int64(1)
+	chID := "1"
 	_, err := h.store.InsertDelivery(context.Background(), &Delivery{
-		RunID:            1,
+		RunID:            h.store.onlyRunID(),
 		LevelIndex:       0,
 		ChannelID:        &chID,
 		Status:           DeliveryStatusPending,

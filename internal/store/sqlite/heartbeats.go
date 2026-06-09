@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // HeartbeatStore implements heartbeat.HeartbeatStore using SQLite.
@@ -35,42 +36,52 @@ func NewHeartbeatStore(d *DB) *HeartbeatStore {
 	}
 }
 
-const heartbeatColumns = `id, uuid, name, status, alert_state,
+const heartbeatColumns = `id, agent_id, name, status, alert_state,
 	interval_seconds, grace_seconds,
 	last_ping_at, next_deadline_at, current_run_started_at,
 	last_exit_code, last_duration_ms,
 	consecutive_failures, consecutive_successes,
-	active, created_at, updated_at, agent_id`
+	active, created_at, updated_at`
 
-func (s *HeartbeatStore) CreateHeartbeat(ctx context.Context, h *heartbeat.Heartbeat) (int64, error) {
+// CreateHeartbeat upserts a heartbeat. Its id is the public ping token: the
+// caller supplies it via h.ID, falling back to a fresh UUID when empty.
+func (s *HeartbeatStore) CreateHeartbeat(ctx context.Context, h *heartbeat.Heartbeat) (string, error) {
+	if h.ID == "" {
+		h.ID = uid.New()
+	}
+	h.AgentID = uid.Agent(h.AgentID)
 	now := time.Now().Unix()
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO heartbeats (uuid, name, status, alert_state,
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO heartbeats (id, agent_id, name, status, alert_state,
 			interval_seconds, grace_seconds,
 			consecutive_failures, consecutive_successes,
 			active, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)`,
-		h.UUID, h.Name, string(heartbeat.StatusNew), string(heartbeat.AlertNormal),
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name=excluded.name, interval_seconds=excluded.interval_seconds,
+			grace_seconds=excluded.grace_seconds, active=excluded.active,
+			updated_at=excluded.updated_at`,
+		h.ID, h.AgentID, h.Name, string(heartbeat.StatusNew), string(heartbeat.AlertNormal),
 		h.IntervalSeconds, h.GraceSeconds,
 		now, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert heartbeat: %w", err)
+		return "", fmt.Errorf("insert heartbeat: %w", err)
 	}
-	h.ID = res.LastInsertID
 	h.CreatedAt = time.Unix(now, 0)
 	h.UpdatedAt = time.Unix(now, 0)
-	return res.LastInsertID, nil
+	return h.ID, nil
 }
 
-func (s *HeartbeatStore) GetHeartbeatByID(ctx context.Context, id int64) (*heartbeat.Heartbeat, error) {
+func (s *HeartbeatStore) GetHeartbeatByID(ctx context.Context, id string) (*heartbeat.Heartbeat, error) {
 	return s.scanHeartbeat(s.db.QueryRowContext(ctx,
 		`SELECT `+heartbeatColumns+` FROM heartbeats WHERE id=?`, id))
 }
 
-func (s *HeartbeatStore) GetHeartbeatByUUID(ctx context.Context, uuid string) (*heartbeat.Heartbeat, error) {
+// GetHeartbeatByUUID looks up an active heartbeat by its ping token (the id).
+func (s *HeartbeatStore) GetHeartbeatByUUID(ctx context.Context, token string) (*heartbeat.Heartbeat, error) {
 	return s.scanHeartbeat(s.db.QueryRowContext(ctx,
-		`SELECT `+heartbeatColumns+` FROM heartbeats WHERE uuid=? AND active=1`, uuid))
+		`SELECT `+heartbeatColumns+` FROM heartbeats WHERE id=? AND active=1`, token))
 }
 
 func (s *HeartbeatStore) ListHeartbeats(ctx context.Context, opts heartbeat.ListHeartbeatsOpts) ([]*heartbeat.Heartbeat, error) {
@@ -86,7 +97,8 @@ func (s *HeartbeatStore) ListHeartbeats(ctx context.Context, opts heartbeat.List
 	}
 	if opts.AgentFilter != nil {
 		if *opts.AgentFilter == "local" {
-			query += ` AND agent_id IS NULL`
+			query += ` AND agent_id=?`
+			args = append(args, uid.LocalAgent)
 		} else {
 			query += ` AND agent_id=?`
 			args = append(args, *opts.AgentFilter)
@@ -114,7 +126,7 @@ func (s *HeartbeatStore) ListHeartbeats(ctx context.Context, opts heartbeat.List
 	return results, rows.Err()
 }
 
-func (s *HeartbeatStore) UpdateHeartbeat(ctx context.Context, id int64, input heartbeat.UpdateHeartbeatInput) error {
+func (s *HeartbeatStore) UpdateHeartbeat(ctx context.Context, id string, input heartbeat.UpdateHeartbeatInput) error {
 	now := time.Now().Unix()
 	query := `UPDATE heartbeats SET updated_at=?`
 	args := []interface{}{now}
@@ -137,22 +149,22 @@ func (s *HeartbeatStore) UpdateHeartbeat(ctx context.Context, id int64, input he
 
 	_, err := s.writer.Exec(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("update heartbeat %d: %w", id, err)
+		return fmt.Errorf("update heartbeat %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *HeartbeatStore) DeleteHeartbeat(ctx context.Context, id int64) error {
+func (s *HeartbeatStore) DeleteHeartbeat(ctx context.Context, id string) error {
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`UPDATE heartbeats SET active=0, updated_at=? WHERE id=?`, now, id)
 	if err != nil {
-		return fmt.Errorf("delete heartbeat %d: %w", id, err)
+		return fmt.Errorf("delete heartbeat %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *HeartbeatStore) UpdateHeartbeatState(ctx context.Context, id int64,
+func (s *HeartbeatStore) UpdateHeartbeatState(ctx context.Context, id string,
 	status heartbeat.HeartbeatStatus, alertState heartbeat.AlertState,
 	lastPingAt *time.Time, nextDeadlineAt *time.Time, currentRunStartedAt *time.Time,
 	lastExitCode *int, lastDurationMs *int64,
@@ -184,29 +196,29 @@ func (s *HeartbeatStore) UpdateHeartbeatState(ctx context.Context, id int64,
 		now, id,
 	)
 	if err != nil {
-		return fmt.Errorf("update heartbeat state %d: %w", id, err)
+		return fmt.Errorf("update heartbeat state %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *HeartbeatStore) PauseHeartbeat(ctx context.Context, id int64) error {
+func (s *HeartbeatStore) PauseHeartbeat(ctx context.Context, id string) error {
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`UPDATE heartbeats SET status='paused', next_deadline_at=NULL, updated_at=? WHERE id=?`,
 		now, id)
 	if err != nil {
-		return fmt.Errorf("pause heartbeat %d: %w", id, err)
+		return fmt.Errorf("pause heartbeat %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *HeartbeatStore) ResumeHeartbeat(ctx context.Context, id int64, nextDeadlineAt time.Time) error {
+func (s *HeartbeatStore) ResumeHeartbeat(ctx context.Context, id string, nextDeadlineAt time.Time) error {
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`UPDATE heartbeats SET status='up', next_deadline_at=?, updated_at=? WHERE id=?`,
 		nextDeadlineAt.Unix(), now, id)
 	if err != nil {
-		return fmt.Errorf("resume heartbeat %d: %w", id, err)
+		return fmt.Errorf("resume heartbeat %s: %w", id, err)
 	}
 	return nil
 }
@@ -253,20 +265,20 @@ func (s *HeartbeatStore) CountConfigured(ctx context.Context) (int, error) {
 
 // --- Pings ---
 
-func (s *HeartbeatStore) InsertPing(ctx context.Context, p *heartbeat.HeartbeatPing) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO heartbeat_pings (heartbeat_id, ping_type, exit_code, source_ip, http_method, payload, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		p.HeartbeatID, string(p.PingType), p.ExitCode, p.SourceIP, p.HTTPMethod, p.Payload, p.Timestamp.Unix(),
+func (s *HeartbeatStore) InsertPing(ctx context.Context, p *heartbeat.HeartbeatPing) (string, error) {
+	p.ID = uid.New()
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO heartbeat_pings (id, heartbeat_id, ping_type, exit_code, source_ip, http_method, payload, timestamp)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.HeartbeatID, string(p.PingType), p.ExitCode, p.SourceIP, p.HTTPMethod, p.Payload, p.Timestamp.Unix(),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert ping: %w", err)
+		return "", fmt.Errorf("insert ping: %w", err)
 	}
-	p.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return p.ID, nil
 }
 
-func (s *HeartbeatStore) ListPings(ctx context.Context, heartbeatID int64, opts heartbeat.ListPingsOpts) ([]*heartbeat.HeartbeatPing, int, error) {
+func (s *HeartbeatStore) ListPings(ctx context.Context, heartbeatID string, opts heartbeat.ListPingsOpts) ([]*heartbeat.HeartbeatPing, int, error) {
 	var total int
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM heartbeat_pings WHERE heartbeat_id=?`, heartbeatID).Scan(&total); err != nil {
@@ -309,7 +321,8 @@ func (s *HeartbeatStore) ListPings(ctx context.Context, heartbeatID int64, opts 
 
 // --- Executions ---
 
-func (s *HeartbeatStore) InsertExecution(ctx context.Context, e *heartbeat.HeartbeatExecution) (int64, error) {
+func (s *HeartbeatStore) InsertExecution(ctx context.Context, e *heartbeat.HeartbeatExecution) (string, error) {
+	e.ID = uid.New()
 	var startedAtUnix, completedAtUnix interface{}
 	if e.StartedAt != nil {
 		startedAtUnix = e.StartedAt.Unix()
@@ -318,19 +331,18 @@ func (s *HeartbeatStore) InsertExecution(ctx context.Context, e *heartbeat.Heart
 		completedAtUnix = e.CompletedAt.Unix()
 	}
 
-	res, err := s.writer.Exec(ctx,
-		`INSERT INTO heartbeat_executions (heartbeat_id, started_at, completed_at, duration_ms, exit_code, outcome, payload)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		e.HeartbeatID, startedAtUnix, completedAtUnix, e.DurationMs, e.ExitCode, string(e.Outcome), e.Payload,
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO heartbeat_executions (id, heartbeat_id, started_at, completed_at, duration_ms, exit_code, outcome, payload)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.HeartbeatID, startedAtUnix, completedAtUnix, e.DurationMs, e.ExitCode, string(e.Outcome), e.Payload,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("insert execution: %w", err)
+		return "", fmt.Errorf("insert execution: %w", err)
 	}
-	e.ID = res.LastInsertID
-	return res.LastInsertID, nil
+	return e.ID, nil
 }
 
-func (s *HeartbeatStore) UpdateExecution(ctx context.Context, id int64, completedAt *time.Time, durationMs *int64, exitCode *int, outcome heartbeat.ExecutionOutcome, payload *string) error {
+func (s *HeartbeatStore) UpdateExecution(ctx context.Context, id string, completedAt *time.Time, durationMs *int64, exitCode *int, outcome heartbeat.ExecutionOutcome, payload *string) error {
 	var completedAtUnix interface{}
 	if completedAt != nil {
 		completedAtUnix = completedAt.Unix()
@@ -341,19 +353,21 @@ func (s *HeartbeatStore) UpdateExecution(ctx context.Context, id int64, complete
 		completedAtUnix, durationMs, exitCode, string(outcome), payload, id,
 	)
 	if err != nil {
-		return fmt.Errorf("update execution %d: %w", id, err)
+		return fmt.Errorf("update execution %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *HeartbeatStore) GetCurrentExecution(ctx context.Context, heartbeatID int64) (*heartbeat.HeartbeatExecution, error) {
+// GetCurrentExecution returns the latest in-progress execution. Execution ids
+// are time-ordered UUIDv7, so ORDER BY id DESC yields the most recent.
+func (s *HeartbeatStore) GetCurrentExecution(ctx context.Context, heartbeatID string) (*heartbeat.HeartbeatExecution, error) {
 	return scanExecutionSingle(s.db.QueryRowContext(ctx,
 		`SELECT id, heartbeat_id, started_at, completed_at, duration_ms, exit_code, outcome, payload
 		FROM heartbeat_executions WHERE heartbeat_id=? AND outcome='in_progress'
 		ORDER BY id DESC LIMIT 1`, heartbeatID))
 }
 
-func (s *HeartbeatStore) ListExecutions(ctx context.Context, heartbeatID int64, opts heartbeat.ListExecutionsOpts) ([]*heartbeat.HeartbeatExecution, int, error) {
+func (s *HeartbeatStore) ListExecutions(ctx context.Context, heartbeatID string, opts heartbeat.ListExecutionsOpts) ([]*heartbeat.HeartbeatExecution, int, error) {
 	var total int
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM heartbeat_executions WHERE heartbeat_id=?`, heartbeatID).Scan(&total); err != nil {
@@ -439,15 +453,14 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 	var lastPingAt, nextDeadlineAt, currentRunStartedAt, lastExitCode, lastDurationMs sql.NullInt64
 	var active int
 	var createdAt, updatedAt int64
-	var agentID sql.NullString
 
 	err := row.Scan(
-		&h.ID, &h.UUID, &h.Name, &h.Status, &h.AlertState,
+		&h.ID, &h.AgentID, &h.Name, &h.Status, &h.AlertState,
 		&h.IntervalSeconds, &h.GraceSeconds,
 		&lastPingAt, &nextDeadlineAt, &currentRunStartedAt,
 		&lastExitCode, &lastDurationMs,
 		&h.ConsecutiveFailures, &h.ConsecutiveSuccesses,
-		&active, &createdAt, &updatedAt, &agentID,
+		&active, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -479,9 +492,6 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 	if lastDurationMs.Valid {
 		v := lastDurationMs.Int64
 		h.LastDurationMs = &v
-	}
-	if agentID.Valid {
-		h.AgentID = &agentID.String
 	}
 
 	return &h, nil

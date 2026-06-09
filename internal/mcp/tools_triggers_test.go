@@ -14,6 +14,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,24 +29,24 @@ import (
 // ---------------------------------------------------------------------------
 
 type mcpTriggerStore struct {
-	triggers map[int64]*alert.AlertTrigger
+	triggers map[string]*alert.AlertTrigger
 	nextID   int64
 }
 
 func newMCPTriggerStore() *mcpTriggerStore {
-	return &mcpTriggerStore{triggers: map[int64]*alert.AlertTrigger{}}
+	return &mcpTriggerStore{triggers: map[string]*alert.AlertTrigger{}}
 }
 
-func (m *mcpTriggerStore) InsertTrigger(_ context.Context, t *alert.AlertTrigger) (int64, error) {
+func (m *mcpTriggerStore) InsertTrigger(_ context.Context, t *alert.AlertTrigger) (string, error) {
 	m.nextID++
-	t.ID = m.nextID
+	t.ID = strconv.FormatInt(m.nextID, 10)
 	t.CreatedAt = time.Now()
 	t.UpdatedAt = time.Now()
 	cp := *t
 	m.triggers[t.ID] = &cp
 	return t.ID, nil
 }
-func (m *mcpTriggerStore) GetTrigger(_ context.Context, id int64) (*alert.AlertTrigger, error) {
+func (m *mcpTriggerStore) GetTrigger(_ context.Context, id string) (*alert.AlertTrigger, error) {
 	return m.triggers[id], nil
 }
 func (m *mcpTriggerStore) ListTriggers(_ context.Context) ([]*alert.AlertTrigger, error) {
@@ -63,25 +64,25 @@ func (m *mcpTriggerStore) UpdateTrigger(_ context.Context, t *alert.AlertTrigger
 	m.triggers[t.ID] = &cp
 	return nil
 }
-func (m *mcpTriggerStore) DeleteTrigger(_ context.Context, id int64) error {
+func (m *mcpTriggerStore) DeleteTrigger(_ context.Context, id string) error {
 	delete(m.triggers, id)
 	return nil
 }
-func (m *mcpTriggerStore) SetChannels(_ context.Context, _ int64, _ []int64) error { return nil }
-func (m *mcpTriggerStore) ListChannelsForTrigger(_ context.Context, _ int64) ([]int64, error) {
-	return []int64{}, nil
+func (m *mcpTriggerStore) SetChannels(_ context.Context, _ string, _ []string) error { return nil }
+func (m *mcpTriggerStore) ListChannelsForTrigger(_ context.Context, _ string) ([]string, error) {
+	return []string{}, nil
 }
-func (m *mcpTriggerStore) ListTriggersForChannel(_ context.Context, _ int64) ([]*alert.AlertTrigger, error) {
+func (m *mcpTriggerStore) ListTriggersForChannel(_ context.Context, _ string) ([]*alert.AlertTrigger, error) {
 	return nil, nil
 }
 
 // mcpNilChannelStore always returns nil (channel not found), used for validation tests.
 type mcpNilChannelStore struct{}
 
-func (m *mcpNilChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (int64, error) {
-	return 0, nil
+func (m *mcpNilChannelStore) InsertChannel(_ context.Context, _ *alert.NotificationChannel) (string, error) {
+	return "", nil
 }
-func (m *mcpNilChannelStore) GetChannel(_ context.Context, _ int64) (*alert.NotificationChannel, error) {
+func (m *mcpNilChannelStore) GetChannel(_ context.Context, _ string) (*alert.NotificationChannel, error) {
 	return nil, nil
 }
 func (m *mcpNilChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
@@ -90,17 +91,17 @@ func (m *mcpNilChannelStore) ListChannels(_ context.Context) ([]*alert.Notificat
 func (m *mcpNilChannelStore) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
 	return nil
 }
-func (m *mcpNilChannelStore) DeleteChannel(_ context.Context, _ int64) error { return nil }
-func (m *mcpNilChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
+func (m *mcpNilChannelStore) DeleteChannel(_ context.Context, _ string) error { return nil }
+func (m *mcpNilChannelStore) GetChannelHealth(_ context.Context, _ string) (string, error) {
 	return "ok", nil
 }
-func (m *mcpNilChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
-	return 0, nil
+func (m *mcpNilChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (string, error) {
+	return "", nil
 }
 func (m *mcpNilChannelStore) UpdateDelivery(_ context.Context, _ *alert.NotificationDelivery) error {
 	return nil
 }
-func (m *mcpNilChannelStore) ListDeliveriesByAlert(_ context.Context, _ int64) ([]*alert.NotificationDelivery, error) {
+func (m *mcpNilChannelStore) ListDeliveriesByAlert(_ context.Context, _ string) ([]*alert.NotificationDelivery, error) {
 	return nil, nil
 }
 
@@ -145,7 +146,7 @@ func TestListTriggersHandler_Empty(t *testing.T) {
 func TestListTriggersHandler_ReturnsTriggers(t *testing.T) {
 	svc, ts := buildTriggerServices()
 	_, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
-		Name: "CritContainers", Enabled: true, ChannelIDs: []int64{1},
+		Name: "CritContainers", Enabled: true, ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
 
@@ -165,7 +166,7 @@ func TestListTriggersHandler_ReturnsTriggers(t *testing.T) {
 func TestGetTriggerHandler_Found(t *testing.T) {
 	svc, ts := buildTriggerServices()
 	id, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
-		Name: "FindMe", Enabled: true, ChannelIDs: []int64{1},
+		Name: "FindMe", Enabled: true, ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
 
@@ -179,7 +180,7 @@ func TestGetTriggerHandler_Found(t *testing.T) {
 func TestGetTriggerHandler_NotFound(t *testing.T) {
 	svc, _ := buildTriggerServices()
 	handler := getTriggerHandler(svc)
-	result, _, err := handler(context.Background(), nil, getTriggerInput{ID: 9999})
+	result, _, err := handler(context.Background(), nil, getTriggerInput{ID: "9999"})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.IsError)
@@ -197,7 +198,7 @@ func TestCreateTriggerHandler_Happy(t *testing.T) {
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:       "AlertAll",
 		Enabled:    true,
-		ChannelIDs: []int64{1},
+		ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -211,7 +212,7 @@ func TestCreateTriggerHandler_EmptyName(t *testing.T) {
 
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:       "",
-		ChannelIDs: []int64{1},
+		ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
@@ -224,7 +225,7 @@ func TestCreateTriggerHandler_EmptyChannelIDs(t *testing.T) {
 
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:       "NoChannel",
-		ChannelIDs: []int64{},
+		ChannelIDs: []string{},
 	})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
@@ -238,7 +239,7 @@ func TestCreateTriggerHandler_ChannelNotFound(t *testing.T) {
 
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:       "OrphanTrigger",
-		ChannelIDs: []int64{999},
+		ChannelIDs: []string{"999"},
 	})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
@@ -256,7 +257,7 @@ func TestCreateTriggerHandler_FilterScopes_CommunityBlocked(t *testing.T) {
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:         "ScopedTrigger",
 		FilterScopes: "container:42",
-		ChannelIDs:   []int64{1},
+		ChannelIDs:   []string{"1"},
 	})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
@@ -274,7 +275,7 @@ func TestCreateTriggerHandler_FilterTags_CommunityBlocked(t *testing.T) {
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:       "TaggedTrigger",
 		FilterTags: "prod",
-		ChannelIDs: []int64{1},
+		ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
@@ -292,7 +293,7 @@ func TestCreateTriggerHandler_FilterScopes_EnterpriseAllowed(t *testing.T) {
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:         "ProTrigger",
 		FilterScopes: "container:7",
-		ChannelIDs:   []int64{1},
+		ChannelIDs:   []string{"1"},
 	})
 	require.NoError(t, err)
 	require.False(t, result.IsError)
@@ -305,7 +306,7 @@ func TestCreateTriggerHandler_FilterScopes_EnterpriseAllowed(t *testing.T) {
 func TestUpdateTriggerHandler_Happy(t *testing.T) {
 	svc, ts := buildTriggerServices()
 	id, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
-		Name: "BeforeUpdate", Enabled: true, ChannelIDs: []int64{1},
+		Name: "BeforeUpdate", Enabled: true, ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
 
@@ -315,7 +316,7 @@ func TestUpdateTriggerHandler_Happy(t *testing.T) {
 		triggerInput: triggerInput{
 			Name:       "AfterUpdate",
 			Enabled:    true,
-			ChannelIDs: []int64{1},
+			ChannelIDs: []string{"1"},
 		},
 	})
 	require.NoError(t, err)
@@ -328,8 +329,8 @@ func TestUpdateTriggerHandler_NotFound(t *testing.T) {
 	handler := updateTriggerHandler(svc)
 
 	result, _, err := handler(context.Background(), nil, updateTriggerInputWithID{
-		ID:           9999,
-		triggerInput: triggerInput{Name: "Ghost", ChannelIDs: []int64{1}},
+		ID:           "9999",
+		triggerInput: triggerInput{Name: "Ghost", ChannelIDs: []string{"1"}},
 	})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
@@ -343,7 +344,7 @@ func TestUpdateTriggerHandler_NotFound(t *testing.T) {
 func TestDeleteTriggerHandler_Happy(t *testing.T) {
 	svc, ts := buildTriggerServices()
 	id, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
-		Name: "ToRemove", Enabled: true, ChannelIDs: []int64{1},
+		Name: "ToRemove", Enabled: true, ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
 
@@ -358,7 +359,7 @@ func TestDeleteTriggerHandler_NotFound(t *testing.T) {
 	svc, _ := buildTriggerServices()
 	handler := deleteTriggerHandler(svc)
 
-	result, _, err := handler(context.Background(), nil, deleteTriggerInput{ID: 9999})
+	result, _, err := handler(context.Background(), nil, deleteTriggerInput{ID: "9999"})
 	require.NoError(t, err)
 	require.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "not found")

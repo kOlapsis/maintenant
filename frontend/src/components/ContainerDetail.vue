@@ -48,12 +48,12 @@ import {
 import { fetchSwarmServiceDetail, type SwarmServiceDetailResponse } from '@/services/swarmApi'
 
 const props = defineProps<{
-  containerId: number
+  containerId: string
 }>()
 
 const emit = defineEmits<{
   close: []
-  deleted: [containerId: number]
+  deleted: [containerId: string]
 }>()
 
 const container = ref<ContainerDetailResponse | null>(null)
@@ -102,7 +102,7 @@ async function handleAcknowledge(insight: { type: string; details: Record<string
   containerPosture.value = await postureStore.fetchContainerScore(props.containerId)
 }
 
-async function handleRevoke(ack: { id: number }) {
+async function handleRevoke(ack: { id: string }) {
   await postureStore.revokeAcknowledgment(ack.id)
   await postureStore.fetchAcknowledgments(props.containerId)
   containerPosture.value = await postureStore.fetchContainerScore(props.containerId)

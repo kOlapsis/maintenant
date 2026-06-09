@@ -63,8 +63,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	// change through the normal pipeline (handleStateChange updates existing rows
 	// correctly — the c == nil branch is never reached).
 	dirty := false
-	if c.AgentID == nil {
-		c.AgentID = &agentID
+	if c.AgentID != agentID {
+		c.AgentID = agentID
 		dirty = true
 	}
 	if img := ev.GetImage(); img != "" && img != c.Image {
@@ -104,7 +104,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 
 	c := &Container{
 		ExternalID:         externalID,
-		AgentID:            &agentID,
+		AgentID:            agentID,
 		Name:               ev.GetName(),
 		Image:              ev.GetImage(),
 		State:              state,

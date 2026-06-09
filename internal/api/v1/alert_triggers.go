@@ -16,7 +16,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
@@ -41,13 +40,13 @@ func NewAlertTriggerHandler(ts alert.TriggerStore, cs alert.ChannelStore, broker
 
 // triggerInput is the wire format accepted by POST/PUT.
 type triggerInput struct {
-	Name             string  `json:"name"`
-	FilterSeverities string  `json:"filter_severities"`
-	FilterSources    string  `json:"filter_sources"`
-	FilterScopes     string  `json:"filter_scopes"`
-	FilterTags       string  `json:"filter_tags"`
-	Enabled          *bool   `json:"enabled"`
-	ChannelIDs       []int64 `json:"channel_ids"`
+	Name             string   `json:"name"`
+	FilterSeverities string   `json:"filter_severities"`
+	FilterSources    string   `json:"filter_sources"`
+	FilterScopes     string   `json:"filter_scopes"`
+	FilterTags       string   `json:"filter_tags"`
+	Enabled          *bool    `json:"enabled"`
+	ChannelIDs       []string `json:"channel_ids"`
 }
 
 // HandleListTriggers handles GET /api/v1/alert-triggers.
@@ -66,8 +65,8 @@ func (h *AlertTriggerHandler) HandleListTriggers(w http.ResponseWriter, r *http.
 
 // HandleGetTrigger handles GET /api/v1/alert-triggers/{id}.
 func (h *AlertTriggerHandler) HandleGetTrigger(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid trigger ID")
 		return
 	}
@@ -143,8 +142,8 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 
 // HandleUpdateTrigger handles PUT /api/v1/alert-triggers/{id}.
 func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid trigger ID")
 		return
 	}
@@ -213,8 +212,8 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 
 // HandleDeleteTrigger handles DELETE /api/v1/alert-triggers/{id}.
 func (h *AlertTriggerHandler) HandleDeleteTrigger(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid trigger ID")
 		return
 	}
@@ -234,7 +233,7 @@ func (h *AlertTriggerHandler) HandleDeleteTrigger(w http.ResponseWriter, r *http
 		return
 	}
 	if h.broker != nil {
-		h.broker.Broadcast(SSEEvent{Type: event.TriggerDeleted, Data: map[string]int64{"id": id}})
+		h.broker.Broadcast(SSEEvent{Type: event.TriggerDeleted, Data: map[string]string{"id": id}})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -265,14 +264,14 @@ func (h *AlertTriggerHandler) checkAdvancedFiltersGating(t *triggerInput) error 
 }
 
 // checkChannelsExist verifies that each channel_id points at an existing row.
-func (h *AlertTriggerHandler) checkChannelsExist(r *http.Request, ids []int64) error {
+func (h *AlertTriggerHandler) checkChannelsExist(r *http.Request, ids []string) error {
 	for _, id := range ids {
 		ch, err := h.channelStore.GetChannel(r.Context(), id)
 		if err != nil {
 			return errors.New("failed to validate channel_ids")
 		}
 		if ch == nil {
-			return errors.New("field=channel_ids: channel " + strconv.FormatInt(id, 10) + " does not exist")
+			return errors.New("field=channel_ids: channel " + id + " does not exist")
 		}
 	}
 	return nil

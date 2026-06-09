@@ -29,13 +29,13 @@ type mockStore struct {
 	mu       sync.Mutex
 	calls    int
 	matched  bool
-	windowID int64
+	windowID string
 	endsAt   time.Time
 	err      error
 	lastCtx  context.Context
 }
 
-func (m *mockStore) IsEntitySuppressed(ctx context.Context, monitorType string, monitorID int64, now time.Time) (bool, int64, time.Time, error) {
+func (m *mockStore) IsEntitySuppressed(ctx context.Context, monitorType string, monitorID string, now time.Time) (bool, string, time.Time, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls++
@@ -102,13 +102,22 @@ func newTestSuppressor(store Store, handler slog.Handler) *Suppressor {
 	}
 }
 
-func TestSuppressor_NonParsableEntityID(t *testing.T) {
+func TestSuppressor_EmptyEntityID(t *testing.T) {
 	store := &mockStore{}
 	s := newTestSuppressor(store, nil)
-	matched, err := s.IsSuppressed(context.Background(), "src", "container", "not-a-number")
+	matched, err := s.IsSuppressed(context.Background(), "src", "container", "")
 	require.NoError(t, err)
 	assert.False(t, matched)
-	assert.Equal(t, 0, store.calls, "store should not be called on parse error")
+	assert.Equal(t, 0, store.calls, "store should not be called with empty entity id")
+}
+
+func TestSuppressor_UUIDEntityID(t *testing.T) {
+	store := &mockStore{matched: false}
+	s := newTestSuppressor(store, nil)
+	matched, err := s.IsSuppressed(context.Background(), "src", "container", "550e8400-e29b-41d4-a716-446655440000")
+	require.NoError(t, err)
+	assert.False(t, matched)
+	assert.Equal(t, 1, store.calls, "store should be queried with the UUID entity id")
 }
 
 func TestSuppressor_StoreError(t *testing.T) {
@@ -125,7 +134,7 @@ func TestSuppressor_StoreError(t *testing.T) {
 func TestSuppressor_Match(t *testing.T) {
 	lh := &testLogHandler{}
 	endsAt := time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC)
-	store := &mockStore{matched: true, windowID: 7, endsAt: endsAt}
+	store := &mockStore{matched: true, windowID: "7", endsAt: endsAt}
 	s := newTestSuppressor(store, lh)
 	matched, err := s.IsSuppressed(context.Background(), "src", "container", "42")
 	require.NoError(t, err)
