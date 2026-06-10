@@ -19,11 +19,17 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 	"github.com/kolapsis/maintenant/internal/swarm"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
+
+// localTopologyReconcileInterval is how often the server re-snapshots its own
+// runtime's topology into the per-agent store under the LocalAgent id.
+const localTopologyReconcileInterval = 30 * time.Second
 
 // reconcile performs startup reconciliation and endpoint/security discovery.
 // Must only be called when the runtime is connected.
@@ -211,6 +217,73 @@ func (a *App) startNodeRefresh(ctx context.Context) {
 			if a.swarmReplicaChecker != nil && a.swarmDiscovery != nil {
 				a.swarmReplicaChecker.Check(a.swarmDiscovery.ListServices())
 			}
+		}
+	}
+}
+
+// startKubernetesReconcile periodically snapshots the server's own Kubernetes
+// runtime into the per-agent store under the LocalAgent id, so the store-backed
+// Workloads/Pods/Nodes views reflect the local cluster the same way they reflect
+// remote agents. No-op unless the local runtime is Kubernetes.
+func (a *App) startKubernetesReconcile(ctx context.Context) {
+	src, ok := a.rt.(kubernetes.SnapshotSource)
+	if !ok || a.k8sIngest == nil {
+		return
+	}
+	reconcile := func() {
+		snap, err := kubernetes.SnapshotFromRuntime(ctx, src)
+		if err != nil {
+			a.logger.Warn("local kubernetes reconcile: snapshot failed", "error", err)
+			return
+		}
+		if err := a.k8sIngest.Reconcile(ctx, uid.LocalAgent, snap); err != nil {
+			a.logger.Warn("local kubernetes reconcile: store failed", "error", err)
+		}
+	}
+	reconcile()
+	ticker := time.NewTicker(localTopologyReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+// startSwarmTopologyReconcile periodically snapshots the server's own Swarm
+// services and tasks into the per-agent store under the LocalAgent id. Nodes are
+// left to the Enterprise NodeService to avoid two writers fighting over the same
+// rows. No-op unless this server is a swarm manager.
+func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
+	if a.swarmDiscovery == nil || a.swarmIngest == nil {
+		return
+	}
+	dr, ok := a.rt.(*docker.Runtime)
+	if !ok {
+		return
+	}
+	reconcile := func() {
+		snap, err := swarm.SnapshotFromClient(ctx, a.swarmDiscovery, dr.Client())
+		if err != nil {
+			a.logger.Warn("local swarm reconcile: snapshot failed", "error", err)
+			return
+		}
+		if err := a.swarmIngest.ReconcileServicesTasks(ctx, uid.LocalAgent, snap); err != nil {
+			a.logger.Warn("local swarm reconcile: store failed", "error", err)
+		}
+	}
+	reconcile()
+	ticker := time.NewTicker(localTopologyReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
 		}
 	}
 }

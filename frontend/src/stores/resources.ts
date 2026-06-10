@@ -13,16 +13,14 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   getSummary,
-  getResourceHosts,
   type ResourceSnapshot,
   type ResourceSummary,
-  type ResourceHost,
 } from '@/services/resourceApi'
 import { sseBus } from '@/services/sseBus'
-import { isLocalAgent } from '@/services/apiFetch'
 
-// Persisted selected host for the resources view ('' === local server).
-const SELECTED_HOST_KEY = 'pb:resources:selected-host'
+// Persisted global host filter: null = all resources, 'local' = the server's own
+// runtime, '<agent_id>' = a specific enrolled agent.
+const FILTER_KEY = 'pb:host-filter:selected'
 
 export interface ResourceAlert {
   container_id: string
@@ -41,27 +39,20 @@ export const useResourcesStore = defineStore('resources', () => {
   const summary = ref<ResourceSummary | null>(null)
   const cpuSparklines = ref<Record<string, number[]>>({})
 
-  // Multi-host: list of selectable hosts and the current selection ('' = local).
-  const hosts = ref<ResourceHost[]>([])
-  const selectedHostId = ref<string>(localStorage.getItem(SELECTED_HOST_KEY) ?? '')
+  // Global host filter — the single source of truth that scopes every list
+  // (containers, endpoints, certificates, heartbeats) and the dashboard.
+  // null = all resources, 'local' = the server's own runtime, '<id>' = an agent.
+  const selected = ref<string | null>(localStorage.getItem(FILTER_KEY) || null)
 
-  // The selector is only meaningful when more than one host exists.
-  const multiHost = computed(() => hosts.value.length > 1)
+  // Query value for entity lists: passes 'local'/'<id>' through verbatim (the
+  // backend understands both); null → undefined → no filter (all resources).
+  const entityQuery = computed<string | undefined>(() => selected.value ?? undefined)
 
-  // Selection key for a host: '' for the local server (the backend now sends the
-  // sentinel agent id for local entities; older builds sent ''), else the agent id.
-  function hostKey(h: ResourceHost): string {
-    return h.is_local || isLocalAgent(h.agent_id) ? '' : h.agent_id
-  }
-
-  // Query value to scope API calls: undefined when there is a single host
-  // (preserve prior behaviour), else 'local' or the agent id.
-  const hostQuery = computed<string | undefined>(() => {
-    if (!multiHost.value) return undefined
-    return selectedHostId.value === '' ? 'local' : selectedHostId.value
-  })
-
-  const selectedHost = computed(() => hosts.value.find((h) => hostKey(h) === selectedHostId.value) ?? null)
+  // Query value for the per-host resource summary (header gauges). There is no
+  // multi-host aggregate, so 'all' falls back to the local server, same as 'local'.
+  const summaryQuery = computed<string | undefined>(() =>
+    selected.value === null || selected.value === 'local' ? undefined : selected.value,
+  )
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B'
@@ -157,33 +148,33 @@ export const useResourcesStore = defineStore('resources', () => {
 
   async function fetchSummary() {
     try {
-      summary.value = await getSummary(hostQuery.value)
+      summary.value = await getSummary(summaryQuery.value)
     } catch {
       // ignore
     }
   }
 
-  async function fetchHosts() {
+  // setFilter changes the global host filter and persists it. Reacting to the
+  // change (refetching the entity lists + gauges) is wired in AppHeader, which
+  // owns the dropdown and is always mounted — this keeps the store free of a
+  // dashboard import cycle.
+  function setFilter(value: string | null) {
+    selected.value = value
     try {
-      const res = await getResourceHosts()
-      hosts.value = res.hosts || []
-      // Reset to local if the previously selected host disappeared.
-      if (selectedHostId.value && !hosts.value.some((h) => hostKey(h) === selectedHostId.value)) {
-        selectHost('')
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  function selectHost(agentId: string) {
-    selectedHostId.value = agentId
-    try {
-      localStorage.setItem(SELECTED_HOST_KEY, agentId)
+      if (value) localStorage.setItem(FILTER_KEY, value)
+      else localStorage.removeItem(FILTER_KEY)
     } catch {
       // ignore (private mode)
     }
-    fetchSummary()
+  }
+
+  // reconcile clears the selection when the selected agent is no longer enrolled
+  // (revoked/deleted), falling back to "all resources".
+  function reconcile(activeAgentIds: Set<string>) {
+    const s = selected.value
+    if (s && s !== 'local' && !activeAgentIds.has(s)) {
+      setFilter(null)
+    }
   }
 
   return {
@@ -191,12 +182,9 @@ export const useResourcesStore = defineStore('resources', () => {
     alerts,
     summary,
     cpuSparklines,
-    hosts,
-    selectedHostId,
-    selectedHost,
-    multiHost,
-    hostKey,
-    hostQuery,
+    selected,
+    entityQuery,
+    summaryQuery,
     getSnapshot,
     getAlert,
     formattedSnapshot,
@@ -205,7 +193,7 @@ export const useResourcesStore = defineStore('resources', () => {
     connectSSE,
     disconnectSSE,
     fetchSummary,
-    fetchHosts,
-    selectHost,
+    setFilter,
+    reconcile,
   }
 })

@@ -19,44 +19,84 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
-// KubernetesProvider is the interface the handler needs from the K8s runtime.
-type KubernetesProvider interface {
-	ListNamespaces(ctx context.Context) ([]string, error)
-	ListWorkloads(ctx context.Context, namespaces []string) ([]kubernetes.K8sWorkloadGroup, error)
-	GetWorkload(ctx context.Context, id string) (*kubernetes.K8sWorkload, []kubernetes.K8sPod, []kubernetes.K8sEvent, error)
-	ListPods(ctx context.Context, namespaces []string, filters kubernetes.PodFilters) ([]kubernetes.K8sPod, error)
-	GetPodDetail(ctx context.Context, namespace, name string) (*kubernetes.K8sPod, []kubernetes.K8sEvent, error)
-	ListNodes(ctx context.Context) ([]kubernetes.K8sNode, error)
-	ClusterOverview(ctx context.Context) (*kubernetes.K8sClusterOverview, error)
+// kubernetesStore is the per-agent store the handler reads from. Implemented by
+// *sqlite.KubernetesStore. An empty agentID means "all agents"; "local" is
+// resolved to the LocalAgent sentinel by the handler.
+type kubernetesStore interface {
+	ListNamespaces(ctx context.Context, agentID string) ([]string, error)
+	ListWorkloads(ctx context.Context, agentID string, namespaces []string) ([]kubernetes.K8sWorkloadGroup, error)
+	GetWorkload(ctx context.Context, agentID, workloadID string) (*kubernetes.K8sWorkload, error)
+	ListPods(ctx context.Context, agentID string, namespaces []string, filters kubernetes.PodFilters) ([]kubernetes.K8sPod, error)
+	GetPod(ctx context.Context, agentID, namespace, name string) (*kubernetes.K8sPod, error)
+	ListNodes(ctx context.Context, agentID string) ([]kubernetes.K8sNode, error)
+	ListEventsForObject(ctx context.Context, agentID, kind, namespace, name string) ([]kubernetes.K8sEvent, error)
 }
 
-// K8sMetricsProvider is an optional interface for runtimes that can query pod/node metrics.
+// K8sMetricsProvider is an optional interface for runtimes that can query pod/node
+// metrics. Only meaningful for the server's own local cluster (live
+// metrics-server); remote agents do not ship metrics, so requests scoped to a
+// remote agent report metrics as unavailable.
 type K8sMetricsProvider interface {
 	MetricsAvailable() bool
 	GetPodMetrics(ctx context.Context, namespace, name string) (*kubernetes.PodResourceMetrics, error)
 	GetNodeMetrics(ctx context.Context, name string) (*kubernetes.NodeResourceMetrics, error)
 }
 
-// KubernetesHandler handles Kubernetes API endpoints.
+// KubernetesHandler handles Kubernetes API endpoints. Reads are served from the
+// per-agent store (fed by the local runtime under LocalAgent and by remote
+// agents), so the views work regardless of the server's own runtime.
 type KubernetesHandler struct {
-	k8s     KubernetesProvider
+	store   kubernetesStore
 	metrics K8sMetricsProvider
+	agents  AgentDirectory
 }
 
-// NewKubernetesHandler creates a new KubernetesHandler.
-func NewKubernetesHandler(provider KubernetesProvider) *KubernetesHandler {
-	h := &KubernetesHandler{k8s: provider}
-	if mp, ok := provider.(K8sMetricsProvider); ok {
-		h.metrics = mp
+// NewKubernetesHandler creates a new KubernetesHandler. metrics may be nil when
+// the server has no live metrics-capable cluster.
+func NewKubernetesHandler(store kubernetesStore, metrics K8sMetricsProvider) *KubernetesHandler {
+	return &KubernetesHandler{store: store, metrics: metrics}
+}
+
+// SetAgentDirectory wires agent name resolution so multi-host list views can show
+// which agent each remote workload/pod belongs to.
+func (h *KubernetesHandler) SetAgentDirectory(ad AgentDirectory) {
+	h.agents = ad
+}
+
+// agentNames resolves agent display identities, or nil when unavailable.
+func (h *KubernetesHandler) agentNames(ctx context.Context) map[string]AgentName {
+	if h.agents == nil {
+		return nil
 	}
-	return h
+	names, err := h.agents.AgentNames(ctx)
+	if err != nil {
+		return nil
+	}
+	return names
+}
+
+// agentScopeParam resolves the agent_id query parameter: "" → all agents, "local"
+// → the LocalAgent sentinel, anything else → that agent verbatim.
+func agentScopeParam(r *http.Request) string {
+	a := r.URL.Query().Get("agent_id")
+	if a == "local" {
+		return uid.LocalAgent
+	}
+	return a
+}
+
+// isRemoteScope reports whether the scope is a specific remote agent (i.e. not
+// "all" and not the local runtime), for which live metrics are unavailable.
+func isRemoteScope(agentID string) bool {
+	return agentID != "" && agentID != uid.LocalAgent
 }
 
 // HandleListNamespaces handles GET /api/v1/kubernetes/namespaces.
 func (h *KubernetesHandler) HandleListNamespaces(w http.ResponseWriter, r *http.Request) {
-	namespaces, err := h.k8s.ListNamespaces(r.Context())
+	namespaces, err := h.store.ListNamespaces(r.Context(), agentScopeParam(r))
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list namespaces")
 		return
@@ -73,19 +113,20 @@ func (h *KubernetesHandler) HandleListNamespaces(w http.ResponseWriter, r *http.
 }
 
 // HandleListWorkloads handles GET /api/v1/kubernetes/workloads.
-// Query params: namespaces (comma-separated), kind, status.
+// Query params: agent_id, namespaces (comma-separated), kind, status.
 func (h *KubernetesHandler) HandleListWorkloads(w http.ResponseWriter, r *http.Request) {
 	namespaces := splitParam(r.URL.Query().Get("namespaces"))
 	kindFilter := r.URL.Query().Get("kind")
 	statusFilter := r.URL.Query().Get("status")
 
-	groups, err := h.k8s.ListWorkloads(r.Context(), namespaces)
+	groups, err := h.store.ListWorkloads(r.Context(), agentScopeParam(r), namespaces)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list workloads")
 		return
 	}
 
 	// Apply kind/status filters and build response.
+	names := h.agentNames(r.Context())
 	total := 0
 	respGroups := make([]map[string]interface{}, 0, len(groups))
 	for _, g := range groups {
@@ -97,7 +138,9 @@ func (h *KubernetesHandler) HandleListWorkloads(w http.ResponseWriter, r *http.R
 			if statusFilter != "" && !strings.EqualFold(wl.Status, statusFilter) {
 				continue
 			}
-			wls = append(wls, workloadToJSON(wl))
+			m := workloadToJSON(wl)
+			enrichAgentFields(m, wl.AgentID, names)
+			wls = append(wls, m)
 			total++
 		}
 		if len(wls) == 0 {
@@ -125,7 +168,8 @@ func (h *KubernetesHandler) HandleGetWorkload(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	wl, pods, events, err := h.k8s.GetWorkload(r.Context(), id)
+	agentID := agentScopeParam(r)
+	wl, err := h.store.GetWorkload(r.Context(), agentID, id)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to get workload")
 		return
@@ -135,11 +179,24 @@ func (h *KubernetesHandler) HandleGetWorkload(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Pods owning-ref'd to this workload. Note: Deployment pods carry a
+	// ReplicaSet workload_ref, so for Deployments this may under-match until the
+	// agent resolves refs up to the top-level controller.
+	pods, err := h.store.ListPods(r.Context(), agentID, []string{wl.Namespace}, kubernetes.PodFilters{Workload: id})
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list workload pods")
+		return
+	}
 	podList := make([]map[string]interface{}, 0, len(pods))
 	for _, p := range pods {
 		podList = append(podList, podToJSON(p))
 	}
 
+	events, err := h.store.ListEventsForObject(r.Context(), agentID, wl.Kind, wl.Namespace, wl.Name)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list workload events")
+		return
+	}
 	eventList := make([]map[string]interface{}, 0, len(events))
 	for _, e := range events {
 		eventList = append(eventList, eventToJSON(e))
@@ -162,15 +219,18 @@ func (h *KubernetesHandler) HandleListPods(w http.ResponseWriter, r *http.Reques
 		Status:   r.URL.Query().Get("status"),
 	}
 
-	pods, err := h.k8s.ListPods(r.Context(), namespaces, filters)
+	pods, err := h.store.ListPods(r.Context(), agentScopeParam(r), namespaces, filters)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list pods")
 		return
 	}
 
+	names := h.agentNames(r.Context())
 	result := make([]map[string]interface{}, 0, len(pods))
 	for _, p := range pods {
-		result = append(result, podToJSON(p))
+		m := podToJSON(p)
+		enrichAgentFields(m, p.AgentID, names)
+		result = append(result, m)
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -184,7 +244,8 @@ func (h *KubernetesHandler) HandleGetPodDetail(w http.ResponseWriter, r *http.Re
 	namespace := r.PathValue("namespace")
 	name := r.PathValue("name")
 
-	pod, events, err := h.k8s.GetPodDetail(r.Context(), namespace, name)
+	agentID := agentScopeParam(r)
+	pod, err := h.store.GetPod(r.Context(), agentID, namespace, name)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to get pod")
 		return
@@ -194,6 +255,11 @@ func (h *KubernetesHandler) HandleGetPodDetail(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	events, err := h.store.ListEventsForObject(r.Context(), agentID, "Pod", namespace, name)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list pod events")
+		return
+	}
 	eventList := make([]map[string]interface{}, 0, len(events))
 	for _, e := range events {
 		eventList = append(eventList, eventToJSON(e))
@@ -207,7 +273,7 @@ func (h *KubernetesHandler) HandleGetPodDetail(w http.ResponseWriter, r *http.Re
 
 // HandleListNodes handles GET /api/v1/kubernetes/nodes.
 func (h *KubernetesHandler) HandleListNodes(w http.ResponseWriter, r *http.Request) {
-	nodes, err := h.k8s.ListNodes(r.Context())
+	nodes, err := h.store.ListNodes(r.Context(), agentScopeParam(r))
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list nodes")
 		return
@@ -224,38 +290,106 @@ func (h *KubernetesHandler) HandleListNodes(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// HandleGetCluster handles GET /api/v1/kubernetes/cluster.
+// HandleGetCluster handles GET /api/v1/kubernetes/cluster. The overview is
+// aggregated from the per-agent store rather than a live cluster query.
 func (h *KubernetesHandler) HandleGetCluster(w http.ResponseWriter, r *http.Request) {
-	overview, err := h.k8s.ClusterOverview(r.Context())
+	agentID := agentScopeParam(r)
+	ctx := r.Context()
+
+	groups, err := h.store.ListWorkloads(ctx, agentID, nil)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to get cluster overview")
+		return
+	}
+	pods, err := h.store.ListPods(ctx, agentID, nil, kubernetes.PodFilters{})
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to get cluster overview")
+		return
+	}
+	nodes, err := h.store.ListNodes(ctx, agentID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to get cluster overview")
 		return
 	}
 
-	nsSummaries := make([]map[string]interface{}, 0, len(overview.Namespaces))
-	for _, ns := range overview.Namespaces {
+	// Per-namespace + global workload counts.
+	workloadCount, workloadHealthy := 0, 0
+	nsWorkloads := make(map[string]int)
+	nsHealthy := make(map[string]bool)
+	nsSeen := make(map[string]bool)
+	var nsOrder []string
+	for _, g := range groups {
+		if !nsSeen[g.Namespace] {
+			nsSeen[g.Namespace] = true
+			nsOrder = append(nsOrder, g.Namespace)
+			nsHealthy[g.Namespace] = true
+		}
+		for _, wl := range g.Workloads {
+			workloadCount++
+			nsWorkloads[g.Namespace]++
+			if wl.Status == "healthy" {
+				workloadHealthy++
+			} else {
+				nsHealthy[g.Namespace] = false
+			}
+		}
+	}
+
+	// Pod status tally + per-namespace pod counts.
+	var running, pending, failed, succeeded, unknown int
+	nsPods := make(map[string]int)
+	for _, p := range pods {
+		nsPods[p.Namespace]++
+		switch strings.ToLower(p.Status) {
+		case "running":
+			running++
+		case "pending":
+			pending++
+		case "failed":
+			failed++
+		case "succeeded":
+			succeeded++
+		default:
+			unknown++
+		}
+	}
+
+	nodeReady := 0
+	for _, n := range nodes {
+		if strings.EqualFold(n.Status, "ready") {
+			nodeReady++
+		}
+	}
+
+	nsSummaries := make([]map[string]interface{}, 0, len(nsOrder))
+	for _, ns := range nsOrder {
 		nsSummaries = append(nsSummaries, map[string]interface{}{
-			"name":           ns.Name,
-			"workload_count": ns.WorkloadCount,
-			"pod_count":      ns.PodCount,
-			"healthy":        ns.Healthy,
+			"name":           ns,
+			"workload_count": nsWorkloads[ns],
+			"pod_count":      nsPods[ns],
+			"healthy":        nsHealthy[ns],
 		})
 	}
 
+	clusterHealth := "healthy"
+	if workloadHealthy < workloadCount || nodeReady < len(nodes) {
+		clusterHealth = "degraded"
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"namespace_count":  overview.NamespaceCount,
-		"node_count":       overview.NodeCount,
-		"node_ready_count": overview.NodeReadyCount,
+		"namespace_count":  len(nsOrder),
+		"node_count":       len(nodes),
+		"node_ready_count": nodeReady,
 		"pod_status": map[string]interface{}{
-			"running":   overview.PodStatus.Running,
-			"pending":   overview.PodStatus.Pending,
-			"failed":    overview.PodStatus.Failed,
-			"succeeded": overview.PodStatus.Succeeded,
-			"unknown":   overview.PodStatus.Unknown,
+			"running":   running,
+			"pending":   pending,
+			"failed":    failed,
+			"succeeded": succeeded,
+			"unknown":   unknown,
 		},
-		"workload_count":   overview.WorkloadCount,
-		"workload_healthy": overview.WorkloadHealthy,
-		"cluster_health":   overview.ClusterHealth,
+		"workload_count":   workloadCount,
+		"workload_healthy": workloadHealthy,
+		"cluster_health":   clusterHealth,
 		"namespaces":       nsSummaries,
 	})
 }
@@ -270,7 +404,10 @@ func (h *KubernetesHandler) HandleGetWorkloadResources(w http.ResponseWriter, r 
 		return
 	}
 
-	if h.metrics == nil || !h.metrics.MetricsAvailable() {
+	agentID := agentScopeParam(r)
+	// Live metrics-server data only exists for the server's own cluster; remote
+	// agents do not ship metrics.
+	if isRemoteScope(agentID) || h.metrics == nil || !h.metrics.MetricsAvailable() {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"metrics_available": false,
 			"message":           "Install metrics-server for resource data",
@@ -279,13 +416,18 @@ func (h *KubernetesHandler) HandleGetWorkloadResources(w http.ResponseWriter, r 
 		return
 	}
 
-	wl, pods, _, err := h.k8s.GetWorkload(r.Context(), id)
+	wl, err := h.store.GetWorkload(r.Context(), agentID, id)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to get workload")
 		return
 	}
 	if wl == nil {
 		WriteError(w, http.StatusNotFound, "K8S_WORKLOAD_NOT_FOUND", "Workload "+id+" not found")
+		return
+	}
+	pods, err := h.store.ListPods(r.Context(), agentID, []string{wl.Namespace}, kubernetes.PodFilters{Workload: id})
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list workload pods")
 		return
 	}
 
@@ -332,7 +474,7 @@ func (h *KubernetesHandler) HandleGetWorkloadResources(w http.ResponseWriter, r 
 func (h *KubernetesHandler) HandleGetNodeResources(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
-	if h.metrics == nil || !h.metrics.MetricsAvailable() {
+	if isRemoteScope(agentScopeParam(r)) || h.metrics == nil || !h.metrics.MetricsAvailable() {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"metrics_available": false,
 			"message":           "Install metrics-server for resource data",

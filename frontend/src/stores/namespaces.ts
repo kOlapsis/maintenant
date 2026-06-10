@@ -12,6 +12,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { fetchNamespaces } from '@/services/kubernetesApi'
+import { useResourcesStore } from '@/stores/resources'
 
 const STORAGE_KEY = 'maintenant:k8s:namespaces'
 
@@ -44,7 +45,7 @@ export const useNamespacesStore = defineStore('namespaces', () => {
 
   async function fetchNamespacesList() {
     try {
-      const resp = await fetchNamespaces()
+      const resp = await fetchNamespaces(useResourcesStore().entityQuery)
       namespaces.value = resp.namespaces
     } catch { /* ignore */ }
   }

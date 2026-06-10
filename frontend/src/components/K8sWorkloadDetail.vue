@@ -22,6 +22,7 @@ import {
 import FeatureGate from './FeatureGate.vue'
 import { timeAgo } from '@/utils/time'
 import { useEdition } from '@/composables/useEdition'
+import { useResourcesStore } from '@/stores/resources'
 
 const props = defineProps<{
   workloadId: string
@@ -54,7 +55,7 @@ const tabs = hasFeature('k8s_cluster')
 
 onMounted(async () => {
   try {
-    detail.value = await fetchWorkloadDetail(props.workloadId)
+    detail.value = await fetchWorkloadDetail(props.workloadId, useResourcesStore().entityQuery)
   } finally {
     loading.value = false
   }
@@ -64,7 +65,7 @@ async function loadResources() {
   if (podResources.value.length > 0 || !metricsAvailable.value) return
   resourcesLoading.value = true
   try {
-    const resp = await fetchWorkloadResources(props.workloadId)
+    const resp = await fetchWorkloadResources(props.workloadId, useResourcesStore().entityQuery)
     metricsAvailable.value = resp.metrics_available
     metricsMessage.value = resp.message ?? ''
     podResources.value = resp.pods
@@ -109,11 +110,16 @@ function memColor(percent: number | null): string {
 
 function statusStyle(status: string): string {
   switch (status) {
-    case 'healthy': return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
-    case 'degraded': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
-    case 'progressing': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-    case 'failed': return 'text-red-400 bg-red-400/10 border-red-400/20'
-    default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
+    case 'healthy':
+      return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
+    case 'degraded':
+      return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+    case 'progressing':
+      return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
+    case 'failed':
+      return 'text-red-400 bg-red-400/10 border-red-400/20'
+    default:
+      return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
   }
 }
 
@@ -158,16 +164,30 @@ function replicaColor(ready: number, desired: number): string {
           <div class="min-w-0">
             <h2 class="text-base font-bold text-pb-primary truncate">{{ detail.workload.name }}</h2>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-sky-400 bg-sky-400/10 border border-sky-400/20 px-1.5 py-0.5 rounded">
+              <span
+                class="text-[10px] font-bold uppercase tracking-wider text-sky-400 bg-sky-400/10 border border-sky-400/20 px-1.5 py-0.5 rounded"
+              >
                 {{ detail.workload.kind }}
               </span>
-              <span class="text-[10px] font-mono text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
+              <span
+                class="text-[10px] font-mono text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded"
+              >
                 {{ detail.workload.namespace }}
               </span>
-              <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border', statusStyle(detail.workload.status)]">
+              <span
+                :class="[
+                  'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border',
+                  statusStyle(detail.workload.status),
+                ]"
+              >
                 {{ detail.workload.status }}
               </span>
-              <span :class="['text-xs font-semibold tabular-nums', replicaColor(detail.workload.ready_replicas, detail.workload.desired_replicas)]">
+              <span
+                :class="[
+                  'text-xs font-semibold tabular-nums',
+                  replicaColor(detail.workload.ready_replicas, detail.workload.desired_replicas),
+                ]"
+              >
                 {{ detail.workload.ready_replicas }}/{{ detail.workload.desired_replicas }} ready
               </span>
             </div>
@@ -192,8 +212,14 @@ function replicaColor(ready: number, desired: number): string {
 
         <!-- Timestamps -->
         <div class="mt-3 flex gap-6 text-xs text-slate-500">
-          <span>Created <span class="text-slate-400">{{ timeAgo(detail.workload.created_at) }}</span></span>
-          <span>Updated <span class="text-slate-400">{{ timeAgo(detail.workload.last_transition) }}</span></span>
+          <span
+            >Created
+            <span class="text-slate-400">{{ timeAgo(detail.workload.created_at) }}</span></span
+          >
+          <span
+            >Updated
+            <span class="text-slate-400">{{ timeAgo(detail.workload.last_transition) }}</span></span
+          >
         </div>
       </div>
 
@@ -211,18 +237,15 @@ function replicaColor(ready: number, desired: number): string {
           @click="onTabClick(tab.key)"
         >
           {{ tab.label }}
-          <span
-            v-if="tab.key === 'pods'"
-            class="ml-1 text-[10px] text-slate-600"
-          >{{ detail.pods.length }}</span>
-          <span
-            v-if="tab.key === 'events'"
-            class="ml-1 text-[10px] text-slate-600"
-          >{{ detail.events.length }}</span>
-          <span
-            v-if="tab.key === 'conditions'"
-            class="ml-1 text-[10px] text-slate-600"
-          >{{ detail.workload.conditions.length }}</span>
+          <span v-if="tab.key === 'pods'" class="ml-1 text-[10px] text-slate-600">{{
+            detail.pods.length
+          }}</span>
+          <span v-if="tab.key === 'events'" class="ml-1 text-[10px] text-slate-600">{{
+            detail.events.length
+          }}</span>
+          <span v-if="tab.key === 'conditions'" class="ml-1 text-[10px] text-slate-600">{{
+            detail.workload.conditions.length
+          }}</span>
         </button>
       </div>
 
@@ -241,14 +264,21 @@ function replicaColor(ready: number, desired: number): string {
             >
               <div class="flex items-center justify-between gap-3">
                 <span class="text-sm font-mono text-pb-primary truncate">{{ pod.name }}</span>
-                <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', podStatusStyle(pod.status)]">
+                <span
+                  :class="[
+                    'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                    podStatusStyle(pod.status),
+                  ]"
+                >
                   {{ pod.status }}
                 </span>
               </div>
               <div class="flex items-center gap-4 mt-1.5 text-xs text-slate-500">
                 <span v-if="pod.node_name" class="font-mono">{{ pod.node_name }}</span>
                 <span v-if="pod.pod_ip" class="font-mono">{{ pod.pod_ip }}</span>
-                <span v-if="pod.restart_count > 0" class="text-amber-400">{{ pod.restart_count }}↺</span>
+                <span v-if="pod.restart_count > 0" class="text-amber-400"
+                  >{{ pod.restart_count }}↺</span
+                >
                 <span>{{ timeAgo(pod.created_at) }}</span>
               </div>
             </div>
@@ -267,13 +297,20 @@ function replicaColor(ready: number, desired: number): string {
               class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
             >
               <div class="flex items-start gap-3">
-                <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0 mt-0.5', eventTypeStyle(event.type)]">
+                <span
+                  :class="[
+                    'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0 mt-0.5',
+                    eventTypeStyle(event.type),
+                  ]"
+                >
                   {{ event.type }}
                 </span>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
                     <span class="text-sm font-semibold text-pb-secondary">{{ event.reason }}</span>
-                    <span v-if="event.count > 1" class="text-[10px] text-slate-600 tabular-nums">×{{ event.count }}</span>
+                    <span v-if="event.count > 1" class="text-[10px] text-slate-600 tabular-nums"
+                      >×{{ event.count }}</span
+                    >
                   </div>
                   <p class="text-xs text-slate-400 mt-0.5 leading-relaxed">{{ event.message }}</p>
                   <div class="flex items-center gap-3 mt-1 text-xs text-slate-600">
@@ -288,7 +325,10 @@ function replicaColor(ready: number, desired: number): string {
 
         <!-- Conditions tab -->
         <template v-else-if="activeTab === 'conditions'">
-          <div v-if="detail.workload.conditions.length === 0" class="text-sm text-slate-500 py-4 text-center">
+          <div
+            v-if="detail.workload.conditions.length === 0"
+            class="text-sm text-slate-500 py-4 text-center"
+          >
             No conditions
           </div>
           <div v-else class="space-y-1">
@@ -299,7 +339,12 @@ function replicaColor(ready: number, desired: number): string {
             >
               <div class="flex items-center justify-between gap-3">
                 <span class="text-sm font-semibold text-pb-primary">{{ condition.type }}</span>
-                <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', conditionStatusStyle(condition.status)]">
+                <span
+                  :class="[
+                    'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                    conditionStatusStyle(condition.status),
+                  ]"
+                >
                   {{ condition.status }}
                 </span>
               </div>
@@ -328,9 +373,14 @@ function replicaColor(ready: number, desired: number): string {
             </div>
             <div v-else-if="!metricsAvailable" class="text-center py-8">
               <p class="text-sm text-slate-400 font-medium mb-1">Metrics unavailable</p>
-              <p class="text-xs text-slate-500">{{ metricsMessage || 'Install metrics-server for resource data' }}</p>
+              <p class="text-xs text-slate-500">
+                {{ metricsMessage || 'Install metrics-server for resource data' }}
+              </p>
             </div>
-            <div v-else-if="podResources.length === 0" class="text-sm text-slate-500 py-4 text-center">
+            <div
+              v-else-if="podResources.length === 0"
+              class="text-sm text-slate-500 py-4 text-center"
+            >
               No resource data available
             </div>
             <div v-else class="space-y-2">
@@ -342,32 +392,52 @@ function replicaColor(ready: number, desired: number): string {
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2">
                     <span class="text-sm font-mono text-pb-primary truncate">{{ pr.name }}</span>
-                    <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', podStatusStyle(pr.status)]">
+                    <span
+                      :class="[
+                        'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                        podStatusStyle(pr.status),
+                      ]"
+                    >
                       {{ pr.status }}
                     </span>
                   </div>
-                  <span v-if="pr.node_name" class="text-xs text-slate-500 font-mono">{{ pr.node_name }}</span>
+                  <span v-if="pr.node_name" class="text-xs text-slate-500 font-mono">{{
+                    pr.node_name
+                  }}</span>
                 </div>
 
                 <!-- CPU -->
                 <div class="mb-2">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">CPU</span>
-                    <span class="text-xs text-slate-400 tabular-nums">{{ cpuDisplay(pr.cpu_millicores) }}</span>
+                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+                      >CPU</span
+                    >
+                    <span class="text-xs text-slate-400 tabular-nums">{{
+                      cpuDisplay(pr.cpu_millicores)
+                    }}</span>
                   </div>
                 </div>
 
                 <!-- Memory bar -->
                 <div>
                   <div class="flex items-center justify-between mb-1">
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Memory</span>
+                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+                      >Memory</span
+                    >
                     <span class="text-xs text-slate-400 tabular-nums">
                       {{ formatBytes(pr.mem_bytes) }}
-                      <template v-if="pr.mem_limit_bytes"> / {{ formatBytes(pr.mem_limit_bytes) }}</template>
-                      <span v-if="pr.mem_percent !== null" class="text-slate-600 ml-1">({{ pr.mem_percent.toFixed(1) }}%)</span>
+                      <template v-if="pr.mem_limit_bytes">
+                        / {{ formatBytes(pr.mem_limit_bytes) }}</template
+                      >
+                      <span v-if="pr.mem_percent !== null" class="text-slate-600 ml-1"
+                        >({{ pr.mem_percent.toFixed(1) }}%)</span
+                      >
                     </span>
                   </div>
-                  <div v-if="pr.mem_limit_bytes" class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden">
+                  <div
+                    v-if="pr.mem_limit_bytes"
+                    class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden"
+                  >
                     <div
                       :class="['h-full rounded-full transition-all', memColor(pr.mem_percent)]"
                       :style="{ width: memBarWidth(pr.mem_percent) }"

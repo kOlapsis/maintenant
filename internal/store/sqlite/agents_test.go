@@ -190,6 +190,60 @@ func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestAgentStore_LocalSentinelHiddenFromListings(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+	ctx := context.Background()
+
+	// The schema seeds the local sentinel agent (FK anchor). It must remain
+	// reachable via Get but never appear in any user-facing enumeration/count.
+	sentinel, err := store.Get(ctx, uid.LocalAgent)
+	require.NoError(t, err, "sentinel must stay reachable via Get")
+	assert.Equal(t, uid.LocalAgent, sentinel.AgentID)
+
+	// With no enrolled agents, every listing/count must be empty.
+	list, err := store.List(ctx, "")
+	require.NoError(t, err)
+	assert.Empty(t, list, "List must exclude the local sentinel")
+
+	active, revoked, err := store.CountByStatus(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, active, "CountByStatus must exclude the local sentinel")
+	assert.Equal(t, 0, revoked)
+
+	docker, swarm, k8s, err := store.CountByRuntime(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, docker, "CountByRuntime must exclude the local sentinel")
+	assert.Equal(t, 0, swarm)
+	assert.Equal(t, 0, k8s)
+
+	// A real enrolled agent shows up; the sentinel still does not.
+	require.NoError(t, store.Insert(ctx, &agent.Agent{
+		AgentID:         "real-agent-1",
+		PublicKey:       []byte("pubkeyplaceholder12345678901234"),
+		Hostname:        "remote-host",
+		Label:           "Remote",
+		OSArch:          "linux/amd64",
+		AgentVersion:    "1.0.0",
+		DetectedRuntime: "docker",
+		Status:          "active",
+		CreatedAt:       time.Now().UTC(),
+	}))
+
+	list, err = store.List(ctx, "")
+	require.NoError(t, err)
+	require.Len(t, list, 1, "only the enrolled agent is listed")
+	assert.Equal(t, "real-agent-1", list[0].AgentID)
+
+	active, _, err = store.CountByStatus(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, active)
+
+	docker, _, _, err = store.CountByRuntime(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, docker)
+}
+
 func TestAgentStore_InsertGet(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)

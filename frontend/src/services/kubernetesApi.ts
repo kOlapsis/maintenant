@@ -31,7 +31,16 @@ export interface K8sContainerStatus {
   started_at: string | null
 }
 
-export interface K8sWorkload {
+// Multi-host attribution: present on rows reported by a remote agent (the
+// server's own cluster rows omit these). Surfaced as a host badge in the "all
+// resources" scope.
+export interface AgentAttribution {
+  agent_id?: string
+  agent_hostname?: string
+  agent_label?: string
+}
+
+export interface K8sWorkload extends AgentAttribution {
   id: string
   name: string
   namespace: string
@@ -51,7 +60,7 @@ export interface K8sWorkloadGroup {
   workloads: K8sWorkload[]
 }
 
-export interface K8sPod {
+export interface K8sPod extends AgentAttribution {
   name: string
   namespace: string
   status: string
@@ -96,26 +105,46 @@ export interface K8sPodDetailResponse {
   events: K8sEvent[]
 }
 
-export function fetchNamespaces(): Promise<{ namespaces: string[]; total: number }> {
-  return apiFetch<{ namespaces: string[]; total: number }>(`${API_BASE}/kubernetes/namespaces`)
+// withAgent appends the agent_id scope param ("local"/"<id>") when set. Omitting
+// it scopes the query to all agents server-side.
+function withAgent(url: URL, agentId?: string): URL {
+  if (agentId) url.searchParams.set('agent_id', agentId)
+  return url
+}
+
+export function fetchNamespaces(
+  agentId?: string,
+): Promise<{ namespaces: string[]; total: number }> {
+  const url = withAgent(
+    new URL(`${API_BASE}/kubernetes/namespaces`, window.location.origin),
+    agentId,
+  )
+  return apiFetch<{ namespaces: string[]; total: number }>(url.toString())
 }
 
 export function fetchWorkloads(params?: {
   namespaces?: string
   kind?: string
   status?: string
+  agentId?: string
 }): Promise<K8sWorkloadListResponse> {
   const url = new URL(`${API_BASE}/kubernetes/workloads`, window.location.origin)
   if (params?.namespaces) url.searchParams.set('namespaces', params.namespaces)
   if (params?.kind) url.searchParams.set('kind', params.kind)
   if (params?.status) url.searchParams.set('status', params.status)
+  withAgent(url, params?.agentId)
   return apiFetch<K8sWorkloadListResponse>(url.toString())
 }
 
-export function fetchWorkloadDetail(id: string): Promise<K8sWorkloadDetailResponse> {
-  return apiFetch<K8sWorkloadDetailResponse>(
-    `${API_BASE}/kubernetes/workloads/${encodeURIComponent(id)}`,
+export function fetchWorkloadDetail(
+  id: string,
+  agentId?: string,
+): Promise<K8sWorkloadDetailResponse> {
+  const url = withAgent(
+    new URL(`${API_BASE}/kubernetes/workloads/${encodeURIComponent(id)}`, window.location.origin),
+    agentId,
   )
+  return apiFetch<K8sWorkloadDetailResponse>(url.toString())
 }
 
 export function fetchPods(params?: {
@@ -123,19 +152,30 @@ export function fetchPods(params?: {
   workload?: string
   node?: string
   status?: string
+  agentId?: string
 }): Promise<K8sPodListResponse> {
   const url = new URL(`${API_BASE}/kubernetes/pods`, window.location.origin)
   if (params?.namespaces) url.searchParams.set('namespaces', params.namespaces)
   if (params?.workload) url.searchParams.set('workload', params.workload)
   if (params?.node) url.searchParams.set('node', params.node)
   if (params?.status) url.searchParams.set('status', params.status)
+  withAgent(url, params?.agentId)
   return apiFetch<K8sPodListResponse>(url.toString())
 }
 
-export function fetchPodDetail(namespace: string, name: string): Promise<K8sPodDetailResponse> {
-  return apiFetch<K8sPodDetailResponse>(
-    `${API_BASE}/kubernetes/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+export function fetchPodDetail(
+  namespace: string,
+  name: string,
+  agentId?: string,
+): Promise<K8sPodDetailResponse> {
+  const url = withAgent(
+    new URL(
+      `${API_BASE}/kubernetes/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+      window.location.origin,
+    ),
+    agentId,
   )
+  return apiFetch<K8sPodDetailResponse>(url.toString())
 }
 
 // --- Per-workload resource metrics (Enterprise) ---
@@ -159,10 +199,18 @@ export interface K8sWorkloadResourcesResponse {
   pods: K8sPodResourceEntry[]
 }
 
-export function fetchWorkloadResources(id: string): Promise<K8sWorkloadResourcesResponse> {
-  return apiFetch<K8sWorkloadResourcesResponse>(
-    `${API_BASE}/kubernetes/workloads/${encodeURIComponent(id)}/resources`,
+export function fetchWorkloadResources(
+  id: string,
+  agentId?: string,
+): Promise<K8sWorkloadResourcesResponse> {
+  const url = withAgent(
+    new URL(
+      `${API_BASE}/kubernetes/workloads/${encodeURIComponent(id)}/resources`,
+      window.location.origin,
+    ),
+    agentId,
   )
+  return apiFetch<K8sWorkloadResourcesResponse>(url.toString())
 }
 
 // --- Cluster overview (Enterprise) ---
@@ -193,8 +241,9 @@ export interface K8sClusterOverview {
   namespaces: K8sNamespaceSummary[]
 }
 
-export function fetchClusterOverview(): Promise<K8sClusterOverview> {
-  return apiFetch<K8sClusterOverview>(`${API_BASE}/kubernetes/cluster`)
+export function fetchClusterOverview(agentId?: string): Promise<K8sClusterOverview> {
+  const url = withAgent(new URL(`${API_BASE}/kubernetes/cluster`, window.location.origin), agentId)
+  return apiFetch<K8sClusterOverview>(url.toString())
 }
 
 // --- Nodes (Enterprise) ---
@@ -224,12 +273,11 @@ export interface K8sNodeDetailResponse {
   events: K8sEvent[]
 }
 
-export function fetchNodes(): Promise<K8sNodeListResponse> {
-  return apiFetch<K8sNodeListResponse>(`${API_BASE}/kubernetes/nodes`)
+export function fetchNodes(agentId?: string): Promise<K8sNodeListResponse> {
+  const url = withAgent(new URL(`${API_BASE}/kubernetes/nodes`, window.location.origin), agentId)
+  return apiFetch<K8sNodeListResponse>(url.toString())
 }
 
 export function fetchNodeDetail(name: string): Promise<K8sNodeDetailResponse> {
-  return apiFetch<K8sNodeDetailResponse>(
-    `${API_BASE}/kubernetes/nodes/${encodeURIComponent(name)}`,
-  )
+  return apiFetch<K8sNodeDetailResponse>(`${API_BASE}/kubernetes/nodes/${encodeURIComponent(name)}`)
 }

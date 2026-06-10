@@ -37,6 +37,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/mcp"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
@@ -122,11 +123,17 @@ type App struct {
 	swarmDiscovery      *swarm.ServiceDiscovery
 	swarmEvents         *swarm.EventProcessor
 	swarmNodeStore      *sqlite.SwarmNodeStore
+	swarmTopologyStore  *sqlite.SwarmTopologyStore
+	swarmIngest         *swarm.IngestService
 	swarmNodeSvc        *swarm.NodeService
 	swarmCrashLoop      *swarm.CrashLoopDetector
 	swarmUpdateTracker  *swarm.UpdateTracker
 	swarmTaskTracker    *swarm.TaskTracker
 	swarmReplicaChecker *swarm.ReplicaHealthChecker
+
+	// Kubernetes
+	k8sStore  *sqlite.KubernetesStore
+	k8sIngest *kubernetes.IngestService
 }
 
 // sseBroadcaster adapts the SSEBroker to the agentserver.EventBroadcaster interface.
@@ -234,6 +241,20 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		rt.SetDisconnected()
 	}
 
+	// Swarm topology stores + ingest are created unconditionally: a remote agent
+	// may report a swarm even when this server's own runtime is docker or
+	// kubernetes. The local runtime reconciles into the same tables under the
+	// LocalAgent id (see lifecycle reconcile loop).
+	a.swarmNodeStore = sqlite.NewSwarmNodeStore(db)
+	a.swarmTopologyStore = sqlite.NewSwarmTopologyStore(db)
+	a.swarmIngest = swarm.NewIngestService(a.swarmTopologyStore, a.swarmNodeStore, logger)
+
+	// Kubernetes topology store + ingest, also created unconditionally so a
+	// remote kubernetes agent can report into per-agent tables regardless of the
+	// server's own runtime.
+	a.k8sStore = sqlite.NewKubernetesStore(db)
+	a.k8sIngest = kubernetes.NewIngestService(a.k8sStore, logger)
+
 	// --- Swarm detection (only when runtime is connected) ---
 	if rt.IsConnected() {
 		if dr, ok := rt.(*docker.Runtime); ok {
@@ -259,7 +280,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 				// Enterprise: node health monitoring, crash-loop detection, update tracking
 				if extension.CurrentEdition() == extension.Enterprise {
-					a.swarmNodeStore = sqlite.NewSwarmNodeStore(db)
 					a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
 					a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
 					a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
@@ -360,6 +380,14 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.broker = v1.NewSSEBroker(logger)
 	a.statusBroker = v1.NewSSEBroker(logger)
 
+	// Emit per-agent topology change events so connected clients scoped to a
+	// remote agent refetch its Workloads/Pods/Services/Tasks live.
+	topologyBroadcast := func(eventType string, data any) {
+		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+	}
+	a.swarmIngest.SetBroadcaster(topologyBroadcast)
+	a.k8sIngest.SetBroadcaster(topologyBroadcast)
+
 	// Agent session registry (depends on broker)
 	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
 
@@ -375,6 +403,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			Endpoint:    a.endpointSvc,
 			Certificate: a.certSvc,
 			Heartbeat:   a.heartbeatSvc,
+			Swarm:       a.swarmIngest,
+			Kubernetes:  a.k8sIngest,
 			// Provision endpoint/cert monitors from a remote container's labels
 			// (the agent probes them itself; the server never dials them).
 			LabelSync: func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
@@ -559,6 +589,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SwarmUpdateTracker:  a.swarmUpdateTracker,
 		SwarmCrashLoop:      a.swarmCrashLoop,
 		SwarmReplicaChecker: a.swarmReplicaChecker,
+		SwarmTopologyStore:  a.swarmTopologyStore,
+		// Kubernetes (per-agent store-backed reads)
+		KubernetesStore: a.k8sStore,
 		// Multi-host agents (Enterprise)
 		AgentStore:          a.agentStore,
 		AgentSessions:       a.agentSessions,
@@ -706,6 +739,12 @@ func (a *App) Start(ctx context.Context) error {
 	if a.swarmNodeSvc != nil {
 		go a.startNodeRefresh(ctx)
 	}
+
+	// Local-runtime topology reconcile into the per-agent store (under LocalAgent),
+	// so store-backed K8s/Swarm views reflect the local cluster too. Each is a
+	// no-op unless the matching runtime is active.
+	go a.startKubernetesReconcile(ctx)
+	go a.startSwarmTopologyReconcile(ctx)
 
 	// Swarm context recheck (60s) — detects swarm activation/deactivation.
 	if a.swarmDetector != nil {

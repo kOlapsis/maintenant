@@ -735,6 +735,131 @@ CREATE TABLE swarm_nodes (
 );
 CREATE INDEX idx_swarm_nodes_status ON swarm_nodes(status);
 
+-- swarm_services / swarm_tasks: per-agent swarm topology. IF NOT EXISTS because
+-- the 22_swarm_topology forward migration may already have created them before
+-- this canonical schema runs during the one-time UUID conversion.
+CREATE TABLE IF NOT EXISTS swarm_services (
+    id               TEXT PRIMARY KEY NOT NULL,                 -- uid.SwarmService(agent, service_id)
+    agent_id         TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
+    service_id       TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    image            TEXT NOT NULL DEFAULT '',
+    mode             TEXT NOT NULL DEFAULT '',
+    desired_replicas INTEGER NOT NULL DEFAULT 0,
+    running_replicas INTEGER NOT NULL DEFAULT 0,
+    labels           TEXT NOT NULL DEFAULT '{}',
+    stack_name       TEXT NOT NULL DEFAULT '',
+    created_at       BIGINT NOT NULL DEFAULT 0,
+    UNIQUE(agent_id, service_id)
+);
+CREATE INDEX IF NOT EXISTS idx_swarm_services_agent ON swarm_services(agent_id);
+CREATE INDEX IF NOT EXISTS idx_swarm_services_stack ON swarm_services(agent_id, stack_name);
+
+CREATE TABLE IF NOT EXISTS swarm_tasks (
+    id            TEXT PRIMARY KEY NOT NULL,                    -- uid.SwarmTask(agent, task_id)
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
+    task_id       TEXT NOT NULL,
+    service_id    TEXT NOT NULL,
+    node_id       TEXT NOT NULL DEFAULT '',
+    slot          INTEGER NOT NULL DEFAULT 0,
+    state         TEXT NOT NULL DEFAULT '',
+    desired_state TEXT NOT NULL DEFAULT '',
+    container_id  TEXT NOT NULL DEFAULT '',
+    error         TEXT NOT NULL DEFAULT '',
+    exit_code     INTEGER,
+    timestamp     BIGINT NOT NULL DEFAULT 0,
+    node_hostname TEXT NOT NULL DEFAULT '',
+    UNIQUE(agent_id, task_id)
+);
+CREATE INDEX IF NOT EXISTS idx_swarm_tasks_agent ON swarm_tasks(agent_id);
+CREATE INDEX IF NOT EXISTS idx_swarm_tasks_service ON swarm_tasks(agent_id, service_id);
+
+-- ============================================================== kubernetes ===
+-- Per-agent Kubernetes topology. IF NOT EXISTS because the 23_kubernetes_topology
+-- forward migration may already have created these before this canonical schema
+-- runs during the one-time UUID conversion.
+CREATE TABLE IF NOT EXISTS kubernetes_namespaces (
+    id        TEXT PRIMARY KEY NOT NULL,                       -- uid.Namespace(agent, name)
+    agent_id  TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
+    name      TEXT NOT NULL,
+    UNIQUE(agent_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_k8s_namespaces_agent ON kubernetes_namespaces(agent_id);
+
+CREATE TABLE IF NOT EXISTS kubernetes_workloads (
+    id               TEXT PRIMARY KEY NOT NULL,                -- uid.K8sWorkload(agent, workload_id)
+    agent_id         TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
+    workload_id      TEXT NOT NULL,                            -- "{namespace}/{kind}/{name}"
+    name             TEXT NOT NULL,
+    namespace        TEXT NOT NULL,
+    kind             TEXT NOT NULL,
+    images           TEXT NOT NULL DEFAULT '[]',
+    ready_replicas   INTEGER NOT NULL DEFAULT 0,
+    desired_replicas INTEGER NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT '',
+    created_at       BIGINT NOT NULL DEFAULT 0,
+    UNIQUE(agent_id, workload_id)
+);
+CREATE INDEX IF NOT EXISTS idx_k8s_workloads_agent ON kubernetes_workloads(agent_id);
+CREATE INDEX IF NOT EXISTS idx_k8s_workloads_ns ON kubernetes_workloads(agent_id, namespace);
+
+CREATE TABLE IF NOT EXISTS kubernetes_pods (
+    id            TEXT PRIMARY KEY NOT NULL,                   -- uid.Pod(agent, namespace, name)
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
+    namespace     TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT '',
+    status_reason TEXT NOT NULL DEFAULT '',
+    restart_count INTEGER NOT NULL DEFAULT 0,
+    node_name     TEXT NOT NULL DEFAULT '',
+    pod_ip        TEXT NOT NULL DEFAULT '',
+    host_ip       TEXT NOT NULL DEFAULT '',
+    workload_ref  TEXT NOT NULL DEFAULT '',
+    containers    TEXT NOT NULL DEFAULT '[]',
+    created_at    BIGINT NOT NULL DEFAULT 0,
+    UNIQUE(agent_id, namespace, name)
+);
+CREATE INDEX IF NOT EXISTS idx_k8s_pods_agent ON kubernetes_pods(agent_id);
+CREATE INDEX IF NOT EXISTS idx_k8s_pods_ns ON kubernetes_pods(agent_id, namespace);
+CREATE INDEX IF NOT EXISTS idx_k8s_pods_workload ON kubernetes_pods(agent_id, workload_ref);
+
+CREATE TABLE IF NOT EXISTS kubernetes_nodes (
+    id                         TEXT PRIMARY KEY NOT NULL,      -- uid.K8sNode(agent, name)
+    agent_id                   TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
+    name                       TEXT NOT NULL,
+    roles                      TEXT NOT NULL DEFAULT '[]',
+    status                     TEXT NOT NULL DEFAULT '',
+    running_pods               INTEGER NOT NULL DEFAULT 0,
+    kubernetes_version         TEXT NOT NULL DEFAULT '',
+    os_image                   TEXT NOT NULL DEFAULT '',
+    architecture               TEXT NOT NULL DEFAULT '',
+    capacity_cpu_millicores    BIGINT NOT NULL DEFAULT 0,
+    capacity_memory_bytes      BIGINT NOT NULL DEFAULT 0,
+    capacity_pods              BIGINT NOT NULL DEFAULT 0,
+    allocatable_cpu_millicores BIGINT NOT NULL DEFAULT 0,
+    allocatable_memory_bytes   BIGINT NOT NULL DEFAULT 0,
+    allocatable_pods           BIGINT NOT NULL DEFAULT 0,
+    created_at                 BIGINT NOT NULL DEFAULT 0,
+    UNIQUE(agent_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_k8s_nodes_agent ON kubernetes_nodes(agent_id);
+
+CREATE TABLE IF NOT EXISTS kubernetes_events (
+    id                 TEXT PRIMARY KEY NOT NULL,
+    agent_id           TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
+    involved_kind      TEXT NOT NULL DEFAULT '',
+    involved_namespace TEXT NOT NULL DEFAULT '',
+    involved_name      TEXT NOT NULL DEFAULT '',
+    type               TEXT NOT NULL DEFAULT '',
+    reason             TEXT NOT NULL DEFAULT '',
+    message            TEXT NOT NULL DEFAULT '',
+    source             TEXT NOT NULL DEFAULT '',
+    first_seen         BIGINT NOT NULL DEFAULT 0,
+    last_seen          BIGINT NOT NULL DEFAULT 0,
+    count              INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_k8s_events_object ON kubernetes_events(agent_id, involved_kind, involved_namespace, involved_name);
+
 -- ============================================================== mcp oauth ====
 CREATE TABLE mcp_oauth_codes (
     code_hash     TEXT PRIMARY KEY NOT NULL,

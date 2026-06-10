@@ -42,24 +42,6 @@ export interface ResourceSummary {
   timestamp: string
 }
 
-// ResourceHost is one selectable host in the resources view: the local server
-// (agent_id === '') or a remote agent. Metrics are zero when available is false.
-export interface ResourceHost {
-  agent_id: string
-  hostname: string
-  label: string
-  is_local: boolean
-  available: boolean
-  cpu_percent: number
-  mem_used: number
-  mem_total: number
-  mem_percent: number
-  disk_total: number
-  disk_used: number
-  disk_percent: number
-  container_count: number
-}
-
 export interface HistoryPoint {
   timestamp: string
   cpu_percent: number
@@ -108,9 +90,6 @@ export function getSummary(agentId?: string): Promise<ResourceSummary> {
   return fetchJSON<ResourceSummary>(`${API_BASE}/resources/summary${qs}`)
 }
 
-export function getResourceHosts(): Promise<{ hosts: ResourceHost[] }> {
-  return fetchJSON<{ hosts: ResourceHost[] }>(`${API_BASE}/resources/hosts`)
-}
 
 export function getResourceHistory(containerId: string, range: string): Promise<HistoryResponse> {
   return fetchJSON<HistoryResponse>(`${API_BASE}/containers/${containerId}/resources/history?range=${range}`)

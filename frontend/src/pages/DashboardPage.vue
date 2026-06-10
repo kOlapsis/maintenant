@@ -17,24 +17,23 @@ import { useRouter } from 'vue-router'
 import { useDashboardStore, type UnifiedMonitor } from '@/stores/dashboard'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { useResourcesStore } from '@/stores/resources'
-import { useAlertsStore } from '@/stores/alerts'
-import { useStatusAdminStore } from '@/stores/statusAdmin'
 import { usePostureStore } from '@/stores/posture'
-import type { Alert } from '@/services/alertApi'
 import SparklineChart from '@/components/ui/SparklineChart.vue'
 import UpdateSummaryStrip from '@/components/dashboard/UpdateSummaryStrip.vue'
+import IncidentFeedCard from '@/components/dashboard/IncidentFeedCard.vue'
+import HostResourcesCard from '@/components/dashboard/HostResourcesCard.vue'
 import UpdateBadge from '@/components/UpdateBadge.vue'
 import RuntimeDegradedBanner from '@/components/RuntimeDegradedBanner.vue'
 import { useContainersStore } from '@/stores/containers'
 import { useUpdatesStore } from '@/stores/updates'
 import { useEdition } from '@/composables/useEdition'
-import { timeAgo } from '@/utils/time'
 import {
   Zap,
   Cpu,
   Shield,
   ShieldCheck,
   Server,
+  Cloud,
   ChevronRight,
   Activity,
   Filter,
@@ -48,8 +47,6 @@ const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const dashboard = useDashboardStore()
 const resources = useResourcesStore()
-const alertsStore = useAlertsStore()
-const statusAdmin = useStatusAdminStore()
 const updatesStore = useUpdatesStore()
 const postureStore = usePostureStore()
 const containersStore = useContainersStore()
@@ -136,140 +133,13 @@ const typeLabels: Record<string, string> = {
   endpoint: 'HTTP',
   heartbeat: 'Heartbeat',
   certificate: 'SSL',
+  workload: 'Workload',
 }
 
 // Resource gauges
 const totalCpu = computed(() =>
   resources.summary?.total_cpu_percent ?? 0,
 )
-const totalMemUsed = computed(() =>
-  resources.summary?.total_mem_used ?? 0,
-)
-const totalMemLimit = computed(() =>
-  resources.summary?.total_mem_limit ?? 0,
-)
-const memPercent = computed(() => {
-  if (totalMemLimit.value === 0) return 0
-  return (totalMemUsed.value / totalMemLimit.value) * 100
-})
-
-function gaugeBarColor(val: number, thresholds = { warn: 60, crit: 80 }): string {
-  if (val > thresholds.crit) return 'bg-rose-500'
-  if (val > thresholds.warn) return 'bg-amber-500'
-  return 'bg-pb-green-500'
-}
-
-// Unified incident feed: active alerts + status page incidents
-interface IncidentFeedItem {
-  id: string
-  service: string
-  message: string
-  time: string
-  color: string
-  icon: string
-  route: string
-  entityType: EntityType | null
-  entityId: string | null
-}
-
-const incidentFeed = computed(() => {
-  const items: IncidentFeedItem[] = []
-
-  // Collect all active alerts (deduplicated, sorted by fired_at desc)
-  const allActive: Alert[] = [
-    ...(alertsStore.activeAlerts.critical ?? []),
-    ...(alertsStore.activeAlerts.warning ?? []),
-    ...(alertsStore.activeAlerts.info ?? []),
-  ].sort((a, b) => new Date(b.fired_at || b.created_at).getTime() - new Date(a.fired_at || a.created_at).getTime())
-
-  for (const alert of allActive.slice(0, 6)) {
-    const color =
-      alert.severity === 'critical' ? 'bg-rose-500' :
-      alert.severity === 'warning'  ? 'bg-amber-500' :
-      'bg-pb-green-500'
-    const route = alertEntityRoute(alert)
-    const entityId = alertEntityId(alert)
-    const entityType = alertEntityType(alert)
-    items.push({
-      id: `alert-${alert.id}`,
-      service: alert.entity_name || alert.source || `Alert #${alert.id}`,
-      message: alert.message,
-      time: formatRelativeTime(alert.fired_at || alert.created_at),
-      color,
-      icon: 'alert',
-      route,
-      entityType,
-      entityId,
-    })
-  }
-
-  // Active status page incidents (non-resolved)
-  for (const inc of statusAdmin.incidents.filter((i) => i.status !== 'resolved').slice(0, 3)) {
-    const color =
-      inc.severity === 'critical' ? 'bg-rose-500' :
-      inc.severity === 'major'    ? 'bg-rose-500' :
-      inc.severity === 'minor'    ? 'bg-amber-500' :
-      'bg-pb-green-400'
-    items.push({
-      id: `inc-${inc.id}`,
-      service: inc.title,
-      message: inc.updates?.[0]?.message ?? `Incident ${inc.status}`,
-      time: formatRelativeTime(inc.created_at),
-      color,
-      icon: 'status',
-      route: '/status-admin',
-      entityType: null,
-      entityId: null,
-    })
-  }
-
-  return items.slice(0, 6)
-})
-
-function alertEntityRoute(alert: Alert): string {
-  // Route by source first — some sources (update, security) have entity_type
-  // "container" but should navigate to their dedicated page instead.
-  switch (alert.source) {
-    case 'update': return '/updates'
-    case 'security':
-      if (alert.entity_type === 'infrastructure') return '/security'
-      return hasFeature('security_posture') ? '/security' : '/containers'
-  }
-  // Default: route by entity type
-  switch (alert.entity_type) {
-    case 'container': return '/containers'
-    case 'endpoint': return '/endpoints'
-    case 'heartbeat': return '/heartbeats'
-    case 'certificate': return '/certificates'
-    default: return '/alerts'
-  }
-}
-
-function alertEntityId(alert: Alert): string | null {
-  const supported = ['container', 'heartbeat', 'certificate']
-  if (supported.includes(alert.entity_type) && alert.entity_id) {
-    return String(alert.entity_id)
-  }
-  return null
-}
-
-function alertEntityType(alert: Alert): EntityType | null {
-  const supported: EntityType[] = ['container', 'heartbeat', 'certificate']
-  if (supported.includes(alert.entity_type as EntityType) && alert.entity_id) {
-    return alert.entity_type as EntityType
-  }
-  return null
-}
-
-function navigateToIncident(inc: IncidentFeedItem) {
-  if (inc.entityType && inc.entityId) {
-    detailSlideOver.openDetail(inc.entityType, inc.entityId)
-  } else {
-    router.push(inc.route)
-  }
-}
-
-const formatRelativeTime = timeAgo
 
 function containerUpdateForMonitor(monitor: UnifiedMonitor) {
   if (monitor.type !== 'container') return null
@@ -338,24 +208,16 @@ const summaryCards = computed(() => {
   ]
 })
 
-let summaryTimer: ReturnType<typeof setInterval> | null = null
-
 onMounted(() => {
   dashboard.fetchAll()
   dashboard.connectAllSSE()
-  alertsStore.fetchAlerts()
-  alertsStore.fetchActiveAlerts()
   updatesStore.fetchAllUpdates()
-  resources.fetchSummary()
-  if (hasFeature('incidents')) statusAdmin.fetchIncidents()
+  // resources.fetchSummary + refresh timer live in HostResourcesCard
   if (hasFeature('security_posture')) postureStore.fetchPosture()
-
-  summaryTimer = setInterval(() => resources.fetchSummary(), 3_000)
 })
 
 onUnmounted(() => {
   dashboard.disconnectAllSSE()
-  if (summaryTimer) clearInterval(summaryTimer)
 })
 </script>
 
@@ -428,7 +290,7 @@ onUnmounted(() => {
           <div class="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-800 flex flex-wrap justify-between items-center gap-3">
             <div>
               <h2 class="text-sm sm:text-base font-bold text-pb-primary">Unified Monitors</h2>
-              <p class="text-[10px] sm:text-xs text-slate-500 mt-0.5">Docker auto-discovery and external probes</p>
+              <p class="text-[10px] sm:text-xs text-slate-500 mt-0.5">Containers, workloads, and external probes</p>
             </div>
             <div class="flex items-center gap-2">
               <button
@@ -470,6 +332,7 @@ onUnmounted(() => {
             >
               <option value="">All types</option>
               <option value="container">Container</option>
+              <option value="workload">Workload</option>
               <option value="endpoint">HTTP</option>
               <option value="heartbeat">Heartbeat</option>
               <option value="certificate">SSL</option>
@@ -516,6 +379,7 @@ onUnmounted(() => {
                   </div>
                   <p class="text-[10px] text-slate-600 mt-0.5 flex items-center gap-1 truncate">
                     <Server v-if="service.type === 'container'" :size="9" />
+                    <Cloud v-else-if="service.type === 'workload'" :size="9" />
                     <Clock v-else-if="service.type === 'heartbeat'" :size="9" />
                     <span>{{ service.subtitle }}</span>
                     <UpdateBadge v-if="service.type === 'container'" :update="containerUpdateForMonitor(service)" />
@@ -532,7 +396,7 @@ onUnmounted(() => {
               <Server :size="32" class="mx-auto text-slate-800 mb-3" />
               <p class="text-sm text-slate-600 font-medium">
                 <template v-if="dashboard.searchQuery || hasActiveFilters">No monitors matching filters</template>
-                <template v-else>No monitors. Start Docker containers or add endpoints.</template>
+                <template v-else>No monitors yet. Start containers, deploy workloads, or add endpoints.</template>
               </p>
             </div>
           </div>
@@ -566,6 +430,7 @@ onUnmounted(() => {
                         </p>
                         <p class="text-[10px] text-slate-600 mt-0.5 flex items-center gap-1 truncate">
                           <Server v-if="service.type === 'container'" :size="9" />
+                          <Cloud v-else-if="service.type === 'workload'" :size="9" />
                           <Clock v-else-if="service.type === 'heartbeat'" :size="9" />
                           <span>{{ service.subtitle }}</span>
                           <UpdateBadge v-if="service.type === 'container'" :update="containerUpdateForMonitor(service)" />
@@ -644,7 +509,7 @@ onUnmounted(() => {
                     <Server :size="32" class="mx-auto text-slate-800 mb-3" />
                     <p class="text-sm text-slate-600 font-medium">
                       <template v-if="dashboard.searchQuery || hasActiveFilters">No monitors matching filters</template>
-                      <template v-else>No monitors. Start Docker containers or add endpoints.</template>
+                      <template v-else>No monitors yet. Start containers, deploy workloads, or add endpoints.</template>
                     </p>
                   </td>
                 </tr>
@@ -655,112 +520,8 @@ onUnmounted(() => {
 
         <!-- Bottom Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-5">
-
-          <!-- Incident Activity Feed -->
-          <div class="lg:col-span-2 bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
-            <div class="flex justify-between items-center mb-5">
-              <h3 class="text-sm font-bold text-pb-primary flex items-center gap-2.5">
-                <Activity :size="15" class="text-pb-green-500" />
-                Incident Activity Feed
-              </h3>
-              <RouterLink
-                to="/alerts"
-                class="text-[10px] text-pb-green-500 hover:text-pb-green-400 font-bold uppercase tracking-widest transition-colors"
-              >
-                View full history
-              </RouterLink>
-            </div>
-
-            <div v-if="incidentFeed.length > 0" class="space-y-1">
-              <div
-                v-for="(inc, idx) in incidentFeed"
-                :key="inc.id"
-                class="flex gap-4 p-3 rounded-xl hover:bg-slate-800/40 transition-all border border-transparent hover:border-slate-800/60 group cursor-pointer"
-                @click="navigateToIncident(inc)"
-              >
-                <div class="flex flex-col items-center gap-1 shrink-0">
-                  <div :class="['w-2 h-2 rounded-full mt-1.5 shrink-0', inc.color]" />
-                  <div v-if="idx < incidentFeed.length - 1" class="w-px flex-1 bg-slate-800" />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex justify-between items-center mb-0.5">
-                    <span class="text-xs font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors tracking-tight truncate mr-3">{{ inc.service }}</span>
-                    <span class="text-[10px] text-slate-600 font-bold shrink-0">{{ inc.time }}</span>
-                  </div>
-                  <p class="text-[11px] text-slate-500 truncate">{{ inc.message }}</p>
-                </div>
-                <ChevronRight :size="13" class="text-slate-700 group-hover:text-slate-400 self-center shrink-0 transition-colors" />
-              </div>
-            </div>
-
-            <div v-else class="flex flex-col items-center justify-center py-10 gap-3">
-              <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                <Activity :size="18" class="text-pb-status-ok" />
-              </div>
-              <p class="text-sm text-slate-600 font-medium">No recent incidents</p>
-              <p class="text-[10px] text-slate-700">All services operating normally</p>
-            </div>
-          </div>
-
-          <!-- Host Resources -->
-          <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
-            <div class="flex items-center gap-2.5 mb-5">
-              <Server :size="15" class="text-pb-status-ok" />
-              <h3 class="text-sm font-bold text-pb-primary">Host Resources</h3>
-            </div>
-
-            <div class="space-y-5">
-              <!-- CPU -->
-              <div class="space-y-1.5">
-                <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-                  <span class="text-slate-500">CPU Usage</span>
-                  <span class="text-pb-primary">{{ Math.round(totalCpu) }}%</span>
-                </div>
-                <div class="h-1.5 w-full bg-pb-primary rounded-full border border-slate-800 overflow-hidden">
-                  <div
-                    class="h-full rounded-full transition-all duration-700"
-                    :class="gaugeBarColor(totalCpu)"
-                    :style="{ width: `${Math.min(totalCpu, 100)}%` }"
-                  />
-                </div>
-              </div>
-
-              <!-- RAM -->
-              <div class="space-y-1.5">
-                <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-                  <span class="text-slate-500">RAM Memory</span>
-                  <span class="text-pb-primary text-right">
-                    {{ resources.formatBytes(totalMemUsed) }} / {{ resources.formatBytes(totalMemLimit) }}
-                  </span>
-                </div>
-                <div class="h-1.5 w-full bg-pb-primary rounded-full border border-slate-800 overflow-hidden">
-                  <div
-                    class="h-full rounded-full transition-all duration-700"
-                    :class="gaugeBarColor(memPercent, { warn: 70, crit: 85 })"
-                    :style="{ width: `${Math.min(memPercent, 100)}%` }"
-                  />
-                </div>
-              </div>
-
-              <!-- Stats -->
-              <div class="pt-4 border-t border-slate-800 space-y-2.5">
-                <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-                  <span class="text-slate-500">Containers</span>
-                  <span class="text-pb-secondary font-mono">{{ Object.keys(resources.snapshots).length }} active</span>
-                </div>
-                <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-                  <span class="text-slate-500">Monitors</span>
-                  <span class="text-pb-secondary font-mono">{{ dashboard.monitors.length }} total</span>
-                </div>
-                <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-                  <span class="text-slate-500">Availability</span>
-                  <span class="text-pb-status-ok font-mono">
-                    {{ dashboard.monitors.length > 0 ? ((stats.running / dashboard.monitors.length) * 100).toFixed(1) : '—' }}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <IncidentFeedCard class="lg:col-span-2" />
+          <HostResourcesCard />
         </div>
       </div>
 

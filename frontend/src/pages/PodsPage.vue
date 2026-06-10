@@ -15,6 +15,7 @@
 import { onMounted, onUnmounted, inject, watch } from 'vue'
 import { useKubernetesStore } from '@/stores/kubernetes'
 import { useNamespacesStore } from '@/stores/namespaces'
+import { useResourcesStore } from '@/stores/resources'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import { type K8sPod } from '@/services/kubernetesApi'
 import K8sPodList from '@/components/K8sPodList.vue'
@@ -23,6 +24,7 @@ import { Box } from 'lucide-vue-next'
 
 const store = useKubernetesStore()
 const namespacesStore = useNamespacesStore()
+const resources = useResourcesStore()
 const { openDetail } = inject(detailSlideOverKey)!
 
 onMounted(async () => {
@@ -34,10 +36,19 @@ onUnmounted(() => {
   store.stopListening()
 })
 
-// Refresh when namespace selection changes
+// Refresh when namespace selection changes.
 watch(
   () => namespacesStore.namespacesParam,
   () => {
+    store.fetchPodsList()
+  },
+)
+
+// Refresh namespaces + pods when the host scope changes.
+watch(
+  () => resources.selected,
+  () => {
+    namespacesStore.fetchNamespacesList()
     store.fetchPodsList()
   },
 )

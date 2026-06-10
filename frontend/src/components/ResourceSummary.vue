@@ -39,7 +39,7 @@ const containerCount = computed(() => Object.keys(store.snapshots).length)
 async function fetchTopConsumers() {
   loading.value = true
   try {
-    const resp = await getTopConsumers(topMetric.value, topPeriod.value, 5, store.hostQuery)
+    const resp = await getTopConsumers(topMetric.value, topPeriod.value, 5, store.summaryQuery)
     topConsumers.value = resp.consumers.map((c) => ({
       containerId: c.container_id,
       containerName: c.container_name,
@@ -55,7 +55,7 @@ async function fetchTopConsumers() {
 }
 
 onMounted(fetchTopConsumers)
-watch([topMetric, topPeriod, () => store.hostQuery], fetchTopConsumers)
+watch([topMetric, topPeriod, () => store.summaryQuery], fetchTopConsumers)
 </script>
 
 <template>

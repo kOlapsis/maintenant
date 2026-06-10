@@ -25,12 +25,14 @@ import (
 	cmodel "github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/hoststat"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/swarm"
 )
 
-const (
-	resourceSampleInterval = 10 * time.Second
-)
+// resourceSampleInterval is the cadence for container and host resource samples.
+// A var (not const) so tests can shorten it; never mutated in production.
+var resourceSampleInterval = 10 * time.Second
 
 // RunCollector starts collecting events from the local runtime and pushing them to stream.
 // rt is the already-connected runtime resolved by agent.Run; label is the reported
@@ -39,18 +41,21 @@ const (
 func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label string, stream *PushStream, logger *slog.Logger) error {
 	switch label {
 	case RuntimeDocker, RuntimeSwarm:
-		return collectContainerRuntime(ctx, id, rt, stream, logger)
+		return collectContainerRuntime(ctx, id, rt, label, stream, logger)
 	case RuntimeKubernetes:
-		// K8s collector is not yet implemented; block until context is cancelled.
-		logger.Warn("collector: kubernetes event collection not yet implemented")
-		<-ctx.Done()
-		return nil
+		src, ok := rt.(kubernetes.SnapshotSource)
+		if !ok {
+			logger.Warn("collector: kubernetes runtime does not expose a snapshot source; topology disabled")
+			<-ctx.Done()
+			return nil
+		}
+		return collectKubernetesRuntime(ctx, id, src, stream, logger)
 	default:
 		return fmt.Errorf("collector: unsupported runtime %q", label)
 	}
 }
 
-func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, stream *PushStream, logger *slog.Logger) error {
 	if err := syncInventory(ctx, id, rt, stream, logger); err != nil {
 		return err
 	}
@@ -59,6 +64,19 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, stream, logger) })
 	g.Go(func() error { return sampleHostResources(gCtx, id, stream, logger) })
 	g.Go(func() error { return runLabelProbers(gCtx, id, rt, stream, logger) })
+
+	// Swarm: also push a periodic full topology snapshot (services/tasks/nodes)
+	// so the server can serve the Services/Tasks/Nodes views for this agent.
+	if label == RuntimeSwarm {
+		if dr, ok := rt.(*docker.Runtime); ok {
+			disc := swarm.NewServiceDiscovery(dr.Client(), logger)
+			client := dr.Client()
+			g.Go(func() error { return streamSwarmTopology(gCtx, id, disc, client, stream, logger) })
+		} else {
+			logger.Warn("collector: swarm runtime is not a docker runtime; topology snapshots disabled")
+		}
+	}
+
 	return g.Wait()
 }
 

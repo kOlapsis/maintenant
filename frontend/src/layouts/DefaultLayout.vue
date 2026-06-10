@@ -5,7 +5,7 @@ COMMERCIAL-LICENSE.md Source: https://github.com/kolapsis/maintenant -->
 
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { computed, onMounted, provide, ref } from 'vue'
+import { computed, onMounted, provide, ref, watch } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
@@ -45,8 +45,10 @@ import {
 } from 'lucide-vue-next'
 
 import { useSwarmStore } from '@/stores/swarm'
-import { useRuntime } from '@/composables/useRuntime'
 import { useRuntimeStore } from '@/stores/runtime'
+import { useResourcesStore } from '@/stores/resources'
+import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
+import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,8 +56,9 @@ const { version } = useAppVersion()
 const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } =
   useEdition()
 const swarmStore = useSwarmStore()
-const { runtimeContext } = useRuntime()
 const runtimeStore = useRuntimeStore()
+const resources = useResourcesStore()
+const { availableRuntimes } = useFleetRuntimes()
 
 const detailSlideOver = useDetailSlideOver()
 provide(detailSlideOverKey, detailSlideOver)
@@ -132,6 +135,15 @@ interface NavItem {
 
 const allNav: NavItem[] = [
   { type: 'item', to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  // Enterprise: Cluster (Swarm & K8s)
+  {
+    type: 'item',
+    to: '/cluster',
+    label: 'Cluster Overview',
+    icon: Network,
+    runtime: ['swarm', 'kubernetes'],
+    feature: 'swarm_dashboard',
+  },
   { type: 'separator' },
   // Docker-only
   { type: 'item', to: '/containers', label: 'Containers', icon: Box, runtime: ['docker'] },
@@ -141,15 +153,7 @@ const allNav: NavItem[] = [
   // K8s Community
   { type: 'item', to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
   { type: 'item', to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
-  // Enterprise: Cluster + Nodes (Swarm & K8s)
-  {
-    type: 'item',
-    to: '/cluster',
-    label: 'Cluster Overview',
-    icon: Network,
-    runtime: ['swarm', 'kubernetes'],
-    feature: 'swarm_dashboard',
-  },
+  // Enterprise: Nodes (Swarm & K8s)
   {
     type: 'item',
     to: '/nodes',
@@ -178,9 +182,29 @@ const allNav: NavItem[] = [
 const mainNav = computed(() =>
   allNav.filter((item) => {
     if (item.feature && !hasFeature(item.feature)) return false
-    if (item.runtime && !item.runtime.includes(runtimeContext.value)) return false
+    // Runtime-specific items show when the selected host scope offers that
+    // runtime: in "all" the union of every agent + local runtime, otherwise the
+    // single selected scope's runtime.
+    if (item.runtime && !item.runtime.some((rt) => availableRuntimes.value.includes(rt))) {
+      return false
+    }
     return true
   }),
+)
+
+// When the user switches host scope, a runtime-specific page they are on may no
+// longer apply (e.g. selecting a Docker agent while viewing /workloads). Send
+// them back to the dashboard rather than leaving a stale, empty view. Watches
+// the explicit selection (not availableRuntimes) so initial deep-links are not
+// redirected before the fleet has loaded.
+watch(
+  () => resources.selected,
+  () => {
+    const current = allNav.find((i) => i.type === 'item' && i.to && route.path.startsWith(i.to))
+    if (current?.runtime && !current.runtime.some((rt) => availableRuntimes.value.includes(rt))) {
+      router.replace('/dashboard')
+    }
+  },
 )
 </script>
 
@@ -195,6 +219,12 @@ const mainNav = computed(() =>
         <div class="p-6 flex items-center gap-3 shrink-0">
           <img src="/icon.svg" alt="" width="32" height="32" />
           <span class="text-sm font-bold text-pb-primary">maintenant</span>
+        </div>
+
+        <!-- Host/resource scope selector — drives which runtime views the nav shows.
+             Kept outside the scrolling nav so its dropdown menu is not clipped. -->
+        <div class="px-4 pb-2 shrink-0">
+          <HostFilterDropdown />
         </div>
 
         <!-- Main nav -->
@@ -308,6 +338,9 @@ const mainNav = computed(() =>
         <div class="p-6 flex items-center gap-3">
           <img src="/icon.svg" alt="maintenant" class="w-8 h-8 rounded-lg" />
           <h1 class="text-xl font-bold tracking-tight text-pb-primary">maintenant</h1>
+        </div>
+        <div class="px-4 pb-2 shrink-0">
+          <HostFilterDropdown />
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <template v-for="item in mainNav" :key="item.to">

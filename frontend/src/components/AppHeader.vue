@@ -12,14 +12,14 @@
 -->
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useAlertsStore } from '@/stores/alerts'
 import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
-import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Server, Sun, Moon, Monitor } from 'lucide-vue-next'
-import type { ResourceHost } from '@/services/resourceApi'
+import { useAgentsStore } from '@/stores/agents'
+import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import { useTheme } from '@/composables/useTheme'
@@ -29,6 +29,26 @@ const dashboard = useDashboardStore()
 const alertsStore = useAlertsStore()
 const resources = useResourcesStore()
 const containers = useContainersStore()
+const agentsStore = useAgentsStore()
+
+// Active enrolled agents drive the global host filter (the dropdown now lives in
+// the sidebar nav); this watch keeps the selection valid when agents change.
+const activeAgentIds = computed(() =>
+  agentsStore.agents.filter((a) => a.status === 'active').map((a) => a.agent_id),
+)
+
+// Clear the selection if the selected agent was revoked/deleted (fires when the
+// agent list changes, e.g. after the initial fetch or a refresh).
+watch(activeAgentIds, (ids) => resources.reconcile(new Set(ids)))
+
+// Refetch every list + the header gauges whenever the global host filter changes.
+watch(
+  () => resources.selected,
+  () => {
+    dashboard.refetchForFilter()
+    resources.fetchSummary()
+  },
+)
 
 let summaryInterval: ReturnType<typeof setInterval> | null = null
 
@@ -36,22 +56,13 @@ let summaryInterval: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   dashboard.fetchAll()
   dashboard.connectAllSSE()
-  resources.fetchHosts()
+  agentsStore.fetchAgents()
   resources.fetchSummary()
   summaryInterval = setInterval(() => {
-    resources.fetchHosts()
+    agentsStore.fetchAgents()
     resources.fetchSummary()
   }, 30_000)
 })
-
-function onHostChange(e: Event) {
-  resources.selectHost((e.target as HTMLSelectElement).value)
-}
-
-function hostName(h: ResourceHost): string {
-  if (h.is_local) return 'Local'
-  return h.label || h.hostname || h.agent_id.slice(0, 12)
-}
 
 onUnmounted(() => {
   dashboard.disconnectAllSSE()
@@ -192,21 +203,6 @@ const themeTooltip = computed(() => {
             :class="dashboard.globalStats.incidents > 0 ? 'text-pb-status-down' : 'text-slate-500'"
           >{{ dashboard.globalStats.incidents }}</span>
         </div>
-      </div>
-
-      <!-- Host selector (multi-host only) -->
-      <div v-if="resources.multiHost" class="hidden lg:flex items-center gap-2 border-l border-slate-800 pl-5">
-        <Server :size="14" class="text-slate-500 shrink-0" />
-        <select
-          :value="resources.selectedHostId"
-          class="bg-pb-primary border border-slate-800 rounded-lg py-1.5 pl-2 pr-7 text-xs text-pb-primary focus:outline-none focus:ring-1 focus:ring-pb-green-500/60 max-w-[170px] cursor-pointer"
-          title="Choisir l'hôte à afficher"
-          @change="onHostChange"
-        >
-          <option v-for="h in resources.hosts" :key="h.agent_id" :value="resources.hostKey(h)">
-            {{ hostName(h) }}<template v-if="!h.available"> (hors-ligne)</template>
-          </option>
-        </select>
       </div>
 
       <!-- Resource gauges -->

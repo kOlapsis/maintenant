@@ -12,11 +12,10 @@
 -->
 
 <script setup lang="ts">
-import { inject, computed, watch } from 'vue'
+import { inject, computed } from 'vue'
 import ContainerList from '@/components/ContainerList.vue'
 import ResourceSummary from '@/components/ResourceSummary.vue'
 import RuntimeDegradedBanner from '@/components/RuntimeDegradedBanner.vue'
-import AgentFilterDropdown from '@/components/AgentFilterDropdown.vue'
 import { useContainersStore } from '@/stores/containers'
 import { useUpdatesStore } from '@/stores/updates'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
@@ -35,11 +34,6 @@ const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
 function handleSelect(container: Container) {
   openDetail('container', container.id)
 }
-
-watch(
-  () => store.agentFilter,
-  (val) => store.fetchContainers({ agent_id: val ?? undefined }),
-)
 </script>
 
 <template>
@@ -52,7 +46,6 @@ watch(
           Auto-discovered {{ store.runtimeLabel }} containers
         </p>
       </div>
-      <AgentFilterDropdown v-model="store.agentFilter" class="mt-1" />
     </div>
 
     <!-- Degraded mode banner -->

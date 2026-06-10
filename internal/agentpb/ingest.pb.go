@@ -832,6 +832,8 @@ type AgentEvent struct {
 	//	*AgentEvent_Heartbeat
 	//	*AgentEvent_Resource
 	//	*AgentEvent_Certificate
+	//	*AgentEvent_Swarm
+	//	*AgentEvent_Kubernetes
 	Body          isAgentEvent_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -947,6 +949,24 @@ func (x *AgentEvent) GetCertificate() *CertificateInfo {
 	return nil
 }
 
+func (x *AgentEvent) GetSwarm() *SwarmTopology {
+	if x != nil {
+		if x, ok := x.Body.(*AgentEvent_Swarm); ok {
+			return x.Swarm
+		}
+	}
+	return nil
+}
+
+func (x *AgentEvent) GetKubernetes() *KubernetesTopology {
+	if x != nil {
+		if x, ok := x.Body.(*AgentEvent_Kubernetes); ok {
+			return x.Kubernetes
+		}
+	}
+	return nil
+}
+
 type isAgentEvent_Body interface {
 	isAgentEvent_Body()
 }
@@ -971,6 +991,14 @@ type AgentEvent_Certificate struct {
 	Certificate *CertificateInfo `protobuf:"bytes,14,opt,name=certificate,proto3,oneof"`
 }
 
+type AgentEvent_Swarm struct {
+	Swarm *SwarmTopology `protobuf:"bytes,15,opt,name=swarm,proto3,oneof"`
+}
+
+type AgentEvent_Kubernetes struct {
+	Kubernetes *KubernetesTopology `protobuf:"bytes,16,opt,name=kubernetes,proto3,oneof"`
+}
+
 func (*AgentEvent_Container) isAgentEvent_Body() {}
 
 func (*AgentEvent_Endpoint) isAgentEvent_Body() {}
@@ -980,6 +1008,10 @@ func (*AgentEvent_Heartbeat) isAgentEvent_Body() {}
 func (*AgentEvent_Resource) isAgentEvent_Body() {}
 
 func (*AgentEvent_Certificate) isAgentEvent_Body() {}
+
+func (*AgentEvent_Swarm) isAgentEvent_Body() {}
+
+func (*AgentEvent_Kubernetes) isAgentEvent_Body() {}
 
 type ContainerEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1434,6 +1466,1062 @@ func (x *CertificateInfo) GetSanDns() []string {
 	return nil
 }
 
+type SwarmTopology struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Services      []*SwarmServiceMsg     `protobuf:"bytes,1,rep,name=services,proto3" json:"services,omitempty"`
+	Tasks         []*SwarmTaskMsg        `protobuf:"bytes,2,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	Nodes         []*SwarmNodeMsg        `protobuf:"bytes,3,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SwarmTopology) Reset() {
+	*x = SwarmTopology{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SwarmTopology) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SwarmTopology) ProtoMessage() {}
+
+func (x *SwarmTopology) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SwarmTopology.ProtoReflect.Descriptor instead.
+func (*SwarmTopology) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SwarmTopology) GetServices() []*SwarmServiceMsg {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *SwarmTopology) GetTasks() []*SwarmTaskMsg {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+func (x *SwarmTopology) GetNodes() []*SwarmNodeMsg {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+type SwarmServiceMsg struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ServiceId       string                 `protobuf:"bytes,1,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
+	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Image           string                 `protobuf:"bytes,3,opt,name=image,proto3" json:"image,omitempty"`
+	Mode            string                 `protobuf:"bytes,4,opt,name=mode,proto3" json:"mode,omitempty"` // "replicated" or "global"
+	DesiredReplicas int32                  `protobuf:"varint,5,opt,name=desired_replicas,json=desiredReplicas,proto3" json:"desired_replicas,omitempty"`
+	RunningReplicas int32                  `protobuf:"varint,6,opt,name=running_replicas,json=runningReplicas,proto3" json:"running_replicas,omitempty"`
+	Labels          map[string]string      `protobuf:"bytes,7,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	StackName       string                 `protobuf:"bytes,8,opt,name=stack_name,json=stackName,proto3" json:"stack_name,omitempty"`
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SwarmServiceMsg) Reset() {
+	*x = SwarmServiceMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SwarmServiceMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SwarmServiceMsg) ProtoMessage() {}
+
+func (x *SwarmServiceMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SwarmServiceMsg.ProtoReflect.Descriptor instead.
+func (*SwarmServiceMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *SwarmServiceMsg) GetServiceId() string {
+	if x != nil {
+		return x.ServiceId
+	}
+	return ""
+}
+
+func (x *SwarmServiceMsg) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SwarmServiceMsg) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *SwarmServiceMsg) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *SwarmServiceMsg) GetDesiredReplicas() int32 {
+	if x != nil {
+		return x.DesiredReplicas
+	}
+	return 0
+}
+
+func (x *SwarmServiceMsg) GetRunningReplicas() int32 {
+	if x != nil {
+		return x.RunningReplicas
+	}
+	return 0
+}
+
+func (x *SwarmServiceMsg) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *SwarmServiceMsg) GetStackName() string {
+	if x != nil {
+		return x.StackName
+	}
+	return ""
+}
+
+func (x *SwarmServiceMsg) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type SwarmTaskMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	ServiceId     string                 `protobuf:"bytes,2,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Slot          int32                  `protobuf:"varint,4,opt,name=slot,proto3" json:"slot,omitempty"`
+	State         string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
+	DesiredState  string                 `protobuf:"bytes,6,opt,name=desired_state,json=desiredState,proto3" json:"desired_state,omitempty"`
+	ContainerId   string                 `protobuf:"bytes,7,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Error         string                 `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
+	ExitCode      int32                  `protobuf:"varint,9,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	HasExitCode   bool                   `protobuf:"varint,10,opt,name=has_exit_code,json=hasExitCode,proto3" json:"has_exit_code,omitempty"` // proto3 has no nullable int; gate exit_code with this
+	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	NodeHostname  string                 `protobuf:"bytes,12,opt,name=node_hostname,json=nodeHostname,proto3" json:"node_hostname,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SwarmTaskMsg) Reset() {
+	*x = SwarmTaskMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SwarmTaskMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SwarmTaskMsg) ProtoMessage() {}
+
+func (x *SwarmTaskMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SwarmTaskMsg.ProtoReflect.Descriptor instead.
+func (*SwarmTaskMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SwarmTaskMsg) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *SwarmTaskMsg) GetServiceId() string {
+	if x != nil {
+		return x.ServiceId
+	}
+	return ""
+}
+
+func (x *SwarmTaskMsg) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *SwarmTaskMsg) GetSlot() int32 {
+	if x != nil {
+		return x.Slot
+	}
+	return 0
+}
+
+func (x *SwarmTaskMsg) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *SwarmTaskMsg) GetDesiredState() string {
+	if x != nil {
+		return x.DesiredState
+	}
+	return ""
+}
+
+func (x *SwarmTaskMsg) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *SwarmTaskMsg) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *SwarmTaskMsg) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *SwarmTaskMsg) GetHasExitCode() bool {
+	if x != nil {
+		return x.HasExitCode
+	}
+	return false
+}
+
+func (x *SwarmTaskMsg) GetTimestamp() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Timestamp
+	}
+	return nil
+}
+
+func (x *SwarmTaskMsg) GetNodeHostname() string {
+	if x != nil {
+		return x.NodeHostname
+	}
+	return ""
+}
+
+type SwarmNodeMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Hostname      string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Role          string                 `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`                 // "manager" or "worker"
+	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`             // "ready", "down", "disconnected", "unknown"
+	Availability  string                 `protobuf:"bytes,5,opt,name=availability,proto3" json:"availability,omitempty"` // "active", "pause", "drain"
+	EngineVersion string                 `protobuf:"bytes,6,opt,name=engine_version,json=engineVersion,proto3" json:"engine_version,omitempty"`
+	Address       string                 `protobuf:"bytes,7,opt,name=address,proto3" json:"address,omitempty"`
+	TaskCount     int32                  `protobuf:"varint,8,opt,name=task_count,json=taskCount,proto3" json:"task_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SwarmNodeMsg) Reset() {
+	*x = SwarmNodeMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SwarmNodeMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SwarmNodeMsg) ProtoMessage() {}
+
+func (x *SwarmNodeMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SwarmNodeMsg.ProtoReflect.Descriptor instead.
+func (*SwarmNodeMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *SwarmNodeMsg) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *SwarmNodeMsg) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *SwarmNodeMsg) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *SwarmNodeMsg) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SwarmNodeMsg) GetAvailability() string {
+	if x != nil {
+		return x.Availability
+	}
+	return ""
+}
+
+func (x *SwarmNodeMsg) GetEngineVersion() string {
+	if x != nil {
+		return x.EngineVersion
+	}
+	return ""
+}
+
+func (x *SwarmNodeMsg) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *SwarmNodeMsg) GetTaskCount() int32 {
+	if x != nil {
+		return x.TaskCount
+	}
+	return 0
+}
+
+type KubernetesTopology struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespaces    []string               `protobuf:"bytes,1,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
+	Workloads     []*K8SWorkloadMsg      `protobuf:"bytes,2,rep,name=workloads,proto3" json:"workloads,omitempty"`
+	Pods          []*K8SPodMsg           `protobuf:"bytes,3,rep,name=pods,proto3" json:"pods,omitempty"`
+	Nodes         []*K8SNodeMsg          `protobuf:"bytes,4,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	Events        []*K8SEventMsg         `protobuf:"bytes,5,rep,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KubernetesTopology) Reset() {
+	*x = KubernetesTopology{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KubernetesTopology) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KubernetesTopology) ProtoMessage() {}
+
+func (x *KubernetesTopology) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KubernetesTopology.ProtoReflect.Descriptor instead.
+func (*KubernetesTopology) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *KubernetesTopology) GetNamespaces() []string {
+	if x != nil {
+		return x.Namespaces
+	}
+	return nil
+}
+
+func (x *KubernetesTopology) GetWorkloads() []*K8SWorkloadMsg {
+	if x != nil {
+		return x.Workloads
+	}
+	return nil
+}
+
+func (x *KubernetesTopology) GetPods() []*K8SPodMsg {
+	if x != nil {
+		return x.Pods
+	}
+	return nil
+}
+
+func (x *KubernetesTopology) GetNodes() []*K8SNodeMsg {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+func (x *KubernetesTopology) GetEvents() []*K8SEventMsg {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type K8SEventMsg struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Type              string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Normal, Warning
+	Reason            string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Message           string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Source            string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
+	FirstSeen         *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"`
+	LastSeen          *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`
+	Count             int32                  `protobuf:"varint,7,opt,name=count,proto3" json:"count,omitempty"`
+	InvolvedKind      string                 `protobuf:"bytes,8,opt,name=involved_kind,json=involvedKind,proto3" json:"involved_kind,omitempty"` // Pod, Deployment, StatefulSet, DaemonSet, Job
+	InvolvedNamespace string                 `protobuf:"bytes,9,opt,name=involved_namespace,json=involvedNamespace,proto3" json:"involved_namespace,omitempty"`
+	InvolvedName      string                 `protobuf:"bytes,10,opt,name=involved_name,json=involvedName,proto3" json:"involved_name,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *K8SEventMsg) Reset() {
+	*x = K8SEventMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *K8SEventMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*K8SEventMsg) ProtoMessage() {}
+
+func (x *K8SEventMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use K8SEventMsg.ProtoReflect.Descriptor instead.
+func (*K8SEventMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *K8SEventMsg) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *K8SEventMsg) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *K8SEventMsg) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *K8SEventMsg) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *K8SEventMsg) GetFirstSeen() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FirstSeen
+	}
+	return nil
+}
+
+func (x *K8SEventMsg) GetLastSeen() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeen
+	}
+	return nil
+}
+
+func (x *K8SEventMsg) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *K8SEventMsg) GetInvolvedKind() string {
+	if x != nil {
+		return x.InvolvedKind
+	}
+	return ""
+}
+
+func (x *K8SEventMsg) GetInvolvedNamespace() string {
+	if x != nil {
+		return x.InvolvedNamespace
+	}
+	return ""
+}
+
+func (x *K8SEventMsg) GetInvolvedName() string {
+	if x != nil {
+		return x.InvolvedName
+	}
+	return ""
+}
+
+type K8SWorkloadMsg struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // "{namespace}/{kind}/{name}"
+	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace       string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Kind            string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"` // Deployment, StatefulSet, DaemonSet, Job
+	Images          []string               `protobuf:"bytes,5,rep,name=images,proto3" json:"images,omitempty"`
+	ReadyReplicas   int32                  `protobuf:"varint,6,opt,name=ready_replicas,json=readyReplicas,proto3" json:"ready_replicas,omitempty"`
+	DesiredReplicas int32                  `protobuf:"varint,7,opt,name=desired_replicas,json=desiredReplicas,proto3" json:"desired_replicas,omitempty"`
+	Status          string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"` // healthy, degraded, progressing, failed
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *K8SWorkloadMsg) Reset() {
+	*x = K8SWorkloadMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *K8SWorkloadMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*K8SWorkloadMsg) ProtoMessage() {}
+
+func (x *K8SWorkloadMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use K8SWorkloadMsg.ProtoReflect.Descriptor instead.
+func (*K8SWorkloadMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *K8SWorkloadMsg) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *K8SWorkloadMsg) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *K8SWorkloadMsg) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *K8SWorkloadMsg) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *K8SWorkloadMsg) GetImages() []string {
+	if x != nil {
+		return x.Images
+	}
+	return nil
+}
+
+func (x *K8SWorkloadMsg) GetReadyReplicas() int32 {
+	if x != nil {
+		return x.ReadyReplicas
+	}
+	return 0
+}
+
+func (x *K8SWorkloadMsg) GetDesiredReplicas() int32 {
+	if x != nil {
+		return x.DesiredReplicas
+	}
+	return 0
+}
+
+func (x *K8SWorkloadMsg) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *K8SWorkloadMsg) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type K8SPodMsg struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Name          string                   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace     string                   `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Status        string                   `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                                 // Running, Pending, Succeeded, Failed, Unknown
+	StatusReason  string                   `protobuf:"bytes,4,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"` // CrashLoopBackOff, ImagePullBackOff, ...
+	RestartCount  int32                    `protobuf:"varint,5,opt,name=restart_count,json=restartCount,proto3" json:"restart_count,omitempty"`
+	NodeName      string                   `protobuf:"bytes,6,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	PodIp         string                   `protobuf:"bytes,7,opt,name=pod_ip,json=podIp,proto3" json:"pod_ip,omitempty"`
+	HostIp        string                   `protobuf:"bytes,8,opt,name=host_ip,json=hostIp,proto3" json:"host_ip,omitempty"`
+	WorkloadRef   string                   `protobuf:"bytes,9,opt,name=workload_ref,json=workloadRef,proto3" json:"workload_ref,omitempty"` // owning workload ID
+	Containers    []*K8SContainerStatusMsg `protobuf:"bytes,10,rep,name=containers,proto3" json:"containers,omitempty"`
+	CreatedAt     *timestamppb.Timestamp   `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *K8SPodMsg) Reset() {
+	*x = K8SPodMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *K8SPodMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*K8SPodMsg) ProtoMessage() {}
+
+func (x *K8SPodMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use K8SPodMsg.ProtoReflect.Descriptor instead.
+func (*K8SPodMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *K8SPodMsg) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetStatusReason() string {
+	if x != nil {
+		return x.StatusReason
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetRestartCount() int32 {
+	if x != nil {
+		return x.RestartCount
+	}
+	return 0
+}
+
+func (x *K8SPodMsg) GetNodeName() string {
+	if x != nil {
+		return x.NodeName
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetPodIp() string {
+	if x != nil {
+		return x.PodIp
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetHostIp() string {
+	if x != nil {
+		return x.HostIp
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetWorkloadRef() string {
+	if x != nil {
+		return x.WorkloadRef
+	}
+	return ""
+}
+
+func (x *K8SPodMsg) GetContainers() []*K8SContainerStatusMsg {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+func (x *K8SPodMsg) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type K8SContainerStatusMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Image         string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	Ready         bool                   `protobuf:"varint,3,opt,name=ready,proto3" json:"ready,omitempty"`
+	RestartCount  int32                  `protobuf:"varint,4,opt,name=restart_count,json=restartCount,proto3" json:"restart_count,omitempty"`
+	State         string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"` // running, waiting, terminated
+	StateReason   string                 `protobuf:"bytes,6,opt,name=state_reason,json=stateReason,proto3" json:"state_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *K8SContainerStatusMsg) Reset() {
+	*x = K8SContainerStatusMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *K8SContainerStatusMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*K8SContainerStatusMsg) ProtoMessage() {}
+
+func (x *K8SContainerStatusMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use K8SContainerStatusMsg.ProtoReflect.Descriptor instead.
+func (*K8SContainerStatusMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *K8SContainerStatusMsg) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *K8SContainerStatusMsg) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *K8SContainerStatusMsg) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *K8SContainerStatusMsg) GetRestartCount() int32 {
+	if x != nil {
+		return x.RestartCount
+	}
+	return 0
+}
+
+func (x *K8SContainerStatusMsg) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *K8SContainerStatusMsg) GetStateReason() string {
+	if x != nil {
+		return x.StateReason
+	}
+	return ""
+}
+
+type K8SNodeMsg struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	Name                     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Roles                    []string               `protobuf:"bytes,2,rep,name=roles,proto3" json:"roles,omitempty"`
+	Status                   string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"` // ready, not-ready, unknown
+	RunningPods              int32                  `protobuf:"varint,4,opt,name=running_pods,json=runningPods,proto3" json:"running_pods,omitempty"`
+	KubernetesVersion        string                 `protobuf:"bytes,5,opt,name=kubernetes_version,json=kubernetesVersion,proto3" json:"kubernetes_version,omitempty"`
+	OsImage                  string                 `protobuf:"bytes,6,opt,name=os_image,json=osImage,proto3" json:"os_image,omitempty"`
+	Architecture             string                 `protobuf:"bytes,7,opt,name=architecture,proto3" json:"architecture,omitempty"`
+	CapacityCpuMillicores    int64                  `protobuf:"varint,8,opt,name=capacity_cpu_millicores,json=capacityCpuMillicores,proto3" json:"capacity_cpu_millicores,omitempty"`
+	CapacityMemoryBytes      int64                  `protobuf:"varint,9,opt,name=capacity_memory_bytes,json=capacityMemoryBytes,proto3" json:"capacity_memory_bytes,omitempty"`
+	CapacityPods             int64                  `protobuf:"varint,10,opt,name=capacity_pods,json=capacityPods,proto3" json:"capacity_pods,omitempty"`
+	AllocatableCpuMillicores int64                  `protobuf:"varint,11,opt,name=allocatable_cpu_millicores,json=allocatableCpuMillicores,proto3" json:"allocatable_cpu_millicores,omitempty"`
+	AllocatableMemoryBytes   int64                  `protobuf:"varint,12,opt,name=allocatable_memory_bytes,json=allocatableMemoryBytes,proto3" json:"allocatable_memory_bytes,omitempty"`
+	AllocatablePods          int64                  `protobuf:"varint,13,opt,name=allocatable_pods,json=allocatablePods,proto3" json:"allocatable_pods,omitempty"`
+	CreatedAt                *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *K8SNodeMsg) Reset() {
+	*x = K8SNodeMsg{}
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *K8SNodeMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*K8SNodeMsg) ProtoMessage() {}
+
+func (x *K8SNodeMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use K8SNodeMsg.ProtoReflect.Descriptor instead.
+func (*K8SNodeMsg) Descriptor() ([]byte, []int) {
+	return file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *K8SNodeMsg) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *K8SNodeMsg) GetRoles() []string {
+	if x != nil {
+		return x.Roles
+	}
+	return nil
+}
+
+func (x *K8SNodeMsg) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *K8SNodeMsg) GetRunningPods() int32 {
+	if x != nil {
+		return x.RunningPods
+	}
+	return 0
+}
+
+func (x *K8SNodeMsg) GetKubernetesVersion() string {
+	if x != nil {
+		return x.KubernetesVersion
+	}
+	return ""
+}
+
+func (x *K8SNodeMsg) GetOsImage() string {
+	if x != nil {
+		return x.OsImage
+	}
+	return ""
+}
+
+func (x *K8SNodeMsg) GetArchitecture() string {
+	if x != nil {
+		return x.Architecture
+	}
+	return ""
+}
+
+func (x *K8SNodeMsg) GetCapacityCpuMillicores() int64 {
+	if x != nil {
+		return x.CapacityCpuMillicores
+	}
+	return 0
+}
+
+func (x *K8SNodeMsg) GetCapacityMemoryBytes() int64 {
+	if x != nil {
+		return x.CapacityMemoryBytes
+	}
+	return 0
+}
+
+func (x *K8SNodeMsg) GetCapacityPods() int64 {
+	if x != nil {
+		return x.CapacityPods
+	}
+	return 0
+}
+
+func (x *K8SNodeMsg) GetAllocatableCpuMillicores() int64 {
+	if x != nil {
+		return x.AllocatableCpuMillicores
+	}
+	return 0
+}
+
+func (x *K8SNodeMsg) GetAllocatableMemoryBytes() int64 {
+	if x != nil {
+		return x.AllocatableMemoryBytes
+	}
+	return 0
+}
+
+func (x *K8SNodeMsg) GetAllocatablePods() int64 {
+	if x != nil {
+		return x.AllocatablePods
+	}
+	return 0
+}
+
+func (x *K8SNodeMsg) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
 var File_specs_012_multiserver_pro_contracts_ingest_proto protoreflect.FileDescriptor
 
 const file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc = "" +
@@ -1479,7 +2567,7 @@ const file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc = "" +
 	"\vStreamError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12$\n" +
-	"\x0eretry_after_ms\x18\x03 \x01(\rR\fretryAfterMs\"\xf2\x03\n" +
+	"\x0eretry_after_ms\x18\x03 \x01(\rR\fretryAfterMs\"\xf9\x04\n" +
 	"\n" +
 	"AgentEvent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x19\n" +
@@ -1492,7 +2580,11 @@ const file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc = "" +
 	"\bendpoint\x18\v \x01(\v2\".maintenant.agent.v1.EndpointEventH\x00R\bendpoint\x12C\n" +
 	"\theartbeat\x18\f \x01(\v2#.maintenant.agent.v1.HeartbeatEventH\x00R\theartbeat\x12A\n" +
 	"\bresource\x18\r \x01(\v2#.maintenant.agent.v1.ResourceSampleH\x00R\bresource\x12H\n" +
-	"\vcertificate\x18\x0e \x01(\v2$.maintenant.agent.v1.CertificateInfoH\x00R\vcertificateB\x06\n" +
+	"\vcertificate\x18\x0e \x01(\v2$.maintenant.agent.v1.CertificateInfoH\x00R\vcertificate\x12:\n" +
+	"\x05swarm\x18\x0f \x01(\v2\".maintenant.agent.v1.SwarmTopologyH\x00R\x05swarm\x12I\n" +
+	"\n" +
+	"kubernetes\x18\x10 \x01(\v2'.maintenant.agent.v1.KubernetesTopologyH\x00R\n" +
+	"kubernetesB\x06\n" +
 	"\x04body\"\xa1\x03\n" +
 	"\x0eContainerEvent\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
@@ -1543,7 +2635,125 @@ const file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc = "" +
 	"not_before\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tnotBefore\x127\n" +
 	"\tnot_after\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\bnotAfter\x12-\n" +
 	"\x12fingerprint_sha256\x18\a \x01(\fR\x11fingerprintSha256\x12\x17\n" +
-	"\asan_dns\x18\b \x03(\tR\x06sanDns*a\n" +
+	"\asan_dns\x18\b \x03(\tR\x06sanDns\"\xc3\x01\n" +
+	"\rSwarmTopology\x12@\n" +
+	"\bservices\x18\x01 \x03(\v2$.maintenant.agent.v1.SwarmServiceMsgR\bservices\x127\n" +
+	"\x05tasks\x18\x02 \x03(\v2!.maintenant.agent.v1.SwarmTaskMsgR\x05tasks\x127\n" +
+	"\x05nodes\x18\x03 \x03(\v2!.maintenant.agent.v1.SwarmNodeMsgR\x05nodes\"\xa3\x03\n" +
+	"\x0fSwarmServiceMsg\x12\x1d\n" +
+	"\n" +
+	"service_id\x18\x01 \x01(\tR\tserviceId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05image\x18\x03 \x01(\tR\x05image\x12\x12\n" +
+	"\x04mode\x18\x04 \x01(\tR\x04mode\x12)\n" +
+	"\x10desired_replicas\x18\x05 \x01(\x05R\x0fdesiredReplicas\x12)\n" +
+	"\x10running_replicas\x18\x06 \x01(\x05R\x0frunningReplicas\x12H\n" +
+	"\x06labels\x18\a \x03(\v20.maintenant.agent.v1.SwarmServiceMsg.LabelsEntryR\x06labels\x12\x1d\n" +
+	"\n" +
+	"stack_name\x18\b \x01(\tR\tstackName\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x87\x03\n" +
+	"\fSwarmTaskMsg\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1d\n" +
+	"\n" +
+	"service_id\x18\x02 \x01(\tR\tserviceId\x12\x17\n" +
+	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12\x12\n" +
+	"\x04slot\x18\x04 \x01(\x05R\x04slot\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\tR\x05state\x12#\n" +
+	"\rdesired_state\x18\x06 \x01(\tR\fdesiredState\x12!\n" +
+	"\fcontainer_id\x18\a \x01(\tR\vcontainerId\x12\x14\n" +
+	"\x05error\x18\b \x01(\tR\x05error\x12\x1b\n" +
+	"\texit_code\x18\t \x01(\x05R\bexitCode\x12\"\n" +
+	"\rhas_exit_code\x18\n" +
+	" \x01(\bR\vhasExitCode\x128\n" +
+	"\ttimestamp\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12#\n" +
+	"\rnode_hostname\x18\f \x01(\tR\fnodeHostname\"\xf3\x01\n" +
+	"\fSwarmNodeMsg\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1a\n" +
+	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x12\n" +
+	"\x04role\x18\x03 \x01(\tR\x04role\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x12\"\n" +
+	"\favailability\x18\x05 \x01(\tR\favailability\x12%\n" +
+	"\x0eengine_version\x18\x06 \x01(\tR\rengineVersion\x12\x18\n" +
+	"\aaddress\x18\a \x01(\tR\aaddress\x12\x1d\n" +
+	"\n" +
+	"task_count\x18\b \x01(\x05R\ttaskCount\"\x9c\x02\n" +
+	"\x12KubernetesTopology\x12\x1e\n" +
+	"\n" +
+	"namespaces\x18\x01 \x03(\tR\n" +
+	"namespaces\x12A\n" +
+	"\tworkloads\x18\x02 \x03(\v2#.maintenant.agent.v1.K8sWorkloadMsgR\tworkloads\x122\n" +
+	"\x04pods\x18\x03 \x03(\v2\x1e.maintenant.agent.v1.K8sPodMsgR\x04pods\x125\n" +
+	"\x05nodes\x18\x04 \x03(\v2\x1f.maintenant.agent.v1.K8sNodeMsgR\x05nodes\x128\n" +
+	"\x06events\x18\x05 \x03(\v2 .maintenant.agent.v1.K8sEventMsgR\x06events\"\xee\x02\n" +
+	"\vK8sEventMsg\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x16\n" +
+	"\x06source\x18\x04 \x01(\tR\x06source\x129\n" +
+	"\n" +
+	"first_seen\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tfirstSeen\x127\n" +
+	"\tlast_seen\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\blastSeen\x12\x14\n" +
+	"\x05count\x18\a \x01(\x05R\x05count\x12#\n" +
+	"\rinvolved_kind\x18\b \x01(\tR\finvolvedKind\x12-\n" +
+	"\x12involved_namespace\x18\t \x01(\tR\x11involvedNamespace\x12#\n" +
+	"\rinvolved_name\x18\n" +
+	" \x01(\tR\finvolvedName\"\xa3\x02\n" +
+	"\x0eK8sWorkloadMsg\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x16\n" +
+	"\x06images\x18\x05 \x03(\tR\x06images\x12%\n" +
+	"\x0eready_replicas\x18\x06 \x01(\x05R\rreadyReplicas\x12)\n" +
+	"\x10desired_replicas\x18\a \x01(\x05R\x0fdesiredReplicas\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x96\x03\n" +
+	"\tK8sPodMsg\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12#\n" +
+	"\rstatus_reason\x18\x04 \x01(\tR\fstatusReason\x12#\n" +
+	"\rrestart_count\x18\x05 \x01(\x05R\frestartCount\x12\x1b\n" +
+	"\tnode_name\x18\x06 \x01(\tR\bnodeName\x12\x15\n" +
+	"\x06pod_ip\x18\a \x01(\tR\x05podIp\x12\x17\n" +
+	"\ahost_ip\x18\b \x01(\tR\x06hostIp\x12!\n" +
+	"\fworkload_ref\x18\t \x01(\tR\vworkloadRef\x12J\n" +
+	"\n" +
+	"containers\x18\n" +
+	" \x03(\v2*.maintenant.agent.v1.K8sContainerStatusMsgR\n" +
+	"containers\x129\n" +
+	"\n" +
+	"created_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb5\x01\n" +
+	"\x15K8sContainerStatusMsg\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\tR\x05image\x12\x14\n" +
+	"\x05ready\x18\x03 \x01(\bR\x05ready\x12#\n" +
+	"\rrestart_count\x18\x04 \x01(\x05R\frestartCount\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\tR\x05state\x12!\n" +
+	"\fstate_reason\x18\x06 \x01(\tR\vstateReason\"\xce\x04\n" +
+	"\n" +
+	"K8sNodeMsg\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05roles\x18\x02 \x03(\tR\x05roles\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12!\n" +
+	"\frunning_pods\x18\x04 \x01(\x05R\vrunningPods\x12-\n" +
+	"\x12kubernetes_version\x18\x05 \x01(\tR\x11kubernetesVersion\x12\x19\n" +
+	"\bos_image\x18\x06 \x01(\tR\aosImage\x12\"\n" +
+	"\farchitecture\x18\a \x01(\tR\farchitecture\x126\n" +
+	"\x17capacity_cpu_millicores\x18\b \x01(\x03R\x15capacityCpuMillicores\x122\n" +
+	"\x15capacity_memory_bytes\x18\t \x01(\x03R\x13capacityMemoryBytes\x12#\n" +
+	"\rcapacity_pods\x18\n" +
+	" \x01(\x03R\fcapacityPods\x12<\n" +
+	"\x1aallocatable_cpu_millicores\x18\v \x01(\x03R\x18allocatableCpuMillicores\x128\n" +
+	"\x18allocatable_memory_bytes\x18\f \x01(\x03R\x16allocatableMemoryBytes\x12)\n" +
+	"\x10allocatable_pods\x18\r \x01(\x03R\x0fallocatablePods\x129\n" +
+	"\n" +
+	"created_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt*a\n" +
 	"\aRuntime\x12\x17\n" +
 	"\x13RUNTIME_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eRUNTIME_DOCKER\x10\x01\x12\x11\n" +
@@ -1580,7 +2790,7 @@ func file_specs_012_multiserver_pro_contracts_ingest_proto_rawDescGZIP() []byte 
 }
 
 var file_specs_012_multiserver_pro_contracts_ingest_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_specs_012_multiserver_pro_contracts_ingest_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_specs_012_multiserver_pro_contracts_ingest_proto_goTypes = []any{
 	(Runtime)(0),                  // 0: maintenant.agent.v1.Runtime
 	(ContainerState)(0),           // 1: maintenant.agent.v1.ContainerState
@@ -1600,40 +2810,69 @@ var file_specs_012_multiserver_pro_contracts_ingest_proto_goTypes = []any{
 	(*HeartbeatEvent)(nil),        // 15: maintenant.agent.v1.HeartbeatEvent
 	(*ResourceSample)(nil),        // 16: maintenant.agent.v1.ResourceSample
 	(*CertificateInfo)(nil),       // 17: maintenant.agent.v1.CertificateInfo
-	nil,                           // 18: maintenant.agent.v1.ContainerEvent.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*SwarmTopology)(nil),         // 18: maintenant.agent.v1.SwarmTopology
+	(*SwarmServiceMsg)(nil),       // 19: maintenant.agent.v1.SwarmServiceMsg
+	(*SwarmTaskMsg)(nil),          // 20: maintenant.agent.v1.SwarmTaskMsg
+	(*SwarmNodeMsg)(nil),          // 21: maintenant.agent.v1.SwarmNodeMsg
+	(*KubernetesTopology)(nil),    // 22: maintenant.agent.v1.KubernetesTopology
+	(*K8SEventMsg)(nil),           // 23: maintenant.agent.v1.K8sEventMsg
+	(*K8SWorkloadMsg)(nil),        // 24: maintenant.agent.v1.K8sWorkloadMsg
+	(*K8SPodMsg)(nil),             // 25: maintenant.agent.v1.K8sPodMsg
+	(*K8SContainerStatusMsg)(nil), // 26: maintenant.agent.v1.K8sContainerStatusMsg
+	(*K8SNodeMsg)(nil),            // 27: maintenant.agent.v1.K8sNodeMsg
+	nil,                           // 28: maintenant.agent.v1.ContainerEvent.LabelsEntry
+	nil,                           // 29: maintenant.agent.v1.SwarmServiceMsg.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 30: google.protobuf.Timestamp
 }
 var file_specs_012_multiserver_pro_contracts_ingest_proto_depIdxs = []int32{
 	0,  // 0: maintenant.agent.v1.RegisterRequest.detected_runtime:type_name -> maintenant.agent.v1.Runtime
-	19, // 1: maintenant.agent.v1.RegisterResponse.server_time:type_name -> google.protobuf.Timestamp
+	30, // 1: maintenant.agent.v1.RegisterResponse.server_time:type_name -> google.protobuf.Timestamp
 	5,  // 2: maintenant.agent.v1.RegisterResponse.agent_config:type_name -> maintenant.agent.v1.AgentConfig
 	9,  // 3: maintenant.agent.v1.ClientMessage.auth:type_name -> maintenant.agent.v1.AuthResponse
 	12, // 4: maintenant.agent.v1.ClientMessage.event:type_name -> maintenant.agent.v1.AgentEvent
 	8,  // 5: maintenant.agent.v1.ServerMessage.challenge:type_name -> maintenant.agent.v1.AuthChallenge
 	10, // 6: maintenant.agent.v1.ServerMessage.ack:type_name -> maintenant.agent.v1.EventAck
 	11, // 7: maintenant.agent.v1.ServerMessage.error:type_name -> maintenant.agent.v1.StreamError
-	19, // 8: maintenant.agent.v1.EventAck.received_at:type_name -> google.protobuf.Timestamp
-	19, // 9: maintenant.agent.v1.AgentEvent.observed_at:type_name -> google.protobuf.Timestamp
+	30, // 8: maintenant.agent.v1.EventAck.received_at:type_name -> google.protobuf.Timestamp
+	30, // 9: maintenant.agent.v1.AgentEvent.observed_at:type_name -> google.protobuf.Timestamp
 	13, // 10: maintenant.agent.v1.AgentEvent.container:type_name -> maintenant.agent.v1.ContainerEvent
 	14, // 11: maintenant.agent.v1.AgentEvent.endpoint:type_name -> maintenant.agent.v1.EndpointEvent
 	15, // 12: maintenant.agent.v1.AgentEvent.heartbeat:type_name -> maintenant.agent.v1.HeartbeatEvent
 	16, // 13: maintenant.agent.v1.AgentEvent.resource:type_name -> maintenant.agent.v1.ResourceSample
 	17, // 14: maintenant.agent.v1.AgentEvent.certificate:type_name -> maintenant.agent.v1.CertificateInfo
-	1,  // 15: maintenant.agent.v1.ContainerEvent.state:type_name -> maintenant.agent.v1.ContainerState
-	19, // 16: maintenant.agent.v1.ContainerEvent.started_at:type_name -> google.protobuf.Timestamp
-	18, // 17: maintenant.agent.v1.ContainerEvent.labels:type_name -> maintenant.agent.v1.ContainerEvent.LabelsEntry
-	2,  // 18: maintenant.agent.v1.EndpointEvent.status:type_name -> maintenant.agent.v1.EndpointStatus
-	19, // 19: maintenant.agent.v1.CertificateInfo.not_before:type_name -> google.protobuf.Timestamp
-	19, // 20: maintenant.agent.v1.CertificateInfo.not_after:type_name -> google.protobuf.Timestamp
-	3,  // 21: maintenant.agent.v1.Ingest.RegisterAgent:input_type -> maintenant.agent.v1.RegisterRequest
-	6,  // 22: maintenant.agent.v1.Ingest.Push:input_type -> maintenant.agent.v1.ClientMessage
-	4,  // 23: maintenant.agent.v1.Ingest.RegisterAgent:output_type -> maintenant.agent.v1.RegisterResponse
-	7,  // 24: maintenant.agent.v1.Ingest.Push:output_type -> maintenant.agent.v1.ServerMessage
-	23, // [23:25] is the sub-list for method output_type
-	21, // [21:23] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	18, // 15: maintenant.agent.v1.AgentEvent.swarm:type_name -> maintenant.agent.v1.SwarmTopology
+	22, // 16: maintenant.agent.v1.AgentEvent.kubernetes:type_name -> maintenant.agent.v1.KubernetesTopology
+	1,  // 17: maintenant.agent.v1.ContainerEvent.state:type_name -> maintenant.agent.v1.ContainerState
+	30, // 18: maintenant.agent.v1.ContainerEvent.started_at:type_name -> google.protobuf.Timestamp
+	28, // 19: maintenant.agent.v1.ContainerEvent.labels:type_name -> maintenant.agent.v1.ContainerEvent.LabelsEntry
+	2,  // 20: maintenant.agent.v1.EndpointEvent.status:type_name -> maintenant.agent.v1.EndpointStatus
+	30, // 21: maintenant.agent.v1.CertificateInfo.not_before:type_name -> google.protobuf.Timestamp
+	30, // 22: maintenant.agent.v1.CertificateInfo.not_after:type_name -> google.protobuf.Timestamp
+	19, // 23: maintenant.agent.v1.SwarmTopology.services:type_name -> maintenant.agent.v1.SwarmServiceMsg
+	20, // 24: maintenant.agent.v1.SwarmTopology.tasks:type_name -> maintenant.agent.v1.SwarmTaskMsg
+	21, // 25: maintenant.agent.v1.SwarmTopology.nodes:type_name -> maintenant.agent.v1.SwarmNodeMsg
+	29, // 26: maintenant.agent.v1.SwarmServiceMsg.labels:type_name -> maintenant.agent.v1.SwarmServiceMsg.LabelsEntry
+	30, // 27: maintenant.agent.v1.SwarmServiceMsg.created_at:type_name -> google.protobuf.Timestamp
+	30, // 28: maintenant.agent.v1.SwarmTaskMsg.timestamp:type_name -> google.protobuf.Timestamp
+	24, // 29: maintenant.agent.v1.KubernetesTopology.workloads:type_name -> maintenant.agent.v1.K8sWorkloadMsg
+	25, // 30: maintenant.agent.v1.KubernetesTopology.pods:type_name -> maintenant.agent.v1.K8sPodMsg
+	27, // 31: maintenant.agent.v1.KubernetesTopology.nodes:type_name -> maintenant.agent.v1.K8sNodeMsg
+	23, // 32: maintenant.agent.v1.KubernetesTopology.events:type_name -> maintenant.agent.v1.K8sEventMsg
+	30, // 33: maintenant.agent.v1.K8sEventMsg.first_seen:type_name -> google.protobuf.Timestamp
+	30, // 34: maintenant.agent.v1.K8sEventMsg.last_seen:type_name -> google.protobuf.Timestamp
+	30, // 35: maintenant.agent.v1.K8sWorkloadMsg.created_at:type_name -> google.protobuf.Timestamp
+	26, // 36: maintenant.agent.v1.K8sPodMsg.containers:type_name -> maintenant.agent.v1.K8sContainerStatusMsg
+	30, // 37: maintenant.agent.v1.K8sPodMsg.created_at:type_name -> google.protobuf.Timestamp
+	30, // 38: maintenant.agent.v1.K8sNodeMsg.created_at:type_name -> google.protobuf.Timestamp
+	3,  // 39: maintenant.agent.v1.Ingest.RegisterAgent:input_type -> maintenant.agent.v1.RegisterRequest
+	6,  // 40: maintenant.agent.v1.Ingest.Push:input_type -> maintenant.agent.v1.ClientMessage
+	4,  // 41: maintenant.agent.v1.Ingest.RegisterAgent:output_type -> maintenant.agent.v1.RegisterResponse
+	7,  // 42: maintenant.agent.v1.Ingest.Push:output_type -> maintenant.agent.v1.ServerMessage
+	41, // [41:43] is the sub-list for method output_type
+	39, // [39:41] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_specs_012_multiserver_pro_contracts_ingest_proto_init() }
@@ -1656,6 +2895,8 @@ func file_specs_012_multiserver_pro_contracts_ingest_proto_init() {
 		(*AgentEvent_Heartbeat)(nil),
 		(*AgentEvent_Resource)(nil),
 		(*AgentEvent_Certificate)(nil),
+		(*AgentEvent_Swarm)(nil),
+		(*AgentEvent_Kubernetes)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1663,7 +2904,7 @@ func file_specs_012_multiserver_pro_contracts_ingest_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc), len(file_specs_012_multiserver_pro_contracts_ingest_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   16,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

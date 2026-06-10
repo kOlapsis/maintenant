@@ -17,6 +17,7 @@ import {
   type ListEndpointsParams,
 } from '@/services/endpointApi'
 import { sseBus } from '@/services/sseBus'
+import { useResourcesStore } from '@/stores/resources'
 
 export const useEndpointsStore = defineStore('endpoints', () => {
   const endpoints = ref<Endpoint[]>([])
@@ -30,7 +31,6 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   const statusFilter = ref<string>('')
   const typeFilter = ref<string>('')
   const containerFilter = ref<string>('')
-  const agentFilter = ref<string | null>(null)
 
   const endpointsCount = computed(() => totalCount.value)
 
@@ -69,10 +69,8 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   })
 
   async function fetchEndpoints(params?: ListEndpointsParams) {
-    if (params?.agent_id !== undefined) agentFilter.value = params.agent_id ?? null
-    const mergedParams = agentFilter.value
-      ? { ...params, agent_id: agentFilter.value }
-      : params
+    const q = useResourcesStore().entityQuery
+    const mergedParams = q ? { ...params, agent_id: q } : params
     loading.value = true
     error.value = null
     try {
@@ -209,7 +207,6 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     statusFilter,
     typeFilter,
     containerFilter,
-    agentFilter,
     filteredEndpoints,
     endpointsByContainer,
     statusCounts,

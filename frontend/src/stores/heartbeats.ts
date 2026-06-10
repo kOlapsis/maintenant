@@ -16,6 +16,7 @@ import {
   type Heartbeat,
 } from '@/services/heartbeatApi'
 import { sseBus } from '@/services/sseBus'
+import { useResourcesStore } from '@/stores/resources'
 
 export const useHeartbeatsStore = defineStore('heartbeats', () => {
   const heartbeats = ref<Heartbeat[]>([])
@@ -23,7 +24,6 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const sseConnected = sseBus.connected
-  const agentFilter = ref<string | null>(null)
 
   const heartbeatsCount = computed(() => totalCount.value)
 
@@ -37,12 +37,11 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
     return counts
   })
 
-  async function fetchHeartbeats(filter?: string | null) {
-    if (filter !== undefined) agentFilter.value = filter
+  async function fetchHeartbeats() {
     loading.value = true
     error.value = null
     try {
-      const res = await listHeartbeats(agentFilter.value ?? undefined)
+      const res = await listHeartbeats(useResourcesStore().entityQuery)
       heartbeats.value = res.heartbeats || []
       totalCount.value = res.total || 0
     } catch (e) {
@@ -166,7 +165,6 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
     loading,
     error,
     sseConnected,
-    agentFilter,
     statusCounts,
     fetchHeartbeats,
     connectSSE,

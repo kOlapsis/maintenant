@@ -43,6 +43,16 @@ type CertificateHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.CertificateInfo) error
 }
 
+// SwarmTopologyHandler processes a full swarm topology snapshot from an agent.
+type SwarmTopologyHandler interface {
+	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.SwarmTopology) error
+}
+
+// KubernetesTopologyHandler processes a full Kubernetes topology snapshot from an agent.
+type KubernetesTopologyHandler interface {
+	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.KubernetesTopology) error
+}
+
 // LabelSyncFunc provisions label-discovered endpoint/cert monitors for a remote
 // agent's container. Invoked for every container event so monitors track label
 // changes: created on first sight, deprovisioned when a label is removed. The
@@ -57,6 +67,8 @@ type DispatchDeps struct {
 	Heartbeat   HeartbeatHandler
 	Resource    ResourceHandler
 	Certificate CertificateHandler
+	Swarm       SwarmTopologyHandler
+	Kubernetes  KubernetesTopologyHandler
 	// LabelSync, if set, provisions endpoint/cert monitors from a container's
 	// labels after each container event. Optional (nil = no label discovery).
 	LabelSync LabelSyncFunc
@@ -110,6 +122,18 @@ func (d *Dispatcher) Dispatch(ctx context.Context, evt *agentpb.AgentEvent) erro
 		if d.deps.Certificate != nil {
 			if err := d.deps.Certificate.HandleAgentEvent(ctx, agentID, body.Certificate); err != nil {
 				return fmt.Errorf("dispatch certificate event: %w", err)
+			}
+		}
+	case *agentpb.AgentEvent_Swarm:
+		if d.deps.Swarm != nil {
+			if err := d.deps.Swarm.HandleAgentEvent(ctx, agentID, body.Swarm); err != nil {
+				return fmt.Errorf("dispatch swarm topology: %w", err)
+			}
+		}
+	case *agentpb.AgentEvent_Kubernetes:
+		if d.deps.Kubernetes != nil {
+			if err := d.deps.Kubernetes.HandleAgentEvent(ctx, agentID, body.Kubernetes); err != nil {
+				return fmt.Errorf("dispatch kubernetes topology: %w", err)
 			}
 		}
 	}

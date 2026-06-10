@@ -45,10 +45,16 @@ var nsRoot = uuid.MustParse("6d61696e-7465-6e61-6e74-000000000001")
 // Per-entity namespaces, derived once from nsRoot and stable forever. Changing a
 // namespace would orphan every id previously derived under it.
 var (
-	nsContainer = uuid.NewSHA1(nsRoot, []byte("container"))
-	nsEndpoint  = uuid.NewSHA1(nsRoot, []byte("endpoint"))
-	nsCert      = uuid.NewSHA1(nsRoot, []byte("cert_monitor"))
-	nsSwarmNode = uuid.NewSHA1(nsRoot, []byte("swarm_node"))
+	nsContainer    = uuid.NewSHA1(nsRoot, []byte("container"))
+	nsEndpoint     = uuid.NewSHA1(nsRoot, []byte("endpoint"))
+	nsCert         = uuid.NewSHA1(nsRoot, []byte("cert_monitor"))
+	nsSwarmNode    = uuid.NewSHA1(nsRoot, []byte("swarm_node"))
+	nsSwarmService = uuid.NewSHA1(nsRoot, []byte("swarm_service"))
+	nsSwarmTask    = uuid.NewSHA1(nsRoot, []byte("swarm_task"))
+	nsK8sPod       = uuid.NewSHA1(nsRoot, []byte("k8s_pod"))
+	nsK8sNode      = uuid.NewSHA1(nsRoot, []byte("k8s_node"))
+	nsK8sWorkload  = uuid.NewSHA1(nsRoot, []byte("k8s_workload"))
+	nsNamespace    = uuid.NewSHA1(nsRoot, []byte("k8s_namespace"))
 )
 
 // New returns a fresh time-ordered UUIDv7 string.
@@ -90,6 +96,37 @@ func CertMonitor(agentID, hostname string, port int) string {
 // SwarmNode derives a swarm node id from the agent and the runtime node id.
 func SwarmNode(agentID, nodeID string) string {
 	return Derive(nsSwarmNode, agentID, nodeID)
+}
+
+// SwarmService derives a swarm service id from the agent and the runtime service id.
+func SwarmService(agentID, serviceID string) string {
+	return Derive(nsSwarmService, agentID, serviceID)
+}
+
+// SwarmTask derives a swarm task id from the agent and the runtime task id.
+func SwarmTask(agentID, taskID string) string {
+	return Derive(nsSwarmTask, agentID, taskID)
+}
+
+// Pod derives a Kubernetes pod id from the agent, namespace and pod name.
+func Pod(agentID, namespace, name string) string {
+	return Derive(nsK8sPod, agentID, namespace, name)
+}
+
+// K8sNode derives a Kubernetes node id from the agent and the node name.
+func K8sNode(agentID, name string) string {
+	return Derive(nsK8sNode, agentID, name)
+}
+
+// K8sWorkload derives a Kubernetes workload id from the agent and the workload's
+// natural id ("{namespace}/{kind}/{name}").
+func K8sWorkload(agentID, workloadID string) string {
+	return Derive(nsK8sWorkload, agentID, workloadID)
+}
+
+// Namespace derives a Kubernetes namespace id from the agent and the namespace name.
+func Namespace(agentID, name string) string {
+	return Derive(nsNamespace, agentID, name)
 }
 
 // Agent returns agentID, or LocalAgent when it is empty. Eases the transition

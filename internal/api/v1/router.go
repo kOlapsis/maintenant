@@ -116,6 +116,10 @@ type HandlerDeps struct {
 	SwarmUpdateTracker  *swarm.UpdateTracker
 	SwarmCrashLoop      *swarm.CrashLoopDetector
 	SwarmReplicaChecker *swarm.ReplicaHealthChecker
+	SwarmTopologyStore  *sqlite.SwarmTopologyStore
+
+	// Kubernetes (per-agent store-backed reads)
+	KubernetesStore *sqlite.KubernetesStore
 
 	// Multi-host agents (Enterprise)
 	AgentStore          *sqlite.AgentStore
@@ -570,17 +574,24 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 }
 
 func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
-	if d.Runtime == nil || d.Runtime.Name() != "kubernetes" {
+	if d.KubernetesStore == nil {
 		return
 	}
 
-	k8sProvider, ok := d.Runtime.(KubernetesProvider)
-	if !ok {
-		r.logger.Warn("kubernetes runtime does not implement KubernetesProvider; skipping k8s routes")
-		return
+	// Reads are store-backed (per-agent), so the routes are mounted regardless of
+	// the server's own runtime. Live metrics-server data is only available when
+	// the server itself runs on Kubernetes; expose it for the local scope.
+	var metrics K8sMetricsProvider
+	if d.Runtime != nil && d.Runtime.Name() == "kubernetes" {
+		if mp, ok := d.Runtime.(K8sMetricsProvider); ok {
+			metrics = mp
+		}
 	}
 
-	kh := NewKubernetesHandler(k8sProvider)
+	kh := NewKubernetesHandler(d.KubernetesStore, metrics)
+	if d.AgentStore != nil {
+		kh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
+	}
 
 	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/kubernetes/namespaces", kh.HandleListNamespaces)
@@ -597,10 +608,17 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 }
 
 func (r *Router) registerSwarmRoutes(d HandlerDeps) {
-	if d.SwarmCluster == nil {
+	// Mounted unconditionally: the services/tasks/nodes lists are store-backed
+	// (per-agent), so they work even when this server is not itself a swarm
+	// manager. The live Enterprise dashboards guard internally on the local
+	// runtime being a swarm cluster.
+	if d.SwarmTopologyStore == nil {
 		return
 	}
-	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop, d.SwarmReplicaChecker, d.Containers, d.Resources)
+	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmTopologyStore, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop, d.SwarmReplicaChecker, d.Containers, d.Resources)
+	if d.AgentStore != nil {
+		sh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
+	}
 
 	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/info", sh.HandleGetInfo)

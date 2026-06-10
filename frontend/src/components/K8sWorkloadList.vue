@@ -16,6 +16,7 @@ import { ref } from 'vue'
 import { type K8sWorkloadGroup, type K8sWorkload } from '@/services/kubernetesApi'
 import { timeAgo } from '@/utils/time'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import HostBadge from '@/components/HostBadge.vue'
 
 defineProps<{
   groups: K8sWorkloadGroup[]
@@ -49,10 +50,14 @@ function ensureExpanded(groups: K8sWorkloadGroup[]) {
 
 function statusStyle(status: K8sWorkload['status']): string {
   switch (status) {
-    case 'healthy': return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
-    case 'degraded': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
-    case 'progressing': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-    case 'failed': return 'text-red-400 bg-red-400/10 border-red-400/20'
+    case 'healthy':
+      return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
+    case 'degraded':
+      return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+    case 'progressing':
+      return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
+    case 'failed':
+      return 'text-red-400 bg-red-400/10 border-red-400/20'
   }
 }
 
@@ -64,10 +69,14 @@ function replicaColor(ready: number, desired: number): string {
 
 function kindStyle(kind: K8sWorkload['kind']): string {
   switch (kind) {
-    case 'Deployment': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-    case 'StatefulSet': return 'text-violet-400 bg-violet-400/10 border-violet-400/20'
-    case 'DaemonSet': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
-    case 'Job': return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
+    case 'Deployment':
+      return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
+    case 'StatefulSet':
+      return 'text-violet-400 bg-violet-400/10 border-violet-400/20'
+    case 'DaemonSet':
+      return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+    case 'Job':
+      return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
   }
 }
 
@@ -103,7 +112,9 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
             class="text-slate-500 flex-shrink-0"
           />
           <span class="text-sm font-semibold text-pb-primary font-mono">{{ group.namespace }}</span>
-          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
+          <span
+            class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded"
+          >
             {{ group.workloads.length }} workload{{ group.workloads.length === 1 ? '' : 's' }}
           </span>
         </div>
@@ -111,14 +122,17 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
           <span
             :class="[
               'text-xs font-semibold tabular-nums',
-              group.workloads.every(w => w.status === 'healthy')
+              group.workloads.every((w) => w.status === 'healthy')
                 ? 'text-pb-status-ok'
-                : group.workloads.some(w => w.status === 'failed')
+                : group.workloads.some((w) => w.status === 'failed')
                   ? 'text-red-400'
                   : 'text-amber-400',
             ]"
           >
-            {{ group.workloads.filter(w => w.status === 'healthy').length }}/{{ group.workloads.length }} healthy
+            {{ group.workloads.filter((w) => w.status === 'healthy').length }}/{{
+              group.workloads.length
+            }}
+            healthy
           </span>
         </div>
       </button>
@@ -137,27 +151,55 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
           <div class="flex items-center justify-between gap-4">
             <!-- Left: name + badges -->
             <div class="flex items-center gap-2 min-w-0">
-              <span class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors">
+              <span
+                class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors"
+              >
                 {{ workload.name }}
               </span>
-              <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', kindStyle(workload.kind)]">
+              <span
+                :class="[
+                  'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                  kindStyle(workload.kind),
+                ]"
+              >
                 {{ workload.kind }}
               </span>
-              <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', statusStyle(workload.status)]">
+              <HostBadge
+                :agent-id="workload.agent_id"
+                :hostname="workload.agent_hostname"
+                :label="workload.agent_label"
+                class="flex-shrink-0"
+              />
+              <span
+                :class="[
+                  'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                  statusStyle(workload.status),
+                ]"
+              >
                 {{ workload.status }}
               </span>
             </div>
 
             <!-- Right: replicas + image + age -->
             <div class="flex items-center gap-4 flex-shrink-0">
-              <span :class="['text-sm font-semibold tabular-nums', replicaColor(workload.ready_replicas, workload.desired_replicas)]">
+              <span
+                :class="[
+                  'text-sm font-semibold tabular-nums',
+                  replicaColor(workload.ready_replicas, workload.desired_replicas),
+                ]"
+              >
                 {{ workload.ready_replicas }}/{{ workload.desired_replicas }}
               </span>
-              <div v-if="workload.images.length > 0" class="hidden sm:flex items-center gap-1.5 max-w-48">
+              <div
+                v-if="workload.images.length > 0"
+                class="hidden sm:flex items-center gap-1.5 max-w-48"
+              >
                 <span class="text-xs text-slate-500 font-mono truncate">
                   {{ primaryImage(workload.images).name.split('/').pop() }}
                 </span>
-                <span class="text-[10px] font-mono text-slate-600 bg-slate-800 px-1 py-0.5 rounded flex-shrink-0">
+                <span
+                  class="text-[10px] font-mono text-slate-600 bg-slate-800 px-1 py-0.5 rounded flex-shrink-0"
+                >
                   {{ primaryImage(workload.images).tag }}
                 </span>
               </div>

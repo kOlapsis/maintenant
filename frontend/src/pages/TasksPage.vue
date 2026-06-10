@@ -12,72 +12,105 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import {
   fetchSwarmTasks,
   fetchSwarmServices,
   type SwarmTaskResponse,
   type SwarmServiceResponse,
 } from '@/services/swarmApi'
+import { useResourcesStore } from '@/stores/resources'
+import { useTopologyRefetch } from '@/composables/useTopologyRefetch'
 import { timeAgo } from '@/utils/time'
 import { ClipboardList } from 'lucide-vue-next'
+import HostBadge from '@/components/HostBadge.vue'
 
 type TaskWithService = SwarmTaskResponse & { service_name: string }
+
+const resources = useResourcesStore()
 
 const tasks = ref<TaskWithService[]>([])
 const services = ref<SwarmServiceResponse[]>([])
 const loading = ref(true)
 
-const filterService = ref('')
-const filterState = ref('')
-
-const TASK_STATES = ['running', 'complete', 'failed', 'rejected', 'shutdown', 'starting', 'preparing', 'assigned']
-
-const filteredTasks = computed(() => {
-  return tasks.value.filter(t => {
-    if (filterService.value && t.service_name !== filterService.value) return false
-    if (filterState.value && t.state !== filterState.value) return false
-    return true
-  })
-})
-
-onMounted(async () => {
+async function loadTasks() {
+  loading.value = true
   try {
     const [tasksResp, servicesResp] = await Promise.all([
-      fetchSwarmTasks(),
-      fetchSwarmServices(),
+      fetchSwarmTasks({ agentId: resources.entityQuery }),
+      fetchSwarmServices(undefined, resources.entityQuery),
     ])
     tasks.value = tasksResp.tasks
     services.value = servicesResp.services
   } finally {
     loading.value = false
   }
+}
+
+const filterService = ref('')
+const filterState = ref('')
+
+const TASK_STATES = [
+  'running',
+  'complete',
+  'failed',
+  'rejected',
+  'shutdown',
+  'starting',
+  'preparing',
+  'assigned',
+]
+
+const filteredTasks = computed(() => {
+  return tasks.value.filter((t) => {
+    if (filterService.value && t.service_name !== filterService.value) return false
+    if (filterState.value && t.state !== filterState.value) return false
+    return true
+  })
 })
+
+onMounted(loadTasks)
+
+// Refresh when the host scope changes, or a matching remote agent reports.
+watch(() => resources.selected, loadTasks)
+useTopologyRefetch('swarm.topology_changed', loadTasks)
 
 function stateColor(state: string): string {
   switch (state) {
-    case 'running': return 'text-pb-status-ok'
-    case 'complete': return 'text-slate-400'
-    case 'failed': return 'text-red-400'
-    case 'rejected': return 'text-red-400'
-    case 'shutdown': return 'text-slate-500'
+    case 'running':
+      return 'text-pb-status-ok'
+    case 'complete':
+      return 'text-slate-400'
+    case 'failed':
+      return 'text-red-400'
+    case 'rejected':
+      return 'text-red-400'
+    case 'shutdown':
+      return 'text-slate-500'
     case 'preparing':
     case 'starting':
-    case 'assigned': return 'text-sky-400'
-    default: return 'text-amber-400'
+    case 'assigned':
+      return 'text-sky-400'
+    default:
+      return 'text-amber-400'
   }
 }
 
 function stateDot(state: string): string {
   switch (state) {
-    case 'running': return 'bg-emerald-500'
+    case 'running':
+      return 'bg-emerald-500'
     case 'failed':
-    case 'rejected': return 'bg-red-500'
-    case 'complete': return 'bg-slate-500'
+    case 'rejected':
+      return 'bg-red-500'
+    case 'complete':
+      return 'bg-slate-500'
     case 'preparing':
     case 'starting':
-    case 'assigned': return 'bg-sky-500'
-    default: return 'bg-amber-500'
+    case 'assigned':
+      return 'bg-sky-500'
+    default:
+      return 'bg-amber-500'
   }
 }
 
@@ -98,7 +131,9 @@ function shortId(id: string): string {
       <!-- Filter bar -->
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <div class="flex items-center gap-2">
-          <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Service</label>
+          <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+            >Service</label
+          >
           <select
             v-model="filterService"
             class="bg-pb-surface border border-slate-800 text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
@@ -111,7 +146,9 @@ function shortId(id: string): string {
         </div>
 
         <div class="flex items-center gap-2">
-          <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">State</label>
+          <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+            >State</label
+          >
           <select
             v-model="filterState"
             class="bg-pb-surface border border-slate-800 text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
@@ -147,13 +184,21 @@ function shortId(id: string): string {
       <!-- Task list -->
       <div v-else class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden">
         <!-- Table header -->
-        <div class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2 border-b border-slate-800">
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Task ID</span>
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Service</span>
+        <div
+          class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2 border-b border-slate-800"
+        >
+          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+            >Task ID</span
+          >
+          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+            >Service</span
+          >
           <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Slot</span>
           <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Node</span>
           <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">State</span>
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-right">When</span>
+          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-right"
+            >When</span
+          >
         </div>
 
         <!-- Rows -->
@@ -164,10 +209,21 @@ function shortId(id: string): string {
             class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2.5 hover:bg-slate-800/25 transition-all items-center"
           >
             <!-- Task ID -->
-            <span class="text-xs text-slate-400 font-mono truncate">{{ shortId(task.task_id) }}</span>
+            <span class="text-xs text-slate-400 font-mono truncate">{{
+              shortId(task.task_id)
+            }}</span>
 
             <!-- Service name -->
-            <span class="text-xs text-pb-secondary font-medium truncate">{{ task.service_name }}</span>
+            <span class="flex items-center gap-1.5 min-w-0">
+              <span class="text-xs text-pb-secondary font-medium truncate">{{
+                task.service_name
+              }}</span>
+              <HostBadge
+                :agent-id="task.agent_id"
+                :hostname="task.agent_hostname"
+                :label="task.agent_label"
+              />
+            </span>
 
             <!-- Slot -->
             <span class="text-xs text-slate-400 font-mono">#{{ task.slot }}</span>
@@ -179,11 +235,7 @@ function shortId(id: string): string {
             <div class="flex items-center gap-2 min-w-0">
               <div :class="['w-1.5 h-1.5 rounded-full flex-shrink-0', stateDot(task.state)]" />
               <span :class="['text-xs font-medium', stateColor(task.state)]">{{ task.state }}</span>
-              <span
-                v-if="task.error"
-                class="text-[10px] text-red-400 truncate"
-                :title="task.error"
-              >
+              <span v-if="task.error" class="text-[10px] text-red-400 truncate" :title="task.error">
                 {{ task.error }}
               </span>
               <span
@@ -195,7 +247,9 @@ function shortId(id: string): string {
             </div>
 
             <!-- When -->
-            <span class="text-xs text-slate-500 tabular-nums text-right">{{ timeAgo(task.timestamp) }}</span>
+            <span class="text-xs text-slate-500 tabular-nums text-right">{{
+              timeAgo(task.timestamp)
+            }}</span>
           </div>
         </div>
       </div>

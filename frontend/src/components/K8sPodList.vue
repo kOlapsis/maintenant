@@ -15,6 +15,7 @@
 import { ref, computed } from 'vue'
 import { type K8sPod } from '@/services/kubernetesApi'
 import { timeAgo } from '@/utils/time'
+import HostBadge from '@/components/HostBadge.vue'
 
 const props = defineProps<{
   pods: K8sPod[]
@@ -34,7 +35,8 @@ const filteredPods = computed(() => {
     if (filterNamespace.value && !pod.namespace.includes(filterNamespace.value)) return false
     if (filterWorkload.value && !pod.workload_ref.includes(filterWorkload.value)) return false
     if (filterNode.value && !pod.node_name.includes(filterNode.value)) return false
-    if (filterStatus.value && !pod.status.toLowerCase().includes(filterStatus.value.toLowerCase())) return false
+    if (filterStatus.value && !pod.status.toLowerCase().includes(filterStatus.value.toLowerCase()))
+      return false
     return true
   })
 })
@@ -44,7 +46,8 @@ function podStatusStyle(status: string): string {
   if (s === 'running') return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
   if (s === 'pending') return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
   if (s === 'succeeded') return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-  if (s === 'failed' || s === 'crashloopbackoff') return 'text-red-400 bg-red-400/10 border-red-400/20'
+  if (s === 'failed' || s === 'crashloopbackoff')
+    return 'text-red-400 bg-red-400/10 border-red-400/20'
   return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
 }
 
@@ -105,17 +108,31 @@ function restartCountStyle(count: number): string {
           <!-- Left: name + namespace + status -->
           <div class="flex items-center gap-2 min-w-0">
             <div class="min-w-0">
-              <span class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors block">
+              <span
+                class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors block"
+              >
                 {{ pod.name }}
               </span>
-              <span class="text-xs text-slate-500 font-mono">{{ pod.namespace }}</span>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-500 font-mono">{{ pod.namespace }}</span>
+                <HostBadge
+                  :agent-id="pod.agent_id"
+                  :hostname="pod.agent_hostname"
+                  :label="pod.agent_label"
+                />
+              </div>
             </div>
           </div>
 
           <!-- Right: status + restarts + node + IP + age -->
           <div class="flex items-center gap-3 flex-shrink-0">
             <div class="flex items-center gap-1">
-              <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border', podStatusStyle(pod.status)]">
+              <span
+                :class="[
+                  'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border',
+                  podStatusStyle(pod.status),
+                ]"
+              >
                 {{ pod.status }}
               </span>
               <span
@@ -126,7 +143,10 @@ function restartCountStyle(count: number): string {
               </span>
             </div>
             <span
-              :class="['text-xs font-semibold tabular-nums hidden sm:block', restartCountStyle(pod.restart_count)]"
+              :class="[
+                'text-xs font-semibold tabular-nums hidden sm:block',
+                restartCountStyle(pod.restart_count),
+              ]"
               :title="`${pod.restart_count} restarts`"
             >
               {{ pod.restart_count }}↺

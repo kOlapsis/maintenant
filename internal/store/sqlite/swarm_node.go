@@ -72,10 +72,35 @@ func (s *SwarmNodeStore) UpsertNode(ctx context.Context, node *swarm.SwarmNode) 
 	return nil
 }
 
-// ListNodes returns all swarm nodes.
-func (s *SwarmNodeStore) ListNodes(ctx context.Context) ([]*swarm.SwarmNode, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+swarmNodeColumns+` FROM swarm_nodes ORDER BY hostname ASC`)
+// ReplaceNodesForAgent upserts every node in the snapshot and hard-deletes any
+// node previously held for this agent that is no longer present. first_seen_at
+// is preserved across upserts by UpsertNode.
+func (s *SwarmNodeStore) ReplaceNodesForAgent(ctx context.Context, agentID string, nodes []*swarm.SwarmNode) error {
+	agentID = uid.Agent(agentID)
+	keep := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		n.AgentID = agentID
+		if err := s.UpsertNode(ctx, n); err != nil {
+			return err
+		}
+		keep = append(keep, uid.SwarmNode(agentID, n.NodeID))
+	}
+	return deleteNotInForAgent(ctx, s.writer, "swarm_nodes", agentID, keep)
+}
+
+// ListNodes returns swarm nodes. When agentID is non-empty only that agent's
+// nodes are returned; otherwise every agent's nodes are returned.
+func (s *SwarmNodeStore) ListNodes(ctx context.Context, agentID string) ([]*swarm.SwarmNode, error) {
+	q := `SELECT ` + swarmNodeColumns + ` FROM swarm_nodes`
+	var rows *sql.Rows
+	var err error
+	if agentID != "" {
+		q += ` WHERE agent_id=? ORDER BY hostname ASC`
+		rows, err = s.db.QueryContext(ctx, q, uid.Agent(agentID))
+	} else {
+		q += ` ORDER BY hostname ASC`
+		rows, err = s.db.QueryContext(ctx, q)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list swarm nodes: %w", err)
 	}

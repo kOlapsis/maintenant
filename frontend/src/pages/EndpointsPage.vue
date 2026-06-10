@@ -12,13 +12,12 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useEndpointsStore } from '@/stores/endpoints'
 import { useContainersStore } from '@/stores/containers'
 import { useEdition } from '@/composables/useEdition'
 import { createEndpoint } from '@/services/endpointApi'
 import EndpointCard from '@/components/EndpointCard.vue'
-import AgentFilterDropdown from '@/components/AgentFilterDropdown.vue'
 import { Globe } from 'lucide-vue-next'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
@@ -93,11 +92,6 @@ onMounted(() => {
 onUnmounted(() => {
   store.disconnectSSE()
 })
-
-watch(
-  () => store.agentFilter,
-  (val) => store.fetchEndpoints({ agent_id: val ?? undefined }),
-)
 </script>
 
 <template>
@@ -111,7 +105,6 @@ watch(
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <AgentFilterDropdown v-model="store.agentFilter" />
         <span
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"

@@ -19,6 +19,7 @@ import {
 import { sseBus } from '@/services/sseBus'
 import { isLocalAgent } from '@/services/apiFetch'
 import { useRuntimeStore } from '@/stores/runtime'
+import { useResourcesStore } from '@/stores/resources'
 
 export interface ContainerGroup {
   name: string
@@ -38,7 +39,6 @@ export const useContainersStore = defineStore('containers', () => {
   const archivedCount = ref(0)
 
   const expandedControllers = ref<Set<string>>(new Set())
-  const agentFilter = ref<string | null>(null)
 
   // Derived from the runtime store: false when container monitoring is unavailable.
   const isContainerMonitoringAvailable = computed(() => {
@@ -91,10 +91,8 @@ export const useContainersStore = defineStore('containers', () => {
   }
 
   async function fetchContainers(params?: ListContainersParams) {
-    if (params?.agent_id !== undefined) agentFilter.value = params.agent_id ?? null
-    const mergedParams = agentFilter.value
-      ? { ...params, agent_id: agentFilter.value }
-      : params
+    const q = useResourcesStore().entityQuery
+    const mergedParams = q ? { ...params, agent_id: q } : params
     loading.value = true
     error.value = null
     try {
@@ -243,7 +241,6 @@ export const useContainersStore = defineStore('containers', () => {
     hostCount,
     totalCount,
     archivedCount,
-    agentFilter,
     expandedControllers,
     toggleController,
     isControllerExpanded,

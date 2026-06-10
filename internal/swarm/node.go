@@ -24,7 +24,7 @@ import (
 // NodeStore abstracts persistence for swarm nodes.
 type NodeStore interface {
 	UpsertNode(ctx context.Context, node *SwarmNode) error
-	ListNodes(ctx context.Context) ([]*SwarmNode, error)
+	ListNodes(ctx context.Context, agentID string) ([]*SwarmNode, error)
 	GetNodeByNodeID(ctx context.Context, nodeID string) (*SwarmNode, error)
 	UpdateNodeStatus(ctx context.Context, nodeID, status, availability string) error
 	UpdateNodeTaskCount(ctx context.Context, nodeID string, count int) error

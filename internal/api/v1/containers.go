@@ -48,6 +48,24 @@ type AgentDirectory interface {
 	AgentNames(ctx context.Context) (map[string]AgentName, error)
 }
 
+// enrichAgentFields tags a response row with the remote agent that reported it,
+// for the multi-host list views. Local rows (the server's own runtime) get no
+// agent fields, so single-host installs and the "local" scope stay clean.
+func enrichAgentFields(m map[string]interface{}, agentID string, names map[string]AgentName) {
+	if agentID == "" || agentID == uid.LocalAgent {
+		return
+	}
+	m["agent_id"] = agentID
+	if n, ok := names[agentID]; ok {
+		if n.Hostname != "" {
+			m["agent_hostname"] = n.Hostname
+		}
+		if n.Label != "" {
+			m["agent_label"] = n.Label
+		}
+	}
+}
+
 // ContainerHandler handles container-related HTTP endpoints.
 type ContainerHandler struct {
 	service          *container.Service

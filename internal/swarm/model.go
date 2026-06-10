@@ -25,6 +25,7 @@ type SwarmCluster struct {
 // SwarmService represents a Swarm service with aggregated state (volatile/in-memory).
 type SwarmService struct {
 	ServiceID       string              `json:"service_id"`
+	AgentID         string              `json:"agent_id,omitempty"`
 	Name            string              `json:"name"`
 	Image           string              `json:"image"`
 	Mode            string              `json:"mode"` // "replicated" or "global"
@@ -41,6 +42,7 @@ type SwarmService struct {
 // SwarmTask represents a single instance (replica) of a service (volatile/in-memory).
 type SwarmTask struct {
 	TaskID       string    `json:"task_id"`
+	AgentID      string    `json:"agent_id,omitempty"`
 	ServiceID    string    `json:"service_id"`
 	NodeID       string    `json:"node_id"`
 	Slot         int       `json:"slot"`
@@ -74,6 +76,17 @@ type UpdateStatus struct {
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	Message     string     `json:"message,omitempty"`
+}
+
+// TopologySnapshot is a full point-in-time view of an agent's swarm: every
+// service, task and node it currently sees. The server reconciles it against
+// the rows already held for that agent, hard-deleting anything absent from the
+// snapshot. Produced by both the server's local runtime (under the LocalAgent
+// id) and remote agents (under their own id).
+type TopologySnapshot struct {
+	Services []SwarmService
+	Tasks    []SwarmTask
+	Nodes    []SwarmNode
 }
 
 // SwarmNode represents a machine in the Swarm cluster (persisted for Enterprise).

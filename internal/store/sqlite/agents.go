@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // AgentStore handles persistence for agents and enrollment tokens. The agents
@@ -67,11 +68,13 @@ func (s *AgentStore) Get(ctx context.Context, agentID string) (*agent.Agent, err
 }
 
 // List retrieves agents with an optional status filter ("" or "all" = all).
+// The local sentinel agent is an internal FK anchor, not an enrolled agent, so
+// it is never surfaced in listings.
 func (s *AgentStore) List(ctx context.Context, statusFilter string) ([]*agent.Agent, error) {
-	query := `SELECT ` + agentColumns + ` FROM agents`
-	args := []any{}
+	query := `SELECT ` + agentColumns + ` FROM agents WHERE id != ?`
+	args := []any{uid.LocalAgent}
 	if statusFilter != "" && statusFilter != "all" {
-		query += " WHERE status = ?"
+		query += " AND status = ?"
 		args = append(args, statusFilter)
 	}
 	query += " ORDER BY created_at DESC"
@@ -147,7 +150,8 @@ func (s *AgentStore) Delete(ctx context.Context, agentID string) error {
 
 // CountByStatus returns agent counts grouped by status.
 func (s *AgentStore) CountByStatus(ctx context.Context) (active, revoked int, err error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM agents GROUP BY status`)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM agents WHERE id != ? GROUP BY status`, uid.LocalAgent)
 	if err != nil {
 		return 0, 0, fmt.Errorf("count agents by status: %w", err)
 	}
@@ -171,7 +175,7 @@ func (s *AgentStore) CountByStatus(ctx context.Context) (active, revoked int, er
 // CountByRuntime returns active agent counts grouped by detected_runtime.
 func (s *AgentStore) CountByRuntime(ctx context.Context) (docker, swarm, kubernetes int, err error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT detected_runtime, COUNT(*) FROM agents WHERE status = 'active' GROUP BY detected_runtime`)
+		`SELECT detected_runtime, COUNT(*) FROM agents WHERE status = 'active' AND id != ? GROUP BY detected_runtime`, uid.LocalAgent)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("count agents by runtime: %w", err)
 	}

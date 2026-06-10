@@ -4,12 +4,19 @@
   or a commercial license.
 -->
 <script setup lang="ts">
-import { useRuntime } from '@/composables/useRuntime'
+import { computed } from 'vue'
+import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
+import { useResourcesStore } from '@/stores/resources'
 import FeatureGate from '@/components/FeatureGate.vue'
 import K8sNodeList from '@/components/K8sNodeList.vue'
 import SwarmNodeList from '@/components/SwarmNodeList.vue'
 
-const { isSwarm, isKubernetes } = useRuntime()
+// Runtime views follow the selected host scope (an agent's runtime, or the union
+// in "all"), not the server's own runtime.
+const { availableRuntimes } = useFleetRuntimes()
+const resources = useResourcesStore()
+const isKubernetes = computed(() => availableRuntimes.value.includes('kubernetes'))
+const isSwarm = computed(() => availableRuntimes.value.includes('swarm'))
 
 function onK8sNodeSelect(name: string) {
   // K8s node detail view can be wired in a future phase.
@@ -33,23 +40,23 @@ function onSwarmNodeSelect(nodeId: string) {
         title="Kubernetes Node Management"
         description="View node status, roles, capacity, and conditions across your cluster."
       >
-        <K8sNodeList @select="onK8sNodeSelect" />
+        <K8sNodeList :key="`k8s-${resources.selected}`" @select="onK8sNodeSelect" />
       </FeatureGate>
     </template>
 
     <!-- Swarm nodes (Enterprise) -->
-    <template v-else-if="isSwarm">
+    <template v-if="isSwarm">
       <FeatureGate
         feature="swarm_dashboard"
         title="Swarm Node Management"
         description="Monitor node availability, roles, and task distribution across your Swarm cluster."
       >
-        <SwarmNodeList @select="onSwarmNodeSelect" />
+        <SwarmNodeList :key="`swarm-${resources.selected}`" @select="onSwarmNodeSelect" />
       </FeatureGate>
     </template>
 
-    <!-- Docker standalone -->
-    <template v-else>
+    <!-- Neither runtime in the selected scope -->
+    <template v-if="!isKubernetes && !isSwarm">
       <p class="text-sm text-slate-400">Node management is available for Kubernetes and Docker Swarm runtimes.</p>
     </template>
   </div>
