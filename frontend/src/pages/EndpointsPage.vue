@@ -393,36 +393,33 @@ onUnmounted(() => {
       {{ store.error }}
     </div>
 
-    <!-- Content area with persistent background hint -->
-    <div v-else class="relative min-h-[300px]">
-      <!-- Background hint — always visible -->
-      <div class="flex flex-col items-center justify-center py-16 text-center">
-        <div class="p-4 rounded-2xl mb-4" style="background: var(--pb-bg-elevated)">
-          <Globe :size="48" class="text-slate-600" />
-        </div>
-        <p class="text-sm mb-2 max-w-md text-slate-500">
-          Monitor HTTP and TCP endpoints by adding {{ labelOrAnnotation }}s to your {{ isK8s ? 'pods' : 'containers' }},
-          or create standalone monitors using the button above.
-        </p>
-        <p class="text-sm max-w-md text-slate-500">
-          Add the <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.http</code>
-          or <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.tcp</code>
-          {{ labelOrAnnotation }} with the target URL.
-        </p>
-      </div>
+    <!-- Endpoint grid -->
+    <div
+      v-else-if="store.filteredEndpoints.length > 0"
+      class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+    >
+      <EndpointCard
+        v-for="ep in store.filteredEndpoints"
+        :key="ep.id"
+        :endpoint="ep"
+        @deleted="store.fetchEndpoints(); reload()"
+      />
+    </div>
 
-      <!-- Endpoint grid — overlays on top -->
-      <div
-        v-if="store.filteredEndpoints.length > 0"
-        class="absolute inset-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 content-start bg-pb-primary"
-      >
-        <EndpointCard
-          v-for="ep in store.filteredEndpoints"
-          :key="ep.id"
-          :endpoint="ep"
-          @deleted="store.fetchEndpoints(); reload()"
-        />
+    <!-- Empty / help state -->
+    <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+      <div class="p-4 rounded-2xl mb-4" style="background: var(--pb-bg-elevated)">
+        <Globe :size="48" class="text-slate-600" />
       </div>
+      <p class="text-sm mb-2 max-w-md text-slate-500">
+        Monitor HTTP and TCP endpoints by adding {{ labelOrAnnotation }}s to your {{ isK8s ? 'pods' : 'containers' }},
+        or create standalone monitors using the button above.
+      </p>
+      <p class="text-sm max-w-md text-slate-500">
+        Add the <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.http</code>
+        or <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.tcp</code>
+        {{ labelOrAnnotation }} with the target URL.
+      </p>
     </div>
   </div>
   </div>

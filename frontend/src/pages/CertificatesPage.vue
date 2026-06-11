@@ -335,39 +335,35 @@ function handleSelect(id: string) {
       {{ store.error }}
     </div>
 
-    <!-- Content area with persistent background hint -->
-    <div v-else class="relative min-h-[300px]">
-      <!-- Background hint — always visible -->
-      <div class="flex flex-col items-center justify-center py-16 text-center">
-        <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4" style="color: var(--pb-text-muted)">
-          <rect x="10" y="6" width="36" height="44" rx="4" />
-          <path d="M20 20h16M20 28h16M20 36h10" stroke-linecap="round" />
-          <circle cx="40" cy="40" r="10" fill="var(--pb-bg-primary)" />
-          <path d="M37 40l2 2 4-4" stroke="var(--pb-status-ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <p class="text-sm mb-2 max-w-sm" :style="{ color: 'var(--pb-text-muted)' }">
-          HTTPS endpoints are auto-detected from {{ labelOrAnnotation }}s. Create standalone monitors for additional hosts.
-        </p>
-        <p class="text-sm max-w-sm" :style="{ color: 'var(--pb-text-muted)' }">
-          Add the <code class="rounded-md px-1.5 py-0.5 text-xs" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.tls.certificates</code>
-          {{ labelOrAnnotation }} to monitor specific certificates.
-        </p>
-      </div>
+    <!-- Certificate grid -->
+    <div
+      v-else-if="sortedCertificates.length > 0"
+      class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+    >
+      <CertificateCard
+        v-for="cert in sortedCertificates"
+        :key="cert.id"
+        :certificate="cert"
+        @refresh="store.fetchCertificates(); reload()"
+        @select="handleSelect($event)"
+      />
+    </div>
 
-      <!-- Certificate grid — overlays on top -->
-      <div
-        v-if="sortedCertificates.length > 0"
-        class="absolute inset-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 content-start"
-        :style="{ backgroundColor: 'var(--pb-bg-primary)' }"
-      >
-        <CertificateCard
-          v-for="cert in sortedCertificates"
-          :key="cert.id"
-          :certificate="cert"
-          @refresh="store.fetchCertificates(); reload()"
-          @select="handleSelect($event)"
-        />
-      </div>
+    <!-- Empty / help state -->
+    <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+      <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4" style="color: var(--pb-text-muted)">
+        <rect x="10" y="6" width="36" height="44" rx="4" />
+        <path d="M20 20h16M20 28h16M20 36h10" stroke-linecap="round" />
+        <circle cx="40" cy="40" r="10" fill="var(--pb-bg-primary)" />
+        <path d="M37 40l2 2 4-4" stroke="var(--pb-status-ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <p class="text-sm mb-2 max-w-sm" :style="{ color: 'var(--pb-text-muted)' }">
+        HTTPS endpoints are auto-detected from {{ labelOrAnnotation }}s. Create standalone monitors for additional hosts.
+      </p>
+      <p class="text-sm max-w-sm" :style="{ color: 'var(--pb-text-muted)' }">
+        Add the <code class="rounded-md px-1.5 py-0.5 text-xs" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.tls.certificates</code>
+        {{ labelOrAnnotation }} to monitor specific certificates.
+      </p>
     </div>
   </div>
   </div>
