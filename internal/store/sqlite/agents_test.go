@@ -13,6 +13,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -25,12 +26,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConsumeAtomic_Concurrent(t *testing.T) {
+// enrollAgentRecord builds a minimal valid agent record for EnrollAtomic.
+func enrollAgentRecord(id string) *agent.Agent {
+	return &agent.Agent{
+		AgentID:         id,
+		PublicKey:       []byte("pubkeyplaceholder12345678901234"),
+		Hostname:        "host-" + id,
+		Label:           id,
+		OSArch:          "linux/amd64",
+		AgentVersion:    "1.0.0",
+		DetectedRuntime: "docker",
+		Status:          "active",
+		CreatedAt:       time.Now().UTC(),
+	}
+}
+
+// Many agents racing on the SAME one-time token: exactly one wins (consumes the
+// token and is inserted); the rest get ErrTokenAlreadyConsumed. limit < 0 keeps
+// the cap out of the picture so this isolates the token-consume race.
+func TestEnrollAtomic_ConcurrentSameToken(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)
 	ctx := context.Background()
 
-	// Insert a token valid for 1 hour.
 	tok := &agent.EnrollmentToken{
 		TokenID:   "testtoken01",
 		Token:     "mnt_enr_testtoken",
@@ -51,12 +69,11 @@ func TestConsumeAtomic_Concurrent(t *testing.T) {
 	for i := range goroutines {
 		go func(i int) {
 			defer wg.Done()
-			agentID := fmt.Sprintf("agent-%d", i)
-			err := store.ConsumeAtomic(ctx, tok.Token, agentID)
+			err := store.EnrollAtomic(ctx, -1, tok.Token, enrollAgentRecord(fmt.Sprintf("agent-%d", i)))
 			switch {
 			case err == nil:
 				successes.Add(1)
-			case err == agent.ErrTokenAlreadyConsumed:
+			case errors.Is(err, agent.ErrTokenAlreadyConsumed):
 				alreadyConsumed.Add(1)
 			default:
 				other.Add(1)
@@ -68,18 +85,75 @@ func TestConsumeAtomic_Concurrent(t *testing.T) {
 	assert.Equal(t, int32(1), successes.Load(), "exactly one goroutine should succeed")
 	assert.Equal(t, int32(goroutines-1), alreadyConsumed.Load(), "all others should get ErrTokenAlreadyConsumed")
 	assert.Equal(t, int32(0), other.Load(), "no unexpected errors")
+
+	active, _, err := store.CountByStatus(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, active, "only the winning enrollment is persisted")
 }
 
-func TestConsumeAtomic_NotFound(t *testing.T) {
+// Many agents racing on distinct tokens against a finite cap: exactly `limit`
+// succeed and the active count lands exactly on the cap — no over-fill. This is
+// the regression test for the count/insert race the atomic transaction closes.
+func TestEnrollAtomic_ConcurrentCap(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)
 	ctx := context.Background()
 
-	err := store.ConsumeAtomic(ctx, "mnt_enr_doesnotexist", "agent-x")
+	const limit = 10
+	const goroutines = 40
+	for i := range goroutines {
+		require.NoError(t, store.InsertToken(ctx, &agent.EnrollmentToken{
+			TokenID:   fmt.Sprintf("captok-%d", i),
+			Token:     fmt.Sprintf("mnt_enr_captoken%012d", i),
+			CreatedAt: time.Now().UTC(),
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+		}))
+	}
+
+	var (
+		successes atomic.Int32
+		atCap     atomic.Int32
+		other     atomic.Int32
+	)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			err := store.EnrollAtomic(ctx, limit,
+				fmt.Sprintf("mnt_enr_captoken%012d", i),
+				enrollAgentRecord(fmt.Sprintf("cap-agent-%d", i)))
+			switch {
+			case err == nil:
+				successes.Add(1)
+			case errors.Is(err, agent.ErrHostLimitReached):
+				atCap.Add(1)
+			default:
+				other.Add(1)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	assert.Equal(t, int32(limit), successes.Load(), "exactly `limit` enrollments succeed")
+	assert.Equal(t, int32(goroutines-limit), atCap.Load(), "the rest are rejected at the cap")
+	assert.Equal(t, int32(0), other.Load(), "no unexpected errors")
+
+	active, _, err := store.CountByStatus(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, limit, active, "active agents never exceed the cap")
+}
+
+func TestEnrollAtomic_TokenNotFound(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+	ctx := context.Background()
+
+	err := store.EnrollAtomic(ctx, -1, "mnt_enr_doesnotexist", enrollAgentRecord("agent-x"))
 	assert.ErrorIs(t, err, agent.ErrTokenNotFound)
 }
 
-func TestConsumeAtomic_Expired(t *testing.T) {
+func TestEnrollAtomic_TokenExpired(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)
 	ctx := context.Background()
@@ -92,7 +166,7 @@ func TestConsumeAtomic_Expired(t *testing.T) {
 	}
 	require.NoError(t, store.InsertToken(ctx, tok))
 
-	err := store.ConsumeAtomic(ctx, tok.Token, "agent-y")
+	err := store.EnrollAtomic(ctx, -1, tok.Token, enrollAgentRecord("agent-y"))
 	assert.ErrorIs(t, err, agent.ErrTokenExpired)
 }
 

@@ -53,4 +53,5 @@ var (
 	ErrBadSignature         = errors.New("invalid Ed25519 signature")
 	ErrClockSkew            = errors.New("clock skew exceeds 300s")
 	ErrAgentUnknown         = errors.New("agent unknown")
+	ErrHostLimitReached     = errors.New("agent host limit reached")
 )

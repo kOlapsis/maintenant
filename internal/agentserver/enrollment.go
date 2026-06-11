@@ -49,41 +49,14 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 		label = label[:64]
 	}
 
-	// Enforce the per-edition agent host cap before consuming the one-time
-	// token, so a rejected enrollment leaves the token reusable. The local
-	// runtime is never counted (CountByStatus excludes uid.LocalAgent and
-	// counts only active agents, so a revoked one frees a slot).
-	if limit := extension.AgentHostLimit(); limit >= 0 {
-		active, _, err := impl.deps.AgentStore.CountByStatus(ctx)
-		if err != nil {
-			logger.Error("agent host limit check failed", "err", err)
-			return nil, grpcstatus.Error(codes.Internal, "host limit check failed")
-		}
-		if active >= limit {
-			logger.Warn("agent.enroll_rejected", "reason", "host_limit", "active", active, "limit", limit)
-			return nil, grpcstatus.Error(codes.ResourceExhausted, "agent host limit reached")
-		}
-	}
-
-	// Consume the one-time enrollment token atomically.
-	if err := impl.deps.AgentStore.ConsumeAtomic(ctx, req.GetEnrollmentToken(), req.GetAgentId()); err != nil {
-		switch {
-		case errors.Is(err, agent.ErrTokenNotFound):
-			return nil, grpcstatus.Error(codes.NotFound, "enrollment token not found")
-		case errors.Is(err, agent.ErrTokenAlreadyConsumed):
-			return nil, grpcstatus.Error(codes.FailedPrecondition, "enrollment token already consumed")
-		case errors.Is(err, agent.ErrTokenExpired):
-			return nil, grpcstatus.Error(codes.FailedPrecondition, "enrollment token expired")
-		default:
-			logger.Error("ConsumeAtomic failed", "err", err)
-			return nil, grpcstatus.Error(codes.Internal, "token validation error")
-		}
-	}
-
 	// Version compatibility check: block on major mismatch, warn on minor skew.
 	checkVersionCompat(req.GetAgentVersion(), logger)
 
-	// Persist agent record.
+	// Enrol the agent atomically: the per-edition host cap check, the one-time
+	// token consume, and the insert run in a single serialized transaction, so
+	// concurrent enrollments can never both pass the cap and over-fill it. The
+	// local runtime is never counted, and a rejected cap/token leaves the token
+	// unconsumed. limit < 0 means unlimited.
 	now := time.Now().UTC()
 	a := &agent.Agent{
 		AgentID:         req.GetAgentId(),
@@ -96,9 +69,21 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 		Status:          "active",
 		CreatedAt:       now,
 	}
-	if err := impl.deps.AgentStore.Insert(ctx, a); err != nil {
-		logger.Error("insert agent failed", "agent_id", req.GetAgentId(), "err", err)
-		return nil, grpcstatus.Error(codes.Internal, "failed to register agent")
+	if err := impl.deps.AgentStore.EnrollAtomic(ctx, extension.AgentHostLimit(), req.GetEnrollmentToken(), a); err != nil {
+		switch {
+		case errors.Is(err, agent.ErrHostLimitReached):
+			logger.Warn("agent.enroll_rejected", "reason", "host_limit", "limit", extension.AgentHostLimit())
+			return nil, grpcstatus.Error(codes.ResourceExhausted, "agent host limit reached")
+		case errors.Is(err, agent.ErrTokenNotFound):
+			return nil, grpcstatus.Error(codes.NotFound, "enrollment token not found")
+		case errors.Is(err, agent.ErrTokenAlreadyConsumed):
+			return nil, grpcstatus.Error(codes.FailedPrecondition, "enrollment token already consumed")
+		case errors.Is(err, agent.ErrTokenExpired):
+			return nil, grpcstatus.Error(codes.FailedPrecondition, "enrollment token expired")
+		default:
+			logger.Error("enroll agent failed", "agent_id", req.GetAgentId(), "err", err)
+			return nil, grpcstatus.Error(codes.Internal, "failed to register agent")
+		}
 	}
 
 	logger.Info("agent.registered",

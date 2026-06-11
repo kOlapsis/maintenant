@@ -22,10 +22,12 @@ import (
 
 const writerBufferSize = 256
 
-// WriteOp represents a single write operation to be serialized.
+// WriteOp represents a single write operation to be serialized. When Fn is set,
+// it runs inside a transaction on the writer goroutine and Query/Args are ignored.
 type WriteOp struct {
 	Query string
 	Args  []interface{}
+	Fn    func(context.Context, *sql.Tx) error
 	Done  chan WriteResult
 }
 
@@ -76,6 +78,10 @@ func (w *Writer) Start(ctx context.Context) {
 				if !ok {
 					return
 				}
+				if op.Fn != nil {
+					op.Done <- w.runTx(ctx, op.Fn)
+					continue
+				}
 				result, err := w.db.ExecContext(ctx, op.Query, op.Args...)
 				wr := WriteResult{Err: err}
 				if err == nil {
@@ -90,6 +96,20 @@ func (w *Writer) Start(ctx context.Context) {
 
 // Exec sends a write operation and waits for the result.
 func (w *Writer) Exec(ctx context.Context, query string, args ...interface{}) (WriteResult, error) {
+	return w.submit(ctx, WriteOp{Query: query, Args: args})
+}
+
+// Tx runs fn inside a single transaction executed on the writer goroutine, so
+// the whole read-modify-write is serialized against every other write — no other
+// write can interleave between fn's reads and its writes. fn must use the
+// provided *sql.Tx for all statements; calling Exec/Tx from within fn deadlocks.
+func (w *Writer) Tx(ctx context.Context, fn func(context.Context, *sql.Tx) error) error {
+	_, err := w.submit(ctx, WriteOp{Fn: fn})
+	return err
+}
+
+// submit enqueues an op on the writer goroutine and waits for its result.
+func (w *Writer) submit(ctx context.Context, op WriteOp) (WriteResult, error) {
 	if w.stopped.Load() {
 		return WriteResult{}, errors.New("writer is stopped")
 	}
@@ -101,11 +121,7 @@ func (w *Writer) Exec(ctx context.Context, query string, args ...interface{}) (W
 	}
 	defer w.wg.Done()
 
-	op := WriteOp{
-		Query: query,
-		Args:  args,
-		Done:  make(chan WriteResult, 1),
-	}
+	op.Done = make(chan WriteResult, 1)
 	select {
 	case w.ch <- op:
 	case <-ctx.Done():
@@ -117,4 +133,21 @@ func (w *Writer) Exec(ctx context.Context, query string, args ...interface{}) (W
 	case <-ctx.Done():
 		return WriteResult{}, ctx.Err()
 	}
+}
+
+// runTx executes fn within a transaction, rolling back on any error. It runs on
+// the writer goroutine, so it is the only writer for its duration.
+func (w *Writer) runTx(ctx context.Context, fn func(context.Context, *sql.Tx) error) WriteResult {
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return WriteResult{Err: err}
+	}
+	if err := fn(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		return WriteResult{Err: err}
+	}
+	if err := tx.Commit(); err != nil {
+		return WriteResult{Err: err}
+	}
+	return WriteResult{}
 }

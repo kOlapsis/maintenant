@@ -17,6 +17,8 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -137,6 +139,60 @@ func TestRegisterAgent_HostLimit_UnderCapSucceeds(t *testing.T) {
 	got, err := store.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, "active", got.Status)
+}
+
+// Concurrent enrollments racing on an empty Pro tier (cap 10) with distinct
+// tokens must never exceed the cap: exactly 10 succeed, the rest are rejected
+// with ResourceExhausted, and the persisted active count lands exactly on 10.
+// This is the end-to-end regression test for the enroll-cap race.
+func TestRegisterAgent_HostLimit_ConcurrentEnrollments(t *testing.T) {
+	orig := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	t.Cleanup(func() { extension.CurrentEdition = orig })
+
+	impl, store := newHostLimitTestImpl(t)
+	ctx := context.Background()
+
+	limit := extension.AgentHostLimit()
+	require.Equal(t, 10, limit)
+	const goroutines = 40
+	for i := range goroutines {
+		insertToken(t, store, fmt.Sprintf("tok-%d", i), fmt.Sprintf("mnt_enr_concurrent%07d", i))
+	}
+
+	var (
+		ok    atomic.Int32
+		atCap atomic.Int32
+		other atomic.Int32
+	)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(i int) {
+			defer wg.Done()
+			_, err := impl.RegisterAgent(ctx, registerReq(
+				fmt.Sprintf("aaaaaaaa-0000-0000-0000-%012d", i+1),
+				fmt.Sprintf("mnt_enr_concurrent%07d", i),
+				fmt.Sprintf("conc-host-%d", i)))
+			switch {
+			case err == nil:
+				ok.Add(1)
+			case grpcstatus.Code(err) == codes.ResourceExhausted:
+				atCap.Add(1)
+			default:
+				other.Add(1)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	assert.Equal(t, int32(limit), ok.Load(), "exactly `limit` enrollments succeed")
+	assert.Equal(t, int32(goroutines-limit), atCap.Load(), "the rest hit ResourceExhausted")
+	assert.Equal(t, int32(0), other.Load(), "no unexpected errors")
+
+	active, _, err := store.CountByStatus(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, limit, active, "active agents never exceed the cap")
 }
 
 // Community cannot enroll any agent (cap 0), even via a valid token.

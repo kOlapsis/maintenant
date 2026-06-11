@@ -211,26 +211,63 @@ func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) 
 	return nil
 }
 
-// ConsumeAtomic atomically marks a token as consumed. Returns ErrTokenNotFound,
-// ErrTokenAlreadyConsumed, or ErrTokenExpired on failure.
-func (s *AgentStore) ConsumeAtomic(ctx context.Context, tokenCleartext, agentID string) error {
-	now := time.Now().Unix()
-	res, err := s.writer.Exec(ctx,
-		`UPDATE enrollment_tokens
-		SET consumed_at = ?, consumed_by_agent_id = ?
-		WHERE token = ? AND consumed_at IS NULL AND expires_at > ?`,
-		now, agentID, tokenCleartext, now,
-	)
-	if err != nil {
-		return fmt.Errorf("consume token: %w", err)
-	}
-	if res.RowsAffected == 1 {
+// EnrollAtomic enforces the per-edition host cap, consumes the one-time token,
+// and inserts the agent as a single serialized transaction. Because the count,
+// the token consume, and the insert run in one writer-goroutine transaction, no
+// two concurrent enrollments can both pass the cap check and over-fill it. A
+// limit < 0 means unlimited; the local sentinel is never counted. Returns
+// ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed, or
+// ErrTokenExpired.
+func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if limit >= 0 {
+			var active int
+			if err := tx.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM agents WHERE id != ? AND status = 'active'`, uid.LocalAgent,
+			).Scan(&active); err != nil {
+				return fmt.Errorf("count active agents: %w", err)
+			}
+			if active >= limit {
+				return agent.ErrHostLimitReached
+			}
+		}
+
+		now := time.Now().Unix()
+		res, err := tx.ExecContext(ctx,
+			`UPDATE enrollment_tokens
+			SET consumed_at = ?, consumed_by_agent_id = ?
+			WHERE token = ? AND consumed_at IS NULL AND expires_at > ?`,
+			now, a.AgentID, tokenCleartext, now,
+		)
+		if err != nil {
+			return fmt.Errorf("consume token: %w", err)
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("consume token rows: %w", err)
+		}
+		if affected != 1 {
+			return classifyTokenFailure(ctx, tx, tokenCleartext, now)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO agents (id, public_key, hostname, label, os_arch, agent_version,
+				detected_runtime, status, last_seen_at, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			a.AgentID, a.PublicKey, a.Hostname, a.Label, a.OSArch, a.AgentVersion,
+			a.DetectedRuntime, a.Status, nullableTime(a.LastSeenAt), a.CreatedAt.Unix(),
+		); err != nil {
+			return fmt.Errorf("insert agent: %w", err)
+		}
 		return nil
-	}
-	// Determine why it failed.
+	})
+}
+
+// classifyTokenFailure determines why a token UPDATE matched no rows.
+func classifyTokenFailure(ctx context.Context, tx *sql.Tx, tokenCleartext string, now int64) error {
 	var consumed sql.NullInt64
 	var expiresAt int64
-	err = s.db.QueryRowContext(ctx,
+	err := tx.QueryRowContext(ctx,
 		`SELECT consumed_at, expires_at FROM enrollment_tokens WHERE token = ?`, tokenCleartext,
 	).Scan(&consumed, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
