@@ -21,6 +21,7 @@ import { useContainersStore } from '@/stores/containers'
 import { useAgentsStore } from '@/stores/agents'
 import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
+import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import { useTheme } from '@/composables/useTheme'
 
@@ -31,8 +32,8 @@ const resources = useResourcesStore()
 const containers = useContainersStore()
 const agentsStore = useAgentsStore()
 
-// Active enrolled agents drive the global host filter (the dropdown now lives in
-// the sidebar nav); this watch keeps the selection valid when agents change.
+// Active enrolled agents drive the global host filter (the dropdown lives in the
+// header, before the search); this watch keeps the selection valid when agents change.
 const activeAgentIds = computed(() =>
   agentsStore.agents.filter((a) => a.status === 'active').map((a) => a.agent_id),
 )
@@ -168,6 +169,9 @@ const themeTooltip = computed(() => {
 <template>
   <header class="hidden md:flex h-16 shrink-0 border-b border-slate-800 items-center justify-between px-6 bg-pb-surface/60 backdrop-blur-md z-10">
     <div class="flex items-center gap-5">
+      <!-- Global host/resource scope selector (hidden on single-host installs) -->
+      <HostFilterDropdown v-if="activeAgentIds.length > 0" class="w-48 shrink-0" />
+
       <!-- Search -->
       <div class="relative group">
         <Search
@@ -184,7 +188,6 @@ const themeTooltip = computed(() => {
 
       <!-- Monitor health counters (containers + endpoints + heartbeats + certificates) -->
       <div class="hidden sm:flex items-center gap-5 border-l border-slate-800 pl-5">
-        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Monitors</span>
         <div class="flex items-center gap-2">
           <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">OK</span>
           <span class="text-sm font-black text-pb-status-ok">{{ dashboard.globalStats.running }}</span>

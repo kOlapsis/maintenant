@@ -21,7 +21,8 @@ const isSwarm = computed(() => availableRuntimes.value.includes('swarm'))
 </script>
 
 <template>
-  <div class="p-6">
+  <div class="overflow-y-auto p-3 sm:p-6">
+    <div class="max-w-7xl mx-auto">
     <h1 class="text-xl font-bold text-pb-primary mb-6">Cluster Overview</h1>
 
     <!-- K8s cluster overview (Enterprise) -->
@@ -56,6 +57,7 @@ const isSwarm = computed(() => availableRuntimes.value.includes('swarm'))
     <div v-if="kubernetesOnly" class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-5 mt-6">
       <IncidentFeedCard class="lg:col-span-2" />
       <HostResourcesCard :show-monitor-stats="false" />
+    </div>
     </div>
   </div>
 </template>

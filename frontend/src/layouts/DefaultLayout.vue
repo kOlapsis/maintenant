@@ -221,20 +221,14 @@ watch(
           <span class="text-sm font-bold text-pb-primary">maintenant</span>
         </div>
 
-        <!-- Host/resource scope selector — drives which runtime views the nav shows.
-             Kept outside the scrolling nav so its dropdown menu is not clipped. -->
-        <div class="px-4 pb-2 shrink-0">
-          <HostFilterDropdown />
-        </div>
-
         <!-- Main nav -->
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <template v-for="item in mainNav" :key="item.to">
-            <hr v-if="item.type === 'separator'" class="my-2 border-slate-700" />
+            <hr v-if="item.type === 'separator'" class="my-1.5 border-slate-700" />
             <RouterLink
               v-else-if="item.type === 'item'"
               :to="item.to!"
-              class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border group"
+              class="w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all border group"
               :class="[
                 route.path.startsWith(item.to!)
                   ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
@@ -344,7 +338,7 @@ watch(
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <template v-for="item in mainNav" :key="item.to">
-            <hr v-if="item.type === 'separator'" class="my-2 border-slate-700" />
+            <hr v-if="item.type === 'separator'" class="my-1.5 border-slate-700" />
             <RouterLink
               v-else-if="item.type === 'item'"
               :to="item.to!"

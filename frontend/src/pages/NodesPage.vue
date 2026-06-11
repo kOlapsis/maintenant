@@ -30,7 +30,8 @@ function onSwarmNodeSelect(nodeId: string) {
 </script>
 
 <template>
-  <div class="p-6">
+  <div class="overflow-y-auto p-3 sm:p-6">
+    <div class="max-w-7xl mx-auto">
     <h1 class="text-xl font-bold text-pb-primary mb-6">Nodes</h1>
 
     <!-- K8s nodes (Enterprise) -->
@@ -59,5 +60,6 @@ function onSwarmNodeSelect(nodeId: string) {
     <template v-if="!isKubernetes && !isSwarm">
       <p class="text-sm text-slate-400">Node management is available for Kubernetes and Docker Swarm runtimes.</p>
     </template>
+    </div>
   </div>
 </template>
