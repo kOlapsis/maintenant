@@ -15,7 +15,7 @@
   <div class="overflow-y-auto p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
     <div class="flex items-center justify-between mb-6">
-      <h1 class="text-xl font-semibold" style="color: var(--pb-text-primary)">Webhooks</h1>
+      <h1 class="text-2xl font-black text-pb-primary">Webhooks</h1>
       <button
         @click="showCreate = true"
         class="min-h-[44px] rounded px-4 text-sm font-medium"

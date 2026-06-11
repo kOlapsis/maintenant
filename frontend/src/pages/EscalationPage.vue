@@ -66,8 +66,8 @@ onMounted(() => {
       <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-bold text-pb-primary">Escalation Policies</h1>
-          <p class="text-xs text-slate-500 mt-0.5">
+          <h1 class="text-2xl font-black text-pb-primary">Escalation Policies</h1>
+          <p class="mt-1 text-sm text-pb-muted">
             Multi-level alert routing with automatic escalation chains
           </p>
         </div>

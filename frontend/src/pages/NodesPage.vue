@@ -32,7 +32,12 @@ function onSwarmNodeSelect(nodeId: string) {
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
     <div class="max-w-7xl mx-auto">
-    <h1 class="text-xl font-bold text-pb-primary mb-6">Nodes</h1>
+    <div class="mb-6 flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-black text-pb-primary">Nodes</h1>
+        <p class="mt-1 text-sm text-pb-muted">Node health and capacity across your cluster</p>
+      </div>
+    </div>
 
     <!-- K8s nodes (Enterprise) -->
     <template v-if="isKubernetes">

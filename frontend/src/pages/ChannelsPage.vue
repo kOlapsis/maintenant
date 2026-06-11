@@ -33,8 +33,8 @@ onUnmounted(() => {
     <div class="max-w-7xl mx-auto space-y-6 pb-12">
       <!-- Header -->
       <div>
-        <h1 class="text-xl font-bold text-pb-primary">Channels</h1>
-        <p class="text-xs text-slate-500 mt-0.5">
+        <h1 class="text-2xl font-black text-pb-primary">Channels</h1>
+        <p class="mt-1 text-sm text-pb-muted">
           Pure delivery targets — silent until wired through Triggers or Escalations
         </p>
       </div>
