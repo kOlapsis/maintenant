@@ -10,7 +10,7 @@ imagePullSecrets: []
 ## Runtime: "kubernetes" or "docker"
 runtime: kubernetes
 
-## License key (Enterprise edition)
+## License key (Pro edition)
 license:
   key: ""
   ## Use an existing secret instead of the inline key above.

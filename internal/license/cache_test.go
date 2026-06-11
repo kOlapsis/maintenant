@@ -91,7 +91,7 @@ func TestCache_TamperedPayload(t *testing.T) {
 	require.NoError(t, err)
 	var cached SignedResponse
 	require.NoError(t, json.Unmarshal(data, &cached))
-	cached.Payload = `{"status":"active","plan":"enterprise"}`
+	cached.Payload = `{"status":"active","plan":"team"}`
 	tampered, err := json.Marshal(cached)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, cacheFileName), tampered, 0600))
