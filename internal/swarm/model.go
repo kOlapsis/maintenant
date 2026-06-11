@@ -70,7 +70,7 @@ type PortConfig struct {
 	PublishMode   string `json:"publish_mode"`   // "ingress" or "host"
 }
 
-// UpdateStatus represents the rolling update status of a Swarm service (Enterprise).
+// UpdateStatus represents the rolling update status of a Swarm service (Pro).
 type UpdateStatus struct {
 	State       string     `json:"state"` // "updating", "paused", "completed", "rollback_started", "rollback_completed", "rollback_paused"
 	StartedAt   *time.Time `json:"started_at,omitempty"`
@@ -89,7 +89,7 @@ type TopologySnapshot struct {
 	Nodes    []SwarmNode
 }
 
-// SwarmNode represents a machine in the Swarm cluster (persisted for Enterprise).
+// SwarmNode represents a machine in the Swarm cluster (persisted for Pro).
 type SwarmNode struct {
 	ID                 string    `json:"id"`
 	AgentID            string    `json:"agent_id"`

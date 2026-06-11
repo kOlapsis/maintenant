@@ -27,6 +27,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 )
 
@@ -61,6 +62,22 @@ func NewAgentHandler(
 }
 
 func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *http.Request) {
+	// Refuse up front when the host cap is already reached, so the operator sees
+	// it before running the install command. The gRPC RegisterAgent path stays
+	// the authoritative barrier. The local runtime is never counted.
+	if limit := extension.AgentHostLimit(); limit >= 0 {
+		active, _, err := h.store.CountByStatus(r.Context())
+		if err != nil {
+			h.logger.Error("count agents for host limit", "err", err)
+			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check host limit")
+			return
+		}
+		if active >= limit {
+			WriteError(w, http.StatusConflict, "HOST_LIMIT_REACHED", "Agent host limit reached")
+			return
+		}
+	}
+
 	var body struct {
 		TTLHours int `json:"ttl_hours"`
 	}

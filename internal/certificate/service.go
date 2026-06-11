@@ -618,8 +618,8 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 		result.HostnameMatch = &raw.HostnameMatch
 
 		// OCSP stapling is a Pro feature — capture is free but the fields are only
-		// persisted, exposed and alerted on in Enterprise.
-		if extension.CurrentEdition() == extension.Enterprise {
+		// persisted, exposed and alerted on in Pro.
+		if extension.CurrentEdition() == extension.Pro {
 			result.OCSPStapled = raw.OCSPStapled
 			result.OCSPStatus = raw.OCSPStatus
 			result.OCSPProducedAt = raw.OCSPProducedAt

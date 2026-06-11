@@ -83,7 +83,7 @@ onUnmounted(() => {
         The posture score weights network exposure, configuration risks (privileged, host network), and pending updates across all {{ containerStore.runtimeLabel }} containers. Drill into individual containers to see the underlying insights, and <em>acknowledge</em> known findings to exclude them from the score with an audit trail.
       </FeatureHint>
 
-      <!-- Enterprise gate -->
+      <!-- Pro gate -->
       <FeatureGate feature="security_posture">
 
         <!-- Loading -->

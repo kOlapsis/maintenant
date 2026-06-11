@@ -136,7 +136,7 @@ type setEscalationPolicyActiveInput struct {
 // --- edition check helper ---
 
 func checkEscalationEdition() (*gomcp.CallToolResult, any, error) {
-	if extension.CurrentEdition() != extension.Enterprise {
+	if extension.CurrentEdition() != extension.Pro {
 		msg := `{"error":"edition_required","feature":"alert_escalation","message":"This tool requires Maintenant Pro. Upgrade at https://maintenant.dev/pro"}`
 		return &gomcp.CallToolResult{
 			Content: []gomcp.Content{&gomcp.TextContent{Text: msg}},

@@ -165,7 +165,7 @@ func newTestService(store *mockStore) *Service {
 	return NewService(
 		store,
 		&mockChannelStore{},
-		func() extension.Edition { return extension.Enterprise },
+		func() extension.Edition { return extension.Pro },
 		&mockSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)
@@ -321,7 +321,7 @@ func TestIsAlertSuppressed(t *testing.T) {
 	svc := NewService(
 		newMockStore(),
 		&mockChannelStore{},
-		func() extension.Edition { return extension.Enterprise },
+		func() extension.Edition { return extension.Pro },
 		&mockSuppressor{suppressed: true},
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
@@ -334,7 +334,7 @@ func TestIsAlertSuppressed_NotSuppressed(t *testing.T) {
 	svc := NewService(
 		newMockStore(),
 		&mockChannelStore{},
-		func() extension.Edition { return extension.Enterprise },
+		func() extension.Edition { return extension.Pro },
 		&mockSuppressor{suppressed: false},
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)

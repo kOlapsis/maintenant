@@ -13,12 +13,12 @@ package extension
 
 import "errors"
 
-// Edition identifies whether the running binary is Community or Enterprise.
+// Edition identifies whether the running binary is Community or Pro.
 type Edition string
 
 const (
-	Community  Edition = "community"
-	Enterprise Edition = "enterprise"
+	Community Edition = "community"
+	Pro       Edition = "pro"
 )
 
 // ErrNotAvailable is returned by no-op implementations when an extension is not available.
@@ -27,3 +27,19 @@ var ErrNotAvailable = errors.New("this feature requires an extended edition of m
 // CurrentEdition returns the edition of the running binary.
 // CE always returns Community. Extended editions override this via the build.
 var CurrentEdition = func() Edition { return Community }
+
+// proAgentHostLimit caps the number of remote agent hosts (the local runtime is
+// never counted) an installation may enroll on the Pro edition.
+const proAgentHostLimit = 10
+
+// AgentHostLimit returns the maximum number of enrolled agent hosts (local
+// runtime excluded) for the running edition: -1 means unlimited, 0 means none.
+// Community cannot enroll agents (multi-host is Pro-only); Pro is capped.
+func AgentHostLimit() int {
+	switch CurrentEdition() {
+	case Pro:
+		return proAgentHostLimit
+	default:
+		return 0
+	}
+}

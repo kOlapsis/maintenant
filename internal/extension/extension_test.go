@@ -31,6 +31,23 @@ func TestErrNotAvailable(t *testing.T) {
 	}
 }
 
+func TestAgentHostLimit(t *testing.T) {
+	orig := CurrentEdition
+	t.Cleanup(func() { CurrentEdition = orig })
+
+	// Community cannot enroll agents (multi-host is Pro-only).
+	CurrentEdition = func() Edition { return Community }
+	if got := AgentHostLimit(); got != 0 {
+		t.Fatalf("Community: expected 0, got %d", got)
+	}
+
+	// Pro is capped (a future higher edition would lift this to -1).
+	CurrentEdition = func() Edition { return Pro }
+	if got := AgentHostLimit(); got != proAgentHostLimit {
+		t.Fatalf("Pro: expected %d, got %d", proAgentHostLimit, got)
+	}
+}
+
 func TestNoopEscalator(t *testing.T) {
 	ctx := context.Background()
 	n := NoopEscalator{}

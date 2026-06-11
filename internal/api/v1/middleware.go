@@ -154,10 +154,10 @@ func bodyLimit(maxBytes int64, next http.Handler) http.Handler {
 	})
 }
 
-// requireEnterprise wraps a handler to reject requests in Community edition.
-func requireEnterprise(next http.HandlerFunc) http.HandlerFunc {
+// requirePro wraps a handler to reject requests in Community edition.
+func requirePro(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if extension.CurrentEdition() != extension.Enterprise {
+		if extension.CurrentEdition() != extension.Pro {
 			WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
 			return
 		}

@@ -98,7 +98,7 @@ func (h *UpdateHandler) HandleGetUpdateSummary(w http.ResponseWriter, r *http.Re
 		"counts":      summary,
 	}
 
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		if cveCounts, err := h.store.GetCVESummaryCounts(r.Context()); err == nil {
 			resp["cve_counts"] = cveCounts
 		}
@@ -150,7 +150,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 		}
 	}
 
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		resp["source_url"] = u.SourceURL
 		resp["previous_digest"] = u.PreviousDigest
 		resp["changelog_url"] = u.ChangelogURL

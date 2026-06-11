@@ -92,7 +92,7 @@ func checkAdvancedFiltersEdition(scopes, tags string) (*gomcp.CallToolResult, an
 	if scopes == "" && tags == "" {
 		return nil, nil, nil
 	}
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		return nil, nil, nil
 	}
 	msg := `{"error":"edition_required","feature":"alert_advanced_filters","message":"Advanced filters (scopes, tags) require Maintenant Pro. Upgrade at https://maintenant.dev/pro"}`

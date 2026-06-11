@@ -47,7 +47,7 @@ func TestRunRetentionLoop_PurgesOldRuns(t *testing.T) {
 	svc := NewService(
 		store,
 		&mockChannelStore{},
-		func() extension.Edition { return extension.Enterprise },
+		func() extension.Edition { return extension.Pro },
 		&mockSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)

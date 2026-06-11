@@ -26,6 +26,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // ingestImpl implements agentpb.IngestServer.
@@ -46,6 +47,22 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 	// Final safety: truncate hostname to 64 chars if it somehow exceeds that.
 	if len(label) > 64 {
 		label = label[:64]
+	}
+
+	// Enforce the per-edition agent host cap before consuming the one-time
+	// token, so a rejected enrollment leaves the token reusable. The local
+	// runtime is never counted (CountByStatus excludes uid.LocalAgent and
+	// counts only active agents, so a revoked one frees a slot).
+	if limit := extension.AgentHostLimit(); limit >= 0 {
+		active, _, err := impl.deps.AgentStore.CountByStatus(ctx)
+		if err != nil {
+			logger.Error("agent host limit check failed", "err", err)
+			return nil, grpcstatus.Error(codes.Internal, "host limit check failed")
+		}
+		if active >= limit {
+			logger.Warn("agent.enroll_rejected", "reason", "host_limit", "active", active, "limit", limit)
+			return nil, grpcstatus.Error(codes.ResourceExhausted, "agent host limit reached")
+		}
 	}
 
 	// Consume the one-time enrollment token atomically.

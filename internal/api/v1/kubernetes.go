@@ -394,7 +394,7 @@ func (h *KubernetesHandler) HandleGetCluster(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// HandleGetWorkloadResources handles GET /api/v1/kubernetes/workloads/{id}/resources (Enterprise).
+// HandleGetWorkloadResources handles GET /api/v1/kubernetes/workloads/{id}/resources (Pro).
 // Returns per-pod CPU/RAM from metrics-server.
 func (h *KubernetesHandler) HandleGetWorkloadResources(w http.ResponseWriter, r *http.Request) {
 	rawID := r.PathValue("id")
@@ -469,7 +469,7 @@ func (h *KubernetesHandler) HandleGetWorkloadResources(w http.ResponseWriter, r 
 	})
 }
 
-// HandleGetNodeResources handles GET /api/v1/kubernetes/nodes/{name}/resources (Enterprise).
+// HandleGetNodeResources handles GET /api/v1/kubernetes/nodes/{name}/resources (Pro).
 // Returns node-level CPU/RAM from metrics-server.
 func (h *KubernetesHandler) HandleGetNodeResources(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")

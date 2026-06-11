@@ -103,7 +103,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_agents",
-		Description: "List all registered remote agents with their connection state, runtime type, hostname, and label. Only available in Enterprise edition.",
+		Description: "List all registered remote agents with their connection state, runtime type, hostname, and label. Only available in Pro edition.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAgentsHandler(svc))
 }

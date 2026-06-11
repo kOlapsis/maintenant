@@ -91,7 +91,7 @@ type resumeMonitorInput struct {
 
 func acknowledgeAlertHandler(svc *Services) gomcp.ToolHandlerFor[acknowledgeAlertInput, any] {
 	return func(_ context.Context, _ *gomcp.CallToolRequest, _ acknowledgeAlertInput) (*gomcp.CallToolResult, any, error) {
-		// Alert acknowledgment is an Enterprise feature — CE has no ack concept
+		// Alert acknowledgment is an Pro feature — CE has no ack concept
 		return errResult(extension.ErrNotAvailable.Error())
 	}
 }

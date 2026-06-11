@@ -53,7 +53,7 @@ import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
-const { isEnterprise, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } =
+const { isPro, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } =
   useEdition()
 const swarmStore = useSwarmStore()
 const runtimeStore = useRuntimeStore()
@@ -135,7 +135,7 @@ interface NavItem {
 
 const allNav: NavItem[] = [
   { type: 'item', to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  // Enterprise: Cluster (Swarm & K8s)
+  // Pro: Cluster (Swarm & K8s)
   {
     type: 'item',
     to: '/cluster',
@@ -153,7 +153,7 @@ const allNav: NavItem[] = [
   // K8s Community
   { type: 'item', to: '/workloads', label: 'Workloads', icon: Cloud, runtime: ['kubernetes'] },
   { type: 'item', to: '/pods', label: 'Pods', icon: Box, runtime: ['kubernetes'] },
-  // Enterprise: Nodes (Swarm & K8s)
+  // Pro: Nodes (Swarm & K8s)
   {
     type: 'item',
     to: '/nodes',
@@ -259,19 +259,19 @@ watch(
               class="rounded-xl p-3 border"
               style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)"
             >
-              <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isEnterprise }">
+              <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isPro }">
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
-                  :class="isEnterprise ? 'text-pb-accent' : 'text-pb-secondary'"
-                  >{{ isEnterprise ? 'Pro Edition' : 'Community Edition' }}</span
+                  :class="isPro ? 'text-pb-accent' : 'text-pb-secondary'"
+                  >{{ isPro ? 'Pro Edition' : 'Community Edition' }}</span
                 >
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   :class="
-                    isEnterprise ? 'bg-emerald-500/20 border border-emerald-500/30' : 'border'
+                    isPro ? 'bg-emerald-500/20 border border-emerald-500/30' : 'border'
                   "
                   :style="
-                    isEnterprise
+                    isPro
                       ? { color: 'var(--pb-accent)' }
                       : {
                           background: 'var(--pb-bg-surface)',
@@ -283,7 +283,7 @@ watch(
                 >
               </div>
               <button
-                v-if="!isEnterprise"
+                v-if="!isPro"
                 class="cursor-pointer block w-full py-1.5 rounded-lg text-xs font-semibold text-center transition-colors"
                 style="background: var(--pb-bg-surface); color: var(--pb-text-secondary)"
               >

@@ -14,15 +14,15 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// requireEnterprise middleware
+// requirePro middleware
 // ---------------------------------------------------------------------------
 
-func TestRequireEnterprise_CommunityBlocked(t *testing.T) {
+func TestRequirePro_CommunityBlocked(t *testing.T) {
 	original := extension.CurrentEdition
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	handler := requireEnterprise(func(w http.ResponseWriter, r *http.Request) {
+	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -34,13 +34,13 @@ func TestRequireEnterprise_CommunityBlocked(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
 }
 
-func TestRequireEnterprise_EnterpriseAllowed(t *testing.T) {
+func TestRequirePro_ProAllowed(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	handlerCalled := false
-	handler := requireEnterprise(func(w http.ResponseWriter, r *http.Request) {
+	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
 		handlerCalled = true
 		w.WriteHeader(http.StatusOK)
 	})

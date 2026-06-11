@@ -248,12 +248,12 @@ func TestPersonalizationV1_PutSettings_InvalidDateFormat(t *testing.T) {
 
 // --- T025: Edition gating ---
 
-func TestPersonalizationV1_EnterpriseGating_PutSettings(t *testing.T) {
+func TestPersonalizationV1_ProGating_PutSettings(t *testing.T) {
 	original := extension.CurrentEdition
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	handler := requireEnterprise(func(w http.ResponseWriter, r *http.Request) {
+	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/status-page/settings", nil)
@@ -435,12 +435,12 @@ func TestPersonalizationV1_FAQ_Reorder(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestPersonalizationV1_FAQ_EnterpriseGating(t *testing.T) {
+func TestPersonalizationV1_FAQ_ProGating(t *testing.T) {
 	original := extension.CurrentEdition
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	handler := requireEnterprise(func(w http.ResponseWriter, r *http.Request) {
+	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/status-page/faq", nil)

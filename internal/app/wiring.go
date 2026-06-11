@@ -420,7 +420,7 @@ func (a *App) wireUpdateCallback() {
 					"update_type": m["update_type"],
 				}
 
-				if extension.CurrentEdition() == extension.Enterprise {
+				if extension.CurrentEdition() == extension.Pro {
 					if cmd, ok := m["update_command"]; ok {
 						details["update_command"] = cmd
 					}
@@ -513,7 +513,7 @@ func (a *App) wireSwarmCallbacks() {
 		})
 	}
 
-	// Wire node service into event processor and alert pipeline (Enterprise).
+	// Wire node service into event processor and alert pipeline (Pro).
 	if a.swarmNodeSvc != nil {
 		a.swarmEvents.SetNodeService(a.swarmNodeSvc)
 
@@ -531,19 +531,19 @@ func (a *App) wireSwarmCallbacks() {
 		a.swarmNodeSvc.SetEventCallback(sseBroadcast)
 		a.swarmNodeSvc.SetAlertCallback(alertForward)
 
-		// Wire crash-loop detector (Enterprise).
+		// Wire crash-loop detector (Pro).
 		if a.swarmCrashLoop != nil {
 			a.swarmCrashLoop.SetEventCallback(sseBroadcast)
 			a.swarmCrashLoop.SetAlertCallback(alertForward)
 		}
 
-		// Wire update tracker (Enterprise).
+		// Wire update tracker (Pro).
 		if a.swarmUpdateTracker != nil {
 			a.swarmUpdateTracker.SetEventCallback(sseBroadcast)
 			a.swarmUpdateTracker.SetAlertCallback(alertForward)
 		}
 
-		// Wire replica health checker (Enterprise).
+		// Wire replica health checker (Pro).
 		if a.swarmReplicaChecker != nil {
 			a.swarmReplicaChecker.SetEventCallback(sseBroadcast)
 			a.swarmReplicaChecker.SetAlertCallback(alertForward)

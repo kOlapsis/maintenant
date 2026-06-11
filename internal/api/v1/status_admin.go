@@ -129,7 +129,7 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 	}
 
 	// Quota check for Community edition (max 3 components).
-	if extension.CurrentEdition() != extension.Enterprise {
+	if extension.CurrentEdition() != extension.Pro {
 		existing, err := h.components.ListComponents(r.Context())
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "internal", err.Error())

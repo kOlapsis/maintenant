@@ -18,7 +18,7 @@ import { useEdition } from '@/composables/useEdition'
 import FeatureGate from '@/components/FeatureGate.vue'
 import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
 
-const { hasFeature, isEnterprise } = useEdition()
+const { hasFeature, isPro } = useEdition()
 
 const emit = defineEmits<{
   created: [id: string]
@@ -220,7 +220,7 @@ function goBack() {
           class="relative"
         >
           <!-- SMTP not configured special case -->
-          <SmtpNotConfigured v-if="type.feature === 'smtp' && isEnterprise && !hasFeature('smtp')" :title="type.label" />
+          <SmtpNotConfigured v-if="type.feature === 'smtp' && isPro && !hasFeature('smtp')" :title="type.label" />
 
           <!-- Normal pro channel button -->
           <button

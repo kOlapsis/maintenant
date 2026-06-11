@@ -98,8 +98,8 @@ func TestHandleCreateChannel_TypeGating(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:    "enterprise + slack passes type check",
-			edition: extension.Enterprise,
+			name:    "pro + slack passes type check",
+			edition: extension.Pro,
 			// http:// URL fails HTTPS scheme check → 400, not 403
 			body:       `{"type":"slack","name":"test","url":"http://not-https.example"}`,
 			wantStatus: http.StatusBadRequest,
@@ -179,7 +179,7 @@ func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	// Channel already has type "slack" (created under Enterprise, now downgraded)
+	// Channel already has type "slack" (created under Pro, now downgraded)
 	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "slack"}}
 	h := &AlertHandler{channelStore: store}
 

@@ -94,7 +94,7 @@ func (s *IngestService) Reconcile(ctx context.Context, agentID string, snap Topo
 
 // ReconcileServicesTasks reconciles only the services and tasks of a snapshot,
 // leaving nodes untouched. Used by the server's local reconcile loop, where the
-// Enterprise NodeService owns the local swarm_nodes rows; reconciling nodes here
+// Pro NodeService owns the local swarm_nodes rows; reconciling nodes here
 // too would let the two writers fight over the same LocalAgent rows.
 func (s *IngestService) ReconcileServicesTasks(ctx context.Context, agentID string, snap TopologySnapshot) error {
 	if err := s.store.ReplaceServicesForAgent(ctx, agentID, snap.Services); err != nil {

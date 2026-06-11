@@ -14,11 +14,11 @@ type ContainerMock = { containerCount: number; groups: unknown[] }
 
 function mountProBanner(
   store: ContainerMock,
-  isEnterprise = ref(false),
+  isPro = ref(false),
 ): { handle: ProBannerHandle; unmount: () => void } {
   mockedUseContainersStore.mockReturnValue(store as ReturnType<typeof _useContainersStore>)
   mockedUseEdition.mockReturnValue(
-    { isEnterprise } as ReturnType<typeof _useEdition>,
+    { isPro } as ReturnType<typeof _useEdition>,
   )
 
   let handle!: ProBannerHandle
@@ -294,7 +294,7 @@ describe('useProBanner — license gate', () => {
     localStorage.clear()
   })
 
-  it('FR-013 enterprise license hides banner (tier still computed)', async () => {
+  it('FR-013 pro license hides banner (tier still computed)', async () => {
     const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, ref(true))
     await nextTick()
     expect(handle.tier.value).toBe(2)
@@ -310,12 +310,12 @@ describe('useProBanner — license gate', () => {
     unmount()
   })
 
-  it('reactive to isEnterprise change: false → visible becomes true', async () => {
-    const isEnterprise = ref(true)
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isEnterprise)
+  it('reactive to isPro change: false → visible becomes true', async () => {
+    const isPro = ref(true)
+    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isPro)
     await nextTick()
     expect(handle.visible.value).toBe(false)
-    isEnterprise.value = false
+    isPro.value = false
     await nextTick()
     expect(handle.visible.value).toBe(true)
     unmount()
@@ -325,23 +325,23 @@ describe('useProBanner — license gate', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
     localStorage.setItem('pb:banner:pro-tier-2', String(Date.now() - 1000))
-    const isEnterprise = ref(true)
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isEnterprise)
+    const isPro = ref(true)
+    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isPro)
     await nextTick()
     expect(handle.visible.value).toBe(false) // Pro masque
-    isEnterprise.value = false
+    isPro.value = false
     await nextTick()
     expect(handle.visible.value).toBe(false) // cooldown still active
     unmount()
     vi.useRealTimers()
   })
 
-  it('no dismissal: false → true when enterprise expires', async () => {
-    const isEnterprise = ref(true)
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isEnterprise)
+  it('no dismissal: false → true when pro expires', async () => {
+    const isPro = ref(true)
+    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isPro)
     await nextTick()
     expect(handle.visible.value).toBe(false)
-    isEnterprise.value = false
+    isPro.value = false
     await nextTick()
     expect(handle.visible.value).toBe(true)
     unmount()

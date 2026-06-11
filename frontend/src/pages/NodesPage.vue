@@ -39,7 +39,7 @@ function onSwarmNodeSelect(nodeId: string) {
       </div>
     </div>
 
-    <!-- K8s nodes (Enterprise) -->
+    <!-- K8s nodes (Pro) -->
     <template v-if="isKubernetes">
       <FeatureGate
         feature="k8s_cluster"
@@ -50,7 +50,7 @@ function onSwarmNodeSelect(nodeId: string) {
       </FeatureGate>
     </template>
 
-    <!-- Swarm nodes (Enterprise) -->
+    <!-- Swarm nodes (Pro) -->
     <template v-if="isSwarm">
       <FeatureGate
         feature="swarm_dashboard"

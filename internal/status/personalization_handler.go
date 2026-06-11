@@ -102,9 +102,9 @@ func (h *PersonalizationPublicHandler) HandleSettingsJSON(w http.ResponseWriter,
 		return
 	}
 
-	isEnterprise := extension.CurrentEdition() == extension.Enterprise
+	isPro := extension.CurrentEdition() == extension.Pro
 
-	if !isEnterprise {
+	if !isPro {
 		settings = DefaultSettings()
 	}
 
@@ -148,7 +148,7 @@ func (h *PersonalizationPublicHandler) HandleSettingsJSON(w http.ResponseWriter,
 		DateFormat: settings.DateFormat,
 	}
 
-	if isEnterprise {
+	if isPro {
 		for _, role := range []AssetRole{AssetRoleLogo, AssetRoleFavicon, AssetRoleHero} {
 			asset, err := h.svc.GetAsset(ctx, role)
 			if err != nil {

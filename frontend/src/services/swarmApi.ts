@@ -207,7 +207,7 @@ export interface SwarmTaskListResponse {
   total: number
 }
 
-// --- Per-task resource usage (Enterprise) ---
+// --- Per-task resource usage (Pro) ---
 
 export interface SwarmTaskResourceEntry {
   task_id: string

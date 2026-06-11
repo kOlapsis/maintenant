@@ -19,19 +19,22 @@ import { useEdition } from '@/composables/useEdition'
 import FeatureGate from '@/components/FeatureGate.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import EnrollmentTokenModal from '@/components/EnrollmentTokenModal.vue'
+import HostLimitDialog from '@/components/HostLimitDialog.vue'
 import AgentDetailPanel from '@/components/AgentDetailPanel.vue'
 import { docUrl } from '@/utils/docs'
 import { MonitorDot, Server, Boxes, ShieldCheck } from 'lucide-vue-next'
 import type { Agent, EnrollmentTokenCreated } from '@/services/agentApi'
 
-const { hasFeature } = useEdition()
+const { hasFeature, getQuota } = useEdition()
 const store = useAgentsStore()
 
 const isAvailable = computed(() => hasFeature('multihost'))
+const hostQuota = getQuota('agent_hosts')
 
 const generatingToken = ref(false)
 const tokenModalData = ref<EnrollmentTokenCreated | null>(null)
 const tokenError = ref<string | null>(null)
+const showLimitDialog = ref(false)
 
 const detailOpen = ref(false)
 const selectedAgent = ref<Agent | null>(null)
@@ -55,6 +58,11 @@ onUnmounted(() => {
 })
 
 async function handleGenerateToken() {
+  // At the host cap, invite a direct conversation instead of enrolling more.
+  if (hostQuota.value.isAtLimit) {
+    showLimitDialog.value = true
+    return
+  }
   generatingToken.value = true
   tokenError.value = null
   try {
@@ -74,7 +82,7 @@ function handleModalClose() {
 async function handleDeleteToken(tokenId: string) {
   try {
     await store.deleteToken(tokenId)
-  } catch (e) {
+  } catch {
     // token may already be consumed — silently refresh
     await store.fetchTokens()
   }
@@ -113,7 +121,7 @@ function runtimeLabel(rt: string): string {
         Enroll lightweight agents on remote machines to stream their Docker, Swarm and Kubernetes state back to this server. Generate an enrollment token, run the install command on the host, and the agent appears below.
       </FeatureHint>
 
-      <!-- Enterprise gate -->
+      <!-- Pro gate -->
       <FeatureGate feature="multihost">
         <!-- Metrics strip -->
         <div
@@ -143,7 +151,14 @@ function runtimeLabel(rt: string): string {
           class="overflow-hidden overflow-x-auto rounded-xl border border-pb-default bg-pb-surface mb-6"
         >
           <div class="flex items-center justify-between px-4 py-3 border-b border-pb-subtle">
-            <p class="text-sm font-semibold text-pb-primary">Enrolled Agents</p>
+            <p class="text-sm font-semibold text-pb-primary">
+              Enrolled Agents
+              <span
+                v-if="hostQuota.limit !== -1"
+                class="ml-2 font-mono text-xs"
+                :style="{ color: hostQuota.isAtLimit ? 'var(--pb-status-warn-text)' : 'var(--pb-text-muted)' }"
+              >{{ hostQuota.used }}/{{ hostQuota.limit }}</span>
+            </p>
             <button
               :disabled="generatingToken"
               class="min-h-[36px] rounded-lg px-4 text-sm font-medium transition-opacity disabled:opacity-50"
@@ -308,6 +323,14 @@ function runtimeLabel(rt: string): string {
     v-if="tokenModalData"
     :token="tokenModalData"
     @close="handleModalClose"
+  />
+
+  <!-- Host cap reached — invite a direct conversation -->
+  <HostLimitDialog
+    v-if="showLimitDialog"
+    :used="hostQuota.used"
+    :limit="hostQuota.limit"
+    @close="showLimitDialog = false"
   />
 
   <!-- Agent detail panel -->

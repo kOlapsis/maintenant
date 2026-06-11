@@ -105,7 +105,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	svc := escalation.NewService(
 		store,
 		&noopChannelStore{},
-		func() extension.Edition { return extension.Enterprise },
+		func() extension.Edition { return extension.Pro },
 		&noopSuppressor{},
 		logger,
 	)
@@ -185,7 +185,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 }
 
 // TestRetentionLoopStartsInProOnly verifies that RunRetentionLoop is started
-// in Enterprise (Pro) mode and triggers a purge, while in Community (CE) mode
+// in Pro (Pro) mode and triggers a purge, while in Community (CE) mode
 // the loop goroutine is never launched and the purge count stays at zero.
 func TestRetentionLoopStartsInProOnly(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -195,7 +195,7 @@ func TestRetentionLoopStartsInProOnly(t *testing.T) {
 		svc := escalation.NewService(
 			pstore,
 			&noopChannelStore{},
-			func() extension.Edition { return extension.Enterprise },
+			func() extension.Edition { return extension.Pro },
 			&noopSuppressor{},
 			logger,
 		)
@@ -215,8 +215,8 @@ func TestRetentionLoopStartsInProOnly(t *testing.T) {
 		defer cancel()
 
 		// Replicate the conditional in app.go Start():
-		//   if extension.CurrentEdition() == extension.Enterprise { go svc.RunRetentionLoop(ctx) }
-		if svc != nil { // svc is Enterprise; always true — mirrors the runtime check
+		//   if extension.CurrentEdition() == extension.Pro { go svc.RunRetentionLoop(ctx) }
+		if svc != nil { // svc is Pro; always true — mirrors the runtime check
 			go svc.RunRetentionLoop(ctx)
 		}
 

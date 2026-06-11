@@ -94,7 +94,7 @@ const (
 
 // Runtime context change events.
 const (
-	RuntimeContextChanged     = "runtime.context_changed"
+	RuntimeContextChanged      = "runtime.context_changed"
 	RuntimeAvailabilityChanged = "runtime.availability_changed"
 )
 
@@ -123,7 +123,7 @@ const (
 	SwarmStatus            = "swarm.status"
 )
 
-// Swarm monitoring events (Enterprise).
+// Swarm monitoring events (Pro).
 const (
 	SwarmNodeStatusChanged  = "swarm.node_status_changed"
 	SwarmTaskFailed         = "swarm.task_failed"
@@ -140,7 +140,7 @@ const (
 	KubernetesNodeChanged     = "kubernetes.node_changed"
 )
 
-// Multi-host agent events (Enterprise).
+// Multi-host agent events (Pro).
 const (
 	AgentCreated      = "agent.created"
 	AgentUpdated      = "agent.updated"

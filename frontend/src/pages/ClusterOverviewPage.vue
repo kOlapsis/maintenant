@@ -30,7 +30,7 @@ const isSwarm = computed(() => availableRuntimes.value.includes('swarm'))
       </div>
     </div>
 
-    <!-- K8s cluster overview (Enterprise) -->
+    <!-- K8s cluster overview (Pro) -->
     <template v-if="isKubernetes">
       <FeatureGate
         feature="k8s_cluster"
@@ -41,7 +41,7 @@ const isSwarm = computed(() => availableRuntimes.value.includes('swarm'))
       </FeatureGate>
     </template>
 
-    <!-- Swarm cluster overview (Enterprise) -->
+    <!-- Swarm cluster overview (Pro) -->
     <template v-if="isSwarm">
       <FeatureGate
         feature="swarm_dashboard"

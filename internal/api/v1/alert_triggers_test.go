@@ -247,9 +247,9 @@ func TestHandleCreateTrigger_ProFilterTags_CommunityBlocked(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "edition_required")
 }
 
-func TestHandleCreateTrigger_ProFilterAllowed_Enterprise(t *testing.T) {
+func TestHandleCreateTrigger_ProFilterAllowed_Pro(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	h, _ := newTriggerHandler(true)

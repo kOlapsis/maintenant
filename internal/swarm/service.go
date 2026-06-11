@@ -303,7 +303,7 @@ func mapService(svc swarm.Service) *SwarmService {
 		})
 	}
 
-	// Update status (Enterprise feature, but captured always).
+	// Update status (Pro feature, but captured always).
 	if svc.UpdateStatus != nil && svc.UpdateStatus.State != "" {
 		us := &UpdateStatus{
 			State:   string(svc.UpdateStatus.State),

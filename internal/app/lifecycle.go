@@ -67,7 +67,7 @@ func (a *App) reconcile(ctx context.Context) {
 		}
 	}
 
-	// Swarm node reconciliation on startup (Enterprise).
+	// Swarm node reconciliation on startup (Pro).
 	if a.swarmNodeSvc != nil {
 		a.logger.Info("running Swarm node reconciliation")
 		if err := a.swarmNodeSvc.Reconcile(ctx); err != nil {
@@ -132,7 +132,7 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 				if a.swarmEvents != nil {
 					a.swarmEvents.ProcessEvent(ctx, evt)
 
-					// On service update, check rolling update status (Enterprise).
+					// On service update, check rolling update status (Pro).
 					if evt.ResourceType == runtime.ResourceService && evt.Action == "update" && a.swarmUpdateTracker != nil {
 						go a.swarmUpdateTracker.CheckService(ctx, evt.ExternalID)
 					}
@@ -168,7 +168,7 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 			case "stop", "die", "kill":
 				a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
 
-				// Feed Swarm task failures to crash-loop detector (Enterprise).
+				// Feed Swarm task failures to crash-loop detector (Pro).
 				if evt.Action == "die" && a.swarmCrashLoop != nil {
 					if svcID, ok := evt.Labels["com.docker.swarm.service.id"]; ok && svcID != "" {
 						svcName := evt.Labels["com.docker.swarm.service.name"]
@@ -197,7 +197,7 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 	return done
 }
 
-// startNodeRefresh runs periodic Swarm node reconciliation (Enterprise, 60s).
+// startNodeRefresh runs periodic Swarm node reconciliation (Pro, 60s).
 func (a *App) startNodeRefresh(ctx context.Context) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -255,7 +255,7 @@ func (a *App) startKubernetesReconcile(ctx context.Context) {
 
 // startSwarmTopologyReconcile periodically snapshots the server's own Swarm
 // services and tasks into the per-agent store under the LocalAgent id. Nodes are
-// left to the Enterprise NodeService to avoid two writers fighting over the same
+// left to the Pro NodeService to avoid two writers fighting over the same
 // rows. No-op unless this server is a swarm manager.
 func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
 	if a.swarmDiscovery == nil || a.swarmIngest == nil {

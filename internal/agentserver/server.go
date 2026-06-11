@@ -10,7 +10,7 @@
 // Source: https://github.com/kolapsis/maintenant
 
 // Package agentserver implements the gRPC Ingest service that remote agents
-// connect to for enrollment and event streaming (Enterprise only).
+// connect to for enrollment and event streaming (Pro only).
 package agentserver
 
 import (

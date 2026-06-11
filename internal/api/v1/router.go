@@ -121,7 +121,7 @@ type HandlerDeps struct {
 	// Kubernetes (per-agent store-backed reads)
 	KubernetesStore *sqlite.KubernetesStore
 
-	// Multi-host agents (Enterprise)
+	// Multi-host agents (Pro)
 	AgentStore          *sqlite.AgentStore
 	AgentSessions       AgentSessions
 	GRPCPublicURL       string
@@ -258,7 +258,7 @@ func NewRouter(d HandlerDeps) *Router {
 			rh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 		}
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/current", rh.HandleGetCurrent)
-		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", requireEnterprise(rh.HandleGetHistory))
+		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", requirePro(rh.HandleGetHistory))
 		r.mux.HandleFunc("GET /api/v1/resources/summary", rh.HandleGetSummary)
 		r.mux.HandleFunc("GET /api/v1/resources/hosts", rh.HandleGetHosts)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/alerts", rh.HandleGetAlertConfig)
@@ -316,50 +316,50 @@ func NewRouter(d HandlerDeps) *Router {
 		// Incidents
 		if d.StatusIncidents != nil {
 			r.mux.HandleFunc("GET /api/v1/status/incidents", sh.HandleListIncidents)
-			r.mux.HandleFunc("POST /api/v1/status/incidents", requireEnterprise(sh.HandleCreateIncident))
-			r.mux.HandleFunc("PUT /api/v1/status/incidents/{id}", requireEnterprise(sh.HandleUpdateIncident))
-			r.mux.HandleFunc("DELETE /api/v1/status/incidents/{id}", requireEnterprise(sh.HandleDeleteIncident))
-			r.mux.HandleFunc("POST /api/v1/status/incidents/{id}/updates", requireEnterprise(sh.HandlePostUpdate))
+			r.mux.HandleFunc("POST /api/v1/status/incidents", requirePro(sh.HandleCreateIncident))
+			r.mux.HandleFunc("PUT /api/v1/status/incidents/{id}", requirePro(sh.HandleUpdateIncident))
+			r.mux.HandleFunc("DELETE /api/v1/status/incidents/{id}", requirePro(sh.HandleDeleteIncident))
+			r.mux.HandleFunc("POST /api/v1/status/incidents/{id}/updates", requirePro(sh.HandlePostUpdate))
 		}
 		// Maintenance windows
 		if d.StatusMaintenance != nil {
 			r.mux.HandleFunc("GET /api/v1/status/maintenance", sh.HandleListMaintenance)
-			r.mux.HandleFunc("POST /api/v1/status/maintenance", requireEnterprise(sh.HandleCreateMaintenance))
-			r.mux.HandleFunc("PUT /api/v1/status/maintenance/{id}", requireEnterprise(sh.HandleUpdateMaintenance))
-			r.mux.HandleFunc("DELETE /api/v1/status/maintenance/{id}", requireEnterprise(sh.HandleDeleteMaintenance))
+			r.mux.HandleFunc("POST /api/v1/status/maintenance", requirePro(sh.HandleCreateMaintenance))
+			r.mux.HandleFunc("PUT /api/v1/status/maintenance/{id}", requirePro(sh.HandleUpdateMaintenance))
+			r.mux.HandleFunc("DELETE /api/v1/status/maintenance/{id}", requirePro(sh.HandleDeleteMaintenance))
 		}
 		// Subscribers
 		if d.StatusSubscribers != nil {
-			r.mux.HandleFunc("GET /api/v1/status/subscribers", requireEnterprise(sh.HandleListSubscribers))
+			r.mux.HandleFunc("GET /api/v1/status/subscribers", requirePro(sh.HandleListSubscribers))
 		}
 		// SMTP config (Pro only)
-		r.mux.HandleFunc("GET /api/v1/status/smtp", requireEnterprise(sh.HandleGetSmtpConfig))
-		r.mux.HandleFunc("PUT /api/v1/status/smtp", requireEnterprise(sh.HandleUpdateSmtpConfig))
-		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requireEnterprise(sh.HandleTestSmtp))
+		r.mux.HandleFunc("GET /api/v1/status/smtp", requirePro(sh.HandleGetSmtpConfig))
+		r.mux.HandleFunc("PUT /api/v1/status/smtp", requirePro(sh.HandleUpdateSmtpConfig))
+		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requirePro(sh.HandleTestSmtp))
 	}
 
 	// Status page personalization (Pro only)
 	if d.PersonalizationSvc != nil {
 		ph := NewPersonalizationHandler(d.PersonalizationSvc)
 		// Settings
-		r.mux.HandleFunc("GET /api/v1/status-page/settings", requireEnterprise(ph.HandleGetSettings))
-		r.mux.HandleFunc("PUT /api/v1/status-page/settings", requireEnterprise(ph.HandlePutSettings))
+		r.mux.HandleFunc("GET /api/v1/status-page/settings", requirePro(ph.HandleGetSettings))
+		r.mux.HandleFunc("PUT /api/v1/status-page/settings", requirePro(ph.HandlePutSettings))
 		// Assets
-		r.mux.HandleFunc("PUT /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandlePutAsset))
-		r.mux.HandleFunc("GET /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandleGetAsset))
-		r.mux.HandleFunc("DELETE /api/v1/status-page/assets/{role}", requireEnterprise(ph.HandleDeleteAsset))
+		r.mux.HandleFunc("PUT /api/v1/status-page/assets/{role}", requirePro(ph.HandlePutAsset))
+		r.mux.HandleFunc("GET /api/v1/status-page/assets/{role}", requirePro(ph.HandleGetAsset))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/assets/{role}", requirePro(ph.HandleDeleteAsset))
 		// Footer links
-		r.mux.HandleFunc("GET /api/v1/status-page/footer-links", requireEnterprise(ph.HandleListFooterLinks))
-		r.mux.HandleFunc("POST /api/v1/status-page/footer-links", requireEnterprise(ph.HandleCreateFooterLink))
-		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/order", requireEnterprise(ph.HandleReorderFooterLinks))
-		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/{id}", requireEnterprise(ph.HandleUpdateFooterLink))
-		r.mux.HandleFunc("DELETE /api/v1/status-page/footer-links/{id}", requireEnterprise(ph.HandleDeleteFooterLink))
+		r.mux.HandleFunc("GET /api/v1/status-page/footer-links", requirePro(ph.HandleListFooterLinks))
+		r.mux.HandleFunc("POST /api/v1/status-page/footer-links", requirePro(ph.HandleCreateFooterLink))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/order", requirePro(ph.HandleReorderFooterLinks))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/{id}", requirePro(ph.HandleUpdateFooterLink))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/footer-links/{id}", requirePro(ph.HandleDeleteFooterLink))
 		// FAQ
-		r.mux.HandleFunc("GET /api/v1/status-page/faq", requireEnterprise(ph.HandleListFAQ))
-		r.mux.HandleFunc("POST /api/v1/status-page/faq", requireEnterprise(ph.HandleCreateFAQItem))
-		r.mux.HandleFunc("PUT /api/v1/status-page/faq/order", requireEnterprise(ph.HandleReorderFAQ))
-		r.mux.HandleFunc("PUT /api/v1/status-page/faq/{id}", requireEnterprise(ph.HandleUpdateFAQItem))
-		r.mux.HandleFunc("DELETE /api/v1/status-page/faq/{id}", requireEnterprise(ph.HandleDeleteFAQItem))
+		r.mux.HandleFunc("GET /api/v1/status-page/faq", requirePro(ph.HandleListFAQ))
+		r.mux.HandleFunc("POST /api/v1/status-page/faq", requirePro(ph.HandleCreateFAQItem))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/order", requirePro(ph.HandleReorderFAQ))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/{id}", requirePro(ph.HandleUpdateFAQItem))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/faq/{id}", requirePro(ph.HandleDeleteFAQItem))
 	}
 
 	// Escalation policies
@@ -440,30 +440,30 @@ func NewRouter(d HandlerDeps) *Router {
 	// Kubernetes monitoring
 	r.registerKubernetesRoutes(d)
 
-	// Multi-host agents (Enterprise)
+	// Multi-host agents (Pro)
 	r.registerAgentRoutes(d)
 
 	return r
 }
 
-// registerEscalationRoutes registers escalation policy CRUD endpoints (Enterprise only).
+// registerEscalationRoutes registers escalation policy CRUD endpoints (Pro only).
 // The overlap-probe route must be registered before {id} to avoid path ambiguity.
 func (r *Router) registerEscalationRoutes(d HandlerDeps) {
 	if d.EscalationSvc == nil {
 		return
 	}
 	eh := NewEscalationHandler(d.EscalationSvc)
-	r.mux.HandleFunc("POST /api/v1/escalation-policies", requireEnterprise(eh.HandleCreatePolicy))
-	r.mux.HandleFunc("GET /api/v1/escalation-policies", requireEnterprise(eh.HandleListPolicies))
+	r.mux.HandleFunc("POST /api/v1/escalation-policies", requirePro(eh.HandleCreatePolicy))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies", requirePro(eh.HandleListPolicies))
 	// overlap-probe must be registered before /{id} to avoid the wildcard matching the literal segment.
-	r.mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requireEnterprise(eh.HandleOverlapProbe))
-	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleGetPolicy))
-	r.mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleDeletePolicy))
-	r.mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requireEnterprise(eh.HandleUpdatePolicy))
-	r.mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requireEnterprise(eh.HandleSetPolicyActive))
-	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requireEnterprise(eh.HandleListPolicyRuns))
-	r.mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requireEnterprise(eh.HandleGetRun))
-	r.mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requireEnterprise(eh.HandleListAlertRuns))
+	r.mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requirePro(eh.HandleOverlapProbe))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requirePro(eh.HandleGetPolicy))
+	r.mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requirePro(eh.HandleDeletePolicy))
+	r.mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requirePro(eh.HandleUpdatePolicy))
+	r.mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requirePro(eh.HandleSetPolicyActive))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requirePro(eh.HandleListPolicyRuns))
+	r.mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requirePro(eh.HandleGetRun))
+	r.mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requirePro(eh.HandleListAlertRuns))
 }
 
 // registerUIRoutes registers optional UI endpoints (daily uptime, log streaming, top resources).
@@ -537,8 +537,8 @@ func (r *Router) registerUpdateRoutes(d HandlerDeps) {
 	// Risk scoring routes (Pro only)
 	// Note: history uses a query param (?history=1) to avoid conflict with {container_id...}.
 	rh := NewRiskHandler(d.UpdateStore)
-	r.mux.HandleFunc("GET /api/v1/risk", requireEnterprise(rh.HandleListRiskScores))
-	r.mux.HandleFunc("GET /api/v1/risk/{container_id...}", requireEnterprise(rh.HandleGetContainerRisk))
+	r.mux.HandleFunc("GET /api/v1/risk", requirePro(rh.HandleListRiskScores))
+	r.mux.HandleFunc("GET /api/v1/risk/{container_id...}", requirePro(rh.HandleGetContainerRisk))
 }
 
 func (r *Router) registerSecurityRoutes(d HandlerDeps) {
@@ -563,14 +563,14 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore, d.AlertStore, d.SecuritySvc, d.Broker)
 
 	// Posture endpoints
-	r.mux.HandleFunc("GET /api/v1/security/posture", requireEnterprise(ph.HandleGetPosture))
-	r.mux.HandleFunc("GET /api/v1/security/posture/containers", requireEnterprise(ph.HandleListContainerPostures))
-	r.mux.HandleFunc("GET /api/v1/security/posture/containers/{container_id}", requireEnterprise(ph.HandleGetContainerPosture))
+	r.mux.HandleFunc("GET /api/v1/security/posture", requirePro(ph.HandleGetPosture))
+	r.mux.HandleFunc("GET /api/v1/security/posture/containers", requirePro(ph.HandleListContainerPostures))
+	r.mux.HandleFunc("GET /api/v1/security/posture/containers/{container_id}", requirePro(ph.HandleGetContainerPosture))
 
 	// Acknowledgment endpoints
-	r.mux.HandleFunc("POST /api/v1/security/acknowledgments", requireEnterprise(ph.HandleCreateAcknowledgment))
-	r.mux.HandleFunc("GET /api/v1/security/acknowledgments", requireEnterprise(ph.HandleListAcknowledgments))
-	r.mux.HandleFunc("DELETE /api/v1/security/acknowledgments/{id}", requireEnterprise(ph.HandleDeleteAcknowledgment))
+	r.mux.HandleFunc("POST /api/v1/security/acknowledgments", requirePro(ph.HandleCreateAcknowledgment))
+	r.mux.HandleFunc("GET /api/v1/security/acknowledgments", requirePro(ph.HandleListAcknowledgments))
+	r.mux.HandleFunc("DELETE /api/v1/security/acknowledgments/{id}", requirePro(ph.HandleDeleteAcknowledgment))
 }
 
 func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
@@ -600,17 +600,17 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("GET /api/v1/kubernetes/pods", kh.HandleListPods)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/pods/{namespace}/{name}", kh.HandleGetPodDetail)
 
-	// Enterprise endpoints
-	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes", requireEnterprise(kh.HandleListNodes))
-	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes/{name}/resources", requireEnterprise(kh.HandleGetNodeResources))
-	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}/resources", requireEnterprise(kh.HandleGetWorkloadResources))
-	r.mux.HandleFunc("GET /api/v1/kubernetes/cluster", requireEnterprise(kh.HandleGetCluster))
+	// Pro endpoints
+	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes", requirePro(kh.HandleListNodes))
+	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes/{name}/resources", requirePro(kh.HandleGetNodeResources))
+	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}/resources", requirePro(kh.HandleGetWorkloadResources))
+	r.mux.HandleFunc("GET /api/v1/kubernetes/cluster", requirePro(kh.HandleGetCluster))
 }
 
 func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 	// Mounted unconditionally: the services/tasks/nodes lists are store-backed
 	// (per-agent), so they work even when this server is not itself a swarm
-	// manager. The live Enterprise dashboards guard internally on the local
+	// manager. The live Pro dashboards guard internally on the local
 	// runtime being a swarm cluster.
 	if d.SwarmTopologyStore == nil {
 		return
@@ -626,15 +626,15 @@ func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}", sh.HandleGetService)
 	r.mux.HandleFunc("GET /api/v1/swarm/tasks", sh.HandleListTasks)
 
-	// Enterprise node endpoints
-	r.mux.HandleFunc("GET /api/v1/swarm/nodes", requireEnterprise(sh.HandleListNodes))
-	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", requireEnterprise(sh.HandleGetNodeDetail))
+	// Pro node endpoints
+	r.mux.HandleFunc("GET /api/v1/swarm/nodes", requirePro(sh.HandleListNodes))
+	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", requirePro(sh.HandleGetNodeDetail))
 
-	// Enterprise update status, resources, dashboard, and cluster endpoints
-	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", requireEnterprise(sh.HandleGetUpdateStatus))
-	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/resources", requireEnterprise(sh.HandleGetServiceResources))
-	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", requireEnterprise(sh.HandleGetDashboard))
-	r.mux.HandleFunc("GET /api/v1/swarm/cluster", requireEnterprise(sh.HandleGetCluster))
+	// Pro update status, resources, dashboard, and cluster endpoints
+	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", requirePro(sh.HandleGetUpdateStatus))
+	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/resources", requirePro(sh.HandleGetServiceResources))
+	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", requirePro(sh.HandleGetDashboard))
+	r.mux.HandleFunc("GET /api/v1/swarm/cluster", requirePro(sh.HandleGetCluster))
 }
 
 // Handler returns the HTTP handler with the full middleware chain applied.
@@ -687,36 +687,36 @@ func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		isEnterprise := extension.CurrentEdition() == extension.Enterprise
+		isPro := extension.CurrentEdition() == extension.Pro
 
 		// Compute quotas
-		quotas := r.computeQuotas(ctx, d, isEnterprise)
+		quotas := r.computeQuotas(ctx, d, isPro)
 
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": r.organisationName,
 			"status_url":        r.statusURL,
 			"features": map[string]bool{
-				"cve_enrichment":         isEnterprise,
-				"risk_scoring":           isEnterprise,
-				"changelog":              isEnterprise,
-				"incidents":              isEnterprise,
-				"maintenance_windows":    isEnterprise,
-				"subscribers":            isEnterprise,
-				"smtp":                   smtpConfigured && isEnterprise,
-				"slack":                  isEnterprise,
-				"teams":                  isEnterprise,
-				"resource_history":       isEnterprise,
-				"alert_escalation":       isEnterprise,
+				"cve_enrichment":         isPro,
+				"risk_scoring":           isPro,
+				"changelog":              isPro,
+				"incidents":              isPro,
+				"maintenance_windows":    isPro,
+				"subscribers":            isPro,
+				"smtp":                   smtpConfigured && isPro,
+				"slack":                  isPro,
+				"teams":                  isPro,
+				"resource_history":       isPro,
+				"alert_escalation":       isPro,
 				"alert_routing":          true,
-				"alert_advanced_filters": isEnterprise,
-				"alert_entity_routing":   isEnterprise,
-				"security_posture":       isEnterprise,
-				"ocsp_stapling":          isEnterprise,
-				"swarm_dashboard":        isEnterprise,
-				"k8s_cluster":            isEnterprise,
-				"personalization":        isEnterprise,
-				"multihost":              isEnterprise,
+				"alert_advanced_filters": isPro,
+				"alert_entity_routing":   isPro,
+				"security_posture":       isPro,
+				"ocsp_stapling":          isPro,
+				"swarm_dashboard":        isPro,
+				"k8s_cluster":            isPro,
+				"personalization":        isPro,
+				"multihost":              isPro,
 			},
 			"quotas": quotas,
 		})
@@ -724,31 +724,33 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 }
 
 // computeQuotas returns quota information for all gated resources.
-func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isEnterprise bool) map[string]interface{} {
-	// For Enterprise, all limits are -1 (unlimited)
-	if isEnterprise {
-		return map[string]interface{}{
-			"endpoints": map[string]interface{}{
-				"used":  0,
-				"limit": -1,
-			},
-			"heartbeats": map[string]interface{}{
-				"used":  0,
-				"limit": -1,
-			},
-			"certificates": map[string]interface{}{
-				"used":  0,
-				"limit": -1,
-			},
-			"status_components": map[string]interface{}{
-				"used":  0,
-				"limit": -1,
-			},
+func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isPro bool) map[string]interface{} {
+	quotas := make(map[string]interface{})
+
+	// Agent hosts: capped even on Pro (a future higher edition lifts the cap).
+	// The local runtime is never counted (CountByStatus excludes it).
+	if d.AgentStore != nil {
+		used, _, err := d.AgentStore.CountByStatus(ctx)
+		if err != nil {
+			r.logger.Error("failed to count agent hosts for quota", "error", err)
+			used = 0
+		}
+		quotas["agent_hosts"] = map[string]interface{}{
+			"used":  used,
+			"limit": extension.AgentHostLimit(),
 		}
 	}
 
+	// For Pro, all other gated limits are unlimited (-1).
+	if isPro {
+		quotas["endpoints"] = map[string]interface{}{"used": 0, "limit": -1}
+		quotas["heartbeats"] = map[string]interface{}{"used": 0, "limit": -1}
+		quotas["certificates"] = map[string]interface{}{"used": 0, "limit": -1}
+		quotas["status_components"] = map[string]interface{}{"used": 0, "limit": -1}
+		return quotas
+	}
+
 	// Community edition: compute actual usage
-	quotas := make(map[string]interface{})
 
 	// Endpoints: max 10
 	if d.Endpoints != nil {
@@ -816,16 +818,16 @@ func (r *Router) registerAgentRoutes(d HandlerDeps) {
 	ah := NewAgentHandler(d.AgentStore, d.AgentSessions, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen, staleThreshold)
 
 	// Enrollment token endpoints (order matters: specific paths before wildcards)
-	r.mux.HandleFunc("GET /api/v1/agents/metrics", requireEnterprise(ah.HandleGetAgentMetrics))
-	r.mux.HandleFunc("POST /api/v1/agents/enrollment-tokens", requireEnterprise(ah.HandleCreateEnrollmentToken))
-	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens", requireEnterprise(ah.HandleListEnrollmentTokens))
-	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens/{token_id}", requireEnterprise(ah.HandleGetEnrollmentToken))
-	r.mux.HandleFunc("DELETE /api/v1/agents/enrollment-tokens/{token_id}", requireEnterprise(ah.HandleDeleteEnrollmentToken))
+	r.mux.HandleFunc("GET /api/v1/agents/metrics", requirePro(ah.HandleGetAgentMetrics))
+	r.mux.HandleFunc("POST /api/v1/agents/enrollment-tokens", requirePro(ah.HandleCreateEnrollmentToken))
+	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens", requirePro(ah.HandleListEnrollmentTokens))
+	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens/{token_id}", requirePro(ah.HandleGetEnrollmentToken))
+	r.mux.HandleFunc("DELETE /api/v1/agents/enrollment-tokens/{token_id}", requirePro(ah.HandleDeleteEnrollmentToken))
 
 	// Agent endpoints
-	r.mux.HandleFunc("GET /api/v1/agents", requireEnterprise(ah.HandleListAgents))
-	r.mux.HandleFunc("GET /api/v1/agents/{id}", requireEnterprise(ah.HandleGetAgent))
-	r.mux.HandleFunc("PATCH /api/v1/agents/{id}", requireEnterprise(ah.HandleUpdateAgent))
-	r.mux.HandleFunc("POST /api/v1/agents/{id}/revoke", requireEnterprise(ah.HandleRevokeAgent))
-	r.mux.HandleFunc("DELETE /api/v1/agents/{id}", requireEnterprise(ah.HandleDeleteAgent))
+	r.mux.HandleFunc("GET /api/v1/agents", requirePro(ah.HandleListAgents))
+	r.mux.HandleFunc("GET /api/v1/agents/{id}", requirePro(ah.HandleGetAgent))
+	r.mux.HandleFunc("PATCH /api/v1/agents/{id}", requirePro(ah.HandleUpdateAgent))
+	r.mux.HandleFunc("POST /api/v1/agents/{id}/revoke", requirePro(ah.HandleRevokeAgent))
+	r.mux.HandleFunc("DELETE /api/v1/agents/{id}", requirePro(ah.HandleDeleteAgent))
 }

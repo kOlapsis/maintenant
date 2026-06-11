@@ -33,18 +33,18 @@ import {
 import { useEdition } from '@/composables/useEdition'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
 
-const { isEnterprise, licenseStatusValue, licenseMessage, loadLicenseStatus } = useEdition()
+const { isPro, licenseStatusValue, licenseMessage, loadLicenseStatus } = useEdition()
 
 onMounted(() => {
   loadLicenseStatus()
 })
 
 const isLicenseActive = computed(
-  () => isEnterprise.value && licenseStatusValue.value === 'active',
+  () => isPro.value && licenseStatusValue.value === 'active',
 )
 
 const hasLicenseIssue = computed(
-  () => isEnterprise.value && licenseStatusValue.value !== '' && licenseStatusValue.value !== 'active',
+  () => isPro.value && licenseStatusValue.value !== '' && licenseStatusValue.value !== 'active',
 )
 
 const isProDisabled = computed(() => {
@@ -219,7 +219,7 @@ const features = [
         </div>
       </template>
 
-      <!-- Enterprise with license issue -->
+      <!-- Pro with license issue -->
       <template v-else-if="hasLicenseIssue">
         <div class="max-w-2xl mx-auto mb-10 space-y-4">
           <InlineAlert :severity="issueSeverity" :tag="issueTag">

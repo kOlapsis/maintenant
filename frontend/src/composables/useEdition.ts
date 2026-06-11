@@ -50,6 +50,9 @@ const QUOTA_EVENTS = [
   'certificate.created',
   'certificate.deleted',
   'status.component_changed',
+  'agent.created',
+  'agent.revoked',
+  'agent.deleted',
 ] as const
 
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
@@ -69,8 +72,8 @@ for (const ev of QUOTA_EVENTS) {
 load()
 
 export function useEdition() {
-  const isEnterprise = computed(() => edition.value?.edition === 'enterprise')
-  const isCommunity = computed(() => !isEnterprise.value)
+  const isPro = computed(() => edition.value?.edition === 'pro')
+  const isCommunity = computed(() => !isPro.value)
   const organisationName = computed(() => edition.value?.organisation_name || '')
   const statusURL = computed(() => edition.value?.status_url || '')
 
@@ -106,7 +109,7 @@ export function useEdition() {
 
   return {
     edition,
-    isEnterprise,
+    isPro,
     isCommunity,
     organisationName,
     statusURL,

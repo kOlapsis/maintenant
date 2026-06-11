@@ -22,11 +22,11 @@ const (
 )
 
 // mapEdition translates the in-process extension.Edition value to the
-// stable wire value. Anything that is not extension.Enterprise resolves
+// stable wire value. Anything that is not extension.Pro resolves
 // to "community" — including a Pro-capable build whose license has
 // expired or is missing.
 func mapEdition(e extension.Edition) string {
-	if e == extension.Enterprise {
+	if e == extension.Pro {
 		return editionPro
 	}
 	return editionCommunity

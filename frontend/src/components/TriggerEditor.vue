@@ -31,7 +31,7 @@ const emit = defineEmits<{
 
 const store = useTriggersStore()
 const channelsStore = useChannelsStore()
-const { isEnterprise } = useEdition()
+const { isPro } = useEdition()
 
 const SEVERITY_OPTIONS = ['critical', 'warning']
 const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'monitor', 'resource', 'update']
@@ -277,14 +277,14 @@ async function handleSave() {
       <div class="space-y-3 rounded-xl border border-slate-800 bg-[#0B0E13] p-4">
         <div class="flex items-center justify-between">
           <label class="text-[10px] font-bold uppercase tracking-widest"
-            :class="isEnterprise ? 'text-slate-500' : 'text-slate-600'">
+            :class="isPro ? 'text-slate-500' : 'text-slate-600'">
             Advanced filters
           </label>
-          <span v-if="!isEnterprise" class="inline-flex items-center gap-1 rounded-full bg-indigo-600/15 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-400">
+          <span v-if="!isPro" class="inline-flex items-center gap-1 rounded-full bg-indigo-600/15 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-400">
             <Lock :size="10" /> Pro
           </span>
         </div>
-        <p v-if="!isEnterprise" class="text-xs text-slate-500">
+        <p v-if="!isPro" class="text-xs text-slate-500">
           Filter triggers by per-entity scope (e.g. <code class="rounded bg-slate-800 px-1.5 py-0.5 text-[10px]">container:42</code>) or by tags. Available with Maintenant Pro.
         </p>
 
@@ -295,7 +295,7 @@ async function handleSave() {
           <input
             v-model="scopesCsv"
             type="text"
-            :disabled="!isEnterprise"
+            :disabled="!isPro"
             placeholder="container:42, endpoint:7"
             class="w-full bg-[#12151C] border border-slate-800 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
@@ -308,7 +308,7 @@ async function handleSave() {
           <input
             v-model="tagsCsv"
             type="text"
-            :disabled="!isEnterprise"
+            :disabled="!isPro"
             placeholder="prod, payments"
             class="w-full bg-[#12151C] border border-slate-800 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />

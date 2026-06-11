@@ -282,9 +282,9 @@ func TestCreateTriggerHandler_FilterTags_CommunityBlocked(t *testing.T) {
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
 }
 
-func TestCreateTriggerHandler_FilterScopes_EnterpriseAllowed(t *testing.T) {
+func TestCreateTriggerHandler_FilterScopes_ProAllowed(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc, _ := buildTriggerServices()

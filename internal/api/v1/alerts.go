@@ -231,7 +231,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 	}
 
 	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[input.Type] && extension.CurrentEdition() != extension.Enterprise {
+	if proChannelTypes[input.Type] && extension.CurrentEdition() != extension.Pro {
 		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
 		return
 	}
@@ -350,7 +350,7 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 	}
 
 	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Enterprise {
+	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Pro {
 		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
 		return
 	}
@@ -410,7 +410,7 @@ func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request)
 	}
 
 	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Enterprise {
+	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Pro {
 		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
 		return
 	}

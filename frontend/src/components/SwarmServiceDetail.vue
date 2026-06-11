@@ -238,7 +238,7 @@ const tabs = hasFeature('swarm_dashboard')
           </div>
         </template>
 
-        <!-- Resources tab (Enterprise) -->
+        <!-- Resources tab (Pro) -->
         <template v-else-if="activeTab === 'resources'">
           <FeatureGate
             feature="swarm_dashboard"

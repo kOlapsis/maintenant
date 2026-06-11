@@ -178,7 +178,7 @@ export function fetchPodDetail(
   return apiFetch<K8sPodDetailResponse>(url.toString())
 }
 
-// --- Per-workload resource metrics (Enterprise) ---
+// --- Per-workload resource metrics (Pro) ---
 
 export interface K8sPodResourceEntry {
   name: string
@@ -213,7 +213,7 @@ export function fetchWorkloadResources(
   return apiFetch<K8sWorkloadResourcesResponse>(url.toString())
 }
 
-// --- Cluster overview (Enterprise) ---
+// --- Cluster overview (Pro) ---
 
 export interface K8sPodStatusBreakdown {
   running: number
@@ -246,7 +246,7 @@ export function fetchClusterOverview(agentId?: string): Promise<K8sClusterOvervi
   return apiFetch<K8sClusterOverview>(url.toString())
 }
 
-// --- Nodes (Enterprise) ---
+// --- Nodes (Pro) ---
 
 export interface K8sNodeResponse {
   name: string

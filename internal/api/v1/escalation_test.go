@@ -175,7 +175,7 @@ func buildEscalationHandler() *EscalationHandler {
 	svc := escalation.NewService(
 		newEscalationTestStore(),
 		&escalationTestChannelStore{},
-		func() extension.Edition { return extension.Enterprise },
+		func() extension.Edition { return extension.Pro },
 		noopSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)
@@ -186,16 +186,16 @@ func escalationMux(t *testing.T) *http.ServeMux {
 	t.Helper()
 	h := buildEscalationHandler()
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/escalation-policies", requireEnterprise(h.HandleCreatePolicy))
-	mux.HandleFunc("GET /api/v1/escalation-policies", requireEnterprise(h.HandleListPolicies))
-	mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requireEnterprise(h.HandleOverlapProbe))
-	mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requireEnterprise(h.HandleGetPolicy))
-	mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requireEnterprise(h.HandleDeletePolicy))
-	mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requireEnterprise(h.HandleUpdatePolicy))
-	mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requireEnterprise(h.HandleSetPolicyActive))
-	mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requireEnterprise(h.HandleListPolicyRuns))
-	mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requireEnterprise(h.HandleGetRun))
-	mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requireEnterprise(h.HandleListAlertRuns))
+	mux.HandleFunc("POST /api/v1/escalation-policies", requirePro(h.HandleCreatePolicy))
+	mux.HandleFunc("GET /api/v1/escalation-policies", requirePro(h.HandleListPolicies))
+	mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requirePro(h.HandleOverlapProbe))
+	mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requirePro(h.HandleGetPolicy))
+	mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requirePro(h.HandleDeletePolicy))
+	mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requirePro(h.HandleUpdatePolicy))
+	mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requirePro(h.HandleSetPolicyActive))
+	mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requirePro(h.HandleListPolicyRuns))
+	mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requirePro(h.HandleGetRun))
+	mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requirePro(h.HandleListAlertRuns))
 	return mux
 }
 
@@ -246,7 +246,7 @@ func TestEscalation_AllEndpoints_Return403_CE(t *testing.T) {
 
 func TestEscalation_CreatePolicy_HappyPath(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -266,7 +266,7 @@ func TestEscalation_CreatePolicy_HappyPath(t *testing.T) {
 
 func TestEscalation_CreatePolicy_ValidationError_EmptyName(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -284,7 +284,7 @@ func TestEscalation_CreatePolicy_ValidationError_EmptyName(t *testing.T) {
 
 func TestEscalation_ListPolicies_Empty(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -305,7 +305,7 @@ func TestEscalation_ListPolicies_Empty(t *testing.T) {
 
 func TestEscalation_GetPolicy_NotFound(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -318,7 +318,7 @@ func TestEscalation_GetPolicy_NotFound(t *testing.T) {
 
 func TestEscalation_DeletePolicy_NotFound(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -331,7 +331,7 @@ func TestEscalation_DeletePolicy_NotFound(t *testing.T) {
 
 func TestEscalation_DeletePolicy_HappyPath(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -356,7 +356,7 @@ func TestEscalation_DeletePolicy_HappyPath(t *testing.T) {
 
 func TestEscalation_OverlapProbe_ReturnsEmpty(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -374,7 +374,7 @@ func TestEscalation_OverlapProbe_ReturnsEmpty(t *testing.T) {
 
 func TestEscalation_UpdatePolicy_HappyPath(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -419,7 +419,7 @@ func TestEscalation_UpdatePolicy_HappyPath(t *testing.T) {
 
 func TestEscalation_UpdatePolicy_NotFound(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -434,7 +434,7 @@ func TestEscalation_UpdatePolicy_NotFound(t *testing.T) {
 
 func TestEscalation_UpdatePolicy_ValidationError(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -464,7 +464,7 @@ func TestEscalation_UpdatePolicy_ValidationError(t *testing.T) {
 
 func TestEscalation_SetPolicyActive_HappyPath(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -495,7 +495,7 @@ func TestEscalation_SetPolicyActive_HappyPath(t *testing.T) {
 
 func TestEscalation_SetPolicyActive_NotFound(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -510,7 +510,7 @@ func TestEscalation_SetPolicyActive_NotFound(t *testing.T) {
 
 func TestEscalation_GetAlertRuns_Pro_Empty(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -541,7 +541,7 @@ func TestEscalation_GetAlertRuns_CE_403(t *testing.T) {
 
 func TestEscalation_GetRun_NotFound(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)
@@ -554,7 +554,7 @@ func TestEscalation_GetRun_NotFound(t *testing.T) {
 
 func TestEscalation_ListPolicyRuns_Pro_Empty(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	mux := escalationMux(t)

@@ -26,7 +26,7 @@ export interface ProBannerHandle {
 
 export function useProBanner(): ProBannerHandle {
   const containers = useContainersStore()
-  const { isEnterprise } = useEdition()
+  const { isPro } = useEdition()
 
   // localStorage isn't reactive — bump this to force dismissed recompute after dismiss().
   const dismissNonce = ref(0)
@@ -51,7 +51,7 @@ export function useProBanner(): ProBannerHandle {
   })
 
   const visible = computed(
-    () => !isEnterprise.value && tier.value !== null && tier.value !== 0 && !dismissed.value,
+    () => !isPro.value && tier.value !== null && tier.value !== 0 && !dismissed.value,
   )
 
   function dismiss(): void {

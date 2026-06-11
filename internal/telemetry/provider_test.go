@@ -37,7 +37,7 @@ func TestProvider_HappyPath_AllSevenKeys(t *testing.T) {
 		Certificates:     fakeCounter{value: 8},
 		Webhooks:         fakeCounter{value: 2},
 		StatusComponents: fakeCounter{value: 12},
-		Edition:          staticEdition{value: extension.Enterprise},
+		Edition:          staticEdition{value: extension.Pro},
 	}
 	got := newMetricsProvider(deps, logger)()
 

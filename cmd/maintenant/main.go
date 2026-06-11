@@ -45,7 +45,7 @@ func main() {
 	fTLSCert := flag.String("grpc-tls-cert", "", "TLS certificate file (server mode)")
 	fTLSKey := flag.String("grpc-tls-key", "", "TLS key file (server mode)")
 	fInsecureSkip := flag.Bool("grpc-insecure-skip-tls-verify", false, "disable TLS verification (debug only)")
-	fEmbeddedAgent := flag.Bool("embedded-agent", false, "also run a local agent (server mode, Enterprise)")
+	fEmbeddedAgent := flag.Bool("embedded-agent", false, "also run a local agent (server mode, Pro)")
 
 	// flag.Parse handles --foo and -foo; ignore unknown flags for --mcp-stdio compat.
 	flag.CommandLine.SetOutput(os.Stderr)

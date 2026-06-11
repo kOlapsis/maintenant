@@ -19,15 +19,15 @@ func newTestPublicHandler(t *testing.T) *PersonalizationPublicHandler {
 	return NewPersonalizationPublicHandler(svc, logger)
 }
 
-func withEnterprise(t *testing.T) func() {
+func withPro(t *testing.T) func() {
 	t.Helper()
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	return func() { extension.CurrentEdition = original }
 }
 
 func TestPersonalizationPublicHandler_CacheControlHeaders(t *testing.T) {
-	defer withEnterprise(t)()
+	defer withPro(t)()
 	h := newTestPublicHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/status/settings.json", nil)
@@ -42,7 +42,7 @@ func TestPersonalizationPublicHandler_CacheControlHeaders(t *testing.T) {
 }
 
 func TestPersonalizationPublicHandler_ETagPresent(t *testing.T) {
-	defer withEnterprise(t)()
+	defer withPro(t)()
 	h := newTestPublicHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/status/settings.json", nil)
@@ -54,7 +54,7 @@ func TestPersonalizationPublicHandler_ETagPresent(t *testing.T) {
 }
 
 func TestPersonalizationPublicHandler_304OnMatchingETag(t *testing.T) {
-	defer withEnterprise(t)()
+	defer withPro(t)()
 	h := newTestPublicHandler(t)
 
 	// First request — capture ETag
@@ -75,7 +75,7 @@ func TestPersonalizationPublicHandler_304OnMatchingETag(t *testing.T) {
 }
 
 func TestPersonalizationPublicHandler_ETagChangesAfterUpdate(t *testing.T) {
-	defer withEnterprise(t)()
+	defer withPro(t)()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	svc := NewPersonalizationService(newMockPersonalizationStore(), logger)
 	h := NewPersonalizationPublicHandler(svc, logger)
@@ -105,8 +105,8 @@ func TestPersonalizationPublicHandler_DefaultsUnderCommunityEdition(t *testing.T
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	store := newMockPersonalizationStore()
-	// Simulate enterprise customization already in DB
-	store.settings.Title = "Enterprise Custom Title"
+	// Simulate pro customization already in DB
+	store.settings.Title = "Pro Custom Title"
 	svc := NewPersonalizationService(store, logger)
 	h := NewPersonalizationPublicHandler(svc, logger)
 
@@ -115,7 +115,7 @@ func TestPersonalizationPublicHandler_DefaultsUnderCommunityEdition(t *testing.T
 	h.HandleSettingsJSON(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	// CE must return defaults, not the stored enterprise title
-	assert.NotContains(t, rec.Body.String(), "Enterprise Custom Title")
+	// CE must return defaults, not the stored pro title
+	assert.NotContains(t, rec.Body.String(), "Pro Custom Title")
 	assert.Contains(t, rec.Body.String(), "System Status")
 }

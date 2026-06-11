@@ -30,7 +30,7 @@ func NewCVEHandler(store update.UpdateStore) *CVEHandler {
 
 // HandleListCVEs handles GET /api/v1/cve.
 func (h *CVEHandler) HandleListCVEs(w http.ResponseWriter, r *http.Request) {
-	if extension.CurrentEdition() != extension.Enterprise {
+	if extension.CurrentEdition() != extension.Pro {
 		WriteError(w, http.StatusForbidden, "NOT_AVAILABLE", extension.ErrNotAvailable.Error())
 		return
 	}
@@ -89,7 +89,7 @@ func (h *CVEHandler) HandleListCVEs(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetContainerCVEs handles GET /api/v1/cve/{container_id}.
 func (h *CVEHandler) HandleGetContainerCVEs(w http.ResponseWriter, r *http.Request) {
-	if extension.CurrentEdition() != extension.Enterprise {
+	if extension.CurrentEdition() != extension.Pro {
 		WriteError(w, http.StatusForbidden, "NOT_AVAILABLE", extension.ErrNotAvailable.Error())
 		return
 	}

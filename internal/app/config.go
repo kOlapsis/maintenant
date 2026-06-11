@@ -55,7 +55,7 @@ type Config struct {
 	// Telemetry
 	DisableTelemetry bool
 
-	// Multi-host agent mode (Enterprise only)
+	// Multi-host agent mode (Pro only)
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
 
@@ -69,7 +69,7 @@ type Config struct {
 	PublicKeyB64 string
 }
 
-// MultiHostConfig holds multi-server agent configuration (Enterprise only).
+// MultiHostConfig holds multi-server agent configuration (Pro only).
 type MultiHostConfig struct {
 	GRPCPublicURL              string
 	GRPCListen                 string

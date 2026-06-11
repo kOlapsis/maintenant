@@ -199,12 +199,12 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	agentStore := sqlite.NewAgentStore(db)
 	a.agentStore = agentStore
 
-	// --- Mode gate: server/agent require Enterprise license ---
+	// --- Mode gate: server/agent require Pro license ---
 	if cfg.Mode != "" && cfg.Mode != "embedded" {
 		// Evaluate edition now (before license manager starts) using whatever was
 		// set at binary build time or injected via a previous boot.
-		if extension.CurrentEdition() != extension.Enterprise {
-			logger.Error("server/agent mode requires Enterprise license", "mode", cfg.Mode)
+		if extension.CurrentEdition() != extension.Pro {
+			logger.Error("server/agent mode requires Pro license", "mode", cfg.Mode)
 			os.Exit(1)
 		}
 	}
@@ -220,7 +220,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			a.licenseMgr = lm
 			extension.CurrentEdition = func() extension.Edition {
 				if lm.IsProEnabled() {
-					return extension.Enterprise
+					return extension.Pro
 				}
 				return extension.Community
 			}
@@ -278,8 +278,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 				})
 				a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
 
-				// Enterprise: node health monitoring, crash-loop detection, update tracking
-				if extension.CurrentEdition() == extension.Enterprise {
+				// Pro: node health monitoring, crash-loop detection, update tracking
+				if extension.CurrentEdition() == extension.Pro {
 					a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
 					a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
 					a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
@@ -317,8 +317,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	var endpointLicenseChecker endpoint.LicenseChecker
 	var heartbeatLicenseChecker heartbeat.LicenseChecker
 
-	if extension.CurrentEdition() == extension.Enterprise {
-		// Enterprise: unlimited quotas
+	if extension.CurrentEdition() == extension.Pro {
+		// Pro: unlimited quotas
 		certLicenseChecker = &certificate.DefaultLicenseChecker{MaxCertificates: 1<<31 - 1}
 		endpointLicenseChecker = &endpoint.DefaultLicenseChecker{MaxEndpoints: 1<<31 - 1}
 		heartbeatLicenseChecker = &heartbeat.DefaultLicenseChecker{MaxHeartbeats: 1<<31 - 1}
@@ -391,7 +391,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// Agent session registry (depends on broker)
 	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
 
-	// Agent gRPC server (Enterprise-gated at Start time).
+	// Agent gRPC server (Pro-gated at Start time).
 	a.agentSrv = agentserver.New(agentserver.Deps{
 		AgentStore:  a.agentStore,
 		Sessions:    a.agentSessions,
@@ -460,7 +460,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	var updateEnricher update.Enricher
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		cveClient := update.NewCVEClient(updateStore, logger.With("component", "cve"))
 		changelogResolver := update.NewChangelogResolver(registryClient, logger.With("component", "changelog"))
 		riskEngine := update.NewRiskEngine()
@@ -494,9 +494,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- Escalation policies ---
 	a.escalationStore = sqlite.NewEscalationStore(db)
 
-	// Maintenance suppressor: real implementation in Enterprise, noop in CE.
+	// Maintenance suppressor: real implementation in Pro, noop in CE.
 	var suppressor alert.MaintenanceSuppressor = extension.NoopMaintenanceSuppressor{}
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		suppressor = maintenance.NewSuppressor(maintenanceStore, logger.With("component", "maintenance-suppressor"))
 	}
 	// Must be called before alertEngine.Start (invoked in App.Start).
@@ -510,11 +510,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logger.With("component", "escalation"),
 	)
 
-	// Concrete escalator runner: only wired in Enterprise. In CE the engine
+	// Concrete escalator runner: only wired in Pro. In CE the engine
 	// keeps its built-in noopEscalator, which means the 60s evaluation ticker
 	// (alert.Engine.Start) does not start either. SetEscalator must run before
 	// alertEngine.Start (called later in App.Start).
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		runner := escalation.NewRunner(escalation.RunnerDeps{
 			Store:        a.escalationStore,
 			AlertStore:   alertStore,
@@ -592,7 +592,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		SwarmTopologyStore:  a.swarmTopologyStore,
 		// Kubernetes (per-agent store-backed reads)
 		KubernetesStore: a.k8sStore,
-		// Multi-host agents (Enterprise)
+		// Multi-host agents (Pro)
 		AgentStore:          a.agentStore,
 		AgentSessions:       a.agentSessions,
 		GRPCPublicURL:       cfg.MultiHost.GRPCPublicURL,
@@ -670,7 +670,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	a.alertEngine.Start(ctx)
 
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		go a.escalationSvc.RunRetentionLoop(ctx)
 		a.logger.Info("escalation retention loop started (Pro)")
 	}
@@ -735,7 +735,7 @@ func (a *App) Start(ctx context.Context) error {
 		}()
 	}
 
-	// Swarm node periodic refresh (Enterprise, 60s).
+	// Swarm node periodic refresh (Pro, 60s).
 	if a.swarmNodeSvc != nil {
 		go a.startNodeRefresh(ctx)
 	}
@@ -758,16 +758,16 @@ func (a *App) Start(ctx context.Context) error {
 	// and manages reconnection in background when degraded (Phase 5).
 	a.startRuntimeSupervisor(ctx)
 
-	// Agent gRPC server — Enterprise only, server/embedded modes only.
-	if extension.CurrentEdition() == extension.Enterprise && a.cfg.Mode != "agent" {
+	// Agent gRPC server — Pro only, server/embedded modes only.
+	if extension.CurrentEdition() == extension.Pro && a.cfg.Mode != "agent" {
 		if err := a.startAgentGRPC(ctx); err != nil {
 			return fmt.Errorf("start agent gRPC server: %w", err)
 		}
 	}
 
-	// Embedded agent (mode=server + --embedded-agent + Enterprise).
+	// Embedded agent (mode=server + --embedded-agent + Pro).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
-	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && extension.CurrentEdition() == extension.Enterprise {
+	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && extension.CurrentEdition() == extension.Pro {
 		a.startEmbeddedAgent(ctx)
 	}
 
@@ -820,7 +820,7 @@ func (a *App) Shutdown() error {
 
 // startEmbeddedAgent launches a local agent goroutine connecting to the local gRPC endpoint.
 // If the agent is not yet enrolled, a short-lived enrollment token is auto-created.
-// Called only when mode=server, --embedded-agent, and Enterprise license are all active.
+// Called only when mode=server, --embedded-agent, and Pro license are all active.
 func (a *App) startEmbeddedAgent(ctx context.Context) {
 	dataDir := filepath.Dir(a.cfg.DBPath)
 	agentDataDir := filepath.Join(dataDir, "embedded-agent")

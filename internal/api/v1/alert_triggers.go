@@ -257,7 +257,7 @@ func (h *AlertTriggerHandler) checkAdvancedFiltersGating(t *triggerInput) error 
 	if t.FilterScopes == "" && t.FilterTags == "" {
 		return nil
 	}
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.CurrentEdition() == extension.Pro {
 		return nil
 	}
 	return errors.New("Advanced filters (scopes, tags) require the Pro edition")

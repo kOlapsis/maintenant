@@ -51,7 +51,7 @@ export const useSwarmStore = defineStore('swarm', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // Enterprise state
+  // Pro state
   const crashLoops = ref<Map<string, CrashLoopState>>(new Map())
   const updateProgress = ref<Map<string, UpdateProgressState>>(new Map())
 

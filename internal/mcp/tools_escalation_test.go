@@ -170,7 +170,7 @@ func buildProEscalationServices() *Services {
 	svc := escalation.NewService(
 		newMCPEscalationStore(),
 		&mcpChannelStore{},
-		func() extension.Edition { return extension.Enterprise },
+		func() extension.Edition { return extension.Pro },
 		mcpNoopSuppressor{},
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 	)
@@ -267,7 +267,7 @@ func TestEscalationTools_CE_GetRun(t *testing.T) {
 
 func TestEscalationTools_Pro_ListPolicies(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc := buildProEscalationServices()
@@ -280,7 +280,7 @@ func TestEscalationTools_Pro_ListPolicies(t *testing.T) {
 
 func TestEscalationTools_Pro_CreateAndGetPolicy(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc := buildProEscalationServices()
@@ -302,7 +302,7 @@ func TestEscalationTools_Pro_CreateAndGetPolicy(t *testing.T) {
 
 func TestEscalationTools_Pro_DeletePolicy_NotFound(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc := buildProEscalationServices()
@@ -341,7 +341,7 @@ func TestEscalationTools_CE_SetPolicyActive(t *testing.T) {
 
 func TestEscalationTools_Pro_SetPolicyActive_HappyPath(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc := buildProEscalationServices()
@@ -368,7 +368,7 @@ func TestEscalationTools_Pro_SetPolicyActive_HappyPath(t *testing.T) {
 
 func TestEscalationTools_Pro_UpdatePolicy_HappyPath(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc := buildProEscalationServices()
@@ -401,7 +401,7 @@ func TestEscalationTools_Pro_UpdatePolicy_HappyPath(t *testing.T) {
 
 func TestEscalationTools_Pro_ListAlertRuns_Empty(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc := buildProEscalationServices()
@@ -414,7 +414,7 @@ func TestEscalationTools_Pro_ListAlertRuns_Empty(t *testing.T) {
 
 func TestEscalationTools_Pro_GetRun_NotFound(t *testing.T) {
 	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Enterprise }
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
 	defer func() { extension.CurrentEdition = original }()
 
 	svc := buildProEscalationServices()

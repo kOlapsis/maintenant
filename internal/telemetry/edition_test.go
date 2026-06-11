@@ -19,7 +19,7 @@ func TestMapEdition(t *testing.T) {
 		want string
 	}{
 		{"community resolves to community", extension.Community, "community"},
-		{"enterprise resolves to pro", extension.Enterprise, "pro"},
+		{"enterprise resolves to pro", extension.Pro, "pro"},
 		{"zero-value resolves to community", extension.Edition(""), "community"},
 		{"unknown resolves to community", extension.Edition("garbage"), "community"},
 	}

@@ -158,7 +158,7 @@ func (s *Service) OnEditionUpgraded(ctx context.Context) error {
 }
 
 // GetPlanLimits returns escalation usage stats. Pro is unlimited; CE has no
-// access to escalation (routes are gated by requireEnterprise upstream), so
+// access to escalation (routes are gated by requirePro upstream), so
 // the only signal exposed here is the current active count.
 func (s *Service) GetPlanLimits(ctx context.Context) (Limits, error) {
 	current, err := s.store.CountActivePolicies(ctx)
