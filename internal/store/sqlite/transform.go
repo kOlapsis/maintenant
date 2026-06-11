@@ -214,6 +214,16 @@ type stmt struct{ desc, sql string }
 // s is the local sentinel agent id, injected into the copy SQL.
 const s = uid.LocalAgent
 
+// epoch returns a SQL expression coercing a legacy timestamp column to an
+// epoch-second integer regardless of how it was stored. The app wrote some
+// columns as epoch integers (time.Unix) and others as datetime strings (or left
+// them to DEFAULT CURRENT_TIMESTAMP). Integers/reals pass through; strings go
+// through SQLite's date parser; NULL stays NULL.
+func epoch(col string) string {
+	return "CAST(CASE WHEN typeof(" + col + ") IN ('integer','real') THEN " + col +
+		" ELSE strftime('%s', " + col + ") END AS INTEGER)"
+}
+
 // copyStatements returns the ordered INSERT ... SELECT statements that move data
 // from the renamed _old_* tables into the UUID-native tables.
 func copyStatements() []stmt {
@@ -371,24 +381,24 @@ func copyStatements() []stmt {
 			 END, CAST(a.entity_id AS TEXT)),
 			 a.entity_name, a.details,
 			 (SELECT new_id FROM _map_alert WHERE old_id = a.resolved_by_id),
-			 CAST(strftime('%s', a.fired_at) AS INTEGER),
-			 CAST(strftime('%s', a.resolved_at) AS INTEGER),
-			 CAST(strftime('%s', a.created_at) AS INTEGER),
-			 CAST(strftime('%s', a.acknowledged_at) AS INTEGER), a.acknowledged_by,
-			 CAST(strftime('%s', a.escalated_at) AS INTEGER)
+			 ` + epoch("a.fired_at") + `,
+			 ` + epoch("a.resolved_at") + `,
+			 ` + epoch("a.created_at") + `,
+			 ` + epoch("a.acknowledged_at") + `, a.acknowledged_by,
+			 ` + epoch("a.escalated_at") + `
 			FROM _old_alerts a JOIN _map_alert ma ON a.id = ma.old_id`},
 
 		// -------- notification channels (minted) + deliveries -------------------
 		{"notification_channels", `INSERT INTO notification_channels
 			(id, name, type, url, headers, enabled, created_at, updated_at)
 			SELECT mc.new_id, nc.name, nc.type, nc.url, nc.headers, nc.enabled,
-			 CAST(strftime('%s', nc.created_at) AS INTEGER), CAST(strftime('%s', nc.updated_at) AS INTEGER)
+			 ` + epoch("nc.created_at") + `, ` + epoch("nc.updated_at") + `
 			FROM _old_notification_channels nc JOIN _map_channel mc ON nc.id = mc.old_id`},
 
 		{"notification_deliveries", `INSERT INTO notification_deliveries
 			(id, alert_id, channel_id, status, attempts, last_error, created_at, updated_at)
 			SELECT mnt_uuid7(), ma.new_id, mc.new_id, nd.status, nd.attempts, nd.last_error,
-			 CAST(strftime('%s', nd.created_at) AS INTEGER), CAST(strftime('%s', nd.updated_at) AS INTEGER)
+			 ` + epoch("nd.created_at") + `, ` + epoch("nd.updated_at") + `
 			FROM _old_notification_deliveries nd
 			JOIN _map_alert ma ON nd.alert_id = ma.old_id
 			JOIN _map_channel mc ON nd.channel_id = mc.old_id`},
@@ -405,15 +415,15 @@ func copyStatements() []stmt {
 			   WHEN NULL THEN NULL
 			   ELSE CASE WHEN sr.entity_id IS NULL THEN NULL ELSE CAST(sr.entity_id AS TEXT) END
 			 END, CASE WHEN sr.entity_id IS NULL THEN NULL ELSE CAST(sr.entity_id AS TEXT) END),
-			 sr.source, sr.reason, CAST(strftime('%s', sr.starts_at) AS INTEGER), sr.duration_seconds,
-			 CAST(strftime('%s', sr.cancelled_at) AS INTEGER), CAST(strftime('%s', sr.created_at) AS INTEGER)
+			 sr.source, sr.reason, ` + epoch("sr.starts_at") + `, sr.duration_seconds,
+			 ` + epoch("sr.cancelled_at") + `, ` + epoch("sr.created_at") + `
 			FROM _old_silence_rules sr`},
 
 		// -------- alert triggers (minted) + channels join -----------------------
 		{"alert_triggers", `INSERT INTO alert_triggers
 			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, created_at, updated_at)
 			SELECT mt.new_id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes, t.filter_tags,
-			 t.enabled, CAST(strftime('%s', t.created_at) AS INTEGER), CAST(strftime('%s', t.updated_at) AS INTEGER)
+			 t.enabled, ` + epoch("t.created_at") + `, ` + epoch("t.updated_at") + `
 			FROM _old_alert_triggers t JOIN _map_trigger mt ON t.id = mt.old_id`},
 
 		{"alert_trigger_channels", `INSERT INTO alert_trigger_channels (trigger_id, channel_id)
@@ -426,22 +436,22 @@ func copyStatements() []stmt {
 			(id, name, active, active_before_downgrade, severities_json, scopes_json, tags_json, levels_json,
 			 created_at, created_by, updated_at, updated_by)
 			SELECT mp.new_id, p.name, p.active, p.active_before_downgrade, p.severities_json, p.scopes_json,
-			 p.tags_json, p.levels_json, CAST(strftime('%s', p.created_at) AS INTEGER), p.created_by,
-			 CAST(strftime('%s', p.updated_at) AS INTEGER), p.updated_by
+			 p.tags_json, p.levels_json, ` + epoch("p.created_at") + `, p.created_by,
+			 ` + epoch("p.updated_at") + `, p.updated_by
 			FROM _old_escalation_policies p JOIN _map_policy mp ON p.id = mp.old_id`},
 
 		{"escalation_runs", `INSERT INTO escalation_runs
 			(id, policy_id, policy_snapshot_json, alert_id, status, last_executed_level_index, started_at, ended_at, next_action_at)
 			SELECT mr.new_id, (SELECT new_id FROM _map_policy WHERE old_id = r.policy_id), r.policy_snapshot_json,
-			 ma.new_id, r.status, r.last_executed_level_index, CAST(strftime('%s', r.started_at) AS INTEGER),
-			 CAST(strftime('%s', r.ended_at) AS INTEGER), CAST(strftime('%s', r.next_action_at) AS INTEGER)
+			 ma.new_id, r.status, r.last_executed_level_index, ` + epoch("r.started_at") + `,
+			 ` + epoch("r.ended_at") + `, ` + epoch("r.next_action_at") + `
 			FROM _old_escalation_runs r JOIN _map_run mr ON r.id = mr.old_id
 			JOIN _map_alert ma ON r.alert_id = ma.old_id`},
 
 		{"escalation_deliveries", `INSERT INTO escalation_deliveries
 			(id, run_id, level_index, channel_id, status, error, attempt_started_at, sent_at)
 			SELECT mnt_uuid7(), mr.new_id, d.level_index, (SELECT new_id FROM _map_channel WHERE old_id = d.channel_id),
-			 d.status, d.error, CAST(strftime('%s', d.attempt_started_at) AS INTEGER), CAST(strftime('%s', d.sent_at) AS INTEGER)
+			 d.status, d.error, ` + epoch("d.attempt_started_at") + `, ` + epoch("d.sent_at") + `
 			FROM _old_escalation_deliveries d JOIN _map_run mr ON d.run_id = mr.old_id`},
 
 		// -------- status components (minted) + monitors -------------------------
@@ -550,7 +560,7 @@ func copyStatements() []stmt {
 			FROM _old_risk_acknowledgments`},
 
 		{"digest_baselines", `INSERT INTO digest_baselines (container_id, image, tag, remote_digest, checked_at)
-			SELECT container_id, image, tag, remote_digest, CAST(strftime('%s', checked_at) AS INTEGER) FROM _old_digest_baselines`},
+			SELECT container_id, image, tag, remote_digest, ` + epoch("checked_at") + ` FROM _old_digest_baselines`},
 
 		// -------- mcp oauth + webhooks (natural / text keys) --------------------
 		{"mcp_oauth_codes", `INSERT INTO mcp_oauth_codes SELECT * FROM _old_mcp_oauth_codes`},
@@ -558,7 +568,7 @@ func copyStatements() []stmt {
 		{"webhook_subscriptions", `INSERT INTO webhook_subscriptions
 			(id, name, url, secret, event_types, is_active, last_delivery_status, last_delivery_at, failure_count, created_at)
 			SELECT id, name, url, secret, event_types, is_active, last_delivery_status,
-			 CAST(strftime('%s', last_delivery_at) AS INTEGER), failure_count, CAST(strftime('%s', created_at) AS INTEGER)
+			 ` + epoch("last_delivery_at") + `, failure_count, ` + epoch("created_at") + `
 			FROM _old_webhook_subscriptions`},
 	}
 }

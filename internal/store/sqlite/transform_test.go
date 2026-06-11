@@ -211,3 +211,24 @@ func TestConvertToUUID_OrphanedPolymorphicRefs(t *testing.T) {
 	require.Equal(t, 1, countRows(t, db, "status_component_monitors"))
 	require.Equal(t, "999", scanString(t, db, `SELECT monitor_id FROM status_component_monitors`))
 }
+
+// Some timestamp columns are written by the app as epoch integers (time.Unix)
+// into columns the legacy schema typed DATETIME. strftime() can't parse an
+// integer, so the conversion must pass integer timestamps through unchanged
+// rather than NULL them (which would crash NOT NULL columns like checked_at).
+func TestConvertToUUID_EpochIntTimestamps(t *testing.T) {
+	db := setupLegacyDB(t)
+	ctx := context.Background()
+
+	const checkedAt = 1700000000
+	_, err := db.Exec(
+		`INSERT INTO digest_baselines (container_id, image, tag, remote_digest, checked_at)
+		 VALUES ('abc123','nginx','1.0','sha256:x',?)`, checkedAt)
+	require.NoError(t, err)
+
+	require.NoError(t, convertToUUID(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil))))
+
+	require.Equal(t, 1, countRows(t, db, "digest_baselines"))
+	require.Equal(t, strconv.Itoa(checkedAt),
+		scanString(t, db, `SELECT checked_at FROM digest_baselines`))
+}
