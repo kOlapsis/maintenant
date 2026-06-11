@@ -176,3 +176,38 @@ func TestConvertToUUID(t *testing.T) {
 	// No legacy tables remain.
 	require.False(t, tableExists(t, db, "_old_containers"))
 }
+
+// Orphaned polymorphic references (the entity was deleted before the upgrade, so
+// the id points at nothing) must not crash the conversion on the NOT NULL
+// entity_id/monitor_id columns. They fall back to the original id as text and the
+// rows are preserved — no silent drop.
+func TestConvertToUUID_OrphanedPolymorphicRefs(t *testing.T) {
+	db := setupLegacyDB(t)
+	ctx := context.Background()
+
+	stmts := []string{
+		`INSERT INTO alerts (source, alert_type, message, entity_type, entity_id, entity_name, fired_at)
+		 VALUES ('container','restart','orphan-alert','container',999,'ghost','2026-01-02T15:04:05Z')`,
+		`INSERT INTO silence_rules (entity_type, entity_id, source, reason, duration_seconds)
+		 VALUES ('endpoint',999,'manual','noise',3600)`,
+		`INSERT INTO status_components (display_name, created_at, updated_at) VALUES ('API',100,100)`,
+		`INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id)
+		 VALUES ((SELECT id FROM status_components LIMIT 1),'container',999)`,
+	}
+	for _, q := range stmts {
+		_, err := db.Exec(q)
+		require.NoError(t, err, "seed orphan: %s", q)
+	}
+
+	err := convertToUUID(ctx, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err, "conversion must tolerate orphaned polymorphic refs (incl. foreign_key_check)")
+
+	require.Equal(t, 1, countRows(t, db, "alerts"))
+	require.Equal(t, "999", scanString(t, db, `SELECT entity_id FROM alerts WHERE message='orphan-alert'`))
+
+	require.Equal(t, 1, countRows(t, db, "silence_rules"))
+	require.Equal(t, "999", scanString(t, db, `SELECT entity_id FROM silence_rules`))
+
+	require.Equal(t, 1, countRows(t, db, "status_component_monitors"))
+	require.Equal(t, "999", scanString(t, db, `SELECT monitor_id FROM status_component_monitors`))
+}

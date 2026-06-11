@@ -44,6 +44,11 @@ RUN apk add --no-cache ca-certificates tzdata setpriv \
     && mkdir -p /data \
     && chown 65534:65534 /data
 
+# Keep SQLite's temp files (statement journals, temp B-trees used by the one-time
+# UUID conversion of large tables) on the data volume. The hardened runtime mounts
+# /tmp as a tiny tmpfs, which SQLITE_FULL-fails the conversion; /data has real space.
+ENV SQLITE_TMPDIR=/data
+
 COPY --from=builder --chmod=555 /out/maintenant /app/maintenant
 COPY --chmod=555 docker-entrypoint.sh /docker-entrypoint.sh
 

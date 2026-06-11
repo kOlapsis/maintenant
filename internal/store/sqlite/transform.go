@@ -362,13 +362,13 @@ func copyStatements() []stmt {
 			(id, source, alert_type, severity, status, message, entity_type, entity_id, entity_name, details,
 			 resolved_by_id, fired_at, resolved_at, created_at, acknowledged_at, acknowledged_by, escalated_at)
 			SELECT ma.new_id, a.source, a.alert_type, a.severity, a.status, a.message, a.entity_type,
-			 CASE a.entity_type
+			 COALESCE(CASE a.entity_type
 			   WHEN 'container'   THEN (SELECT mnt_container_id('` + s + `', c.external_id) FROM _old_containers c WHERE c.id = a.entity_id)
 			   WHEN 'endpoint'    THEN (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = a.entity_id)
 			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port) FROM _old_cert_monitors cm WHERE cm.id = a.entity_id)
 			   WHEN 'heartbeat'   THEN (SELECT hb.uuid FROM _old_heartbeats hb WHERE hb.id = a.entity_id)
 			   ELSE CAST(a.entity_id AS TEXT)
-			 END,
+			 END, CAST(a.entity_id AS TEXT)),
 			 a.entity_name, a.details,
 			 (SELECT new_id FROM _map_alert WHERE old_id = a.resolved_by_id),
 			 CAST(strftime('%s', a.fired_at) AS INTEGER),
@@ -397,14 +397,14 @@ func copyStatements() []stmt {
 		{"silence_rules", `INSERT INTO silence_rules
 			(id, entity_type, entity_id, source, reason, starts_at, duration_seconds, cancelled_at, created_at)
 			SELECT mnt_uuid7(), sr.entity_type,
-			 CASE sr.entity_type
+			 COALESCE(CASE sr.entity_type
 			   WHEN 'container'   THEN (SELECT mnt_container_id('` + s + `', c.external_id) FROM _old_containers c WHERE c.id = sr.entity_id)
 			   WHEN 'endpoint'    THEN (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = sr.entity_id)
 			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port) FROM _old_cert_monitors cm WHERE cm.id = sr.entity_id)
 			   WHEN 'heartbeat'   THEN (SELECT hb.uuid FROM _old_heartbeats hb WHERE hb.id = sr.entity_id)
 			   WHEN NULL THEN NULL
 			   ELSE CASE WHEN sr.entity_id IS NULL THEN NULL ELSE CAST(sr.entity_id AS TEXT) END
-			 END,
+			 END, CASE WHEN sr.entity_id IS NULL THEN NULL ELSE CAST(sr.entity_id AS TEXT) END),
 			 sr.source, sr.reason, CAST(strftime('%s', sr.starts_at) AS INTEGER), sr.duration_seconds,
 			 CAST(strftime('%s', sr.cancelled_at) AS INTEGER), CAST(strftime('%s', sr.created_at) AS INTEGER)
 			FROM _old_silence_rules sr`},
@@ -454,13 +454,13 @@ func copyStatements() []stmt {
 
 		{"status_component_monitors", `INSERT INTO status_component_monitors (component_id, monitor_type, monitor_id)
 			SELECT mco.new_id, scm.monitor_type,
-			 CASE scm.monitor_type
+			 COALESCE(CASE scm.monitor_type
 			   WHEN 'container'   THEN (SELECT mnt_container_id('` + s + `', c.external_id) FROM _old_containers c WHERE c.id = scm.monitor_id)
 			   WHEN 'endpoint'    THEN (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = scm.monitor_id)
 			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port) FROM _old_cert_monitors cm WHERE cm.id = scm.monitor_id)
 			   WHEN 'heartbeat'   THEN (SELECT hb.uuid FROM _old_heartbeats hb WHERE hb.id = scm.monitor_id)
 			   ELSE CAST(scm.monitor_id AS TEXT)
-			 END
+			 END, CAST(scm.monitor_id AS TEXT))
 			FROM _old_status_component_monitors scm JOIN _map_component mco ON scm.component_id = mco.old_id`},
 
 		// -------- incidents/maintenance (minted, cross-referencing) -------------
