@@ -19,7 +19,7 @@ import (
 
 // PublicURLConfig holds the inputs for resolving the gRPC public URL.
 type PublicURLConfig struct {
-	// Explicit override from MAINTENANT_GRPC_PUBLIC_URL env or --grpc-public-url flag.
+	// Explicit override from MAINTENANT_GRPC_URL env or --grpc-url flag.
 	// If non-empty, it is used as-is (after ensuring the grpcs:// scheme).
 	Explicit string
 

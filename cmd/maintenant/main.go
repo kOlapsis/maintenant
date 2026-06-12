@@ -41,7 +41,7 @@ func main() {
 	fRuntime := flag.String("runtime", "", "override runtime detection: docker|swarm|kubernetes")
 	fLabel := flag.String("label", "", "display label for this agent (agent mode)")
 	fGRPCListen := flag.String("grpc-listen", "", "override MAINTENANT_GRPC_LISTEN")
-	fGRPCPublicURL := flag.String("grpc-public-url", "", "override MAINTENANT_GRPC_PUBLIC_URL")
+	fGRPCPublicURL := flag.String("grpc-url", "", "override MAINTENANT_GRPC_URL")
 	fTLSCert := flag.String("grpc-tls-cert", "", "TLS certificate file (server mode)")
 	fTLSKey := flag.String("grpc-tls-key", "", "TLS key file (server mode)")
 	fInsecureSkip := flag.Bool("grpc-insecure-skip-tls-verify", false, "disable TLS verification (debug only)")

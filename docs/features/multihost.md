@@ -32,7 +32,7 @@ The server exposes two interfaces:
 The gRPC port must be reachable from agent hosts. Configure the public URL so that generated install commands point to the right address:
 
 ```bash
-MAINTENANT_GRPC_PUBLIC_URL=grpcs://monitoring.example.com
+MAINTENANT_GRPC_URL=grpcs://monitoring.example.com
 ```
 
 The port is optional and defaults to `443` — only add it (e.g. `:8443`) if agents reach gRPC directly instead of through a reverse proxy/DNS terminating TLS on 443.
@@ -238,7 +238,7 @@ Available for development and testing against self-signed certificates. A boot-t
 | Variable / Flag | Default | Description |
 |-----------------|---------|-------------|
 | `MAINTENANT_GRPC_LISTEN` / `--grpc-listen` | `127.0.0.1:8443` | gRPC bind address (server mode) |
-| `MAINTENANT_GRPC_PUBLIC_URL` / `--grpc-public-url` | _(inferred)_ | Public gRPC URL injected into install commands |
+| `MAINTENANT_GRPC_URL` / `--grpc-url` | _(inferred)_ | Public gRPC URL injected into install commands |
 | `--grpc-tls-cert` | — | Path to TLS certificate (server mode) |
 | `--grpc-tls-key` | — | Path to TLS private key (server mode) |
 | `--grpc-insecure-skip-tls-verify` | `false` | Skip TLS cert verification (agent mode, dev only) |

@@ -122,7 +122,7 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
             <p class="text-sm text-yellow-400 font-semibold">Local address detected</p>
             <p class="mt-1 text-xs text-yellow-300/80">
               The server URL resolves to a local address. Remote agents won't be able to connect.
-              Set <code class="font-mono bg-yellow-500/10 px-1 rounded">MAINTENANT_GRPC_PUBLIC_URL</code>
+              Set <code class="font-mono bg-yellow-500/10 px-1 rounded">MAINTENANT_GRPC_URL</code>
               to a publicly reachable address.
             </p>
           </div>

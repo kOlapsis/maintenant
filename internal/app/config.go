@@ -149,7 +149,7 @@ func ConfigFromEnv() Config {
 	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
 	cfg.MultiHost = MultiHostConfig{
-		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_PUBLIC_URL"),
+		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_URL"),
 		GRPCListen:                 envOr("MAINTENANT_GRPC_LISTEN", "127.0.0.1:8443"),
 		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000),
 		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60),
