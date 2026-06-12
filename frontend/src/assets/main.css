@@ -108,6 +108,34 @@
     --pb-status-critical-bg: rgba(249, 115, 22, 0.12);
     --pb-status-down-bg: rgba(244, 63, 94, 0.12);
 
+    /* Severity scale (design system) — light. 4 severities + neutral (paused).
+       Maps UnifiedStatus/AlertSeverity → severity at presentation only.
+       `incident` is the single red (down + critical alerts). AA-validated text. */
+    --pb-sev-ok: #2EAF78;
+    --pb-sev-ok-text: #1A7A50;
+    --pb-sev-ok-bg: rgba(46, 175, 120, 0.12);
+    --pb-sev-ok-border: rgba(46, 175, 120, 0.45);
+
+    --pb-sev-warning: #D97706;
+    --pb-sev-warning-text: #92530A;
+    --pb-sev-warning-bg: rgba(245, 158, 11, 0.14);
+    --pb-sev-warning-border: rgba(180, 83, 9, 0.45);
+
+    --pb-sev-incident: #E11D48;
+    --pb-sev-incident-text: #B91C3C;
+    --pb-sev-incident-bg: rgba(244, 63, 94, 0.12);
+    --pb-sev-incident-border: rgba(190, 18, 60, 0.45);
+
+    --pb-sev-unknown: #6E788E;
+    --pb-sev-unknown-text: #4E5568;
+    --pb-sev-unknown-bg: rgba(110, 120, 142, 0.12);
+    --pb-sev-unknown-border: rgba(110, 120, 142, 0.4);
+
+    --pb-sev-neutral: #8892A8;
+    --pb-sev-neutral-text: #4E5568;
+    --pb-sev-neutral-bg: rgba(136, 146, 168, 0.14);
+    --pb-sev-neutral-border: rgba(136, 146, 168, 0.4);
+
     /* Shadows — lighter for light theme */
     --pb-shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
     --pb-shadow-elevated: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
@@ -218,6 +246,33 @@
     --pb-status-warn-bg: rgba(245, 158, 11, 0.15);
     --pb-status-critical-bg: rgba(249, 115, 22, 0.15);
     --pb-status-down-bg: rgba(244, 63, 94, 0.15);
+
+    /* Severity scale (design system) — dark. 4 severities + neutral (paused).
+       `incident` is the single red (down + critical alerts). AA-validated text. */
+    --pb-sev-ok: #3ECF8E;
+    --pb-sev-ok-text: #4FD89E;
+    --pb-sev-ok-bg: rgba(62, 207, 142, 0.15);
+    --pb-sev-ok-border: rgba(62, 207, 142, 0.35);
+
+    --pb-sev-warning: #f59e0b;
+    --pb-sev-warning-text: #fbbf24;
+    --pb-sev-warning-bg: rgba(245, 158, 11, 0.15);
+    --pb-sev-warning-border: rgba(245, 158, 11, 0.35);
+
+    --pb-sev-incident: #f43f5e;
+    --pb-sev-incident-text: #fb7185;
+    --pb-sev-incident-bg: rgba(244, 63, 94, 0.15);
+    --pb-sev-incident-border: rgba(244, 63, 94, 0.35);
+
+    --pb-sev-unknown: #8892A8;
+    --pb-sev-unknown-text: #A0A8B8;
+    --pb-sev-unknown-bg: rgba(136, 146, 168, 0.12);
+    --pb-sev-unknown-border: rgba(136, 146, 168, 0.3);
+
+    --pb-sev-neutral: #6B7590;
+    --pb-sev-neutral-text: #8892A8;
+    --pb-sev-neutral-bg: rgba(107, 117, 144, 0.12);
+    --pb-sev-neutral-border: rgba(107, 117, 144, 0.3);
 
     /* Status glow shadows */
     --pb-glow-ok: 0 0 8px rgba(62, 207, 142, 0.5);
@@ -364,4 +419,50 @@ select option {
   .bg-pb-status-warn { background-color: var(--pb-status-warn-bg); }
   .bg-pb-status-down { background-color: var(--pb-status-down-bg); }
   .bg-pb-status-critical { background-color: var(--pb-status-critical-bg); }
+
+  /* Severity scale utilities (text / muted bg / border) */
+  .text-pb-sev-ok { color: var(--pb-sev-ok-text); }
+  .text-pb-sev-warning { color: var(--pb-sev-warning-text); }
+  .text-pb-sev-incident { color: var(--pb-sev-incident-text); }
+  .text-pb-sev-unknown { color: var(--pb-sev-unknown-text); }
+  .text-pb-sev-neutral { color: var(--pb-sev-neutral-text); }
+  .bg-pb-sev-ok { background-color: var(--pb-sev-ok-bg); }
+  .bg-pb-sev-warning { background-color: var(--pb-sev-warning-bg); }
+  .bg-pb-sev-incident { background-color: var(--pb-sev-incident-bg); }
+  .bg-pb-sev-unknown { background-color: var(--pb-sev-unknown-bg); }
+  .bg-pb-sev-neutral { background-color: var(--pb-sev-neutral-bg); }
+  .border-pb-sev-ok { border-color: var(--pb-sev-ok-border); }
+  .border-pb-sev-warning { border-color: var(--pb-sev-warning-border); }
+  .border-pb-sev-incident { border-color: var(--pb-sev-incident-border); }
+  .border-pb-sev-unknown { border-color: var(--pb-sev-unknown-border); }
+  .border-pb-sev-neutral { border-color: var(--pb-sev-neutral-border); }
+
+  /* Consistent keyboard focus ring (a11y) — accent outline on focus-visible */
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--pb-accent);
+    outline-offset: 2px;
+    border-radius: var(--pb-radius-sm);
+  }
+}
+
+/* Decorative status motion — opt-out under reduced-motion (a11y) */
+@keyframes pb-ping {
+  0% { transform: scale(1); opacity: 0.5; }
+  70%, 100% { transform: scale(1.6); opacity: 0; }
+}
+.pb-ping { animation: pb-ping 2.4s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .pb-ping,
+  .pb-skeleton { animation: none !important; }
+}
+
+/* Loading skeleton shimmer */
+@keyframes pb-skeleton {
+  0% { opacity: 0.5; }
+  50% { opacity: 0.85; }
+  100% { opacity: 0.5; }
+}
+.pb-skeleton {
+  background-color: var(--pb-bg-elevated);
+  animation: pb-skeleton 1.4s ease-in-out infinite;
 }

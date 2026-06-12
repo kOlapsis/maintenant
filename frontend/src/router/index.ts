@@ -75,6 +75,16 @@ const router = createRouter({
         { path: 'escalation', name: 'escalation', component: EscalationPage },
         { path: 'agents', name: 'agents', component: AgentsPage },
         { path: 'pro-edition', name: 'pro-edition', component: ProPage },
+        // Dev-only design system gallery (not linked in nav, excluded from prod build)
+        ...(import.meta.env.DEV
+          ? [
+              {
+                path: '_ds',
+                name: 'design-system',
+                component: () => import('../pages/DesignSystemPage.vue'),
+              },
+            ]
+          : []),
       ],
     },
     {
