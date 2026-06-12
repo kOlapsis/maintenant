@@ -13,6 +13,8 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 
 export type Density = 'compact' | 'comfortable'
+export type MonitorView = 'grid' | 'list'
+export type MonitorGroupBy = 'type' | 'severity'
 
 export const usePreferencesStore = defineStore('preferences', () => {
   function getInitialDensity(): Density {
@@ -22,6 +24,20 @@ export const usePreferencesStore = defineStore('preferences', () => {
   }
 
   const density = ref<Density>(getInitialDensity())
+
+  // Dashboard monitor view preferences (persisted like density).
+  function getInitialView(): MonitorView {
+    return localStorage.getItem('pb-monitors-view') === 'list' ? 'list' : 'grid'
+  }
+  function getInitialGroupBy(): MonitorGroupBy {
+    return localStorage.getItem('pb-monitors-group') === 'severity' ? 'severity' : 'type'
+  }
+
+  const monitorsView = ref<MonitorView>(getInitialView())
+  const monitorsGroupBy = ref<MonitorGroupBy>(getInitialGroupBy())
+
+  watch(monitorsView, (v) => localStorage.setItem('pb-monitors-view', v))
+  watch(monitorsGroupBy, (v) => localStorage.setItem('pb-monitors-group', v))
 
   function applyDensity(d: Density) {
     if (d === 'comfortable') {
@@ -41,5 +57,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   return {
     density,
     toggleDensity,
+    monitorsView,
+    monitorsGroupBy,
   }
 })
