@@ -27,7 +27,7 @@ The server exposes two interfaces:
 | Interface | Default | Purpose |
 |-----------|---------|---------|
 | HTTP | `127.0.0.1:8080` | REST API + web UI (reverse-proxied) |
-| gRPC/TLS | `127.0.0.1:8443` | Agent event ingestion |
+| gRPC | `127.0.0.1:8443` | Agent event ingestion (TLS or h2c, see below) |
 
 The gRPC port must be reachable from agent hosts. Configure the public URL so that generated install commands point to the right address:
 
@@ -41,15 +41,31 @@ If not set, the server infers the URL from the HTTP request headers (`X-Forwarde
 
 ### Starting the server
 
+Three TLS modes are supported — choose one:
+
+**Behind a reverse proxy (h2c mode)**
+
+Set `MAINTENANT_GRPC_TLS_INSECURE=true`. The listener accepts plaintext HTTP/2 (h2c); TLS is terminated at the proxy. The Docker-internal leg is unencrypted, which is safe within a private network.
+
+```bash
+MAINTENANT_GRPC_TLS_INSECURE=true maintenant --mode=server
+```
+
+**Direct TLS with a custom certificate**
+
+Mount a certificate/key pair covering the public hostname agents will dial:
+
 ```bash
 maintenant \
   --mode=server \
-  --grpc-listen=127.0.0.1:8443 \
+  --grpc-listen=0.0.0.0:8443 \
   --grpc-tls-cert=/etc/maintenant/tls.crt \
   --grpc-tls-key=/etc/maintenant/tls.key
 ```
 
-Plaintext gRPC is not supported. A valid TLS certificate is required.
+**Self-signed (development only)**
+
+Omit both cert and key. The server generates a self-signed certificate in-memory, logs a warning, and agents must connect with `--grpc-insecure-skip-tls-verify`.
 
 ---
 
@@ -220,7 +236,7 @@ Agent status is updated in real time via SSE. The `connection_state` field refle
 
 | Concern | Mechanism |
 |---------|-----------|
-| Transport encryption | TLS required on gRPC. Plaintext rejected at server boot. |
+| Transport encryption | TLS at the gRPC listener, or h2c behind a trusted reverse proxy (`MAINTENANT_GRPC_TLS_INSECURE=true`). Plaintext mode is explicit opt-in, not the default. |
 | Per-stream authentication | Ed25519 challenge-response, fresh nonce per connection |
 | Clock skew tolerance | ±5 minutes between agent and server clocks |
 | Token exposure | Cleartext shown once at creation, stored hashed, masked in subsequent reads |
@@ -239,8 +255,9 @@ Available for development and testing against self-signed certificates. A boot-t
 |-----------------|---------|-------------|
 | `MAINTENANT_GRPC_LISTEN` / `--grpc-listen` | `127.0.0.1:8443` | gRPC bind address (server mode) |
 | `MAINTENANT_GRPC_URL` / `--grpc-url` | _(inferred)_ | Public gRPC URL injected into install commands |
-| `--grpc-tls-cert` | — | Path to TLS certificate (server mode) |
-| `--grpc-tls-key` | — | Path to TLS private key (server mode) |
+| `MAINTENANT_GRPC_TLS_CERT` / `--grpc-tls-cert` | — | Path to TLS certificate (server mode, direct TLS) |
+| `MAINTENANT_GRPC_TLS_KEY` / `--grpc-tls-key` | — | Path to TLS private key (server mode, direct TLS) |
+| `MAINTENANT_GRPC_TLS_INSECURE` | `false` | Accept h2c (plaintext HTTP/2) — use behind a trusted reverse proxy only |
 | `--grpc-insecure-skip-tls-verify` | `false` | Skip TLS cert verification (agent mode, dev only) |
 | `--server` | — | Server gRPC URL (agent mode, e.g. `grpcs://monitoring.example.com`; port defaults to 443) |
 | `--enrollment-token` | — | One-time enrollment token (agent mode, first boot only) |

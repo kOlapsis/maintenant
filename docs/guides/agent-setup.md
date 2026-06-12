@@ -29,8 +29,44 @@ MAINTENANT_GRPC_URL=grpcs://agents.example.com   # the address agents will dial
 
 `MAINTENANT_GRPC_URL` is the public address injected into the generated install commands. If you omit it, the server infers it from request headers and warns in the UI when the result looks local/private.
 
-!!! tip "Behind a reverse proxy (recommended)"
-    The gRPC server always serves its own TLS. To present a public Let's Encrypt certificate instead of a self-signed one, terminate TLS at your reverse proxy on a dedicated subdomain and re-encrypt to the backend on `:8443` over HTTP/2. Agents then dial `grpcs://agents.example.com` (port 443) and validate the certificate normally — no insecure flag needed.
+**TLS mode — choose one that matches your deployment:**
+
+=== "Behind a reverse proxy (recommended)"
+
+    Set `MAINTENANT_GRPC_TLS_INSECURE=true` on the server. The gRPC listener accepts plaintext HTTP/2 (h2c) on `:8443`; TLS is terminated at the proxy edge with a Let's Encrypt certificate. Agents dial `grpcs://agents.example.com` (port 443) and validate the public cert normally — no extra flag needed.
+
+    Example Traefik labels on the server container:
+
+    ```yaml
+    - traefik.http.routers.maintenant-grpc.rule=Host(`agents.example.com`)
+    - traefik.http.routers.maintenant-grpc.entrypoints=websecure
+    - traefik.http.routers.maintenant-grpc.tls.certresolver=le
+    - traefik.http.routers.maintenant-grpc.service=maintenant-grpc
+    - traefik.http.services.maintenant-grpc.loadbalancer.server.port=8443
+    - traefik.http.services.maintenant-grpc.loadbalancer.server.scheme=h2c
+    ```
+
+=== "Direct TLS with a custom certificate"
+
+    Mount a certificate/key pair and point to them with env vars:
+
+    ```bash
+    MAINTENANT_GRPC_TLS_CERT=/etc/maintenant/tls.crt
+    MAINTENANT_GRPC_TLS_KEY=/etc/maintenant/tls.key
+    ```
+
+    The certificate must cover the hostname agents will dial. With a valid public certificate (e.g. obtained via a DNS ACME challenge), agents connect without any extra flag. Works well with Traefik TCP passthrough:
+
+    ```yaml
+    - traefik.tcp.routers.maintenant-grpc.rule=HostSNI(`agents.example.com`)
+    - traefik.tcp.routers.maintenant-grpc.entrypoints=websecure
+    - traefik.tcp.routers.maintenant-grpc.tls.passthrough=true
+    - traefik.tcp.services.maintenant-grpc.loadbalancer.server.port=8443
+    ```
+
+=== "Self-signed (development only)"
+
+    No certificate configuration needed. The server generates a self-signed cert in-memory at startup and logs a warning. Agents must pass `--grpc-insecure-skip-tls-verify`. **Do not use in production.**
 
 ---
 
