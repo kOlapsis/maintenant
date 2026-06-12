@@ -71,6 +71,8 @@ nav:
       - Configuration: getting-started/configuration.md
   - Features:
       - Container Monitoring: features/containers.md
+      - Docker Swarm Monitoring: features/swarm.md
+      - Multi-Host Monitoring: features/multihost.md
       - Endpoint Monitoring: features/endpoints.md
       - Heartbeat & Cron Monitoring: features/heartbeats.md
       - TLS Certificate Monitoring: features/certificates.md
@@ -82,8 +84,10 @@ nav:
       - Public Status Page: features/status-page.md
       - MCP Server: features/mcp.md
   - Guides:
+      - Agent Setup: guides/agent-setup.md
       - Docker Labels Reference: guides/docker-labels.md
       - Kubernetes Guide: guides/kubernetes.md
+      - Docker Swarm Deployment: guides/swarm.md
   - API:
       - API Reference: api/reference.md
   - Security: security.md

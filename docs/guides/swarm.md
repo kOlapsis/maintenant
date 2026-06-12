@@ -126,9 +126,9 @@ maintenant sees all nodes, services, and tasks across the entire cluster from an
 
 ---
 
-## Enterprise Features
+## Pro Features
 
-Enterprise features require a multi-node cluster to be meaningful:
+Pro features require a multi-node cluster to be meaningful:
 
 | Feature | Requires |
 |---------|----------|
@@ -140,14 +140,14 @@ Enterprise features require a multi-node cluster to be meaningful:
 | Rolling update tracking | Any cluster size |
 | Dedicated Swarm dashboard | Any cluster size |
 
-### Recommended Setup for Enterprise
+### Recommended Setup for Pro
 
-For the full Enterprise experience:
+For the full Pro experience:
 
 - **3 manager nodes** — For quorum monitoring and high availability
 - **1+ worker nodes** — For task placement and distribution visibility
 - **maintenant on a manager** — Constraint to `node.role == manager`
-- **Enterprise license** — Activate via the settings page
+- **Pro license** — Activate via the settings page
 
 ---
 
@@ -246,13 +246,13 @@ maintenant handles edge cases without user intervention:
     docker service logs maintenant 2>&1 | grep -i swarm
     ```
 
-### Node health not showing (Enterprise)
+### Node health not showing (Pro)
 
-Node health monitoring is an Enterprise feature. Verify your license:
+Node health monitoring is an Pro feature. Verify your license:
 
 - Navigate to the settings page
-- Check that the edition shows "Enterprise"
-- The `/swarm` dashboard route requires Enterprise
+- Check that the edition shows "Pro"
+- The `/swarm` dashboard route requires Pro
 
 ### Services show 0/N running
 
