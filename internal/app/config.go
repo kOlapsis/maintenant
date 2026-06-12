@@ -76,8 +76,9 @@ type MultiHostConfig struct {
 	AgentRateLimitPerSecond    int
 	AgentStaleThresholdSeconds int
 	// TLS (for mode=server)
-	TLSCertFile string
-	TLSKeyFile  string
+	TLSCertFile  string
+	TLSKeyFile   string
+	InsecureGRPC bool // h2c mode — use only behind a trusted reverse proxy
 	// Agent flags (for mode=agent)
 	ServerURL          string
 	EnrollmentToken    string
@@ -153,6 +154,9 @@ func ConfigFromEnv() Config {
 		GRPCListen:                 envOr("MAINTENANT_GRPC_LISTEN", "127.0.0.1:8443"),
 		AgentRateLimitPerSecond:    envIntOr("MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", 1000),
 		AgentStaleThresholdSeconds: envIntOr("MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", 60),
+		TLSCertFile:                os.Getenv("MAINTENANT_GRPC_TLS_CERT"),
+		TLSKeyFile:                 os.Getenv("MAINTENANT_GRPC_TLS_KEY"),
+		InsecureGRPC:               parseTruthy(os.Getenv("MAINTENANT_GRPC_TLS_INSECURE")),
 	}
 
 	return cfg

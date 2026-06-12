@@ -13,6 +13,7 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -884,15 +885,21 @@ func (a *App) startAgentGRPC(ctx context.Context) error {
 		listen = "127.0.0.1:8443"
 	}
 
-	hosts := collectGRPCTLSHosts(a.cfg.MultiHost.GRPCPublicURL, listen)
-	tlsCfg, err := agentserver.LoadOrGenerateTLS(
-		a.cfg.MultiHost.TLSCertFile,
-		a.cfg.MultiHost.TLSKeyFile,
-		hosts,
-		a.logger.With("component", "agentserver"),
-	)
-	if err != nil {
-		return err
+	var tlsCfg *tls.Config
+	if a.cfg.MultiHost.InsecureGRPC {
+		a.logger.Warn("agentserver: TLS disabled — only use behind a trusted reverse proxy (MAINTENANT_GRPC_TLS_INSECURE)")
+	} else {
+		hosts := collectGRPCTLSHosts(a.cfg.MultiHost.GRPCPublicURL, listen)
+		var err error
+		tlsCfg, err = agentserver.LoadOrGenerateTLS(
+			a.cfg.MultiHost.TLSCertFile,
+			a.cfg.MultiHost.TLSKeyFile,
+			hosts,
+			a.logger.With("component", "agentserver"),
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	a.agentSrv.StartTokenGC(ctx)

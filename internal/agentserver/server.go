@@ -58,22 +58,21 @@ func New(deps Deps) *Server {
 	}
 }
 
-// Start binds to listen, wraps it in TLS, registers the Ingest service, and
-// begins serving. It blocks until the context is cancelled or an error occurs.
-// tlsCfg must not be nil — plaintext gRPC is not supported (FR-031).
+// Start binds to listen, registers the Ingest service, and begins serving.
+// It blocks until the context is cancelled or an error occurs.
+// If tlsCfg is nil the server listens in h2c (plaintext) — only safe behind a
+// trusted reverse proxy (MAINTENANT_GRPC_TLS_INSECURE=true).
 func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) error {
-	if tlsCfg == nil {
-		return fmt.Errorf("agentserver: TLS config is required; plaintext gRPC is not supported")
-	}
-
 	lis, err := net.Listen("tcp", listen)
 	if err != nil {
 		return fmt.Errorf("agentserver: listen %s: %w", listen, err)
 	}
 
-	s.grpc = grpc.NewServer(
-		grpc.Creds(credentials.NewTLS(tlsCfg)),
-	)
+	var opts []grpc.ServerOption
+	if tlsCfg != nil {
+		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsCfg)))
+	}
+	s.grpc = grpc.NewServer(opts...)
 	agentpb.RegisterIngestServer(s.grpc, s.impl)
 
 	s.deps.Logger.Info("agent gRPC server starting", "listen", listen)
