@@ -20,6 +20,9 @@ import { createEndpoint } from '@/services/endpointApi'
 import EndpointCard from '@/components/EndpointCard.vue'
 import { Globe } from 'lucide-vue-next'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
 
@@ -100,7 +103,7 @@ onUnmounted(() => {
     <div class="mb-6 flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-black text-pb-primary">Endpoints</h1>
-        <p class="mt-1 text-sm text-slate-500">
+        <p class="mt-1 text-sm text-pb-muted">
           HTTP/TCP endpoint health checks
         </p>
       </div>
@@ -183,7 +186,7 @@ onUnmounted(() => {
           <a
             href="/pro-edition"
             class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: #a78bfa"
+            style="color: var(--pb-accent)"
           >
             Upgrade to Pro
           </a>
@@ -336,7 +339,7 @@ onUnmounted(() => {
       <span class="rounded-full bg-pb-status-down text-pb-status-down px-3 py-1 font-medium">
         {{ store.statusCounts.down }} down
       </span>
-      <span class="rounded-full bg-slate-800 text-slate-400 px-3 py-1 font-medium">
+      <span class="rounded-full bg-pb-sev-unknown text-pb-sev-unknown px-3 py-1 font-medium">
         {{ store.statusCounts.unknown }} unknown
       </span>
     </div>
@@ -381,17 +384,10 @@ onUnmounted(() => {
     </div>
 
     <!-- Loading -->
-    <div v-if="store.loading" class="py-12 text-center text-slate-500">
-      Loading endpoints...
-    </div>
+    <LoadingSkeleton v-if="store.loading" variant="cards" :count="6" />
 
     <!-- Error -->
-    <div
-      v-else-if="store.error"
-      class="rounded-2xl p-4 text-sm bg-pb-status-down border border-rose-500/30 text-pb-status-down"
-    >
-      {{ store.error }}
-    </div>
+    <ErrorState v-else-if="store.error" :message="store.error" />
 
     <!-- Endpoint grid -->
     <div
@@ -406,21 +402,13 @@ onUnmounted(() => {
       />
     </div>
 
-    <!-- Empty / help state -->
-    <div v-else class="flex flex-col items-center justify-center py-16 text-center">
-      <div class="p-4 rounded-2xl mb-4" style="background: var(--pb-bg-elevated)">
-        <Globe :size="48" class="text-slate-600" />
-      </div>
-      <p class="text-sm mb-2 max-w-md text-slate-500">
-        Monitor HTTP and TCP endpoints by adding {{ labelOrAnnotation }}s to your {{ isK8s ? 'pods' : 'containers' }},
-        or create standalone monitors using the button above.
-      </p>
-      <p class="text-sm max-w-md text-slate-500">
-        Add the <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.http</code>
-        or <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.tcp</code>
-        {{ labelOrAnnotation }} with the target URL.
-      </p>
-    </div>
+    <!-- Empty state -->
+    <EmptyState
+      v-else
+      :icon="Globe"
+      title="No endpoints yet"
+      :description="`Add maintenant.endpoint ${labelOrAnnotation}s to your ${isK8s ? 'pods' : 'containers'}, or create a standalone monitor with the button above.`"
+    />
   </div>
   </div>
 </template>
