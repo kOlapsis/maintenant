@@ -19,6 +19,10 @@ import { createHeartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
+import { Heart } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
 
 const store = useHeartbeatsStore()
@@ -162,7 +166,7 @@ async function handleCreate() {
           <a
             href="/pro-edition"
             class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: #a78bfa"
+            style="color: var(--pb-accent)"
           >
             Upgrade to Pro
           </a>
@@ -273,46 +277,28 @@ async function handleCreate() {
     </div>
 
     <!-- Loading -->
-    <div v-if="store.loading" class="py-12 text-center" :style="{ color: 'var(--pb-text-muted)' }">
-      Loading heartbeats...
-    </div>
+    <LoadingSkeleton v-if="store.loading" variant="cards" :count="6" />
 
     <!-- Error -->
-    <div
-      v-else-if="store.error"
-      class="rounded-lg p-4 text-sm"
-      :style="{
-        backgroundColor: 'var(--pb-status-down-bg)',
-        border: '1px solid var(--pb-status-down)',
-        color: 'var(--pb-status-down)',
-        borderRadius: 'var(--pb-radius-lg)',
-      }"
-    >
-      {{ store.error }}
-    </div>
+    <ErrorState v-else-if="store.error" :message="store.error" />
 
     <!-- Empty state -->
-    <div
+    <EmptyState
       v-else-if="store.heartbeats.length === 0"
-      class="flex flex-col items-center justify-center py-16 text-center"
+      :icon="Heart"
+      title="No heartbeat monitors"
+      description="Heartbeat monitors track cron jobs and scheduled tasks. Create one and integrate the ping URL into your scripts."
     >
-      <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4" style="color: var(--pb-text-muted)">
-        <rect x="8" y="8" width="40" height="40" rx="8" />
-        <path d="M18 28l4 4 6-8 4 4 6-8" stroke-linecap="round" stroke-linejoin="round" />
-        <circle cx="28" cy="38" r="2" fill="currentColor" stroke="none" />
-      </svg>
-      <h3 class="text-lg font-medium mb-1" style="color: var(--pb-text-primary)">No heartbeat monitors</h3>
-      <p class="text-sm mb-4 max-w-sm" style="color: var(--pb-text-muted)">
-        Heartbeat monitors track cron jobs and scheduled tasks. Create one and integrate the ping URL into your scripts.
-      </p>
-      <button
-        class="min-h-[44px] rounded-lg px-4 text-sm font-medium"
-        style="background-color: var(--pb-accent); color: var(--pb-text-inverted); border-radius: var(--pb-radius-lg)"
-        @click="showCreateForm = true"
-      >
-        Create Your First Heartbeat
-      </button>
-    </div>
+      <template #action>
+        <button
+          class="min-h-[44px] rounded-lg px-4 text-sm font-medium"
+          style="background-color: var(--pb-accent); color: var(--pb-text-inverted); border-radius: var(--pb-radius-lg)"
+          @click="showCreateForm = true"
+        >
+          Create your first heartbeat
+        </button>
+      </template>
+    </EmptyState>
 
     <!-- Heartbeat grid -->
     <div
