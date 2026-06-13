@@ -23,17 +23,46 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // EndpointHandler handles endpoint-related HTTP endpoints.
 type EndpointHandler struct {
 	service      *endpoint.Service
 	containerSvc *container.Service
+	sessions     agentLiveness
+}
+
+// enrichedEndpoint adds presentation-only liveness flags to an endpoint. When an
+// endpoint is probed by a remote agent whose stream is gone, its last result is
+// no longer live, so the UI degrades it to offline.
+type enrichedEndpoint struct {
+	*endpoint.Endpoint
+	Stale        *bool `json:"stale,omitempty"`
+	AgentOffline *bool `json:"agent_offline,omitempty"`
 }
 
 // NewEndpointHandler creates a new endpoint handler.
 func NewEndpointHandler(service *endpoint.Service, containerSvc *container.Service) *EndpointHandler {
 	return &EndpointHandler{service: service, containerSvc: containerSvc}
+}
+
+// SetAgentSessions wires live agent-stream state so agent-probed endpoints can be
+// flagged stale when their reporting agent disconnects. Server-probed endpoints
+// (no agent) are unaffected.
+func (h *EndpointHandler) SetAgentSessions(s agentLiveness) {
+	h.sessions = s
+}
+
+// markStale wraps an endpoint, flagging it stale when its remote agent is offline.
+func (h *EndpointHandler) markStale(ep *endpoint.Endpoint) enrichedEndpoint {
+	ee := enrichedEndpoint{Endpoint: ep}
+	if ep.AgentID != "" && ep.AgentID != uid.LocalAgent && h.sessions != nil && !h.sessions.IsConnected(ep.AgentID) {
+		t := true
+		ee.Stale = &t
+		ee.AgentOffline = &t
+	}
+	return ee
 }
 
 // HandleListEndpoints handles GET /api/v1/endpoints.
@@ -62,9 +91,14 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 		endpoints = []*endpoint.Endpoint{}
 	}
 
+	enriched := make([]enrichedEndpoint, 0, len(endpoints))
+	for _, ep := range endpoints {
+		enriched = append(enriched, h.markStale(ep))
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"endpoints": endpoints,
-		"total":     len(endpoints),
+		"endpoints": enriched,
+		"total":     len(enriched),
 	})
 }
 
@@ -89,7 +123,7 @@ func (h *EndpointHandler) HandleGetEndpoint(w http.ResponseWriter, r *http.Reque
 	uptime := h.service.CalculateUptime(r.Context(), id)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"endpoint": ep,
+		"endpoint": h.markStale(ep),
 		"uptime":   uptime,
 	})
 }

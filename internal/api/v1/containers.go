@@ -75,6 +75,7 @@ type ContainerHandler struct {
 	securityProvider SecurityInsightProvider
 	runtimeChecker   RuntimeChecker
 	agentDirectory   AgentDirectory
+	sessions         agentLiveness
 }
 
 // NewContainerHandler creates a new container handler.
@@ -90,6 +91,19 @@ func (h *ContainerHandler) SetRuntimeChecker(rc RuntimeChecker) {
 // SetSecurityProvider sets the security insight provider for enriching container responses.
 func (h *ContainerHandler) SetSecurityProvider(sp SecurityInsightProvider) {
 	h.securityProvider = sp
+}
+
+// SetAgentSessions wires live agent-stream state so containers reported by a
+// disconnected remote agent can be flagged stale (their last-known state is no
+// longer live). The runtimeChecker still governs the local runtime separately.
+func (h *ContainerHandler) SetAgentSessions(s agentLiveness) {
+	h.sessions = s
+}
+
+// agentOffline reports whether a remote agent has no live stream. The local
+// runtime (empty/LocalAgent) is governed by the runtime checker, not sessions.
+func (h *ContainerHandler) agentOffline(agentID string) bool {
+	return agentID != "" && agentID != uid.LocalAgent && h.sessions != nil && !h.sessions.IsConnected(agentID)
 }
 
 // SetAgentDirectory sets the agent directory for enriching remote containers with
@@ -148,6 +162,8 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		SecurityHighestSeverity *string `json:"security_highest_severity"`
 		AgentHostname           *string `json:"agent_hostname,omitempty"`
 		AgentLabel              *string `json:"agent_label,omitempty"`
+		Stale                   *bool   `json:"stale,omitempty"`
+		AgentOffline            *bool   `json:"agent_offline,omitempty"`
 	}
 	type enrichedGroup struct {
 		Name       string              `json:"name"`
@@ -184,6 +200,11 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 						ec.AgentLabel = &label
 					}
 				}
+			}
+			if h.agentOffline(c.AgentID) {
+				t := true
+				ec.Stale = &t
+				ec.AgentOffline = &t
 			}
 			eg.Containers = append(eg.Containers, ec)
 		}
@@ -265,6 +286,10 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
 		detail["stale"] = true
+	}
+	if h.agentOffline(c.AgentID) {
+		detail["stale"] = true
+		detail["agent_offline"] = true
 	}
 
 	WriteJSON(w, http.StatusOK, detail)

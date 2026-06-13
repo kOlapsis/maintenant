@@ -50,6 +50,7 @@ export interface UnifiedMonitor {
 }
 
 function containerStatus(c: Container): { status: UnifiedStatus; label: string } {
+  if (c.stale) return { status: 'unknown', label: 'Agent offline' }
   if (c.state === 'paused') return { status: 'paused', label: 'Paused' }
   if (c.state === 'completed') return { status: 'paused', label: 'Completed' }
   if (c.state === 'running') {
@@ -61,6 +62,7 @@ function containerStatus(c: Container): { status: UnifiedStatus; label: string }
 }
 
 function endpointStatus(e: Endpoint): { status: UnifiedStatus; label: string } {
+  if (e.stale) return { status: 'unknown', label: 'Agent offline' }
   if (e.status === 'up') return { status: 'ok', label: 'Up' }
   if (e.status === 'down') return { status: 'down', label: 'Down' }
   return { status: 'unknown', label: 'Unknown' }

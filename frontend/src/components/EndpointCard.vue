@@ -130,7 +130,14 @@ function formatResponseTime(ms: number | undefined): string {
         >
           alerting
         </span>
-        <EndpointStatusBadge :status="endpoint.status" />
+        <span
+          v-if="endpoint.stale"
+          class="rounded-full px-2 py-0.5 text-xs font-medium text-mnt-sev-unknown bg-mnt-sev-unknown"
+          :title="`Agent offline · last known: ${endpoint.status}`"
+        >
+          offline
+        </span>
+        <EndpointStatusBadge v-else :status="endpoint.status" />
       </div>
     </div>
 

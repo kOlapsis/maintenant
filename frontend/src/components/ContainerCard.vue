@@ -130,6 +130,12 @@ function getStateStyle(state: string) {
             title="Container is restart-looping"
           >!!</span>
           <span
+            v-if="container.stale"
+            class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold text-mnt-sev-unknown bg-mnt-sev-unknown"
+            :title="`Agent offline · last known: ${container.state}`"
+          >offline</span>
+          <span
+            v-else
             class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
             :style="getStateStyle(container.state)"
           >{{ container.state }}</span>

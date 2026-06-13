@@ -208,6 +208,9 @@ func NewRouter(d HandlerDeps) *Router {
 	if d.AgentStore != nil {
 		ch.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 	}
+	if d.AgentSessions != nil {
+		ch.SetAgentSessions(d.AgentSessions)
+	}
 
 	// Container REST endpoints
 	r.mux.HandleFunc("GET /api/v1/containers", ch.HandleList)
@@ -219,6 +222,9 @@ func NewRouter(d HandlerDeps) *Router {
 	// Endpoint REST endpoints
 	if d.Endpoints != nil {
 		eh := NewEndpointHandler(d.Endpoints, d.Containers)
+		if d.AgentSessions != nil {
+			eh.SetAgentSessions(d.AgentSessions)
+		}
 		r.mux.HandleFunc("GET /api/v1/endpoints", eh.HandleListEndpoints)
 		r.mux.HandleFunc("POST /api/v1/endpoints", eh.HandleCreateEndpoint)
 		r.mux.HandleFunc("GET /api/v1/endpoints/{id}", eh.HandleGetEndpoint)

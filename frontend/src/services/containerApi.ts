@@ -18,6 +18,10 @@ export interface Container {
   external_id: string
   name: string
   image: string
+  // Set by the server when the reporting agent has no live stream: the state
+  // below is last-known, not live. The UI degrades it to offline.
+  stale?: boolean
+  agent_offline?: boolean
   state: string
   health_status: string | null
   has_health_check: boolean
