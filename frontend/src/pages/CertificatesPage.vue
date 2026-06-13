@@ -20,6 +20,10 @@ import { createCertificate } from '@/services/certificateApi'
 import CertificateCard from '@/components/CertificateCard.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
+import { ShieldCheck } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
 
 const store = useCertificatesStore()
@@ -181,7 +185,7 @@ function handleSelect(id: string) {
           <a
             href="/pro-edition"
             class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: #a78bfa"
+            style="color: var(--pb-accent)"
           >
             Upgrade to Pro
           </a>
@@ -317,23 +321,10 @@ function handleSelect(id: string) {
     </div>
 
     <!-- Loading -->
-    <div v-if="store.loading" class="py-12 text-center" :style="{ color: 'var(--pb-text-muted)' }">
-      Loading certificates...
-    </div>
+    <LoadingSkeleton v-if="store.loading" variant="cards" :count="6" />
 
     <!-- Error -->
-    <div
-      v-else-if="store.error"
-      class="rounded-lg p-4 text-sm"
-      :style="{
-        backgroundColor: 'var(--pb-status-down-bg)',
-        border: '1px solid var(--pb-status-down)',
-        color: 'var(--pb-status-down)',
-        borderRadius: 'var(--pb-radius-lg)',
-      }"
-    >
-      {{ store.error }}
-    </div>
+    <ErrorState v-else-if="store.error" :message="store.error" />
 
     <!-- Certificate grid -->
     <div
@@ -349,22 +340,13 @@ function handleSelect(id: string) {
       />
     </div>
 
-    <!-- Empty / help state -->
-    <div v-else class="flex flex-col items-center justify-center py-16 text-center">
-      <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4" style="color: var(--pb-text-muted)">
-        <rect x="10" y="6" width="36" height="44" rx="4" />
-        <path d="M20 20h16M20 28h16M20 36h10" stroke-linecap="round" />
-        <circle cx="40" cy="40" r="10" fill="var(--pb-bg-primary)" />
-        <path d="M37 40l2 2 4-4" stroke="var(--pb-status-ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-      <p class="text-sm mb-2 max-w-sm" :style="{ color: 'var(--pb-text-muted)' }">
-        HTTPS endpoints are auto-detected from {{ labelOrAnnotation }}s. Create standalone monitors for additional hosts.
-      </p>
-      <p class="text-sm max-w-sm" :style="{ color: 'var(--pb-text-muted)' }">
-        Add the <code class="rounded-md px-1.5 py-0.5 text-xs" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.tls.certificates</code>
-        {{ labelOrAnnotation }} to monitor specific certificates.
-      </p>
-    </div>
+    <!-- Empty state -->
+    <EmptyState
+      v-else
+      :icon="ShieldCheck"
+      title="No certificates monitored"
+      :description="`HTTPS endpoints are auto-detected from ${labelOrAnnotation}s. Add the maintenant.tls.certificates ${labelOrAnnotation} or create a standalone monitor above.`"
+    />
   </div>
   </div>
 </template>
