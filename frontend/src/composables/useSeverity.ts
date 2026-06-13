@@ -78,7 +78,7 @@ type SeverityPart = 'solid' | 'bg' | 'text' | 'border'
 
 export function severityVar(severity: Severity, part: SeverityPart = 'solid'): string {
   const suffix = part === 'solid' ? '' : `-${part}`
-  return `var(--pb-sev-${severity}${suffix})`
+  return `var(--mnt-sev-${severity}${suffix})`
 }
 
 // `incident` and `warning` are the only severities that demand attention.

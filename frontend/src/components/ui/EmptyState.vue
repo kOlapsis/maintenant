@@ -17,9 +17,9 @@ defineEmits<{ action: [] }>()
 
 <template>
   <div class="flex flex-col items-center justify-center px-6 py-12 text-center">
-    <component :is="icon" v-if="icon" :size="32" class="mb-3 text-pb-muted" aria-hidden="true" />
-    <p class="text-sm font-medium text-pb-secondary">{{ title }}</p>
-    <p v-if="description" class="mt-1 max-w-sm text-xs text-pb-muted">{{ description }}</p>
+    <component :is="icon" v-if="icon" :size="32" class="mb-3 text-mnt-muted" aria-hidden="true" />
+    <p class="text-sm font-medium text-mnt-secondary">{{ title }}</p>
+    <p v-if="description" class="mt-1 max-w-sm text-xs text-mnt-muted">{{ description }}</p>
     <div v-if="$slots.action" class="mt-4">
       <slot name="action" />
     </div>

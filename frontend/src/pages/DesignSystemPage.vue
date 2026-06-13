@@ -92,15 +92,15 @@ const lastSelected = ref('')
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-10 p-6 pb-24">
+  <div class="mx-auto max-w-6xl space-y-10 p-6 mnt-24">
     <header class="flex items-center gap-3">
-      <h1 class="text-lg font-bold text-pb-primary">Design system</h1>
-      <span class="rounded bg-pb-elevated px-2 py-0.5 font-mono text-[11px] text-pb-muted">/_ds</span>
+      <h1 class="text-lg font-bold text-mnt-primary">Design system</h1>
+      <span class="rounded bg-mnt-elevated px-2 py-0.5 font-mono text-[11px] text-mnt-muted">/_ds</span>
       <div class="ml-auto flex items-center gap-2">
         <DensityToggle />
         <button
           type="button"
-          class="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-pb-default px-2.5 py-1.5 text-xs font-semibold text-pb-secondary hover:text-pb-primary"
+          class="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-mnt-default px-2.5 py-1.5 text-xs font-semibold text-mnt-secondary hover:text-mnt-primary"
           @click="flipTheme"
         >
           <component :is="resolvedTheme === 'dark' ? Sun : Moon" :size="14" aria-hidden="true" />
@@ -116,13 +116,13 @@ const lastSelected = ref('')
         <div
           v-for="s in severities"
           :key="s"
-          class="flex min-w-[140px] flex-col gap-2 rounded-xl border border-pb-default bg-pb-surface p-3"
+          class="flex min-w-[140px] flex-col gap-2 rounded-xl border border-mnt-default bg-mnt-surface p-3"
         >
           <div class="flex items-center gap-2">
             <span class="h-4 w-4 rounded-full" :style="{ backgroundColor: severityVar(s) }" />
-            <span class="text-xs font-semibold capitalize text-pb-primary">{{ s }}</span>
+            <span class="text-xs font-semibold capitalize text-mnt-primary">{{ s }}</span>
           </div>
-          <div class="rounded px-2 py-1 text-[11px] font-medium" :class="[`bg-pb-sev-${s}`, `text-pb-sev-${s}`]">
+          <div class="rounded px-2 py-1 text-[11px] font-medium" :class="[`bg-mnt-sev-${s}`, `text-mnt-sev-${s}`]">
             muted wash + AA text
           </div>
         </div>
@@ -132,13 +132,13 @@ const lastSelected = ref('')
     <!-- Status primitives -->
     <section class="space-y-3">
       <SectionHeader title="StatusDot / StatusBadge" />
-      <div class="flex flex-wrap items-center gap-5 rounded-xl border border-pb-default bg-pb-surface p-4">
+      <div class="flex flex-wrap items-center gap-5 rounded-xl border border-mnt-default bg-mnt-surface p-4">
         <StatusDot v-for="s in severities" :key="s" :severity="s" size="lg" :pulse="s === 'incident'" />
       </div>
-      <div class="flex flex-wrap items-center gap-4 rounded-xl border border-pb-default bg-pb-surface p-4">
+      <div class="flex flex-wrap items-center gap-4 rounded-xl border border-mnt-default bg-mnt-surface p-4">
         <StatusBadge v-for="s in severities" :key="s" :severity="s" show-label />
       </div>
-      <div class="flex flex-wrap items-center gap-4 rounded-xl border border-pb-default bg-pb-surface p-4">
+      <div class="flex flex-wrap items-center gap-4 rounded-xl border border-mnt-default bg-mnt-surface p-4">
         <StatusBadge :status="'critical'" show-label label="legacy critical → incident" />
         <StatusBadge :status="'down'" show-label label="legacy down → incident" />
         <StatusBadge :status="'paused'" show-label label="legacy paused → neutral" />
@@ -148,7 +148,7 @@ const lastSelected = ref('')
     <!-- Rallied badges -->
     <section class="space-y-3">
       <SectionHeader title="Domain badges (rallied to StatusBadge)" />
-      <div class="flex flex-wrap items-center gap-4 rounded-xl border border-pb-default bg-pb-surface p-4">
+      <div class="flex flex-wrap items-center gap-4 rounded-xl border border-mnt-default bg-mnt-surface p-4">
         <EndpointStatusBadge status="up" />
         <EndpointStatusBadge status="down" />
         <HeartbeatStatusBadge status="started" />
@@ -166,17 +166,17 @@ const lastSelected = ref('')
     <!-- Rows & tiles -->
     <section class="space-y-3">
       <SectionHeader title="SeverityRow" />
-      <div class="rounded-xl border border-pb-default bg-pb-surface p-2">
+      <div class="rounded-xl border border-mnt-default bg-mnt-surface p-2">
         <SeverityRow severity="incident" name="71b219ddb31b" kind="Agent" description="Agent disconnected (stream_ended)" timestamp="27 min" @select="lastSelected = 'row:incident'" />
         <SeverityRow severity="warning" name="bitwarden-postgres" kind="Update" description="Update available — postgres 18.4" timestamp="7 h" @select="lastSelected = 'row:warning'" />
         <SeverityRow severity="ok" name="maintenant-api" kind="Container" description="Running" metric="0.4% cpu" :interactive="false" />
       </div>
-      <p v-if="lastSelected" class="text-xs text-pb-muted">selected: {{ lastSelected }}</p>
+      <p v-if="lastSelected" class="text-xs text-mnt-muted">selected: {{ lastSelected }}</p>
     </section>
 
     <section class="space-y-3">
       <SectionHeader title="StatusTile" />
-      <div class="grid gap-1.5 rounded-xl border border-pb-default bg-pb-surface p-4" style="grid-template-columns: repeat(auto-fill, minmax(118px, 1fr))">
+      <div class="grid gap-1.5 rounded-xl border border-mnt-default bg-mnt-surface p-4" style="grid-template-columns: repeat(auto-fill, minmax(118px, 1fr))">
         <StatusTile severity="incident" name="matrix-coturn" meta="42 issues" />
         <StatusTile severity="warning" name="bitwarden-pg" meta="update 18.4" />
         <StatusTile severity="ok" name="traefik" meta="0.3% cpu" />
@@ -200,11 +200,11 @@ const lastSelected = ref('')
     <!-- Controls -->
     <section class="space-y-3">
       <SectionHeader title="SegmentedToggle + Tooltip" />
-      <div class="flex flex-wrap items-center gap-6 rounded-xl border border-pb-default bg-pb-surface p-4">
+      <div class="flex flex-wrap items-center gap-6 rounded-xl border border-mnt-default bg-mnt-surface p-4">
         <SegmentedToggle v-model="gridView" :options="[{ value: 'grid', label: 'Grid' }, { value: 'list', label: 'List' }]" ariaLabel="Demo view" />
         <Tooltip text="Last check 12s ago · 0.4% cpu" placement="top">
           <template #trigger>
-            <span class="cursor-help rounded border border-pb-default px-2.5 py-1 text-xs text-pb-secondary">Hover me</span>
+            <span class="cursor-help rounded border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary">Hover me</span>
           </template>
         </Tooltip>
       </div>
@@ -214,22 +214,22 @@ const lastSelected = ref('')
     <section class="space-y-3">
       <SectionHeader title="Data states" />
       <div class="grid gap-4 lg:grid-cols-3">
-        <div class="rounded-xl border border-pb-default bg-pb-surface">
+        <div class="rounded-xl border border-mnt-default bg-mnt-surface">
           <LoadingSkeleton variant="list" :count="4" />
         </div>
-        <div class="rounded-xl border border-pb-default bg-pb-surface">
+        <div class="rounded-xl border border-mnt-default bg-mnt-surface">
           <EmptyState :icon="ServerOff" title="Nothing needs your attention" description="All monitors are operational." />
         </div>
-        <div class="rounded-xl border border-pb-default bg-pb-surface">
+        <div class="rounded-xl border border-mnt-default bg-mnt-surface">
           <ErrorState message="Couldn't reach the monitor API. Check the agent connection and retry." retryable />
         </div>
       </div>
-      <div class="rounded-xl border border-pb-default bg-pb-surface p-3">
+      <div class="rounded-xl border border-mnt-default bg-mnt-surface p-3">
         <LoadingSkeleton variant="grid" :count="12" />
       </div>
     </section>
 
-    <p class="flex items-center gap-2 text-xs text-pb-muted">
+    <p class="flex items-center gap-2 text-xs text-mnt-muted">
       <Heart :size="13" aria-hidden="true" />
       Tokens-only · dual-theme · keyboard-navigable · respects reduced-motion
     </p>

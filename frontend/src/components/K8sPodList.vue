@@ -43,57 +43,57 @@ const filteredPods = computed(() => {
 
 function podStatusStyle(status: string): string {
   const s = status.toLowerCase()
-  if (s === 'running') return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
-  if (s === 'pending') return 'text-pb-status-warn bg-pb-status-warn border-pb-sev-warning'
-  if (s === 'succeeded') return 'text-pb-secondary bg-pb-elevated border-pb-default'
+  if (s === 'running') return 'text-mnt-status-ok bg-mnt-status-ok border-emerald-400/20'
+  if (s === 'pending') return 'text-mnt-status-warn bg-mnt-status-warn border-mnt-sev-warning'
+  if (s === 'succeeded') return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
   if (s === 'failed' || s === 'crashloopbackoff')
-    return 'text-pb-status-down bg-pb-status-down border-pb-sev-incident'
-  return 'text-pb-muted bg-pb-elevated border-pb-default'
+    return 'text-mnt-status-down bg-mnt-status-down border-mnt-sev-incident'
+  return 'text-mnt-muted bg-mnt-elevated border-mnt-default'
 }
 
 function restartCountStyle(count: number): string {
-  if (count === 0) return 'text-pb-muted'
-  if (count < 5) return 'text-pb-status-warn'
-  return 'text-pb-status-down'
+  if (count === 0) return 'text-mnt-muted'
+  if (count < 5) return 'text-mnt-status-warn'
+  return 'text-mnt-status-down'
 }
 </script>
 
 <template>
-  <div class="bg-pb-surface rounded-xl border border-pb-default overflow-hidden">
+  <div class="bg-mnt-surface rounded-xl border border-mnt-default overflow-hidden">
     <!-- Filter bar -->
-    <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-pb-default">
+    <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-mnt-default">
       <input
         v-model="filterNamespace"
         type="text"
         placeholder="Namespace…"
-        class="bg-pb-primary border border-pb-default rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder:text-pb-muted focus:outline-none focus:border-pb-default w-32"
+        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-32"
       />
       <input
         v-model="filterWorkload"
         type="text"
         placeholder="Workload…"
-        class="bg-pb-primary border border-pb-default rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder:text-pb-muted focus:outline-none focus:border-pb-default w-32"
+        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-32"
       />
       <input
         v-model="filterNode"
         type="text"
         placeholder="Node…"
-        class="bg-pb-primary border border-pb-default rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder:text-pb-muted focus:outline-none focus:border-pb-default w-28"
+        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-28"
       />
       <input
         v-model="filterStatus"
         type="text"
         placeholder="Status…"
-        class="bg-pb-primary border border-pb-default rounded-lg px-3 py-1.5 text-xs text-pb-secondary placeholder:text-pb-muted focus:outline-none focus:border-pb-default w-24"
+        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-24"
       />
-      <span class="ml-auto text-xs text-pb-muted tabular-nums">
+      <span class="ml-auto text-xs text-mnt-muted tabular-nums">
         {{ filteredPods.length }}/{{ pods.length }}
       </span>
     </div>
 
     <!-- Empty state -->
     <div v-if="filteredPods.length === 0" class="px-6 py-10 text-center">
-      <p class="text-sm text-pb-muted">No pods found</p>
+      <p class="text-sm text-mnt-muted">No pods found</p>
     </div>
 
     <!-- Pod rows -->
@@ -101,7 +101,7 @@ function restartCountStyle(count: number): string {
       <div
         v-for="pod in filteredPods"
         :key="`${pod.namespace}/${pod.name}`"
-        class="px-4 py-3 hover:bg-pb-elevated transition-all cursor-pointer group"
+        class="px-4 py-3 hover:bg-mnt-elevated transition-all cursor-pointer group"
         @click="emit('select', pod)"
       >
         <div class="flex items-center justify-between gap-4">
@@ -109,12 +109,12 @@ function restartCountStyle(count: number): string {
           <div class="flex items-center gap-2 min-w-0">
             <div class="min-w-0">
               <span
-                class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors block"
+                class="text-sm text-mnt-primary font-medium truncate group-hover:text-mnt-green-400 transition-colors block"
               >
                 {{ pod.name }}
               </span>
               <div class="flex items-center gap-2">
-                <span class="text-xs text-pb-muted font-mono">{{ pod.namespace }}</span>
+                <span class="text-xs text-mnt-muted font-mono">{{ pod.namespace }}</span>
                 <HostBadge
                   :agent-id="pod.agent_id"
                   :hostname="pod.agent_hostname"
@@ -137,7 +137,7 @@ function restartCountStyle(count: number): string {
               </span>
               <span
                 v-if="pod.status_reason"
-                class="text-[10px] text-pb-muted hidden sm:block truncate max-w-20"
+                class="text-[10px] text-mnt-muted hidden sm:block truncate max-w-20"
               >
                 {{ pod.status_reason }}
               </span>
@@ -151,13 +151,13 @@ function restartCountStyle(count: number): string {
             >
               {{ pod.restart_count }}↺
             </span>
-            <span class="text-xs text-pb-muted font-mono hidden md:block truncate max-w-28">
+            <span class="text-xs text-mnt-muted font-mono hidden md:block truncate max-w-28">
               {{ pod.node_name || '—' }}
             </span>
-            <span class="text-xs text-pb-muted font-mono hidden lg:block">
+            <span class="text-xs text-mnt-muted font-mono hidden lg:block">
               {{ pod.pod_ip || '—' }}
             </span>
-            <span class="text-xs text-pb-muted tabular-nums hidden md:block">
+            <span class="text-xs text-mnt-muted tabular-nums hidden md:block">
               {{ timeAgo(pod.created_at) }}
             </span>
           </div>

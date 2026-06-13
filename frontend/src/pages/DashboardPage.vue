@@ -205,7 +205,7 @@ onUnmounted(() => {
 
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
-    <div class="mx-auto max-w-7xl space-y-4 pb-12 sm:space-y-6">
+    <div class="mx-auto max-w-7xl space-y-4 mnt-12 sm:space-y-6">
       <RuntimeDegradedBanner v-if="!containersStore.isContainerMonitoringAvailable" />
 
       <!-- 1. Verdict -->
@@ -229,13 +229,13 @@ onUnmounted(() => {
 
       <!-- 4. Monitors -->
       <section>
-        <div v-if="loadError" class="overflow-hidden rounded-xl border border-pb-default bg-pb-surface">
+        <div v-if="loadError" class="overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface">
           <ErrorState :message="loadError" retryable @retry="load" />
         </div>
 
         <div v-else-if="loading && dashboard.monitors.length === 0" class="space-y-3">
           <SectionHeader title="Monitors" />
-          <div class="rounded-xl border border-pb-default bg-pb-surface p-4">
+          <div class="rounded-xl border border-mnt-default bg-mnt-surface p-4">
             <LoadingSkeleton variant="grid" :count="18" />
           </div>
         </div>
@@ -243,11 +243,11 @@ onUnmounted(() => {
         <StatusGrid v-else v-model:view="view" :groups="monitorGroups" @select="openMonitor">
           <template #bar>
             <div class="flex items-center gap-2.5">
-              <h2 class="text-xs font-semibold uppercase tracking-wide text-pb-muted">Monitors</h2>
-              <span class="rounded-full bg-pb-elevated px-2 py-0.5 font-mono text-[11px] text-pb-muted">
+              <h2 class="text-xs font-semibold uppercase tracking-wide text-mnt-muted">Monitors</h2>
+              <span class="rounded-full bg-mnt-elevated px-2 py-0.5 font-mono text-[11px] text-mnt-muted">
                 {{ dashboard.monitors.length }}
               </span>
-              <span v-if="freshness" class="hidden text-[11px] text-pb-muted sm:inline">· {{ freshness }}</span>
+              <span v-if="freshness" class="hidden text-[11px] text-mnt-muted sm:inline">· {{ freshness }}</span>
             </div>
             <SegmentedToggle v-model="groupBy" :options="groupByOptions" ariaLabel="Group monitors by" />
           </template>

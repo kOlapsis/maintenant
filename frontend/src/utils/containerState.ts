@@ -18,16 +18,16 @@ export interface StateStyle {
 }
 
 const stateStyles: Record<string, StateStyle> = {
-  running: { color: 'var(--pb-status-ok)', bg: 'var(--pb-status-ok-bg)', glow: 'var(--pb-glow-ok)' },
-  exited: { color: 'var(--pb-status-down)', bg: 'var(--pb-status-down-bg)' },
-  completed: { color: 'var(--pb-text-secondary)', bg: 'var(--pb-bg-elevated)' },
-  restarting: { color: 'var(--pb-status-warn)', bg: 'var(--pb-status-warn-bg)', glow: 'var(--pb-glow-warn)' },
-  paused: { color: 'var(--pb-accent)', bg: 'var(--pb-bg-elevated)' },
-  created: { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)' },
-  dead: { color: 'var(--pb-status-down)', bg: 'var(--pb-status-down-bg)' },
+  running: { color: 'var(--mnt-status-ok)', bg: 'var(--mnt-status-ok-bg)', glow: 'var(--mnt-glow-ok)' },
+  exited: { color: 'var(--mnt-status-down)', bg: 'var(--mnt-status-down-bg)' },
+  completed: { color: 'var(--mnt-text-secondary)', bg: 'var(--mnt-bg-elevated)' },
+  restarting: { color: 'var(--mnt-status-warn)', bg: 'var(--mnt-status-warn-bg)', glow: 'var(--mnt-glow-warn)' },
+  paused: { color: 'var(--mnt-accent)', bg: 'var(--mnt-bg-elevated)' },
+  created: { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)' },
+  dead: { color: 'var(--mnt-status-down)', bg: 'var(--mnt-status-down-bg)' },
 }
 
-const defaultStyle: StateStyle = { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)' }
+const defaultStyle: StateStyle = { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)' }
 
 export function getStateStyle(state: string): StateStyle {
   return stateStyles[state] ?? defaultStyle
@@ -51,7 +51,7 @@ export interface ExitCodeStyle {
 
 export function getExitCodeStyle(code: number): ExitCodeStyle {
   if (isGracefulExitCode(code)) {
-    return { bg: 'var(--pb-bg-elevated)', color: 'var(--pb-text-secondary)' }
+    return { bg: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-secondary)' }
   }
-  return { bg: 'var(--pb-status-down-bg)', color: 'var(--pb-status-down)' }
+  return { bg: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)' }
 }

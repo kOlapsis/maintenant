@@ -106,8 +106,8 @@ function runtimeLabel(rt: string): string {
       <!-- Header -->
       <div class="mb-6 flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-black text-pb-primary">Agents</h1>
-          <p class="mt-1 text-sm text-pb-muted">
+          <h1 class="text-2xl font-black text-mnt-primary">Agents</h1>
+          <p class="mt-1 text-sm text-mnt-muted">
             Remote monitoring agents enrolled on this server
           </p>
         </div>
@@ -128,85 +128,85 @@ function runtimeLabel(rt: string): string {
           v-if="store.metrics"
           class="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3"
         >
-          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
-            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Total</p>
-            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.total }}</p>
+          <div class="rounded-xl border border-mnt-default bg-mnt-surface px-4 py-3">
+            <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Total</p>
+            <p class="mt-1 text-2xl font-black text-mnt-primary">{{ store.metrics.total }}</p>
           </div>
-          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
-            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Active</p>
-            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.by_status.active }}</p>
+          <div class="rounded-xl border border-mnt-default bg-mnt-surface px-4 py-3">
+            <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Active</p>
+            <p class="mt-1 text-2xl font-black text-mnt-primary">{{ store.metrics.by_status.active }}</p>
           </div>
-          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
-            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Connected</p>
-            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.by_connection_state.connected }}</p>
+          <div class="rounded-xl border border-mnt-default bg-mnt-surface px-4 py-3">
+            <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Connected</p>
+            <p class="mt-1 text-2xl font-black text-mnt-primary">{{ store.metrics.by_connection_state.connected }}</p>
           </div>
-          <div class="rounded-xl border border-pb-default bg-pb-surface px-4 py-3">
-            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Events/s (5m)</p>
-            <p class="mt-1 text-2xl font-black text-pb-primary">{{ store.metrics.total_events_per_second_observed_5m }}</p>
+          <div class="rounded-xl border border-mnt-default bg-mnt-surface px-4 py-3">
+            <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Events/s (5m)</p>
+            <p class="mt-1 text-2xl font-black text-mnt-primary">{{ store.metrics.total_events_per_second_observed_5m }}</p>
           </div>
         </div>
 
         <!-- Agents table -->
         <div
-          class="overflow-hidden overflow-x-auto rounded-xl border border-pb-default bg-pb-surface mb-6"
+          class="overflow-hidden overflow-x-auto rounded-xl border border-mnt-default bg-mnt-surface mb-6"
         >
-          <div class="flex items-center justify-between px-4 py-3 border-b border-pb-subtle">
-            <p class="text-sm font-semibold text-pb-primary">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-mnt-subtle">
+            <p class="text-sm font-semibold text-mnt-primary">
               Enrolled Agents
               <span
                 v-if="hostQuota.limit !== -1"
                 class="ml-2 font-mono text-xs"
-                :style="{ color: hostQuota.isAtLimit ? 'var(--pb-status-warn-text)' : 'var(--pb-text-muted)' }"
+                :style="{ color: hostQuota.isAtLimit ? 'var(--mnt-status-warn-text)' : 'var(--mnt-text-muted)' }"
               >{{ hostQuota.used }}/{{ hostQuota.limit }}</span>
             </p>
             <button
               :disabled="generatingToken"
               class="min-h-[36px] rounded-lg px-4 text-sm font-medium transition-opacity disabled:opacity-50"
-              :style="{ backgroundColor: 'var(--pb-accent)', color: 'var(--pb-text-inverted)', borderRadius: 'var(--pb-radius-md)' }"
+              :style="{ backgroundColor: 'var(--mnt-accent)', color: 'var(--mnt-text-inverted)', borderRadius: 'var(--mnt-radius-md)' }"
               @click="handleGenerateToken"
             >
               {{ generatingToken ? 'Generating…' : 'Generate enrollment token' }}
             </button>
           </div>
 
-          <div v-if="tokenError" class="px-4 py-2 text-xs" :style="{ color: 'var(--pb-status-down-text)' }">{{ tokenError }}</div>
+          <div v-if="tokenError" class="px-4 py-2 text-xs" :style="{ color: 'var(--mnt-status-down-text)' }">{{ tokenError }}</div>
 
-          <div v-if="store.loading" class="px-4 py-8 text-center text-sm text-pb-muted">Loading…</div>
-          <div v-else-if="store.error" class="px-4 py-4 text-sm" :style="{ color: 'var(--pb-status-down-text)' }">{{ store.error }}</div>
+          <div v-if="store.loading" class="px-4 py-8 text-center text-sm text-mnt-muted">Loading…</div>
+          <div v-else-if="store.error" class="px-4 py-4 text-sm" :style="{ color: 'var(--mnt-status-down-text)' }">{{ store.error }}</div>
           <table v-else class="w-full text-sm min-w-[640px]">
             <thead>
-              <tr class="border-b border-pb-subtle">
-                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Hostname / Label</th>
-                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Runtime</th>
-                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Status</th>
-                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Connection</th>
-                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest hidden md:table-cell">Last seen</th>
+              <tr class="border-b border-mnt-subtle">
+                <th class="text-left px-4 py-3 text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Hostname / Label</th>
+                <th class="text-left px-4 py-3 text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Runtime</th>
+                <th class="text-left px-4 py-3 text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Status</th>
+                <th class="text-left px-4 py-3 text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Connection</th>
+                <th class="text-left px-4 py-3 text-[10px] text-mnt-muted font-bold uppercase tracking-widest hidden md:table-cell">Last seen</th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="agent in store.agents"
                 :key="agent.agent_id"
-                class="transition-all cursor-pointer group border-b border-pb-subtle last:border-0 agent-row"
+                class="transition-all cursor-pointer group border-b border-mnt-subtle last:border-0 agent-row"
                 @click="openDetail(agent)"
               >
                 <td class="px-4 py-3">
-                  <p class="font-medium text-pb-primary">{{ agent.label || agent.hostname }}</p>
-                  <p v-if="agent.label && agent.label !== agent.hostname" class="text-xs text-pb-muted">{{ agent.hostname }}</p>
-                  <p class="text-xs text-pb-muted font-mono">{{ agent.os_arch }} · v{{ agent.agent_version }}</p>
+                  <p class="font-medium text-mnt-primary">{{ agent.label || agent.hostname }}</p>
+                  <p v-if="agent.label && agent.label !== agent.hostname" class="text-xs text-mnt-muted">{{ agent.hostname }}</p>
+                  <p class="text-xs text-mnt-muted font-mono">{{ agent.os_arch }} · v{{ agent.agent_version }}</p>
                 </td>
                 <td class="px-4 py-3">
                   <span
                     class="rounded-full px-2 py-0.5 text-xs font-medium"
-                    :style="{ backgroundColor: 'var(--pb-bg-elevated)', color: 'var(--pb-text-secondary)' }"
+                    :style="{ backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-secondary)' }"
                   >{{ runtimeLabel(agent.detected_runtime) }}</span>
                 </td>
                 <td class="px-4 py-3">
                   <span
                     class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :style="{
-                      backgroundColor: agent.status === 'active' ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-down-bg)',
-                      color: agent.status === 'active' ? 'var(--pb-status-ok-text)' : 'var(--pb-status-down-text)',
+                      backgroundColor: agent.status === 'active' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-down-bg)',
+                      color: agent.status === 'active' ? 'var(--mnt-status-ok-text)' : 'var(--mnt-status-down-text)',
                     }"
                   >{{ agent.status }}</span>
                 </td>
@@ -214,17 +214,17 @@ function runtimeLabel(rt: string): string {
                   <span
                     class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :style="{
-                      backgroundColor: agent.connection_state === 'connected' ? 'var(--pb-status-ok-bg)' : 'var(--pb-bg-elevated)',
-                      color: agent.connection_state === 'connected' ? 'var(--pb-status-ok-text)' : 'var(--pb-text-muted)',
+                      backgroundColor: agent.connection_state === 'connected' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-bg-elevated)',
+                      color: agent.connection_state === 'connected' ? 'var(--mnt-status-ok-text)' : 'var(--mnt-text-muted)',
                     }"
                   >{{ agent.connection_state ?? 'disconnected' }}</span>
                 </td>
-                <td class="px-4 py-3 text-xs text-pb-muted hidden md:table-cell">
+                <td class="px-4 py-3 text-xs text-mnt-muted hidden md:table-cell">
                   {{ formatDate(agent.last_seen_at) }}
                 </td>
               </tr>
               <tr v-if="store.agents.length === 0">
-                <td colspan="5" class="px-4 py-8 text-center text-sm text-pb-muted">
+                <td colspan="5" class="px-4 py-8 text-center text-sm text-mnt-muted">
                   No agents enrolled yet. Generate an enrollment token to get started.
                 </td>
               </tr>
@@ -235,17 +235,17 @@ function runtimeLabel(rt: string): string {
         <!-- Pending tokens -->
         <div
           v-if="store.tokens.length > 0"
-          class="overflow-hidden rounded-xl border border-pb-default bg-pb-surface"
+          class="overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface"
         >
-          <div class="px-4 py-3 border-b border-pb-subtle">
-            <p class="text-sm font-semibold text-pb-primary">Pending Enrollment Tokens</p>
-            <p class="text-xs text-pb-muted mt-0.5">Tokens that have not yet been consumed by an agent</p>
+          <div class="px-4 py-3 border-b border-mnt-subtle">
+            <p class="text-sm font-semibold text-mnt-primary">Pending Enrollment Tokens</p>
+            <p class="text-xs text-mnt-muted mt-0.5">Tokens that have not yet been consumed by an agent</p>
           </div>
           <table class="w-full text-sm min-w-[480px]">
             <thead>
-              <tr class="border-b border-pb-subtle">
-                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Token</th>
-                <th class="text-left px-4 py-3 text-[10px] text-pb-muted font-bold uppercase tracking-widest">Expires</th>
+              <tr class="border-b border-mnt-subtle">
+                <th class="text-left px-4 py-3 text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Token</th>
+                <th class="text-left px-4 py-3 text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Expires</th>
                 <th class="px-4 py-3"></th>
               </tr>
             </thead>
@@ -253,14 +253,14 @@ function runtimeLabel(rt: string): string {
               <tr
                 v-for="tok in store.tokens"
                 :key="tok.token_id"
-                class="border-b border-pb-subtle last:border-0"
+                class="border-b border-mnt-subtle last:border-0"
               >
-                <td class="px-4 py-3 font-mono text-xs text-pb-secondary">{{ tok.token_masked }}</td>
-                <td class="px-4 py-3 text-xs text-pb-muted">{{ formatDate(tok.expires_at) }}</td>
+                <td class="px-4 py-3 font-mono text-xs text-mnt-secondary">{{ tok.token_masked }}</td>
+                <td class="px-4 py-3 text-xs text-mnt-muted">{{ formatDate(tok.expires_at) }}</td>
                 <td class="px-4 py-3 text-right">
                   <button
                     class="rounded px-2 py-1 text-xs transition-colors revoke-btn"
-                    :style="{ color: 'var(--pb-status-down-text)' }"
+                    :style="{ color: 'var(--mnt-status-down-text)' }"
                     @click="handleDeleteToken(tok.token_id)"
                   >
                     Revoke
@@ -273,32 +273,32 @@ function runtimeLabel(rt: string): string {
 
         <!-- Placeholder slot (Community Edition) -->
         <template #placeholder>
-          <div class="bg-pb-surface rounded-2xl border border-pb-default overflow-hidden">
+          <div class="bg-mnt-surface rounded-2xl border border-mnt-default overflow-hidden">
             <div class="px-6 py-10 flex flex-col items-center text-center">
-              <div class="w-12 h-12 rounded-xl bg-pb-green-500/10 border border-pb-green-500/20 flex items-center justify-center mb-4">
-                <MonitorDot :size="22" class="text-pb-green-400" />
+              <div class="w-12 h-12 rounded-xl bg-mnt-green-500/10 border border-mnt-green-500/20 flex items-center justify-center mb-4">
+                <MonitorDot :size="22" class="text-mnt-green-400" />
               </div>
-              <h2 class="text-base font-bold text-pb-primary mb-1">Multi-host Agents</h2>
-              <p class="text-sm text-pb-muted max-w-md mb-6 leading-relaxed">
+              <h2 class="text-base font-bold text-mnt-primary mb-1">Multi-host Agents</h2>
+              <p class="text-sm text-mnt-muted max-w-md mb-6 leading-relaxed">
                 Enroll lightweight agents on remote hosts to monitor Docker, Swarm and Kubernetes from this single server — no extra dashboards, no per-host setup.
               </p>
 
               <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
                 <li class="flex items-start gap-3">
-                  <Server :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-pb-secondary">
+                  <Server :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-mnt-secondary">
                     Monitor unlimited remote hosts from one server with token-based enrollment
                   </span>
                 </li>
                 <li class="flex items-start gap-3">
-                  <Boxes :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-pb-secondary">
+                  <Boxes :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-mnt-secondary">
                     Auto-detect Docker, Swarm and Kubernetes runtimes on each agent
                   </span>
                 </li>
                 <li class="flex items-start gap-3">
-                  <ShieldCheck :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-pb-secondary">
+                  <ShieldCheck :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-mnt-secondary">
                     Secure, expiring enrollment tokens you can revoke at any time
                   </span>
                 </li>
@@ -306,7 +306,7 @@ function runtimeLabel(rt: string): string {
 
               <RouterLink
                 to="/pro-edition"
-                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted shadow-lg shadow-pb-green-500/20 transition-colors"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted shadow-lg shadow-mnt-green-500/20 transition-colors"
               >
                 Unlock with Pro
               </RouterLink>
@@ -344,9 +344,9 @@ function runtimeLabel(rt: string): string {
 
 <style scoped>
 .agent-row:hover {
-  background-color: var(--pb-bg-hover);
+  background-color: var(--mnt-bg-hover);
 }
 .revoke-btn:hover {
-  background-color: var(--pb-status-down-bg);
+  background-color: var(--mnt-status-down-bg);
 }
 </style>

@@ -175,7 +175,7 @@ const globalBanner = computed(() => {
 const incidentSeverityStyle = (severity: string) => {
   if (severity === 'critical' || severity === 'major') return 'border-rose-500/40 bg-rose-500/5'
   if (severity === 'minor') return 'border-amber-500/40 bg-amber-500/5'
-  return 'border-pb-green-500/40 bg-pb-green-500/5'
+  return 'border-mnt-green-500/40 bg-mnt-green-500/5'
 }
 
 const incidentStatusLabel = (status: string) => {
@@ -190,11 +190,11 @@ const incidentStatusLabel = (status: string) => {
 
 const componentStatusStyle = (status: string) => {
   const styles: Record<string, { dot: string; label: string; text: string }> = {
-    operational: { dot: 'bg-emerald-500', label: t('statusOperational'), text: 'text-pb-status-ok' },
+    operational: { dot: 'bg-emerald-500', label: t('statusOperational'), text: 'text-mnt-status-ok' },
     degraded: { dot: 'bg-amber-500', label: t('statusDegraded'), text: 'text-amber-400' },
     partial_outage: { dot: 'bg-amber-500', label: t('statusPartialOutage'), text: 'text-amber-400' },
-    major_outage: { dot: 'bg-rose-500', label: t('statusMajorOutage'), text: 'text-pb-status-down' },
-    under_maintenance: { dot: 'bg-pb-green-500', label: 'Under Maintenance', text: 'text-pb-green-400' },
+    major_outage: { dot: 'bg-rose-500', label: t('statusMajorOutage'), text: 'text-mnt-status-down' },
+    under_maintenance: { dot: 'bg-mnt-green-500', label: 'Under Maintenance', text: 'text-mnt-green-400' },
   }
   return styles[status] || { dot: 'bg-slate-500', label: status, text: 'text-slate-400' }
 }
@@ -267,7 +267,7 @@ function formatDate(iso: string) {
     </div>
 
     <!-- Title / subtitle -->
-    <div class="mx-auto max-w-3xl px-6 pt-10 pb-2 text-center">
+    <div class="mx-auto max-w-3xl px-6 pt-10 mnt-2 text-center">
       <h1 class="text-3xl font-black tracking-tight">{{ settings?.title || 'System Status' }}</h1>
       <p v-if="settings?.subtitle" class="text-sm mt-1 opacity-60">{{ settings.subtitle }}</p>
     </div>
@@ -329,7 +329,7 @@ function formatDate(iso: string) {
                   >&#8964;</span>
                 </div>
               </button>
-              <div v-if="expandedComponents.has(comp.id) && comp.monitors?.length" :id="`breakdown-${comp.id}`" class="px-5 pb-3">
+              <div v-if="expandedComponents.has(comp.id) && comp.monitors?.length" :id="`breakdown-${comp.id}`" class="px-5 mnt-3">
                 <StatusComponentBreakdown :monitors="comp.monitors" />
               </div>
             </div>
@@ -371,11 +371,11 @@ function formatDate(iso: string) {
             <div
               v-for="maint in data.upcoming_maintenance"
               :key="maint.id"
-              class="rounded-xl border border-pb-green-500/30 bg-pb-green-500/5 p-5"
+              class="rounded-xl border border-mnt-green-500/30 bg-mnt-green-500/5 p-5"
             >
               <div class="flex items-start justify-between gap-3 mb-1">
                 <span class="font-semibold text-sm">{{ maint.title }}</span>
-                <span class="shrink-0 text-[10px] px-2 py-0.5 rounded bg-pb-green-500/15 text-pb-green-400 border border-pb-green-500/30 font-medium">{{ t('maintenanceScheduled') }}</span>
+                <span class="shrink-0 text-[10px] px-2 py-0.5 rounded bg-mnt-green-500/15 text-mnt-green-400 border border-mnt-green-500/30 font-medium">{{ t('maintenanceScheduled') }}</span>
               </div>
               <p class="text-xs text-slate-500 mb-2">{{ formatDate(maint.starts_at) }} {{ t('maintenanceTo') }} {{ formatDate(maint.ends_at) }}</p>
               <div class="flex flex-wrap gap-1.5">
@@ -407,7 +407,7 @@ function formatDate(iso: string) {
                 </span>
               </summary>
               <div
-                class="px-4 pb-4 text-sm leading-relaxed prose prose-invert max-w-none"
+                class="px-4 mnt-4 text-sm leading-relaxed prose prose-invert max-w-none"
                 :style="{ color: 'var(--mnt-text, #fff)' }"
                 v-html="item.answer_html"
               />

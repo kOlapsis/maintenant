@@ -34,8 +34,8 @@ function onSwarmNodeSelect(nodeId: string) {
     <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-black text-pb-primary">Nodes</h1>
-        <p class="mt-1 text-sm text-pb-muted">Node health and capacity across your cluster</p>
+        <h1 class="text-2xl font-black text-mnt-primary">Nodes</h1>
+        <p class="mt-1 text-sm text-mnt-muted">Node health and capacity across your cluster</p>
       </div>
     </div>
 
@@ -63,7 +63,7 @@ function onSwarmNodeSelect(nodeId: string) {
 
     <!-- Neither runtime in the selected scope -->
     <template v-if="!isKubernetes && !isSwarm">
-      <p class="text-sm text-pb-muted">Node management is available for Kubernetes and Docker Swarm runtimes.</p>
+      <p class="text-sm text-mnt-muted">Node management is available for Kubernetes and Docker Swarm runtimes.</p>
     </template>
     </div>
   </div>

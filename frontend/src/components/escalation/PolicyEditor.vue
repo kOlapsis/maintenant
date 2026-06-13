@@ -183,14 +183,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bg-pb-surface rounded-2xl border border-pb-default">
+  <div class="bg-mnt-surface rounded-2xl border border-mnt-default">
     <!-- Header -->
-    <div class="flex items-center justify-between px-5 py-4 border-b border-pb-default">
-      <h3 class="text-sm font-bold text-pb-primary">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-mnt-default">
+      <h3 class="text-sm font-bold text-mnt-primary">
         {{ policy ? 'Edit policy' : 'New escalation policy' }}
       </h3>
       <button
-        class="p-1 rounded text-pb-muted hover:text-pb-secondary hover:bg-pb-elevated transition-all"
+        class="p-1 rounded text-mnt-muted hover:text-mnt-secondary hover:bg-mnt-elevated transition-all"
         @click="emit('cancel')"
       >
         <X :size="16" />
@@ -201,35 +201,35 @@ onMounted(() => {
       <!-- Error -->
       <div
         v-if="saveError"
-        class="px-4 py-3 rounded-lg bg-pb-status-down/10 border border-pb-status-down/30 text-xs text-pb-status-down"
+        class="px-4 py-3 rounded-lg bg-mnt-status-down/10 border border-mnt-status-down/30 text-xs text-mnt-status-down"
       >
         {{ saveError }}
       </div>
 
       <!-- Name -->
       <div class="space-y-1.5">
-        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
           Policy name
         </label>
         <input
           v-model="name"
           type="text"
           placeholder="e.g. Critical alerts on-call"
-          class="w-full bg-pb-primary border border-pb-default rounded-lg px-3 py-2 text-sm text-pb-primary placeholder:text-pb-muted focus:outline-none focus:border-pb-default transition-colors"
+          class="w-full bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors"
         />
       </div>
 
       <!-- Active toggle -->
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm font-medium text-pb-secondary">Active</p>
-          <p class="text-[10px] text-pb-muted mt-0.5">
+          <p class="text-sm font-medium text-mnt-secondary">Active</p>
+          <p class="text-[10px] text-mnt-muted mt-0.5">
             Inactive policies are saved but never triggered.
           </p>
         </div>
         <button
           class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="active ? 'bg-pb-green-600' : 'bg-pb-elevated'"
+          :class="active ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
           @click="active = !active"
         >
           <span
@@ -241,8 +241,8 @@ onMounted(() => {
 
       <!-- Severities -->
       <div class="space-y-2">
-        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
-          Severities <span class="text-pb-muted normal-case font-normal">(empty = all)</span>
+        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
+          Severities <span class="text-mnt-muted normal-case font-normal">(empty = all)</span>
         </label>
         <div class="flex gap-2">
           <button
@@ -252,9 +252,9 @@ onMounted(() => {
             :class="
               severities.includes(sev)
                 ? sev === 'critical'
-                  ? 'bg-pb-status-down/15 border-pb-status-down/40 text-pb-status-down'
-                  : 'bg-pb-status-warn border-amber-500/40 text-pb-status-warn'
-                : 'bg-transparent border-pb-default text-pb-muted hover:border-pb-default hover:text-pb-muted'
+                  ? 'bg-mnt-status-down/15 border-mnt-status-down/40 text-mnt-status-down'
+                  : 'bg-mnt-status-warn border-amber-500/40 text-mnt-status-warn'
+                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
             "
             @click="toggleSeverity(sev)"
           >
@@ -275,7 +275,7 @@ onMounted(() => {
         <template #action>
           <RouterLink
             to="/channels"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-pb-status-warn px-3 py-1.5 text-[11px] font-bold text-pb-status-warn hover:bg-pb-sev-warning-solid/20 transition-colors"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-mnt-status-warn px-3 py-1.5 text-[11px] font-bold text-mnt-status-warn hover:bg-mnt-sev-warning-solid/20 transition-colors"
           >
             Configure a channel
             <ArrowRight :size="12" />
@@ -286,14 +286,14 @@ onMounted(() => {
       <!-- Reserved-escalation channels notice -->
       <div
         v-if="reservedChannelIds.length > 0"
-        class="rounded-xl border border-pb-green-500/30 bg-pb-green-500/5 px-4 py-3 flex items-start gap-3"
+        class="rounded-xl border border-mnt-green-500/30 bg-mnt-green-500/5 px-4 py-3 flex items-start gap-3"
       >
-        <Shield :size="14" class="text-pb-green-400 mt-0.5 shrink-0" />
-        <div class="text-xs text-pb-secondary space-y-1">
-          <p class="font-medium text-pb-green-400">Reserved-escalation channels detected</p>
-          <p class="text-pb-muted leading-relaxed">
+        <Shield :size="14" class="text-mnt-green-400 mt-0.5 shrink-0" />
+        <div class="text-xs text-mnt-secondary space-y-1">
+          <p class="font-medium text-mnt-green-400">Reserved-escalation channels detected</p>
+          <p class="text-mnt-muted leading-relaxed">
             <template v-for="(id, idx) in reservedChannelIds" :key="id">
-              <span class="text-pb-secondary font-medium">
+              <span class="text-mnt-secondary font-medium">
                 {{ channels.find((c) => c.id === id)?.name ?? `Channel #${id}` }}
               </span>
               <span v-if="idx < reservedChannelIds.length - 1">, </span>
@@ -307,13 +307,13 @@ onMounted(() => {
       <!-- Levels -->
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest block">
+          <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest block">
             Escalation levels
           </label>
-          <span class="text-[10px] text-pb-muted">{{ levels.length }}/{{ maxLevels }} levels</span>
+          <span class="text-[10px] text-mnt-muted">{{ levels.length }}/{{ maxLevels }} levels</span>
         </div>
 
-        <div v-if="channelsLoading" class="flex items-center gap-2 text-xs text-pb-muted py-2">
+        <div v-if="channelsLoading" class="flex items-center gap-2 text-xs text-mnt-muted py-2">
           <Loader2 :size="13" class="animate-spin" />
           Loading channels...
         </div>
@@ -332,7 +332,7 @@ onMounted(() => {
 
           <button
             v-if="levels.length < maxLevels"
-            class="w-full py-2.5 rounded-xl border border-dashed border-pb-default text-xs text-pb-muted hover:text-pb-secondary hover:border-pb-default transition-all flex items-center justify-center gap-1.5"
+            class="w-full py-2.5 rounded-xl border border-dashed border-mnt-default text-xs text-mnt-muted hover:text-mnt-secondary hover:border-mnt-default transition-all flex items-center justify-center gap-1.5"
             @click="addLevel"
           >
             <Plus :size="13" />
@@ -347,13 +347,13 @@ onMounted(() => {
       <!-- Actions -->
       <div class="flex items-center justify-end gap-3 pt-2">
         <button
-          class="px-4 py-2 text-xs font-medium text-pb-muted hover:text-pb-secondary transition-colors"
+          class="px-4 py-2 text-xs font-medium text-mnt-muted hover:text-mnt-secondary transition-colors"
           @click="emit('cancel')"
         >
           Cancel
         </button>
         <button
-          class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-pb-elevated disabled:text-pb-muted text-pb-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 disabled:bg-mnt-elevated disabled:text-mnt-muted text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
           :disabled="saving"
           @click="handleSave"
         >

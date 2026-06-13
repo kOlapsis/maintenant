@@ -40,10 +40,10 @@ const mailto =
       <div
         class="relative mx-4 w-full max-w-md overflow-hidden"
         :style="{
-          backgroundColor: 'var(--pb-bg-surface)',
-          border: '1px solid var(--pb-border-default)',
-          borderRadius: 'var(--pb-radius-lg)',
-          boxShadow: 'var(--pb-shadow-elevated)',
+          backgroundColor: 'var(--mnt-bg-surface)',
+          border: '1px solid var(--mnt-border-default)',
+          borderRadius: 'var(--mnt-radius-lg)',
+          boxShadow: 'var(--mnt-shadow-elevated)',
         }"
         role="dialog"
         aria-modal="true"
@@ -53,23 +53,23 @@ const mailto =
           <div class="flex items-start gap-3">
             <div
               class="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
-              style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default)"
+              style="background: var(--mnt-bg-elevated); border: 1px solid var(--mnt-border-default)"
             >
-              <MonitorDot :size="20" class="text-pb-accent" />
+              <MonitorDot :size="20" class="text-mnt-accent" />
             </div>
             <div>
-              <h2 id="host-limit-title" class="text-lg font-semibold text-pb-primary">
+              <h2 id="host-limit-title" class="text-lg font-semibold text-mnt-primary">
                 Host limit reached
               </h2>
-              <p class="mt-1 text-sm text-pb-muted">
+              <p class="mt-1 text-sm text-mnt-muted">
                 You're monitoring
-                <span class="font-semibold text-pb-secondary">{{ used }} of {{ limit }}</span>
+                <span class="font-semibold text-mnt-secondary">{{ used }} of {{ limit }}</span>
                 hosts on this server.
               </p>
             </div>
           </div>
 
-          <p class="text-sm text-pb-muted leading-relaxed">
+          <p class="text-sm text-mnt-muted leading-relaxed">
             Need to monitor more hosts? Get in touch directly and I'll help you set it up.
           </p>
 
@@ -78,9 +78,9 @@ const mailto =
               :href="mailto"
               class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
               :style="{
-                backgroundColor: 'var(--pb-accent)',
-                color: 'var(--pb-text-inverted)',
-                borderRadius: 'var(--pb-radius-md)',
+                backgroundColor: 'var(--mnt-accent)',
+                color: 'var(--mnt-text-inverted)',
+                borderRadius: 'var(--mnt-radius-md)',
               }"
             >
               Email benjamin@kolapsis.com
@@ -89,9 +89,9 @@ const mailto =
               type="button"
               class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors"
               :style="{
-                backgroundColor: 'var(--pb-bg-elevated)',
-                color: 'var(--pb-text-secondary)',
-                borderRadius: 'var(--pb-radius-md)',
+                backgroundColor: 'var(--mnt-bg-elevated)',
+                color: 'var(--mnt-text-secondary)',
+                borderRadius: 'var(--mnt-radius-md)',
               }"
               @click="emit('close')"
             >

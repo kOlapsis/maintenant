@@ -60,9 +60,9 @@ onMounted(async () => {
 })
 
 const healthColors: Record<string, string> = {
-  healthy: 'var(--pb-status-ok)',
-  unhealthy: 'var(--pb-status-down)',
-  starting: 'var(--pb-status-warn)',
+  healthy: 'var(--mnt-status-ok)',
+  unhealthy: 'var(--mnt-status-down)',
+  starting: 'var(--mnt-status-warn)',
 }
 
 const cpuBarWidth = computed(() => {
@@ -78,9 +78,9 @@ const memBarWidth = computed(() => {
 })
 
 function barColor(value: number): string {
-  if (value > 80) return 'var(--pb-status-down)'
-  if (value > 50) return 'var(--pb-status-warn)'
-  return 'var(--pb-status-ok)'
+  if (value > 80) return 'var(--mnt-status-down)'
+  if (value > 50) return 'var(--mnt-status-warn)'
+  return 'var(--mnt-status-ok)'
 }
 
 const imageTag = computed(() => {
@@ -102,20 +102,20 @@ function getStateStyle(state: string) {
 
 <template>
   <div
-    class="bg-pb-surface rounded-xl border border-pb-default hover:border-pb-default transition-all cursor-pointer overflow-hidden group"
+    class="bg-mnt-surface rounded-xl border border-mnt-default hover:border-mnt-default transition-all cursor-pointer overflow-hidden group"
     @click="emit('select', container)"
   >
     <!-- Header: name + state -->
-    <div class="px-4 pt-3.5 pb-2">
+    <div class="px-4 pt-3.5 mnt-2">
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2 min-w-0">
           <span
             v-if="container.has_health_check && container.health_status"
             class="inline-block h-2 w-2 rounded-full shrink-0"
-            :style="{ backgroundColor: container.state === 'running' ? (healthColors[container.health_status] || 'var(--pb-text-muted)') : 'var(--pb-text-muted)' }"
+            :style="{ backgroundColor: container.state === 'running' ? (healthColors[container.health_status] || 'var(--mnt-text-muted)') : 'var(--mnt-text-muted)' }"
             :title="container.state === 'running' ? container.health_status : 'stopped'"
           />
-          <h3 class="truncate text-sm font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors">
+          <h3 class="truncate text-sm font-semibold text-mnt-primary group-hover:text-mnt-green-400 transition-colors">
             {{ container.name }}
           </h3>
         </div>
@@ -124,8 +124,8 @@ function getStateStyle(state: string) {
             v-if="container.state === 'restarting'"
             class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold"
             :style="{
-              backgroundColor: 'var(--pb-status-critical-bg)',
-              color: 'var(--pb-status-critical)',
+              backgroundColor: 'var(--mnt-status-critical-bg)',
+              color: 'var(--mnt-status-critical)',
             }"
             title="Container is restart-looping"
           >!!</span>
@@ -138,7 +138,7 @@ function getStateStyle(state: string) {
 
       <!-- Badges row: image tag, update, security, posture, agent -->
       <div class="mt-1 flex items-center gap-1.5 flex-wrap">
-        <span class="text-[10px] text-pb-muted truncate max-w-[140px]">{{ imageTag }}</span>
+        <span class="text-[10px] text-mnt-muted truncate max-w-[140px]">{{ imageTag }}</span>
         <UpdateBadge :update="containerUpdate" />
         <SecurityInsightBadge
           :count="container.security_insight_count ?? 0"
@@ -160,41 +160,41 @@ function getStateStyle(state: string) {
     </div>
 
     <!-- Resource metrics (running containers only) -->
-    <div v-if="container.state === 'running' && metrics" class="px-4 pb-1.5 space-y-1">
+    <div v-if="container.state === 'running' && metrics" class="px-4 mnt-1.5 space-y-1">
       <div class="flex items-center gap-2 text-[10px]">
-        <span class="w-7 text-pb-muted font-bold uppercase">CPU</span>
-        <div class="h-1 flex-1 rounded-full bg-pb-primary">
+        <span class="w-7 text-mnt-muted font-bold uppercase">CPU</span>
+        <div class="h-1 flex-1 rounded-full bg-mnt-primary">
           <div
             class="h-1 rounded-full transition-all"
             :style="{ width: cpuBarWidth + '%', backgroundColor: barColor(cpuBarWidth) }"
           />
         </div>
-        <span class="w-10 text-right text-pb-muted font-mono">{{ metrics.cpu }}</span>
+        <span class="w-10 text-right text-mnt-muted font-mono">{{ metrics.cpu }}</span>
       </div>
       <div class="flex items-center gap-2 text-[10px]">
-        <span class="w-7 text-pb-muted font-bold uppercase">MEM</span>
-        <div class="h-1 flex-1 rounded-full bg-pb-primary">
+        <span class="w-7 text-mnt-muted font-bold uppercase">MEM</span>
+        <div class="h-1 flex-1 rounded-full bg-mnt-primary">
           <div
             class="h-1 rounded-full transition-all"
             :style="{ width: memBarWidth + '%', backgroundColor: barColor(memBarWidth) }"
           />
         </div>
-        <span class="w-10 text-right text-pb-muted font-mono">{{ metrics.memPercent }}</span>
+        <span class="w-10 text-right text-mnt-muted font-mono">{{ metrics.memPercent }}</span>
       </div>
     </div>
 
     <!-- K8s pod count badge -->
     <div
       v-if="container.runtime_type === 'kubernetes' && container.pod_count && container.pod_count > 0"
-      class="px-4 pb-1.5 flex items-center gap-2 text-[10px]"
+      class="px-4 mnt-1.5 flex items-center gap-2 text-[10px]"
     >
       <span
         v-if="container.controller_kind"
-        class="rounded px-1.5 py-0.5 bg-pb-elevated text-pb-muted"
+        class="rounded px-1.5 py-0.5 bg-mnt-elevated text-mnt-muted"
       >{{ container.controller_kind }}</span>
       <span
         :style="{
-          color: container.ready_count === container.pod_count ? 'var(--pb-status-ok)' : 'var(--pb-status-warn)',
+          color: container.ready_count === container.pod_count ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
         }"
       >{{ container.ready_count }}/{{ container.pod_count }} ready</span>
     </div>
@@ -202,12 +202,12 @@ function getStateStyle(state: string) {
     <!-- Swarm service info -->
     <div
       v-if="container.controller_kind === 'swarm-service'"
-      class="px-4 pb-1.5 flex items-center gap-2 text-[10px]"
+      class="px-4 mnt-1.5 flex items-center gap-2 text-[10px]"
     >
-      <span class="rounded px-1.5 py-0.5 bg-pb-elevated text-pb-muted">
+      <span class="rounded px-1.5 py-0.5 bg-mnt-elevated text-mnt-muted">
         {{ container.swarm_service_mode }}
       </span>
-      <span v-if="container.swarm_task_slot" class="text-pb-muted">
+      <span v-if="container.swarm_task_slot" class="text-mnt-muted">
         slot {{ container.swarm_task_slot }}
       </span>
     </div>
@@ -215,13 +215,13 @@ function getStateStyle(state: string) {
     <!-- Error detail -->
     <div
       v-if="container.error_detail"
-      class="px-4 pb-1.5 truncate text-[10px]"
-      :style="{ color: 'var(--pb-status-down)' }"
+      class="px-4 mnt-1.5 truncate text-[10px]"
+      :style="{ color: 'var(--mnt-status-down)' }"
       :title="container.error_detail"
     >{{ container.error_detail }}</div>
 
     <!-- Footer -->
-    <div class="px-4 py-2 flex items-center justify-between text-[10px] text-pb-muted border-t border-pb-default/50">
+    <div class="px-4 py-2 flex items-center justify-between text-[10px] text-mnt-muted border-t border-mnt-default/50">
       <span v-if="container.orchestration_unit" class="truncate font-medium">
         {{ container.orchestration_unit }}
       </span>

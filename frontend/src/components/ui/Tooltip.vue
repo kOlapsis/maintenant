@@ -68,25 +68,25 @@ const tipStyle = computed(() => {
     <slot name="trigger"><slot /></slot>
   </span>
   <Teleport to="body">
-    <div v-if="open" class="pb-tooltip" :style="tipStyle" role="tooltip">
+    <div v-if="open" class="mnt-tooltip" :style="tipStyle" role="tooltip">
       <slot name="content">{{ text }}</slot>
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-.pb-tooltip {
+.mnt-tooltip {
   position: fixed;
   z-index: 60;
   max-width: 240px;
   padding: 6px 10px;
   font-size: 11.5px;
   line-height: 1.4;
-  color: var(--pb-text-primary);
-  background: var(--pb-bg-elevated);
-  border: 1px solid var(--pb-border-default);
-  border-radius: var(--pb-radius-md);
-  box-shadow: var(--pb-shadow-elevated);
+  color: var(--mnt-text-primary);
+  background: var(--mnt-bg-elevated);
+  border: 1px solid var(--mnt-border-default);
+  border-radius: var(--mnt-radius-md);
+  box-shadow: var(--mnt-shadow-elevated);
   pointer-events: none;
   white-space: normal;
 }

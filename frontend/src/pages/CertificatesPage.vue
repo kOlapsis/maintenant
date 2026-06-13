@@ -105,8 +105,8 @@ function handleSelect(id: string) {
   <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-black text-pb-primary">Certificates</h1>
-        <p class="mt-1 text-sm" :style="{ color: 'var(--pb-text-muted)' }">
+        <h1 class="text-2xl font-black text-mnt-primary">Certificates</h1>
+        <p class="mt-1 text-sm" :style="{ color: 'var(--mnt-text-muted)' }">
           SSL/TLS certificate monitoring &amp; expiration alerts
         </p>
       </div>
@@ -115,8 +115,8 @@ function handleSelect(id: string) {
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"
           :style="{
-            backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
-            color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+            backgroundColor: quota.isAtLimit ? 'var(--mnt-status-down-bg)' : quota.nearLimit ? 'var(--mnt-status-warn-bg)' : 'var(--mnt-bg-elevated)',
+            color: quota.isAtLimit ? 'var(--mnt-status-down)' : quota.nearLimit ? 'var(--mnt-status-warn)' : 'var(--mnt-text-secondary)',
           }"
         >
           {{ quota.used }}/{{ quota.limit }}
@@ -125,7 +125,7 @@ function handleSelect(id: string) {
           v-if="quota.nearLimit && !quota.isAtLimit"
           :to="{ name: 'pro-edition' }"
           class="text-xs font-medium transition-opacity hover:opacity-80"
-          style="color: var(--pb-accent)"
+          style="color: var(--mnt-accent)"
         >
           Upgrade
         </router-link>
@@ -134,9 +134,9 @@ function handleSelect(id: string) {
           :disabled="quota.isAtLimit"
           :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} certificate monitors` : ''"
           :style="{
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -156,7 +156,7 @@ function handleSelect(id: string) {
       :doc-href="docUrl('features/certificates/#alert-thresholds')"
     >
       Any HTTPS endpoint {{ labelOrAnnotation }} auto-creates a certificate monitor &mdash; the full chain (leaf, intermediates, root) is validated on each check. Add standalone monitors for domains outside your stack, or declare extras with
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.tls.certificates</code>.
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.tls.certificates</code>.
       Alerts fire at 30, 14, 7, 3 and 1 day before expiry, plus on chain errors.
     </FeatureHint>
 
@@ -165,19 +165,19 @@ function handleSelect(id: string) {
       v-if="showCreateForm"
       class="mb-6 p-4"
       :style="{
-        backgroundColor: 'var(--pb-bg-surface)',
-        border: '1px solid var(--pb-border-default)',
-        borderRadius: 'var(--pb-radius-lg)',
+        backgroundColor: 'var(--mnt-bg-surface)',
+        border: '1px solid var(--mnt-border-default)',
+        borderRadius: 'var(--mnt-radius-lg)',
       }"
     >
-      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--pb-text-primary)' }">Create Certificate Monitor</h3>
+      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Certificate Monitor</h3>
       <div
         v-if="createError"
         class="mb-3 rounded p-2 text-sm"
         :style="{
-          backgroundColor: 'var(--pb-status-down-bg)',
-          color: 'var(--pb-status-down)',
-          borderRadius: 'var(--pb-radius-sm)',
+          backgroundColor: 'var(--mnt-status-down-bg)',
+          color: 'var(--mnt-status-down)',
+          borderRadius: 'var(--mnt-radius-sm)',
         }"
       >
         <template v-if="isQuotaError">
@@ -185,7 +185,7 @@ function handleSelect(id: string) {
           <a
             href="/pro-edition"
             class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: var(--pb-accent)"
+            style="color: var(--mnt-accent)"
           >
             Upgrade to Pro
           </a>
@@ -198,17 +198,17 @@ function handleSelect(id: string) {
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div class="grid gap-3 sm:grid-cols-2">
           <div>
-            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Hostname</label>
+            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Hostname</label>
             <input
               v-model="form.hostname"
               type="text"
               placeholder="e.g., example.com"
               :style="{
                 width: '100%',
-                borderRadius: 'var(--pb-radius-md)',
-                border: '1px solid var(--pb-border-default)',
-                backgroundColor: 'var(--pb-bg-elevated)',
-                color: 'var(--pb-text-primary)',
+                borderRadius: 'var(--mnt-radius-md)',
+                border: '1px solid var(--mnt-border-default)',
+                backgroundColor: 'var(--mnt-bg-elevated)',
+                color: 'var(--mnt-text-primary)',
                 padding: '0.375rem 0.75rem',
                 fontSize: '0.875rem',
                 minHeight: '44px',
@@ -217,7 +217,7 @@ function handleSelect(id: string) {
             />
           </div>
           <div>
-            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Port</label>
+            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Port</label>
             <input
               v-model.number="form.port"
               type="number"
@@ -225,10 +225,10 @@ function handleSelect(id: string) {
               max="65535"
               :style="{
                 width: '100%',
-                borderRadius: 'var(--pb-radius-md)',
-                border: '1px solid var(--pb-border-default)',
-                backgroundColor: 'var(--pb-bg-elevated)',
-                color: 'var(--pb-text-primary)',
+                borderRadius: 'var(--mnt-radius-md)',
+                border: '1px solid var(--mnt-border-default)',
+                backgroundColor: 'var(--mnt-bg-elevated)',
+                color: 'var(--mnt-text-primary)',
                 padding: '0.375rem 0.75rem',
                 fontSize: '0.875rem',
                 minHeight: '44px',
@@ -237,7 +237,7 @@ function handleSelect(id: string) {
           </div>
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Check Interval</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Check Interval</label>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="preset in intervalPresets"
@@ -246,14 +246,14 @@ function handleSelect(id: string) {
               class="rounded-full px-3 py-1 text-xs font-medium transition"
               :style="{
                 border: form.check_interval_seconds === preset.value
-                  ? '1px solid var(--pb-accent)'
-                  : '1px solid var(--pb-border-default)',
+                  ? '1px solid var(--mnt-accent)'
+                  : '1px solid var(--mnt-border-default)',
                 backgroundColor: form.check_interval_seconds === preset.value
-                  ? 'var(--pb-accent)'
+                  ? 'var(--mnt-accent)'
                   : 'transparent',
                 color: form.check_interval_seconds === preset.value
-                  ? 'var(--pb-text-inverted)'
-                  : 'var(--pb-text-secondary)',
+                  ? 'var(--mnt-text-inverted)'
+                  : 'var(--mnt-text-secondary)',
               }"
               @click="form.check_interval_seconds = preset.value"
             >
@@ -265,9 +265,9 @@ function handleSelect(id: string) {
           type="submit"
           :style="{
             alignSelf: 'flex-start',
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -280,19 +280,19 @@ function handleSelect(id: string) {
 
     <!-- Status summary + filters -->
     <div class="mb-6 flex flex-wrap items-center gap-4 text-sm">
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-ok-bg)', color: 'var(--pb-status-ok)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-status-ok)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.valid }} valid
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-warn-bg)', color: 'var(--pb-status-warn)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.expiring }} expiring
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-down-bg)', color: 'var(--pb-status-down)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.expired }} expired
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-critical-bg)', color: 'var(--pb-status-critical)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-critical-bg)', color: 'var(--mnt-status-critical)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.error }} error
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-muted)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.unknown }} unknown
       </span>
     </div>
@@ -305,14 +305,14 @@ function handleSelect(id: string) {
         class="rounded-full px-3 py-1 text-xs font-medium transition"
         :style="{
           border: store.statusFilter === f.value
-            ? '1px solid var(--pb-accent)'
-            : '1px solid var(--pb-border-default)',
+            ? '1px solid var(--mnt-accent)'
+            : '1px solid var(--mnt-border-default)',
           backgroundColor: store.statusFilter === f.value
-            ? 'var(--pb-accent)'
+            ? 'var(--mnt-accent)'
             : 'transparent',
           color: store.statusFilter === f.value
-            ? 'var(--pb-text-inverted)'
-            : 'var(--pb-text-secondary)',
+            ? 'var(--mnt-text-inverted)'
+            : 'var(--mnt-text-secondary)',
         }"
         @click="store.statusFilter = f.value"
       >

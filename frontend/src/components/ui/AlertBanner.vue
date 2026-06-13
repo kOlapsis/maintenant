@@ -102,66 +102,66 @@ const labelText = computed(() => props.label ?? meta.value.defaultLabel)
 
 <style scoped>
 .alert-banner--warn {
-  border-color: var(--pb-alert-warn-border);
+  border-color: var(--mnt-alert-warn-border);
 }
 .alert-banner--critical {
-  border-color: var(--pb-alert-critical-border);
+  border-color: var(--mnt-alert-critical-border);
 }
 .alert-banner--info {
-  border-color: var(--pb-alert-info-border);
+  border-color: var(--mnt-alert-info-border);
 }
 
 .alert-banner--warn .alert-banner__rail {
-  background: var(--pb-alert-warn-rail);
+  background: var(--mnt-alert-warn-rail);
 }
 .alert-banner--critical .alert-banner__rail {
-  background: var(--pb-alert-critical-rail);
+  background: var(--mnt-alert-critical-rail);
 }
 .alert-banner--info .alert-banner__rail {
-  background: var(--pb-alert-info-rail);
+  background: var(--mnt-alert-info-rail);
 }
 
 .alert-banner--warn .alert-banner__gradient {
-  background: var(--pb-alert-warn-gradient);
+  background: var(--mnt-alert-warn-gradient);
 }
 .alert-banner--critical .alert-banner__gradient {
-  background: var(--pb-alert-critical-gradient);
+  background: var(--mnt-alert-critical-gradient);
 }
 .alert-banner--info .alert-banner__gradient {
-  background: var(--pb-alert-info-gradient);
+  background: var(--mnt-alert-info-gradient);
 }
 
 .alert-banner__scan {
   background-image: repeating-linear-gradient(
     135deg,
-    var(--pb-alert-scan-color) 0px,
-    var(--pb-alert-scan-color) 1px,
+    var(--mnt-alert-scan-color) 0px,
+    var(--mnt-alert-scan-color) 1px,
     transparent 1px,
     transparent 5px
   );
 }
 
 .alert-banner--warn .alert-banner__dot {
-  background: var(--pb-alert-warn-dot);
-  box-shadow: 0 0 6px var(--pb-alert-warn-dot-halo);
+  background: var(--mnt-alert-warn-dot);
+  box-shadow: 0 0 6px var(--mnt-alert-warn-dot-halo);
 }
 .alert-banner--critical .alert-banner__dot {
-  background: var(--pb-alert-critical-dot);
-  box-shadow: 0 0 6px var(--pb-alert-critical-dot-halo);
+  background: var(--mnt-alert-critical-dot);
+  box-shadow: 0 0 6px var(--mnt-alert-critical-dot-halo);
 }
 .alert-banner--info .alert-banner__dot {
-  background: var(--pb-alert-info-dot);
-  box-shadow: 0 0 6px var(--pb-alert-info-dot-halo);
+  background: var(--mnt-alert-info-dot);
+  box-shadow: 0 0 6px var(--mnt-alert-info-dot-halo);
 }
 
 .alert-banner--warn .alert-banner__dot-halo {
-  background: var(--pb-alert-warn-dot-halo);
+  background: var(--mnt-alert-warn-dot-halo);
 }
 .alert-banner--critical .alert-banner__dot-halo {
-  background: var(--pb-alert-critical-dot-halo);
+  background: var(--mnt-alert-critical-dot-halo);
 }
 .alert-banner--info .alert-banner__dot-halo {
-  background: var(--pb-alert-info-dot-halo);
+  background: var(--mnt-alert-info-dot-halo);
 }
 
 .alert-banner__dot-halo {
@@ -169,37 +169,37 @@ const labelText = computed(() => props.label ?? meta.value.defaultLabel)
 }
 
 .alert-banner--warn .alert-banner__tag {
-  background: var(--pb-alert-warn-tag-bg);
-  border-color: var(--pb-alert-warn-tag-border);
-  color: var(--pb-alert-warn-tag-text);
+  background: var(--mnt-alert-warn-tag-bg);
+  border-color: var(--mnt-alert-warn-tag-border);
+  color: var(--mnt-alert-warn-tag-text);
 }
 .alert-banner--critical .alert-banner__tag {
-  background: var(--pb-alert-critical-tag-bg);
-  border-color: var(--pb-alert-critical-tag-border);
-  color: var(--pb-alert-critical-tag-text);
+  background: var(--mnt-alert-critical-tag-bg);
+  border-color: var(--mnt-alert-critical-tag-border);
+  color: var(--mnt-alert-critical-tag-text);
 }
 .alert-banner--info .alert-banner__tag {
-  background: var(--pb-alert-info-tag-bg);
-  border-color: var(--pb-alert-info-tag-border);
-  color: var(--pb-alert-info-tag-text);
+  background: var(--mnt-alert-info-tag-bg);
+  border-color: var(--mnt-alert-info-tag-border);
+  color: var(--mnt-alert-info-tag-text);
 }
 
 .alert-banner--warn .alert-banner__message {
-  color: var(--pb-alert-warn-text);
+  color: var(--mnt-alert-warn-text);
 }
 .alert-banner--critical .alert-banner__message {
-  color: var(--pb-alert-critical-text);
+  color: var(--mnt-alert-critical-text);
 }
 .alert-banner--info .alert-banner__message {
-  color: var(--pb-alert-info-text);
+  color: var(--mnt-alert-info-text);
 }
 
 .alert-banner__dismiss {
-  color: var(--pb-text-muted);
+  color: var(--mnt-text-muted);
 }
 .alert-banner__dismiss:hover {
-  color: var(--pb-text-primary);
-  background: var(--pb-bg-hover);
+  color: var(--mnt-text-primary);
+  background: var(--mnt-bg-hover);
 }
 
 @keyframes alert-ping {

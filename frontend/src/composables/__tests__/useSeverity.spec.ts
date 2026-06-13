@@ -39,10 +39,10 @@ describe('useSeverity', () => {
   })
 
   it('builds tokenised CSS var references, never a hex', () => {
-    expect(severityVar('incident')).toBe('var(--pb-sev-incident)')
-    expect(severityVar('ok', 'bg')).toBe('var(--pb-sev-ok-bg)')
-    expect(severityVar('warning', 'text')).toBe('var(--pb-sev-warning-text)')
-    expect(severityVar('unknown', 'border')).toBe('var(--pb-sev-unknown-border)')
+    expect(severityVar('incident')).toBe('var(--mnt-sev-incident)')
+    expect(severityVar('ok', 'bg')).toBe('var(--mnt-sev-ok-bg)')
+    expect(severityVar('warning', 'text')).toBe('var(--mnt-sev-warning-text)')
+    expect(severityVar('unknown', 'border')).toBe('var(--mnt-sev-unknown-border)')
   })
 
   it('flags only incident and warning as actionable', () => {

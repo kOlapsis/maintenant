@@ -116,23 +116,23 @@ onMounted(() => {
         >
           <ChevronDown
             :size="14"
-            class="shrink-0 text-pb-muted transition-transform"
+            class="shrink-0 text-mnt-muted transition-transform"
             :class="{ '-rotate-90': collapsedGroups.has(group.name) }"
             aria-hidden="true"
           />
-          <h2 class="text-sm font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">
+          <h2 class="text-sm font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">
             {{ group.name }}
           </h2>
           <span
             class="rounded-full px-2 py-0.5 text-xs"
             :style="{
-              backgroundColor: 'var(--pb-bg-elevated)',
-              color: 'var(--pb-text-muted)',
+              backgroundColor: 'var(--mnt-bg-elevated)',
+              color: 'var(--mnt-text-muted)',
             }"
           >
             {{ group.containers.filter(c => !c.archived).length }}
           </span>
-          <span class="text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+          <span class="text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
             {{ group.source }}
           </span>
         </button>
@@ -146,24 +146,24 @@ onMounted(() => {
           >
             <button
               class="flex w-full items-center gap-2 text-left px-2 py-1.5 rounded"
-              :style="{ backgroundColor: 'var(--pb-bg-elevated)' }"
+              :style="{ backgroundColor: 'var(--mnt-bg-elevated)' }"
               @click="store.toggleController(`${group.name}/${ctrl.kind}/${ctrl.name}`)"
             >
               <ChevronDown
                 :size="13"
-                class="shrink-0 text-pb-muted transition-transform"
+                class="shrink-0 text-mnt-muted transition-transform"
                 :class="{ '-rotate-90': !store.isControllerExpanded(`${group.name}/${ctrl.kind}/${ctrl.name}`) }"
                 aria-hidden="true"
               />
               <span
                 class="rounded px-1.5 py-0.5 text-xs"
-                :style="{ backgroundColor: 'var(--pb-bg-surface)', color: 'var(--pb-text-secondary)' }"
+                :style="{ backgroundColor: 'var(--mnt-bg-surface)', color: 'var(--mnt-text-secondary)' }"
               >{{ ctrl.kind }}</span>
-              <span class="text-sm font-medium" :style="{ color: 'var(--pb-text-primary)' }">{{ ctrl.name }}</span>
+              <span class="text-sm font-medium" :style="{ color: 'var(--mnt-text-primary)' }">{{ ctrl.name }}</span>
               <span
                 class="text-xs"
                 :style="{
-                  color: ctrl.readyCount === ctrl.podCount ? 'var(--pb-status-ok)' : 'var(--pb-status-warn)',
+                  color: ctrl.readyCount === ctrl.podCount ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
                 }"
               >{{ ctrl.readyCount }}/{{ ctrl.podCount }} ready</span>
             </button>
@@ -213,7 +213,7 @@ onMounted(() => {
     <div v-if="!store.loading && store.archivedCount > 0" class="mt-6">
       <button
         class="text-sm"
-        :style="{ color: 'var(--pb-text-muted)' }"
+        :style="{ color: 'var(--mnt-text-muted)' }"
         @click="toggleArchived"
       >
         {{ showArchived ? 'Hide' : 'Show' }} archived ({{ store.archivedCount }})
@@ -224,11 +224,11 @@ onMounted(() => {
     <div
       v-if="!store.loading"
       class="mt-4 flex items-center gap-2 text-xs"
-      :style="{ color: 'var(--pb-text-muted)' }"
+      :style="{ color: 'var(--mnt-text-muted)' }"
     >
       <span
         class="inline-block h-2 w-2 rounded-full"
-        :style="{ backgroundColor: store.sseConnected ? 'var(--pb-status-ok)' : 'var(--pb-status-down)' }"
+        :style="{ backgroundColor: store.sseConnected ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)' }"
       />
       {{ store.sseConnected ? 'Live' : 'Disconnected' }}
       <span class="ml-auto">{{ store.containerCount }} containers</span>

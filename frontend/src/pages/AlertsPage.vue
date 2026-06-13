@@ -60,61 +60,61 @@ onUnmounted(() => {
   <div class="overflow-y-auto p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
     <div class="mb-6">
-      <h1 class="text-2xl font-black text-pb-primary">Alerts</h1>
-      <p class="mt-1 text-sm text-pb-muted">
+      <h1 class="text-2xl font-black text-mnt-primary">Alerts</h1>
+      <p class="mt-1 text-sm text-mnt-muted">
         Alert history, routing triggers, and silence rules
       </p>
     </div>
 
     <!-- Active alerts -->
     <div class="mb-6">
-      <h2 class="mb-2 text-sm font-medium" style="color: var(--pb-text-secondary)">Active Alerts</h2>
+      <h2 class="mb-2 text-sm font-medium" style="color: var(--mnt-text-secondary)">Active Alerts</h2>
       <ActiveAlerts />
     </div>
 
     <!-- Tab navigation -->
-    <div class="mb-4" style="border-bottom: 1px solid var(--pb-border-default)">
+    <div class="mb-4" style="border-bottom: 1px solid var(--mnt-border-default)">
       <nav class="-mb-px flex gap-6">
         <button
           @click="activeTab = 'history'"
-          class="pb-2 text-sm font-medium min-h-[44px]"
+          class="mnt-2 text-sm font-medium min-h-[44px]"
           :style="{
-            borderBottom: activeTab === 'history' ? '2px solid var(--pb-accent)' : '2px solid transparent',
-            color: activeTab === 'history' ? 'var(--pb-accent)' : 'var(--pb-text-muted)',
+            borderBottom: activeTab === 'history' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
+            color: activeTab === 'history' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
           }"
         >
           History
         </button>
         <button
           @click="activeTab = 'triggers'"
-          class="pb-2 text-sm font-medium min-h-[44px]"
+          class="mnt-2 text-sm font-medium min-h-[44px]"
           :style="{
-            borderBottom: activeTab === 'triggers' ? '2px solid var(--pb-accent)' : '2px solid transparent',
-            color: activeTab === 'triggers' ? 'var(--pb-accent)' : 'var(--pb-text-muted)',
+            borderBottom: activeTab === 'triggers' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
+            color: activeTab === 'triggers' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
           }"
         >
           Triggers
           <span
             v-if="triggersStore.triggers.length"
             class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background-color: var(--pb-bg-elevated); color: var(--pb-text-muted)"
+            style="background-color: var(--mnt-bg-elevated); color: var(--mnt-text-muted)"
           >
             {{ triggersStore.triggers.length }}
           </span>
         </button>
         <button
           @click="activeTab = 'silence'"
-          class="pb-2 text-sm font-medium min-h-[44px]"
+          class="mnt-2 text-sm font-medium min-h-[44px]"
           :style="{
-            borderBottom: activeTab === 'silence' ? '2px solid var(--pb-accent)' : '2px solid transparent',
-            color: activeTab === 'silence' ? 'var(--pb-accent)' : 'var(--pb-text-muted)',
+            borderBottom: activeTab === 'silence' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
+            color: activeTab === 'silence' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
           }"
         >
           Silence Rules
           <span
             v-if="store.activeSilenceCount"
             class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background-color: var(--pb-status-warn-bg); color: var(--pb-status-warn)"
+            style="background-color: var(--mnt-status-warn-bg); color: var(--mnt-status-warn)"
           >
             {{ store.activeSilenceCount }}
           </span>
@@ -130,7 +130,7 @@ onUnmounted(() => {
         title="What are alert triggers?"
         :doc-href="docUrl('features/alerts/#alert-triggers')"
       >
-        Triggers are routing rules: each one matches alerts by severity, source, or scope, then dispatches them to one or more channels. A channel without any trigger stays silent — useful when you want to reserve it for an escalation policy. Manage your channels separately in the <RouterLink to="/channels" class="text-pb-green-400 hover:underline">Channels</RouterLink> page.
+        Triggers are routing rules: each one matches alerts by severity, source, or scope, then dispatches them to one or more channels. A channel without any trigger stays silent — useful when you want to reserve it for an escalation policy. Manage your channels separately in the <RouterLink to="/channels" class="text-mnt-green-400 hover:underline">Channels</RouterLink> page.
       </FeatureHint>
       <TriggerManager />
     </template>

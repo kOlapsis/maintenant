@@ -240,11 +240,11 @@ async function handleOverride(comp: StatusComponent, status: string) {
 // --- Display helpers ---
 
 const statusColors: Record<string, string> = {
-  operational: 'var(--pb-status-ok)',
-  degraded: 'var(--pb-status-warn)',
-  partial_outage: 'var(--pb-status-critical)',
-  major_outage: 'var(--pb-status-down)',
-  under_maintenance: 'var(--pb-accent)',
+  operational: 'var(--mnt-status-ok)',
+  degraded: 'var(--mnt-status-warn)',
+  partial_outage: 'var(--mnt-status-critical)',
+  major_outage: 'var(--mnt-status-down)',
+  under_maintenance: 'var(--mnt-accent)',
 }
 
 const statusLabels: Record<string, string> = {
@@ -294,14 +294,14 @@ function componentSummary(c: StatusComponent): string {
     <!-- Components section -->
     <div>
       <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-lg font-semibold" style="color: var(--pb-text-primary)">Status Components</h2>
+        <h2 class="text-lg font-semibold" style="color: var(--mnt-text-primary)">Status Components</h2>
         <div class="flex items-center gap-2">
           <span
             v-if="!quota.isUnlimited"
             class="rounded-full px-2.5 py-1 text-xs font-medium"
             :style="{
-              backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
-              color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+              backgroundColor: quota.isAtLimit ? 'var(--mnt-status-down-bg)' : quota.nearLimit ? 'var(--mnt-status-warn-bg)' : 'var(--mnt-bg-elevated)',
+              color: quota.isAtLimit ? 'var(--mnt-status-down)' : quota.nearLimit ? 'var(--mnt-status-warn)' : 'var(--mnt-text-secondary)',
             }"
           >
             {{ quota.used }}/{{ quota.limit }}
@@ -310,7 +310,7 @@ function componentSummary(c: StatusComponent): string {
             v-if="quota.nearLimit && !quota.isAtLimit"
             :to="{ name: 'pro-edition' }"
             class="text-xs font-medium transition-opacity hover:opacity-80"
-            style="color: var(--pb-accent)"
+            style="color: var(--mnt-accent)"
           >
             Upgrade
           </router-link>
@@ -318,14 +318,14 @@ function componentSummary(c: StatusComponent): string {
             @click="startAddComp"
             :disabled="quota.isAtLimit"
             :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} status components` : ''"
-            class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary transition-colors min-h-[44px]"
+            class="rounded-md px-3 py-1.5 text-sm font-medium text-mnt-primary transition-colors min-h-[44px]"
             :style="{
-              background: 'var(--pb-accent)',
+              background: 'var(--mnt-accent)',
               opacity: quota.isAtLimit ? '0.5' : '1',
               cursor: quota.isAtLimit ? 'not-allowed' : 'pointer',
             }"
-            @mouseenter="!quota.isAtLimit && (($event.target as HTMLElement).style.background = 'var(--pb-accent-hover)')"
-            @mouseleave="($event.target as HTMLElement).style.background = 'var(--pb-accent)'"
+            @mouseenter="!quota.isAtLimit && (($event.target as HTMLElement).style.background = 'var(--mnt-accent-hover)')"
+            @mouseleave="($event.target as HTMLElement).style.background = 'var(--mnt-accent)'"
           >
             Add Component
           </button>
@@ -333,8 +333,8 @@ function componentSummary(c: StatusComponent): string {
       </div>
 
       <!-- Form -->
-      <div v-if="showCompForm" class="mb-4 rounded-lg border p-4" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-        <h3 class="mb-3 text-sm font-medium" style="color: var(--pb-text-primary)">
+      <div v-if="showCompForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+        <h3 class="mb-3 text-sm font-medium" style="color: var(--mnt-text-primary)">
           {{ editingCompId ? 'Edit Component' : 'New Component' }}
         </h3>
 
@@ -342,9 +342,9 @@ function componentSummary(c: StatusComponent): string {
           v-if="createError"
           class="mb-3 rounded p-2 text-sm"
           :style="{
-            backgroundColor: 'var(--pb-status-down-bg)',
-            color: 'var(--pb-status-down)',
-            borderRadius: 'var(--pb-radius-sm)',
+            backgroundColor: 'var(--mnt-status-down-bg)',
+            color: 'var(--mnt-status-down)',
+            borderRadius: 'var(--mnt-radius-sm)',
           }"
         >
           <template v-if="isQuotaError">
@@ -352,7 +352,7 @@ function componentSummary(c: StatusComponent): string {
             <a
               href="/pro-edition"
               class="font-medium underline transition-opacity hover:opacity-80"
-              style="color: var(--pb-accent)"
+              style="color: var(--mnt-accent)"
             >
               Upgrade to Pro
             </a>
@@ -368,11 +368,11 @@ function componentSummary(c: StatusComponent): string {
           <!-- Composition mode toggle — only shown when creating; locked in edit mode -->
           <div>
             <div class="mb-1 flex items-center gap-2">
-              <span class="text-[10px] font-bold uppercase tracking-widest text-pb-muted">Composition Mode</span>
+              <span class="text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Composition Mode</span>
               <span
                 v-if="editingCompId"
-                class="rounded px-1.5 py-0.5 text-[10px] text-pb-muted"
-                style="background: var(--pb-bg-elevated)"
+                class="rounded px-1.5 py-0.5 text-[10px] text-mnt-muted"
+                style="background: var(--mnt-bg-elevated)"
                 title="Mode is locked after creation; delete and recreate to change"
               >
                 Locked
@@ -385,9 +385,9 @@ function componentSummary(c: StatusComponent): string {
                 @click="compositionMode = 'explicit'"
                 class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
                 :style="{
-                  background: compositionMode === 'explicit' ? 'rgba(59,130,246,0.12)' : 'var(--pb-bg-elevated)',
-                  borderColor: compositionMode === 'explicit' ? '#3b82f6' : 'var(--pb-border-default)',
-                  color: compositionMode === 'explicit' ? '#60a5fa' : 'var(--pb-text-secondary)',
+                  background: compositionMode === 'explicit' ? 'rgba(59,130,246,0.12)' : 'var(--mnt-bg-elevated)',
+                  borderColor: compositionMode === 'explicit' ? '#3b82f6' : 'var(--mnt-border-default)',
+                  color: compositionMode === 'explicit' ? '#60a5fa' : 'var(--mnt-text-secondary)',
                   opacity: editingCompId ? '0.5' : '1',
                   cursor: editingCompId ? 'not-allowed' : 'pointer',
                 }"
@@ -400,9 +400,9 @@ function componentSummary(c: StatusComponent): string {
                 @click="compositionMode = 'match-all'"
                 class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
                 :style="{
-                  background: compositionMode === 'match-all' ? 'rgba(139,92,246,0.12)' : 'var(--pb-bg-elevated)',
-                  borderColor: compositionMode === 'match-all' ? '#8b5cf6' : 'var(--pb-border-default)',
-                  color: compositionMode === 'match-all' ? 'var(--pb-accent)' : 'var(--pb-text-secondary)',
+                  background: compositionMode === 'match-all' ? 'rgba(139,92,246,0.12)' : 'var(--mnt-bg-elevated)',
+                  borderColor: compositionMode === 'match-all' ? '#8b5cf6' : 'var(--mnt-border-default)',
+                  color: compositionMode === 'match-all' ? 'var(--mnt-accent)' : 'var(--mnt-text-secondary)',
                   opacity: editingCompId ? '0.5' : '1',
                   cursor: editingCompId ? 'not-allowed' : 'pointer',
                 }"
@@ -420,24 +420,24 @@ function componentSummary(c: StatusComponent): string {
                 v-for="m in selectedMonitors"
                 :key="`${m.type}-${m.id}`"
                 class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-                style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+                style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
               >
-                <span class="text-[10px] uppercase tracking-wider" style="color: var(--pb-text-muted)">{{ m.type[0] }}</span>
+                <span class="text-[10px] uppercase tracking-wider" style="color: var(--mnt-text-muted)">{{ m.type[0] }}</span>
                 {{ m.name }}
                 <button
                   type="button"
                   @click="removeSelectedMonitor(m)"
                   class="ml-0.5 opacity-60 hover:opacity-100"
-                  style="color: var(--pb-text-muted)"
+                  style="color: var(--mnt-text-muted)"
                 >
                   ×
                 </button>
               </span>
             </div>
-            <p v-else class="text-xs text-pb-muted">No monitors selected. Pick at least one below.</p>
+            <p v-else class="text-xs text-mnt-muted">No monitors selected. Pick at least one below.</p>
 
             <!-- Type tabs -->
-            <div class="flex gap-1 border-b" style="border-color: var(--pb-border-default)">
+            <div class="flex gap-1 border-b" style="border-color: var(--mnt-border-default)">
               <button
                 v-for="type in monitorTypes"
                 :key="type"
@@ -445,8 +445,8 @@ function componentSummary(c: StatusComponent): string {
                 @click="activeTypeTab = type; searchQuery = ''"
                 class="relative px-3 py-1.5 text-xs transition-colors"
                 :style="{
-                  color: activeTypeTab === type ? 'var(--pb-text-primary)' : 'var(--pb-text-secondary)',
-                  borderBottom: activeTypeTab === type ? '2px solid var(--pb-accent)' : '2px solid transparent',
+                  color: activeTypeTab === type ? 'var(--mnt-text-primary)' : 'var(--mnt-text-secondary)',
+                  borderBottom: activeTypeTab === type ? '2px solid var(--mnt-accent)' : '2px solid transparent',
                   marginBottom: '-1px',
                 }"
               >
@@ -454,7 +454,7 @@ function componentSummary(c: StatusComponent): string {
                 <span
                   v-if="selectedCountForType(type) > 0"
                   class="ml-1 rounded-full px-1.5 text-[10px] font-bold"
-                  style="background: var(--pb-accent); color: var(--pb-text-primary)"
+                  style="background: var(--mnt-accent); color: var(--mnt-text-primary)"
                 >
                   {{ selectedCountForType(type) }}
                 </span>
@@ -467,32 +467,32 @@ function componentSummary(c: StatusComponent): string {
               type="text"
               placeholder="Search..."
               class="w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
             />
 
             <!-- Monitor list -->
             <div
               class="max-h-48 overflow-y-auto rounded-md border"
-              style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)"
+              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default)"
             >
-              <div v-if="monitorOptionsLoading" class="p-4 text-center text-xs text-pb-muted">Loading...</div>
-              <div v-else-if="filteredMonitors.length === 0" class="p-4 text-center text-xs text-pb-muted">
+              <div v-if="monitorOptionsLoading" class="p-4 text-center text-xs text-mnt-muted">Loading...</div>
+              <div v-else-if="filteredMonitors.length === 0" class="p-4 text-center text-xs text-mnt-muted">
                 No {{ monitorTypeLabels[activeTypeTab] }}s found
               </div>
               <label
                 v-for="m in filteredMonitors"
                 :key="`${m.type}-${m.id}`"
-                class="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-pb-elevated"
-                style="border-color: var(--pb-border-default)"
+                class="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-mnt-elevated"
+                style="border-color: var(--mnt-border-default)"
               >
                 <input
                   type="checkbox"
                   :checked="isMonitorSelected(m)"
                   @change="toggleMonitor(m)"
                   class="rounded"
-                  style="accent-color: var(--pb-accent)"
+                  style="accent-color: var(--mnt-accent)"
                 />
-                <span class="text-sm" style="color: var(--pb-text-primary)">{{ m.name }}</span>
+                <span class="text-sm" style="color: var(--mnt-text-primary)">{{ m.name }}</span>
               </label>
             </div>
           </div>
@@ -500,41 +500,41 @@ function componentSummary(c: StatusComponent): string {
           <!-- Match-all mode: single type dropdown + count preview -->
           <div v-else class="space-y-2">
             <div>
-              <label class="block text-[10px] font-bold uppercase tracking-widest text-pb-muted">Monitor Type</label>
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Monitor Type</label>
               <select
                 v-model="matchAllType"
                 :disabled="!!editingCompId"
                 class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm"
-                style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+                style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
               >
                 <option v-for="t in monitorTypes" :key="t" :value="t">{{ monitorTypeLabels[t] }}</option>
               </select>
             </div>
-            <p v-if="monitorOptionsLoading" class="text-xs text-pb-muted">Loading count...</p>
-            <p v-else-if="matchAllCount !== null" class="text-xs text-pb-muted">
-              <span class="font-medium" style="color: var(--pb-text-primary)">{{ matchAllCount }}</span>
+            <p v-if="monitorOptionsLoading" class="text-xs text-mnt-muted">Loading count...</p>
+            <p v-else-if="matchAllCount !== null" class="text-xs text-mnt-muted">
+              <span class="font-medium" style="color: var(--mnt-text-primary)">{{ matchAllCount }}</span>
               monitor{{ matchAllCount !== 1 ? 's' : '' }} currently match
             </p>
           </div>
 
           <!-- Common fields -->
           <div>
-            <label class="block text-[10px] font-bold uppercase tracking-widest text-pb-muted">Display Name</label>
+            <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Display Name</label>
             <input
               v-model="compForm.display_name"
               required
               class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
             />
           </div>
 
           <div class="flex items-center gap-4">
-            <label class="flex items-center gap-2 text-sm" style="color: var(--pb-text-secondary)">
-              <input v-model="compForm.visible" type="checkbox" class="rounded" style="accent-color: var(--pb-accent)" />
+            <label class="flex items-center gap-2 text-sm" style="color: var(--mnt-text-secondary)">
+              <input v-model="compForm.visible" type="checkbox" class="rounded" style="accent-color: var(--mnt-accent)" />
               Visible on public page
             </label>
-            <label class="flex items-center gap-2 text-sm" style="color: var(--pb-text-secondary)">
-              <input v-model="compForm.auto_incident" type="checkbox" class="rounded" style="accent-color: var(--pb-accent)" />
+            <label class="flex items-center gap-2 text-sm" style="color: var(--mnt-text-secondary)">
+              <input v-model="compForm.auto_incident" type="checkbox" class="rounded" style="accent-color: var(--mnt-accent)" />
               Auto-create incidents
             </label>
           </div>
@@ -543,9 +543,9 @@ function componentSummary(c: StatusComponent): string {
             <button
               type="submit"
               :disabled="!isFormValid"
-              class="rounded-md px-3 py-1.5 text-sm text-pb-primary"
+              class="rounded-md px-3 py-1.5 text-sm text-mnt-primary"
               :style="{
-                background: 'var(--pb-accent)',
+                background: 'var(--mnt-accent)',
                 opacity: isFormValid ? '1' : '0.45',
                 cursor: isFormValid ? 'pointer' : 'not-allowed',
               }"
@@ -556,7 +556,7 @@ function componentSummary(c: StatusComponent): string {
               type="button"
               @click="resetCompForm"
               class="rounded-md border px-3 py-1.5 text-sm"
-              style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+              style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
             >
               Cancel
             </button>
@@ -565,8 +565,8 @@ function componentSummary(c: StatusComponent): string {
       </div>
 
       <!-- Empty state -->
-      <div v-if="(store.components?.length ?? 0) === 0 && !store.componentsLoading" class="rounded-lg border p-6 text-center" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-        <p class="text-sm" style="color: var(--pb-text-muted)">No status components configured. Add components to appear on the public status page.</p>
+      <div v-if="(store.components?.length ?? 0) === 0 && !store.componentsLoading" class="rounded-lg border p-6 text-center" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+        <p class="text-sm" style="color: var(--mnt-text-muted)">No status components configured. Add components to appear on the public status page.</p>
       </div>
 
       <!-- Component list -->
@@ -575,30 +575,30 @@ function componentSummary(c: StatusComponent): string {
           v-for="c in store.components"
           :key="c.id"
           class="rounded-lg border p-4"
-          style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+          style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="flex items-start gap-3 min-w-0">
-              <span class="mt-0.5 h-2.5 w-2.5 flex-shrink-0 rounded-full" :style="{ background: statusColors[c.effective_status] || 'var(--pb-text-muted)' }"></span>
+              <span class="mt-0.5 h-2.5 w-2.5 flex-shrink-0 rounded-full" :style="{ background: statusColors[c.effective_status] || 'var(--mnt-text-muted)' }"></span>
               <div class="min-w-0">
                 <!-- Name row -->
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-medium" style="color: var(--pb-text-primary)">{{ c.display_name }}</span>
+                  <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ c.display_name }}</span>
                   <!-- Composition mode badge -->
                   <span
                     class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest"
                     :style="c.composition_mode === 'explicit'
                       ? 'background: rgba(59,130,246,0.15); color: #60a5fa'
-                      : 'background: rgba(139,92,246,0.15); color: var(--pb-accent)'"
+                      : 'background: rgba(139,92,246,0.15); color: var(--mnt-accent)'"
                   >
                     {{ c.composition_mode === 'explicit' ? 'Explicit' : 'Match-all' }}
                   </span>
-                  <span v-if="!c.visible" class="rounded px-1.5 py-0.5 text-[10px]" style="background: var(--pb-bg-elevated); color: var(--pb-text-muted)">hidden</span>
-                  <span v-if="c.auto_incident" class="rounded px-1.5 py-0.5 text-[10px]" style="background: var(--pb-status-warn-bg); color: var(--pb-status-warn)">auto-incident</span>
-                  <span v-if="c.status_override" class="rounded px-1.5 py-0.5 text-[10px]" style="background: rgba(139, 92, 246, 0.15); color: var(--pb-accent)">overridden</span>
+                  <span v-if="!c.visible" class="rounded px-1.5 py-0.5 text-[10px]" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-muted)">hidden</span>
+                  <span v-if="c.auto_incident" class="rounded px-1.5 py-0.5 text-[10px]" style="background: var(--mnt-status-warn-bg); color: var(--mnt-status-warn)">auto-incident</span>
+                  <span v-if="c.status_override" class="rounded px-1.5 py-0.5 text-[10px]" style="background: rgba(139, 92, 246, 0.15); color: var(--mnt-accent)">overridden</span>
                 </div>
                 <!-- Summary + status -->
-                <p class="mt-0.5 text-xs" style="color: var(--pb-text-muted)">
+                <p class="mt-0.5 text-xs" style="color: var(--mnt-text-muted)">
                   {{ componentSummary(c) }}
                   &middot; {{ formatStatus(c.effective_status) }}
                   <span v-if="c.status_override && c.derived_status !== c.effective_status"> (monitor: {{ formatStatus(c.derived_status) }})</span>
@@ -609,14 +609,14 @@ function componentSummary(c: StatusComponent): string {
               <select
                 @change="handleOverride(c, ($event.target as HTMLSelectElement).value)"
                 class="rounded border px-2 py-1 text-xs"
-                style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+                style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
               >
                 <option v-for="s in statusOverrideOptions" :key="s.value" :value="s.value" :selected="(c.status_override || '') === s.value">
                   {{ s.label }}
                 </option>
               </select>
-              <button @click="startEditComp(c)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Edit</button>
-              <button @click="handleDeleteComp(c.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--pb-status-down); color: var(--pb-status-down)">Delete</button>
+              <button @click="startEditComp(c)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)">Edit</button>
+              <button @click="handleDeleteComp(c.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--mnt-status-down); color: var(--mnt-status-down)">Delete</button>
             </div>
           </div>
 
@@ -626,13 +626,13 @@ function componentSummary(c: StatusComponent): string {
             <button
               @click="startEditComp(c)"
               class="rounded px-2 py-0.5 text-xs font-medium"
-              style="background: var(--pb-accent); color: var(--pb-text-primary)"
+              style="background: var(--mnt-accent); color: var(--mnt-text-primary)"
             >
               Fix
             </button>
             <button
               @click="handleDeleteComp(c.id)"
-              class="rounded px-2 py-0.5 text-xs text-pb-status-down"
+              class="rounded px-2 py-0.5 text-xs text-mnt-status-down"
             >
               Delete
             </button>

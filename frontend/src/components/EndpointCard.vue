@@ -74,14 +74,14 @@ function formatResponseTime(ms: number | undefined): string {
 <template>
   <div
     :style="{
-      backgroundColor: 'var(--pb-bg-surface)',
-      border: '1px solid var(--pb-border-default)',
-      borderRadius: 'var(--pb-radius-lg)',
+      backgroundColor: 'var(--mnt-bg-surface)',
+      border: '1px solid var(--mnt-border-default)',
+      borderRadius: 'var(--mnt-radius-lg)',
       padding: '1rem',
-      boxShadow: 'var(--pb-shadow-card)',
+      boxShadow: 'var(--mnt-shadow-card)',
       transition: 'box-shadow 0.15s ease',
     }"
-    class="hover:shadow-pb-elevated"
+    class="hover:shadow-mnt-elevated"
   >
     <div class="flex items-start justify-between">
       <div class="min-w-0 flex-1">
@@ -90,26 +90,26 @@ function formatResponseTime(ms: number | undefined): string {
             :style="{
               display: 'inline-flex',
               alignItems: 'center',
-              borderRadius: 'var(--pb-radius-sm)',
+              borderRadius: 'var(--mnt-radius-sm)',
               padding: '0.125rem 0.375rem',
               fontSize: '0.75rem',
               fontFamily: 'monospace',
               fontWeight: '500',
               textTransform: 'uppercase',
-              backgroundColor: endpoint.endpoint_type === 'http' ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-warn-bg)',
-              color: endpoint.endpoint_type === 'http' ? 'var(--pb-status-ok)' : 'var(--pb-status-warn)',
+              backgroundColor: endpoint.endpoint_type === 'http' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-warn-bg)',
+              color: endpoint.endpoint_type === 'http' ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
             }"
           >
             {{ endpoint.endpoint_type }}
           </span>
           <h3
             class="truncate text-sm font-semibold"
-            :style="{ color: 'var(--pb-text-primary)' }"
+            :style="{ color: 'var(--mnt-text-primary)' }"
           >
             {{ endpoint.target }}
           </h3>
         </div>
-        <p class="mt-0.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+        <p class="mt-0.5 text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
           {{ endpoint.source === 'standalone' ? (endpoint.name || 'standalone') : endpoint.container_name }}
         </p>
         <AgentBadge v-if="endpoint.agent_id" :agent-id="endpoint.agent_id" class="mt-1" />
@@ -121,8 +121,8 @@ function formatResponseTime(ms: number | undefined): string {
             display: 'inline-flex',
             alignItems: 'center',
             borderRadius: '9999px',
-            backgroundColor: 'var(--pb-status-down-bg)',
-            color: 'var(--pb-status-down)',
+            backgroundColor: 'var(--mnt-status-down-bg)',
+            color: 'var(--mnt-status-down)',
             padding: '0.125rem 0.375rem',
             fontSize: '0.75rem',
             fontWeight: '500',
@@ -139,7 +139,7 @@ function formatResponseTime(ms: number | undefined): string {
       <UptimeBar90 :days="uptimeDays" compact />
     </div>
 
-    <div class="mt-3 flex items-center justify-between text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+    <div class="mt-3 flex items-center justify-between text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
       <div class="flex items-center gap-3">
         <span v-if="endpoint.last_response_time_ms !== undefined">
           {{ formatResponseTime(endpoint.last_response_time_ms) }}
@@ -155,16 +155,16 @@ function formatResponseTime(ms: number | undefined): string {
       v-if="endpoint.last_error && endpoint.status === 'down'"
       class="mt-2 truncate rounded px-2 py-1 text-xs"
       :style="{
-        backgroundColor: 'var(--pb-status-down-bg)',
-        color: 'var(--pb-status-down)',
-        borderRadius: 'var(--pb-radius-sm)',
+        backgroundColor: 'var(--mnt-status-down-bg)',
+        color: 'var(--mnt-status-down)',
+        borderRadius: 'var(--mnt-radius-sm)',
       }"
     >
       {{ endpoint.last_error }}
     </div>
 
     <!-- Config summary -->
-    <div class="mt-2 flex flex-wrap gap-1.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+    <div class="mt-2 flex flex-wrap gap-1.5 text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
       <span>{{ endpoint.config.interval }}</span>
       <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.method !== 'GET'">
         {{ endpoint.config.method }}
@@ -172,7 +172,7 @@ function formatResponseTime(ms: number | undefined): string {
       <span v-if="endpoint.endpoint_type === 'http' && endpoint.config.expected_status !== '2xx'">
         expect {{ endpoint.config.expected_status }}
       </span>
-      <span v-if="endpoint.endpoint_type === 'http' && !endpoint.config.tls_verify" :style="{ color: 'var(--pb-status-warn)' }">
+      <span v-if="endpoint.endpoint_type === 'http' && !endpoint.config.tls_verify" :style="{ color: 'var(--mnt-status-warn)' }">
         TLS off
       </span>
     </div>
@@ -181,12 +181,12 @@ function formatResponseTime(ms: number | undefined): string {
     <div
       v-if="endpoint.source === 'standalone'"
       class="mt-3 flex items-center pt-2"
-      :style="{ borderTop: '1px solid var(--pb-border-subtle)' }"
+      :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       @click.stop
     >
       <button
         class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
-        :style="{ color: 'var(--pb-status-down)' }"
+        :style="{ color: 'var(--mnt-status-down)' }"
         :disabled="deleting"
         @click="handleDelete"
       >

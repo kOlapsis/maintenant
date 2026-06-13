@@ -155,12 +155,12 @@ onMounted(() => fetchHistory())
   <div class="space-y-4">
     <!-- Range selector -->
     <div class="flex items-center gap-2">
-      <span class="text-sm font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Time Range:</span>
+      <span class="text-sm font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Time Range:</span>
       <div
         class="flex"
         :style="{
-          borderRadius: 'var(--pb-radius-md)',
-          border: '1px solid var(--pb-border-default)',
+          borderRadius: 'var(--mnt-radius-md)',
+          border: '1px solid var(--mnt-border-default)',
           overflow: 'hidden',
         }"
       >
@@ -169,8 +169,8 @@ onMounted(() => fetchHistory())
           :key="r"
           class="px-3 py-1 text-xs font-medium transition"
           :style="{
-            backgroundColor: selectedRange === r ? 'var(--pb-accent)' : 'var(--pb-bg-surface)',
-            color: selectedRange === r ? 'var(--pb-text-inverted)' : 'var(--pb-text-secondary)',
+            backgroundColor: selectedRange === r ? 'var(--mnt-accent)' : 'var(--mnt-bg-surface)',
+            color: selectedRange === r ? 'var(--mnt-text-inverted)' : 'var(--mnt-text-secondary)',
           }"
           @click="selectedRange = r"
         >
@@ -180,7 +180,7 @@ onMounted(() => fetchHistory())
       <div
         v-if="loading"
         class="ml-2 h-4 w-4 animate-spin rounded-full border-2"
-        :style="{ borderColor: 'var(--pb-border-default)', borderTopColor: 'var(--pb-accent)' }"
+        :style="{ borderColor: 'var(--mnt-border-default)', borderTopColor: 'var(--mnt-accent)' }"
       />
     </div>
 
@@ -189,10 +189,10 @@ onMounted(() => fetchHistory())
       v-if="!loading && points.length === 0"
       class="rounded p-6 text-center text-sm"
       :style="{
-        backgroundColor: 'var(--pb-bg-elevated)',
-        border: '1px solid var(--pb-border-subtle)',
-        color: 'var(--pb-text-muted)',
-        borderRadius: 'var(--pb-radius-md)',
+        backgroundColor: 'var(--mnt-bg-elevated)',
+        border: '1px solid var(--mnt-border-subtle)',
+        color: 'var(--mnt-text-muted)',
+        borderRadius: 'var(--mnt-radius-md)',
       }"
     >
       No resource data available for this time range.
@@ -203,45 +203,45 @@ onMounted(() => fetchHistory())
       <div
         class="rounded p-3"
         :style="{
-          backgroundColor: 'var(--pb-bg-surface)',
-          border: '1px solid var(--pb-border-default)',
-          borderRadius: 'var(--pb-radius-md)',
+          backgroundColor: 'var(--mnt-bg-surface)',
+          border: '1px solid var(--mnt-border-default)',
+          borderRadius: 'var(--mnt-radius-md)',
         }"
       >
-        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">CPU Usage</h4>
+        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">CPU Usage</h4>
         <div ref="cpuEl" class="w-full" />
       </div>
       <div
         class="rounded p-3"
         :style="{
-          backgroundColor: 'var(--pb-bg-surface)',
-          border: '1px solid var(--pb-border-default)',
-          borderRadius: 'var(--pb-radius-md)',
+          backgroundColor: 'var(--mnt-bg-surface)',
+          border: '1px solid var(--mnt-border-default)',
+          borderRadius: 'var(--mnt-radius-md)',
         }"
       >
-        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">Memory Usage</h4>
+        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">Memory Usage</h4>
         <div ref="memEl" class="w-full" />
       </div>
       <div
         class="rounded p-3"
         :style="{
-          backgroundColor: 'var(--pb-bg-surface)',
-          border: '1px solid var(--pb-border-default)',
-          borderRadius: 'var(--pb-radius-md)',
+          backgroundColor: 'var(--mnt-bg-surface)',
+          border: '1px solid var(--mnt-border-default)',
+          borderRadius: 'var(--mnt-radius-md)',
         }"
       >
-        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">Network I/O</h4>
+        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">Network I/O</h4>
         <div ref="netEl" class="w-full" />
       </div>
       <div
         class="rounded p-3"
         :style="{
-          backgroundColor: 'var(--pb-bg-surface)',
-          border: '1px solid var(--pb-border-default)',
-          borderRadius: 'var(--pb-radius-md)',
+          backgroundColor: 'var(--mnt-bg-surface)',
+          border: '1px solid var(--mnt-border-default)',
+          borderRadius: 'var(--mnt-radius-md)',
         }"
       >
-        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">Block I/O</h4>
+        <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">Block I/O</h4>
         <div ref="ioEl" class="w-full" />
       </div>
     </div>

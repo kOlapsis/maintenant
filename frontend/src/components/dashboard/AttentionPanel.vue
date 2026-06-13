@@ -26,14 +26,14 @@ const overflow = computed(() => Math.max(0, props.items.length - props.max))
         <RouterLink
           v-if="overflow > 0"
           to="/alerts"
-          class="focus-ring rounded text-xs font-semibold text-pb-accent hover:underline"
+          class="focus-ring rounded text-xs font-semibold text-mnt-accent hover:underline"
         >
           {{ overflow }} more →
         </RouterLink>
       </template>
     </SectionHeader>
 
-    <div class="overflow-hidden rounded-xl border border-pb-default bg-pb-surface p-1.5">
+    <div class="overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface p-1.5">
       <template v-if="items.length > 0">
         <SeverityRow
           v-for="it in shown"

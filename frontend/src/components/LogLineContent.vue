@@ -174,7 +174,7 @@ const renderSegments = computed<RenderSegment[]>(() => {
       {{ shortTimestamp }}
       <span
         v-if="showTimestampTooltip && line.parsedTimestamp"
-        class="absolute bottom-full left-1/2 z-50 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-slate-700 bg-pb-surface px-2 py-1 text-[10px] text-pb-secondary shadow-lg"
+        class="absolute bottom-full left-1/2 z-50 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-slate-700 bg-mnt-surface px-2 py-1 text-[10px] text-mnt-secondary shadow-lg"
       >{{ fullTimestamp }} &mdash; {{ relativeTime }}</span>
     </span>
 

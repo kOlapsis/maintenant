@@ -102,8 +102,8 @@ onUnmounted(() => {
     <div class="mx-auto max-w-7xl">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-black text-pb-primary">Endpoints</h1>
-        <p class="mt-1 text-sm text-pb-muted">
+        <h1 class="text-2xl font-black text-mnt-primary">Endpoints</h1>
+        <p class="mt-1 text-sm text-mnt-muted">
           HTTP/TCP endpoint health checks
         </p>
       </div>
@@ -112,8 +112,8 @@ onUnmounted(() => {
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"
           :style="{
-            backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
-            color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+            backgroundColor: quota.isAtLimit ? 'var(--mnt-status-down-bg)' : quota.nearLimit ? 'var(--mnt-status-warn-bg)' : 'var(--mnt-bg-elevated)',
+            color: quota.isAtLimit ? 'var(--mnt-status-down)' : quota.nearLimit ? 'var(--mnt-status-warn)' : 'var(--mnt-text-secondary)',
           }"
         >
           {{ quota.used }}/{{ quota.limit }}
@@ -122,7 +122,7 @@ onUnmounted(() => {
           v-if="quota.nearLimit && !quota.isAtLimit"
           :to="{ name: 'pro-edition' }"
           class="text-xs font-medium transition-opacity hover:opacity-80"
-          style="color: var(--pb-accent)"
+          style="color: var(--mnt-accent)"
         >
           Upgrade
         </router-link>
@@ -131,9 +131,9 @@ onUnmounted(() => {
           :disabled="quota.isAtLimit"
           :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} endpoints` : ''"
           :style="{
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -153,11 +153,11 @@ onUnmounted(() => {
       :doc-href="docUrl('features/endpoints/#quick-start')"
     >
       Declare endpoints directly on your {{ isK8s ? 'pods' : 'containers' }} with
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.http</code>
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.endpoint.http</code>
       or
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.tcp</code>,
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.endpoint.tcp</code>,
       and tune the interval, failure/recovery thresholds, expected status codes, or TLS verification via sibling {{ labelOrAnnotation }}s. Use indexed labels
-      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.endpoint.0.*</code>)
+      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.endpoint.0.*</code>)
       to monitor multiple endpoints from the same {{ isK8s ? 'pod' : 'container' }}.
     </FeatureHint>
 
@@ -166,19 +166,19 @@ onUnmounted(() => {
       v-if="showCreateForm"
       class="mb-6 p-4"
       :style="{
-        backgroundColor: 'var(--pb-bg-surface)',
-        border: '1px solid var(--pb-border-default)',
-        borderRadius: 'var(--pb-radius-lg)',
+        backgroundColor: 'var(--mnt-bg-surface)',
+        border: '1px solid var(--mnt-border-default)',
+        borderRadius: 'var(--mnt-radius-lg)',
       }"
     >
-      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--pb-text-primary)' }">Create Endpoint Monitor</h3>
+      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Endpoint Monitor</h3>
       <div
         v-if="createError"
         class="mb-3 rounded p-2 text-sm"
         :style="{
-          backgroundColor: 'var(--pb-status-down-bg)',
-          color: 'var(--pb-status-down)',
-          borderRadius: 'var(--pb-radius-sm)',
+          backgroundColor: 'var(--mnt-status-down-bg)',
+          color: 'var(--mnt-status-down)',
+          borderRadius: 'var(--mnt-radius-sm)',
         }"
       >
         <template v-if="isQuotaError">
@@ -186,7 +186,7 @@ onUnmounted(() => {
           <a
             href="/pro-edition"
             class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: var(--pb-accent)"
+            style="color: var(--mnt-accent)"
           >
             Upgrade to Pro
           </a>
@@ -199,17 +199,17 @@ onUnmounted(() => {
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div class="grid gap-3 sm:grid-cols-2">
           <div>
-            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Name</label>
+            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Name</label>
             <input
               v-model="form.name"
               type="text"
               placeholder="e.g., Production API"
               :style="{
                 width: '100%',
-                borderRadius: 'var(--pb-radius-md)',
-                border: '1px solid var(--pb-border-default)',
-                backgroundColor: 'var(--pb-bg-elevated)',
-                color: 'var(--pb-text-primary)',
+                borderRadius: 'var(--mnt-radius-md)',
+                border: '1px solid var(--mnt-border-default)',
+                backgroundColor: 'var(--mnt-bg-elevated)',
+                color: 'var(--mnt-text-primary)',
                 padding: '0.375rem 0.75rem',
                 fontSize: '0.875rem',
                 minHeight: '44px',
@@ -218,7 +218,7 @@ onUnmounted(() => {
             />
           </div>
           <div>
-            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Type</label>
+            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Type</label>
             <div class="flex gap-2">
               <button
                 v-for="t in (['http', 'tcp'] as const)"
@@ -227,14 +227,14 @@ onUnmounted(() => {
                 class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition min-h-[44px]"
                 :style="{
                   border: form.endpoint_type === t
-                    ? '1px solid var(--pb-accent)'
-                    : '1px solid var(--pb-border-default)',
+                    ? '1px solid var(--mnt-accent)'
+                    : '1px solid var(--mnt-border-default)',
                   backgroundColor: form.endpoint_type === t
-                    ? 'var(--pb-accent)'
-                    : 'var(--pb-bg-elevated)',
+                    ? 'var(--mnt-accent)'
+                    : 'var(--mnt-bg-elevated)',
                   color: form.endpoint_type === t
-                    ? 'var(--pb-text-inverted)'
-                    : 'var(--pb-text-secondary)',
+                    ? 'var(--mnt-text-inverted)'
+                    : 'var(--mnt-text-secondary)',
                   textTransform: 'uppercase',
                 }"
                 @click="form.endpoint_type = t"
@@ -245,7 +245,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">
             {{ form.endpoint_type === 'http' ? 'URL' : 'Host:Port' }}
           </label>
           <input
@@ -254,10 +254,10 @@ onUnmounted(() => {
             :placeholder="form.endpoint_type === 'http' ? 'https://example.com/health' : 'db.example.com:5432'"
             :style="{
               width: '100%',
-              borderRadius: 'var(--pb-radius-md)',
-              border: '1px solid var(--pb-border-default)',
-              backgroundColor: 'var(--pb-bg-elevated)',
-              color: 'var(--pb-text-primary)',
+              borderRadius: 'var(--mnt-radius-md)',
+              border: '1px solid var(--mnt-border-default)',
+              backgroundColor: 'var(--mnt-bg-elevated)',
+              color: 'var(--mnt-text-primary)',
               padding: '0.375rem 0.75rem',
               fontSize: '0.875rem',
               fontFamily: 'monospace',
@@ -267,7 +267,7 @@ onUnmounted(() => {
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Check Interval</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Check Interval</label>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="preset in intervalPresets"
@@ -276,14 +276,14 @@ onUnmounted(() => {
               class="rounded-full px-3 py-1 text-xs font-medium transition"
               :style="{
                 border: form.interval === preset.value
-                  ? '1px solid var(--pb-accent)'
-                  : '1px solid var(--pb-border-default)',
+                  ? '1px solid var(--mnt-accent)'
+                  : '1px solid var(--mnt-border-default)',
                 backgroundColor: form.interval === preset.value
-                  ? 'var(--pb-accent)'
+                  ? 'var(--mnt-accent)'
                   : 'transparent',
                 color: form.interval === preset.value
-                  ? 'var(--pb-text-inverted)'
-                  : 'var(--pb-text-secondary)',
+                  ? 'var(--mnt-text-inverted)'
+                  : 'var(--mnt-text-secondary)',
               }"
               @click="form.interval = preset.value"
             >
@@ -297,9 +297,9 @@ onUnmounted(() => {
           :disabled="creating"
           :style="{
             alignSelf: 'flex-start',
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -323,7 +323,7 @@ onUnmounted(() => {
         <li v-for="(err, i) in store.configErrors" :key="i" class="flex items-start gap-2">
           <span class="bullet mt-1.5 h-1 w-1 shrink-0 rounded-full" />
           <span>
-            <strong class="font-semibold" style="color: var(--pb-alert-warn-title)">{{ err.container_name }}</strong>
+            <strong class="font-semibold" style="color: var(--mnt-alert-warn-title)">{{ err.container_name }}</strong>
             <span class="mx-1 opacity-70">({{ err.label_key }})</span>
             <span>{{ err.error }}</span>
           </span>
@@ -333,13 +333,13 @@ onUnmounted(() => {
 
     <!-- Status summary -->
     <div class="mb-6 flex gap-3 text-sm">
-      <span class="rounded-full bg-pb-status-ok text-pb-status-ok px-3 py-1 font-medium">
+      <span class="rounded-full bg-mnt-status-ok text-mnt-status-ok px-3 py-1 font-medium">
         {{ store.statusCounts.up }} up
       </span>
-      <span class="rounded-full bg-pb-status-down text-pb-status-down px-3 py-1 font-medium">
+      <span class="rounded-full bg-mnt-status-down text-mnt-status-down px-3 py-1 font-medium">
         {{ store.statusCounts.down }} down
       </span>
-      <span class="rounded-full bg-pb-sev-unknown text-pb-sev-unknown px-3 py-1 font-medium">
+      <span class="rounded-full bg-mnt-sev-unknown text-mnt-sev-unknown px-3 py-1 font-medium">
         {{ store.statusCounts.unknown }} unknown
       </span>
     </div>
@@ -348,8 +348,8 @@ onUnmounted(() => {
     <div class="mb-6 flex flex-wrap gap-3">
       <select
         v-model="store.statusFilter"
-        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
-        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
+        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
       >
         <option value="">All statuses</option>
         <option value="up">Up</option>
@@ -359,8 +359,8 @@ onUnmounted(() => {
 
       <select
         v-model="store.typeFilter"
-        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
-        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
+        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
       >
         <option value="">All types</option>
         <option value="http">HTTP</option>
@@ -369,8 +369,8 @@ onUnmounted(() => {
 
       <select
         v-model="store.containerFilter"
-        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pb-green-500 min-h-[44px]"
-        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
+        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
       >
         <option value="">All containers</option>
         <option
@@ -415,7 +415,7 @@ onUnmounted(() => {
 
 <style scoped>
 .config-errors .bullet {
-  background: var(--pb-alert-warn-dot);
+  background: var(--mnt-alert-warn-dot);
   opacity: 0.7;
 }
 </style>

@@ -57,9 +57,9 @@ function switchPeriod(p: Period) {
 }
 
 function barColor(percent: number): string {
-  if (percent >= 90) return 'var(--pb-status-down)'
-  if (percent >= 70) return 'var(--pb-status-warn)'
-  return 'var(--pb-status-ok)'
+  if (percent >= 90) return 'var(--mnt-status-down)'
+  if (percent >= 70) return 'var(--mnt-status-warn)'
+  return 'var(--mnt-status-ok)'
 }
 
 function formatValue(consumer: TopConsumer): string {
@@ -84,9 +84,9 @@ function formatValue(consumer: TopConsumer): string {
           :key="m"
           class="rounded-full px-3 py-1 text-xs font-medium transition cursor-pointer"
           :style="{
-            backgroundColor: activeMetric === m ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-            color: activeMetric === m ? 'var(--pb-text-inverted)' : 'var(--pb-text-secondary)',
-            border: activeMetric === m ? '1px solid var(--pb-accent)' : '1px solid var(--pb-border-default)',
+            backgroundColor: activeMetric === m ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
+            color: activeMetric === m ? 'var(--mnt-text-inverted)' : 'var(--mnt-text-secondary)',
+            border: activeMetric === m ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
           }"
           @click="switchMetric(m)"
         >
@@ -96,7 +96,7 @@ function formatValue(consumer: TopConsumer): string {
 
       <div
         class="h-4 w-px"
-        :style="{ backgroundColor: 'var(--pb-border-default)' }"
+        :style="{ backgroundColor: 'var(--mnt-border-default)' }"
       />
 
       <div class="flex gap-1">
@@ -105,9 +105,9 @@ function formatValue(consumer: TopConsumer): string {
           :key="p"
           class="rounded-full px-2.5 py-1 text-xs font-medium transition cursor-pointer"
           :style="{
-            backgroundColor: activePeriod === p ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-            color: activePeriod === p ? 'var(--pb-text-inverted)' : 'var(--pb-text-secondary)',
-            border: activePeriod === p ? '1px solid var(--pb-accent)' : '1px solid var(--pb-border-default)',
+            backgroundColor: activePeriod === p ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
+            color: activePeriod === p ? 'var(--mnt-text-inverted)' : 'var(--mnt-text-secondary)',
+            border: activePeriod === p ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
           }"
           @click="switchPeriod(p)"
         >
@@ -118,9 +118,9 @@ function formatValue(consumer: TopConsumer): string {
           :key="p"
           class="rounded-full px-2.5 py-1 text-xs font-medium transition flex items-center gap-1"
           :style="{
-            backgroundColor: hasFeature('resource_history') && activePeriod === p ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-            color: hasFeature('resource_history') && activePeriod === p ? 'var(--pb-text-inverted)' : hasFeature('resource_history') ? 'var(--pb-text-secondary)' : 'var(--pb-text-muted)',
-            border: hasFeature('resource_history') && activePeriod === p ? '1px solid var(--pb-accent)' : '1px solid var(--pb-border-default)',
+            backgroundColor: hasFeature('resource_history') && activePeriod === p ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
+            color: hasFeature('resource_history') && activePeriod === p ? 'var(--mnt-text-inverted)' : hasFeature('resource_history') ? 'var(--mnt-text-secondary)' : 'var(--mnt-text-muted)',
+            border: hasFeature('resource_history') && activePeriod === p ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
             cursor: hasFeature('resource_history') ? 'pointer' : 'not-allowed',
             opacity: hasFeature('resource_history') ? '1' : '0.5',
           }"
@@ -133,7 +133,7 @@ function formatValue(consumer: TopConsumer): string {
     </div>
 
     <!-- Ranked list -->
-    <div v-if="consumers.length === 0" class="text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+    <div v-if="consumers.length === 0" class="text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
       No resource data available.
     </div>
     <div v-else class="space-y-2">
@@ -145,19 +145,19 @@ function formatValue(consumer: TopConsumer): string {
         <!-- Rank -->
         <span
           class="w-5 text-center text-xs font-semibold"
-          :style="{ color: 'var(--pb-text-muted)' }"
+          :style="{ color: 'var(--mnt-text-muted)' }"
         >
           {{ consumer.rank }}
         </span>
 
         <!-- Name + bar -->
         <div class="min-w-0 flex-1">
-          <div class="mb-0.5 truncate text-xs font-medium" :style="{ color: 'var(--pb-text-primary)' }">
+          <div class="mb-0.5 truncate text-xs font-medium" :style="{ color: 'var(--mnt-text-primary)' }">
             {{ consumer.containerName }}
           </div>
           <div
             class="h-1.5 w-full rounded-full"
-            :style="{ backgroundColor: 'var(--pb-bg-elevated)' }"
+            :style="{ backgroundColor: 'var(--mnt-bg-elevated)' }"
           >
             <div
               class="h-1.5 rounded-full transition-all"
@@ -170,7 +170,7 @@ function formatValue(consumer: TopConsumer): string {
         </div>
 
         <!-- Value -->
-        <span class="shrink-0 text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">
+        <span class="shrink-0 text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">
           {{ formatValue(consumer) }}
         </span>
       </div>

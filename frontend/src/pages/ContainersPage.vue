@@ -41,8 +41,8 @@ function handleSelect(container: Container) {
   <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-black text-pb-primary">Containers</h1>
-        <p class="mt-1 text-sm text-pb-muted">
+        <h1 class="text-2xl font-black text-mnt-primary">Containers</h1>
+        <p class="mt-1 text-sm text-mnt-muted">
           Auto-discovered {{ store.runtimeLabel }} containers
         </p>
       </div>
@@ -62,9 +62,9 @@ function handleSelect(container: Container) {
       :doc-href="docUrl(isK8s ? 'features/containers/#grouping' : 'features/containers/#auto-discovery')"
     >
       Use {{ labelOrAnnotation }}s to configure container behavior:
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.ignore</code> to hide a container,
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.group</code> to group containers,
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.alert.severity</code> to set alert severity.
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.ignore</code> to hide a container,
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.group</code> to group containers,
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.alert.severity</code> to set alert severity.
     </FeatureHint>
 
     <ResourceSummary />

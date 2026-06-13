@@ -130,14 +130,14 @@ async function handleSave() {
 </script>
 
 <template>
-  <div class="bg-pb-surface rounded-2xl border border-pb-default">
+  <div class="bg-mnt-surface rounded-2xl border border-mnt-default">
     <!-- Header -->
-    <div class="flex items-center justify-between px-5 py-4 border-b border-pb-default">
-      <h3 class="text-sm font-bold text-pb-primary">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-mnt-default">
+      <h3 class="text-sm font-bold text-mnt-primary">
         {{ trigger ? 'Edit trigger' : 'New alert trigger' }}
       </h3>
       <button
-        class="p-1 rounded text-pb-muted hover:text-pb-secondary hover:bg-pb-elevated transition-all"
+        class="p-1 rounded text-mnt-muted hover:text-mnt-secondary hover:bg-mnt-elevated transition-all"
         @click="emit('cancel')"
       >
         <X :size="16" />
@@ -148,7 +148,7 @@ async function handleSave() {
       <!-- Error -->
       <div
         v-if="saveError"
-        class="px-4 py-3 rounded-lg bg-pb-status-down/10 border border-pb-status-down/30 text-xs text-pb-status-down"
+        class="px-4 py-3 rounded-lg bg-mnt-status-down/10 border border-mnt-status-down/30 text-xs text-mnt-status-down"
       >
         {{ saveError }}
       </div>
@@ -156,14 +156,14 @@ async function handleSave() {
       <!-- No channels warning -->
       <div
         v-if="channelsStore.channels.length === 0"
-        class="px-4 py-3 rounded-lg bg-pb-status-warn border border-amber-500/30 text-xs text-pb-status-warn flex items-start justify-between gap-3"
+        class="px-4 py-3 rounded-lg bg-mnt-status-warn border border-amber-500/30 text-xs text-mnt-status-warn flex items-start justify-between gap-3"
       >
         <span>
           No notification channels exist yet. Create one before defining a trigger.
         </span>
         <RouterLink
           to="/channels"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-pb-status-warn px-3 py-1 text-[11px] font-bold text-pb-status-warn hover:bg-pb-sev-warning-solid/20 transition-colors"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-mnt-status-warn px-3 py-1 text-[11px] font-bold text-mnt-status-warn hover:bg-mnt-sev-warning-solid/20 transition-colors"
         >
           Configure
           <ArrowRight :size="12" />
@@ -172,28 +172,28 @@ async function handleSave() {
 
       <!-- Name -->
       <div class="space-y-1.5">
-        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
           Trigger name
         </label>
         <input
           v-model="name"
           type="text"
           placeholder="e.g. Critical containers"
-          class="w-full bg-pb-primary border border-pb-default rounded-lg px-3 py-2 text-sm text-pb-primary placeholder:text-pb-muted focus:outline-none focus:border-pb-default transition-colors"
+          class="w-full bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors"
         />
       </div>
 
       <!-- Active toggle -->
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm font-medium text-pb-secondary">Enabled</p>
-          <p class="text-[10px] text-pb-muted mt-0.5">
+          <p class="text-sm font-medium text-mnt-secondary">Enabled</p>
+          <p class="text-[10px] text-mnt-muted mt-0.5">
             Disabled triggers stay configured but never dispatch.
           </p>
         </div>
         <button
           class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="enabled ? 'bg-pb-green-600' : 'bg-pb-elevated'"
+          :class="enabled ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
           @click="enabled = !enabled"
         >
           <span
@@ -205,9 +205,9 @@ async function handleSave() {
 
       <!-- Channels -->
       <div class="space-y-2">
-        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
           Notify channels
-          <span class="text-pb-status-down/70 normal-case font-normal">*</span>
+          <span class="text-mnt-status-down/70 normal-case font-normal">*</span>
         </label>
         <div class="flex flex-wrap gap-2">
           <button
@@ -216,8 +216,8 @@ async function handleSave() {
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
             :class="
               selectedChannelIds.includes(ch.id)
-                ? 'bg-pb-green-500/10 border-pb-green-500/30 text-pb-green-400'
-                : 'bg-transparent border-pb-default text-pb-muted hover:border-pb-default hover:text-pb-secondary'
+                ? 'bg-mnt-green-500/10 border-mnt-green-500/30 text-mnt-green-400'
+                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-secondary'
             "
             @click="toggleChannel(ch.id)"
           >
@@ -229,8 +229,8 @@ async function handleSave() {
 
       <!-- Severities (CE) -->
       <div class="space-y-2">
-        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
-          Severities <span class="text-pb-muted normal-case font-normal">(empty = match all)</span>
+        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
+          Severities <span class="text-mnt-muted normal-case font-normal">(empty = match all)</span>
         </label>
         <div class="flex gap-2">
           <button
@@ -240,9 +240,9 @@ async function handleSave() {
             :class="
               severities.includes(sev)
                 ? sev === 'critical'
-                  ? 'bg-pb-status-down/15 border-pb-status-down/40 text-pb-status-down'
-                  : 'bg-pb-status-warn border-amber-500/40 text-pb-status-warn'
-                : 'bg-transparent border-pb-default text-pb-muted hover:border-pb-default hover:text-pb-muted'
+                  ? 'bg-mnt-status-down/15 border-mnt-status-down/40 text-mnt-status-down'
+                  : 'bg-mnt-status-warn border-amber-500/40 text-mnt-status-warn'
+                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
             "
             @click="toggleSeverity(sev)"
           >
@@ -253,8 +253,8 @@ async function handleSave() {
 
       <!-- Sources (CE) -->
       <div class="space-y-2">
-        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
-          Sources <span class="text-pb-muted normal-case font-normal">(empty = match all)</span>
+        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
+          Sources <span class="text-mnt-muted normal-case font-normal">(empty = match all)</span>
         </label>
         <div class="flex flex-wrap gap-2">
           <button
@@ -263,8 +263,8 @@ async function handleSave() {
             class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize"
             :class="
               sources.includes(src)
-                ? 'bg-pb-elevated border-pb-default text-pb-secondary'
-                : 'bg-transparent border-pb-default text-pb-muted hover:border-pb-default hover:text-pb-muted'
+                ? 'bg-mnt-elevated border-mnt-default text-mnt-secondary'
+                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
             "
             @click="toggleSource(src)"
           >
@@ -274,22 +274,22 @@ async function handleSave() {
       </div>
 
       <!-- Scopes / Tags (Pro) -->
-      <div class="space-y-3 rounded-xl border border-pb-default bg-pb-primary p-4">
+      <div class="space-y-3 rounded-xl border border-mnt-default bg-mnt-primary p-4">
         <div class="flex items-center justify-between">
           <label class="text-[10px] font-bold uppercase tracking-widest"
-            :class="isPro ? 'text-pb-muted' : 'text-pb-muted'">
+            :class="isPro ? 'text-mnt-muted' : 'text-mnt-muted'">
             Advanced filters
           </label>
           <span v-if="!isPro" class="inline-flex items-center gap-1 rounded-full bg-indigo-600/15 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-400">
             <Lock :size="10" /> Pro
           </span>
         </div>
-        <p v-if="!isPro" class="text-xs text-pb-muted">
-          Filter triggers by per-entity scope (e.g. <code class="rounded bg-pb-elevated px-1.5 py-0.5 text-[10px]">container:42</code>) or by tags. Available with Maintenant Pro.
+        <p v-if="!isPro" class="text-xs text-mnt-muted">
+          Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">container:42</code>) or by tags. Available with Maintenant Pro.
         </p>
 
         <div class="space-y-1.5">
-          <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+          <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
             Scopes (CSV)
           </label>
           <input
@@ -297,12 +297,12 @@ async function handleSave() {
             type="text"
             :disabled="!isPro"
             placeholder="container:42, endpoint:7"
-            class="w-full bg-pb-surface border border-pb-default rounded-lg px-3 py-2 text-sm text-pb-primary placeholder:text-pb-muted focus:outline-none focus:border-pb-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            class="w-full bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
 
         <div class="space-y-1.5">
-          <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+          <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
             Tags (CSV)
           </label>
           <input
@@ -310,7 +310,7 @@ async function handleSave() {
             type="text"
             :disabled="!isPro"
             placeholder="prod, payments"
-            class="w-full bg-pb-surface border border-pb-default rounded-lg px-3 py-2 text-sm text-pb-primary placeholder:text-pb-muted focus:outline-none focus:border-pb-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            class="w-full bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
       </div>
@@ -318,7 +318,7 @@ async function handleSave() {
       <!-- Match-all hint -->
       <div
         v-if="matchAll"
-        class="px-3 py-2 rounded-lg bg-pb-elevated/50 border border-pb-default text-[11px] text-pb-muted"
+        class="px-3 py-2 rounded-lg bg-mnt-elevated/50 border border-mnt-default text-[11px] text-mnt-muted"
       >
         Without any filter, this trigger matches <strong>every alert</strong>.
       </div>
@@ -326,13 +326,13 @@ async function handleSave() {
       <!-- Actions -->
       <div class="flex items-center justify-end gap-3 pt-2">
         <button
-          class="px-4 py-2 text-xs font-medium text-pb-muted hover:text-pb-secondary transition-colors"
+          class="px-4 py-2 text-xs font-medium text-mnt-muted hover:text-mnt-secondary transition-colors"
           @click="emit('cancel')"
         >
           Cancel
         </button>
         <button
-          class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-pb-elevated disabled:text-pb-muted text-pb-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 disabled:bg-mnt-elevated disabled:text-mnt-muted text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
           :disabled="saving"
           @click="handleSave"
         >

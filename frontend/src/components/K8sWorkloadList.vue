@@ -51,32 +51,32 @@ function ensureExpanded(groups: K8sWorkloadGroup[]) {
 function statusStyle(status: K8sWorkload['status']): string {
   switch (status) {
     case 'healthy':
-      return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
+      return 'text-mnt-status-ok bg-mnt-status-ok border-emerald-400/20'
     case 'degraded':
-      return 'text-pb-status-warn bg-pb-status-warn border-pb-sev-warning'
+      return 'text-mnt-status-warn bg-mnt-status-warn border-mnt-sev-warning'
     case 'progressing':
-      return 'text-pb-secondary bg-pb-elevated border-pb-default'
+      return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
     case 'failed':
-      return 'text-pb-status-down bg-pb-status-down border-pb-sev-incident'
+      return 'text-mnt-status-down bg-mnt-status-down border-mnt-sev-incident'
   }
 }
 
 function replicaColor(ready: number, desired: number): string {
-  if (ready >= desired && desired > 0) return 'text-pb-status-ok'
-  if (ready > 0) return 'text-pb-status-warn'
-  return 'text-pb-status-down'
+  if (ready >= desired && desired > 0) return 'text-mnt-status-ok'
+  if (ready > 0) return 'text-mnt-status-warn'
+  return 'text-mnt-status-down'
 }
 
 function kindStyle(kind: K8sWorkload['kind']): string {
   switch (kind) {
     case 'Deployment':
-      return 'text-pb-secondary bg-pb-elevated border-pb-default'
+      return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
     case 'StatefulSet':
-      return 'text-pb-secondary bg-pb-elevated border-pb-default'
+      return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
     case 'DaemonSet':
-      return 'text-pb-status-warn bg-pb-status-warn border-pb-sev-warning'
+      return 'text-mnt-status-warn bg-mnt-status-warn border-mnt-sev-warning'
     case 'Job':
-      return 'text-pb-muted bg-pb-elevated border-pb-default'
+      return 'text-mnt-muted bg-mnt-elevated border-mnt-default'
   }
 }
 
@@ -98,22 +98,22 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
     <div
       v-for="group in groups"
       :key="group.namespace"
-      class="bg-pb-surface rounded-xl border border-pb-default overflow-hidden"
+      class="bg-mnt-surface rounded-xl border border-mnt-default overflow-hidden"
     >
       <!-- Namespace header -->
       <button
-        class="w-full flex items-center justify-between px-4 py-3 hover:bg-pb-elevated transition-all"
+        class="w-full flex items-center justify-between px-4 py-3 hover:bg-mnt-elevated transition-all"
         @click="toggleGroup(group.namespace)"
       >
         <div class="flex items-center gap-3">
           <component
             :is="isExpanded(group.namespace) ? ChevronDown : ChevronRight"
             :size="14"
-            class="text-pb-muted flex-shrink-0"
+            class="text-mnt-muted flex-shrink-0"
           />
-          <span class="text-sm font-semibold text-pb-primary font-mono">{{ group.namespace }}</span>
+          <span class="text-sm font-semibold text-mnt-primary font-mono">{{ group.namespace }}</span>
           <span
-            class="text-[10px] font-bold uppercase tracking-wider text-pb-muted bg-pb-elevated border border-pb-default px-1.5 py-0.5 rounded"
+            class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded"
           >
             {{ group.workloads.length }} workload{{ group.workloads.length === 1 ? '' : 's' }}
           </span>
@@ -123,10 +123,10 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
             :class="[
               'text-xs font-semibold tabular-nums',
               group.workloads.every((w) => w.status === 'healthy')
-                ? 'text-pb-status-ok'
+                ? 'text-mnt-status-ok'
                 : group.workloads.some((w) => w.status === 'failed')
-                  ? 'text-pb-status-down'
-                  : 'text-pb-status-warn',
+                  ? 'text-mnt-status-down'
+                  : 'text-mnt-status-warn',
             ]"
           >
             {{ group.workloads.filter((w) => w.status === 'healthy').length }}/{{
@@ -140,19 +140,19 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
       <!-- Workload rows -->
       <div
         v-if="isExpanded(group.namespace)"
-        class="border-t border-pb-default divide-y divide-slate-800/60"
+        class="border-t border-mnt-default divide-y divide-slate-800/60"
       >
         <div
           v-for="workload in group.workloads"
           :key="workload.id"
-          class="px-4 py-3 hover:bg-pb-elevated transition-all cursor-pointer group"
+          class="px-4 py-3 hover:bg-mnt-elevated transition-all cursor-pointer group"
           @click="emit('select', workload)"
         >
           <div class="flex items-center justify-between gap-4">
             <!-- Left: name + badges -->
             <div class="flex items-center gap-2 min-w-0">
               <span
-                class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors"
+                class="text-sm text-mnt-primary font-medium truncate group-hover:text-mnt-green-400 transition-colors"
               >
                 {{ workload.name }}
               </span>
@@ -194,16 +194,16 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
                 v-if="workload.images.length > 0"
                 class="hidden sm:flex items-center gap-1.5 max-w-48"
               >
-                <span class="text-xs text-pb-muted font-mono truncate">
+                <span class="text-xs text-mnt-muted font-mono truncate">
                   {{ primaryImage(workload.images).name.split('/').pop() }}
                 </span>
                 <span
-                  class="text-[10px] font-mono text-pb-muted bg-pb-elevated px-1 py-0.5 rounded flex-shrink-0"
+                  class="text-[10px] font-mono text-mnt-muted bg-mnt-elevated px-1 py-0.5 rounded flex-shrink-0"
                 >
                   {{ primaryImage(workload.images).tag }}
                 </span>
               </div>
-              <span class="text-xs text-pb-muted tabular-nums hidden md:block">
+              <span class="text-xs text-mnt-muted tabular-nums hidden md:block">
                 {{ timeAgo(workload.last_transition) }}
               </span>
             </div>

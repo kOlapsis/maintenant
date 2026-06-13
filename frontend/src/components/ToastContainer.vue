@@ -51,36 +51,36 @@ const iconMap = {
 
 <style scoped>
 .toast {
-  background: var(--pb-bg-surface);
+  background: var(--mnt-bg-surface);
   backdrop-filter: blur(4px);
 }
 
 .toast--info {
-  border-color: var(--pb-border-default);
-  color: var(--pb-text-primary);
+  border-color: var(--mnt-border-default);
+  color: var(--mnt-text-primary);
 }
 .toast--info .toast__icon {
-  color: var(--pb-text-muted);
+  color: var(--mnt-text-muted);
 }
 
 .toast--success {
-  border-color: var(--pb-alert-info-border);
-  color: var(--pb-alert-info-title);
+  border-color: var(--mnt-alert-info-border);
+  color: var(--mnt-alert-info-title);
 }
 .toast--success .toast__icon {
-  color: var(--pb-alert-info-icon-color);
+  color: var(--mnt-alert-info-icon-color);
 }
 .toast--success .toast__msg {
-  color: var(--pb-alert-info-text);
+  color: var(--mnt-alert-info-text);
 }
 
 .toast--warning {
-  border-color: var(--pb-alert-warn-border);
+  border-color: var(--mnt-alert-warn-border);
 }
 .toast--warning .toast__icon {
-  color: var(--pb-alert-warn-icon-color);
+  color: var(--mnt-alert-warn-icon-color);
 }
 .toast--warning .toast__msg {
-  color: var(--pb-alert-warn-text);
+  color: var(--mnt-alert-warn-text);
 }
 </style>

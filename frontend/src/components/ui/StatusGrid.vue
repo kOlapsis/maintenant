@@ -86,28 +86,28 @@ const viewModel = computed<string>({
       </div>
     </div>
 
-    <div class="overflow-hidden rounded-xl border border-pb-default bg-pb-surface">
+    <div class="overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface">
       <div
         v-for="g in groups"
         :key="g.key"
-        class="border-t border-pb-subtle first:border-t-0"
+        class="border-t border-mnt-subtle first:border-t-0"
       >
         <button
           type="button"
-          class="focus-ring flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-pb-elevated"
+          class="focus-ring flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-mnt-elevated"
           :aria-expanded="!isCollapsed(g.key)"
           @click="toggle(g.key)"
         >
           <ChevronDown
             :size="14"
-            class="text-pb-muted transition-transform"
+            class="text-mnt-muted transition-transform"
             :class="isCollapsed(g.key) ? '-rotate-90' : ''"
             aria-hidden="true"
           />
-          <component :is="g.icon" v-if="g.icon" :size="14" class="text-pb-muted" aria-hidden="true" />
-          <span class="text-xs font-semibold text-pb-primary">{{ g.label }}</span>
-          <span class="font-mono text-[11px] text-pb-muted">{{ g.items.length }}</span>
-          <span class="ml-auto flex items-center gap-2.5 font-mono text-[11px] text-pb-muted">
+          <component :is="g.icon" v-if="g.icon" :size="14" class="text-mnt-muted" aria-hidden="true" />
+          <span class="text-xs font-semibold text-mnt-primary">{{ g.label }}</span>
+          <span class="font-mono text-[11px] text-mnt-muted">{{ g.items.length }}</span>
+          <span class="ml-auto flex items-center gap-2.5 font-mono text-[11px] text-mnt-muted">
             <span v-if="counts(g).incident" class="flex items-center gap-1">
               <span class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: severityVar('incident') }" />
               {{ counts(g).incident }}
@@ -123,7 +123,7 @@ const viewModel = computed<string>({
           </span>
         </button>
 
-        <div v-show="!isCollapsed(g.key)" class="px-4 pb-4 pt-1">
+        <div v-show="!isCollapsed(g.key)" class="px-4 mnt-4 pt-1">
           <!-- Large groups: windowed list (always rows, even in grid view). -->
           <VirtualRows
             v-if="g.items.length > virtualizeThreshold"

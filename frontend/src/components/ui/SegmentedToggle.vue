@@ -30,7 +30,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
   <div
     role="group"
     :aria-label="ariaLabel"
-    class="inline-flex items-center gap-0.5 rounded-lg border border-pb-default bg-pb-surface p-0.5"
+    class="inline-flex items-center gap-0.5 rounded-lg border border-mnt-default bg-mnt-surface p-0.5"
   >
     <button
       v-for="opt in options"
@@ -41,10 +41,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
       class="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors"
       :class="
         modelValue === opt.value
-          ? 'text-pb-accent'
-          : 'text-pb-muted hover:text-pb-primary'
+          ? 'text-mnt-accent'
+          : 'text-mnt-muted hover:text-mnt-primary'
       "
-      :style="modelValue === opt.value ? { backgroundColor: 'var(--pb-status-ok-bg)' } : undefined"
+      :style="modelValue === opt.value ? { backgroundColor: 'var(--mnt-status-ok-bg)' } : undefined"
       @click="emit('update:modelValue', opt.value)"
     >
       <component :is="opt.icon" v-if="opt.icon" :size="14" aria-hidden="true" />

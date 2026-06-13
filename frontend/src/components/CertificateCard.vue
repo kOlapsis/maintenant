@@ -41,11 +41,11 @@ function formatDaysRemaining(cert: CertMonitor): string {
 const formatTime = (iso: string | undefined) => timeAgo(iso, 'never')
 
 function countdownColor(days: number | undefined | null): string {
-  if (days === undefined || days === null) return 'var(--pb-text-muted)'
-  if (days > 30) return 'var(--pb-status-ok)'
-  if (days > 7) return 'var(--pb-status-warn)'
-  if (days > 3) return 'var(--pb-status-critical)'
-  return 'var(--pb-status-down)'
+  if (days === undefined || days === null) return 'var(--mnt-text-muted)'
+  if (days > 30) return 'var(--mnt-status-ok)'
+  if (days > 7) return 'var(--mnt-status-warn)'
+  if (days > 3) return 'var(--mnt-status-critical)'
+  return 'var(--mnt-status-down)'
 }
 
 // Expiry progress bar: percentage of lifetime elapsed
@@ -88,21 +88,21 @@ async function handleDelete() {
   <div
     class="cursor-pointer"
     :style="{
-      backgroundColor: 'var(--pb-bg-surface)',
-      border: '1px solid var(--pb-border-default)',
-      borderRadius: 'var(--pb-radius-lg)',
+      backgroundColor: 'var(--mnt-bg-surface)',
+      border: '1px solid var(--mnt-border-default)',
+      borderRadius: 'var(--mnt-radius-lg)',
       padding: '1rem',
-      boxShadow: 'var(--pb-shadow-card)',
+      boxShadow: 'var(--mnt-shadow-card)',
       transition: 'box-shadow 0.15s ease',
     }"
     @click="emit('select', certificate.id)"
   >
     <div class="flex items-start justify-between">
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-sm font-semibold" :style="{ color: 'var(--pb-text-primary)' }">
+        <h3 class="truncate text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">
           {{ certificate.hostname }}
         </h3>
-        <p class="mt-0.5 text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+        <p class="mt-0.5 text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
           :{{ certificate.port }}
         </p>
         <AgentBadge v-if="certificate.agent_id" :agent-id="certificate.agent_id" class="mt-1" />
@@ -123,8 +123,8 @@ async function handleDelete() {
         <span
           class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium"
           :style="{
-            backgroundColor: certificate.source === 'auto' ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-warn-bg)',
-            color: certificate.source === 'auto' ? 'var(--pb-accent)' : 'var(--pb-status-warn)',
+            backgroundColor: certificate.source === 'auto' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-warn-bg)',
+            color: certificate.source === 'auto' ? 'var(--mnt-accent)' : 'var(--mnt-status-warn)',
           }"
         >
           {{ certificate.source }}
@@ -137,7 +137,7 @@ async function handleDelete() {
     <div v-if="expiryProgress !== null" class="mt-3">
       <div
         class="h-1.5 w-full rounded-full"
-        :style="{ backgroundColor: 'var(--pb-bg-elevated)' }"
+        :style="{ backgroundColor: 'var(--mnt-bg-elevated)' }"
       >
         <div
           class="h-1.5 rounded-full transition-all"
@@ -149,7 +149,7 @@ async function handleDelete() {
       </div>
     </div>
 
-    <div class="mt-3 flex items-center justify-between text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+    <div class="mt-3 flex items-center justify-between text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
       <div class="flex items-center gap-3">
         <span v-if="certificate.latest_check?.issuer_cn">
           {{ certificate.latest_check.issuer_cn }}
@@ -171,12 +171,12 @@ async function handleDelete() {
     <div
       v-if="certificate.source === 'standalone'"
       class="mt-3 flex items-center pt-2"
-      :style="{ borderTop: '1px solid var(--pb-border-subtle)' }"
+      :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       @click.stop
     >
       <button
         class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
-        :style="{ color: 'var(--pb-status-down)' }"
+        :style="{ color: 'var(--mnt-status-down)' }"
         :disabled="deleting"
         @click="handleDelete"
       >

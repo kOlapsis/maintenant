@@ -53,25 +53,25 @@ function summarizeFilter(t: AlertTrigger): string {
     <div
       v-for="t in triggers"
       :key="t.id"
-      class="flex items-start justify-between rounded-xl border border-pb-default bg-pb-surface p-4 hover:bg-pb-elevated transition-all group"
+      class="flex items-start justify-between rounded-xl border border-mnt-default bg-mnt-surface p-4 hover:bg-mnt-elevated transition-all group"
     >
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-sm font-medium text-pb-primary">{{ t.name }}</span>
+          <span class="text-sm font-medium text-mnt-primary">{{ t.name }}</span>
           <span
             v-if="!t.enabled"
-            class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-pb-elevated text-pb-muted"
+            class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-mnt-elevated text-mnt-muted"
           >disabled</span>
         </div>
-        <p class="mt-1 text-[11px] text-pb-muted">{{ summarizeFilter(t) }}</p>
-        <p class="mt-1 text-[11px] text-pb-muted">
-          <span class="text-pb-muted">→</span> {{ channelNames(t.channel_ids) }}
+        <p class="mt-1 text-[11px] text-mnt-muted">{{ summarizeFilter(t) }}</p>
+        <p class="mt-1 text-[11px] text-mnt-muted">
+          <span class="text-mnt-muted">→</span> {{ channelNames(t.channel_ids) }}
         </p>
       </div>
       <div class="flex items-center gap-2 ml-4 shrink-0">
         <button
           class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="t.enabled ? 'bg-pb-green-600' : 'bg-pb-elevated'"
+          :class="t.enabled ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
           :title="t.enabled ? 'Click to disable' : 'Click to enable'"
           @click="emit('toggle', t)"
         >
@@ -81,13 +81,13 @@ function summarizeFilter(t: AlertTrigger): string {
           />
         </button>
         <button
-          class="rounded-lg border border-pb-default px-2.5 py-1 text-xs text-pb-secondary hover:bg-pb-elevated transition-all flex items-center gap-1"
+          class="rounded-lg border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all flex items-center gap-1"
           @click="emit('edit', t)"
         >
           <Edit2 :size="11" /> Edit
         </button>
         <button
-          class="rounded-lg border border-pb-status-down/40 px-2.5 py-1 text-xs text-pb-status-down hover:bg-pb-status-down/10 transition-all flex items-center gap-1"
+          class="rounded-lg border border-mnt-status-down/40 px-2.5 py-1 text-xs text-mnt-status-down hover:bg-mnt-status-down/10 transition-all flex items-center gap-1"
           @click="emit('delete', t)"
         >
           <Trash2 :size="11" /> Delete

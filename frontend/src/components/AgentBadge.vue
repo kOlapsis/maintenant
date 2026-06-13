@@ -55,10 +55,10 @@ const tooltip = computed(() => {
   <span
     v-if="isRemote"
     class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium max-w-[160px]"
-    :style="{ backgroundColor: 'var(--pb-bg-elevated)', color: 'var(--pb-text-secondary)' }"
+    :style="{ backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-secondary)' }"
     :title="tooltip"
   >
-    <Server :size="11" class="shrink-0 text-pb-green-500" />
+    <Server :size="11" class="shrink-0 text-mnt-green-500" />
     <span class="truncate">{{ displayName }}</span>
   </span>
 </template>

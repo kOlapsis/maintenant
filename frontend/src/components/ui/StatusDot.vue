@@ -33,7 +33,7 @@ const ariaLabel = computed(() => props.label ?? severityMeta(props.severity).lab
   >
     <span
       v-if="pulse"
-      class="pb-ping absolute inset-0 rounded-full"
+      class="mnt-ping absolute inset-0 rounded-full"
       :style="{ backgroundColor: severityVar(severity) }"
       aria-hidden="true"
     />

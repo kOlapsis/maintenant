@@ -209,30 +209,30 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-screen bg-pb-primary text-pb-primary antialiased overflow-hidden">
+  <div class="flex h-screen bg-mnt-primary text-mnt-primary antialiased overflow-hidden">
     <!-- Desktop sidebar -->
     <aside
-      class="hidden md:flex md:w-64 md:flex-col md:shrink-0 bg-pb-surface border-r border-pb-default"
+      class="hidden md:flex md:w-64 md:flex-col md:shrink-0 bg-mnt-surface border-r border-mnt-default"
     >
       <div class="flex flex-col flex-1 overflow-y-auto">
         <!-- Logo -->
         <div class="p-6 flex items-center gap-3 shrink-0">
           <img src="/icon.svg" alt="" width="32" height="32" />
-          <span class="text-sm font-bold text-pb-primary">maintenant</span>
+          <span class="text-sm font-bold text-mnt-primary">maintenant</span>
         </div>
 
         <!-- Main nav -->
-        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
+        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto mnt-4">
           <template v-for="item in mainNav" :key="item.to">
-            <hr v-if="item.type === 'separator'" class="my-1.5 border-pb-subtle" />
+            <hr v-if="item.type === 'separator'" class="my-1.5 border-mnt-subtle" />
             <RouterLink
               v-else-if="item.type === 'item'"
               :to="item.to!"
               class="w-full flex items-center justify-between px-3 py-1.5 rounded-lg transition-all border group"
               :class="[
                 route.path.startsWith(item.to!)
-                  ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                  : 'text-pb-muted hover:text-pb-primary hover:bg-pb-elevated border-transparent',
+                  ? 'bg-mnt-green-500/10 text-mnt-nav-active border-mnt-green-500/20'
+                  : 'text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated border-transparent',
               ]"
             >
               <div class="flex items-center gap-3">
@@ -242,8 +242,8 @@ watch(
                   class="shrink-0 transition-colors"
                   :class="
                     route.path.startsWith(item.to!)
-                      ? 'text-pb-nav-active'
-                      : 'text-pb-muted group-hover:text-pb-secondary'
+                      ? 'text-mnt-nav-active'
+                      : 'text-mnt-muted group-hover:text-mnt-secondary'
                   "
                 />
                 <span class="text-sm font-medium">{{ item.label }}</span>
@@ -253,30 +253,30 @@ watch(
         </nav>
 
         <!-- Bottom section: Edition -->
-        <div class="p-4 border-t space-y-3 shrink-0" style="border-color: var(--pb-border-default)">
+        <div class="p-4 border-t space-y-3 shrink-0" style="border-color: var(--mnt-border-default)">
           <router-link :to="{ name: 'pro-edition' }">
             <div
               class="rounded-xl p-3 border"
-              style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)"
+              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default)"
             >
               <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isPro }">
                 <span
                   class="text-[10px] font-bold uppercase tracking-tighter"
-                  :class="isPro ? 'text-pb-accent' : 'text-pb-secondary'"
+                  :class="isPro ? 'text-mnt-accent' : 'text-mnt-secondary'"
                   >{{ isPro ? 'Pro Edition' : 'Community Edition' }}</span
                 >
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   :class="
-                    isPro ? 'bg-pb-status-ok border border-pb-sev-ok' : 'border'
+                    isPro ? 'bg-mnt-status-ok border border-mnt-sev-ok' : 'border'
                   "
                   :style="
                     isPro
-                      ? { color: 'var(--pb-accent)' }
+                      ? { color: 'var(--mnt-accent)' }
                       : {
-                          background: 'var(--pb-bg-surface)',
-                          color: 'var(--pb-accent)',
-                          borderColor: 'color-mix(in srgb, var(--pb-accent) 40%, transparent)',
+                          background: 'var(--mnt-bg-surface)',
+                          color: 'var(--mnt-accent)',
+                          borderColor: 'color-mix(in srgb, var(--mnt-accent) 40%, transparent)',
                         }
                   "
                   >{{ version }}</span
@@ -285,7 +285,7 @@ watch(
               <button
                 v-if="!isPro"
                 class="cursor-pointer block w-full py-1.5 rounded-lg text-xs font-semibold text-center transition-colors"
-                style="background: var(--pb-bg-surface); color: var(--pb-text-secondary)"
+                style="background: var(--mnt-bg-surface); color: var(--mnt-text-secondary)"
               >
                 Get Pro Edition
               </button>
@@ -297,11 +297,11 @@ watch(
 
     <!-- Mobile top bar -->
     <div
-      class="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-pb-surface/90 backdrop-blur-md border-b border-pb-default"
+      class="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-mnt-surface/90 backdrop-blur-md border-b border-mnt-default"
     >
       <button
         @click="mobileMenuOpen = !mobileMenuOpen"
-        class="p-3 rounded-md text-pb-muted hover:text-pb-primary transition-colors"
+        class="p-3 rounded-md text-mnt-muted hover:text-mnt-primary transition-colors"
         aria-label="Toggle navigation"
       >
         <Menu v-if="!mobileMenuOpen" :size="20" />
@@ -309,7 +309,7 @@ watch(
       </button>
       <div class="ml-3 flex items-center gap-2">
         <img src="/icon.svg" alt="maintenant" class="w-6 h-6 rounded-md" />
-        <span class="text-sm font-bold text-pb-primary">maintenant</span>
+        <span class="text-sm font-bold text-mnt-primary">maintenant</span>
       </div>
       <div class="flex-1" />
     </div>
@@ -327,26 +327,26 @@ watch(
     <Transition name="slide-left">
       <div
         v-if="mobileMenuOpen"
-        class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-pb-surface border-r border-pb-default flex flex-col"
+        class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-mnt-surface border-r border-mnt-default flex flex-col"
       >
         <div class="p-6 flex items-center gap-3">
           <img src="/icon.svg" alt="maintenant" class="w-8 h-8 rounded-lg" />
-          <h1 class="text-xl font-bold tracking-tight text-pb-primary">maintenant</h1>
+          <h1 class="text-xl font-bold tracking-tight text-mnt-primary">maintenant</h1>
         </div>
-        <div class="px-4 pb-2 shrink-0">
+        <div class="px-4 mnt-2 shrink-0">
           <HostFilterDropdown />
         </div>
-        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
+        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto mnt-4">
           <template v-for="item in mainNav" :key="item.to">
-            <hr v-if="item.type === 'separator'" class="my-1.5 border-pb-subtle" />
+            <hr v-if="item.type === 'separator'" class="my-1.5 border-mnt-subtle" />
             <RouterLink
               v-else-if="item.type === 'item'"
               :to="item.to!"
               class="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border"
               :class="[
                 route.path.startsWith(item.to!)
-                  ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                  : 'text-pb-muted hover:text-pb-primary hover:bg-pb-elevated border-transparent',
+                  ? 'bg-mnt-green-500/10 text-mnt-nav-active border-mnt-green-500/20'
+                  : 'text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated border-transparent',
               ]"
               @click="closeMobileMenu"
             >
@@ -465,27 +465,27 @@ watch(
 }
 
 .license-action--warning {
-  background: var(--pb-alert-warn-action-bg);
-  border-color: var(--pb-alert-warn-action-border);
-  color: var(--pb-alert-warn-action-text);
+  background: var(--mnt-alert-warn-action-bg);
+  border-color: var(--mnt-alert-warn-action-border);
+  color: var(--mnt-alert-warn-action-text);
 }
 .license-action--warning:hover {
-  background: var(--pb-alert-warn-action-hover);
+  background: var(--mnt-alert-warn-action-hover);
 }
 .license-action--critical {
-  background: var(--pb-alert-critical-action-bg);
-  border-color: var(--pb-alert-critical-action-border);
-  color: var(--pb-alert-critical-action-text);
+  background: var(--mnt-alert-critical-action-bg);
+  border-color: var(--mnt-alert-critical-action-border);
+  color: var(--mnt-alert-critical-action-text);
 }
 .license-action--critical:hover {
-  background: var(--pb-alert-critical-action-hover);
+  background: var(--mnt-alert-critical-action-hover);
 }
 .license-action--info {
-  background: var(--pb-alert-info-action-bg);
-  border-color: var(--pb-alert-info-action-border);
-  color: var(--pb-alert-info-action-text);
+  background: var(--mnt-alert-info-action-bg);
+  border-color: var(--mnt-alert-info-action-border);
+  color: var(--mnt-alert-info-action-text);
 }
 .license-action--info:hover {
-  background: var(--pb-alert-info-action-hover);
+  background: var(--mnt-alert-info-action-hover);
 }
 </style>

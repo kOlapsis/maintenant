@@ -58,15 +58,15 @@ function toggleChannel(id: string) {
 </script>
 
 <template>
-  <div class="bg-pb-primary rounded-xl border border-pb-default p-4 space-y-4">
+  <div class="bg-mnt-primary rounded-xl border border-mnt-default p-4 space-y-4">
     <!-- Level header -->
     <div class="flex items-center justify-between">
-      <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+      <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
         Level {{ index + 1 }}
       </span>
       <button
         v-if="canRemove"
-        class="p-1 rounded text-pb-muted hover:text-pb-status-down hover:bg-pb-status-down/10 transition-all"
+        class="p-1 rounded text-mnt-muted hover:text-mnt-status-down hover:bg-mnt-status-down/10 transition-all"
         title="Remove level"
         @click="emit('remove')"
       >
@@ -76,7 +76,7 @@ function toggleChannel(id: string) {
 
     <!-- Delay -->
     <div class="space-y-2">
-      <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+      <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
         Trigger after (seconds)
       </label>
       <div class="flex items-center gap-3 flex-wrap">
@@ -86,7 +86,7 @@ function toggleChannel(id: string) {
           min="60"
           max="86400"
           step="60"
-          class="w-28 bg-pb-surface border border-pb-default rounded-lg px-3 py-1.5 text-sm text-pb-primary focus:outline-none focus:border-pb-default transition-colors"
+          class="w-28 bg-mnt-surface border border-mnt-default rounded-lg px-3 py-1.5 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default transition-colors"
           @input="setDelay(Number(($event.target as HTMLInputElement).value))"
         />
         <div class="flex gap-1.5 flex-wrap">
@@ -96,8 +96,8 @@ function toggleChannel(id: string) {
             class="px-2.5 py-1 rounded text-[10px] font-bold border transition-all"
             :class="
               modelValue.delay_seconds === preset.value
-                ? 'bg-pb-elevated border-pb-default text-pb-secondary'
-                : 'bg-transparent border-pb-default text-pb-muted hover:border-pb-default hover:text-pb-muted'
+                ? 'bg-mnt-elevated border-mnt-default text-mnt-secondary'
+                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
             "
             @click="setDelay(preset.value)"
           >
@@ -109,8 +109,8 @@ function toggleChannel(id: string) {
 
     <!-- Channels -->
     <div class="space-y-2">
-      <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Notify via</label>
-      <div v-if="channels.length === 0" class="text-xs text-pb-muted">
+      <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Notify via</label>
+      <div v-if="channels.length === 0" class="text-xs text-mnt-muted">
         No channels available.
       </div>
       <div v-else class="flex flex-wrap gap-2">
@@ -120,8 +120,8 @@ function toggleChannel(id: string) {
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
           :class="
             modelValue.channel_ids.includes(ch.id)
-              ? 'bg-pb-green-500/10 border-pb-green-500/30 text-pb-green-400'
-              : 'bg-transparent border-pb-default text-pb-muted hover:border-pb-default hover:text-pb-secondary'
+              ? 'bg-mnt-green-500/10 border-mnt-green-500/30 text-mnt-green-400'
+              : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-secondary'
           "
           @click="toggleChannel(ch.id)"
         >

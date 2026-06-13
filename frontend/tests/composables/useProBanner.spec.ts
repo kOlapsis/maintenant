@@ -206,7 +206,7 @@ describe('useProBanner — tier 0 & guard', () => {
     const { handle, unmount } = mountProBanner({ containerCount: 5, groups: groups(5) })
     await nextTick()
     handle.dismiss()
-    expect(localStorage.getItem('pb:banner:pro-tier-0')).toBeNull()
+    expect(localStorage.getItem('mnt:banner:pro-tier-0')).toBeNull()
     unmount()
   })
 
@@ -214,7 +214,7 @@ describe('useProBanner — tier 0 & guard', () => {
     const { handle, unmount } = mountProBanner({ containerCount: 0, groups: [] })
     await nextTick()
     handle.dismiss()
-    expect(localStorage.getItem('pb:banner:pro-tier-0')).toBeNull()
+    expect(localStorage.getItem('mnt:banner:pro-tier-0')).toBeNull()
     unmount()
   })
 })
@@ -237,7 +237,7 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
     await nextTick()
     expect(handle.visible.value).toBe(true)
     handle.dismiss()
-    const ts = Number(localStorage.getItem('pb:banner:pro-tier-1'))
+    const ts = Number(localStorage.getItem('mnt:banner:pro-tier-1'))
     expect(Number.isFinite(ts)).toBe(true)
     expect(ts).toBe(Date.now())
     expect(handle.visible.value).toBe(false)
@@ -245,7 +245,7 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
   })
 
   it('FR-011 cooldown active — banner hidden when dismissed 1s ago', async () => {
-    localStorage.setItem('pb:banner:pro-tier-1', String(Date.now() - 1000))
+    localStorage.setItem('mnt:banner:pro-tier-1', String(Date.now() - 1000))
     const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(false)
@@ -253,7 +253,7 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
   })
 
   it('FR-011 cooldown expired — banner shown after 31 days', async () => {
-    localStorage.setItem('pb:banner:pro-tier-1', String(Date.now() - 31 * 24 * 60 * 60 * 1000))
+    localStorage.setItem('mnt:banner:pro-tier-1', String(Date.now() - 31 * 24 * 60 * 60 * 1000))
     const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(true)
@@ -261,7 +261,7 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
   })
 
   it('FR-012 tier-keying — tier-1 dismissal does not block tier-2', async () => {
-    localStorage.setItem('pb:banner:pro-tier-1', String(Date.now() - 1000))
+    localStorage.setItem('mnt:banner:pro-tier-1', String(Date.now() - 1000))
     const { handle, unmount } = mountProBanner({ containerCount: 27, groups: groups(27) })
     await nextTick()
     expect(handle.tier.value).toBe(2)
@@ -279,7 +279,7 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
   })
 
   it('corrupted localStorage value treated as non-dismissed', async () => {
-    localStorage.setItem('pb:banner:pro-tier-1', 'not-a-number')
+    localStorage.setItem('mnt:banner:pro-tier-1', 'not-a-number')
     const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(true)
@@ -324,7 +324,7 @@ describe('useProBanner — license gate', () => {
   it('dismissal preserved when license expires (cooldown active)', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
-    localStorage.setItem('pb:banner:pro-tier-2', String(Date.now() - 1000))
+    localStorage.setItem('mnt:banner:pro-tier-2', String(Date.now() - 1000))
     const isPro = ref(true)
     const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isPro)
     await nextTick()

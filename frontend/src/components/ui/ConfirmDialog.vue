@@ -60,9 +60,9 @@ function handleKeydown(e: KeyboardEvent) {
         <div
           class="relative mx-4 w-full max-w-sm overflow-hidden"
           :style="{
-            backgroundColor: 'var(--pb-bg-surface)',
-            border: '1px solid var(--pb-border-default)',
-            borderRadius: 'var(--pb-radius-lg)',
+            backgroundColor: 'var(--mnt-bg-surface)',
+            border: '1px solid var(--mnt-border-default)',
+            borderRadius: 'var(--mnt-radius-lg)',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
           }"
           role="alertdialog"
@@ -74,14 +74,14 @@ function handleKeydown(e: KeyboardEvent) {
             <h3
               id="confirm-title"
               class="text-sm font-semibold"
-              :style="{ color: 'var(--pb-text-primary)' }"
+              :style="{ color: 'var(--mnt-text-primary)' }"
             >
               {{ state.title }}
             </h3>
             <p
               id="confirm-message"
               class="mt-2 text-sm leading-relaxed"
-              :style="{ color: 'var(--pb-text-muted)' }"
+              :style="{ color: 'var(--mnt-text-muted)' }"
             >
               {{ state.message }}
             </p>
@@ -89,15 +89,15 @@ function handleKeydown(e: KeyboardEvent) {
 
           <div
             class="flex items-center justify-end gap-2 px-5 py-3"
-            :style="{ borderTop: '1px solid var(--pb-border-default)' }"
+            :style="{ borderTop: '1px solid var(--mnt-border-default)' }"
           >
             <button
               ref="cancelRef"
               class="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors min-h-[36px]"
               :style="{
-                color: 'var(--pb-text-secondary)',
+                color: 'var(--mnt-text-secondary)',
                 backgroundColor: 'transparent',
-                border: '1px solid var(--pb-border-default)',
+                border: '1px solid var(--mnt-border-default)',
               }"
               @click="resolve(false)"
             >
@@ -106,8 +106,8 @@ function handleKeydown(e: KeyboardEvent) {
             <button
               class="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors min-h-[36px]"
               :style="{
-                color: state.destructive ? '#fff' : 'var(--pb-text-inverted)',
-                backgroundColor: state.destructive ? 'var(--pb-status-down)' : 'var(--pb-accent)',
+                color: state.destructive ? '#fff' : 'var(--mnt-text-inverted)',
+                backgroundColor: state.destructive ? 'var(--mnt-status-down)' : 'var(--mnt-accent)',
               }"
               @click="resolve(true)"
             >

@@ -100,21 +100,21 @@ async function handleDelete() {
   <div
     class="cursor-pointer"
     :style="{
-      backgroundColor: 'var(--pb-bg-surface)',
-      border: '1px solid var(--pb-border-default)',
-      borderRadius: 'var(--pb-radius-lg)',
+      backgroundColor: 'var(--mnt-bg-surface)',
+      border: '1px solid var(--mnt-border-default)',
+      borderRadius: 'var(--mnt-radius-lg)',
       padding: '1rem',
-      boxShadow: 'var(--pb-shadow-card)',
+      boxShadow: 'var(--mnt-shadow-card)',
       transition: 'box-shadow 0.15s ease',
     }"
     @click="emit('select', heartbeat.id)"
   >
     <div class="flex items-start justify-between">
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-sm font-semibold" :style="{ color: 'var(--pb-text-primary)' }">
+        <h3 class="truncate text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">
           {{ heartbeat.name }}
         </h3>
-        <p class="mt-0.5 truncate font-mono text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+        <p class="mt-0.5 truncate font-mono text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
           /ping/{{ heartbeat.uuid.slice(0, 8) }}...
         </p>
         <AgentBadge v-if="heartbeat.agent_id" :agent-id="heartbeat.agent_id" class="mt-1" />
@@ -126,8 +126,8 @@ async function handleDelete() {
             display: 'inline-flex',
             alignItems: 'center',
             borderRadius: '9999px',
-            backgroundColor: 'var(--pb-status-down-bg)',
-            color: 'var(--pb-status-down)',
+            backgroundColor: 'var(--mnt-status-down-bg)',
+            color: 'var(--mnt-status-down)',
             padding: '0.125rem 0.375rem',
             fontSize: '0.75rem',
             fontWeight: '500',
@@ -144,7 +144,7 @@ async function handleDelete() {
       <UptimeBar90 :days="uptimeDays" compact />
     </div>
 
-    <div class="mt-3 flex items-center justify-between text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+    <div class="mt-3 flex items-center justify-between text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
       <div class="flex items-center gap-3">
         <span>every {{ formatInterval(heartbeat.interval_seconds) }}</span>
         <span>grace {{ formatInterval(heartbeat.grace_seconds) }}</span>
@@ -158,12 +158,12 @@ async function handleDelete() {
     <!-- Actions -->
     <div
       class="mt-3 flex items-center gap-2 pt-2"
-      :style="{ borderTop: '1px solid var(--pb-border-subtle)' }"
+      :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       @click.stop
     >
       <button
         class="rounded px-2 py-0.5 text-xs"
-        :style="{ color: 'var(--pb-text-secondary)' }"
+        :style="{ color: 'var(--mnt-text-secondary)' }"
         @click="copyPingUrl"
       >
         {{ copied ? 'Copied!' : 'Copy URL' }}
@@ -171,7 +171,7 @@ async function handleDelete() {
       <button
         v-if="heartbeat.status !== 'paused'"
         class="rounded px-2 py-0.5 text-xs"
-        :style="{ color: 'var(--pb-status-warn)' }"
+        :style="{ color: 'var(--mnt-status-warn)' }"
         @click="handlePause"
       >
         Pause
@@ -179,14 +179,14 @@ async function handleDelete() {
       <button
         v-else
         class="rounded px-2 py-0.5 text-xs"
-        :style="{ color: 'var(--pb-status-ok)' }"
+        :style="{ color: 'var(--mnt-status-ok)' }"
         @click="handleResume"
       >
         Resume
       </button>
       <button
         class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
-        :style="{ color: 'var(--pb-status-down)' }"
+        :style="{ color: 'var(--mnt-status-down)' }"
         :disabled="deleting"
         @click="handleDelete"
       >

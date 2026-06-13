@@ -20,10 +20,10 @@ const props = defineProps<{
 }>()
 
 const gaugeColor = computed(() => {
-  if (props.score >= 81) return { bar: 'bg-pb-sev-incident-solid', text: 'text-pb-status-down' }
-  if (props.score >= 61) return { bar: 'bg-orange-500', text: 'text-pb-status-warn' }
-  if (props.score >= 31) return { bar: 'bg-pb-sev-warning-solid', text: 'text-pb-status-warn' }
-  return { bar: 'bg-pb-sev-ok-solid', text: 'text-pb-status-ok' }
+  if (props.score >= 81) return { bar: 'bg-mnt-sev-incident-solid', text: 'text-mnt-status-down' }
+  if (props.score >= 61) return { bar: 'bg-orange-500', text: 'text-mnt-status-warn' }
+  if (props.score >= 31) return { bar: 'bg-mnt-sev-warning-solid', text: 'text-mnt-status-warn' }
+  return { bar: 'bg-mnt-sev-ok-solid', text: 'text-mnt-status-ok' }
 })
 
 const levelLabel = computed(() => {
@@ -41,9 +41,9 @@ const levelLabel = computed(() => {
   <div class="space-y-1.5">
     <div class="flex items-baseline justify-between">
       <span :class="['text-2xl font-black', gaugeColor.text]">{{ score }}</span>
-      <span class="text-[10px] font-bold uppercase tracking-widest text-pb-muted">{{ levelLabel }}</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-mnt-muted">{{ levelLabel }}</span>
     </div>
-    <div class="h-2 w-full bg-pb-primary rounded-full border border-pb-default overflow-hidden">
+    <div class="h-2 w-full bg-mnt-primary rounded-full border border-mnt-default overflow-hidden">
       <div
         class="h-full rounded-full transition-all duration-500"
         :class="gaugeColor.bar"

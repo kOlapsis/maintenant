@@ -67,24 +67,24 @@ function handleSelect(pod: K8sPod) {
       <!-- Page header -->
       <div class="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-black text-pb-primary">Pods</h1>
-          <p class="mt-1 text-sm text-pb-muted">Kubernetes pods across all workloads</p>
+          <h1 class="text-2xl font-black text-mnt-primary">Pods</h1>
+          <p class="mt-1 text-sm text-mnt-muted">Kubernetes pods across all workloads</p>
         </div>
         <NamespaceSelector />
       </div>
 
       <!-- Loading -->
-      <div v-if="store.loading && store.pods.length === 0" class="rounded-xl border border-pb-default bg-pb-surface p-4">
+      <div v-if="store.loading && store.pods.length === 0" class="rounded-xl border border-mnt-default bg-mnt-surface p-4">
         <LoadingSkeleton variant="list" :count="6" />
       </div>
 
       <!-- Error -->
-      <div v-else-if="store.error" class="overflow-hidden rounded-xl border border-pb-default bg-pb-surface">
+      <div v-else-if="store.error" class="overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface">
         <ErrorState :message="store.error" />
       </div>
 
       <!-- Empty -->
-      <div v-else-if="store.pods.length === 0" class="overflow-hidden rounded-xl border border-pb-default bg-pb-surface">
+      <div v-else-if="store.pods.length === 0" class="overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface">
         <EmptyState
           :icon="Box"
           title="No pods found"
@@ -100,7 +100,7 @@ function handleSelect(pod: K8sPod) {
       />
 
       <!-- Footer count -->
-      <div v-if="store.pods.length > 0" class="mt-4 text-xs text-pb-muted text-right tabular-nums">
+      <div v-if="store.pods.length > 0" class="mt-4 text-xs text-mnt-muted text-right tabular-nums">
         {{ store.pods.length }} pod{{ store.pods.length === 1 ? '' : 's' }}
       </div>
     </div>

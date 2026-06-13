@@ -23,13 +23,13 @@ const props = defineProps<{
 const severityStyle = computed(() => {
   switch (props.severity) {
     case 'critical':
-      return { color: 'var(--pb-status-down)', bg: 'var(--pb-status-down-bg)' }
+      return { color: 'var(--mnt-status-down)', bg: 'var(--mnt-status-down-bg)' }
     case 'high':
-      return { color: 'var(--pb-status-warn)', bg: 'var(--pb-status-warn-bg)' }
+      return { color: 'var(--mnt-status-warn)', bg: 'var(--mnt-status-warn-bg)' }
     case 'medium':
       return { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' }
     default:
-      return { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)' }
+      return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)' }
   }
 })
 </script>

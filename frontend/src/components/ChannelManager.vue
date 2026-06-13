@@ -89,11 +89,11 @@ function handleWizardCreated(_id: string) {
 <template>
   <div>
     <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-pb-primary">Notification Channels</h2>
+      <h2 class="text-lg font-semibold text-mnt-primary">Notification Channels</h2>
       <div class="flex gap-2">
         <button
           @click="showWizard = true; showForm = false"
-          class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
         >
           Add Channel
         </button>
@@ -101,11 +101,11 @@ function handleWizardCreated(_id: string) {
     </div>
 
     <!-- Pedagogical banner -->
-    <div class="mb-4 rounded-xl border border-pb-default bg-pb-surface px-4 py-3 text-xs text-pb-muted">
+    <div class="mb-4 rounded-xl border border-mnt-default bg-mnt-surface px-4 py-3 text-xs text-mnt-muted">
       Channels are silent by default. To start receiving notifications, wire a channel through an
-      <RouterLink to="/alerts/triggers" class="text-pb-green-400 hover:underline">Alert Trigger</RouterLink>
+      <RouterLink to="/alerts/triggers" class="text-mnt-green-400 hover:underline">Alert Trigger</RouterLink>
       or an
-      <RouterLink to="/escalation" class="text-pb-green-400 hover:underline">Escalation Policy</RouterLink>.
+      <RouterLink to="/escalation" class="text-mnt-green-400 hover:underline">Escalation Policy</RouterLink>.
     </div>
 
     <!-- Channel Wizard -->
@@ -117,28 +117,28 @@ function handleWizardCreated(_id: string) {
     </div>
 
     <!-- Edit form (for existing channels) -->
-    <div v-if="showForm && editingId" class="mb-4 rounded-xl border border-pb-default bg-pb-surface p-4">
-      <h3 class="mb-3 text-sm font-medium text-pb-primary">Edit Channel</h3>
+    <div v-if="showForm && editingId" class="mb-4 rounded-xl border border-mnt-default bg-mnt-surface p-4">
+      <h3 class="mb-3 text-sm font-medium text-mnt-primary">Edit Channel</h3>
       <form @submit.prevent="submitForm" class="space-y-3">
         <div>
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-pb-muted">Name</label>
-          <input v-model="form.name" required class="mt-1 w-full rounded-lg border border-pb-default bg-pb-primary px-3 py-2 text-sm text-pb-primary focus:outline-none focus:border-pb-default" />
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Name</label>
+          <input v-model="form.name" required class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default" />
         </div>
         <div>
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-pb-muted">Webhook URL</label>
-          <input v-model="form.url" required type="url" class="mt-1 w-full rounded-lg border border-pb-default bg-pb-primary px-3 py-2 text-sm text-pb-primary focus:outline-none focus:border-pb-default" />
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Webhook URL</label>
+          <input v-model="form.url" required type="url" class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default" />
         </div>
         <div>
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-pb-muted">Custom Headers (JSON)</label>
-          <input v-model="form.headers" placeholder='{"Authorization": "Bearer ..."}' class="mt-1 w-full rounded-lg border border-pb-default bg-pb-primary px-3 py-2 text-sm text-pb-primary placeholder:text-pb-muted focus:outline-none focus:border-pb-default" />
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Custom Headers (JSON)</label>
+          <input v-model="form.headers" placeholder='{"Authorization": "Bearer ..."}' class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default" />
         </div>
         <div class="flex items-center gap-2">
-          <input v-model="form.enabled" type="checkbox" id="ch-enabled" class="rounded accent-pb-green-500" />
-          <label for="ch-enabled" class="text-sm text-pb-secondary">Enabled</label>
+          <input v-model="form.enabled" type="checkbox" id="ch-enabled" class="rounded accent-mnt-green-500" />
+          <label for="ch-enabled" class="text-sm text-mnt-secondary">Enabled</label>
         </div>
         <div class="flex gap-2">
-          <button type="submit" class="px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted rounded-lg text-xs font-bold transition-all">Save</button>
-          <button type="button" @click="resetForm" class="px-4 py-2 rounded-lg border border-pb-default text-xs text-pb-secondary hover:bg-pb-elevated transition-all">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all">Save</button>
+          <button type="button" @click="resetForm" class="px-4 py-2 rounded-lg border border-mnt-default text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all">Cancel</button>
         </div>
       </form>
     </div>
@@ -147,35 +147,35 @@ function handleWizardCreated(_id: string) {
     <div class="space-y-3">
       <div
         v-if="store.channels.length === 0 && !store.channelsLoading"
-        class="rounded-xl border border-pb-default bg-pb-surface p-6 text-center"
+        class="rounded-xl border border-mnt-default bg-mnt-surface p-6 text-center"
       >
-        <p class="text-sm text-pb-muted">No notification channels configured</p>
+        <p class="text-sm text-mnt-muted">No notification channels configured</p>
       </div>
 
       <div
         v-for="ch in store.channels"
         :key="ch.id"
-        class="rounded-xl border border-pb-default bg-pb-surface p-4"
+        class="rounded-xl border border-mnt-default bg-mnt-surface p-4"
       >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <span
               class="h-2 w-2 rounded-full"
-              :style="{ background: ch.health === 'healthy' ? 'var(--pb-status-ok)' : 'var(--pb-status-down)' }"
+              :style="{ background: ch.health === 'healthy' ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)' }"
             ></span>
             <div>
               <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-pb-primary">{{ ch.name }}</span>
-                <span v-if="!ch.enabled" class="rounded px-1.5 py-0.5 text-xs bg-pb-elevated text-pb-muted">disabled</span>
-                <span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-pb-elevated text-pb-muted">{{ ch.type }}</span>
+                <span class="text-sm font-medium text-mnt-primary">{{ ch.name }}</span>
+                <span v-if="!ch.enabled" class="rounded px-1.5 py-0.5 text-xs bg-mnt-elevated text-mnt-muted">disabled</span>
+                <span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-mnt-elevated text-mnt-muted">{{ ch.type }}</span>
               </div>
-              <p class="text-xs text-pb-muted">{{ maskUrl(ch.url) }}</p>
+              <p class="text-xs text-mnt-muted">{{ maskUrl(ch.url) }}</p>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button @click="handleTest(ch.id)" class="rounded-lg border border-pb-default px-2.5 py-1 text-xs text-pb-secondary hover:bg-pb-elevated transition-all">Test</button>
-            <button @click="startEdit(ch)" class="rounded-lg border border-pb-default px-2.5 py-1 text-xs text-pb-secondary hover:bg-pb-elevated transition-all">Edit</button>
-            <button @click="handleDelete(ch.id)" class="rounded-lg border border-pb-status-down/40 px-2.5 py-1 text-xs text-pb-status-down hover:bg-pb-status-down/10 transition-all">Delete</button>
+            <button @click="handleTest(ch.id)" class="rounded-lg border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all">Test</button>
+            <button @click="startEdit(ch)" class="rounded-lg border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all">Edit</button>
+            <button @click="handleDelete(ch.id)" class="rounded-lg border border-mnt-status-down/40 px-2.5 py-1 text-xs text-mnt-status-down hover:bg-mnt-status-down/10 transition-all">Delete</button>
           </div>
         </div>
 
@@ -184,9 +184,9 @@ function handleWizardCreated(_id: string) {
           v-if="testResult && testResult.id === ch.id"
           class="mt-2 rounded border px-3 py-1.5 text-xs"
           :style="{
-            background: testResult.status === 'delivered' ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-down-bg)',
-            borderColor: testResult.status === 'delivered' ? 'var(--pb-status-ok)' : 'var(--pb-status-down)',
-            color: testResult.status === 'delivered' ? 'var(--pb-status-ok)' : 'var(--pb-status-down)',
+            background: testResult.status === 'delivered' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-down-bg)',
+            borderColor: testResult.status === 'delivered' ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)',
+            color: testResult.status === 'delivered' ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)',
           }"
         >
           {{ testResult.status === 'delivered' ? `Delivered (HTTP ${testResult.response_code})` : `Failed: ${testResult.error}` }}

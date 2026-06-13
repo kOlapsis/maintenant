@@ -37,7 +37,7 @@ const selectedLabel = computed(() => {
 })
 
 function itemClass(active: boolean): string {
-  return active ? 'text-pb-primary font-medium' : 'text-pb-secondary'
+  return active ? 'text-mnt-primary font-medium' : 'text-mnt-secondary'
 }
 
 function select(value: string | null) {
@@ -50,19 +50,19 @@ function select(value: string | null) {
   <!-- Only meaningful once at least one agent is enrolled; single-host installs hide it. -->
   <div v-if="activeAgents.length > 0" class="relative">
     <button
-      class="flex w-full items-center justify-between gap-1.5 rounded-lg border border-pb-default bg-pb-primary px-3 py-1.5 text-xs text-pb-secondary transition-colors hover:text-pb-primary"
+      class="flex w-full items-center justify-between gap-1.5 rounded-lg border border-mnt-default bg-mnt-primary px-3 py-1.5 text-xs text-mnt-secondary transition-colors hover:text-mnt-primary"
       @click="open = !open"
     >
       <span class="flex items-center gap-1.5 min-w-0">
-        <Server :size="13" class="text-pb-muted shrink-0" />
+        <Server :size="13" class="text-mnt-muted shrink-0" />
         <span class="truncate">{{ selectedLabel }}</span>
       </span>
-      <ChevronDown :size="13" class="text-pb-muted shrink-0" />
+      <ChevronDown :size="13" class="text-mnt-muted shrink-0" />
     </button>
 
     <div
       v-if="open"
-      class="absolute left-0 right-0 z-50 mt-1 min-w-[200px] rounded-xl border border-pb-default bg-pb-surface py-1 shadow-2xl"
+      class="absolute left-0 right-0 z-50 mt-1 min-w-[200px] rounded-xl border border-mnt-default bg-mnt-surface py-1 shadow-2xl"
     >
       <button
         class="hf-item"
@@ -79,7 +79,7 @@ function select(value: string | null) {
         Local
       </button>
 
-      <div class="my-1 border-t border-pb-subtle" />
+      <div class="my-1 border-t border-mnt-subtle" />
 
       <button
         v-for="agent in activeAgents"
@@ -93,8 +93,8 @@ function select(value: string | null) {
           :style="{
             backgroundColor:
               agent.connection_state === 'connected'
-                ? 'var(--pb-status-ok-text)'
-                : 'var(--pb-text-muted)',
+                ? 'var(--mnt-status-ok-text)'
+                : 'var(--mnt-text-muted)',
           }"
         />
         {{ agent.label || agent.hostname }}
@@ -114,6 +114,6 @@ function select(value: string | null) {
   transition: background-color 0.12s ease;
 }
 .hf-item:hover {
-  background-color: var(--pb-bg-hover);
+  background-color: var(--mnt-bg-hover);
 }
 </style>

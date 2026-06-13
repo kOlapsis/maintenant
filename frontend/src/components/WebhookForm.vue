@@ -25,10 +25,10 @@
       <div
         class="relative mx-4 w-full max-w-md overflow-hidden"
         :style="{
-          backgroundColor: 'var(--pb-bg-surface)',
-          border: '1px solid var(--pb-border-default)',
-          borderRadius: 'var(--pb-radius-lg)',
-          boxShadow: 'var(--pb-shadow-elevated)',
+          backgroundColor: 'var(--mnt-bg-surface)',
+          border: '1px solid var(--mnt-border-default)',
+          borderRadius: 'var(--mnt-radius-lg)',
+          boxShadow: 'var(--mnt-shadow-elevated)',
         }"
         role="dialog"
         aria-modal="true"
@@ -38,7 +38,7 @@
           <h2
             id="webhook-form-title"
             class="text-lg font-semibold mb-4"
-            :style="{ color: 'var(--pb-text-primary)' }"
+            :style="{ color: 'var(--mnt-text-primary)' }"
           >
             Add Webhook
           </h2>
@@ -47,7 +47,7 @@
             <div>
               <label
                 class="block text-sm mb-1"
-                :style="{ color: 'var(--pb-text-muted)' }"
+                :style="{ color: 'var(--mnt-text-muted)' }"
               >
                 Name
               </label>
@@ -59,10 +59,10 @@
                 placeholder="e.g., Slack Integration"
                 class="w-full rounded px-3 py-2 text-sm focus:outline-none"
                 :style="{
-                  backgroundColor: 'var(--pb-bg-elevated)',
-                  border: '1px solid var(--pb-border-default)',
-                  color: 'var(--pb-text-primary)',
-                  borderRadius: 'var(--pb-radius-md)',
+                  backgroundColor: 'var(--mnt-bg-elevated)',
+                  border: '1px solid var(--mnt-border-default)',
+                  color: 'var(--mnt-text-primary)',
+                  borderRadius: 'var(--mnt-radius-md)',
                 }"
               />
             </div>
@@ -70,7 +70,7 @@
             <div>
               <label
                 class="block text-sm mb-1"
-                :style="{ color: 'var(--pb-text-muted)' }"
+                :style="{ color: 'var(--mnt-text-muted)' }"
               >
                 URL (HTTPS)
               </label>
@@ -81,10 +81,10 @@
                 placeholder="https://hooks.example.com/webhook"
                 class="w-full rounded px-3 py-2 text-sm focus:outline-none"
                 :style="{
-                  backgroundColor: 'var(--pb-bg-elevated)',
-                  border: '1px solid var(--pb-border-default)',
-                  color: 'var(--pb-text-primary)',
-                  borderRadius: 'var(--pb-radius-md)',
+                  backgroundColor: 'var(--mnt-bg-elevated)',
+                  border: '1px solid var(--mnt-border-default)',
+                  color: 'var(--mnt-text-primary)',
+                  borderRadius: 'var(--mnt-radius-md)',
                 }"
               />
             </div>
@@ -92,7 +92,7 @@
             <div>
               <label
                 class="block text-sm mb-1"
-                :style="{ color: 'var(--pb-text-muted)' }"
+                :style="{ color: 'var(--mnt-text-muted)' }"
               >
                 Secret (optional, for HMAC signing)
               </label>
@@ -102,10 +102,10 @@
                 placeholder="Optional signing secret"
                 class="w-full rounded px-3 py-2 text-sm focus:outline-none"
                 :style="{
-                  backgroundColor: 'var(--pb-bg-elevated)',
-                  border: '1px solid var(--pb-border-default)',
-                  color: 'var(--pb-text-primary)',
-                  borderRadius: 'var(--pb-radius-md)',
+                  backgroundColor: 'var(--mnt-bg-elevated)',
+                  border: '1px solid var(--mnt-border-default)',
+                  color: 'var(--mnt-text-primary)',
+                  borderRadius: 'var(--mnt-radius-md)',
                 }"
               />
             </div>
@@ -113,7 +113,7 @@
             <div>
               <label
                 class="block text-sm mb-2"
-                :style="{ color: 'var(--pb-text-muted)' }"
+                :style="{ color: 'var(--mnt-text-muted)' }"
               >
                 Event Types
               </label>
@@ -124,11 +124,11 @@
                     value="*"
                     v-model="selectedEvents"
                     @change="onAllEventsToggle"
-                    class="rounded accent-pb-green-500"
+                    class="rounded accent-mnt-green-500"
                   />
                   <span
                     class="text-sm"
-                    :style="{ color: 'var(--pb-text-secondary)' }"
+                    :style="{ color: 'var(--mnt-text-secondary)' }"
                   >
                     All events
                   </span>
@@ -143,11 +143,11 @@
                     :value="et.value"
                     v-model="selectedEvents"
                     :disabled="selectedEvents.includes('*')"
-                    class="rounded accent-pb-green-500"
+                    class="rounded accent-mnt-green-500"
                   />
                   <span
                     class="text-sm"
-                    :style="{ color: 'var(--pb-text-secondary)' }"
+                    :style="{ color: 'var(--mnt-text-secondary)' }"
                   >
                     {{ et.label }}
                   </span>
@@ -158,7 +158,7 @@
             <div
               v-if="error"
               class="text-sm"
-              :style="{ color: 'var(--pb-status-down-text)' }"
+              :style="{ color: 'var(--mnt-status-down-text)' }"
             >
               {{ error }}
             </div>
@@ -169,9 +169,9 @@
                 @click="emit('close')"
                 class="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-colors min-h-[36px]"
                 :style="{
-                  color: 'var(--pb-text-secondary)',
+                  color: 'var(--mnt-text-secondary)',
                   backgroundColor: 'transparent',
-                  border: '1px solid var(--pb-border-default)',
+                  border: '1px solid var(--mnt-border-default)',
                 }"
               >
                 Cancel
@@ -181,8 +181,8 @@
                 :disabled="submitting || !name || !url || selectedEvents.length === 0"
                 class="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-colors min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed"
                 :style="{
-                  backgroundColor: 'var(--pb-accent)',
-                  color: 'var(--pb-text-inverted)',
+                  backgroundColor: 'var(--mnt-accent)',
+                  color: 'var(--mnt-text-inverted)',
                 }"
               >
                 {{ submitting ? 'Creating...' : 'Add Webhook' }}

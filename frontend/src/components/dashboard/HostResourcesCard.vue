@@ -35,9 +35,9 @@ const memPercent = computed(() => {
 })
 
 function gaugeBarColor(val: number, thresholds = { warn: 60, crit: 80 }): string {
-  if (val > thresholds.crit) return 'bg-pb-sev-incident-solid'
-  if (val > thresholds.warn) return 'bg-pb-sev-warning-solid'
-  return 'bg-pb-green-500'
+  if (val > thresholds.crit) return 'bg-mnt-sev-incident-solid'
+  if (val > thresholds.warn) return 'bg-mnt-sev-warning-solid'
+  return 'bg-mnt-green-500'
 }
 
 let summaryTimer: ReturnType<typeof setInterval> | null = null
@@ -53,20 +53,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-pb-default p-4 sm:p-6">
+  <div class="bg-mnt-surface rounded-xl sm:rounded-2xl border border-mnt-default p-4 sm:p-6">
     <div class="flex items-center gap-2.5 mb-5">
-      <Server :size="15" class="text-pb-status-ok" />
-      <h3 class="text-sm font-bold text-pb-primary">Host Resources</h3>
+      <Server :size="15" class="text-mnt-status-ok" />
+      <h3 class="text-sm font-bold text-mnt-primary">Host Resources</h3>
     </div>
 
     <div class="space-y-5">
       <!-- CPU -->
       <div class="space-y-1.5">
         <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-          <span class="text-pb-muted">CPU Usage</span>
-          <span class="text-pb-primary">{{ Math.round(totalCpu) }}%</span>
+          <span class="text-mnt-muted">CPU Usage</span>
+          <span class="text-mnt-primary">{{ Math.round(totalCpu) }}%</span>
         </div>
-        <div class="h-1.5 w-full bg-pb-primary rounded-full border border-pb-default overflow-hidden">
+        <div class="h-1.5 w-full bg-mnt-primary rounded-full border border-mnt-default overflow-hidden">
           <div
             class="h-full rounded-full transition-all duration-700"
             :class="gaugeBarColor(totalCpu)"
@@ -78,12 +78,12 @@ onUnmounted(() => {
       <!-- RAM -->
       <div class="space-y-1.5">
         <div class="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
-          <span class="text-pb-muted">RAM Memory</span>
-          <span class="text-pb-primary text-right">
+          <span class="text-mnt-muted">RAM Memory</span>
+          <span class="text-mnt-primary text-right">
             {{ resources.formatBytes(totalMemUsed) }} / {{ resources.formatBytes(totalMemLimit) }}
           </span>
         </div>
-        <div class="h-1.5 w-full bg-pb-primary rounded-full border border-pb-default overflow-hidden">
+        <div class="h-1.5 w-full bg-mnt-primary rounded-full border border-mnt-default overflow-hidden">
           <div
             class="h-full rounded-full transition-all duration-700"
             :class="gaugeBarColor(memPercent, { warn: 70, crit: 85 })"
@@ -93,19 +93,19 @@ onUnmounted(() => {
       </div>
 
       <!-- Stats -->
-      <div class="pt-4 border-t border-pb-default space-y-2.5">
+      <div class="pt-4 border-t border-mnt-default space-y-2.5">
         <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-          <span class="text-pb-muted">Containers</span>
-          <span class="text-pb-secondary font-mono">{{ Object.keys(resources.snapshots).length }} active</span>
+          <span class="text-mnt-muted">Containers</span>
+          <span class="text-mnt-secondary font-mono">{{ Object.keys(resources.snapshots).length }} active</span>
         </div>
         <template v-if="props.showMonitorStats">
           <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-            <span class="text-pb-muted">Monitors</span>
-            <span class="text-pb-secondary font-mono">{{ dashboard.monitors.length }} total</span>
+            <span class="text-mnt-muted">Monitors</span>
+            <span class="text-mnt-secondary font-mono">{{ dashboard.monitors.length }} total</span>
           </div>
           <div class="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-            <span class="text-pb-muted">Availability</span>
-            <span class="text-pb-status-ok font-mono">
+            <span class="text-mnt-muted">Availability</span>
+            <span class="text-mnt-status-ok font-mono">
               {{ dashboard.monitors.length > 0 ? ((dashboard.globalStats.running / dashboard.monitors.length) * 100).toFixed(1) : '—' }}%
             </span>
           </div>

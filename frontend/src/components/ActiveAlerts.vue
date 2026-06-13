@@ -62,21 +62,21 @@ function openEntityDetail(alert: Alert) {
 const severityConfig: Record<string, { label: string; color: string; bg: string; dot: string }> = {
   critical: {
     label: 'Critical',
-    color: 'var(--pb-status-down)',
-    bg: 'var(--pb-status-down-bg)',
-    dot: 'var(--pb-status-down)',
+    color: 'var(--mnt-status-down)',
+    bg: 'var(--mnt-status-down-bg)',
+    dot: 'var(--mnt-status-down)',
   },
   warning: {
     label: 'Warning',
-    color: 'var(--pb-status-warn)',
-    bg: 'var(--pb-status-warn-bg)',
-    dot: 'var(--pb-status-warn)',
+    color: 'var(--mnt-status-warn)',
+    bg: 'var(--mnt-status-warn-bg)',
+    dot: 'var(--mnt-status-warn)',
   },
   info: {
     label: 'Info',
-    color: 'var(--pb-accent)',
+    color: 'var(--mnt-accent)',
     bg: 'rgba(59, 130, 246, 0.15)',
-    dot: 'var(--pb-accent)',
+    dot: 'var(--mnt-accent)',
   },
 }
 
@@ -101,9 +101,9 @@ onMounted(() => {
     <div
       v-if="store.totalActiveCount === 0"
       class="rounded-lg border p-6 text-center"
-      style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+      style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
     >
-      <p class="text-sm" style="color: var(--pb-text-muted)">No active alerts</p>
+      <p class="text-sm" style="color: var(--mnt-text-muted)">No active alerts</p>
     </div>
 
     <div v-else class="space-y-3">
@@ -132,7 +132,7 @@ onMounted(() => {
               <div class="flex items-center gap-2">
                 <span
                   class="rounded px-1.5 py-0.5 text-xs font-medium"
-                  style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
+                  style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
                 >
                   {{ alert.source }}
                 </span>
@@ -144,11 +144,11 @@ onMounted(() => {
                   :runs="escalationRuns[alert.id] ?? []"
                 />
               </div>
-              <div v-if="alert.entity_name" class="mt-0.5 text-xs" style="color: var(--pb-text-muted)">
+              <div v-if="alert.entity_name" class="mt-0.5 text-xs" style="color: var(--mnt-text-muted)">
                 {{ alert.entity_name }}
               </div>
             </div>
-            <span class="ml-3 shrink-0 text-xs" style="color: var(--pb-text-muted)">
+            <span class="ml-3 shrink-0 text-xs" style="color: var(--mnt-text-muted)">
               {{ timeAgo(alert.fired_at) }}
             </span>
           </div>

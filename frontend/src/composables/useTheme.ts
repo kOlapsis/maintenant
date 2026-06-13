@@ -14,7 +14,7 @@ import { ref, readonly, onMounted, onUnmounted } from 'vue'
 export type ThemeValue = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 
-const STORAGE_KEY = 'pb-theme'
+const STORAGE_KEY = 'mnt-theme'
 
 const theme = ref<ThemeValue>('system')
 const resolvedTheme = ref<ResolvedTheme>('dark')
@@ -59,7 +59,8 @@ function detachOsListener() {
 
 export function useTheme() {
   onMounted(() => {
-    const stored = localStorage.getItem(STORAGE_KEY) as ThemeValue | null
+    // Fallback to the legacy "pb-" key so existing users keep their choice.
+    const stored = (localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem('pb-theme')) as ThemeValue | null
     const valid: ThemeValue[] = ['light', 'dark', 'system']
     theme.value = stored && valid.includes(stored) ? stored : 'system'
 

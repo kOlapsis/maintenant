@@ -6,17 +6,17 @@ defineProps<{
 }>()
 
 const barColorMap: Record<string, string> = {
-  green: 'bg-pb-sev-ok-solid',
-  yellow: 'bg-pb-sev-warning-solid',
+  green: 'bg-mnt-sev-ok-solid',
+  yellow: 'bg-mnt-sev-warning-solid',
   orange: 'bg-orange-500',
-  red: 'bg-pb-sev-incident-solid',
+  red: 'bg-mnt-sev-incident-solid',
 }
 
 const textColorMap: Record<string, string> = {
-  green: 'text-pb-status-ok',
-  yellow: 'text-pb-status-warn',
-  orange: 'text-pb-status-warn',
-  red: 'text-pb-status-down',
+  green: 'text-mnt-status-ok',
+  yellow: 'text-mnt-status-warn',
+  orange: 'text-mnt-status-warn',
+  red: 'text-mnt-status-down',
 }
 
 function scoreColor(score: number): string {
@@ -43,13 +43,13 @@ function categoryLabel(name: string): string {
     <div
       v-for="cat in categories"
       :key="cat.name"
-      class="bg-pb-surface rounded-xl p-4 border border-pb-default"
+      class="bg-mnt-surface rounded-xl p-4 border border-mnt-default"
     >
       <div class="mb-2 flex items-center justify-between">
-        <span class="text-sm font-semibold text-pb-primary">
+        <span class="text-sm font-semibold text-mnt-primary">
           {{ categoryLabel(cat.name) }}
         </span>
-        <span class="text-[10px] text-pb-muted font-bold">{{ cat.weight }}%</span>
+        <span class="text-[10px] text-mnt-muted font-bold">{{ cat.weight }}%</span>
       </div>
 
       <template v-if="cat.applicable">
@@ -57,10 +57,10 @@ function categoryLabel(name: string): string {
           <span class="text-2xl font-black" :class="textColorMap[scoreColor(cat.sub_score)]">
             {{ cat.sub_score }}
           </span>
-          <span class="text-[10px] text-pb-muted font-bold">/100</span>
+          <span class="text-[10px] text-mnt-muted font-bold">/100</span>
         </div>
 
-        <div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-pb-primary border border-pb-default">
+        <div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-mnt-primary border border-mnt-default">
           <div
             class="h-full rounded-full transition-all duration-700"
             :class="barColorMap[scoreColor(cat.sub_score)]"
@@ -69,15 +69,15 @@ function categoryLabel(name: string): string {
         </div>
 
         <div class="flex items-center justify-between text-[10px]">
-          <span class="text-pb-muted">{{ cat.summary }}</span>
-          <span v-if="cat.issue_count > 0" class="text-pb-muted font-bold">
+          <span class="text-mnt-muted">{{ cat.summary }}</span>
+          <span v-if="cat.issue_count > 0" class="text-mnt-muted font-bold">
             {{ cat.issue_count }} issue{{ cat.issue_count !== 1 ? 's' : '' }}
           </span>
         </div>
       </template>
 
       <template v-else>
-        <div class="py-2 text-xs text-pb-muted italic">
+        <div class="py-2 text-xs text-mnt-muted italic">
           Not applicable
         </div>
       </template>

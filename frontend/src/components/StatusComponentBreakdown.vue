@@ -19,11 +19,11 @@ defineProps<{
 }>()
 
 const statusColors: Record<string, string> = {
-  operational: 'var(--pb-status-ok)',
-  degraded: 'var(--pb-status-warn)',
-  partial_outage: 'var(--pb-status-critical)',
-  major_outage: 'var(--pb-status-down)',
-  under_maintenance: 'var(--pb-accent)',
+  operational: 'var(--mnt-status-ok)',
+  degraded: 'var(--mnt-status-warn)',
+  partial_outage: 'var(--mnt-status-critical)',
+  major_outage: 'var(--mnt-status-down)',
+  under_maintenance: 'var(--mnt-accent)',
 }
 
 const typeLabels: Record<string, string> = {
@@ -35,8 +35,8 @@ const typeLabels: Record<string, string> = {
 </script>
 
 <template>
-  <div class="mt-2 space-y-1 rounded-lg border border-pb-default bg-pb-primary p-3">
-    <div v-if="!monitors?.length" class="text-xs text-pb-muted">No monitors</div>
+  <div class="mt-2 space-y-1 rounded-lg border border-mnt-default bg-mnt-primary p-3">
+    <div v-if="!monitors?.length" class="text-xs text-mnt-muted">No monitors</div>
     <div
       v-for="m in monitors"
       :key="`${m.type}-${m.id}`"
@@ -44,10 +44,10 @@ const typeLabels: Record<string, string> = {
     >
       <span
         class="h-2 w-2 flex-shrink-0 rounded-full"
-        :style="{ background: statusColors[m.status ?? 'operational'] || 'var(--pb-text-muted)' }"
+        :style="{ background: statusColors[m.status ?? 'operational'] || 'var(--mnt-text-muted)' }"
       ></span>
-      <span class="flex-1 text-sm text-pb-secondary">{{ m.name || `${typeLabels[m.type] || m.type} #${m.id}` }}</span>
-      <span class="text-[10px] font-bold uppercase tracking-widest text-pb-muted">{{ typeLabels[m.type] || m.type }}</span>
+      <span class="flex-1 text-sm text-mnt-secondary">{{ m.name || `${typeLabels[m.type] || m.type} #${m.id}` }}</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-mnt-muted">{{ typeLabels[m.type] || m.type }}</span>
     </div>
   </div>
 </template>

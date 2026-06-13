@@ -61,18 +61,18 @@ onMounted(() => {
 
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
-    <div class="max-w-7xl mx-auto space-y-6 pb-12">
+    <div class="max-w-7xl mx-auto space-y-6 mnt-12">
 
       <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-black text-pb-primary">Escalation Policies</h1>
-          <p class="mt-1 text-sm text-pb-muted">
+          <h1 class="text-2xl font-black text-mnt-primary">Escalation Policies</h1>
+          <p class="mt-1 text-sm text-mnt-muted">
             Multi-level alert routing with automatic escalation chains
           </p>
         </div>
         <div v-if="store.limits" class="flex items-center gap-3">
-          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+          <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
             <template v-if="store.limits.max_active === -1">
               {{ store.limits.current_active }} active
             </template>
@@ -88,14 +88,14 @@ onMounted(() => {
         <div class="space-y-4">
           <!-- Action bar -->
           <div class="flex items-center justify-between">
-            <p class="text-xs text-pb-muted">
+            <p class="text-xs text-mnt-muted">
               <template v-if="store.policies.length > 0">
                 {{ store.policies.length }} {{ store.policies.length === 1 ? 'policy' : 'policies' }}
               </template>
             </p>
             <button
               v-if="!showEditor"
-              class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
               @click="openCreate"
             >
               <Plus :size="13" />
@@ -124,7 +124,7 @@ onMounted(() => {
           <!-- Error -->
           <div
             v-if="store.error"
-            class="px-4 py-3 rounded-lg bg-pb-status-down/10 border border-pb-status-down/30 text-xs text-pb-status-down"
+            class="px-4 py-3 rounded-lg bg-mnt-status-down/10 border border-mnt-status-down/30 text-xs text-mnt-status-down"
           >
             {{ store.error }}
           </div>
@@ -132,32 +132,32 @@ onMounted(() => {
 
         <!-- Placeholder slot (Community Edition) -->
         <template #placeholder>
-          <div class="bg-pb-surface rounded-2xl border border-pb-default overflow-hidden">
+          <div class="bg-mnt-surface rounded-2xl border border-mnt-default overflow-hidden">
             <div class="px-6 py-10 flex flex-col items-center text-center">
-              <div class="w-12 h-12 rounded-xl bg-pb-green-500/10 border border-pb-green-500/20 flex items-center justify-center mb-4">
-                <BellRing :size="22" class="text-pb-green-400" />
+              <div class="w-12 h-12 rounded-xl bg-mnt-green-500/10 border border-mnt-green-500/20 flex items-center justify-center mb-4">
+                <BellRing :size="22" class="text-mnt-green-400" />
               </div>
-              <h2 class="text-base font-bold text-pb-primary mb-1">Escalation policies</h2>
-              <p class="text-sm text-pb-muted max-w-md mb-6 leading-relaxed">
+              <h2 class="text-base font-bold text-mnt-primary mb-1">Escalation policies</h2>
+              <p class="text-sm text-mnt-muted max-w-md mb-6 leading-relaxed">
                 Automatically escalate unacknowledged alerts through a chain of notification levels — each with a configurable delay and a distinct set of channels.
               </p>
 
               <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
                 <li class="flex items-start gap-3">
-                  <CheckCircle2 :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-pb-secondary">
+                  <CheckCircle2 :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-mnt-secondary">
                     Multi-level chains: page different teams at escalating delays
                   </span>
                 </li>
                 <li class="flex items-start gap-3">
-                  <CheckCircle2 :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-pb-secondary">
+                  <CheckCircle2 :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-mnt-secondary">
                     Acknowledgment or resolution automatically stops the escalation
                   </span>
                 </li>
                 <li class="flex items-start gap-3">
-                  <ShieldAlert :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-pb-secondary">
+                  <ShieldAlert :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
+                  <span class="text-sm text-mnt-secondary">
                     Full audit trail: every delivery attempt logged with status and error
                   </span>
                 </li>
@@ -165,7 +165,7 @@ onMounted(() => {
 
               <RouterLink
                 to="/pro-edition"
-                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted shadow-lg shadow-pb-green-500/20 transition-colors"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted shadow-lg shadow-mnt-green-500/20 transition-colors"
               >
                 Unlock with Pro
               </RouterLink>

@@ -47,29 +47,29 @@ const tasksByNode = computed(() => {
 
 function stateColor(state: string): string {
   switch (state) {
-    case 'running': return 'text-pb-status-ok'
-    case 'complete': return 'text-pb-muted'
-    case 'failed': return 'text-pb-status-down'
-    case 'rejected': return 'text-pb-status-down'
-    case 'shutdown': return 'text-pb-muted'
-    case 'preparing': case 'starting': case 'assigned': return 'text-pb-secondary'
-    default: return 'text-pb-status-warn'
+    case 'running': return 'text-mnt-status-ok'
+    case 'complete': return 'text-mnt-muted'
+    case 'failed': return 'text-mnt-status-down'
+    case 'rejected': return 'text-mnt-status-down'
+    case 'shutdown': return 'text-mnt-muted'
+    case 'preparing': case 'starting': case 'assigned': return 'text-mnt-secondary'
+    default: return 'text-mnt-status-warn'
   }
 }
 
 function stateDot(state: string): string {
   switch (state) {
-    case 'running': return 'bg-pb-sev-ok-solid'
-    case 'failed': case 'rejected': return 'bg-pb-sev-incident-solid'
-    case 'complete': return 'bg-pb-sev-neutral-solid'
-    default: return 'bg-pb-sev-warning-solid'
+    case 'running': return 'bg-mnt-sev-ok-solid'
+    case 'failed': case 'rejected': return 'bg-mnt-sev-incident-solid'
+    case 'complete': return 'bg-mnt-sev-neutral-solid'
+    default: return 'bg-mnt-sev-warning-solid'
   }
 }
 </script>
 
 <template>
   <div>
-    <div v-if="tasks.length === 0" class="text-sm text-pb-muted py-4 text-center">
+    <div v-if="tasks.length === 0" class="text-sm text-mnt-muted py-4 text-center">
       No tasks
     </div>
 
@@ -78,17 +78,17 @@ function stateDot(state: string): string {
       <div
         v-for="task in sortedTasks"
         :key="task.task_id"
-        class="bg-pb-surface rounded-lg border border-pb-default px-3 py-2 flex items-center justify-between"
+        class="bg-mnt-surface rounded-lg border border-mnt-default px-3 py-2 flex items-center justify-between"
       >
         <div class="flex items-center gap-2 min-w-0">
           <div :class="['w-2 h-2 rounded-full flex-shrink-0', stateDot(task.state)]" />
-          <span class="text-xs text-pb-secondary font-mono">#{{ task.slot }}</span>
+          <span class="text-xs text-mnt-secondary font-mono">#{{ task.slot }}</span>
           <span :class="['text-xs font-medium', stateColor(task.state)]">{{ task.state }}</span>
-          <span v-if="task.node_hostname" class="text-xs text-pb-muted truncate">{{ task.node_hostname }}</span>
+          <span v-if="task.node_hostname" class="text-xs text-mnt-muted truncate">{{ task.node_hostname }}</span>
         </div>
-        <div class="flex items-center gap-3 text-xs text-pb-muted flex-shrink-0 ml-2">
-          <span v-if="task.error" class="text-pb-status-down truncate max-w-48" :title="task.error">{{ task.error }}</span>
-          <span v-if="task.exit_code !== null && task.exit_code !== 0" class="text-pb-status-down">exit {{ task.exit_code }}</span>
+        <div class="flex items-center gap-3 text-xs text-mnt-muted flex-shrink-0 ml-2">
+          <span v-if="task.error" class="text-mnt-status-down truncate max-w-48" :title="task.error">{{ task.error }}</span>
+          <span v-if="task.exit_code !== null && task.exit_code !== 0" class="text-mnt-status-down">exit {{ task.exit_code }}</span>
           <span class="tabular-nums">{{ timeAgo(task.timestamp) }}</span>
         </div>
       </div>
@@ -97,23 +97,23 @@ function stateDot(state: string): string {
     <!-- Grouped by node -->
     <div v-else-if="tasksByNode" class="space-y-3">
       <div v-for="[nodeId, group] in tasksByNode" :key="nodeId">
-        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-1">
+        <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-1">
           {{ group.hostname }} ({{ group.tasks.length }})
         </p>
         <div class="space-y-1">
           <div
             v-for="task in group.tasks"
             :key="task.task_id"
-            class="bg-pb-surface rounded-lg border border-pb-default px-3 py-2 flex items-center justify-between"
+            class="bg-mnt-surface rounded-lg border border-mnt-default px-3 py-2 flex items-center justify-between"
           >
             <div class="flex items-center gap-2 min-w-0">
               <div :class="['w-2 h-2 rounded-full flex-shrink-0', stateDot(task.state)]" />
-              <span class="text-xs text-pb-secondary font-mono">#{{ task.slot }}</span>
+              <span class="text-xs text-mnt-secondary font-mono">#{{ task.slot }}</span>
               <span :class="['text-xs font-medium', stateColor(task.state)]">{{ task.state }}</span>
             </div>
-            <div class="flex items-center gap-3 text-xs text-pb-muted flex-shrink-0 ml-2">
-              <span v-if="task.error" class="text-pb-status-down truncate max-w-48" :title="task.error">{{ task.error }}</span>
-              <span v-if="task.exit_code !== null && task.exit_code !== 0" class="text-pb-status-down">exit {{ task.exit_code }}</span>
+            <div class="flex items-center gap-3 text-xs text-mnt-muted flex-shrink-0 ml-2">
+              <span v-if="task.error" class="text-mnt-status-down truncate max-w-48" :title="task.error">{{ task.error }}</span>
+              <span v-if="task.exit_code !== null && task.exit_code !== 0" class="text-mnt-status-down">exit {{ task.exit_code }}</span>
               <span class="tabular-nums">{{ timeAgo(task.timestamp) }}</span>
             </div>
           </div>

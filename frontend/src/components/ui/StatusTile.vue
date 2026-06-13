@@ -19,9 +19,9 @@ const emit = defineEmits<{ select: [] }>()
 // relying on colour alone (the left rail + marker are the secondary channels).
 const tintClass = computed(() =>
   props.severity === 'incident'
-    ? 'bg-pb-sev-incident'
+    ? 'bg-mnt-sev-incident'
     : props.severity === 'warning'
-      ? 'bg-pb-sev-warning'
+      ? 'bg-mnt-sev-warning'
       : '',
 )
 const marked = computed(() => props.severity === 'incident' || props.severity === 'warning')
@@ -36,7 +36,7 @@ function onKey(e: KeyboardEvent) {
 
 <template>
   <div
-    class="pb-tile focus-ring"
+    class="mnt-tile focus-ring"
     :class="tintClass"
     role="button"
     tabindex="0"
@@ -44,11 +44,11 @@ function onKey(e: KeyboardEvent) {
     @click="emit('select')"
     @keydown="onKey"
   >
-    <div class="truncate text-[11.5px] font-semibold text-pb-primary">{{ name }}</div>
-    <div v-if="meta" class="mt-0.5 truncate font-mono text-[10px] text-pb-muted">{{ meta }}</div>
+    <div class="truncate text-[11.5px] font-semibold text-mnt-primary">{{ name }}</div>
+    <div v-if="meta" class="mt-0.5 truncate font-mono text-[10px] text-mnt-muted">{{ meta }}</div>
     <span
       v-if="marked"
-      class="pb-tile-mark"
+      class="mnt-tile-mark"
       :style="{ backgroundColor: severityVar(severity) }"
       aria-hidden="true"
     />
@@ -57,22 +57,22 @@ function onKey(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-.pb-tile {
+.mnt-tile {
   position: relative;
   cursor: pointer;
-  border: 1px solid var(--pb-border-default);
+  border: 1px solid var(--mnt-border-default);
   border-left-width: 3px;
-  border-radius: var(--pb-radius-md);
-  background: var(--pb-bg-elevated);
+  border-radius: var(--mnt-radius-md);
+  background: var(--mnt-bg-elevated);
   padding: 9px 10px;
   transition:
     transform 0.08s,
     border-color 0.12s;
 }
-.pb-tile:hover {
+.mnt-tile:hover {
   transform: translateY(-1px);
 }
-.pb-tile-mark {
+.mnt-tile-mark {
   position: absolute;
   top: 8px;
   right: 8px;
@@ -81,10 +81,10 @@ function onKey(e: KeyboardEvent) {
   border-radius: 50%;
 }
 @media (prefers-reduced-motion: reduce) {
-  .pb-tile {
+  .mnt-tile {
     transition: none;
   }
-  .pb-tile:hover {
+  .mnt-tile:hover {
     transform: none;
   }
 }

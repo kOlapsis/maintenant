@@ -52,40 +52,40 @@ function formatDateShort(iso: string | undefined): string {
 
 function checkStatus(check: CertCheckResult): { color: string; label: string } {
   if (check.error_message) {
-    return { color: 'var(--pb-status-down)', label: 'error' }
+    return { color: 'var(--mnt-status-down)', label: 'error' }
   }
   if (check.chain_valid === false || check.hostname_match === false) {
-    return { color: 'var(--pb-status-down)', label: 'invalid' }
+    return { color: 'var(--mnt-status-down)', label: 'invalid' }
   }
   if (check.ocsp_status === 'revoked') {
-    return { color: 'var(--pb-status-down)', label: 'revoked' }
+    return { color: 'var(--mnt-status-down)', label: 'revoked' }
   }
   const days = check.days_remaining
   if (days === undefined || days === null) {
-    return { color: 'var(--pb-text-muted)', label: 'unknown' }
+    return { color: 'var(--mnt-text-muted)', label: 'unknown' }
   }
-  if (days <= 0) return { color: 'var(--pb-status-down)', label: 'expired' }
-  if (days <= 7) return { color: 'var(--pb-status-critical)', label: 'expiring' }
-  if (days <= 30) return { color: 'var(--pb-status-warn)', label: 'expiring' }
-  return { color: 'var(--pb-status-ok)', label: 'valid' }
+  if (days <= 0) return { color: 'var(--mnt-status-down)', label: 'expired' }
+  if (days <= 7) return { color: 'var(--mnt-status-critical)', label: 'expiring' }
+  if (days <= 30) return { color: 'var(--mnt-status-warn)', label: 'expiring' }
+  return { color: 'var(--mnt-status-ok)', label: 'valid' }
 }
 </script>
 
 <template>
   <div>
-    <div v-if="loading" class="py-8 text-center text-sm" :style="{ color: 'var(--pb-text-muted)' }">Loading...</div>
+    <div v-if="loading" class="py-8 text-center text-sm" :style="{ color: 'var(--mnt-text-muted)' }">Loading...</div>
     <div
       v-else-if="error"
       class="rounded p-3 text-sm"
       :style="{
-        backgroundColor: 'var(--pb-status-down-bg)',
-        color: 'var(--pb-status-down)',
-        borderRadius: 'var(--pb-radius-sm)',
+        backgroundColor: 'var(--mnt-status-down-bg)',
+        color: 'var(--mnt-status-down)',
+        borderRadius: 'var(--mnt-radius-sm)',
       }"
     >
       {{ error }}
     </div>
-    <div v-else-if="checks.length === 0" class="py-8 text-center text-sm" :style="{ color: 'var(--pb-text-muted)' }">
+    <div v-else-if="checks.length === 0" class="py-8 text-center text-sm" :style="{ color: 'var(--mnt-text-muted)' }">
       No check history yet.
     </div>
     <div v-else>
@@ -93,27 +93,27 @@ function checkStatus(check: CertCheckResult): { color: string; label: string } {
         v-for="check in checks"
         :key="check.id"
         class="flex items-center gap-3 px-2 py-1.5 text-sm"
-        :style="{ borderBottom: '1px solid var(--pb-border-subtle)' }"
+        :style="{ borderBottom: '1px solid var(--mnt-border-subtle)' }"
       >
         <span
           class="h-2 w-2 shrink-0 rounded-full"
           :style="{ backgroundColor: checkStatus(check).color }"
           :title="checkStatus(check).label"
         />
-        <span class="shrink-0 tabular-nums" :style="{ color: 'var(--pb-text-secondary)' }">
+        <span class="shrink-0 tabular-nums" :style="{ color: 'var(--mnt-text-secondary)' }">
           {{ formatDateShort(check.checked_at) }}
         </span>
         <span
           v-if="check.days_remaining !== undefined && check.days_remaining !== null && !check.error_message"
           class="shrink-0 tabular-nums text-xs"
-          :style="{ color: 'var(--pb-text-muted)' }"
+          :style="{ color: 'var(--mnt-text-muted)' }"
         >
           {{ check.days_remaining }}d
         </span>
         <span
           v-if="check.error_message"
           class="truncate text-xs"
-          :style="{ color: 'var(--pb-status-down)' }"
+          :style="{ color: 'var(--mnt-status-down)' }"
         >
           {{ check.error_message }}
         </span>

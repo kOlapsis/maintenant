@@ -14,7 +14,7 @@ export function tierFromCount(count: number): Tier {
 }
 
 function storageKey(tier: Tier): string {
-  return `pb:banner:pro-tier-${tier}`
+  return `mnt:banner:pro-tier-${tier}`
 }
 
 export interface ProBannerHandle {
@@ -45,7 +45,7 @@ export function useProBanner(): ProBannerHandle {
     dismissNonce.value
     const t = tier.value
     if (t === null || t === 0) return false
-    const raw = localStorage.getItem(storageKey(t))
+    const raw = localStorage.getItem(storageKey(t)) ?? localStorage.getItem(`pb:banner:pro-tier-${t}`)
     const ts = Number(raw)
     return Number.isFinite(ts) && Date.now() - ts < COOLDOWN_MS
   })

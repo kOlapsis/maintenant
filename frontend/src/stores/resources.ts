@@ -20,7 +20,7 @@ import { sseBus } from '@/services/sseBus'
 
 // Persisted global host filter: null = all resources, 'local' = the server's own
 // runtime, '<agent_id>' = a specific enrolled agent.
-const FILTER_KEY = 'pb:host-filter:selected'
+const FILTER_KEY = 'mnt:host-filter:selected'
 
 export interface ResourceAlert {
   container_id: string
@@ -42,7 +42,7 @@ export const useResourcesStore = defineStore('resources', () => {
   // Global host filter — the single source of truth that scopes every list
   // (containers, endpoints, certificates, heartbeats) and the dashboard.
   // null = all resources, 'local' = the server's own runtime, '<id>' = an agent.
-  const selected = ref<string | null>(localStorage.getItem(FILTER_KEY) || null)
+  const selected = ref<string | null>((localStorage.getItem(FILTER_KEY) ?? localStorage.getItem('pb:host-filter:selected')) || null)
 
   // Query value for entity lists: passes 'local'/'<id>' through verbatim (the
   // backend understands both); null → undefined → no filter (all resources).

@@ -82,8 +82,8 @@ async function handleCreate() {
   <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-black text-pb-primary">Heartbeats</h1>
-        <p class="mt-1 text-sm" :style="{ color: 'var(--pb-text-muted)' }">
+        <h1 class="text-2xl font-black text-mnt-primary">Heartbeats</h1>
+        <p class="mt-1 text-sm" :style="{ color: 'var(--mnt-text-muted)' }">
           Passive cron &amp; scheduled task monitoring
         </p>
       </div>
@@ -92,8 +92,8 @@ async function handleCreate() {
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"
           :style="{
-            backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
-            color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+            backgroundColor: quota.isAtLimit ? 'var(--mnt-status-down-bg)' : quota.nearLimit ? 'var(--mnt-status-warn-bg)' : 'var(--mnt-bg-elevated)',
+            color: quota.isAtLimit ? 'var(--mnt-status-down)' : quota.nearLimit ? 'var(--mnt-status-warn)' : 'var(--mnt-text-secondary)',
           }"
         >
           {{ quota.used }}/{{ quota.limit }}
@@ -102,7 +102,7 @@ async function handleCreate() {
           v-if="quota.nearLimit && !quota.isAtLimit"
           :to="{ name: 'pro-edition' }"
           class="text-xs font-medium transition-opacity hover:opacity-80"
-          style="color: var(--pb-accent)"
+          style="color: var(--mnt-accent)"
         >
           Upgrade
         </router-link>
@@ -111,9 +111,9 @@ async function handleCreate() {
           :disabled="quota.isAtLimit"
           :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} heartbeats` : ''"
           :style="{
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -133,11 +133,11 @@ async function handleCreate() {
       :doc-href="docUrl('features/heartbeats/#ping-url-format')"
     >
       Each monitor gets a unique public ping URL
-      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/ping/{uuid}</code>).
+      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/ping/{uuid}</code>).
       Hit it from a cron job, systemd timer, or any script to report success &mdash; append
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/$?</code>
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/$?</code>
       to forward the exit code, or use
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/start</code>
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/start</code>
       + exit code to track duration. If no ping arrives before the deadline (interval + grace), a <em>deadline missed</em> alert fires.
     </FeatureHint>
 
@@ -146,19 +146,19 @@ async function handleCreate() {
       v-if="showCreateForm"
       class="mb-6 p-4"
       :style="{
-        backgroundColor: 'var(--pb-bg-surface)',
-        border: '1px solid var(--pb-border-default)',
-        borderRadius: 'var(--pb-radius-lg)',
+        backgroundColor: 'var(--mnt-bg-surface)',
+        border: '1px solid var(--mnt-border-default)',
+        borderRadius: 'var(--mnt-radius-lg)',
       }"
     >
-      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--pb-text-primary)' }">Create Heartbeat Monitor</h3>
+      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Heartbeat Monitor</h3>
       <div
         v-if="createError"
         class="mb-3 rounded p-2 text-sm"
         :style="{
-          backgroundColor: 'var(--pb-status-down-bg)',
-          color: 'var(--pb-status-down)',
-          borderRadius: 'var(--pb-radius-sm)',
+          backgroundColor: 'var(--mnt-status-down-bg)',
+          color: 'var(--mnt-status-down)',
+          borderRadius: 'var(--mnt-radius-sm)',
         }"
       >
         <template v-if="isQuotaError">
@@ -166,7 +166,7 @@ async function handleCreate() {
           <a
             href="/pro-edition"
             class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: var(--pb-accent)"
+            style="color: var(--mnt-accent)"
           >
             Upgrade to Pro
           </a>
@@ -178,17 +178,17 @@ async function handleCreate() {
       </div>
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Name</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Name</label>
           <input
             v-model="form.name"
             type="text"
             placeholder="e.g., Nightly Backup"
             :style="{
               width: '100%',
-              borderRadius: 'var(--pb-radius-md)',
-              border: '1px solid var(--pb-border-default)',
-              backgroundColor: 'var(--pb-bg-elevated)',
-              color: 'var(--pb-text-primary)',
+              borderRadius: 'var(--mnt-radius-md)',
+              border: '1px solid var(--mnt-border-default)',
+              backgroundColor: 'var(--mnt-bg-elevated)',
+              color: 'var(--mnt-text-primary)',
               padding: '0.375rem 0.75rem',
               fontSize: '0.875rem',
               minHeight: '44px',
@@ -197,7 +197,7 @@ async function handleCreate() {
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Expected Interval</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Expected Interval</label>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="preset in intervalPresets"
@@ -206,14 +206,14 @@ async function handleCreate() {
               class="rounded-full px-3 py-1 text-xs font-medium transition"
               :style="{
                 border: form.interval_seconds === preset.value
-                  ? '1px solid var(--pb-accent)'
-                  : '1px solid var(--pb-border-default)',
+                  ? '1px solid var(--mnt-accent)'
+                  : '1px solid var(--mnt-border-default)',
                 backgroundColor: form.interval_seconds === preset.value
-                  ? 'var(--pb-accent)'
+                  ? 'var(--mnt-accent)'
                   : 'transparent',
                 color: form.interval_seconds === preset.value
-                  ? 'var(--pb-text-inverted)'
-                  : 'var(--pb-text-secondary)',
+                  ? 'var(--mnt-text-inverted)'
+                  : 'var(--mnt-text-secondary)',
               }"
               @click="form.interval_seconds = preset.value"
             >
@@ -222,7 +222,7 @@ async function handleCreate() {
           </div>
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Grace Period (seconds)</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Grace Period (seconds)</label>
           <input
             v-model.number="form.grace_seconds"
             type="number"
@@ -230,10 +230,10 @@ async function handleCreate() {
             :max="form.interval_seconds"
             :style="{
               width: '100%',
-              borderRadius: 'var(--pb-radius-md)',
-              border: '1px solid var(--pb-border-default)',
-              backgroundColor: 'var(--pb-bg-elevated)',
-              color: 'var(--pb-text-primary)',
+              borderRadius: 'var(--mnt-radius-md)',
+              border: '1px solid var(--mnt-border-default)',
+              backgroundColor: 'var(--mnt-bg-elevated)',
+              color: 'var(--mnt-text-primary)',
               padding: '0.375rem 0.75rem',
               fontSize: '0.875rem',
               minHeight: '44px',
@@ -244,9 +244,9 @@ async function handleCreate() {
           type="submit"
           :style="{
             alignSelf: 'flex-start',
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -259,19 +259,19 @@ async function handleCreate() {
 
     <!-- Status summary -->
     <div class="mb-6 flex gap-4 text-sm">
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-ok-bg)', color: 'var(--pb-status-ok)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-status-ok)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.up }} up
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-down-bg)', color: 'var(--pb-status-down)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.down }} down
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-ok-bg)', color: 'var(--pb-accent)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-accent)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.started }} started
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-muted)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.new }} new
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-warn-bg)', color: 'var(--pb-status-warn)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.paused }} paused
       </span>
     </div>
@@ -292,7 +292,7 @@ async function handleCreate() {
       <template #action>
         <button
           class="min-h-[44px] rounded-lg px-4 text-sm font-medium"
-          style="background-color: var(--pb-accent); color: var(--pb-text-inverted); border-radius: var(--pb-radius-lg)"
+          style="background-color: var(--mnt-accent); color: var(--mnt-text-inverted); border-radius: var(--mnt-radius-lg)"
           @click="showCreateForm = true"
         >
           Create your first heartbeat

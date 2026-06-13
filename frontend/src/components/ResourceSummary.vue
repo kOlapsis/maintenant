@@ -63,21 +63,21 @@ watch([topMetric, topPeriod, () => store.summaryQuery], fetchTopConsumers)
     v-if="containerCount > 0"
     class="mb-6 rounded-lg p-4"
     :style="{
-      backgroundColor: 'var(--pb-bg-surface)',
-      border: '1px solid var(--pb-border-default)',
-      borderRadius: 'var(--pb-radius-lg)',
-      boxShadow: 'var(--pb-shadow-card)',
+      backgroundColor: 'var(--mnt-bg-surface)',
+      border: '1px solid var(--mnt-border-default)',
+      borderRadius: 'var(--mnt-radius-lg)',
+      boxShadow: 'var(--mnt-shadow-card)',
     }"
   >
     <!-- Summary text -->
-    <div class="mb-3 flex items-center justify-between text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+    <div class="mb-3 flex items-center justify-between text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
       <span>{{ store.formatBytes(totalMemUsed) }} / {{ store.formatBytes(totalMemLimit) }} RAM</span>
       <span>{{ containerCount }} containers</span>
     </div>
 
     <!-- Top consumers -->
     <div>
-      <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">Top Consumers</h4>
+      <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">Top Consumers</h4>
       <TopConsumersWidget
         :metric="topMetric"
         :period="topPeriod"

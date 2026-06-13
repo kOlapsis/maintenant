@@ -143,24 +143,24 @@ onUnmounted(() => {
   <div class="overflow-y-auto p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
     <div class="mb-6">
-      <h1 class="text-2xl font-black text-pb-primary">Status Page</h1>
-      <p class="mt-1 text-sm" style="color: var(--pb-text-muted)">
+      <h1 class="text-2xl font-black text-mnt-primary">Status Page</h1>
+      <p class="mt-1 text-sm" style="color: var(--mnt-text-muted)">
         Manage the public status page components, incidents, and maintenance windows
       </p>
       <a
         :href="statusURL || '/status'"
         target="_blank"
         class="mt-1 inline-block text-sm transition-colors"
-        style="color: var(--pb-accent)"
-        @mouseenter="($event.target as HTMLElement).style.color = 'var(--pb-accent-hover)'"
-        @mouseleave="($event.target as HTMLElement).style.color = 'var(--pb-accent)'"
+        style="color: var(--mnt-accent)"
+        @mouseenter="($event.target as HTMLElement).style.color = 'var(--mnt-accent-hover)'"
+        @mouseleave="($event.target as HTMLElement).style.color = 'var(--mnt-accent)'"
       >
         View public status page &rarr;
       </a>
     </div>
 
     <!-- Tab navigation -->
-    <div class="mb-4 border-b" style="border-color: var(--pb-border-default)">
+    <div class="mb-4 border-b" style="border-color: var(--mnt-border-default)">
       <nav class="-mb-px flex gap-6 overflow-x-auto">
         <button
           v-for="tab in [
@@ -173,24 +173,24 @@ onUnmounted(() => {
           ]"
           :key="tab.key"
           @click="activeTab = tab.key as Tab"
-          class="shrink-0 border-b-2 pb-2 text-sm font-medium transition-colors"
+          class="shrink-0 border-b-2 mnt-2 text-sm font-medium transition-colors"
           :style="{
-            borderColor: activeTab === tab.key ? 'var(--pb-accent)' : 'transparent',
-            color: activeTab === tab.key ? 'var(--pb-accent)' : 'var(--pb-text-muted)',
+            borderColor: activeTab === tab.key ? 'var(--mnt-accent)' : 'transparent',
+            color: activeTab === tab.key ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
           }"
         >
           {{ tab.label }}
           <span
             v-if="tab.key === 'subscribers' && store.subscriberTotal"
             class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
+            style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
           >
             {{ store.subscriberConfirmed }}/{{ store.subscriberTotal }}
           </span>
           <span
             v-else-if="tab.count"
             class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
+            style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
           >
             {{ tab.count }}
           </span>
@@ -209,37 +209,37 @@ onUnmounted(() => {
     <FeatureGate v-else-if="activeTab === 'subscribers'" feature="subscribers" title="Subscriber Notifications" description="Let your users subscribe to status updates by email. They get notified instantly when an incident starts or a maintenance is planned.">
       <div
         class="rounded-lg border p-6"
-        style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+        style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
       >
-        <h2 class="mb-3 text-lg font-semibold" style="color: var(--pb-text-primary)">Subscribers</h2>
+        <h2 class="mb-3 text-lg font-semibold" style="color: var(--mnt-text-primary)">Subscribers</h2>
         <div class="mb-3 flex gap-4">
-          <div class="rounded-lg border px-4 py-2" style="border-color: var(--pb-border-default); background: var(--pb-bg-elevated)">
-            <p class="text-2xl font-bold" style="color: var(--pb-text-primary)">{{ store.subscriberTotal }}</p>
-            <p class="text-xs" style="color: var(--pb-text-muted)">Total</p>
+          <div class="rounded-lg border px-4 py-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
+            <p class="text-2xl font-bold" style="color: var(--mnt-text-primary)">{{ store.subscriberTotal }}</p>
+            <p class="text-xs" style="color: var(--mnt-text-muted)">Total</p>
           </div>
-          <div class="rounded-lg border px-4 py-2" style="border-color: var(--pb-border-default); background: var(--pb-bg-elevated)">
-            <p class="text-2xl font-bold" style="color: var(--pb-status-ok)">{{ store.subscriberConfirmed }}</p>
-            <p class="text-xs" style="color: var(--pb-text-muted)">Confirmed</p>
+          <div class="rounded-lg border px-4 py-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
+            <p class="text-2xl font-bold" style="color: var(--mnt-status-ok)">{{ store.subscriberConfirmed }}</p>
+            <p class="text-xs" style="color: var(--mnt-text-muted)">Confirmed</p>
           </div>
         </div>
         <div v-if="(store.subscribers?.length ?? 0) === 0" class="text-center">
-          <p class="text-sm" style="color: var(--pb-text-muted)">No subscribers yet</p>
+          <p class="text-sm" style="color: var(--mnt-text-muted)">No subscribers yet</p>
         </div>
         <div v-else class="space-y-1">
           <div
             v-for="sub in store.subscribers"
             :key="sub.id"
             class="flex items-center justify-between rounded px-3 py-1.5 text-sm transition-colors"
-            style="color: var(--pb-text-secondary)"
-            @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--pb-bg-hover)'"
+            style="color: var(--mnt-text-secondary)"
+            @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
             @mouseleave="($event.currentTarget as HTMLElement).style.background = 'transparent'"
           >
             <span>{{ sub.email }}</span>
             <span
               class="rounded px-1.5 py-0.5 text-xs"
               :style="{
-                background: sub.confirmed ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-warn-bg)',
-                color: sub.confirmed ? 'var(--pb-status-ok)' : 'var(--pb-status-warn)',
+                background: sub.confirmed ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-warn-bg)',
+                color: sub.confirmed ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
               }"
             >
               {{ sub.confirmed ? 'confirmed' : 'pending' }}
@@ -265,11 +265,11 @@ onUnmounted(() => {
       <div class="space-y-6">
         <!-- Save bar -->
         <div class="flex items-center justify-end gap-3">
-          <span v-if="persoSaveSuccess" class="text-xs" style="color: var(--pb-status-ok)">Saved!</span>
-          <span v-if="persoSaveError" class="text-xs" style="color: var(--pb-status-error)">{{ persoSaveError }}</span>
+          <span v-if="persoSaveSuccess" class="text-xs" style="color: var(--mnt-status-ok)">Saved!</span>
+          <span v-if="persoSaveError" class="text-xs" style="color: var(--mnt-status-error)">{{ persoSaveError }}</span>
           <button
             class="px-4 py-1.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-            style="background: var(--pb-accent); color: #fff"
+            style="background: var(--mnt-accent); color: #fff"
             :disabled="persoSaving"
             @click="savePersonalization"
           >
@@ -281,13 +281,13 @@ onUnmounted(() => {
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
           <div
             class="rounded-xl border p-6"
-            style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+            style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
           >
             <BrandingSection ref="brandingRef" v-model:title="title" v-model:subtitle="subtitle" />
           </div>
           <div
             class="rounded-xl border p-6"
-            style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+            style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
           >
             <ColorPaletteSection v-model:palette="palette" v-model:warnings="contrastWarnings" />
           </div>
@@ -296,23 +296,23 @@ onUnmounted(() => {
         <!-- Row 2: Editorial content (full width) -->
         <div
           class="rounded-xl border p-6 space-y-6"
-          style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+          style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
         >
           <HeaderAnnouncementSection
             v-model:enabled="announcementEnabled"
             v-model:message-m-d="announcementMD"
             v-model:url="announcementURL"
           />
-          <hr style="border-color: var(--pb-border-default)" />
+          <hr style="border-color: var(--mnt-border-default)" />
           <FooterSection v-model:footer-text-m-d="footerTextMD" />
-          <hr style="border-color: var(--pb-border-default)" />
+          <hr style="border-color: var(--mnt-border-default)" />
           <FaqSection />
         </div>
 
         <!-- Row 3: Localization (full width) -->
         <div
           class="rounded-xl border p-6"
-          style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+          style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
         >
           <LocalizationSection
             v-model:locale="locale"

@@ -27,13 +27,13 @@ const valueStyle = computed(() =>
     :is="to ? RouterLink : 'div'"
     :to="to"
     class="flex flex-col gap-1 px-4 py-3.5"
-    :class="to ? 'focus-ring transition-colors hover:bg-pb-elevated' : ''"
+    :class="to ? 'focus-ring transition-colors hover:bg-mnt-elevated' : ''"
   >
     <div class="flex items-center gap-2">
-      <component :is="icon" v-if="icon" :size="13" class="text-pb-muted" aria-hidden="true" />
-      <span class="text-[10px] font-semibold uppercase tracking-wider text-pb-muted">{{ label }}</span>
+      <component :is="icon" v-if="icon" :size="13" class="text-mnt-muted" aria-hidden="true" />
+      <span class="text-[10px] font-semibold uppercase tracking-wider text-mnt-muted">{{ label }}</span>
     </div>
-    <span class="text-xl font-bold text-pb-primary" :style="valueStyle">{{ value }}</span>
-    <span v-if="sub" class="truncate text-[11px] text-pb-muted">{{ sub }}</span>
+    <span class="text-xl font-bold text-mnt-primary" :style="valueStyle">{{ value }}</span>
+    <span v-if="sub" class="truncate text-[11px] text-mnt-muted">{{ sub }}</span>
   </component>
 </template>

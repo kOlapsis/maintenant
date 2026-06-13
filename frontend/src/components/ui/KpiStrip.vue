@@ -23,21 +23,21 @@ const props = defineProps<{ stats: KpiStripItem[] }>()
 
 <template>
   <div
-    class="pb-kpis grid overflow-hidden rounded-xl border border-pb-default"
+    class="mnt-kpis grid overflow-hidden rounded-xl border border-mnt-default"
     :style="{ '--kpi-cols': props.stats.length }"
   >
-    <KpiStat v-for="(s, i) in stats" :key="i" v-bind="s" class="bg-pb-surface" />
+    <KpiStat v-for="(s, i) in stats" :key="i" v-bind="s" class="bg-mnt-surface" />
   </div>
 </template>
 
 <style scoped>
-.pb-kpis {
+.mnt-kpis {
   gap: 1px;
-  background: var(--pb-border-default);
+  background: var(--mnt-border-default);
   grid-template-columns: repeat(2, 1fr);
 }
 @media (min-width: 1024px) {
-  .pb-kpis {
+  .mnt-kpis {
     grid-template-columns: repeat(var(--kpi-cols), minmax(0, 1fr));
   }
 }

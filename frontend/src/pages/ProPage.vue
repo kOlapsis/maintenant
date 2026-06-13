@@ -166,35 +166,35 @@ const features = [
       <!-- Hero (always shown) -->
       <div class="text-center mb-16">
         <div
-          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-pb-green-500/10 border border-pb-green-500/20 text-pb-green-400 text-xs font-semibold mb-6"
+          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-mnt-green-500/10 border border-mnt-green-500/20 text-mnt-green-400 text-xs font-semibold mb-6"
         >
           <Crown :size="14" />
           Pro Edition
         </div>
-        <h1 class="text-4xl font-bold text-pb-primary tracking-tight mb-4">{{ heroTitle }}</h1>
-        <p class="text-lg text-pb-muted max-w-2xl mx-auto leading-relaxed">{{ heroSubtitle }}</p>
+        <h1 class="text-4xl font-bold text-mnt-primary tracking-tight mb-4">{{ heroTitle }}</h1>
+        <p class="text-lg text-mnt-muted max-w-2xl mx-auto leading-relaxed">{{ heroSubtitle }}</p>
       </div>
 
       <!-- Active license: thank you + feature reminder -->
       <template v-if="isLicenseActive">
         <div class="max-w-2xl mx-auto mb-10">
           <div
-            class="flex items-start gap-4 bg-pb-green-500/5 border border-pb-green-500/20 rounded-xl px-6 py-5"
+            class="flex items-start gap-4 bg-mnt-green-500/5 border border-mnt-green-500/20 rounded-xl px-6 py-5"
           >
-            <Heart :size="20" class="text-pb-green-400 shrink-0 mt-0.5" />
+            <Heart :size="20" class="text-mnt-green-400 shrink-0 mt-0.5" />
             <div>
-              <h2 class="text-base font-semibold text-pb-primary mb-1">Thank you for your support</h2>
-              <p class="text-sm text-pb-muted leading-relaxed">
+              <h2 class="text-base font-semibold text-mnt-primary mb-1">Thank you for your support</h2>
+              <p class="text-sm text-mnt-muted leading-relaxed">
                 Your Pro license is active. Thank you for supporting the development of maintenant —
                 it makes a real difference.
               </p>
-              <p class="mt-2 text-sm text-pb-muted">
+              <p class="mt-2 text-sm text-mnt-muted">
                 Manage your subscription from your
                 <a
                   :href="ACCOUNT_URL"
                   target="_blank"
                   rel="noopener"
-                  class="text-pb-green-400 hover:underline"
+                  class="text-mnt-green-400 hover:underline"
                   >maintenant.dev account</a
                 >.
               </p>
@@ -203,17 +203,17 @@ const features = [
         </div>
 
         <div class="max-w-2xl mx-auto">
-          <h3 class="text-xs font-medium text-pb-muted uppercase tracking-wider mb-3">
+          <h3 class="text-xs font-medium text-mnt-muted uppercase tracking-wider mb-3">
             Included in your plan
           </h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div v-for="feature in features" :key="feature.title" class="flex items-center gap-2.5">
-              <Check :size="14" class="text-pb-green-500/60 shrink-0" />
-              <span class="text-sm text-pb-muted">{{ feature.title }}</span>
+              <Check :size="14" class="text-mnt-green-500/60 shrink-0" />
+              <span class="text-sm text-mnt-muted">{{ feature.title }}</span>
             </div>
             <div class="flex items-center gap-2.5">
-              <Check :size="14" class="text-pb-green-500/60 shrink-0" />
-              <span class="text-sm text-pb-muted">All Community features</span>
+              <Check :size="14" class="text-mnt-green-500/60 shrink-0" />
+              <span class="text-sm text-mnt-muted">All Community features</span>
             </div>
           </div>
         </div>
@@ -236,7 +236,7 @@ const features = [
               :href="CHECKOUT_URL"
               target="_blank"
               rel="noopener"
-              class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted shadow-lg shadow-pb-green-500/20 transition-colors"
+              class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted shadow-lg shadow-mnt-green-500/20 transition-colors"
             >
               <RefreshCw :size="15" />
               {{ isProDisabled ? 'Resubscribe to Pro' : 'Renew subscription' }}
@@ -245,25 +245,25 @@ const features = [
               :href="ACCOUNT_URL"
               target="_blank"
               rel="noopener"
-              class="inline-flex items-center gap-1.5 px-2 py-1 text-sm text-pb-muted hover:text-pb-primary transition-colors"
+              class="inline-flex items-center gap-1.5 px-2 py-1 text-sm text-mnt-muted hover:text-mnt-primary transition-colors"
             >
               Manage subscription
               <ExternalLink :size="13" class="opacity-70" />
             </a>
           </div>
 
-          <p class="text-xs text-pb-muted leading-relaxed">
+          <p class="text-xs text-mnt-muted leading-relaxed">
             Questions or think this is a mistake? Reach out at
             <a
               href="mailto:support@maintenant.dev"
-              class="text-pb-muted hover:text-pb-primary underline underline-offset-2"
+              class="text-mnt-muted hover:text-mnt-primary underline underline-offset-2"
               >support@maintenant.dev</a
             >.
           </p>
         </div>
 
         <div class="max-w-2xl mx-auto">
-          <h3 class="text-xs font-medium text-pb-muted uppercase tracking-wider mb-3">
+          <h3 class="text-xs font-medium text-mnt-muted uppercase tracking-wider mb-3">
             {{ isProDisabled ? 'Features unlocked by Pro' : 'Included in your plan' }}
           </h3>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -271,11 +271,11 @@ const features = [
               <Check
                 :size="14"
                 class="shrink-0"
-                :class="isProDisabled ? 'text-pb-muted' : 'text-pb-green-500/60'"
+                :class="isProDisabled ? 'text-mnt-muted' : 'text-mnt-green-500/60'"
               />
               <span
                 class="text-sm"
-                :class="isProDisabled ? 'text-pb-muted' : 'text-pb-muted'"
+                :class="isProDisabled ? 'text-mnt-muted' : 'text-mnt-muted'"
                 >{{ feature.title }}</span
               >
             </div>
@@ -283,11 +283,11 @@ const features = [
               <Check
                 :size="14"
                 class="shrink-0"
-                :class="isProDisabled ? 'text-pb-muted' : 'text-pb-green-500/60'"
+                :class="isProDisabled ? 'text-mnt-muted' : 'text-mnt-green-500/60'"
               />
               <span
                 class="text-sm"
-                :class="isProDisabled ? 'text-pb-muted' : 'text-pb-muted'"
+                :class="isProDisabled ? 'text-mnt-muted' : 'text-mnt-muted'"
                 >All Community features</span
               >
             </div>
@@ -301,21 +301,21 @@ const features = [
           <div
             v-for="feature in features"
             :key="feature.title"
-            class="group bg-pb-surface border border-pb-default rounded-xl p-5 hover:border-pb-default transition-colors"
+            class="group bg-mnt-surface border border-mnt-default rounded-xl p-5 hover:border-mnt-default transition-colors"
           >
             <div
-              class="w-9 h-9 rounded-lg bg-pb-green-500/10 border border-pb-green-500/20 flex items-center justify-center mb-3"
+              class="w-9 h-9 rounded-lg bg-mnt-green-500/10 border border-mnt-green-500/20 flex items-center justify-center mb-3"
             >
-              <component :is="feature.icon" :size="18" class="text-pb-green-400" />
+              <component :is="feature.icon" :size="18" class="text-mnt-green-400" />
             </div>
-            <h3 class="text-sm font-semibold text-pb-primary mb-1.5">{{ feature.title }}</h3>
-            <p class="text-xs text-pb-muted leading-relaxed">{{ feature.description }}</p>
+            <h3 class="text-sm font-semibold text-mnt-primary mb-1.5">{{ feature.title }}</h3>
+            <p class="text-xs text-mnt-muted leading-relaxed">{{ feature.description }}</p>
           </div>
         </div>
 
         <div class="max-w-2xl mx-auto">
-          <h2 class="text-2xl font-bold text-pb-primary text-center mb-2">Simple pricing</h2>
-          <p class="text-sm text-pb-muted text-center mb-8">
+          <h2 class="text-2xl font-bold text-mnt-primary text-center mb-2">Simple pricing</h2>
+          <p class="text-sm text-mnt-muted text-center mb-8">
             One plan, all Pro features. No per-seat or per-host charges. From 29€/month.
           </p>
 
@@ -324,38 +324,38 @@ const features = [
               :href="CHECKOUT_URL"
               target="_blank"
               rel="noopener"
-              class="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted shadow-lg shadow-pb-green-500/20 transition-colors"
+              class="inline-flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-semibold bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted shadow-lg shadow-mnt-green-500/20 transition-colors"
             >
               <Crown :size="16" />
               Upgrade to Pro
             </a>
-            <p class="text-xs text-pb-muted">Choose monthly or yearly on the next screen.</p>
+            <p class="text-xs text-mnt-muted">Choose monthly or yearly on the next screen.</p>
           </div>
 
           <div
             class="mt-6 flex items-start gap-3 bg-blue-500/5 border border-blue-500/20 rounded-xl px-5 py-4"
           >
             <Mail :size="18" class="text-blue-400 shrink-0 mt-0.5" />
-            <p class="text-sm text-pb-secondary leading-relaxed">
+            <p class="text-sm text-mnt-secondary leading-relaxed">
               After purchase, your license key will be sent to the email address provided during
               checkout.
             </p>
           </div>
 
-          <div class="mt-8 bg-pb-surface border border-pb-default rounded-xl p-6">
-            <h3 class="text-sm font-semibold text-pb-primary mb-4">Everything in Pro includes:</h3>
+          <div class="mt-8 bg-mnt-surface border border-mnt-default rounded-xl p-6">
+            <h3 class="text-sm font-semibold text-mnt-primary mb-4">Everything in Pro includes:</h3>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div
                 v-for="feature in features"
                 :key="feature.title"
                 class="flex items-center gap-2.5"
               >
-                <Check :size="14" class="text-pb-green-400 shrink-0" />
-                <span class="text-sm text-pb-secondary">{{ feature.title }}</span>
+                <Check :size="14" class="text-mnt-green-400 shrink-0" />
+                <span class="text-sm text-mnt-secondary">{{ feature.title }}</span>
               </div>
               <div class="flex items-center gap-2.5">
-                <Check :size="14" class="text-pb-green-400 shrink-0" />
-                <span class="text-sm text-pb-secondary">All Community features</span>
+                <Check :size="14" class="text-mnt-green-400 shrink-0" />
+                <span class="text-sm text-mnt-secondary">All Community features</span>
               </div>
             </div>
           </div>

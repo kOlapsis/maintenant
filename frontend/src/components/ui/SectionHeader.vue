@@ -15,11 +15,11 @@ defineProps<{
 
 <template>
   <div class="flex items-center gap-2.5">
-    <component :is="icon" v-if="icon" :size="15" class="text-pb-muted" aria-hidden="true" />
-    <h2 class="text-xs font-semibold uppercase tracking-wide text-pb-muted">{{ title }}</h2>
+    <component :is="icon" v-if="icon" :size="15" class="text-mnt-muted" aria-hidden="true" />
+    <h2 class="text-xs font-semibold uppercase tracking-wide text-mnt-muted">{{ title }}</h2>
     <span
       v-if="count !== undefined"
-      class="rounded-full bg-pb-elevated px-2 py-0.5 font-mono text-[11px] text-pb-muted"
+      class="rounded-full bg-mnt-elevated px-2 py-0.5 font-mono text-[11px] text-mnt-muted"
     >
       {{ count }}
     </span>

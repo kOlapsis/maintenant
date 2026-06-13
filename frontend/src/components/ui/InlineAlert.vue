@@ -40,7 +40,7 @@ const tagLabel = computed(() => props.tag ?? meta.value.defaultTag)
 <template>
   <div
     role="alert"
-    class="inline-alert relative overflow-hidden rounded-xl border bg-pb-surface"
+    class="inline-alert relative overflow-hidden rounded-xl border bg-mnt-surface"
     :class="`inline-alert--${meta.key}`"
   >
     <!-- Colored wash overlay -->
@@ -80,88 +80,88 @@ const tagLabel = computed(() => props.tag ?? meta.value.defaultTag)
 
 <style scoped>
 .inline-alert--warn {
-  border-color: var(--pb-alert-warn-border);
+  border-color: var(--mnt-alert-warn-border);
 }
 .inline-alert--critical {
-  border-color: var(--pb-alert-critical-border);
+  border-color: var(--mnt-alert-critical-border);
 }
 .inline-alert--info {
-  border-color: var(--pb-alert-info-border);
+  border-color: var(--mnt-alert-info-border);
 }
 
 .inline-alert--warn .inline-alert__wash {
-  background: var(--pb-alert-warn-gradient-card);
+  background: var(--mnt-alert-warn-gradient-card);
 }
 .inline-alert--critical .inline-alert__wash {
-  background: var(--pb-alert-critical-gradient-card);
+  background: var(--mnt-alert-critical-gradient-card);
 }
 .inline-alert--info .inline-alert__wash {
-  background: var(--pb-alert-info-gradient-card);
+  background: var(--mnt-alert-info-gradient-card);
 }
 
 .inline-alert--warn .inline-alert__rail {
-  background: var(--pb-alert-warn-rail);
+  background: var(--mnt-alert-warn-rail);
 }
 .inline-alert--critical .inline-alert__rail {
-  background: var(--pb-alert-critical-rail);
+  background: var(--mnt-alert-critical-rail);
 }
 .inline-alert--info .inline-alert__rail {
-  background: var(--pb-alert-info-rail);
+  background: var(--mnt-alert-info-rail);
 }
 
 .inline-alert--warn .inline-alert__icon {
-  background: var(--pb-alert-warn-icon-bg);
-  border-color: var(--pb-alert-warn-icon-border);
-  color: var(--pb-alert-warn-icon-color);
+  background: var(--mnt-alert-warn-icon-bg);
+  border-color: var(--mnt-alert-warn-icon-border);
+  color: var(--mnt-alert-warn-icon-color);
 }
 .inline-alert--critical .inline-alert__icon {
-  background: var(--pb-alert-critical-icon-bg);
-  border-color: var(--pb-alert-critical-icon-border);
-  color: var(--pb-alert-critical-icon-color);
+  background: var(--mnt-alert-critical-icon-bg);
+  border-color: var(--mnt-alert-critical-icon-border);
+  color: var(--mnt-alert-critical-icon-color);
 }
 .inline-alert--info .inline-alert__icon {
-  background: var(--pb-alert-info-icon-bg);
-  border-color: var(--pb-alert-info-icon-border);
-  color: var(--pb-alert-info-icon-color);
+  background: var(--mnt-alert-info-icon-bg);
+  border-color: var(--mnt-alert-info-icon-border);
+  color: var(--mnt-alert-info-icon-color);
 }
 
 .inline-alert--warn .inline-alert__title {
-  color: var(--pb-alert-warn-title);
+  color: var(--mnt-alert-warn-title);
 }
 .inline-alert--critical .inline-alert__title {
-  color: var(--pb-alert-critical-title);
+  color: var(--mnt-alert-critical-title);
 }
 .inline-alert--info .inline-alert__title {
-  color: var(--pb-alert-info-title);
+  color: var(--mnt-alert-info-title);
 }
 
 .inline-alert--warn .inline-alert__tag {
-  background: var(--pb-alert-warn-tag-bg);
-  border-color: var(--pb-alert-warn-tag-border);
-  color: var(--pb-alert-warn-tag-text);
+  background: var(--mnt-alert-warn-tag-bg);
+  border-color: var(--mnt-alert-warn-tag-border);
+  color: var(--mnt-alert-warn-tag-text);
 }
 .inline-alert--critical .inline-alert__tag {
-  background: var(--pb-alert-critical-tag-bg);
-  border-color: var(--pb-alert-critical-tag-border);
-  color: var(--pb-alert-critical-tag-text);
+  background: var(--mnt-alert-critical-tag-bg);
+  border-color: var(--mnt-alert-critical-tag-border);
+  color: var(--mnt-alert-critical-tag-text);
 }
 .inline-alert--info .inline-alert__tag {
-  background: var(--pb-alert-info-tag-bg);
-  border-color: var(--pb-alert-info-tag-border);
-  color: var(--pb-alert-info-tag-text);
+  background: var(--mnt-alert-info-tag-bg);
+  border-color: var(--mnt-alert-info-tag-border);
+  color: var(--mnt-alert-info-tag-text);
 }
 
 .inline-alert__body {
-  color: var(--pb-text-secondary);
+  color: var(--mnt-text-secondary);
 }
 
 .inline-alert--warn .inline-alert__body {
-  color: var(--pb-alert-warn-text);
+  color: var(--mnt-alert-warn-text);
 }
 .inline-alert--critical .inline-alert__body {
-  color: var(--pb-alert-critical-text);
+  color: var(--mnt-alert-critical-text);
 }
 .inline-alert--info .inline-alert__body {
-  color: var(--pb-alert-info-text);
+  color: var(--mnt-alert-info-text);
 }
 </style>

@@ -145,9 +145,9 @@ const memPercent = computed(() => {
 const diskPercent = computed(() => resources.summary?.disk_percent ?? 0)
 
 function barColor(value: number): string {
-  if (value >= 90) return 'var(--pb-status-down-text)'
-  if (value >= 70) return 'var(--pb-status-warn-text)'
-  return 'var(--pb-status-ok-text)'
+  if (value >= 90) return 'var(--mnt-status-down-text)'
+  if (value >= 70) return 'var(--mnt-status-warn-text)'
+  return 'var(--mnt-status-ok-text)'
 }
 
 const { theme, setTheme } = useTheme()
@@ -167,7 +167,7 @@ const themeTooltip = computed(() => {
 </script>
 
 <template>
-  <header class="hidden md:flex h-16 shrink-0 border-b border-pb-default items-center justify-between px-6 bg-pb-surface/60 backdrop-blur-md z-10">
+  <header class="hidden md:flex h-16 shrink-0 border-b border-mnt-default items-center justify-between px-6 bg-mnt-surface/60 backdrop-blur-md z-10">
     <div class="flex items-center gap-5">
       <!-- Global host/resource scope selector (hidden on single-host installs) -->
       <HostFilterDropdown v-if="activeAgentIds.length > 0" class="w-48 shrink-0" />
@@ -176,44 +176,44 @@ const themeTooltip = computed(() => {
       <div class="relative group">
         <Search
           :size="15"
-          class="absolute left-3 top-1/2 -translate-y-1/2 text-pb-muted group-focus-within:text-pb-green-400 transition-colors"
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-mnt-muted group-focus-within:text-mnt-green-400 transition-colors"
         />
         <input
           v-model="dashboard.searchQuery"
           type="text"
           placeholder="Search services..."
-          class="bg-pb-primary border border-pb-default rounded-lg py-2 pl-9 pr-4 text-sm w-72 focus:outline-none focus:ring-1 focus:ring-pb-green-500/60 focus:border-pb-green-500/40 transition-all text-pb-primary placeholder:text-pb-muted"
+          class="bg-mnt-primary border border-mnt-default rounded-lg py-2 pl-9 pr-4 text-sm w-72 focus:outline-none focus:ring-1 focus:ring-mnt-green-500/60 focus:border-mnt-green-500/40 transition-all text-mnt-primary placeholder:text-mnt-muted"
         />
       </div>
 
       <!-- Monitor health counters (containers + endpoints + heartbeats + certificates) -->
-      <div class="hidden sm:flex items-center gap-5 border-l border-pb-default pl-5">
+      <div class="hidden sm:flex items-center gap-5 border-l border-mnt-default pl-5">
         <div class="flex items-center gap-2">
-          <span class="text-[10px] font-bold text-pb-muted uppercase tracking-widest">OK</span>
-          <span class="text-sm font-black text-pb-status-ok">{{ dashboard.globalStats.running }}</span>
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">OK</span>
+          <span class="text-sm font-black text-mnt-status-ok">{{ dashboard.globalStats.running }}</span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-[10px] font-bold text-pb-muted uppercase tracking-widest">Warning</span>
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Warning</span>
           <span
             class="text-sm font-black"
-            :class="dashboard.globalStats.warnings > 0 ? 'text-pb-status-warn' : 'text-pb-muted'"
+            :class="dashboard.globalStats.warnings > 0 ? 'text-mnt-status-warn' : 'text-mnt-muted'"
           >{{ dashboard.globalStats.warnings }}</span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-[10px] font-bold text-pb-muted uppercase tracking-widest">Incident</span>
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Incident</span>
           <span
             class="text-sm font-black"
-            :class="dashboard.globalStats.incidents > 0 ? 'text-pb-status-down' : 'text-pb-muted'"
+            :class="dashboard.globalStats.incidents > 0 ? 'text-mnt-status-down' : 'text-mnt-muted'"
           >{{ dashboard.globalStats.incidents }}</span>
         </div>
       </div>
 
       <!-- Resource gauges -->
-      <div class="hidden lg:flex items-center gap-4 border-l border-pb-default pl-5">
+      <div class="hidden lg:flex items-center gap-4 border-l border-mnt-default pl-5">
         <!-- CPU -->
         <div class="flex items-center gap-2 min-w-[120px]">
-          <span class="text-[10px] font-bold text-pb-muted uppercase tracking-widest w-8">CPU</span>
-          <div class="flex-1 h-1.5 rounded-full bg-pb-elevated overflow-hidden">
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest w-8">CPU</span>
+          <div class="flex-1 h-1.5 rounded-full bg-mnt-elevated overflow-hidden">
             <div
               class="h-full rounded-full transition-all duration-500"
               :style="{ width: totalCpu + '%', backgroundColor: barColor(totalCpu) }"
@@ -225,8 +225,8 @@ const themeTooltip = computed(() => {
         </div>
         <!-- MEM -->
         <div class="flex items-center gap-2 min-w-[120px]">
-          <span class="text-[10px] font-bold text-pb-muted uppercase tracking-widest w-8">MEM</span>
-          <div class="flex-1 h-1.5 rounded-full bg-pb-elevated overflow-hidden">
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest w-8">MEM</span>
+          <div class="flex-1 h-1.5 rounded-full bg-mnt-elevated overflow-hidden">
             <div
               class="h-full rounded-full transition-all duration-500"
               :style="{ width: memPercent + '%', backgroundColor: barColor(memPercent) }"
@@ -238,8 +238,8 @@ const themeTooltip = computed(() => {
         </div>
         <!-- DISK -->
         <div class="flex items-center gap-2 min-w-[120px]">
-          <span class="text-[10px] font-bold text-pb-muted uppercase tracking-widest w-8">DISK</span>
-          <div class="flex-1 h-1.5 rounded-full bg-pb-elevated overflow-hidden">
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest w-8">DISK</span>
+          <div class="flex-1 h-1.5 rounded-full bg-mnt-elevated overflow-hidden">
             <div
               class="h-full rounded-full transition-all duration-500"
               :style="{ width: diskPercent + '%', backgroundColor: barColor(diskPercent) }"
@@ -262,7 +262,7 @@ const themeTooltip = computed(() => {
         @click="cycleTheme"
         :title="themeTooltip"
         :aria-label="themeTooltip"
-        class="p-2 text-pb-muted hover:text-pb-primary hover:bg-pb-elevated rounded-lg transition-all"
+        class="p-2 text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated rounded-lg transition-all"
       >
         <Sun v-if="theme === 'light'" :size="18" />
         <Moon v-else-if="theme === 'dark'" :size="18" />
@@ -277,17 +277,17 @@ const themeTooltip = computed(() => {
         <button
           @click="onBellClick"
           :aria-label="alertsStore.totalActiveCount > 0 ? `View alerts (${alertsStore.totalActiveCount} active)` : 'View alerts'"
-          class="p-2 text-pb-muted hover:text-pb-primary hover:bg-pb-elevated rounded-lg transition-all relative"
+          class="p-2 text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated rounded-lg transition-all relative"
         >
           <Bell :size="18" />
           <span
             v-if="alertsStore.totalActiveCount > 0"
             class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
-            :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--pb-sev-incident)' : 'var(--pb-sev-warning)' }"
+            :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--mnt-sev-incident)' : 'var(--mnt-sev-warning)' }"
           >
             <span
-              class="pb-ping absolute inset-0 rounded-full"
-              :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--pb-sev-incident)' : 'var(--pb-sev-warning)' }"
+              class="mnt-ping absolute inset-0 rounded-full"
+              :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--mnt-sev-incident)' : 'var(--mnt-sev-warning)' }"
             />
           </span>
         </button>
@@ -303,15 +303,15 @@ const themeTooltip = computed(() => {
         >
           <div
             v-if="bellOpen"
-            class="absolute right-0 top-full mt-2 w-56 rounded-xl border border-pb-default bg-pb-surface shadow-2xl shadow-black/40 overflow-hidden z-50"
+            class="absolute right-0 top-full mt-2 w-56 rounded-xl border border-mnt-default bg-mnt-surface shadow-2xl shadow-black/40 overflow-hidden z-50"
             @mouseenter="onBellEnter"
             @mouseleave="onBellLeave"
           >
-            <div class="px-3 py-2.5 border-b border-pb-default flex items-center justify-between">
-              <span class="text-[10px] font-bold text-pb-muted uppercase tracking-widest">Active alerts</span>
+            <div class="px-3 py-2.5 border-b border-mnt-default flex items-center justify-between">
+              <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Active alerts</span>
               <span
                 class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
-                :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-pb-status-down text-pb-status-down' : 'bg-pb-status-warn text-pb-status-warn'"
+                :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-mnt-status-down text-mnt-status-down' : 'bg-mnt-status-warn text-mnt-status-warn'"
               >
                 {{ alertsStore.totalActiveCount }}
               </span>
@@ -321,27 +321,27 @@ const themeTooltip = computed(() => {
                 v-for="source in sourceKeys"
                 :key="source"
                 @click="navigateToSource(source)"
-                class="w-full flex items-center gap-3 px-3 py-2 text-sm text-pb-secondary hover:bg-pb-elevated transition-colors"
+                class="w-full flex items-center gap-3 px-3 py-2 text-sm text-mnt-secondary hover:bg-mnt-elevated transition-colors"
               >
                 <component
                   :is="sourceRouteMap[source]?.icon ?? AlertTriangle"
                   :size="14"
                   class="shrink-0"
-                  :class="alertsBySource[source]?.critical ? 'text-pb-status-down' : alertsBySource[source]?.warning ? 'text-pb-status-warn' : 'text-pb-green-400'"
+                  :class="alertsBySource[source]?.critical ? 'text-mnt-status-down' : alertsBySource[source]?.warning ? 'text-mnt-status-warn' : 'text-mnt-green-400'"
                 />
                 <span class="flex-1 text-left">{{ sourceRouteMap[source]?.label ?? source }}</span>
                 <span
                   class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
-                  :class="alertsBySource[source]?.critical ? 'bg-pb-status-down text-pb-status-down' : alertsBySource[source]?.warning ? 'bg-pb-status-warn text-pb-status-warn' : 'bg-pb-green-500/15 text-pb-green-400'"
+                  :class="alertsBySource[source]?.critical ? 'bg-mnt-status-down text-mnt-status-down' : alertsBySource[source]?.warning ? 'bg-mnt-status-warn text-mnt-status-warn' : 'bg-mnt-green-500/15 text-mnt-green-400'"
                 >
                   {{ alertsBySource[source]?.count }}
                 </span>
               </button>
             </div>
-            <div class="border-t border-pb-default">
+            <div class="border-t border-mnt-default">
               <button
                 @click="navigateToSource('_all')"
-                class="w-full px-3 py-2 text-[11px] font-medium text-pb-muted hover:text-pb-secondary hover:bg-pb-elevated transition-colors text-center"
+                class="w-full px-3 py-2 text-[11px] font-medium text-mnt-muted hover:text-mnt-secondary hover:bg-mnt-elevated transition-colors text-center"
               >
                 View all alerts
               </button>

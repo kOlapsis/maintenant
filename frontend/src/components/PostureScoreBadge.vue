@@ -18,31 +18,31 @@ const sizes = {
 } as const
 
 const colorMap: Record<string, string> = {
-  green: 'border-emerald-500 text-pb-status-ok',
-  yellow: 'border-amber-500 text-pb-status-warn',
-  orange: 'border-orange-500 text-pb-status-warn',
-  red: 'border-red-500 text-pb-status-down',
+  green: 'border-emerald-500 text-mnt-status-ok',
+  yellow: 'border-amber-500 text-mnt-status-warn',
+  orange: 'border-orange-500 text-mnt-status-warn',
+  red: 'border-red-500 text-mnt-status-down',
 }
 
 const bgMap: Record<string, string> = {
-  green: 'bg-pb-status-ok',
-  yellow: 'bg-pb-status-warn',
+  green: 'bg-mnt-status-ok',
+  yellow: 'bg-mnt-status-warn',
   orange: 'bg-orange-500/10',
-  red: 'bg-pb-status-down',
+  red: 'bg-mnt-status-down',
 }
 
 const xsColorMap: Record<string, string> = {
-  green: 'text-pb-status-ok',
-  yellow: 'text-pb-status-warn',
-  orange: 'text-pb-status-warn',
-  red: 'text-pb-status-down',
+  green: 'text-mnt-status-ok',
+  yellow: 'text-mnt-status-warn',
+  orange: 'text-mnt-status-warn',
+  red: 'text-mnt-status-down',
 }
 
 const xsBgMap: Record<string, string> = {
-  green: 'bg-pb-status-ok',
-  yellow: 'bg-pb-status-warn',
+  green: 'bg-mnt-status-ok',
+  yellow: 'bg-mnt-status-warn',
   orange: 'bg-orange-500/10',
-  red: 'bg-pb-status-down',
+  red: 'bg-mnt-status-down',
 }
 
 const s = computed(() => sizes[props.size ?? 'md'])
@@ -69,6 +69,6 @@ const xsBg = computed(() => xsBgMap[props.color] ?? xsBgMap.red)
     >
       <span :class="s.text">{{ score }}</span>
     </div>
-    <span v-if="label" class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">{{ label }}</span>
+    <span v-if="label" class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">{{ label }}</span>
   </div>
 </template>

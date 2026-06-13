@@ -122,46 +122,46 @@ function runtimeLabel(rt: string): string {
 
       <!-- Identity -->
       <div>
-        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-3">Identity</p>
+        <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-3">Identity</p>
         <div class="space-y-2 text-sm">
           <div class="flex justify-between">
-            <span class="text-pb-muted">Agent ID</span>
-            <span class="font-mono text-xs text-pb-secondary truncate max-w-[180px]" :title="agent.agent_id">{{ agent.agent_id }}</span>
+            <span class="text-mnt-muted">Agent ID</span>
+            <span class="font-mono text-xs text-mnt-secondary truncate max-w-[180px]" :title="agent.agent_id">{{ agent.agent_id }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-pb-muted">Hostname</span>
-            <span class="text-pb-primary">{{ agent.hostname }}</span>
+            <span class="text-mnt-muted">Hostname</span>
+            <span class="text-mnt-primary">{{ agent.hostname }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-pb-muted">OS / Arch</span>
-            <span class="text-pb-primary">{{ agent.os_arch }}</span>
+            <span class="text-mnt-muted">OS / Arch</span>
+            <span class="text-mnt-primary">{{ agent.os_arch }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-pb-muted">Version</span>
-            <span class="text-pb-primary">v{{ agent.agent_version }}</span>
+            <span class="text-mnt-muted">Version</span>
+            <span class="text-mnt-primary">v{{ agent.agent_version }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-pb-muted">Runtime</span>
-            <span class="text-pb-primary">{{ runtimeLabel(agent.detected_runtime) }}</span>
+            <span class="text-mnt-muted">Runtime</span>
+            <span class="text-mnt-primary">{{ runtimeLabel(agent.detected_runtime) }}</span>
           </div>
         </div>
       </div>
 
       <!-- Label editor -->
       <div>
-        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Label</p>
+        <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-2">Label</p>
         <div class="flex gap-2">
           <input
             v-model="labelDraft"
             maxlength="64"
             placeholder="Display label…"
-            class="flex-1 rounded-lg border border-pb-default bg-pb-primary px-3 py-2 text-sm text-pb-primary placeholder:text-pb-muted focus:outline-none focus:border-pb-green-500"
+            class="flex-1 rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-green-500"
             @keydown.enter="saveLabel"
           />
           <button
             :disabled="savingLabel || labelDraft === agent.label"
             class="rounded-lg px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-40"
-            :style="{ backgroundColor: 'var(--pb-accent)', color: 'var(--pb-text-inverted)' }"
+            :style="{ backgroundColor: 'var(--mnt-accent)', color: 'var(--mnt-text-inverted)' }"
             @click="saveLabel"
           >
             {{ savingLabel ? '…' : 'Save' }}
@@ -170,50 +170,50 @@ function runtimeLabel(rt: string): string {
         <p v-if="labelConflict" class="mt-1 text-xs text-yellow-500">
           Another agent already uses this label.
         </p>
-        <p v-if="labelError" class="mt-1 text-xs text-pb-status-down">{{ labelError }}</p>
-        <p v-if="labelSuccess" class="mt-1 text-xs text-pb-green-400">Label updated.</p>
+        <p v-if="labelError" class="mt-1 text-xs text-mnt-status-down">{{ labelError }}</p>
+        <p v-if="labelSuccess" class="mt-1 text-xs text-mnt-green-400">Label updated.</p>
       </div>
 
       <!-- Status -->
       <div>
-        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-3">Status</p>
+        <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-3">Status</p>
         <div class="space-y-2 text-sm">
           <div class="flex justify-between">
-            <span class="text-pb-muted">Status</span>
+            <span class="text-mnt-muted">Status</span>
             <span
               class="rounded-full px-2 py-0.5 text-xs font-medium"
               :style="{
-                backgroundColor: agent.status === 'active' ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-down-bg)',
-                color: agent.status === 'active' ? 'var(--pb-status-ok)' : 'var(--pb-status-down)',
+                backgroundColor: agent.status === 'active' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-down-bg)',
+                color: agent.status === 'active' ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)',
               }"
             >{{ agent.status }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-pb-muted">Connection</span>
+            <span class="text-mnt-muted">Connection</span>
             <span
               class="rounded-full px-2 py-0.5 text-xs font-medium"
               :style="{
-                backgroundColor: agent.connection_state === 'connected' ? 'var(--pb-status-ok-bg)' : 'var(--pb-bg-elevated)',
-                color: agent.connection_state === 'connected' ? 'var(--pb-status-ok)' : 'var(--pb-text-muted)',
+                backgroundColor: agent.connection_state === 'connected' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-bg-elevated)',
+                color: agent.connection_state === 'connected' ? 'var(--mnt-status-ok)' : 'var(--mnt-text-muted)',
               }"
             >{{ agent.connection_state ?? 'disconnected' }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-pb-muted">Last seen</span>
-            <span class="text-pb-secondary text-xs">{{ formatDate(agent.last_seen_at) }}</span>
+            <span class="text-mnt-muted">Last seen</span>
+            <span class="text-mnt-secondary text-xs">{{ formatDate(agent.last_seen_at) }}</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-pb-muted">Enrolled</span>
-            <span class="text-pb-secondary text-xs">{{ formatDate(agent.created_at) }}</span>
+            <span class="text-mnt-muted">Enrolled</span>
+            <span class="text-mnt-secondary text-xs">{{ formatDate(agent.created_at) }}</span>
           </div>
           <template v-if="agent.revoked_at">
             <div class="flex justify-between">
-              <span class="text-pb-muted">Revoked at</span>
-              <span class="text-pb-status-down text-xs">{{ formatDate(agent.revoked_at) }}</span>
+              <span class="text-mnt-muted">Revoked at</span>
+              <span class="text-mnt-status-down text-xs">{{ formatDate(agent.revoked_at) }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-pb-muted">Revoked by</span>
-              <span class="text-pb-status-down text-xs">{{ agent.revoked_by ?? '—' }}</span>
+              <span class="text-mnt-muted">Revoked by</span>
+              <span class="text-mnt-status-down text-xs">{{ agent.revoked_by ?? '—' }}</span>
             </div>
           </template>
         </div>
@@ -221,8 +221,8 @@ function runtimeLabel(rt: string): string {
 
       <!-- Actions -->
       <div v-if="agent.status === 'active'" class="space-y-2">
-        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Actions</p>
-        <p v-if="actionError" class="text-xs text-pb-status-down">{{ actionError }}</p>
+        <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-2">Actions</p>
+        <p v-if="actionError" class="text-xs text-mnt-status-down">{{ actionError }}</p>
         <button
           :disabled="revoking"
           class="w-full rounded-lg border border-yellow-600/40 px-4 py-2 text-sm font-medium text-yellow-500 hover:bg-yellow-600/10 transition-colors disabled:opacity-40"
@@ -231,7 +231,7 @@ function runtimeLabel(rt: string): string {
           {{ revoking ? 'Revoking…' : 'Revoke agent' }}
         </button>
         <button
-          class="w-full rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-pb-status-down hover:bg-pb-sev-incident-solid/10 transition-colors"
+          class="w-full rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-mnt-status-down hover:bg-mnt-sev-incident-solid/10 transition-colors"
           @click="showDeleteConfirm = true"
         >
           Delete agent
@@ -239,10 +239,10 @@ function runtimeLabel(rt: string): string {
       </div>
 
       <div v-if="agent.status === 'revoked'" class="space-y-2">
-        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Actions</p>
-        <p v-if="actionError" class="text-xs text-pb-status-down">{{ actionError }}</p>
+        <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-2">Actions</p>
+        <p v-if="actionError" class="text-xs text-mnt-status-down">{{ actionError }}</p>
         <button
-          class="w-full rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-pb-status-down hover:bg-pb-sev-incident-solid/10 transition-colors"
+          class="w-full rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-mnt-status-down hover:bg-mnt-sev-incident-solid/10 transition-colors"
           @click="showDeleteConfirm = true"
         >
           Delete agent
@@ -258,23 +258,23 @@ function runtimeLabel(rt: string): string {
         @click.self="showDeleteConfirm = false"
       >
         <div class="absolute inset-0 bg-black/70" @click="showDeleteConfirm = false" />
-        <div class="relative z-10 w-full max-w-md mx-4 rounded-2xl border border-pb-default bg-pb-surface p-6 shadow-2xl">
-          <h3 class="text-base font-bold text-pb-primary mb-2">Delete agent?</h3>
-          <p class="text-sm text-pb-muted mb-4">
+        <div class="relative z-10 w-full max-w-md mx-4 rounded-2xl border border-mnt-default bg-mnt-surface p-6 shadow-2xl">
+          <h3 class="text-base font-bold text-mnt-primary mb-2">Delete agent?</h3>
+          <p class="text-sm text-mnt-muted mb-4">
             This will permanently purge all historical events for this agent
             (containers, endpoints, heartbeats, resources, certificates) in a single transaction.
-            <strong class="text-pb-status-down">This action is irreversible.</strong>
+            <strong class="text-mnt-status-down">This action is irreversible.</strong>
           </p>
           <div class="flex gap-3 justify-end">
             <button
-              class="rounded-lg px-4 py-2 text-sm text-pb-muted hover:text-pb-primary transition-colors"
+              class="rounded-lg px-4 py-2 text-sm text-mnt-muted hover:text-mnt-primary transition-colors"
               @click="showDeleteConfirm = false"
             >
               Cancel
             </button>
             <button
               :disabled="deleting"
-              class="rounded-lg px-4 py-2 text-sm font-medium text-pb-primary bg-pb-sev-incident-solid hover:opacity-90 disabled:opacity-40 transition-colors"
+              class="rounded-lg px-4 py-2 text-sm font-medium text-mnt-primary bg-mnt-sev-incident-solid hover:opacity-90 disabled:opacity-40 transition-colors"
               @click="handleDelete"
             >
               {{ deleting ? 'Deleting…' : 'Delete permanently' }}

@@ -59,16 +59,16 @@ const nextActionLabel = computed(() => {
     <!-- Active escalation -->
     <div
       v-if="displayRun.status === 'active'"
-      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-pb-status-warn border border-amber-500/20 text-pb-status-warn"
+      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-mnt-status-warn border border-amber-500/20 text-mnt-status-warn"
     >
       <BellRing :size="10" class="shrink-0" />
       <span>{{ displayRun.policy?.name ?? 'Escalating' }}</span>
-      <span v-if="levelLabel" class="text-pb-status-warn/70">· {{ levelLabel }}</span>
+      <span v-if="levelLabel" class="text-mnt-status-warn/70">· {{ levelLabel }}</span>
     </div>
     <!-- Stopped/final status -->
     <div
       v-else
-      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-pb-elevated border border-pb-default text-pb-muted"
+      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-mnt-elevated border border-mnt-default text-mnt-muted"
     >
       <CheckCircle2
         v-if="displayRun.status === 'stopped_by_ack' || displayRun.status === 'stopped_by_resolution'"

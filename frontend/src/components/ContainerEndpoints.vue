@@ -44,7 +44,7 @@ function formatResponseTime(ms: number | undefined): string {
 
 <template>
   <div v-if="endpoints.length > 0" class="mt-3 space-y-1.5">
-    <div class="text-xs font-medium text-pb-muted uppercase tracking-wide">
+    <div class="text-xs font-medium text-mnt-muted uppercase tracking-wide">
       Endpoints
     </div>
     <div
@@ -56,16 +56,16 @@ function formatResponseTime(ms: number | undefined): string {
         <span
           class="font-mono uppercase"
           :class="{
-            'text-pb-green-500': ep.endpoint_type === 'http',
+            'text-mnt-green-500': ep.endpoint_type === 'http',
             'text-purple-600': ep.endpoint_type === 'tcp',
           }"
         >
           {{ ep.endpoint_type }}
         </span>
-        <span class="truncate text-pb-muted">{{ ep.target }}</span>
+        <span class="truncate text-mnt-muted">{{ ep.target }}</span>
       </div>
       <div class="flex items-center gap-2 ml-2 shrink-0">
-        <span class="text-pb-muted">
+        <span class="text-mnt-muted">
           {{ formatResponseTime(ep.last_response_time_ms) }}
         </span>
         <EndpointStatusBadge :status="ep.status" />

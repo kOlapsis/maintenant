@@ -21,16 +21,16 @@ withDefaults(
       class="grid gap-2"
       style="grid-template-columns: repeat(auto-fill, minmax(118px, 1fr))"
     >
-      <div v-for="i in count" :key="i" class="pb-skeleton h-14 rounded-lg" />
+      <div v-for="i in count" :key="i" class="mnt-skeleton h-14 rounded-lg" />
     </div>
     <div v-else-if="variant === 'cards'" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <div v-for="i in count" :key="i" class="pb-skeleton h-28 rounded-xl" />
+      <div v-for="i in count" :key="i" class="mnt-skeleton h-28 rounded-xl" />
     </div>
     <div v-else class="space-y-2">
       <div
         v-for="i in count"
         :key="i"
-        class="pb-skeleton rounded-lg"
+        class="mnt-skeleton rounded-lg"
         :class="variant === 'list' ? 'h-12' : 'h-5'"
       />
     </div>

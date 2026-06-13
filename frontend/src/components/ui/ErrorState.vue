@@ -20,15 +20,15 @@ const emit = defineEmits<{ retry: [] }>()
 
 <template>
   <div role="alert" class="flex flex-col items-center justify-center px-6 py-12 text-center">
-    <span class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-pb-sev-incident">
-      <AlertTriangle :size="20" class="text-pb-sev-incident" aria-hidden="true" />
+    <span class="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-mnt-sev-incident">
+      <AlertTriangle :size="20" class="text-mnt-sev-incident" aria-hidden="true" />
     </span>
-    <p class="text-sm font-semibold text-pb-primary">{{ title }}</p>
-    <p class="mt-1 max-w-sm text-xs text-pb-secondary">{{ message }}</p>
+    <p class="text-sm font-semibold text-mnt-primary">{{ title }}</p>
+    <p class="mt-1 max-w-sm text-xs text-mnt-secondary">{{ message }}</p>
     <button
       v-if="retryable"
       type="button"
-      class="focus-ring mt-4 inline-flex items-center gap-1.5 rounded-lg border border-pb-default px-3 py-1.5 text-xs font-semibold text-pb-secondary transition-colors hover:text-pb-primary"
+      class="focus-ring mt-4 inline-flex items-center gap-1.5 rounded-lg border border-mnt-default px-3 py-1.5 text-xs font-semibold text-mnt-secondary transition-colors hover:text-mnt-primary"
       @click="emit('retry')"
     >
       <RefreshCw :size="13" aria-hidden="true" />

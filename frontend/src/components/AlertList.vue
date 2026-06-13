@@ -52,15 +52,15 @@ function formatTime(ts: string): string {
 }
 
 const severityColors: Record<string, { bg: string; color: string }> = {
-  critical: { bg: 'var(--pb-status-down-bg)', color: 'var(--pb-status-down)' },
-  warning: { bg: 'var(--pb-status-warn-bg)', color: 'var(--pb-status-warn)' },
-  info: { bg: 'rgba(59, 130, 246, 0.15)', color: 'var(--pb-accent)' },
+  critical: { bg: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)' },
+  warning: { bg: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)' },
+  info: { bg: 'rgba(59, 130, 246, 0.15)', color: 'var(--mnt-accent)' },
 }
 
 const statusColors: Record<string, { bg: string; color: string }> = {
-  active: { bg: 'var(--pb-status-down-bg)', color: 'var(--pb-status-down)' },
-  resolved: { bg: 'var(--pb-status-ok-bg)', color: 'var(--pb-status-ok)' },
-  silenced: { bg: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)' },
+  active: { bg: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)' },
+  resolved: { bg: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-status-ok)' },
+  silenced: { bg: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-muted)' },
 }
 
 const ENTITY_TYPES: ReadonlySet<string> = new Set(['container', 'heartbeat', 'certificate'])
@@ -79,7 +79,7 @@ function openEntityDetail(alert: Alert) {
   detailSlideOver.openDetail(alert.entity_type as EntityType, alert.entity_id)
 }
 
-const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-secondary)'
+const selectStyle = 'background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)'
 </script>
 
 <template>
@@ -124,12 +124,12 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
 
     <!-- Mobile card list -->
     <div class="md:hidden space-y-2">
-      <div v-if="store.alerts.length === 0 && !store.loading" class="rounded-lg border p-8 text-center text-sm" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default); color: var(--pb-text-muted)">No alerts found</div>
+      <div v-if="store.alerts.length === 0 && !store.loading" class="rounded-lg border p-8 text-center text-sm" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default); color: var(--mnt-text-muted)">No alerts found</div>
       <div
         v-for="alert in store.alerts"
         :key="'m-' + alert.id"
         class="rounded-lg border p-3 cursor-pointer transition-colors"
-        style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+        style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
         @click="openEntityDetail(alert)"
       >
         <div class="flex items-center justify-between gap-2 mb-1.5">
@@ -137,22 +137,22 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
             <span
               class="rounded-full px-2 py-0.5 text-xs font-medium"
               :style="{
-                background: (severityColors[alert.severity] || { bg: 'var(--pb-bg-elevated)' }).bg,
-                color: (severityColors[alert.severity] || { color: 'var(--pb-text-secondary)' }).color,
+                background: (severityColors[alert.severity] || { bg: 'var(--mnt-bg-elevated)' }).bg,
+                color: (severityColors[alert.severity] || { color: 'var(--mnt-text-secondary)' }).color,
               }"
             >{{ alert.severity }}</span>
-            <span class="rounded px-1.5 py-0.5 text-xs font-medium" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">{{ alert.source }}</span>
+            <span class="rounded px-1.5 py-0.5 text-xs font-medium" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">{{ alert.source }}</span>
           </div>
           <span
             class="rounded-full px-2 py-0.5 text-xs font-medium"
             :style="{
-              background: (statusColors[alert.status] || { bg: 'var(--pb-bg-elevated)' }).bg,
-              color: (statusColors[alert.status] || { color: 'var(--pb-text-secondary)' }).color,
+              background: (statusColors[alert.status] || { bg: 'var(--mnt-bg-elevated)' }).bg,
+              color: (statusColors[alert.status] || { color: 'var(--mnt-text-secondary)' }).color,
             }"
           >{{ alert.status }}</span>
         </div>
-        <p class="text-sm truncate" style="color: var(--pb-text-primary)">{{ alertTitle(alert) }}</p>
-        <div class="flex items-center justify-between mt-1.5 text-xs" style="color: var(--pb-text-muted)">
+        <p class="text-sm truncate" style="color: var(--mnt-text-primary)">{{ alertTitle(alert) }}</p>
+        <div class="flex items-center justify-between mt-1.5 text-xs" style="color: var(--mnt-text-muted)">
           <span>{{ alert.entity_name || '-' }}</span>
           <span>{{ formatTime(alert.fired_at) }}</span>
         </div>
@@ -162,29 +162,29 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
     <!-- Desktop table -->
     <div
       class="hidden md:block overflow-x-auto rounded-lg border"
-      style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+      style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
     >
       <table class="min-w-full">
         <thead>
-          <tr style="background: var(--pb-bg-elevated); border-bottom: 1px solid var(--pb-border-default)">
-            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--pb-text-muted)">Severity</th>
-            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--pb-text-muted)">Source</th>
-            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--pb-text-muted)">Message</th>
-            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--pb-text-muted)">Entity</th>
-            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--pb-text-muted)">Time</th>
-            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--pb-text-muted)">Status</th>
+          <tr style="background: var(--mnt-bg-elevated); border-bottom: 1px solid var(--mnt-border-default)">
+            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--mnt-text-muted)">Severity</th>
+            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--mnt-text-muted)">Source</th>
+            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--mnt-text-muted)">Message</th>
+            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--mnt-text-muted)">Entity</th>
+            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--mnt-text-muted)">Time</th>
+            <th class="px-4 py-2 text-left text-xs font-medium uppercase" style="color: var(--mnt-text-muted)">Status</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="store.alerts.length === 0 && !store.loading">
-            <td colspan="6" class="px-4 py-8 text-center text-sm" style="color: var(--pb-text-muted)">No alerts found</td>
+            <td colspan="6" class="px-4 py-8 text-center text-sm" style="color: var(--mnt-text-muted)">No alerts found</td>
           </tr>
           <tr
             v-for="alert in store.alerts"
             :key="alert.id"
             class="transition-colors cursor-pointer"
-            :style="{ borderBottom: '1px solid var(--pb-border-subtle)' }"
-            @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--pb-bg-hover)'"
+            :style="{ borderBottom: '1px solid var(--mnt-border-subtle)' }"
+            @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
             @mouseleave="($event.currentTarget as HTMLElement).style.background = 'transparent'"
             @click="openEntityDetail(alert)"
           >
@@ -192,8 +192,8 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
               <span
                 class="rounded-full px-2 py-0.5 text-xs font-medium"
                 :style="{
-                  background: (severityColors[alert.severity] || { bg: 'var(--pb-bg-elevated)' }).bg,
-                  color: (severityColors[alert.severity] || { color: 'var(--pb-text-secondary)' }).color,
+                  background: (severityColors[alert.severity] || { bg: 'var(--mnt-bg-elevated)' }).bg,
+                  color: (severityColors[alert.severity] || { color: 'var(--mnt-text-secondary)' }).color,
                 }"
               >
                 {{ alert.severity }}
@@ -202,20 +202,20 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
             <td class="px-4 py-2">
               <span
                 class="rounded px-1.5 py-0.5 text-xs font-medium"
-                style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
+                style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
               >
                 {{ alert.source }}
               </span>
             </td>
-            <td class="max-w-md truncate px-4 py-2 text-sm" style="color: var(--pb-text-primary)">{{ alertTitle(alert) }}</td>
-            <td class="px-4 py-2 text-sm" style="color: var(--pb-text-muted)">{{ alert.entity_name || '-' }}</td>
-            <td class="whitespace-nowrap px-4 py-2 text-xs" style="color: var(--pb-text-muted)">{{ formatTime(alert.fired_at) }}</td>
+            <td class="max-w-md truncate px-4 py-2 text-sm" style="color: var(--mnt-text-primary)">{{ alertTitle(alert) }}</td>
+            <td class="px-4 py-2 text-sm" style="color: var(--mnt-text-muted)">{{ alert.entity_name || '-' }}</td>
+            <td class="whitespace-nowrap px-4 py-2 text-xs" style="color: var(--mnt-text-muted)">{{ formatTime(alert.fired_at) }}</td>
             <td class="px-4 py-2">
               <span
                 class="rounded-full px-2 py-0.5 text-xs font-medium"
                 :style="{
-                  background: (statusColors[alert.status] || { bg: 'var(--pb-bg-elevated)' }).bg,
-                  color: (statusColors[alert.status] || { color: 'var(--pb-text-secondary)' }).color,
+                  background: (statusColors[alert.status] || { bg: 'var(--mnt-bg-elevated)' }).bg,
+                  color: (statusColors[alert.status] || { color: 'var(--mnt-text-secondary)' }).color,
                 }"
               >
                 {{ alert.status }}
@@ -232,7 +232,7 @@ const selectStyle = 'background: var(--pb-bg-elevated); border-color: var(--pb-b
         @click="loadMore"
         :disabled="store.loading"
         class="rounded-md border px-4 py-2 text-sm disabled:opacity-50 transition-colors"
-        style="border-color: var(--pb-border-default); color: var(--pb-text-secondary); background: var(--pb-bg-surface)"
+        style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary); background: var(--mnt-bg-surface)"
       >
         {{ store.loading ? 'Loading...' : 'Load more' }}
       </button>

@@ -33,7 +33,7 @@ const display = computed(() => props.label || props.hostname || 'agent')
 <template>
   <span
     v-if="visible"
-    class="inline-flex items-center gap-1 rounded border border-pb-default bg-pb-surface px-1.5 py-0.5 text-[10px] text-pb-muted"
+    class="inline-flex items-center gap-1 rounded border border-mnt-default bg-mnt-surface px-1.5 py-0.5 text-[10px] text-mnt-muted"
     :title="hostname || agentId || ''"
   >
     <Server :size="10" class="shrink-0" />

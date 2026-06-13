@@ -80,14 +80,14 @@ onMounted(async () => {
   <div class="space-y-4">
     <!-- Action bar -->
     <div class="flex items-center justify-between">
-      <p class="text-xs text-pb-muted">
+      <p class="text-xs text-mnt-muted">
         <template v-if="store.triggers.length > 0">
           {{ store.triggers.length }} {{ store.triggers.length === 1 ? 'trigger' : 'triggers' }}
         </template>
       </p>
       <button
         v-if="!showEditor"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
+        class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
         @click="openCreate"
       >
         <Plus :size="13" />
@@ -106,10 +106,10 @@ onMounted(async () => {
     <!-- Empty state -->
     <div
       v-if="!showEditor && !store.loading && store.triggers.length === 0"
-      class="rounded-xl border border-pb-default bg-pb-surface p-8 text-center"
+      class="rounded-xl border border-mnt-default bg-mnt-surface p-8 text-center"
     >
-      <p class="text-sm text-pb-muted">No triggers configured.</p>
-      <p class="mt-1 text-xs text-pb-muted">
+      <p class="text-sm text-mnt-muted">No triggers configured.</p>
+      <p class="mt-1 text-xs text-mnt-muted">
         Without triggers, alerts are not dispatched anywhere by default. Create one above.
       </p>
     </div>
@@ -126,7 +126,7 @@ onMounted(async () => {
     <!-- Error -->
     <div
       v-if="store.error"
-      class="px-4 py-3 rounded-lg bg-pb-status-down/10 border border-pb-status-down/30 text-xs text-pb-status-down"
+      class="px-4 py-3 rounded-lg bg-mnt-status-down/10 border border-mnt-status-down/30 text-xs text-mnt-status-down"
     >
       {{ store.error }}
     </div>
