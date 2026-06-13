@@ -458,7 +458,7 @@ watch(() => props.containerId, () => {
               <div class="mt-1 space-y-1">
                 <div v-for="net in swarmServiceDetail.networks" :key="net.network_id" class="flex items-center gap-2">
                   <span class="text-xs" :style="{ color: 'var(--pb-text-primary)' }">{{ net.network_name || net.network_id }}</span>
-                  <span v-if="net.scope" class="text-[10px] uppercase font-bold tracking-wider px-1 py-0.5 rounded bg-slate-400/10 border border-slate-400/20 text-slate-400">{{ net.scope }}</span>
+                  <span v-if="net.scope" class="text-[10px] uppercase font-bold tracking-wider px-1 py-0.5 rounded bg-pb-elevated border border-pb-default text-pb-muted">{{ net.scope }}</span>
                 </div>
               </div>
             </div>
@@ -470,7 +470,7 @@ watch(() => props.containerId, () => {
                   <span :style="{ color: 'var(--pb-text-muted)' }">→</span>
                   <span :style="{ color: 'var(--pb-text-primary)' }">{{ port.target_port }}/{{ port.protocol }}</span>
                   <span class="text-[10px] uppercase font-bold tracking-wider px-1 py-0.5 rounded border"
-                    :class="port.publish_mode === 'ingress' ? 'text-sky-400 bg-sky-400/10 border-sky-400/20' : 'text-amber-400 bg-amber-400/10 border-amber-400/20'">
+                    :class="port.publish_mode === 'ingress' ? 'text-pb-secondary bg-pb-elevated border-pb-default' : 'text-pb-status-warn bg-pb-status-warn border-pb-sev-warning'">
                     {{ port.publish_mode }}
                   </span>
                 </div>
