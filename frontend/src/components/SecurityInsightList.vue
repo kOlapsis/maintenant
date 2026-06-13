@@ -144,14 +144,14 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
           <div v-if="showAcknowledge" class="mt-1.5">
             <button
               v-if="!getAck(insight)"
-              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-slate-400 hover:bg-slate-700/50 hover:text-pb-primary transition-colors"
+              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-pb-muted hover:bg-pb-elevated hover:text-pb-primary transition-colors"
               @click.stop="emit('acknowledge', insight)"
             >
               Acknowledge
             </button>
             <button
               v-else
-              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-pb-status-ok hover:bg-red-500/10 hover:text-red-400 transition-colors"
+              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-pb-status-ok hover:bg-pb-status-down hover:text-pb-status-down transition-colors"
               @click.stop="emit('revoke', getAck(insight)!)"
             >
               Revoke

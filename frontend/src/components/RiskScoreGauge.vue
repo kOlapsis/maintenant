@@ -20,10 +20,10 @@ const props = defineProps<{
 }>()
 
 const gaugeColor = computed(() => {
-  if (props.score >= 81) return { bar: 'bg-rose-500', text: 'text-pb-status-down' }
-  if (props.score >= 61) return { bar: 'bg-orange-500', text: 'text-orange-400' }
-  if (props.score >= 31) return { bar: 'bg-amber-500', text: 'text-amber-400' }
-  return { bar: 'bg-emerald-500', text: 'text-pb-status-ok' }
+  if (props.score >= 81) return { bar: 'bg-pb-sev-incident-solid', text: 'text-pb-status-down' }
+  if (props.score >= 61) return { bar: 'bg-orange-500', text: 'text-pb-status-warn' }
+  if (props.score >= 31) return { bar: 'bg-pb-sev-warning-solid', text: 'text-pb-status-warn' }
+  return { bar: 'bg-pb-sev-ok-solid', text: 'text-pb-status-ok' }
 })
 
 const levelLabel = computed(() => {
@@ -41,9 +41,9 @@ const levelLabel = computed(() => {
   <div class="space-y-1.5">
     <div class="flex items-baseline justify-between">
       <span :class="['text-2xl font-black', gaugeColor.text]">{{ score }}</span>
-      <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">{{ levelLabel }}</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-pb-muted">{{ levelLabel }}</span>
     </div>
-    <div class="h-2 w-full bg-pb-primary rounded-full border border-slate-800 overflow-hidden">
+    <div class="h-2 w-full bg-pb-primary rounded-full border border-pb-default overflow-hidden">
       <div
         class="h-full rounded-full transition-all duration-500"
         :class="gaugeColor.bar"

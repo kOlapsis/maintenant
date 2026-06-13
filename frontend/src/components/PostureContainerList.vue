@@ -13,11 +13,11 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="bg-pb-surface rounded-2xl border border-slate-800 overflow-hidden">
+  <div class="bg-pb-surface rounded-2xl border border-pb-default overflow-hidden">
     <div class="hidden md:block overflow-x-auto">
       <table class="w-full text-left border-collapse">
         <thead>
-          <tr class="bg-pb-primary/60 text-slate-500 text-[10px] uppercase tracking-widest font-bold border-b border-slate-800/60">
+          <tr class="bg-pb-primary/60 text-pb-muted text-[10px] uppercase tracking-widest font-bold border-b border-pb-default/60">
             <th class="px-6 py-3.5">Score</th>
             <th class="px-6 py-3.5">Container</th>
             <th class="px-6 py-3.5">Top Issue</th>
@@ -28,7 +28,7 @@ const emit = defineEmits<{
           <tr
             v-for="risk in risks"
             :key="risk.container_id"
-            class="group hover:bg-slate-800/25 transition-all cursor-pointer"
+            class="group hover:bg-pb-elevated transition-all cursor-pointer"
             @click="emit('select', risk.container_id)"
           >
             <td class="px-6 py-3">
@@ -37,15 +37,15 @@ const emit = defineEmits<{
             <td class="px-6 py-3 text-sm font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors">
               {{ risk.container_name }}
             </td>
-            <td class="px-6 py-3 text-xs text-slate-500">
+            <td class="px-6 py-3 text-xs text-pb-muted">
               {{ risk.top_issue || '—' }}
             </td>
             <td class="px-6 py-3 text-right">
-              <ChevronRight :size="14" class="text-slate-700 group-hover:text-slate-400 transition-colors" />
+              <ChevronRight :size="14" class="text-pb-muted group-hover:text-pb-muted transition-colors" />
             </td>
           </tr>
           <tr v-if="risks.length === 0">
-            <td colspan="4" class="px-6 py-12 text-center text-slate-600 text-sm font-medium">
+            <td colspan="4" class="px-6 py-12 text-center text-pb-muted text-sm font-medium">
               No container risk data available
             </td>
           </tr>
@@ -58,18 +58,18 @@ const emit = defineEmits<{
       <div
         v-for="risk in risks"
         :key="'m-' + risk.container_id"
-        class="px-4 py-3 active:bg-slate-800/25 transition-colors cursor-pointer flex items-center gap-3"
+        class="px-4 py-3 active:bg-pb-elevated/25 transition-colors cursor-pointer flex items-center gap-3"
         @click="emit('select', risk.container_id)"
       >
         <PostureScoreBadge :score="risk.score" :color="risk.color" size="sm" />
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-pb-primary truncate">{{ risk.container_name }}</p>
-          <p class="text-[10px] text-slate-600 mt-0.5 truncate">{{ risk.top_issue || '—' }}</p>
+          <p class="text-[10px] text-pb-muted mt-0.5 truncate">{{ risk.top_issue || '—' }}</p>
         </div>
-        <ChevronRight :size="14" class="text-slate-700 shrink-0" />
+        <ChevronRight :size="14" class="text-pb-muted shrink-0" />
       </div>
       <div v-if="risks.length === 0" class="px-4 py-12 text-center">
-        <p class="text-sm text-slate-600 font-medium">No container risk data available</p>
+        <p class="text-sm text-pb-muted font-medium">No container risk data available</p>
       </div>
     </div>
   </div>

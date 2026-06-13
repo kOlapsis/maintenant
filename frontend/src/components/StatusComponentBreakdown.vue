@@ -35,8 +35,8 @@ const typeLabels: Record<string, string> = {
 </script>
 
 <template>
-  <div class="mt-2 space-y-1 rounded-lg border border-slate-800 bg-[#0B0E13] p-3">
-    <div v-if="!monitors?.length" class="text-xs text-slate-500">No monitors</div>
+  <div class="mt-2 space-y-1 rounded-lg border border-pb-default bg-pb-primary p-3">
+    <div v-if="!monitors?.length" class="text-xs text-pb-muted">No monitors</div>
     <div
       v-for="m in monitors"
       :key="`${m.type}-${m.id}`"
@@ -46,8 +46,8 @@ const typeLabels: Record<string, string> = {
         class="h-2 w-2 flex-shrink-0 rounded-full"
         :style="{ background: statusColors[m.status ?? 'operational'] || 'var(--pb-text-muted)' }"
       ></span>
-      <span class="flex-1 text-sm text-slate-200">{{ m.name || `${typeLabels[m.type] || m.type} #${m.id}` }}</span>
-      <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">{{ typeLabels[m.type] || m.type }}</span>
+      <span class="flex-1 text-sm text-pb-secondary">{{ m.name || `${typeLabels[m.type] || m.type} #${m.id}` }}</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-pb-muted">{{ typeLabels[m.type] || m.type }}</span>
     </div>
   </div>
 </template>

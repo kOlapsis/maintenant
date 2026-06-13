@@ -65,11 +65,11 @@ onUnmounted(() => {
           </p>
         </div>
         <div v-if="posture" class="flex items-center gap-3">
-          <span v-if="posture.is_partial" class="flex items-center gap-1.5 text-[10px] text-amber-400 font-bold">
+          <span v-if="posture.is_partial" class="flex items-center gap-1.5 text-[10px] text-pb-status-warn font-bold">
             <AlertTriangle :size="11" />
             Partial data
           </span>
-          <span class="text-[10px] text-slate-500 font-bold">
+          <span class="text-[10px] text-pb-muted font-bold">
             Updated {{ timeAgo(posture.computed_at) }}
           </span>
         </div>
@@ -90,7 +90,7 @@ onUnmounted(() => {
         <template v-if="store.loading && !posture">
           <div class="space-y-4">
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <div v-for="i in 6" :key="i" class="h-24 animate-pulse rounded-xl bg-slate-800/50" />
+              <div v-for="i in 6" :key="i" class="h-24 animate-pulse rounded-xl bg-pb-elevated/50" />
             </div>
           </div>
         </template>
@@ -100,22 +100,22 @@ onUnmounted(() => {
           <!-- Score + Category summary -->
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <!-- Global score card -->
-            <div class="bg-pb-surface rounded-xl p-4 border border-slate-800 flex flex-col items-center justify-center">
+            <div class="bg-pb-surface rounded-xl p-4 border border-pb-default flex flex-col items-center justify-center">
               <PostureScoreBadge :score="posture.score" :color="posture.color" size="md" />
-              <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2">Score</p>
+              <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mt-2">Score</p>
             </div>
 
             <!-- Category cards -->
             <div
               v-for="cat in posture.categories"
               :key="cat.name"
-              class="bg-pb-surface rounded-xl p-4 border border-slate-800"
+              class="bg-pb-surface rounded-xl p-4 border border-pb-default"
             >
-              <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">{{ cat.name.replace('_', ' ') }}</div>
-              <p class="text-2xl font-black" :class="cat.total_issues > 0 ? 'text-amber-400' : 'text-slate-600'">
+              <div class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-1">{{ cat.name.replace('_', ' ') }}</div>
+              <p class="text-2xl font-black" :class="cat.total_issues > 0 ? 'text-pb-status-warn' : 'text-pb-muted'">
                 {{ cat.total_issues }}
               </p>
-              <p class="text-[10px] text-slate-600 mt-0.5">{{ cat.summary }}</p>
+              <p class="text-[10px] text-pb-muted mt-0.5">{{ cat.summary }}</p>
             </div>
           </div>
 
@@ -128,39 +128,39 @@ onUnmounted(() => {
 
         <!-- No data -->
         <div v-else class="flex flex-col items-center justify-center py-16">
-          <ShieldCheck :size="40" class="text-slate-700 mb-3" />
-          <p class="text-sm text-slate-600 font-medium">No posture data available</p>
-          <p class="text-[10px] text-slate-700 mt-1">Make sure containers are being monitored</p>
+          <ShieldCheck :size="40" class="text-pb-muted mb-3" />
+          <p class="text-sm text-pb-muted font-medium">No posture data available</p>
+          <p class="text-[10px] text-pb-muted mt-1">Make sure containers are being monitored</p>
         </div>
 
         <!-- Placeholder slot (Community Edition) -->
         <template #placeholder>
-          <div class="bg-[#12151C] rounded-2xl border border-slate-800 overflow-hidden">
+          <div class="bg-pb-surface rounded-2xl border border-pb-default overflow-hidden">
             <div class="px-6 py-10 flex flex-col items-center text-center">
               <div class="w-12 h-12 rounded-xl bg-pb-green-500/10 border border-pb-green-500/20 flex items-center justify-center mb-4">
                 <ShieldCheck :size="22" class="text-pb-green-400" />
               </div>
-              <h2 class="text-base font-bold text-white mb-1">Security Posture</h2>
-              <p class="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
+              <h2 class="text-base font-bold text-pb-primary mb-1">Security Posture</h2>
+              <p class="text-sm text-pb-muted max-w-md mb-6 leading-relaxed">
                 Get an infrastructure-wide security score that weights network exposure, configuration risks, and pending updates across every monitored container.
               </p>
 
               <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
                 <li class="flex items-start gap-3">
                   <CheckCircle2 :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-slate-300">
+                  <span class="text-sm text-pb-secondary">
                     Single weighted score with per-category breakdown (network, config, updates)
                   </span>
                 </li>
                 <li class="flex items-start gap-3">
                   <BarChart3 :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-slate-300">
+                  <span class="text-sm text-pb-secondary">
                     Drill into the riskiest containers, sorted by impact on the global score
                   </span>
                 </li>
                 <li class="flex items-start gap-3">
                   <AlertTriangle :size="15" class="text-pb-green-400 mt-0.5 shrink-0" />
-                  <span class="text-sm text-slate-300">
+                  <span class="text-sm text-pb-secondary">
                     Acknowledge known findings to exclude them from the score with full audit trail
                   </span>
                 </li>
@@ -168,7 +168,7 @@ onUnmounted(() => {
 
               <RouterLink
                 to="/pro-edition"
-                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 shadow-lg shadow-pb-green-500/20 transition-colors"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted shadow-lg shadow-pb-green-500/20 transition-colors"
               >
                 Unlock with Pro
               </RouterLink>

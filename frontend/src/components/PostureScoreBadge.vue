@@ -19,30 +19,30 @@ const sizes = {
 
 const colorMap: Record<string, string> = {
   green: 'border-emerald-500 text-pb-status-ok',
-  yellow: 'border-amber-500 text-amber-400',
-  orange: 'border-orange-500 text-orange-400',
-  red: 'border-red-500 text-red-400',
+  yellow: 'border-amber-500 text-pb-status-warn',
+  orange: 'border-orange-500 text-pb-status-warn',
+  red: 'border-red-500 text-pb-status-down',
 }
 
 const bgMap: Record<string, string> = {
-  green: 'bg-emerald-500/10',
-  yellow: 'bg-amber-500/10',
+  green: 'bg-pb-status-ok',
+  yellow: 'bg-pb-status-warn',
   orange: 'bg-orange-500/10',
-  red: 'bg-red-500/10',
+  red: 'bg-pb-status-down',
 }
 
 const xsColorMap: Record<string, string> = {
   green: 'text-pb-status-ok',
-  yellow: 'text-amber-400',
-  orange: 'text-orange-400',
-  red: 'text-red-400',
+  yellow: 'text-pb-status-warn',
+  orange: 'text-pb-status-warn',
+  red: 'text-pb-status-down',
 }
 
 const xsBgMap: Record<string, string> = {
-  green: 'bg-emerald-500/10',
-  yellow: 'bg-amber-500/10',
+  green: 'bg-pb-status-ok',
+  yellow: 'bg-pb-status-warn',
   orange: 'bg-orange-500/10',
-  red: 'bg-red-500/10',
+  red: 'bg-pb-status-down',
 }
 
 const s = computed(() => sizes[props.size ?? 'md'])
@@ -69,6 +69,6 @@ const xsBg = computed(() => xsBgMap[props.color] ?? xsBgMap.red)
     >
       <span :class="s.text">{{ score }}</span>
     </div>
-    <span v-if="label" class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{{ label }}</span>
+    <span v-if="label" class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">{{ label }}</span>
   </div>
 </template>
