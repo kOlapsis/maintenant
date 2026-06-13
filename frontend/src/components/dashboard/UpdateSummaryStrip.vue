@@ -34,20 +34,20 @@ const formatTime = timeAgo
 </script>
 
 <template>
-  <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 p-3 sm:p-5">
+  <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-pb-default p-3 sm:p-5">
     <div class="flex items-center justify-between mb-3 sm:mb-4">
       <div class="flex items-center gap-2.5">
         <ArrowUpCircle :size="15" class="text-pb-green-500" />
         <h3 class="text-sm font-bold text-pb-primary">Updates</h3>
       </div>
       <div class="flex items-center gap-3">
-        <span v-if="updates.summary" class="text-[10px] text-slate-500 font-bold">
+        <span v-if="updates.summary" class="text-[10px] text-pb-muted font-bold">
           Last scan: {{ formatTime(updates.summary.last_scan) }}
         </span>
         <button
           @click="updates.startScan()"
           :disabled="updates.scanning"
-          class="px-3 py-1.5 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-pb-green-500/20"
+          class="px-3 py-1.5 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-pb-elevated disabled:text-pb-muted text-pb-inverted rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-pb-green-500/20"
         >
           <RefreshCw :size="11" :class="{ 'animate-spin': updates.scanning }" />
           {{ updates.scanning ? 'Scan...' : 'Check' }}
@@ -57,43 +57,43 @@ const formatTime = timeAgo
 
     <div v-if="updates.summary?.counts" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <!-- Critical -->
-      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-slate-800 hover:border-slate-700 transition-colors">
+      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-pb-default hover:border-pb-default transition-colors">
         <div class="flex items-center gap-1.5 mb-1">
           <AlertTriangle :size="11" class="text-pb-status-down" />
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Critical</span>
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Critical</span>
         </div>
-        <p class="text-xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-pb-status-down' : 'text-slate-500'">
+        <p class="text-xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-pb-status-down' : 'text-pb-muted'">
           {{ updates.summary.counts.critical }}
         </p>
       </RouterLink>
 
       <!-- Recommended -->
-      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-slate-800 hover:border-slate-700 transition-colors">
+      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-pb-default hover:border-pb-default transition-colors">
         <div class="flex items-center gap-1.5 mb-1">
-          <ArrowUpCircle :size="11" class="text-amber-500" />
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Recommended</span>
+          <ArrowUpCircle :size="11" class="text-pb-status-warn" />
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Recommended</span>
         </div>
-        <p class="text-xl font-black" :class="updates.summary.counts.recommended > 0 ? 'text-amber-400' : 'text-slate-500'">
+        <p class="text-xl font-black" :class="updates.summary.counts.recommended > 0 ? 'text-pb-status-warn' : 'text-pb-muted'">
           {{ updates.summary.counts.recommended }}
         </p>
       </RouterLink>
 
       <!-- Available -->
-      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-slate-800 hover:border-slate-700 transition-colors">
+      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-pb-default hover:border-pb-default transition-colors">
         <div class="flex items-center gap-1.5 mb-1">
           <ArrowUpCircle :size="11" class="text-pb-green-500" />
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Available</span>
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Available</span>
         </div>
-        <p class="text-xl font-black" :class="updates.summary.counts.available > 0 ? 'text-pb-green-400' : 'text-slate-500'">
+        <p class="text-xl font-black" :class="updates.summary.counts.available > 0 ? 'text-pb-green-400' : 'text-pb-muted'">
           {{ updates.summary.counts.available }}
         </p>
       </RouterLink>
 
       <!-- Up to date -->
-      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-slate-800 hover:border-slate-700 transition-colors">
+      <RouterLink :to="{ name: 'updates' }" class="bg-pb-primary rounded-xl p-3 border border-pb-default hover:border-pb-default transition-colors">
         <div class="flex items-center gap-1.5 mb-1">
           <CheckCircle :size="11" class="text-pb-status-ok" />
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Up to date</span>
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Up to date</span>
         </div>
         <p class="text-xl font-black text-pb-status-ok">
           {{ updates.summary.counts.up_to_date }}

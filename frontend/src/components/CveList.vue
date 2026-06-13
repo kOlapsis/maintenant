@@ -22,9 +22,9 @@ const props = defineProps<{
 
 const severityColors: Record<string, { bg: string; text: string }> = {
   critical: { bg: 'bg-pb-status-down', text: 'text-pb-status-down' },
-  high: { bg: 'bg-orange-500/10', text: 'text-orange-400' },
-  medium: { bg: 'bg-amber-500/10', text: 'text-amber-400' },
-  low: { bg: 'bg-slate-500/10', text: 'text-slate-400' },
+  high: { bg: 'bg-orange-500/10', text: 'text-pb-status-warn' },
+  medium: { bg: 'bg-pb-status-warn', text: 'text-pb-status-warn' },
+  low: { bg: 'bg-pb-sev-neutral-solid/10', text: 'text-pb-muted' },
 }
 
 function getSeverityStyle(sev: string): { bg: string; text: string } {
@@ -45,14 +45,14 @@ async function copyFixCommand(cveId: string, command: string) {
 </script>
 
 <template>
-  <div v-if="cves.length === 0" class="text-xs text-slate-600 py-4 text-center">
+  <div v-if="cves.length === 0" class="text-xs text-pb-muted py-4 text-center">
     No active CVEs
   </div>
   <div v-else class="space-y-2">
     <div
       v-for="cve in cves"
       :key="cve.cve_id"
-      class="bg-pb-primary rounded-xl p-3 border border-slate-800"
+      class="bg-pb-primary rounded-xl p-3 border border-pb-default"
     >
       <div class="flex items-center justify-between mb-1">
         <div class="flex items-center gap-2">
@@ -66,9 +66,9 @@ async function copyFixCommand(cveId: string, command: string) {
             ]"
           >{{ cve.severity }}</span>
         </div>
-        <span class="text-[10px] font-mono text-slate-400">CVSS {{ cve.cvss_score?.toFixed(1) || 'N/A' }}</span>
+        <span class="text-[10px] font-mono text-pb-muted">CVSS {{ cve.cvss_score?.toFixed(1) || 'N/A' }}</span>
       </div>
-      <p v-if="cve.summary" class="text-[11px] text-slate-500 mt-1">{{ cve.summary }}</p>
+      <p v-if="cve.summary" class="text-[11px] text-pb-muted mt-1">{{ cve.summary }}</p>
       <div v-if="cve.fixed_in" class="mt-1.5">
         <div class="flex items-center gap-2">
           <p class="text-[10px] text-pb-status-ok font-medium">
@@ -84,7 +84,7 @@ async function copyFixCommand(cveId: string, command: string) {
         </div>
         <div v-if="cve.fix_command && !cve.is_fixed_by_update" class="mt-1.5">
           <div class="flex items-center justify-between mb-1">
-            <span class="text-[9px] text-slate-600 uppercase tracking-wider">Fix command</span>
+            <span class="text-[9px] text-pb-muted uppercase tracking-wider">Fix command</span>
             <button
               @click="copyFixCommand(cve.cve_id, cve.fix_command)"
               class="text-[9px] text-pb-status-ok hover:text-pb-accent flex items-center gap-1 transition-colors"
@@ -94,7 +94,7 @@ async function copyFixCommand(cveId: string, command: string) {
               {{ copiedFixId === cve.cve_id ? 'Copied!' : 'Copy' }}
             </button>
           </div>
-          <pre class="text-[10px] text-pb-secondary bg-[#0a0c10] rounded-lg p-2 overflow-x-auto font-mono">{{ cve.fix_command }}</pre>
+          <pre class="text-[10px] text-pb-secondary bg-pb-primary rounded-lg p-2 overflow-x-auto font-mono">{{ cve.fix_command }}</pre>
         </div>
       </div>
     </div>
