@@ -1,0 +1,19 @@
+services:
+  maintenant-agent:
+    image: ghcr.io/kolapsis/maintenant:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "983"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - maintenant-agent-data:/var/lib/maintenant
+    command:
+      - --mode=agent
+      - --server=grpcs://agents.kolapsis.com
+      - --enrollment-token=mnt_enr_2meyrc3klelslt6bihxwvyfc3oq4hpgteypygl6yjcrodcgl4jvq
+
+volumes:
+  maintenant-agent-data:
