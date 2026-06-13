@@ -436,6 +436,12 @@ select option {
   .border-pb-sev-incident { border-color: var(--pb-sev-incident-border); }
   .border-pb-sev-unknown { border-color: var(--pb-sev-unknown-border); }
   .border-pb-sev-neutral { border-color: var(--pb-sev-neutral-border); }
+  /* Solid severity fills (status dots) */
+  .bg-pb-sev-ok-solid { background-color: var(--pb-sev-ok); }
+  .bg-pb-sev-warning-solid { background-color: var(--pb-sev-warning); }
+  .bg-pb-sev-incident-solid { background-color: var(--pb-sev-incident); }
+  .bg-pb-sev-unknown-solid { background-color: var(--pb-sev-unknown); }
+  .bg-pb-sev-neutral-solid { background-color: var(--pb-sev-neutral); }
 
   /* Consistent keyboard focus ring (a11y) — accent outline on focus-visible */
   .focus-ring:focus-visible {

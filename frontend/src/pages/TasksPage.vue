@@ -80,37 +80,37 @@ function stateColor(state: string): string {
     case 'running':
       return 'text-pb-status-ok'
     case 'complete':
-      return 'text-slate-400'
+      return 'text-pb-muted'
     case 'failed':
-      return 'text-red-400'
+      return 'text-pb-status-down'
     case 'rejected':
-      return 'text-red-400'
+      return 'text-pb-status-down'
     case 'shutdown':
-      return 'text-slate-500'
+      return 'text-pb-muted'
     case 'preparing':
     case 'starting':
     case 'assigned':
-      return 'text-sky-400'
+      return 'text-pb-secondary'
     default:
-      return 'text-amber-400'
+      return 'text-pb-status-warn'
   }
 }
 
 function stateDot(state: string): string {
   switch (state) {
     case 'running':
-      return 'bg-emerald-500'
+      return 'bg-pb-sev-ok-solid'
     case 'failed':
     case 'rejected':
-      return 'bg-red-500'
+      return 'bg-pb-sev-incident-solid'
     case 'complete':
-      return 'bg-slate-500'
+      return 'bg-pb-sev-neutral-solid'
     case 'preparing':
     case 'starting':
     case 'assigned':
-      return 'bg-sky-500'
+      return 'bg-pb-sev-neutral-solid'
     default:
-      return 'bg-amber-500'
+      return 'bg-pb-sev-warning-solid'
   }
 }
 
@@ -125,18 +125,18 @@ function shortId(id: string): string {
       <!-- Page header -->
       <div class="mb-6">
         <h1 class="text-2xl font-black text-pb-primary">Tasks</h1>
-        <p class="mt-1 text-sm text-slate-500">All Swarm tasks</p>
+        <p class="mt-1 text-sm text-pb-muted">All Swarm tasks</p>
       </div>
 
       <!-- Filter bar -->
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <div class="flex items-center gap-2">
-          <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+          <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest"
             >Service</label
           >
           <select
             v-model="filterService"
-            class="bg-pb-surface border border-slate-800 text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
+            class="bg-pb-surface border border-pb-default text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-pb-default cursor-pointer"
           >
             <option value="">All services</option>
             <option v-for="svc in services" :key="svc.service_id" :value="svc.name">
@@ -146,12 +146,12 @@ function shortId(id: string): string {
         </div>
 
         <div class="flex items-center gap-2">
-          <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+          <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest"
             >State</label
           >
           <select
             v-model="filterState"
-            class="bg-pb-surface border border-slate-800 text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-slate-600 cursor-pointer"
+            class="bg-pb-surface border border-pb-default text-xs text-pb-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-pb-default cursor-pointer"
           >
             <option value="">All states</option>
             <option v-for="state in TASK_STATES" :key="state" :value="state">
@@ -160,43 +160,43 @@ function shortId(id: string): string {
           </select>
         </div>
 
-        <span class="ml-auto text-xs text-slate-500">
+        <span class="ml-auto text-xs text-pb-muted">
           {{ filteredTasks.length }} task{{ filteredTasks.length === 1 ? '' : 's' }}
         </span>
       </div>
 
       <!-- Loading -->
       <div v-if="loading" class="flex items-center justify-center py-16">
-        <span class="text-sm text-slate-500">Loading tasks…</span>
+        <span class="text-sm text-pb-muted">Loading tasks…</span>
       </div>
 
       <!-- Empty -->
       <div
         v-else-if="filteredTasks.length === 0"
-        class="bg-pb-surface rounded-xl border border-slate-800 px-6 py-12 text-center"
+        class="bg-pb-surface rounded-xl border border-pb-default px-6 py-12 text-center"
       >
-        <ClipboardList :size="32" class="mx-auto mb-3 text-slate-600" />
-        <p class="text-sm text-slate-500">
+        <ClipboardList :size="32" class="mx-auto mb-3 text-pb-muted" />
+        <p class="text-sm text-pb-muted">
           {{ tasks.length === 0 ? 'No tasks found' : 'No tasks match the selected filters' }}
         </p>
       </div>
 
       <!-- Task list -->
-      <div v-else class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden">
+      <div v-else class="bg-pb-surface rounded-xl border border-pb-default overflow-hidden">
         <!-- Table header -->
         <div
-          class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2 border-b border-slate-800"
+          class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2 border-b border-pb-default"
         >
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest"
             >Task ID</span
           >
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest"
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest"
             >Service</span
           >
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Slot</span>
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Node</span>
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">State</span>
-          <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-right"
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Slot</span>
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Node</span>
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">State</span>
+          <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest text-right"
             >When</span
           >
         </div>
@@ -206,10 +206,10 @@ function shortId(id: string): string {
           <div
             v-for="task in filteredTasks"
             :key="task.task_id"
-            class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2.5 hover:bg-slate-800/25 transition-all items-center"
+            class="grid grid-cols-[1fr_1fr_80px_1fr_120px_80px] gap-3 px-4 py-2.5 hover:bg-pb-elevated transition-all items-center"
           >
             <!-- Task ID -->
-            <span class="text-xs text-slate-400 font-mono truncate">{{
+            <span class="text-xs text-pb-muted font-mono truncate">{{
               shortId(task.task_id)
             }}</span>
 
@@ -226,28 +226,28 @@ function shortId(id: string): string {
             </span>
 
             <!-- Slot -->
-            <span class="text-xs text-slate-400 font-mono">#{{ task.slot }}</span>
+            <span class="text-xs text-pb-muted font-mono">#{{ task.slot }}</span>
 
             <!-- Node -->
-            <span class="text-xs text-slate-500 truncate">{{ task.node_hostname || '—' }}</span>
+            <span class="text-xs text-pb-muted truncate">{{ task.node_hostname || '—' }}</span>
 
             <!-- State + error -->
             <div class="flex items-center gap-2 min-w-0">
               <div :class="['w-1.5 h-1.5 rounded-full flex-shrink-0', stateDot(task.state)]" />
               <span :class="['text-xs font-medium', stateColor(task.state)]">{{ task.state }}</span>
-              <span v-if="task.error" class="text-[10px] text-red-400 truncate" :title="task.error">
+              <span v-if="task.error" class="text-[10px] text-pb-status-down truncate" :title="task.error">
                 {{ task.error }}
               </span>
               <span
                 v-else-if="task.exit_code !== null && task.exit_code !== 0"
-                class="text-[10px] text-red-400 flex-shrink-0"
+                class="text-[10px] text-pb-status-down flex-shrink-0"
               >
                 exit {{ task.exit_code }}
               </span>
             </div>
 
             <!-- When -->
-            <span class="text-xs text-slate-500 tabular-nums text-right">{{
+            <span class="text-xs text-pb-muted tabular-nums text-right">{{
               timeAgo(task.timestamp)
             }}</span>
           </div>
