@@ -36,12 +36,12 @@ function podBarWidth(count: number): string {
 <template>
   <div>
     <!-- Loading -->
-    <div v-if="k8sStore.clusterLoading && !overview" class="text-sm text-slate-500 py-12 text-center">
+    <div v-if="k8sStore.clusterLoading && !overview" class="text-sm text-pb-muted py-12 text-center">
       Loading cluster overview...
     </div>
 
     <!-- Error -->
-    <div v-else-if="k8sStore.error && !overview" class="text-sm text-red-400 py-12 text-center">
+    <div v-else-if="k8sStore.error && !overview" class="text-sm text-pb-status-down py-12 text-center">
       {{ k8sStore.error }}
     </div>
 
@@ -50,64 +50,64 @@ function podBarWidth(count: number): string {
       <!-- Health + summary cards -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <!-- Cluster Health -->
-        <div class="bg-pb-surface rounded-xl border border-slate-800 px-5 py-4">
-          <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Cluster Health</p>
+        <div class="bg-pb-surface rounded-xl border border-pb-default px-5 py-4">
+          <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Cluster Health</p>
           <ClusterHealthBadge :health="overview.cluster_health" />
         </div>
 
         <!-- Namespaces -->
-        <div class="bg-pb-surface rounded-xl border border-slate-800 px-5 py-4">
-          <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Namespaces</p>
+        <div class="bg-pb-surface rounded-xl border border-pb-default px-5 py-4">
+          <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Namespaces</p>
           <p class="text-2xl font-bold text-pb-primary tabular-nums">{{ overview.namespace_count }}</p>
         </div>
 
         <!-- Nodes -->
-        <div class="bg-pb-surface rounded-xl border border-slate-800 px-5 py-4">
-          <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Nodes</p>
+        <div class="bg-pb-surface rounded-xl border border-pb-default px-5 py-4">
+          <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Nodes</p>
           <div class="flex items-baseline gap-1.5">
             <span class="text-2xl font-bold text-pb-primary tabular-nums">{{ overview.node_ready_count }}</span>
-            <span class="text-sm text-slate-400">/ {{ overview.node_count }} ready</span>
+            <span class="text-sm text-pb-muted">/ {{ overview.node_count }} ready</span>
           </div>
         </div>
 
         <!-- Workloads -->
-        <div class="bg-pb-surface rounded-xl border border-slate-800 px-5 py-4">
-          <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Workloads</p>
+        <div class="bg-pb-surface rounded-xl border border-pb-default px-5 py-4">
+          <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Workloads</p>
           <div class="flex items-baseline gap-1.5">
             <span class="text-2xl font-bold text-pb-primary tabular-nums">{{ overview.workload_healthy }}</span>
-            <span class="text-sm text-slate-400">/ {{ overview.workload_count }} healthy</span>
+            <span class="text-sm text-pb-muted">/ {{ overview.workload_count }} healthy</span>
           </div>
         </div>
       </div>
 
       <!-- Pod status breakdown -->
-      <div class="bg-pb-surface rounded-xl border border-slate-800 px-5 py-4">
-        <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-3">Pod Status</p>
+      <div class="bg-pb-surface rounded-xl border border-pb-default px-5 py-4">
+        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-3">Pod Status</p>
         <div class="flex items-center gap-4 mb-3">
           <span class="text-2xl font-bold text-pb-primary tabular-nums">{{ totalPods }}</span>
-          <span class="text-sm text-slate-400">total pods</span>
+          <span class="text-sm text-pb-muted">total pods</span>
         </div>
 
         <!-- Stacked bar -->
-        <div class="flex h-2.5 rounded-full overflow-hidden bg-pb-primary border border-slate-800">
+        <div class="flex h-2.5 rounded-full overflow-hidden bg-pb-primary border border-pb-default">
           <div
-            class="bg-emerald-500 transition-all"
+            class="bg-pb-sev-ok-solid transition-all"
             :style="{ width: podBarWidth(overview.pod_status.running) }"
           />
           <div
-            class="bg-amber-500 transition-all"
+            class="bg-pb-sev-warning-solid transition-all"
             :style="{ width: podBarWidth(overview.pod_status.pending) }"
           />
           <div
-            class="bg-red-500 transition-all"
+            class="bg-pb-sev-incident-solid transition-all"
             :style="{ width: podBarWidth(overview.pod_status.failed) }"
           />
           <div
-            class="bg-sky-500 transition-all"
+            class="bg-pb-sev-neutral-solid transition-all"
             :style="{ width: podBarWidth(overview.pod_status.succeeded) }"
           />
           <div
-            class="bg-slate-500 transition-all"
+            class="bg-pb-sev-neutral-solid transition-all"
             :style="{ width: podBarWidth(overview.pod_status.unknown) }"
           />
         </div>
@@ -115,38 +115,38 @@ function podBarWidth(count: number): string {
         <!-- Legend -->
         <div class="flex flex-wrap gap-x-5 gap-y-1 mt-2.5 text-xs">
           <span class="flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-500" />
-            <span class="text-slate-400">Running</span>
+            <span class="w-2 h-2 rounded-full bg-pb-sev-ok-solid" />
+            <span class="text-pb-muted">Running</span>
             <span class="text-pb-primary font-medium tabular-nums">{{ overview.pod_status.running }}</span>
           </span>
           <span class="flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-amber-500" />
-            <span class="text-slate-400">Pending</span>
+            <span class="w-2 h-2 rounded-full bg-pb-sev-warning-solid" />
+            <span class="text-pb-muted">Pending</span>
             <span class="text-pb-primary font-medium tabular-nums">{{ overview.pod_status.pending }}</span>
           </span>
           <span class="flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-red-500" />
-            <span class="text-slate-400">Failed</span>
+            <span class="w-2 h-2 rounded-full bg-pb-sev-incident-solid" />
+            <span class="text-pb-muted">Failed</span>
             <span class="text-pb-primary font-medium tabular-nums">{{ overview.pod_status.failed }}</span>
           </span>
           <span class="flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-sky-500" />
-            <span class="text-slate-400">Succeeded</span>
+            <span class="w-2 h-2 rounded-full bg-pb-sev-neutral-solid" />
+            <span class="text-pb-muted">Succeeded</span>
             <span class="text-pb-primary font-medium tabular-nums">{{ overview.pod_status.succeeded }}</span>
           </span>
           <span v-if="overview.pod_status.unknown > 0" class="flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-slate-500" />
-            <span class="text-slate-400">Unknown</span>
+            <span class="w-2 h-2 rounded-full bg-pb-sev-neutral-solid" />
+            <span class="text-pb-muted">Unknown</span>
             <span class="text-pb-primary font-medium tabular-nums">{{ overview.pod_status.unknown }}</span>
           </span>
         </div>
       </div>
 
       <!-- Per-namespace summaries -->
-      <div class="bg-pb-surface rounded-xl border border-slate-800 px-5 py-4">
-        <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-3">Namespaces</p>
+      <div class="bg-pb-surface rounded-xl border border-pb-default px-5 py-4">
+        <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-3">Namespaces</p>
 
-        <div v-if="overview.namespaces.length === 0" class="text-sm text-slate-500 py-4 text-center">
+        <div v-if="overview.namespaces.length === 0" class="text-sm text-pb-muted py-4 text-center">
           No namespaces found
         </div>
 
@@ -154,18 +154,18 @@ function podBarWidth(count: number): string {
           <div
             v-for="ns in overview.namespaces"
             :key="ns.name"
-            class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-800/25 transition-all"
+            class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-pb-elevated transition-all"
           >
             <div class="flex items-center gap-2.5 min-w-0">
               <span
                 :class="[
                   'w-2 h-2 rounded-full flex-shrink-0',
-                  ns.healthy ? 'bg-emerald-500' : 'bg-amber-500',
+                  ns.healthy ? 'bg-pb-sev-ok-solid' : 'bg-pb-sev-warning-solid',
                 ]"
               />
               <span class="text-sm text-pb-primary font-medium truncate">{{ ns.name }}</span>
             </div>
-            <div class="flex items-center gap-4 text-xs text-slate-400 flex-shrink-0 ml-4">
+            <div class="flex items-center gap-4 text-xs text-pb-muted flex-shrink-0 ml-4">
               <span class="tabular-nums">{{ ns.workload_count }} workloads</span>
               <span class="tabular-nums">{{ ns.pod_count }} pods</span>
             </div>

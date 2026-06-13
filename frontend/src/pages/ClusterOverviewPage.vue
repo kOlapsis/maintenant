@@ -54,7 +54,7 @@ const isSwarm = computed(() => availableRuntimes.value.includes('swarm'))
 
     <!-- Neither runtime in the selected scope -->
     <template v-if="!isKubernetes && !isSwarm">
-      <p class="text-sm text-slate-400">Cluster overview is available for Kubernetes and Docker Swarm runtimes.</p>
+      <p class="text-sm text-pb-muted">Cluster overview is available for Kubernetes and Docker Swarm runtimes.</p>
     </template>
 
     <!-- All-Kubernetes fleet: this page replaces the dashboard, so keep its
