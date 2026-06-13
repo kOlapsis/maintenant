@@ -35,27 +35,24 @@ const sortedNodes = computed(() => {
 
 const readyCount = computed(() => k8sStore.nodes.filter((n) => n.status === 'ready').length)
 
-function statusColor(status: string): string {
+function statusVar(status: string): string {
   switch (status) {
-    case 'ready': return 'bg-emerald-500'
-    case 'not-ready': return 'bg-red-500'
-    default: return 'bg-slate-500'
+    case 'ready': return 'var(--pb-sev-ok)'
+    case 'not-ready': return 'var(--pb-sev-incident)'
+    default: return 'var(--pb-sev-neutral)'
   }
 }
 
 function statusText(status: string): string {
   switch (status) {
     case 'ready': return 'text-pb-status-ok'
-    case 'not-ready': return 'text-red-400'
-    default: return 'text-slate-400'
+    case 'not-ready': return 'text-pb-status-down'
+    default: return 'text-pb-muted'
   }
 }
 
-function roleStyle(role: string): string {
-  if (role === 'control-plane' || role === 'master') {
-    return 'text-violet-400 bg-violet-400/10 border-violet-400/20'
-  }
-  return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
+function roleStyle(_role: string): string {
+  return 'text-pb-secondary bg-pb-elevated border-pb-default'
 }
 
 function hasCondition(conditions: Array<{ type: string; status: string }>, condType: string): boolean {
@@ -78,23 +75,23 @@ function formatCPU(millicores: number): string {
 <template>
   <div>
     <div class="mb-3 flex items-center justify-between">
-      <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cluster Nodes</p>
-      <div class="flex items-center gap-3 text-xs text-slate-400">
-        <span :class="readyCount === k8sStore.nodes.length ? 'text-pb-status-ok' : 'text-amber-400'">
+      <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Cluster Nodes</p>
+      <div class="flex items-center gap-3 text-xs text-pb-muted">
+        <span :class="readyCount === k8sStore.nodes.length ? 'text-pb-status-ok' : 'text-pb-status-warn'">
           {{ readyCount }}/{{ k8sStore.nodes.length }} ready
         </span>
       </div>
     </div>
 
-    <div v-if="k8sStore.nodesLoading && k8sStore.nodes.length === 0" class="text-sm text-slate-500 py-8 text-center">
+    <div v-if="k8sStore.nodesLoading && k8sStore.nodes.length === 0" class="text-sm text-pb-muted py-8 text-center">
       Loading nodes...
     </div>
 
-    <div v-else-if="k8sStore.error && k8sStore.nodes.length === 0" class="text-sm text-red-400 py-8 text-center">
+    <div v-else-if="k8sStore.error && k8sStore.nodes.length === 0" class="text-sm text-pb-status-down py-8 text-center">
       {{ k8sStore.error }}
     </div>
 
-    <div v-else-if="k8sStore.nodes.length === 0" class="text-sm text-slate-500 py-8 text-center">
+    <div v-else-if="k8sStore.nodes.length === 0" class="text-sm text-pb-muted py-8 text-center">
       No nodes found
     </div>
 
@@ -102,17 +99,18 @@ function formatCPU(millicores: number): string {
       <div
         v-for="node in sortedNodes"
         :key="node.name"
-        class="bg-pb-surface rounded-xl border border-slate-800 px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
+        class="bg-pb-surface rounded-xl border border-pb-default px-4 py-3 hover:bg-pb-elevated transition-all cursor-pointer group"
         @click="emit('select', node.name)"
       >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3 min-w-0">
             <!-- Status dot -->
             <div class="relative flex-shrink-0">
-              <div :class="['w-2.5 h-2.5 rounded-full', statusColor(node.status)]" />
+              <div class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: statusVar(node.status) }" />
               <div
                 v-if="node.status === 'ready'"
-                :class="['absolute inset-0 w-2.5 h-2.5 rounded-full animate-ping opacity-30', statusColor(node.status)]"
+                class="pb-ping absolute inset-0 w-2.5 h-2.5 rounded-full opacity-30"
+                :style="{ backgroundColor: statusVar(node.status) }"
               />
             </div>
 
@@ -131,25 +129,25 @@ function formatCPU(millicores: number): string {
             <!-- Condition warnings -->
             <span
               v-if="hasCondition(node.conditions, 'MemoryPressure')"
-              class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-amber-400 bg-amber-400/10 border-amber-400/20"
+              class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-pb-status-warn bg-pb-status-warn border-pb-sev-warning"
             >
               MemPressure
             </span>
             <span
               v-if="hasCondition(node.conditions, 'DiskPressure')"
-              class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-amber-400 bg-amber-400/10 border-amber-400/20"
+              class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-pb-status-warn bg-pb-status-warn border-pb-sev-warning"
             >
               DiskPressure
             </span>
             <span
               v-if="hasCondition(node.conditions, 'PIDPressure')"
-              class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-amber-400 bg-amber-400/10 border-amber-400/20"
+              class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-pb-status-warn bg-pb-status-warn border-pb-sev-warning"
             >
               PIDPressure
             </span>
           </div>
 
-          <div class="flex items-center gap-4 text-xs text-slate-400 flex-shrink-0 ml-4">
+          <div class="flex items-center gap-4 text-xs text-pb-muted flex-shrink-0 ml-4">
             <!-- Status text -->
             <span :class="['font-medium', statusText(node.status)]">{{ node.status }}</span>
 
@@ -165,12 +163,12 @@ function formatCPU(millicores: number): string {
             <span class="tabular-nums">{{ node.running_pods }} pods</span>
 
             <!-- K8s version -->
-            <span v-if="node.kubernetes_version" class="text-slate-500 hidden md:inline">
+            <span v-if="node.kubernetes_version" class="text-pb-muted hidden md:inline">
               {{ node.kubernetes_version }}
             </span>
 
             <!-- Created -->
-            <span class="text-slate-500 tabular-nums hidden lg:inline" :title="node.created_at">
+            <span class="text-pb-muted tabular-nums hidden lg:inline" :title="node.created_at">
               {{ timeAgo(node.created_at) }}
             </span>
           </div>
