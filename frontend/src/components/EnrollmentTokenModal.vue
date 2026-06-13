@@ -104,12 +104,12 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
           <div>
             <h2
               id="token-modal-title"
-              class="text-lg font-semibold text-white"
+              class="text-lg font-semibold text-pb-primary"
             >
               Enrollment Token
             </h2>
-            <p class="mt-1 text-sm text-slate-400">
-              This token will <span class="text-white font-semibold">never be shown again</span>.
+            <p class="mt-1 text-sm text-pb-muted">
+              This token will <span class="text-pb-primary font-semibold">never be shown again</span>.
               Copy the install command before closing.
             </p>
           </div>
@@ -129,14 +129,14 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
 
           <!-- Token cleartext -->
           <div>
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Token</p>
+            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-1">Token</p>
             <div class="flex items-center gap-2">
               <code
-                class="flex-1 block rounded-lg bg-[#0B0E13] border border-slate-800 px-3 py-2 font-mono text-xs text-slate-300 break-all"
+                class="flex-1 block rounded-lg bg-pb-primary border border-pb-default px-3 py-2 font-mono text-xs text-pb-secondary break-all"
               >{{ token.token }}</code>
               <button
                 type="button"
-                class="shrink-0 rounded-lg border border-slate-700 bg-[#0B0E13] px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 transition-colors"
+                class="shrink-0 rounded-lg border border-pb-default bg-pb-primary px-3 py-2 text-xs text-pb-secondary hover:bg-pb-elevated transition-colors"
                 @click="copyText(token.token, 'token')"
               >
                 {{ copiedToken ? 'Copied!' : 'Copy' }}
@@ -146,13 +146,13 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
 
           <!-- Install mode selector + command -->
           <div>
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Install command</p>
+            <p class="text-[10px] text-pb-muted font-bold uppercase tracking-widest mb-2">Install command</p>
 
             <!-- Segmented control -->
             <div
               role="tablist"
               aria-label="Install mode"
-              class="flex flex-wrap gap-1 rounded-lg border border-slate-800 bg-[#0B0E13] p-1 mb-2"
+              class="flex flex-wrap gap-1 rounded-lg border border-pb-default bg-pb-primary p-1 mb-2"
             >
               <button
                 v-for="mode in MODES"
@@ -163,8 +163,8 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
                 class="flex-1 min-w-[5rem] rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
                 :class="
                   selectedMode === mode.id
-                    ? 'bg-slate-800 text-white'
-                    : 'text-slate-500 hover:bg-slate-800/40 hover:text-slate-300'
+                    ? 'bg-pb-elevated text-pb-primary'
+                    : 'text-pb-muted hover:bg-pb-elevated hover:text-pb-secondary'
                 "
                 @click="selectMode(mode.id)"
               >
@@ -174,12 +174,12 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
 
             <!-- Template body -->
             <pre
-              class="rounded-lg bg-[#0B0E13] border border-slate-800 px-3 py-2 font-mono text-xs text-slate-300 whitespace-pre overflow-auto max-h-80"
+              class="rounded-lg bg-pb-primary border border-pb-default px-3 py-2 font-mono text-xs text-pb-secondary whitespace-pre overflow-auto max-h-80"
             >{{ currentTemplate }}</pre>
 
             <button
               type="button"
-              class="mt-2 w-full rounded-lg border border-slate-700 bg-[#0B0E13] px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors"
+              class="mt-2 w-full rounded-lg border border-pb-default bg-pb-primary px-4 py-2 text-sm font-medium text-pb-secondary hover:bg-pb-elevated transition-colors"
               @click="copyText(currentTemplate, 'command')"
             >
               {{ copiedCommand ? 'Copied!' : 'Copy install command' }}
@@ -187,14 +187,14 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
           </div>
 
           <!-- Expires -->
-          <p class="text-xs text-slate-500">
+          <p class="text-xs text-pb-muted">
             Expires: {{ new Date(token.expires_at).toLocaleString() }}
           </p>
 
           <!-- Done -->
           <button
             type="button"
-            class="w-full rounded-lg bg-pb-green-600 px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+            class="w-full rounded-lg bg-pb-green-600 px-4 py-2 text-sm font-semibold text-pb-primary hover:opacity-90 transition-opacity"
             @click="emit('close')"
           >
             Done

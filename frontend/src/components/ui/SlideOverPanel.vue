@@ -92,12 +92,12 @@ const panelWidth = computed(() => widthMap[props.width] || '32rem')
           :style="{ width: '100%', maxWidth: panelWidth }"
         >
           <!-- Header -->
-          <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-pb-default">
             <slot name="header">
               <h2 class="text-lg font-semibold text-pb-primary">{{ title }}</h2>
             </slot>
             <button
-              class="flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-pb-primary hover:bg-slate-800 transition-colors"
+              class="flex items-center justify-center w-8 h-8 rounded-lg text-pb-muted hover:text-pb-primary hover:bg-pb-elevated transition-colors"
               @click="close"
               aria-label="Close panel"
             >
@@ -113,7 +113,7 @@ const panelWidth = computed(() => widthMap[props.width] || '32rem')
           <!-- Footer -->
           <div
             v-if="$slots.footer"
-            class="px-5 py-4 border-t border-slate-800"
+            class="px-5 py-4 border-t border-pb-default"
           >
             <slot name="footer" />
           </div>

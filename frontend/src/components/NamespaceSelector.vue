@@ -51,25 +51,25 @@ onBeforeUnmount(() => {
 <template>
   <div ref="containerRef" class="relative">
     <button
-      class="flex items-center gap-2 bg-pb-surface border border-slate-800 rounded-lg px-3 py-2 text-sm text-pb-secondary hover:border-slate-700 hover:text-pb-primary transition-all"
+      class="flex items-center gap-2 bg-pb-surface border border-pb-default rounded-lg px-3 py-2 text-sm text-pb-secondary hover:border-pb-default hover:text-pb-primary transition-all"
       @click="toggle"
     >
-      <Layers :size="14" class="text-slate-500 flex-shrink-0" />
+      <Layers :size="14" class="text-pb-muted flex-shrink-0" />
       <span class="truncate max-w-40">{{ label }}</span>
       <ChevronDown
         :size="14"
-        :class="['text-slate-500 flex-shrink-0 transition-transform', open ? 'rotate-180' : '']"
+        :class="['text-pb-muted flex-shrink-0 transition-transform', open ? 'rotate-180' : '']"
       />
     </button>
 
     <!-- Dropdown -->
     <div
       v-if="open"
-      class="absolute right-0 top-full mt-1 z-50 min-w-52 bg-pb-surface border border-slate-800 rounded-xl shadow-xl overflow-hidden"
+      class="absolute right-0 top-full mt-1 z-50 min-w-52 bg-pb-surface border border-pb-default rounded-xl shadow-xl overflow-hidden"
     >
       <!-- All namespaces option -->
       <button
-        class="w-full flex items-center justify-between px-4 py-2.5 text-sm text-pb-secondary hover:bg-slate-800/40 hover:text-pb-primary transition-colors"
+        class="w-full flex items-center justify-between px-4 py-2.5 text-sm text-pb-secondary hover:bg-pb-elevated hover:text-pb-primary transition-colors"
         @click="store.selectAll()"
       >
         <span>All namespaces</span>
@@ -81,15 +81,15 @@ onBeforeUnmount(() => {
       </button>
 
       <!-- Divider -->
-      <div v-if="store.namespaces.length > 0" class="border-t border-slate-800" />
+      <div v-if="store.namespaces.length > 0" class="border-t border-pb-default" />
 
       <!-- Individual namespaces -->
       <div class="max-h-64 overflow-y-auto">
         <button
           v-for="ns in store.namespaces"
           :key="ns"
-          class="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-slate-800/40 transition-colors"
-          :class="store.selectedNamespaces.includes(ns) ? 'text-pb-primary' : 'text-slate-400'"
+          class="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-pb-elevated transition-colors"
+          :class="store.selectedNamespaces.includes(ns) ? 'text-pb-primary' : 'text-pb-muted'"
           @click="store.toggleNamespace(ns)"
         >
           <span class="font-mono">{{ ns }}</span>
@@ -102,7 +102,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Empty state -->
-      <div v-if="store.namespaces.length === 0" class="px-4 py-3 text-xs text-slate-500 text-center">
+      <div v-if="store.namespaces.length === 0" class="px-4 py-3 text-xs text-pb-muted text-center">
         No namespaces found
       </div>
     </div>

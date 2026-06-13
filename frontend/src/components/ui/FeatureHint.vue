@@ -46,7 +46,7 @@ function dismiss() {
       <Info :size="20" class="text-pb-green-400 shrink-0 mt-0.5" />
       <div class="flex-1 min-w-0">
         <h3 class="text-sm font-medium text-pb-green-400">{{ title }}</h3>
-        <p class="mt-1 text-sm text-slate-400">
+        <p class="mt-1 text-sm text-pb-muted">
           <slot />
           <a
             v-if="docHref"
@@ -62,7 +62,7 @@ function dismiss() {
       </div>
       <button
         @click="dismiss"
-        class="text-slate-500 hover:text-slate-300 shrink-0 transition-colors"
+        class="text-pb-muted hover:text-pb-secondary shrink-0 transition-colors"
         aria-label="Dismiss hint"
       >
         <X :size="16" />

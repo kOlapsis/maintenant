@@ -17,9 +17,9 @@ defineProps<{
 }>()
 
 function uptimeColor(pct: number): string {
-  if (pct >= 99) return 'bg-green-500'
+  if (pct >= 99) return 'bg-pb-sev-ok-solid'
   if (pct >= 95) return 'bg-yellow-500'
-  return 'bg-red-500'
+  return 'bg-pb-sev-incident-solid'
 }
 
 function formatPct(pct: number): string {
@@ -42,7 +42,7 @@ const windowLabels: Record<string, string> = {
       :key="key"
       class="flex items-center gap-1.5 text-xs"
     >
-      <span class="text-slate-400">{{ label }}</span>
+      <span class="text-pb-muted">{{ label }}</span>
       <div class="h-2 w-12 rounded-full bg-gray-200 overflow-hidden">
         <div
           class="h-full rounded-full transition-all"
@@ -50,7 +50,7 @@ const windowLabels: Record<string, string> = {
           :style="{ width: Math.min(uptimes[key] || 0, 100) + '%' }"
         />
       </div>
-      <span class="text-slate-600 tabular-nums">{{ formatPct(uptimes[key] || 0) }}</span>
+      <span class="text-pb-muted tabular-nums">{{ formatPct(uptimes[key] || 0) }}</span>
     </div>
   </div>
 </template>

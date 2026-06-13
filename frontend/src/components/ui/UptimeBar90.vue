@@ -30,10 +30,10 @@ const tooltip = ref<{ visible: boolean; x: number; y: number; day: UptimeDay | n
 })
 
 function barColorClass(day: UptimeDay): string {
-  if (day.uptime_percent === null) return 'bg-slate-700'
-  if (day.uptime_percent >= 100) return 'bg-emerald-500'
-  if (day.uptime_percent > 0) return 'bg-amber-500'
-  return 'bg-rose-500'
+  if (day.uptime_percent === null) return 'bg-pb-elevated'
+  if (day.uptime_percent >= 100) return 'bg-pb-sev-ok-solid'
+  if (day.uptime_percent > 0) return 'bg-pb-sev-warning-solid'
+  return 'bg-pb-sev-incident-solid'
 }
 
 function showTooltip(event: MouseEvent, day: UptimeDay) {
@@ -80,7 +80,7 @@ function formatUptime(pct: number | null): string {
     <Teleport to="body">
       <div
         v-if="tooltip.visible && tooltip.day && !compact"
-        class="fixed z-[9999] pointer-events-none whitespace-nowrap bg-pb-surface text-pb-primary border border-slate-800 rounded-lg px-3 py-2 text-xs shadow-xl"
+        class="fixed z-[9999] pointer-events-none whitespace-nowrap bg-pb-surface text-pb-primary border border-pb-default rounded-lg px-3 py-2 text-xs shadow-xl"
         :style="{
           left: tooltip.x + 'px',
           top: (tooltip.y - 8) + 'px',
@@ -91,7 +91,7 @@ function formatUptime(pct: number | null): string {
           {{ formatDate(tooltip.day.date) }}
         </div>
         <div>Uptime: {{ formatUptime(tooltip.day.uptime_percent) }}</div>
-        <div class="text-slate-500">
+        <div class="text-pb-muted">
           {{ tooltip.day.incident_count }} incident{{ tooltip.day.incident_count !== 1 ? 's' : '' }}
         </div>
       </div>

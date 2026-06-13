@@ -32,10 +32,10 @@ const error = ref<string | null>(null)
 const saved = ref(false)
 
 const alertStateColors: Record<string, string> = {
-  normal: 'text-green-600',
-  cpu_alert: 'text-red-600',
-  mem_alert: 'text-red-600',
-  both_alert: 'text-red-600',
+  normal: 'text-pb-status-ok',
+  cpu_alert: 'text-pb-status-down',
+  mem_alert: 'text-pb-status-down',
+  both_alert: 'text-pb-status-down',
 }
 
 onMounted(async () => {
@@ -72,11 +72,11 @@ async function save() {
 <template>
   <div class="rounded border border-gray-200 bg-white p-4">
     <div class="mb-3 flex items-center justify-between">
-      <h4 class="text-sm font-semibold text-slate-700">Resource Alerts</h4>
+      <h4 class="text-sm font-semibold text-pb-muted">Resource Alerts</h4>
       <span
         v-if="config"
         class="text-xs font-medium"
-        :class="alertStateColors[config.alert_state] || 'text-slate-500'"
+        :class="alertStateColors[config.alert_state] || 'text-pb-muted'"
       >
         {{ config.alert_state }}
       </span>
@@ -86,12 +86,12 @@ async function save() {
       <!-- Enable toggle -->
       <label class="flex items-center gap-2 text-sm">
         <input v-model="enabled" type="checkbox" class="rounded border-gray-300" />
-        <span class="text-slate-700">Enable alerts</span>
+        <span class="text-pb-muted">Enable alerts</span>
       </label>
 
       <!-- CPU threshold -->
       <div>
-        <label class="block text-xs text-slate-500">CPU Threshold (%)</label>
+        <label class="block text-xs text-pb-muted">CPU Threshold (%)</label>
         <div class="flex items-center gap-2">
           <input
             v-model.number="cpuThreshold"
@@ -112,7 +112,7 @@ async function save() {
 
       <!-- Memory threshold -->
       <div>
-        <label class="block text-xs text-slate-500">Memory Threshold (%)</label>
+        <label class="block text-xs text-pb-muted">Memory Threshold (%)</label>
         <div class="flex items-center gap-2">
           <input
             v-model.number="memThreshold"
@@ -134,14 +134,14 @@ async function save() {
       <!-- Save button -->
       <div class="flex items-center gap-2">
         <button
-          class="rounded bg-pb-green-600 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-pb-green-700 disabled:opacity-50"
+          class="rounded bg-pb-green-600 px-3 py-1.5 text-xs font-medium text-pb-inverted hover:bg-pb-green-700 disabled:opacity-50"
           :disabled="saving"
           @click="save"
         >
           {{ saving ? 'Saving...' : 'Save' }}
         </button>
-        <span v-if="saved" class="text-xs text-green-600">Saved</span>
-        <span v-if="error" class="text-xs text-red-600">{{ error }}</span>
+        <span v-if="saved" class="text-xs text-pb-status-ok">Saved</span>
+        <span v-if="error" class="text-xs text-pb-status-down">{{ error }}</span>
       </div>
     </div>
   </div>
