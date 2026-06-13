@@ -59,8 +59,8 @@ const incidentFeed = computed(() => {
 
   for (const alert of allActive.slice(0, 6)) {
     const color =
-      alert.severity === 'critical' ? 'bg-rose-500' :
-      alert.severity === 'warning'  ? 'bg-amber-500' :
+      alert.severity === 'critical' ? 'bg-pb-sev-incident-solid' :
+      alert.severity === 'warning'  ? 'bg-pb-sev-warning-solid' :
       'bg-pb-green-500'
     const route = alertEntityRoute(alert)
     const entityId = alertEntityId(alert)
@@ -81,9 +81,9 @@ const incidentFeed = computed(() => {
   // Active status page incidents (non-resolved)
   for (const inc of statusAdmin.incidents.filter((i) => i.status !== 'resolved').slice(0, 3)) {
     const color =
-      inc.severity === 'critical' ? 'bg-rose-500' :
-      inc.severity === 'major'    ? 'bg-rose-500' :
-      inc.severity === 'minor'    ? 'bg-amber-500' :
+      inc.severity === 'critical' ? 'bg-pb-sev-incident-solid' :
+      inc.severity === 'major'    ? 'bg-pb-sev-incident-solid' :
+      inc.severity === 'minor'    ? 'bg-pb-sev-warning-solid' :
       'bg-pb-green-400'
     items.push({
       id: `inc-${inc.id}`,
@@ -148,7 +148,7 @@ const formatRelativeTime = timeAgo
 </script>
 
 <template>
-  <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-slate-800 p-4 sm:p-6">
+  <div class="bg-pb-surface rounded-xl sm:rounded-2xl border border-pb-default p-4 sm:p-6">
     <div class="flex justify-between items-center mb-5">
       <h3 class="text-sm font-bold text-pb-primary flex items-center gap-2.5">
         <Activity :size="15" class="text-pb-green-500" />
@@ -166,30 +166,30 @@ const formatRelativeTime = timeAgo
       <div
         v-for="(inc, idx) in incidentFeed"
         :key="inc.id"
-        class="flex gap-4 p-3 rounded-xl hover:bg-slate-800/40 transition-all border border-transparent hover:border-slate-800/60 group cursor-pointer"
+        class="flex gap-4 p-3 rounded-xl hover:bg-pb-elevated transition-all border border-transparent hover:border-pb-default/60 group cursor-pointer"
         @click="navigateToIncident(inc)"
       >
         <div class="flex flex-col items-center gap-1 shrink-0">
           <div :class="['w-2 h-2 rounded-full mt-1.5 shrink-0', inc.color]" />
-          <div v-if="idx < incidentFeed.length - 1" class="w-px flex-1 bg-slate-800" />
+          <div v-if="idx < incidentFeed.length - 1" class="w-px flex-1 bg-pb-elevated" />
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex justify-between items-center mb-0.5">
             <span class="text-xs font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors tracking-tight truncate mr-3">{{ inc.service }}</span>
-            <span class="text-[10px] text-slate-600 font-bold shrink-0">{{ inc.time }}</span>
+            <span class="text-[10px] text-pb-muted font-bold shrink-0">{{ inc.time }}</span>
           </div>
-          <p class="text-[11px] text-slate-500 truncate">{{ inc.message }}</p>
+          <p class="text-[11px] text-pb-muted truncate">{{ inc.message }}</p>
         </div>
-        <ChevronRight :size="13" class="text-slate-700 group-hover:text-slate-400 self-center shrink-0 transition-colors" />
+        <ChevronRight :size="13" class="text-pb-muted group-hover:text-pb-muted self-center shrink-0 transition-colors" />
       </div>
     </div>
 
     <div v-else class="flex flex-col items-center justify-center py-10 gap-3">
-      <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+      <div class="w-10 h-10 rounded-full bg-pb-status-ok flex items-center justify-center">
         <Activity :size="18" class="text-pb-status-ok" />
       </div>
-      <p class="text-sm text-slate-600 font-medium">No recent incidents</p>
-      <p class="text-[10px] text-slate-700">All services operating normally</p>
+      <p class="text-sm text-pb-muted font-medium">No recent incidents</p>
+      <p class="text-[10px] text-pb-muted">All services operating normally</p>
     </div>
   </div>
 </template>
