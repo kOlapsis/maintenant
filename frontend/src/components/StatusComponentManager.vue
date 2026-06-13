@@ -352,7 +352,7 @@ function componentSummary(c: StatusComponent): string {
             <a
               href="/pro-edition"
               class="font-medium underline transition-opacity hover:opacity-80"
-              style="color: #a78bfa"
+              style="color: var(--pb-accent)"
             >
               Upgrade to Pro
             </a>
@@ -368,10 +368,10 @@ function componentSummary(c: StatusComponent): string {
           <!-- Composition mode toggle — only shown when creating; locked in edit mode -->
           <div>
             <div class="mb-1 flex items-center gap-2">
-              <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Composition Mode</span>
+              <span class="text-[10px] font-bold uppercase tracking-widest text-pb-muted">Composition Mode</span>
               <span
                 v-if="editingCompId"
-                class="rounded px-1.5 py-0.5 text-[10px] text-slate-500"
+                class="rounded px-1.5 py-0.5 text-[10px] text-pb-muted"
                 style="background: var(--pb-bg-elevated)"
                 title="Mode is locked after creation; delete and recreate to change"
               >
@@ -402,7 +402,7 @@ function componentSummary(c: StatusComponent): string {
                 :style="{
                   background: compositionMode === 'match-all' ? 'rgba(139,92,246,0.12)' : 'var(--pb-bg-elevated)',
                   borderColor: compositionMode === 'match-all' ? '#8b5cf6' : 'var(--pb-border-default)',
-                  color: compositionMode === 'match-all' ? '#a78bfa' : 'var(--pb-text-secondary)',
+                  color: compositionMode === 'match-all' ? 'var(--pb-accent)' : 'var(--pb-text-secondary)',
                   opacity: editingCompId ? '0.5' : '1',
                   cursor: editingCompId ? 'not-allowed' : 'pointer',
                 }"
@@ -434,7 +434,7 @@ function componentSummary(c: StatusComponent): string {
                 </button>
               </span>
             </div>
-            <p v-else class="text-xs text-slate-500">No monitors selected. Pick at least one below.</p>
+            <p v-else class="text-xs text-pb-muted">No monitors selected. Pick at least one below.</p>
 
             <!-- Type tabs -->
             <div class="flex gap-1 border-b" style="border-color: var(--pb-border-default)">
@@ -475,14 +475,14 @@ function componentSummary(c: StatusComponent): string {
               class="max-h-48 overflow-y-auto rounded-md border"
               style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default)"
             >
-              <div v-if="monitorOptionsLoading" class="p-4 text-center text-xs text-slate-500">Loading...</div>
-              <div v-else-if="filteredMonitors.length === 0" class="p-4 text-center text-xs text-slate-500">
+              <div v-if="monitorOptionsLoading" class="p-4 text-center text-xs text-pb-muted">Loading...</div>
+              <div v-else-if="filteredMonitors.length === 0" class="p-4 text-center text-xs text-pb-muted">
                 No {{ monitorTypeLabels[activeTypeTab] }}s found
               </div>
               <label
                 v-for="m in filteredMonitors"
                 :key="`${m.type}-${m.id}`"
-                class="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-slate-800/25"
+                class="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-pb-elevated"
                 style="border-color: var(--pb-border-default)"
               >
                 <input
@@ -500,7 +500,7 @@ function componentSummary(c: StatusComponent): string {
           <!-- Match-all mode: single type dropdown + count preview -->
           <div v-else class="space-y-2">
             <div>
-              <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Monitor Type</label>
+              <label class="block text-[10px] font-bold uppercase tracking-widest text-pb-muted">Monitor Type</label>
               <select
                 v-model="matchAllType"
                 :disabled="!!editingCompId"
@@ -510,8 +510,8 @@ function componentSummary(c: StatusComponent): string {
                 <option v-for="t in monitorTypes" :key="t" :value="t">{{ monitorTypeLabels[t] }}</option>
               </select>
             </div>
-            <p v-if="monitorOptionsLoading" class="text-xs text-slate-500">Loading count...</p>
-            <p v-else-if="matchAllCount !== null" class="text-xs text-slate-400">
+            <p v-if="monitorOptionsLoading" class="text-xs text-pb-muted">Loading count...</p>
+            <p v-else-if="matchAllCount !== null" class="text-xs text-pb-muted">
               <span class="font-medium" style="color: var(--pb-text-primary)">{{ matchAllCount }}</span>
               monitor{{ matchAllCount !== 1 ? 's' : '' }} currently match
             </p>
@@ -519,7 +519,7 @@ function componentSummary(c: StatusComponent): string {
 
           <!-- Common fields -->
           <div>
-            <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Display Name</label>
+            <label class="block text-[10px] font-bold uppercase tracking-widest text-pb-muted">Display Name</label>
             <input
               v-model="compForm.display_name"
               required
@@ -589,13 +589,13 @@ function componentSummary(c: StatusComponent): string {
                     class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest"
                     :style="c.composition_mode === 'explicit'
                       ? 'background: rgba(59,130,246,0.15); color: #60a5fa'
-                      : 'background: rgba(139,92,246,0.15); color: #a78bfa'"
+                      : 'background: rgba(139,92,246,0.15); color: var(--pb-accent)'"
                   >
                     {{ c.composition_mode === 'explicit' ? 'Explicit' : 'Match-all' }}
                   </span>
                   <span v-if="!c.visible" class="rounded px-1.5 py-0.5 text-[10px]" style="background: var(--pb-bg-elevated); color: var(--pb-text-muted)">hidden</span>
                   <span v-if="c.auto_incident" class="rounded px-1.5 py-0.5 text-[10px]" style="background: var(--pb-status-warn-bg); color: var(--pb-status-warn)">auto-incident</span>
-                  <span v-if="c.status_override" class="rounded px-1.5 py-0.5 text-[10px]" style="background: rgba(139, 92, 246, 0.15); color: #a78bfa">overridden</span>
+                  <span v-if="c.status_override" class="rounded px-1.5 py-0.5 text-[10px]" style="background: rgba(139, 92, 246, 0.15); color: var(--pb-accent)">overridden</span>
                 </div>
                 <!-- Summary + status -->
                 <p class="mt-0.5 text-xs" style="color: var(--pb-text-muted)">
@@ -632,7 +632,7 @@ function componentSummary(c: StatusComponent): string {
             </button>
             <button
               @click="handleDeleteComp(c.id)"
-              class="rounded px-2 py-0.5 text-xs text-red-400"
+              class="rounded px-2 py-0.5 text-xs text-pb-status-down"
             >
               Delete
             </button>

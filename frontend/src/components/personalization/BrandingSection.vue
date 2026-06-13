@@ -199,7 +199,7 @@ defineExpose({ flushPendingAssets })
         <button
           v-if="hasLogo && !logoFile && !removeLogo"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-red-400"
+          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-pb-status-down"
           style="background: transparent; border-color: var(--pb-border-default); color: var(--pb-text-muted)"
           @click="markForRemoval('logo')"
         >
@@ -275,7 +275,7 @@ defineExpose({ flushPendingAssets })
         <button
           v-if="hasFavicon && !faviconFile && !removeFavicon"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-red-400"
+          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-pb-status-down"
           style="background: transparent; border-color: var(--pb-border-default); color: var(--pb-text-muted)"
           @click="markForRemoval('favicon')"
         >
@@ -343,7 +343,7 @@ defineExpose({ flushPendingAssets })
         <button
           v-if="hasHero && !heroFile && !removeHero"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-red-400"
+          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-pb-status-down"
           style="background: transparent; border-color: var(--pb-border-default); color: var(--pb-text-muted)"
           @click="markForRemoval('hero')"
         >
