@@ -45,7 +45,7 @@ function podStatusStyle(status: string): string {
   const s = status.toLowerCase()
   if (s === 'running') return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
   if (s === 'pending') return 'text-pb-status-warn bg-pb-status-warn border-pb-sev-warning'
-  if (s === 'succeeded') return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
+  if (s === 'succeeded') return 'text-pb-secondary bg-pb-elevated border-pb-default'
   if (s === 'failed' || s === 'crashloopbackoff')
     return 'text-pb-status-down bg-pb-status-down border-pb-sev-incident'
   return 'text-pb-muted bg-pb-elevated border-pb-default'

@@ -55,7 +55,7 @@ function statusStyle(status: K8sWorkload['status']): string {
     case 'degraded':
       return 'text-pb-status-warn bg-pb-status-warn border-pb-sev-warning'
     case 'progressing':
-      return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
+      return 'text-pb-secondary bg-pb-elevated border-pb-default'
     case 'failed':
       return 'text-pb-status-down bg-pb-status-down border-pb-sev-incident'
   }
@@ -70,7 +70,7 @@ function replicaColor(ready: number, desired: number): string {
 function kindStyle(kind: K8sWorkload['kind']): string {
   switch (kind) {
     case 'Deployment':
-      return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
+      return 'text-pb-secondary bg-pb-elevated border-pb-default'
     case 'StatefulSet':
       return 'text-pb-secondary bg-pb-elevated border-pb-default'
     case 'DaemonSet':

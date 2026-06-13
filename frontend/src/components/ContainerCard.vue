@@ -102,7 +102,7 @@ function getStateStyle(state: string) {
 
 <template>
   <div
-    class="bg-pb-surface rounded-xl border border-slate-800 hover:border-slate-700 transition-all cursor-pointer overflow-hidden group"
+    class="bg-pb-surface rounded-xl border border-pb-default hover:border-pb-default transition-all cursor-pointer overflow-hidden group"
     @click="emit('select', container)"
   >
     <!-- Header: name + state -->
@@ -138,7 +138,7 @@ function getStateStyle(state: string) {
 
       <!-- Badges row: image tag, update, security, posture, agent -->
       <div class="mt-1 flex items-center gap-1.5 flex-wrap">
-        <span class="text-[10px] text-slate-500 truncate max-w-[140px]">{{ imageTag }}</span>
+        <span class="text-[10px] text-pb-muted truncate max-w-[140px]">{{ imageTag }}</span>
         <UpdateBadge :update="containerUpdate" />
         <SecurityInsightBadge
           :count="container.security_insight_count ?? 0"
@@ -162,24 +162,24 @@ function getStateStyle(state: string) {
     <!-- Resource metrics (running containers only) -->
     <div v-if="container.state === 'running' && metrics" class="px-4 pb-1.5 space-y-1">
       <div class="flex items-center gap-2 text-[10px]">
-        <span class="w-7 text-slate-600 font-bold uppercase">CPU</span>
+        <span class="w-7 text-pb-muted font-bold uppercase">CPU</span>
         <div class="h-1 flex-1 rounded-full bg-pb-primary">
           <div
             class="h-1 rounded-full transition-all"
             :style="{ width: cpuBarWidth + '%', backgroundColor: barColor(cpuBarWidth) }"
           />
         </div>
-        <span class="w-10 text-right text-slate-400 font-mono">{{ metrics.cpu }}</span>
+        <span class="w-10 text-right text-pb-muted font-mono">{{ metrics.cpu }}</span>
       </div>
       <div class="flex items-center gap-2 text-[10px]">
-        <span class="w-7 text-slate-600 font-bold uppercase">MEM</span>
+        <span class="w-7 text-pb-muted font-bold uppercase">MEM</span>
         <div class="h-1 flex-1 rounded-full bg-pb-primary">
           <div
             class="h-1 rounded-full transition-all"
             :style="{ width: memBarWidth + '%', backgroundColor: barColor(memBarWidth) }"
           />
         </div>
-        <span class="w-10 text-right text-slate-400 font-mono">{{ metrics.memPercent }}</span>
+        <span class="w-10 text-right text-pb-muted font-mono">{{ metrics.memPercent }}</span>
       </div>
     </div>
 
@@ -190,7 +190,7 @@ function getStateStyle(state: string) {
     >
       <span
         v-if="container.controller_kind"
-        class="rounded px-1.5 py-0.5 bg-slate-800 text-slate-400"
+        class="rounded px-1.5 py-0.5 bg-pb-elevated text-pb-muted"
       >{{ container.controller_kind }}</span>
       <span
         :style="{
@@ -204,10 +204,10 @@ function getStateStyle(state: string) {
       v-if="container.controller_kind === 'swarm-service'"
       class="px-4 pb-1.5 flex items-center gap-2 text-[10px]"
     >
-      <span class="rounded px-1.5 py-0.5 bg-slate-800 text-slate-400">
+      <span class="rounded px-1.5 py-0.5 bg-pb-elevated text-pb-muted">
         {{ container.swarm_service_mode }}
       </span>
-      <span v-if="container.swarm_task_slot" class="text-slate-500">
+      <span v-if="container.swarm_task_slot" class="text-pb-muted">
         slot {{ container.swarm_task_slot }}
       </span>
     </div>
@@ -221,7 +221,7 @@ function getStateStyle(state: string) {
     >{{ container.error_detail }}</div>
 
     <!-- Footer -->
-    <div class="px-4 py-2 flex items-center justify-between text-[10px] text-slate-600 border-t border-slate-800/50">
+    <div class="px-4 py-2 flex items-center justify-between text-[10px] text-pb-muted border-t border-pb-default/50">
       <span v-if="container.orchestration_unit" class="truncate font-medium">
         {{ container.orchestration_unit }}
       </span>
