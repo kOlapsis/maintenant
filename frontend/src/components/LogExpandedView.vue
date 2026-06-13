@@ -53,7 +53,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <div class="fixed inset-0 z-[10000] flex flex-col bg-pb-primary">
       <!-- Header -->
-      <div class="flex items-center gap-3 border-b border-slate-800 px-4 py-2">
+      <div class="flex items-center gap-3 border-b border-pb-default px-4 py-2">
         <span class="text-sm font-semibold text-pb-primary">{{ containerName }}</span>
         <span class="flex-1" />
         <LogToolbar
