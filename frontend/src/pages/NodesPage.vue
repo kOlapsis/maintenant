@@ -63,7 +63,7 @@ function onSwarmNodeSelect(nodeId: string) {
 
     <!-- Neither runtime in the selected scope -->
     <template v-if="!isKubernetes && !isSwarm">
-      <p class="text-sm text-slate-400">Node management is available for Kubernetes and Docker Swarm runtimes.</p>
+      <p class="text-sm text-pb-muted">Node management is available for Kubernetes and Docker Swarm runtimes.</p>
     </template>
     </div>
   </div>
