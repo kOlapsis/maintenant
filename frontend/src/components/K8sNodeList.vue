@@ -106,9 +106,9 @@ function formatCPU(millicores: number): string {
           <div class="flex items-center gap-3 min-w-0">
             <!-- Status dot -->
             <div class="relative flex-shrink-0">
-              <div class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: statusVar(node.status) }" />
+              <div class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: node.stale ? 'var(--mnt-sev-unknown)' : statusVar(node.status) }" />
               <div
-                v-if="node.status === 'ready'"
+                v-if="node.status === 'ready' && !node.stale"
                 class="mnt-ping absolute inset-0 w-2.5 h-2.5 rounded-full opacity-30"
                 :style="{ backgroundColor: statusVar(node.status) }"
               />
@@ -149,7 +149,10 @@ function formatCPU(millicores: number): string {
 
           <div class="flex items-center gap-4 text-xs text-mnt-muted flex-shrink-0 ml-4">
             <!-- Status text -->
-            <span :class="['font-medium', statusText(node.status)]">{{ node.status }}</span>
+            <span
+              :class="['font-medium', node.stale ? 'text-mnt-sev-unknown' : statusText(node.status)]"
+              :title="node.stale ? `Agent offline · last known: ${node.status}` : undefined"
+            >{{ node.stale ? 'offline' : node.status }}</span>
 
             <!-- Capacity summary -->
             <span class="tabular-nums hidden sm:inline" :title="`${node.capacity.cpu_millicores}m CPU`">

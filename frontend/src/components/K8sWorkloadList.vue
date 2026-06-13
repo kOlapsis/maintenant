@@ -171,6 +171,14 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
                 class="flex-shrink-0"
               />
               <span
+                v-if="workload.stale"
+                class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0 text-mnt-sev-unknown bg-mnt-sev-unknown border-mnt-sev-unknown"
+                :title="`Agent offline · last known: ${workload.status}`"
+              >
+                offline
+              </span>
+              <span
+                v-else
                 :class="[
                   'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
                   statusStyle(workload.status),

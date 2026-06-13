@@ -38,6 +38,10 @@ export interface AgentAttribution {
   agent_id?: string
   agent_hostname?: string
   agent_label?: string
+  // Set by the server when the reporting agent has no live stream: the status
+  // below is the last-known value, not live. The UI degrades it to offline.
+  stale?: boolean
+  agent_offline?: boolean
 }
 
 export interface K8sWorkload extends AgentAttribution {
@@ -260,6 +264,8 @@ export interface K8sNodeResponse {
   os_image: string
   architecture: string
   created_at: string
+  stale?: boolean
+  agent_offline?: boolean
 }
 
 export interface K8sNodeListResponse {

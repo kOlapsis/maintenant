@@ -128,6 +128,14 @@ function restartCountStyle(count: number): string {
           <div class="flex items-center gap-3 flex-shrink-0">
             <div class="flex items-center gap-1">
               <span
+                v-if="pod.stale"
+                class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-mnt-sev-unknown bg-mnt-sev-unknown border-mnt-sev-unknown"
+                :title="`Agent offline · last known: ${pod.status}`"
+              >
+                offline
+              </span>
+              <span
+                v-else
                 :class="[
                   'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border',
                   podStatusStyle(pod.status),

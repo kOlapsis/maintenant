@@ -91,6 +91,8 @@ function certStatus(c: CertMonitor): { status: UnifiedStatus; label: string } {
 // A K8s workload is the cluster analogue of a Docker container / Swarm service —
 // "the service you monitor" — so it maps onto the same unified status set.
 function workloadStatus(w: K8sWorkload): { status: UnifiedStatus; label: string } {
+  // The reporting agent is offline — its last-known status is no longer live.
+  if (w.stale) return { status: 'unknown', label: 'Agent offline' }
   switch (w.status) {
     case 'healthy':
       return { status: 'ok', label: 'Healthy' }

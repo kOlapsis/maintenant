@@ -188,3 +188,51 @@ func TestKubernetesHandler_Cluster_AggregatesFromStore(t *testing.T) {
 	assert.Equal(t, float64(1), podStatus["running"])
 	assert.Equal(t, float64(1), podStatus["pending"])
 }
+
+type stubK8sSessions struct{ connected map[string]bool }
+
+func (s stubK8sSessions) IsConnected(agentID string) bool { return s.connected[agentID] }
+
+// A workload reported by an agent that no longer has a live stream must be
+// flagged stale (its last-known status is no longer trustworthy), while a
+// connected agent's workloads and the local runtime stay live.
+func TestKubernetesHandler_ListWorkloads_FlagsOfflineAgentStale(t *testing.T) {
+	store := &fakeK8sStore{
+		workloads: []kubernetes.K8sWorkloadGroup{
+			{Namespace: "default", Workloads: []kubernetes.K8sWorkload{
+				{ID: "d/Deployment/web", AgentID: "agent-OFF", Name: "web", Namespace: "default", Kind: "Deployment", Status: "healthy"},
+				{ID: "d/Deployment/api", AgentID: "agent-ON", Name: "api", Namespace: "default", Kind: "Deployment", Status: "healthy"},
+				{ID: "d/Deployment/loc", AgentID: uid.LocalAgent, Name: "loc", Namespace: "default", Kind: "Deployment", Status: "healthy"},
+			}},
+		},
+	}
+	h := NewKubernetesHandler(store, nil)
+	// agent-OFF is absent from the connected set → treated as offline.
+	h.SetAgentSessions(stubK8sSessions{connected: map[string]bool{"agent-ON": true}})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/kubernetes/workloads", h.HandleListWorkloads)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kubernetes/workloads", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	wls := body["groups"].([]interface{})[0].(map[string]interface{})["workloads"].([]interface{})
+	byName := map[string]map[string]interface{}{}
+	for _, raw := range wls {
+		m := raw.(map[string]interface{})
+		byName[m["name"].(string)] = m
+	}
+
+	assert.Equal(t, true, byName["web"]["stale"], "offline agent's workload is stale")
+	assert.Equal(t, true, byName["web"]["agent_offline"])
+	assert.Equal(t, "healthy", byName["web"]["status"], "last-known status is preserved")
+
+	_, onStale := byName["api"]["stale"]
+	assert.False(t, onStale, "connected agent's workload is not stale")
+
+	_, locStale := byName["loc"]["stale"]
+	assert.False(t, locStale, "local runtime is not governed by agent sessions")
+}

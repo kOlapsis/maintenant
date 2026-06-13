@@ -49,9 +49,16 @@ type K8sMetricsProvider interface {
 // per-agent store (fed by the local runtime under LocalAgent and by remote
 // agents), so the views work regardless of the server's own runtime.
 type KubernetesHandler struct {
-	store   kubernetesStore
-	metrics K8sMetricsProvider
-	agents  AgentDirectory
+	store    kubernetesStore
+	metrics  K8sMetricsProvider
+	agents   AgentDirectory
+	sessions agentLiveness
+}
+
+// agentLiveness is the narrow slice of AgentSessions the handler needs to flag
+// entities whose reporting agent has no live stream.
+type agentLiveness interface {
+	IsConnected(agentID string) bool
 }
 
 // NewKubernetesHandler creates a new KubernetesHandler. metrics may be nil when
@@ -64,6 +71,26 @@ func NewKubernetesHandler(store kubernetesStore, metrics K8sMetricsProvider) *Ku
 // which agent each remote workload/pod belongs to.
 func (h *KubernetesHandler) SetAgentDirectory(ad AgentDirectory) {
 	h.agents = ad
+}
+
+// SetAgentSessions wires live agent-stream state so reads can flag entities whose
+// reporting agent is offline (their last-known status is no longer live).
+func (h *KubernetesHandler) SetAgentSessions(s agentLiveness) {
+	h.sessions = s
+}
+
+// markLiveness flags an entity as stale when its reporting agent has no live
+// stream. The local runtime (empty/LocalAgent) is governed by the process
+// itself, not agent sessions, so it is never marked here. The last-known status
+// is preserved on the payload; the UI degrades it to "offline/unknown".
+func (h *KubernetesHandler) markLiveness(m map[string]interface{}, agentID string) {
+	if h.sessions == nil || agentID == "" || agentID == uid.LocalAgent {
+		return
+	}
+	if !h.sessions.IsConnected(agentID) {
+		m["stale"] = true
+		m["agent_offline"] = true
+	}
 }
 
 // agentNames resolves agent display identities, or nil when unavailable.
@@ -140,6 +167,7 @@ func (h *KubernetesHandler) HandleListWorkloads(w http.ResponseWriter, r *http.R
 			}
 			m := workloadToJSON(wl)
 			enrichAgentFields(m, wl.AgentID, names)
+			h.markLiveness(m, wl.AgentID)
 			wls = append(wls, m)
 			total++
 		}
@@ -189,7 +217,9 @@ func (h *KubernetesHandler) HandleGetWorkload(w http.ResponseWriter, r *http.Req
 	}
 	podList := make([]map[string]interface{}, 0, len(pods))
 	for _, p := range pods {
-		podList = append(podList, podToJSON(p))
+		pm := podToJSON(p)
+		h.markLiveness(pm, p.AgentID)
+		podList = append(podList, pm)
 	}
 
 	events, err := h.store.ListEventsForObject(r.Context(), agentID, wl.Kind, wl.Namespace, wl.Name)
@@ -202,8 +232,10 @@ func (h *KubernetesHandler) HandleGetWorkload(w http.ResponseWriter, r *http.Req
 		eventList = append(eventList, eventToJSON(e))
 	}
 
+	wm := workloadToJSON(*wl)
+	h.markLiveness(wm, wl.AgentID)
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"workload": workloadToJSON(*wl),
+		"workload": wm,
 		"pods":     podList,
 		"events":   eventList,
 	})
@@ -230,6 +262,7 @@ func (h *KubernetesHandler) HandleListPods(w http.ResponseWriter, r *http.Reques
 	for _, p := range pods {
 		m := podToJSON(p)
 		enrichAgentFields(m, p.AgentID, names)
+		h.markLiveness(m, p.AgentID)
 		result = append(result, m)
 	}
 
@@ -265,8 +298,10 @@ func (h *KubernetesHandler) HandleGetPodDetail(w http.ResponseWriter, r *http.Re
 		eventList = append(eventList, eventToJSON(e))
 	}
 
+	podJSON := podToJSON(*pod)
+	h.markLiveness(podJSON, pod.AgentID)
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"pod":    podToJSON(*pod),
+		"pod":    podJSON,
 		"events": eventList,
 	})
 }
@@ -281,7 +316,9 @@ func (h *KubernetesHandler) HandleListNodes(w http.ResponseWriter, r *http.Reque
 
 	result := make([]map[string]interface{}, 0, len(nodes))
 	for _, n := range nodes {
-		result = append(result, nodeDetailToJSON(n))
+		nm := nodeDetailToJSON(n)
+		h.markLiveness(nm, n.AgentID)
+		result = append(result, nm)
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{

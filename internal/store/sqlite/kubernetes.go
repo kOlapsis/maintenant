@@ -392,7 +392,7 @@ func (s *KubernetesStore) GetPod(ctx context.Context, agentID, namespace, name s
 
 // ListNodes returns the agent's nodes sorted by name.
 func (s *KubernetesStore) ListNodes(ctx context.Context, agentID string) ([]kubernetes.K8sNode, error) {
-	q := `SELECT name, roles, status, running_pods, kubernetes_version, os_image, architecture,
+	q := `SELECT agent_id, name, roles, status, running_pods, kubernetes_version, os_image, architecture,
 		capacity_cpu_millicores, capacity_memory_bytes, capacity_pods,
 		allocatable_cpu_millicores, allocatable_memory_bytes, allocatable_pods, created_at
 		FROM kubernetes_nodes`
@@ -417,7 +417,7 @@ func (s *KubernetesStore) ListNodes(ctx context.Context, agentID string) ([]kube
 			rolesJSON string
 			createdAt int64
 		)
-		if err := rows.Scan(&n.Name, &rolesJSON, &n.Status, &n.RunningPods,
+		if err := rows.Scan(&n.AgentID, &n.Name, &rolesJSON, &n.Status, &n.RunningPods,
 			&n.KubernetesVersion, &n.OSImage, &n.Architecture,
 			&n.Capacity.CPUMillicores, &n.Capacity.MemoryBytes, &n.Capacity.Pods,
 			&n.Allocatable.CPUMillicores, &n.Allocatable.MemoryBytes, &n.Allocatable.Pods, &createdAt); err != nil {

@@ -592,6 +592,9 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 	if d.AgentStore != nil {
 		kh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 	}
+	if d.AgentSessions != nil {
+		kh.SetAgentSessions(d.AgentSessions)
+	}
 
 	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/kubernetes/namespaces", kh.HandleListNamespaces)
