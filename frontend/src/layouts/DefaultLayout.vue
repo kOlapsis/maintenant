@@ -212,7 +212,7 @@ watch(
   <div class="flex h-screen bg-pb-primary text-pb-primary antialiased overflow-hidden">
     <!-- Desktop sidebar -->
     <aside
-      class="hidden md:flex md:w-64 md:flex-col md:shrink-0 bg-pb-surface border-r border-slate-800"
+      class="hidden md:flex md:w-64 md:flex-col md:shrink-0 bg-pb-surface border-r border-pb-default"
     >
       <div class="flex flex-col flex-1 overflow-y-auto">
         <!-- Logo -->
@@ -224,7 +224,7 @@ watch(
         <!-- Main nav -->
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <template v-for="item in mainNav" :key="item.to">
-            <hr v-if="item.type === 'separator'" class="my-1.5 border-slate-700" />
+            <hr v-if="item.type === 'separator'" class="my-1.5 border-pb-subtle" />
             <RouterLink
               v-else-if="item.type === 'item'"
               :to="item.to!"
@@ -232,7 +232,7 @@ watch(
               :class="[
                 route.path.startsWith(item.to!)
                   ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                  : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
+                  : 'text-pb-muted hover:text-pb-primary hover:bg-pb-elevated border-transparent',
               ]"
             >
               <div class="flex items-center gap-3">
@@ -243,7 +243,7 @@ watch(
                   :class="
                     route.path.startsWith(item.to!)
                       ? 'text-pb-nav-active'
-                      : 'text-slate-500 group-hover:text-pb-secondary'
+                      : 'text-pb-muted group-hover:text-pb-secondary'
                   "
                 />
                 <span class="text-sm font-medium">{{ item.label }}</span>
@@ -268,7 +268,7 @@ watch(
                 <span
                   class="text-[10px] px-1.5 py-0.5 rounded font-bold"
                   :class="
-                    isPro ? 'bg-emerald-500/20 border border-emerald-500/30' : 'border'
+                    isPro ? 'bg-pb-status-ok border border-pb-sev-ok' : 'border'
                   "
                   :style="
                     isPro
@@ -297,11 +297,11 @@ watch(
 
     <!-- Mobile top bar -->
     <div
-      class="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-pb-surface/90 backdrop-blur-md border-b border-slate-800"
+      class="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-pb-surface/90 backdrop-blur-md border-b border-pb-default"
     >
       <button
         @click="mobileMenuOpen = !mobileMenuOpen"
-        class="p-3 rounded-md text-slate-400 hover:text-pb-primary transition-colors"
+        class="p-3 rounded-md text-pb-muted hover:text-pb-primary transition-colors"
         aria-label="Toggle navigation"
       >
         <Menu v-if="!mobileMenuOpen" :size="20" />
@@ -327,7 +327,7 @@ watch(
     <Transition name="slide-left">
       <div
         v-if="mobileMenuOpen"
-        class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-pb-surface border-r border-slate-800 flex flex-col"
+        class="md:hidden fixed inset-y-0 left-0 z-50 w-64 bg-pb-surface border-r border-pb-default flex flex-col"
       >
         <div class="p-6 flex items-center gap-3">
           <img src="/icon.svg" alt="maintenant" class="w-8 h-8 rounded-lg" />
@@ -338,7 +338,7 @@ watch(
         </div>
         <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <template v-for="item in mainNav" :key="item.to">
-            <hr v-if="item.type === 'separator'" class="my-1.5 border-slate-700" />
+            <hr v-if="item.type === 'separator'" class="my-1.5 border-pb-subtle" />
             <RouterLink
               v-else-if="item.type === 'item'"
               :to="item.to!"
@@ -346,7 +346,7 @@ watch(
               :class="[
                 route.path.startsWith(item.to!)
                   ? 'bg-pb-green-500/10 text-pb-nav-active border-pb-green-500/20'
-                  : 'text-slate-400 hover:text-pb-primary hover:bg-slate-800/50 border-transparent',
+                  : 'text-pb-muted hover:text-pb-primary hover:bg-pb-elevated border-transparent',
               ]"
               @click="closeMobileMenu"
             >
