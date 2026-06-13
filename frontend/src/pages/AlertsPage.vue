@@ -61,7 +61,7 @@ onUnmounted(() => {
   <div class="max-w-7xl mx-auto">
     <div class="mb-6">
       <h1 class="text-2xl font-black text-pb-primary">Alerts</h1>
-      <p class="mt-1 text-sm text-slate-500">
+      <p class="mt-1 text-sm text-pb-muted">
         Alert history, routing triggers, and silence rules
       </p>
     </div>

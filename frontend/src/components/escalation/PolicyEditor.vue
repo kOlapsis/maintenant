@@ -183,14 +183,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bg-[#12151C] rounded-2xl border border-slate-800">
+  <div class="bg-pb-surface rounded-2xl border border-pb-default">
     <!-- Header -->
-    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-      <h3 class="text-sm font-bold text-white">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-pb-default">
+      <h3 class="text-sm font-bold text-pb-primary">
         {{ policy ? 'Edit policy' : 'New escalation policy' }}
       </h3>
       <button
-        class="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-all"
+        class="p-1 rounded text-pb-muted hover:text-pb-secondary hover:bg-pb-elevated transition-all"
         @click="emit('cancel')"
       >
         <X :size="16" />
@@ -208,28 +208,28 @@ onMounted(() => {
 
       <!-- Name -->
       <div class="space-y-1.5">
-        <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
           Policy name
         </label>
         <input
           v-model="name"
           type="text"
           placeholder="e.g. Critical alerts on-call"
-          class="w-full bg-[#0B0E13] border border-slate-800 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-slate-600 transition-colors"
+          class="w-full bg-pb-primary border border-pb-default rounded-lg px-3 py-2 text-sm text-pb-primary placeholder:text-pb-muted focus:outline-none focus:border-pb-default transition-colors"
         />
       </div>
 
       <!-- Active toggle -->
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm font-medium text-slate-200">Active</p>
-          <p class="text-[10px] text-slate-500 mt-0.5">
+          <p class="text-sm font-medium text-pb-secondary">Active</p>
+          <p class="text-[10px] text-pb-muted mt-0.5">
             Inactive policies are saved but never triggered.
           </p>
         </div>
         <button
           class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="active ? 'bg-pb-green-600' : 'bg-slate-700'"
+          :class="active ? 'bg-pb-green-600' : 'bg-pb-elevated'"
           @click="active = !active"
         >
           <span
@@ -241,8 +241,8 @@ onMounted(() => {
 
       <!-- Severities -->
       <div class="space-y-2">
-        <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-          Severities <span class="text-slate-600 normal-case font-normal">(empty = all)</span>
+        <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">
+          Severities <span class="text-pb-muted normal-case font-normal">(empty = all)</span>
         </label>
         <div class="flex gap-2">
           <button
@@ -253,8 +253,8 @@ onMounted(() => {
               severities.includes(sev)
                 ? sev === 'critical'
                   ? 'bg-pb-status-down/15 border-pb-status-down/40 text-pb-status-down'
-                  : 'bg-amber-500/15 border-amber-500/40 text-amber-400'
-                : 'bg-transparent border-slate-700 text-slate-500 hover:border-slate-600 hover:text-slate-400'
+                  : 'bg-pb-status-warn border-amber-500/40 text-pb-status-warn'
+                : 'bg-transparent border-pb-default text-pb-muted hover:border-pb-default hover:text-pb-muted'
             "
             @click="toggleSeverity(sev)"
           >
@@ -275,7 +275,7 @@ onMounted(() => {
         <template #action>
           <RouterLink
             to="/channels"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-300 hover:bg-amber-500/20 transition-colors"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-pb-status-warn px-3 py-1.5 text-[11px] font-bold text-pb-status-warn hover:bg-pb-sev-warning-solid/20 transition-colors"
           >
             Configure a channel
             <ArrowRight :size="12" />
@@ -289,11 +289,11 @@ onMounted(() => {
         class="rounded-xl border border-pb-green-500/30 bg-pb-green-500/5 px-4 py-3 flex items-start gap-3"
       >
         <Shield :size="14" class="text-pb-green-400 mt-0.5 shrink-0" />
-        <div class="text-xs text-slate-300 space-y-1">
+        <div class="text-xs text-pb-secondary space-y-1">
           <p class="font-medium text-pb-green-400">Reserved-escalation channels detected</p>
-          <p class="text-slate-400 leading-relaxed">
+          <p class="text-pb-muted leading-relaxed">
             <template v-for="(id, idx) in reservedChannelIds" :key="id">
-              <span class="text-slate-200 font-medium">
+              <span class="text-pb-secondary font-medium">
                 {{ channels.find((c) => c.id === id)?.name ?? `Channel #${id}` }}
               </span>
               <span v-if="idx < reservedChannelIds.length - 1">, </span>
@@ -307,13 +307,13 @@ onMounted(() => {
       <!-- Levels -->
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <label class="text-[10px] text-slate-500 font-bold uppercase tracking-widest block">
+          <label class="text-[10px] text-pb-muted font-bold uppercase tracking-widest block">
             Escalation levels
           </label>
-          <span class="text-[10px] text-slate-600">{{ levels.length }}/{{ maxLevels }} levels</span>
+          <span class="text-[10px] text-pb-muted">{{ levels.length }}/{{ maxLevels }} levels</span>
         </div>
 
-        <div v-if="channelsLoading" class="flex items-center gap-2 text-xs text-slate-500 py-2">
+        <div v-if="channelsLoading" class="flex items-center gap-2 text-xs text-pb-muted py-2">
           <Loader2 :size="13" class="animate-spin" />
           Loading channels...
         </div>
@@ -332,7 +332,7 @@ onMounted(() => {
 
           <button
             v-if="levels.length < maxLevels"
-            class="w-full py-2.5 rounded-xl border border-dashed border-slate-700 text-xs text-slate-500 hover:text-slate-300 hover:border-slate-600 transition-all flex items-center justify-center gap-1.5"
+            class="w-full py-2.5 rounded-xl border border-dashed border-pb-default text-xs text-pb-muted hover:text-pb-secondary hover:border-pb-default transition-all flex items-center justify-center gap-1.5"
             @click="addLevel"
           >
             <Plus :size="13" />
@@ -347,13 +347,13 @@ onMounted(() => {
       <!-- Actions -->
       <div class="flex items-center justify-end gap-3 pt-2">
         <button
-          class="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
+          class="px-4 py-2 text-xs font-medium text-pb-muted hover:text-pb-secondary transition-colors"
           @click="emit('cancel')"
         >
           Cancel
         </button>
         <button
-          class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-pb-elevated disabled:text-pb-muted text-pb-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
           :disabled="saving"
           @click="handleSave"
         >

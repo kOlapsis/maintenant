@@ -53,25 +53,25 @@ function summarizeFilter(t: AlertTrigger): string {
     <div
       v-for="t in triggers"
       :key="t.id"
-      class="flex items-start justify-between rounded-xl border border-slate-800 bg-[#12151C] p-4 hover:bg-slate-800/25 transition-all group"
+      class="flex items-start justify-between rounded-xl border border-pb-default bg-pb-surface p-4 hover:bg-pb-elevated transition-all group"
     >
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-sm font-medium text-white">{{ t.name }}</span>
+          <span class="text-sm font-medium text-pb-primary">{{ t.name }}</span>
           <span
             v-if="!t.enabled"
-            class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-500"
+            class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-pb-elevated text-pb-muted"
           >disabled</span>
         </div>
-        <p class="mt-1 text-[11px] text-slate-500">{{ summarizeFilter(t) }}</p>
-        <p class="mt-1 text-[11px] text-slate-400">
-          <span class="text-slate-600">→</span> {{ channelNames(t.channel_ids) }}
+        <p class="mt-1 text-[11px] text-pb-muted">{{ summarizeFilter(t) }}</p>
+        <p class="mt-1 text-[11px] text-pb-muted">
+          <span class="text-pb-muted">→</span> {{ channelNames(t.channel_ids) }}
         </p>
       </div>
       <div class="flex items-center gap-2 ml-4 shrink-0">
         <button
           class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="t.enabled ? 'bg-pb-green-600' : 'bg-slate-700'"
+          :class="t.enabled ? 'bg-pb-green-600' : 'bg-pb-elevated'"
           :title="t.enabled ? 'Click to disable' : 'Click to enable'"
           @click="emit('toggle', t)"
         >
@@ -81,7 +81,7 @@ function summarizeFilter(t: AlertTrigger): string {
           />
         </button>
         <button
-          class="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800/50 transition-all flex items-center gap-1"
+          class="rounded-lg border border-pb-default px-2.5 py-1 text-xs text-pb-secondary hover:bg-pb-elevated transition-all flex items-center gap-1"
           @click="emit('edit', t)"
         >
           <Edit2 :size="11" /> Edit

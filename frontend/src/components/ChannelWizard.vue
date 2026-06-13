@@ -239,7 +239,7 @@ function goBack() {
             <span
               v-if="!hasFeature(type.feature)"
               class="absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-              style="background: rgba(139, 92, 246, 0.15); color: #a78bfa"
+              style="background: rgba(139, 92, 246, 0.15); color: var(--pb-accent)"
             >
               Pro
             </span>

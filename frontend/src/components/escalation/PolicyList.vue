@@ -49,14 +49,14 @@ function severityLabel(severities: string[]): string {
 </script>
 
 <template>
-  <div class="bg-[#12151C] rounded-2xl border border-slate-800 overflow-hidden">
+  <div class="bg-pb-surface rounded-2xl border border-pb-default overflow-hidden">
     <!-- Table header -->
-    <div class="px-5 py-3 border-b border-slate-800 grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center">
-      <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Name</span>
-      <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest w-20 text-center">Status</span>
-      <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest w-28 text-center">Severities</span>
-      <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest w-20 text-center">Levels</span>
-      <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest w-28 text-right">Modified</span>
+    <div class="px-5 py-3 border-b border-pb-default grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center">
+      <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest">Name</span>
+      <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest w-20 text-center">Status</span>
+      <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest w-28 text-center">Severities</span>
+      <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest w-20 text-center">Levels</span>
+      <span class="text-[10px] text-pb-muted font-bold uppercase tracking-widest w-28 text-right">Modified</span>
     </div>
 
     <!-- Skeleton loading -->
@@ -64,24 +64,24 @@ function severityLabel(severities: string[]): string {
       <div
         v-for="i in 3"
         :key="i"
-        class="px-5 py-4 border-b border-slate-800/40 grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center"
+        class="px-5 py-4 border-b border-pb-default/40 grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center"
       >
-        <div class="h-4 rounded bg-slate-800/60 animate-pulse w-48" />
-        <div class="h-5 rounded-full bg-slate-800/60 animate-pulse w-20" />
-        <div class="h-4 rounded bg-slate-800/60 animate-pulse w-28" />
-        <div class="h-4 rounded bg-slate-800/60 animate-pulse w-10 mx-auto" />
-        <div class="h-4 rounded bg-slate-800/60 animate-pulse w-24" />
+        <div class="h-4 rounded bg-pb-elevated/60 animate-pulse w-48" />
+        <div class="h-5 rounded-full bg-pb-elevated/60 animate-pulse w-20" />
+        <div class="h-4 rounded bg-pb-elevated/60 animate-pulse w-28" />
+        <div class="h-4 rounded bg-pb-elevated/60 animate-pulse w-10 mx-auto" />
+        <div class="h-4 rounded bg-pb-elevated/60 animate-pulse w-24" />
       </div>
     </template>
 
     <!-- Empty state -->
     <template v-else-if="policies.length === 0">
       <div class="flex flex-col items-center justify-center py-16">
-        <Layers :size="36" class="text-slate-700 mb-3" />
-        <p class="text-sm text-slate-500 font-medium">No escalation policies yet</p>
-        <p class="text-[10px] text-slate-600 mt-1">Create a policy to start routing alerts through escalation chains.</p>
+        <Layers :size="36" class="text-pb-muted mb-3" />
+        <p class="text-sm text-pb-muted font-medium">No escalation policies yet</p>
+        <p class="text-[10px] text-pb-muted mt-1">Create a policy to start routing alerts through escalation chains.</p>
         <button
-          class="mt-5 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-slate-950 rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
+          class="mt-5 px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 text-pb-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-pb-green-500/20"
           @click="emit('create')"
         >
           Create first policy
@@ -94,11 +94,11 @@ function severityLabel(severities: string[]): string {
       <div
         v-for="policy in policies"
         :key="policy.id"
-        class="px-5 py-3.5 border-b border-slate-800/40 last:border-0 grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center hover:bg-slate-800/25 transition-all cursor-pointer group"
+        class="px-5 py-3.5 border-b border-pb-default/40 last:border-0 grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center hover:bg-pb-elevated transition-all cursor-pointer group"
         @click="emit('edit', policy)"
       >
         <!-- Name -->
-        <span class="text-sm font-semibold text-white group-hover:text-pb-green-400 transition-colors truncate">
+        <span class="text-sm font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors truncate">
           {{ policy.name }}
         </span>
 
@@ -108,7 +108,7 @@ function severityLabel(severities: string[]): string {
             class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all"
             :class="policy.active
               ? 'bg-pb-green-500/10 text-pb-green-400 border-pb-green-500/20 hover:bg-pb-green-500/20'
-              : 'bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700'"
+              : 'bg-pb-elevated text-pb-muted border-pb-default hover:bg-pb-elevated'"
             :title="policy.active ? 'Click to deactivate' : 'Click to activate'"
             @click.stop="emit('toggleActive', policy.id, !policy.active)"
           >
@@ -120,26 +120,26 @@ function severityLabel(severities: string[]): string {
 
         <!-- Severities -->
         <div class="w-28 text-center">
-          <span class="text-xs text-slate-400">{{ severityLabel(policy.filters.severities) }}</span>
+          <span class="text-xs text-pb-muted">{{ severityLabel(policy.filters.severities) }}</span>
         </div>
 
         <!-- Level count -->
         <div class="w-20 text-center">
-          <span class="text-xs font-bold text-slate-300">{{ policy.levels.length }}</span>
+          <span class="text-xs font-bold text-pb-secondary">{{ policy.levels.length }}</span>
         </div>
 
         <!-- Last modified + actions -->
         <div class="w-28 flex items-center justify-end gap-2">
-          <span class="text-[10px] text-slate-600">{{ timeAgo(policy.updated_at) }}</span>
+          <span class="text-[10px] text-pb-muted">{{ timeAgo(policy.updated_at) }}</span>
           <button
-            class="p-1 rounded text-slate-600 hover:text-slate-300 hover:bg-slate-700/50 transition-all opacity-0 group-hover:opacity-100"
+            class="p-1 rounded text-pb-muted hover:text-pb-secondary hover:bg-pb-elevated transition-all opacity-0 group-hover:opacity-100"
             title="Edit"
             @click.stop="emit('edit', policy)"
           >
             <Pencil :size="13" />
           </button>
           <button
-            class="p-1 rounded text-slate-600 hover:text-pb-status-down hover:bg-pb-status-down/10 transition-all opacity-0 group-hover:opacity-100"
+            class="p-1 rounded text-pb-muted hover:text-pb-status-down hover:bg-pb-status-down/10 transition-all opacity-0 group-hover:opacity-100"
             title="Delete"
             @click.stop="handleDelete(policy)"
           >

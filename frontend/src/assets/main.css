@@ -401,6 +401,7 @@ select option {
   .text-pb-primary { color: var(--pb-text-primary); }
   .text-pb-secondary { color: var(--pb-text-secondary); }
   .text-pb-muted { color: var(--pb-text-muted); }
+  .text-pb-inverted { color: var(--pb-text-inverted); }
   .border-pb-default { border-color: var(--pb-border-default); }
   .border-pb-subtle { border-color: var(--pb-border-subtle); }
   .shadow-pb-card { box-shadow: var(--pb-shadow-card); }
