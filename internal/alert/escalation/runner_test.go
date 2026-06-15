@@ -328,7 +328,7 @@ func (m *alertStoreMock) ListAlerts(_ context.Context, _ alert.ListAlertsOpts) (
 func (m *alertStoreMock) UpdateAlertStatus(_ context.Context, _ string, _ string, _ *time.Time, _ *string) error {
 	return nil
 }
-func (m *alertStoreMock) UpdateAlertSeverity(_ context.Context, _ string, _, _ string) error {
+func (m *alertStoreMock) UpdateAlertOnEscalation(_ context.Context, _, _, _, _, _ string) error {
 	return nil
 }
 func (m *alertStoreMock) GetActiveAlert(_ context.Context, _, _, _ string, _ string) (*alert.Alert, error) {

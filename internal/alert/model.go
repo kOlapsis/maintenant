@@ -187,7 +187,10 @@ type AlertStore interface {
 	GetAlert(ctx context.Context, id string) (*Alert, error)
 	ListAlerts(ctx context.Context, opts ListAlertsOpts) ([]*Alert, error)
 	UpdateAlertStatus(ctx context.Context, id string, status string, resolvedAt *time.Time, resolvedByID *string) error
-	UpdateAlertSeverity(ctx context.Context, id string, severity, message string) error
+	// UpdateAlertOnEscalation refreshes a live alert to the latest event:
+	// severity, message AND entity name/details, so an escalation never leaves a
+	// record mixing two events' fields.
+	UpdateAlertOnEscalation(ctx context.Context, id, severity, message, entityName, details string) error
 	GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID string) (*Alert, error)
 	ListActiveAlerts(ctx context.Context) ([]*Alert, error)
 	DeleteAlertsOlderThan(ctx context.Context, before time.Time) (int64, error)

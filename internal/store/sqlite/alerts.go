@@ -127,13 +127,13 @@ func (s *AlertStoreImpl) UpdateAlertStatus(ctx context.Context, id string, statu
 	return nil
 }
 
-func (s *AlertStoreImpl) UpdateAlertSeverity(ctx context.Context, id string, severity, message string) error {
+func (s *AlertStoreImpl) UpdateAlertOnEscalation(ctx context.Context, id, severity, message, entityName, details string) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE alerts SET severity = ?, message = ? WHERE id = ?`,
-		severity, message, id,
+		`UPDATE alerts SET severity = ?, message = ?, entity_name = ?, details = ? WHERE id = ?`,
+		severity, message, entityName, details, id,
 	)
 	if err != nil {
-		return fmt.Errorf("update alert severity: %w", err)
+		return fmt.Errorf("update alert on escalation: %w", err)
 	}
 	return nil
 }

@@ -253,6 +253,21 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	e.mu.RUnlock()
 
 	if exists {
+		// Collision guard: one dedup key must identify exactly one subject. If an
+		// incoming event lands on an existing alert but names a DIFFERENT entity,
+		// two distinct subjects are sharing a key — almost always a missing/blank
+		// entity_id in the emitting source. Log loudly so it can never corrupt
+		// silently (this is the "keycloak message on bitwarden entity" signature).
+		if evt.EntityName != existing.EntityName {
+			e.logger.Error("alert engine: dedup key collision — one key claimed by two entities (emitting source likely omits a unique entity_id)",
+				"source", evt.Source,
+				"alert_type", evt.AlertType,
+				"entity_type", evt.EntityType,
+				"entity_id", evt.EntityID,
+				"existing_entity", existing.EntityName,
+				"incoming_entity", evt.EntityName,
+			)
+		}
 		if severityRank(evt.Severity) > severityRank(existing.Severity) {
 			e.escalateAlert(ctx, existing, evt)
 		} else {
@@ -333,11 +348,24 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 
 func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) {
 	oldSeverity := existing.Severity
+
+	// Refresh the record to the escalating event in full — severity, message AND
+	// entity name/details — so an escalation can never leave a record mixing two
+	// events' fields. EntityID/EntityType are part of the dedup key and therefore
+	// already identical, so they are intentionally not touched.
+	detailsJSON := "{}"
+	if evt.Details != nil {
+		if b, err := json.Marshal(evt.Details); err == nil {
+			detailsJSON = string(b)
+		}
+	}
 	existing.Severity = evt.Severity
 	existing.Message = evt.Message
+	existing.EntityName = evt.EntityName
+	existing.Details = detailsJSON
 
-	if err := e.alertStore.UpdateAlertSeverity(ctx, existing.ID, evt.Severity, evt.Message); err != nil {
-		e.logger.Error("alert engine: escalate severity", "error", err, "alert_id", existing.ID)
+	if err := e.alertStore.UpdateAlertOnEscalation(ctx, existing.ID, evt.Severity, evt.Message, evt.EntityName, detailsJSON); err != nil {
+		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
 		return
 	}
 
