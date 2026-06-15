@@ -135,6 +135,12 @@ export function buildUnifiedAttention(
 
   for (const al of alerts) {
     if (al.status !== 'active') continue
+    // Agent alerts are handled by the agents-store branch (the authoritative
+    // source — it only knows agents that still exist, so a deleted agent never
+    // lingers here). Update alerts are a duplicate of the update scanner and are
+    // surfaced as a single roll-up entry linking to the Updates page, not as
+    // per-container incidents.
+    if (al.entity_type === 'agent' || al.source === 'update') continue
     const severity = severityFromAlert(al.severity)
     if (severity !== 'incident' && severity !== 'warning') continue
     const key = `${al.entity_type}:${al.entity_id}`

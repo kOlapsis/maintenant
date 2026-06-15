@@ -124,14 +124,20 @@ func TestSessions_LifecycleAlertHook(t *testing.T) {
 
 	sessions.Open("agent-A", func() {}, "addr")
 	sessions.Close("agent-A", "stream_ended")
-	// Closing an agent that was never opened must NOT fire the hook (no phantom alert).
-	sessions.Close("ghost", "deleted")
+	// A real stream drop on an agent with no live session must NOT fire (no phantom alert).
+	sessions.Close("ghost-drop", "stream_ended")
+	// Intentional removal (delete/revoke) of an already-offline agent MUST fire the
+	// hook so its lingering disconnect alert is resolved even without a session.
+	sessions.Close("ghost-deleted", "deleted")
+	sessions.Close("ghost-revoked", "revoked")
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.Len(t, calls, 2, "ghost close must not fire the lifecycle hook")
+	require.Len(t, calls, 4, "terminal-reason closes must fire even with no session; a bare drop must not")
 	assert.Equal(t, call{"agent-A", "", true}, calls[0], "Open should fire connected=true")
 	assert.Equal(t, call{"agent-A", "stream_ended", false}, calls[1], "Close should pass reason and connected=false")
+	assert.Equal(t, call{"ghost-deleted", "deleted", false}, calls[2], "delete of offline agent resolves its alert")
+	assert.Equal(t, call{"ghost-revoked", "revoked", false}, calls[3], "revoke of offline agent resolves its alert")
 }
 
 func TestSessions_EventsPerSecond5m(t *testing.T) {

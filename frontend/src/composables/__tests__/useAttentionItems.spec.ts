@@ -6,7 +6,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildAttentionItems } from '../useAttentionItems'
 import type { UnifiedMonitor } from '@/stores/dashboard'
-import type { ImageUpdate } from '@/services/updateApi'
 import type { Agent } from '@/services/agentApi'
 import type { Alert } from '@/services/alertApi'
 
@@ -25,6 +24,14 @@ function monitor(p: Partial<UnifiedMonitor> & Pick<UnifiedMonitor, 'id' | 'type'
     updatedAt: '2026-06-13T11:30:00Z',
     ...p,
   } as UnifiedMonitor
+}
+
+function agent(p: Partial<Agent>): Agent {
+  return {
+    agent_id: 'x', hostname: 'host', label: '', os_arch: '', agent_version: '',
+    detected_runtime: 'docker', status: 'active', connection_state: 'disconnected',
+    last_seen_at: '2026-06-13T10:00:00Z', created_at: '', revoked_at: null, revoked_by: null, ...p,
+  } as Agent
 }
 
 function alert(p: Partial<Alert> & Pick<Alert, 'severity' | 'entity_type' | 'entity_id'>): Alert {
@@ -53,7 +60,7 @@ describe('buildAttentionItems', () => {
       ],
       [],
       [],
-      [],
+      0,
       NOW,
     )
     expect(items.map((i) => i.name)).toEqual(['a', 'b'])
@@ -69,47 +76,39 @@ describe('buildAttentionItems', () => {
       ],
       [],
       [],
-      [],
+      0,
       NOW,
     )
     expect(items.find((i) => i.name === 'a')!.nav.slideOver).toEqual({ type: 'container', id: 'a' })
     expect(items.find((i) => i.name === 'w')!.nav.route).toBeDefined()
   })
 
-  it('includes critical non-pinned updates only', () => {
-    const u = (p: Partial<ImageUpdate>): ImageUpdate => ({
-      id: 'u', container_id: 'c', container_name: 'svc', image: '', current_tag: '1', current_digest: '',
-      latest_tag: '2', latest_digest: '', update_type: 'critical', published_at: null, changelog_url: '',
-      changelog_summary: '', has_breaking_changes: false, risk_score: 0, status: 'available',
-      detected_at: '2026-06-13T11:00:00Z', ...p,
-    })
-    const items = buildAttentionItems(
-      [],
-      [u({ id: 'crit' }), u({ id: 'pinned', status: 'pinned' }), u({ id: 'low', update_type: 'available' })],
-      [],
-      [],
-      NOW,
-    )
-    expect(items.map((i) => i.id)).toEqual(['update:crit'])
+  it('rolls up critical updates into a single entry linking to the Updates page', () => {
+    const items = buildAttentionItems([], [], [], 7, NOW)
+    expect(items).toHaveLength(1)
+    expect(items[0]!.id).toBe('updates:critical')
+    expect(items[0]!.kind).toBe('Updates')
     expect(items[0]!.severity).toBe('warning')
+    expect(items[0]!.name).toBe('7 critical updates')
+    expect(items[0]!.nav.route).toEqual({ name: 'updates' })
+  })
+
+  it('uses a singular label for a single critical update, and nothing when zero', () => {
+    expect(buildAttentionItems([], [], [], 1, NOW)[0]!.name).toBe('1 critical update')
+    expect(buildAttentionItems([], [], [], 0, NOW)).toEqual([])
   })
 
   it('includes disconnected active agents, excluding local and revoked', () => {
-    const a = (p: Partial<Agent>): Agent => ({
-      agent_id: 'x', hostname: 'host', label: '', os_arch: '', agent_version: '',
-      detected_runtime: 'docker', status: 'active', connection_state: 'disconnected',
-      last_seen_at: '2026-06-13T10:00:00Z', created_at: '', revoked_at: null, revoked_by: null, ...p,
-    })
     const items = buildAttentionItems(
       [],
-      [],
       [
-        a({ agent_id: 'remote', hostname: 'remote' }),
-        a({ agent_id: '00000000-0000-0000-0000-000000000000', hostname: 'local' }),
-        a({ agent_id: 'revoked', status: 'revoked' }),
-        a({ agent_id: 'online', connection_state: 'connected' }),
+        agent({ agent_id: 'remote', hostname: 'remote' }),
+        agent({ agent_id: '00000000-0000-0000-0000-000000000000', hostname: 'local' }),
+        agent({ agent_id: 'revoked', status: 'revoked' }),
+        agent({ agent_id: 'online', connection_state: 'connected' }),
       ],
       [],
+      0,
       NOW,
     )
     expect(items.map((i) => i.id)).toEqual(['agent:remote'])
@@ -125,7 +124,7 @@ describe('buildAttentionItems', () => {
       ],
       [],
       [],
-      [],
+      0,
       NOW,
     )
     expect(items.map((i) => i.name)).toEqual(['new-inc', 'old-inc', 'warn'])
@@ -136,7 +135,7 @@ describe('buildAttentionItems', () => {
       [monitor({ id: 'container:a', type: 'container', name: 'a', status: 'down', updatedAt: '2026-06-13T11:33:00Z' })],
       [],
       [],
-      [],
+      0,
       NOW,
     )
     expect(items[0]!.timestamp).toBe('27 min')
@@ -146,8 +145,8 @@ describe('buildAttentionItems', () => {
     const items = buildAttentionItems(
       [],
       [],
-      [],
       [alert({ severity: 'critical', entity_type: 'container', entity_id: 'traefik', entity_name: 'traefik' })],
+      0,
       NOW,
     )
     expect(items).toHaveLength(1)
@@ -161,11 +160,11 @@ describe('buildAttentionItems', () => {
     const items = buildAttentionItems(
       [],
       [],
-      [],
       [
         alert({ severity: 'warning', entity_type: 'container', entity_id: 'w', entity_name: 'w' }),
         alert({ severity: 'info', entity_type: 'container', entity_id: 'i', entity_name: 'i' }),
       ],
+      0,
       NOW,
     )
     expect(items.map((i) => i.severity)).toEqual(['warning'])
@@ -175,13 +174,12 @@ describe('buildAttentionItems', () => {
     const items = buildAttentionItems(
       [monitor({ id: 'container:x', type: 'container', name: 'x', status: 'warning' })],
       [],
-      [],
       [alert({ severity: 'critical', entity_type: 'container', entity_id: 'x', entity_name: 'x' })],
+      0,
       NOW,
     )
     expect(items).toHaveLength(1)
     expect(items[0]!.severity).toBe('incident')
-    // Monitor representation wins the nav and kind.
     expect(items[0]!.nav.slideOver).toEqual({ type: 'container', id: 'x' })
     expect(items[0]!.kind).toBe('Container')
   })
@@ -190,42 +188,46 @@ describe('buildAttentionItems', () => {
     const items = buildAttentionItems(
       [monitor({ id: 'container:x', type: 'container', name: 'x', status: 'down' })],
       [],
-      [],
       [alert({ severity: 'warning', entity_type: 'container', entity_id: 'x', entity_name: 'x' })],
+      0,
       NOW,
     )
     expect(items).toHaveLength(1)
     expect(items[0]!.severity).toBe('incident')
   })
 
-  it('surfaces an orphan agent alert (no agent record) as an incident routed to agents', () => {
+  it('drops agent alerts — agent state comes from the authoritative agents store', () => {
+    // An orphan agent alert (its agent was deleted) must not surface on the dashboard.
     const items = buildAttentionItems(
-      [],
       [],
       [],
       [alert({ source: 'agent', alert_type: 'disconnected', severity: 'critical', entity_type: 'agent', entity_id: 'gone', entity_name: 'gone' })],
+      0,
       NOW,
     )
-    expect(items).toHaveLength(1)
-    expect(items[0]!.severity).toBe('incident')
-    expect(items[0]!.kind).toBe('Agent')
-    expect(items[0]!.nav.route).toEqual({ name: 'agents' })
+    expect(items).toEqual([])
   })
 
-  it('does not double-count an agent present both in the agent list and as an alert', () => {
-    const a: Agent = {
-      agent_id: 'dup', hostname: 'dup', label: '', os_arch: '', agent_version: '',
-      detected_runtime: 'docker', status: 'active', connection_state: 'disconnected',
-      last_seen_at: '2026-06-13T10:00:00Z', created_at: '', revoked_at: null, revoked_by: null,
-    }
+  it('drops update-source alerts — updates are shown via the roll-up entry', () => {
     const items = buildAttentionItems(
       [],
       [],
-      [a],
-      [alert({ source: 'agent', alert_type: 'disconnected', severity: 'critical', entity_type: 'agent', entity_id: 'dup', entity_name: 'dup' })],
+      [alert({ source: 'update', alert_type: 'update_available', severity: 'critical', entity_type: 'container', entity_id: '', entity_name: 'bitwarden-postgres' })],
+      0,
       NOW,
     )
-    expect(items.filter((i) => i.id === 'agent:dup')).toHaveLength(1)
+    expect(items).toEqual([])
+  })
+
+  it('does not double-count an agent present in the list and as an alert', () => {
+    const items = buildAttentionItems(
+      [],
+      [agent({ agent_id: 'dup', hostname: 'dup' })],
+      [alert({ source: 'agent', alert_type: 'disconnected', severity: 'critical', entity_type: 'agent', entity_id: 'dup', entity_name: 'dup' })],
+      0,
+      NOW,
+    )
     expect(items).toHaveLength(1)
+    expect(items[0]!.id).toBe('agent:dup')
   })
 })

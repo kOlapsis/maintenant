@@ -14,11 +14,9 @@ import { useDashboardStore } from '@/stores/dashboard'
 import { useUpdatesStore } from '@/stores/updates'
 import { useAgentsStore } from '@/stores/agents'
 import { useAlertsStore } from '@/stores/alerts'
-import type { ImageUpdate } from '@/services/updateApi'
 import { severityRank } from '@/composables/useSeverity'
 import {
   buildUnifiedAttention,
-  relTime,
   type AttentionItem,
   type MonitorLike,
   type AgentLike,
@@ -27,35 +25,34 @@ import {
 
 export type { AttentionItem, MonitorLike, AgentLike, AlertLike }
 
-type UpdateLike = Pick<
-  ImageUpdate,
-  'id' | 'container_name' | 'update_type' | 'status' | 'current_tag' | 'latest_tag' | 'detected_at'
->
+// The roll-up kind for the single "X critical updates" entry. Kept in sync with
+// the breakdown exclusion in DashboardPage so updates never inflate the verdict.
+export const UPDATES_KIND = 'Updates'
 
 // Pure aggregation — unit-tested. Wraps the canonical `buildUnifiedAttention`
-// (monitors + agents + alerts) and appends critical container updates as a
-// warning-only, dashboard-scoped source. Updates have no dedupable entity key,
-// so they are concatenated as-is. Final order: incidents first, then most recent.
+// (monitors + agents + alerts) and, when there are critical container updates,
+// appends ONE roll-up entry linking to the Updates page — never per-container
+// items, which were fragile (update alerts share an empty entity id and collide)
+// and misleading (only one ever survived). Final order: incidents first, then
+// most recent.
 export function buildAttentionItems(
   monitors: MonitorLike[],
-  updates: UpdateLike[],
   agents: AgentLike[],
   alerts: AlertLike[],
+  criticalUpdateCount: number,
   now: number,
 ): AttentionItem[] {
   const out = buildUnifiedAttention(monitors, alerts, agents, now)
 
-  for (const u of updates) {
-    if (u.update_type !== 'critical' || u.status === 'pinned') continue
-    const { ts, label } = relTime(u.detected_at, now)
+  if (criticalUpdateCount > 0) {
     out.push({
-      id: `update:${u.id}`,
+      id: 'updates:critical',
       severity: 'warning',
-      name: u.container_name,
-      kind: 'Update',
-      description: `Critical update available — ${u.current_tag} → ${u.latest_tag}`,
-      ts,
-      timestamp: label,
+      name: `${criticalUpdateCount} critical update${criticalUpdateCount > 1 ? 's' : ''}`,
+      kind: UPDATES_KIND,
+      description: 'Review available container updates',
+      ts: 0,
+      timestamp: '',
       nav: { route: { name: 'updates' } },
     })
   }
@@ -72,7 +69,7 @@ export function useAttentionItems() {
   const items = computed(() => {
     const active = alerts.activeAlerts
     const allAlerts = [...active.critical, ...active.warning, ...active.info]
-    return buildAttentionItems(dashboard.monitors, updates.updates, agents.agents, allAlerts, Date.now())
+    return buildAttentionItems(dashboard.monitors, agents.agents, allAlerts, updates.criticalCount, Date.now())
   })
 
   return { items }

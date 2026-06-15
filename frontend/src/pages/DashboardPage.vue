@@ -23,7 +23,7 @@ import { useUpdatesStore } from '@/stores/updates'
 import { useAgentsStore } from '@/stores/agents'
 import { usePreferencesStore } from '@/stores/preferences'
 import { useEdition } from '@/composables/useEdition'
-import { useAttentionItems, type AttentionItem } from '@/composables/useAttentionItems'
+import { useAttentionItems, UPDATES_KIND, type AttentionItem } from '@/composables/useAttentionItems'
 import { useMonitorGroups } from '@/composables/useMonitorGroups'
 import type { Severity } from '@/composables/useSeverity'
 import type { GridItem } from '@/components/ui/statusGrid'
@@ -116,7 +116,7 @@ const verdictSummary = computed(() => {
   const labels = target === 'incident' ? INCIDENT_LABEL : WARNING_LABEL
   const counts = new Map<string, number>()
   for (const it of attentionItems.value) {
-    if (it.severity !== target || it.kind === 'Update') continue
+    if (it.severity !== target || it.kind === UPDATES_KIND) continue
     counts.set(it.kind, (counts.get(it.kind) ?? 0) + 1)
   }
   const parts: string[] = []

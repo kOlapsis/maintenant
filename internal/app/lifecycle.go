@@ -13,8 +13,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/agent"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
@@ -31,6 +33,32 @@ import (
 // runtime's topology into the per-agent store under the LocalAgent id.
 const localTopologyReconcileInterval = 30 * time.Second
 
+// pruneOrphanAlerts resolves active alerts whose underlying entity no longer
+// exists: a container that was removed, or an agent that was deleted while
+// already offline (its lifecycle hook never fired a recover at delete time, so
+// the disconnect alert lingered). Idempotent — safe to run on every startup.
+func (a *App) pruneOrphanAlerts(ctx context.Context) {
+	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
+	if err != nil {
+		return
+	}
+	for _, al := range activeAlerts {
+		switch al.EntityType {
+		case "container":
+			c, err := a.containerSvc.GetContainer(ctx, al.EntityID)
+			if err != nil || c == nil {
+				a.alertEngine.ResolveByEntity(ctx, "container", al.EntityID)
+				a.logger.Info("pruned orphan container alert", "alert_id", al.ID, "entity_id", al.EntityID)
+			}
+		case "agent":
+			if _, err := a.agentStore.Get(ctx, al.EntityID); errors.Is(err, agent.ErrAgentNotFound) {
+				a.alertEngine.ResolveByEntity(ctx, "agent", al.EntityID)
+				a.logger.Info("pruned orphan agent alert", "alert_id", al.ID, "entity_id", al.EntityID)
+			}
+		}
+	}
+}
+
 // reconcile performs startup reconciliation and endpoint/security discovery.
 // Must only be called when the runtime is connected.
 func (a *App) reconcile(ctx context.Context) {
@@ -42,19 +70,7 @@ func (a *App) reconcile(ctx context.Context) {
 		a.logger.Error("startup reconciliation failed", "error", err)
 	}
 
-	// Prune orphan alerts
-	if activeAlerts, err := a.alertStore.ListActiveAlerts(ctx); err == nil {
-		for _, al := range activeAlerts {
-			if al.EntityType != "container" {
-				continue
-			}
-			c, err := a.containerSvc.GetContainer(ctx, al.EntityID)
-			if err != nil || c == nil {
-				a.alertEngine.ResolveByEntity(ctx, "container", al.EntityID)
-				a.logger.Info("pruned orphan container alert", "alert_id", al.ID, "entity_id", al.EntityID)
-			}
-		}
-	}
+	a.pruneOrphanAlerts(ctx)
 
 	// Swarm service discovery on startup.
 	if a.swarmDiscovery != nil {

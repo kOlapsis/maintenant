@@ -132,9 +132,13 @@ func (s *Sessions) Close(agentID, reason string) {
 				"agent_id": agentID,
 			})
 		}
-		if s.alertHook != nil {
-			s.alertHook(agentID, reason, false)
-		}
+	}
+
+	// Fire the lifecycle hook on a real stream close (had) OR on intentional
+	// removal (revoke/delete), so a pending disconnect alert is resolved even
+	// when the agent was already offline with no live session to close.
+	if s.alertHook != nil && (had || reason == "revoked" || reason == "deleted") {
+		s.alertHook(agentID, reason, false)
 	}
 }
 
