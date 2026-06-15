@@ -283,10 +283,11 @@ func (s *UpdateStore) DeleteStaleImageUpdates(ctx context.Context, scanID string
 	return res.RowsAffected, nil
 }
 
-// ListStaleImageUpdates returns the container names that had a pending update
-// before this scan but are no longer in the latest results — i.e. containers
-// that were upgraded between scans. Used to emit recovery alerts.
-func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID string, scannedContainerNames []string) ([]string, error) {
+// ListStaleImageUpdates returns the containers that had a pending update before
+// this scan but are no longer in the latest results — i.e. containers that were
+// upgraded between scans. The container id is returned alongside the name so the
+// recovery event can resolve the alert by its real entity id.
+func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID string, scannedContainerNames []string) ([]update.StaleImageUpdate, error) {
 	if len(scannedContainerNames) == 0 {
 		return nil, nil
 	}
@@ -298,7 +299,7 @@ func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID string, 
 		args = append(args, name)
 	}
 	query := fmt.Sprintf(
-		`SELECT DISTINCT container_name FROM image_updates WHERE scan_id != ? AND container_name IN (%s)`,
+		`SELECT DISTINCT container_id, container_name FROM image_updates WHERE scan_id != ? AND container_name IN (%s)`,
 		strings.Join(placeholders, ","),
 	)
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -306,15 +307,15 @@ func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID string, 
 		return nil, fmt.Errorf("list stale image updates: %w", err)
 	}
 	defer func(rows *sql.Rows) { _ = rows.Close() }(rows)
-	var names []string
+	var stale []update.StaleImageUpdate
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var su update.StaleImageUpdate
+		if err := rows.Scan(&su.ContainerID, &su.ContainerName); err != nil {
 			return nil, err
 		}
-		names = append(names, name)
+		stale = append(stale, su)
 	}
-	return names, rows.Err()
+	return stale, rows.Err()
 }
 
 // --- CVE cache ---

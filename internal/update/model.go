@@ -160,6 +160,14 @@ type ScanError struct {
 	Error         error
 }
 
+// StaleImageUpdate identifies a pending update that a fresh scan no longer
+// found (the container was upgraded). Both id and name are carried so the
+// recovery event can resolve the alert by its real entity id.
+type StaleImageUpdate struct {
+	ContainerID   string
+	ContainerName string
+}
+
 // CVESeverity classifies the severity of a CVE.
 type CVESeverity string
 

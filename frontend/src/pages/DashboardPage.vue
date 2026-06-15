@@ -85,9 +85,11 @@ const groupByOptions = [
 ]
 
 // Human label [singular, plural] per attention kind, so the subtitle reads
-// naturally and sums EXACTLY to the headline count. Updates are excluded from
-// the breakdown (they are not in globalStats — they have their own strip).
+// naturally and describes the headline severity. The "Updates" roll-up is one
+// attention item but represents many updates, so its displayed count comes from
+// the scanner (criticalCount), not the item count.
 const INCIDENT_LABEL: Record<string, [string, string]> = {
+  Updates: ['critical update', 'critical updates'],
   Security: ['security risk', 'security risks'],
   Agent: ['agent disconnected', 'agents disconnected'],
   Endpoint: ['endpoint down', 'endpoints down'],
@@ -97,7 +99,9 @@ const INCIDENT_LABEL: Record<string, [string, string]> = {
   Workload: ['workload down', 'workloads down'],
 }
 const WARNING_LABEL: Record<string, [string, string]> = {
+  Updates: ['critical update', 'critical updates'],
   Security: ['security warning', 'security warnings'],
+  Agent: ['agent disconnected', 'agents disconnected'],
   Endpoint: ['endpoint degraded', 'endpoints degraded'],
   Container: ['container unhealthy', 'containers unhealthy'],
   Heartbeat: ['heartbeat late', 'heartbeats late'],
@@ -110,19 +114,20 @@ const verdictSummary = computed(() => {
     const n = dashboard.monitors.length
     return n ? `${n} monitor${n > 1 ? 's' : ''} healthy` : 'No monitors configured yet'
   }
-  // Break down the attention items of the headline severity by kind. Excludes
-  // the warning-only "Update" kind so the parts sum to the header counter.
+  // Break down the attention items of the headline severity by kind.
   const target = stats.value.incidents > 0 ? 'incident' : 'warning'
   const labels = target === 'incident' ? INCIDENT_LABEL : WARNING_LABEL
   const counts = new Map<string, number>()
   for (const it of attentionItems.value) {
-    if (it.severity !== target || it.kind === UPDATES_KIND) continue
+    if (it.severity !== target) continue
     counts.set(it.kind, (counts.get(it.kind) ?? 0) + 1)
   }
   const parts: string[] = []
   for (const [kind, n] of counts) {
+    // The updates roll-up is one item but stands for `criticalCount` updates.
+    const count = kind === UPDATES_KIND ? updatesStore.criticalCount : n
     const label = labels[kind] ?? [`${kind.toLowerCase()} ${target}`, `${kind.toLowerCase()} ${target}s`]
-    parts.push(`${n} ${n > 1 ? label[1] : label[0]}`)
+    parts.push(`${count} ${count > 1 ? label[1] : label[0]}`)
   }
   return parts.join(' · ')
 })

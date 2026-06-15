@@ -18,8 +18,9 @@ import (
 )
 
 // TestAgentLifecycleEvent pins the severity/recovery semantics of the agent
-// lifecycle alert: a genuine outage pages as Critical (an incident), while
-// reconnection and intentional removal emit a non-paging recovery.
+// lifecycle alert: a genuine outage raises a Warning (severity owned by the
+// alert engine), while reconnection and intentional removal emit a non-paging
+// recovery.
 func TestAgentLifecycleEvent(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -28,8 +29,8 @@ func TestAgentLifecycleEvent(t *testing.T) {
 		wantSev   string
 		wantRec   bool
 	}{
-		{"stream drop is critical", "stream_ended", false, alert.SeverityCritical, false},
-		{"stale liveness is critical", "stale", false, alert.SeverityCritical, false},
+		{"stream drop is warning", "stream_ended", false, alert.SeverityWarning, false},
+		{"stale liveness is warning", "stale", false, alert.SeverityWarning, false},
 		{"reconnect recovers", "", true, alert.SeverityInfo, true},
 		{"revoked recovers, never pages", "revoked", false, alert.SeverityInfo, true},
 		{"deleted recovers, never pages", "deleted", false, alert.SeverityInfo, true},

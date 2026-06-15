@@ -71,7 +71,7 @@ func (s *stubStore) DeleteImageUpdatesByContainer(_ context.Context, _ string) e
 func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ string, _ []string) (int64, error) {
 	return 0, nil
 }
-func (s *stubStore) ListStaleImageUpdates(_ context.Context, _ string, _ []string) ([]string, error) {
+func (s *stubStore) ListStaleImageUpdates(_ context.Context, _ string, _ []string) ([]StaleImageUpdate, error) {
 	return nil, nil
 }
 func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, error) {

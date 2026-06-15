@@ -18,7 +18,6 @@ import { useCertificatesStore } from './certificates'
 import { useAlertsStore } from './alerts'
 import { useResourcesStore } from './resources'
 import { useKubernetesStore } from './kubernetes'
-import { useAgentsStore } from './agents'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
 import { buildUnifiedAttention } from '@/composables/attentionAggregator'
 import { apiFetch } from '@/services/apiFetch'
@@ -127,7 +126,6 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const alertsStore = useAlertsStore()
   const resourcesStore = useResourcesStore()
   const kubernetes = useKubernetesStore()
-  const agentsStore = useAgentsStore()
   const { availableRuntimes } = useFleetRuntimes()
 
   // Kubernetes contributes workloads (not containers); only surface them when the
@@ -399,7 +397,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     // they are deliberately excluded from these counters.
     const active = alertsStore.activeAlerts
     const allAlerts = [...active.critical, ...active.warning, ...active.info]
-    const unified = buildUnifiedAttention(monitors.value, allAlerts, agentsStore.agents, Date.now())
+    const unified = buildUnifiedAttention(monitors.value, allAlerts, Date.now())
     let incidents = 0, warnings = 0
     for (const it of unified) {
       if (it.severity === 'incident') incidents++

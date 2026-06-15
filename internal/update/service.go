@@ -434,7 +434,7 @@ func (s *Service) runScan(ctx context.Context) {
 	// by this scan (container was upgraded and no longer has a pending update).
 	// Emit a recovery event for each so listening consumers (alert engine) can
 	// resolve the matching active alert.
-	staleNames, err := s.store.ListStaleImageUpdates(ctx, scanID, scannedNames)
+	staleUpdates, err := s.store.ListStaleImageUpdates(ctx, scanID, scannedNames)
 	if err != nil {
 		s.logger.Warn("update scan: list stale updates", "error", err)
 	}
@@ -443,9 +443,10 @@ func (s *Service) runScan(ctx context.Context) {
 	} else if deleted > 0 {
 		s.logger.Info("update scan: removed stale updates", "deleted", deleted)
 	}
-	for _, name := range staleNames {
+	for _, su := range staleUpdates {
 		s.emitEvent(event.UpdateResolved, map[string]interface{}{
-			"container_name": name,
+			"container_id":   su.ContainerID,
+			"container_name": su.ContainerName,
 		})
 	}
 

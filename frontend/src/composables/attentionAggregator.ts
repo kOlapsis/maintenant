@@ -11,14 +11,14 @@
 
 import type { RouteLocationRaw } from 'vue-router'
 import type { UnifiedMonitor, MonitorType } from '@/stores/dashboard'
-import type { Agent } from '@/services/agentApi'
 import type { Alert } from '@/services/alertApi'
 import { severityFromStatus, severityFromAlert, severityRank, type Severity } from '@/composables/useSeverity'
 import type { EntityType } from '@/composables/useDetailSlideOver'
 
-// The local runtime sentinel — never an attention item when "disconnected".
-export const LOCAL_AGENT = '00000000-0000-0000-0000-000000000000'
 const SLIDEOVER_TYPES = new Set<string>(['container', 'heartbeat', 'certificate'])
+
+// Stable id of the single rolled-up "N critical updates" attention entry.
+export const UPDATES_ROLLUP_ID = 'updates:critical'
 
 const KIND: Record<MonitorType, string> = {
   container: 'Container',
@@ -37,6 +37,9 @@ const ALERT_SOURCE_KIND: Record<string, string> = {
   agent: 'Agent',
 }
 
+// Kind label for the rolled-up updates entry.
+export const UPDATES_KIND = 'Updates'
+
 export interface AttentionItem {
   id: string
   severity: Severity
@@ -53,10 +56,6 @@ export interface AttentionItem {
 export type MonitorLike = Pick<
   UnifiedMonitor,
   'id' | 'type' | 'name' | 'status' | 'statusLabel' | 'subtitle' | 'updatedAt' | 'link'
->
-export type AgentLike = Pick<
-  Agent,
-  'agent_id' | 'hostname' | 'label' | 'status' | 'connection_state' | 'last_seen_at'
 >
 export type AlertLike = Pick<
   Alert,
@@ -80,18 +79,17 @@ function capitalise(s: string): string {
   return s ? s[0]!.toUpperCase() + s.slice(1) : s
 }
 
-// Single source of truth for the unified attention list, built from the three
-// GLOBALLY-available signals (monitors + disconnected agents + engine alerts).
-// Entities are deduplicated by `${entityType}:${entityId}` with incident
-// outranking warning, so a warning monitor that also has a critical alert counts
-// once, as an incident, keeping the monitor's rich nav. `paused`/`unknown`
-// monitors and `info`/resolved alerts are never actionable and are skipped.
-// Updates are intentionally NOT a source here — they are warning-only and
-// dashboard-scoped (see buildAttentionItems).
+// Single source of truth for the unified attention list. Severity is NEVER
+// invented here: it comes straight from the alert engine (critical→incident,
+// warning→warning) for alerts, and from the monitor's own status for monitors,
+// so the dashboard counters always agree with the Alerts page. Entities are
+// deduplicated by `${entityType}:${entityId}`, with the more severe of a
+// monitor/alert pair kept. All critical/warning update alerts collapse into one
+// "Updates" roll-up entry (they are a single maintenance concern, not N
+// incidents) carrying the alerts' own severity.
 export function buildUnifiedAttention(
   monitors: MonitorLike[],
   alerts: AlertLike[],
-  agents: AgentLike[],
   now: number,
 ): AttentionItem[] {
   const byKey = new Map<string, AttentionItem>()
@@ -116,38 +114,31 @@ export function buildUnifiedAttention(
     })
   }
 
-  for (const a of agents) {
-    if (a.agent_id === LOCAL_AGENT || a.status !== 'active' || a.connection_state !== 'disconnected') {
-      continue
-    }
-    const { ts, label } = relTime(a.last_seen_at, now)
-    byKey.set(`agent:${a.agent_id}`, {
-      id: `agent:${a.agent_id}`,
-      severity: 'incident',
-      name: a.label || a.hostname,
-      kind: 'Agent',
-      description: 'Agent disconnected',
-      ts,
-      timestamp: label,
-      nav: { route: { name: 'agents' } },
-    })
-  }
+  // Update alerts collapse into one roll-up; track their count, worst severity
+  // and most recent fire time as we go.
+  let updateCount = 0
+  let updateSeverity: Severity | null = null
+  let updateTs = 0
 
   for (const al of alerts) {
     if (al.status !== 'active') continue
-    // Agent alerts are handled by the agents-store branch (the authoritative
-    // source — it only knows agents that still exist, so a deleted agent never
-    // lingers here). Update alerts are a duplicate of the update scanner and are
-    // surfaced as a single roll-up entry linking to the Updates page, not as
-    // per-container incidents.
-    if (al.entity_type === 'agent' || al.source === 'update') continue
     const severity = severityFromAlert(al.severity)
     if (severity !== 'incident' && severity !== 'warning') continue
+
+    if (al.source === 'update') {
+      updateCount++
+      if (updateSeverity === null || severityRank(severity) < severityRank(updateSeverity)) {
+        updateSeverity = severity
+      }
+      updateTs = Math.max(updateTs, relTime(al.fired_at, now).ts)
+      continue
+    }
+
     const key = `${al.entity_type}:${al.entity_id}`
     const existing = byKey.get(key)
     if (existing) {
-      // Same entity already represented by a monitor/agent — upgrade severity if
-      // the alert is more severe, but keep the existing item's richer nav/kind.
+      // Same entity already represented by a monitor — keep the more severe of
+      // the two, preserving the monitor's richer nav/kind.
       if (severityRank(severity) < severityRank(existing.severity)) existing.severity = severity
       continue
     }
@@ -161,13 +152,28 @@ export function buildUnifiedAttention(
       ts,
       timestamp: label,
       nav:
-        SLIDEOVER_TYPES.has(al.entity_type) && al.entity_id
-          ? { slideOver: { type: al.entity_type as EntityType, id: al.entity_id } }
-          : al.entity_type === 'agent'
-            ? { route: { name: 'agents' } }
+        al.entity_type === 'agent'
+          ? { route: { name: 'agents' } }
+          : SLIDEOVER_TYPES.has(al.entity_type) && al.entity_id
+            ? { slideOver: { type: al.entity_type as EntityType, id: al.entity_id } }
             : { route: { name: 'alerts' } },
     })
   }
 
-  return Array.from(byKey.values())
+  const out = Array.from(byKey.values())
+
+  if (updateCount > 0 && updateSeverity !== null) {
+    out.push({
+      id: UPDATES_ROLLUP_ID,
+      severity: updateSeverity,
+      name: `${updateCount} critical update${updateCount > 1 ? 's' : ''}`,
+      kind: UPDATES_KIND,
+      description: 'Review available container updates',
+      ts: updateTs,
+      timestamp: '',
+      nav: { route: { name: 'updates' } },
+    })
+  }
+
+  return out
 }

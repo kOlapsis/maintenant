@@ -369,12 +369,75 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	})
 }
 
+// updateDetectedAlert builds the alert event for a freshly detected image
+// update. EntityID is the container id so each container's update is its own
+// alert — without it every update shares the dedup key {update,update_available,
+// container,""} and collides, mixing one container's message with another's
+// entity. Severity follows the risk score. The caller sets Timestamp.
+func updateDetectedAlert(m map[string]any, pro bool) alert.Event {
+	severity := alert.SeverityInfo
+	if rs, ok := m["risk_score"].(int); ok {
+		if rs >= 81 {
+			severity = alert.SeverityCritical
+		} else if rs >= 61 {
+			severity = alert.SeverityWarning
+		}
+	}
+
+	details := map[string]any{
+		"image":       m["image"],
+		"current_tag": m["current_tag"],
+		"latest_tag":  m["latest_tag"],
+		"update_type": m["update_type"],
+	}
+	if pro {
+		for _, k := range []string{"update_command", "rollback_command", "changelog_url", "has_breaking_changes"} {
+			if v, ok := m[k]; ok {
+				details[k] = v
+			}
+		}
+	}
+
+	containerID, _ := m["container_id"].(string)
+	containerName, _ := m["container_name"].(string)
+	latestTag, _ := m["latest_tag"].(string)
+	return alert.Event{
+		Source:     "update",
+		AlertType:  "update_available",
+		Severity:   severity,
+		Message:    fmt.Sprintf("Update available for %s: %s", containerName, latestTag),
+		EntityType: "container",
+		EntityID:   containerID,
+		EntityName: containerName,
+		Details:    details,
+	}
+}
+
+// updateResolvedAlert builds the recovery event when a container's update is no
+// longer pending. EntityID matches updateDetectedAlert so the right alert is
+// resolved by dedup key. The caller sets Timestamp.
+func updateResolvedAlert(m map[string]any) alert.Event {
+	containerID, _ := m["container_id"].(string)
+	containerName, _ := m["container_name"].(string)
+	return alert.Event{
+		Source:     "update",
+		AlertType:  "update_available",
+		Severity:   alert.SeverityInfo,
+		IsRecover:  true,
+		Message:    fmt.Sprintf("Update no longer required for %s", containerName),
+		EntityType: "container",
+		EntityID:   containerID,
+		EntityName: containerName,
+	}
+}
+
 // wireUpdateCallback wires the update service event callback.
 func (a *App) wireUpdateCallback() {
 	alertCh := a.alertEngine.EventChannel()
 	ctx := context.Background()
 
 	sendAlert := func(evt alert.Event) {
+		evt.Timestamp = time.Now()
 		alertCh <- evt
 		a.statusSvc.HandleAlertEvent(ctx, evt)
 	}
@@ -382,72 +445,19 @@ func (a *App) wireUpdateCallback() {
 	a.updateSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 
-		if eventType == event.UpdateResolved {
-			if m, ok := data.(map[string]any); ok {
-				containerName, _ := m["container_name"].(string)
-				if containerName == "" {
-					return
-				}
-				sendAlert(alert.Event{
-					Source:     "update",
-					AlertType:  "update_available",
-					Severity:   alert.SeverityInfo,
-					IsRecover:  true,
-					Message:    fmt.Sprintf("Update no longer required for %s", containerName),
-					EntityType: "container",
-					EntityName: containerName,
-					Timestamp:  time.Now(),
-				})
-			}
+		m, ok := data.(map[string]any)
+		if !ok {
 			return
 		}
 
-		if eventType == event.UpdateDetected {
-			if m, ok := data.(map[string]any); ok {
-				severity := alert.SeverityInfo
-				if rs, ok := m["risk_score"].(int); ok {
-					if rs >= 81 {
-						severity = alert.SeverityCritical
-					} else if rs >= 61 {
-						severity = alert.SeverityWarning
-					}
-				}
-
-				details := map[string]any{
-					"image":       m["image"],
-					"current_tag": m["current_tag"],
-					"latest_tag":  m["latest_tag"],
-					"update_type": m["update_type"],
-				}
-
-				if extension.CurrentEdition() == extension.Pro {
-					if cmd, ok := m["update_command"]; ok {
-						details["update_command"] = cmd
-					}
-					if cmd, ok := m["rollback_command"]; ok {
-						details["rollback_command"] = cmd
-					}
-					if url, ok := m["changelog_url"]; ok {
-						details["changelog_url"] = url
-					}
-					if bc, ok := m["has_breaking_changes"]; ok {
-						details["has_breaking_changes"] = bc
-					}
-				}
-
-				containerName, _ := m["container_name"].(string)
-				latestTag, _ := m["latest_tag"].(string)
-				sendAlert(alert.Event{
-					Source:     "update",
-					AlertType:  "update_available",
-					Severity:   severity,
-					Message:    fmt.Sprintf("Update available for %s: %s", containerName, latestTag),
-					EntityType: "container",
-					EntityName: containerName,
-					Details:    details,
-					Timestamp:  time.Now(),
-				})
+		switch eventType {
+		case event.UpdateResolved:
+			if name, _ := m["container_name"].(string); name == "" {
+				return
 			}
+			sendAlert(updateResolvedAlert(m))
+		case event.UpdateDetected:
+			sendAlert(updateDetectedAlert(m, extension.CurrentEdition() == extension.Pro))
 		}
 	})
 }
@@ -567,9 +577,10 @@ func (a *App) wireSwarmCallbacks() {
 
 // agentLifecycleEvent builds the alert event for an agent connection-state
 // change. A genuine outage (stream drop or stale liveness past the threshold)
-// pages as Critical: a disconnected agent blinds every monitor it reports, so
-// it is a real incident. Reconnection and intentional removal (revoke/delete)
-// emit a recovery that clears any pending alert. The caller sets Timestamp.
+// raises a Warning — the severity is owned by the alert engine and surfaced
+// verbatim by every consumer (dashboard, Alerts page). Reconnection and
+// intentional removal (revoke/delete) emit a recovery that clears any pending
+// alert. The caller sets Timestamp.
 func agentLifecycleEvent(agentID, name, reason string, connected bool) alert.Event {
 	evt := alert.Event{
 		Source:     "agent",
@@ -591,14 +602,14 @@ func agentLifecycleEvent(agentID, name, reason string, connected bool) alert.Eve
 		evt.Message = fmt.Sprintf("Agent %s %s", name, reason)
 	default:
 		// stream_ended (drop) or stale (liveness) → genuine outage.
-		evt.Severity = alert.SeverityCritical
+		evt.Severity = alert.SeverityWarning
 		evt.Message = fmt.Sprintf("Agent %s disconnected (%s)", name, reason)
 		evt.Details = map[string]any{"agent_id": agentID, "reason": reason}
 	}
 	return evt
 }
 
-// wireAgentLifecycleAlerts raises a Critical alert when a remote agent's stream
+// wireAgentLifecycleAlerts raises a Warning alert when a remote agent's stream
 // drops unexpectedly (network outage, or stale liveness past the threshold) and
 // resolves it when the agent reconnects. Intentional removals (revoke/delete)
 // and graceful shutdown never page. The agent UUID is the alert entity id.
