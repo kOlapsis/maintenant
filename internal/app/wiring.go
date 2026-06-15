@@ -565,7 +565,40 @@ func (a *App) wireSwarmCallbacks() {
 	}
 }
 
-// wireAgentLifecycleAlerts raises a Warning alert when a remote agent's stream
+// agentLifecycleEvent builds the alert event for an agent connection-state
+// change. A genuine outage (stream drop or stale liveness past the threshold)
+// pages as Critical: a disconnected agent blinds every monitor it reports, so
+// it is a real incident. Reconnection and intentional removal (revoke/delete)
+// emit a recovery that clears any pending alert. The caller sets Timestamp.
+func agentLifecycleEvent(agentID, name, reason string, connected bool) alert.Event {
+	evt := alert.Event{
+		Source:     "agent",
+		AlertType:  "disconnected",
+		EntityType: "agent",
+		EntityID:   agentID,
+		EntityName: name,
+	}
+	switch {
+	case connected:
+		// Reconnection clears a pending disconnect alert (no-op if none).
+		evt.Severity = alert.SeverityInfo
+		evt.IsRecover = true
+		evt.Message = fmt.Sprintf("Agent %s reconnected", name)
+	case reason == "revoked" || reason == "deleted":
+		// Intentional removal: clear any pending alert, never raise one.
+		evt.Severity = alert.SeverityInfo
+		evt.IsRecover = true
+		evt.Message = fmt.Sprintf("Agent %s %s", name, reason)
+	default:
+		// stream_ended (drop) or stale (liveness) → genuine outage.
+		evt.Severity = alert.SeverityCritical
+		evt.Message = fmt.Sprintf("Agent %s disconnected (%s)", name, reason)
+		evt.Details = map[string]any{"agent_id": agentID, "reason": reason}
+	}
+	return evt
+}
+
+// wireAgentLifecycleAlerts raises a Critical alert when a remote agent's stream
 // drops unexpectedly (network outage, or stale liveness past the threshold) and
 // resolves it when the agent reconnects. Intentional removals (revoke/delete)
 // and graceful shutdown never page. The agent UUID is the alert entity id.
@@ -591,32 +624,8 @@ func (a *App) wireAgentLifecycleAlerts() {
 			}
 		}
 
-		evt := alert.Event{
-			Source:     "agent",
-			AlertType:  "disconnected",
-			EntityType: "agent",
-			EntityID:   agentID,
-			EntityName: name,
-			Timestamp:  time.Now(),
-		}
-
-		switch {
-		case connected:
-			// Reconnection clears a pending disconnect alert (no-op if none).
-			evt.Severity = alert.SeverityInfo
-			evt.IsRecover = true
-			evt.Message = fmt.Sprintf("Agent %s reconnected", name)
-		case reason == "revoked" || reason == "deleted":
-			// Intentional removal: clear any pending alert, never raise one.
-			evt.Severity = alert.SeverityInfo
-			evt.IsRecover = true
-			evt.Message = fmt.Sprintf("Agent %s %s", name, reason)
-		default:
-			// stream_ended (drop) or stale (liveness) → genuine outage.
-			evt.Severity = alert.SeverityWarning
-			evt.Message = fmt.Sprintf("Agent %s disconnected (%s)", name, reason)
-			evt.Details = map[string]any{"agent_id": agentID, "reason": reason}
-		}
+		evt := agentLifecycleEvent(agentID, name, reason, connected)
+		evt.Timestamp = time.Now()
 
 		alertCh <- evt
 		a.statusSvc.HandleAlertEvent(ctx, evt)

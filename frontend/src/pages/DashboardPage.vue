@@ -58,7 +58,6 @@ const { monitorGroups } = useMonitorGroups()
 const showPosture = computed(() => hasFeature('security_posture') && postureStore.posture !== null)
 const stats = computed(() => dashboard.globalStats)
 
-const LOCAL_AGENT = '00000000-0000-0000-0000-000000000000'
 const SLIDEOVER_TYPES = new Set<string>(['container', 'heartbeat', 'certificate'])
 
 const loading = ref(true)
@@ -85,24 +84,46 @@ const groupByOptions = [
   { value: 'severity', label: 'By severity' },
 ]
 
+// Human label [singular, plural] per attention kind, so the subtitle reads
+// naturally and sums EXACTLY to the headline count. Updates are excluded from
+// the breakdown (they are not in globalStats — they have their own strip).
+const INCIDENT_LABEL: Record<string, [string, string]> = {
+  Security: ['security risk', 'security risks'],
+  Agent: ['agent disconnected', 'agents disconnected'],
+  Endpoint: ['endpoint down', 'endpoints down'],
+  Container: ['container down', 'containers down'],
+  Heartbeat: ['heartbeat missed', 'heartbeats missed'],
+  Certificate: ['certificate expired', 'certificates expired'],
+  Workload: ['workload down', 'workloads down'],
+}
+const WARNING_LABEL: Record<string, [string, string]> = {
+  Security: ['security warning', 'security warnings'],
+  Endpoint: ['endpoint degraded', 'endpoints degraded'],
+  Container: ['container unhealthy', 'containers unhealthy'],
+  Heartbeat: ['heartbeat late', 'heartbeats late'],
+  Certificate: ['certificate expiring', 'certificates expiring'],
+  Workload: ['workload degraded', 'workloads degraded'],
+}
+
 const verdictSummary = computed(() => {
   if (stats.value.incidents === 0 && stats.value.warnings === 0) {
     const n = dashboard.monitors.length
     return n ? `${n} monitor${n > 1 ? 's' : ''} healthy` : 'No monitors configured yet'
   }
+  // Break down the attention items of the headline severity by kind. Excludes
+  // the warning-only "Update" kind so the parts sum to the header counter.
+  const target = stats.value.incidents > 0 ? 'incident' : 'warning'
+  const labels = target === 'incident' ? INCIDENT_LABEL : WARNING_LABEL
+  const counts = new Map<string, number>()
+  for (const it of attentionItems.value) {
+    if (it.severity !== target || it.kind === 'Update') continue
+    counts.set(it.kind, (counts.get(it.kind) ?? 0) + 1)
+  }
   const parts: string[] = []
-  const disc = agentsStore.agents.filter(
-    (a) => a.agent_id !== LOCAL_AGENT && a.status === 'active' && a.connection_state === 'disconnected',
-  ).length
-  if (disc) parts.push(`${disc} agent${disc > 1 ? 's' : ''} disconnected`)
-  const downEp = dashboard.monitors.filter((m) => m.type === 'endpoint' && m.status === 'down').length
-  if (downEp) parts.push(`${downEp} endpoint check${downEp > 1 ? 's' : ''} failing`)
-  const downCt = dashboard.monitors.filter((m) => m.type === 'container' && m.status === 'down').length
-  if (downCt) parts.push(`${downCt} container${downCt > 1 ? 's' : ''} down`)
-  const downHb = dashboard.monitors.filter((m) => m.type === 'heartbeat' && m.status === 'down').length
-  if (downHb) parts.push(`${downHb} heartbeat${downHb > 1 ? 's' : ''} missed`)
-  const crit = updatesStore.criticalCount
-  if (crit) parts.push(`${crit} critical update${crit > 1 ? 's' : ''}`)
+  for (const [kind, n] of counts) {
+    const label = labels[kind] ?? [`${kind.toLowerCase()} ${target}`, `${kind.toLowerCase()} ${target}s`]
+    parts.push(`${n} ${n > 1 ? label[1] : label[0]}`)
+  }
   return parts.join(' · ')
 })
 

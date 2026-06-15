@@ -18,7 +18,9 @@ import { useCertificatesStore } from './certificates'
 import { useAlertsStore } from './alerts'
 import { useResourcesStore } from './resources'
 import { useKubernetesStore } from './kubernetes'
+import { useAgentsStore } from './agents'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
+import { buildUnifiedAttention } from '@/composables/attentionAggregator'
 import { apiFetch } from '@/services/apiFetch'
 import { sseBus } from '@/services/sseBus'
 import type { Container } from '@/services/containerApi'
@@ -125,6 +127,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const alertsStore = useAlertsStore()
   const resourcesStore = useResourcesStore()
   const kubernetes = useKubernetesStore()
+  const agentsStore = useAgentsStore()
   const { availableRuntimes } = useFleetRuntimes()
 
   // Kubernetes contributes workloads (not containers); only surface them when the
@@ -383,19 +386,26 @@ export const useDashboardStore = defineStore('dashboard', () => {
   }
 
   const globalStats = computed(() => {
-    let running = 0, down = 0, warning = 0
+    let running = 0
     for (const m of monitors.value) {
       if (m.status === 'ok') running++
-      else if (m.status === 'down') down++
-      else if (m.status === 'warning') warning++
     }
-    // Split alert severities: incidents = critical alerts, warnings = warning
-    // alerts. This avoids the confusing mix where restart-loop warnings were
-    // counted as "incidents" while the header "WARNINGS" counter only showed
-    // health-check unhealthy monitors.
-    const incidents = alertsStore.activeAlerts.critical?.length ?? 0
-    const warningAlerts = alertsStore.activeAlerts.warning?.length ?? 0
-    return { running, incidents, warnings: warning + warningAlerts }
+    // Incident/warning counts derive from the SAME unified attention model as
+    // the dashboard panel, so the header counters, the verdict banner and the
+    // "Needs attention" list can never disagree. Built from the globally
+    // available signals only (monitors + engine alerts + disconnected agents),
+    // deduplicated per entity (a down monitor that also fired a critical alert
+    // counts once). Critical updates are warning-only and dashboard-scoped, so
+    // they are deliberately excluded from these counters.
+    const active = alertsStore.activeAlerts
+    const allAlerts = [...active.critical, ...active.warning, ...active.info]
+    const unified = buildUnifiedAttention(monitors.value, allAlerts, agentsStore.agents, Date.now())
+    let incidents = 0, warnings = 0
+    for (const it of unified) {
+      if (it.severity === 'incident') incidents++
+      else if (it.severity === 'warning') warnings++
+    }
+    return { running, incidents, warnings }
   })
 
   return {
