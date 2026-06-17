@@ -13,6 +13,7 @@ import { computed } from 'vue'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useAgentsStore } from '@/stores/agents'
 import { useResourcesStore } from '@/stores/resources'
+import type { SwarmMetadata } from '@/services/runtimeApi'
 
 // useFleetRuntimes derives which container runtimes are reachable for the
 // currently selected host scope, so the navigation can show the matching views.
@@ -32,9 +33,22 @@ export function useFleetRuntimes() {
   // The server's own runtime: 'docker' | 'swarm' | 'kubernetes'.
   const localRuntime = computed(() => runtimeStore.context)
 
+  // A local Swarm manager with zero deployed services still runs plain
+  // containers, so keep the Docker "Containers" view reachable alongside the
+  // (empty) Swarm views until a service is actually deployed.
+  const localSwarmNoServices = computed(() => {
+    if (runtimeStore.context !== 'swarm') return false
+    const meta = runtimeStore.metadata as Partial<SwarmMetadata>
+    return (meta.service_count ?? 0) === 0
+  })
+
   const availableRuntimes = computed<string[]>(() => {
     const sel = resources.selected
-    if (sel === 'local') return [localRuntime.value]
+    if (sel === 'local') {
+      const set = new Set<string>([localRuntime.value])
+      if (localSwarmNoServices.value) set.add('docker')
+      return [...set]
+    }
     if (sel) {
       const agent = activeAgents.value.find((a) => a.agent_id === sel)
       return agent ? [agent.detected_runtime] : []
@@ -42,6 +56,7 @@ export function useFleetRuntimes() {
     // "All resources": union of the local runtime and every active agent's.
     const set = new Set<string>([localRuntime.value])
     for (const a of activeAgents.value) set.add(a.detected_runtime)
+    if (localSwarmNoServices.value) set.add('docker')
     return [...set]
   })
 

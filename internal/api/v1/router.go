@@ -375,48 +375,7 @@ func NewRouter(d HandlerDeps) *Router {
 	r.registerUIRoutes(d)
 
 	// Runtime status endpoint
-	r.mux.HandleFunc("GET /api/v1/runtime/status", func(w http.ResponseWriter, req *http.Request) {
-		runtimeName := d.Runtime.Name()
-		ctx := "docker"
-		label := "Containers"
-		metadata := map[string]interface{}{}
-
-		switch runtimeName {
-		case "kubernetes":
-			ctx = "kubernetes"
-			label = "Workloads"
-			metadata["namespace_count"] = 0
-			metadata["node_count"] = 0
-		default:
-			// Check for Swarm mode.
-			if detector := d.SwarmDetector(); detector != nil {
-				result := detector.Result()
-				if result.Active && result.IsManager {
-					ctx = "swarm"
-					label = "Services"
-
-					metadata["cluster_id"] = result.ClusterID
-					metadata["is_manager"] = true
-					if cluster := d.SwarmCluster(); cluster != nil {
-						metadata["manager_count"] = cluster.ManagerCount
-						metadata["worker_count"] = cluster.WorkerCount
-					} else {
-						metadata["manager_count"] = 0
-						metadata["worker_count"] = 0
-					}
-				}
-			}
-		}
-
-		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"runtime":     runtimeName,
-			"context":     ctx,
-			"connected":   d.Runtime.IsConnected(),
-			"label":       label,
-			"detected_at": time.Now().UTC().Format(time.RFC3339),
-			"metadata":    metadata,
-		})
-	})
+	r.mux.HandleFunc("GET /api/v1/runtime/status", r.handleRuntimeStatus(d))
 
 	// Edition endpoint — exposes CE/Pro feature flags for frontend gating
 	smtpConfigured := d.Notifier != nil && d.Notifier.SMTPConfigured()
@@ -450,6 +409,62 @@ func NewRouter(d HandlerDeps) *Router {
 	r.registerAgentRoutes(d)
 
 	return r
+}
+
+// handleRuntimeStatus reports the active container runtime context (docker,
+// swarm, or kubernetes) and runtime-specific metadata. For a Swarm manager it
+// includes service_count so the dashboard can keep the Docker "Containers" view
+// available while no service is deployed.
+func (r *Router) handleRuntimeStatus(d HandlerDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		runtimeName := d.Runtime.Name()
+		ctx := "docker"
+		label := "Containers"
+		metadata := map[string]interface{}{}
+
+		switch runtimeName {
+		case "kubernetes":
+			ctx = "kubernetes"
+			label = "Workloads"
+			metadata["namespace_count"] = 0
+			metadata["node_count"] = 0
+		default:
+			// Check for Swarm mode.
+			if detector := d.SwarmDetector(); detector != nil {
+				result := detector.Result()
+				if result.Active && result.IsManager {
+					ctx = "swarm"
+					label = "Services"
+
+					metadata["cluster_id"] = result.ClusterID
+					metadata["is_manager"] = true
+					if cluster := d.SwarmCluster(); cluster != nil {
+						metadata["manager_count"] = cluster.ManagerCount
+						metadata["worker_count"] = cluster.WorkerCount
+					} else {
+						metadata["manager_count"] = 0
+						metadata["worker_count"] = 0
+					}
+
+					// Expose the deployed-service count so the dashboard can keep the
+					// Docker "Containers" view available on an empty Swarm manager.
+					metadata["service_count"] = 0
+					if disc := d.SwarmDiscovery(); disc != nil {
+						metadata["service_count"] = len(disc.ListServices())
+					}
+				}
+			}
+		}
+
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"runtime":     runtimeName,
+			"context":     ctx,
+			"connected":   d.Runtime.IsConnected(),
+			"label":       label,
+			"detected_at": time.Now().UTC().Format(time.RFC3339),
+			"metadata":    metadata,
+		})
+	}
 }
 
 // registerEscalationRoutes registers escalation policy CRUD endpoints (Pro only).

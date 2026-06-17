@@ -20,6 +20,7 @@ export interface SwarmMetadata {
   is_manager: boolean
   manager_count: number
   worker_count: number
+  service_count: number
 }
 
 export interface KubernetesMetadata {

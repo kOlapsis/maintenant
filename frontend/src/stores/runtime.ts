@@ -76,7 +76,15 @@ export const useRuntimeStore = defineStore('runtime', () => {
       if (data.message) {
         showToast(data.message, 'info')
       }
+      // Refresh full status so metadata (incl. service_count) stays authoritative.
+      void fetchStatus()
     } catch { /* ignore */ }
+  }
+
+  // Service deploy/remove changes the Swarm service count, which decides whether
+  // the Docker "Containers" view stays visible — refetch so the nav reacts live.
+  function onServiceCountChanged() {
+    void fetchStatus()
   }
 
   function onAvailabilityChanged(e: MessageEvent) {
@@ -89,11 +97,15 @@ export const useRuntimeStore = defineStore('runtime', () => {
   function startListening() {
     sseBus.on('runtime.context_changed', onContextChanged)
     sseBus.on('runtime.availability_changed', onAvailabilityChanged)
+    sseBus.on('swarm.service_discovered', onServiceCountChanged)
+    sseBus.on('swarm.service_removed', onServiceCountChanged)
   }
 
   function stopListening() {
     sseBus.off('runtime.context_changed', onContextChanged)
     sseBus.off('runtime.availability_changed', onAvailabilityChanged)
+    sseBus.off('swarm.service_discovered', onServiceCountChanged)
+    sseBus.off('swarm.service_removed', onServiceCountChanged)
   }
 
   return {
