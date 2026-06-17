@@ -21,10 +21,12 @@ import {useContainersStore} from '@/stores/containers'
 import {useEdition} from '@/composables/useEdition'
 import {timeAgo} from '@/utils/time'
 import {getStateStyle as getStateStyleFromUtil} from '@/utils/containerState'
+import {fetchContainerDailyUptime, type UptimeDay} from '@/services/uptimeApi'
 import UpdateBadge from '@/components/UpdateBadge.vue'
 import SecurityInsightBadge from '@/components/SecurityInsightBadge.vue'
 import PostureScoreBadge from '@/components/PostureScoreBadge.vue'
 import AgentBadge from '@/components/AgentBadge.vue'
+import UptimeBar90 from '@/components/ui/UptimeBar90.vue'
 import {computed, onMounted, ref} from 'vue'
 
 const props = defineProps<{
@@ -49,8 +51,13 @@ const metrics = computed(() => resourcesStore.formattedSnapshot(props.container.
 const containerUpdate = computed(() => updatesStore.updates.find(u => u.container_id === props.container.external_id) ?? null)
 
 const containerScore = ref<{ score: number; color: string } | null>(null)
+const uptimeDays = ref<UptimeDay[]>([])
 
 onMounted(async () => {
+  fetchContainerDailyUptime(props.container.id)
+    .then((days) => { uptimeDays.value = days })
+    .catch(() => { /* uptime data may be unavailable */ })
+
   if (hasFeature('security_posture')) {
     const score = await postureStore.fetchContainerScore(props.container.id)
     if (score) {
@@ -187,6 +194,11 @@ function getStateStyle(state: string) {
         </div>
         <span class="w-10 text-right text-mnt-muted font-mono">{{ metrics.memPercent }}</span>
       </div>
+    </div>
+
+    <!-- 90-day uptime bar -->
+    <div v-if="uptimeDays.length > 0" class="mt-3">
+      <UptimeBar90 :days="uptimeDays" compact />
     </div>
 
     <!-- K8s pod count badge -->

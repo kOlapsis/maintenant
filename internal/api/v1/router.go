@@ -493,6 +493,7 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 		udh := NewUptimeDailyHandler(d.UptimeDaily)
 		r.mux.HandleFunc("GET /api/v1/endpoints/{id}/uptime/daily", udh.HandleEndpointDailyUptime)
 		r.mux.HandleFunc("GET /api/v1/heartbeats/{id}/uptime/daily", udh.HandleHeartbeatDailyUptime)
+		r.mux.HandleFunc("GET /api/v1/containers/{id}/uptime/daily", udh.HandleContainerDailyUptime)
 	}
 
 	if d.LogStreamer != nil && d.Containers != nil {

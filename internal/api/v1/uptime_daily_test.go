@@ -28,6 +28,7 @@ import (
 type mockUptimeDailyStore struct {
 	endpointResults  map[string][]sqlite.DailyUptime
 	heartbeatResults map[string][]sqlite.DailyUptime
+	containerResults map[string][]sqlite.DailyUptime
 	err              error
 }
 
@@ -54,6 +55,23 @@ func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartb
 		return nil, m.err
 	}
 	if results, ok := m.heartbeatResults[heartbeatID]; ok {
+		if days < len(results) {
+			return results[:days], nil
+		}
+		return results, nil
+	}
+	result := make([]sqlite.DailyUptime, days)
+	for i := range result {
+		result[i] = sqlite.DailyUptime{Date: fmt.Sprintf("2026-01-%02d", days-i), UptimePercent: nil}
+	}
+	return result, nil
+}
+
+func (m *mockUptimeDailyStore) GetContainerDailyUptime(_ context.Context, containerID string, days int) ([]sqlite.DailyUptime, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	if results, ok := m.containerResults[containerID]; ok {
 		if days < len(results) {
 			return results[:days], nil
 		}

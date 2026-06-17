@@ -27,6 +27,8 @@ import LogExpandedView from './LogExpandedView.vue'
 import { useLogStream } from '@/composables/useLogStream'
 import { useLogSearch } from '@/composables/useLogSearch'
 import ContainerEventTimeline from './ContainerEventTimeline.vue'
+import UptimeBar90 from './ui/UptimeBar90.vue'
+import { fetchContainerDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import SecurityInsightList from './SecurityInsightList.vue'
 import PostureScoreBadge from './PostureScoreBadge.vue'
 import PostureCategoryBreakdown from './PostureCategoryBreakdown.vue'
@@ -58,6 +60,7 @@ const emit = defineEmits<{
 
 const container = ref<ContainerDetailResponse | null>(null)
 const transitions = ref<StateTransition[]>([])
+const uptimeDays = ref<UptimeDay[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedLogContainer = ref<string | undefined>(undefined)
@@ -154,13 +157,15 @@ async function loadData() {
   loading.value = true
   error.value = null
   try {
-    const [c, t] = await Promise.all([
+    const [c, t, , uptime] = await Promise.all([
       getContainer(props.containerId),
       listTransitions(props.containerId, { limit: 20 }),
       securityStore.fetchForContainer(props.containerId),
+      fetchContainerDailyUptime(props.containerId).catch(() => [] as UptimeDay[]),
     ])
     container.value = c
     transitions.value = t.transitions || []
+    uptimeDays.value = uptime
     if (hasFeature('security_posture')) {
       containerPosture.value = await postureStore.fetchContainerScore(props.containerId)
       await postureStore.fetchAcknowledgments(props.containerId)
@@ -496,6 +501,14 @@ watch(() => props.containerId, () => {
               <PostureScoreBadge :score="containerPosture.score" :color="containerPosture.color" size="sm" />
             </div>
             <PostureCategoryBreakdown :categories="containerPosture.categories" />
+          </div>
+
+          <!-- 90-day uptime -->
+          <div v-if="uptimeDays.length > 0">
+            <h3 class="mb-3 text-xs font-bold uppercase tracking-wider" :style="{ color: 'var(--mnt-text-muted)' }">
+              90-day uptime
+            </h3>
+            <UptimeBar90 :days="uptimeDays" />
           </div>
 
           <!-- Event Timeline -->

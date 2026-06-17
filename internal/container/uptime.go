@@ -157,6 +157,12 @@ func computeUptime(transitions []*StateTransition, from, to time.Time) float64 {
 	return float64(int(pct*100)) / 100
 }
 
+// ComputeUptime is the exported entry point for the time-weighted uptime
+// calculation, reused by the per-day uptime aggregation in package sqlite.
+func ComputeUptime(transitions []*StateTransition, from, to time.Time) float64 {
+	return computeUptime(transitions, from, to)
+}
+
 func isUp(t *StateTransition) bool {
 	if t.NewState != StateRunning {
 		return false

@@ -35,3 +35,8 @@ export async function fetchHeartbeatDailyUptime(id: string, days = 90): Promise<
   const res = await apiFetch<DailyUptimeResponse>(`${API_BASE}/heartbeats/${id}/uptime/daily?days=${days}`)
   return res.days ?? []
 }
+
+export async function fetchContainerDailyUptime(id: string, days = 90): Promise<UptimeDay[]> {
+  const res = await apiFetch<DailyUptimeResponse>(`${API_BASE}/containers/${id}/uptime/daily?days=${days}`)
+  return res.days ?? []
+}
