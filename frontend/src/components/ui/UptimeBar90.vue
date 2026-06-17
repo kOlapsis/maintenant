@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { UptimeDay } from '@/services/uptimeApi'
 
 const props = withDefaults(defineProps<{
@@ -21,6 +21,10 @@ const props = withDefaults(defineProps<{
 }>(), {
   compact: false,
 })
+
+// The API returns days newest-first; render oldest → newest so the present sits
+// on the right (Uptime-Kuma orientation). Copy first to avoid mutating the prop.
+const orderedDays = computed(() => [...props.days].reverse())
 
 const tooltip = ref<{ visible: boolean; x: number; y: number; day: UptimeDay | null }>({
   visible: false,
@@ -64,11 +68,11 @@ function formatUptime(pct: number | null): string {
 
 <template>
   <div class="relative">
-    <div class="flex items-center gap-px" :style="{ height: compact ? '16px' : '28px' }">
+    <div class="flex w-full items-center gap-px" :style="{ height: compact ? '16px' : '28px' }">
       <div
-        v-for="(day, i) in days"
+        v-for="(day, i) in orderedDays"
         :key="i"
-        class="h-4 w-[2px] rounded-full transition-opacity hover:opacity-80"
+        class="h-4 flex-1 min-w-[2px] rounded-full transition-opacity hover:opacity-80"
         :class="barColorClass(day)"
         :style="{ cursor: compact ? 'default' : 'pointer' }"
         @mouseenter="showTooltip($event, day)"
