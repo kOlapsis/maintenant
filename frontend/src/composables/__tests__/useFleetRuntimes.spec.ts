@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // Mock the three Pinia stores the composable reads, so we can drive its inputs
 // without a full store/SSE/localStorage setup.
 const state = vi.hoisted(() => ({
-  runtime: { context: 'docker' as string, metadata: {} as Record<string, unknown> },
+  runtime: { context: 'docker' as string, metadata: {} as Record<string, unknown>, loaded: true },
   agents: { agents: [] as Array<{ status: string; agent_id: string; detected_runtime: string }> },
   resources: { selected: null as string | null },
 }))
@@ -26,6 +26,7 @@ function runtimes() {
 beforeEach(() => {
   state.runtime.context = 'docker'
   state.runtime.metadata = {}
+  state.runtime.loaded = true
   state.agents.agents = []
   state.resources.selected = null
 })
@@ -71,6 +72,23 @@ describe('useFleetRuntimes — empty Swarm keeps Docker available', () => {
     state.runtime.context = 'docker'
     state.runtime.metadata = { service_count: 0 }
     state.resources.selected = 'local'
+    expect(runtimes()).toEqual(['docker'])
+  })
+})
+
+describe('useFleetRuntimes — no flash before the runtime is known', () => {
+  it('local scope contributes nothing until the status is loaded', () => {
+    state.runtime.loaded = false
+    state.runtime.context = 'docker'
+    state.resources.selected = 'local'
+    expect(runtimes()).toEqual([])
+  })
+
+  it('"all" scope ignores the unloaded local runtime but keeps known agents', () => {
+    state.runtime.loaded = false
+    state.runtime.context = 'docker'
+    state.agents.agents = [{ status: 'active', agent_id: 'agent-1', detected_runtime: 'docker' }]
+    state.resources.selected = null
     expect(runtimes()).toEqual(['docker'])
   })
 })

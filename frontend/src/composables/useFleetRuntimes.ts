@@ -42,21 +42,27 @@ export function useFleetRuntimes() {
     return (meta.service_count ?? 0) === 0
   })
 
+  // The local server's runtimes, gated on the runtime status being known. Until
+  // the first fetch resolves we contribute nothing, so runtime-specific nav
+  // (Containers/Services/Tasks/Workloads/Pods) waits instead of flashing the
+  // optimistic 'docker' default.
+  const localRuntimes = (): string[] => {
+    if (!runtimeStore.loaded) return []
+    const set = new Set<string>([localRuntime.value])
+    if (localSwarmNoServices.value) set.add('docker')
+    return [...set]
+  }
+
   const availableRuntimes = computed<string[]>(() => {
     const sel = resources.selected
-    if (sel === 'local') {
-      const set = new Set<string>([localRuntime.value])
-      if (localSwarmNoServices.value) set.add('docker')
-      return [...set]
-    }
+    if (sel === 'local') return localRuntimes()
     if (sel) {
       const agent = activeAgents.value.find((a) => a.agent_id === sel)
       return agent ? [agent.detected_runtime] : []
     }
     // "All resources": union of the local runtime and every active agent's.
-    const set = new Set<string>([localRuntime.value])
+    const set = new Set<string>(localRuntimes())
     for (const a of activeAgents.value) set.add(a.detected_runtime)
-    if (localSwarmNoServices.value) set.add('docker')
     return [...set]
   })
 

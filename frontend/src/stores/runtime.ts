@@ -41,6 +41,9 @@ export const useRuntimeStore = defineStore('runtime', () => {
   const detectedAt = ref<string | null>(null)
   const metadata = ref<SwarmMetadata | KubernetesMetadata | DockerMetadata>({})
   const loading = ref(false)
+  // false until the first successful status fetch — runtime-specific nav waits
+  // for the real runtime instead of flashing the optimistic 'docker' default.
+  const loaded = ref(false)
 
   const isDocker = computed(() => context.value === 'docker')
   const isSwarm = computed(() => context.value === 'swarm')
@@ -56,6 +59,7 @@ export const useRuntimeStore = defineStore('runtime', () => {
       label.value = status.label
       detectedAt.value = status.detected_at
       metadata.value = status.metadata
+      loaded.value = true
     } finally {
       loading.value = false
     }
@@ -116,6 +120,7 @@ export const useRuntimeStore = defineStore('runtime', () => {
     detectedAt,
     metadata,
     loading,
+    loaded,
     isDocker,
     isSwarm,
     isKubernetes,
