@@ -57,7 +57,7 @@ function formatDuration(ms: number | undefined): string {
 }
 
 async function copyPingUrl() {
-  const url = `${window.location.origin}/ping/${props.heartbeat.uuid}`
+  const url = `${window.location.origin}/ping/${props.heartbeat.id}`
   await navigator.clipboard.writeText(url)
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
@@ -115,7 +115,7 @@ async function handleDelete() {
           {{ heartbeat.name }}
         </h3>
         <p class="mt-0.5 truncate font-mono text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
-          /ping/{{ heartbeat.uuid.slice(0, 8) }}...
+          /ping/{{ heartbeat.id.slice(0, 8) }}...
         </p>
         <AgentBadge v-if="heartbeat.agent_id" :agent-id="heartbeat.agent_id" class="mt-1" />
       </div>

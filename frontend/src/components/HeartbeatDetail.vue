@@ -159,7 +159,7 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
       >
         <p class="mb-1 text-xs font-medium" style="color: var(--mnt-text-muted)">Ping URL</p>
         <code class="block break-all text-sm" style="color: var(--mnt-text-primary)">
-          /ping/{{ detail.heartbeat.uuid }}
+          /ping/{{ detail.heartbeat.id }}
         </code>
       </div>
 

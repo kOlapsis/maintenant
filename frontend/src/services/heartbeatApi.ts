@@ -10,11 +10,10 @@
 // Source: https://github.com/kolapsis/maintenant
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
-import { apiFetch, apiFetchVoid } from './apiFetch'
+import { apiFetch } from './apiFetch'
 
 export interface Heartbeat {
   id: string
-  uuid: string
   name: string
   status: 'new' | 'up' | 'down' | 'started' | 'paused'
   alert_state: 'normal' | 'alerting'
