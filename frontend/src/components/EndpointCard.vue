@@ -28,6 +28,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'deleted'): void
+  (e: 'select'): void
 }>()
 
 const confirm = useConfirm()
@@ -80,8 +81,10 @@ function formatResponseTime(ms: number | undefined): string {
       padding: '1rem',
       boxShadow: 'var(--mnt-shadow-card)',
       transition: 'box-shadow 0.15s ease',
+      cursor: 'pointer',
     }"
     class="hover:shadow-mnt-elevated"
+    @click="emit('select')"
   >
     <div class="flex items-start justify-between">
       <div class="min-w-0 flex-1">

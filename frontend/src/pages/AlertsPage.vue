@@ -77,7 +77,7 @@ onUnmounted(() => {
       <nav class="-mb-px flex gap-6">
         <button
           @click="activeTab = 'history'"
-          class="mnt-2 text-sm font-medium min-h-[44px]"
+          class="pb-2 text-sm font-medium min-h-[44px]"
           :style="{
             borderBottom: activeTab === 'history' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
             color: activeTab === 'history' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
@@ -87,7 +87,7 @@ onUnmounted(() => {
         </button>
         <button
           @click="activeTab = 'triggers'"
-          class="mnt-2 text-sm font-medium min-h-[44px]"
+          class="pb-2 text-sm font-medium min-h-[44px]"
           :style="{
             borderBottom: activeTab === 'triggers' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
             color: activeTab === 'triggers' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
@@ -104,7 +104,7 @@ onUnmounted(() => {
         </button>
         <button
           @click="activeTab = 'silence'"
-          class="mnt-2 text-sm font-medium min-h-[44px]"
+          class="pb-2 text-sm font-medium min-h-[44px]"
           :style="{
             borderBottom: activeTab === 'silence' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
             color: activeTab === 'silence' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',

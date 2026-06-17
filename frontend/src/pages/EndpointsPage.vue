@@ -12,10 +12,11 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, inject } from 'vue'
 import { useEndpointsStore } from '@/stores/endpoints'
 import { useContainersStore } from '@/stores/containers'
 import { useEdition } from '@/composables/useEdition'
+import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import { createEndpoint } from '@/services/endpointApi'
 import EndpointCard from '@/components/EndpointCard.vue'
 import { Globe } from 'lucide-vue-next'
@@ -30,6 +31,7 @@ const store = useEndpointsStore()
 const containers = useContainersStore()
 const { getQuota, reload } = useEdition()
 const quota = getQuota('endpoints')
+const { openDetail } = inject(detailSlideOverKey)!
 
 const isK8s = computed(() => containers.runtimeName === 'kubernetes')
 const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
@@ -398,6 +400,7 @@ onUnmounted(() => {
         v-for="ep in store.filteredEndpoints"
         :key="ep.id"
         :endpoint="ep"
+        @select="openDetail('endpoint', ep.id)"
         @deleted="store.fetchEndpoints(); reload()"
       />
     </div>

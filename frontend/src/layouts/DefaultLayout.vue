@@ -222,7 +222,7 @@ watch(
         </div>
 
         <!-- Main nav -->
-        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto mnt-4">
+        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <template v-for="item in mainNav" :key="item.to">
             <hr v-if="item.type === 'separator'" class="my-1.5 border-mnt-subtle" />
             <RouterLink
@@ -333,10 +333,10 @@ watch(
           <img src="/icon.svg" alt="maintenant" class="w-8 h-8 rounded-lg" />
           <h1 class="text-xl font-bold tracking-tight text-mnt-primary">maintenant</h1>
         </div>
-        <div class="px-4 mnt-2 shrink-0">
+        <div class="px-4 pb-2 shrink-0">
           <HostFilterDropdown />
         </div>
-        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto mnt-4">
+        <nav class="flex-1 px-4 space-y-0.5 overflow-y-auto pb-4">
           <template v-for="item in mainNav" :key="item.to">
             <hr v-if="item.type === 'separator'" class="my-1.5 border-mnt-subtle" />
             <RouterLink

@@ -92,7 +92,7 @@ const lastSelected = ref('')
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-10 p-6 mnt-24">
+  <div class="mx-auto max-w-6xl space-y-10 p-6 pb-24">
     <header class="flex items-center gap-3">
       <h1 class="text-lg font-bold text-mnt-primary">Design system</h1>
       <span class="rounded bg-mnt-elevated px-2 py-0.5 font-mono text-[11px] text-mnt-muted">/_ds</span>

@@ -17,6 +17,7 @@ import SlideOverPanel from './ui/SlideOverPanel.vue'
 import ContainerDetail from './ContainerDetail.vue'
 import HeartbeatDetail from './HeartbeatDetail.vue'
 import CertificateDetail from './CertificateDetail.vue'
+import EndpointDetail from './EndpointDetail.vue'
 import SwarmServiceDetail from './SwarmServiceDetail.vue'
 import K8sWorkloadDetail from './K8sWorkloadDetail.vue'
 import K8sPodDetail from './K8sPodDetail.vue'
@@ -24,12 +25,14 @@ import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlid
 import { useContainersStore } from '@/stores/containers'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { useCertificatesStore } from '@/stores/certificates'
+import { useEndpointsStore } from '@/stores/endpoints'
 
 const detail = inject(detailSlideOverKey)!
 
 const containersStore = useContainersStore()
 const heartbeatsStore = useHeartbeatsStore()
 const certificatesStore = useCertificatesStore()
+const endpointsStore = useEndpointsStore()
 
 // Ensure store data is loaded when opening a detail for an entity type
 watch(
@@ -42,6 +45,8 @@ watch(
       heartbeatsStore.fetchHeartbeats()
     } else if (type === 'certificate' && certificatesStore.certificates.length === 0) {
       certificatesStore.fetchCertificates()
+    } else if (type === 'endpoint' && endpointsStore.endpoints.length === 0) {
+      endpointsStore.fetchEndpoints()
     }
   },
 )
@@ -61,7 +66,8 @@ const panelTitle = computed(() => {
 })
 
 const panelWidth = computed(() => {
-  return detail.entityType.value === 'container' ? 'max-w-2xl' : 'max-w-lg'
+  const type = detail.entityType.value
+  return type === 'container' || type === 'endpoint' ? 'max-w-2xl' : 'max-w-lg'
 })
 
 function resolveTitle(type: EntityType, id: string): string {
@@ -78,8 +84,10 @@ function resolveTitle(type: EntityType, id: string): string {
       const cert = certificatesStore.certificates.find(c => c.id === id)
       return cert ? `${cert.hostname}:${cert.port}` : ''
     }
-    case 'endpoint':
-      return ''
+    case 'endpoint': {
+      const ep = endpointsStore.endpoints.find(e => e.id === id)
+      return ep ? (ep.name || ep.target) : ''
+    }
     case 'swarm-service':
       return ''
     case 'k8s-workload':
@@ -96,6 +104,11 @@ function handleClose() {
 function handleDeleted() {
   detail.close()
   containersStore.fetchContainers()
+}
+
+function handleEndpointDeleted() {
+  detail.close()
+  endpointsStore.fetchEndpoints()
 }
 </script>
 
@@ -119,6 +132,12 @@ function handleDeleted() {
       v-if="detail.entityType.value === 'certificate' && typeof detail.entityId.value === 'string' && detail.entityId.value"
       :certificate-id="(detail.entityId.value as string)"
       @close="handleClose"
+    />
+    <EndpointDetail
+      v-if="detail.entityType.value === 'endpoint' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :endpoint-id="(detail.entityId.value as string)"
+      @close="handleClose"
+      @deleted="handleEndpointDeleted"
     />
     <SwarmServiceDetail
       v-if="detail.entityType.value === 'swarm-service' && typeof detail.entityId.value === 'string' && detail.entityId.value"

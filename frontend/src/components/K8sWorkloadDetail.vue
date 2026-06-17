@@ -159,7 +159,7 @@ function replicaColor(ready: number, desired: number): string {
 
     <template v-else-if="detail">
       <!-- Header -->
-      <div class="px-5 pt-4 mnt-3 border-b border-mnt-default">
+      <div class="px-5 pt-4 pb-3 border-b border-mnt-default">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <h2 class="text-base font-bold text-mnt-primary truncate">{{ detail.workload.name }}</h2>

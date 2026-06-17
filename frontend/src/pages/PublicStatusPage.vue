@@ -267,7 +267,7 @@ function formatDate(iso: string) {
     </div>
 
     <!-- Title / subtitle -->
-    <div class="mx-auto max-w-3xl px-6 pt-10 mnt-2 text-center">
+    <div class="mx-auto max-w-3xl px-6 pt-10 pb-2 text-center">
       <h1 class="text-3xl font-black tracking-tight">{{ settings?.title || 'System Status' }}</h1>
       <p v-if="settings?.subtitle" class="text-sm mt-1 opacity-60">{{ settings.subtitle }}</p>
     </div>
@@ -329,7 +329,7 @@ function formatDate(iso: string) {
                   >&#8964;</span>
                 </div>
               </button>
-              <div v-if="expandedComponents.has(comp.id) && comp.monitors?.length" :id="`breakdown-${comp.id}`" class="px-5 mnt-3">
+              <div v-if="expandedComponents.has(comp.id) && comp.monitors?.length" :id="`breakdown-${comp.id}`" class="px-5 pb-3">
                 <StatusComponentBreakdown :monitors="comp.monitors" />
               </div>
             </div>
@@ -407,7 +407,7 @@ function formatDate(iso: string) {
                 </span>
               </summary>
               <div
-                class="px-4 mnt-4 text-sm leading-relaxed prose prose-invert max-w-none"
+                class="px-4 pb-4 text-sm leading-relaxed prose prose-invert max-w-none"
                 :style="{ color: 'var(--mnt-text, #fff)' }"
                 v-html="item.answer_html"
               />

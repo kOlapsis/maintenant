@@ -231,7 +231,7 @@ onUnmounted(() => {
 
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
-    <div class="mx-auto max-w-7xl space-y-4 mnt-12 sm:space-y-6">
+    <div class="mx-auto max-w-7xl space-y-4 pb-12 sm:space-y-6">
       <RuntimeDegradedBanner v-if="!containersStore.isContainerMonitoringAvailable" />
 
       <!-- 1. Verdict -->

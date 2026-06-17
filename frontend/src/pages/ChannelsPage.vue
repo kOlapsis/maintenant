@@ -30,7 +30,7 @@ onUnmounted(() => {
 
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
-    <div class="max-w-7xl mx-auto space-y-6 mnt-12">
+    <div class="max-w-7xl mx-auto space-y-6 pb-12">
       <!-- Header -->
       <div>
         <h1 class="text-2xl font-black text-mnt-primary">Channels</h1>

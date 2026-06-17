@@ -102,11 +102,11 @@ function getStateStyle(state: string) {
 
 <template>
   <div
-    class="bg-mnt-surface rounded-xl border border-mnt-default hover:border-mnt-default transition-all cursor-pointer overflow-hidden group"
+    class="group cursor-pointer overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface p-4 shadow-mnt-card transition-shadow hover:shadow-mnt-elevated"
     @click="emit('select', container)"
   >
     <!-- Header: name + state -->
-    <div class="px-4 pt-3.5 mnt-2">
+    <div>
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2 min-w-0">
           <span
@@ -143,7 +143,7 @@ function getStateStyle(state: string) {
       </div>
 
       <!-- Badges row: image tag, update, security, posture, agent -->
-      <div class="mt-1 flex items-center gap-1.5 flex-wrap">
+      <div class="mt-2 flex items-center gap-1.5 flex-wrap">
         <span class="text-[10px] text-mnt-muted truncate max-w-[140px]">{{ imageTag }}</span>
         <UpdateBadge :update="containerUpdate" />
         <SecurityInsightBadge
@@ -166,7 +166,7 @@ function getStateStyle(state: string) {
     </div>
 
     <!-- Resource metrics (running containers only) -->
-    <div v-if="container.state === 'running' && metrics" class="px-4 mnt-1.5 space-y-1">
+    <div v-if="container.state === 'running' && metrics" class="mt-3 space-y-1.5">
       <div class="flex items-center gap-2 text-[10px]">
         <span class="w-7 text-mnt-muted font-bold uppercase">CPU</span>
         <div class="h-1 flex-1 rounded-full bg-mnt-primary">
@@ -192,7 +192,7 @@ function getStateStyle(state: string) {
     <!-- K8s pod count badge -->
     <div
       v-if="container.runtime_type === 'kubernetes' && container.pod_count && container.pod_count > 0"
-      class="px-4 mnt-1.5 flex items-center gap-2 text-[10px]"
+      class="mt-2.5 flex items-center gap-2 text-[10px]"
     >
       <span
         v-if="container.controller_kind"
@@ -208,7 +208,7 @@ function getStateStyle(state: string) {
     <!-- Swarm service info -->
     <div
       v-if="container.controller_kind === 'swarm-service'"
-      class="px-4 mnt-1.5 flex items-center gap-2 text-[10px]"
+      class="mt-2.5 flex items-center gap-2 text-[10px]"
     >
       <span class="rounded px-1.5 py-0.5 bg-mnt-elevated text-mnt-muted">
         {{ container.swarm_service_mode }}
@@ -221,13 +221,13 @@ function getStateStyle(state: string) {
     <!-- Error detail -->
     <div
       v-if="container.error_detail"
-      class="px-4 mnt-1.5 truncate text-[10px]"
+      class="mt-2.5 truncate text-[10px]"
       :style="{ color: 'var(--mnt-status-down)' }"
       :title="container.error_detail"
     >{{ container.error_detail }}</div>
 
     <!-- Footer -->
-    <div class="px-4 py-2 flex items-center justify-between text-[10px] text-mnt-muted border-t border-mnt-default/50">
+    <div class="mt-3 flex items-center justify-between border-t border-mnt-subtle pt-2 text-[10px] text-mnt-muted">
       <span v-if="container.orchestration_unit" class="truncate font-medium">
         {{ container.orchestration_unit }}
       </span>

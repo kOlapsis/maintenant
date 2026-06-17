@@ -143,7 +143,7 @@ function formatFullTimestamp(ts: string): string {
       <!-- Expanded timeline detail -->
       <div
         v-if="expandedId === incident.id"
-        class="mnt-3 pl-8"
+        class="pb-3 pl-8"
       >
         <div class="relative ml-2">
           <!-- Vertical connector line -->
@@ -152,7 +152,7 @@ function formatFullTimestamp(ts: string): string {
           <div
             v-for="(step, idx) in timelineSteps"
             :key="step"
-            class="relative flex items-start gap-3 mnt-3 last:mnt-0"
+            class="relative flex items-start gap-3 pb-3 last:pb-0"
           >
             <!-- Step dot -->
             <div

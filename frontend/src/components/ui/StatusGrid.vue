@@ -123,7 +123,7 @@ const viewModel = computed<string>({
           </span>
         </button>
 
-        <div v-show="!isCollapsed(g.key)" class="px-4 mnt-4 pt-1">
+        <div v-show="!isCollapsed(g.key)" class="px-4 pb-4 pt-1">
           <!-- Large groups: windowed list (always rows, even in grid view). -->
           <VirtualRows
             v-if="g.items.length > virtualizeThreshold"

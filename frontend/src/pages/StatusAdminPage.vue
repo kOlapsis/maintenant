@@ -173,7 +173,7 @@ onUnmounted(() => {
           ]"
           :key="tab.key"
           @click="activeTab = tab.key as Tab"
-          class="shrink-0 border-b-2 mnt-2 text-sm font-medium transition-colors"
+          class="shrink-0 border-b-2 pb-2 text-sm font-medium transition-colors"
           :style="{
             borderColor: activeTab === tab.key ? 'var(--mnt-accent)' : 'transparent',
             color: activeTab === tab.key ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',

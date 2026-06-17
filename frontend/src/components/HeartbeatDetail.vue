@@ -185,12 +185,12 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
           <table class="w-full text-left text-sm">
             <thead>
               <tr class="border-b text-xs" style="border-color: var(--mnt-border-default); color: var(--mnt-text-muted)">
-                <th class="mnt-2 pr-4">Started</th>
-                <th class="mnt-2 pr-4">Completed</th>
-                <th class="mnt-2 pr-4">Duration</th>
-                <th class="mnt-2 pr-4">Exit</th>
-                <th class="mnt-2 pr-4">Outcome</th>
-                <th class="mnt-2">Payload</th>
+                <th class="pb-2 pr-4">Started</th>
+                <th class="pb-2 pr-4">Completed</th>
+                <th class="pb-2 pr-4">Duration</th>
+                <th class="pb-2 pr-4">Exit</th>
+                <th class="pb-2 pr-4">Outcome</th>
+                <th class="pb-2">Payload</th>
               </tr>
             </thead>
             <tbody>
