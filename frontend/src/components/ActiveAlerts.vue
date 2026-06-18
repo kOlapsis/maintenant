@@ -20,6 +20,7 @@ import { timeAgo } from '@/utils/time'
 import type { Alert } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
 import EscalationStatusBadge from '@/components/escalation/EscalationStatusBadge.vue'
+import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import { useEscalationApi } from '@/composables/useEscalationApi'
 import type { EscalationRun } from '@/types/escalation'
 
@@ -148,9 +149,12 @@ onMounted(() => {
                 {{ alert.entity_name }}
               </div>
             </div>
-            <span class="ml-3 shrink-0 text-xs" style="color: var(--mnt-text-muted)">
-              {{ timeAgo(alert.fired_at) }}
-            </span>
+            <div class="ml-3 flex shrink-0 items-center gap-2">
+              <AcknowledgeButton :alert="alert" />
+              <span class="text-xs" style="color: var(--mnt-text-muted)">
+                {{ timeAgo(alert.fired_at) }}
+              </span>
+            </div>
           </div>
         </div>
       </div>

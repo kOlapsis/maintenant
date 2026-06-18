@@ -370,10 +370,12 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 }
 
 // updateDetectedAlert builds the alert event for a freshly detected image
-// update. EntityID is the container id so each container's update is its own
-// alert — without it every update shares the dedup key {update,update_available,
-// container,""} and collides, mixing one container's message with another's
-// entity. Severity follows the risk score. The caller sets Timestamp.
+// update. EntityID is the container's canonical store PK (uid.Container) so the
+// alert links to the container detail panel — and so each container's update is
+// its own alert; without a unique id every update shares the dedup key
+// {update,update_available,container,""} and collides, mixing one container's
+// message with another's entity. Falls back to the external id if the UID is
+// unavailable. Severity follows the risk score. The caller sets Timestamp.
 func updateDetectedAlert(m map[string]any, pro bool) alert.Event {
 	severity := alert.SeverityInfo
 	if rs, ok := m["risk_score"].(int); ok {
@@ -401,24 +403,32 @@ func updateDetectedAlert(m map[string]any, pro bool) alert.Event {
 	containerID, _ := m["container_id"].(string)
 	containerName, _ := m["container_name"].(string)
 	latestTag, _ := m["latest_tag"].(string)
+	entityID, _ := m["container_uid"].(string)
+	if entityID == "" {
+		entityID = containerID
+	}
 	return alert.Event{
 		Source:     "update",
 		AlertType:  "update_available",
 		Severity:   severity,
 		Message:    fmt.Sprintf("Update available for %s: %s", containerName, latestTag),
 		EntityType: "container",
-		EntityID:   containerID,
+		EntityID:   entityID,
 		EntityName: containerName,
 		Details:    details,
 	}
 }
 
 // updateResolvedAlert builds the recovery event when a container's update is no
-// longer pending. EntityID matches updateDetectedAlert so the right alert is
-// resolved by dedup key. The caller sets Timestamp.
+// longer pending. EntityID uses the same container UID as updateDetectedAlert so
+// the right alert is resolved by dedup key. The caller sets Timestamp.
 func updateResolvedAlert(m map[string]any) alert.Event {
 	containerID, _ := m["container_id"].(string)
 	containerName, _ := m["container_name"].(string)
+	entityID, _ := m["container_uid"].(string)
+	if entityID == "" {
+		entityID = containerID
+	}
 	return alert.Event{
 		Source:     "update",
 		AlertType:  "update_available",
@@ -426,7 +436,7 @@ func updateResolvedAlert(m map[string]any) alert.Event {
 		IsRecover:  true,
 		Message:    fmt.Sprintf("Update no longer required for %s", containerName),
 		EntityType: "container",
-		EntityID:   containerID,
+		EntityID:   entityID,
 		EntityName: containerName,
 	}
 }

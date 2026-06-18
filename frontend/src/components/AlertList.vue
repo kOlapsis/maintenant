@@ -18,6 +18,7 @@ import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import type { Alert, ListAlertsParams } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
+import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 
 const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
@@ -143,13 +144,16 @@ const selectStyle = 'background: var(--mnt-bg-elevated); border-color: var(--mnt
             >{{ alert.severity }}</span>
             <span class="rounded px-1.5 py-0.5 text-xs font-medium" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">{{ alert.source }}</span>
           </div>
-          <span
-            class="rounded-full px-2 py-0.5 text-xs font-medium"
-            :style="{
-              background: (statusColors[alert.status] || { bg: 'var(--mnt-bg-elevated)' }).bg,
-              color: (statusColors[alert.status] || { color: 'var(--mnt-text-secondary)' }).color,
-            }"
-          >{{ alert.status }}</span>
+          <div class="flex items-center gap-2">
+            <AcknowledgeButton :alert="alert" />
+            <span
+              class="rounded-full px-2 py-0.5 text-xs font-medium"
+              :style="{
+                background: (statusColors[alert.status] || { bg: 'var(--mnt-bg-elevated)' }).bg,
+                color: (statusColors[alert.status] || { color: 'var(--mnt-text-secondary)' }).color,
+              }"
+            >{{ alert.status }}</span>
+          </div>
         </div>
         <p class="text-sm truncate" style="color: var(--mnt-text-primary)">{{ alertTitle(alert) }}</p>
         <div class="flex items-center justify-between mt-1.5 text-xs" style="color: var(--mnt-text-muted)">
@@ -211,15 +215,18 @@ const selectStyle = 'background: var(--mnt-bg-elevated); border-color: var(--mnt
             <td class="px-4 py-2 text-sm" style="color: var(--mnt-text-muted)">{{ alert.entity_name || '-' }}</td>
             <td class="whitespace-nowrap px-4 py-2 text-xs" style="color: var(--mnt-text-muted)">{{ formatTime(alert.fired_at) }}</td>
             <td class="px-4 py-2">
-              <span
-                class="rounded-full px-2 py-0.5 text-xs font-medium"
-                :style="{
-                  background: (statusColors[alert.status] || { bg: 'var(--mnt-bg-elevated)' }).bg,
-                  color: (statusColors[alert.status] || { color: 'var(--mnt-text-secondary)' }).color,
-                }"
-              >
-                {{ alert.status }}
-              </span>
+              <div class="flex items-center gap-2">
+                <span
+                  class="rounded-full px-2 py-0.5 text-xs font-medium"
+                  :style="{
+                    background: (statusColors[alert.status] || { bg: 'var(--mnt-bg-elevated)' }).bg,
+                    color: (statusColors[alert.status] || { color: 'var(--mnt-text-secondary)' }).color,
+                  }"
+                >
+                  {{ alert.status }}
+                </span>
+                <AcknowledgeButton :alert="alert" />
+              </div>
             </td>
           </tr>
         </tbody>

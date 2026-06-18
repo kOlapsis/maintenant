@@ -64,6 +64,7 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 			continue
 		}
 		infos = append(infos, ContainerInfo{
+			UID:                c.ID,
 			ExternalID:         c.ExternalID,
 			Name:               c.Name,
 			Image:              c.Image,
@@ -94,6 +95,7 @@ func (a *ContainerServiceAdapter) GetContainerInfo(ctx context.Context, external
 	for _, c := range containers {
 		if c.ExternalID == externalID {
 			return ContainerInfo{
+				UID:                c.ID,
 				ExternalID:         c.ExternalID,
 				Name:               c.Name,
 				Image:              c.Image,

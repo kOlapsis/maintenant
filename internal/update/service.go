@@ -403,6 +403,7 @@ func (s *Service) runScan(ctx context.Context) {
 
 		eventData := map[string]interface{}{
 			"container_id":   r.ContainerID,
+			"container_uid":  containerByID[r.ContainerID].UID,
 			"container_name": r.ContainerName,
 			"image":          r.Image,
 			"current_tag":    r.CurrentTag,
@@ -446,6 +447,7 @@ func (s *Service) runScan(ctx context.Context) {
 	for _, su := range staleUpdates {
 		s.emitEvent(event.UpdateResolved, map[string]interface{}{
 			"container_id":   su.ContainerID,
+			"container_uid":  containerByID[su.ContainerID].UID,
 			"container_name": su.ContainerName,
 		})
 	}

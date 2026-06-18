@@ -15,11 +15,16 @@ import {
   listAlerts,
   getActiveAlerts,
   listSilenceRules,
+  acknowledgeAlert as ackAlert,
   type Alert,
   type SilenceRule,
   type ListAlertsParams,
 } from '@/services/alertApi'
 import { sseBus } from '@/services/sseBus'
+
+// Identité envoyée au backend pour `acknowledged_by` (non vide requis).
+// Placeholder constant tant qu'il n'y a pas d'auth/utilisateur dans l'app.
+const ACK_ACTOR = 'operator'
 
 export const useAlertsStore = defineStore('alerts', () => {
   // Alert state
@@ -84,6 +89,15 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
+  async function acknowledgeAlert(id: string) {
+    const updated = await ackAlert(id, ACK_ACTOR)
+    // Mise à jour immédiate ; l'event SSE `alert.acknowledged` qui suivra
+    // refait le même travail (idempotent).
+    updateAlertInList(updated)
+    upsertActive(updated)
+    return updated
+  }
+
   function clearNewAlertCount() {
     newAlertCount.value = 0
   }
@@ -128,8 +142,10 @@ export const useAlertsStore = defineStore('alerts', () => {
     } catch {
       return
     }
+    // Une alerte acquittée reste active : on la met à jour en place
+    // (badge « Acquittée »), on ne la retire surtout pas de la liste active.
     updateAlertInList(alert)
-    removeFromActive(alert.id)
+    upsertActive(alert)
   }
 
   function onAlertSilenced(e: MessageEvent) {
@@ -240,6 +256,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     fetchAlerts,
     fetchActiveAlerts,
     fetchSilenceRules,
+    acknowledgeAlert,
     clearNewAlertCount,
     connectSSE,
     disconnectSSE,

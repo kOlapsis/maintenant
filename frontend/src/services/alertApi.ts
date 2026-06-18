@@ -26,6 +26,8 @@ export interface Alert {
   entity_name: string
   details?: Record<string, unknown>
   resolved_by_id?: string | null
+  acknowledged_at?: string | null
+  acknowledged_by?: string | null
   fired_at: string
   resolved_at?: string | null
   created_at: string
@@ -112,6 +114,14 @@ export function getActiveAlerts(): Promise<ActiveAlertsResponse> {
 
 export function getAlert(id: string): Promise<Alert> {
   return fetchJSON<Alert>(`${API_BASE}/alerts/${id}`)
+}
+
+export function acknowledgeAlert(id: string, acknowledgedBy: string): Promise<Alert> {
+  return fetchJSON<Alert>(`${API_BASE}/alerts/${id}/acknowledge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ acknowledged_by: acknowledgedBy }),
+  })
 }
 
 // --- Channels ---

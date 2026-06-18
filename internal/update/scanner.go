@@ -22,6 +22,7 @@ import (
 
 // ContainerInfo holds the minimal container data needed for scanning.
 type ContainerInfo struct {
+	UID                string // canonical store PK (uid.Container) — used as alert EntityID
 	ExternalID         string
 	Name               string
 	Image              string

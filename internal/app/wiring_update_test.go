@@ -56,6 +56,29 @@ func TestUpdateDetectedAlert_EntityIDPerContainer(t *testing.T) {
 	}
 }
 
+// TestUpdateDetectedAlert_EntityIDUsesContainerUID locks the "Container not found"
+// fix: when present, the alert EntityID must be the container's canonical store PK
+// (uid.Container) so the detail panel resolves it — not the raw Docker external id.
+func TestUpdateDetectedAlert_EntityIDUsesContainerUID(t *testing.T) {
+	p := detectedPayload("immich_redis", "ext-docker-sha", 90)
+	p["container_uid"] = "uuid-immich"
+	evt := updateDetectedAlert(p, false)
+	if evt.EntityID != "uuid-immich" {
+		t.Errorf("EntityID = %q, want uuid-immich (store PK, not the external id)", evt.EntityID)
+	}
+}
+
+func TestUpdateResolvedAlert_EntityIDUsesContainerUID(t *testing.T) {
+	evt := updateResolvedAlert(map[string]any{
+		"container_id":   "ext-docker-sha",
+		"container_uid":  "uuid-immich",
+		"container_name": "immich_redis",
+	})
+	if evt.EntityID != "uuid-immich" {
+		t.Errorf("EntityID = %q, want uuid-immich", evt.EntityID)
+	}
+}
+
 func TestUpdateDetectedAlert_SeverityFromRiskScore(t *testing.T) {
 	cases := []struct {
 		risk int
