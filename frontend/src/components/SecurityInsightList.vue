@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import type { SecurityInsight } from '@/services/securityApi'
 import type { RiskAcknowledgment } from '@/services/postureApi'
-import { ShieldAlert, Network, Lock, Server, CheckCircle } from 'lucide-vue-next'
+import { ShieldAlert, ShieldCheck, Network, Lock, Server, CheckCircle } from 'lucide-vue-next'
 
 const props = defineProps<{
   insights: SecurityInsight[]
@@ -128,7 +128,7 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
               class="flex items-center gap-1 rounded-full bg-mnt-status-ok px-1.5 py-0.5 text-[10px] font-medium text-mnt-status-ok"
             >
               <CheckCircle :size="10" />
-              acknowledged
+              Risque accepté
             </span>
           </div>
           <p class="mt-0.5 text-xs" :style="{ color: 'var(--mnt-text-secondary)' }">
@@ -144,17 +144,18 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
           <div v-if="showAcknowledge" class="mt-1.5">
             <button
               v-if="!getAck(insight)"
-              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-mnt-muted hover:bg-mnt-elevated hover:text-mnt-primary transition-colors"
+              class="flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium text-mnt-muted hover:bg-mnt-elevated hover:text-mnt-primary transition-colors"
               @click.stop="emit('acknowledge', insight)"
             >
-              Acknowledge
+              <ShieldCheck :size="11" />
+              Accepter le risque
             </button>
             <button
               v-else
               class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-mnt-status-ok hover:bg-mnt-status-down hover:text-mnt-status-down transition-colors"
               @click.stop="emit('revoke', getAck(insight)!)"
             >
-              Revoke
+              Révoquer
             </button>
           </div>
         </div>

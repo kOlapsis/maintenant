@@ -14,12 +14,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useUpdatesStore } from '@/stores/updates'
+import { useAlertsStore } from '@/stores/alerts'
 import { type ContainerUpdateDetail, fetchContainerUpdate } from '@/services/updateApi'
+import { type Alert } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
 import RiskScoreGauge from '@/components/RiskScoreGauge.vue'
 import CveList from '@/components/CveList.vue'
 import ChangelogViewer from '@/components/ChangelogViewer.vue'
 import FeatureGate from '@/components/FeatureGate.vue'
+import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import { AlertTriangle, ArrowRight, Check, Copy, ExternalLink, Pin, PinOff } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -29,6 +32,7 @@ const props = defineProps<{
 }>()
 
 const updates = useUpdatesStore()
+const alertsStore = useAlertsStore()
 const detail = ref<ContainerUpdateDetail | null>(null)
 const loading = ref(true)
 const copied = ref(false)
@@ -45,10 +49,26 @@ const riskLevel = computed(() => {
   return 'low'
 })
 
+// L'alerte update active de ce conteneur. Le panel ne connaît que l'ExternalID,
+// mais l'alerte update porte le nom du conteneur (source='update') — on matche
+// par nom + source (au plus une alerte update active par conteneur).
+const updateAlert = computed<Alert | undefined>(() => {
+  const name = detail.value?.container_name
+  if (!name) return undefined
+  const all = [
+    ...alertsStore.activeAlerts.critical,
+    ...alertsStore.activeAlerts.warning,
+    ...alertsStore.activeAlerts.info,
+  ]
+  return all.find((a) => a.source === 'update' && a.entity_name === name)
+})
+
 async function loadDetail() {
   loading.value = true
   try {
     detail.value = await fetchContainerUpdate(props.containerId)
+    // S'assure que les alertes actives sont chargées (deep-link sur /updates).
+    void alertsStore.fetchActiveAlerts()
     if (hasFeature('cve_enrichment')) {
       await updates.fetchContainerCves(props.containerId)
     }
@@ -113,7 +133,10 @@ onMounted(loadDetail)
   <div v-else-if="detail" class="space-y-5">
     <!-- 1. Version info -->
     <div class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
-      <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest mb-3">Version</h4>
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Version</h4>
+        <AcknowledgeButton v-if="updateAlert" :alert="updateAlert" />
+      </div>
       <div class="flex items-center gap-3">
         <div class="text-center">
           <p class="text-xs text-mnt-muted mb-0.5">Current</p>
