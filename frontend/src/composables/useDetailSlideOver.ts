@@ -12,13 +12,14 @@
 import { ref, readonly, watch, type InjectionKey, type Ref, type DeepReadonly } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-export type EntityType = 'container' | 'heartbeat' | 'certificate' | 'endpoint' | 'swarm-service' | 'k8s-workload' | 'k8s-pod'
+export type EntityType = 'container' | 'heartbeat' | 'certificate' | 'endpoint' | 'update' | 'swarm-service' | 'k8s-workload' | 'k8s-pod'
 
 const VALID_ENTITY_TYPES: ReadonlySet<string> = new Set<EntityType>([
   'container',
   'heartbeat',
   'certificate',
   'endpoint',
+  'update',
   'swarm-service',
   'k8s-workload',
   'k8s-pod',

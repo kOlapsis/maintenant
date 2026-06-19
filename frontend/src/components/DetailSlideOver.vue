@@ -18,6 +18,7 @@ import ContainerDetail from './ContainerDetail.vue'
 import HeartbeatDetail from './HeartbeatDetail.vue'
 import CertificateDetail from './CertificateDetail.vue'
 import EndpointDetail from './EndpointDetail.vue'
+import UpdateDetailPanel from './UpdateDetailPanel.vue'
 import SwarmServiceDetail from './SwarmServiceDetail.vue'
 import K8sWorkloadDetail from './K8sWorkloadDetail.vue'
 import K8sPodDetail from './K8sPodDetail.vue'
@@ -39,7 +40,7 @@ watch(
   () => [detail.entityType.value, detail.entityId.value] as const,
   ([type]) => {
     if (!type) return
-    if (type === 'container' && containersStore.allContainers.length === 0) {
+    if ((type === 'container' || type === 'update') && containersStore.allContainers.length === 0) {
       containersStore.fetchContainers()
     } else if (type === 'heartbeat' && heartbeatsStore.heartbeats.length === 0) {
       heartbeatsStore.fetchHeartbeats()
@@ -70,6 +71,15 @@ const panelWidth = computed(() => {
   return type === 'container' || type === 'endpoint' ? 'max-w-2xl' : 'max-w-lg'
 })
 
+// Update alerts carry the container UUID as entity id; UpdateDetailPanel is keyed
+// by the runtime ExternalID, so resolve it from the containers store.
+const updateExternalId = computed(() => {
+  if (detail.entityType.value !== 'update') return ''
+  const id = detail.entityId.value
+  if (!id) return ''
+  return containersStore.allContainers.find(c => c.id === id)?.external_id ?? ''
+})
+
 function resolveTitle(type: EntityType, id: string): string {
   switch (type) {
     case 'container': {
@@ -87,6 +97,10 @@ function resolveTitle(type: EntityType, id: string): string {
     case 'endpoint': {
       const ep = endpointsStore.endpoints.find(e => e.id === id)
       return ep ? (ep.name || ep.target) : ''
+    }
+    case 'update': {
+      const c = containersStore.allContainers.find(ct => ct.id === id)
+      return c?.name ?? ''
     }
     case 'swarm-service':
       return ''
@@ -138,6 +152,10 @@ function handleEndpointDeleted() {
       :endpoint-id="(detail.entityId.value as string)"
       @close="handleClose"
       @deleted="handleEndpointDeleted"
+    />
+    <UpdateDetailPanel
+      v-if="detail.entityType.value === 'update' && updateExternalId"
+      :container-id="updateExternalId"
     />
     <SwarmServiceDetail
       v-if="detail.entityType.value === 'swarm-service' && typeof detail.entityId.value === 'string' && detail.entityId.value"

@@ -13,14 +13,12 @@
 
 <script setup lang="ts">
 import { ref, watch, inject } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import type { Alert, ListAlertsParams } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 
-const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
@@ -72,8 +70,13 @@ function alertTitle(alert: Alert): string {
 }
 
 function openEntityDetail(alert: Alert) {
+  // Update alerts carry entity_type='container' but should open the update panel.
+  if (alert.source === 'update' && alert.entity_id) {
+    detailSlideOver.openDetail('update', alert.entity_id)
+    return
+  }
   if (alert.entity_type === 'endpoint' && alert.entity_id) {
-    router.push({ name: 'endpoints' })
+    detailSlideOver.openDetail('endpoint', alert.entity_id)
     return
   }
   if (!alert.entity_id || !ENTITY_TYPES.has(alert.entity_type)) return

@@ -13,7 +13,6 @@
 
 <script setup lang="ts">
 import { computed, inject, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { timeAgo } from '@/utils/time'
@@ -24,7 +23,6 @@ import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import { useEscalationApi } from '@/composables/useEscalationApi'
 import type { EscalationRun } from '@/types/escalation'
 
-const router = useRouter()
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
 
@@ -48,12 +46,13 @@ function alertTitle(alert: Alert): string {
 }
 
 function openEntityDetail(alert: Alert) {
-  if (alert.source === 'update') {
-    router.push({ name: 'updates', query: { container: alert.entity_name } })
+  // Update alerts carry entity_type='container' but should open the update panel.
+  if (alert.source === 'update' && alert.entity_id) {
+    detailSlideOver.openDetail('update', alert.entity_id)
     return
   }
   if (alert.entity_type === 'endpoint' && alert.entity_id) {
-    router.push({ name: 'endpoints' })
+    detailSlideOver.openDetail('endpoint', alert.entity_id)
     return
   }
   if (!alert.entity_id || !ENTITY_TYPES.has(alert.entity_type)) return
