@@ -67,8 +67,14 @@ async function loadDetail() {
   loading.value = true
   try {
     detail.value = await fetchContainerUpdate(props.containerId)
-    // S'assure que les alertes actives sont chargées (deep-link sur /updates).
-    void alertsStore.fetchActiveAlerts()
+    // Les alertes actives sont déjà chargées et tenues à jour app-wide
+    // (AppHeader → dashboard.fetchAll + SSE). On ne refetch QUE si le store est
+    // vide : sinon un refetch (snapshot pré-ack) écraserait la mise à jour
+    // optimiste d'un acquittement en cours.
+    const active = alertsStore.activeAlerts
+    if (active.critical.length + active.warning.length + active.info.length === 0) {
+      void alertsStore.fetchActiveAlerts()
+    }
     if (hasFeature('cve_enrichment')) {
       await updates.fetchContainerCves(props.containerId)
     }
