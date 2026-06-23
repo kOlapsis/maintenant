@@ -244,8 +244,6 @@ services:
     read_only: true                    # immutable root filesystem
     security_opt:
       - no-new-privileges:true         # prevent privilege escalation
-    group_add:
-      - "${DOCKER_GID:-983}"           # Docker socket access (see below)
     tmpfs:
       - /tmp:noexec,nosuid,size=64m    # scratch space for SQLite WAL
     volumes:
@@ -259,12 +257,14 @@ services:
 | Entrypoint drops to uid 65534 via `setpriv` | Process runs as `nobody`, not root |
 | `read_only: true` | Root filesystem is immutable — no writes outside mounted volumes |
 | `no-new-privileges` | Blocks `setuid`/`setgid` binaries and privilege escalation |
-| `group_add` | Adds the host Docker group so `nobody` can read the socket |
+| Entrypoint auto-detects the socket group | `nobody` can read the mounted socket without `group_add` |
 | `tmpfs /tmp` | Writable scratch space with `noexec` and `nosuid` flags |
 
-!!! tip "Finding your Docker GID"
-    Run `stat -c '%g' /var/run/docker.sock` on the host to get the Docker group ID.
-    Set it as `DOCKER_GID` in your `.env` file or pass it directly in `group_add`.
+!!! tip "Docker socket access is automatic"
+    The entrypoint reads the group of the mounted `/var/run/docker.sock` and grants the
+    unprivileged user access to it — no `group_add` needed, on plain Compose **and** Swarm.
+    Set `DOCKER_GID` (e.g. from `stat -c '%g' /var/run/docker.sock`) only to override the
+    detected GID, for a non-standard socket path, or for a socket proxy.
 
 ### Docker Socket
 
@@ -319,8 +319,8 @@ A quick reference for securing your deployment:
 - [ ] Container runs as non-root (uid 65534, dropped via `setpriv` in the entrypoint — default in the official image)
 - [ ] `read_only: true` — immutable root filesystem
 - [ ] `no-new-privileges:true` — blocks privilege escalation
-- [ ] `group_add` set to host Docker GID (run `stat -c '%g' /var/run/docker.sock`)
-- [ ] Docker socket mounted read-only (`:ro`)
+- [ ] Docker socket mounted read-only (`:ro`) — its group is auto-detected; `group_add` not required
+- [ ] (Optional) `DOCKER_GID` set to override the detected socket GID (non-standard path or socket proxy)
 - [ ] Reverse proxy in front of maintenant with authentication enabled
 - [ ] `/api/v1/*` and `/` require authentication
 - [ ] `/ping/` and `/status/` bypass authentication

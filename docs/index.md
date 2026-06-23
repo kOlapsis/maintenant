@@ -68,8 +68,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"  # match host's docker group
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:

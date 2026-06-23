@@ -23,6 +23,21 @@ case " $* " in
         ;;
 esac
 
-# --keep-groups carries supplementary groups injected by compose `group_add`
-# (e.g., the docker socket group) through to the unprivileged user.
-exec setpriv --reuid=65534 --regid=65534 --keep-groups -- "$@"
+# Auto-detect the mounted Docker socket's group so socket access works without
+# `group_add` (which `docker stack deploy` silently drops on Swarm — see #29).
+SUPP=""
+add_group() {
+    [ -n "$1" ] && [ "$1" != "0" ] || return 0
+    case ",$SUPP," in *",$1,"*) ;; *) SUPP="${SUPP:+$SUPP,}$1" ;; esac
+}
+for sock in /var/run/docker.sock /run/docker.sock; do
+    [ -S "$sock" ] && add_group "$(stat -c '%g' "$sock" 2>/dev/null)"
+done
+add_group "${DOCKER_GID:-}"
+for g in $(id -G 2>/dev/null); do add_group "$g"; done
+
+if [ -n "$SUPP" ]; then
+    exec setpriv --reuid=65534 --regid=65534 --groups="$SUPP" -- "$@"
+else
+    exec setpriv --reuid=65534 --regid=65534 --clear-groups -- "$@"
+fi

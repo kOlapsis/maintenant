@@ -198,17 +198,19 @@ The full reference (server-side variables, rate limits, stale thresholds) is in 
     - If the server uses a self-signed certificate, the agent must either trust it or run with `--grpc-insecure-skip-tls-verify` (dev only). With a real (Let's Encrypt) certificate, no flag is needed.
 
 !!! failure "Permission denied on the Docker socket"
-    The containerized agent runs unprivileged. If it can't read `/var/run/docker.sock`, add the host's `docker` group:
+    The containerized agent runs unprivileged but auto-detects the mounted socket's group, so
+    just mounting `/var/run/docker.sock` is normally enough. If it still can't read the socket
+    (non-standard path or socket proxy), pin the GID explicitly:
 
     ```bash
     # docker run
-    --group-add "$(getent group docker | cut -d: -f3)"
+    -e DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
     ```
 
     ```yaml
     # compose
-    group_add:
-      - "<docker-gid>"   # e.g. the GID from: getent group docker
+    environment:
+      DOCKER_GID: "<docker-gid>"   # e.g. from: stat -c '%g' /var/run/docker.sock
     ```
 
 !!! warning "`public_url_appears_local` warning in the modal"

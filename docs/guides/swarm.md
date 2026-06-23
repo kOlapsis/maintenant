@@ -69,8 +69,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:
@@ -96,6 +94,15 @@ docker stack deploy -c docker-compose.yml maintenant
 
 !!! important "Manager constraint"
     Always use `node.role == manager` as a placement constraint. This ensures maintenant runs on a manager node and has access to the Swarm management API.
+
+!!! warning "Don't use `group_add` on Swarm"
+    `docker stack deploy` **silently ignores** `group_add` — it is not part of the Swarm
+    service spec. On Swarm, the container would never join the `docker` group and the socket
+    would be unreachable (`permission denied … /var/run/docker.sock`).
+
+    You don't need it: the maintenant entrypoint **auto-detects the mounted socket's group**
+    and grants the unprivileged runtime user access automatically — on Swarm and plain Compose
+    alike. Just mount `/var/run/docker.sock` and you're done.
 
 ---
 

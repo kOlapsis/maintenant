@@ -17,8 +17,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"  # match host's docker group
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:
@@ -39,6 +37,12 @@ docker compose up -d
 ```
 
 Open **http://localhost:8080**. maintenant auto-discovers all your containers immediately.
+
+!!! note "Docker socket access"
+    The entrypoint reads the mounted socket's group and grants the unprivileged user access
+    automatically — no `group_add` required, on Compose and Swarm alike. Set `DOCKER_GID` only
+    to pin a specific GID (non-standard socket path or socket proxy). See
+    [Troubleshooting](troubleshooting.md#permission-denied-on-varrundockersock) if access fails.
 
 !!! tip "Production deployment"
     For production, place maintenant behind a reverse proxy with authentication.

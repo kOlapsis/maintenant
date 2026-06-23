@@ -114,8 +114,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"  # match host's docker group — see note below
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:
@@ -137,8 +135,8 @@ docker compose up -d
 
 Open **http://localhost:8080** — your containers are already there. No configuration needed.
 
-> **Finding your DOCKER_GID**
-> Run `getent group docker | cut -d: -f3` on the host. The number printed is your Docker group GID. The fallback `983` is not universal — it varies by distribution and installation method. Create a `.env` file next to your `docker-compose.yml` with `DOCKER_GID=<number>` so Compose picks it up automatically.
+> **Docker socket access is automatic**
+> The entrypoint reads the mounted socket's group and grants the unprivileged user access to it — no `group_add` needed, on plain Compose **and** Docker Swarm (where `docker stack deploy` silently ignores `group_add`). Set `DOCKER_GID` (e.g. `stat -c '%g' /var/run/docker.sock`) only to pin a specific GID for a non-standard socket path or socket proxy.
 >
 > If containers are not discovered (permission error on the socket), see [Troubleshooting](#troubleshooting).
 
@@ -513,30 +511,24 @@ services:
 permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock
 ```
 
-**Why it happens:** maintenant runs as `nobody` (uid 65534) by design. The Docker socket on the host is owned by `root:docker`. Without `group_add`, the `nobody` user has no group membership that grants access to the socket — even with a read-only mount, the kernel rejects the open call.
+**Why it happens:** maintenant runs as `nobody` (uid 65534) by design. The Docker socket on the host is owned by `root:docker`, so the process needs membership in the socket's group — without it the kernel rejects the open call even with a read-only mount.
 
-**Fix:** find the Docker group GID on the host and pass it via `group_add`.
+**Normally automatic:** the entrypoint detects the mounted socket's group and grants the unprivileged user access to it — on plain Compose **and** Swarm (where `docker stack deploy` silently ignores `group_add`). Mounting `/var/run/docker.sock` is enough.
 
-```bash
-# On the host
-getent group docker | cut -d: -f3
-```
-
-Create a `.env` file next to your `docker-compose.yml`:
+**If it still fails** (non-standard socket path, socket proxy, or to pin the GID), set `DOCKER_GID` explicitly. Find the socket's group on the host:
 
 ```bash
-DOCKER_GID=998   # replace with the number printed above
+stat -c '%g' /var/run/docker.sock
+# or: getent group docker | cut -d: -f3
 ```
 
-Then restart:
+Pass it to the container via a `.env` file and the `DOCKER_GID` environment variable, then restart:
 
 ```bash
 docker compose up -d
 ```
 
-The fallback `983` in the Compose template is a common value but not universal — it varies by distribution, Docker install method, and host configuration.
-
-**SELinux (Fedora / RHEL / Rocky / CentOS):** if the GID fix above does not resolve the error, SELinux may be blocking the socket access. Check with:
+**SELinux (Fedora / RHEL / Rocky / CentOS):** if setting the GID does not resolve the error, SELinux may be blocking the socket access. Check with:
 
 ```bash
 ausearch -m AVC -ts recent
