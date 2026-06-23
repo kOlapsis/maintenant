@@ -150,7 +150,7 @@ The `/ping/` routes are designed to be publicly accessible. They do not require 
 
 !!! warning "Reverse proxy configuration"
     Make sure your reverse proxy allows unauthenticated access to `/ping/` paths.
-    See [Configuration](../getting-started/configuration.md#public-routes) for details.
+    See [Security](../security.md#public-routes) for details.
 
 ---
 

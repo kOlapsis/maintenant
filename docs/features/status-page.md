@@ -195,4 +195,4 @@ POST /status/subscribe
 ## Related
 
 - [Alert Engine](alerts.md) — Alerts that feed into incident creation
-- [Configuration](../getting-started/configuration.md#public-routes) — Public route setup
+- [Security](../security.md#public-routes) — Public route setup
