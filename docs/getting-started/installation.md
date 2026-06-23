@@ -42,7 +42,7 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     The entrypoint reads the mounted socket's group and grants the unprivileged user access
     automatically — no `group_add` required, on Compose and Swarm alike. Set `DOCKER_GID` only
     to pin a specific GID (non-standard socket path or socket proxy). See
-    [Troubleshooting](troubleshooting.md#permission-denied-on-varrundockersock) if access fails.
+    [Troubleshooting](../troubleshooting.md#permission-denied-on-varrundockersock) if access fails.
 
 !!! tip "Production deployment"
     For production, place maintenant behind a reverse proxy with authentication.
