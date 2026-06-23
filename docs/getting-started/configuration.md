@@ -194,7 +194,7 @@ Internet  →  Reverse Proxy (Traefik / Caddy / nginx)
           →  maintenant
 ```
 
-The `/api/v1/*` routes and the dashboard must be behind authentication. The `/ping/` and `/status/` routes must be publicly accessible. If MCP is enabled with OAuth2, the `/mcp`, `/oauth/`, and `/.well-known/` routes should bypass proxy auth (MCP handles its own).
+The `/api/v1/*` routes and the dashboard must be behind authentication. The `/ping`, `/status` (match the prefix, not the trailing slash) and `/manifest.webmanifest` routes must be publicly accessible — the browser fetches the PWA manifest without credentials. If MCP is enabled with OAuth2, the `/mcp`, `/oauth/`, and `/.well-known/` routes should bypass proxy auth (MCP handles its own).
 
 See the **[Security Guide](../security.md)** for the complete route reference, reverse proxy examples (Traefik, Caddy, nginx), built-in protections, MCP authentication details, and deployment hardening checklist.
 

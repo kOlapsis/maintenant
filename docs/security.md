@@ -33,6 +33,10 @@ These routes **must bypass** your authentication middleware:
 | `/status/subscribe` | Email subscription to status updates | Yes |
 | `/status/confirm` | Subscription confirmation (token-based) | Yes |
 | `/status/unsubscribe` | Unsubscribe (token-based) | Yes |
+| `/manifest.webmanifest` | PWA manifest — the browser fetches it **without credentials**, so it must not sit behind auth | No |
+
+!!! note "Match the prefix, not the exact slash"
+    Route the public matcher on the prefix **without** a trailing slash (`/ping`, `/status`). maintenant 301-redirects the bare path to its canonical form (`/status` → `/status/`); if your matcher only covers `/status/`, the bare `/status` reaches the authenticated router first and returns 401 before the redirect. Note that `/ping` and `/ping/` themselves return **404** — only `/ping/{uuid}` is a real endpoint; the prefix just needs to bypass auth so heartbeats reach the app.
 
 ### MCP & OAuth Routes
 
@@ -59,7 +63,10 @@ These routes provide full read/write access to your monitoring system. **Always 
 | `/` | Dashboard (Vue SPA) |
 
 !!! danger "Do not expose `/api/v1/` without authentication"
-    The admin API provides unrestricted access to all monitoring data and configuration: creating webhooks, managing heartbeats, viewing container logs, acknowledging alerts, and more. There is no authorization layer — any request that reaches the API is trusted.
+    The admin API provides unrestricted access to all monitoring data and configuration: creating webhooks, managing heartbeats, viewing container logs, acknowledging alerts, and more. There is no **user-level** authorization layer — any authenticated request that reaches the API is trusted, so the reverse proxy is your only access control.
+
+!!! note "A 403 on `/api/v1/*` is edition gating, not the proxy"
+    Some routes are reserved for the Pro edition (e.g. `/api/v1/agents`, `/api/v1/swarm/*`, `/api/v1/security/posture`, `/api/v1/cve`). In Community edition they return `403 PRO_REQUIRED` regardless of authentication — this is feature gating, not a reverse-proxy or trust problem. The dashboard hides these features, so a correctly-loaded SPA never calls them. Edition itself is reported by `/api/v1/edition` (always public-readable behind auth).
 
 ---
 
@@ -88,7 +95,7 @@ services:
       # Public routes — no auth
       traefik.http.routers.maintenant-public.rule: >
         Host(`now.example.com`) &&
-        (PathPrefix(`/ping/`) || PathPrefix(`/status/`))
+        (PathPrefix(`/ping`) || PathPrefix(`/status`) || Path(`/manifest.webmanifest`))
       traefik.http.routers.maintenant-public.priority: "100"
 
       # MCP + OAuth routes — MCP handles its own auth
@@ -111,7 +118,7 @@ services:
 ```
 now.example.com {
     # Public routes — no auth
-    @public path /ping/* /status/*
+    @public path /ping /ping/* /status /status/* /manifest.webmanifest
     reverse_proxy @public maintenant:8080
 
     # MCP routes — own OAuth2 auth
@@ -135,7 +142,10 @@ server {
     server_name now.example.com;
 
     # Public routes — no auth
-    location ~ ^/(ping|status)/ {
+    location ~ ^/(ping|status)(/|$) {
+        proxy_pass http://127.0.0.1:8080;
+    }
+    location = /manifest.webmanifest {
         proxy_pass http://127.0.0.1:8080;
     }
 
@@ -323,7 +333,7 @@ A quick reference for securing your deployment:
 - [ ] (Optional) `DOCKER_GID` set to override the detected socket GID (non-standard path or socket proxy)
 - [ ] Reverse proxy in front of maintenant with authentication enabled
 - [ ] `/api/v1/*` and `/` require authentication
-- [ ] `/ping/` and `/status/` bypass authentication
+- [ ] `/ping`, `/status` (prefix, no trailing slash) and `/manifest.webmanifest` bypass authentication
 - [ ] If MCP is enabled: OAuth2 credentials configured (`MAINTENANT_MCP_CLIENT_ID` + `MAINTENANT_MCP_CLIENT_SECRET`)
 - [ ] If MCP is enabled: `/mcp`, `/oauth/*`, `/.well-known/*` bypass proxy auth (MCP handles its own)
 - [ ] HTTPS termination at the proxy level

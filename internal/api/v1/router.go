@@ -516,10 +516,17 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 }
 
 func (r *Router) registerLicenseRoutes(mgr *license.Manager) {
-	if mgr == nil {
-		return
-	}
 	r.mux.HandleFunc("GET /api/v1/license/status", func(w http.ResponseWriter, req *http.Request) {
+		// No license configured (Community): report an inactive state rather than
+		// leaving the documented route unregistered (404).
+		if mgr == nil {
+			WriteJSON(w, http.StatusOK, map[string]interface{}{
+				"status":  "inactive",
+				"plan":    "",
+				"message": "",
+			})
+			return
+		}
 		state := mgr.State()
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"status":      state.Status,
