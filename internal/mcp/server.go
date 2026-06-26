@@ -21,10 +21,10 @@ import (
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
-	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -54,9 +54,10 @@ type Services struct {
 	Alerts        alert.AlertStore
 	Channels      alert.ChannelStore
 	Triggers      alert.TriggerStore
+	Escalator     alert.Escalator
 	Updates       *update.Service
-	Incidents     extension.IncidentManager
-	Maintenance   extension.MaintenanceScheduler
+	Incidents     status.IncidentStore
+	Maintenance   status.MaintenanceStore
 	Runtime       runtime.Runtime
 	LogFetcher    LogFetcher
 	EscalationSvc *escalation.Service
