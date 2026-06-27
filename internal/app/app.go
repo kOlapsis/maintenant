@@ -629,8 +629,18 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		EscalationSvc: a.escalationSvc,
 		Agents:        a.agentStore,
 		Sessions:      a.agentSessions,
-		Version:       cfg.Version,
-		Logger:        logger.With("component", "mcp"),
+		// Security & supply-chain (read-only)
+		SecuritySvc: a.securitySvc,
+		Scorer:      a.scorer,
+		UpdateStore: updateStore,
+		// Orchestrators (read-only)
+		Kubernetes:     a.k8sStore,
+		SwarmCluster:   func() *swarm.SwarmCluster { return a.swarmCluster },
+		SwarmDiscovery: func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
+		SwarmTopology:  a.swarmTopologyStore,
+		SwarmNodes:     a.swarmNodeStore,
+		Version:        cfg.Version,
+		Logger:         logger.With("component", "mcp"),
 	}
 	a.mcpServer = mcp.NewServer(mcpSvc)
 

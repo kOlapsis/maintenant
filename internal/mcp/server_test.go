@@ -114,6 +114,21 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		"create_trigger",
 		"update_trigger",
 		"delete_trigger",
+		// Security tools (4)
+		"get_security_insights",
+		"list_cve",
+		"list_risk_scores",
+		"get_security_posture",
+		// Kubernetes tools (4)
+		"list_kubernetes_namespaces",
+		"list_kubernetes_workloads",
+		"list_kubernetes_pods",
+		"list_kubernetes_nodes",
+		// Swarm tools (4)
+		"get_swarm_info",
+		"list_swarm_services",
+		"list_swarm_tasks",
+		"list_swarm_nodes",
 	}
 
 	toolNames := make(map[string]bool)
@@ -121,7 +136,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 
-	assert.Len(t, result.Tools, 32, "expected exactly 32 tools registered")
+	assert.Len(t, result.Tools, 44, "expected exactly 44 tools registered")
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "expected tool %q to be registered", name)
 	}

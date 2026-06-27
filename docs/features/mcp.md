@@ -8,7 +8,7 @@ Expose maintenant monitoring data to AI coding assistants (Claude Code, Claude D
 
 ## Overview
 
-maintenant embeds an MCP server that provides 18 tools covering every monitoring dimension. AI assistants can use these tools to diagnose issues, correlate data, and suggest fixes without you ever leaving your editor.
+maintenant embeds an MCP server that provides 44 tools covering every monitoring dimension — containers, endpoints, heartbeats, certificates, resources, alerts, image updates, security insights, CVEs, Kubernetes, Docker Swarm, alert routing, and the status page. AI assistants can use these tools to diagnose issues, correlate data, and act on them without you ever leaving your editor.
 
 **Transports:**
 
@@ -134,35 +134,74 @@ Share the client ID and secret with authorized users. They enter these values in
 
 ## Available Tools
 
-### Read Tools
+All tools work in the **Community** edition unless marked **Pro**. Pro-only tools return an `edition_required` error in Community. Every tool is read-only except the ones listed under [Actions](#actions-write).
 
-| Tool | Description |
-|------|-------------|
-| `list_containers` | List all monitored containers with state, health, and metadata |
-| `get_container` | Detailed container info with recent state transitions |
-| `get_container_logs` | Recent log lines from a container (configurable line count) |
-| `list_endpoints` | All HTTP/TCP endpoints with status, response time, uptime |
-| `get_endpoint_history` | Check history for a specific endpoint |
-| `list_heartbeats` | All heartbeat monitors with status, last ping, periods |
-| `list_certificates` | TLS certificates with expiration, issuer, chain validity |
-| `list_alerts` | Active alerts (or full history with `active_only: false`) |
-| `get_resources` | Host resource summary: CPU, memory, network, disk |
-| `get_top_consumers` | Containers ranked by CPU or memory usage |
-| `get_updates` | Available image updates for monitored containers |
-| `get_health` | maintenant version, runtime, and status |
-
-### Write Tools
+### Monitoring (read)
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `acknowledge_alert` | Acknowledge an active alert | Extended |
-| `create_incident` | Create a status page incident | Extended |
-| `update_incident` | Update an existing incident | Extended |
-| `create_maintenance` | Schedule a maintenance window | Extended |
-| `pause_monitor` | Pause a heartbeat monitor | CE |
-| `resume_monitor` | Resume a paused heartbeat monitor | CE |
+| `list_containers` | List all monitored containers with state, health, and metadata | Community |
+| `get_container` | Detailed container info with recent state transitions | Community |
+| `get_container_logs` | Recent log lines from a container (configurable line count) | Community |
+| `list_endpoints` | All HTTP/TCP endpoints with status, response time, uptime | Community |
+| `get_endpoint_history` | Check history for a specific endpoint | Community |
+| `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
+| `list_certificates` | TLS certificates with expiration, issuer, chain validity | Community |
+| `list_alerts` | Active alerts (or full history with `active_only: false`) | Community |
+| `get_resources` | Host resource summary: CPU, memory, network, disk | Community |
+| `get_top_consumers` | Containers ranked by CPU or memory usage | Community |
+| `get_updates` | Available image updates for monitored containers | Community |
+| `get_health` | maintenant version, runtime, and status | Community |
+| `list_agents` | Registered remote agents with connection state and runtime | Pro |
 
-Write tools marked **Extended** return an error in the Community Edition.
+### Security & supply chain (read)
+
+| Tool | Description | Edition |
+|------|-------------|---------|
+| `get_security_insights` | Security insights (dangerous runtime configs), all containers or one, with a severity summary | Community |
+| `list_cve` | Active CVE vulnerabilities in container images, filterable by container or minimum severity | Pro |
+| `list_risk_scores` | Image-update risk scores per container (0–100) with risk level | Pro |
+| `get_security_posture` | Infrastructure posture score, or a single container's posture | Pro |
+
+### Kubernetes (read)
+
+| Tool | Description | Edition |
+|------|-------------|---------|
+| `list_kubernetes_namespaces` | Namespaces known across monitored clusters | Community |
+| `list_kubernetes_workloads` | Workloads grouped by namespace with ready/desired replicas and status | Community |
+| `list_kubernetes_pods` | Pods with status, restart count and node (filter by namespace/workload/node/status) | Community |
+| `list_kubernetes_nodes` | Nodes with roles, conditions, capacity and running-pod counts | Pro |
+
+### Docker Swarm (read)
+
+| Tool | Description | Edition |
+|------|-------------|---------|
+| `get_swarm_info` | Cluster info (manager/worker counts, manager status); reports inactive when Swarm is off | Community |
+| `list_swarm_services` | Services with image, mode, desired/running replicas | Community |
+| `list_swarm_tasks` | Tasks (a service's running units) with state and node; filter by service | Community |
+| `list_swarm_nodes` | Nodes with role, status, availability and task count | Pro |
+
+### Alert routing (read & write)
+
+| Tool | Description | Edition |
+|------|-------------|---------|
+| `list_triggers` / `get_trigger` | List or fetch alert triggers (entity → channel routing) | Community |
+| `create_trigger` / `update_trigger` / `delete_trigger` | Manage alert triggers (scope/tag filters require Pro) | Community |
+| `list_escalation_policies` / `get_escalation_policy` | List or fetch escalation policies | Pro |
+| `create_escalation_policy` / `update_escalation_policy` / `delete_escalation_policy` | Manage escalation policies | Pro |
+| `set_escalation_policy_active` | Enable or disable a policy | Pro |
+| `list_alert_escalation_runs` / `get_escalation_run` | Inspect escalation runs for an alert | Pro |
+
+### Actions (write)
+
+| Tool | Description | Edition |
+|------|-------------|---------|
+| `acknowledge_alert` | Acknowledge an active alert (stops escalation) | Community |
+| `pause_monitor` | Pause a heartbeat monitor | Community |
+| `resume_monitor` | Resume a paused heartbeat monitor | Community |
+| `create_incident` | Create a status page incident | Pro |
+| `update_incident` | Post a status update to an incident | Pro |
+| `create_maintenance` | Schedule a maintenance window | Pro |
 
 ---
 
@@ -173,10 +212,14 @@ Once connected, you can ask your AI assistant questions like:
 - "Which containers are unhealthy right now?"
 - "Show me the logs for the postgres container."
 - "What's consuming the most CPU?"
-- "Are there any active alerts?"
+- "Are there any active alerts? Acknowledge the one for the API."
 - "Which certificates expire within 30 days?"
 - "Are there image updates available for my containers?"
 - "Pause the backup-check heartbeat monitor."
+- "Any critical CVEs in my images? What's my security posture?"
+- "List the Kubernetes workloads that aren't fully ready."
+- "Show the Swarm services and how many replicas are running."
+- "Open a status page incident: API degraded, investigating."
 
 ---
 
@@ -215,5 +258,7 @@ No special configuration needed — Caddy handles SSE and redirects natively.
 - [Heartbeat Monitoring](heartbeats.md) — Heartbeat status via `list_heartbeats`, `pause_monitor`
 - [Certificate Monitoring](certificates.md) — Certificate expiry via `list_certificates`
 - [Resource Metrics](resources.md) — Resource usage via `get_resources`, `get_top_consumers`
-- [Alert Engine](alerts.md) — Active alerts via `list_alerts`
-- [Update Intelligence](updates.md) — Image updates via `get_updates`
+- [Alert Engine](alerts.md) — Active alerts via `list_alerts`, acknowledgement and triggers
+- [Alert Escalation](alert-escalation.md) — Escalation policies via `list_escalation_policies` and related tools
+- [Network Security Insights](security.md) — Insights, CVEs and posture via `get_security_insights`, `list_cve`, `get_security_posture`
+- [Update Intelligence](updates.md) — Image updates via `get_updates`, CVEs via `list_cve`, risk via `list_risk_scores`

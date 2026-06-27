@@ -22,9 +22,12 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
+	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -42,6 +45,25 @@ type AgentLister interface {
 // SessionChecker reports whether an agent currently has an active gRPC stream.
 type SessionChecker interface {
 	IsConnected(agentID string) bool
+}
+
+// K8sReader exposes the read methods of the Kubernetes store needed by MCP.
+type K8sReader interface {
+	ListNamespaces(ctx context.Context, agentID string) ([]string, error)
+	ListWorkloads(ctx context.Context, agentID string, namespaces []string) ([]kubernetes.K8sWorkloadGroup, error)
+	ListPods(ctx context.Context, agentID string, namespaces []string, filters kubernetes.PodFilters) ([]kubernetes.K8sPod, error)
+	ListNodes(ctx context.Context, agentID string) ([]kubernetes.K8sNode, error)
+}
+
+// SwarmTopologyReader exposes the read methods of the Swarm topology store.
+type SwarmTopologyReader interface {
+	ListServices(ctx context.Context, agentID string) ([]*swarm.SwarmService, error)
+	ListTasks(ctx context.Context, agentID, serviceID string) ([]*swarm.SwarmTask, error)
+}
+
+// SwarmNodeReader exposes the read methods of the Swarm node store.
+type SwarmNodeReader interface {
+	ListNodes(ctx context.Context, agentID string) ([]*swarm.SwarmNode, error)
 }
 
 // Services holds all dependencies required by MCP tool handlers.
@@ -63,8 +85,21 @@ type Services struct {
 	EscalationSvc *escalation.Service
 	Agents        AgentLister
 	Sessions      SessionChecker
-	Version       string
-	Logger        *slog.Logger
+
+	// Security & supply-chain (read-only MCP surface).
+	SecuritySvc *security.Service
+	Scorer      *security.Scorer
+	UpdateStore update.UpdateStore
+
+	// Orchestrators (read-only MCP surface).
+	Kubernetes     K8sReader
+	SwarmCluster   func() *swarm.SwarmCluster
+	SwarmDiscovery func() *swarm.ServiceDiscovery
+	SwarmTopology  SwarmTopologyReader
+	SwarmNodes     SwarmNodeReader
+
+	Version string
+	Logger  *slog.Logger
 }
 
 // NewServer creates and configures an MCP server with all maintenant tools registered.
@@ -81,6 +116,9 @@ func NewServer(svc *Services) *gomcp.Server {
 	registerWriteTools(server, svc)
 	registerEscalationTools(server, svc)
 	registerTriggerTools(server, svc)
+	registerSecurityTools(server, svc)
+	registerKubernetesTools(server, svc)
+	registerSwarmTools(server, svc)
 
 	return server
 }
