@@ -8,7 +8,7 @@ maintenant is configured entirely through environment variables. No configuratio
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers. |
+| `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers; on a host install, bind the interface you actually need. See [Choosing a Bind Address](#choosing-a-bind-address). |
 | `MAINTENANT_DB` | `./maintenant.db` | SQLite database file path. |
 | `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and as the fallback target for the status page link. |
 | `MAINTENANT_STATUS_URL` | — | Canonical public URL of the status page (e.g. `https://status.example.com`). When set, the admin UI's *View public status page* link points here. Optional — falls back to `{MAINTENANT_BASE_URL}/status` when unset. See [Public Status Page → Status URL](../features/status-page.md#status-url). |
@@ -35,7 +35,9 @@ maintenant is configured entirely through environment variables. No configuratio
 ### Example `.env` File
 
 ```bash
-# Listen address (use 0.0.0.0 inside containers, 127.0.0.1 on host)
+# Listen address — see "Choosing a Bind Address" below.
+# In a container: keep 0.0.0.0:8080 and control exposure with the port mapping.
+# On the host: 127.0.0.1:8080 (local only) or <lan-ip>:8080 for LAN access.
 MAINTENANT_ADDR=127.0.0.1:8080
 
 # SQLite database path
@@ -89,6 +91,31 @@ MAINTENANT_BASE_URL=https://maintenant.example.com
 # Never set in production — disables SSRF protection.
 # MAINTENANT_ALLOW_PRIVATE_WEBHOOKS=true
 ```
+
+---
+
+## Choosing a Bind Address
+
+`MAINTENANT_ADDR` controls where the maintenant process itself listens. In Docker, the **published** port (the `ports:` mapping / `-p` flag) is a separate decision — and it is the one that determines what your network can reach.
+
+### Running in a container (recommended)
+
+Keep `MAINTENANT_ADDR=0.0.0.0:8080`. Inside a container this is required: Docker's port mapping reaches the process through the container's bridge interface, so binding `127.0.0.1` there would make the UI unreachable from outside the container. Control exposure with the port mapping instead:
+
+| Goal | Port mapping |
+|------|--------------|
+| Behind a reverse proxy on the same host | `127.0.0.1:8080:8080` — or no `ports:` at all when the proxy shares a Docker network with maintenant |
+| Headless server, direct access from your LAN | `192.168.1.50:8080:8080` (the server's LAN IP) |
+| Reachable from every interface | `8080:8080` — only behind a reverse proxy with authentication, or on a trusted network you accept exposing it to |
+
+### Running the binary directly on the host
+
+The default `127.0.0.1:8080` keeps the UI local-only. To reach it from your LAN without a reverse proxy, bind the server's LAN IP: `MAINTENANT_ADDR=192.168.1.50:8080`. Binding `0.0.0.0:8080` also works but listens on every interface of the host, including public ones if the machine has any.
+
+!!! note "\"Port exposed on all interfaces\" on maintenant's own container"
+    maintenant's security scanner analyzes **every** discovered container — including its own. If the UI port is published on all interfaces (`8080:8080`), it reports a critical `port_exposed_all_interfaces` finding against itself. That is expected behaviour, not a bug: the port really is reachable from any network interface.
+
+    Either restrict the published port to a specific interface as shown above, or — when the exposure is intentional (e.g. a trusted home LAN) — acknowledge the finding with an audit trail: see [Network Security Insights → Acknowledging Findings](../features/security.md#acknowledging-findings).
 
 ---
 

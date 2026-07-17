@@ -44,6 +44,29 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     to pin a specific GID (non-standard socket path or socket proxy). See
     [Troubleshooting](../troubleshooting.md#permission-denied-on-varrundockersock) if access fails.
 
+!!! note "Why `0.0.0.0`? And the security finding it triggers"
+    `MAINTENANT_ADDR: "0.0.0.0:8080"` is the bind address **inside the container**. It must be
+    `0.0.0.0` there — Docker's port mapping reaches the process through the container's bridge
+    interface, so binding `127.0.0.1` inside the container would make the UI unreachable. This
+    setting alone exposes nothing to your network.
+
+    What decides the actual exposure is the `ports:` mapping. `"8080:8080"` publishes the port on
+    **all** host interfaces — and maintenant's own security scanner, which does not exempt
+    maintenant's container, will report a critical **"Port exposed on all interfaces"** finding
+    for it. That finding is expected, not a bug. To avoid it, publish the port on a specific
+    interface instead:
+
+    ```yaml
+    ports:
+      - "127.0.0.1:8080:8080"     # local only — pair with a reverse proxy
+      # or, for direct access from your LAN on a headless server:
+      # - "192.168.1.50:8080:8080"  # the server's LAN IP
+    ```
+
+    See [Configuration → Choosing a Bind Address](configuration.md#choosing-a-bind-address) for
+    the full decision guide, including how to acknowledge the finding when the exposure is
+    intentional.
+
 !!! tip "Production deployment"
     For production, place maintenant behind a reverse proxy with authentication.
     See the [Configuration](configuration.md) page for a Traefik + Authelia example.

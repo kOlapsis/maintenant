@@ -23,7 +23,7 @@ For each container, maintenant checks:
 
 | Insight | Severity | Description |
 |---------|----------|-------------|
-| `port_exposed_all_interfaces` | High | A port is bound to `0.0.0.0`, making it reachable from any network interface |
+| `port_exposed_all_interfaces` | Critical | A port is bound to `0.0.0.0`, making it reachable from any network interface |
 | `database_port_exposed` | Critical | A known database port (3306, 5432, 6379, 27017, etc.) is exposed without restriction |
 | `privileged_container` | Critical | Container runs in privileged mode with full host access |
 | `host_network_mode` | High | Container shares the host network namespace |
@@ -67,6 +67,29 @@ With maintenant Pro, a dedicated Security Posture page aggregates insights into 
 - **Per-container risk ranking** — containers sorted by risk with drill-down to individual findings
 - **Severity distribution** — counts across critical, high, and medium findings
 - **Risk acknowledgment** — dismiss known findings with an audit trail
+
+---
+
+## Acknowledging Findings :material-crown:{ title="Pro" }
+
+Some findings describe a configuration that is deliberate — a port intentionally published to a trusted LAN, or maintenant's own UI port (the scanner does not exempt maintenant's container; see [Configuration → Choosing a Bind Address](../getting-started/configuration.md#choosing-a-bind-address)). Acknowledging a finding records who accepted the risk and why, removes it from the posture score, and — once every finding on the container is acknowledged — automatically acknowledges the container's active security alert.
+
+- **UI** — Security Posture → container drill-down → acknowledge the finding (a reason is kept as the audit trail).
+- **API** — `POST /api/v1/security/acknowledgments`. For port findings, `finding_key` is `{port}/{protocol}`:
+
+```json
+{
+  "container_id": "…",
+  "finding_type": "port_exposed_all_interfaces",
+  "finding_key": "8080/tcp",
+  "acknowledged_by": "ops@example.com",
+  "reason": "UI intentionally exposed to the trusted LAN"
+}
+```
+
+Revoke with `DELETE /api/v1/security/acknowledgments/{id}` — the finding counts against the posture score again.
+
+On Community Edition, address the finding at the source instead: publish the port on a specific interface (`127.0.0.1:8080:8080` behind a reverse proxy, or a LAN IP for direct access).
 
 ---
 
