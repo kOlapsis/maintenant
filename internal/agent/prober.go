@@ -142,7 +142,7 @@ func scanCertsOnce(ctx context.Context, agentID string, ld labeledDiscoverer, se
 			}
 			seen[key] = true
 
-			scan := certificate.CheckCertificate(c.Hostname, c.Port, certScanTimeout)
+			scan := certificate.CheckCertificate(c.Hostname, c.Port, "", certScanTimeout)
 			if scan.Error != "" {
 				logger.Debug("prober: cert scan failed", "host", c.Hostname, "port", c.Port, "err", scan.Error)
 				continue

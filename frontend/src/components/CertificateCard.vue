@@ -105,6 +105,13 @@ async function handleDelete() {
         <p class="mt-0.5 text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
           :{{ certificate.port }}
         </p>
+        <p
+          v-if="certificate.server_name && certificate.server_name !== certificate.hostname"
+          class="mt-0.5 truncate text-xs"
+          :style="{ color: 'var(--mnt-text-muted)' }"
+        >
+          SNI: {{ certificate.server_name }}
+        </p>
         <AgentBadge v-if="certificate.agent_id" :agent-id="certificate.agent_id" class="mt-1" />
       </div>
       <div class="ml-2 flex items-center gap-1.5">

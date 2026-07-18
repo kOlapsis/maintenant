@@ -39,9 +39,12 @@ const (
 
 // CertMonitor represents a monitored SSL/TLS certificate.
 type CertMonitor struct {
-	ID                   string     `json:"id"`
-	Hostname             string     `json:"hostname"`
-	Port                 int        `json:"port"`
+	ID       string `json:"id"`
+	Hostname string `json:"hostname"`
+	Port     int    `json:"port"`
+	// ServerName, when non-empty, is sent as SNI during the check and the
+	// certificate is validated against it instead of Hostname.
+	ServerName           string     `json:"server_name,omitempty"`
 	Source               CertSource `json:"source"`
 	EndpointID           *string    `json:"endpoint_id,omitempty"`
 	Status               CertStatus `json:"status"`
@@ -183,6 +186,7 @@ type ListChecksOpts struct {
 type CreateCertificateInput struct {
 	Hostname             string `json:"hostname"`
 	Port                 int    `json:"port"`
+	ServerName           string `json:"server_name"`
 	CheckIntervalSeconds int    `json:"check_interval_seconds"`
 	WarningThresholds    []int  `json:"warning_thresholds"`
 }

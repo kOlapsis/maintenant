@@ -19,6 +19,8 @@ export interface CertMonitor {
   id: string
   hostname: string
   port: number
+  /** SNI sent during the check; the cert is validated against it instead of hostname. */
+  server_name?: string
   source: CertSource
   endpoint_id?: string
   status: CertStatus
@@ -69,6 +71,7 @@ export interface CertChainEntry {
 export interface CreateCertificateInput {
   hostname: string
   port?: number
+  server_name?: string
   check_interval_seconds?: number
   warning_thresholds?: number[]
 }

@@ -43,15 +43,21 @@ type ChainCert struct {
 }
 
 // CheckCertificate performs a TLS handshake to the given hostname:port and extracts
-// certificate details including chain validation.
-func CheckCertificate(hostname string, port int, timeout time.Duration) *CheckCertificateResult {
+// certificate details including chain validation. A non-empty serverName is sent
+// as SNI and used for chain validation and hostname matching instead of hostname,
+// so a failover proxy can be checked for the certificate it serves a given vhost.
+func CheckCertificate(hostname string, port int, serverName string, timeout time.Duration) *CheckCertificateResult {
 	addr := fmt.Sprintf("%s:%d", hostname, port)
+	validationName := serverName
+	if validationName == "" {
+		validationName = hostname
+	}
 
 	// Connect with InsecureSkipVerify so we can inspect even invalid certs
 	dialer := &net.Dialer{Timeout: timeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
 		InsecureSkipVerify: true,
-		ServerName:         hostname,
+		ServerName:         validationName,
 		MinVersion:         tls.VersionTLS10, // inspection dial: reach legacy hosts down to TLS 1.0
 	})
 	if err != nil {
@@ -74,10 +80,10 @@ func CheckCertificate(hostname string, port int, timeout time.Duration) *CheckCe
 	result := extractCertDetails(leaf, state.PeerCertificates)
 
 	// Validate chain
-	result.ChainValid, result.ChainError = validateChain(leaf, state.PeerCertificates[1:], hostname)
+	result.ChainValid, result.ChainError = validateChain(leaf, state.PeerCertificates[1:], validationName)
 
 	// Check hostname match
-	result.HostnameMatch = checkHostnameMatch(leaf, hostname)
+	result.HostnameMatch = checkHostnameMatch(leaf, validationName)
 
 	applyOCSPStaple(result, state.OCSPResponse, state.PeerCertificates)
 

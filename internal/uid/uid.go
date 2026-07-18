@@ -87,10 +87,14 @@ func EndpointLabel(agentID, containerName, labelKey string) string {
 	return Derive(nsEndpoint, agentID, containerName, labelKey)
 }
 
-// CertMonitor derives a cert monitor id from the agent and the monitored
-// hostname:port.
-func CertMonitor(agentID, hostname string, port int) string {
-	return Derive(nsCert, agentID, hostname, strconv.Itoa(port))
+// CertMonitor derives a cert monitor id from the agent, the monitored
+// hostname:port and the optional SNI server name. An empty serverName keeps
+// the historical three-part derivation so pre-SNI monitor ids are unchanged.
+func CertMonitor(agentID, hostname string, port int, serverName string) string {
+	if serverName == "" {
+		return Derive(nsCert, agentID, hostname, strconv.Itoa(port))
+	}
+	return Derive(nsCert, agentID, hostname, strconv.Itoa(port), serverName)
 }
 
 // SwarmNode derives a swarm node id from the agent and the runtime node id.

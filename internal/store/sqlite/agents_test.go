@@ -223,7 +223,7 @@ func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 		// cert_monitor
 		_, err = db.Writer().Exec(ctx,
 			`INSERT INTO cert_monitors (id, hostname, port, source, created_at, agent_id) VALUES (?, ?, 443, 'standalone', ?, ?)`,
-			uid.CertMonitor(agentID, "host-"+agentID, 443), "host-"+agentID, now, agentID)
+			uid.CertMonitor(agentID, "host-"+agentID, 443, ""), "host-"+agentID, now, agentID)
 		require.NoError(t, err)
 		return containerID
 	}

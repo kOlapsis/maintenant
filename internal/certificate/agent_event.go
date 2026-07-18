@@ -33,7 +33,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return nil
 	}
 
-	monitor, err := s.store.GetMonitorByHostPortAgent(ctx, &agentID, host, port)
+	monitor, err := s.store.GetMonitorByHostPortAgent(ctx, &agentID, host, port, "")
 	if err != nil {
 		return err
 	}

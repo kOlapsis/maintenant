@@ -44,6 +44,7 @@ const isQuotaError = computed(() => {
 const form = ref({
   hostname: '',
   port: 443,
+  server_name: '',
   check_interval_seconds: 43200,
 })
 
@@ -87,7 +88,7 @@ async function handleCreate() {
   try {
     await createCertificate(form.value)
     showCreateForm.value = false
-    form.value = { hostname: '', port: 443, check_interval_seconds: 43200 }
+    form.value = { hostname: '', port: 443, server_name: '', check_interval_seconds: 43200 }
     store.fetchCertificates()
     reload()
   } catch (e) {
@@ -234,6 +235,31 @@ function handleSelect(id: string) {
                 minHeight: '44px',
               }"
             />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">
+              Server name (SNI) <span :style="{ color: 'var(--mnt-text-muted)' }">— optional</span>
+            </label>
+            <input
+              v-model="form.server_name"
+              type="text"
+              placeholder="e.g., service.example.com"
+              :style="{
+                width: '100%',
+                borderRadius: 'var(--mnt-radius-md)',
+                border: '1px solid var(--mnt-border-default)',
+                backgroundColor: 'var(--mnt-bg-elevated)',
+                color: 'var(--mnt-text-primary)',
+                padding: '0.375rem 0.75rem',
+                fontSize: '0.875rem',
+                minHeight: '44px',
+              }"
+            />
+            <p class="mt-1 text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
+              Sent as SNI during the TLS handshake; the certificate is validated against this name
+              instead of the hostname. Useful to verify which certificate a reverse proxy serves
+              for a given virtual host (failover / keepalived setups).
+            </p>
           </div>
         </div>
         <div>

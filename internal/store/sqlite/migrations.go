@@ -92,6 +92,12 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 		return fmt.Errorf("uuid conversion: %w", err)
 	}
 
+	// One-time rebuild extending the cert monitor identity with the SNI
+	// server_name, for databases converted before that column existed.
+	if err := rebuildCertMonitorsForSNI(context.Background(), db, logger); err != nil {
+		return fmt.Errorf("cert sni rebuild: %w", err)
+	}
+
 	return nil
 }
 

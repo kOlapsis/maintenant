@@ -113,10 +113,25 @@ Create a monitor for any domain:
 # Create a certificate monitor
 POST /api/v1/certificates
 {
-  "domain": "example.com",
+  "hostname": "example.com",
   "port": 443
 }
 ```
+
+#### SNI checks (`server_name`)
+
+The optional `server_name` field is presented as **SNI** during the TLS handshake, and the received certificate is validated against it instead of `hostname`. This lets you check which certificate a reverse proxy would serve for a given virtual host — for example, verifying every proxy of a keepalived/failover pair before a failover happens:
+
+```bash
+POST /api/v1/certificates
+{
+  "hostname": "proxy2.lan",
+  "port": 443,
+  "server_name": "service.example.com"
+}
+```
+
+Several monitors can target the same `hostname:port` with different `server_name` values — one per virtual host you want covered. `server_name` is fixed at creation time; delete and recreate the monitor to change it. When it is empty, the certificate is validated against `hostname` as before.
 
 ### API Endpoints
 

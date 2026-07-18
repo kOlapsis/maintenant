@@ -39,18 +39,18 @@ func NewCertificateStore(d *DB) *CertificateStore {
 
 const certMonitorColumns = `id, hostname, port, source, endpoint_id, status,
 	check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
-	last_check_at, next_check_at, last_error, created_at, external_id, agent_id`
+	last_check_at, next_check_at, last_error, created_at, external_id, agent_id, server_name`
 
 // CreateMonitor upserts a cert monitor. Its id is derived deterministically from
-// (agent_id, hostname, port) so the agent and server mint the same id; a repeat
-// report for the same host updates the existing row's mutable settings.
+// (agent_id, hostname, port, server_name) so the agent and server mint the same
+// id; a repeat report for the same host updates the existing row's mutable settings.
 func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.CertMonitor) (string, error) {
 	now := time.Now().Unix()
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now()
 	}
 	m.AgentID = uid.Agent(m.AgentID)
-	m.ID = uid.CertMonitor(m.AgentID, m.Hostname, m.Port)
+	m.ID = uid.CertMonitor(m.AgentID, m.Hostname, m.Port, m.ServerName)
 
 	thresholdsJSON := m.WarningThresholdsJSON()
 
@@ -65,16 +65,16 @@ func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.Cer
 	}
 
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO cert_monitors (id, agent_id, hostname, port, source, endpoint_id, status,
+		`INSERT INTO cert_monitors (id, agent_id, hostname, port, server_name, source, endpoint_id, status,
 			check_interval_seconds, warning_thresholds_json, last_alerted_threshold,
 			last_check_at, next_check_at, last_error, created_at, external_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			source=excluded.source, endpoint_id=excluded.endpoint_id,
 			check_interval_seconds=excluded.check_interval_seconds,
 			warning_thresholds_json=excluded.warning_thresholds_json,
 			external_id=excluded.external_id`,
-		m.ID, m.AgentID, m.Hostname, m.Port, string(m.Source), endpointID, string(m.Status),
+		m.ID, m.AgentID, m.Hostname, m.Port, m.ServerName, string(m.Source), endpointID, string(m.Status),
 		m.CheckIntervalSeconds, thresholdsJSON,
 		nextCheckAt, now, m.ExternalID,
 	)
@@ -89,25 +89,25 @@ func (s *CertificateStore) GetMonitorByID(ctx context.Context, id string) (*cert
 		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE id=?`, id))
 }
 
-func (s *CertificateStore) GetMonitorByHostPort(ctx context.Context, hostname string, port int) (*certificate.CertMonitor, error) {
+func (s *CertificateStore) GetMonitorByHostPort(ctx context.Context, hostname string, port int, serverName string) (*certificate.CertMonitor, error) {
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
-		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE hostname=? AND port=?`,
-		hostname, port))
+		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE hostname=? AND port=? AND server_name=?`,
+		hostname, port, serverName))
 }
 
 // GetMonitorByHostPortAgent resolves a monitor scoped to a given agent (or the
 // local server when agentID is nil/empty). Matches the agent-aware identity
-// (agent_id, hostname, port) so a remote agent's localhost:443 does not collide
-// with the server's own or another agent's.
-func (s *CertificateStore) GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int) (*certificate.CertMonitor, error) {
+// (agent_id, hostname, port, server_name) so a remote agent's localhost:443 does
+// not collide with the server's own or another agent's.
+func (s *CertificateStore) GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int, serverName string) (*certificate.CertMonitor, error) {
 	aid := uid.LocalAgent
 	if agentID != nil {
 		aid = uid.Agent(*agentID)
 	}
 	return s.scanMonitor(s.db.QueryRowContext(ctx,
 		`SELECT `+certMonitorColumns+` FROM cert_monitors
-		WHERE hostname=? AND port=? AND agent_id=?`,
-		hostname, port, aid))
+		WHERE hostname=? AND port=? AND agent_id=? AND server_name=?`,
+		hostname, port, aid, serverName))
 }
 
 func (s *CertificateStore) GetMonitorByEndpointID(ctx context.Context, endpointID string) (*certificate.CertMonitor, error) {
@@ -451,7 +451,7 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 		&m.ID, &m.Hostname, &m.Port, &m.Source, &endpointID, &m.Status,
 		&m.CheckIntervalSeconds, &thresholdsJSON, &lastAlertedThreshold,
 		&lastCheckAt, &nextCheckAt, &lastError, &createdAt,
-		&m.ExternalID, &m.AgentID,
+		&m.ExternalID, &m.AgentID, &m.ServerName,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

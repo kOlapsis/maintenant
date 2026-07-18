@@ -122,6 +122,13 @@ function countdownBgColor(days: number | undefined): string {
         <span class="text-lg font-medium break-all" :style="{ color: 'var(--mnt-text-primary)' }">
           {{ detail.certificate.hostname }}:{{ detail.certificate.port }}
         </span>
+        <span
+          v-if="detail.certificate.server_name"
+          class="rounded-full px-2 py-0.5 text-xs font-medium break-all"
+          :style="{ backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-secondary)' }"
+        >
+          SNI: {{ detail.certificate.server_name }}
+        </span>
         <CertificateStatusBadge :status="detail.certificate.status" />
         <span
           class="rounded-full px-2 py-0.5 text-xs font-medium"

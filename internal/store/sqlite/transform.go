@@ -197,8 +197,8 @@ func registerUIDFuncs(ctx context.Context, conn *sql.Conn) error {
 		if err := c.RegisterFunc("mnt_endpoint_id", uid.EndpointLabel, true); err != nil {
 			return err
 		}
-		if err := c.RegisterFunc("mnt_cert_id", func(agent, host string, port int64) string {
-			return uid.CertMonitor(agent, host, int(port))
+		if err := c.RegisterFunc("mnt_cert_id", func(agent, host string, port int64, serverName string) string {
+			return uid.CertMonitor(agent, host, int(port), serverName)
 		}, true); err != nil {
 			return err
 		}
@@ -313,18 +313,18 @@ func copyStatements() []stmt {
 		{"cert_monitors", `INSERT INTO cert_monitors
 			(id, agent_id, hostname, port, source, endpoint_id, status, check_interval_seconds,
 			 warning_thresholds_json, last_alerted_threshold, last_check_at, next_check_at, last_error,
-			 created_at, external_id)
-			SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port), '` + s + `', cm.hostname, cm.port, cm.source,
+			 created_at, external_id, server_name)
+			SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port, cm.server_name), '` + s + `', cm.hostname, cm.port, cm.source,
 			 (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = cm.endpoint_id),
 			 cm.status, cm.check_interval_seconds, cm.warning_thresholds_json, cm.last_alerted_threshold,
-			 cm.last_check_at, cm.next_check_at, cm.last_error, cm.created_at, cm.external_id
+			 cm.last_check_at, cm.next_check_at, cm.last_error, cm.created_at, cm.external_id, cm.server_name
 			FROM _old_cert_monitors cm`},
 
 		{"cert_check_results", `INSERT INTO cert_check_results
 			(id, monitor_id, subject_cn, issuer_cn, issuer_org, sans_json, serial_number, signature_algorithm,
 			 not_before, not_after, chain_valid, chain_error, hostname_match, error_message, checked_at,
 			 ocsp_stapled, ocsp_status, ocsp_produced_at, ocsp_next_update, ocsp_error)
-			SELECT mcc.new_id, mnt_cert_id('` + s + `', cm.hostname, cm.port), ccr.subject_cn, ccr.issuer_cn,
+			SELECT mcc.new_id, mnt_cert_id('` + s + `', cm.hostname, cm.port, cm.server_name), ccr.subject_cn, ccr.issuer_cn,
 			 ccr.issuer_org, ccr.sans_json, ccr.serial_number, ccr.signature_algorithm, ccr.not_before,
 			 ccr.not_after, ccr.chain_valid, ccr.chain_error, ccr.hostname_match, ccr.error_message,
 			 ccr.checked_at, ccr.ocsp_stapled, ccr.ocsp_status, ccr.ocsp_produced_at, ccr.ocsp_next_update, ccr.ocsp_error
@@ -375,7 +375,7 @@ func copyStatements() []stmt {
 			 COALESCE(CASE a.entity_type
 			   WHEN 'container'   THEN (SELECT mnt_container_id('` + s + `', c.external_id) FROM _old_containers c WHERE c.id = a.entity_id)
 			   WHEN 'endpoint'    THEN (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = a.entity_id)
-			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port) FROM _old_cert_monitors cm WHERE cm.id = a.entity_id)
+			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port, cm.server_name) FROM _old_cert_monitors cm WHERE cm.id = a.entity_id)
 			   WHEN 'heartbeat'   THEN (SELECT hb.uuid FROM _old_heartbeats hb WHERE hb.id = a.entity_id)
 			   ELSE CAST(a.entity_id AS TEXT)
 			 END, CAST(a.entity_id AS TEXT)),
@@ -410,7 +410,7 @@ func copyStatements() []stmt {
 			 COALESCE(CASE sr.entity_type
 			   WHEN 'container'   THEN (SELECT mnt_container_id('` + s + `', c.external_id) FROM _old_containers c WHERE c.id = sr.entity_id)
 			   WHEN 'endpoint'    THEN (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = sr.entity_id)
-			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port) FROM _old_cert_monitors cm WHERE cm.id = sr.entity_id)
+			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port, cm.server_name) FROM _old_cert_monitors cm WHERE cm.id = sr.entity_id)
 			   WHEN 'heartbeat'   THEN (SELECT hb.uuid FROM _old_heartbeats hb WHERE hb.id = sr.entity_id)
 			   WHEN NULL THEN NULL
 			   ELSE CASE WHEN sr.entity_id IS NULL THEN NULL ELSE CAST(sr.entity_id AS TEXT) END
@@ -467,7 +467,7 @@ func copyStatements() []stmt {
 			 COALESCE(CASE scm.monitor_type
 			   WHEN 'container'   THEN (SELECT mnt_container_id('` + s + `', c.external_id) FROM _old_containers c WHERE c.id = scm.monitor_id)
 			   WHEN 'endpoint'    THEN (SELECT mnt_endpoint_id('` + s + `', e.container_name, e.label_key) FROM _old_endpoints e WHERE e.id = scm.monitor_id)
-			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port) FROM _old_cert_monitors cm WHERE cm.id = scm.monitor_id)
+			   WHEN 'certificate' THEN (SELECT mnt_cert_id('` + s + `', cm.hostname, cm.port, cm.server_name) FROM _old_cert_monitors cm WHERE cm.id = scm.monitor_id)
 			   WHEN 'heartbeat'   THEN (SELECT hb.uuid FROM _old_heartbeats hb WHERE hb.id = scm.monitor_id)
 			   ELSE CAST(scm.monitor_id AS TEXT)
 			 END, CAST(scm.monitor_id AS TEXT))

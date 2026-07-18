@@ -141,7 +141,7 @@ func TestConvertToUUID(t *testing.T) {
 	require.Equal(t, wantContainer, scanString(t, db, `SELECT id FROM containers`))
 	wantEndpoint := uid.EndpointLabel(uid.LocalAgent, "web", "maintenant.endpoint.http")
 	require.Equal(t, wantEndpoint, scanString(t, db, `SELECT id FROM endpoints`))
-	wantCert := uid.CertMonitor(uid.LocalAgent, "example.com", 443)
+	wantCert := uid.CertMonitor(uid.LocalAgent, "example.com", 443, "")
 	require.Equal(t, wantCert, scanString(t, db, `SELECT id FROM cert_monitors`))
 
 	// Heartbeat id is the ping token.

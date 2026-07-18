@@ -280,7 +280,7 @@ func TestParseCertificateLabels_StripsSchemeAndPath(t *testing.T) {
 type mockCertStore struct {
 	monitors               map[string]*CertMonitor
 	standaloneCount        int
-	getMonitorByHostPortFn func(ctx context.Context, hostname string, port int) (*CertMonitor, error)
+	getMonitorByHostPortFn func(ctx context.Context, hostname string, port int, serverName string) (*CertMonitor, error)
 }
 
 func newMockCertStore() *mockCertStore {
@@ -298,16 +298,16 @@ func (m *mockCertStore) CreateMonitor(_ context.Context, monitor *CertMonitor) (
 	return monitor.ID, nil
 }
 
-func (m *mockCertStore) GetMonitorByHostPort(ctx context.Context, hostname string, port int) (*CertMonitor, error) {
+func (m *mockCertStore) GetMonitorByHostPort(ctx context.Context, hostname string, port int, serverName string) (*CertMonitor, error) {
 	if m.getMonitorByHostPortFn != nil {
-		return m.getMonitorByHostPortFn(ctx, hostname, port)
+		return m.getMonitorByHostPortFn(ctx, hostname, port, serverName)
 	}
 	return nil, nil
 }
 
-func (m *mockCertStore) GetMonitorByHostPortAgent(ctx context.Context, _ *string, hostname string, port int) (*CertMonitor, error) {
+func (m *mockCertStore) GetMonitorByHostPortAgent(ctx context.Context, _ *string, hostname string, port int, serverName string) (*CertMonitor, error) {
 	if m.getMonitorByHostPortFn != nil {
-		return m.getMonitorByHostPortFn(ctx, hostname, port)
+		return m.getMonitorByHostPortFn(ctx, hostname, port, serverName)
 	}
 	return nil, nil
 }
@@ -407,4 +407,55 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 	count, err := store.CountStandaloneMonitors(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
+}
+
+// ---------------------------------------------------------------------------
+// SNI (server_name) tests
+// ---------------------------------------------------------------------------
+
+func TestService_CreateStandalone_InvalidServerName(t *testing.T) {
+	svc := NewService(Deps{Store: newMockCertStore(), Logger: noopLogger()})
+
+	for _, sni := range []string{"bad:443", "https://bad", "bad name"} {
+		_, _, err := svc.CreateStandalone(context.Background(), CreateCertificateInput{
+			Hostname:             "proxy.invalid",
+			Port:                 443,
+			ServerName:           sni,
+			CheckIntervalSeconds: 3600,
+		})
+		assert.True(t, errors.Is(err, ErrInvalidInput), "server_name %q should be rejected", sni)
+	}
+}
+
+func TestService_CreateStandalone_SNICoexistsAndDedups(t *testing.T) {
+	store := newMockCertStore()
+	// Mirror the real store lookup: an existing monitor only matches on the
+	// full (hostname, port, server_name) identity.
+	store.getMonitorByHostPortFn = func(_ context.Context, hostname string, port int, serverName string) (*CertMonitor, error) {
+		for _, m := range store.monitors {
+			if m.Hostname == hostname && m.Port == port && m.ServerName == serverName {
+				return m, nil
+			}
+		}
+		return nil, nil
+	}
+	svc := NewService(Deps{Store: store, Logger: noopLogger()})
+	ctx := context.Background()
+
+	// SNI-less monitor, then an SNI monitor on the same host:port — both live.
+	_, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
+		Hostname: "proxy2.invalid", Port: 443, CheckIntervalSeconds: 3600,
+	})
+	require.NoError(t, err)
+	withSNI, _, err := svc.CreateStandalone(ctx, CreateCertificateInput{
+		Hostname: "proxy2.invalid", Port: 443, ServerName: "service.example.invalid", CheckIntervalSeconds: 3600,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "service.example.invalid", withSNI.ServerName)
+
+	// Same (host, port, server_name) again is a duplicate.
+	_, _, err = svc.CreateStandalone(ctx, CreateCertificateInput{
+		Hostname: "proxy2.invalid", Port: 443, ServerName: "service.example.invalid", CheckIntervalSeconds: 3600,
+	})
+	assert.True(t, errors.Is(err, ErrDuplicateMonitor), "expected ErrDuplicateMonitor, got %v", err)
 }

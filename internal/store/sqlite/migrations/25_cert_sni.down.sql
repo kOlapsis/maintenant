@@ -1,0 +1,3 @@
+-- Migration rollback is intentionally a no-op per the project convention
+-- (see 20_cert_ocsp.down.sql). After the SNI identity rebuild, server_name is
+-- part of the table's UNIQUE constraint, so DROP COLUMN would fail anyway.

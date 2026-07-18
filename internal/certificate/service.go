@@ -122,7 +122,7 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID string, tar
 		return existing, nil
 	}
 
-	existing, err = s.store.GetMonitorByHostPort(ctx, hostname, port)
+	existing, err = s.store.GetMonitorByHostPort(ctx, hostname, port, "")
 	if err != nil {
 		return nil, fmt.Errorf("get monitor by host:port: %w", err)
 	}
@@ -147,7 +147,7 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID string, tar
 		// Race condition: another goroutine created the monitor concurrently.
 		// Fall back to reading the existing one.
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			existing, rerr := s.store.GetMonitorByHostPort(ctx, hostname, port)
+			existing, rerr := s.store.GetMonitorByHostPort(ctx, hostname, port, "")
 			if rerr != nil {
 				return nil, fmt.Errorf("create auto monitor: %w (fallback: %w)", err, rerr)
 			}
@@ -215,6 +215,10 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 	if len(input.WarningThresholds) == 0 {
 		input.WarningThresholds = DefaultWarningThresholds()
 	}
+	input.ServerName = strings.TrimSpace(input.ServerName)
+	if strings.ContainsAny(input.ServerName, ":/ ") {
+		return nil, nil, fmt.Errorf("%w: server_name must be a bare hostname (no port, scheme or path)", ErrInvalidInput)
+	}
 
 	// Check quota for standalone monitors
 	count, err := s.store.CountStandaloneMonitors(ctx)
@@ -223,13 +227,14 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 	}
 
 	// Check for existing monitor (FR-018)
-	existing, err := s.store.GetMonitorByHostPort(ctx, input.Hostname, input.Port)
+	existing, err := s.store.GetMonitorByHostPort(ctx, input.Hostname, input.Port, input.ServerName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("check existing: %w", err)
 	}
 	monitor := &CertMonitor{
 		Hostname:             input.Hostname,
 		Port:                 input.Port,
+		ServerName:           input.ServerName,
 		Source:               SourceStandalone,
 		Status:               StatusUnknown,
 		CheckIntervalSeconds: input.CheckIntervalSeconds,
@@ -251,14 +256,15 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 	}
 
 	s.emit(event.CertificateCreated, map[string]interface{}{
-		"monitor_id": monitor.ID,
-		"hostname":   monitor.Hostname,
-		"port":       monitor.Port,
-		"source":     "standalone",
+		"monitor_id":  monitor.ID,
+		"hostname":    monitor.Hostname,
+		"port":        monitor.Port,
+		"server_name": monitor.ServerName,
+		"source":      "standalone",
 	})
 
 	// Run first check immediately
-	checkResult := CheckCertificate(monitor.Hostname, monitor.Port, 10*time.Second)
+	checkResult := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, 10*time.Second)
 	result := s.processCheckResult(ctx, monitor, checkResult)
 
 	return monitor, result, nil
@@ -350,7 +356,7 @@ func (s *Service) SyncFromLabels(ctx context.Context, containerExternalID string
 		key := p.Hostname + ":" + strconv.Itoa(p.Port)
 		desired[key] = true
 
-		existing, err := s.store.GetMonitorByHostPort(ctx, p.Hostname, p.Port)
+		existing, err := s.store.GetMonitorByHostPort(ctx, p.Hostname, p.Port, "")
 		if err != nil {
 			s.logger.Error("check existing cert monitor", "error", err, "hostname", p.Hostname)
 			continue
@@ -435,7 +441,7 @@ func (s *Service) SyncAgentCerts(ctx context.Context, agentID, containerExternal
 	for _, p := range parsed {
 		desired[p.Hostname+":"+strconv.Itoa(p.Port)] = true
 
-		existing, err := s.store.GetMonitorByHostPortAgent(ctx, &agentID, p.Hostname, p.Port)
+		existing, err := s.store.GetMonitorByHostPortAgent(ctx, &agentID, p.Hostname, p.Port, "")
 		if err != nil {
 			s.logger.Error("check existing agent cert monitor", "error", err, "hostname", p.Hostname)
 			continue
@@ -578,8 +584,8 @@ func (s *Service) runScheduledChecks(ctx context.Context) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			s.logger.Debug("certificate: checking", "hostname", monitor.Hostname, "port", monitor.Port, "source", string(monitor.Source))
-			result := CheckCertificate(monitor.Hostname, monitor.Port, 10*time.Second)
+			s.logger.Debug("certificate: checking", "hostname", monitor.Hostname, "port", monitor.Port, "server_name", monitor.ServerName, "source", string(monitor.Source))
+			result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, 10*time.Second)
 			s.processCheckResult(ctx, monitor, result)
 		}(m)
 	}
@@ -721,9 +727,18 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 		return
 	}
 
+	// withSNI tags alert payloads with the SNI so multi-vhost monitors on the
+	// same host:port are distinguishable in notifications.
+	withSNI := func(data map[string]interface{}) map[string]interface{} {
+		if monitor.ServerName != "" {
+			data["server_name"] = monitor.ServerName
+		}
+		return data
+	}
+
 	// Check chain validation alerts
 	if result.ChainValid != nil && !*result.ChainValid {
-		s.emit(event.CertificateAlert, map[string]interface{}{
+		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
 			"monitor_id":  monitor.ID,
 			"hostname":    monitor.Hostname,
 			"port":        monitor.Port,
@@ -731,32 +746,32 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"severity":    "critical",
 			"chain_error": result.ChainError,
 			"timestamp":   result.CheckedAt.Format(time.RFC3339),
-		})
+		}))
 	}
 
 	// Check hostname mismatch alerts
 	if result.HostnameMatch != nil && !*result.HostnameMatch {
-		s.emit(event.CertificateAlert, map[string]interface{}{
+		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
 			"alert_type": "hostname_mismatch",
 			"severity":   "critical",
 			"timestamp":  result.CheckedAt.Format(time.RFC3339),
-		})
+		}))
 	}
 
 	// Only "revoked" triggers an alert. "unknown" and "error" are inconclusive
 	// and do not warrant a critical page.
 	if result.OCSPStatus == "revoked" {
-		alertData := map[string]interface{}{
+		alertData := withSNI(map[string]interface{}{
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
 			"alert_type": "ocsp_revoked",
 			"severity":   "critical",
 			"timestamp":  result.CheckedAt.Format(time.RFC3339),
-		}
+		})
 		if result.OCSPProducedAt != nil {
 			alertData["ocsp_produced_at"] = result.OCSPProducedAt.Format(time.RFC3339)
 		}
@@ -771,7 +786,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 
 	// Check if certificate has expired
 	if result.NotAfter.Before(time.Now()) {
-		s.emit(event.CertificateAlert, map[string]interface{}{
+		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
@@ -780,7 +795,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"not_after":      result.NotAfter.Format(time.RFC3339),
 			"days_remaining": daysRemaining,
 			"timestamp":      result.CheckedAt.Format(time.RFC3339),
-		})
+		}))
 		return
 	}
 
@@ -802,7 +817,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 		// No threshold crossed — check if we need a recovery alert
 		if monitor.LastAlertedThreshold != nil {
 			// Certificate renewed, past all thresholds
-			s.emit(event.CertificateRecovery, map[string]interface{}{
+			s.emit(event.CertificateRecovery, withSNI(map[string]interface{}{
 				"monitor_id":          monitor.ID,
 				"hostname":            monitor.Hostname,
 				"port":                monitor.Port,
@@ -810,7 +825,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 				"new_not_after":       result.NotAfter.Format(time.RFC3339),
 				"days_remaining":      daysRemaining,
 				"timestamp":           result.CheckedAt.Format(time.RFC3339),
-			})
+			}))
 			monitor.LastAlertedThreshold = nil
 		}
 		return
@@ -820,7 +835,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 
 	// Check if we need to escalate (fire alert at a new, lower threshold)
 	if monitor.LastAlertedThreshold == nil || *crossedThreshold < *monitor.LastAlertedThreshold {
-		s.emit(event.CertificateAlert, map[string]interface{}{
+		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
@@ -832,7 +847,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"issuer_org":     result.IssuerOrg,
 			"auto_renewable": IsAutoRenewable(result.IssuerOrg),
 			"timestamp":      result.CheckedAt.Format(time.RFC3339),
-		})
+		}))
 		monitor.LastAlertedThreshold = crossedThreshold
 	}
 }
@@ -843,6 +858,9 @@ func (s *Service) emitCheckCompleted(monitor *CertMonitor, result *CertCheckResu
 		"hostname":   monitor.Hostname,
 		"status":     string(monitor.Status),
 		"checked_at": result.CheckedAt.Format(time.RFC3339),
+	}
+	if monitor.ServerName != "" {
+		data["server_name"] = monitor.ServerName
 	}
 
 	if result.SubjectCN != "" {

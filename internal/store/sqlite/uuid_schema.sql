@@ -203,7 +203,7 @@ CREATE INDEX idx_check_timestamp ON check_results(timestamp);
 
 -- ========================================================= cert monitors =====
 CREATE TABLE cert_monitors (
-    id              TEXT PRIMARY KEY NOT NULL,              -- uid.CertMonitor(agent,host,port) or minted (standalone)
+    id              TEXT PRIMARY KEY NOT NULL,              -- uid.CertMonitor(agent,host,port[,server_name]) or minted (standalone)
     agent_id        TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000' REFERENCES agents(id) ON DELETE CASCADE,
     hostname        TEXT NOT NULL,
     port            INTEGER NOT NULL DEFAULT 443,
@@ -218,7 +218,8 @@ CREATE TABLE cert_monitors (
     last_error      TEXT,
     created_at      BIGINT NOT NULL,
     external_id     TEXT NOT NULL DEFAULT '',
-    UNIQUE(agent_id, hostname, port)
+    server_name     TEXT NOT NULL DEFAULT '',               -- SNI; '' = validate against hostname
+    UNIQUE(agent_id, hostname, port, server_name)
 );
 CREATE INDEX idx_cert_monitor_endpoint ON cert_monitors(endpoint_id) WHERE endpoint_id IS NOT NULL;
 CREATE INDEX idx_cert_monitor_status ON cert_monitors(status);

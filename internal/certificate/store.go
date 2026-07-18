@@ -21,8 +21,8 @@ type CertificateStore interface {
 	// Monitor CRUD
 	CreateMonitor(ctx context.Context, m *CertMonitor) (string, error)
 	GetMonitorByID(ctx context.Context, id string) (*CertMonitor, error)
-	GetMonitorByHostPort(ctx context.Context, hostname string, port int) (*CertMonitor, error)
-	GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int) (*CertMonitor, error)
+	GetMonitorByHostPort(ctx context.Context, hostname string, port int, serverName string) (*CertMonitor, error)
+	GetMonitorByHostPortAgent(ctx context.Context, agentID *string, hostname string, port int, serverName string) (*CertMonitor, error)
 	GetMonitorByEndpointID(ctx context.Context, endpointID string) (*CertMonitor, error)
 	ListMonitors(ctx context.Context, opts ListCertificatesOpts) ([]*CertMonitor, error)
 	CountStandaloneMonitors(ctx context.Context) (int, error)

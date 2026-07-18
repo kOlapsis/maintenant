@@ -81,8 +81,14 @@ func TestHelpers_MatchDerive(t *testing.T) {
 	if EndpointLabel("a", "c", "k") != Derive(nsEndpoint, "a", "c", "k") {
 		t.Fatal("EndpointLabel mismatch")
 	}
-	if CertMonitor("a", "h", 443) != Derive(nsCert, "a", "h", "443") {
+	if CertMonitor("a", "h", 443, "") != Derive(nsCert, "a", "h", "443") {
 		t.Fatal("CertMonitor mismatch")
+	}
+	if CertMonitor("a", "h", 443, "sni.example.com") != Derive(nsCert, "a", "h", "443", "sni.example.com") {
+		t.Fatal("CertMonitor with server name mismatch")
+	}
+	if CertMonitor("a", "h", 443, "sni.example.com") == CertMonitor("a", "h", 443, "") {
+		t.Fatal("CertMonitor with server name must differ from the SNI-less id")
 	}
 	if SwarmNode("a", "n") != Derive(nsSwarmNode, "a", "n") {
 		t.Fatal("SwarmNode mismatch")
@@ -118,7 +124,7 @@ func TestGoldenVectors(t *testing.T) {
 		"nsSwarmNode":             {nsSwarmNode.String(), "80f18242-7658-5d48-9e4a-c6f1a2d94d3f"},
 		"container(local,abc123)": {Container(LocalAgent, "abc123"), "51091fab-cae2-5ca2-a58d-7b2459a1afa8"},
 		"endpoint(a,web,health)":  {EndpointLabel("a", "web", "maintenant.endpoint"), "70d87cef-16b7-5ecc-8914-7e4c1fe10d02"},
-		"cert(a,example.com,443)": {CertMonitor("a", "example.com", 443), "be26f414-880f-5477-90dd-bf161c76f60e"},
+		"cert(a,example.com,443)": {CertMonitor("a", "example.com", 443, ""), "be26f414-880f-5477-90dd-bf161c76f60e"},
 	}
 	for name, c := range cases {
 		if c.got != c.want {

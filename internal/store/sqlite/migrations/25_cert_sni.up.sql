@@ -1,0 +1,12 @@
+-- SNI support for certificate monitors (issue #34). server_name is presented
+-- as SNI during the TLS handshake and the received certificate is validated
+-- against it; '' keeps the legacy behaviour (validate against hostname).
+--
+-- Shape-agnostic on purpose: migrations run BEFORE the one-time UUID
+-- conversion, so on fresh/unconverted databases this runs against the legacy
+-- integer-keyed cert_monitors (no agent_id column). The identity change
+-- UNIQUE(agent_id, hostname, port) -> UNIQUE(agent_id, hostname, port, server_name)
+-- cannot be expressed here for both shapes; it is carried by uuid_schema.sql
+-- (fresh installs + conversions) and by rebuildCertMonitorsForSNI in
+-- transform_cert_sni.go (databases converted before this release).
+ALTER TABLE cert_monitors ADD COLUMN server_name TEXT NOT NULL DEFAULT '';
