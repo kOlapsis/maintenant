@@ -204,6 +204,7 @@ func NewRouter(d HandlerDeps) *Router {
 	}
 	if d.Runtime != nil {
 		ch.SetRuntimeChecker(d.Runtime)
+		ch.SetLogFetcher(d.Runtime)
 	}
 	if d.AgentStore != nil {
 		ch.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
