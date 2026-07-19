@@ -278,7 +278,66 @@ services:
 
 ### Docker Socket
 
-maintenant requires access to the Docker socket to discover and monitor containers. Mount it **read-only**:
+maintenant needs access to the Docker API to discover and monitor containers. Its entire API surface is **read-only**: container list/inspect/stats/logs, events, version/info, network metadata and — on Swarm managers — nodes, services and tasks. It never creates, modifies, or deletes anything.
+
+!!! danger "`:ro` on the socket is not a security boundary"
+    Mounting the socket read-only only protects the socket *file*. The Docker API behind it
+    still accepts writes: any process holding the socket — `:ro` or not — can stop containers,
+    start privileged ones, and escalate to root on the host. The only real boundary is a
+    filtering proxy in front of the socket.
+
+#### Recommended: Docker Socket Proxy
+
+Run maintenant behind [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) and point it at the proxy with `DOCKER_HOST` — maintenant's Docker client honours the variable natively, so no socket mount is needed at all:
+
+```yaml
+services:
+  socketproxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      # The only endpoint groups maintenant needs — all read-only:
+      - CONTAINERS=1        # discovery, inspect, stats, logs
+      - INFO=1              # runtime + Swarm detection
+      - NETWORKS=1          # network metadata
+      # EVENTS, PING and VERSION are already enabled by default.
+      # POST defaults to 0 -> every write returns 403.
+      # On a Swarm manager, also enable: SWARM=1, NODES=1, SERVICES=1, TASKS=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [dockerapi]
+    read_only: true
+    tmpfs: [/run, /tmp]   # the proxy writes haproxy.cfg to /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
+    environment:
+      DOCKER_HOST: tcp://socketproxy:2375
+      # ... your other settings
+    volumes:
+      - /proc:/host/proc:ro
+      - maintenant-data:/data
+      # no docker.sock mount
+    networks: [dockerapi, web]
+    depends_on: [socketproxy]
+
+networks:
+  dockerapi:
+    internal: true
+```
+
+Key points:
+
+- The proxy is the root-equivalent component. Keep it on an **internal network** and never publish port 2375 on the host.
+- With this setup, even a fully compromised maintenant could only *read* the Docker API — the proxy answers `403` to every write.
+- If maintenant starts before the proxy is reachable, it boots in degraded mode and reconnects automatically once the proxy is up.
+- Works identically in **agent mode**: the agent uses the same Docker client, so a per-host socket proxy plus `DOCKER_HOST` replaces the socket mount there too.
+
+#### Alternative: direct socket mount
+
+The simpler setup mounts the socket directly:
 
 ```yaml
 volumes:
@@ -286,9 +345,7 @@ volumes:
   - /proc:/host/proc:ro
 ```
 
-The Docker socket grants root-equivalent access to the host. maintenant only reads container state, metadata, and logs — it never creates, modifies, or deletes containers. The read-only mount and non-root user are defense-in-depth measures — even if the process is compromised, it cannot escalate to root on the host.
-
-For stricter isolation, consider using a Docker socket proxy like [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) to restrict API access to only the endpoints maintenant needs.
+This relies on maintenant *behaving* read-only (which it does) rather than *enforcing* it. The non-root user, `read_only: true` filesystem and `no-new-privileges` remain worthwhile defense-in-depth, but be clear about the trade-off: whoever holds the socket holds the host.
 
 ### Network Binding
 
@@ -329,8 +386,9 @@ A quick reference for securing your deployment:
 - [ ] Container runs as non-root (uid 65534, dropped via `setpriv` in the entrypoint — default in the official image)
 - [ ] `read_only: true` — immutable root filesystem
 - [ ] `no-new-privileges:true` — blocks privilege escalation
-- [ ] Docker socket mounted read-only (`:ro`) — its group is auto-detected; `group_add` not required
-- [ ] (Optional) `DOCKER_GID` set to override the detected socket GID (non-standard path or socket proxy)
+- [ ] **Preferred:** Docker API accessed through a [socket proxy](#recommended-docker-socket-proxy) (`DOCKER_HOST=tcp://socketproxy:2375`, no socket mount, writes rejected at the proxy)
+- [ ] Otherwise: Docker socket mounted read-only (`:ro`) — its group is auto-detected; `group_add` not required (remember `:ro` does not block API writes)
+- [ ] (Optional) `DOCKER_GID` set to override the detected socket GID (non-standard path or unix-socket proxy)
 - [ ] Reverse proxy in front of maintenant with authentication enabled
 - [ ] `/api/v1/*` and `/` require authentication
 - [ ] `/ping`, `/status` (prefix, no trailing slash) and `/manifest.webmanifest` bypass authentication

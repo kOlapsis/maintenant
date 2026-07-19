@@ -152,6 +152,14 @@ Pick the tab matching the host environment. Replace `grpcs://agents.example.com`
 
     The DaemonSet passes `--runtime=kubernetes` and reads the token from a `Secret`, so the cluster is monitored at the workload/pod level.
 
+!!! tip "Containerized agent without the socket mount"
+    The agent uses the same Docker client as the server and honours `DOCKER_HOST`. To avoid
+    handing it the raw socket, run a
+    [docker-socket-proxy](../security.md#recommended-docker-socket-proxy) on the host and
+    replace the `docker.sock` volume with `DOCKER_HOST=tcp://socketproxy:2375` (shared Docker
+    network with the proxy). The agent's API usage is read-only, so the proxy's default
+    write-blocking applies cleanly.
+
 What happens on first boot:
 
 1. The agent detects the local runtime (Docker, Swarm, or Kubernetes).

@@ -159,7 +159,7 @@ type SocketUnavailableError struct {
 }
 
 func (e *SocketUnavailableError) Error() string {
-	return fmt.Sprintf("Docker socket unavailable: %v. Ensure /var/run/docker.sock is mounted with: -v /var/run/docker.sock:/var/run/docker.sock:ro", e.Err)
+	return fmt.Sprintf("Docker API unavailable: %v. Mount the socket (-v /var/run/docker.sock:/var/run/docker.sock:ro) or set DOCKER_HOST to a reachable endpoint (e.g. a socket proxy: tcp://socketproxy:2375)", e.Err)
 }
 
 func (e *SocketUnavailableError) Unwrap() error {

@@ -14,6 +14,7 @@ maintenant is configured entirely through environment variables. No configuratio
 | `MAINTENANT_STATUS_URL` | — | Canonical public URL of the status page (e.g. `https://status.example.com`). When set, the admin UI's *View public status page* link points here. Optional — falls back to `{MAINTENANT_BASE_URL}/status` when unset. See [Public Status Page → Status URL](../features/status-page.md#status-url). |
 | `MAINTENANT_CORS_ORIGINS` | same-origin | CORS allowed origins (comma-separated). Empty means same-origin only. Set to `*` for wildcard. |
 | `MAINTENANT_RUNTIME` | auto-detect | Force container runtime: `docker` or `kubernetes`. Auto-detected by default. |
+| `DOCKER_HOST` | local socket | Docker API endpoint (standard Docker SDK variable). Point it at a socket proxy (`tcp://socketproxy:2375`) to run without mounting `/var/run/docker.sock` — see [Security → Docker Socket Proxy](../security.md#recommended-docker-socket-proxy). |
 | `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes for POST/PUT requests (default: 1 MB). |
 | `MAINTENANT_UPDATE_INTERVAL` | `24h` | Update intelligence scan interval. Accepts Go duration format (e.g., `12h`, `30m`). |
 | `MAINTENANT_K8S_NAMESPACES` | all | Kubernetes namespace allowlist (comma-separated). Empty monitors all namespaces. |

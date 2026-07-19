@@ -67,6 +67,13 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     the full decision guide, including how to acknowledge the finding when the exposure is
     intentional.
 
+!!! tip "Run without mounting the Docker socket"
+    Mounting `docker.sock` — even `:ro` — hands the container root-equivalent access to the
+    host; the `:ro` flag does not block Docker API writes. maintenant's API usage is entirely
+    read-only, and its client honours `DOCKER_HOST`, so it runs cleanly behind a
+    [docker-socket-proxy](../security.md#recommended-docker-socket-proxy) that rejects every
+    write with `403`. Recommended for production.
+
 !!! tip "Production deployment"
     For production, place maintenant behind a reverse proxy with authentication.
     See the [Configuration](configuration.md) page for a Traefik + Authelia example.
