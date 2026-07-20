@@ -385,9 +385,10 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 
 		// Check for state changes
 		if sc.State != dc.State {
+			previousState := sc.State
 			transition := &StateTransition{
 				ContainerID:   sc.ID,
-				PreviousState: sc.State,
+				PreviousState: previousState,
 				NewState:      dc.State,
 				Timestamp:     now,
 			}
@@ -402,7 +403,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			}
 
 			s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
-				"id": sc.ID, "state": dc.State, "previous_state": sc.State, "timestamp": now, "agent_id": sc.AgentID,
+				"id": sc.ID, "state": dc.State, "previous_state": previousState, "timestamp": now, "agent_id": sc.AgentID,
 			})
 		}
 	}

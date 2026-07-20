@@ -520,6 +520,46 @@ func TestService_ProcessEvent_HealthChangeRecordsTransition(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Reconcile tests
+// ---------------------------------------------------------------------------
+
+func TestService_Reconcile_StateChangeEmitsRealPreviousState(t *testing.T) {
+	// A container that changed state while maintenant was offline must emit
+	// container.state_changed with the true previous state, not the new one.
+	store := newSvcStore()
+	c := makeTestContainer(extID("recon"), StateRunning)
+	c.ID = "40"
+	store.seed(c)
+
+	discovered := makeTestContainer(c.ExternalID, StateExited)
+	discovered.ID = c.ID
+
+	discoverer := &mockDiscoverer{containers: []*Container{discovered}}
+	var stateChangedData map[string]interface{}
+	svc := newTestService(store, func(d *Deps) {
+		d.Discoverer = discoverer
+		d.EventCallback = func(eventType string, data interface{}) {
+			if eventType == "container.state_changed" {
+				stateChangedData, _ = data.(map[string]interface{})
+			}
+		}
+	})
+
+	require.NoError(t, svc.Reconcile(context.Background(), discoverer))
+
+	require.NotNil(t, stateChangedData, "reconcile must emit container.state_changed")
+	assert.Equal(t, StateExited, stateChangedData["state"])
+	assert.Equal(t, StateRunning, stateChangedData["previous_state"],
+		"previous_state must be the prior state, not the new one")
+
+	// The recorded transition must agree.
+	transitions := store.transitionsFor(c.ID)
+	require.Len(t, transitions, 1)
+	assert.Equal(t, StateRunning, transitions[0].PreviousState)
+	assert.Equal(t, StateExited, transitions[0].NewState)
+}
+
+// ---------------------------------------------------------------------------
 // Restart detection tests
 // ---------------------------------------------------------------------------
 
