@@ -91,7 +91,9 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 
 		headersJSON, _ := json.Marshal(headers)
 
-		// Create a synthetic NotificationChannel to reuse the notifier
+		// Reuse the notifier's worker pool + retry policy, but send the raw
+		// event payload verbatim (the same bytes signed above) — not a synthetic
+		// alert, which would drop every field of the actual event.
 		ch := &alert.NotificationChannel{
 			Name:    sub.Name,
 			Type:    "webhook",
@@ -100,22 +102,10 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 			Enabled: true,
 		}
 
-		delivery := &alert.NotificationDelivery{
-			Status: alert.DeliveryPending,
-		}
-
-		syntheticAlert := &alert.Alert{
-			Source:    "webhook",
-			AlertType: webhookEventType,
-			Severity:  alert.SeverityInfo,
-			Status:    alert.StatusActive,
-			Message:   webhookEventType,
-		}
-
 		d.notifier.Enqueue(alert.NotificationJob{
-			Delivery: delivery,
+			Delivery: &alert.NotificationDelivery{Status: alert.DeliveryPending},
 			Channel:  ch,
-			Alert:    syntheticAlert,
+			Body:     payloadBytes,
 		})
 	}
 }

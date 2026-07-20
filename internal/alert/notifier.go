@@ -44,6 +44,20 @@ type NotificationJob struct {
 	Delivery *NotificationDelivery
 	Channel  *NotificationChannel
 	Alert    *Alert
+	// Body, when non-nil, is the pre-rendered request body sent verbatim
+	// (used by webhook subscriptions, which dispatch the raw event payload
+	// they already marshalled and signed). When nil, the body is formatted
+	// from Alert.
+	Body []byte
+}
+
+// jobAlertID returns the job's alert id for logging, or "" when the job has no
+// alert (a pre-rendered Body job).
+func jobAlertID(job NotificationJob) string {
+	if job.Alert == nil {
+		return ""
+	}
+	return job.Alert.ID
 }
 
 // WebhookPayload is the JSON body sent to generic webhook URLs.
@@ -98,7 +112,7 @@ func (n *Notifier) Enqueue(job NotificationJob) {
 	case n.jobs <- job:
 	default:
 		n.logger.Warn("notifier: job queue full, dropping notification",
-			"alert_id", job.Alert.ID, "channel_id", job.Channel.ID)
+			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
 	}
 }
 
@@ -117,6 +131,13 @@ func (n *Notifier) worker(ctx context.Context) {
 }
 
 func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
+	// Pre-rendered body: webhook subscriptions dispatch the raw event payload
+	// (already marshalled and signed), so there is no alert to format from.
+	if job.Body != nil {
+		n.deliverWebhook(ctx, job, job.Body)
+		return
+	}
+
 	eventType := event.AlertFired
 	if job.Alert.Status == StatusResolved {
 		eventType = event.AlertResolved
@@ -136,14 +157,19 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		return
 	}
 
+	n.deliverWebhook(ctx, job, body)
+}
+
+// deliverWebhook POSTs body to the job's channel using the shared retry/backoff
+// policy and records the delivery outcome.
+func (n *Notifier) deliverWebhook(ctx context.Context, job NotificationJob, body []byte) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			backoff := retryBackoffs[attempt-1]
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(backoff):
+			case <-time.After(retryBackoffs[attempt-1]):
 			}
 		}
 
@@ -157,16 +183,16 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 				}
 			}
 			n.logger.Debug("alert notifier: delivered",
-				"alert_id", job.Alert.ID,
+				"alert_id", jobAlertID(job),
 				"channel_id", job.Channel.ID,
-				"channel_type", channelType,
+				"channel_type", job.Channel.Type,
 			)
 			return
 		}
 
 		n.logger.Warn("notifier: webhook delivery attempt failed",
 			"attempt", attempt+1, "channel_id", job.Channel.ID,
-			"alert_id", job.Alert.ID, "error", lastErr)
+			"alert_id", jobAlertID(job), "error", lastErr)
 	}
 
 	// All retries exhausted

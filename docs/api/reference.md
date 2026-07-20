@@ -201,6 +201,40 @@ Endpoints return `403 edition_required` on Community.
 | `DELETE` | `/api/v1/webhooks/{id}` | Delete a webhook subscription |
 | `POST` | `/api/v1/webhooks/{id}/test` | Send a test payload |
 
+### Delivery format
+
+Each delivery is a `POST` with a JSON body of the shape `{type, timestamp, data}`, where `data` is the raw event payload for that `type`:
+
+```json
+{
+  "type": "container.state_changed",
+  "timestamp": "2026-07-19T19:49:42Z",
+  "data": {
+    "id": "a1b2c3d4e5f6",
+    "state": "running",
+    "previous_state": "exited",
+    "health_status": "healthy",
+    "exit_code": 0,
+    "agent_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+The `data` fields depend on `type` (`container.state_changed`, `endpoint.status_changed`, `heartbeat.status_changed`, `certificate.status_changed`, `alert.fired`, `alert.resolved`). Subscribe to specific types or `*` for all.
+
+Headers on every delivery:
+
+| Header | Value |
+|--------|-------|
+| `X-maintenant-Event` | the event `type` |
+| `X-maintenant-Delivery` | a unique delivery UUID |
+| `X-maintenant-Signature` | `sha256=<hmac>` — present only when the subscription has a secret |
+
+When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_request_body)` and comparing (constant-time) against the hex digest in `X-maintenant-Signature`. The signature is computed over the exact bytes of the request body.
+
+!!! note "Container recreation is noisy"
+    A `docker compose up -d` that recreates a stack legitimately produces several `container.state_changed` deliveries per service (the old container goes `running → exited`, the new one `created → running`, plus health transitions). Filter on `data.state` / `data.previous_state` if you only care about specific transitions.
+
 ---
 
 ## Status Page (Admin)
