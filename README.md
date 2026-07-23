@@ -17,6 +17,12 @@
 </p>
 
 <p align="center">
+  <a href="https://scorecard.dev/viewer/?uri=github.com/kOlapsis/maintenant"><img src="https://img.shields.io/ossf-scorecard/github.com/kOlapsis/maintenant?label=OpenSSF%20Scorecard&style=flat-square" alt="OpenSSF Scorecard" /></a>
+  <a href="https://slsa.dev/spec/v1.0/levels#build-l2"><img src="https://img.shields.io/badge/SLSA-Build%20L2-blue?style=flat-square&logo=slsa&logoColor=white" alt="SLSA Build L2" /></a>
+  <a href="https://score.getplumber.io/github.com/kOlapsis/maintenant"><img src="https://score.getplumber.io/github.com/kOlapsis/maintenant.svg" alt="Plumber Score" /></a>
+</p>
+
+<p align="center">
   <a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#pricing">Pricing</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
 </p>
 

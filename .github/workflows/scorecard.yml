@@ -1,0 +1,68 @@
+# OpenSSF Scorecard: an external, unbiased audit of this repository's supply
+# chain posture (token permissions, pinned dependencies, branch protection,
+# signed releases, dependency update tooling, and a dozen more).
+#
+# publish_results: true sends the result to api.securityscorecards.dev, which is
+# what feeds the README badge and lets a downstream consumer check this project
+# without cloning it. The SARIF also lands in the Security tab so a regression
+# shows up as a code-scanning alert rather than a silent score drop.
+#
+# branch_protection_rule is a trigger on purpose: a weakened ruleset should
+# re-score the repository immediately, not a week later on the cron.
+name: OpenSSF Scorecard
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: "17 4 * * 2"
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # SARIF upload to the Security tab.
+      security-events: write
+      # Result publication to the OpenSSF API (badge), over OIDC.
+      id-token: write
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Scorecard analysis run
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publishes to api.securityscorecards.dev: required for the badge.
+          publish_results: true
+
+      - name: Keep the SARIF as an artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload the SARIF to the Security tab
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          sarif_file: results.sarif

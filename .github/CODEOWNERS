@@ -1,0 +1,12 @@
+# Default owners: every pull request needs their review.
+* @stephrobert
+
+# The CI/CD chain is the most sensitive surface of the repository: a change to a
+# workflow, to the Dockerfile or to the scanner policies can weaken every build.
+/.github/workflows/ @stephrobert
+/.github/dependabot.yml @stephrobert
+/.plumber.yaml @stephrobert
+/.poutine.yml @stephrobert
+/Dockerfile @stephrobert
+/docker-entrypoint.sh @stephrobert
+/SECURITY.md @stephrobert

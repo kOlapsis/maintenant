@@ -1,0 +1,331 @@
+# Contribution gate. Three workflow scanners run first, in parallel, as a fast
+# security gate: zizmor (workflow vulnerabilities), actionlint (syntax, invalid
+# permission scopes, shellcheck) and poutine (CI/CD exploitation chains). The
+# heavier jobs (Go lint, tests, gosec, dependency audit, frontend) only run once
+# all three pass, so an insecure workflow fails fast without burning runners.
+#
+# The compliance score and the repository-settings checks live in plumber.yml
+# (trusted context only); supply-chain posture in scorecard.yml; deep static
+# analysis in codeql.yml; the image build and its Trivy scan in build-docker.yml.
+#
+# Hardening baseline: every action is pinned to a full commit SHA, the default
+# token has no permissions, each job grants only what it needs, checkout never
+# persists credentials, and jobs are time-boxed.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Deny-by-default: jobs opt into the scopes they need, nothing is inherited.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast security gate — every heavier job depends on the three scanners below.
+  zizmor:
+    name: Zizmor (workflow static analysis)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # First step of every job: monitor egress and keep the runner from being
+      # tampered with. `audit` records outbound calls without failing the run —
+      # the recorded list is what a future `block` policy would be built from.
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Gate-only (no SARIF upload) so the check also passes on pull requests
+      # from forks, where the token cannot write to code scanning. Findings in
+      # the Security tab come from CodeQL, Scorecard and plumber.yml.
+      - name: Zizmor
+        uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
+        with:
+          version: "1.28.0"
+          advanced-security: false
+
+  # Workflow syntax gate. actionlint is what refuses an invalid runner label, a
+  # malformed ${{ }} expression or a permission scope that does not exist — the
+  # class of mistake that silently disables a control rather than failing loudly.
+  # It also runs shellcheck over every `run:` block.
+  actionlint:
+    name: Actionlint (workflow syntax)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Verified release binary rather than a third-party action: the scanner
+      # that guards the pipeline must not itself widen the trust boundary. The
+      # checksum is verified before the binary ever runs (no piped remote code).
+      - name: Install actionlint (verified release binary)
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          asset="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "${workdir}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${workdir}/checksums.txt" "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          (cd "${workdir}" && grep " ${asset}$" checksums.txt | sha256sum -c -)
+          tar -xzf "${workdir}/${asset}" -C "${workdir}" actionlint
+          sudo install -m 0755 "${workdir}/actionlint" /usr/local/bin/actionlint
+          actionlint --version
+
+      - name: Actionlint
+        run: actionlint -color
+
+  # CI/CD exploitation-chain gate. poutine models triggers, permissions and data
+  # flow to surface complete attack scenarios, and flags actions from unverified
+  # creators. Acknowledged false positives live in .poutine.yml, per purl.
+  poutine:
+    name: Poutine (CI/CD exploitation chains)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install poutine (verified release binary)
+        env:
+          POUTINE_VERSION: "1.1.6"
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          base="https://github.com/boostsecurityio/poutine/releases/download/v${POUTINE_VERSION}"
+          asset="poutine_Linux_x86_64.tar.gz"
+          curl -fsSL -o "${workdir}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${workdir}/checksums.txt" "${base}/poutine_${POUTINE_VERSION}_checksums.txt"
+          (cd "${workdir}" && grep " ${asset}$" checksums.txt | sha256sum -c -)
+          tar -xzf "${workdir}/${asset}" -C "${workdir}" poutine
+          sudo install -m 0755 "${workdir}/poutine" /usr/local/bin/poutine
+
+      - name: Poutine
+        run: poutine analyze_local .
+
+  lint:
+    name: Lint (golangci-lint)
+    needs: [zizmor, actionlint, poutine]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # cmd/maintenant/web/web.go embeds `all:dist`. That directory is built by
+      # the frontend and never committed, so without this placeholder the Go
+      # build fails before lint or tests even start.
+      - name: Prepare embedded assets
+        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
+
+      # go.sum carries the hash of every module: `go mod verify` is what turns
+      # the lockfile into an integrity check rather than a version list.
+      - name: Verify module hashes (go.sum)
+        run: go mod verify
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.12.2
+
+  test:
+    name: Tests (go test -race)
+    needs: [zizmor, actionlint, poutine]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Prepare embedded assets
+        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
+
+      - name: Unit tests with race detector
+        run: go test -race -cover ./...
+
+  sast:
+    name: SAST (gosec)
+    needs: [zizmor, actionlint, poutine]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Prepare embedded assets
+        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
+
+      # Complements CodeQL rather than replacing it: CodeQL carries the Scorecard
+      # SAST control, gosec adds the Go-specific rule set.
+      - name: gosec
+        uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
+        with:
+          args: -exclude-generated -severity medium ./...
+
+  audit:
+    name: Dependency audit (govulncheck + Trivy)
+    needs: [zizmor, actionlint, poutine]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Prepare embedded assets
+        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
+
+      # govulncheck is call-graph aware: it only reports advisories on code the
+      # binary actually reaches, so a finding here is genuinely exploitable.
+      - name: govulncheck (golang.org/x/vuln database)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          govulncheck ./...
+
+      # --ignore-unfixed: block on fixable advisories only, not on ones with no
+      # upstream fix, which are outside our control and would cry wolf forever.
+      - name: Trivy on lockfiles (Go + npm)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  frontend:
+    name: Frontend (eslint + vitest)
+    needs: [zizmor, actionlint, poutine]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` (never `npm install`) requires a coherent lockfile and enforces
+      # the sha512 integrity of every package. --ignore-scripts stops a
+      # dependency's install hook from running arbitrary code on the runner.
+      - name: Install dependencies (lockfile)
+        run: npm ci --ignore-scripts
+
+      # The package scripts pass --fix / --cache, which must not happen in CI:
+      # call the binaries directly so the check reports instead of rewriting.
+      - name: Lint (eslint)
+        run: npx --no-install eslint .
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Unit tests (vitest)
+        run: npx --no-install vitest run
+
+      - name: npm audit
+        run: npm audit --audit-level=high

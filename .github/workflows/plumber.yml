@@ -1,0 +1,67 @@
+# Validates this repository's own CI/CD with Plumber (getplumber.io): it scores
+# the GitHub Actions workflows and the repository settings against .plumber.yaml,
+# uploads findings to Code Scanning, publishes the compliance score to the README
+# badge, and fails below the threshold. The action verifies the SLSA build
+# provenance of the Plumber binary it downloads before running it.
+#
+# This workflow runs ONLY in trusted contexts (push to main, schedule, manual):
+# it reads repository administration to evaluate branch protection, and that
+# token must never be exposed to pull_request runs, least of all from forks.
+# Pull requests are gated for workflow security by the zizmor, actionlint and
+# poutine jobs in ci.yml, which use no secrets.
+name: Plumber compliance
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 3 * * 3"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plumber:
+    name: Plumber analyze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to Code Scanning
+      actions: read # read the workflow run for Plumber status
+      id-token: write # OIDC to publish the score to score.getplumber.io
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Blocking gate: min-points 100 with soft-fail false, so any deviation
+      # from the trust policy fails the job.
+      #
+      # github-token: with the default GITHUB_TOKEN, Plumber resolves only 19 of
+      # the 21 branch-protection settings and wrongly concludes that code-owner
+      # review is not required (score B instead of A). PLUMBER_ADMIN_TOKEN is an
+      # optional fine-grained PAT (Administration + Contents + Metadata = Read)
+      # that lifts it to 21/21; the pipeline works without it.
+      - name: Plumber compliance scan
+        uses: getplumber/plumber@ef9864df81f444647d95889d98695434f6fa9732 # v0.4.12
+        with:
+          version: "v0.4.12"
+          verify-attestation: true # check the binary's SLSA provenance before running
+          min-points: "100"
+          soft-fail: false
+          upload-sarif: true
+          upload-artifacts: true
+          score-push: true # publish the score to the README badge
+          github-token: ${{ secrets.PLUMBER_ADMIN_TOKEN || secrets.GITHUB_TOKEN }}

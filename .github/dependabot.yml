@@ -1,0 +1,53 @@
+version: 2
+updates:
+  # Go modules. The cooldown is a quarantine: never adopt a version on the day
+  # it ships, which is the window where a compromise is not yet detected.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+
+  # Frontend (Vue / Vite), driven by frontend/package-lock.json.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+
+  # Documentation toolchain (mkdocs), installed with --require-hashes.
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+
+  # Actions pinned by commit SHA: without this block the pins freeze and age.
+  # Only default-days is valid here; semver-* keys are rejected for this
+  # ecosystem.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  # Base images of the multi-stage Dockerfile.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

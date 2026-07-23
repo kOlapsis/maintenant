@@ -1,0 +1,54 @@
+{
+  "name": "Protect main",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["~DEFAULT_BRANCH"],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "pull_request"
+    }
+  ],
+  "rules": [
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "require_code_owner_review": false,
+        "dismiss_stale_reviews_on_push": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": ["squash", "rebase"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          { "context": "Zizmor (workflow static analysis)" },
+          { "context": "Actionlint (workflow syntax)" },
+          { "context": "Poutine (CI/CD exploitation chains)" },
+          { "context": "Lint (golangci-lint)" },
+          { "context": "Tests (go test -race)" },
+          { "context": "SAST (gosec)" },
+          { "context": "Dependency audit (govulncheck + Trivy)" },
+          { "context": "Frontend (eslint + vitest)" },
+          { "context": "Build (amd64)" },
+          { "context": "Build (arm64)" },
+          { "context": "CodeQL (go)" },
+          { "context": "CodeQL (javascript-typescript)" }
+        ]
+      }
+    },
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "required_linear_history" }
+  ]
+}
