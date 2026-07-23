@@ -59,7 +59,7 @@ func engineTestSetup(t *testing.T) (
 	channelStore = sqlite.NewChannelStore(db)
 	triggerStore = sqlite.NewTriggerStore(db)
 	silenceStore := sqlite.NewSilenceStore(db)
-	notifier = alert.NewNotifier(channelStore, logger)
+	notifier = alert.NewNotifier(channelStore, logger, true)
 	notifier.Start(ctx)
 
 	eng = alert.NewEngine(alert.EngineDeps{

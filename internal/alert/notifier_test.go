@@ -20,7 +20,8 @@ import (
 )
 
 func newTestNotifier() *Notifier {
-	return NewNotifier(nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	// allowPrivate=true: tests deliver to httptest servers on 127.0.0.1.
+	return NewNotifier(nil, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})), true)
 }
 
 func captureServer(t *testing.T, statusCode int) (*httptest.Server, *[]byte, *string) {

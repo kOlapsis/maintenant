@@ -14,9 +14,7 @@ package v1
 import (
 	"encoding/json"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +22,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/ssrf"
 )
 
 // AlertHandler handles alert-related HTTP endpoints.
@@ -246,32 +245,13 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Validate webhook URL: require HTTPS and reject internal/private IPs.
-	// Both checks are skipped when AllowPrivateWebhooks is set (local dev only).
-	parsed, err := url.Parse(input.URL)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid URL format")
-		return
-	}
+	// The check is skipped when AllowPrivateWebhooks is set (local dev only).
+	// This is fast-feedback only; the notifier's dial-time SSRF guard is the
+	// actual boundary and also defeats DNS rebinding at delivery time.
 	if !h.allowPrivateWebhooks {
-		if parsed.Scheme != "https" {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must use https scheme")
+		if err := ssrf.ValidateURL(r.Context(), input.URL); err != nil {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 			return
-		}
-		hostname := parsed.Hostname()
-		addrs, err := net.DefaultResolver.LookupHost(r.Context(), hostname)
-		if err != nil {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "cannot resolve webhook hostname: "+hostname)
-			return
-		}
-		for _, addr := range addrs {
-			ip := net.ParseIP(addr)
-			if ip == nil {
-				continue
-			}
-			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() {
-				WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must not resolve to a private or internal IP address")
-				return
-			}
 		}
 	}
 

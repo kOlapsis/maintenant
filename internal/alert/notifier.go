@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/ssrf"
 )
 
 const (
@@ -76,15 +77,15 @@ type Notifier struct {
 	logger       *slog.Logger
 }
 
-// NewNotifier creates a new webhook notifier.
-func NewNotifier(channelStore ChannelStore, logger *slog.Logger) *Notifier {
+// NewNotifier creates a new webhook notifier. Its HTTP client blocks delivery
+// to private/internal IPs (SSRF guard) at dial time unless allowPrivate is set
+// (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS).
+func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool) *Notifier {
 	return &Notifier{
 		jobs:         make(chan NotificationJob, notifierChannelBuffer),
 		channelStore: channelStore,
-		httpClient: &http.Client{
-			Timeout: webhookTimeout,
-		},
-		logger: logger,
+		httpClient:   ssrf.NewHTTPClient(webhookTimeout, allowPrivate),
+		logger:       logger,
 	}
 }
 

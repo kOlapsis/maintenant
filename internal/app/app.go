@@ -372,7 +372,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	// --- Alert engine ---
-	a.notifier = alert.NewNotifier(channelStore, logger)
+	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks)
 	if smtpSender != nil {
 		a.notifier.SetSMTPSender(smtpSender)
 	}

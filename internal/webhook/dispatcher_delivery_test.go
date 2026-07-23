@@ -80,7 +80,7 @@ func TestDispatcher_DeliversRealEventPayload(t *testing.T) {
 		EventTypes: []string{"*"}, IsActive: true,
 	}}}
 
-	notifier := alert.NewNotifier(nil, logger)
+	notifier := alert.NewNotifier(nil, logger, true)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	notifier.Start(ctx)
