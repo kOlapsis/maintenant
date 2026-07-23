@@ -30,6 +30,7 @@ const selectedType = ref<string | null>(null)
 const createdChannelId = ref<string | null>(null)
 const testStatus = ref<'idle' | 'testing' | 'success' | 'failed'>('idle')
 const testError = ref('')
+const submitError = ref('')
 
 const form = ref({
   name: '',
@@ -94,9 +95,11 @@ function selectType(type: string) {
   form.value.name = ''
   form.value.url = ''
   form.value.headers = ''
+  submitError.value = ''
 }
 
 async function submitConfig() {
+  submitError.value = ''
   try {
     const result = await createChannel({
       name: form.value.name,
@@ -108,7 +111,7 @@ async function submitConfig() {
     createdChannelId.value = result.id
     step.value = 3
   } catch (e) {
-    console.error('Failed to create channel:', e)
+    submitError.value = e instanceof Error ? e.message : 'Failed to create channel'
   }
 }
 
@@ -323,6 +326,9 @@ function goBack() {
           <input v-model="form.enabled" type="checkbox" id="wizard-enabled" class="rounded" style="accent-color: var(--mnt-accent)" />
           <label for="wizard-enabled" class="text-sm" style="color: var(--mnt-text-secondary)">Enable channel immediately</label>
         </div>
+        <p v-if="submitError" class="text-xs" style="color: var(--mnt-status-down-text)">
+          {{ submitError }}
+        </p>
         <div class="flex justify-between pt-2">
           <button
             type="button"
