@@ -13,6 +13,8 @@ package v1
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -124,6 +126,42 @@ func TestHandleCreateChannel_TypeGating(t *testing.T) {
 			if tc.wantCode != "" {
 				assert.Contains(t, rec.Body.String(), tc.wantCode)
 			}
+		})
+	}
+}
+
+// An email channel carries its recipient address in URL and is delivered over
+// SMTP, so it must be exempt from the HTTPS/SSRF rule and validated as an
+// address instead.
+func TestHandleCreateChannel_EmailValidation(t *testing.T) {
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	defer func() { extension.CurrentEdition = original }()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	cases := []struct {
+		name       string
+		url        string
+		wantStatus int
+	}{
+		{"valid address accepted", "alerts@example.com", http.StatusCreated},
+		{"malformed address rejected", "not-an-email", http.StatusBadRequest},
+		{"empty rejected", "", http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &AlertHandler{channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
+
+			body := `{"type":"email","name":"team","url":"` + tc.url + `"}`
+			req := httptest.NewRequest("POST", "/api/v1/channels", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			h.HandleCreateChannel(rec, req)
+
+			assert.Equal(t, tc.wantStatus, rec.Code, rec.Body.String())
 		})
 	}
 }

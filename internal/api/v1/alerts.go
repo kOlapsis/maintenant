@@ -12,9 +12,12 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -215,6 +218,23 @@ func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// validateChannelURL validates a channel's destination. Email channels carry a
+// recipient address delivered over SMTP — validate the address. Every other
+// type is an HTTP webhook subject to the HTTPS + SSRF rules (fast-feedback;
+// skipped in dev, where the notifier's dial-time guard remains the boundary).
+func (h *AlertHandler) validateChannelURL(ctx context.Context, chType, rawURL string) error {
+	if chType == "email" {
+		if _, err := mail.ParseAddress(rawURL); err != nil {
+			return errors.New("invalid email address")
+		}
+		return nil
+	}
+	if h.allowPrivateWebhooks {
+		return nil
+	}
+	return ssrf.ValidateURL(ctx, rawURL)
+}
+
 // HandleCreateChannel handles POST /api/v1/channels.
 func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	var input struct {
@@ -244,19 +264,13 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate webhook URL: require HTTPS and reject internal/private IPs.
-	// The check is skipped when AllowPrivateWebhooks is set (local dev only).
-	// This is fast-feedback only; the notifier's dial-time SSRF guard is the
-	// actual boundary and also defeats DNS rebinding at delivery time.
-	if !h.allowPrivateWebhooks {
-		if err := ssrf.ValidateURL(r.Context(), input.URL); err != nil {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
-			return
-		}
-	}
-
 	if input.Type == "" {
 		input.Type = "webhook"
+	}
+
+	if err := h.validateChannelURL(r.Context(), input.Type, input.URL); err != nil {
+		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
 	}
 
 	ch := &alert.NotificationChannel{
@@ -333,6 +347,15 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Pro {
 		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
 		return
+	}
+
+	// Re-validate the destination when the URL or type changed, so an update
+	// can't smuggle in a private/internal URL the create path would reject.
+	if input.URL != nil || input.Type != nil {
+		if err := h.validateChannelURL(r.Context(), ch.Type, ch.URL); err != nil {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
 	}
 
 	if err := h.channelStore.UpdateChannel(r.Context(), ch); err != nil {
