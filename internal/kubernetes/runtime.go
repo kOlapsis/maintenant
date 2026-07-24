@@ -149,6 +149,7 @@ func buildConfig() (*rest.Config, error) {
 		}
 	}
 	if kubeconfig != "" {
+		// #nosec G703 -- path from the operator's KUBECONFIG env or home dir, not remote input.
 		if _, err := os.Stat(kubeconfig); err == nil {
 			return clientcmd.BuildConfigFromFlags("", kubeconfig)
 		}

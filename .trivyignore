@@ -1,0 +1,5 @@
+# Moby daemon authorization-plugin bypass. We only consume the Docker client
+# library; the vulnerable code path is the daemon's AuthZ middleware. The fix
+# (Moby 29.3.1) has no tag on the classic github.com/docker/docker Go module —
+# the v29 client lives in the new moby/moby/v2 module, a separate migration.
+CVE-2026-34040

@@ -498,7 +498,6 @@ func (a *App) supervisorLoop(ctx context.Context, streamDone <-chan struct{}) {
 				a.rt.SetDisconnected()
 				a.broadcastRuntimeAvailability()
 				a.logger.Warn("container runtime lost, entering degraded mode", "runtime", a.rt.Name())
-				lossNotify = nil
 			}
 		}
 

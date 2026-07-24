@@ -34,7 +34,7 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: !cfg.TLSVerify,
+			InsecureSkipVerify: !cfg.TLSVerify, // #nosec G402 -- per-endpoint opt-out configured by the user.
 			MinVersion:         tls.VersionTLS12,
 		},
 		DialContext: (&net.Dialer{

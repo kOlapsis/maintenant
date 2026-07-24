@@ -21,7 +21,7 @@ func ensureDataDirWritable(path string) error {
 	if path == "" {
 		return fmt.Errorf("telemetry: datadir path is empty")
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, 0o750); err != nil {
 		return fmt.Errorf("telemetry: datadir %q not writable: %w", path, err)
 	}
 	probe := filepath.Join(path, ".maintenant-write-probe")

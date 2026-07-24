@@ -40,7 +40,7 @@ func BuildSignPayload(nonce []byte, agentID string, ts int64) ([]byte, error) {
 	payload := make([]byte, SignPayloadSize)
 	copy(payload[0:32], nonce)
 	copy(payload[32:48], uuidBytes)
-	binary.BigEndian.PutUint64(payload[48:56], uint64(ts))
+	binary.BigEndian.PutUint64(payload[48:56], uint64(ts)) // #nosec G115 -- epoch timestamp encoded to a fixed 8-byte wire field
 	return payload, nil
 }
 

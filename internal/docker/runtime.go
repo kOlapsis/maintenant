@@ -15,6 +15,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	goruntime "runtime"
 	"sync"
@@ -122,8 +123,8 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*runtim
 	// Sum network bytes across all interfaces.
 	var netRx, netTx int64
 	for _, ns := range stats.Networks {
-		netRx += int64(ns.RxBytes)
-		netTx += int64(ns.TxBytes)
+		netRx += clampInt64(ns.RxBytes)
+		netTx += clampInt64(ns.TxBytes)
 	}
 
 	// Sum block I/O.
@@ -131,16 +132,16 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*runtim
 	for _, entry := range stats.BlkioStats.IoServiceBytesRecursive {
 		switch entry.Op {
 		case "read", "Read":
-			blockRead += int64(entry.Value)
+			blockRead += clampInt64(entry.Value)
 		case "write", "Write":
-			blockWrite += int64(entry.Value)
+			blockWrite += clampInt64(entry.Value)
 		}
 	}
 
 	// Memory: working-set = Usage - inactive_file.
-	memUsed := int64(stats.MemoryStats.Usage)
+	memUsed := clampInt64(stats.MemoryStats.Usage)
 	if inactive, ok := stats.MemoryStats.Stats["inactive_file"]; ok {
-		memUsed -= int64(inactive)
+		memUsed -= clampInt64(inactive)
 		if memUsed < 0 {
 			memUsed = 0
 		}
@@ -187,7 +188,7 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*runtim
 	return &runtime.RawStats{
 		CPUPercent:      cpuPercent,
 		MemUsed:         memUsed,
-		MemLimit:        int64(stats.MemoryStats.Limit),
+		MemLimit:        clampInt64(stats.MemoryStats.Limit),
 		NetRxBytes:      netRx,
 		NetTxBytes:      netTx,
 		BlockReadBytes:  blockRead,
@@ -253,11 +254,11 @@ func newDemuxReader(r io.ReadCloser) *demuxReader {
 	go func() {
 		_, err := stdcopy.StdCopy(pw, pw, r)
 		if err != nil {
-			pw.CloseWithError(err)
+			_ = pw.CloseWithError(err)
 		} else {
-			pw.Close()
+			_ = pw.Close()
 		}
-		r.Close()
+		_ = r.Close()
 	}()
 	return &demuxReader{pr: pr, original: r}
 }
@@ -268,6 +269,15 @@ func (d *demuxReader) Read(p []byte) (int, error) {
 
 func (d *demuxReader) Close() error {
 	err := d.pr.Close()
-	d.original.Close()
+	_ = d.original.Close()
 	return err
+}
+
+// clampInt64 converts an unsigned Docker stats counter to int64, saturating at
+// MaxInt64 so an out-of-range value can never wrap to a negative number.
+func clampInt64(v uint64) int64 {
+	if v > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(v)
 }

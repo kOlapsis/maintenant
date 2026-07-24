@@ -173,6 +173,7 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// #nosec G704 -- delivered through the SSRF-guarded client below (internal/ssrf).
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, testSub.URL, bytes.NewReader(body))
 	if err != nil {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -186,7 +187,7 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 	req.Header.Set("X-maintenant-Delivery", uuid.New().String())
 
 	client := ssrf.NewHTTPClient(10*time.Second, h.allowPrivateWebhooks)
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- ssrf.NewHTTPClient blocks private ranges at dial time.
 	if err != nil {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "failed",

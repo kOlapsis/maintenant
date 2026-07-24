@@ -86,7 +86,7 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 
 	deadline := time.Now().Add(3 * time.Second)
 	var sawTopology, sawHostSample bool
-	for time.Now().Before(deadline) && !(sawTopology && sawHostSample) {
+	for time.Now().Before(deadline) && (!sawTopology || !sawHostSample) {
 		for _, ev := range fake.events() {
 			if ev.GetKubernetes() != nil {
 				sawTopology = true

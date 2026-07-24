@@ -117,7 +117,7 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 			"Cannot retrieve logs from container runtime")
 		return
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Set SSE headers.
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -167,7 +167,9 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 
-		fmt.Fprintf(w, "event: container.log_line\ndata: %s\n\n", data)
+		if _, err := fmt.Fprintf(w, "event: container.log_line\ndata: %s\n\n", data); err != nil {
+			return
+		}
 		flusher.Flush()
 	}
 
@@ -177,6 +179,6 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 		"error":        "container stopped",
 	}
 	data, _ := json.Marshal(errEvent)
-	fmt.Fprintf(w, "event: container.log_error\ndata: %s\n\n", data)
+	_, _ = fmt.Fprintf(w, "event: container.log_error\ndata: %s\n\n", data)
 	flusher.Flush()
 }

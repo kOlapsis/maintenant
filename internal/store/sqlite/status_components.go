@@ -312,6 +312,7 @@ func (s *StatusComponentStoreImpl) hydrateMonitorRefs(ctx context.Context, comps
 	placeholders := strings.Repeat("?,", len(ids))
 	placeholders = placeholders[:len(placeholders)-1]
 
+	// #nosec G202 -- only generated "?" placeholders are concatenated; ids are bound.
 	rows, err := s.db.QueryContext(ctx,
 		"SELECT component_id, monitor_type, monitor_id FROM status_component_monitors WHERE component_id IN ("+placeholders+") ORDER BY component_id, monitor_type, monitor_id",
 		ids...)

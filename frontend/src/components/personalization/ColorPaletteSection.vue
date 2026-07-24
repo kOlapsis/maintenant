@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { ContrastWarning, PalettePayload } from '@/services/personalizationApi'
-import { usePersonalizationStore } from '@/stores/personalization'
 
-const store = usePersonalizationStore()
 const palette = defineModel<PalettePayload>('palette', { required: true })
 const warnings = defineModel<ContrastWarning[]>('warnings', { default: () => [] })
 

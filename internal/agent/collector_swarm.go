@@ -69,8 +69,8 @@ func swarmTopologyEvent(agentID string, snap swarm.TopologySnapshot) *agentpb.Ag
 			Name:            s.Name,
 			Image:           s.Image,
 			Mode:            s.Mode,
-			DesiredReplicas: int32(s.DesiredReplicas),
-			RunningReplicas: int32(s.RunningReplicas),
+			DesiredReplicas: clampInt32(s.DesiredReplicas),
+			RunningReplicas: clampInt32(s.RunningReplicas),
 			Labels:          s.Labels,
 			StackName:       s.StackName,
 			CreatedAt:       timestamppb.New(s.CreatedAt),
@@ -84,7 +84,7 @@ func swarmTopologyEvent(agentID string, snap swarm.TopologySnapshot) *agentpb.Ag
 			TaskId:       t.TaskID,
 			ServiceId:    t.ServiceID,
 			NodeId:       t.NodeID,
-			Slot:         int32(t.Slot),
+			Slot:         clampInt32(t.Slot),
 			State:        t.State,
 			DesiredState: t.DesiredState,
 			ContainerId:  t.ContainerID,
@@ -93,7 +93,7 @@ func swarmTopologyEvent(agentID string, snap swarm.TopologySnapshot) *agentpb.Ag
 			NodeHostname: t.NodeHostname,
 		}
 		if t.ExitCode != nil {
-			msg.ExitCode = int32(*t.ExitCode)
+			msg.ExitCode = clampInt32(*t.ExitCode)
 			msg.HasExitCode = true
 		}
 		tasks = append(tasks, msg)
@@ -110,7 +110,7 @@ func swarmTopologyEvent(agentID string, snap swarm.TopologySnapshot) *agentpb.Ag
 			Availability:  n.Availability,
 			EngineVersion: n.EngineVersion,
 			Address:       n.Address,
-			TaskCount:     int32(n.TaskCount),
+			TaskCount:     clampInt32(n.TaskCount),
 		})
 	}
 

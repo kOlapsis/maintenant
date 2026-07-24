@@ -69,7 +69,7 @@ func (b *Backoff) Next() time.Duration {
 	if b.Jitter == 0 {
 		return raw
 	}
-	factor := 1 - b.Jitter + rand.Float64()*(2*b.Jitter) //nolint:gosec // non-crypto jitter
+	factor := 1 - b.Jitter + rand.Float64()*(2*b.Jitter) // #nosec G404 -- non-crypto jitter for backoff timing
 	return time.Duration(float64(raw) * factor)
 }
 

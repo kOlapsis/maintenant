@@ -245,7 +245,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 
 			if limiter != nil {
 				if allowed, retryAfter := limiter.Allow(ag.AgentID); !allowed {
-					retryMs := uint32(retryAfter.Milliseconds())
+					retryMs := uint32(retryAfter.Milliseconds()) // #nosec G115 -- rate-limiter retry delay, always non-negative and sub-second
 					logger.Warn("agent.rate_limited",
 						"agent_id", ag.AgentID,
 						"retry_after_ms", retryMs,

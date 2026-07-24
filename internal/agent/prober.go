@@ -164,7 +164,7 @@ func endpointEvent(agentID, target string, r endpoint.CheckResult) *agentpb.Agen
 	}
 	var code uint32
 	if r.HTTPStatus != nil && *r.HTTPStatus > 0 {
-		code = uint32(*r.HTTPStatus)
+		code = uint32(*r.HTTPStatus) // #nosec G115 -- HTTP status code, small positive value
 	}
 	var latency uint64
 	if r.ResponseTimeMs > 0 {
@@ -188,7 +188,7 @@ func endpointEvent(agentID, target string, r endpoint.CheckResult) *agentpb.Agen
 func certEvent(agentID, host string, port int, scan *certificate.CheckCertificateResult) *agentpb.AgentEvent {
 	info := &agentpb.CertificateInfo{
 		Host:      host,
-		Port:      uint32(port),
+		Port:      uint32(port), // #nosec G115 -- TCP port, bounded to 0-65535
 		SubjectCn: scan.SubjectCN,
 		IssuerCn:  scan.IssuerCN,
 		SanDns:    scan.SANs,

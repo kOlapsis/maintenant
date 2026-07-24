@@ -11,7 +11,7 @@
   Source: https://github.com/kolapsis/maintenant
 */
 
-import { ref, watch, watchEffect, nextTick, type Ref } from 'vue'
+import { ref, watch, watchEffect, nextTick, type Ref, type ComponentPublicInstance } from 'vue'
 import { parseAnsi, type AnsiToken } from './useAnsiParser'
 import { detectLogLevel, parseJsonLine, parseTimestamp } from './useLogParser'
 
@@ -50,6 +50,8 @@ export interface UseLogStreamReturn {
   scrollContainerRef: Ref<HTMLElement | null>
   scrollToBottom: () => void
   handleScroll: (event: Event) => void
+  toggleWordWrap: () => void
+  setScrollContainer: (el: Element | ComponentPublicInstance | null) => void
   connect: () => void
   disconnect: () => void
 }
@@ -145,6 +147,14 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     } else if (!atBottom) {
       autoScroll.value = false
     }
+  }
+
+  function toggleWordWrap() {
+    wordWrap.value = !wordWrap.value
+  }
+
+  function setScrollContainer(el: Element | ComponentPublicInstance | null) {
+    scrollContainerRef.value = el instanceof HTMLElement ? el : null
   }
 
   function connect() {
@@ -265,6 +275,8 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     scrollContainerRef,
     scrollToBottom,
     handleScroll,
+    toggleWordWrap,
+    setScrollContainer,
     connect,
     disconnect,
   }

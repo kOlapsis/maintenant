@@ -1,0 +1,71 @@
+# Deep static analysis of both codebases: Go (the server, agents and CLI) and
+# JavaScript/TypeScript (the Vue frontend). CodeQL is the analysis that carries
+# the OpenSSF Scorecard SAST control, and it only scores 10 when it runs on
+# pull requests — a cron-only trigger caps that control at 7, hence the three
+# triggers below.
+#
+# Paths excluded from the analysis (vendored code, bundles, generated files)
+# live in codeql-config.yml at the repository root.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  # Triggering on pull_request is what takes the Scorecard SAST control to 10;
+  # a cron-only trigger would cap it at 7.
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "24 5 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # cmd/maintenant/web/web.go embeds `all:dist`: without that directory the
+      # Go autobuild fails.
+      - name: Prepare embedded assets
+        if: matrix.language == 'go'
+        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./codeql-config.yml
+
+      - name: CodeQL analysis
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
+        with:
+          category: /language:${{ matrix.language }}

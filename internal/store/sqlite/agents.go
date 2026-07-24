@@ -83,7 +83,7 @@ func (s *AgentStore) List(ctx context.Context, statusFilter string) ([]*agent.Ag
 	if err != nil {
 		return nil, fmt.Errorf("list agents: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var agents []*agent.Agent
 	for rows.Next() {
@@ -155,7 +155,7 @@ func (s *AgentStore) CountByStatus(ctx context.Context) (active, revoked int, er
 	if err != nil {
 		return 0, 0, fmt.Errorf("count agents by status: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var status string
 		var count int
@@ -179,7 +179,7 @@ func (s *AgentStore) CountByRuntime(ctx context.Context) (docker, swarm, kuberne
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("count agents by runtime: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var rt string
 		var count int
@@ -285,7 +285,7 @@ func classifyTokenFailure(ctx context.Context, tx *sql.Tx, tokenCleartext string
 	return agent.ErrTokenNotFound
 }
 
-const tokenColumns = `id, token, created_at, expires_at, consumed_at, consumed_by_agent_id`
+const tokenColumns = `id, token, created_at, expires_at, consumed_at, consumed_by_agent_id` // #nosec G101 -- column names, not a credential.
 
 // GetByToken retrieves a token by its cleartext value.
 func (s *AgentStore) GetByToken(ctx context.Context, tokenCleartext string) (*agent.EnrollmentToken, error) {
@@ -327,7 +327,7 @@ func (s *AgentStore) ListTokens(ctx context.Context, includeExpired, includeCons
 	if err != nil {
 		return nil, fmt.Errorf("list tokens: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tokens []*agent.EnrollmentToken
 	for rows.Next() {
@@ -371,7 +371,7 @@ func (s *AgentStore) StaleAgents(ctx context.Context, threshold time.Duration) (
 	if err != nil {
 		return nil, fmt.Errorf("stale agents: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var ids []string
 	for rows.Next() {
 		var id string

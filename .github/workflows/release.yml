@@ -1,0 +1,118 @@
+# Publishes a verifiable release image when a GitHub Release is published.
+#
+# Security model:
+# - The image is built by the same reusable workflow the CI uses (build-docker.yml),
+#   so a release ships exactly what the pipeline validated — no parallel build path
+#   with its own, unreviewed steps. That build restores no cache (cache-poisoning
+#   hardening) and its digest is the subject of every attestation below.
+# - Privilege separation: the build job holds only contents:read + packages:write;
+#   the provenance job runs no project code, it only attests, signs and uploads.
+# - Keyless signing over OIDC (id-token: write): no long-lived signing key exists
+#   to be stolen, and the certificate binds the signature to this workflow file.
+# - Three artifacts are produced and independently verifiable: a SLSA build
+#   provenance attestation, a CycloneDX SBOM attested in the registry, and a
+#   Cosign signature. See SECURITY.md for the verification commands.
+#
+# Note that release events set github.ref to the tag, so docker/metadata-action
+# computes the semver tags and `latest` exactly as it did on the old tag trigger.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Reuses the existing multi-arch build chain: the image published by a release
+  # is exactly the one the CI produces, with no parallel build path.
+  build:
+    name: Build and publish the image
+    uses: ./.github/workflows/build-docker.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      push: true
+
+  provenance:
+    name: Provenance (SLSA + SBOM + Cosign)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      # Attach provenance.intoto.jsonl to the release (Scorecard Signed-Releases).
+      contents: write
+      # Push the attestations next to the image in GHCR.
+      packages: write
+      # OIDC: keyless Sigstore signing and native attestations.
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: SLSA build provenance attestation (native)
+        id: attest
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ needs.build.outputs.image }}
+          subject-digest: ${{ needs.build.outputs.digest }}
+          push-to-registry: true
+
+      # SBOM produced by Trivy rather than anchore/sbom-action: the latter
+      # downloads and runs install.sh from a mutable branch
+      # (raw.githubusercontent.com/.../main/install.sh), which pinning the action
+      # by SHA does not cover (plumber ISSUE-714).
+      - name: Generate the SBOM (Trivy, CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          format: cyclonedx
+          output: sbom.cdx.json
+
+      - name: Attest the SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ needs.build.outputs.image }}
+          subject-digest: ${{ needs.build.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+
+      # cosign-installer v4 installs Cosign 3.x: a local cosign 2.x would wrongly
+      # answer "no signatures found" when verifying.
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the image (keyless Sigstore)
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      # Scorecard Signed-Releases looks for a *.intoto.jsonl asset on the release,
+      # not the OCI attestation pushed to the registry: two distinct artifacts.
+      - name: Attach the provenance to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" provenance.intoto.jsonl
+          gh release upload "$TAG" provenance.intoto.jsonl sbom.cdx.json --clobber

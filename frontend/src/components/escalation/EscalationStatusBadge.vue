@@ -13,7 +13,6 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { timeAgo } from '@/utils/time'
 import type { EscalationRun } from '@/types/escalation'
 import { BellRing, BellOff, CheckCircle2 } from 'lucide-vue-next'
 
@@ -47,11 +46,6 @@ const statusLabel = computed(() => {
   return labels[s] ?? s
 })
 
-// expose timeAgo for template usage
-const nextActionLabel = computed(() => {
-  if (!displayRun.value?.next_action_at) return 'soon'
-  return timeAgo(displayRun.value.next_action_at)
-})
 </script>
 
 <template>

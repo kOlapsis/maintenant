@@ -270,7 +270,7 @@ func (n *Notifier) sendWebhook(ctx context.Context, ch *NotificationChannel, bod
 	if err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("non-2xx response: %d", resp.StatusCode)
@@ -399,7 +399,7 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -571,20 +571,20 @@ func formatEmailSubject(eventType string, a *Alert) string {
 
 func formatEmailBody(eventType string, a *Alert) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Event: %s\n", eventType))
-	b.WriteString(fmt.Sprintf("Source: %s\n", a.Source))
-	b.WriteString(fmt.Sprintf("Severity: %s\n", a.Severity))
-	b.WriteString(fmt.Sprintf("Entity: %s (%s)\n", a.EntityName, a.EntityType))
-	b.WriteString(fmt.Sprintf("Message: %s\n", a.Message))
-	b.WriteString(fmt.Sprintf("Time: %s\n", a.FiredAt.UTC().Format(time.RFC3339)))
+	fmt.Fprintf(&b, "Event: %s\n", eventType)
+	fmt.Fprintf(&b, "Source: %s\n", a.Source)
+	fmt.Fprintf(&b, "Severity: %s\n", a.Severity)
+	fmt.Fprintf(&b, "Entity: %s (%s)\n", a.EntityName, a.EntityType)
+	fmt.Fprintf(&b, "Message: %s\n", a.Message)
+	fmt.Fprintf(&b, "Time: %s\n", a.FiredAt.UTC().Format(time.RFC3339))
 
 	if a.Source == "update" {
 		if details := parseAlertDetails(a.Details); details != nil {
 			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
-				b.WriteString(fmt.Sprintf("\nUpdate command:\n  %s\n", cmd))
+				fmt.Fprintf(&b, "\nUpdate command:\n  %s\n", cmd)
 			}
 			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
-				b.WriteString(fmt.Sprintf("\nRollback command:\n  %s\n", cmd))
+				fmt.Fprintf(&b, "\nRollback command:\n  %s\n", cmd)
 			}
 		}
 	}

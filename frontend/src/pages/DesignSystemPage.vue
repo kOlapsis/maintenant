@@ -20,7 +20,7 @@ import KpiStrip from '@/components/ui/KpiStrip.vue'
 import SectionHeader from '@/components/ui/SectionHeader.vue'
 import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 import DensityToggle from '@/components/ui/DensityToggle.vue'
-import Tooltip from '@/components/ui/Tooltip.vue'
+import UiTooltip from '@/components/ui/UiTooltip.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
@@ -202,11 +202,11 @@ const lastSelected = ref('')
       <SectionHeader title="SegmentedToggle + Tooltip" />
       <div class="flex flex-wrap items-center gap-6 rounded-xl border border-mnt-default bg-mnt-surface p-4">
         <SegmentedToggle v-model="gridView" :options="[{ value: 'grid', label: 'Grid' }, { value: 'list', label: 'List' }]" ariaLabel="Demo view" />
-        <Tooltip text="Last check 12s ago · 0.4% cpu" placement="top">
+        <UiTooltip text="Last check 12s ago · 0.4% cpu" placement="top">
           <template #trigger>
             <span class="cursor-help rounded border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary">Hover me</span>
           </template>
-        </Tooltip>
+        </UiTooltip>
       </div>
     </section>
 

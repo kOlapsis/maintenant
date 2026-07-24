@@ -257,7 +257,7 @@ func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID string,
 	}
 	query += fmt.Sprintf(` LIMIT %d`, limit)
 	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset)
+		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -441,12 +441,10 @@ func (s *EndpointStore) scanEndpoint(row rowScanner) (*endpoint.Endpoint, error)
 		e.LastError = lastError.String
 	}
 
-	// Parse config JSON
+	// Parse config JSON (best-effort: keep the defaults set above on parse error).
 	e.Config = endpoint.DefaultConfig()
 	if configJSON != "" && configJSON != "{}" {
-		if err := json.Unmarshal([]byte(configJSON), &e.Config); err != nil {
-			// Use defaults on parse error
-		}
+		_ = json.Unmarshal([]byte(configJSON), &e.Config)
 	}
 
 	return &e, nil

@@ -1,0 +1,19 @@
+# poutine configuration (CI/CD exploitation-chain analysis).
+#
+# The github_action_from_unverified_creator_used rule stays ACTIVE: any new
+# third-party action the Marketplace does not mark as a verified creator will
+# still be reported. Only the actions below are acknowledged, by exact purl,
+# after manually reviewing their provenance. The skip is surgical, never global.
+#
+# Each entry is pinned to a full commit SHA in the workflows.
+skip:
+  - rule: github_action_from_unverified_creator_used
+    purl:
+      # Official action of the zizmor workflow analyzer, published by the zizmor
+      # project itself (zizmorcore). Runs in ci.yml as the security gate.
+      - pkg:githubactions/zizmorcore/zizmor-action
+      # Official action of golangci-lint, maintained by the same organisation
+      # that ships the linter itself.
+      - pkg:githubactions/golangci/golangci-lint-action
+      # Official action of gosec, the long-standing Go SAST from securego.
+      - pkg:githubactions/securego/gosec

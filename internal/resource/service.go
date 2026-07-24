@@ -293,9 +293,10 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 	if newState == AlertStateNormal && prevState != AlertStateNormal {
 		if s.eventCallback != nil {
 			recoveredType := "cpu"
-			if prevState == AlertStateMemory {
+			switch prevState {
+			case AlertStateMemory:
 				recoveredType = "memory"
-			} else if prevState == AlertStateBoth {
+			case AlertStateBoth:
 				recoveredType = "both"
 			}
 			s.eventCallback(event.ResourceRecovery, map[string]interface{}{

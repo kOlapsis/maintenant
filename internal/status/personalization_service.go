@@ -13,10 +13,7 @@ import (
 var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$`)
 
 type cachedPayload struct {
-	version int64
 	data    Settings
-	links   []FooterLink
-	faq     []FAQItem
 	builtAt time.Time
 }
 

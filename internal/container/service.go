@@ -488,7 +488,9 @@ func (s *Service) ListTransitions(ctx context.Context, containerID string, opts 
 
 func parseExitCode(s string) int {
 	var ec int
-	fmt.Sscanf(s, "%d", &ec)
+	if _, err := fmt.Sscanf(s, "%d", &ec); err != nil {
+		return 0
+	}
 	return ec
 }
 

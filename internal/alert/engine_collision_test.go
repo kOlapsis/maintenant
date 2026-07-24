@@ -59,7 +59,7 @@ func TestEngine_DedupKeyCollision_LogsAndRefreshes(t *testing.T) {
 
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "eng.db"), logger)
 	require.NoError(t, err)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
 	db.StartWriter(ctx)
 

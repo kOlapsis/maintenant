@@ -80,7 +80,7 @@ function maskUrl(url: string): string {
   }
 }
 
-function handleWizardCreated(_id: string) {
+function handleWizardCreated() {
   showWizard.value = false
   store.fetchChannels()
 }

@@ -37,7 +37,7 @@ type Identity struct {
 func LoadOrCreate(dataDir string) (*Identity, error) {
 	path := filepath.Join(dataDir, identityFile)
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is dataDir + constant identity filename, not user input
 	if err == nil {
 		var id Identity
 		if jsonErr := json.Unmarshal(data, &id); jsonErr != nil {
@@ -61,16 +61,16 @@ func LoadOrCreate(dataDir string) (*Identity, error) {
 		PrivateKey: []byte(priv),
 	}
 
-	encoded, err := json.Marshal(id)
+	encoded, err := json.Marshal(id) // #nosec G117 -- agent identity file persists its own Ed25519 private key by design
 	if err != nil {
 		return nil, fmt.Errorf("marshal identity: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600) // #nosec G304 -- path is dataDir + constant identity filename, not user input
 	if err != nil {
 		return nil, fmt.Errorf("create identity file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write(encoded); err != nil {
 		return nil, fmt.Errorf("write identity file: %w", err)
@@ -87,7 +87,7 @@ func LoadOrCreate(dataDir string) (*Identity, error) {
 // Save persists updated identity fields (e.g. Registered) back to disk with mode 0600.
 func (id *Identity) Save(dataDir string) error {
 	path := filepath.Join(dataDir, identityFile)
-	encoded, err := json.Marshal(id)
+	encoded, err := json.Marshal(id) // #nosec G117 -- agent identity file persists its own Ed25519 private key by design
 	if err != nil {
 		return fmt.Errorf("marshal identity: %w", err)
 	}

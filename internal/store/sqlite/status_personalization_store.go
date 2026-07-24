@@ -139,7 +139,7 @@ func (s *PersonalizationStoreImpl) ListFooterLinks(ctx context.Context) ([]statu
 	if err != nil {
 		return nil, fmt.Errorf("list footer links: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanFooterLinks(rows)
 }
 
@@ -216,7 +216,7 @@ func (s *PersonalizationStoreImpl) ListFAQItems(ctx context.Context) ([]status.F
 	if err != nil {
 		return nil, fmt.Errorf("list faq items: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanFAQItems(rows)
 }
 

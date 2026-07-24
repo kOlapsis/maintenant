@@ -16,8 +16,7 @@ import { onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useUpdatesStore } from '@/stores/updates'
 import { timeAgo } from '@/utils/time'
-import FeatureGate from '@/components/FeatureGate.vue'
-import { RefreshCw, AlertTriangle, ArrowUpCircle, CheckCircle, Shield } from 'lucide-vue-next'
+import { RefreshCw, AlertTriangle, ArrowUpCircle, CheckCircle } from 'lucide-vue-next'
 
 const updates = useUpdatesStore()
 

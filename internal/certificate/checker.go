@@ -56,7 +56,7 @@ func CheckCertificate(hostname string, port int, serverName string, timeout time
 	// Connect with InsecureSkipVerify so we can inspect even invalid certs
 	dialer := &net.Dialer{Timeout: timeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402 -- inspection dial: invalid certs must be retrieved to be reported; chain is validated manually below.
 		ServerName:         validationName,
 		MinVersion:         tls.VersionTLS10, // inspection dial: reach legacy hosts down to TLS 1.0
 	})

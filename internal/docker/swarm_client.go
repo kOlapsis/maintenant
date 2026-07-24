@@ -15,7 +15,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/api/types/system"
@@ -41,7 +40,7 @@ func (c *Client) Info(ctx context.Context) (system.Info, error) {
 
 // ServiceList returns all Swarm services.
 func (c *Client) ServiceList(ctx context.Context) ([]swarm.Service, error) {
-	services, err := c.cli.ServiceList(ctx, types.ServiceListOptions{})
+	services, err := c.cli.ServiceList(ctx, swarm.ServiceListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("service list: %w", err)
 	}
@@ -50,7 +49,7 @@ func (c *Client) ServiceList(ctx context.Context) ([]swarm.Service, error) {
 
 // ServiceInspect returns a single Swarm service with raw data.
 func (c *Client) ServiceInspect(ctx context.Context, serviceID string) (swarm.Service, error) {
-	svc, _, err := c.cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+	svc, _, err := c.cli.ServiceInspectWithRaw(ctx, serviceID, swarm.ServiceInspectOptions{})
 	if err != nil {
 		return swarm.Service{}, fmt.Errorf("service inspect %s: %w", serviceID, err)
 	}
@@ -59,7 +58,7 @@ func (c *Client) ServiceInspect(ctx context.Context, serviceID string) (swarm.Se
 
 // NodeList returns all Swarm nodes.
 func (c *Client) NodeList(ctx context.Context) ([]swarm.Node, error) {
-	nodes, err := c.cli.NodeList(ctx, types.NodeListOptions{})
+	nodes, err := c.cli.NodeList(ctx, swarm.NodeListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("node list: %w", err)
 	}
@@ -68,7 +67,7 @@ func (c *Client) NodeList(ctx context.Context) ([]swarm.Node, error) {
 
 // TaskList returns all Swarm tasks.
 func (c *Client) TaskList(ctx context.Context) ([]swarm.Task, error) {
-	tasks, err := c.cli.TaskList(ctx, types.TaskListOptions{})
+	tasks, err := c.cli.TaskList(ctx, swarm.TaskListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("task list: %w", err)
 	}

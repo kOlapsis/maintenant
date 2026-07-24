@@ -265,8 +265,9 @@ func getResourcesHandler(svc *Services) gomcp.ToolHandlerFor[getResourcesInput, 
 		var diskPercent float64
 		var fs syscall.Statfs_t
 		if err := syscall.Statfs("/", &fs); err == nil {
-			diskTotal = fs.Blocks * uint64(fs.Bsize)
-			diskFree := fs.Bavail * uint64(fs.Bsize)
+			bsize := uint64(fs.Bsize) // #nosec G115 -- filesystem block size is always positive
+			diskTotal = fs.Blocks * bsize
+			diskFree := fs.Bavail * bsize
 			diskUsed = diskTotal - diskFree
 			if diskTotal > 0 {
 				diskPercent = float64(diskUsed) / float64(diskTotal) * 100.0

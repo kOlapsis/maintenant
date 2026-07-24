@@ -136,6 +136,14 @@ export interface Exclusion {
   created_at: string
 }
 
+export interface PinVersionResponse {
+  container_id: string
+  pinned_tag: string
+  pinned_digest: string
+  reason: string
+  pinned_at: string
+}
+
 // Updates
 export function fetchUpdates(filters?: { status?: string; update_type?: string; min_risk?: number }): Promise<{ updates: ImageUpdate[]; last_scan: string; next_scan: string }> {
   const params = new URLSearchParams()
@@ -166,12 +174,12 @@ export function fetchDryRun(): Promise<{ would_update: Array<{ container_id: str
   return apiFetch(`${API_BASE}/updates/dry-run`)
 }
 
-export function fetchDigest(): Promise<any> {
+export function fetchDigest(): Promise<unknown> {
   return apiFetch(`${API_BASE}/updates/digest`)
 }
 
 // Pinning
-export function pinVersion(containerId: string, reason?: string): Promise<any> {
+export function pinVersion(containerId: string, reason?: string): Promise<PinVersionResponse> {
   return apiFetch(`${API_BASE}/updates/pin/${containerId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -218,7 +226,7 @@ export function fetchRiskScores(): Promise<RiskListResponse> {
   return apiFetch(`${API_BASE}/risk`)
 }
 
-export function fetchContainerRisk(containerId: string): Promise<any> {
+export function fetchContainerRisk(containerId: string): Promise<RiskScore> {
   return apiFetch(`${API_BASE}/risk/${containerId}`)
 }
 

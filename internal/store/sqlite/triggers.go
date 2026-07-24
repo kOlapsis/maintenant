@@ -87,6 +87,7 @@ func (s *TriggerStoreImpl) ListEnabledTriggers(ctx context.Context) ([]*alert.Al
 }
 
 func (s *TriggerStoreImpl) listTriggersWhere(ctx context.Context, where string) ([]*alert.AlertTrigger, error) {
+	// #nosec G202 -- `where` is a package-internal constant, never caller input.
 	query := `SELECT id, name, filter_severities, filter_sources, filter_scopes, filter_tags,
 		enabled, created_at, updated_at
 		FROM alert_triggers ` + where + ` ORDER BY created_at ASC`

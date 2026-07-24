@@ -250,7 +250,7 @@ func (s *ContainerStore) ListTransitionsByContainer(ctx context.Context, contain
 		query += fmt.Sprintf(` LIMIT %d`, opts.Limit)
 	}
 	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset)
+		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

@@ -15,7 +15,6 @@
 import { ref, computed } from 'vue'
 import { createChannel, testChannel } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
-import FeatureGate from '@/components/FeatureGate.vue'
 import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
 
 const { hasFeature, isPro } = useEdition()

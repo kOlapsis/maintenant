@@ -56,7 +56,7 @@ func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, l
 	if useTLS {
 		tlsCfg := &tls.Config{
 			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // explicit opt-in with warning at boot
+			InsecureSkipVerify: insecureSkipVerify, // #nosec G402 -- explicit opt-in flag, warning logged at boot.
 		}
 		if insecureSkipVerify {
 			logger.Warn("TLS certificate verification is disabled — do not use in production")

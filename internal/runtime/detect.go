@@ -69,12 +69,12 @@ func DetectWithOverride(ctx context.Context, logger *slog.Logger, override strin
 			logger.Info("detected Kubernetes in-cluster environment", "method", "KUBERNETES_SERVICE_HOST")
 			rt, err := f(ctx, logger)
 			if err != nil {
-				return nil, fmt.Errorf("Kubernetes in-cluster runtime failed: %w", err)
+				return nil, fmt.Errorf("kubernetes in-cluster runtime failed: %w", err)
 			}
 			logger.Info("runtime initialized", "runtime", rt.Name(), "method", "auto_detect_in_cluster")
 			return rt, nil
 		}
-		return nil, fmt.Errorf("Kubernetes environment detected (KUBERNETES_SERVICE_HOST set) but kubernetes runtime not yet implemented; registered: %v", registeredNames())
+		return nil, fmt.Errorf("kubernetes environment detected (KUBERNETES_SERVICE_HOST set) but kubernetes runtime not yet implemented; registered: %v", registeredNames())
 	}
 
 	// Try KUBECONFIG for out-of-cluster K8s development.
@@ -109,7 +109,7 @@ func DetectWithOverride(ctx context.Context, logger *slog.Logger, override strin
 	if f, ok := factories["docker"]; ok {
 		rt, err := f(ctx, logger)
 		if err != nil {
-			return nil, fmt.Errorf("Docker runtime unavailable: %w. Set MAINTENANT_RUNTIME or ensure Docker socket is mounted", err)
+			return nil, fmt.Errorf("docker runtime unavailable: %w. Set MAINTENANT_RUNTIME or ensure Docker socket is mounted", err)
 		}
 		logger.Info("runtime initialized", "runtime", rt.Name(), "method", "auto_detect_docker")
 		return rt, nil

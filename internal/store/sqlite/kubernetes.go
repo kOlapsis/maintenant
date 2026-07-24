@@ -202,7 +202,7 @@ func (s *KubernetesStore) ListWorkloads(ctx context.Context, agentID string, nam
 		desired_replicas, status, created_at FROM kubernetes_workloads`
 	conds, args := agentNamespaceFilter(agentID, namespaces)
 	if len(conds) > 0 {
-		q += " WHERE " + strings.Join(conds, " AND ")
+		q += " WHERE " + strings.Join(conds, " AND ") // #nosec G202 -- conds are constant "col=?" fragments; values are bound.
 	}
 	q += " ORDER BY namespace ASC, kind ASC, name ASC"
 
@@ -261,7 +261,7 @@ func (s *KubernetesStore) ListPods(ctx context.Context, agentID string, namespac
 		args = append(args, filters.Workload+"%")
 	}
 	if len(conds) > 0 {
-		q += " WHERE " + strings.Join(conds, " AND ")
+		q += " WHERE " + strings.Join(conds, " AND ") // #nosec G202 -- conds are constant "col=?" fragments; values are bound.
 	}
 	q += " ORDER BY namespace ASC, name ASC"
 

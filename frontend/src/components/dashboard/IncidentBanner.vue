@@ -55,11 +55,6 @@ function getStepTimestamp(incident: IncidentTimelineEntry, step: string): string
   return state ? state.timestamp : null
 }
 
-function formatTimestamp(ts: string): string {
-  const d = new Date(ts)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
 function formatFullTimestamp(ts: string): string {
   return new Date(ts).toLocaleString()
 }
@@ -150,7 +145,7 @@ function formatFullTimestamp(ts: string): string {
           <div class="absolute left-[5px] top-0 h-full w-px bg-mnt-elevated" />
 
           <div
-            v-for="(step, idx) in timelineSteps"
+            v-for="step in timelineSteps"
             :key="step"
             class="relative flex items-start gap-3 pb-3 last:pb-0"
           >

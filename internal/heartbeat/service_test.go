@@ -368,8 +368,6 @@ func seedHeartbeat(store *mockStore, token string, status HeartbeatStatus, alert
 	return h
 }
 
-func strPtr(s string) *string { return &s }
-
 // ---------------------------------------------------------------------------
 // CreateHeartbeat tests
 // ---------------------------------------------------------------------------
