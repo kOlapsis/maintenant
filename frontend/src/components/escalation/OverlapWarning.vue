@@ -15,7 +15,7 @@
 import { AlertTriangle } from 'lucide-vue-next'
 import type { OverlapWarning } from '@/types/escalation'
 
-const props = defineProps<{
+defineProps<{
   warnings: OverlapWarning[]
 }>()
 </script>

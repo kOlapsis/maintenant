@@ -43,7 +43,7 @@ func TestStart_DegradedMode(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	tmpDir := t.TempDir()
 	t.Setenv("MAINTENANT_RUNTIME", "docker")
@@ -73,7 +73,7 @@ func TestStart_DegradedMode(t *testing.T) {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get("http://" + addr + "/api/v1/health")
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			assert.Equal(t, http.StatusOK, resp.StatusCode, "health endpoint must return 200 in degraded mode")
 			cancel() // trigger graceful shutdown
 			break

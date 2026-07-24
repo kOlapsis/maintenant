@@ -126,7 +126,7 @@ func kubernetesTopologyEvent(agentID string, snap kubernetes.TopologySnapshot) *
 			Name:                     n.Name,
 			Roles:                    n.Roles,
 			Status:                   n.Status,
-			RunningPods:              int32(n.RunningPods),
+			RunningPods:              clampInt32(n.RunningPods),
 			KubernetesVersion:        n.KubernetesVersion,
 			OsImage:                  n.OSImage,
 			Architecture:             n.Architecture,

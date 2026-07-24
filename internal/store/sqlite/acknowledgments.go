@@ -74,7 +74,7 @@ func (s *AcknowledgmentStoreImpl) ListAcknowledgments(ctx context.Context, conta
 	if err != nil {
 		return nil, fmt.Errorf("list acknowledgments: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []*security.RiskAcknowledgment
 	for rows.Next() {

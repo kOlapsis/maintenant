@@ -50,7 +50,7 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("runtime detection: %w", err)
 	}
-	defer rt.Close()
+	defer func() { _ = rt.Close() }()
 	logger.Info("runtime detected", "runtime", rtLabel)
 
 	id, err := LoadOrCreate(cfg.DataDir)
@@ -62,7 +62,7 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("connect to server: %w", err)
 	}
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	if !id.Registered {
 		if cfg.EnrollmentToken == "" {

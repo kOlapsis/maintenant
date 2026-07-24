@@ -135,8 +135,9 @@ func DiskUsage(path string) (total uint64, used uint64) {
 	if err := syscall.Statfs(path, &fs); err != nil {
 		return 0, 0
 	}
-	total = fs.Blocks * uint64(fs.Bsize)
-	free := fs.Bavail * uint64(fs.Bsize)
+	bsize := uint64(fs.Bsize) // #nosec G115 -- filesystem block size is always positive
+	total = fs.Blocks * bsize
+	free := fs.Bavail * bsize
 	if total >= free {
 		used = total - free
 	}
@@ -151,11 +152,11 @@ func DiskUsage(path string) (total uint64, used uint64) {
 // (guest/guest_nice are already included in user/nice per kernel docs).
 // idle = idle + iowait (iowait is time the CPU was available but waiting).
 func readCPUJiffies(procPath string) (cpuJiffies, error) {
-	f, err := os.Open(procPath + "/stat")
+	f, err := os.Open(procPath + "/stat") // #nosec G304 -- procPath is a fixed /proc constant, not user input
 	if err != nil {
 		return cpuJiffies{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -189,11 +190,11 @@ func readCPUJiffies(procPath string) (cpuJiffies, error) {
 
 // readMeminfo reads MemTotal and MemAvailable from /proc/meminfo (bytes).
 func readMeminfo(procPath string) (total int64, available int64, err error) {
-	f, err := os.Open(procPath + "/meminfo")
+	f, err := os.Open(procPath + "/meminfo") // #nosec G304 -- procPath is a fixed /proc constant, not user input
 	if err != nil {
 		return 0, 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	found := 0
 	scanner := bufio.NewScanner(f)

@@ -298,6 +298,7 @@ func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID string, 
 		placeholders[i] = "?"
 		args = append(args, name)
 	}
+	// #nosec G201 -- only "?" placeholders are interpolated; values are bound.
 	query := fmt.Sprintf(
 		`SELECT DISTINCT container_id, container_name FROM image_updates WHERE scan_id != ? AND container_name IN (%s)`,
 		strings.Join(placeholders, ","),

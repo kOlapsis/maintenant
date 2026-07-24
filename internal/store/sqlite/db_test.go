@@ -20,7 +20,7 @@ func TestWriterAvailableBeforeStart(t *testing.T) {
 
 	db, err := Open(dbPath, logger)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	w := db.Writer()
 	assert.NotNil(t, w, "Writer() must return a non-nil *Writer before StartWriter is called")

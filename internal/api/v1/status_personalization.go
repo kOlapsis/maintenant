@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -142,7 +141,7 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 	cap := status.AssetSizeCap(role)
 	r.Body = http.MaxBytesReader(w, r.Body, cap+1024) // +1024 for form overhead
 
-	if err := r.ParseMultipartForm(cap); err != nil {
+	if err := r.ParseMultipartForm(cap); err != nil { // #nosec G120 -- body bounded by http.MaxBytesReader above
 		if strings.Contains(err.Error(), "request body too large") {
 			WriteError(w, http.StatusBadRequest, "payload_too_large", "asset exceeds size limit")
 			return
@@ -156,7 +155,7 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 		WriteError(w, http.StatusBadRequest, "validation_error", "file part is required")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, cap+1))
 	if err != nil {
@@ -205,7 +204,12 @@ func (h *PersonalizationHandler) HandleGetAsset(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Type", asset.MIME)
 	w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// Neutralizes scripts in an allowlisted SVG opened by direct navigation.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	w.WriteHeader(http.StatusOK)
+	// #nosec G705 -- bytes stored by the authenticated admin; MIME sniffed and
+	// allowlisted per role at upload (DetectAssetMIME), CSP above covers SVG.
 	_, _ = w.Write(asset.Bytes)
 }
 
@@ -518,13 +522,6 @@ func faqItemsToResponse(items []status.FAQItem) []faqItemResp {
 		out[i] = faqItemToResponse(item)
 	}
 	return out
-}
-
-func assetDataURL(a *status.Asset) string {
-	if a == nil {
-		return ""
-	}
-	return "data:" + a.MIME + ";base64," + base64.StdEncoding.EncodeToString(a.Bytes)
 }
 
 func mapSettingsError(err error) (int, string) {

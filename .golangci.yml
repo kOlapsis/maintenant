@@ -1,0 +1,8 @@
+# Some npm packages vendor Go source inside node_modules (e.g. flatted ships a
+# Go port); without this exclusion a local `golangci-lint run ./...` lints them.
+version: "2"
+
+linters:
+  exclusions:
+    paths:
+      - frontend/node_modules

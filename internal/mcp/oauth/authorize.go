@@ -92,6 +92,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		"code":  code,
 		"state": state,
 	})
+	// #nosec G710 -- redirect_uri validated by isRedirectURIAllowed before any redirect.
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
@@ -101,6 +102,7 @@ func oauthRedirectError(w http.ResponseWriter, r *http.Request, redirectURI, sta
 		"error_description": desc,
 		"state":             state,
 	})
+	// #nosec G710 -- callers only reach this after isRedirectURIAllowed passed.
 	http.Redirect(w, r, u, http.StatusFound)
 }
 

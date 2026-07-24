@@ -13,6 +13,7 @@ package resource
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
@@ -31,8 +32,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		s.RecordHostSample(&HostSample{
 			AgentID:    agentID,
 			CPUPercent: ev.GetCpuPercent(),
-			MemUsed:    int64(ev.GetMemoryBytes()),
-			MemTotal:   int64(ev.GetMemoryLimitBytes()),
+			MemUsed:    clampInt64(ev.GetMemoryBytes()),
+			MemTotal:   clampInt64(ev.GetMemoryLimitBytes()),
 			DiskTotal:  ev.GetHostDiskTotalBytes(),
 			DiskUsed:   ev.GetHostDiskUsedBytes(),
 			Timestamp:  time.Now(),
@@ -48,16 +49,25 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	snap := &ResourceSnapshot{
 		ContainerID:     uid.Container(uid.Agent(agentID), containerExternalID),
 		CPUPercent:      ev.GetCpuPercent(),
-		MemUsed:         int64(ev.GetMemoryBytes()),
-		MemLimit:        int64(ev.GetMemoryLimitBytes()),
-		NetRxBytes:      int64(ev.GetNetworkRxBytes()),
-		NetTxBytes:      int64(ev.GetNetworkTxBytes()),
-		BlockReadBytes:  int64(ev.GetDiskReadBytes()),
-		BlockWriteBytes: int64(ev.GetDiskWriteBytes()),
+		MemUsed:         clampInt64(ev.GetMemoryBytes()),
+		MemLimit:        clampInt64(ev.GetMemoryLimitBytes()),
+		NetRxBytes:      clampInt64(ev.GetNetworkRxBytes()),
+		NetTxBytes:      clampInt64(ev.GetNetworkTxBytes()),
+		BlockReadBytes:  clampInt64(ev.GetDiskReadBytes()),
+		BlockWriteBytes: clampInt64(ev.GetDiskWriteBytes()),
 		Timestamp:       time.Now(),
 		AgentID:         uid.Agent(agentID),
 	}
 
 	s.processSnapshot(snap)
 	return nil
+}
+
+// clampInt64 converts an unsigned byte/count metric to int64, saturating at
+// MaxInt64 so an out-of-range value can never wrap to a negative number.
+func clampInt64(v uint64) int64 {
+	if v > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(v)
 }

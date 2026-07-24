@@ -38,13 +38,9 @@ import { useEdition } from '@/composables/useEdition'
 import type { SecurityScore } from '@/services/postureApi'
 import { getStateStyle, getExitCodeStyle } from '@/utils/containerState'
 import {
-  X,
   Trash2,
   Terminal,
   Activity,
-  Clock,
-  Server,
-  ChevronDown,
   ChevronRight,
 } from 'lucide-vue-next'
 import { fetchSwarmServiceDetail, type SwarmServiceDetailResponse } from '@/services/swarmApi'

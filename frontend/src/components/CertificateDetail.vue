@@ -23,7 +23,7 @@ const props = defineProps<{
   certificateId: string
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   close: []
 }>()
 

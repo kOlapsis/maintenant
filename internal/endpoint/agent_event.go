@@ -39,7 +39,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	result := CheckResult{
 		EndpointID:     ep.ID,
 		Success:        ev.GetStatus() == agentpb.EndpointStatus_ENDPOINT_STATUS_UP,
-		ResponseTimeMs: int64(ev.GetLatencyMs()),
+		ResponseTimeMs: int64(ev.GetLatencyMs()), // #nosec G115 -- probe latency in ms, never approaches int64
 		HTTPStatus:     &statusCode,
 		ErrorMessage:   ev.GetErrorMessage(),
 		Timestamp:      time.Now(),

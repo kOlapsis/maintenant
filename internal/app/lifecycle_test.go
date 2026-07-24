@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -60,11 +59,10 @@ func TestSupervisor_MultipleStartStop(t *testing.T) {
 		t.Skip("skipped in short mode")
 	}
 
-	var wg sync.WaitGroup
+	// Sequential on purpose: t.Setenv and license.InitPublicKey mutate
+	// process-wide state and race under concurrent app instances.
 	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		func() {
 			tmpDir := t.TempDir()
 			t.Setenv("MAINTENANT_RUNTIME", "docker")
 			t.Setenv("DOCKER_HOST", "unix:///nonexistent-socket-abc.sock")
@@ -93,5 +91,4 @@ func TestSupervisor_MultipleStartStop(t *testing.T) {
 			}
 		}()
 	}
-	wg.Wait()
 }

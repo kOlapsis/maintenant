@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -278,8 +279,8 @@ func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runt
 			Body: &agentpb.AgentEvent_Resource{Resource: &agentpb.ResourceSample{
 				ContainerId:      c.ExternalID,
 				CpuPercent:       raw.CPUPercent,
-				MemoryBytes:      uint64(raw.MemUsed),
-				MemoryLimitBytes: uint64(raw.MemLimit),
+				MemoryBytes:      clampUint(raw.MemUsed),
+				MemoryLimitBytes: clampUint(raw.MemLimit),
 				NetworkRxBytes:   netRx,
 				NetworkTxBytes:   netTx,
 				DiskReadBytes:    diskR,
@@ -334,4 +335,16 @@ func clampUint(v int64) uint64 {
 		return 0
 	}
 	return uint64(v)
+}
+
+// clampInt32 narrows a host int counter (replicas, slots, task/pod counts) to
+// the int32 proto field, saturating at the int32 bounds instead of wrapping.
+func clampInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
 }

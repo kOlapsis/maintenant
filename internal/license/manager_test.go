@@ -69,7 +69,7 @@ func TestManager_ActiveLicense(t *testing.T) {
 			VerifiedAt: time.Now(),
 		}
 		signed := signPayload(t, priv, payload)
-		json.NewEncoder(w).Encode(signed)
+		_ = json.NewEncoder(w).Encode(signed)
 	}
 
 	m := testManager(t, pub, handler)
@@ -93,7 +93,7 @@ func TestManager_GraceLicense(t *testing.T) {
 			VerifiedAt: time.Now(),
 		}
 		signed := signPayload(t, priv, payload)
-		json.NewEncoder(w).Encode(signed)
+		_ = json.NewEncoder(w).Encode(signed)
 	}
 
 	m := testManager(t, pub, handler)
@@ -116,7 +116,7 @@ func TestManager_ExpiredLicense(t *testing.T) {
 			VerifiedAt: time.Now(),
 		}
 		signed := signPayload(t, priv, payload)
-		json.NewEncoder(w).Encode(signed)
+		_ = json.NewEncoder(w).Encode(signed)
 	}
 
 	m := testManager(t, pub, handler)
@@ -133,7 +133,7 @@ func TestManager_UnknownKey_HTTP401(t *testing.T) {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"message":"Invalid license key"}`))
+		_, _ = w.Write([]byte(`{"message":"Invalid license key"}`))
 	}
 
 	m := testManager(t, pub, handler)
@@ -166,7 +166,7 @@ func TestManager_ExpiredKey_HTTP403(t *testing.T) {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"status":"expired","message":"Your license has expired. Renew at https://maintenant.dev/pricing"}`))
+		_, _ = w.Write([]byte(`{"status":"expired","message":"Your license has expired. Renew at https://maintenant.dev/pricing"}`))
 	}
 
 	m := testManager(t, pub, handler)
@@ -183,7 +183,7 @@ func TestManager_CanceledKey_HTTP403(t *testing.T) {
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"status":"canceled","message":"Your subscription has been canceled."}`))
+		_, _ = w.Write([]byte(`{"status":"canceled","message":"Your subscription has been canceled."}`))
 	}
 
 	m := testManager(t, pub, handler)
@@ -206,7 +206,7 @@ func TestManager_InvalidSignature(t *testing.T) {
 		}
 		// Sign with wrong key
 		signed := signPayload(t, otherPriv, payload)
-		json.NewEncoder(w).Encode(signed)
+		_ = json.NewEncoder(w).Encode(signed)
 	}
 
 	m := testManager(t, pub, handler)
@@ -258,7 +258,7 @@ func TestManager_NetworkError_CacheFallback(t *testing.T) {
 				VerifiedAt: time.Now(),
 			}
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 			return
 		}
 		// Second call: server error
@@ -389,7 +389,7 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			payload := makeProPayload(t, priv)
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 		}
 		m := testManager(t, pub, handler)
 
@@ -414,7 +414,7 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 		}))
 		defer ts.Close()
 		licenseServerOverride = ts.URL
@@ -442,12 +442,12 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 			if expiredCalls <= 1 {
 				payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
 				signed := signPayload(t, priv, payload)
-				json.NewEncoder(w).Encode(signed)
+				_ = json.NewEncoder(w).Encode(signed)
 				return
 			}
 			payload := makeProPayload(t, priv)
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 		}
 		m := testManager(t, pub, handler)
 
@@ -485,7 +485,7 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			payload := makeProPayload(t, priv)
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 		}
 		m := testManager(t, pub, handler)
 
@@ -511,7 +511,7 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			payload := makeProPayload(t, priv)
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 		}
 		m := testManager(t, pub, handler)
 
@@ -542,12 +542,12 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 			if expiredCalled <= 1 {
 				payload := makeProPayload(t, priv)
 				signed := signPayload(t, priv, payload)
-				json.NewEncoder(w).Encode(signed)
+				_ = json.NewEncoder(w).Encode(signed)
 				return
 			}
 			payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 		}
 		m := testManager(t, pub, handler)
 
@@ -583,12 +583,12 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 			if expiredCalled <= 1 {
 				payload := makeProPayload(t, priv)
 				signed := signPayload(t, priv, payload)
-				json.NewEncoder(w).Encode(signed)
+				_ = json.NewEncoder(w).Encode(signed)
 				return
 			}
 			payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-1 * time.Hour), VerifiedAt: time.Now()}
 			signed := signPayload(t, priv, payload)
-			json.NewEncoder(w).Encode(signed)
+			_ = json.NewEncoder(w).Encode(signed)
 		}
 		m := testManager(t, pub, handler)
 

@@ -112,18 +112,18 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 
 // mapSSETypeToWebhookEvent maps internal SSE event types to webhook event types.
 func mapSSETypeToWebhookEvent(sseType string) string {
-	switch {
-	case sseType == event.ContainerStateChanged || sseType == event.ContainerDiscovered || sseType == "container.removed":
+	switch sseType {
+	case event.ContainerStateChanged, event.ContainerDiscovered, "container.removed":
 		return event.ContainerStateChanged
-	case sseType == event.EndpointStatusChanged || sseType == event.EndpointDiscovered || sseType == event.EndpointRemoved:
+	case event.EndpointStatusChanged, event.EndpointDiscovered, event.EndpointRemoved:
 		return event.EndpointStatusChanged
-	case sseType == event.HeartbeatStatusChanged:
+	case event.HeartbeatStatusChanged:
 		return event.HeartbeatStatusChanged
-	case sseType == event.CertificateStatusChanged:
+	case event.CertificateStatusChanged:
 		return event.CertificateStatusChanged
-	case sseType == event.AlertFired:
+	case event.AlertFired:
 		return event.AlertFired
-	case sseType == event.AlertResolved:
+	case event.AlertResolved:
 		return event.AlertResolved
 	default:
 		return ""

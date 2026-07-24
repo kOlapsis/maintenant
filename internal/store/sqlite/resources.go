@@ -256,12 +256,13 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 		}
 	case "24h", "7d", "30d":
 		table, timeCol = "resource_daily", "bucket"
-		if period == "24h" {
+		switch period {
+		case "24h":
 			table = "resource_hourly"
 			from = now.Add(-24 * time.Hour).Unix()
-		} else if period == "7d" {
+		case "7d":
 			from = now.Add(-7 * 24 * time.Hour).Unix()
-		} else {
+		default:
 			from = now.Add(-30 * 24 * time.Hour).Unix()
 		}
 		switch metric {
@@ -287,6 +288,8 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 	}
 	args = append(args, limit)
 
+	// #nosec G201 -- every fragment comes from the exhaustive period/metric
+	// switches above (invalid values already returned an error); args are bound.
 	query := fmt.Sprintf(
 		`SELECT container_id, %s AS avg_val, %s AS avg_pct
 		FROM %s WHERE %s >= ?%s

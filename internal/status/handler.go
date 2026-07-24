@@ -14,6 +14,7 @@ package status
 import (
 	"bytes"
 	"encoding/json"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -333,9 +334,11 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 
 // writeSimpleHTML renders a minimal HTML page for confirm/unsubscribe results.
 func writeSimpleHTML(w http.ResponseWriter, statusCode int, title, message string) {
+	// Escaped: message can carry an error string derived from request input.
+	t, m := html.EscapeString(title), html.EscapeString(message)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(statusCode)
-	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>` + title + `</title>
+	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>` + t + `</title>
 <style>body{font-family:system-ui,sans-serif;max-width:480px;margin:80px auto;text-align:center;color:#333}h1{font-size:1.5rem}</style>
-</head><body><h1>` + title + `</h1><p>` + message + `</p></body></html>`))
+</head><body><h1>` + t + `</h1><p>` + m + `</p></body></html>`))
 }

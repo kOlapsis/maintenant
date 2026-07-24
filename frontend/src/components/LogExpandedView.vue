@@ -62,7 +62,7 @@ onUnmounted(() => {
           :word-wrap="logStream.wordWrap.value"
           :search="search"
           @toggle-expand="emit('close')"
-          @toggle-wrap="logStream.wordWrap.value = !logStream.wordWrap.value"
+          @toggle-wrap="logStream.toggleWordWrap()"
           @reconnect="logStream.connect()"
         />
       </div>
@@ -70,7 +70,7 @@ onUnmounted(() => {
       <!-- Log content -->
       <div class="relative flex-1">
         <div
-          :ref="(el: any) => { logStream.scrollContainerRef.value = el }"
+          :ref="logStream.setScrollContainer"
           class="absolute inset-0 overflow-auto px-2 py-1 font-mono text-[0.7rem] leading-relaxed text-mnt-primary"
           :class="logStream.wordWrap.value ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'"
           @scroll="logStream.handleScroll"

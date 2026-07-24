@@ -170,7 +170,7 @@ func (s *SwarmTopologyStore) ListTasks(ctx context.Context, agentID, serviceID s
 		args = append(args, serviceID)
 	}
 	if len(conds) > 0 {
-		q += " WHERE " + strings.Join(conds, " AND ")
+		q += " WHERE " + strings.Join(conds, " AND ") // #nosec G202 -- conds are constant "col=?" fragments; values are bound.
 	}
 	q += " ORDER BY service_id ASC, slot ASC"
 

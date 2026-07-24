@@ -51,7 +51,7 @@ function statusText(status: string): string {
   }
 }
 
-function roleStyle(_role: string): string {
+function roleStyle(): string {
   return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
 }
 
@@ -121,7 +121,7 @@ function formatCPU(millicores: number): string {
             <span
               v-for="role in node.roles"
               :key="role"
-              :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border', roleStyle(role)]"
+              :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border', roleStyle()]"
             >
               {{ role }}
             </span>

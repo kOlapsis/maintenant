@@ -67,7 +67,6 @@ function buildGanttEntries(): HeartbeatTimelineEntry[] {
   if (!detail.value || executions.value.length === 0) return []
 
   const hb = detail.value.heartbeat
-  const interval = hb.interval_seconds || 0
   const grace = hb.grace_seconds || 0
 
   return executions.value.map(exec => {

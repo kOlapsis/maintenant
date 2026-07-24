@@ -297,7 +297,7 @@ func (s *HeartbeatStore) ListPings(ctx context.Context, heartbeatID string, opts
 		FROM heartbeat_pings WHERE heartbeat_id=? ORDER BY timestamp DESC`
 	query += fmt.Sprintf(` LIMIT %d`, limit)
 	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset)
+		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, heartbeatID)
@@ -386,7 +386,7 @@ func (s *HeartbeatStore) ListExecutions(ctx context.Context, heartbeatID string,
 		FROM heartbeat_executions WHERE heartbeat_id=? ORDER BY id DESC`
 	query += fmt.Sprintf(` LIMIT %d`, limit)
 	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset)
+		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, heartbeatID)

@@ -30,7 +30,6 @@ const emit = defineEmits<{
 }>()
 
 const panelRef = ref<HTMLElement | null>(null)
-const isActive = computed(() => props.open)
 
 useFocusTrap(panelRef, ref(props.open))
 

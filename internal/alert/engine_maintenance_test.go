@@ -35,7 +35,7 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
 	db.StartWriter(ctx)
 

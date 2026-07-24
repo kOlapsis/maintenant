@@ -109,9 +109,10 @@ func (r *Runtime) ClusterOverview(ctx context.Context) (*K8sClusterOverview, err
 	anyNodeNotReady := false
 	anyNodeWarning := false
 	for _, n := range nodes {
-		if n.Status == "ready" {
+		switch n.Status {
+		case "ready":
 			nodeReadyCount++
-		} else if n.Status == "not-ready" {
+		case "not-ready":
 			anyNodeNotReady = true
 		}
 		// Check for pressure conditions.

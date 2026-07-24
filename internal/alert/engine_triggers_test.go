@@ -50,7 +50,7 @@ func engineTestSetup(t *testing.T) (
 	var err error
 	db, err = sqlite.Open(filepath.Join(t.TempDir(), "eng.db"), logger)
 	require.NoError(t, err)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
 	db.StartWriter(ctx)

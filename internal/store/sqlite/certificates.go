@@ -293,7 +293,7 @@ func (s *CertificateStore) ListCheckResults(ctx context.Context, monitorID strin
 	FROM cert_check_results WHERE monitor_id=? ORDER BY checked_at DESC`
 	query += fmt.Sprintf(` LIMIT %d`, limit)
 	if opts.Offset > 0 {
-		query += fmt.Sprintf(` OFFSET %d`, opts.Offset)
+		query += fmt.Sprintf(` OFFSET %d`, opts.Offset) // #nosec G202 -- integer formatting of an int option.
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, monitorID)
@@ -482,12 +482,10 @@ func (s *CertificateStore) scanMonitor(row rowScanner) (*certificate.CertMonitor
 		m.LastError = lastError.String
 	}
 
-	// Parse warning thresholds
+	// Parse warning thresholds (best-effort: keep the defaults set above on parse error).
 	m.WarningThresholds = certificate.DefaultWarningThresholds()
 	if thresholdsJSON != "" {
-		if err := json.Unmarshal([]byte(thresholdsJSON), &m.WarningThresholds); err != nil {
-			// Use defaults on parse error
-		}
+		_ = json.Unmarshal([]byte(thresholdsJSON), &m.WarningThresholds)
 	}
 
 	return &m, nil

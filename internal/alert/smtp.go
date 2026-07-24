@@ -58,11 +58,9 @@ func (s *SMTPSender) Send(_ context.Context, to, subject, textBody string) error
 		_ = c.Close()
 	}(c)
 
-	// STARTTLS
+	// STARTTLS best-effort: some servers don't support it, so continue in plaintext on error.
 	tlsCfg := &tls.Config{ServerName: s.cfg.Host, MinVersion: tls.VersionTLS12}
-	if err := c.StartTLS(tlsCfg); err != nil {
-		// Non-fatal: some servers don't support STARTTLS
-	}
+	_ = c.StartTLS(tlsCfg)
 
 	// AUTH PLAIN if credentials are configured
 	if s.cfg.Username != "" {

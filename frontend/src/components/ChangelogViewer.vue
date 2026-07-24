@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { ExternalLink, AlertTriangle } from 'lucide-vue-next'
 
-const props = defineProps<{
+defineProps<{
   changelogUrl: string
   changelogSummary: string
   hasBreakingChanges: boolean

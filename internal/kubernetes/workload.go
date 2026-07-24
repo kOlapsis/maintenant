@@ -491,7 +491,7 @@ func mapDeploymentWorkload(dep *appsv1.Deployment) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}
@@ -526,7 +526,7 @@ func mapStatefulSetWorkload(ss *appsv1.StatefulSet) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}
@@ -558,7 +558,7 @@ func mapDaemonSetWorkload(ds *appsv1.DaemonSet) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}
@@ -593,7 +593,7 @@ func mapJobWorkload(job *batchv1.Job) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}

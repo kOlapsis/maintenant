@@ -17,7 +17,7 @@ import type { EscalationPolicy } from '@/types/escalation'
 import { timeAgo } from '@/utils/time'
 import { Pencil, Trash2, Layers, CheckCircle2, CircleDashed } from 'lucide-vue-next'
 
-const props = defineProps<{
+defineProps<{
   policies: EscalationPolicy[]
   loading: boolean
 }>()

@@ -97,7 +97,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
 	db.StartWriter(ctx)
 

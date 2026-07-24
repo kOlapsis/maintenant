@@ -16,7 +16,7 @@ import type { CVEInfo } from '@/services/updateApi'
 import { ref } from 'vue'
 import { Shield, Copy, Check, CheckCircle } from 'lucide-vue-next'
 
-const props = defineProps<{
+defineProps<{
   cves: CVEInfo[]
 }>()
 

@@ -361,9 +361,10 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 			if eventType, eventData := s.alertCallback(updated, result); eventType != "" {
 				// Update alert state in store
 				newAlertState := updated.AlertState
-				if eventType == "endpoint.alert" {
+				switch eventType {
+				case "endpoint.alert":
 					newAlertState = AlertAlerting
-				} else if eventType == "endpoint.recovery" {
+				case "endpoint.recovery":
 					newAlertState = AlertNormal
 				}
 				if err := s.store.UpdateCheckResult(ctx, endpointID, newStatus, newAlertState,

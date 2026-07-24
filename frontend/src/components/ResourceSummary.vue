@@ -14,12 +14,10 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
 import { useResourcesStore } from '@/stores/resources'
-import { useContainersStore } from '@/stores/containers'
 import { getTopConsumers } from '@/services/resourceApi'
 import TopConsumersWidget, { type TopConsumer, type Period } from './TopConsumersWidget.vue'
 
 const store = useResourcesStore()
-const containersStore = useContainersStore()
 
 const topMetric = ref<'cpu' | 'memory'>('cpu')
 const topPeriod = ref<Period>('1h')
