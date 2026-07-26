@@ -423,8 +423,8 @@ func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
 
 	lines := 100
 	if l := r.URL.Query().Get("lines"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil && n > 0 {
-			lines = n
+		if n, err := strconv.ParseUint(l, 10, 32); err == nil && n > 0 {
+			lines = int(n)
 			if lines > 500 {
 				lines = 500
 			}
