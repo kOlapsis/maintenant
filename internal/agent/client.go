@@ -31,6 +31,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentauth"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/retry"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 // ErrAgentRevokedServer is returned by RunWithReconnect when the server revokes the agent.
@@ -41,6 +42,19 @@ var ErrAgentRevokedServer = errors.New("agent revoked by server")
 type Client struct {
 	conn   *grpc.ClientConn
 	client agentpb.IngestClient
+
+	// commands and agentVersion are reported at auth and wired into every stream
+	// this client opens. Set once via EnableCommands, before the first dial.
+	commands     *CommandRunner
+	agentVersion string
+}
+
+// EnableCommands lets the server issue commands (log reads) against rt, and makes
+// the running build known at each connect. Must be called before DialPush; the
+// receive loop starts inside it, so a later hook-up would race.
+func (c *Client) EnableCommands(rt runtime.Runtime, agentVersion string, logger *slog.Logger) {
+	c.commands = NewCommandRunner(rt, logger)
+	c.agentVersion = agentVersion
 }
 
 // NewClient dials the server at serverURL and returns a ready-to-use Client.
@@ -101,6 +115,11 @@ type PushStream struct {
 	stream agentpb.Ingest_PushClient
 	seq    atomic.Uint64
 	recvCh chan error
+
+	// commands executes server-issued commands; nil disables the command channel.
+	commands *CommandRunner
+	// ctx bounds command work to the stream's lifetime.
+	ctx context.Context
 }
 
 // Send wraps evt in a ClientMessage and delivers it, assigning a monotonic seq.
@@ -110,6 +129,16 @@ func (ps *PushStream) Send(evt *agentpb.AgentEvent) error {
 	defer ps.mu.Unlock()
 	return ps.stream.Send(&agentpb.ClientMessage{
 		Payload: &agentpb.ClientMessage_Event{Event: evt},
+	})
+}
+
+// SendResult delivers a reply to a server-issued command. Safe to call from the
+// per-request goroutines, which share the stream with the telemetry senders.
+func (ps *PushStream) SendResult(res *agentpb.CommandResult) error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.stream.Send(&agentpb.ClientMessage{
+		Payload: &agentpb.ClientMessage_Result{Result: res},
 	})
 }
 
@@ -146,6 +175,13 @@ func (ps *PushStream) recvLoop(logger *slog.Logger) {
 				"retry_after_ms", errMsg.GetRetryAfterMs(),
 			)
 		}
+		if cmd := msg.GetCommand(); cmd != nil && ps.commands != nil {
+			ps.commands.Handle(ps.ctx, ps, cmd)
+		}
+	}
+	// The stream is gone; abandon work whose requester can no longer be reached.
+	if ps.commands != nil {
+		ps.commands.CancelAll()
 	}
 	ps.recvCh <- retErr
 }
@@ -177,13 +213,16 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 		return nil, fmt.Errorf("build sign payload: %w", err)
 	}
 
-	// Phase 3: send AuthResponse.
+	// Phase 3: send AuthResponse. Version and capabilities ride along outside the
+	// signed payload, so old and new servers both accept this message.
 	if err := stream.Send(&agentpb.ClientMessage{
 		Payload: &agentpb.ClientMessage_Auth{
 			Auth: &agentpb.AuthResponse{
-				AgentId:   id.AgentID,
-				Timestamp: now,
-				Signature: id.Sign(payload),
+				AgentId:      id.AgentID,
+				Timestamp:    now,
+				Signature:    id.Sign(payload),
+				AgentVersion: c.agentVersion,
+				Capabilities: Capabilities(),
 			},
 		},
 	}); err != nil {
@@ -191,8 +230,10 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 	}
 
 	ps := &PushStream{
-		stream: stream,
-		recvCh: make(chan error, 1),
+		stream:   stream,
+		recvCh:   make(chan error, 1),
+		commands: c.commands,
+		ctx:      ctx,
 	}
 	go ps.recvLoop(logger)
 
@@ -231,7 +272,10 @@ func RunWithReconnect(
 		} else {
 			streamErr := onStream(ctx, stream)
 			stream.Close()
-			_ = stream.Wait(ctx)
+			// The server reports revocation on the receive side; the send side only
+			// ever surfaces a generic EOF. Ignoring this error turned a revocation
+			// into an endless reconnect loop.
+			recvErr := stream.Wait(ctx)
 
 			if time.Since(start) > stable {
 				backoff.Reset()
@@ -240,12 +284,13 @@ func RunWithReconnect(
 			if ctx.Err() != nil {
 				return nil
 			}
-			if isRevokedErr(streamErr) {
-				logger.Error("agent: revoked by server, exiting", "err", streamErr)
+			if isRevokedErr(streamErr) || isRevokedErr(recvErr) {
+				logger.Error("agent: revoked by server, exiting", "err", errors.Join(streamErr, recvErr))
 				return ErrAgentRevokedServer
 			}
-			if streamErr != nil {
-				logger.Warn("agent: stream closed, will reconnect", "err", streamErr, "attempt", backoff.Attempt())
+			if streamErr != nil || recvErr != nil {
+				logger.Warn("agent: stream closed, will reconnect",
+					"err", errors.Join(streamErr, recvErr), "attempt", backoff.Attempt())
 			}
 		}
 

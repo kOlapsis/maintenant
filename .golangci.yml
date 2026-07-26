@@ -2,6 +2,12 @@
 # Go port); without this exclusion a local `golangci-lint run ./...` lints them.
 version: "2"
 
+# The integration suite sits behind this build tag; without it the linter cannot
+# even parse those files, so problems there would go unreported.
+run:
+  build-tags:
+    - integration
+
 linters:
   exclusions:
     paths:

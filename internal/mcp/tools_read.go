@@ -194,9 +194,6 @@ func getContainerHandler(svc *Services) gomcp.ToolHandlerFor[getContainerInput, 
 
 func getContainerLogsHandler(svc *Services) gomcp.ToolHandlerFor[getContainerLogsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input getContainerLogsInput) (*gomcp.CallToolResult, any, error) {
-		if svc.LogFetcher == nil {
-			return errResult("logs unavailable: no container runtime connected")
-		}
 		if input.ContainerID == "" {
 			return errResult("invalid input: container_id is required")
 		}
@@ -214,7 +211,21 @@ func getContainerLogsHandler(svc *Services) gomcp.ToolHandlerFor[getContainerLog
 		if lines > 1000 {
 			lines = 1000
 		}
-		logLines, err := svc.LogFetcher.FetchLogs(ctx, c.ExternalID, lines, input.Timestamps)
+
+		// A container on a remote agent is invisible to our runtime: ask the agent
+		// that reported it instead of failing against the local daemon.
+		var logLines []string
+		if c.AgentID != "" && c.AgentID != uid.LocalAgent {
+			if svc.AgentLogs == nil {
+				return errResult("logs unavailable: multi-host agent support is not enabled")
+			}
+			logLines, err = svc.AgentLogs.FetchLogs(ctx, c.AgentID, c.ExternalID, lines, input.Timestamps)
+		} else {
+			if svc.LogFetcher == nil {
+				return errResult("logs unavailable: no container runtime connected")
+			}
+			logLines, err = svc.LogFetcher.FetchLogs(ctx, c.ExternalID, lines, input.Timestamps)
+		}
 		if err != nil {
 			return errResult(fmt.Sprintf("logs unavailable: %s", err.Error()))
 		}

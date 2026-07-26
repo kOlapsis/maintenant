@@ -76,6 +76,18 @@ type ContainerHandler struct {
 	runtimeChecker   RuntimeChecker
 	agentDirectory   AgentDirectory
 	sessions         agentLiveness
+	logRequester     AgentLogRequester
+}
+
+// SetLogRequester wires the command channel used to read logs of containers that
+// live on a remote agent's host, which the server's own runtime cannot see.
+func (h *ContainerHandler) SetLogRequester(lr AgentLogRequester) {
+	h.logRequester = lr
+}
+
+// agentLabel resolves a human-friendly name for an agent, for error messages.
+func (h *ContainerHandler) agentLabel(ctx context.Context, agentID string) string {
+	return resolveAgentLabel(ctx, h.agentDirectory, agentID)
 }
 
 // NewContainerHandler creates a new container handler.
@@ -421,16 +433,34 @@ func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
 
 	timestamps := r.URL.Query().Get("timestamps") == "true"
 
-	if h.logFetcher == nil {
-		WriteError(w, http.StatusBadGateway, "RUNTIME_UNAVAILABLE",
-			"Cannot connect to container runtime for log retrieval.")
-		return
-	}
+	var logLines []string
 
-	logLines, err := h.logFetcher.FetchLogs(r.Context(), c.ExternalID, lines, timestamps)
-	if err != nil {
-		WriteError(w, http.StatusBadGateway, "LOGS_UNAVAILABLE", "Cannot retrieve logs from Docker")
-		return
+	// A container on a remote agent is invisible to our own runtime; only the
+	// agent that reported it can read its logs.
+	if isRemoteAgent(c.AgentID) {
+		if h.logRequester == nil {
+			WriteError(w, http.StatusBadGateway, "RUNTIME_UNAVAILABLE",
+				"Multi-host agent support is not enabled on this server.")
+			return
+		}
+		remote, err := fetchRemoteLogs(r.Context(), h.logRequester, c.AgentID, c.ExternalID, lines, timestamps)
+		if err != nil {
+			writeRemoteLogsError(w, h.agentLabel(r.Context(), c.AgentID), err)
+			return
+		}
+		logLines = remote
+	} else {
+		if h.logFetcher == nil {
+			WriteError(w, http.StatusBadGateway, "RUNTIME_UNAVAILABLE",
+				"Cannot connect to container runtime for log retrieval.")
+			return
+		}
+		local, err := h.logFetcher.FetchLogs(r.Context(), c.ExternalID, lines, timestamps)
+		if err != nil {
+			WriteError(w, http.StatusBadGateway, "LOGS_UNAVAILABLE", "Cannot retrieve logs from Docker")
+			return
+		}
+		logLines = local
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{

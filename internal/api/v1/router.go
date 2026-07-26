@@ -211,6 +211,9 @@ func NewRouter(d HandlerDeps) *Router {
 	}
 	if d.AgentSessions != nil {
 		ch.SetAgentSessions(d.AgentSessions)
+		if lr, ok := d.AgentSessions.(AgentLogRequester); ok {
+			ch.SetLogRequester(lr)
+		}
 	}
 
 	// Container REST endpoints
@@ -497,10 +500,19 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/uptime/daily", udh.HandleContainerDailyUptime)
 	}
 
-	if d.LogStreamer != nil && d.Containers != nil {
+	// Registered when either source of logs exists: a server with no local runtime
+	// can still follow the logs of its agents' containers.
+	logRequester, _ := d.AgentSessions.(AgentLogRequester)
+	if d.Containers != nil && (d.LogStreamer != nil || logRequester != nil) {
 		lsh := NewLogStreamHandler(d.LogStreamer, d.Containers)
 		if d.Runtime != nil {
 			lsh.SetRuntimeChecker(d.Runtime)
+		}
+		if logRequester != nil {
+			lsh.SetLogRequester(logRequester)
+		}
+		if d.AgentStore != nil {
+			lsh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 		}
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/logs/stream", lsh.HandleLogStream)
 	}

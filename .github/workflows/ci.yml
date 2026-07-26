@@ -206,6 +206,13 @@ jobs:
       - name: Unit tests with race detector
         run: go test -race -cover ./...
 
+      # Behind the `integration` build tag, so `go test ./...` skips it entirely.
+      # Without this step the suite rots unnoticed — it had stopped compiling and
+      # nobody found out. It needs no external service: loopback TLS gRPC and a
+      # temp SQLite file.
+      - name: Integration tests with race detector
+        run: go test -race -tags=integration ./...
+
   sast:
     name: SAST (gosec)
     needs: [zizmor, actionlint, poutine]

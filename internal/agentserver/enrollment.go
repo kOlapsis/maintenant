@@ -173,11 +173,24 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	if p, ok := peer.FromContext(stream.Context()); ok {
 		addr = p.Addr.String()
 	}
-	streamCtx, cancel := context.WithCancel(stream.Context())
-	defer cancel()
+	streamCtx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(ErrSessionClosed)
+	// Commands from HTTP handlers are queued here and written by this goroutine
+	// only, keeping the single-writer invariant on the gRPC stream.
+	sendCh := make(chan *agentpb.ServerMessage, 16)
 	if sessions != nil {
-		sessions.Open(ag.AgentID, cancel, addr)
+		sessions.Open(ag.AgentID, cancel, addr, resp.GetCapabilities(), sendCh)
 		defer sessions.Close(ag.AgentID, "stream_ended")
+	}
+
+	// RegisterRequest.agent_version freezes at enrollment; AuthResponse carries
+	// the running build, so refresh it on every connect.
+	if v := resp.GetAgentVersion(); v != "" && v != ag.AgentVersion {
+		if err := impl.deps.AgentStore.UpdateAgentVersion(stream.Context(), ag.AgentID, v); err != nil {
+			logger.Error("Push: UpdateAgentVersion failed", "agent_id", ag.AgentID, "err", err)
+		} else {
+			logger.Info("agent.version_updated", "agent_id", ag.AgentID, "from", ag.AgentVersion, "to", v)
+		}
 	}
 
 	// Mark live on auth so the stale watcher can't reap a freshly (re)connected stream.
@@ -210,6 +223,20 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		lastSeenUpd = connectedAt
 	)
 
+	// touchLiveness records that the agent is alive. Any message proves it —
+	// telemetry, a command reply, even an event we are about to rate-limit — so
+	// this runs before payload dispatch. Gating it on accepted telemetry let the
+	// stale watcher reap a session that was streaming perfectly well.
+	touchLiveness := func() {
+		if time.Since(lastSeenUpd) <= 20*time.Second {
+			return
+		}
+		if err := impl.deps.AgentStore.UpdateLastSeen(stream.Context(), ag.AgentID, time.Now()); err != nil {
+			logger.Error("Push: UpdateLastSeen failed", "agent_id", ag.AgentID, "err", err)
+		}
+		lastSeenUpd = time.Now()
+	}
+
 	maybeAck := func(force bool) error {
 		if !force && eventCount%ackEvery != 0 && time.Since(lastAck) < 5*time.Second {
 			return nil
@@ -231,11 +258,33 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	for {
 		select {
 		case <-streamCtx.Done():
-			return grpcstatus.Error(codes.PermissionDenied, "agent_revoked")
+			// Only a genuine revocation is permanent. A stale reap or a replaced
+			// session must read as retryable, or the agent would exit for good
+			// over a transient hiccup.
+			if errors.Is(context.Cause(streamCtx), ErrSessionRevoked) {
+				return grpcstatus.Error(codes.PermissionDenied, "agent_revoked")
+			}
+			return grpcstatus.Error(codes.Unavailable, "session_closed")
+
+		case out := <-sendCh:
+			if err := stream.Send(out); err != nil {
+				return err
+			}
 
 		case res := <-recvCh:
 			if res.err != nil {
 				return res.err
+			}
+			touchLiveness()
+
+			// Command replies are solicited, not telemetry: they bypass the rate
+			// limiter and the event counters, or a chatty log follow would trip
+			// the limiter and get the agent throttled.
+			if resMsg, ok := res.msg.GetPayload().(*agentpb.ClientMessage_Result); ok {
+				if sessions != nil {
+					sessions.DeliverResult(ag.AgentID, resMsg.Result)
+				}
+				continue
 			}
 			evMsg, ok := res.msg.GetPayload().(*agentpb.ClientMessage_Event)
 			if !ok {
@@ -265,13 +314,6 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 
 			eventCount++
 			lastSeenSeq = evt.GetSeq()
-
-			if time.Since(lastSeenUpd) > 20*time.Second {
-				if err := impl.deps.AgentStore.UpdateLastSeen(stream.Context(), ag.AgentID, time.Now()); err != nil {
-					logger.Error("Push: UpdateLastSeen failed", "agent_id", ag.AgentID, "err", err)
-				}
-				lastSeenUpd = time.Now()
-			}
 
 			if sessions != nil {
 				sessions.IncrEvents(ag.AgentID)

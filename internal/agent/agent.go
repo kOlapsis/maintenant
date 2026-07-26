@@ -64,6 +64,9 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 	}
 	defer func() { _ = grpcClient.Close() }()
 
+	// Let the server read logs of containers only this host can see.
+	grpcClient.EnableCommands(rt, cfg.AgentVersion, logger)
+
 	if !id.Registered {
 		if cfg.EnrollmentToken == "" {
 			return fmt.Errorf("agent is not enrolled and --enrollment-token is empty")

@@ -23,6 +23,11 @@ type ContainerHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent) error
 }
 
+// ContainerInventoryHandler reconciles a full container snapshot from an agent.
+type ContainerInventoryHandler interface {
+	HandleAgentInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory) error
+}
+
 // EndpointHandler processes an endpoint probe result from a remote agent.
 type EndpointHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.EndpointEvent) error
@@ -63,6 +68,7 @@ type LabelSyncFunc func(ctx context.Context, agentID, containerName, externalID 
 // A nil handler means that event type is silently ignored.
 type DispatchDeps struct {
 	Container   ContainerHandler
+	Inventory   ContainerInventoryHandler
 	Endpoint    EndpointHandler
 	Heartbeat   HeartbeatHandler
 	Resource    ResourceHandler
@@ -99,6 +105,17 @@ func (d *Dispatcher) Dispatch(ctx context.Context, evt *agentpb.AgentEvent) erro
 		}
 		if d.deps.LabelSync != nil {
 			d.deps.LabelSync(ctx, agentID, body.Container.GetName(), body.Container.GetContainerId(), body.Container.GetLabels())
+		}
+	case *agentpb.AgentEvent_Inventory:
+		if d.deps.Inventory != nil {
+			if err := d.deps.Inventory.HandleAgentInventory(ctx, agentID, body.Inventory); err != nil {
+				return fmt.Errorf("dispatch container inventory: %w", err)
+			}
+		}
+		if d.deps.LabelSync != nil {
+			for _, c := range body.Inventory.GetContainers() {
+				d.deps.LabelSync(ctx, agentID, c.GetName(), c.GetContainerId(), c.GetLabels())
+			}
 		}
 	case *agentpb.AgentEvent_Endpoint:
 		if d.deps.Endpoint != nil {

@@ -361,7 +361,12 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 		currentByExternalID[c.ExternalID] = c
 	}
 
-	stored, err := s.store.ListContainers(ctx, ListContainersOpts{IncludeArchived: false, IncludeIgnored: true})
+	// Scoped to the local runtime: discoverer only sees the server's own daemon,
+	// so an unfiltered list would archive every remote agent's containers.
+	local := uid.LocalAgent
+	stored, err := s.store.ListContainers(ctx, ListContainersOpts{
+		IncludeArchived: false, IncludeIgnored: true, AgentFilter: &local,
+	})
 	if err != nil {
 		return fmt.Errorf("reconcile list stored: %w", err)
 	}

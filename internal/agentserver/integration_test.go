@@ -49,6 +49,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
 )
 
@@ -83,6 +84,15 @@ func (b *captureBroadcaster) hasEventType(t string) bool {
 		}
 	}
 	return false
+}
+
+// withMultiHostEdition enables the edition that allows agent enrollment, which
+// the Community host cap otherwise refuses.
+func withMultiHostEdition(t *testing.T) {
+	t.Helper()
+	orig := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	t.Cleanup(func() { extension.CurrentEdition = orig })
 }
 
 // openIntegrationDB opens a temp SQLite DB with migrations and writer started.
@@ -148,9 +158,10 @@ func buildSignPayload(nonce []byte, agentID string, ts int64) ([]byte, error) {
 	return payload, nil
 }
 
-// startTestServer starts a gRPC server on a random loopback port and returns
-// its address, a cancel func, and an error channel.
-func startTestServer(t *testing.T, deps agentserver.Deps) (listenAddr string, cancel context.CancelFunc) {
+// startTestServer starts a gRPC server on a random loopback port and returns its
+// address plus the client TLS config that trusts its self-signed certificate.
+// Pass the config straight to dialGRPC.
+func startTestServer(t *testing.T, deps agentserver.Deps) (listenAddr string, clientTLS *tls.Config) {
 	t.Helper()
 	tlsCfg := selfSignedTLS(t)
 	srv := agentserver.New(deps)
@@ -161,18 +172,18 @@ func startTestServer(t *testing.T, deps agentserver.Deps) (listenAddr string, ca
 	_ = lis.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
 	go func() { _ = srv.Start(ctx, listenAddr, tlsCfg) }()
 	time.Sleep(50 * time.Millisecond)
 
-	// Build client TLS that trusts the self-signed cert.
+	// Trust the server's own self-signed leaf; nothing else would validate.
 	certPool := x509.NewCertPool()
 	leaf, err := x509.ParseCertificate(tlsCfg.Certificates[0].Certificate[0])
 	require.NoError(t, err)
 	certPool.AddCert(leaf)
 
-	t.Cleanup(cancel)
-	return listenAddr, cancel
+	return listenAddr, &tls.Config{RootCAs: certPool, ServerName: "127.0.0.1"} // #nosec G402 -- loopback test server, pinned to its own self-signed leaf
 }
 
 func dialGRPC(t *testing.T, addr string, tlsCfg *tls.Config) agentpb.IngestClient {
@@ -184,6 +195,8 @@ func dialGRPC(t *testing.T, addr string, tlsCfg *tls.Config) agentpb.IngestClien
 }
 
 func TestIntegration_Enrollment(t *testing.T) {
+	withMultiHostEdition(t)
+
 	db := openIntegrationDB(t)
 	store := sqlite.NewAgentStore(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -223,7 +236,7 @@ func TestIntegration_Enrollment(t *testing.T) {
 	clientTLS := &tls.Config{RootCAs: certPool, ServerName: "127.0.0.1"}
 	conn, err := grpc.NewClient(listenAddr, grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := agentpb.NewIngestClient(conn)
 
@@ -294,6 +307,8 @@ func TestIntegration_Enrollment(t *testing.T) {
 // enroll → open stream → auth handshake → push container event →
 // DB persistence with agent_id → SSE broadcast (SC-002).
 func TestIntegration_PushStream(t *testing.T) {
+	withMultiHostEdition(t)
+
 	deadline := time.Now().Add(5 * time.Second)
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
@@ -342,7 +357,7 @@ func TestIntegration_PushStream(t *testing.T) {
 	clientTLS := &tls.Config{RootCAs: certPool, ServerName: "127.0.0.1"}
 	conn, err := grpc.NewClient(listenAddr, grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	grpcClient := agentpb.NewIngestClient(conn)
 
 	// === Step 1: Enroll agent with a real Ed25519 keypair ===
@@ -373,13 +388,12 @@ func TestIntegration_PushStream(t *testing.T) {
 
 	// === Step 2: Pre-insert a container with State=Exited so handleStateChange can process a "start" ===
 	const testExternalID = "cnt-integration-push-001"
-	agentIDRef := agentID
 	_, err = containerStore.InsertContainer(ctx, &container.Container{
 		ExternalID:        testExternalID,
 		Name:              "test-push-container",
 		Image:             "alpine:latest",
 		State:             container.StateExited,
-		AgentID:           &agentIDRef,
+		AgentID:           agentID,
 		AlertSeverity:     container.SeverityInfo,
 		FirstSeenAt:       time.Now().UTC(),
 		LastStateChangeAt: time.Now().UTC(),
@@ -446,8 +460,11 @@ func TestIntegration_PushStream(t *testing.T) {
 	}, 4*time.Second, 30*time.Millisecond, "container state should be Running in DB within 4s (SC-002)")
 
 	// === Step 6: Verify SSE container.state_changed was broadcast ===
-	assert.True(t, broadcaster.hasEventType(event.ContainerStateChanged),
-		"container.state_changed SSE should be broadcast")
+	// Waited for, not asserted outright: the service persists the state before it
+	// emits, so step 5 can win the race and leave the event still in flight.
+	require.Eventually(t, func() bool {
+		return broadcaster.hasEventType(event.ContainerStateChanged)
+	}, 4*time.Second, 30*time.Millisecond, "container.state_changed SSE should be broadcast")
 
 	// Verify agent_id key is present in the SSE payload.
 	broadcaster.mu.Lock()
@@ -464,4 +481,120 @@ func TestIntegration_PushStream(t *testing.T) {
 	require.NotNil(t, ssePayload, "state_changed payload should be a map")
 	_, hasAgentID := ssePayload["agent_id"]
 	assert.True(t, hasAgentID, "SSE payload should contain agent_id key")
+}
+
+// TestIntegration_LogsCommandRoundTrip drives the server→agent command channel over
+// a real gRPC stream: the HTTP-side caller enqueues a command, the Push loop writes
+// it to the stream, the agent answers, and the reply reaches the waiter.
+//
+// This is the wiring unit tests cannot reach — the send queue drained by Push's
+// select, and CommandResult routed back out of the receive branch.
+func TestIntegration_LogsCommandRoundTrip(t *testing.T) {
+	withMultiHostEdition(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db := openIntegrationDB(t)
+	agentStore := sqlite.NewAgentStore(db)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	sessions := agentserver.NewSessions(logger, noopBroadcaster{})
+	listenAddr, clientTLS := startTestServer(t, agentserver.Deps{
+		AgentStore:  agentStore,
+		Broadcaster: noopBroadcaster{},
+		Sessions:    sessions,
+		Limiter:     agentserver.NewLimiter(1000),
+		Logger:      logger,
+	})
+	grpcClient := dialGRPC(t, listenAddr, clientTLS)
+
+	// === Enroll ===
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	const agentID = "c0ffee00-1111-2222-3333-444455556666"
+
+	enrollTok := &agent.EnrollmentToken{
+		TokenID:   "cmd-test-tok",
+		Token:     "mnt_enr_cmdtest000000001",
+		CreatedAt: time.Now().UTC(),
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	}
+	require.NoError(t, agentStore.InsertToken(ctx, enrollTok))
+
+	_, err = grpcClient.RegisterAgent(ctx, &agentpb.RegisterRequest{
+		AgentId:         agentID,
+		EnrollmentToken: enrollTok.Token,
+		Hostname:        "cmd-test-host",
+		OsArch:          "linux/amd64",
+		AgentVersion:    "1.3.7",
+		DetectedRuntime: agentpb.Runtime_RUNTIME_DOCKER,
+		PublicKey:       []byte(pub),
+	})
+	require.NoError(t, err)
+
+	// === Auth, advertising the logs capability and a newer build ===
+	stream, err := grpcClient.Push(ctx)
+	require.NoError(t, err)
+
+	srvMsg, err := stream.Recv()
+	require.NoError(t, err)
+	challenge, ok := srvMsg.GetPayload().(*agentpb.ServerMessage_Challenge)
+	require.True(t, ok)
+
+	now := time.Now().Unix()
+	payload, err := buildSignPayload(challenge.Challenge.GetNonce(), agentID, now)
+	require.NoError(t, err)
+
+	require.NoError(t, stream.Send(&agentpb.ClientMessage{
+		Payload: &agentpb.ClientMessage_Auth{Auth: &agentpb.AuthResponse{
+			AgentId:      agentID,
+			Timestamp:    now,
+			Signature:    ed25519.Sign(priv, payload),
+			AgentVersion: "1.4.0",
+			Capabilities: []string{agentserver.CapabilityLogs},
+		}},
+	}))
+
+	require.Eventually(t, func() bool {
+		return sessions.HasCapability(agentID, agentserver.CapabilityLogs)
+	}, 4*time.Second, 20*time.Millisecond, "the server must record the advertised capability")
+
+	// The running build must replace the version frozen at enrollment.
+	require.Eventually(t, func() bool {
+		a, err := agentStore.Get(ctx, agentID)
+		return err == nil && a.AgentVersion == "1.4.0"
+	}, 4*time.Second, 20*time.Millisecond, "agent_version must be refreshed from AuthResponse")
+
+	// === Agent side: answer any logs command it receives ===
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				return
+			}
+			cmd := msg.GetCommand()
+			if cmd == nil || cmd.GetLogs() == nil {
+				continue
+			}
+			_ = stream.Send(&agentpb.ClientMessage{
+				Payload: &agentpb.ClientMessage_Result{Result: &agentpb.CommandResult{
+					RequestId: cmd.GetRequestId(),
+					Last:      true,
+					Result: &agentpb.CommandResult_Logs{Logs: &agentpb.LogsChunk{
+						Lines: []string{"hello from " + cmd.GetLogs().GetContainerId()},
+					}},
+				}},
+			})
+		}
+	}()
+
+	// === Server side: the API layer asks for a tail ===
+	lines, err := sessions.FetchLogs(ctx, agentID, "ctr-xyz", 100, false)
+	require.NoError(t, err, "the command must round-trip over the real stream")
+	assert.Equal(t, []string{"hello from ctr-xyz"}, lines)
+
+	// An agent that never advertised the capability is refused, not timed out.
+	_, err = sessions.FetchLogs(ctx, "11111111-0000-0000-0000-000000000000", "ctr", 100, false)
+	assert.ErrorIs(t, err, agentserver.ErrAgentNotConnected)
 }
