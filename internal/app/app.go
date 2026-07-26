@@ -400,6 +400,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Limiter:     agentserver.NewLimiter(cfg.MultiHost.AgentRateLimitPerSecond),
 		Dispatcher: agentserver.NewDispatcher(agentserver.DispatchDeps{
 			Container:   a.containerSvc,
+			Inventory:   a.containerSvc,
 			Resource:    a.resourceSvc,
 			Endpoint:    a.endpointSvc,
 			Certificate: a.certSvc,
@@ -629,6 +630,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		EscalationSvc: a.escalationSvc,
 		Agents:        a.agentStore,
 		Sessions:      a.agentSessions,
+		AgentLogs:     a.agentSessions,
 		// Security & supply-chain (read-only)
 		SecuritySvc: a.securitySvc,
 		Scorer:      a.scorer,

@@ -71,6 +71,13 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		c.Image = img
 		dirty = true
 	}
+	// The agent still sees it, so it is alive: resurrect a row archived while we
+	// had lost sight of the container.
+	if c.Archived {
+		c.Archived = false
+		c.ArchivedAt = nil
+		dirty = true
+	}
 	if dirty {
 		// Persist before ProcessEvent, which reloads the row from the store.
 		if err := s.store.UpdateContainer(ctx, c); err != nil {
@@ -86,6 +93,56 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		Timestamp:  agentEventTime(ev),
 		Labels:     ev.GetLabels(),
 	})
+	return nil
+}
+
+// HandleAgentInventory reconciles a full container snapshot from a remote agent:
+// every reported container is upserted (and un-archived), then any container we
+// still hold for this agent but which the snapshot omits is archived.
+//
+// This is the only mechanism that retires a remote container — agents do not
+// stream destroy events — and it is why an empty snapshot must be ignored: it
+// would mean "archive this agent's whole fleet" on a transient discovery error.
+func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory) error {
+	reported := ev.GetContainers()
+	if len(reported) == 0 {
+		return nil
+	}
+
+	live := make(map[string]struct{}, len(reported))
+	for _, c := range reported {
+		externalID := c.GetContainerId()
+		if externalID == "" {
+			continue
+		}
+		live[externalID] = struct{}{}
+		if err := s.HandleAgentEvent(ctx, agentID, c); err != nil {
+			return err
+		}
+	}
+
+	stored, err := s.store.ListContainers(ctx, ListContainersOpts{
+		IncludeArchived: false, IncludeIgnored: true, AgentFilter: &agentID,
+	})
+	if err != nil {
+		return fmt.Errorf("agent inventory: list stored: %w", err)
+	}
+
+	now := time.Now()
+	for _, sc := range stored {
+		if _, ok := live[sc.ExternalID]; ok {
+			continue
+		}
+		if err := s.store.ArchiveContainer(ctx, sc.ExternalID, now); err != nil {
+			s.logger.Error("agent inventory: archive", "external_id", shortID(sc.ExternalID), "error", err)
+			continue
+		}
+		s.logger.Info("agent inventory: container gone, archived",
+			"external_id", shortID(sc.ExternalID), "name", sc.Name, "agent_id", agentID)
+		s.emitEvent(event.ContainerArchived, map[string]interface{}{
+			"id": sc.ID, "archived_at": now, "agent_id": sc.AgentID,
+		})
+	}
 	return nil
 }
 

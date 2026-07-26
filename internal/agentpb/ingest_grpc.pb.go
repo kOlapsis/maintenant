@@ -1,13 +1,19 @@
 // Maintenant — Multi-Server Agent Ingest Protocol
-// Feature: 012-multiserver-pro
-// Status: Draft
+// Originally specified by feature 012-multiserver-pro.
 //
-// Generated stubs land in: internal/agentpb/{ingest.pb.go, ingest_grpc.pb.go}
-// Build command (run when this file changes; .pb.go files are committed):
-//   protoc --go_out=. --go_opt=paths=source_relative \
-//          --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-//          contracts/ingest.proto
-//   mv contracts/ingest*.pb.go internal/agentpb/
+// This file is the source of truth for the committed stubs in
+// internal/agentpb/{ingest.pb.go, ingest_grpc.pb.go}. It lives here, tracked in
+// git, rather than under specs/ (which is untracked): generated code that ships
+// must not have an untracked input.
+//
+// Regenerate after any change: `make proto-gen`
+//
+// Compatibility rules, since servers and agents are upgraded independently:
+//   - never renumber or reuse a field number;
+//   - only ever append to a oneof — an unknown arm decodes to nil on the peer,
+//     which both sides already treat as "ignore";
+//   - keep AuthResponse's signed payload (nonce || uuid || timestamp) untouched;
+//     new fields there ride outside the signature and stay compatible.
 //
 // Wire layer is gRPC over TLS. Application-level auth is Ed25519 nonce
 // signature; see AuthChallenge / AuthResponse below.
@@ -16,7 +22,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v5.29.3
-// source: specs/012-multiserver-pro/contracts/ingest.proto
+// source: proto/ingest.proto
 
 package agentpb
 
@@ -180,5 +186,5 @@ var Ingest_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "specs/012-multiserver-pro/contracts/ingest.proto",
+	Metadata: "proto/ingest.proto",
 }

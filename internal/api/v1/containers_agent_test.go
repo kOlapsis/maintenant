@@ -64,10 +64,13 @@ func (s *agentEnrichStore) DeleteArchivedContainersBefore(context.Context, time.
 	return 0, nil
 }
 
-type stubAgentDirectory struct{ names map[string]AgentName }
+type stubAgentDirectory struct {
+	names map[string]AgentName
+	err   error
+}
 
 func (s stubAgentDirectory) AgentNames(context.Context) (map[string]AgentName, error) {
-	return s.names, nil
+	return s.names, s.err
 }
 
 func TestHandleList_EnrichesAgentIdentity(t *testing.T) {

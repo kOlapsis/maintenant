@@ -118,6 +118,9 @@ func (m *svcStore) ListContainers(_ context.Context, opts ListContainersOpts) ([
 		if !opts.IncludeArchived && c.Archived {
 			continue
 		}
+		if opts.AgentFilter != nil && c.AgentID != *opts.AgentFilter {
+			continue
+		}
 		clone := *c
 		result = append(result, &clone)
 	}
@@ -557,6 +560,32 @@ func TestService_Reconcile_StateChangeEmitsRealPreviousState(t *testing.T) {
 	require.Len(t, transitions, 1)
 	assert.Equal(t, StateRunning, transitions[0].PreviousState)
 	assert.Equal(t, StateExited, transitions[0].NewState)
+}
+
+func TestService_Reconcile_LeavesRemoteAgentContainersAlone(t *testing.T) {
+	// Regression, issue #39: Reconcile compares the DB against the server's own
+	// Docker daemon. A remote agent's containers can never appear there, so an
+	// unfiltered sweep archived every one of them.
+	store := newSvcStore()
+
+	localGone := makeTestContainer(extID("localgone"), StateRunning)
+	localGone.AgentID = uid.LocalAgent
+	store.seed(localGone)
+
+	remote := makeTestContainer(extID("remote"), StateRunning)
+	remote.AgentID = "11111111-2222-3333-4444-555555555555"
+	store.seed(remote)
+
+	// The local daemon reports nothing at all.
+	discoverer := &mockDiscoverer{}
+	svc := newTestService(store, func(d *Deps) { d.Discoverer = discoverer })
+
+	require.NoError(t, svc.Reconcile(context.Background(), discoverer))
+
+	assert.True(t, store.isArchived(localGone.ExternalID),
+		"a local container missing from the local runtime must still be archived")
+	assert.False(t, store.isArchived(remote.ExternalID),
+		"a remote agent's container must never be archived by the local reconcile")
 }
 
 // ---------------------------------------------------------------------------

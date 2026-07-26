@@ -122,6 +122,18 @@ func (s *AgentStore) UpdateLastSeen(ctx context.Context, agentID string, t time.
 	return nil
 }
 
+// UpdateAgentVersion records the build the agent is currently running. Enrollment
+// only happens once, so this is the only way the stored version stays truthful
+// across agent upgrades.
+func (s *AgentStore) UpdateAgentVersion(ctx context.Context, agentID, version string) error {
+	_, err := s.writer.Exec(ctx,
+		`UPDATE agents SET agent_version = ? WHERE id = ?`, version, agentID)
+	if err != nil {
+		return fmt.Errorf("update agent version: %w", err)
+	}
+	return nil
+}
+
 // Revoke marks an agent as revoked.
 func (s *AgentStore) Revoke(ctx context.Context, agentID, revokedBy string) error {
 	res, err := s.writer.Exec(ctx,

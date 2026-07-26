@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -381,4 +382,113 @@ func TestContainerStateToState(t *testing.T) {
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, containerStateToState(tc.in))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Un-archiving and full inventory reconciliation (issue #39)
+// ---------------------------------------------------------------------------
+
+func TestHandleAgentEvent_ResurrectsArchivedContainer(t *testing.T) {
+	// A container archived by mistake (or while we lost sight of it) must come
+	// back as soon as its agent reports it again — without needing a recreate.
+	store := newSvcStore()
+	svc := newTestService(store)
+
+	agentID := "agent-42"
+	id := extID("zombie")
+	seed := makeTestContainer(id, StateRunning)
+	seed.AgentID = agentID
+	store.seed(seed)
+	require.NoError(t, store.ArchiveContainer(context.Background(), id, time.Now()))
+	require.True(t, store.isArchived(id))
+
+	ev := &agentpb.ContainerEvent{
+		ContainerId: id,
+		Name:        "zombie",
+		State:       agentpb.ContainerState_CONTAINER_STATE_RUNNING,
+	}
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), agentID, ev))
+
+	assert.False(t, store.isArchived(id), "a re-reported container must be un-archived")
+	c, _ := store.GetContainerByExternalID(context.Background(), id)
+	require.NotNil(t, c)
+	assert.Nil(t, c.ArchivedAt, "archived_at must be cleared alongside the flag")
+}
+
+func TestHandleAgentInventory_ArchivesContainersAbsentFromSnapshot(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+
+	agentID := "agent-inv"
+	kept := extID("kept")
+	gone := extID("gone")
+	for _, id := range []string{kept, gone} {
+		seed := makeTestContainer(id, StateRunning)
+		seed.AgentID = agentID
+		store.seed(seed)
+	}
+
+	inv := &agentpb.ContainerInventory{Containers: []*agentpb.ContainerEvent{
+		{ContainerId: kept, Name: "kept", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING},
+	}}
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, inv))
+
+	assert.False(t, store.isArchived(kept), "a container present in the snapshot stays live")
+	assert.True(t, store.isArchived(gone), "a container absent from the snapshot must be archived")
+}
+
+func TestHandleAgentInventory_LeavesOtherAgentsAlone(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+
+	mine := extID("mine")
+	seedMine := makeTestContainer(mine, StateRunning)
+	seedMine.AgentID = "agent-a"
+	store.seed(seedMine)
+
+	theirs := extID("theirs")
+	seedTheirs := makeTestContainer(theirs, StateRunning)
+	seedTheirs.AgentID = "agent-b"
+	store.seed(seedTheirs)
+
+	inv := &agentpb.ContainerInventory{Containers: []*agentpb.ContainerEvent{
+		{ContainerId: mine, Name: "mine", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING},
+	}}
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), "agent-a", inv))
+
+	assert.False(t, store.isArchived(theirs), "another agent's containers must be untouched")
+}
+
+func TestHandleAgentInventory_EmptySnapshotArchivesNothing(t *testing.T) {
+	// An empty inventory can only mean the agent failed to look; treating it as
+	// "this host is empty" would wipe the whole fleet.
+	store := newSvcStore()
+	svc := newTestService(store)
+
+	agentID := "agent-empty"
+	id := extID("survivor")
+	seed := makeTestContainer(id, StateRunning)
+	seed.AgentID = agentID
+	store.seed(seed)
+
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, &agentpb.ContainerInventory{}))
+
+	assert.False(t, store.isArchived(id), "an empty snapshot must never archive anything")
+}
+
+func TestHandleAgentInventory_InsertsUnknownContainers(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+
+	agentID := "agent-new"
+	id := extID("fresh")
+	inv := &agentpb.ContainerInventory{Containers: []*agentpb.ContainerEvent{
+		{ContainerId: id, Name: "fresh", Image: "app:v1", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING},
+	}}
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, inv))
+
+	c, _ := store.GetContainerByExternalID(context.Background(), id)
+	require.NotNil(t, c, "an inventory entry we have never seen must be inserted")
+	assert.Equal(t, agentID, c.AgentID)
+	assert.Equal(t, StateRunning, c.State)
 }

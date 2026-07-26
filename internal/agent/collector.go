@@ -35,6 +35,10 @@ import (
 // A var (not const) so tests can shorten it; never mutated in production.
 var resourceSampleInterval = 10 * time.Second
 
+// containerInventoryInterval is the cadence for the full container snapshot,
+// aligned with the Swarm and Kubernetes topology snapshots.
+var containerInventoryInterval = 30 * time.Second
+
 // RunCollector starts collecting events from the local runtime and pushing them to stream.
 // rt is the already-connected runtime resolved by agent.Run; label is the reported
 // runtime kind ("docker", "swarm" or "kubernetes").
@@ -62,6 +66,7 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	}
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, stream, logger) })
+	g.Go(func() error { return streamInventory(gCtx, id, rt, stream, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, stream, logger) })
 	g.Go(func() error { return sampleHostResources(gCtx, id, stream, logger) })
 	g.Go(func() error { return runLabelProbers(gCtx, id, rt, stream, logger) })
@@ -87,29 +92,30 @@ type labeledDiscoverer interface {
 	DiscoverAllWithLabels(ctx context.Context) ([]*docker.DiscoveryResult, error)
 }
 
-// syncInventory pushes a container event for every container the runtime currently
-// knows about. The live event stream only carries state transitions, so without this
-// containers already running at connect time would never reach the server.
+// syncInventory pushes a full snapshot of every container the runtime currently
+// knows about. The live event stream only carries state transitions, so without
+// this containers already running at connect time would never reach the server;
+// resent periodically, it also lets the server retire containers whose removal
+// we missed (destroy events are not streamed).
+//
+// Discovery failure yields no message at all: an empty snapshot would tell the
+// server this host has no containers and archive the lot.
 func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
-	send := func(c *cmodel.Container, labels map[string]string) error {
+	entry := func(c *cmodel.Container, labels map[string]string) *agentpb.ContainerEvent {
 		state, ok := containerStateToProto(c.State)
 		if !ok {
 			return nil
 		}
-		return stream.Send(&agentpb.AgentEvent{
-			AgentId:    id.AgentID,
-			EventId:    uuid.NewString(),
-			ObservedAt: timestamppb.Now(),
-			Body: &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{
-				ContainerId: c.ExternalID,
-				Name:        c.Name,
-				Image:       c.Image,
-				State:       state,
-				Labels:      labels,
-			}},
-		})
+		return &agentpb.ContainerEvent{
+			ContainerId: c.ExternalID,
+			Name:        c.Name,
+			Image:       c.Image,
+			State:       state,
+			Labels:      labels,
+		}
 	}
 
+	var entries []*agentpb.ContainerEvent
 	if ld, ok := rt.(labeledDiscoverer); ok {
 		results, err := ld.DiscoverAllWithLabels(ctx)
 		if err != nil {
@@ -117,24 +123,54 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream
 			return nil
 		}
 		for _, res := range results {
-			if err := send(res.Container, res.Labels); err != nil {
-				return fmt.Errorf("send inventory event: %w", err)
+			if e := entry(res.Container, res.Labels); e != nil {
+				entries = append(entries, e)
 			}
 		}
+	} else {
+		containers, err := rt.DiscoverAll(ctx)
+		if err != nil {
+			logger.Warn("collector: inventory discovery failed", "err", err)
+			return nil
+		}
+		for _, c := range containers {
+			if e := entry(c, nil); e != nil {
+				entries = append(entries, e)
+			}
+		}
+	}
+
+	if len(entries) == 0 {
 		return nil
 	}
 
-	containers, err := rt.DiscoverAll(ctx)
-	if err != nil {
-		logger.Warn("collector: inventory discovery failed", "err", err)
-		return nil
-	}
-	for _, c := range containers {
-		if err := send(c, nil); err != nil {
-			return fmt.Errorf("send inventory event: %w", err)
-		}
+	if err := stream.Send(&agentpb.AgentEvent{
+		AgentId:    id.AgentID,
+		EventId:    uuid.NewString(),
+		ObservedAt: timestamppb.Now(),
+		Body:       &agentpb.AgentEvent_Inventory{Inventory: &agentpb.ContainerInventory{Containers: entries}},
+	}); err != nil {
+		return fmt.Errorf("send inventory: %w", err)
 	}
 	return nil
+}
+
+// streamInventory resends the full container inventory on a fixed cadence so the
+// server can reconcile away containers removed on this host.
+func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+	ticker := time.NewTicker(containerInventoryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := syncInventory(ctx, id, rt, stream, logger); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func containerStateToProto(s cmodel.ContainerState) (agentpb.ContainerState, bool) {

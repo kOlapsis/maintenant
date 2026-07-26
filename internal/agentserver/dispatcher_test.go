@@ -36,6 +36,18 @@ func (m *mockContainerHandler) HandleAgentEvent(_ context.Context, agentID strin
 	return m.returnErr
 }
 
+type mockInventoryHandler struct {
+	calledWithAgentID string
+	calledWithEvent   *agentpb.ContainerInventory
+	returnErr         error
+}
+
+func (m *mockInventoryHandler) HandleAgentInventory(_ context.Context, agentID string, ev *agentpb.ContainerInventory) error {
+	m.calledWithAgentID = agentID
+	m.calledWithEvent = ev
+	return m.returnErr
+}
+
 type mockEndpointHandler struct {
 	calledWithAgentID string
 	calledWithEvent   *agentpb.EndpointEvent
@@ -103,6 +115,33 @@ func TestDispatcher_ContainerEventRoutedToContainerHandler(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
 	assert.Same(t, ev, h.calledWithEvent)
+}
+
+func TestDispatcher_InventoryRoutedToInventoryHandler(t *testing.T) {
+	h := &mockInventoryHandler{}
+	var synced []string
+	d := NewDispatcher(DispatchDeps{
+		Inventory: h,
+		LabelSync: func(_ context.Context, _, _, externalID string, _ map[string]string) {
+			synced = append(synced, externalID)
+		},
+	})
+
+	ev := &agentpb.ContainerInventory{Containers: []*agentpb.ContainerEvent{
+		{ContainerId: "ctr-1"}, {ContainerId: "ctr-2"},
+	}}
+	evt := &agentpb.AgentEvent{
+		AgentId: dispatchAgentID,
+		Body:    &agentpb.AgentEvent_Inventory{Inventory: ev},
+	}
+
+	err := d.Dispatch(context.Background(), evt)
+
+	require.NoError(t, err)
+	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
+	assert.Same(t, ev, h.calledWithEvent)
+	assert.Equal(t, []string{"ctr-1", "ctr-2"}, synced,
+		"label discovery must run for every container in the snapshot")
 }
 
 func TestDispatcher_EndpointEventRoutedToEndpointHandler(t *testing.T) {

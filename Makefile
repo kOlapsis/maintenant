@@ -20,4 +20,4 @@ proto-gen:
 		--go-grpc_out=. \
 		--go-grpc_opt=module=github.com/kolapsis/maintenant \
 		--proto_path=. \
-		specs/012-multiserver-pro/contracts/ingest.proto
+		proto/ingest.proto

@@ -47,6 +47,12 @@ type SessionChecker interface {
 	IsConnected(agentID string) bool
 }
 
+// AgentLogFetcher reads logs of a container living on a remote agent's host,
+// which the server's own runtime cannot see. Satisfied by *agentserver.Sessions.
+type AgentLogFetcher interface {
+	FetchLogs(ctx context.Context, agentID, externalID string, lines int, timestamps bool) ([]string, error)
+}
+
 // K8sReader exposes the read methods of the Kubernetes store needed by MCP.
 type K8sReader interface {
 	ListNamespaces(ctx context.Context, agentID string) ([]string, error)
@@ -85,6 +91,7 @@ type Services struct {
 	EscalationSvc *escalation.Service
 	Agents        AgentLister
 	Sessions      SessionChecker
+	AgentLogs     AgentLogFetcher
 
 	// Security & supply-chain (read-only MCP surface).
 	SecuritySvc *security.Service
