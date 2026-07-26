@@ -66,6 +66,8 @@ function endpointStatus(e: Endpoint): { status: UnifiedStatus; label: string } {
   if (e.stale) return { status: 'unknown', label: 'Agent offline' }
   if (e.status === 'up') return { status: 'ok', label: 'Up' }
   if (e.status === 'down') return { status: 'down', label: 'Down' }
+  // Reachable, but its certificate is not trusted.
+  if (e.status === 'degraded') return { status: 'warning', label: 'Degraded' }
   return { status: 'unknown', label: 'Unknown' }
 }
 

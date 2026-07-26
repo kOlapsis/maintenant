@@ -22,6 +22,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/app"
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 var (
@@ -45,6 +46,7 @@ func main() {
 	fTLSCert := flag.String("grpc-tls-cert", "", "TLS certificate file (server mode)")
 	fTLSKey := flag.String("grpc-tls-key", "", "TLS key file (server mode)")
 	fInsecureSkip := flag.Bool("grpc-insecure-skip-tls-verify", false, "disable TLS verification (debug only)")
+	fCACert := flag.String("ca-cert", "", "PEM bundle of extra root CAs to trust, added to the system store")
 	fEmbeddedAgent := flag.Bool("embedded-agent", false, "also run a local agent (server mode, Pro)")
 
 	// flag.Parse handles --foo and -foo; ignore unknown flags for --mcp-stdio compat.
@@ -72,6 +74,20 @@ func main() {
 	cfg.BuildDate = buildDate
 	cfg.PublicKeyB64 = publicKeyB64
 	cfg.Mode = *fMode
+
+	if *fCACert != "" {
+		cfg.CACertFile = *fCACert
+	}
+	// Loaded before anything can probe: both server and agent modes run from
+	// here, and a bad path must stop the process rather than turn every TLS
+	// check into a misleading "unknown authority".
+	if err := trust.Load(cfg.CACertFile); err != nil {
+		logger.Error("failed to load extra CA bundle", "error", err)
+		os.Exit(1)
+	}
+	if cfg.CACertFile != "" {
+		logger.Info("extra CA bundle trusted", "path", cfg.CACertFile)
+	}
 
 	// CLI overrides for MultiHost config
 	if *fGRPCListen != "" {

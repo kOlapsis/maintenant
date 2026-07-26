@@ -37,7 +37,7 @@ export interface Endpoint {
   agent_offline?: boolean
   target: string
   label_key: string
-  status: 'up' | 'down' | 'unknown'
+  status: 'up' | 'down' | 'degraded' | 'unknown'
   alert_state: 'normal' | 'alerting'
   consecutive_failures: number
   consecutive_successes: number

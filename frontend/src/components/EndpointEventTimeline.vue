@@ -15,7 +15,7 @@
 import { computed, ref } from 'vue'
 import type { CheckResult } from '@/services/endpointApi'
 
-type EpStatus = 'up' | 'down' | 'unknown'
+type EpStatus = 'up' | 'down' | 'degraded' | 'unknown'
 
 const props = withDefaults(defineProps<{
   checks: CheckResult[]
@@ -36,6 +36,7 @@ const tooltip = ref<{ visible: boolean; x: number; y: number; status: EpStatus; 
 const statusColors: Record<EpStatus, string> = {
   up: 'var(--mnt-status-ok)',
   down: 'var(--mnt-status-down)',
+  degraded: 'var(--mnt-status-warn)',
   unknown: 'var(--mnt-sev-unknown)',
 }
 
@@ -50,7 +51,10 @@ function statusOpacity(status: EpStatus): string {
 }
 
 function statusLabel(status: EpStatus): string {
-  return status === 'up' ? 'Up' : status === 'down' ? 'Down' : 'No data'
+  if (status === 'up') return 'Up'
+  if (status === 'down') return 'Down'
+  if (status === 'degraded') return 'Degraded'
+  return 'No data'
 }
 
 const timeWindow = computed(() => {

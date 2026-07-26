@@ -39,6 +39,10 @@ type Config struct {
 	CORSOrigins string
 	MaxBodySize int64
 
+	// CACertFile is a PEM bundle appended to the system roots, so endpoints and
+	// certificates signed by an internal PKI validate without disabling checks.
+	CACertFile string
+
 	// Branding
 	OrgName string
 
@@ -132,6 +136,7 @@ func ConfigFromEnv() Config {
 
 		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
 		MaxBodySize: 1048576,
+		CACertFile:  os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
 		StatusURL: os.Getenv("MAINTENANT_STATUS_URL"),

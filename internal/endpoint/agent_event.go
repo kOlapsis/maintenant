@@ -36,9 +36,14 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	statusCode := int(ev.GetStatusCode())
+	// Degraded is a success: the agent reached the host, only its certificate
+	// is untrusted. Collapsing it into the boolean would report it as down.
+	degraded := ev.GetStatus() == agentpb.EndpointStatus_ENDPOINT_STATUS_DEGRADED
 	result := CheckResult{
 		EndpointID:     ep.ID,
-		Success:        ev.GetStatus() == agentpb.EndpointStatus_ENDPOINT_STATUS_UP,
+		Success:        ev.GetStatus() == agentpb.EndpointStatus_ENDPOINT_STATUS_UP || degraded,
+		Degraded:       degraded,
+		DegradedReason: ev.GetErrorMessage(),
 		ResponseTimeMs: int64(ev.GetLatencyMs()), // #nosec G115 -- probe latency in ms, never approaches int64
 		HTTPStatus:     &statusCode,
 		ErrorMessage:   ev.GetErrorMessage(),
