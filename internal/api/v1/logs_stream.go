@@ -106,9 +106,10 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 	lines := 100
 	if l := r.URL.Query().Get("lines"); l != "" {
 		if n, err := strconv.ParseUint(l, 10, 32); err == nil && n > 0 {
-			lines = int(n)
-			if lines > 500 {
+			if n > 500 {
 				lines = 500
+			} else {
+				lines = int(n)
 			}
 		}
 	}
