@@ -364,22 +364,29 @@ const (
 // LogsCommand builds a logs command with a fresh request id. Exported because the
 // SSE follow path drives SendCommand directly to stream chunks as they arrive.
 func LogsCommand(externalID string, lines int, timestamps, follow bool) *agentpb.AgentCommand {
-	tail := lines
-	if tail <= 0 {
-		tail = logsTailDefault
-	}
-	if tail > logsTailMax {
-		tail = logsTailMax
-	}
 	return &agentpb.AgentCommand{
 		RequestId: uid.New(),
 		Command: &agentpb.AgentCommand_Logs{Logs: &agentpb.LogsRequest{
 			ContainerId: externalID,
-			Lines:       uint32(tail), // #nosec G115 -- clamped to [1,500] just above
+			Lines:       clampTail(lines),
 			Timestamps:  timestamps,
 			Follow:      follow,
 		}},
 	}
+}
+
+// clampTail narrows a caller-supplied tail length to the wire's uint32. Written
+// as early returns so both constant bounds directly guard the conversion: with
+// the checks written as reassignments instead, static analysis cannot see that
+// the converted value is already in range.
+func clampTail(lines int) uint32 {
+	if lines <= 0 {
+		return logsTailDefault
+	}
+	if lines >= logsTailMax {
+		return logsTailMax
+	}
+	return uint32(lines)
 }
 
 // FetchLogs performs a one-shot log tail on agentID, collecting the agent's chunks
