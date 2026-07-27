@@ -44,6 +44,9 @@ func EndpointStatus(ep *endpoint.Endpoint) string {
 		return status.StatusOperational
 	case endpoint.StatusDown:
 		return status.StatusMajorOutage
+	case endpoint.StatusDegraded:
+		// Serving, but over a certificate we do not trust: not an outage.
+		return status.StatusDegraded
 	default:
 		return status.StatusOperational
 	}

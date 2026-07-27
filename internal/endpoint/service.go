@@ -304,6 +304,21 @@ func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName
 	}
 }
 
+// statusForResult maps a probe outcome to the endpoint's reported status. A
+// degraded host is reachable and serving, so it stays a success everywhere that
+// matters — uptime, consecutive counters, outage alerting — and differs only in
+// the status it shows.
+func statusForResult(result CheckResult) EndpointStatus {
+	switch {
+	case result.Success && result.Degraded:
+		return StatusDegraded
+	case result.Success:
+		return StatusUp
+	default:
+		return StatusDown
+	}
+}
+
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.
 func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, result CheckResult) {
 	ep, err := s.store.GetEndpointByID(ctx, endpointID)
@@ -314,13 +329,11 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 
 	previousStatus := ep.Status
 
-	var newStatus EndpointStatus
+	newStatus := statusForResult(result)
 	if result.Success {
-		newStatus = StatusUp
 		ep.ConsecutiveSuccesses++
 		ep.ConsecutiveFailures = 0
 	} else {
-		newStatus = StatusDown
 		ep.ConsecutiveFailures++
 		ep.ConsecutiveSuccesses = 0
 	}

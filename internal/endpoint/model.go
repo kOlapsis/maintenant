@@ -59,9 +59,12 @@ const (
 type EndpointStatus string
 
 const (
-	StatusUp      EndpointStatus = "up"
-	StatusDown    EndpointStatus = "down"
-	StatusUnknown EndpointStatus = "unknown"
+	StatusUp   EndpointStatus = "up"
+	StatusDown EndpointStatus = "down"
+	// StatusDegraded is reachable and serving, but its certificate is not
+	// trusted. Distinct from down: the host is not the problem, its chain is.
+	StatusDegraded EndpointStatus = "degraded"
+	StatusUnknown  EndpointStatus = "unknown"
 )
 
 // AlertState represents the current alert state of an endpoint.
@@ -107,13 +110,18 @@ func (e *Endpoint) ConfigJSON() string {
 
 // CheckResult represents a single probe result for an endpoint.
 type CheckResult struct {
-	ID                  string              `json:"id"`
-	EndpointID          string              `json:"endpoint_id"`
-	Success             bool                `json:"success"`
-	ResponseTimeMs      int64               `json:"response_time_ms"`
-	HTTPStatus          *int                `json:"http_status,omitempty"`
-	ErrorMessage        string              `json:"error_message,omitempty"`
-	Timestamp           time.Time           `json:"timestamp"`
+	ID             string    `json:"id"`
+	EndpointID     string    `json:"endpoint_id"`
+	Success        bool      `json:"success"`
+	ResponseTimeMs int64     `json:"response_time_ms"`
+	HTTPStatus     *int      `json:"http_status,omitempty"`
+	ErrorMessage   string    `json:"error_message,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
+	// Degraded marks a host that answered but whose certificate we refuse to
+	// trust. Success stays true — it is reachable and serving — so uptime is
+	// unaffected and only the status and alert severity change.
+	Degraded            bool                `json:"degraded,omitempty"`
+	DegradedReason      string              `json:"degraded_reason,omitempty"`
 	TLSPeerCertificates []*x509.Certificate `json:"-"`
 	TLSOCSPResponse     []byte              `json:"-"`
 	AgentID             string              `json:"agent_id"`

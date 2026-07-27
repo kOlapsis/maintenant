@@ -167,7 +167,7 @@ CREATE TABLE endpoints (
     external_id     TEXT NOT NULL,
     endpoint_type   TEXT NOT NULL CHECK(endpoint_type IN ('http','tcp')),
     target          TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'unknown' CHECK(status IN ('up','down','unknown')),
+    status          TEXT NOT NULL DEFAULT 'unknown' CHECK(status IN ('up','down','degraded','unknown')),
     alert_state     TEXT NOT NULL DEFAULT 'normal' CHECK(alert_state IN ('normal','alerting')),
     consecutive_failures  INTEGER NOT NULL DEFAULT 0,
     consecutive_successes INTEGER NOT NULL DEFAULT 0,

@@ -98,6 +98,12 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 		return fmt.Errorf("cert sni rebuild: %w", err)
 	}
 
+	// One-time rebuild widening the endpoint status CHECK to accept 'degraded',
+	// for databases converted before that state existed.
+	if err := rebuildEndpointsForDegraded(context.Background(), db, logger); err != nil {
+		return fmt.Errorf("endpoint degraded rebuild: %w", err)
+	}
+
 	return nil
 }
 

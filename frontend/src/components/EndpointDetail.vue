@@ -226,7 +226,7 @@ watch(() => props.endpointId, () => {
 
       <!-- Last error -->
       <div
-        v-if="endpoint.last_error && endpoint.status === 'down'"
+        v-if="endpoint.last_error && (endpoint.status === 'down' || endpoint.status === 'degraded')"
         class="mb-6 break-words rounded-lg px-3 py-2 text-xs"
         :style="{ backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)' }"
       >

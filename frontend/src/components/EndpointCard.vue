@@ -162,7 +162,7 @@ function formatResponseTime(ms: number | undefined): string {
     </div>
 
     <div
-      v-if="endpoint.last_error && endpoint.status === 'down'"
+      v-if="endpoint.last_error && (endpoint.status === 'down' || endpoint.status === 'degraded')"
       class="mt-2 truncate rounded px-2 py-1 text-xs"
       :style="{
         backgroundColor: 'var(--mnt-status-down-bg)',

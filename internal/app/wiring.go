@@ -129,6 +129,45 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, any) {
 		a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", ep.ID)
 
+		epName := ep.ContainerName
+		if epName == "" {
+			epName = ep.Name
+		}
+
+		// Certificate trust is independent of the failure thresholds: a degraded
+		// host is answering, so it never trips them. Raise it as its own warning
+		// and clear it once the chain verifies. Both directions are idempotent —
+		// the engine dedups the alert and ignores a recovery with nothing active.
+		switch {
+		case result.Degraded:
+			sendAlert(alert.Event{
+				Source:     alert.SourceEndpoint,
+				AlertType:  "certificate_untrusted",
+				Severity:   alert.SeverityWarning,
+				Message:    fmt.Sprintf("Endpoint %s is reachable but its certificate is not trusted: %s", ep.Target, result.DegradedReason),
+				EntityType: "endpoint",
+				EntityID:   ep.ID,
+				EntityName: epName,
+				Details: map[string]any{
+					"target": ep.Target,
+					"reason": result.DegradedReason,
+				},
+				Timestamp: result.Timestamp,
+			})
+		case result.Success:
+			sendAlert(alert.Event{
+				Source:     alert.SourceEndpoint,
+				AlertType:  "certificate_untrusted",
+				Severity:   alert.SeverityInfo,
+				IsRecover:  true,
+				Message:    fmt.Sprintf("Endpoint %s now presents a trusted certificate", ep.Target),
+				EntityType: "endpoint",
+				EntityID:   ep.ID,
+				EntityName: epName,
+				Timestamp:  result.Timestamp,
+			})
+		}
+
 		al := alertDetector.EvaluateCheckResult(ep, result)
 		if al == nil {
 			return "", nil

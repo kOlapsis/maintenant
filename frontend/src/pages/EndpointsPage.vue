@@ -341,6 +341,12 @@ onUnmounted(() => {
       <span class="rounded-full bg-mnt-status-down text-mnt-status-down px-3 py-1 font-medium">
         {{ store.statusCounts.down }} down
       </span>
+      <span
+        v-if="store.statusCounts.degraded > 0"
+        class="rounded-full bg-mnt-status-warn text-mnt-status-warn px-3 py-1 font-medium"
+      >
+        {{ store.statusCounts.degraded }} degraded
+      </span>
       <span class="rounded-full bg-mnt-sev-unknown text-mnt-sev-unknown px-3 py-1 font-medium">
         {{ store.statusCounts.unknown }} unknown
       </span>
@@ -356,6 +362,7 @@ onUnmounted(() => {
         <option value="">All statuses</option>
         <option value="up">Up</option>
         <option value="down">Down</option>
+        <option value="degraded">Degraded</option>
         <option value="unknown">Unknown</option>
       </select>
 

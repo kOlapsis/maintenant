@@ -95,3 +95,22 @@ volumes:
 ```
 
 Replace `1000` with the UID of the user running the rootless daemon (`id -u` on the host). The `group_add` configuration is not required in rootless mode — the socket is owned by the user, not by a `docker` group.
+
+## An HTTPS host shows as down (or degraded) with "unknown authority"
+
+The host is answering; maintenant just refuses to trust the certificate it presents. Since it is reachable, it is reported as **degraded** rather than down.
+
+If the certificate comes from your own PKI, trust the root instead of disabling verification:
+
+```yaml
+environment:
+  MAINTENANT_CA_CERT: /etc/maintenant/ca.pem
+volumes:
+  - ./ca.pem:/etc/maintenant/ca.pem:ro
+```
+
+Make sure the mounted file is readable by uid **65534** — the container runs unprivileged, and a root-owned `0600` file will not be read. If the endpoint is attached to an agent, set this on the **agent**: it is the one performing the probe.
+
+Do not reach for `SSL_CERT_FILE`. Go treats it as a replacement for the whole system bundle rather than an addition, so setting it drops every public CA, and an unreadable file yields an empty trust store with no error reported.
+
+As a last resort you can turn verification off for a single container endpoint with the label `maintenant.endpoint.http.tls-verify=false`, but that also stops expiry and hostname checks for it.

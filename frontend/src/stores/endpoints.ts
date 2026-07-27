@@ -59,7 +59,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   })
 
   const statusCounts = computed(() => {
-    const counts = { up: 0, down: 0, unknown: 0 }
+    const counts = { up: 0, down: 0, degraded: 0, unknown: 0 }
     for (const ep of endpoints.value) {
       if (ep.status in counts) {
         counts[ep.status as keyof typeof counts]++

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ocsp"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 // CheckCertificateResult holds the raw result of a TLS certificate check.
@@ -195,7 +197,10 @@ func validateChain(leaf *x509.Certificate, intermediates []*x509.Certificate, ho
 	opts := x509.VerifyOptions{
 		DNSName:       hostname,
 		Intermediates: pool,
-		// Roots: nil uses system CA pool
+		// nil falls back to the system pool. Without this the endpoint probe
+		// would go green on an internal CA while the monitor kept reporting an
+		// untrusted root.
+		Roots: trust.Pool(),
 	}
 
 	_, err := leaf.Verify(opts)

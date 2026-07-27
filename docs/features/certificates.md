@@ -52,6 +52,41 @@ If any certificate in the chain is invalid, expired, or missing, maintenant fire
 
 ---
 
+## Trusting an internal CA
+
+If you run your own PKI — step-ca, Smallstep, an internal Active Directory CA — point maintenant at your root certificate:
+
+```yaml
+services:
+  maintenant:
+    environment:
+      MAINTENANT_CA_CERT: /etc/maintenant/ca.pem
+    volumes:
+      - ./ca.pem:/etc/maintenant/ca.pem:ro
+```
+
+The bundle is **added** to the system roots, so public CAs keep working. It applies to endpoint probes, certificate monitoring, webhooks and SMTP alike. A CLI equivalent exists for one-off runs: `--ca-cert /path/to/ca.pem`.
+
+Three things to watch out for:
+
+- **The file must be readable by uid 65534.** The container drops to an unprivileged user, and a root-owned `0600` file — the default output of most CA tooling — will not be readable. `chmod 644` the copy you mount.
+- **Provide it to whichever process performs the check.** An endpoint attached to an agent is probed by that agent, on its own host. Setting the variable on the server changes nothing for it.
+- **Do not use `SSL_CERT_FILE` for this.** Go treats it as a *replacement* for the system bundle, not an addition, so every public CA disappears the moment you set it. Worse, if the file cannot be read, Go returns an empty trust store with no error at all and every HTTPS check starts failing with "unknown authority" and nothing in the logs. `MAINTENANT_CA_CERT` refuses to start instead.
+
+A bad path, an unreadable file, or a PEM with no certificate in it all stop the process with an explicit message rather than silently degrading every check.
+
+---
+
+## Untrusted certificates are degraded, not down
+
+A host that answers normally but presents a certificate maintenant cannot validate is reported as **degraded** (orange), not **down** (red). The host is not the problem — its chain of trust is. It keeps counting as available in uptime, and raises a `certificate_untrusted` alert at *warning* severity instead of a critical outage.
+
+The certificate is still collected in this state, so expiry monitoring keeps working on internal-PKI hosts even before you configure the CA.
+
+A host that is genuinely unreachable — timeout, DNS failure, connection refused — remains **down**.
+
+---
+
 ## Alert Events
 
 | Event | Description | Severity |

@@ -159,7 +159,10 @@ func scanCertsOnce(ctx context.Context, agentID string, ld labeledDiscoverer, se
 // carried in url so the server can resolve the monitor by (agent_id, target).
 func endpointEvent(agentID, target string, r endpoint.CheckResult) *agentpb.AgentEvent {
 	status := agentpb.EndpointStatus_ENDPOINT_STATUS_DOWN
-	if r.Success {
+	switch {
+	case r.Success && r.Degraded:
+		status = agentpb.EndpointStatus_ENDPOINT_STATUS_DEGRADED
+	case r.Success:
 		status = agentpb.EndpointStatus_ENDPOINT_STATUS_UP
 	}
 	var code uint32
