@@ -24,8 +24,31 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
-        navigateFallbackDenylist: [/\/api\//, /\/ping\//, /\/status\//, /\/oauth\//, /\/\.well-known\//, /\/mcp/],
+        // `__reauth` must reach the network: it is how the app hands a navigation
+        // back to an auth proxy (Authentik…) instead of replaying the cached shell.
+        navigateFallbackDenylist: [
+          /\/api\//,
+          /\/ping\//,
+          /\/status\//,
+          // An auth proxy's own endpoints: oauth2-proxy answers under /oauth2/,
+          // Authentik under /outpost.goauthentik.io/. Replaying the shell there
+          // swallows the OIDC callback, so the session is never established and
+          // re-auth can only loop.
+          /\/oauth2?\//,
+          /\/outpost\.goauthentik\.io\//,
+          // Whatever prefix the proxy uses, a provider handing an authorization
+          // code back to us must reach the network.
+          /[?&](code|state|error)=/,
+          /\/\.well-known\//,
+          /\/mcp/,
+          /__reauth=/,
+        ],
         runtimeCaching: [
+          {
+            // Session probe: must always see the live answer, never a cached one.
+            urlPattern: /__probe=1/,
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: /\/api\/v1\/(?!containers\/events|status\/smtp|channels|webhooks)/,
             handler: 'NetworkFirst',
@@ -33,6 +56,9 @@ export default defineConfig({
               cacheName: `api-${buildRevision}`,
               expiration: { maxEntries: 50, maxAgeSeconds: 300 },
               networkTimeoutSeconds: 5,
+              // Keeps an auth proxy's login page out of the API cache, which
+              // would otherwise be replayed as a fake expired session.
+              cacheableResponse: { statuses: [200], headers: { 'content-type': 'application/json' } },
             },
           },
           {

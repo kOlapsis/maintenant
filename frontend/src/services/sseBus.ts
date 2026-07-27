@@ -11,6 +11,8 @@
 
 import { ref } from 'vue'
 
+import { probeAuth } from './authGuard'
+
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
 type EventHandler = (event: MessageEvent) => void
@@ -86,6 +88,9 @@ function openConnection() {
     // (we manage reconnection ourselves with backoff).
     es.close()
     eventSource = null
+    // EventSource never tells us why it failed: ask the API whether the proxy
+    // session died, otherwise we would retry a dead stream forever.
+    void probeAuth()
     scheduleRetry()
   }
 

@@ -15,6 +15,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import StatusComponentBreakdown from '@/components/StatusComponentBreakdown.vue'
 import { useStatusPageI18n } from '@/composables/useStatusPageI18n'
+import { guardedFetch } from '@/services/apiFetch'
 import type { MonitorRef } from '@/services/statusApi'
 
 // --- Personalization settings ---
@@ -49,7 +50,7 @@ const { t } = useStatusPageI18n(locale)
 
 async function fetchSettings() {
   try {
-    const res = await fetch('/status/settings.json')
+    const res = await guardedFetch('/status/settings.json')
     if (res.ok) settings.value = await res.json()
   } catch {
     // graceful degradation — defaults already applied via null checks
@@ -115,7 +116,7 @@ let eventSource: EventSource | null = null
 
 async function fetchStatus() {
   try {
-    const res = await fetch('/status/api')
+    const res = await guardedFetch('/status/api')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     data.value = await res.json()
   } catch (e) {

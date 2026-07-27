@@ -167,7 +167,7 @@ const themeTooltip = computed(() => {
 </script>
 
 <template>
-  <header class="hidden md:flex h-16 shrink-0 border-b border-mnt-default items-center justify-between px-6 bg-mnt-surface/60 backdrop-blur-md z-10">
+  <header class="header-glass hidden md:flex h-16 shrink-0 border-b border-mnt-default items-center justify-between px-6 backdrop-blur-md z-10">
     <div class="flex items-center gap-5">
       <!-- Global host/resource scope selector (hidden on single-host installs) -->
       <HostFilterDropdown v-if="activeAgentIds.length > 0" class="w-48 shrink-0" />
@@ -361,3 +361,11 @@ const themeTooltip = computed(() => {
     <strong class="font-semibold">{{ containers.runtimeLabel }}</strong> runtime disconnected — monitoring paused until connection is restored.
   </AlertBanner>
 </template>
+
+<style scoped>
+/* `bg-mnt-*` are hand-written utilities: Tailwind's `/60` opacity modifier
+   does not apply to them, so mix the token here. */
+.header-glass {
+  background-color: color-mix(in srgb, var(--mnt-bg-surface) 60%, transparent);
+}
+</style>

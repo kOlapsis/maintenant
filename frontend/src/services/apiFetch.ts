@@ -13,6 +13,8 @@
  * Shared fetch wrapper for all API services.
  */
 
+import { AuthChallengeError, isAuthChallenge, probeAuth, reportAuthChallenge } from './authGuard'
+
 // Sentinel agent id the backend sends for server-local entities. Treat it as
 // "local" everywhere a host is grouped or displayed.
 export const LOCAL_AGENT = '00000000-0000-0000-0000-000000000000'
@@ -21,8 +23,29 @@ export function isLocalAgent(id?: string | null): boolean {
   return !id || id === LOCAL_AGENT
 }
 
+/**
+ * fetch, but an auth-proxy challenge becomes an AuthChallengeError instead of a
+ * login page the caller would try to parse as JSON.
+ */
+export async function guardedFetch(url: string, init?: RequestInit): Promise<Response> {
+  let res: Response
+  try {
+    res = await fetch(url, init)
+  } catch (err) {
+    if (await probeAuth()) throw new AuthChallengeError()
+    throw err
+  }
+
+  if (isAuthChallenge(res)) {
+    reportAuthChallenge()
+    throw new AuthChallengeError()
+  }
+
+  return res
+}
+
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
+  const res = await guardedFetch(url, init)
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
@@ -33,7 +56,7 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export async function apiFetchVoid(url: string, init?: RequestInit): Promise<void> {
-  const res = await fetch(url, init)
+  const res = await guardedFetch(url, init)
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))

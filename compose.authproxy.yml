@@ -1,0 +1,116 @@
+# Auth-proxy lab: Maintenant behind an OIDC login, to exercise the session
+# expiry handling (frontend/src/services/authGuard.ts).
+#
+#   docker compose -f compose.authproxy.yml up -d
+#   open http://localhost:8088   →   admin@lab.test / password
+#
+# Everything is served from localhost on purpose: a service worker only
+# registers on a secure origin, and http://something.local is not one. Without
+# the service worker the very bug this lab reproduces (cached app shell booting
+# on a dead session) cannot happen.
+#
+# See deploy/authproxy-lab/README.md for the test scenarios.
+
+# Own project name: without it Compose would adopt — and recreate — the
+# containers of compose.local.yml, which declares a `maintenant` service too.
+name: maintenant-authlab
+
+services:
+  # Not published: the only way in is through the proxy.
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant
+    build:
+      context: .
+      args:
+        - VERSION=dev
+        - COMMIT=xxxxx
+        - BUILD_DATE=2026-03-01
+        - LICENSE_PUBLIC_KEY=XRnZAk+VcCWdtsNrIsJZ4GBKKzbP6RyH/EO0F4qYdyI=
+    container_name: authlab-maintenant
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    volumes:
+      - authlab_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+    environment:
+      MAINTENANT_LOG_LEVEL: debug
+      MAINTENANT_ADDR: "0.0.0.0:8080"
+      MAINTENANT_GRPC_LISTEN: "0.0.0.0:8443"
+      MAINTENANT_DB: "/data/maintenant.db"
+      MAINTENANT_BASE_URL: "http://localhost:8088"
+      MAINTENANT_ORGANISATION_NAME: "Auth lab"
+      MAINTENANT_DISABLE_TELEMETRY: true
+      # No licence on purpose: Pro endpoints answer a JSON 403 (PRO_REQUIRED),
+      # which the guard must NOT mistake for an expired session.
+    networks:
+      - authlab
+
+  # Owns the network namespace shared with oauth2-proxy, hence both published
+  # ports. Publishing them from oauth2-proxy instead would be a startup cycle.
+  dex:
+    image: ghcr.io/dexidp/dex:v2.44.0
+    container_name: authlab-dex
+    restart: unless-stopped
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./deploy/authproxy-lab/dex.yaml:/etc/dex/config.yaml:ro
+    ports:
+      - "8088:4180"   # oauth2-proxy → the app
+      - "5556:5556"   # dex → the login form
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:5556/dex/.well-known/openid-configuration"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    networks:
+      - authlab
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.13.0
+    container_name: authlab-oauth2-proxy
+    restart: unless-stopped
+    # Shares dex's namespace so http://localhost:5556/dex is a single valid
+    # issuer URL for the browser and for the proxy alike.
+    network_mode: "service:dex"
+    depends_on:
+      dex:
+        condition: service_healthy
+      maintenant:
+        condition: service_started
+    # Setting `prompt` is what suppresses the legacy approval_prompt=force the
+    # proxy sends otherwise — which makes dex raise a "Grant Access" screen on
+    # every re-auth round-trip, whatever skipApprovalScreen says.
+    command: ["--prompt=login"]
+    environment:
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+      OAUTH2_PROXY_UPSTREAMS: "http://maintenant:8080"
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: "http://localhost:5556/dex"
+      OAUTH2_PROXY_CLIENT_ID: maintenant
+      OAUTH2_PROXY_CLIENT_SECRET: maintenant-lab-secret
+      OAUTH2_PROXY_REDIRECT_URL: "http://localhost:8088/oauth2/callback"
+      OAUTH2_PROXY_COOKIE_SECRET: "JOA9A-EsluWxAA7sTWCK5UasgS419L4Afw06WzeTLJ0="
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      # Straight to the provider, no "Sign in with…" interstitial.
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      # Lab only — lets the console one-liner in the README kill the session.
+      OAUTH2_PROXY_COOKIE_HTTPONLY: "false"
+      # Lower it (1m) to watch the session die on its own.
+      OAUTH2_PROXY_COOKIE_EXPIRE: "${AUTHLAB_COOKIE_EXPIRE:-30m}"
+      # SSE would otherwise be buffered for a second at a time.
+      OAUTH2_PROXY_FLUSH_INTERVAL: "100ms"
+      # Uncomment to answer API calls with a bare 401 instead of a 302 to the
+      # provider — the other branch of isAuthChallenge().
+      # OAUTH2_PROXY_API_ROUTES: "^/api/"
+
+volumes:
+  authlab_data:
+
+networks:
+  authlab:

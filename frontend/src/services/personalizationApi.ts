@@ -1,3 +1,5 @@
+import { guardedFetch } from './apiFetch'
+
 const BASE = '/api/v1/status-page'
 
 export interface PalettePayload {
@@ -72,7 +74,7 @@ export interface FAQItem {
 }
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const res = await guardedFetch(url, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
@@ -95,7 +97,7 @@ export const personalizationApi = {
     const form = new FormData()
     form.append('file', file)
     if (altText !== undefined) form.append('alt_text', altText)
-    const res = await fetch(`${BASE}/assets/${role}`, { method: 'PUT', body: form })
+    const res = await guardedFetch(`${BASE}/assets/${role}`, { method: 'PUT', body: form })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(err?.error?.message || `HTTP ${res.status}`)
