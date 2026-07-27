@@ -13,8 +13,10 @@
 
 <template>
   <RouterView />
+  <SessionExpiredOverlay />
 </template>
 
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import SessionExpiredOverlay from '@/components/ui/SessionExpiredOverlay.vue'
 </script>

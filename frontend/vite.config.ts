@@ -24,8 +24,23 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         skipWaiting: true,
         clientsClaim: true,
-        navigateFallbackDenylist: [/\/api\//, /\/ping\//, /\/status\//, /\/oauth\//, /\/\.well-known\//, /\/mcp/],
+        // `__reauth` must reach the network: it is how the app hands a navigation
+        // back to an auth proxy (Authentik…) instead of replaying the cached shell.
+        navigateFallbackDenylist: [
+          /\/api\//,
+          /\/ping\//,
+          /\/status\//,
+          /\/oauth\//,
+          /\/\.well-known\//,
+          /\/mcp/,
+          /__reauth=/,
+        ],
         runtimeCaching: [
+          {
+            // Session probe: must always see the live answer, never a cached one.
+            urlPattern: /__probe=1/,
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: /\/api\/v1\/(?!containers\/events|status\/smtp|channels|webhooks)/,
             handler: 'NetworkFirst',
@@ -33,6 +48,9 @@ export default defineConfig({
               cacheName: `api-${buildRevision}`,
               expiration: { maxEntries: 50, maxAgeSeconds: 300 },
               networkTimeoutSeconds: 5,
+              // Keeps an auth proxy's login page out of the API cache, which
+              // would otherwise be replayed as a fake expired session.
+              cacheableResponse: { statuses: [200], headers: { 'content-type': 'application/json' } },
             },
           },
           {

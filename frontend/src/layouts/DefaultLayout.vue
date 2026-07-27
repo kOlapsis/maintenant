@@ -297,7 +297,7 @@ watch(
 
     <!-- Mobile top bar -->
     <div
-      class="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-mnt-surface/90 backdrop-blur-md border-b border-mnt-default"
+      class="mobile-bar md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 backdrop-blur-md border-b border-mnt-default"
     >
       <button
         @click="mobileMenuOpen = !mobileMenuOpen"
@@ -487,5 +487,11 @@ watch(
 }
 .license-action--info:hover {
   background: var(--mnt-alert-info-action-hover);
+}
+
+/* `bg-mnt-*` are hand-written utilities: Tailwind's `/90` opacity modifier
+   does not apply to them, so mix the token here. */
+.mobile-bar {
+  background-color: color-mix(in srgb, var(--mnt-bg-surface) 90%, transparent);
 }
 </style>

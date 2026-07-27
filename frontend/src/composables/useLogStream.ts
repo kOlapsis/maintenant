@@ -12,6 +12,7 @@
 */
 
 import { ref, watch, watchEffect, nextTick, type Ref, type ComponentPublicInstance } from 'vue'
+import { guardedFetch } from '@/services/apiFetch'
 import { parseAnsi, type AnsiToken } from './useAnsiParser'
 import { detectLogLevel, parseJsonLine, parseTimestamp } from './useLogParser'
 
@@ -226,7 +227,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
   async function fetchLogsStatic() {
     status.value = 'connecting'
     try {
-      const res = await fetch(
+      const res = await guardedFetch(
         `${API_BASE}/containers/${options.containerId.value}/logs?lines=100&timestamps=true`,
       )
       if (!res.ok) {
