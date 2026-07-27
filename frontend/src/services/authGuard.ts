@@ -52,10 +52,16 @@ export function isAuthChallenge(res: Response): boolean {
   // redirect: 'manual' turns the proxy's 302 into an opaque redirect.
   if (res.type === 'opaqueredirect') return true
 
+  // A 401 always comes from the proxy: the API has no authentication of its
+  // own and never sends one. Checked before the content type because
+  // oauth2-proxy answers `Accept: application/json` calls — the session probe
+  // among them — with a JSON 401.
+  if (res.status === 401) return true
+
   const contentType = res.headers.get('content-type') ?? ''
   if (contentType.includes('json')) return false
 
-  if (res.status === 401 || res.status === 403) return true
+  if (res.status === 403) return true
   // fetch followed the proxy's 302 and handed us its login page under a 200.
   if (res.redirected) return true
   return res.ok && contentType.includes('html')

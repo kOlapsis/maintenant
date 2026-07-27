@@ -1,0 +1,34 @@
+# Throwaway OIDC provider for the auth-proxy lab. In-memory storage: every
+# restart wipes the sessions, which is exactly what we want when testing
+# session expiry.
+#
+# The issuer must be reachable under the SAME URL from the browser and from
+# oauth2-proxy, which is why oauth2-proxy shares this container's network
+# namespace (see compose.authproxy.yml): both sides say localhost:5556.
+
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  # No consent screen: a re-auth round-trip should land straight on the form.
+  skipApprovalScreen: true
+
+staticClients:
+  - id: maintenant
+    name: Maintenant
+    secret: maintenant-lab-secret
+    redirectURIs:
+      - http://localhost:8088/oauth2/callback
+
+enablePasswordDB: true
+staticPasswords:
+  - email: admin@lab.test
+    username: admin
+    userID: 6f4e3d2c-1b0a-4e8d-9c7b-5a4f3e2d1c0b
+    # bcrypt of "password" — $2a, the only prefix Go's bcrypt accepts.
+    hash: "$2a$10$xHypoIwcpseDmLIG/vrzye0eiJfkjtiuBfoigHsJvrFx6p3wOpVkm"

@@ -32,7 +32,10 @@ describe('isAuthChallenge', () => {
 
   it('does not mistake the API 403s (PRO_REQUIRED, quotas) for an expired session', () => {
     expect(isAuthChallenge(response({ status: 403 }))).toBe(false)
-    expect(isAuthChallenge(response({ status: 401 }))).toBe(false)
+  })
+
+  it('catches the JSON 401 oauth2-proxy answers AJAX calls with', () => {
+    expect(isAuthChallenge(response({ status: 401 }))).toBe(true)
   })
 
   it('catches a proxy 302 that fetch followed to a login page', () => {

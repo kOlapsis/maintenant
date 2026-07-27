@@ -30,7 +30,15 @@ export default defineConfig({
           /\/api\//,
           /\/ping\//,
           /\/status\//,
-          /\/oauth\//,
+          // An auth proxy's own endpoints: oauth2-proxy answers under /oauth2/,
+          // Authentik under /outpost.goauthentik.io/. Replaying the shell there
+          // swallows the OIDC callback, so the session is never established and
+          // re-auth can only loop.
+          /\/oauth2?\//,
+          /\/outpost\.goauthentik\.io\//,
+          // Whatever prefix the proxy uses, a provider handing an authorization
+          // code back to us must reach the network.
+          /[?&](code|state|error)=/,
           /\/\.well-known\//,
           /\/mcp/,
           /__reauth=/,
