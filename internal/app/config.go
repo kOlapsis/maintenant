@@ -16,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/kolapsis/maintenant/internal/resource"
 )
 
 // Config holds all application configuration parsed from environment variables.
@@ -99,9 +97,8 @@ type MultiHostConfig struct {
 // RetentionConfig holds the tunable part of the retention cleanup. Zero values
 // mean "use the store defaults".
 type RetentionConfig struct {
-	// Snapshots is how long raw resource samples are kept. The 24h range is the
-	// longest one reading them, so 24h is the floor; longer ranges are served
-	// from the hourly rollup and are unaffected.
+	// Snapshots is how long raw resource samples are kept. Lowering it below
+	// 168h also shortens the 7-day resource graphs, which aggregate raw rows.
 	Snapshots time.Duration
 	Interval  time.Duration
 	BatchSize int
@@ -167,7 +164,7 @@ func ConfigFromEnv() Config {
 	}
 
 	cfg.Retention = RetentionConfig{
-		Snapshots: envDurationOr("MAINTENANT_RETENTION_SNAPSHOTS", resource.DefaultSnapshotRetention),
+		Snapshots: envDurationOr("MAINTENANT_RETENTION_SNAPSHOTS", 7*24*time.Hour),
 		Interval:  envDurationOr("MAINTENANT_RETENTION_INTERVAL", time.Hour),
 		BatchSize: envIntOr("MAINTENANT_RETENTION_BATCH_SIZE", 1000),
 	}

@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
-const rollupInterval = 5 * time.Minute
+const (
+	rollupInterval = 5 * time.Minute
+	backfillLimit  = 7 * 24 * time.Hour
+)
 
 func (s *Service) startRollupLoop(ctx context.Context) {
 	s.logger.Info("starting resource rollup loop", "interval", rollupInterval)
@@ -39,14 +42,14 @@ func (s *Service) startRollupLoop(ctx context.Context) {
 func (s *Service) runRollups(ctx context.Context) {
 	now := time.Now().UTC()
 
-	hourlyStart := now.Add(-s.rawWindow).Truncate(time.Hour)
+	hourlyStart := now.Add(-backfillLimit).Truncate(time.Hour)
 	currentHour := now.Truncate(time.Hour)
 	hourlyBuckets := 0
 	for b := hourlyStart; b.Before(currentHour); b = b.Add(time.Hour) {
 		hourlyBuckets++
 	}
 
-	dailyStart := now.Add(-s.rawWindow).UTC()
+	dailyStart := now.Add(-backfillLimit).UTC()
 	dailyStart = time.Date(dailyStart.Year(), dailyStart.Month(), dailyStart.Day(), 0, 0, 0, 0, time.UTC)
 	currentDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	dailyBuckets := 0
@@ -63,7 +66,7 @@ func (s *Service) runRollups(ctx context.Context) {
 func (s *Service) rollupHourly(ctx context.Context) {
 	now := time.Now().UTC()
 	currentHour := now.Truncate(time.Hour)
-	backfillStart := now.Add(-s.rawWindow).Truncate(time.Hour)
+	backfillStart := now.Add(-backfillLimit).Truncate(time.Hour)
 
 	for bucket := backfillStart; bucket.Before(currentHour); bucket = bucket.Add(time.Hour) {
 		bucketEnd := bucket.Add(time.Hour)
@@ -76,7 +79,7 @@ func (s *Service) rollupHourly(ctx context.Context) {
 func (s *Service) rollupDaily(ctx context.Context) {
 	now := time.Now().UTC()
 	currentDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	backfillStart := now.Add(-s.rawWindow).UTC()
+	backfillStart := now.Add(-backfillLimit).UTC()
 	backfillStart = time.Date(backfillStart.Year(), backfillStart.Month(), backfillStart.Day(), 0, 0, 0, 0, time.UTC)
 
 	for bucket := backfillStart; bucket.Before(currentDay); bucket = bucket.Add(24 * time.Hour) {

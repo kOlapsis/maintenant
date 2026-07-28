@@ -33,10 +33,6 @@ type Deps struct {
 	ContainerSvc  *container.Service // required
 	Logger        *slog.Logger       // required
 	EventCallback EventCallback      // optional — nil-safe
-
-	// RawWindow mirrors the raw retention window so the rollup backfills exactly
-	// as far as raw samples still exist. Zero uses DefaultSnapshotRetention.
-	RawWindow time.Duration
 }
 
 // Service orchestrates resource collection, persistence, and alerting.
@@ -54,9 +50,6 @@ type Service struct {
 	// "alerts not configured" once. Set membership is the only signal — values
 	// are unused.
 	noAlertConfigLogged sync.Map
-
-	// rawWindow bounds how far back the rollup backfills.
-	rawWindow time.Duration
 }
 
 // NewService creates a resource monitoring service.
@@ -73,17 +66,12 @@ func NewService(d Deps) *Service {
 	if d.Logger == nil {
 		panic("resource.NewService: Logger is required")
 	}
-	rawWindow := d.RawWindow
-	if rawWindow <= 0 {
-		rawWindow = DefaultSnapshotRetention
-	}
 	s := &Service{
 		store:         d.Store,
 		containerSvc:  d.ContainerSvc,
 		logger:        d.Logger,
 		eventCallback: d.EventCallback,
 		hosts:         newHostRegistry(),
-		rawWindow:     rawWindow,
 	}
 
 	s.collector = NewCollector(d.Runtime, d.ContainerSvc, d.Logger)
@@ -129,23 +117,11 @@ func (s *Service) GetContainerName(containerID string) string {
 }
 
 // GetHistory returns historical resource snapshots for charting.
-//
-// Ranges up to 24h group raw samples on the fly; 7d reads the hourly rollup,
-// which already holds exactly the buckets that range displays. That is what
-// keeps the raw retention window short — see DefaultSnapshotRetention.
 func (s *Service) GetHistory(ctx context.Context, containerID string, timeRange string) ([]*ResourceSnapshot, Granularity, error) {
 	now := time.Now()
-
-	if timeRange == "7d" {
-		snaps, err := s.store.ListHourlyInRange(ctx, containerID, now.Add(-7*24*time.Hour), now)
-		if err != nil {
-			return nil, "", err
-		}
-		return snaps, Granularity1h, nil
-	}
-
 	var from time.Time
 	var granularity Granularity
+
 	switch timeRange {
 	case "6h":
 		from = now.Add(-6 * time.Hour)
@@ -153,6 +129,9 @@ func (s *Service) GetHistory(ctx context.Context, containerID string, timeRange 
 	case "24h":
 		from = now.Add(-24 * time.Hour)
 		granularity = Granularity5m
+	case "7d":
+		from = now.Add(-7 * 24 * time.Hour)
+		granularity = Granularity1h
 	default: // "1h"
 		from = now.Add(-1 * time.Hour)
 		granularity = GranularityRaw

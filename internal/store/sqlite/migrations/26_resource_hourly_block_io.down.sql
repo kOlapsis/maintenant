@@ -1,2 +1,0 @@
--- Migration rollback is intentionally a no-op per the project convention
--- (see 20_cert_ocsp.down.sql, 25_cert_sni.down.sql).

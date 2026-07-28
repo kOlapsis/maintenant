@@ -281,11 +281,9 @@ func copyStatements() []stmt {
 		// resource_hourly/daily reference containers by the integer id; re-derive
 		// via join so they point at the container UUID.
 		{"resource_hourly", `INSERT INTO resource_hourly
-			(id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes,
-			 avg_block_read_bytes, avg_block_write_bytes, sample_count)
+			(id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
 			SELECT mnt_uuid7(), mnt_container_id('` + s + `', c.external_id), rh.bucket, rh.avg_cpu_percent,
-			 rh.avg_mem_used, rh.avg_mem_limit, rh.avg_net_rx_bytes, rh.avg_net_tx_bytes,
-			 rh.avg_block_read_bytes, rh.avg_block_write_bytes, rh.sample_count
+			 rh.avg_mem_used, rh.avg_mem_limit, rh.avg_net_rx_bytes, rh.avg_net_tx_bytes, rh.sample_count
 			FROM _old_resource_hourly rh JOIN _old_containers c ON rh.container_id = c.id`},
 		{"resource_daily", `INSERT INTO resource_daily
 			(id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)

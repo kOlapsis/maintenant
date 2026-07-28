@@ -98,28 +98,6 @@ func (s *ResourceStore) ListSnapshotsAggregated(ctx context.Context, containerID
 	return collectSnapshots(rows)
 }
 
-// ListHourlyInRange returns the hourly rollup for a container as snapshots, so
-// the long ranges read pre-aggregated buckets instead of grouping a week of raw
-// rows. Block I/O is 0 for buckets aggregated before it was rolled up.
-func (s *ResourceStore) ListHourlyInRange(ctx context.Context, containerID string, from, to time.Time) ([]*resource.ResourceSnapshot, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT '' AS id, container_id, '' AS agent_id,
-			avg_cpu_percent, avg_mem_used, avg_mem_limit,
-			avg_net_rx_bytes, avg_net_tx_bytes,
-			avg_block_read_bytes, avg_block_write_bytes, bucket
-		FROM resource_hourly
-		WHERE container_id = ? AND bucket >= ? AND bucket <= ?
-		ORDER BY bucket`,
-		containerID, from.Unix(), to.Unix())
-	if err != nil {
-		return nil, fmt.Errorf("list hourly in range: %w", err)
-	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
-	return collectSnapshots(rows)
-}
-
 func (s *ResourceStore) GetAlertConfig(ctx context.Context, containerID string) (*resource.ResourceAlertConfig, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, container_id, cpu_threshold, mem_threshold, enabled, alert_state,
@@ -338,12 +316,10 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 
 func (s *ResourceStore) AggregateHourlyRollup(ctx context.Context, bucketStart, bucketEnd time.Time) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO resource_hourly (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit,
-			avg_net_rx_bytes, avg_net_tx_bytes, avg_block_read_bytes, avg_block_write_bytes, sample_count)
+		`INSERT INTO resource_hourly (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
 		SELECT `+rollupRowID+`, container_id, ? AS bucket,
 			AVG(cpu_percent), CAST(AVG(mem_used) AS INTEGER), CAST(AVG(mem_limit) AS INTEGER),
 			CAST(AVG(net_rx_bytes) AS INTEGER), CAST(AVG(net_tx_bytes) AS INTEGER),
-			CAST(AVG(block_read_bytes) AS INTEGER), CAST(AVG(block_write_bytes) AS INTEGER),
 			COUNT(*)
 		FROM resource_snapshots
 		WHERE timestamp >= ? AND timestamp < ?
@@ -351,10 +327,7 @@ func (s *ResourceStore) AggregateHourlyRollup(ctx context.Context, bucketStart, 
 		ON CONFLICT(container_id, bucket) DO UPDATE SET
 			avg_cpu_percent=excluded.avg_cpu_percent, avg_mem_used=excluded.avg_mem_used,
 			avg_mem_limit=excluded.avg_mem_limit, avg_net_rx_bytes=excluded.avg_net_rx_bytes,
-			avg_net_tx_bytes=excluded.avg_net_tx_bytes,
-			avg_block_read_bytes=excluded.avg_block_read_bytes,
-			avg_block_write_bytes=excluded.avg_block_write_bytes,
-			sample_count=excluded.sample_count`,
+			avg_net_tx_bytes=excluded.avg_net_tx_bytes, sample_count=excluded.sample_count`,
 		bucketStart.Unix(), bucketStart.Unix(), bucketEnd.Unix(),
 	)
 	if err != nil {
