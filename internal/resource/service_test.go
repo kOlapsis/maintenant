@@ -32,6 +32,9 @@ type mockResourceStore struct {
 	mu           sync.Mutex
 	alertConfigs map[string]*ResourceAlertConfig
 	snapshots    []*ResourceSnapshot
+
+	hourlyRows       []*ResourceSnapshot
+	hourlyRangeCalls int
 }
 
 func newMockResourceStore() *mockResourceStore {
@@ -77,6 +80,10 @@ func (m *mockResourceStore) ListSnapshots(_ context.Context, _ string, _, _ time
 }
 func (m *mockResourceStore) ListSnapshotsAggregated(_ context.Context, _ string, _, _ time.Time, _ Granularity) ([]*ResourceSnapshot, error) {
 	return nil, nil
+}
+func (m *mockResourceStore) ListHourlyInRange(_ context.Context, _ string, _, _ time.Time) ([]*ResourceSnapshot, error) {
+	m.hourlyRangeCalls++
+	return m.hourlyRows, nil
 }
 func (m *mockResourceStore) DeleteSnapshotsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
 	return 0, nil
@@ -664,7 +671,6 @@ func TestService_GetHistory_TimeRangeToGranularityMapping(t *testing.T) {
 		{"1h", GranularityRaw},
 		{"6h", Granularity1m},
 		{"24h", Granularity5m},
-		{"7d", Granularity1h},
 		{"unknown", GranularityRaw},
 		{"", GranularityRaw},
 	}
@@ -681,6 +687,25 @@ func TestService_GetHistory_TimeRangeToGranularityMapping(t *testing.T) {
 				"granularity passed to store must match returned granularity")
 		})
 	}
+}
+
+// The 7-day range is what keeps raw retention short: it must come from the
+// hourly rollup, never from grouping a week of raw snapshots.
+func TestService_GetHistory_7dReadsHourlyRollup(t *testing.T) {
+	store := &granularityCapturingStore{}
+	store.hourlyRows = []*ResourceSnapshot{
+		{ContainerID: "ctr-1", CPUPercent: 4, BlockReadBytes: 128, Timestamp: time.Now().Add(-2 * time.Hour)},
+	}
+	svc := newTestService(store, nil, nil)
+
+	snaps, gran, err := svc.GetHistory(context.Background(), "ctr-1", "7d")
+	require.NoError(t, err)
+
+	assert.Equal(t, Granularity1h, gran)
+	assert.Equal(t, 1, store.hourlyRangeCalls, "7d must read resource_hourly")
+	assert.Empty(t, store.capturedGranularity, "7d must not group raw snapshots")
+	require.Len(t, snaps, 1)
+	assert.EqualValues(t, 128, snaps[0].BlockReadBytes, "block I/O must survive the rollup")
 }
 
 // granularityCapturingStore records the granularity argument from ListSnapshotsAggregated.

@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/kolapsis/maintenant/internal/resource"
 )
 
 func TestConfigFromEnv_Retention(t *testing.T) {
 	t.Run("defaults when unset", func(t *testing.T) {
 		cfg := ConfigFromEnv()
-		assert.Equal(t, 7*24*time.Hour, cfg.Retention.Snapshots)
+		assert.Equal(t, resource.DefaultSnapshotRetention, cfg.Retention.Snapshots)
 		assert.Equal(t, time.Hour, cfg.Retention.Interval)
 		assert.Equal(t, 1000, cfg.Retention.BatchSize)
 	})
@@ -44,7 +46,7 @@ func TestConfigFromEnv_Retention(t *testing.T) {
 		t.Setenv("MAINTENANT_RETENTION_BATCH_SIZE", "not-a-number")
 
 		cfg := ConfigFromEnv()
-		assert.Equal(t, 7*24*time.Hour, cfg.Retention.Snapshots)
+		assert.Equal(t, resource.DefaultSnapshotRetention, cfg.Retention.Snapshots)
 		assert.Equal(t, time.Hour, cfg.Retention.Interval)
 		assert.Equal(t, 1000, cfg.Retention.BatchSize)
 	})
