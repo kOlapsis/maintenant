@@ -60,6 +60,8 @@
 /* Light theme overrides */
 @layer base {
   :root[data-theme="light"] {
+    color-scheme: light;
+
     /* Gray scale — light equivalents */
     --color-slate-50: #F0F3FA;
     --color-slate-100: #E8ECF4;
@@ -205,6 +207,11 @@
 /* Dark theme (default) */
 @layer base {
   :root {
+    /* Tells the browser which palette to use for native controls it paints
+       itself — range tracks, checkboxes, number spinners, scrollbars. Without
+       it they stay on the UA default and ignore the selected theme. */
+    color-scheme: dark;
+
     /* Semantic: backgrounds */
     --mnt-bg-primary: #0B0E13;
     --mnt-bg-surface: #12151C;
