@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all application configuration parsed from environment variables.
@@ -24,7 +25,8 @@ type Config struct {
 	BaseURL string
 
 	// Database
-	DBPath string
+	DBPath    string
+	Retention RetentionConfig
 
 	// License
 	LicenseKey string
@@ -92,6 +94,16 @@ type MultiHostConfig struct {
 	EmbeddedAgent      bool
 }
 
+// RetentionConfig holds the tunable part of the retention cleanup. Zero values
+// mean "use the store defaults".
+type RetentionConfig struct {
+	// Snapshots is how long raw resource samples are kept. Lowering it below
+	// 168h also shortens the 7-day resource graphs, which aggregate raw rows.
+	Snapshots time.Duration
+	Interval  time.Duration
+	BatchSize int
+}
+
 // SMTPConfig holds SMTP mail server configuration.
 type SMTPConfig struct {
 	Host     string
@@ -151,6 +163,12 @@ func ConfigFromEnv() Config {
 		}
 	}
 
+	cfg.Retention = RetentionConfig{
+		Snapshots: envDurationOr("MAINTENANT_RETENTION_SNAPSHOTS", 7*24*time.Hour),
+		Interval:  envDurationOr("MAINTENANT_RETENTION_INTERVAL", time.Hour),
+		BatchSize: envIntOr("MAINTENANT_RETENTION_BATCH_SIZE", 1000),
+	}
+
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
 	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
@@ -191,6 +209,15 @@ func envIntOr(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
+		}
+	}
+	return fallback
+}
+
+func envDurationOr(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
 		}
 	}
 	return fallback

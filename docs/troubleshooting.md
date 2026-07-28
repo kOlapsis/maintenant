@@ -114,3 +114,54 @@ Make sure the mounted file is readable by uid **65534** — the container runs u
 Do not reach for `SSL_CERT_FILE`. Go treats it as a replacement for the whole system bundle rather than an addition, so setting it drops every public CA, and an unreadable file yields an empty trust store with no error reported.
 
 As a last resort you can turn verification off for a single container endpoint with the label `maintenant.endpoint.http.tls-verify=false`, but that also stops expiry and hostname checks for it.
+
+---
+
+## The database keeps growing, or the -wal file is huge
+
+Up to and including 1.3.7, the retention cleanup deleted at most 1000 rows per hour, whatever
+the number of monitored containers. Since each container produces around 360 raw samples per
+hour, the purge fell behind past roughly three containers and `resource_snapshots` grew without
+bound. Upgrading fixes the throughput: the first pass runs at startup and drains the whole
+backlog.
+
+Check where you stand:
+
+```bash
+sqlite3 /data/maintenant.db "
+  SELECT COUNT(*) AS rows, datetime(MIN(timestamp),'unixepoch') AS oldest FROM resource_snapshots;
+  PRAGMA auto_vacuum;
+  PRAGMA freelist_count;
+"
+```
+
+`oldest` should stay inside the retention window (7 days by default). The `retention cleanup:
+deleted resource snapshots` log line should no longer report a `count` stuck at exactly the batch
+size — that was the signature of the purge never catching up.
+
+### Reclaiming disk space already used
+
+`PRAGMA auto_vacuum` tells you whether freed pages return to the filesystem:
+
+- **`2` (incremental)** — nothing to do. Retention hands freed pages back automatically and
+  `freelist_count` shrinks pass after pass.
+- **`0` (none)** — the database was created before auto-vacuum was enabled and only a full
+  `VACUUM` can convert it. maintenant logs a warning at startup in this case. The database stops
+  growing regardless, since SQLite reuses freed pages, but the file stays at its high-water mark.
+
+A full `VACUUM` is a manual, offline operation. It takes an exclusive lock for its whole duration
+(minutes on a multi-gigabyte database, much longer on an SD card or NAS) and rewrites the file, so
+you need **free disk space equal to the current database size** on top of it:
+
+```bash
+docker compose stop maintenant
+sqlite3 /path/to/maintenant.db "PRAGMA auto_vacuum=INCREMENTAL; VACUUM;"
+docker compose start maintenant
+```
+
+Take a backup first. Running out of disk space mid-VACUUM leaves a journal file behind.
+
+### The -wal file
+
+Newer versions set, on every connection, a `journal_size_limit` of 64 MiB, so the WAL is truncated back after each
+checkpoint. Up to 1.3.7 it was unbounded and only shrank when the process restarted.
