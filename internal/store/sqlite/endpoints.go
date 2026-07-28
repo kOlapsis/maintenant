@@ -293,21 +293,12 @@ func (s *EndpointStore) GetCheckResultsInWindow(ctx context.Context, endpointID 
 }
 
 func (s *EndpointStore) DeleteCheckResultsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	var totalDeleted int64
-	for {
-		res, err := s.writer.Exec(ctx,
-			`DELETE FROM check_results WHERE rowid IN (
-				SELECT rowid FROM check_results WHERE timestamp<? LIMIT ?
-			)`, before.Unix(), batchSize)
-		if err != nil {
-			return totalDeleted, fmt.Errorf("delete check results: %w", err)
-		}
-		totalDeleted += res.RowsAffected
-		if res.RowsAffected < int64(batchSize) {
-			break
-		}
-	}
-	return totalDeleted, nil
+	deleted, _, err := s.deleteCheckResultsBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *EndpointStore) deleteCheckResultsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsBefore(ctx, s.writer, o, "check_results", "timestamp", before)
 }
 
 func (s *EndpointStore) DeleteInactiveEndpointsBefore(ctx context.Context, before time.Time) (int64, error) {

@@ -32,6 +32,9 @@ import { fetchContainerDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import SecurityInsightList from './SecurityInsightList.vue'
 import PostureScoreBadge from './PostureScoreBadge.vue'
 import PostureCategoryBreakdown from './PostureCategoryBreakdown.vue'
+import ResourceCharts from './ResourceCharts.vue'
+import ResourceAlertConfig from './ResourceAlertConfig.vue'
+import FeatureGate from './FeatureGate.vue'
 import { useSecurityStore } from '@/stores/security'
 import { usePostureStore } from '@/stores/posture'
 import { useEdition } from '@/composables/useEdition'
@@ -41,6 +44,7 @@ import {
   Trash2,
   Terminal,
   Activity,
+  ChartLine,
   ChevronRight,
 } from 'lucide-vue-next'
 import { fetchSwarmServiceDetail, type SwarmServiceDetailResponse } from '@/services/swarmApi'
@@ -60,7 +64,7 @@ const uptimeDays = ref<UptimeDay[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedLogContainer = ref<string | undefined>(undefined)
-const activeTab = ref<'logs' | 'info'>('info')
+const activeTab = ref<'logs' | 'info' | 'resources'>('info')
 const isLogExpanded = ref(false)
 
 const logStream = useLogStream({
@@ -360,6 +364,17 @@ watch(() => props.containerId, () => {
           <Terminal :size="13" />
           Logs
         </button>
+        <button
+          class="flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors"
+          :style="{
+            color: activeTab === 'resources' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
+            borderBottom: activeTab === 'resources' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
+          }"
+          @click="activeTab = 'resources'"
+        >
+          <ChartLine :size="13" />
+          Resources
+        </button>
 
         <!-- K8s container selector (logs tab only) -->
         <select
@@ -395,6 +410,20 @@ watch(() => props.containerId, () => {
             class="flex-1"
             @toggle-expand="isLogExpanded = true"
           />
+        </div>
+
+        <!-- RESOURCES TAB -->
+        <!-- v-if, not v-show: the charts only fetch their history once the tab
+             is opened, so the panel costs nothing until then. -->
+        <div v-else-if="activeTab === 'resources'" class="space-y-5 p-5">
+          <FeatureGate
+            feature="resource_history"
+            title="Resource History"
+            description="Track CPU, memory, network and block I/O over time, and alert on thresholds."
+          >
+            <ResourceCharts :container-id="containerId" />
+            <ResourceAlertConfig :container-id="containerId" class="mt-5" />
+          </FeatureGate>
         </div>
 
         <!-- INFO TAB -->

@@ -135,13 +135,12 @@ func (s *ResourceStore) UpsertAlertConfig(ctx context.Context, cfg *resource.Res
 }
 
 func (s *ResourceStore) DeleteSnapshotsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`DELETE FROM resource_snapshots WHERE id IN (SELECT id FROM resource_snapshots WHERE timestamp < ? LIMIT ?)`,
-		before.Unix(), batchSize)
-	if err != nil {
-		return 0, fmt.Errorf("delete snapshots before: %w", err)
-	}
-	return res.RowsAffected, nil
+	deleted, _, err := s.deleteSnapshotsBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *ResourceStore) deleteSnapshotsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsBefore(ctx, s.writer, o, "resource_snapshots", "timestamp", before)
 }
 
 // rowScanner is implemented by both *sql.Row and *sql.Rows.
@@ -369,23 +368,21 @@ const rollupRowID = `lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2)
 	`lower(hex(randomblob(6)))`
 
 func (s *ResourceStore) DeleteHourlyBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`DELETE FROM resource_hourly WHERE id IN (SELECT id FROM resource_hourly WHERE bucket < ? LIMIT ?)`,
-		before.Unix(), batchSize)
-	if err != nil {
-		return 0, fmt.Errorf("delete hourly before: %w", err)
-	}
-	return res.RowsAffected, nil
+	deleted, _, err := s.deleteHourlyBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *ResourceStore) deleteHourlyBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsBefore(ctx, s.writer, o, "resource_hourly", "bucket", before)
 }
 
 func (s *ResourceStore) DeleteDailyBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	res, err := s.writer.Exec(ctx,
-		`DELETE FROM resource_daily WHERE id IN (SELECT id FROM resource_daily WHERE bucket < ? LIMIT ?)`,
-		before.Unix(), batchSize)
-	if err != nil {
-		return 0, fmt.Errorf("delete daily before: %w", err)
-	}
-	return res.RowsAffected, nil
+	deleted, _, err := s.deleteDailyBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *ResourceStore) deleteDailyBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsBefore(ctx, s.writer, o, "resource_daily", "bucket", before)
 }
 
 func granularityToSeconds(g resource.Granularity) int64 {

@@ -412,30 +412,30 @@ func (s *CertificateStore) ListMonitorsByExternalID(ctx context.Context, externa
 // --- Retention ---
 
 func (s *CertificateStore) DeleteCheckResultsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	var totalDeleted int64
-	for {
+	deleted, _, err := s.deleteCheckResultsBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *CertificateStore) deleteCheckResultsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	cutoff := before.Unix()
+	return runBatchedDelete(ctx, o, func(ctx context.Context, batchSize int) (int64, error) {
 		// First, delete chain entries for the check results we're about to delete
-		_, err := s.writer.Exec(ctx,
+		if _, err := s.writer.Exec(ctx,
 			`DELETE FROM cert_chain_entries WHERE check_result_id IN (
 				SELECT id FROM cert_check_results WHERE checked_at<? LIMIT ?
-			)`, before.Unix(), batchSize)
-		if err != nil {
-			return totalDeleted, fmt.Errorf("delete cert chain entries: %w", err)
+			)`, cutoff, batchSize); err != nil {
+			return 0, fmt.Errorf("delete cert chain entries: %w", err)
 		}
 
 		res, err := s.writer.Exec(ctx,
 			`DELETE FROM cert_check_results WHERE rowid IN (
 				SELECT rowid FROM cert_check_results WHERE checked_at<? LIMIT ?
-			)`, before.Unix(), batchSize)
+			)`, cutoff, batchSize)
 		if err != nil {
-			return totalDeleted, fmt.Errorf("delete cert check results: %w", err)
+			return res.RowsAffected, fmt.Errorf("delete cert check results: %w", err)
 		}
-		totalDeleted += res.RowsAffected
-		if res.RowsAffected < int64(batchSize) {
-			break
-		}
-	}
-	return totalDeleted, nil
+		return res.RowsAffected, nil
+	})
 }
 
 // --- Scanners ---

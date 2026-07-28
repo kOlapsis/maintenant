@@ -312,6 +312,11 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 		HeartbeatStore:   a.hbStore,
 		CertificateStore: a.certStore,
 		ResourceStore:    a.resStore,
+		Config: sqlite.RetentionConfig{
+			Snapshots: a.cfg.Retention.Snapshots,
+			Interval:  a.cfg.Retention.Interval,
+			BatchSize: a.cfg.Retention.BatchSize,
+		},
 	})
 
 	// Alert retention cleanup (90 days)

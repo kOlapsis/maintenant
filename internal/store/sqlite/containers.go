@@ -323,21 +323,12 @@ func (s *ContainerStore) GetTransitionsInWindow(ctx context.Context, containerID
 }
 
 func (s *ContainerStore) DeleteTransitionsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	var totalDeleted int64
-	for {
-		res, err := s.writer.Exec(ctx,
-			`DELETE FROM state_transitions WHERE rowid IN (
-				SELECT rowid FROM state_transitions WHERE timestamp<? LIMIT ?
-			)`, before.Unix(), batchSize)
-		if err != nil {
-			return totalDeleted, fmt.Errorf("delete transitions: %w", err)
-		}
-		totalDeleted += res.RowsAffected
-		if res.RowsAffected < int64(batchSize) {
-			break
-		}
-	}
-	return totalDeleted, nil
+	deleted, _, err := s.deleteTransitionsBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *ContainerStore) deleteTransitionsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsBefore(ctx, s.writer, o, "state_transitions", "timestamp", before)
 }
 
 func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, before time.Time) (int64, error) {

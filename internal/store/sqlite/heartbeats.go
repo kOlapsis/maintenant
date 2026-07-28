@@ -411,39 +411,31 @@ func (s *HeartbeatStore) ListExecutions(ctx context.Context, heartbeatID string,
 // --- Retention ---
 
 func (s *HeartbeatStore) DeletePingsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	var totalDeleted int64
-	for {
-		res, err := s.writer.Exec(ctx,
-			`DELETE FROM heartbeat_pings WHERE rowid IN (
-				SELECT rowid FROM heartbeat_pings WHERE timestamp<? LIMIT ?
-			)`, before.Unix(), batchSize)
-		if err != nil {
-			return totalDeleted, fmt.Errorf("delete heartbeat pings: %w", err)
-		}
-		totalDeleted += res.RowsAffected
-		if res.RowsAffected < int64(batchSize) {
-			break
-		}
-	}
-	return totalDeleted, nil
+	deleted, _, err := s.deletePingsBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *HeartbeatStore) deletePingsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsBefore(ctx, s.writer, o, "heartbeat_pings", "timestamp", before)
 }
 
 func (s *HeartbeatStore) DeleteExecutionsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
-	var totalDeleted int64
-	for {
+	deleted, _, err := s.deleteExecutionsBefore(ctx, before, batchOpts{batchSize: batchSize})
+	return deleted, err
+}
+
+func (s *HeartbeatStore) deleteExecutionsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	cutoff := before.Unix()
+	return runBatchedDelete(ctx, o, func(ctx context.Context, batchSize int) (int64, error) {
 		res, err := s.writer.Exec(ctx,
 			`DELETE FROM heartbeat_executions WHERE rowid IN (
 				SELECT rowid FROM heartbeat_executions WHERE completed_at IS NOT NULL AND completed_at<? LIMIT ?
-			)`, before.Unix(), batchSize)
+			)`, cutoff, batchSize)
 		if err != nil {
-			return totalDeleted, fmt.Errorf("delete heartbeat executions: %w", err)
+			return res.RowsAffected, fmt.Errorf("delete heartbeat executions: %w", err)
 		}
-		totalDeleted += res.RowsAffected
-		if res.RowsAffected < int64(batchSize) {
-			break
-		}
-	}
-	return totalDeleted, nil
+		return res.RowsAffected, nil
+	})
 }
 
 // --- Scanners ---
