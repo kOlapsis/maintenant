@@ -312,6 +312,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Runtime:      rt,
 		ContainerSvc: a.containerSvc,
 		Logger:       logger,
+		RawWindow:    cfg.Retention.Snapshots,
 	})
 	// --- License checkers for quota enforcement ---
 	var certLicenseChecker certificate.LicenseChecker

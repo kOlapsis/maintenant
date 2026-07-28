@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/resource"
 )
 
 const (
@@ -30,7 +32,8 @@ const (
 	heartbeatPingRetention    = 30 * 24 * time.Hour  // 30 days
 	heartbeatExecRetention    = 30 * 24 * time.Hour  // 30 days
 	certCheckResultRetention  = 30 * 24 * time.Hour  // 30 days
-	resourceSnapshotRetention = 7 * 24 * time.Hour   // 7 days
+	// Raw samples only feed the ranges up to 24h; 7d reads the hourly rollup.
+	resourceSnapshotRetention = resource.DefaultSnapshotRetention
 	resourceHourlyRetention   = 90 * 24 * time.Hour  // 90 days
 	resourceDailyRetention    = 365 * 24 * time.Hour // 1 year
 
@@ -84,8 +87,8 @@ func (c RetentionConfig) withDefaults(logger *slog.Logger) RetentionConfig {
 		c.BatchSize = 100000
 	}
 
-	// Resource graphs aggregate raw snapshots even for the 7-day range, so a
-	// shorter window silently shortens the charts.
+	// The 24h range groups raw samples, so anything shorter would leave it with
+	// holes. Longer ranges read the hourly rollup and are not affected.
 	c.Snapshots = clampDuration(logger, "resource snapshot retention", c.Snapshots, resourceSnapshotRetention, 24*time.Hour)
 
 	c.Hourly = orDefault(c.Hourly, resourceHourlyRetention)
