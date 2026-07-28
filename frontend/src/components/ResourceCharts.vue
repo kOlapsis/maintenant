@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, nextTick } from 'vue'
 import { getResourceHistory, type HistoryPoint } from '@/services/resourceApi'
 import { useChart } from '@/composables/useChart'
 import { useResourcesStore } from '@/stores/resources'
@@ -118,18 +118,34 @@ const ioChart = useChart({
   data: () => [[], [], []] as uPlot.AlignedData,
 })
 
+const charts = [cpuChart, memChart, netChart, ioChart]
+
 async function fetchHistory() {
   loading.value = true
   try {
     const res = await getResourceHistory(props.containerId, selectedRange.value)
     points.value = res.points || []
-    updateCharts()
   } catch {
     points.value = []
   } finally {
     loading.value = false
   }
 }
+
+// The chart elements sit behind the v-else, so they do not exist until there is
+// data to show: uPlot has to be created once they are in the DOM, and torn down
+// again when a range comes back empty and the branch is swapped out.
+watch(points, async (pts) => {
+  await nextTick()
+  if (!pts.length) {
+    charts.forEach((c) => c.destroy())
+    return
+  }
+  charts.forEach((c) => {
+    if (!c.ready.value) c.create()
+  })
+  updateCharts()
+})
 
 function updateCharts() {
   const ts = toTimestamps(points.value)
