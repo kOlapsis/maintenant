@@ -90,11 +90,17 @@ func NewDispatcher(deps DispatchDeps) *Dispatcher {
 	return &Dispatcher{deps: deps}
 }
 
-// Dispatch routes evt to the handler matching its body type.
-// Returns an error if a handler is wired and returns an error.
-// Silently ignores events whose handler is nil.
-func (d *Dispatcher) Dispatch(ctx context.Context, evt *agentpb.AgentEvent) error {
-	agentID := evt.GetAgentId()
+// Dispatch routes evt to the handler matching its body type, attributing every
+// event to agentID — the identity proven by the auth handshake, NOT the
+// client-controlled agent_id carried on the wire. Returns an error if a handler
+// is wired and returns an error. Silently ignores events whose handler is nil.
+func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.AgentEvent) error {
+	// The wire agent_id is attacker-controlled. Trusting it would let a
+	// compromised agent forge or wipe data for any other host. Reject a
+	// mismatch outright; the authenticated agentID is the only source of truth.
+	if claimed := evt.GetAgentId(); claimed != "" && claimed != agentID {
+		return fmt.Errorf("dispatch: event agent_id %q does not match authenticated agent %q", claimed, agentID)
+	}
 
 	switch body := evt.GetBody().(type) {
 	case *agentpb.AgentEvent_Container:

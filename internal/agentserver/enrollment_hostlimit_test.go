@@ -195,6 +195,44 @@ func TestRegisterAgent_HostLimit_ConcurrentEnrollments(t *testing.T) {
 	assert.Equal(t, limit, active, "active agents never exceed the cap")
 }
 
+// A malformed public key is rejected before any store write: an ed25519 key
+// must be exactly 32 bytes. The agent is never persisted and the token stays
+// unconsumed. This is the enroll-side companion to the auth-path key-length
+// guard that closes the unauthenticated-DoS vector.
+func TestRegisterAgent_RejectsMalformedPublicKey(t *testing.T) {
+	orig := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	t.Cleanup(func() { extension.CurrentEdition = orig })
+
+	impl, store := newHostLimitTestImpl(t)
+	ctx := context.Background()
+
+	for name, key := range map[string][]byte{
+		"nil":   nil,
+		"empty": {},
+		"short": make([]byte, 16),
+		"long":  make([]byte, 64),
+	} {
+		t.Run(name, func(t *testing.T) {
+			tok := insertToken(t, store, "tok-"+name, "mnt_enr_badkey"+fmt.Sprintf("%010s", name))
+			const id = "44444444-4444-4444-4444-444444444444"
+			req := registerReq(id, tok, "bad-key-host")
+			req.PublicKey = key
+
+			_, err := impl.RegisterAgent(ctx, req)
+			require.Error(t, err)
+			assert.Equal(t, codes.InvalidArgument, grpcstatus.Code(err))
+
+			_, err = store.Get(ctx, id)
+			assert.Error(t, err, "malformed enrollment must not persist an agent")
+
+			gotTok, err := store.GetByToken(ctx, tok)
+			require.NoError(t, err)
+			assert.Nil(t, gotTok.ConsumedAt, "rejected enrollment must not consume the token")
+		})
+	}
+}
+
 // Community cannot enroll any agent (cap 0), even via a valid token.
 func TestRegisterAgent_HostLimit_CommunityBlocked(t *testing.T) {
 	orig := extension.CurrentEdition

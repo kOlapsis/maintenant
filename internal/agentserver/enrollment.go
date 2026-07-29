@@ -13,6 +13,7 @@ package agentserver
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"strings"
 	"time"
@@ -51,6 +52,14 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 
 	// Version compatibility check: block on major mismatch, warn on minor skew.
 	checkVersionCompat(req.GetAgentVersion(), logger)
+
+	// Reject a malformed public key at the door. An ed25519 key is exactly 32
+	// bytes; a wrong-sized key could only ever fail signature verification
+	// later, so store nothing and fail early with a clear error.
+	if len(req.GetPublicKey()) != ed25519.PublicKeySize {
+		logger.Warn("agent.enroll_rejected", "reason", "bad_public_key", "agent_id", req.GetAgentId())
+		return nil, grpcstatus.Error(codes.InvalidArgument, "public key must be 32 bytes")
+	}
 
 	// Enrol the agent atomically: the per-edition host cap check, the one-time
 	// token consume, and the insert run in a single serialized transaction, so
@@ -320,7 +329,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 			}
 
 			if dispatcher != nil {
-				if err := dispatcher.Dispatch(stream.Context(), evt); err != nil {
+				if err := dispatcher.Dispatch(stream.Context(), ag.AgentID, evt); err != nil {
 					logger.Error("Push: dispatch failed", "agent_id", ag.AgentID, "err", err)
 				}
 			}
