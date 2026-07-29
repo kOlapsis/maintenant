@@ -84,6 +84,21 @@ func (s *UpdateStore) GetLatestScanRecord(ctx context.Context) (*update.ScanReco
 
 // --- Image updates ---
 
+// liveContainerFilter keeps only the findings whose container a runtime still
+// reports. image_updates.container_id holds the container external_id with no
+// foreign key behind it, so a finding outlives its container: Swarm gives a
+// redeployed task a brand new id and name, which would otherwise leave the
+// pre-upgrade finding on the Updates page for good.
+const liveContainerFilter = `EXISTS (
+		SELECT 1 FROM containers c
+		WHERE c.external_id = image_updates.container_id AND c.archived = 0)`
+
+// liveContainerCVEFilter is the same guard for the CVE findings, which the
+// Updates page counts alongside the image updates.
+const liveContainerCVEFilter = `EXISTS (
+		SELECT 1 FROM containers c
+		WHERE c.external_id = container_cves.container_id AND c.archived = 0)`
+
 func (s *UpdateStore) InsertImageUpdate(ctx context.Context, u *update.ImageUpdate) (string, error) {
 	var publishedAt *int64
 	if u.PublishedAt != nil {
@@ -173,7 +188,7 @@ func (s *UpdateStore) ListImageUpdates(ctx context.Context, opts update.ListImag
 		 latest_tag, latest_digest, update_type, risk_score, published_at,
 		 changelog_url, changelog_summary, has_breaking_changes, previous_digest, source_url,
 		 status, detected_at
-		FROM image_updates WHERE 1=1`
+		FROM image_updates WHERE ` + liveContainerFilter
 	var args []interface{}
 
 	if opts.Status != "" {
@@ -203,7 +218,8 @@ func (s *UpdateStore) ListImageUpdates(ctx context.Context, opts update.ListImag
 func (s *UpdateStore) GetUpdateSummary(ctx context.Context) (*update.UpdateSummary, error) {
 	summary := &update.UpdateSummary{}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT status, risk_score FROM image_updates`)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT status, risk_score FROM image_updates WHERE `+liveContainerFilter)
 	if err != nil {
 		return nil, fmt.Errorf("get update summary: %w", err)
 	}
@@ -237,10 +253,12 @@ func (s *UpdateStore) GetUpdateSummary(ctx context.Context) (*update.UpdateSumma
 		return nil, err
 	}
 
-	// Count active containers that have no pending update (up to date).
+	// Count active containers that have no pending update (up to date). Archiving
+	// leaves the state untouched, so an archived Swarm task stays 'running' and
+	// would inflate the count on every deploy.
 	var totalContainers int
 	err = s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM containers WHERE state = 'running'`).Scan(&totalContainers)
+		`SELECT COUNT(*) FROM containers WHERE state = 'running' AND archived = 0`).Scan(&totalContainers)
 	if err != nil {
 		return nil, fmt.Errorf("count containers for up_to_date: %w", err)
 	}
@@ -317,6 +335,41 @@ func (s *UpdateStore) ListStaleImageUpdates(ctx context.Context, scanID string, 
 		stale = append(stale, su)
 	}
 	return stale, rows.Err()
+}
+
+// ListOrphanImageUpdates returns the findings whose container no runtime reports
+// anymore — archived or deleted. Name-based staleness can never catch those on
+// Swarm, where `docker stack deploy` replaces the task with one under a new id
+// and a new name. The container uid comes along when the archived row is still
+// there, so the recovery event resolves the alert by its real entity id.
+func (s *UpdateStore) ListOrphanImageUpdates(ctx context.Context) ([]update.StaleImageUpdate, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT container_id, container_name,
+			COALESCE((SELECT c.id FROM containers c
+				WHERE c.external_id = image_updates.container_id LIMIT 1), '')
+		FROM image_updates WHERE NOT `+liveContainerFilter)
+	if err != nil {
+		return nil, fmt.Errorf("list orphan image updates: %w", err)
+	}
+	defer func(rows *sql.Rows) { _ = rows.Close() }(rows)
+	var orphans []update.StaleImageUpdate
+	for rows.Next() {
+		var su update.StaleImageUpdate
+		if err := rows.Scan(&su.ContainerID, &su.ContainerName, &su.ContainerUID); err != nil {
+			return nil, err
+		}
+		orphans = append(orphans, su)
+	}
+	return orphans, rows.Err()
+}
+
+// DeleteOrphanImageUpdates removes the findings listed by ListOrphanImageUpdates.
+func (s *UpdateStore) DeleteOrphanImageUpdates(ctx context.Context) (int64, error) {
+	res, err := s.writer.Exec(ctx, `DELETE FROM image_updates WHERE NOT `+liveContainerFilter)
+	if err != nil {
+		return 0, fmt.Errorf("delete orphan image updates: %w", err)
+	}
+	return res.RowsAffected, nil
 }
 
 // --- CVE cache ---
@@ -418,7 +471,7 @@ func (s *UpdateStore) ListContainerCVEs(ctx context.Context, containerID string)
 
 func (s *UpdateStore) ListAllActiveCVEs(ctx context.Context, opts update.ListCVEsOpts) ([]*update.ContainerCVE, error) {
 	query := `SELECT id, container_id, cve_id, severity, cvss_score, summary, fixed_in, first_detected_at, resolved_at
-		FROM container_cves WHERE resolved_at IS NULL`
+		FROM container_cves WHERE resolved_at IS NULL AND ` + liveContainerCVEFilter
 	var args []interface{}
 
 	if opts.Severity != "" {
@@ -463,7 +516,8 @@ func (s *UpdateStore) DeleteContainerCVEs(ctx context.Context, containerID strin
 func (s *UpdateStore) GetCVESummaryCounts(ctx context.Context) (map[string]int, error) {
 	counts := map[string]int{"critical": 0, "high": 0, "medium": 0, "low": 0}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT severity, COUNT(*) FROM container_cves WHERE resolved_at IS NULL GROUP BY severity`)
+		`SELECT severity, COUNT(*) FROM container_cves
+		WHERE resolved_at IS NULL AND `+liveContainerCVEFilter+` GROUP BY severity`)
 	if err != nil {
 		return nil, fmt.Errorf("get cve summary counts: %w", err)
 	}

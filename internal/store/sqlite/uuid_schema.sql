@@ -80,6 +80,7 @@ CREATE TABLE containers (
     UNIQUE(agent_id, external_id)
 );
 CREATE INDEX idx_containers_agent_id ON containers(agent_id);
+CREATE INDEX idx_containers_external_id ON containers(external_id);
 CREATE INDEX idx_container_group ON containers(custom_group, orchestration_group) WHERE archived = 0;
 CREATE INDEX idx_container_archived ON containers(archived, last_state_change_at DESC);
 CREATE INDEX idx_containers_swarm_service ON containers(swarm_service_id) WHERE swarm_service_id != '';

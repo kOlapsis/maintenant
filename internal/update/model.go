@@ -166,6 +166,10 @@ type ScanError struct {
 type StaleImageUpdate struct {
 	ContainerID   string
 	ContainerName string
+	// ContainerUID is the maintenant id, filled for findings whose container is
+	// gone from the scan set and can no longer be looked up by the caller. Empty
+	// when the container row itself has been deleted.
+	ContainerUID string
 }
 
 // CVESeverity classifies the severity of a CVE.
