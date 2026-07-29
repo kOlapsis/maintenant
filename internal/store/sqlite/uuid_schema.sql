@@ -139,6 +139,8 @@ CREATE TABLE resource_hourly (
     avg_mem_limit BIGINT NOT NULL,
     avg_net_rx_bytes BIGINT NOT NULL,
     avg_net_tx_bytes BIGINT NOT NULL,
+    avg_block_read_bytes BIGINT NOT NULL DEFAULT 0,
+    avg_block_write_bytes BIGINT NOT NULL DEFAULT 0,
     sample_count  INTEGER NOT NULL,
     UNIQUE(container_id, bucket)
 );
