@@ -25,6 +25,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 const testAgentUUID = "550e8400-e29b-41d4-a716-446655440000"
@@ -212,6 +213,60 @@ func TestVerify_WrongNonceProducesErrBadSignature(t *testing.T) {
 	err = Verify(req, differentNonce, ag, serverNow)
 
 	assert.ErrorIs(t, err, ErrBadSignature)
+}
+
+// TestVerify_MalformedPublicKeyDoesNotPanic is the regression guard for the
+// unauthenticated DoS: ed25519.Verify panics on a key that is not 32 bytes, so
+// an agent row with a NULL/short public key must fail closed, never crash.
+func TestVerify_MalformedPublicKeyDoesNotPanic(t *testing.T) {
+	for name, key := range map[string][]byte{
+		"nil":   nil,
+		"empty": {},
+		"short": make([]byte, 16),
+		"long":  make([]byte, 64),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ag := &agent.Agent{AgentID: testAgentUUID, PublicKey: key, Status: "active"}
+			nonce := make([]byte, 32)
+			_, err := rand.Read(nonce)
+			require.NoError(t, err)
+
+			serverNow := time.Now()
+			req := &agentpb.AuthResponse{
+				AgentId:   testAgentUUID,
+				Timestamp: serverNow.Unix(),
+				Signature: make([]byte, ed25519.SignatureSize),
+			}
+
+			// Must return an error rather than panic.
+			assert.NotPanics(t, func() {
+				err = Verify(req, nonce, ag, serverNow)
+			})
+			assert.ErrorIs(t, err, ErrBadSignature)
+		})
+	}
+}
+
+// TestVerify_LocalSentinelRejected ensures the in-process sentinel agent
+// (public_key NULL, status active) can never be authenticated over the wire —
+// the exact row a crafted handshake would target.
+func TestVerify_LocalSentinelRejected(t *testing.T) {
+	ag := &agent.Agent{AgentID: uid.LocalAgent, PublicKey: nil, Status: "active"}
+	nonce := make([]byte, 32)
+	_, err := rand.Read(nonce)
+	require.NoError(t, err)
+
+	serverNow := time.Now()
+	req := &agentpb.AuthResponse{
+		AgentId:   uid.LocalAgent,
+		Timestamp: serverNow.Unix(),
+		Signature: make([]byte, ed25519.SignatureSize),
+	}
+
+	assert.NotPanics(t, func() {
+		err = Verify(req, nonce, ag, serverNow)
+	})
+	assert.ErrorIs(t, err, ErrAgentUnknown)
 }
 
 func TestGenerateChallenge_NonceIs32Bytes(t *testing.T) {

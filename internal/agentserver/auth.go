@@ -20,6 +20,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentauth"
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 var (
@@ -46,6 +47,11 @@ func Verify(req *agentpb.AuthResponse, nonce []byte, ag *agent.Agent, serverNow 
 	if ag == nil {
 		return ErrAgentUnknown
 	}
+	// The local runtime sentinel has no keypair (public_key is NULL) and must
+	// never authenticate over the network. Reject it before any crypto runs.
+	if ag.AgentID == uid.LocalAgent {
+		return ErrAgentUnknown
+	}
 	if ag.Status == "revoked" {
 		return ErrAgentRevoked
 	}
@@ -66,6 +72,12 @@ func Verify(req *agentpb.AuthResponse, nonce []byte, ag *agent.Agent, serverNow 
 		return ErrBadSignature
 	}
 
+	// ed25519.Verify panics on a public key that is not exactly 32 bytes; a
+	// malformed or NULL key must fail the signature check, never crash the
+	// process (a single crafted request would otherwise take the server down).
+	if len(ag.PublicKey) != ed25519.PublicKeySize {
+		return ErrBadSignature
+	}
 	if !ed25519.Verify(ed25519.PublicKey(ag.PublicKey), payload, req.GetSignature()) {
 		return ErrBadSignature
 	}

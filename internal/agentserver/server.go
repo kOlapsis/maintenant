@@ -19,10 +19,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"runtime/debug"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
@@ -68,7 +71,13 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 		return fmt.Errorf("agentserver: listen %s: %w", listen, err)
 	}
 
-	var opts []grpc.ServerOption
+	// Recovery interceptors turn any handler panic into a gRPC Internal error
+	// instead of crashing the process. gRPC does not recover panics by default,
+	// so without this a single malformed request in any handler is a full DoS.
+	opts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(recoveryUnaryInterceptor(s.deps.Logger)),
+		grpc.ChainStreamInterceptor(recoveryStreamInterceptor(s.deps.Logger)),
+	}
 	if tlsCfg != nil {
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsCfg)))
 	}
@@ -95,6 +104,37 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 func (s *Server) Stop() {
 	if s.grpc != nil {
 		s.grpc.GracefulStop()
+	}
+}
+
+// recoveryUnaryInterceptor recovers any panic raised by a unary handler,
+// logs it with a stack trace, and returns a generic Internal error.
+func recoveryUnaryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("agentserver: recovered from panic",
+					"method", info.FullMethod, "panic", r, "stack", string(debug.Stack()))
+				err = grpcstatus.Error(codes.Internal, "internal error")
+			}
+		}()
+		return handler(ctx, req)
+	}
+}
+
+// recoveryStreamInterceptor is the streaming counterpart of
+// recoveryUnaryInterceptor: it keeps a panic in a stream handler from taking
+// the whole server down.
+func recoveryStreamInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("agentserver: recovered from panic",
+					"method", info.FullMethod, "panic", r, "stack", string(debug.Stack()))
+				err = grpcstatus.Error(codes.Internal, "internal error")
+			}
+		}()
+		return handler(srv, ss)
 	}
 }
 

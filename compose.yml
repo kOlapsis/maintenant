@@ -7,8 +7,16 @@ services:
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     ports:
+      # ⚠️  SECURITY: this publishes the UI/API on ALL interfaces (0.0.0.0) and the
+      # app has NO authentication of its own. Fine on a trusted/private network to
+      # get started; before exposing it to an untrusted network put an auth reverse
+      # proxy in front (see SECURITY.md and compose.prod.yml), or restrict the bind
+      # to "127.0.0.1:8080:8080".
       - "8080:8080"
     volumes:
+      # WARNING: mounting the Docker socket grants root-equivalent access to the
+      # host. `:ro` does NOT restrict the Docker API. For any exposed deployment
+      # use a read-only docker-socket-proxy instead (see compose.prod.yml).
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
       - maintenant-data:/data

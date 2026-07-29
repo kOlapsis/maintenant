@@ -241,10 +241,19 @@ jobs:
 
       # Complements CodeQL rather than replacing it: CodeQL carries the deep
       # data-flow analysis, gosec adds the Go-specific rule set.
+      #
+      # Built on the runner instead of through securego/gosec: that action runs
+      # in its own image, whose Go trails go.mod and cannot fetch a newer
+      # toolchain under the GOTOOLCHAIN=local that setup-go exports — every
+      # package then fails to load and gosec exits before analysing anything.
+      # Installed by version rather than by digest; the checksum database is
+      # what vouches for the module.
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
+
       - name: gosec
-        uses: securego/gosec@9e75c0576c9878035d4221392108d458abe10fc3 # v2.28.0
-        with:
-          args: -exclude-generated -severity medium ./...
+        run: |
+          "$(go env GOPATH)/bin/gosec" -exclude-generated -severity medium ./...
 
   audit:
     name: Dependency audit (govulncheck + Trivy)

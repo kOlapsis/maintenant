@@ -110,7 +110,7 @@ func TestDispatcher_ContainerEventRoutedToContainerHandler(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Container{Container: ev},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.NoError(t, err)
 	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
@@ -135,7 +135,7 @@ func TestDispatcher_InventoryRoutedToInventoryHandler(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Inventory{Inventory: ev},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.NoError(t, err)
 	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
@@ -154,7 +154,7 @@ func TestDispatcher_EndpointEventRoutedToEndpointHandler(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Endpoint{Endpoint: ev},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.NoError(t, err)
 	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
@@ -171,7 +171,7 @@ func TestDispatcher_HeartbeatEventRoutedToHeartbeatHandler(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Heartbeat{Heartbeat: ev},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.NoError(t, err)
 	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
@@ -188,7 +188,7 @@ func TestDispatcher_ResourceEventRoutedToResourceHandler(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Resource{Resource: ev},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.NoError(t, err)
 	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
@@ -205,7 +205,7 @@ func TestDispatcher_CertificateEventRoutedToCertificateHandler(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Certificate{Certificate: ev},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.NoError(t, err)
 	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
@@ -220,7 +220,7 @@ func TestDispatcher_NilContainerHandlerSilentlyIgnoresEvent(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{}},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	assert.NoError(t, err)
 }
@@ -233,7 +233,7 @@ func TestDispatcher_NilEndpointHandlerSilentlyIgnoresEvent(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Endpoint{Endpoint: &agentpb.EndpointEvent{}},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	assert.NoError(t, err)
 }
@@ -246,7 +246,7 @@ func TestDispatcher_NilHeartbeatHandlerSilentlyIgnoresEvent(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Heartbeat{Heartbeat: &agentpb.HeartbeatEvent{}},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	assert.NoError(t, err)
 }
@@ -259,7 +259,7 @@ func TestDispatcher_NilResourceHandlerSilentlyIgnoresEvent(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Resource{Resource: &agentpb.ResourceSample{}},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	assert.NoError(t, err)
 }
@@ -272,7 +272,7 @@ func TestDispatcher_NilCertificateHandlerSilentlyIgnoresEvent(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Certificate{Certificate: &agentpb.CertificateInfo{}},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	assert.NoError(t, err)
 }
@@ -287,7 +287,7 @@ func TestDispatcher_HandlerErrorIsWrappedAndReturned(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{}},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, handlerErr)
@@ -303,10 +303,41 @@ func TestDispatcher_EndpointHandlerErrorIsWrappedAndReturned(t *testing.T) {
 		Body:    &agentpb.AgentEvent_Endpoint{Endpoint: &agentpb.EndpointEvent{}},
 	}
 
-	err := d.Dispatch(context.Background(), evt)
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, handlerErr)
+}
+
+func TestDispatcher_RejectsSpoofedAgentID(t *testing.T) {
+	h := &mockContainerHandler{}
+	d := NewDispatcher(DispatchDeps{Container: h})
+
+	// Event claims to belong to another agent than the authenticated one.
+	evt := &agentpb.AgentEvent{
+		AgentId: "agt-victim-999",
+		Body:    &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{}},
+	}
+
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
+
+	require.Error(t, err)
+	assert.Empty(t, h.calledWithAgentID, "a spoofed event must never reach the handler")
+}
+
+func TestDispatcher_UsesAuthenticatedIDNotWireValue(t *testing.T) {
+	h := &mockContainerHandler{}
+	d := NewDispatcher(DispatchDeps{Container: h})
+
+	// Empty wire agent_id: the authenticated identity must be used regardless.
+	evt := &agentpb.AgentEvent{
+		Body: &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{}},
+	}
+
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
+
+	require.NoError(t, err)
+	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
 }
 
 func TestDispatcher_AllNilHandlersNoError(t *testing.T) {
@@ -320,7 +351,7 @@ func TestDispatcher_AllNilHandlersNoError(t *testing.T) {
 		{AgentId: dispatchAgentID, Body: &agentpb.AgentEvent_Resource{Resource: &agentpb.ResourceSample{}}},
 		{AgentId: dispatchAgentID, Body: &agentpb.AgentEvent_Certificate{Certificate: &agentpb.CertificateInfo{}}},
 	} {
-		err := d.Dispatch(context.Background(), evt)
+		err := d.Dispatch(context.Background(), dispatchAgentID, evt)
 		assert.NoError(t, err)
 	}
 }
