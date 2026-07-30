@@ -444,10 +444,36 @@ func (s *Service) runScan(ctx context.Context) {
 	} else if deleted > 0 {
 		s.logger.Info("update scan: removed stale updates", "deleted", deleted)
 	}
+
+	// Same for the findings whose container is gone entirely: matching on the
+	// name never sheds those, because Swarm renames the task container on every
+	// deploy. Skipped when the scan saw nothing, so a runtime that is momentarily
+	// unreachable doesn't wipe the whole page.
+	if len(containers) > 0 {
+		// Deleting without the list would strand the matching alerts, with
+		// nothing left to announce their recovery — so leave them to the next
+		// scan. The Updates page already hides them in the meantime.
+		orphans, err := s.store.ListOrphanImageUpdates(ctx)
+		if err != nil {
+			s.logger.Warn("update scan: list orphan updates", "error", err)
+		} else {
+			if deleted, err := s.store.DeleteOrphanImageUpdates(ctx); err != nil {
+				s.logger.Warn("update scan: cleanup orphan updates", "error", err)
+			} else if deleted > 0 {
+				s.logger.Info("update scan: removed updates for containers that no longer exist", "deleted", deleted)
+			}
+			staleUpdates = append(staleUpdates, orphans...)
+		}
+	}
+
 	for _, su := range staleUpdates {
+		containerUID := su.ContainerUID
+		if containerUID == "" {
+			containerUID = containerByID[su.ContainerID].UID
+		}
 		s.emitEvent(event.UpdateResolved, map[string]interface{}{
 			"container_id":   su.ContainerID,
-			"container_uid":  containerByID[su.ContainerID].UID,
+			"container_uid":  containerUID,
 			"container_name": su.ContainerName,
 		})
 	}

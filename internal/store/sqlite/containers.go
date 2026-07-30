@@ -332,9 +332,32 @@ func (s *ContainerStore) deleteTransitionsBefore(ctx context.Context, before tim
 }
 
 func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, before time.Time) (int64, error) {
+	cutoff := before.Unix()
+
+	// Tables keyed by external_id have no FK to cascade through, so they must go
+	// first: once the container row is gone, nothing ties them back to anything
+	// and they stay in the database for good.
+	for _, q := range []struct {
+		sql  string
+		desc string
+	}{
+		{`DELETE FROM image_updates WHERE container_id IN (
+			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "image updates"},
+		{`DELETE FROM container_cves WHERE container_id IN (
+			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "container cves"},
+		{`DELETE FROM version_pins WHERE container_id IN (
+			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "version pins"},
+		{`DELETE FROM risk_score_history WHERE container_id IN (
+			SELECT external_id FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL)`, "risk score history"},
+	} {
+		if _, err := s.writer.Exec(ctx, q.sql, cutoff); err != nil {
+			return 0, fmt.Errorf("delete archived containers %s: %w", q.desc, err)
+		}
+	}
+
 	res, err := s.writer.Exec(ctx,
 		`DELETE FROM containers WHERE archived=1 AND archived_at<? AND archived_at IS NOT NULL`,
-		before.Unix(),
+		cutoff,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("delete archived containers: %w", err)

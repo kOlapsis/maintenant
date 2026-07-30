@@ -74,6 +74,10 @@ func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ string, _ []str
 func (s *stubStore) ListStaleImageUpdates(_ context.Context, _ string, _ []string) ([]StaleImageUpdate, error) {
 	return nil, nil
 }
+func (s *stubStore) ListOrphanImageUpdates(_ context.Context) ([]StaleImageUpdate, error) {
+	return nil, nil
+}
+func (s *stubStore) DeleteOrphanImageUpdates(_ context.Context) (int64, error) { return 0, nil }
 func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, error) {
 	return "", nil
 }
