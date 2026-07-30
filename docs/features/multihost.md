@@ -51,6 +51,8 @@ Set `MAINTENANT_GRPC_TLS_INSECURE=true`. The listener accepts plaintext HTTP/2 (
 MAINTENANT_GRPC_TLS_INSECURE=true maintenant --mode=server
 ```
 
+The proxy must also let the stream live: it is a request whose body never ends, so any read timeout on the route (Traefik's `respondingTimeouts.readTimeout`, 60 s by default) severs it periodically. See [Agent Setup — long-lived streams](../guides/agent-setup.md#step-1-make-the-grpc-endpoint-reachable).
+
 **Direct TLS with a custom certificate**
 
 Mount a certificate/key pair covering the public hostname agents will dial:

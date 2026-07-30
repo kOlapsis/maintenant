@@ -117,6 +117,35 @@ As a last resort you can turn verification off for a single container endpoint w
 
 ---
 
+## An agent host flaps: connected, then disconnected, every 60 seconds
+
+**Symptom:** the host on the **Agents** page alternates between `connected` and `disconnected`
+at a regular interval, and its containers show up or vanish depending on when you look. The
+agent logs show a reconnect loop with no mention of a proxy — it reads like an unstable network
+link.
+
+**Why it happens:** the agent stream is a single gRPC request whose body never ends. A reverse
+proxy that caps the duration of a request cuts it at that limit no matter how much traffic
+flows on it. On Traefik v3 that cap is `respondingTimeouts.readTimeout`, **60 s by default** on
+every entrypoint.
+
+**Fix:** disable the read timeout on the entrypoint that carries gRPC. It is a per-entrypoint
+setting, so a dedicated entrypoint is needed to avoid dropping the protection for all HTTPS
+traffic:
+
+```yaml
+- --entrypoints.grpc.address=:8443
+- --entrypoints.grpc.transport.respondingTimeouts.readTimeout=0
+- --entrypoints.grpc.transport.respondingTimeouts.idleTimeout=0
+```
+
+Agents then need the port in their URL (`--server=grpcs://agents.example.com:8443`). The
+equivalent settings are `grpc_read_timeout` on nginx and `timeout tunnel` on HAProxy. Full
+configuration, including the ACME side effect of a non-443 entrypoint, is in the
+[Agent Setup guide](guides/agent-setup.md#step-1-make-the-grpc-endpoint-reachable).
+
+---
+
 ## The database keeps growing, or the -wal file is huge
 
 Up to and including 1.3.7, the retention cleanup deleted at most 1000 rows per hour, whatever
