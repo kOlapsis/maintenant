@@ -32,7 +32,7 @@ This creates:
 | **ClusterRole** | Read-only access to pods, logs, services, events, workloads, and metrics |
 | **ClusterRoleBinding** | Binds the role to the service account |
 | **Deployment** | Single replica with security hardening |
-| **PersistentVolumeClaim** | 1 Gi for SQLite storage |
+| **PersistentVolumeClaim** | 10 Gi for SQLite storage — migrations rebuild tables in place and need several times the database size |
 | **Service** | ClusterIP on port 80 |
 
 ---
@@ -155,9 +155,15 @@ env:
 
 ## Health Probes
 
-The deployment includes liveness and readiness probes:
+The deployment includes startup, liveness and readiness probes:
 
 ```yaml
+startupProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  periodSeconds: 10
+  failureThreshold: 60
 livenessProbe:
   httpGet:
     path: /api/v1/health
@@ -171,6 +177,15 @@ readinessProbe:
   initialDelaySeconds: 3
   periodSeconds: 10
 ```
+
+!!! warning "Do not drop the startup probe"
+    Schema migrations run **before** the HTTP listener starts, so `/api/v1/health`
+    stays silent for their whole duration — minutes on a large database, and longer
+    for the one-time UUID conversion. Without a startup probe the liveness probe
+    kills the pod about 95 s in, leaving the migration half-applied and the schema
+    marked dirty, and the same thing happens on every restart. The
+    `failureThreshold: 60` above grants 10 minutes; raise it if an upgrade needs
+    more.
 
 ---
 

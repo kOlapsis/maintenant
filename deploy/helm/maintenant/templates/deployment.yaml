@@ -76,6 +76,15 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
+          # Migrations run before the HTTP listener starts, so /health is silent for
+          # their whole duration. Without this the liveness probe kills the pod
+          # mid-migration and leaves the schema dirty — see values.yaml.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
           livenessProbe:
             httpGet:
               path: /api/v1/health
