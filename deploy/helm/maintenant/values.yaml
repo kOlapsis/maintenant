@@ -21,9 +21,20 @@ persistence:
   enabled: true
   storageClass: ""
   accessMode: ReadWriteOnce
-  size: 1Gi
+  ## Migrations that rebuild a table copy it before dropping the original, and
+  ## SQLite temp files are written here too (SQLITE_TMPDIR=/data). Allow several
+  ## times the expected database size or an upgrade can run the volume out of space.
+  size: 10Gi
   ## Use an existing PVC (persistence.enabled is ignored when set)
   existingClaim: ""
+
+## Schema migrations run before the HTTP listener starts, so /health does not
+## answer while they work — minutes on a large database. The startup probe holds
+## the liveness probe off for periodSeconds x failureThreshold (10 min by
+## default); raise failureThreshold if an upgrade needs longer.
+startupProbe:
+  periodSeconds: 10
+  failureThreshold: 60
 
 service:
   type: ClusterIP

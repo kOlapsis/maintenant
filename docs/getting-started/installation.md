@@ -100,7 +100,7 @@ Both approaches deploy:
 
 - A **ServiceAccount** with read-only RBAC (pods, logs, services, namespaces, events, deployments, statefulsets, daemonsets, replicasets, pod metrics)
 - A **Deployment** with security hardening (non-root, read-only filesystem, all capabilities dropped)
-- A **PersistentVolumeClaim** (1Gi) for the SQLite database
+- A **PersistentVolumeClaim** (10Gi) for the SQLite database
 - A **ClusterIP Service** on port 80
 
 maintenant auto-detects the in-cluster Kubernetes API. Namespace filtering and workload-level monitoring work out of the box.

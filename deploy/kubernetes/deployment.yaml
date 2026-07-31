@@ -52,6 +52,18 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
+          # Schema migrations run before the HTTP listener starts, so /health stays
+          # silent for their whole duration — minutes on a large database, and the
+          # one-time UUID conversion is slower still. Without a startupProbe the
+          # liveness probe below kills the pod ~95s in, leaving the migration
+          # half-applied and marked dirty, and it repeats on every restart.
+          # 60 x 10s = 10 minutes of grace; liveness only takes over after that.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /api/v1/health
@@ -87,7 +99,10 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      # Table rebuilds during migration copy a table before dropping the old one,
+      # and SQLite temp files land on this volume too (SQLITE_TMPDIR=/data), so
+      # headroom of several times the database size is needed to upgrade at all.
+      storage: 10Gi
 ---
 apiVersion: v1
 kind: Service
