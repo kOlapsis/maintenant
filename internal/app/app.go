@@ -200,15 +200,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	agentStore := sqlite.NewAgentStore(db)
 	a.agentStore = agentStore
 
-	// --- Mode gate: server/agent require Pro license ---
-	if cfg.Mode != "" && cfg.Mode != "embedded" {
-		// Evaluate edition now (before license manager starts) using whatever was
-		// set at binary build time or injected via a previous boot.
-		if extension.CurrentEdition() != extension.Pro {
-			logger.Error("server/agent mode requires Pro license", "mode", cfg.Mode)
-			os.Exit(1)
-		}
-	}
+	// The mode gate lives in Start(), after the license manager has resolved the
+	// edition. Evaluating it here would read the package default and reject every
+	// edition, Pro included.
 
 	// --- License manager ---
 	license.InitPublicKey(cfg.PublicKeyB64)
@@ -681,6 +675,15 @@ func (a *App) Start(ctx context.Context) error {
 	if a.licenseMgr != nil {
 		a.wireLicenseSubscriber(ctx)
 		a.licenseMgr.Start(ctx)
+	}
+
+	// Mode gate: server mode requires Pro. Checked here because licenseMgr.Start
+	// runs the initial verification synchronously, so the edition is settled —
+	// NewManager has already loaded the disk cache and Start has refreshed it.
+	if a.cfg.Mode != "" && a.cfg.Mode != "embedded" {
+		if edition := extension.CurrentEdition(); edition != extension.Pro {
+			return fmt.Errorf("%s mode requires the Pro edition (current edition: %s)", a.cfg.Mode, edition)
+		}
 	}
 
 	a.alertEngine.Start(ctx)
