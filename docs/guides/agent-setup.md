@@ -46,6 +46,44 @@ MAINTENANT_GRPC_URL=grpcs://agents.example.com   # the address agents will dial
     - traefik.http.services.maintenant-grpc.loadbalancer.server.scheme=h2c
     ```
 
+    !!! warning "Long-lived streams — disable the proxy's read timeout"
+        The agent stream is a single request whose body never ends. Any proxy that caps the
+        duration of a request kills it at that limit regardless of the traffic on it, and the
+        agent reconnects in a loop — remote containers then appear and disappear depending on
+        when the reconnect lands.
+
+        On **Traefik v3** the culprit is `respondingTimeouts.readTimeout`, 60 s by default.
+        It is configured **per entrypoint**, so it cannot be relaxed for gRPC alone on a shared
+        `websecure` entrypoint — use a dedicated one:
+
+        ```yaml
+        # Traefik static configuration (CLI flags)
+        - --entrypoints.grpc.address=:8443
+        - --entrypoints.grpc.transport.respondingTimeouts.readTimeout=0
+        - --entrypoints.grpc.transport.respondingTimeouts.idleTimeout=0
+        ```
+
+        ```yaml
+        # server container labels — same router, on the grpc entrypoint
+        - traefik.http.routers.maintenant-grpc.rule=Host(`agents.example.com`)
+        - traefik.http.routers.maintenant-grpc.entrypoints=grpc
+        - traefik.http.routers.maintenant-grpc.tls.certresolver=le
+        - traefik.http.routers.maintenant-grpc.service=maintenant-grpc
+        - traefik.http.services.maintenant-grpc.loadbalancer.server.port=8443
+        - traefik.http.services.maintenant-grpc.loadbalancer.server.scheme=h2c
+        ```
+
+        Two consequences of a non-443 entrypoint:
+
+        - agents must include the port: `--server=grpcs://agents.example.com:8443`;
+        - ACME `tlschallenge` requires port 443, so a hostname served only on this entrypoint
+          gets no certificate that way — keep a router for it on `websecure`, or switch to
+          `httpchallenge`.
+
+        Other proxies have the same class of setting: nginx `grpc_read_timeout`, HAProxy
+        `timeout tunnel`. The agent pushes a full inventory every 30 s, so idle timeouts
+        (Traefik's `idleTimeout`, 180 s) are normally not hit — only the read timeout is.
+
 === "Direct TLS with a custom certificate"
 
     Mount a certificate/key pair and point to them with env vars:
@@ -204,6 +242,15 @@ The full reference (server-side variables, rate limits, stale thresholds) is in 
 !!! failure "Host stays `disconnected`"
     - Confirm the gRPC port/subdomain is reachable from the agent host (firewall, DNS, reverse-proxy route).
     - If the server uses a self-signed certificate, the agent must either trust it or run with `--grpc-insecure-skip-tls-verify` (dev only). With a real (Let's Encrypt) certificate, no flag is needed.
+
+    These cause a *permanent* failure. A host that connects then drops at a fixed interval is a different problem — see below.
+
+!!! failure "The agent reconnects at a fixed interval (60 s behind Traefik)"
+    A *periodic* drop points at the reverse proxy, not at routing: the stream is one request
+    that never completes, and the proxy closes it when its read timeout expires. Nothing in the
+    agent logs names the proxy — it just looks like an unstable link. Disable the read timeout
+    on the entrypoint carrying gRPC, see
+    [Step 1 — long-lived streams](#step-1-make-the-grpc-endpoint-reachable).
 
 !!! failure "Permission denied on the Docker socket"
     The containerized agent runs unprivileged but auto-detects the mounted socket's group, so
