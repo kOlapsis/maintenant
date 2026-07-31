@@ -13,7 +13,6 @@ import { computed } from 'vue'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useAgentsStore } from '@/stores/agents'
 import { useResourcesStore } from '@/stores/resources'
-import type { SwarmMetadata } from '@/services/runtimeApi'
 
 // useFleetRuntimes derives which container runtimes are reachable for the
 // currently selected host scope, so the navigation can show the matching views.
@@ -33,14 +32,13 @@ export function useFleetRuntimes() {
   // The server's own runtime: 'docker' | 'swarm' | 'kubernetes'.
   const localRuntime = computed(() => runtimeStore.context)
 
-  // A local Swarm manager with zero deployed services still runs plain
-  // containers, so keep the Docker "Containers" view reachable alongside the
-  // (empty) Swarm views until a service is actually deployed.
-  const localSwarmNoServices = computed(() => {
-    if (runtimeStore.context !== 'swarm') return false
-    const meta = runtimeStore.metadata as Partial<SwarmMetadata>
-    return (meta.service_count ?? 0) === 0
-  })
+  // Swarm mode is an overlay on the Docker runtime, not a replacement: the host
+  // keeps running plain containers (the tasks themselves, plus anything started
+  // outside a service), and the Docker views keep working on it. So a Swarm
+  // scope offers 'docker' as well, whatever the deployed-service count — gating
+  // that on service_count == 0 hid the Containers entry on every real cluster
+  // while the page itself still worked by direct URL (issue #28).
+  const expand = (rt: string): string[] => (rt === 'swarm' ? ['swarm', 'docker'] : [rt])
 
   // The local server's runtimes, gated on the runtime status being known. Until
   // the first fetch resolves we contribute nothing, so runtime-specific nav
@@ -48,9 +46,7 @@ export function useFleetRuntimes() {
   // optimistic 'docker' default.
   const localRuntimes = (): string[] => {
     if (!runtimeStore.loaded) return []
-    const set = new Set<string>([localRuntime.value])
-    if (localSwarmNoServices.value) set.add('docker')
-    return [...set]
+    return expand(localRuntime.value)
   }
 
   const availableRuntimes = computed<string[]>(() => {
@@ -58,11 +54,13 @@ export function useFleetRuntimes() {
     if (sel === 'local') return localRuntimes()
     if (sel) {
       const agent = activeAgents.value.find((a) => a.agent_id === sel)
-      return agent ? [agent.detected_runtime] : []
+      return agent ? expand(agent.detected_runtime) : []
     }
     // "All resources": union of the local runtime and every active agent's.
     const set = new Set<string>(localRuntimes())
-    for (const a of activeAgents.value) set.add(a.detected_runtime)
+    for (const a of activeAgents.value) {
+      for (const rt of expand(a.detected_runtime)) set.add(rt)
+    }
     return [...set]
   })
 
