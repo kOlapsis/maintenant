@@ -31,7 +31,7 @@ beforeEach(() => {
   state.resources.selected = null
 })
 
-describe('useFleetRuntimes — empty Swarm keeps Docker available', () => {
+describe('useFleetRuntimes — Swarm keeps Docker available', () => {
   it('local Swarm manager with 0 services exposes both swarm and docker', () => {
     state.runtime.context = 'swarm'
     state.runtime.metadata = { service_count: 0 }
@@ -39,38 +39,51 @@ describe('useFleetRuntimes — empty Swarm keeps Docker available', () => {
     expect(runtimes()).toEqual(expect.arrayContaining(['swarm', 'docker']))
   })
 
-  it('local Swarm manager with services does NOT expose docker', () => {
+  // Issue #28: the Containers entry vanished from the sidebar as soon as one
+  // service was deployed, while /containers still worked by direct URL.
+  it('local Swarm manager with services still exposes docker', () => {
     state.runtime.context = 'swarm'
     state.runtime.metadata = { service_count: 3 }
     state.resources.selected = 'local'
-    expect(runtimes()).toEqual(['swarm'])
+    expect(runtimes()).toEqual(expect.arrayContaining(['swarm', 'docker']))
   })
 
-  it('missing service_count is treated as 0 (docker stays available)', () => {
+  it('the service count no longer decides anything', () => {
     state.runtime.context = 'swarm'
     state.runtime.metadata = {}
     state.resources.selected = 'local'
-    expect(runtimes()).toContain('docker')
+    expect(runtimes()).toEqual(expect.arrayContaining(['swarm', 'docker']))
   })
 
-  it('"all" scope on an empty Swarm includes both docker and swarm', () => {
+  it('"all" scope on a busy Swarm includes both docker and swarm', () => {
     state.runtime.context = 'swarm'
-    state.runtime.metadata = { service_count: 0 }
+    state.runtime.metadata = { service_count: 7 }
     state.resources.selected = null
     expect(runtimes()).toEqual(expect.arrayContaining(['swarm', 'docker']))
   })
 
-  it('does not apply the empty-Swarm rule to a selected remote agent', () => {
+  it('a selected Swarm agent exposes docker too', () => {
+    state.runtime.context = 'docker'
+    state.agents.agents = [{ status: 'active', agent_id: 'agent-1', detected_runtime: 'swarm' }]
+    state.resources.selected = 'agent-1'
+    expect(runtimes()).toEqual(expect.arrayContaining(['swarm', 'docker']))
+  })
+
+  it('a selected Docker agent is unaffected by the local Swarm context', () => {
     state.runtime.context = 'swarm'
-    state.runtime.metadata = { service_count: 0 }
     state.agents.agents = [{ status: 'active', agent_id: 'agent-1', detected_runtime: 'docker' }]
     state.resources.selected = 'agent-1'
     expect(runtimes()).toEqual(['docker'])
   })
 
-  it('plain docker is unaffected regardless of service_count', () => {
+  it('a Kubernetes scope does not gain docker', () => {
+    state.runtime.context = 'kubernetes'
+    state.resources.selected = 'local'
+    expect(runtimes()).toEqual(['kubernetes'])
+  })
+
+  it('plain docker stays exactly docker', () => {
     state.runtime.context = 'docker'
-    state.runtime.metadata = { service_count: 0 }
     state.resources.selected = 'local'
     expect(runtimes()).toEqual(['docker'])
   })
