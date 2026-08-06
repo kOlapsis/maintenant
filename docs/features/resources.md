@@ -33,9 +33,9 @@ maintenant stores metric snapshots and displays them as interactive time-series 
 |-------|-------------|---------|
 | 1 hour | Fine-grained, per-second resolution | Community |
 | 6 hours | Recent activity | Community |
-| 24 hours | Full day view | :material-crown:{ title="Pro" } Pro |
-| 7 days | Weekly trends | :material-crown:{ title="Pro" } Pro |
-| 30 days | Monthly trends | :material-crown:{ title="Pro" } Pro |
+| 24 hours | Full day view | :material-star-four-points:{ title="Personal" } Personal |
+| 7 days | Weekly trends | :material-star-four-points:{ title="Personal" } Personal |
+| 30 days | Monthly trends | :material-star-four-points:{ title="Personal" } Personal |
 
 Access historical data via the API:
 

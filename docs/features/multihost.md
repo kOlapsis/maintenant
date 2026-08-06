@@ -1,4 +1,4 @@
-# Multi-Host Monitoring (Pro)
+# Multi-Host Monitoring :material-star-four-points:{ title="Personal" }
 
 Maintenant can monitor containers and workloads running on multiple remote hosts from a single central server. Remote hosts run a lightweight **agent** process that streams events to the server over a persistent gRPC connection.
 
@@ -11,8 +11,8 @@ The `maintenant` binary supports three operating modes via the `--mode=` flag:
 | Mode | Description |
 |------|-------------|
 | `embedded` | Default. Monitors the local runtime and stores data in local SQLite. No network exposure. |
-| `server` | Central server. Receives events from remote agents via gRPC. Exposes the web UI and REST API. Pro only. |
-| `agent` | Remote agent. Monitors the local runtime and pushes events to a central server. Pro only. |
+| `server` | Central server. Receives events from remote agents via gRPC. Exposes the web UI and REST API. Personal or above. |
+| `agent` | Remote agent. Monitors the local runtime and pushes events to a central server. Carries no license of its own: the server it enrolls with decides. |
 
 > Community Edition enforces `--mode=embedded` at boot. Starting with `--mode=server` or `--mode=agent` exits with an error.
 
@@ -222,7 +222,7 @@ Deleting an agent purges all its associated rows via SQL `ON DELETE CASCADE`.
 
 ## Agent Management
 
-From **Agents** in the web UI (Pro):
+From **Agents** in the web UI:
 
 | Action | Effect |
 |--------|--------|
@@ -243,7 +243,7 @@ Agent status is updated in real time via SSE. The `connection_state` field refle
 | Clock skew tolerance | ±5 minutes between agent and server clocks |
 | Token exposure | Cleartext shown once at creation, stored hashed, masked in subsequent reads |
 | Key compromise | Revoke the agent from the UI; re-enroll generates a new keypair |
-| CE enforcement | All `/api/v1/agents/*` endpoints return `402 pro_required` in Community Edition |
+| Edition enforcement | All `/api/v1/agents/*` endpoints return `403 EDITION_REQUIRED` below Personal, naming the capability and the edition that grants it |
 
 ### `--grpc-insecure-skip-tls-verify`
 

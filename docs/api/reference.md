@@ -104,7 +104,7 @@ These routes do not require authentication:
 
 ## Agents
 
-Multi-host agent management (`--mode=server`). All endpoints require **Pro** — they return `402 pro_required` in Community Edition. See [Multi-Host Monitoring](../features/multihost.md).
+Multi-host agent management (`--mode=server`). All endpoints require **Personal** or above. Below that they return `403 EDITION_REQUIRED`, naming the capability and the edition that grants it. See [Multi-Host Monitoring](../features/multihost.md).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -133,7 +133,7 @@ Multi-host agent management (`--mode=server`). All endpoints require **Pro** —
 
 ## Notification Channels
 
-Channels are silent by default — they only fire when referenced by an [Alert Trigger](#alert-triggers) or an [Escalation Policy](#escalation-policies-pro).
+Channels are silent by default. They only fire when referenced by an [Alert Trigger](#alert-triggers) or an [Escalation Policy](#escalation-policies).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -157,11 +157,11 @@ Triggers route alerts to channels based on filters (severity, source, scope, tag
 | `PUT` | `/api/v1/alert-triggers/{id}` | Update a trigger |
 | `DELETE` | `/api/v1/alert-triggers/{id}` | Delete a trigger |
 
-Filters `filter_scopes` and `filter_tags` require Pro; `filter_severities` and `filter_sources` are available on every edition.
+Filters `filter_scopes` and `filter_tags` require Personal or above; `filter_severities` and `filter_sources` are available on every edition.
 
 ---
 
-## Escalation Policies (Pro)
+## Escalation Policies :material-crown:{ title="Pro" }
 
 Multi-level escalation chains for unacknowledged alerts.
 
@@ -248,7 +248,7 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 | `PUT` | `/api/v1/status/components/{id}` | Update a component |
 | `DELETE` | `/api/v1/status/components/{id}` | Delete a component |
 
-### Incidents (Pro)
+### Incidents :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -258,7 +258,7 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 | `DELETE` | `/api/v1/status/incidents/{id}` | Delete an incident |
 | `POST` | `/api/v1/status/incidents/{id}/updates` | Add an incident update |
 
-### Maintenance Windows (Pro)
+### Maintenance Windows :material-crown:{ title="Pro" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -267,13 +267,13 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 | `PUT` | `/api/v1/status/maintenance/{id}` | Update a maintenance window |
 | `DELETE` | `/api/v1/status/maintenance/{id}` | Delete a maintenance window |
 
-### Subscribers (Pro)
+### Subscribers :material-crown:{ title="Pro" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/status/subscribers` | List email subscribers |
 
-### SMTP Configuration (Pro)
+### SMTP Configuration :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -309,7 +309,7 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 | `GET` | `/api/v1/security/insights/{container_id}` | Get insights for a specific container |
 | `GET` | `/api/v1/security/summary` | Aggregated counts by severity and type |
 
-### Security Posture (Pro)
+### Security Posture :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -322,7 +322,7 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 
 ---
 
-## CVE Intelligence (Pro)
+## CVE Intelligence :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -331,7 +331,7 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 
 ---
 
-## Risk Scoring (Pro)
+## Risk Scoring :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

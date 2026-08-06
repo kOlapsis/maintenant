@@ -124,7 +124,7 @@ The status page is a responsive Vue SPA with live SSE updates. It supports the f
 
 ---
 
-## Incident Management :material-crown:{ title="Pro" }
+## Incident Management :material-star-four-points:{ title="Personal" }
 Track and communicate incidents with timeline updates. Each incident has a severity, status, and a history of updates visible on the public status page.
 
 ```bash
@@ -185,8 +185,8 @@ POST /status/subscribe
 | `POST` | `/api/v1/status/components` | Create a component |
 | `PUT` | `/api/v1/status/components/{id}` | Update a component |
 | `DELETE` | `/api/v1/status/components/{id}` | Delete a component |
-| `POST` | `/api/v1/status/incidents` | Create incident | :material-crown:{ title="Pro" } |
-| `POST` | `/api/v1/status/incidents/{id}/updates` | Post incident update | :material-crown:{ title="Pro" } |
+| `POST` | `/api/v1/status/incidents` | Create incident | :material-star-four-points:{ title="Personal" } |
+| `POST` | `/api/v1/status/incidents/{id}/updates` | Post incident update | :material-star-four-points:{ title="Personal" } |
 | `POST` | `/api/v1/status/maintenance` | Schedule maintenance | :material-crown:{ title="Pro" } |
 | `GET` | `/api/v1/status/subscribers` | List subscribers | :material-crown:{ title="Pro" } |
 

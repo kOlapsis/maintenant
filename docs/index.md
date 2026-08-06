@@ -19,7 +19,7 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 ## Key Features
 
 - **[Container Monitoring](features/containers.md)** — Zero-config auto-discovery for Docker and Kubernetes. State tracking, health checks, restart loop detection, log streaming.
-- **[Multi-Host Monitoring](features/multihost.md)** — Monitor many hosts from one central server. Lightweight agents stream container state, endpoints, certificates and per-host resource metrics over mutually-authenticated gRPC. Pro.
+- **[Multi-Host Monitoring](features/multihost.md)** — Monitor many hosts from one central server. Lightweight agents stream container state, endpoints, certificates and per-host resource metrics over mutually-authenticated gRPC. Personal (up to 20 hosts) or Pro (unlimited).
 - **[Docker Swarm Monitoring](features/swarm.md)** — Automatic Swarm service discovery, stack grouping, node health, crash-loop detection, rolling update tracking. CE + Enterprise.
 - **[Endpoint Monitoring](features/endpoints.md)** — HTTP and TCP checks defined as Docker labels. Response times, uptime history, sparklines.
 - **[Heartbeat & Cron Monitoring](features/heartbeats.md)** — Create a monitor, get a URL, curl from your cron job. Tracks durations, exit codes, missed deadlines.

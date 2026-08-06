@@ -4,17 +4,22 @@ Run a lightweight **agent** on a remote host to monitor its containers and workl
 
 This is a step-by-step guide. For the architecture, streaming protocol and full configuration reference, see [Multi-Host Monitoring](../features/multihost.md).
 
-!!! info "Pro feature"
-    Agent enrollment requires the **Pro** edition on the central server. Community Edition runs in `embedded` mode only (single host) and rejects `--mode=agent`/`--mode=server` at boot.
+!!! info "Personal or Pro"
+    Agent enrollment requires the **Personal** edition or above on the central
+    server. Community runs in `embedded` mode only, on a single host, and
+    refuses `--mode=server` at boot.
+
+    Personal enrolls up to **20** remote hosts; Pro has no cap. The machine
+    running maintenant is never counted against the limit.
 
 ---
 
 ## Prerequisites
 
-- A Maintenant **server** (`--mode=server`) running the Pro edition.
+- A Maintenant **server** (`--mode=server`) running the Personal edition or above.
 - The server's **gRPC endpoint reachable from the agent host** (see [Step 1](#step-1-make-the-grpc-endpoint-reachable)).
 - On the agent host: Docker, a Swarm node, a Kubernetes cluster, or just a bare-metal/VM host. The runtime is auto-detected.
-- A free host slot — each Pro edition caps the number of enrolled hosts. If the cap is reached, enrollment is rejected with `agent host limit reached`.
+- A free host slot. Personal caps enrolled hosts at 20, Pro has no cap. When the cap is reached, enrollment is rejected with `agent host limit reached`.
 
 ---
 

@@ -19,7 +19,7 @@ maintenant is configured entirely through environment variables. No configuratio
 | `MAINTENANT_UPDATE_INTERVAL` | `24h` | Update intelligence scan interval. Accepts Go duration format (e.g., `12h`, `30m`). |
 | `MAINTENANT_K8S_NAMESPACES` | all | Kubernetes namespace allowlist (comma-separated). Empty monitors all namespaces. |
 | `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | none | Kubernetes namespace blocklist (comma-separated). |
-| `MAINTENANT_LICENSE_KEY` | — | Pro license key. Enables Pro features when set to a valid key. |
+| `MAINTENANT_LICENSE_KEY` | — | License key. Unlocks the Personal or Pro edition, whichever the key grants. |
 | `MAINTENANT_MCP` | `false` | Enable the MCP server on `/mcp` (Streamable HTTP transport). |
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client ID for MCP authentication. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret for MCP authentication. |
@@ -190,9 +190,17 @@ WARN  telemetry disabled  reason=datadir-unwritable  datadir=/data/shm  error=..
 
 ---
 
-## Pro License
+## License
 
-To enable Pro features (Slack/Teams/Email channels, CVE enrichment, incident management, maintenance windows, subscriber notifications, and more), set the `MAINTENANT_LICENSE_KEY` environment variable:
+Maintenant comes in three editions, in order: **Community**, **Personal**, **Pro**.
+
+| Edition | Price | Unlocks |
+|---------|-------|---------|
+| Community | Free | Containers, endpoints, heartbeats, certificates, the public status page, and the full Swarm and Kubernetes views. Capped at 10 endpoints, 5 heartbeats, 5 certificate monitors and 3 status components, on a single host. |
+| Personal | One-time, non-commercial | Every cap lifted, up to 20 remote hosts, plus email alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, resource history, advanced trigger filters and OCSP stapling. |
+| Pro | Subscription | Everything above with unlimited hosts, plus Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, and the right to commercial use, with support. |
+
+To unlock Personal or Pro, set the `MAINTENANT_LICENSE_KEY` environment variable:
 
 ```yaml
 services:
@@ -202,7 +210,7 @@ services:
       MAINTENANT_LICENSE_KEY: "your-license-key"
 ```
 
-The license is verified periodically against the license server. If the server is temporarily unreachable, Pro features remain active from cache with a graceful degradation window.
+The license is verified periodically against the license server. If the server is temporarily unreachable, your edition remains active from cache with a graceful degradation window. A Personal license is perpetual: it carries no end date, and an absent date is never read as an expiry.
 
 You can check the current license status via the API:
 

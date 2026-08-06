@@ -51,8 +51,14 @@ POST /api/v1/channels
 
 maintenant sends a JSON payload with alert details to the configured URL.
 
-### Slack, Teams & Email :material-crown:{ title="Pro" } 
-maintenant Pro adds native Slack (Block Kit), Microsoft Teams (MessageCard), and Email (SMTP) channels with platform-specific formatting.
+### Email (SMTP) :material-star-four-points:{ title="Personal" }
+
+Native email delivery over your own SMTP server. Available from the Personal edition.
+
+### Slack & Teams :material-crown:{ title="Pro" }
+
+Native Slack (Block Kit) and Microsoft Teams (MessageCard) channels, with
+platform-specific formatting.
 
 ```bash
 POST /api/v1/channels
