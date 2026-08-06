@@ -25,7 +25,7 @@ const WebhooksPage = () => import('../pages/WebhooksPage.vue')
 const UpdatesPage = () => import('../pages/UpdatesPage.vue')
 const PublicStatusPage = () => import('../pages/PublicStatusPage.vue')
 const SecurityPosturePage = () => import('../pages/SecurityPosturePage.vue')
-const ProPage = () => import('../pages/ProPage.vue')
+const EditionsPage = () => import('../pages/EditionsPage.vue')
 const ServicesPage = () => import('../pages/ServicesPage.vue')
 const TasksPage = () => import('../pages/TasksPage.vue')
 const WorkloadsPage = () => import('../pages/WorkloadsPage.vue')
@@ -74,7 +74,9 @@ const router = createRouter({
         { path: 'nodes', name: 'nodes', component: NodesPage },
         { path: 'escalation', name: 'escalation', component: EscalationPage },
         { path: 'agents', name: 'agents', component: AgentsPage },
-        { path: 'pro-edition', name: 'pro-edition', component: ProPage },
+        { path: 'editions', name: 'editions', component: EditionsPage },
+        // The old offer page: keep the address working, send it to the comparison.
+        { path: 'pro-edition', redirect: { name: 'editions' } },
         // Dev-only design system gallery (not linked in nav, excluded from prod build)
         ...(import.meta.env.DEV
           ? [

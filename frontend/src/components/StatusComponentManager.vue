@@ -27,6 +27,7 @@ import { listContainers } from '@/services/containerApi'
 import { listEndpoints } from '@/services/endpointApi'
 import { listHeartbeats } from '@/services/heartbeatApi'
 import { listCertificates } from '@/services/certificateApi'
+import QuotaRefusal from '@/components/QuotaRefusal.vue'
 
 const store = useStatusAdminStore()
 const { getQuota, reload } = useEdition()
@@ -66,7 +67,7 @@ async function loadAllMonitorOptions() {
 
 const showCompForm = ref(false)
 const editingCompId = ref<string | null>(null)
-const createError = ref<string | null>(null)
+const createError = ref<unknown>(null)
 
 // Composition mode — locked in edit mode
 const compositionMode = ref<'explicit' | 'match-all'>('explicit')
@@ -76,9 +77,6 @@ const matchAllType = ref<string>('container')
 const matchAllCount = ref<number | null>(null)
 const searchQuery = ref('')
 
-const isQuotaError = computed(() => {
-  return createError.value?.includes('Upgrade to Pro') || false
-})
 
 const compForm = ref({
   display_name: '',
@@ -213,7 +211,7 @@ async function submitCompForm() {
     store.fetchComponents()
     reload()
   } catch (e) {
-    createError.value = e instanceof Error ? e.message : 'Failed to save component'
+    createError.value = e
   }
 }
 
@@ -308,7 +306,7 @@ function componentSummary(c: StatusComponent): string {
           </span>
           <router-link
             v-if="quota.nearLimit && !quota.isAtLimit"
-            :to="{ name: 'pro-edition' }"
+            :to="{ name: 'editions' }"
             class="text-xs font-medium transition-opacity hover:opacity-80"
             style="color: var(--mnt-accent)"
           >
@@ -317,7 +315,7 @@ function componentSummary(c: StatusComponent): string {
           <button
             @click="startAddComp"
             :disabled="quota.isAtLimit"
-            :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} status components` : ''"
+            :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} status components` : ''"
             class="rounded-md px-3 py-1.5 text-sm font-medium text-mnt-primary transition-colors min-h-[44px]"
             :style="{
               background: 'var(--mnt-accent)',
@@ -338,30 +336,7 @@ function componentSummary(c: StatusComponent): string {
           {{ editingCompId ? 'Edit Component' : 'New Component' }}
         </h3>
 
-        <div
-          v-if="createError"
-          class="mb-3 rounded p-2 text-sm"
-          :style="{
-            backgroundColor: 'var(--mnt-status-down-bg)',
-            color: 'var(--mnt-status-down)',
-            borderRadius: 'var(--mnt-radius-sm)',
-          }"
-        >
-          <template v-if="isQuotaError">
-            {{ createError.split('Upgrade to Pro')[0] }}
-            <a
-              href="/pro-edition"
-              class="font-medium underline transition-opacity hover:opacity-80"
-              style="color: var(--mnt-accent)"
-            >
-              Upgrade to Pro
-            </a>
-            {{ createError.split('Upgrade to Pro')[1] }}
-          </template>
-          <template v-else>
-            {{ createError }}
-          </template>
-        </div>
+        <QuotaRefusal v-if="createError" :error="createError" />
 
         <form @submit.prevent="submitCompForm" class="space-y-4">
 

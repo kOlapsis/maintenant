@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
+import { inject, ref, onMounted, onUnmounted } from 'vue'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { useEdition } from '@/composables/useEdition'
 import { createHeartbeat } from '@/services/heartbeatApi'
@@ -24,6 +24,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import { Heart } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
+import QuotaRefusal from '@/components/QuotaRefusal.vue'
 
 const store = useHeartbeatsStore()
 const { openDetail } = inject(detailSlideOverKey)!
@@ -31,11 +32,8 @@ const { getQuota, reload } = useEdition()
 const quota = getQuota('heartbeats')
 
 const showCreateForm = ref(false)
-const createError = ref<string | null>(null)
+const createError = ref<unknown>(null)
 
-const isQuotaError = computed(() => {
-  return createError.value?.includes('Upgrade to Pro') || false
-})
 
 const form = ref({
   name: '',
@@ -72,7 +70,7 @@ async function handleCreate() {
     store.fetchHeartbeats()
     reload()
   } catch (e) {
-    createError.value = e instanceof Error ? e.message : 'Failed to create heartbeat'
+    createError.value = e
   }
 }
 </script>
@@ -100,7 +98,7 @@ async function handleCreate() {
         </span>
         <router-link
           v-if="quota.nearLimit && !quota.isAtLimit"
-          :to="{ name: 'pro-edition' }"
+          :to="{ name: 'editions' }"
           class="text-xs font-medium transition-opacity hover:opacity-80"
           style="color: var(--mnt-accent)"
         >
@@ -109,7 +107,7 @@ async function handleCreate() {
         <button
           class="min-h-[44px]"
           :disabled="quota.isAtLimit"
-          :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} heartbeats` : ''"
+          :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} heartbeats` : ''"
           :style="{
             borderRadius: 'var(--mnt-radius-lg)',
             backgroundColor: 'var(--mnt-accent)',
@@ -152,30 +150,7 @@ async function handleCreate() {
       }"
     >
       <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Heartbeat Monitor</h3>
-      <div
-        v-if="createError"
-        class="mb-3 rounded p-2 text-sm"
-        :style="{
-          backgroundColor: 'var(--mnt-status-down-bg)',
-          color: 'var(--mnt-status-down)',
-          borderRadius: 'var(--mnt-radius-sm)',
-        }"
-      >
-        <template v-if="isQuotaError">
-          {{ createError.split('Upgrade to Pro')[0] }}
-          <a
-            href="/pro-edition"
-            class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: var(--mnt-accent)"
-          >
-            Upgrade to Pro
-          </a>
-          {{ createError.split('Upgrade to Pro')[1] }}
-        </template>
-        <template v-else>
-          {{ createError }}
-        </template>
-      </div>
+      <QuotaRefusal v-if="createError" :error="createError" />
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div>
           <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Name</label>

@@ -25,6 +25,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import { ShieldCheck } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
+import QuotaRefusal from '@/components/QuotaRefusal.vue'
 
 const store = useCertificatesStore()
 const containers = useContainersStore()
@@ -35,11 +36,8 @@ const quota = getQuota('certificates')
 const isK8s = computed(() => containers.runtimeName === 'kubernetes')
 const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
 const showCreateForm = ref(false)
-const createError = ref<string | null>(null)
+const createError = ref<unknown>(null)
 
-const isQuotaError = computed(() => {
-  return createError.value?.includes('Upgrade to Pro') || false
-})
 
 const form = ref({
   hostname: '',
@@ -92,7 +90,7 @@ async function handleCreate() {
     store.fetchCertificates()
     reload()
   } catch (e) {
-    createError.value = e instanceof Error ? e.message : 'Failed to create certificate monitor'
+    createError.value = e
   }
 }
 
@@ -124,7 +122,7 @@ function handleSelect(id: string) {
         </span>
         <router-link
           v-if="quota.nearLimit && !quota.isAtLimit"
-          :to="{ name: 'pro-edition' }"
+          :to="{ name: 'editions' }"
           class="text-xs font-medium transition-opacity hover:opacity-80"
           style="color: var(--mnt-accent)"
         >
@@ -133,7 +131,7 @@ function handleSelect(id: string) {
         <button
           class="min-h-[44px]"
           :disabled="quota.isAtLimit"
-          :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} certificate monitors` : ''"
+          :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} certificate monitors` : ''"
           :style="{
             borderRadius: 'var(--mnt-radius-lg)',
             backgroundColor: 'var(--mnt-accent)',
@@ -172,30 +170,7 @@ function handleSelect(id: string) {
       }"
     >
       <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Certificate Monitor</h3>
-      <div
-        v-if="createError"
-        class="mb-3 rounded p-2 text-sm"
-        :style="{
-          backgroundColor: 'var(--mnt-status-down-bg)',
-          color: 'var(--mnt-status-down)',
-          borderRadius: 'var(--mnt-radius-sm)',
-        }"
-      >
-        <template v-if="isQuotaError">
-          {{ createError.split('Upgrade to Pro')[0] }}
-          <a
-            href="/pro-edition"
-            class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: var(--mnt-accent)"
-          >
-            Upgrade to Pro
-          </a>
-          {{ createError.split('Upgrade to Pro')[1] }}
-        </template>
-        <template v-else>
-          {{ createError }}
-        </template>
-      </div>
+      <QuotaRefusal v-if="createError" :error="createError" />
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div class="grid gap-3 sm:grid-cols-2">
           <div>

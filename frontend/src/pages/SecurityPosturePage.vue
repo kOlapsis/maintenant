@@ -23,7 +23,8 @@ import FeatureGate from '@/components/FeatureGate.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
-import { RouterLink } from 'vue-router'
+import UnlockCta from '@/components/UnlockCta.vue'
+
 import { ShieldCheck, AlertTriangle, CheckCircle2, BarChart3 } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -166,12 +167,7 @@ onUnmounted(() => {
                 </li>
               </ul>
 
-              <RouterLink
-                to="/pro-edition"
-                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted shadow-lg shadow-mnt-green-500/20 transition-colors"
-              >
-                Unlock with Pro
-              </RouterLink>
+              <UnlockCta />
             </div>
           </div>
         </template>

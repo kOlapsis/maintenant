@@ -45,7 +45,7 @@ export class AuthChallengeError extends Error {
 /**
  * Tells an auth-proxy answer apart from a genuine API answer.
  *
- * The API always replies JSON — including its own 403s (PRO_REQUIRED, quotas),
+ * The API always replies JSON — including its own 403s (EDITION_REQUIRED, quotas),
  * which must never be mistaken for an expired session.
  */
 export function isAuthChallenge(res: Response): boolean {
@@ -113,6 +113,20 @@ let probeInFlight: Promise<boolean> | null = null
 let lastProbeAt = 0
 
 /**
+ * The session probe calls /edition, so its response body is the edition payload.
+ * Rather than throwing it away, hand it to whoever tracks the edition — that is
+ * one fewer request, and it realigns capabilities after a license transition.
+ *
+ * A callback rather than a direct import: useEdition already imports the API
+ * layer, which imports this module, so importing it back would be a cycle.
+ */
+let probePayloadSink: ((payload: unknown) => void) | null = null
+
+export function onProbePayload(fn: (payload: unknown) => void): void {
+  probePayloadSink = fn
+}
+
+/**
  * Distinguishes an expired session from a real network outage when fetch
  * rejects outright — a proxy hosted on another origin fails the request on
  * CORS instead of answering it.
@@ -133,6 +147,10 @@ export async function probeAuth(): Promise<boolean> {
       if (isAuthChallenge(res)) {
         reportAuthChallenge()
         return true
+      }
+      if (res.ok && probePayloadSink) {
+        const payload = await res.json().catch(() => null)
+        if (payload) probePayloadSink(payload)
       }
     } catch {
       // Nothing answered at all: the network is down, not the session.

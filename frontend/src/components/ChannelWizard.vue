@@ -16,8 +16,9 @@ import { ref, computed } from 'vue'
 import { createChannel, testChannel } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
 import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
+import EditionBadge from '@/components/EditionBadge.vue'
 
-const { hasFeature, isPro } = useEdition()
+const { hasFeature, editionPermits, requiredEditionFor } = useEdition()
 
 const emit = defineEmits<{
   created: [id: string]
@@ -38,7 +39,7 @@ const form = ref({
   enabled: true,
 })
 
-const ceChannelTypes = [
+const openChannelTypes = [
   {
     key: 'discord',
     label: 'Discord',
@@ -55,7 +56,7 @@ const ceChannelTypes = [
   },
 ]
 
-const proChannelTypes = [
+const gatedChannelTypes = [
   {
     key: 'email',
     label: 'Email (SMTP)',
@@ -82,7 +83,7 @@ const proChannelTypes = [
   },
 ]
 
-const allChannelTypes = [...ceChannelTypes, ...proChannelTypes]
+const allChannelTypes = [...openChannelTypes, ...gatedChannelTypes]
 
 const selectedTypeConfig = computed(() =>
   allChannelTypes.find(t => t.key === selectedType.value)
@@ -183,7 +184,7 @@ function goBack() {
       <!-- CE channels -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
-          v-for="type in ceChannelTypes"
+          v-for="type in openChannelTypes"
           :key="type.key"
           @click="selectType(type.key)"
           class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all"
@@ -214,17 +215,17 @@ function goBack() {
         </button>
       </div>
 
-      <!-- Pro channels -->
+      <!-- Channels gated by an edition -->
       <div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div
-          v-for="type in proChannelTypes"
+          v-for="type in gatedChannelTypes"
           :key="type.key"
           class="relative"
         >
           <!-- SMTP not configured special case -->
-          <SmtpNotConfigured v-if="type.feature === 'smtp' && isPro && !hasFeature('smtp')" :title="type.label" />
+          <SmtpNotConfigured v-if="type.feature === 'smtp' && editionPermits('smtp') && !hasFeature('smtp')" :title="type.label" />
 
-          <!-- Normal pro channel button -->
+          <!-- Normal gated channel button -->
           <button
             v-else
             @click="hasFeature(type.feature) && selectType(type.key)"
@@ -237,14 +238,14 @@ function goBack() {
             @mouseenter="hasFeature(type.feature) && (($event.currentTarget as HTMLElement).style.borderColor = 'var(--mnt-accent)')"
             @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)'"
           >
-            <!-- Pro badge -->
-            <span
-              v-if="!hasFeature(type.feature)"
-              class="absolute top-2 right-2 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-              style="background: rgba(139, 92, 246, 0.15); color: var(--mnt-accent)"
-            >
-              Pro
-            </span>
+            <!-- The edition this channel actually needs. It read "Pro" for all
+                 three, but email is Personal — a Community user was told to buy
+                 the top tier for the middle tier's channel. -->
+            <EditionBadge
+              v-if="!hasFeature(type.feature) && requiredEditionFor(type.feature)"
+              :edition="requiredEditionFor(type.feature)!"
+              class="absolute top-2 right-2"
+            />
 
             <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--mnt-bg-hover)">
               <!-- Email -->

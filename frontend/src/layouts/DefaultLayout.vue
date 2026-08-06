@@ -7,6 +7,7 @@ COMMERCIAL-LICENSE.md Source: https://github.com/kolapsis/maintenant -->
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, provide, ref, watch } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
+import EditionBadge from '@/components/EditionBadge.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -19,7 +20,7 @@ import {
 } from '@/composables/useDetailSlideOver'
 import { provideConfirm } from '@/composables/useConfirm'
 import { useEdition } from '@/composables/useEdition'
-import { useProBanner } from '@/composables/useProBanner'
+import { useEditionBanner } from '@/composables/useEditionBanner'
 import {
   Activity,
   ArrowRight,
@@ -53,7 +54,7 @@ import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
-const { isPro, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } =
+const { isCommunity, editionName, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } =
   useEdition()
 const swarmStore = useSwarmStore()
 const runtimeStore = useRuntimeStore()
@@ -116,7 +117,7 @@ const licenseLabel = computed(() => {
   }
 })
 
-const proBanner = useProBanner()
+const editionBanner = useEditionBanner()
 
 const mobileMenuOpen = ref(false)
 
@@ -254,40 +255,31 @@ watch(
 
         <!-- Bottom section: Edition -->
         <div class="p-4 border-t space-y-3 shrink-0" style="border-color: var(--mnt-border-default)">
-          <router-link :to="{ name: 'pro-edition' }">
+          <router-link :to="{ name: 'editions' }">
             <div
               class="rounded-xl p-3 border"
               style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default)"
             >
-              <div class="flex justify-between items-center" :class="{ 'mb-2.5': !isPro }">
+              <div class="flex justify-between items-center" :class="{ 'mb-2.5': isCommunity }">
+                <!-- Three visually distinct states; Personal is never shown as
+                     a free tier, and an unknown edition still renders (FR-041). -->
+                <EditionBadge :edition="editionName" />
                 <span
-                  class="text-[10px] font-bold uppercase tracking-tighter"
-                  :class="isPro ? 'text-mnt-accent' : 'text-mnt-secondary'"
-                  >{{ isPro ? 'Pro Edition' : 'Community Edition' }}</span
-                >
-                <span
-                  class="text-[10px] px-1.5 py-0.5 rounded font-bold"
-                  :class="
-                    isPro ? 'bg-mnt-status-ok border border-mnt-sev-ok' : 'border'
-                  "
-                  :style="
-                    isPro
-                      ? { color: 'var(--mnt-accent)' }
-                      : {
-                          background: 'var(--mnt-bg-surface)',
-                          color: 'var(--mnt-accent)',
-                          borderColor: 'color-mix(in srgb, var(--mnt-accent) 40%, transparent)',
-                        }
-                  "
+                  class="text-[10px] px-1.5 py-0.5 rounded font-bold border"
+                  :style="{
+                    background: 'var(--mnt-bg-surface)',
+                    color: 'var(--mnt-accent)',
+                    borderColor: 'color-mix(in srgb, var(--mnt-accent) 40%, transparent)',
+                  }"
                   >{{ version }}</span
                 >
               </div>
               <button
-                v-if="!isPro"
+                v-if="isCommunity"
                 class="cursor-pointer block w-full py-1.5 rounded-lg text-xs font-semibold text-center transition-colors"
                 style="background: var(--mnt-bg-surface); color: var(--mnt-text-secondary)"
               >
-                Get Pro Edition
+                Compare editions
               </button>
             </div>
           </router-link>
@@ -372,7 +364,7 @@ watch(
         {{ licenseMessage }}
         <template v-if="licenseMessageParts.word" #action>
           <RouterLink
-            to="/pro-edition"
+            to="/editions"
             class="license-action inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
             :class="`license-action--${licenseSeverity}`"
           >
@@ -381,38 +373,42 @@ watch(
           </RouterLink>
         </template>
       </AlertBanner>
-      <!-- Pro tier banner (CE only, segmented by container count) -->
+      <!-- Upsell banner: Community only, segmented by container count -->
       <AlertBanner
-        v-if="proBanner.visible.value"
+        v-if="editionBanner.visible.value"
         severity="info"
-        label="PRO"
+        label="EDITIONS"
         dismissible
         class="shrink-0"
-        @dismiss="proBanner.dismiss()"
+        @dismiss="editionBanner.dismiss()"
       >
-        <template v-if="proBanner.tier.value === 1">
-          Running Maintenant in production? Pro adds Slack/Teams/Email alerts, CVE scanning and
-          incident management — 29€/mo.
+        <!-- Tier 1 leads with Personal: at this size it is most likely a homelab,
+             and Personal is what removes the friction they just hit. -->
+        <template v-if="editionBanner.tier.value === 1">
+          Hitting the Community limits? Personal lifts them all and monitors up to 20 machines,
+          for €149 once, for life.
         </template>
-        <template v-else-if="proBanner.tier.value === 2">
-          You're monitoring {{ proBanner.count.value }} containers across production. Pro adds the
-          alerting layer your scale needs — Slack, escalation, incidents, custom public status page,
-          29€/mo.
+        <!-- Tier 2 names both: the size no longer tells you which one fits. -->
+        <template v-else-if="editionBanner.tier.value === 2">
+          You're monitoring {{ editionBanner.count.value }} containers. Personal removes every limit
+          for €149 once. Pro adds the team layer (Slack, escalation, subscribers) at €29/mo.
         </template>
-        <template v-else-if="proBanner.tier.value === 3">
+        <!-- Tier 3 stays Pro-only: at this scale it is a commercial setup, which
+             Personal's non-commercial clause excludes. -->
+        <template v-else-if="editionBanner.tier.value === 3">
           Running 50+ containers in production. Pro adds incident management, alert escalation and
           Slack routing. Want to discuss your setup with the founder?
         </template>
         <template #action>
-          <template v-if="proBanner.tier.value === 1 || proBanner.tier.value === 2">
+          <template v-if="editionBanner.tier.value === 1 || editionBanner.tier.value === 2">
             <RouterLink
-              to="/pro-edition"
+              to="/editions"
               class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"
             >
-              Get Pro →
+              Compare editions →
             </RouterLink>
           </template>
-          <template v-else-if="proBanner.tier.value === 3">
+          <template v-else-if="editionBanner.tier.value === 3">
             <a
               href="mailto:benjamin@kolapsis.com?subject=Maintenant%20-%2050%2B%20containers%20setup"
               class="license-action license-action--info inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold transition-colors"

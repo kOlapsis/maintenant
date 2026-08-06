@@ -19,6 +19,7 @@ import { useTriggersStore } from '@/stores/triggers'
 import { useChannelsStore } from '@/stores/channels'
 import { useEdition } from '@/composables/useEdition'
 import type { AlertTrigger, TriggerRequest } from '@/types/triggers'
+import EditionBadge from '@/components/EditionBadge.vue'
 
 const props = defineProps<{
   trigger?: AlertTrigger | null
@@ -31,7 +32,12 @@ const emit = defineEmits<{
 
 const store = useTriggersStore()
 const channelsStore = useChannelsStore()
-const { isPro } = useEdition()
+const { hasFeature, requiredEditionFor } = useEdition()
+
+// Advanced filters are a capability, not a tier: gating on the flag means the
+// UI cannot claim something the backend would refuse, or the reverse.
+const canUseAdvancedFilters = computed(() => hasFeature('alert_advanced_filters'))
+const advancedFiltersEdition = computed(() => requiredEditionFor('alert_advanced_filters'))
 
 const SEVERITY_OPTIONS = ['critical', 'warning']
 const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'monitor', 'resource', 'update']
@@ -273,19 +279,22 @@ async function handleSave() {
         </div>
       </div>
 
-      <!-- Scopes / Tags (Pro) -->
+      <!-- Scopes / Tags — gated by the alert_advanced_filters capability -->
       <div class="space-y-3 rounded-xl border border-mnt-default bg-mnt-primary p-4">
         <div class="flex items-center justify-between">
-          <label class="text-[10px] font-bold uppercase tracking-widest"
-            :class="isPro ? 'text-mnt-muted' : 'text-mnt-muted'">
+          <label class="text-[10px] font-bold uppercase tracking-widest text-mnt-muted">
             Advanced filters
           </label>
-          <span v-if="!isPro" class="inline-flex items-center gap-1 rounded-full bg-indigo-600/15 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-400">
-            <Lock :size="10" /> Pro
+          <span
+            v-if="!canUseAdvancedFilters && advancedFiltersEdition"
+            class="inline-flex items-center gap-1.5"
+          >
+            <Lock :size="10" class="text-mnt-muted" />
+            <EditionBadge :edition="advancedFiltersEdition" />
           </span>
         </div>
-        <p v-if="!isPro" class="text-xs text-mnt-muted">
-          Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">container:42</code>) or by tags. Available with Maintenant Pro.
+        <p v-if="!canUseAdvancedFilters" class="text-xs text-mnt-muted">
+          Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">container:42</code>) or by tags.
         </p>
 
         <div class="space-y-1.5">
@@ -295,7 +304,7 @@ async function handleSave() {
           <input
             v-model="scopesCsv"
             type="text"
-            :disabled="!isPro"
+            :disabled="!canUseAdvancedFilters"
             placeholder="container:42, endpoint:7"
             class="w-full bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
@@ -308,7 +317,7 @@ async function handleSave() {
           <input
             v-model="tagsCsv"
             type="text"
-            :disabled="!isPro"
+            :disabled="!canUseAdvancedFilters"
             placeholder="prod, payments"
             class="w-full bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
