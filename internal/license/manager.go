@@ -21,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 const (
@@ -34,21 +36,22 @@ const (
 )
 
 // State represents the current license status, safe to read concurrently.
+// A zero Edition means Community: no usable license.
 type State struct {
-	IsProEnabled bool      `json:"is_pro_enabled"`
-	Plan         string    `json:"plan,omitempty"`
-	Features     []string  `json:"features,omitempty"`
-	Status       string    `json:"status"`
-	VerifiedAt   time.Time `json:"verified_at,omitempty"`
-	ExpiresAt    time.Time `json:"expires_at,omitempty"`
-	Message      string    `json:"message,omitempty"`
+	Edition    extension.Edition `json:"edition"`
+	Plan       string            `json:"plan,omitempty"`
+	Features   []string          `json:"features,omitempty"`
+	Status     string            `json:"status"`
+	VerifiedAt time.Time         `json:"verified_at,omitempty"`
+	ExpiresAt  time.Time         `json:"expires_at,omitempty"`
+	Message    string            `json:"message,omitempty"`
 }
 
-// EditionChangeCallback is invoked after the manager observes a transition in
-// IsProEnabled. prev and next are the old and new values. The callback is invoked
-// from a dedicated goroutine with a 30-second timeout; it must not block.
-// RegisterEditionChangeCallback must be called before Start.
-type EditionChangeCallback func(ctx context.Context, prev, next bool)
+// EditionChangeCallback is invoked after the manager observes a transition
+// between two distinct editions. prev and next are the old and new editions.
+// The callback is invoked from a dedicated goroutine with a 30-second timeout;
+// it must not block. RegisterEditionChangeCallback must be called before Start.
+type EditionChangeCallback func(ctx context.Context, prev, next extension.Edition)
 
 // Manager handles license verification, caching, and state management.
 type Manager struct {
@@ -61,10 +64,10 @@ type Manager struct {
 	state      atomic.Value // *State
 	stop       chan struct{}
 
-	callbacksMu      sync.Mutex
-	callbacks        []EditionChangeCallback
-	lastIsProEnabled bool
-	baselineSet      bool
+	callbacksMu sync.Mutex
+	callbacks   []EditionChangeCallback
+	lastEdition extension.Edition
+	baselineSet bool
 }
 
 // NewManager creates a new license manager and synchronously loads the
@@ -89,7 +92,9 @@ func NewManager(licenseKey, dataDir, version string, logger *slog.Logger) (*Mana
 	}
 
 	// Default community mode; loadCache may upgrade us if a valid cache exists.
-	m.state.Store(&State{Status: "unknown"})
+	// This is the one write that bypasses setStateAndNotify on purpose: it seeds
+	// the zero value, there is nothing to transition from yet.
+	m.state.Store(&State{Status: "unknown", Edition: extension.Community})
 
 	// No callbacks are registered yet, so this never dispatches edition-change
 	// notifications — it only establishes the baseline.
@@ -119,10 +124,10 @@ func (m *Manager) loadCache(ctx context.Context) {
 			"expires_at", cached.ExpiresAt,
 		)
 		deleteCache(m.dataDir)
-		m.state.Store(&State{
+		m.setStateAndNotify(ctx, &State{
 			Status:    "expired",
 			ExpiresAt: cached.ExpiresAt,
-			Message:   "Your license has expired. Pro features have been disabled.",
+			Message:   "Your license has expired. This instance has fallen back to the Community edition.",
 		})
 		return
 	}
@@ -144,12 +149,15 @@ func (m *Manager) State() *State {
 	return m.state.Load().(*State)
 }
 
-// IsProEnabled returns true if the current license enables Pro features.
-func (m *Manager) IsProEnabled() bool {
-	return m.State().IsProEnabled
+// Edition returns the edition the current license grants.
+func (m *Manager) Edition() extension.Edition {
+	if e := m.State().Edition; e != "" {
+		return e
+	}
+	return extension.Community
 }
 
-// RegisterEditionChangeCallback registers a callback invoked on IsProEnabled
+// RegisterEditionChangeCallback registers a callback invoked on edition
 // transitions. Must be called before Start to avoid missing initial transitions.
 func (m *Manager) RegisterEditionChangeCallback(cb EditionChangeCallback) {
 	m.callbacksMu.Lock()
@@ -157,7 +165,7 @@ func (m *Manager) RegisterEditionChangeCallback(cb EditionChangeCallback) {
 	m.callbacks = append(m.callbacks, cb)
 }
 
-func (m *Manager) dispatchEditionChange(ctx context.Context, prev, next bool) {
+func (m *Manager) dispatchEditionChange(ctx context.Context, prev, next extension.Edition) {
 	m.callbacksMu.Lock()
 	cbs := make([]EditionChangeCallback, len(m.callbacks))
 	copy(cbs, m.callbacks)
@@ -177,14 +185,21 @@ func (m *Manager) dispatchEditionChange(ctx context.Context, prev, next bool) {
 	}
 }
 
+// setStateAndNotify is the only way state is written. Routing every write
+// through it is what makes a transition observable: the HTTP 401, HTTP 403 and
+// network-degradation paths used to store directly, so a revocation seen on
+// those paths never disabled anything.
 func (m *Manager) setStateAndNotify(ctx context.Context, newState *State) {
-	prev := m.lastIsProEnabled
+	if newState.Edition == "" {
+		newState.Edition = extension.Community
+	}
+	prev := m.lastEdition
 	m.state.Store(newState)
-	next := m.State().IsProEnabled
+	next := newState.Edition
 	if m.baselineSet && prev != next {
 		m.dispatchEditionChange(ctx, prev, next)
 	}
-	m.lastIsProEnabled = next
+	m.lastEdition = next
 	m.baselineSet = true
 }
 
@@ -216,7 +231,7 @@ func (m *Manager) check(ctx context.Context) {
 			}
 			m.logger.Error("license key not recognized by server", "error", err)
 			deleteCache(m.dataDir)
-			m.state.Store(&State{
+			m.setStateAndNotify(ctx, &State{
 				Status:  "unknown",
 				Message: srvErr.Message,
 			})
@@ -231,7 +246,7 @@ func (m *Manager) check(ctx context.Context) {
 			}
 			m.logger.Warn("license no longer active", "status", srvErr.Status, "error", err)
 			deleteCache(m.dataDir)
-			m.state.Store(&State{
+			m.setStateAndNotify(ctx, &State{
 				Status:  srvErr.Status,
 				Message: srvErr.Message,
 			})
@@ -239,7 +254,7 @@ func (m *Manager) check(ctx context.Context) {
 		}
 
 		// Network error or other non-200: graceful degradation
-		m.handleNetworkError(err)
+		m.handleNetworkError(ctx, err)
 		return
 	}
 
@@ -248,7 +263,7 @@ func (m *Manager) check(ctx context.Context) {
 	if err != nil {
 		// Invalid signature = treat as network error (keep current state)
 		m.logger.Error("license signature verification failed", "error", err)
-		m.handleNetworkError(err)
+		m.handleNetworkError(ctx, err)
 		return
 	}
 
@@ -272,7 +287,7 @@ func (m *Manager) check(ctx context.Context) {
 		// Update message for frontend banner without mutating the shared pointer.
 		stateCopy := *m.State()
 		stateCopy.Message = "Your license is in a grace period. Please renew to avoid service interruption."
-		m.state.Store(&stateCopy)
+		m.setStateAndNotify(ctx, &stateCopy)
 
 	case "expired":
 		m.logger.Warn("license expired", "expires_at", payload.ExpiresAt)
@@ -280,7 +295,7 @@ func (m *Manager) check(ctx context.Context) {
 		m.setStateAndNotify(ctx, &State{
 			Status:    "expired",
 			ExpiresAt: payload.ExpiresAt,
-			Message:   "Your license has expired. Pro features have been disabled.",
+			Message:   "Your license has expired. This instance has fallen back to the Community edition.",
 		})
 
 	case "revoked":
@@ -293,7 +308,7 @@ func (m *Manager) check(ctx context.Context) {
 
 	default:
 		m.logger.Warn("unknown license status from server", "status", payload.Status)
-		m.state.Store(&State{
+		m.setStateAndNotify(ctx, &State{
 			Status:  payload.Status,
 			Message: "Unexpected license status: " + payload.Status,
 		})
@@ -303,23 +318,26 @@ func (m *Manager) check(ctx context.Context) {
 // applyPayload sets the license state from a verified payload.
 func (m *Manager) applyPayload(ctx context.Context, payload *LicensePayload) {
 	m.setStateAndNotify(ctx, &State{
-		IsProEnabled: true,
-		Plan:         payload.Plan,
-		Features:     payload.Features,
-		Status:       payload.Status,
-		VerifiedAt:   payload.VerifiedAt,
-		ExpiresAt:    payload.ExpiresAt,
+		Edition:    ResolveEdition(payload, m.logger),
+		Plan:       payload.Plan,
+		Features:   payload.Features,
+		Status:     payload.Status,
+		VerifiedAt: payload.VerifiedAt,
+		ExpiresAt:  payload.ExpiresAt,
 	})
 }
 
 // handleNetworkError applies graceful degradation based on cache age.
-func (m *Manager) handleNetworkError(err error) {
+// It takes ctx because every write goes through setStateAndNotify: degradation
+// past the 60-day window drops the edition, and that transition must be
+// dispatched like any other.
+func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 	current := m.State()
 
 	// If we have no valid state, just log and remain in community mode
 	if current.VerifiedAt.IsZero() {
 		m.logger.Error("license server unreachable and no cached license", "error", err)
-		m.state.Store(&State{
+		m.setStateAndNotify(ctx, &State{
 			Status:  "unreachable",
 			Message: "Cannot reach license server. Please check your network connection.",
 		})
@@ -333,10 +351,10 @@ func (m *Manager) handleNetworkError(err error) {
 			"expires_at", current.ExpiresAt,
 		)
 		deleteCache(m.dataDir)
-		m.state.Store(&State{
+		m.setStateAndNotify(ctx, &State{
 			Status:    "expired",
 			ExpiresAt: current.ExpiresAt,
-			Message:   "Your license has expired. Pro features have been disabled.",
+			Message:   "Your license has expired. This instance has fallen back to the Community edition.",
 		})
 		return
 	}
@@ -350,10 +368,10 @@ func (m *Manager) handleNetworkError(err error) {
 			"verified_at", current.VerifiedAt,
 		)
 		deleteCache(m.dataDir)
-		m.state.Store(&State{
+		m.setStateAndNotify(ctx, &State{
 			Status:     "unreachable",
 			VerifiedAt: current.VerifiedAt,
-			Message:    "License server unreachable for over 60 days. Pro features have been disabled.",
+			Message:    "License server unreachable for over 60 days. This instance has fallen back to the Community edition.",
 		})
 
 	case age > graceDegradationError:
@@ -363,17 +381,19 @@ func (m *Manager) handleNetworkError(err error) {
 			"verified_at", current.VerifiedAt,
 			"days_until_disabled", daysLeft,
 		)
-		current.Message = "License server unreachable. Pro features will be disabled in " +
+		degraded := *current
+		degraded.Message = "License server unreachable. This instance falls back to the Community edition in " +
 			formatDays(daysLeft) + "."
-		m.state.Store(current)
+		m.setStateAndNotify(ctx, &degraded)
 
 	case age > graceDegradationWarn:
 		m.logger.Warn("license server unreachable for over 7 days",
 			"error", err,
 			"verified_at", current.VerifiedAt,
 		)
-		current.Message = "License server unreachable. Pro features remain active from cache."
-		m.state.Store(current)
+		degraded := *current
+		degraded.Message = "License server unreachable. Your edition remains active from cache."
+		m.setStateAndNotify(ctx, &degraded)
 
 	default:
 		m.logger.Info("license server unreachable, using cached license",

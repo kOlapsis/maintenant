@@ -18,8 +18,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 const (
@@ -54,13 +57,58 @@ type ServerError struct {
 func (e *ServerError) Error() string { return e.Message }
 
 // LicensePayload is the decoded and verified license payload.
+//
+// Edition is optional: licenses issued before the three-edition model carry no
+// such field, and ResolveEdition falls back for them. Features is accepted and
+// ignored — capabilities come from the edition, never from the server.
 type LicensePayload struct {
 	Status     string    `json:"status"`
+	Edition    string    `json:"edition"`
 	Plan       string    `json:"plan"`
 	Features   []string  `json:"features"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	VerifiedAt time.Time `json:"verified_at"`
 	Message    string    `json:"message"`
+}
+
+// ResolveEdition derives the edition a verified payload grants, in the order
+// fixed by contracts/license-payload.md:
+//
+//  1. edition present and recognised → that edition
+//  2. edition present but unknown    → community, and the discrepancy is logged
+//  3. edition absent, plan=personal  → personal
+//  4. edition absent, status usable  → pro
+//  5. nothing usable                 → community
+//
+// Rule 4 is the compatibility clause: the license server returns plan "pro" for
+// every client today, so without it every license in service would lose its
+// capabilities on the first restart after the update. Rule 2 cannot be confused
+// with it — rule 2 requires the field to be present.
+func ResolveEdition(p *LicensePayload, logger *slog.Logger) extension.Edition {
+	// Rule 5 first: nothing is granted by a license that is not in force. An
+	// expired or revoked payload grants Community whatever it declares.
+	if p == nil || (p.Status != "active" && p.Status != "grace") {
+		return extension.Community
+	}
+
+	// Rules 1 and 2.
+	if p.Edition != "" {
+		edition, ok := extension.ParseEdition(p.Edition)
+		if !ok && logger != nil {
+			logger.Warn("license declares an edition this build does not know, falling back to Community",
+				"declared_edition", p.Edition,
+			)
+		}
+		return edition
+	}
+
+	// Rule 3.
+	if p.Plan == string(extension.Personal) {
+		return extension.Personal
+	}
+
+	// Rule 4 — the compatibility clause.
+	return extension.Pro
 }
 
 // verify checks the Ed25519 signature on a SignedResponse, then decodes the
