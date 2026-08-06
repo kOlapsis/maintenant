@@ -716,3 +716,25 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
+
+// TestDefaultLicenseChecker_Unlimited: extension.Limit reports -1 for an
+// uncapped resource, and the checker must read that as "no cap" rather than as
+// a maximum of minus one, which would refuse every creation.
+func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxEndpoints: -1}
+	for _, count := range []int{0, 1, 10, 1000} {
+		if !c.CanCreateEndpoint(count) {
+			t.Errorf("CanCreateEndpoint(%d) = false with an unlimited cap", count)
+		}
+	}
+}
+
+func TestDefaultLicenseChecker_Capped(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxEndpoints: 10}
+	if !c.CanCreateEndpoint(9) {
+		t.Error("the tenth endpoint must be allowed")
+	}
+	if c.CanCreateEndpoint(10) {
+		t.Error("the eleventh endpoint must be refused")
+	}
+}

@@ -249,9 +249,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[input.Type] && extension.CurrentEdition() != extension.Pro {
-		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+	if refuseChannelCapability(w, input.Type) {
 		return
 	}
 
@@ -343,9 +341,7 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		ch.Enabled = *input.Enabled
 	}
 
-	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Pro {
-		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+	if refuseChannelCapability(w, ch.Type) {
 		return
 	}
 
@@ -412,9 +408,7 @@ func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Pro {
-		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+	if refuseChannelCapability(w, ch.Type) {
 		return
 	}
 
@@ -512,4 +506,37 @@ func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Re
 
 	h.broker.Broadcast(SSEEvent{Type: event.SilenceCancelled, Data: map[string]interface{}{"id": id}})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// channelCapability maps a channel type to the capability that opens it. Types
+// absent from the map are open in every edition. email is Personal, Slack and
+// Teams are Pro — the gating is per channel, not "paid edition or not".
+func channelCapability(channelType string) (extension.Capability, bool) {
+	switch channelType {
+	case "slack":
+		return extension.CapSlack, true
+	case "teams":
+		return extension.CapTeams, true
+	case "email":
+		return extension.CapSMTP, true
+	default:
+		return "", false
+	}
+}
+
+// refuseChannelCapability writes the refusal when the running edition does not
+// open this channel type, and reports whether it did.
+func refuseChannelCapability(w http.ResponseWriter, channelType string) bool {
+	c, gated := channelCapability(channelType)
+	if !gated || extension.Allows(c) {
+		return false
+	}
+	required := extension.MinEdition(c)
+	WriteErrorDetail(w, http.StatusForbidden, ErrorDetail{
+		Code:            "EDITION_REQUIRED",
+		Message:         "The " + channelType + " channel requires the " + titleEdition(required) + " edition.",
+		Feature:         string(c),
+		RequiredEdition: string(required),
+	})
+	return true
 }

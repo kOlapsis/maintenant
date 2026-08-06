@@ -253,7 +253,7 @@ func TestPersonalizationV1_ProGating_PutSettings(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
+	handler := requireCapability(extension.CapPersonalization, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/status-page/settings", nil)
@@ -440,7 +440,7 @@ func TestPersonalizationV1_FAQ_ProGating(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
+	handler := requireCapability(extension.CapPersonalization, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/status-page/faq", nil)

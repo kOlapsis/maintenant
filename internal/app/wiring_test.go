@@ -15,7 +15,9 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -153,22 +155,24 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 		callbacks = append(callbacks, cb)
 	}
 
-	// The callback is identical to what wireLicenseSubscriber wires.
-	register(func(cbCtx context.Context, prev, next bool) {
-		if prev && !next {
+	// The callback is identical to what wireLicenseSubscriber wires: it keys on
+	// access to alert_escalation, not on the editions themselves.
+	required := extension.MinEdition(extension.CapAlertEscalation)
+	register(func(cbCtx context.Context, prev, next extension.Edition) {
+		if prev.AtLeast(required) && !next.AtLeast(required) {
 			if err := svc.OnEditionDowngraded(cbCtx); err != nil {
 				t.Errorf("OnEditionDowngraded: %v", err)
 			}
 		}
 	})
 
-	// Fire: Pro (prev=true) → CE (next=false).
+	// Fire: Pro → Community.
 	cbMu.Lock()
 	cbs := make([]license.EditionChangeCallback, len(callbacks))
 	copy(cbs, callbacks)
 	cbMu.Unlock()
 	for _, cb := range cbs {
-		cb(ctx, true, false)
+		cb(ctx, extension.Pro, extension.Community)
 	}
 
 	// Policy must be deactivated.
@@ -240,4 +244,76 @@ func TestRetentionLoopStartsInProOnly(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, 0, pstore.called(), "purge must not be called in CE mode")
 	})
+}
+
+// TestEditionTransitions_AllSixDirectedPairs covers the machine wireLicenseSubscriber
+// implements. It keys on access to alert_escalation rather than on the editions
+// themselves, so of the six directed pairs only the two that cross the Pro
+// boundary do anything — and the upgrade direction is the one that was never
+// called before this feature, leaving a downgrade-then-upgrade round trip with
+// escalation off for good.
+func TestEditionTransitions_AllSixDirectedPairs(t *testing.T) {
+	required := extension.MinEdition(extension.CapAlertEscalation)
+
+	type action string
+	const (
+		none      action = "none"
+		downgrade action = "downgrade"
+		upgrade   action = "upgrade"
+	)
+
+	cases := []struct {
+		prev, next extension.Edition
+		want       action
+	}{
+		{extension.Community, extension.Personal, none},
+		{extension.Personal, extension.Community, none},
+		{extension.Community, extension.Pro, upgrade},
+		{extension.Personal, extension.Pro, upgrade},
+		{extension.Pro, extension.Personal, downgrade},
+		{extension.Pro, extension.Community, downgrade},
+	}
+	require.Len(t, cases, 6, "three editions have exactly six directed transitions")
+
+	for _, c := range cases {
+		t.Run(string(c.prev)+"->"+string(c.next), func(t *testing.T) {
+			// The same decision wireLicenseSubscriber makes.
+			was, now := c.prev.AtLeast(required), c.next.AtLeast(required)
+
+			var got action
+			switch {
+			case was && !now:
+				got = downgrade
+			case !was && now:
+				got = upgrade
+			default:
+				got = none
+			}
+
+			assert.Equal(t, string(c.want), string(got))
+		})
+	}
+}
+
+// TestWireLicenseSubscriber_RegisteredBeforeStart guards the ordering: a
+// callback registered after Start misses the first transition, which is exactly
+// the one that matters when a license is revoked at boot.
+func TestWireLicenseSubscriber_RegisteredBeforeStart(t *testing.T) {
+	src, err := os.ReadFile("wiring.go")
+	require.NoError(t, err)
+	wiring := string(src)
+
+	appSrc, err := os.ReadFile("app.go")
+	require.NoError(t, err)
+
+	require.Contains(t, wiring, "RegisterEditionChangeCallback",
+		"wireLicenseSubscriber must register the callback")
+
+	// In Start(), the subscriber is wired on the line before licenseMgr.Start.
+	start := strings.Index(string(appSrc), "a.wireLicenseSubscriber(ctx)")
+	require.Greater(t, start, 0, "wireLicenseSubscriber must be called from Start")
+	mgrStart := strings.Index(string(appSrc), "a.licenseMgr.Start(ctx)")
+	require.Greater(t, mgrStart, 0)
+	assert.Less(t, start, mgrStart,
+		"wireLicenseSubscriber must run before licenseMgr.Start, or the first transition is lost")
 }

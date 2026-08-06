@@ -39,7 +39,7 @@ func registerSwarmTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_swarm_nodes",
-		Description: "List Docker Swarm nodes with their role, status, availability and task count. Requires Maintenant Pro.",
+		Description: "List Docker Swarm nodes with their role, status, availability and task count.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listSwarmNodesHandler(svc))
 }
@@ -104,9 +104,6 @@ func listSwarmTasksHandler(svc *Services) gomcp.ToolHandlerFor[listSwarmTasksInp
 
 func listSwarmNodesHandler(svc *Services) gomcp.ToolHandlerFor[listSwarmNodesInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listSwarmNodesInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("swarm_nodes"); r != nil {
-			return r, v, err
-		}
 		if svc.SwarmNodes == nil {
 			return errResult("swarm node store not available")
 		}

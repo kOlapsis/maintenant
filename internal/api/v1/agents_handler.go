@@ -65,7 +65,7 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 	// Refuse up front when the host cap is already reached, so the operator sees
 	// it before running the install command. The gRPC RegisterAgent path stays
 	// the authoritative barrier. The local runtime is never counted.
-	if limit := extension.AgentHostLimit(); limit >= 0 {
+	if limit := extension.Limit(extension.ResourceAgentHosts); limit >= 0 {
 		active, _, err := h.store.CountByStatus(r.Context())
 		if err != nil {
 			h.logger.Error("count agents for host limit", "err", err)
@@ -73,7 +73,7 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 			return
 		}
 		if active >= limit {
-			WriteError(w, http.StatusConflict, "HOST_LIMIT_REACHED", "Agent host limit reached")
+			writeQuotaRefusal(w, http.StatusConflict, "HOST_LIMIT_REACHED", extension.ResourceAgentHosts)
 			return
 		}
 	}

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 )
 
@@ -101,8 +102,9 @@ func (h *HeartbeatHandler) HandleCreate(w http.ResponseWriter, r *http.Request) 
 	hb, err := h.svc.CreateHeartbeat(r.Context(), input, newUUID)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrLimitReached) {
-			WriteError(w, http.StatusConflict, "HEARTBEAT_LIMIT_REACHED",
-				"Community edition allows up to 5 heartbeat monitors. Upgrade to Pro for unlimited monitors.")
+			// Was 409 HEARTBEAT_LIMIT_REACHED; heartbeats now answer like the
+			// three other capped resources (FR-022).
+			refuseQuota(w, extension.ResourceHeartbeats)
 			return
 		}
 		if errors.Is(err, heartbeat.ErrInvalidInput) {

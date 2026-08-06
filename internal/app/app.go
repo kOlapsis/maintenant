@@ -213,12 +213,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
 		} else {
 			a.licenseMgr = lm
-			extension.CurrentEdition = func() extension.Edition {
-				if lm.IsProEnabled() {
-					return extension.Pro
-				}
-				return extension.Community
-			}
+			extension.CurrentEdition = lm.Edition
 		}
 	}
 
@@ -273,8 +268,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 				})
 				a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
 
-				// Pro: node health monitoring, crash-loop detection, update tracking
-				if extension.CurrentEdition() == extension.Pro {
+				// Node health, crash-loop detection and update tracking follow the
+				// swarm dashboard capability.
+				if extension.Allows(extension.CapSwarmDashboard) {
 					a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
 					a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
 					a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
@@ -309,17 +305,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		RawWindow:    cfg.Retention.Snapshots,
 	})
 	// --- License checkers for quota enforcement ---
-	var certLicenseChecker certificate.LicenseChecker
-	var endpointLicenseChecker endpoint.LicenseChecker
-	var heartbeatLicenseChecker heartbeat.LicenseChecker
-
-	if extension.CurrentEdition() == extension.Pro {
-		// Pro: unlimited quotas
-		certLicenseChecker = &certificate.DefaultLicenseChecker{MaxCertificates: 1<<31 - 1}
-		endpointLicenseChecker = &endpoint.DefaultLicenseChecker{MaxEndpoints: 1<<31 - 1}
-		heartbeatLicenseChecker = &heartbeat.DefaultLicenseChecker{MaxHeartbeats: 1<<31 - 1}
-	}
-	// Community: nil checkers use service defaults (10 endpoints, 5 heartbeats, 5 certificates)
+	// The checkers are always injected, built from the single declaration of the
+	// caps: -1 means unlimited, so there is no sentinel to invent and no edition
+	// branch here. Leaving them nil in one edition let the service defaults drift
+	// away from the values the interface reports.
+	certLicenseChecker := &certificate.DefaultLicenseChecker{MaxCertificates: extension.Limit(extension.ResourceCertificates)}
+	endpointLicenseChecker := &endpoint.DefaultLicenseChecker{MaxEndpoints: extension.Limit(extension.ResourceEndpoints)}
+	heartbeatLicenseChecker := &heartbeat.DefaultLicenseChecker{MaxHeartbeats: extension.Limit(extension.ResourceHeartbeats)}
 
 	a.certSvc = certificate.NewService(certificate.Deps{
 		Store:          certStore,
@@ -457,7 +449,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	var updateEnricher update.Enricher
-	if extension.CurrentEdition() == extension.Pro {
+	if extension.Allows(extension.CapCVEEnrichment) {
 		cveClient := update.NewCVEClient(updateStore, logger.With("component", "cve"))
 		changelogResolver := update.NewChangelogResolver(registryClient, logger.With("component", "changelog"))
 		riskEngine := update.NewRiskEngine()
@@ -493,7 +485,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// Maintenance suppressor: real implementation in Pro, noop in CE.
 	var suppressor alert.MaintenanceSuppressor = extension.NoopMaintenanceSuppressor{}
-	if extension.CurrentEdition() == extension.Pro {
+	if extension.Allows(extension.CapMaintenanceWindows) {
 		suppressor = maintenance.NewSuppressor(maintenanceStore, logger.With("component", "maintenance-suppressor"))
 	}
 	// Must be called before alertEngine.Start (invoked in App.Start).
@@ -511,7 +503,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// keeps its built-in noopEscalator, which means the 60s evaluation ticker
 	// (alert.Engine.Start) does not start either. SetEscalator must run before
 	// alertEngine.Start (called later in App.Start).
-	if extension.CurrentEdition() == extension.Pro {
+	if extension.Allows(extension.CapAlertEscalation) {
 		runner := escalation.NewRunner(escalation.RunnerDeps{
 			Store:        a.escalationStore,
 			AlertStore:   alertStore,
@@ -677,20 +669,23 @@ func (a *App) Start(ctx context.Context) error {
 		a.licenseMgr.Start(ctx)
 	}
 
-	// Mode gate: server mode requires Pro. Checked here because licenseMgr.Start
-	// runs the initial verification synchronously, so the edition is settled —
-	// NewManager has already loaded the disk cache and Start has refreshed it.
+	// Mode gate: server mode needs multi-host. Checked here because
+	// licenseMgr.Start runs the initial verification synchronously, so the
+	// edition is settled — NewManager has already loaded the disk cache and Start
+	// has refreshed it. Checking it in New() read the package default and
+	// rejected every edition, Pro included.
 	if a.cfg.Mode != "" && a.cfg.Mode != "embedded" {
-		if edition := extension.CurrentEdition(); edition != extension.Pro {
-			return fmt.Errorf("%s mode requires the Pro edition (current edition: %s)", a.cfg.Mode, edition)
+		if !extension.Allows(extension.CapMultihost) {
+			return fmt.Errorf("%s mode requires the %s edition (current edition: %s)",
+				a.cfg.Mode, extension.MinEdition(extension.CapMultihost), extension.CurrentEdition())
 		}
 	}
 
 	a.alertEngine.Start(ctx)
 
-	if extension.CurrentEdition() == extension.Pro {
+	if extension.Allows(extension.CapAlertEscalation) {
 		go a.escalationSvc.RunRetentionLoop(ctx)
-		a.logger.Info("escalation retention loop started (Pro)")
+		a.logger.Info("escalation retention loop started")
 	}
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
@@ -776,8 +771,8 @@ func (a *App) Start(ctx context.Context) error {
 	// and manages reconnection in background when degraded (Phase 5).
 	a.startRuntimeSupervisor(ctx)
 
-	// Agent gRPC server — Pro only, server/embedded modes only.
-	if extension.CurrentEdition() == extension.Pro && a.cfg.Mode != "agent" {
+	// Agent gRPC server — server/embedded modes only, where multi-host is open.
+	if extension.Allows(extension.CapMultihost) && a.cfg.Mode != "agent" {
 		if err := a.startAgentGRPC(ctx); err != nil {
 			return fmt.Errorf("start agent gRPC server: %w", err)
 		}
@@ -785,7 +780,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Embedded agent (mode=server + --embedded-agent + Pro).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
-	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && extension.CurrentEdition() == extension.Pro {
+	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && extension.Allows(extension.CapMultihost) {
 		a.startEmbeddedAgent(ctx)
 	}
 

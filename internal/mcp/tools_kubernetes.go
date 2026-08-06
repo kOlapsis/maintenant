@@ -42,7 +42,7 @@ func registerKubernetesTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_kubernetes_nodes",
-		Description: "List Kubernetes nodes with their roles, conditions, capacity and running pod counts. Requires Maintenant Pro.",
+		Description: "List Kubernetes nodes with their roles, conditions, capacity and running pod counts.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listKubernetesNodesHandler(svc))
 }
@@ -124,9 +124,6 @@ func listKubernetesPodsHandler(svc *Services) gomcp.ToolHandlerFor[listKubernete
 
 func listKubernetesNodesHandler(svc *Services) gomcp.ToolHandlerFor[listKubernetesNodesInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listKubernetesNodesInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("kubernetes_nodes"); r != nil {
-			return r, v, err
-		}
 		if svc.Kubernetes == nil {
 			return errResult("kubernetes store not available")
 		}

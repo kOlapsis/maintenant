@@ -13,6 +13,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -65,32 +67,58 @@ func (s *stubChannelStore) ListDeliveriesByAlert(_ context.Context, _ string) ([
 
 func TestHandleCreateChannel_TypeGating(t *testing.T) {
 	tests := []struct {
-		name       string
-		edition    extension.Edition
-		body       string
-		wantStatus int
-		wantCode   string
+		name         string
+		edition      extension.Edition
+		body         string
+		wantStatus   int
+		wantCode     string
+		wantFeature  string
+		wantRequired string
 	}{
 		{
-			name:       "community + slack blocked",
-			edition:    extension.Community,
-			body:       `{"type":"slack","name":"test","url":"https://example.com"}`,
-			wantStatus: http.StatusForbidden,
-			wantCode:   "PRO_REQUIRED",
+			name:         "community + slack blocked",
+			edition:      extension.Community,
+			body:         `{"type":"slack","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "slack",
+			wantRequired: "pro",
 		},
 		{
-			name:       "community + teams blocked",
-			edition:    extension.Community,
-			body:       `{"type":"teams","name":"test","url":"https://example.com"}`,
-			wantStatus: http.StatusForbidden,
-			wantCode:   "PRO_REQUIRED",
+			name:         "community + teams blocked",
+			edition:      extension.Community,
+			body:         `{"type":"teams","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "teams",
+			wantRequired: "pro",
 		},
 		{
-			name:       "community + email blocked",
-			edition:    extension.Community,
-			body:       `{"type":"email","name":"test","url":"https://example.com"}`,
-			wantStatus: http.StatusForbidden,
-			wantCode:   "PRO_REQUIRED",
+			// Email is Personal, not Pro. The refusal must say so rather than
+			// pushing every blocked channel towards the top tier.
+			name:         "community + email blocked, names Personal",
+			edition:      extension.Community,
+			body:         `{"type":"email","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "smtp",
+			wantRequired: "personal",
+		},
+		{
+			// And a Personal instance gets the email channel it paid for.
+			name:       "personal + email passes type check",
+			edition:    extension.Personal,
+			body:       `{"type":"email","name":"test","url":"not-an-address"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:         "personal + slack still blocked",
+			edition:      extension.Personal,
+			body:         `{"type":"slack","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "slack",
+			wantRequired: "pro",
 		},
 		{
 			name:    "community + webhook passes type check",
@@ -124,7 +152,11 @@ func TestHandleCreateChannel_TypeGating(t *testing.T) {
 
 			assert.Equal(t, tc.wantStatus, rec.Code)
 			if tc.wantCode != "" {
-				assert.Contains(t, rec.Body.String(), tc.wantCode)
+				var body ErrorResponse
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+				assert.Equal(t, tc.wantCode, body.Error.Code)
+				assert.Equal(t, tc.wantFeature, body.Error.Feature)
+				assert.Equal(t, tc.wantRequired, body.Error.RequiredEdition)
 			}
 		})
 	}
@@ -185,7 +217,7 @@ func TestHandleTestChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	h.HandleTestChannel(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+	assert.Contains(t, rec.Body.String(), "EDITION_REQUIRED")
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +241,7 @@ func TestHandleUpdateChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	h.HandleUpdateChannel(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+	assert.Contains(t, rec.Body.String(), "EDITION_REQUIRED")
 }
 
 func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
@@ -230,5 +262,5 @@ func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
 	h.HandleUpdateChannel(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+	assert.Contains(t, rec.Body.String(), "EDITION_REQUIRED")
 }

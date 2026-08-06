@@ -22,6 +22,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
@@ -103,7 +104,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_agents",
-		Description: "List all registered remote agents with their connection state, runtime type, hostname, and label. Only available in Pro edition.",
+		Description: "List all registered remote agents with their connection state, runtime type, hostname, and label." + requires(extension.CapMultihost),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAgentsHandler(svc))
 }

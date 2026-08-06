@@ -36,42 +36,42 @@ import (
 func registerEscalationTools(server *gomcp.Server, svc *Services) {
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_escalation_policies",
-		Description: "List all escalation policies with their filters and levels. Requires Pro edition.",
+		Description: "List all escalation policies with their filters and levels." + requires(extension.CapAlertEscalation),
 	}, listEscalationPoliciesHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "get_escalation_policy",
-		Description: "Get a single escalation policy by ID. Requires Pro edition.",
+		Description: "Get a single escalation policy by ID." + requires(extension.CapAlertEscalation),
 	}, getEscalationPolicyHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "create_escalation_policy",
-		Description: "Create a new escalation policy. Requires Pro edition.",
+		Description: "Create a new escalation policy." + requires(extension.CapAlertEscalation),
 	}, createEscalationPolicyHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "delete_escalation_policy",
-		Description: "Delete an escalation policy and stop any active runs. Requires Pro edition.",
+		Description: "Delete an escalation policy and stop any active runs." + requires(extension.CapAlertEscalation),
 	}, deleteEscalationPolicyHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_alert_escalation_runs",
-		Description: "List escalation runs attached to a specific alert. Requires Pro edition.",
+		Description: "List escalation runs attached to a specific alert." + requires(extension.CapAlertEscalation),
 	}, listAlertEscalationRunsHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "get_escalation_run",
-		Description: "Get full detail of an escalation run including all deliveries. Requires Pro edition.",
+		Description: "Get full detail of an escalation run including all deliveries." + requires(extension.CapAlertEscalation),
 	}, getEscalationRunHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "update_escalation_policy",
-		Description: "Update an existing escalation policy (name, filters, levels, active). Requires Pro edition.",
+		Description: "Update an existing escalation policy (name, filters, levels, active)." + requires(extension.CapAlertEscalation),
 	}, updateEscalationPolicyHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "set_escalation_policy_active",
-		Description: "Activate or deactivate an escalation policy. Requires Pro edition.",
+		Description: "Activate or deactivate an escalation policy." + requires(extension.CapAlertEscalation),
 	}, setEscalationPolicyActiveHandler(svc))
 }
 
@@ -133,24 +133,11 @@ type setEscalationPolicyActiveInput struct {
 	Active bool   `json:"active" jsonschema:"New active status"`
 }
 
-// --- edition check helper ---
-
-func checkEscalationEdition() (*gomcp.CallToolResult, any, error) {
-	if extension.CurrentEdition() != extension.Pro {
-		msg := `{"error":"edition_required","feature":"alert_escalation","message":"This tool requires Maintenant Pro. Upgrade at https://maintenant.dev/pro"}`
-		return &gomcp.CallToolResult{
-			Content: []gomcp.Content{&gomcp.TextContent{Text: msg}},
-			IsError: true,
-		}, nil, nil
-	}
-	return nil, nil, nil
-}
-
 // --- handlers ---
 
 func listEscalationPoliciesHandler(svc *Services) gomcp.ToolHandlerFor[listEscalationPoliciesInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listEscalationPoliciesInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {
@@ -173,7 +160,7 @@ func listEscalationPoliciesHandler(svc *Services) gomcp.ToolHandlerFor[listEscal
 
 func getEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[getEscalationPolicyInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input getEscalationPolicyInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {
@@ -189,7 +176,7 @@ func getEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[getEscalatio
 
 func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEscalationPolicyInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input createEscalationPolicyInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {
@@ -239,7 +226,7 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 
 func deleteEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[deleteEscalationPolicyInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input deleteEscalationPolicyInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {
@@ -257,7 +244,7 @@ func deleteEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[deleteEsc
 
 func listAlertEscalationRunsHandler(svc *Services) gomcp.ToolHandlerFor[listAlertEscalationRunsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listAlertEscalationRunsInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {
@@ -273,7 +260,7 @@ func listAlertEscalationRunsHandler(svc *Services) gomcp.ToolHandlerFor[listAler
 
 func getEscalationRunHandler(svc *Services) gomcp.ToolHandlerFor[getEscalationRunInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input getEscalationRunInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {
@@ -289,7 +276,7 @@ func getEscalationRunHandler(svc *Services) gomcp.ToolHandlerFor[getEscalationRu
 
 func updateEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[updateEscalationPolicyInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input updateEscalationPolicyInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {
@@ -323,7 +310,7 @@ func updateEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[updateEsc
 
 func setEscalationPolicyActiveHandler(svc *Services) gomcp.ToolHandlerFor[setEscalationPolicyActiveInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input setEscalationPolicyActiveInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkEscalationEdition(); r != nil {
+		if r, v, err := checkCapability(extension.CapAlertEscalation); r != nil {
 			return r, v, err
 		}
 		if svc.EscalationSvc == nil {

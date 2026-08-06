@@ -19,6 +19,7 @@ import (
 	"strconv"
 
 	"github.com/kolapsis/maintenant/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // CertificateHandler handles certificate monitor CRUD endpoints.
@@ -159,8 +160,7 @@ func (h *CertificateHandler) HandleCreate(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if errors.Is(err, certificate.ErrLimitReached) {
-			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
-				"Community edition is limited to 5 certificate monitors. Upgrade to Pro for unlimited monitoring.")
+			refuseQuota(w, extension.ResourceCertificates)
 			return
 		}
 		if errors.Is(err, certificate.ErrInvalidInput) {

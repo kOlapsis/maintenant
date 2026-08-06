@@ -257,10 +257,11 @@ func (h *AlertTriggerHandler) checkAdvancedFiltersGating(t *triggerInput) error 
 	if t.FilterScopes == "" && t.FilterTags == "" {
 		return nil
 	}
-	if extension.CurrentEdition() == extension.Pro {
+	if extension.Allows(extension.CapAlertAdvancedFilters) {
 		return nil
 	}
-	return errors.New("advanced filters (scopes, tags) require the Pro edition")
+	return errors.New("advanced filters (scopes, tags) require the " +
+		titleEdition(extension.MinEdition(extension.CapAlertAdvancedFilters)) + " edition")
 }
 
 // checkChannelsExist verifies that each channel_id points at an existing row.

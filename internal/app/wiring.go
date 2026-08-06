@@ -415,7 +415,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 // {update,update_available,container,""} and collides, mixing one container's
 // message with another's entity. Falls back to the external id if the UID is
 // unavailable. Severity follows the risk score. The caller sets Timestamp.
-func updateDetectedAlert(m map[string]any, pro bool) alert.Event {
+func updateDetectedAlert(m map[string]any, withChangelog bool) alert.Event {
 	severity := alert.SeverityInfo
 	if rs, ok := m["risk_score"].(int); ok {
 		if rs >= 81 {
@@ -431,7 +431,8 @@ func updateDetectedAlert(m map[string]any, pro bool) alert.Event {
 		"latest_tag":  m["latest_tag"],
 		"update_type": m["update_type"],
 	}
-	if pro {
+	// The changelog capability decides whether the richer fields ride along.
+	if withChangelog {
 		for _, k := range []string{"update_command", "rollback_command", "changelog_url", "has_breaking_changes"} {
 			if v, ok := m[k]; ok {
 				details[k] = v
@@ -506,7 +507,7 @@ func (a *App) wireUpdateCallback() {
 			}
 			sendAlert(updateResolvedAlert(m))
 		case event.UpdateDetected:
-			sendAlert(updateDetectedAlert(m, extension.CurrentEdition() == extension.Pro))
+			sendAlert(updateDetectedAlert(m, extension.Allows(extension.CapChangelog)))
 		}
 	})
 }
@@ -699,20 +700,34 @@ func toString(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// wireLicenseSubscriber registers a callback on the LicenseManager that propagates
-// Pro→CE edition transitions to the escalation service. Must be called before
-// licenseMgr.Start so the initial state transition is never missed.
+// wireLicenseSubscriber propagates edition transitions to the escalation
+// service. Must be called before licenseMgr.Start so the initial transition is
+// never missed.
+//
+// It compares access to alert_escalation before and after rather than the
+// editions themselves: of the six directed transitions between three editions,
+// four leave escalation untouched (community↔personal, and either of them to
+// itself) and only crossing the Pro boundary flips it. Reasoning in capability
+// terms means the matrix never has to be enumerated here.
 func (a *App) wireLicenseSubscriber(_ context.Context) {
 	if a.licenseMgr == nil {
 		return
 	}
-	a.licenseMgr.RegisterEditionChangeCallback(func(ctx context.Context, prev, next bool) {
-		if prev && !next {
+	required := extension.MinEdition(extension.CapAlertEscalation)
+
+	a.licenseMgr.RegisterEditionChangeCallback(func(ctx context.Context, prev, next extension.Edition) {
+		was, now := prev.AtLeast(required), next.AtLeast(required)
+		switch {
+		case was && !now:
 			if err := a.escalationSvc.OnEditionDowngraded(ctx); err != nil {
-				a.logger.ErrorContext(ctx, "escalation: OnEditionDowngraded failed", "error", err)
+				a.logger.ErrorContext(ctx, "escalation: OnEditionDowngraded failed",
+					"error", err, "from", prev, "to", next)
 			}
-		} else if !prev && next {
-			a.logger.InfoContext(ctx, "license: edition upgraded to Pro (no auto-action on policies)")
+		case !was && now:
+			if err := a.escalationSvc.OnEditionUpgraded(ctx); err != nil {
+				a.logger.ErrorContext(ctx, "escalation: OnEditionUpgraded failed",
+					"error", err, "from", prev, "to", next)
+			}
 		}
 	})
 }

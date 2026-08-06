@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/update"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,19 +31,19 @@ func registerSecurityTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_cve",
-		Description: "List active CVE vulnerabilities detected in container images, optionally filtered by container or minimum severity. Requires Maintenant Pro.",
+		Description: "List active CVE vulnerabilities detected in container images, optionally filtered by container or minimum severity." + requires(extension.CapCVEEnrichment),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listCVEHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_risk_scores",
-		Description: "List image update risk scores per container (0-100) with their risk level. Requires Maintenant Pro.",
+		Description: "List image update risk scores per container (0-100) with their risk level." + requires(extension.CapRiskScoring),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listRiskScoresHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "get_security_posture",
-		Description: "Get the infrastructure security posture score, or the posture of a single container. Requires Maintenant Pro.",
+		Description: "Get the infrastructure security posture score, or the posture of a single container." + requires(extension.CapSecurityPosture),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getSecurityPostureHandler(svc))
 }
@@ -95,7 +96,7 @@ func getSecurityInsightsHandler(svc *Services) gomcp.ToolHandlerFor[getSecurityI
 
 func listCVEHandler(svc *Services) gomcp.ToolHandlerFor[listCVEInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listCVEInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("cve_intelligence"); r != nil {
+		if r, v, err := checkCapability(extension.CapCVEEnrichment); r != nil {
 			return r, v, err
 		}
 		if svc.UpdateStore == nil {
@@ -118,7 +119,7 @@ func listCVEHandler(svc *Services) gomcp.ToolHandlerFor[listCVEInput, any] {
 
 func listRiskScoresHandler(svc *Services) gomcp.ToolHandlerFor[listRiskScoresInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listRiskScoresInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("risk_scoring"); r != nil {
+		if r, v, err := checkCapability(extension.CapRiskScoring); r != nil {
 			return r, v, err
 		}
 		if svc.Updates == nil {
@@ -167,7 +168,7 @@ func listRiskScoresHandler(svc *Services) gomcp.ToolHandlerFor[listRiskScoresInp
 
 func getSecurityPostureHandler(svc *Services) gomcp.ToolHandlerFor[getSecurityPostureInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input getSecurityPostureInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("security_posture"); r != nil {
+		if r, v, err := checkCapability(extension.CapSecurityPosture); r != nil {
 			return r, v, err
 		}
 		if svc.Scorer == nil || svc.Containers == nil {

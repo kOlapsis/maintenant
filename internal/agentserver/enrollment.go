@@ -78,10 +78,16 @@ func (impl *ingestImpl) RegisterAgent(ctx context.Context, req *agentpb.Register
 		Status:          "active",
 		CreatedAt:       now,
 	}
-	if err := impl.deps.AgentStore.EnrollAtomic(ctx, extension.AgentHostLimit(), req.GetEnrollmentToken(), a); err != nil {
+	// EnrollAtomic stays the authoritative barrier: it counts, consumes the token
+	// and inserts in a single write transaction, which is what makes concurrent
+	// enrollment unable to exceed the cap.
+	hostLimit := extension.Limit(extension.ResourceAgentHosts)
+	if err := impl.deps.AgentStore.EnrollAtomic(ctx, hostLimit, req.GetEnrollmentToken(), a); err != nil {
 		switch {
 		case errors.Is(err, agent.ErrHostLimitReached):
-			logger.Warn("agent.enroll_rejected", "reason", "host_limit", "limit", extension.AgentHostLimit())
+			// Capacity, not authentication — the code stays distinct from the
+			// token failures below (FR-027).
+			logger.Warn("agent.enroll_rejected", "reason", "host_limit", "limit", hostLimit)
 			return nil, grpcstatus.Error(codes.ResourceExhausted, "agent host limit reached")
 		case errors.Is(err, agent.ErrTokenNotFound):
 			return nil, grpcstatus.Error(codes.NotFound, "enrollment token not found")

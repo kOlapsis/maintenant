@@ -32,6 +32,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 type noopBroadcasterUnit struct{}
@@ -95,18 +96,20 @@ func registerReq(agentID, token, hostname string) *agentpb.RegisterRequest {
 	}
 }
 
-// At the Pro cap, a further enrollment is rejected with ResourceExhausted and
-// the one-time token is left unconsumed (the check runs before ConsumeAtomic).
+// At the Personal cap, a further enrollment is rejected with ResourceExhausted
+// and the one-time token is left unconsumed (the check runs before the token is
+// consumed). Personal is the edition that carries a cap now: Community enrolls
+// nothing, Pro is unlimited.
 func TestRegisterAgent_HostLimit_RejectedAtCap(t *testing.T) {
 	orig := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	extension.CurrentEdition = func() extension.Edition { return extension.Personal }
 	t.Cleanup(func() { extension.CurrentEdition = orig })
 
 	impl, store := newHostLimitTestImpl(t)
 	ctx := context.Background()
 
-	limit := extension.AgentHostLimit()
-	require.Greater(t, limit, 0)
+	limit := extension.Limit(extension.ResourceAgentHosts)
+	require.Equal(t, 20, limit)
 	insertActiveAgents(t, store, limit) // fill exactly to the cap
 
 	tok := insertToken(t, store, "tok-overcap", "mnt_enr_overcaptoken0001")
@@ -125,7 +128,7 @@ func TestRegisterAgent_HostLimit_RejectedAtCap(t *testing.T) {
 // Under the cap, enrollment succeeds and the agent is persisted as active.
 func TestRegisterAgent_HostLimit_UnderCapSucceeds(t *testing.T) {
 	orig := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	extension.CurrentEdition = func() extension.Edition { return extension.Personal }
 	t.Cleanup(func() { extension.CurrentEdition = orig })
 
 	impl, store := newHostLimitTestImpl(t)
@@ -141,20 +144,21 @@ func TestRegisterAgent_HostLimit_UnderCapSucceeds(t *testing.T) {
 	assert.Equal(t, "active", got.Status)
 }
 
-// Concurrent enrollments racing on an empty Pro tier (cap 10) with distinct
-// tokens must never exceed the cap: exactly 10 succeed, the rest are rejected
-// with ResourceExhausted, and the persisted active count lands exactly on 10.
-// This is the end-to-end regression test for the enroll-cap race.
+// Concurrent enrollments racing on an empty Personal tier (cap 20) with
+// distinct tokens must never exceed the cap: exactly 20 succeed, the rest are
+// rejected with ResourceExhausted, and the persisted active count lands exactly
+// on 20. This is the end-to-end regression test for the enroll-cap race, and it
+// is what makes FR-026 hold.
 func TestRegisterAgent_HostLimit_ConcurrentEnrollments(t *testing.T) {
 	orig := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	extension.CurrentEdition = func() extension.Edition { return extension.Personal }
 	t.Cleanup(func() { extension.CurrentEdition = orig })
 
 	impl, store := newHostLimitTestImpl(t)
 	ctx := context.Background()
 
-	limit := extension.AgentHostLimit()
-	require.Equal(t, 10, limit)
+	limit := extension.Limit(extension.ResourceAgentHosts)
+	require.Equal(t, 20, limit)
 	const goroutines = 40
 	for i := range goroutines {
 		insertToken(t, store, fmt.Sprintf("tok-%d", i), fmt.Sprintf("mnt_enr_concurrent%07d", i))
@@ -249,4 +253,91 @@ func TestRegisterAgent_HostLimit_CommunityBlocked(t *testing.T) {
 	st, ok := grpcstatus.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, codes.ResourceExhausted, st.Code())
+}
+
+// Community runs standalone: multi-host is a Personal capability, so the cap is
+// zero and the very first enrollment is refused. The refusal is capacity
+// (ResourceExhausted), never an authentication failure, and the one-time token
+// survives so it can be used once the edition allows it.
+func TestRegisterAgent_HostLimit_CommunityRefusesEveryEnrollment(t *testing.T) {
+	orig := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Community }
+	t.Cleanup(func() { extension.CurrentEdition = orig })
+
+	require.Equal(t, 0, extension.Limit(extension.ResourceAgentHosts))
+
+	impl, store := newHostLimitTestImpl(t)
+	ctx := context.Background()
+
+	tok := insertToken(t, store, "tok-ce", "mnt_enr_communitytoken01")
+	_, err := impl.RegisterAgent(ctx, registerReq(
+		"33333333-3333-3333-3333-333333333333", tok, "community-host"))
+	require.Error(t, err)
+
+	st, ok := grpcstatus.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.ResourceExhausted, st.Code(),
+		"a capacity refusal must stay distinct from the token failures")
+
+	gotTok, err := store.GetByToken(ctx, tok)
+	require.NoError(t, err)
+	assert.Nil(t, gotTok.ConsumedAt, "a refused enrollment must not consume the token")
+}
+
+// Pro has no cap: enrolling past what any lower edition allows must succeed.
+func TestRegisterAgent_HostLimit_ProIsUnlimited(t *testing.T) {
+	orig := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	t.Cleanup(func() { extension.CurrentEdition = orig })
+
+	require.Equal(t, extension.Unlimited, extension.Limit(extension.ResourceAgentHosts))
+
+	impl, store := newHostLimitTestImpl(t)
+	ctx := context.Background()
+
+	// Well past the Personal cap of 20.
+	insertActiveAgents(t, store, 25)
+
+	tok := insertToken(t, store, "tok-pro", "mnt_enr_prounlimited0001")
+	const id = "44444444-4444-4444-4444-444444444444"
+	_, err := impl.RegisterAgent(ctx, registerReq(id, tok, "agent-26"))
+	require.NoError(t, err, "Pro must not cap enrollment")
+
+	got, err := store.Get(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, "active", got.Status)
+}
+
+// The machine running the application is an agent too, but it is never counted
+// against the cap — only remotely enrolled hosts consume capacity (FR-025).
+func TestRegisterAgent_HostLimit_LocalAgentIsNotCounted(t *testing.T) {
+	orig := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Personal }
+	t.Cleanup(func() { extension.CurrentEdition = orig })
+
+	impl, store := newHostLimitTestImpl(t)
+	ctx := context.Background()
+
+	// The sentinel is seeded active by the schema, so it is always present.
+	local, err := store.Get(ctx, uid.LocalAgent)
+	require.NoError(t, err)
+	require.NotNil(t, local, "the local sentinel agent must exist")
+	require.Equal(t, "active", local.Status)
+
+	limit := extension.Limit(extension.ResourceAgentHosts)
+	insertActiveAgents(t, store, limit-1) // one slot left among remote hosts
+
+	// With the local sentinel active on top of limit-1 remote hosts, a counting
+	// bug that included it would see the cap as full and refuse here.
+	tok := insertToken(t, store, "tok-local", "mnt_enr_localnotcounted1")
+	const id = "55555555-5555-5555-5555-555555555555"
+	_, err = impl.RegisterAgent(ctx, registerReq(id, tok, "last-slot"))
+	require.NoError(t, err, "the local runtime must not consume a remote slot")
+
+	// And the slot it filled was genuinely the last one.
+	tok2 := insertToken(t, store, "tok-local-2", "mnt_enr_localnotcounted2")
+	_, err = impl.RegisterAgent(ctx, registerReq(
+		"66666666-6666-6666-6666-666666666666", tok2, "over-cap"))
+	require.Error(t, err)
+	assert.Equal(t, codes.ResourceExhausted, grpcstatus.Code(err))
 }
