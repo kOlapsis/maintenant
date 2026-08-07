@@ -72,13 +72,16 @@ func insertActiveAgents(t *testing.T, store *sqlite.AgentStore, n int) {
 	}
 }
 
+// insertToken stores tok the way the creation handler does — hash and display
+// prefix only — and returns the cleartext for the caller to enroll with.
 func insertToken(t *testing.T, store *sqlite.AgentStore, id, tok string) string {
 	t.Helper()
 	require.NoError(t, store.InsertToken(context.Background(), &agent.EnrollmentToken{
-		TokenID:   id,
-		Token:     tok,
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
+		TokenID:     id,
+		TokenHash:   agent.HashToken(tok),
+		TokenPrefix: agent.TokenPrefix(tok),
+		CreatedAt:   time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
 	}))
 	return tok
 }

@@ -12,10 +12,14 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -94,6 +98,102 @@ func WithRequestTimeout(h http.Handler, timeout time.Duration) http.Handler {
 	})
 }
 
+// inlineScriptRe matches a <script> element and captures its attributes and its
+// body. One carrying a src attribute is fetched from the origin and is already
+// covered by 'self'; only an inline body needs a hash.
+var inlineScriptRe = regexp.MustCompile(`(?is)<script([^>]*)>(.*?)</script>`)
+
+// inlineScriptHashes returns the CSP source expression for every inline script
+// in html. The digest covers the element's text content byte for byte, which is
+// what a browser hashes when matching the policy.
+func inlineScriptHashes(html []byte) []string {
+	var hashes []string
+	for _, m := range inlineScriptRe.FindAllSubmatch(html, -1) {
+		if bytes.Contains(bytes.ToLower(m[1]), []byte("src=")) {
+			continue
+		}
+		if len(bytes.TrimSpace(m[2])) == 0 {
+			continue
+		}
+		sum := sha256.Sum256(m[2])
+		hashes = append(hashes, "sha256-"+base64.StdEncoding.EncodeToString(sum[:]))
+	}
+	return hashes
+}
+
+// contentSecurityPolicy builds the policy served with every response, minus the
+// frame-ancestors directive that SecurityHeaders appends per route.
+//
+// It is computed at startup from the embedded index.html because script-src has
+// to carry the sha256 of its inline bootstrap script (it applies the theme and
+// density before the bundle loads, so the page does not flash). Hashing what is
+// actually embedded keeps the policy correct across frontend rebuilds, where a
+// hardcoded digest would rot silently and blank the app.
+//
+// style-src keeps 'unsafe-inline' because Vue and uPlot both set element styles
+// at runtime. img-src allows data: for the status page logo and hero, which are
+// stored and served as data URLs.
+func contentSecurityPolicy(indexHTML []byte) string {
+	scriptSrc := "'self'"
+	for _, h := range inlineScriptHashes(indexHTML) {
+		scriptSrc += " '" + h + "'"
+	}
+	return strings.Join([]string{
+		"default-src 'self'",
+		"script-src " + scriptSrc,
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob:",
+		"font-src 'self' data:",
+		"connect-src 'self'",
+		"worker-src 'self'",
+		"manifest-src 'self'",
+		"object-src 'none'",
+		"base-uri 'self'",
+		"form-action 'self'",
+	}, "; ")
+}
+
+// isPublicStatusPath reports whether path belongs to the public status page.
+// The admin side of the status feature lives under /api/v1/status/ and is
+// deliberately not matched here.
+func isPublicStatusPath(path string) bool {
+	return path == "/status" || strings.HasPrefix(path, "/status/")
+}
+
+// SecurityHeaders bounds what a browser will do with a response from this
+// origin. Applied outside the timeout handler so the headers are on the wire
+// even when it writes its own 503, and with Set so a route with a stricter
+// policy of its own — the status page asset route — still wins by overwriting.
+//
+// Framing is refused everywhere except the public status page, which docs and
+// SECURITY.md both describe as embeddable. The dashboard and the admin API are
+// the surfaces a clickjacker would want, and they are the ones locked down.
+//
+// No HSTS here: TLS terminates at the reverse proxy, and deriving "this was
+// HTTPS" from a forwarded header would trust something a client can forge.
+// It belongs in the proxy config, where SECURITY.md puts it.
+func SecurityHeaders(csp string) func(http.Handler) http.Handler {
+	noFraming := csp + "; frame-ancestors 'none'"
+	embeddable := csp + "; frame-ancestors *"
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+			if isPublicStatusPath(r.URL.Path) {
+				h.Set("Content-Security-Policy", embeddable)
+			} else {
+				h.Set("X-Frame-Options", "DENY")
+				h.Set("Content-Security-Policy", noFraming)
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // buildHTTPServer assembles the top-level HTTP mux and creates the server.
 func (a *App) buildHTTPServer() *http.Server {
 	topMux := http.NewServeMux()
@@ -135,29 +235,38 @@ func (a *App) buildHTTPServer() *http.Server {
 			go mcpoauth.StartCleanup(context.Background(), mcpOAuthStore, a.logger.With("component", "mcp-oauth-cleanup"))
 
 			a.logger.Info("MCP server enabled with OAuth2 auth", "client_id", a.cfg.MCP.ClientID)
-		} else {
-			a.logger.Info("MCP server enabled without auth")
+		} else if a.cfg.MCP.AllowUnauthenticated {
+			// The only way this route ever serves traffic: ValidateHTTP refuses
+			// to listen without the opt-out. Warn, because it is a real exposure.
+			a.logger.Warn("MCP server enabled WITHOUT auth — /mcp answers anyone who reaches it",
+				"opt_out", "MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")
 		}
 		mcpHandler = a.rl.Middleware(mcpHandler)
 		topMux.Handle("/mcp", mcpHandler)
 		topMux.Handle("/mcp/", mcpHandler)
 	}
 
-	// Pass the SPA index.html to the status handler so it can serve it for /status/.
+	// Pass the SPA index.html to the status handler so it can serve it for
+	// /status/. The same bytes seed the CSP — its inline script needs a hash.
+	var indexHTML []byte
 	if distFS, err := fs.Sub(web.FS, "dist"); err == nil {
 		if data, err := fs.ReadFile(distFS, "index.html"); err == nil {
+			indexHTML = data
 			a.statusHandler.SetIndexHTML(data)
 		}
 	}
 
 	a.statusHandler.Register(topMux, a.rl.Middleware)
-	topMux.Handle("/api/", a.router.Handler())
+	topMux.Handle("/api/", a.apiRL.Middleware(a.router.Handler()))
 	topMux.Handle("/ping/", a.rl.Middleware(a.router.Handler()))
 	topMux.Handle("/", SPAHandler(a.router.Handler(), a.logger))
 
+	handler := SecurityHeaders(contentSecurityPolicy(indexHTML))(
+		WithRequestTimeout(topMux, 10*time.Second))
+
 	return &http.Server{
 		Addr:         a.cfg.Addr,
-		Handler:      WithRequestTimeout(topMux, 10*time.Second),
+		Handler:      handler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 0,
 		IdleTimeout:  120 * time.Second,

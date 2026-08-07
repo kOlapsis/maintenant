@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -109,6 +108,7 @@ type App struct {
 	maintScheduler *status.MaintenanceScheduler
 	scorer         *security.Scorer
 	rl             *ratelimit.Limiter
+	apiRL          *ratelimit.Limiter
 	licenseMgr     *license.Manager
 	mcpServer      *gomcp.Server
 
@@ -603,8 +603,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 	})
 
-	// --- Rate limiter ---
+	// --- Rate limiters ---
+	// Public surfaces (/ping/, /status/, /mcp) take the tight bucket.
 	a.rl = ratelimit.New(10, 20)
+	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
+	// parallel calls, so the tight bucket would 429 ordinary use. This is a
+	// flood ceiling, not a quota — it must never be reachable by the UI.
+	a.apiRL = ratelimit.New(50, 200)
 
 	// --- MCP Server ---
 	mcpSvc := &mcp.Services{
@@ -670,6 +675,12 @@ func (a *App) RunMCPStdio(ctx context.Context) error {
 // Start begins all background services and the HTTP server.
 // It blocks until ctx is canceled, then performs a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
+	// Checked here rather than in New(): this is the only path that listens, so
+	// --mcp-stdio keeps working without OAuth credentials it has no use for.
+	if err := a.cfg.ValidateHTTP(); err != nil {
+		return err
+	}
+
 	a.db.StartWriter(ctx)
 
 	if a.licenseMgr != nil {
@@ -719,6 +730,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Background services (always run, regardless of runtime availability)
 	go a.rl.Start(ctx)
+	go a.apiRL.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
 	go a.maintScheduler.Start(ctx)
@@ -855,17 +867,24 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 
 	var enrollToken string
 	if !id.Registered {
+		cleartext, hash, tokenID, prefix, err := agent.NewToken()
+		if err != nil {
+			a.logger.Error("embedded agent: failed to generate enrollment token", "err", err)
+			return
+		}
 		t := &agent.EnrollmentToken{
-			TokenID:   uuid.New().String(),
-			Token:     uuid.New().String(),
-			CreatedAt: time.Now(),
-			ExpiresAt: time.Now().Add(5 * time.Minute),
+			TokenID:     tokenID,
+			TokenHash:   hash,
+			TokenPrefix: prefix,
+			CreatedAt:   time.Now(),
+			ExpiresAt:   time.Now().Add(5 * time.Minute),
 		}
 		if err := a.agentStore.InsertToken(ctx, t); err != nil {
 			a.logger.Error("embedded agent: failed to create enrollment token", "err", err)
 			return
 		}
-		enrollToken = t.Token
+		// Held in memory just long enough to hand to the agent goroutine below.
+		enrollToken = cleartext
 	}
 
 	grpcURL := "grpcs://" + a.cfg.MultiHost.GRPCListen

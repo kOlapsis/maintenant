@@ -32,10 +32,14 @@ type Agent struct {
 	RevokedBy       *string
 }
 
-// EnrollmentToken represents a one-time token for enrolling an agent.
+// EnrollmentToken represents a one-time token for enrolling an agent. The
+// cleartext is deliberately absent: only its SHA-256 is persisted, so a copy of
+// the database file yields nothing replayable. TokenPrefix is the leading,
+// non-secret slice kept so a read path can still name the token it matched.
 type EnrollmentToken struct {
 	TokenID           string
-	Token             string // cleartext (only stored, never returned via API after creation)
+	TokenHash         string
+	TokenPrefix       string
 	CreatedAt         time.Time
 	ExpiresAt         time.Time
 	ConsumedAt        *time.Time

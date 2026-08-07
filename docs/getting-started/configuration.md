@@ -24,6 +24,7 @@ maintenant is configured entirely through environment variables. No configuratio
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client ID for MCP authentication. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret for MCP authentication. |
 | `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated allowlist of OAuth2 `redirect_uri` values accepted by `/oauth/authorize`. Required when MCP credentials are set. |
+| `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false` | Serve `/mcp` with no authentication. Without it, enabling MCP without OAuth credentials refuses to start. Trusted networks only. |
 | `MAINTENANT_ORGANISATION_NAME` | `Maintenant` | Organisation name displayed on the public status page. |
 | `MAINTENANT_SMTP_HOST` | — | SMTP server hostname for email notifications. |
 | `MAINTENANT_SMTP_PORT` | `587` | SMTP server port. |
@@ -74,6 +75,10 @@ MAINTENANT_BASE_URL=https://maintenant.example.com
 # MAINTENANT_ORGANISATION_NAME=Acme Corp
 
 # MCP Server (Model Context Protocol for AI assistants)
+# Both credentials are required: /mcp bypasses the reverse-proxy auth, so
+# without them maintenant refuses to start rather than serving your monitoring
+# data to anyone. Set MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true to accept that
+# on a trusted network.
 # MAINTENANT_MCP=true
 # MAINTENANT_MCP_CLIENT_ID=maintenant-mcp
 # MAINTENANT_MCP_CLIENT_SECRET=your-secret-here

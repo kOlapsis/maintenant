@@ -106,6 +106,7 @@ When the OAuth2 variables are absent, the HTTP transport is open. Use your rever
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client identifier. Required for authentication. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret. Required for authentication. |
 | `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated allowlist of OAuth2 `redirect_uri` values. Required when client credentials are set. |
+| `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false` | Serve `/mcp` with no authentication at all. Without it, `MAINTENANT_MCP=true` with no client credentials refuses to start. Trusted networks only; `--mcp-stdio` never needs it. |
 | `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public-facing URL. Used as OAuth2 issuer and in metadata endpoints. |
 
 `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` accepts an exact list of full URIs. Any `redirect_uri` submitted to `/oauth/authorize` is matched against the list with simple string comparison ([RFC 6749 §3.1.2.3](https://www.rfc-editor.org/rfc/rfc6749#section-3.1.2.3)); anything that does not match an entry exactly is rejected, closing the open-redirect path. Use the full callback URI, not just the origin.

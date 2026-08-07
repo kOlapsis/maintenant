@@ -12,6 +12,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -122,6 +123,29 @@ type MCPConfig struct {
 	ClientID            string
 	ClientSecret        string
 	AllowedRedirectURIs string
+	// AllowUnauthenticated is the explicit opt-out for serving /mcp with no
+	// OAuth at all; without it, MCP without credentials refuses to listen.
+	AllowUnauthenticated bool
+}
+
+// ErrMCPUnauthenticated refuses to expose an MCP server that answers to anyone.
+// docs/security.md has the reverse proxy let /mcp through unauthenticated, so
+// missing OAuth credentials do not degrade the protection — they remove it.
+var ErrMCPUnauthenticated = errors.New(
+	"MAINTENANT_MCP=true but MAINTENANT_MCP_CLIENT_ID/MAINTENANT_MCP_CLIENT_SECRET are unset: " +
+		"/mcp is documented as bypassing the reverse-proxy auth, so it would serve containers, logs " +
+		"and alerts to anyone reaching it. Set both, or set MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true " +
+		"to accept that on a trusted network")
+
+// ValidateHTTP rejects a configuration that must not be served over HTTP. It is
+// deliberately not called from New(): --mcp-stdio shares that path and never
+// listens, so refusing there would break a local stdio client for no gain.
+func (c Config) ValidateHTTP() error {
+	if c.MCP.Enabled && !c.MCP.AllowUnauthenticated &&
+		(c.MCP.ClientID == "" || c.MCP.ClientSecret == "") {
+		return ErrMCPUnauthenticated
+	}
+	return nil
 }
 
 // ConfigFromEnv reads configuration from environment variables.
@@ -143,10 +167,11 @@ func ConfigFromEnv() Config {
 		},
 
 		MCP: MCPConfig{
-			Enabled:             os.Getenv("MAINTENANT_MCP") == "true",
-			ClientID:            os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
-			ClientSecret:        os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
-			AllowedRedirectURIs: os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
+			Enabled:              os.Getenv("MAINTENANT_MCP") == "true",
+			ClientID:             os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
+			ClientSecret:         os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
+			AllowedRedirectURIs:  os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
+			AllowUnauthenticated: parseTruthy(os.Getenv("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")),
 		},
 
 		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
