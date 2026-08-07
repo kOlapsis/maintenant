@@ -144,11 +144,12 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 	}
 	defer func() { _ = reader.Close() }()
 
-	// Set SSE headers.
+	// Set SSE headers. CORS is deliberately absent: the cors() middleware
+	// applies the configured policy, and forcing a wildcard here let any site
+	// an operator visited read this container's logs.
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	flusher.Flush()
 
 	scanner := bufio.NewScanner(reader)
@@ -238,10 +239,10 @@ func (h *LogStreamHandler) streamRemote(
 	// Releasing tells the agent to stop tailing as soon as the viewer goes away.
 	defer release()
 
+	// Same as the local path: no wildcard CORS, cors() owns the policy.
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	flusher.Flush()
 
 	ctx := r.Context()

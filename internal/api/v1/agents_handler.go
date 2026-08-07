@@ -12,16 +12,11 @@
 package v1
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base32"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
@@ -94,22 +89,21 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		ttl = 168 * time.Hour
 	}
 
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	// This response is the only place the cleartext ever exists: what gets
+	// persisted is the hash and a display prefix.
+	tokenStr, tokenHash, tokenID, tokenPrefix, err := agent.NewToken()
+	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to generate token")
 		return
 	}
-	tokenStr := "mnt_enr_" + strings.ToLower(strings.TrimRight(base32.StdEncoding.EncodeToString(raw), "="))
-
-	sum := sha256.Sum256([]byte(tokenStr))
-	tokenID := hex.EncodeToString(sum[:])[:16]
 
 	now := time.Now().UTC()
 	tok := &agent.EnrollmentToken{
-		TokenID:   tokenID,
-		Token:     tokenStr,
-		CreatedAt: now,
-		ExpiresAt: now.Add(ttl),
+		TokenID:     tokenID,
+		TokenHash:   tokenHash,
+		TokenPrefix: tokenPrefix,
+		CreatedAt:   now,
+		ExpiresAt:   now.Add(ttl),
 	}
 	if err := h.store.InsertToken(r.Context(), tok); err != nil {
 		h.logger.Error("insert enrollment token", "err", err)
@@ -125,7 +119,7 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 	WriteJSON(w, http.StatusCreated, map[string]any{
 		"token_id":             tokenID,
 		"token":                tokenStr,
-		"token_masked":         maskToken(tokenStr),
+		"token_masked":         tok.Masked(),
 		"created_at":           tok.CreatedAt,
 		"expires_at":           tok.ExpiresAt,
 		"consumed_at":          nil,
@@ -288,7 +282,7 @@ func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http
 	for i, t := range tokens {
 		out[i] = masked{
 			TokenID:           t.TokenID,
-			TokenMasked:       maskToken(t.Token),
+			TokenMasked:       t.Masked(),
 			CreatedAt:         t.CreatedAt,
 			ExpiresAt:         t.ExpiresAt,
 			ConsumedAt:        t.ConsumedAt,
@@ -311,7 +305,7 @@ func (h *AgentHandler) HandleGetEnrollmentToken(w http.ResponseWriter, r *http.R
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"token_id":             tok.TokenID,
-		"token_masked":         maskToken(tok.Token),
+		"token_masked":         tok.Masked(),
 		"created_at":           tok.CreatedAt,
 		"expires_at":           tok.ExpiresAt,
 		"consumed_at":          tok.ConsumedAt,
@@ -542,13 +536,6 @@ func agentToMap(a *agent.Agent, connectionState string) map[string]any {
 		"revoked_at":       a.RevokedAt,
 		"revoked_by":       a.RevokedBy,
 	}
-}
-
-func maskToken(token string) string {
-	if len(token) <= 14 {
-		return token
-	}
-	return token[:14] + "...***"
 }
 
 func parseBoolQuery(r *http.Request, key string, def bool) bool {

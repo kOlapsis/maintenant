@@ -100,6 +100,11 @@ The response contains:
 
 > The token cannot be retrieved again after creation. If lost, delete it and generate a new one.
 
+!!! note "Only the hash is stored"
+    The database keeps `sha256(token)` plus the first 14 characters, which is what every list and detail view displays (`mnt_enr_ab12cd...***`). The cleartext exists in the creation response and nowhere else, so a copy of the database file taken from here on — a backup, the data volume, a `.db` grabbed for debugging — carries nothing replayable.
+
+    Upgrading an existing install rewrites the table in place on first boot and keeps outstanding tokens valid: nothing has to be reissued. Copies of the database made *before* that upgrade still contain the cleartext, and no migration can reach them. If one of those copies may have leaked, delete the affected tokens and issue new ones; otherwise their 7-day maximum TTL retires them on its own.
+
 ### 2. Run the install command on the remote host
 
 Pick the snippet matching the host environment (the UI exposes these as tabs in the modal). For a bare-metal/VM host, the standalone snippet is:

@@ -35,7 +35,8 @@ VALUES ('00000000-0000-0000-0000-000000000000', NULL, 'local', 'local', '', '', 
 
 CREATE TABLE enrollment_tokens (
     id            TEXT PRIMARY KEY NOT NULL,                -- hex(sha256(token))[:16]
-    token         TEXT NOT NULL UNIQUE,
+    token_hash    TEXT NOT NULL UNIQUE,                     -- hex(sha256(token)); the cleartext is never stored
+    token_prefix  TEXT NOT NULL DEFAULT '',                 -- leading non-secret chars, display only
     created_at    BIGINT NOT NULL DEFAULT 0,
     expires_at    BIGINT NOT NULL,
     consumed_at   BIGINT,

@@ -41,6 +41,20 @@ func enrollAgentRecord(id string) *agent.Agent {
 	}
 }
 
+// tokenFor builds the stored record for a cleartext token the way the creation
+// handler does. The store never sees the cleartext: only its hash, plus the
+// prefix kept for display.
+func tokenFor(cleartext string, createdAt, expiresAt time.Time) *agent.EnrollmentToken {
+	hash := agent.HashToken(cleartext)
+	return &agent.EnrollmentToken{
+		TokenID:     agent.TokenIDFromHash(hash),
+		TokenHash:   hash,
+		TokenPrefix: agent.TokenPrefix(cleartext),
+		CreatedAt:   createdAt,
+		ExpiresAt:   expiresAt,
+	}
+}
+
 // Many agents racing on the SAME one-time token: exactly one wins (consumes the
 // token and is inserted); the rest get ErrTokenAlreadyConsumed. limit < 0 keeps
 // the cap out of the picture so this isolates the token-consume race.
@@ -49,13 +63,9 @@ func TestEnrollAtomic_ConcurrentSameToken(t *testing.T) {
 	store := NewAgentStore(db)
 	ctx := context.Background()
 
-	tok := &agent.EnrollmentToken{
-		TokenID:   "testtoken01",
-		Token:     "mnt_enr_testtoken",
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
-	}
-	require.NoError(t, store.InsertToken(ctx, tok))
+	const cleartext = "mnt_enr_testtoken"
+	require.NoError(t, store.InsertToken(ctx,
+		tokenFor(cleartext, time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
 
 	const goroutines = 10
 	var (
@@ -69,7 +79,7 @@ func TestEnrollAtomic_ConcurrentSameToken(t *testing.T) {
 	for i := range goroutines {
 		go func(i int) {
 			defer wg.Done()
-			err := store.EnrollAtomic(ctx, -1, tok.Token, enrollAgentRecord(fmt.Sprintf("agent-%d", i)))
+			err := store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord(fmt.Sprintf("agent-%d", i)))
 			switch {
 			case err == nil:
 				successes.Add(1)
@@ -102,12 +112,9 @@ func TestEnrollAtomic_ConcurrentCap(t *testing.T) {
 	const limit = 10
 	const goroutines = 40
 	for i := range goroutines {
-		require.NoError(t, store.InsertToken(ctx, &agent.EnrollmentToken{
-			TokenID:   fmt.Sprintf("captok-%d", i),
-			Token:     fmt.Sprintf("mnt_enr_captoken%012d", i),
-			CreatedAt: time.Now().UTC(),
-			ExpiresAt: time.Now().UTC().Add(time.Hour),
-		}))
+		require.NoError(t, store.InsertToken(ctx, tokenFor(
+			fmt.Sprintf("mnt_enr_captoken%012d", i),
+			time.Now().UTC(), time.Now().UTC().Add(time.Hour))))
 	}
 
 	var (
@@ -158,15 +165,12 @@ func TestEnrollAtomic_TokenExpired(t *testing.T) {
 	store := NewAgentStore(db)
 	ctx := context.Background()
 
-	tok := &agent.EnrollmentToken{
-		TokenID:   "expiredtoken01",
-		Token:     "mnt_enr_expired",
-		CreatedAt: time.Now().UTC().Add(-2 * time.Hour),
-		ExpiresAt: time.Now().UTC().Add(-1 * time.Hour), // already expired
-	}
-	require.NoError(t, store.InsertToken(ctx, tok))
+	const cleartext = "mnt_enr_expired"
+	require.NoError(t, store.InsertToken(ctx, tokenFor(cleartext,
+		time.Now().UTC().Add(-2*time.Hour),
+		time.Now().UTC().Add(-1*time.Hour)))) // already expired
 
-	err := store.EnrollAtomic(ctx, -1, tok.Token, enrollAgentRecord("agent-y"))
+	err := store.EnrollAtomic(ctx, -1, cleartext, enrollAgentRecord("agent-y"))
 	assert.ErrorIs(t, err, agent.ErrTokenExpired)
 }
 
