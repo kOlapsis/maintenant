@@ -240,19 +240,21 @@ func TestIntegration_Enrollment(t *testing.T) {
 
 	client := agentpb.NewIngestClient(conn)
 
-	// Insert an enrollment token valid for 1 hour.
-	tok := &agent.EnrollmentToken{
-		TokenID:   "inttest001",
-		Token:     "mnt_enr_integrationtest01",
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
-	}
-	require.NoError(t, store.InsertToken(ctx, tok))
+	// Insert an enrollment token valid for 1 hour. Only its hash is stored; the
+	// cleartext below is what the client sends.
+	const tokCleartext = "mnt_enr_integrationtest01"
+	require.NoError(t, store.InsertToken(ctx, &agent.EnrollmentToken{
+		TokenID:     "inttest001",
+		TokenHash:   agent.HashToken(tokCleartext),
+		TokenPrefix: agent.TokenPrefix(tokCleartext),
+		CreatedAt:   time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	}))
 
 	// (a) First call should succeed and insert the agent.
 	req := &agentpb.RegisterRequest{
 		AgentId:         "agt-integration-001",
-		EnrollmentToken: tok.Token,
+		EnrollmentToken: tokCleartext,
 		Hostname:        "testhost",
 		Label:           "Test Agent",
 		OsArch:          "linux/amd64",
@@ -273,14 +275,14 @@ func TestIntegration_Enrollment(t *testing.T) {
 	assert.Equal(t, "active", gotAgent.Status)
 
 	// (b) Verify token is marked consumed.
-	gotTok, err := store.GetByToken(ctx, tok.Token)
+	gotTok, err := store.GetByToken(ctx, tokCleartext)
 	require.NoError(t, err)
 	assert.NotNil(t, gotTok.ConsumedAt, "token should be consumed")
 
 	// (c) Re-call with same token → FailedPrecondition.
 	req2 := &agentpb.RegisterRequest{
 		AgentId:         "agt-integration-002",
-		EnrollmentToken: tok.Token,
+		EnrollmentToken: tokCleartext,
 		Hostname:        "testhost2",
 		OsArch:          "linux/amd64",
 		AgentVersion:    "1.0.0",
@@ -367,17 +369,18 @@ func TestIntegration_PushStream(t *testing.T) {
 	// Use a proper UUID-format agent ID (32 hex chars with dashes after stripping).
 	agentID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
-	enrollTok := &agent.EnrollmentToken{
-		TokenID:   "push-test-tok",
-		Token:     "mnt_enr_pushtest00000001",
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
-	}
-	require.NoError(t, agentStore.InsertToken(ctx, enrollTok))
+	const pushTok = "mnt_enr_pushtest00000001"
+	require.NoError(t, agentStore.InsertToken(ctx, &agent.EnrollmentToken{
+		TokenID:     "push-test-tok",
+		TokenHash:   agent.HashToken(pushTok),
+		TokenPrefix: agent.TokenPrefix(pushTok),
+		CreatedAt:   time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	}))
 
 	_, err = grpcClient.RegisterAgent(ctx, &agentpb.RegisterRequest{
 		AgentId:         agentID,
-		EnrollmentToken: enrollTok.Token,
+		EnrollmentToken: pushTok,
 		Hostname:        "push-test-host",
 		OsArch:          "linux/amd64",
 		AgentVersion:    "1.0.0",
@@ -514,17 +517,18 @@ func TestIntegration_LogsCommandRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	const agentID = "c0ffee00-1111-2222-3333-444455556666"
 
-	enrollTok := &agent.EnrollmentToken{
-		TokenID:   "cmd-test-tok",
-		Token:     "mnt_enr_cmdtest000000001",
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
-	}
-	require.NoError(t, agentStore.InsertToken(ctx, enrollTok))
+	const cmdTok = "mnt_enr_cmdtest000000001"
+	require.NoError(t, agentStore.InsertToken(ctx, &agent.EnrollmentToken{
+		TokenID:     "cmd-test-tok",
+		TokenHash:   agent.HashToken(cmdTok),
+		TokenPrefix: agent.TokenPrefix(cmdTok),
+		CreatedAt:   time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	}))
 
 	_, err = grpcClient.RegisterAgent(ctx, &agentpb.RegisterRequest{
 		AgentId:         agentID,
-		EnrollmentToken: enrollTok.Token,
+		EnrollmentToken: cmdTok,
 		Hostname:        "cmd-test-host",
 		OsArch:          "linux/amd64",
 		AgentVersion:    "1.3.7",

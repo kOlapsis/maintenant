@@ -50,8 +50,10 @@ Only registered when `MAINTENANT_MCP=true`. If MCP uses OAuth2 (recommended), th
 | `/oauth/authorize` | Authorization endpoint (PKCE S256 mandatory) |
 | `/oauth/token` | Token exchange and refresh |
 
-!!! warning "Open MCP"
-    When `MAINTENANT_MCP=true` is set **without** `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET`, the `/mcp` endpoint is open — anyone can query your monitoring data. Either configure OAuth2 credentials or protect `/mcp` with your reverse proxy.
+!!! warning "MCP without credentials refuses to start"
+    `MAINTENANT_MCP=true` **without** `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` used to serve `/mcp` to anyone. Since `/mcp` is documented above as bypassing proxy auth, an incomplete `.env` published your monitoring data. maintenant now refuses to listen and names the missing variables.
+
+    To run MCP unauthenticated anyway — a local instance on a trusted network — set `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true`. The startup log then carries a `WARN` for as long as it stays that way. `--mcp-stdio` is unaffected: it never listens on the network and needs no credentials.
 
 ### Protected Routes
 
@@ -178,15 +180,16 @@ server {
 
 ### Rate Limiting
 
-Per-IP token bucket rate limiter applied to all public-facing routes:
+Two per-IP token bucket rate limiters, one tight for the public surfaces and one loose for the admin API:
 
-| Setting | Value |
-|---------|-------|
-| Rate | 10 requests/second per IP |
-| Burst | 20 requests |
-| Applied to | `/ping/`, `/status/*`, `/mcp` |
-| Not applied to | `/api/v1/*` (expected behind auth) |
-| 429 response | `{"error":{"code":"rate_limited","message":"Too many requests"}}` with `Retry-After: 1` |
+| Setting | Public routes | Admin API |
+|---------|---------------|-----------|
+| Applied to | `/ping/`, `/status/*`, `/mcp` | `/api/v1/*` |
+| Rate | 10 requests/second per IP | 50 requests/second per IP |
+| Burst | 20 requests | 200 requests |
+| 429 response | `{"error":{"code":"rate_limited","message":"Too many requests"}}` with `Retry-After: 1` | Same |
+
+The admin API limit is a flood ceiling, not a quota. A dashboard page load fans out dozens of parallel calls, so the public bucket would reject ordinary use; at 50/s with a burst of 200 the interface never reaches it. It exists so an unauthenticated surface, or a stolen session, cannot hammer expensive routes for free.
 
 IP detection priority: `X-Real-IP` header → first entry in `X-Forwarded-For` → `RemoteAddr`.
 
@@ -194,6 +197,24 @@ The `/status/subscribe` endpoint has an additional rate limit of 5 requests per 
 
 !!! tip "Trusted proxies"
     Make sure your reverse proxy sets `X-Real-IP` or `X-Forwarded-For` correctly. Without it, all requests appear to come from the proxy's IP and share a single rate limit bucket.
+
+### Security Headers
+
+Every response carries:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Stops the browser from re-guessing a declared content type |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Keeps paths (which can carry heartbeat UUIDs) out of cross-origin referrers |
+| `X-Frame-Options` | `DENY` | Clickjacking defence for browsers that ignore CSP |
+| `Content-Security-Policy` | see below | Defence in depth if an XSS ever lands |
+
+The policy is `default-src 'self'` with `object-src 'none'`, `base-uri 'self'` and `form-action 'self'`. `script-src` is `'self'` plus the SHA-256 of the inline theme bootstrap in `index.html`, computed at startup from the embedded asset — never `'unsafe-inline'`. `style-src` does allow `'unsafe-inline'`, because Vue and uPlot both set element styles at runtime. `img-src` allows `data:` for status page logos and hero images.
+
+!!! note "The public status page stays embeddable"
+    `/status` and `/status/*` are served with `frame-ancestors *` and no `X-Frame-Options`, so you can keep iframing the status page. Every other route — the dashboard and `/api/v1/*` — gets `frame-ancestors 'none'` and `X-Frame-Options: DENY`.
+
+HSTS is deliberately **not** set by the application. TLS terminates at your reverse proxy, and the app would have to infer "this was HTTPS" from a forwarded header a client can forge. Set `Strict-Transport-Security` in the proxy.
 
 ### Request Size Limits
 
@@ -240,6 +261,21 @@ The stdio transport (`--mcp-stdio`) requires no authentication — it is a local
 See [MCP Server](features/mcp.md) for full configuration and usage details.
 
 ---
+
+## Secrets at Rest
+
+Everything the database holds that could be replayed is stored hashed, so a copy of the file is not a copy of your credentials:
+
+| Secret | Stored as |
+|--------|-----------|
+| Agent enrollment tokens | `sha256(token)` + a 14-character display prefix |
+| MCP OAuth authorization codes | `sha256(code)` |
+| MCP access and refresh tokens | `sha256(token)` |
+| MCP client secret | `sha256(secret)`, compared in constant time |
+| Agent identity | Ed25519 **public** key only — the private key never leaves the agent host |
+| License key | Signature verified with a build-injected public key; disk cache is `0600` |
+
+Status page subscriber tokens (`confirm_token`, `unsub_token`) are still stored in the clear. They only confirm or cancel an email subscription, and the same table holds the subscriber addresses in the clear by nature, so hashing them would not protect the sensitive part of that table.
 
 ## Deployment Hardening
 
@@ -394,7 +430,9 @@ A quick reference for securing your deployment:
 - [ ] `/ping`, `/status` (prefix, no trailing slash) and `/manifest.webmanifest` bypass authentication
 - [ ] If MCP is enabled: OAuth2 credentials configured (`MAINTENANT_MCP_CLIENT_ID` + `MAINTENANT_MCP_CLIENT_SECRET`)
 - [ ] If MCP is enabled: `/mcp`, `/oauth/*`, `/.well-known/*` bypass proxy auth (MCP handles its own)
+- [ ] `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` **not** set (it is only for a local instance on a trusted network)
 - [ ] HTTPS termination at the proxy level
+- [ ] `Strict-Transport-Security` set at the proxy (the app cannot set it safely)
 - [ ] `MAINTENANT_BASE_URL` set to your public HTTPS URL
 - [ ] Database file has restrictive permissions
 - [ ] Heartbeat UUIDs not exposed in public repositories or logs

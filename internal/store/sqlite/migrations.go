@@ -104,6 +104,12 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 		return fmt.Errorf("endpoint degraded rebuild: %w", err)
 	}
 
+	// One-time rebuild replacing the cleartext enrollment token with its hash,
+	// for databases converted before the token stopped being stored in clear.
+	if err := rebuildEnrollmentTokensForHashing(context.Background(), db, logger); err != nil {
+		return fmt.Errorf("enrollment token hash rebuild: %w", err)
+	}
+
 	return nil
 }
 

@@ -210,12 +210,13 @@ func (s *AgentStore) CountByRuntime(ctx context.Context) (docker, swarm, kuberne
 	return docker, swarm, kubernetes, rows.Err()
 }
 
-// InsertToken persists a new enrollment token.
+// InsertToken persists a new enrollment token. Only the hash and the display
+// prefix are written — the caller holds the cleartext and must not pass it here.
 func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) error {
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO enrollment_tokens (id, token, created_at, expires_at)
-		VALUES (?, ?, ?, ?)`,
-		t.TokenID, t.Token, t.CreatedAt.Unix(), t.ExpiresAt.Unix(),
+		`INSERT INTO enrollment_tokens (id, token_hash, token_prefix, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		t.TokenID, t.TokenHash, t.TokenPrefix, t.CreatedAt.Unix(), t.ExpiresAt.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("insert token: %w", err)
@@ -245,11 +246,13 @@ func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext
 		}
 
 		now := time.Now().Unix()
+		// The client sends the cleartext; the row is found by its hash.
+		tokenHash := agent.HashToken(tokenCleartext)
 		res, err := tx.ExecContext(ctx,
 			`UPDATE enrollment_tokens
 			SET consumed_at = ?, consumed_by_agent_id = ?
-			WHERE token = ? AND consumed_at IS NULL AND expires_at > ?`,
-			now, a.AgentID, tokenCleartext, now,
+			WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?`,
+			now, a.AgentID, tokenHash, now,
 		)
 		if err != nil {
 			return fmt.Errorf("consume token: %w", err)
@@ -259,7 +262,7 @@ func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext
 			return fmt.Errorf("consume token rows: %w", err)
 		}
 		if affected != 1 {
-			return classifyTokenFailure(ctx, tx, tokenCleartext, now)
+			return classifyTokenFailure(ctx, tx, tokenHash, now)
 		}
 
 		if _, err := tx.ExecContext(ctx,
@@ -276,11 +279,11 @@ func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext
 }
 
 // classifyTokenFailure determines why a token UPDATE matched no rows.
-func classifyTokenFailure(ctx context.Context, tx *sql.Tx, tokenCleartext string, now int64) error {
+func classifyTokenFailure(ctx context.Context, tx *sql.Tx, tokenHash string, now int64) error {
 	var consumed sql.NullInt64
 	var expiresAt int64
 	err := tx.QueryRowContext(ctx,
-		`SELECT consumed_at, expires_at FROM enrollment_tokens WHERE token = ?`, tokenCleartext,
+		`SELECT consumed_at, expires_at FROM enrollment_tokens WHERE token_hash = ?`, tokenHash,
 	).Scan(&consumed, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return agent.ErrTokenNotFound
@@ -297,12 +300,13 @@ func classifyTokenFailure(ctx context.Context, tx *sql.Tx, tokenCleartext string
 	return agent.ErrTokenNotFound
 }
 
-const tokenColumns = `id, token, created_at, expires_at, consumed_at, consumed_by_agent_id` // #nosec G101 -- column names, not a credential.
+const tokenColumns = `id, token_hash, token_prefix, created_at, expires_at, consumed_at, consumed_by_agent_id` // #nosec G101 -- column names, not a credential.
 
-// GetByToken retrieves a token by its cleartext value.
+// GetByToken retrieves a token from its cleartext value, which it hashes to
+// find the row. Nothing it returns can reconstruct the cleartext.
 func (s *AgentStore) GetByToken(ctx context.Context, tokenCleartext string) (*agent.EnrollmentToken, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT `+tokenColumns+` FROM enrollment_tokens WHERE token = ?`, tokenCleartext)
+		`SELECT `+tokenColumns+` FROM enrollment_tokens WHERE token_hash = ?`, agent.HashToken(tokenCleartext))
 	t, err := scanToken(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, agent.ErrTokenNotFound
@@ -444,7 +448,7 @@ func scanToken(s scanner) (*agent.EnrollmentToken, error) {
 	var consumedBy sql.NullString
 	var createdAt, expiresAt int64
 	err := s.Scan(
-		&t.TokenID, &t.Token, &createdAt, &expiresAt, &consumedAt, &consumedBy,
+		&t.TokenID, &t.TokenHash, &t.TokenPrefix, &createdAt, &expiresAt, &consumedAt, &consumedBy,
 	)
 	if err != nil {
 		return nil, err
