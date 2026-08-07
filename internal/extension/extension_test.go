@@ -34,7 +34,7 @@ func TestErrNotAvailable(t *testing.T) {
 // TestEditionOrder pins Community < Personal < Pro. Everything else in the
 // authorization model is expressed in terms of this order.
 func TestEditionOrder(t *testing.T) {
-	if !(Community.rank() < Personal.rank() && Personal.rank() < Pro.rank()) {
+	if Community.rank() >= Personal.rank() || Personal.rank() >= Pro.rank() {
 		t.Fatalf("editions are out of order: community=%d personal=%d pro=%d",
 			Community.rank(), Personal.rank(), Pro.rank())
 	}
