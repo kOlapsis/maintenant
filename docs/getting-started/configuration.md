@@ -202,8 +202,12 @@ Maintenant comes in three editions, in order: **Community**, **Personal**, **Pro
 | Edition | Price | Unlocks |
 |---------|-------|---------|
 | Community | Free | Containers, endpoints, heartbeats, certificates, the public status page, and the full Swarm and Kubernetes views. Capped at 10 endpoints, 5 heartbeats, 5 certificate monitors and 3 status components, on a single host. |
-| Personal | One-time, non-commercial | Every cap lifted, up to 20 remote hosts, plus email alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, resource history, advanced trigger filters and OCSP stapling. |
-| Pro | Subscription | Everything above with unlimited hosts, plus Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, and the right to commercial use, with support. |
+| Personal | €149 once, for life | Every cap lifted, up to 20 remote hosts, plus email alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, resource history, advanced trigger filters and OCSP stapling. Covers one person on infrastructure they own or run for themselves, freelancers included. |
+| Pro | €29/month or €290/year | Everything above with unlimited hosts, plus Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, and the right to use Maintenant on behalf of others, with support. |
+
+A Personal license never expires and includes one year of product updates.
+Every version released inside that year stays licensed for life; a further year
+of updates costs €59. See [COMMERCIAL-LICENSE.md](../../COMMERCIAL-LICENSE.md).
 
 To unlock Personal or Pro, set the `MAINTENANT_LICENSE_KEY` environment variable:
 
