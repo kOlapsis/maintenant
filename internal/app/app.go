@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -111,6 +112,9 @@ type App struct {
 	apiRL          *ratelimit.Limiter
 	licenseMgr     *license.Manager
 	mcpServer      *gomcp.Server
+	// degradedPlanLogged keeps the multi-host degradation to one line: the
+	// helper is consulted at three call sites during a single startup.
+	degradedPlanLogged sync.Once
 
 	// Telemetry
 	telemetrySvc *telemetry.Service
@@ -208,7 +212,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	license.InitPublicKey(cfg.PublicKeyB64)
 	if cfg.LicenseKey != "" {
 		dataDir := filepath.Dir(cfg.DBPath)
-		lm, err := license.NewManager(cfg.LicenseKey, dataDir, cfg.Version, logger)
+		lm, err := license.NewManager(cfg.LicenseKey, dataDir, cfg.Version, cfg.BuildDate, logger)
 		if err != nil {
 			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
 		} else {
@@ -664,6 +668,45 @@ func (a *App) RunMCPStdio(ctx context.Context) error {
 	return a.mcpServer.Run(ctx, &gomcp.StdioTransport{})
 }
 
+// multihostPlanAllowed reports whether the multi-host plan may run.
+//
+// It is not the same question as extension.Allows(CapMultihost). A Personal
+// instance whose update window closed falls back to Community, and the mode
+// gate is the only refusal to start in the product: applying it here would take
+// a whole fleet's monitoring down over an unpaid renewal. The plan keeps
+// running, the Personal features do not: every route behind
+// requireCapability(CapMultihost) still refuses, so no new host can be
+// enrolled. Agents already enrolled keep streaming, since the gRPC server
+// carries no capability check.
+func (a *App) multihostPlanAllowed() bool {
+	licenseStatus := ""
+	if a.licenseMgr != nil {
+		licenseStatus = a.licenseMgr.State().Status
+	}
+
+	granted := extension.Allows(extension.CapMultihost)
+	if !multihostPlanPermitted(granted, licenseStatus) {
+		return false
+	}
+
+	if !granted {
+		a.degradedPlanLogged.Do(func() {
+			a.logger.Error("update window closed: the multi-host plan keeps running, but enrolling and managing hosts is now refused",
+				"mode", a.cfg.Mode,
+				"edition", extension.CurrentEdition(),
+				"updates_until", a.licenseMgr.State().UpdatesUntil,
+			)
+		})
+	}
+	return true
+}
+
+// multihostPlanPermitted is the decision itself, kept apart from the manager so
+// it can be exercised directly.
+func multihostPlanPermitted(capabilityGranted bool, licenseStatus string) bool {
+	return capabilityGranted || licenseStatus == license.StatusUpdateWindowEnded
+}
+
 // Start begins all background services and the HTTP server.
 // It blocks until ctx is canceled, then performs a graceful shutdown.
 func (a *App) Start(ctx context.Context) error {
@@ -686,7 +729,7 @@ func (a *App) Start(ctx context.Context) error {
 	// has refreshed it. Checking it in New() read the package default and
 	// rejected every edition, Pro included.
 	if a.cfg.Mode != "" && a.cfg.Mode != "embedded" {
-		if !extension.Allows(extension.CapMultihost) {
+		if !a.multihostPlanAllowed() {
 			return fmt.Errorf("%s mode requires the %s edition (current edition: %s)",
 				a.cfg.Mode, extension.MinEdition(extension.CapMultihost), extension.CurrentEdition())
 		}
@@ -784,7 +827,7 @@ func (a *App) Start(ctx context.Context) error {
 	a.startRuntimeSupervisor(ctx)
 
 	// Agent gRPC server — server/embedded modes only, where multi-host is open.
-	if extension.Allows(extension.CapMultihost) && a.cfg.Mode != "agent" {
+	if a.multihostPlanAllowed() && a.cfg.Mode != "agent" {
 		if err := a.startAgentGRPC(ctx); err != nil {
 			return fmt.Errorf("start agent gRPC server: %w", err)
 		}
@@ -792,7 +835,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Embedded agent (mode=server + --embedded-agent + Pro).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
-	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && extension.Allows(extension.CapMultihost) {
+	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() {
 		a.startEmbeddedAgent(ctx)
 	}
 

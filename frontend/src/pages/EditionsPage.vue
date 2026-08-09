@@ -23,8 +23,10 @@ const {
   edition,
   editionName,
   editionRank,
-  licenseStatusValue,
   licenseMessage,
+  hasLicenseIssue,
+  licenseSeverity,
+  licenseLabel,
   loadLicenseStatus,
 } = useEdition()
 
@@ -149,20 +151,6 @@ function isUpgrade(tier: Tier): boolean {
   return editionRank.value !== null && RANK[tier] > editionRank.value
 }
 
-/**
- * "inactive" means no license is configured at all — the normal state of a
- * Community instance, not a fault. Flagging it raised a red CRITICAL banner on
- * an installation that had simply never bought anything.
- */
-const LICENSE_STATUS_NOT_A_FAULT = ['', 'active', 'inactive']
-
-const hasLicenseIssue = computed(
-  () => !LICENSE_STATUS_NOT_A_FAULT.includes(licenseStatusValue.value),
-)
-const issueSeverity = computed<'warning' | 'critical'>(() => {
-  const s = licenseStatusValue.value
-  return s === 'grace' || s === 'unreachable' ? 'warning' : 'critical'
-})
 </script>
 
 <template>
@@ -179,9 +167,9 @@ const issueSeverity = computed<'warning' | 'critical'>(() => {
 
     <InlineAlert
       v-if="hasLicenseIssue"
-      :severity="issueSeverity"
+      :severity="licenseSeverity"
       class="mb-6"
-      :title="`License ${licenseStatusValue}`"
+      :title="licenseLabel"
     >
       {{ licenseMessage }}
     </InlineAlert>

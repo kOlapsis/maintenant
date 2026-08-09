@@ -158,6 +158,57 @@ export function useEdition() {
   const licenseMessage = computed(() => licenseStatus.value?.message || '')
   const licenseStatusValue = computed(() => licenseStatus.value?.status || '')
 
+  /**
+   * "inactive" means no license is configured at all, the normal state of a
+   * Community instance, not a fault. Flagging it raised a red CRITICAL banner on
+   * an installation that had simply never bought anything.
+   *
+   * The two update-window statuses deliberately stay out of this list: a build
+   * running past its window is an anomaly, and the whole point is to say so.
+   */
+  const LICENSE_STATUS_NOT_A_FAULT = ['', 'active', 'inactive']
+
+  const hasLicenseIssue = computed(
+    () => !LICENSE_STATUS_NOT_A_FAULT.includes(licenseStatusValue.value),
+  )
+
+  /**
+   * Classification lives here and nowhere else. It used to be duplicated in
+   * DefaultLayout and EditionsPage, which is how a status ends up handled in one
+   * of the two and falling through to a generic label in the other.
+   */
+  const licenseSeverity = computed<'warning' | 'critical'>(() => {
+    const s = licenseStatusValue.value
+    return s === 'grace' || s === 'unreachable' || s === 'update_window_grace'
+      ? 'warning'
+      : 'critical'
+  })
+
+  const licenseLabel = computed(() => {
+    switch (licenseStatusValue.value) {
+      case 'grace':
+        return 'GRACE PERIOD'
+      case 'unreachable':
+        return 'LICENSE UNREACHABLE'
+      case 'expired':
+        return 'LICENSE EXPIRED'
+      case 'canceled':
+        return 'LICENSE CANCELED'
+      case 'revoked':
+        return 'LICENSE REVOKED'
+      case 'unknown':
+        return 'LICENSE INVALID'
+      // The license itself is untouched here: it is perpetual. What ran out is
+      // the right to run a version released after the window closed.
+      case 'update_window_grace':
+        return 'UPDATES EXPIRED'
+      case 'update_window_ended':
+        return 'EDITION SUSPENDED'
+      default:
+        return 'LICENSE'
+    }
+  })
+
   function hasFeature(name: string): boolean {
     return edition.value?.features[name] === true
   }
@@ -205,6 +256,9 @@ export function useEdition() {
     licenseStatus,
     licenseMessage,
     licenseStatusValue,
+    hasLicenseIssue,
+    licenseSeverity,
+    licenseLabel,
     loadLicenseStatus,
   }
 }

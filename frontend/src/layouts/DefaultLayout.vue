@@ -54,8 +54,15 @@ import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
-const { isCommunity, editionName, hasFeature, licenseMessage, licenseStatusValue, loadLicenseStatus } =
-  useEdition()
+const {
+  isCommunity,
+  editionName,
+  hasFeature,
+  licenseMessage,
+  licenseSeverity,
+  licenseLabel,
+  loadLicenseStatus,
+} = useEdition()
 const swarmStore = useSwarmStore()
 const runtimeStore = useRuntimeStore()
 const resources = useResourcesStore()
@@ -91,30 +98,6 @@ const licenseMessageParts = computed(() => {
   const word = match[2]
   const capitalized = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
   return { before: match[1] ?? '', word: capitalized, after: match[3] ?? '' }
-})
-
-const licenseSeverity = computed<'warning' | 'critical'>(() => {
-  const s = licenseStatusValue.value
-  return s === 'grace' || s === 'unreachable' ? 'warning' : 'critical'
-})
-
-const licenseLabel = computed(() => {
-  switch (licenseStatusValue.value) {
-    case 'grace':
-      return 'GRACE PERIOD'
-    case 'unreachable':
-      return 'LICENSE UNREACHABLE'
-    case 'expired':
-      return 'LICENSE EXPIRED'
-    case 'canceled':
-      return 'LICENSE CANCELED'
-    case 'revoked':
-      return 'LICENSE REVOKED'
-    case 'unknown':
-      return 'LICENSE INVALID'
-    default:
-      return 'LICENSE'
-  }
 })
 
 const editionBanner = useEditionBanner()

@@ -71,6 +71,17 @@ export interface LicenseStatus {
   verified_at: string
   /** Empty for a perpetual license — never read an empty value as an expiry. */
   expires_at: string
+  /**
+   * Last day the license covers a newly released version. This is not an
+   * expiry: a Personal license never expires, only its right to new versions is
+   * bounded. Empty when there is no window, which is every Pro subscription.
+   */
+  updates_until: string
+  /**
+   * When a build released past `updates_until` loses the edition. Empty unless
+   * the running build is outside the window.
+   */
+  update_grace_until: string
 }
 
 export function fetchLicenseStatus(): Promise<LicenseStatus> {

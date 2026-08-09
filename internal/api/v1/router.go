@@ -536,37 +536,44 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 	}
 }
 
+// rfc3339OrEmpty renders a date the license may not carry. A perpetual license
+// has no end date, and an instance outside no update window has neither of the
+// two window dates. Serialising the zero time would emit year 1, which reads as
+// a deadline long past — an empty string is the only value that cannot be
+// mistaken for one.
+func rfc3339OrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
+
+// licenseStatusPayload is the wire shape of GET /api/v1/license/status. Every
+// branch goes through it so the response always carries the same keys.
+func licenseStatusPayload(state *license.State, edition extension.Edition) map[string]interface{} {
+	return map[string]interface{}{
+		"status":             state.Status,
+		"edition":            string(edition),
+		"plan":               state.Plan,
+		"message":            state.Message,
+		"verified_at":        rfc3339OrEmpty(state.VerifiedAt),
+		"expires_at":         rfc3339OrEmpty(state.ExpiresAt),
+		"updates_until":      rfc3339OrEmpty(state.UpdatesUntil),
+		"update_grace_until": rfc3339OrEmpty(state.UpdateGraceUntil),
+	}
+}
+
 func (r *Router) registerLicenseRoutes(mgr *license.Manager) {
 	r.mux.HandleFunc("GET /api/v1/license/status", func(w http.ResponseWriter, req *http.Request) {
 		// No license configured (Community): report an inactive state rather than
 		// leaving the documented route unregistered (404).
 		if mgr == nil {
-			WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"status":  "inactive",
-				"edition": string(extension.Community),
-				"plan":    "",
-				"message": "",
-			})
+			WriteJSON(w, http.StatusOK,
+				licenseStatusPayload(&license.State{Status: "inactive"}, extension.Community))
 			return
 		}
-		state := mgr.State()
 
-		// A perpetual license carries no end date. Serialising the zero time
-		// would emit year 1, which reads as an expiry long past — an empty
-		// string is the only value that cannot be mistaken for one.
-		expiresAt := ""
-		if !state.ExpiresAt.IsZero() {
-			expiresAt = state.ExpiresAt.Format(time.RFC3339)
-		}
-
-		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"status":      state.Status,
-			"edition":     string(mgr.Edition()),
-			"plan":        state.Plan,
-			"message":     state.Message,
-			"verified_at": state.VerifiedAt,
-			"expires_at":  expiresAt,
-		})
+		WriteJSON(w, http.StatusOK, licenseStatusPayload(mgr.State(), mgr.Edition()))
 	})
 }
 

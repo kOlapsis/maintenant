@@ -267,6 +267,10 @@ func TestEditionTransitions_AllSixDirectedPairs(t *testing.T) {
 		want       action
 	}{
 		{extension.Community, extension.Personal, none},
+		// Reachable in production since the update window: a Personal build past
+		// its grace is bridled to Community. Escalation is Pro, so it was already
+		// off and must stay untouched: deactivating policies here would clear
+		// active_before_downgrade for an instance that never had escalation.
 		{extension.Personal, extension.Community, none},
 		{extension.Community, extension.Pro, upgrade},
 		{extension.Personal, extension.Pro, upgrade},

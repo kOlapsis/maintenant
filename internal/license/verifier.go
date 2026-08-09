@@ -69,6 +69,29 @@ type LicensePayload struct {
 	ExpiresAt  time.Time `json:"expires_at"`
 	VerifiedAt time.Time `json:"verified_at"`
 	Message    string    `json:"message"`
+	// UpdatesUntil is the last day the license covers a newly released version.
+	// It is not an expiry: a Personal license never expires. Only an active
+	// Personal license carries one.
+	//
+	// Typed as a string on purpose. Unmarshalling a malformed date into a
+	// time.Time fails the whole payload, and verify would report "invalid
+	// license payload", sending a perfectly valid license down the network
+	// error path. An optional field added to a signed contract must never be
+	// able to invalidate the rest of it.
+	UpdatesUntil string `json:"updates_until"`
+}
+
+// updateWindowEnd parses UpdatesUntil. The second result is false when the
+// field is absent or unreadable, which means there is no window to enforce.
+func (p *LicensePayload) updateWindowEnd() (time.Time, bool) {
+	if p == nil || p.UpdatesUntil == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, p.UpdatesUntil)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 // ResolveEdition derives the edition a verified payload grants, in the order

@@ -113,6 +113,77 @@ func TestVerify_InvalidSignatureEncoding(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid signature encoding")
 }
 
+// TestVerify_UpdatesUntilSurvivesTheRoundTrip: the field the license server
+// added for Personal must reach the payload intact and parse as a date.
+func TestVerify_UpdatesUntilSurvivesTheRoundTrip(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+
+	signed := signPayload(t, priv, map[string]any{
+		"status":        "active",
+		"edition":       "personal",
+		"plan":          "personal",
+		"updates_until": "2027-08-09T12:00:00Z",
+		"verified_at":   time.Now().Format(time.RFC3339),
+	})
+
+	result, err := verify(pub, signed)
+	require.NoError(t, err)
+	assert.Equal(t, "2027-08-09T12:00:00Z", result.UpdatesUntil)
+
+	end, ok := result.updateWindowEnd()
+	require.True(t, ok)
+	assert.Equal(t, time.Date(2027, time.August, 9, 12, 0, 0, 0, time.UTC), end.UTC())
+}
+
+// TestVerify_MalformedUpdatesUntilCostsOnlyThatField: the whole reason the field
+// is a string. A date the payload cannot parse must not make verify report
+// "invalid license payload", which would route a valid license into
+// handleNetworkError and silently drop its edition.
+func TestVerify_MalformedUpdatesUntilCostsOnlyThatField(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+
+	for _, bad := range []string{"not-a-date", "09/08/2027", "2027-13-45T99:99:99Z", ""} {
+		t.Run(bad, func(t *testing.T) {
+			signed := signPayload(t, priv, map[string]any{
+				"status":        "active",
+				"edition":       "personal",
+				"plan":          "personal",
+				"updates_until": bad,
+				"verified_at":   time.Now().Format(time.RFC3339),
+			})
+
+			result, err := verify(pub, signed)
+			require.NoError(t, err, "a malformed window must not invalidate the payload")
+			assert.Equal(t, "active", result.Status)
+			assert.Equal(t, "personal", result.Edition)
+
+			_, ok := result.updateWindowEnd()
+			assert.False(t, ok, "an unreadable window must report no window")
+		})
+	}
+}
+
+// TestVerify_AbsentUpdatesUntilReportsNoWindow: a Pro subscription never carries
+// the field, and expires_at already governs it.
+func TestVerify_AbsentUpdatesUntilReportsNoWindow(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+
+	signed := signPayload(t, priv, map[string]any{
+		"status":      "active",
+		"edition":     "pro",
+		"plan":        "pro",
+		"expires_at":  time.Now().Add(365 * 24 * time.Hour).Format(time.RFC3339),
+		"verified_at": time.Now().Format(time.RFC3339),
+	})
+
+	result, err := verify(pub, signed)
+	require.NoError(t, err)
+	assert.Empty(t, result.UpdatesUntil)
+
+	_, ok := result.updateWindowEnd()
+	assert.False(t, ok)
+}
+
 // TestResolveEdition covers the five resolution rules of
 // contracts/license-payload.md, in order.
 func TestResolveEdition(t *testing.T) {

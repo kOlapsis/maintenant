@@ -45,6 +45,12 @@ type State struct {
 	VerifiedAt time.Time         `json:"verified_at,omitempty"`
 	ExpiresAt  time.Time         `json:"expires_at,omitempty"`
 	Message    string            `json:"message,omitempty"`
+	// UpdatesUntil is the last day the license covers a newly released version.
+	// UpdateGraceUntil is when a build released past that day loses the edition;
+	// it is named apart from GraceUntil, which already means the server-side
+	// grace of a past_due subscription.
+	UpdatesUntil     time.Time `json:"updates_until,omitempty"`
+	UpdateGraceUntil time.Time `json:"update_grace_until,omitempty"`
 }
 
 // EditionChangeCallback is invoked after the manager observes a transition
@@ -64,6 +70,12 @@ type Manager struct {
 	state      atomic.Value // *State
 	stop       chan struct{}
 
+	// buildDate is when this binary was released. buildDateKnown is false when
+	// ldflags left the default "unknown", or stamped something unparseable; the
+	// update window is then never enforced.
+	buildDate      time.Time
+	buildDateKnown bool
+
 	callbacksMu sync.Mutex
 	callbacks   []EditionChangeCallback
 	lastEdition extension.Edition
@@ -75,7 +87,7 @@ type Manager struct {
 // This matters because edition-gated wiring runs before Start (e.g.
 // extension.CurrentEdition() checks during app construction). Call Start() to
 // begin periodic verification.
-func NewManager(licenseKey, dataDir, version string, logger *slog.Logger) (*Manager, error) {
+func NewManager(licenseKey, dataDir, version, buildDate string, logger *slog.Logger) (*Manager, error) {
 	pubKey, err := getPublicKey()
 	if err != nil {
 		return nil, err
@@ -89,6 +101,15 @@ func NewManager(licenseKey, dataDir, version string, logger *slog.Logger) (*Mana
 		publicKey:  pubKey,
 		client:     &http.Client{Timeout: 10 * time.Second},
 		stop:       make(chan struct{}),
+	}
+
+	// Parsed once here, and the failure reported once here: repeating it on
+	// every 24-hour cycle would be noise.
+	m.buildDate, m.buildDateKnown = parseBuildDate(buildDate)
+	if !m.buildDateKnown {
+		m.logger.Warn("build date is unreadable, the update window will not be enforced",
+			"build_date", buildDate,
+		)
 	}
 
 	// Default community mode; loadCache may upgrade us if a valid cache exists.
@@ -316,15 +337,80 @@ func (m *Manager) check(ctx context.Context) {
 }
 
 // applyPayload sets the license state from a verified payload.
+//
+// The state is built, bridled, then written exactly once: a second
+// setStateAndNotify would dispatch a phantom edition change.
 func (m *Manager) applyPayload(ctx context.Context, payload *LicensePayload) {
-	m.setStateAndNotify(ctx, &State{
+	state := &State{
 		Edition:    ResolveEdition(payload, m.logger),
 		Plan:       payload.Plan,
 		Features:   payload.Features,
 		Status:     payload.Status,
 		VerifiedAt: payload.VerifiedAt,
 		ExpiresAt:  payload.ExpiresAt,
-	})
+	}
+	m.enforceUpdateWindow(state, payload, time.Now())
+	m.setStateAndNotify(ctx, state)
+}
+
+// enforceUpdateWindow bridles state when the running build was released after
+// the license's update window closed. A Personal license never expires; only
+// the right to new versions is bounded, and it is bounded per binary, which is
+// why this is decided here and not in ResolveEdition. That function is pure,
+// and the grace clock is persistent state.
+//
+// It is the only writer of the window record.
+func (m *Manager) enforceUpdateWindow(state *State, payload *LicensePayload, now time.Time) {
+	windowEnd, ok := payload.updateWindowEnd()
+	if !ok {
+		return
+	}
+	state.UpdatesUntil = windowEnd
+
+	// Nothing to bridle: the license grants no edition to take away.
+	if state.Edition == "" || state.Edition == extension.Community {
+		return
+	}
+	if !m.buildDateKnown {
+		return
+	}
+
+	// The covered case, and the reason going back is free: it returns before
+	// reading the record, so a rollback reads nothing, writes nothing and
+	// consumes nothing. The record is not deleted either, so alternating
+	// rollback and update harvests no grace.
+	if !m.buildDate.After(windowEnd) {
+		return
+	}
+
+	record, mustWrite := reconcileWindow(readWindowRecord(m.dataDir), windowEnd, now, m.version, m.buildDate.Format(time.RFC3339))
+	if mustWrite {
+		if err := writeWindowRecord(m.dataDir, record); err != nil {
+			m.logger.Error("failed to write the update window record", "error", err)
+		}
+	}
+
+	graceEnd := updateGraceEnd(record)
+	state.UpdateGraceUntil = graceEnd
+
+	if now.Before(graceEnd) {
+		state.Status = StatusUpdateWindowGrace
+		state.Message = updateWindowGraceMessage(windowEnd, graceEnd, now)
+		m.logger.Warn("this build was released after the update window closed",
+			"updates_until", windowEnd,
+			"build_date", m.buildDate,
+			"community_from", graceEnd,
+		)
+		return
+	}
+
+	state.Status = StatusUpdateWindowEnded
+	state.Edition = extension.Community
+	state.Message = updateWindowEndedMessage(windowEnd)
+	m.logger.Error("the update window grace is spent, falling back to the Community edition",
+		"updates_until", windowEnd,
+		"build_date", m.buildDate,
+	)
 }
 
 // handleNetworkError applies graceful degradation based on cache age.
@@ -384,6 +470,7 @@ func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 		degraded := *current
 		degraded.Message = "License server unreachable. This instance falls back to the Community edition in " +
 			formatDays(daysLeft) + "."
+		m.replayUpdateWindow(&degraded)
 		m.setStateAndNotify(ctx, &degraded)
 
 	case age > graceDegradationWarn:
@@ -393,6 +480,7 @@ func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 		)
 		degraded := *current
 		degraded.Message = "License server unreachable. Your edition remains active from cache."
+		m.replayUpdateWindow(&degraded)
 		m.setStateAndNotify(ctx, &degraded)
 
 	default:
@@ -400,7 +488,26 @@ func (m *Manager) handleNetworkError(ctx context.Context, err error) {
 			"error", err,
 			"verified_at", current.VerifiedAt,
 		)
+		degraded := *current
+		m.replayUpdateWindow(&degraded)
+		m.setStateAndNotify(ctx, &degraded)
 	}
+}
+
+// replayUpdateWindow re-applies the window verdict to a state built offline. It
+// runs after the degradation message is set, so the window has the last word on
+// both status and message: it is the more urgent of the two.
+//
+// readCache re-checks the signature, so the date it yields is the one the online
+// path would have used. Without this the grace clock stops the moment the
+// network does, and an operator who updates then unplugs keeps the edition until
+// the next restart.
+func (m *Manager) replayUpdateWindow(state *State) {
+	cached, err := readCache(m.dataDir, m.publicKey)
+	if err != nil || cached == nil {
+		return
+	}
+	m.enforceUpdateWindow(state, cached, time.Now())
 }
 
 func formatDays(n int) string {
