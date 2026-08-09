@@ -393,8 +393,8 @@ watch(
           You're monitoring {{ editionBanner.count.value }} containers. Personal removes every limit
           for €149 once. Pro adds the team layer (Slack, escalation, subscribers) at €29/mo.
         </template>
-        <!-- Tier 3 stays Pro-only: at this scale it is a commercial setup, which
-             Personal's non-commercial clause excludes. -->
+        <!-- Tier 3 stays Pro-only: at this scale it is a team, or someone
+             else's infrastructure, which Personal does not cover. -->
         <template v-else-if="editionBanner.tier.value === 3">
           Running 50+ containers in production. Pro adds incident management, alert escalation and
           Slack routing. Want to discuss your setup with the founder?

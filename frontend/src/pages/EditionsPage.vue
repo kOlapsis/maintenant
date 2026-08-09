@@ -37,23 +37,13 @@ const RANK: Record<Tier, number> = { community: 0, personal: 1, pro: 2 }
 /**
  * Prices are compiled in. Changing one needs a new binary — an accepted
  * trade-off while they are not settled (spec Assumptions).
- *
- * Personal has one price, €199, with a launch discount taken off it. `was` is
- * the price before the discount: showing €149 alone would read as the standing
- * price, and the day the offer ends this page would advertise an amount the
- * checkout no longer charges.
  */
-const PRICING: Record<
-  Tier,
-  { price: string; was?: string; period: string; note: string; offer?: string }
-> = {
+const PRICING: Record<Tier, { price: string; period: string; note: string }> = {
   community: { price: 'Free', period: '', note: 'Self-hosted, no account required' },
   personal: {
     price: '€149',
-    was: '€199',
-    offer: 'Launch offer',
     period: 'once, for life',
-    note: 'Non-commercial use, no support commitment',
+    note: 'One person, your own infrastructure. One year of updates, then €59/year',
   },
   pro: { price: '€29', period: 'per month', note: 'Commercial use and support included' },
 }
@@ -211,14 +201,10 @@ const issueSeverity = computed<'warning' | 'critical'>(() => {
           </span>
         </div>
         <p class="text-2xl font-semibold text-mnt-primary">
-          <span v-if="PRICING[tier].was" class="price-was">{{ PRICING[tier].was }}</span>
           {{ PRICING[tier].price }}
           <span v-if="PRICING[tier].period" class="text-sm font-normal text-mnt-muted">
             {{ PRICING[tier].period }}
           </span>
-        </p>
-        <p v-if="PRICING[tier].offer" class="mt-1.5">
-          <span class="launch-tag">{{ PRICING[tier].offer }}</span>
         </p>
         <p class="mt-2 text-xs leading-relaxed text-mnt-muted">{{ PRICING[tier].note }}</p>
 
@@ -294,38 +280,19 @@ const issueSeverity = computed<'warning' | 'critical'>(() => {
     </div>
 
     <p class="mt-6 max-w-3xl text-xs leading-relaxed text-mnt-muted">
-      The Personal edition is a one-time purchase, valid for life, and is reserved
-      for <strong class="text-mnt-secondary">non-commercial use</strong>. It carries no
-      support commitment. Pro adds the right to commercial use, support, and the
-      features a team needs to be paged and to address third parties.
+      The Personal edition is a one-time purchase, valid for life, for
+      <strong class="text-mnt-secondary">one person on infrastructure they own or run
+      for themselves</strong>, freelancers included. It does not cover monitoring
+      someone else's infrastructure or reselling Maintenant as a service, and carries no
+      support commitment. It includes one year of product updates; every version released
+      in that year stays yours for life, and a further year costs €59. Pro adds the right
+      to use Maintenant on behalf of others, support, and the features a team needs to be
+      paged and to address third parties.
     </p>
   </div>
 </template>
 
 <style scoped>
-/* The price before the launch discount. It has to stay visible: an offer only
-   reads as one against something. */
-.price-was {
-  font-size: 0.55em;
-  font-weight: 500;
-  text-decoration: line-through;
-  opacity: 0.5;
-  margin-right: 0.2em;
-}
-
-.launch-tag {
-  display: inline-block;
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.1em 0.5em;
-  border-radius: 4px;
-  background: var(--mnt-edition-personal-bg);
-  color: var(--mnt-edition-personal-text);
-  border: 1px solid var(--mnt-edition-personal-border);
-}
-
 .edition-card-active {
   border: 1px solid var(--mnt-accent);
   box-shadow: 0 0 0 1px var(--mnt-accent);
