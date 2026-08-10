@@ -13,7 +13,7 @@
   <a href="https://github.com/kolapsis/maintenant/releases"><img src="https://img.shields.io/github/v/release/kolapsis/maintenant?style=flat-square&color=blue" alt="Release" /></a>
   <a href="https://github.com/kolapsis/maintenant/pkgs/container/maintenant"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fmaintenant-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/maintenant?style=flat-square" alt="License" /></a>
-  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Pro-%E2%82%AC29%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €29/mo, 14-day trial" /></a>
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Pro-%E2%82%AC29%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €29/mo, 14-day trial" /></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
     <td align="center" width="100%">
       <h3>Keep maintenant alive — <a href="#pricing">go Pro for €29/mo</a></h3>
       <sub>Built in the open by <strong>one developer in Bordeaux, France</strong> — no VC, no tracking, no dark patterns.<br>If maintenant replaces 3 SaaS tools in your stack, <strong>a Pro subscription pays for itself on day one</strong>.</sub><br><br>
-      <a href="https://maintenant.dev/#pricing"><strong>Start 14-day free trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
+      <a href="https://maintenant.dev/pricing/"><strong>Start 14-day free trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
     </td>
   </tr>
 </table>
@@ -682,7 +682,7 @@ Full REST API under `/api/v1/` for automation and integration.
       </ul>
       <p>For one person, on infrastructure they own or run for themselves — freelancers included. It does not cover monitoring someone else's infrastructure or reselling Maintenant as a service, and carries no support commitment.</p>
       <p>Includes <strong>one year of product updates</strong>, then €59 per extra year. Every version released inside that year stays licensed for life.</p>
-      <p><a href="https://maintenant.dev/#pricing"><strong>Buy Personal →</strong></a></p>
+      <p><a href="https://maintenant.dev/pricing/"><strong>Buy Personal →</strong></a></p>
     </td>
     <td width="33%" valign="top" align="left">
       <h3>Pro&nbsp;&nbsp;<sub><code>14-day free trial</code></sub></h3>
@@ -699,7 +699,7 @@ Full REST API under `/api/v1/` for automation and integration.
         <li><strong>The right to use Maintenant on behalf of others</strong></li>
         <li><strong>Priority email support</strong></li>
       </ul>
-      <p><a href="https://maintenant.dev/#pricing"><strong>Start free trial →</strong></a></p>
+      <p><a href="https://maintenant.dev/pricing/"><strong>Start free trial →</strong></a></p>
     </td>
   </tr>
 </table>
@@ -761,14 +761,14 @@ Yes — for teams needing SSO, audit logs, custom SLAs, or on-prem support contr
 
 ### Activate a paid edition
 
-Grab a key from [maintenant.dev/#pricing](https://maintenant.dev/#pricing), set it in your environment, restart — done. The same variable carries a Personal or a Pro key.
+Grab a key from [maintenant.dev/pricing/](https://maintenant.dev/pricing/), set it in your environment, restart — done. The same variable carries a Personal or a Pro key.
 
 ```bash
 MAINTENANT_LICENSE_KEY=your-license-key
 ```
 
 <p align="center">
-  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Start%20your%2014--day%20free%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start 14-day free trial — €29/mo" /></a>
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Start%20your%2014--day%20free%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start 14-day free trial — €29/mo" /></a>
 </p>
 
 <p align="center">
@@ -787,7 +787,7 @@ maintenant is built independently in Bordeaux, France. No VC, no tracking, no te
       <h3>1. Go Pro</h3>
       <p><strong>€29/mo</strong> · 14-day trial</p>
       <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development.</sub></p>
-      <p><a href="https://maintenant.dev/#pricing"><strong>Start trial →</strong></a></p>
+      <p><a href="https://maintenant.dev/pricing/"><strong>Start trial →</strong></a></p>
     </td>
     <td width="33%" valign="top" align="center">
       <h3>2. Sponsor</h3>
@@ -831,5 +831,5 @@ Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) 
 ---
 
 <p align="center">
-  <sub>Built with care in Bordeaux, France — if maintenant saves you an outage, <a href="https://maintenant.dev/#pricing">buy the developer a coffee (or a year of runway)</a>.</sub>
+  <sub>Built with care in Bordeaux, France — if maintenant saves you an outage, <a href="https://maintenant.dev/pricing/">buy the developer a coffee (or a year of runway)</a>.</sub>
 </p>
