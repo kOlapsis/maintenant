@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#pricing">Pricing</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
+  <a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
 </p>
 
 ---
@@ -25,7 +25,7 @@
 <table align="center" width="100%">
   <tr>
     <td align="center" width="100%">
-      <h3>Keep maintenant alive — <a href="#pricing">go Pro for €29/mo</a></h3>
+      <h3>Keep maintenant alive — <a href="https://maintenant.dev/pricing/">go Pro for €29/mo</a></h3>
       <sub>Built in the open by <strong>one developer in Bordeaux, France</strong> — no VC, no tracking, no dark patterns.<br>If maintenant replaces 3 SaaS tools in your stack, <strong>a Pro subscription pays for itself on day one</strong>.</sub><br><br>
       <a href="https://maintenant.dev/pricing/"><strong>Start 14-day free trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
     </td>
@@ -176,7 +176,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
 - **Zero-PKI security** — agents enroll with a one-time token and an Ed25519 keypair generated locally; every stream is challenge-response authenticated. Revoke or delete an agent from the UI at any time.
 - Every monitored entity is attributed to its origin host, so containers, alerts and metrics are never mixed across machines.
 
-> **[Pro](#pricing)** feature. Community Edition runs in single-host (`embedded`) mode. See the [Multi-Host guide](./docs/features/multihost.md) for server setup, enrollment and the streaming protocol.
+> **[Pro](https://maintenant.dev/pricing/)** feature. Community Edition runs in single-host (`embedded`) mode. See the [Multi-Host guide](./docs/features/multihost.md) for server setup, enrollment and the streaming protocol.
 
 ### Endpoint Monitoring
 
@@ -198,7 +198,7 @@ Create a monitor, get a unique URL, add one `curl` to your cron job. maintenant 
 curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
-> Community includes up to 5 heartbeats. **[Pro](#pricing)** lifts the cap for unlimited jobs.
+> Community includes up to 5 heartbeats. **[Pro](https://maintenant.dev/pricing/)** lifts the cap for unlimited jobs.
 
 ### SSL/TLS Certificate Monitoring
 
@@ -220,13 +220,13 @@ Knows when your images have updates available. Scans OCI registries, compares di
 
 Unified alerts across all monitoring sources. Channels are silent by default and routed via **Alert Triggers** (filter by severity / source). Webhook and Discord channels included. Silence rules for planned maintenance, exponential backoff retry on delivery.
 
-> **[Pro](#pricing)** adds Slack, Microsoft Teams, and Email channels, scope/tag trigger filters, multi-level **escalation policies**, and maintenance windows that pause and resume escalation chains.
+> **[Pro](https://maintenant.dev/pricing/)** adds Slack, Microsoft Teams, and Email channels, scope/tag trigger filters, multi-level **escalation policies**, and maintenance windows that pause and resume escalation chains.
 
 ### Public Status Page
 
 Give your users a clean, real-time status page. Live SSE updates, severity aggregation across all monitors.
 
-> **[Pro](#pricing)** adds incident timelines and subscriber notifications (email + webhook) — turn outages into trust-building moments.
+> **[Pro](https://maintenant.dev/pricing/)** adds incident timelines and subscriber notifications (email + webhook) — turn outages into trust-building moments.
 
 ### MCP Server
 
