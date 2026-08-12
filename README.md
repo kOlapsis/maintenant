@@ -13,6 +13,7 @@
   <a href="https://github.com/kolapsis/maintenant/releases"><img src="https://img.shields.io/github/v/release/kolapsis/maintenant?style=flat-square&color=blue" alt="Release" /></a>
   <a href="https://github.com/kolapsis/maintenant/pkgs/container/maintenant"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fmaintenant-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/maintenant?style=flat-square" alt="License" /></a>
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Personal-%E2%82%AC149%20once%20%C2%B7%20for%20life-8b5cf6?style=flat-square" alt="Personal — €149 once, for life" /></a>
   <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Pro-%E2%82%AC29%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €29/mo, 14-day trial" /></a>
 </p>
 
@@ -25,9 +26,9 @@
 <table align="center" width="100%">
   <tr>
     <td align="center" width="100%">
-      <h3>Keep maintenant alive — <a href="https://maintenant.dev/pricing/">go Pro for €29/mo</a></h3>
-      <sub>Built in the open by <strong>one developer in Bordeaux, France</strong> — no VC, no tracking, no dark patterns.<br>If maintenant replaces 3 SaaS tools in your stack, <strong>a Pro subscription pays for itself on day one</strong>.</sub><br><br>
-      <a href="https://maintenant.dev/pricing/"><strong>Start 14-day free trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
+      <h3>Keep maintenant alive: <a href="https://maintenant.dev/pricing/">Personal, €149 once</a> · <a href="https://maintenant.dev/pricing/">Pro, €29/mo</a></h3>
+      <sub>Built in the open by <strong>one developer in Bordeaux, France</strong>. No VC, no tracking, no dark patterns.<br>Running your own infrastructure? <strong>Personal lifts every cap for a single payment, for life.</strong> Running it for others? <strong>Pro adds team channels, escalation and the right to do so.</strong></sub><br><br>
+      <a href="https://maintenant.dev/pricing/"><strong>Buy Personal →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/"><strong>Start Pro trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
     </td>
   </tr>
 </table>
@@ -176,7 +177,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
 - **Zero-PKI security** — agents enroll with a one-time token and an Ed25519 keypair generated locally; every stream is challenge-response authenticated. Revoke or delete an agent from the UI at any time.
 - Every monitored entity is attributed to its origin host, so containers, alerts and metrics are never mixed across machines.
 
-> **[Pro](https://maintenant.dev/pricing/)** feature. Community Edition runs in single-host (`embedded`) mode. See the [Multi-Host guide](./docs/features/multihost.md) for server setup, enrollment and the streaming protocol.
+> **[Personal](https://maintenant.dev/pricing/)** feature, up to 20 remote machines, unlimited on **Pro**. Community Edition runs in single-host (`embedded`) mode. See the [Multi-Host guide](./docs/features/multihost.md) for server setup, enrollment and the streaming protocol.
 
 ### Endpoint Monitoring
 
@@ -198,7 +199,7 @@ Create a monitor, get a unique URL, add one `curl` to your cron job. maintenant 
 curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
-> Community includes up to 5 heartbeats. **[Pro](https://maintenant.dev/pricing/)** lifts the cap for unlimited jobs.
+> Community includes up to 5 heartbeats. **[Personal](https://maintenant.dev/pricing/)** lifts the cap for unlimited jobs.
 
 ### SSL/TLS Certificate Monitoring
 
@@ -206,7 +207,7 @@ Automatic detection from your HTTPS endpoints, plus standalone monitors for any 
 
 ### Resource Metrics
 
-Real-time CPU, memory, network I/O, and disk I/O per container. Historical charts from 1 hour to 30 days (Pro). Per-container alert thresholds with debounce to avoid noise. Top consumers view for instant triage. In [multi-host](#multi-host-monitoring) deployments, host-level CPU/memory/disk is reported per machine and the resource header offers a host selector.
+Real-time CPU, memory, network I/O, and disk I/O per container. Historical charts from 1 hour to 30 days (Personal). Per-container alert thresholds with debounce to avoid noise. Top consumers view for instant triage. In [multi-host](#multi-host-monitoring) deployments, host-level CPU/memory/disk is reported per machine and the resource header offers a host selector.
 
 ### Network Security Insights
 
@@ -220,13 +221,13 @@ Knows when your images have updates available. Scans OCI registries, compares di
 
 Unified alerts across all monitoring sources. Channels are silent by default and routed via **Alert Triggers** (filter by severity / source). Webhook and Discord channels included. Silence rules for planned maintenance, exponential backoff retry on delivery.
 
-> **[Pro](https://maintenant.dev/pricing/)** adds Slack, Microsoft Teams, and Email channels, scope/tag trigger filters, multi-level **escalation policies**, and maintenance windows that pause and resume escalation chains.
+> **[Personal](https://maintenant.dev/pricing/)** adds the Email channel and scope/tag trigger filters. **[Pro](https://maintenant.dev/pricing/)** adds Slack and Microsoft Teams channels, multi-level **escalation policies**, per-entity routing, and maintenance windows that pause and resume escalation chains.
 
 ### Public Status Page
 
 Give your users a clean, real-time status page. Live SSE updates, severity aggregation across all monitors.
 
-> **[Pro](https://maintenant.dev/pricing/)** adds incident timelines and subscriber notifications (email + webhook) — turn outages into trust-building moments.
+> **[Personal](https://maintenant.dev/pricing/)** adds incident timelines. **[Pro](https://maintenant.dev/pricing/)** adds subscriber notifications (email + webhook) and status page branding, turning outages into trust-building moments.
 
 ### MCP Server
 
@@ -375,7 +376,7 @@ Each snapshot contains the following fields and **nothing else** (full wire form
 
 **Application fields** (this product owns these):
 
-- `edition` — `community` or `pro`
+- `edition` — `community`, `personal` or `pro`
 - `containers_total` — count of auto-discovered containers
 - `endpoints_total` — count of configured HTTP/TCP endpoints
 - `heartbeats_total` — count of configured heartbeat monitors
@@ -564,7 +565,7 @@ Replace `1000` with the UID of the user running the rootless Docker daemon (`id 
 | Resource    | `cpu_threshold`, `memory_threshold`    | Warning           |
 | Update      | `available`                            | Info              |
 
-Deliver to Discord or any HTTP webhook. Slack, Teams, and email available with maintenant Pro.
+Deliver to Discord or any HTTP webhook. Email comes with Personal, Slack and Teams with Pro.
 
 ---
 
@@ -582,7 +583,7 @@ Full REST API under `/api/v1/` for automation and integration.
 | Heartbeats   | `GET POST /heartbeats` `GET PUT DELETE /heartbeats/{id}` `POST /heartbeats/{id}/pause\|resume`          |
 | Certificates | `GET POST /certificates` `GET PUT DELETE /certificates/{id}`                                            |
 | Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top\|hosts`                  |
-| Agents       | `GET /agents` `GET PATCH DELETE /agents/{id}` `POST /agents/{id}/revoke` `GET POST /agents/enrollment-tokens` *(Pro)* |
+| Agents       | `GET /agents` `GET PATCH DELETE /agents/{id}` `POST /agents/{id}/revoke` `GET POST /agents/enrollment-tokens` *(Personal)* |
 | Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /alert-triggers` `GET POST /escalation-policies` *(Pro)* `GET POST /silence` |
 | Webhooks     | `GET POST /webhooks` `POST /webhooks/{id}/test`                                                         |
 | Status Page  | `GET POST /status/components\|incidents\|maintenance`                                                   |
@@ -713,8 +714,8 @@ Full REST API under `/api/v1/` for automation and integration.
 - **Fund independent software.** maintenant is built in Bordeaux, France — by one developer, with no VC, no tracking, no dark patterns. Your purchase is the roadmap.
 
 <p align="center">
-  <a href="./docs/screen-captures/11-security-posture.png"><img src="./docs/screen-captures/11-security-posture.png" alt="Pro — Unified Security Posture" width="680" /></a>
-  <br><sub><strong>Pro</strong> — Unified security posture with CVE enrichment &amp; risk scoring</sub>
+  <a href="./docs/screen-captures/11-security-posture.png"><img src="./docs/screen-captures/11-security-posture.png" alt="Personal — Unified Security Posture" width="680" /></a>
+  <br><sub><strong>Personal</strong> — Unified security posture with CVE enrichment &amp; risk scoring</sub>
 </p>
 
 ### Flexible billing — your choice of processor
@@ -726,8 +727,9 @@ Pick the processor that fits where you are:
 | Global          | **Stripe** | Credit / debit card                                     |
 | European Union  | **Mollie** | Card, SEPA Direct Debit, iDEAL, Bancontact, and more    |
 
-- 14-day free trial — plenty of time to evaluate against a real stack
-- Cancel anytime from your dashboard
+- Personal is a single payment, with no subscription to cancel and no expiry
+- Pro comes with a 14-day free trial, plenty of time to evaluate against a real stack
+- Cancel a Pro subscription anytime from your dashboard
 - VAT-compliant invoices issued automatically
 - **Self-hosted means self-hosted** — your monitoring data never leaves your infrastructure
 
@@ -768,11 +770,13 @@ MAINTENANT_LICENSE_KEY=your-license-key
 ```
 
 <p align="center">
-  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Start%20your%2014--day%20free%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start 14-day free trial — €29/mo" /></a>
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Buy%20Personal-%E2%82%AC149%20once-8b5cf6?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Buy Personal — €149 once" /></a>
+  &nbsp;&nbsp;
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Start%20your%2014--day%20Pro%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start your 14-day Pro trial — €29/mo" /></a>
 </p>
 
 <p align="center">
-  <sub>14-day free trial · cancel anytime · VAT-compliant invoices</sub>
+  <sub>Personal: one payment, no expiry · Pro: 14-day free trial, cancel anytime · VAT-compliant invoices</sub>
 </p>
 
 ---
@@ -784,15 +788,15 @@ maintenant is built independently in Bordeaux, France. No VC, no tracking, no te
 <table>
   <tr>
     <td width="33%" valign="top" align="center">
-      <h3>1. Go Pro</h3>
-      <p><strong>€29/mo</strong> · 14-day trial</p>
-      <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development.</sub></p>
-      <p><a href="https://maintenant.dev/pricing/"><strong>Start trial →</strong></a></p>
+      <h3>1. Buy a licence</h3>
+      <p><strong>Personal €149</strong> once · <strong>Pro €29/mo</strong></p>
+      <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development. Personal if the infrastructure is yours, Pro if you run it for others.</sub></p>
+      <p><a href="https://maintenant.dev/pricing/"><strong>See editions →</strong></a></p>
     </td>
     <td width="33%" valign="top" align="center">
       <h3>2. Sponsor</h3>
       <p><strong>Any amount</strong> · one-off or monthly</p>
-      <p><sub>Don't need Pro? Sponsor on GitHub. Every sponsor gets credited in the <a href="#backers">Backers</a> wall below.</sub></p>
+      <p><sub>Don't need a paid edition? Sponsor on GitHub. Every sponsor gets credited in the <a href="#backers">Backers</a> wall below.</sub></p>
       <p><a href="https://github.com/sponsors/kolapsis"><strong>Sponsor →</strong></a></p>
     </td>
     <td width="33%" valign="top" align="center">
@@ -806,7 +810,7 @@ maintenant is built independently in Bordeaux, France. No VC, no tracking, no te
 
 ### Backers
 
-<sub>Every Pro subscriber and GitHub sponsor keeps this project independent. Thank you.</sub>
+<sub>Every Personal owner, Pro subscriber and GitHub sponsor keeps this project independent. Thank you.</sub>
 
 <a href="https://github.com/sponsors/kolapsis"><img src="https://img.shields.io/github/sponsors/kolapsis?style=for-the-badge&label=GitHub%20Sponsors&color=ea4aaa" alt="GitHub Sponsors" /></a>
 
