@@ -32,12 +32,17 @@ type LicenseChecker interface {
 	CanCreateEndpoint(currentCount int) bool
 }
 
-// DefaultLicenseChecker implements Community edition limits.
+// DefaultLicenseChecker caps how many endpoints may exist. A negative maximum
+// means unlimited — the value comes straight from extension.Limit, where -1 is
+// the declared "no cap" value.
 type DefaultLicenseChecker struct {
 	MaxEndpoints int
 }
 
 func (c *DefaultLicenseChecker) CanCreateEndpoint(currentCount int) bool {
+	if c.MaxEndpoints < 0 {
+		return true
+	}
 	return currentCount < c.MaxEndpoints
 }
 

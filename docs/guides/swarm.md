@@ -133,9 +133,11 @@ maintenant sees all nodes, services, and tasks across the entire cluster from an
 
 ---
 
-## Pro Features
+## What a Multi-Node Cluster Unlocks
 
-Pro features require a multi-node cluster to be meaningful:
+Every Swarm view is available in the Community edition, with no license required.
+What some of them need is not an edition but **more than one node**: a single-node
+swarm has nothing to say about quorum or task placement.
 
 | Feature | Requires |
 |---------|----------|
@@ -147,14 +149,13 @@ Pro features require a multi-node cluster to be meaningful:
 | Rolling update tracking | Any cluster size |
 | Dedicated Swarm dashboard | Any cluster size |
 
-### Recommended Setup for Pro
+### Recommended Setup
 
-For the full Pro experience:
+To get everything the Swarm views can show:
 
 - **3 manager nodes** — For quorum monitoring and high availability
 - **1+ worker nodes** — For task placement and distribution visibility
 - **maintenant on a manager** — Constraint to `node.role == manager`
-- **Pro license** — Activate via the settings page
 
 ---
 
@@ -253,13 +254,14 @@ maintenant handles edge cases without user intervention:
     docker service logs maintenant 2>&1 | grep -i swarm
     ```
 
-### Node health not showing (Pro)
+### Node health not showing
 
-Node health monitoring is an Pro feature. Verify your license:
+Node health needs a swarm manager to query, not a license. The views are open
+in every edition. Check what maintenant is connected to:
 
-- Navigate to the settings page
-- Check that the edition shows "Pro"
-- The `/swarm` dashboard route requires Pro
+- maintenant must run **on a manager node**, since workers cannot list nodes
+- Constrain the service with `node.role == manager`
+- Check the logs for a Swarm detection message
 
 ### Services show 0/N running
 

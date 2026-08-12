@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createApp, defineComponent, nextTick, reactive, ref } from 'vue'
-import { tierFromCount, useProBanner, type ProBannerHandle } from '@/composables/useProBanner'
+import { tierFromCount, useEditionBanner, type EditionBannerHandle } from '@/composables/useEditionBanner'
 import { useContainersStore as _useContainersStore } from '@/stores/containers'
 import { useEdition as _useEdition } from '@/composables/useEdition'
 
@@ -12,19 +12,19 @@ const mockedUseEdition = vi.mocked(_useEdition)
 
 type ContainerMock = { containerCount: number; groups: unknown[] }
 
-function mountProBanner(
+function mountEditionBanner(
   store: ContainerMock,
-  isPro = ref(false),
-): { handle: ProBannerHandle; unmount: () => void } {
+  isCommunity = ref(true),
+): { handle: EditionBannerHandle; unmount: () => void } {
   mockedUseContainersStore.mockReturnValue(store as ReturnType<typeof _useContainersStore>)
   mockedUseEdition.mockReturnValue(
-    { isPro } as ReturnType<typeof _useEdition>,
+    { isCommunity } as ReturnType<typeof _useEdition>,
   )
 
-  let handle!: ProBannerHandle
+  let handle!: EditionBannerHandle
   const app = createApp(
     defineComponent({
-      setup() { handle = useProBanner(); return {} },
+      setup() { handle = useEditionBanner(); return {} },
       render() { return null },
     }),
   )
@@ -51,9 +51,9 @@ describe('tierFromCount', () => {
 
 // ─── US1 — tier 1 & 2 visibility ─────────────────────────────────────────────
 
-describe('useProBanner — tier 1 & 2 visibility', () => {
+describe('useEditionBanner — tier 1 & 2 visibility', () => {
   it('tier 1 at count=15', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.tier.value).toBe(1)
     expect(handle.count.value).toBe(15)
@@ -62,7 +62,7 @@ describe('useProBanner — tier 1 & 2 visibility', () => {
   })
 
   it('tier 2 at count=30', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 30, groups: groups(30) })
     await nextTick()
     expect(handle.tier.value).toBe(2)
     expect(handle.count.value).toBe(30)
@@ -71,7 +71,7 @@ describe('useProBanner — tier 1 & 2 visibility', () => {
   })
 
   it('tier 2 at count=27', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 27, groups: groups(27) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 27, groups: groups(27) })
     await nextTick()
     expect(handle.tier.value).toBe(2)
     expect(handle.count.value).toBe(27)
@@ -80,14 +80,14 @@ describe('useProBanner — tier 1 & 2 visibility', () => {
   })
 
   it('tier 1 inclusive upper bound at count=24', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 24, groups: groups(24) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 24, groups: groups(24) })
     await nextTick()
     expect(handle.tier.value).toBe(1)
     unmount()
   })
 
   it('tier 2 inclusive lower bound at count=25', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 25, groups: groups(25) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 25, groups: groups(25) })
     await nextTick()
     expect(handle.tier.value).toBe(2)
     unmount()
@@ -95,7 +95,7 @@ describe('useProBanner — tier 1 & 2 visibility', () => {
 
   it('reactive — tier becomes visible when store hydrates after mount', async () => {
     const store = reactive<ContainerMock>({ containerCount: 0, groups: [] })
-    const { handle, unmount } = mountProBanner(store)
+    const { handle, unmount } = mountEditionBanner(store)
     await nextTick()
     expect(handle.tier.value).toBeNull()
     expect(handle.count.value).toBeNull()
@@ -112,7 +112,7 @@ describe('useProBanner — tier 1 & 2 visibility', () => {
 
   it('reactive — tier updates when container count grows past a tier boundary', async () => {
     const store = reactive<ContainerMock>({ containerCount: 15, groups: groups(15) })
-    const { handle, unmount } = mountProBanner(store)
+    const { handle, unmount } = mountEditionBanner(store)
     await nextTick()
     expect(handle.tier.value).toBe(1)
     store.containerCount = 30
@@ -126,9 +126,9 @@ describe('useProBanner — tier 1 & 2 visibility', () => {
 
 // ─── US2 — tier 3 visibility ──────────────────────────────────────────────────
 
-describe('useProBanner — tier 3 visibility', () => {
+describe('useEditionBanner — tier 3 visibility', () => {
   it('tier 3 at count=50', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 50, groups: groups(50) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 50, groups: groups(50) })
     await nextTick()
     expect(handle.tier.value).toBe(3)
     expect(handle.count.value).toBe(50)
@@ -137,7 +137,7 @@ describe('useProBanner — tier 3 visibility', () => {
   })
 
   it('tier 3 at count=80', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 80, groups: groups(80) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 80, groups: groups(80) })
     await nextTick()
     expect(handle.tier.value).toBe(3)
     expect(handle.count.value).toBe(80)
@@ -145,14 +145,14 @@ describe('useProBanner — tier 3 visibility', () => {
   })
 
   it('tier 3 at count=1000 (no upper bound)', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 1000, groups: groups(1) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 1000, groups: groups(1) })
     await nextTick()
     expect(handle.tier.value).toBe(3)
     unmount()
   })
 
   it('tier 2 at count=49 (upper bound tier 2, not tier 3)', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 49, groups: groups(49) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 49, groups: groups(49) })
     await nextTick()
     expect(handle.tier.value).toBe(2)
     unmount()
@@ -161,9 +161,9 @@ describe('useProBanner — tier 3 visibility', () => {
 
 // ─── US3 — tier 0 & guard ─────────────────────────────────────────────────────
 
-describe('useProBanner — tier 0 & guard', () => {
+describe('useEditionBanner — tier 0 & guard', () => {
   it('tier 0 when count=0 with non-empty groups (legitimate empty)', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 0, groups: [{ containers: [] }] })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 0, groups: [{ containers: [] }] })
     await nextTick()
     expect(handle.tier.value).toBe(0)
     expect(handle.visible.value).toBe(false)
@@ -171,7 +171,7 @@ describe('useProBanner — tier 0 & guard', () => {
   })
 
   it('tier 0 at count=5', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 5, groups: groups(5) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 5, groups: groups(5) })
     await nextTick()
     expect(handle.tier.value).toBe(0)
     expect(handle.visible.value).toBe(false)
@@ -179,7 +179,7 @@ describe('useProBanner — tier 0 & guard', () => {
   })
 
   it('tier 0 at count=9', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 9, groups: groups(9) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 9, groups: groups(9) })
     await nextTick()
     expect(handle.tier.value).toBe(0)
     expect(handle.visible.value).toBe(false)
@@ -187,7 +187,7 @@ describe('useProBanner — tier 0 & guard', () => {
   })
 
   it('FR-015 guard — null tier when count=0 and groups empty (store not loaded)', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 0, groups: [] })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 0, groups: [] })
     await nextTick()
     expect(handle.tier.value).toBeNull()
     expect(handle.visible.value).toBe(false)
@@ -195,7 +195,7 @@ describe('useProBanner — tier 0 & guard', () => {
   })
 
   it('tier 1 at count=10 (transition from tier 0)', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 10, groups: groups(10) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 10, groups: groups(10) })
     await nextTick()
     expect(handle.tier.value).toBe(1)
     expect(handle.visible.value).toBe(true)
@@ -203,25 +203,25 @@ describe('useProBanner — tier 0 & guard', () => {
   })
 
   it('dismiss no-op when tier=0: no localStorage write', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 5, groups: groups(5) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 5, groups: groups(5) })
     await nextTick()
     handle.dismiss()
-    expect(localStorage.getItem('mnt:banner:pro-tier-0')).toBeNull()
+    expect(localStorage.getItem('mnt:banner:edition-tier-0')).toBeNull()
     unmount()
   })
 
   it('dismiss no-op when tier=null: no localStorage write', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 0, groups: [] })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 0, groups: [] })
     await nextTick()
     handle.dismiss()
-    expect(localStorage.getItem('mnt:banner:pro-tier-0')).toBeNull()
+    expect(localStorage.getItem('mnt:banner:edition-tier-0')).toBeNull()
     unmount()
   })
 })
 
 // ─── US4 — tier-keyed dismissal & cooldown ───────────────────────────────────
 
-describe('useProBanner — tier-keyed dismissal & cooldown', () => {
+describe('useEditionBanner — tier-keyed dismissal & cooldown', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.useFakeTimers()
@@ -233,11 +233,11 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
   })
 
   it('FR-010 dismiss writes tier key and hides banner immediately', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(true)
     handle.dismiss()
-    const ts = Number(localStorage.getItem('mnt:banner:pro-tier-1'))
+    const ts = Number(localStorage.getItem('mnt:banner:edition-tier-1'))
     expect(Number.isFinite(ts)).toBe(true)
     expect(ts).toBe(Date.now())
     expect(handle.visible.value).toBe(false)
@@ -245,24 +245,24 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
   })
 
   it('FR-011 cooldown active — banner hidden when dismissed 1s ago', async () => {
-    localStorage.setItem('mnt:banner:pro-tier-1', String(Date.now() - 1000))
-    const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
+    localStorage.setItem('mnt:banner:edition-tier-1', String(Date.now() - 1000))
+    const { handle, unmount } = mountEditionBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(false)
     unmount()
   })
 
   it('FR-011 cooldown expired — banner shown after 31 days', async () => {
-    localStorage.setItem('mnt:banner:pro-tier-1', String(Date.now() - 31 * 24 * 60 * 60 * 1000))
-    const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
+    localStorage.setItem('mnt:banner:edition-tier-1', String(Date.now() - 31 * 24 * 60 * 60 * 1000))
+    const { handle, unmount } = mountEditionBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(true)
     unmount()
   })
 
   it('FR-012 tier-keying — tier-1 dismissal does not block tier-2', async () => {
-    localStorage.setItem('mnt:banner:pro-tier-1', String(Date.now() - 1000))
-    const { handle, unmount } = mountProBanner({ containerCount: 27, groups: groups(27) })
+    localStorage.setItem('mnt:banner:edition-tier-1', String(Date.now() - 1000))
+    const { handle, unmount } = mountEditionBanner({ containerCount: 27, groups: groups(27) })
     await nextTick()
     expect(handle.tier.value).toBe(2)
     expect(handle.visible.value).toBe(true)
@@ -271,7 +271,7 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
 
   it('FR-016 legacy key pb:banner:support-prompt is ignored', async () => {
     localStorage.setItem('pb:banner:support-prompt', String(Date.now()))
-    const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
+    const { handle, unmount } = mountEditionBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(true)
     expect(localStorage.getItem('pb:banner:support-prompt')).not.toBeNull()
@@ -279,8 +279,8 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
   })
 
   it('corrupted localStorage value treated as non-dismissed', async () => {
-    localStorage.setItem('mnt:banner:pro-tier-1', 'not-a-number')
-    const { handle, unmount } = mountProBanner({ containerCount: 15, groups: groups(15) })
+    localStorage.setItem('mnt:banner:edition-tier-1', 'not-a-number')
+    const { handle, unmount } = mountEditionBanner({ containerCount: 15, groups: groups(15) })
     await nextTick()
     expect(handle.visible.value).toBe(true)
     unmount()
@@ -289,13 +289,13 @@ describe('useProBanner — tier-keyed dismissal & cooldown', () => {
 
 // ─── US5 — license gate ───────────────────────────────────────────────────────
 
-describe('useProBanner — license gate', () => {
+describe('useEditionBanner — license gate', () => {
   beforeEach(() => {
     localStorage.clear()
   })
 
-  it('FR-013 pro license hides banner (tier still computed)', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, ref(true))
+  it('FR-013 a paid license hides the banner (tier still computed)', async () => {
+    const { handle, unmount } = mountEditionBanner({ containerCount: 30, groups: groups(30) }, ref(false))
     await nextTick()
     expect(handle.tier.value).toBe(2)
     expect(handle.count.value).toBe(30)
@@ -304,18 +304,18 @@ describe('useProBanner — license gate', () => {
   })
 
   it('community license shows banner', async () => {
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, ref(false))
+    const { handle, unmount } = mountEditionBanner({ containerCount: 30, groups: groups(30) }, ref(true))
     await nextTick()
     expect(handle.visible.value).toBe(true)
     unmount()
   })
 
-  it('reactive to isPro change: false → visible becomes true', async () => {
-    const isPro = ref(true)
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isPro)
+  it('reactive to the edition changing: paid → community makes it visible', async () => {
+    const isCommunity = ref(false)
+    const { handle, unmount } = mountEditionBanner({ containerCount: 30, groups: groups(30) }, isCommunity)
     await nextTick()
     expect(handle.visible.value).toBe(false)
-    isPro.value = false
+    isCommunity.value = true
     await nextTick()
     expect(handle.visible.value).toBe(true)
     unmount()
@@ -324,26 +324,48 @@ describe('useProBanner — license gate', () => {
   it('dismissal preserved when license expires (cooldown active)', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
-    localStorage.setItem('mnt:banner:pro-tier-2', String(Date.now() - 1000))
-    const isPro = ref(true)
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isPro)
+    localStorage.setItem('mnt:banner:edition-tier-2', String(Date.now() - 1000))
+    const isCommunity = ref(false)
+    const { handle, unmount } = mountEditionBanner({ containerCount: 30, groups: groups(30) }, isCommunity)
     await nextTick()
-    expect(handle.visible.value).toBe(false) // Pro masque
-    isPro.value = false
+    expect(handle.visible.value).toBe(false) // a paid edition hides it
+    isCommunity.value = true
     await nextTick()
     expect(handle.visible.value).toBe(false) // cooldown still active
     unmount()
     vi.useRealTimers()
   })
 
-  it('no dismissal: false → true when pro expires', async () => {
-    const isPro = ref(true)
-    const { handle, unmount } = mountProBanner({ containerCount: 30, groups: groups(30) }, isPro)
+  it('no dismissal: hidden → visible when the paid license lapses', async () => {
+    const isCommunity = ref(false)
+    const { handle, unmount } = mountEditionBanner({ containerCount: 30, groups: groups(30) }, isCommunity)
     await nextTick()
     expect(handle.visible.value).toBe(false)
-    isPro.value = false
+    isCommunity.value = true
     await nextTick()
     expect(handle.visible.value).toBe(true)
     unmount()
   })
+
+
+  // Renaming the banner must not resurrect one the user already dismissed, so
+  // the previous keys are still read. Both prefixes are covered: `pb:` from the
+  // Pulse Board era, and `mnt:banner:pro-tier-` from before the edition rename.
+  it.each([
+    ['mnt:banner:pro-tier-1'],
+    ['pb:banner:pro-tier-1'],
+  ])('honours a dismissal stored under the legacy key %s', async (legacyKey) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
+    localStorage.setItem(legacyKey, String(Date.now() - 1000))
+
+    const { handle, unmount } = mountEditionBanner({ containerCount: 12, groups: groups(12) })
+    await nextTick()
+
+    expect(handle.tier.value).toBe(1)
+    expect(handle.visible.value).toBe(false)
+    unmount()
+    vi.useRealTimers()
+  })
+
 })

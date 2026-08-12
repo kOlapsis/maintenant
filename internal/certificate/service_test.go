@@ -459,3 +459,23 @@ func TestService_CreateStandalone_SNICoexistsAndDedups(t *testing.T) {
 	})
 	assert.True(t, errors.Is(err, ErrDuplicateMonitor), "expected ErrDuplicateMonitor, got %v", err)
 }
+
+// TestDefaultLicenseChecker_Unlimited: -1 means no cap, not a cap of -1.
+func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxCertificates: -1}
+	for _, count := range []int{0, 1, 5, 500} {
+		if !c.CanCreateCertificate(count) {
+			t.Errorf("CanCreateCertificate(%d) = false with an unlimited cap", count)
+		}
+	}
+}
+
+func TestDefaultLicenseChecker_Capped(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxCertificates: 5}
+	if !c.CanCreateCertificate(4) {
+		t.Error("the fifth monitor must be allowed")
+	}
+	if c.CanCreateCertificate(5) {
+		t.Error("the sixth monitor must be refused")
+	}
+}

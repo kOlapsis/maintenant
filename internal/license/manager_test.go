@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +78,7 @@ func TestManager_ActiveLicense(t *testing.T) {
 	m.check(context.Background())
 
 	state := m.State()
-	assert.True(t, state.IsProEnabled)
+	assert.Equal(t, extension.Pro, state.Edition)
 	assert.Equal(t, "active", state.Status)
 	assert.Equal(t, "pro", state.Plan)
 	assert.Empty(t, state.Message)
@@ -100,7 +102,7 @@ func TestManager_GraceLicense(t *testing.T) {
 	m.check(context.Background())
 
 	state := m.State()
-	assert.True(t, state.IsProEnabled)
+	assert.Equal(t, extension.Pro, state.Edition)
 	assert.Equal(t, "grace", state.Status)
 	assert.Contains(t, state.Message, "grace period")
 }
@@ -123,7 +125,7 @@ func TestManager_ExpiredLicense(t *testing.T) {
 	m.check(context.Background())
 
 	state := m.State()
-	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, extension.Community, state.Edition)
 	assert.Equal(t, "expired", state.Status)
 	assert.Contains(t, state.Message, "expired")
 }
@@ -140,7 +142,7 @@ func TestManager_UnknownKey_HTTP401(t *testing.T) {
 	m.check(context.Background())
 
 	state := m.State()
-	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, extension.Community, state.Edition)
 	assert.Equal(t, "unknown", state.Status)
 	assert.Equal(t, "Invalid license key", state.Message)
 }
@@ -156,7 +158,7 @@ func TestManager_UnknownKey_HTTP401_NoBody(t *testing.T) {
 	m.check(context.Background())
 
 	state := m.State()
-	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, extension.Community, state.Edition)
 	assert.Equal(t, "unknown", state.Status)
 	assert.NotEmpty(t, state.Message)
 }
@@ -173,7 +175,7 @@ func TestManager_ExpiredKey_HTTP403(t *testing.T) {
 	m.check(context.Background())
 
 	state := m.State()
-	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, extension.Community, state.Edition)
 	assert.Equal(t, "expired", state.Status)
 	assert.Contains(t, state.Message, "expired")
 }
@@ -190,7 +192,7 @@ func TestManager_CanceledKey_HTTP403(t *testing.T) {
 	m.check(context.Background())
 
 	state := m.State()
-	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, extension.Community, state.Edition)
 	assert.Equal(t, "canceled", state.Status)
 	assert.Contains(t, state.Message, "canceled")
 }
@@ -213,7 +215,7 @@ func TestManager_InvalidSignature(t *testing.T) {
 
 	// Set an existing state to verify it's preserved
 	m.state.Store(&State{
-		IsProEnabled: true,
+		Edition:    extension.Pro,
 		Status:       "active",
 		Plan:         "pro",
 		VerifiedAt:   time.Now(),
@@ -223,7 +225,7 @@ func TestManager_InvalidSignature(t *testing.T) {
 
 	// State should be preserved (treated as network error with recent cache)
 	state := m.State()
-	assert.True(t, state.IsProEnabled)
+	assert.Equal(t, extension.Pro, state.Edition)
 	assert.Equal(t, "active", state.Status)
 }
 
@@ -239,7 +241,7 @@ func TestManager_NetworkError(t *testing.T) {
 	// No cache, no prior state
 	m.check(context.Background())
 	state := m.State()
-	assert.False(t, state.IsProEnabled)
+	assert.Equal(t, extension.Community, state.Edition)
 	assert.Equal(t, "unreachable", state.Status)
 }
 
@@ -269,11 +271,11 @@ func TestManager_NetworkError_CacheFallback(t *testing.T) {
 
 	// First check: gets active license and caches it
 	m.check(context.Background())
-	assert.True(t, m.IsProEnabled())
+	assert.Equal(t, extension.Pro, m.Edition())
 
 	// Second check: server fails, should keep Pro from cache
 	m.check(context.Background())
-	assert.True(t, m.IsProEnabled())
+	assert.Equal(t, extension.Pro, m.Edition())
 }
 
 func TestManager_CacheLoadOnConstruction(t *testing.T) {
@@ -319,7 +321,7 @@ func TestManager_CacheLoadOnConstruction(t *testing.T) {
 	m.loadCache(ctx)
 
 	// Pro is now enabled from cache, before any network check.
-	assert.True(t, m.IsProEnabled())
+	assert.Equal(t, extension.Pro, m.Edition())
 	assert.Equal(t, "active", m.State().Status)
 
 	// Start runs a network check; with the server down, graceful degradation
@@ -327,7 +329,7 @@ func TestManager_CacheLoadOnConstruction(t *testing.T) {
 	m.Start(ctx)
 	defer m.Stop()
 
-	assert.True(t, m.IsProEnabled())
+	assert.Equal(t, extension.Pro, m.Edition())
 	assert.Equal(t, "active", m.State().Status)
 }
 
@@ -394,10 +396,10 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		m := testManager(t, pub, handler)
 
 		var mu sync.Mutex
-		var callArgs []struct{ prev, next bool }
-		m.RegisterEditionChangeCallback(func(ctx context.Context, prev, next bool) {
+		var callArgs []struct{ prev, next extension.Edition }
+		m.RegisterEditionChangeCallback(func(ctx context.Context, prev, next extension.Edition) {
 			mu.Lock()
-			callArgs = append(callArgs, struct{ prev, next bool }{prev, next})
+			callArgs = append(callArgs, struct{ prev, next extension.Edition }{prev, next})
 			callCount++
 			mu.Unlock()
 		})
@@ -426,8 +428,8 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		mu.Lock()
 		assert.Equal(t, 1, callCount, "Pro→CE should trigger callback")
 		if len(callArgs) > 0 {
-			assert.True(t, callArgs[0].prev)
-			assert.False(t, callArgs[0].next)
+			assert.Equal(t, extension.Pro, callArgs[0].prev)
+			assert.Equal(t, extension.Community, callArgs[0].next)
 		}
 		mu.Unlock()
 	})
@@ -452,10 +454,10 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		m := testManager(t, pub, handler)
 
 		var mu sync.Mutex
-		var callArgs []struct{ prev, next bool }
-		m.RegisterEditionChangeCallback(func(ctx context.Context, prev, next bool) {
+		var callArgs []struct{ prev, next extension.Edition }
+		m.RegisterEditionChangeCallback(func(ctx context.Context, prev, next extension.Edition) {
 			mu.Lock()
-			callArgs = append(callArgs, struct{ prev, next bool }{prev, next})
+			callArgs = append(callArgs, struct{ prev, next extension.Edition }{prev, next})
 			callCount++
 			mu.Unlock()
 		})
@@ -474,8 +476,8 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		mu.Lock()
 		assert.Equal(t, 1, callCount, "CE→Pro should trigger callback")
 		if len(callArgs) > 0 {
-			assert.False(t, callArgs[0].prev)
-			assert.True(t, callArgs[0].next)
+			assert.Equal(t, extension.Community, callArgs[0].prev)
+			assert.Equal(t, extension.Pro, callArgs[0].next)
 		}
 		mu.Unlock()
 	})
@@ -491,7 +493,7 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 
 		var mu sync.Mutex
 		callCount := 0
-		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ extension.Edition) {
 			mu.Lock()
 			callCount++
 			mu.Unlock()
@@ -517,7 +519,7 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 
 		var mu sync.Mutex
 		callCount := 0
-		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ extension.Edition) {
 			mu.Lock()
 			callCount++
 			mu.Unlock()
@@ -553,13 +555,13 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 
 		var mu sync.Mutex
 		invoked := make([]int, 0, 2)
-		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ extension.Edition) {
 			mu.Lock()
 			invoked = append(invoked, 1)
 			callCount++
 			mu.Unlock()
 		})
-		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ extension.Edition) {
 			mu.Lock()
 			invoked = append(invoked, 2)
 			callCount++
@@ -594,10 +596,10 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 
 		var mu sync.Mutex
 		secondCalled := false
-		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ extension.Edition) {
 			panic("intentional panic for test")
 		})
-		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ bool) {
+		m.RegisterEditionChangeCallback(func(_ context.Context, _, _ extension.Edition) {
 			mu.Lock()
 			secondCalled = true
 			mu.Unlock()
@@ -611,4 +613,152 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		assert.True(t, secondCalled, "second callback must run even after first panicked")
 		mu.Unlock()
 	})
+}
+
+// The three paths that used to write state without notifying. A revocation seen
+// on any of them left escalation running, because m.state.Store bypassed
+// setStateAndNotify. These are the regression guards.
+
+// proPayload is an active license with no edition declared — the compatibility
+// case, and what every license in service looks like today.
+func proPayload() LicensePayload {
+	return LicensePayload{
+		Status:     "active",
+		Plan:       "pro",
+		Features:   []string{"all"},
+		ExpiresAt:  time.Now().Add(365 * 24 * time.Hour),
+		VerifiedAt: time.Now(),
+	}
+}
+
+func editionCallbackRecorder(t *testing.T, m *Manager) func() []extension.Edition {
+	t.Helper()
+	var mu sync.Mutex
+	var seen []extension.Edition
+	m.RegisterEditionChangeCallback(func(_ context.Context, _, next extension.Edition) {
+		mu.Lock()
+		seen = append(seen, next)
+		mu.Unlock()
+	})
+	return func() []extension.Edition {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make([]extension.Edition, len(seen))
+		copy(out, seen)
+		return out
+	}
+}
+
+func TestManager_HTTP401NotifiesTheTransition(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+
+	unauthorized := false
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		if unauthorized {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "unknown key"})
+			return
+		}
+		signed := signPayload(t, priv, proPayload())
+		_ = json.NewEncoder(w).Encode(signed)
+	}
+
+	m := testManager(t, pub, handler)
+	seen := editionCallbackRecorder(t, m)
+
+	m.check(context.Background()) // baseline: Pro
+	require.Equal(t, extension.Pro, m.Edition())
+
+	unauthorized = true
+	m.check(context.Background())
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, extension.Community, m.Edition())
+	assert.Equal(t, []extension.Edition{extension.Community}, seen(),
+		"an HTTP 401 must dispatch the transition, not just store the state")
+}
+
+func TestManager_HTTP403NotifiesTheTransition(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+
+	forbidden := false
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		if forbidden {
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "revoked", "message": "refunded"})
+			return
+		}
+		signed := signPayload(t, priv, proPayload())
+		_ = json.NewEncoder(w).Encode(signed)
+	}
+
+	m := testManager(t, pub, handler)
+	seen := editionCallbackRecorder(t, m)
+
+	m.check(context.Background())
+	require.Equal(t, extension.Pro, m.Edition())
+
+	forbidden = true
+	m.check(context.Background())
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, extension.Community, m.Edition())
+	assert.Equal(t, []extension.Edition{extension.Community}, seen(),
+		"an HTTP 403 revocation must dispatch the transition")
+}
+
+func TestManager_NetworkDegradationBeyondSixtyDaysNotifies(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+
+	down := false
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		if down {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		payload := proPayload()
+		// Verified long enough ago that the next failure crosses the 60-day line.
+		payload.VerifiedAt = time.Now().Add(-61 * 24 * time.Hour)
+		signed := signPayload(t, priv, payload)
+		_ = json.NewEncoder(w).Encode(signed)
+	}
+
+	m := testManager(t, pub, handler)
+	seen := editionCallbackRecorder(t, m)
+
+	m.check(context.Background())
+	require.Equal(t, extension.Pro, m.Edition())
+
+	down = true
+	m.check(context.Background())
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, extension.Community, m.Edition())
+	assert.Equal(t, []extension.Edition{extension.Community}, seen(),
+		"crossing the 60-day offline window must dispatch the transition")
+}
+
+// A Personal license must survive the offline scale exactly like a Pro one, and
+// its absence of an end date must never be read as an expiry (FR-008, FR-009).
+func TestManager_PersonalLicenseIsPerpetualAndDegradesLikePro(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		payload := LicensePayload{
+			Status:     "active",
+			Edition:    "personal",
+			Plan:       "personal",
+			VerifiedAt: time.Now(),
+			// ExpiresAt deliberately left zero: perpetual.
+		}
+		signed := signPayload(t, priv, payload)
+		_ = json.NewEncoder(w).Encode(signed)
+	}
+
+	m := testManager(t, pub, handler)
+	m.check(context.Background())
+
+	assert.Equal(t, extension.Personal, m.Edition())
+	assert.True(t, m.State().ExpiresAt.IsZero(), "a perpetual license carries no end date")
+	assert.Equal(t, "active", m.State().Status)
 }

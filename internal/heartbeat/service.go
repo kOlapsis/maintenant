@@ -33,12 +33,16 @@ type LicenseChecker interface {
 	CanStorePayload() bool
 }
 
-// DefaultLicenseChecker implements Community edition limits.
+// DefaultLicenseChecker caps how many heartbeats may exist. A negative maximum
+// means unlimited (extension.Limit reports -1 for an uncapped resource).
 type DefaultLicenseChecker struct {
 	MaxHeartbeats int
 }
 
 func (c *DefaultLicenseChecker) CanCreateHeartbeat(currentCount int) bool {
+	if c.MaxHeartbeats < 0 {
+		return true
+	}
 	return currentCount < c.MaxHeartbeats
 }
 

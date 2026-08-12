@@ -86,13 +86,16 @@ func TestListSwarmTasks_ServiceFilter(t *testing.T) {
 	assert.Equal(t, "svc-9", topo.lastServiceID)
 }
 
-func TestListSwarmNodes_CE_EditionRequired(t *testing.T) {
+// TestListSwarmNodes_OpenOnCommunity: same reasoning as the Kubernetes nodes —
+// swarm info, services and tasks were already open, so the node view joined
+// them. It reads the local Docker API and consumes no remote agent.
+func TestListSwarmNodes_OpenOnCommunity(t *testing.T) {
 	withEdition(t, extension.Community)
-	svc := &Services{SwarmNodes: &mcpSwarmNodes{}, Logger: slog.Default(), Version: "test"}
+	svc := &Services{SwarmNodes: &mcpSwarmNodes{nodes: []*swarm.SwarmNode{{Hostname: "mgr-1"}}}, Logger: slog.Default(), Version: "test"}
 	result, _, err := listSwarmNodesHandler(svc)(context.Background(), nil, listSwarmNodesInput{})
 	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
+	assert.False(t, result.IsError, "swarm nodes must not be gated")
+	assert.Contains(t, textFromContent(t, result.Content), "mgr-1")
 }
 
 func TestListSwarmNodes_Pro_Success(t *testing.T) {

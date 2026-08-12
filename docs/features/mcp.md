@@ -135,7 +135,10 @@ Share the client ID and secret with authorized users. They enter these values in
 
 ## Available Tools
 
-All tools work in the **Community** edition unless marked **Pro**. Pro-only tools return an `edition_required` error in Community. Every tool is read-only except the ones listed under [Actions](#actions-write).
+The **Edition** column is the minimum a tool needs. Below it, the tool returns an
+`edition_required` error naming the capability and the edition that grants it.
+That is the same decision the REST API makes, from the same table. Every tool is
+read-only except the ones listed under [Actions](#actions-write).
 
 ### Monitoring (read)
 
@@ -153,16 +156,16 @@ All tools work in the **Community** edition unless marked **Pro**. Pro-only tool
 | `get_top_consumers` | Containers ranked by CPU or memory usage | Community |
 | `get_updates` | Available image updates for monitored containers | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
-| `list_agents` | Registered remote agents with connection state and runtime | Pro |
+| `list_agents` | Registered remote agents with connection state and runtime | Personal |
 
 ### Security & supply chain (read)
 
 | Tool | Description | Edition |
 |------|-------------|---------|
 | `get_security_insights` | Security insights (dangerous runtime configs), all containers or one, with a severity summary | Community |
-| `list_cve` | Active CVE vulnerabilities in container images, filterable by container or minimum severity | Pro |
-| `list_risk_scores` | Image-update risk scores per container (0–100) with risk level | Pro |
-| `get_security_posture` | Infrastructure posture score, or a single container's posture | Pro |
+| `list_cve` | Active CVE vulnerabilities in container images, filterable by container or minimum severity | Personal |
+| `list_risk_scores` | Image-update risk scores per container (0–100) with risk level | Personal |
+| `get_security_posture` | Infrastructure posture score, or a single container's posture | Personal |
 
 ### Kubernetes (read)
 
@@ -171,7 +174,7 @@ All tools work in the **Community** edition unless marked **Pro**. Pro-only tool
 | `list_kubernetes_namespaces` | Namespaces known across monitored clusters | Community |
 | `list_kubernetes_workloads` | Workloads grouped by namespace with ready/desired replicas and status | Community |
 | `list_kubernetes_pods` | Pods with status, restart count and node (filter by namespace/workload/node/status) | Community |
-| `list_kubernetes_nodes` | Nodes with roles, conditions, capacity and running-pod counts | Pro |
+| `list_kubernetes_nodes` | Nodes with roles, conditions, capacity and running-pod counts | Community |
 
 ### Docker Swarm (read)
 
@@ -180,14 +183,14 @@ All tools work in the **Community** edition unless marked **Pro**. Pro-only tool
 | `get_swarm_info` | Cluster info (manager/worker counts, manager status); reports inactive when Swarm is off | Community |
 | `list_swarm_services` | Services with image, mode, desired/running replicas | Community |
 | `list_swarm_tasks` | Tasks (a service's running units) with state and node; filter by service | Community |
-| `list_swarm_nodes` | Nodes with role, status, availability and task count | Pro |
+| `list_swarm_nodes` | Nodes with role, status, availability and task count | Community |
 
 ### Alert routing (read & write)
 
 | Tool | Description | Edition |
 |------|-------------|---------|
 | `list_triggers` / `get_trigger` | List or fetch alert triggers (entity → channel routing) | Community |
-| `create_trigger` / `update_trigger` / `delete_trigger` | Manage alert triggers (scope/tag filters require Pro) | Community |
+| `create_trigger` / `update_trigger` / `delete_trigger` | Manage alert triggers (scope/tag filters require Personal) | Community |
 | `list_escalation_policies` / `get_escalation_policy` | List or fetch escalation policies | Pro |
 | `create_escalation_policy` / `update_escalation_policy` / `delete_escalation_policy` | Manage escalation policies | Pro |
 | `set_escalation_policy_active` | Enable or disable a policy | Pro |

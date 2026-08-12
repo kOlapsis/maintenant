@@ -58,7 +58,7 @@ Security insights are displayed directly in the container detail panel. Each ins
 
 ---
 
-## Security Posture Dashboard :material-crown:{ title="Pro" }
+## Security Posture Dashboard :material-star-four-points:{ title="Personal" }
 
 With maintenant Pro, a dedicated Security Posture page aggregates insights into a scored view of infrastructure health:
 
@@ -70,7 +70,7 @@ With maintenant Pro, a dedicated Security Posture page aggregates insights into 
 
 ---
 
-## Acknowledging Findings :material-crown:{ title="Pro" }
+## Acknowledging Findings :material-star-four-points:{ title="Personal" }
 
 Some findings describe a configuration that is deliberate — a port intentionally published to a trusted LAN, or maintenant's own UI port (the scanner does not exempt maintenant's container; see [Configuration → Choosing a Bind Address](../getting-started/configuration.md#choosing-a-bind-address)). Acknowledging a finding records who accepted the risk and why, removes it from the posture score, and — once every finding on the container is acknowledged — automatically acknowledges the container's active security alert.
 
@@ -100,12 +100,12 @@ On Community Edition, address the finding at the source instead: publish the por
 | `GET` | `/api/v1/security/insights` | List all insights across all containers |
 | `GET` | `/api/v1/security/insights/{container_id}` | Get insights for a specific container |
 | `GET` | `/api/v1/security/summary` | Aggregated insight counts by severity and type |
-| `GET` | `/api/v1/security/posture` | Global infrastructure posture score :material-crown:{ title="Pro" } |
-| `GET` | `/api/v1/security/posture/containers` | Per-container posture scores :material-crown:{ title="Pro" } |
-| `GET` | `/api/v1/security/posture/containers/{id}` | Single container posture score :material-crown:{ title="Pro" } |
-| `POST` | `/api/v1/security/acknowledgments` | Acknowledge a finding :material-crown:{ title="Pro" } |
-| `DELETE` | `/api/v1/security/acknowledgments/{id}` | Revoke an acknowledgment :material-crown:{ title="Pro" } |
-| `GET` | `/api/v1/security/acknowledgments` | List acknowledgments :material-crown:{ title="Pro" } |
+| `GET` | `/api/v1/security/posture` | Global infrastructure posture score :material-star-four-points:{ title="Personal" } |
+| `GET` | `/api/v1/security/posture/containers` | Per-container posture scores :material-star-four-points:{ title="Personal" } |
+| `GET` | `/api/v1/security/posture/containers/{id}` | Single container posture score :material-star-four-points:{ title="Personal" } |
+| `POST` | `/api/v1/security/acknowledgments` | Acknowledge a finding :material-star-four-points:{ title="Personal" } |
+| `DELETE` | `/api/v1/security/acknowledgments/{id}` | Revoke an acknowledgment :material-star-four-points:{ title="Personal" } |
+| `GET` | `/api/v1/security/acknowledgments` | List acknowledgments :material-star-four-points:{ title="Personal" } |
 
 ---
 

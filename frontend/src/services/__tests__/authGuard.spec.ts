@@ -30,7 +30,7 @@ describe('isAuthChallenge', () => {
     expect(isAuthChallenge(response({ status: 204, contentType: null }))).toBe(false)
   })
 
-  it('does not mistake the API 403s (PRO_REQUIRED, quotas) for an expired session', () => {
+  it('does not mistake the API 403s (EDITION_REQUIRED, quotas) for an expired session', () => {
     expect(isAuthChallenge(response({ status: 403 }))).toBe(false)
   })
 

@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -31,17 +32,17 @@ func registerWriteTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "create_incident",
-		Description: "Create a new incident on the status page. Requires Maintenant Pro.",
+		Description: "Create a new incident on the status page." + requires(extension.CapIncidents),
 	}, createIncidentHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "update_incident",
-		Description: "Post a status update to an existing status page incident. Requires Maintenant Pro.",
+		Description: "Post a status update to an existing status page incident." + requires(extension.CapIncidents),
 	}, updateIncidentHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "create_maintenance",
-		Description: "Schedule a maintenance window on the status page. Requires Maintenant Pro.",
+		Description: "Schedule a maintenance window on the status page." + requires(extension.CapMaintenanceWindows),
 	}, createMaintenanceHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
@@ -94,17 +95,32 @@ type resumeMonitorInput struct {
 	MonitorID   string `json:"monitor_id" jsonschema:"Monitor ID to resume"`
 }
 
-// checkProEdition gates a tool behind the Pro edition, mirroring the REST
-// requirePro middleware. Returns a non-nil result when access is denied.
-func checkProEdition(feature string) (*gomcp.CallToolResult, any, error) {
-	if extension.CurrentEdition() != extension.Pro {
-		msg := fmt.Sprintf(`{"error":"edition_required","feature":%q,"message":"This tool requires Maintenant Pro. Upgrade at https://maintenant.dev/pro"}`, feature)
-		return &gomcp.CallToolResult{
-			Content: []gomcp.Content{&gomcp.TextContent{Text: msg}},
-			IsError: true,
-		}, nil, nil
+// checkCapability gates a tool behind the capability registry, exactly as the
+// REST requireCapability middleware does — same table, same names, so a
+// capability resolves identically whichever surface asks. The refusal names the
+// edition required; it does not advertise.
+func checkCapability(c extension.Capability) (*gomcp.CallToolResult, any, error) {
+	if extension.Allows(c) {
+		return nil, nil, nil
 	}
-	return nil, nil, nil
+	required := extension.MinEdition(c)
+	msg := fmt.Sprintf(
+		`{"error":"edition_required","feature":%q,"required_edition":%q,"message":"This tool requires the %s edition of Maintenant."}`,
+		string(c), string(required), titleEdition(required),
+	)
+	return &gomcp.CallToolResult{
+		Content: []gomcp.Content{&gomcp.TextContent{Text: msg}},
+		IsError: true,
+	}, nil, nil
+}
+
+// titleEdition renders an edition for display: "personal" reads as "Personal".
+func titleEdition(e extension.Edition) string {
+	s := string(e)
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // --- Handlers ---
@@ -155,7 +171,7 @@ func acknowledgeAlertHandler(svc *Services) gomcp.ToolHandlerFor[acknowledgeAler
 
 func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input createIncidentInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("status_page_incidents"); r != nil {
+		if r, v, err := checkCapability(extension.CapIncidents); r != nil {
 			return r, v, err
 		}
 		if svc.Incidents == nil {
@@ -183,7 +199,7 @@ func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInp
 
 func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input updateIncidentInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("status_page_incidents"); r != nil {
+		if r, v, err := checkCapability(extension.CapIncidents); r != nil {
 			return r, v, err
 		}
 		if svc.Incidents == nil {
@@ -212,7 +228,7 @@ func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInp
 
 func createMaintenanceHandler(svc *Services) gomcp.ToolHandlerFor[createMaintenanceInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input createMaintenanceInput) (*gomcp.CallToolResult, any, error) {
-		if r, v, err := checkProEdition("status_page_maintenance"); r != nil {
+		if r, v, err := checkCapability(extension.CapMaintenanceWindows); r != nil {
 			return r, v, err
 		}
 		if svc.Maintenance == nil {
@@ -286,4 +302,12 @@ func resumeMonitorHandler(svc *Services) gomcp.ToolHandlerFor[resumeMonitorInput
 		}
 		return jsonResult(map[string]any{"success": true, "message": fmt.Sprintf("Heartbeat '%s' resumed", hb.Name)})
 	}
+}
+
+// requires renders the edition requirement appended to a tool description. It
+// reads the registry, so a description cannot claim a tier the gate does not
+// enforce — several said "Requires Maintenant Pro" for capabilities that are
+// Personal, sending the reader to buy the wrong thing.
+func requires(c extension.Capability) string {
+	return " Requires the " + titleEdition(extension.MinEdition(c)) + " edition."
 }

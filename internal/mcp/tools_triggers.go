@@ -44,12 +44,12 @@ func registerTriggerTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "create_trigger",
-		Description: "Create a new alert trigger. Filters scopes/tags require Pro edition.",
+		Description: "Create a new alert trigger. Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
 	}, createTriggerHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "update_trigger",
-		Description: "Update an existing alert trigger (last-write-wins). Filters scopes/tags require Pro edition.",
+		Description: "Update an existing alert trigger (last-write-wins). Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
 	}, updateTriggerHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
@@ -70,8 +70,8 @@ type triggerInput struct {
 	Name             string   `json:"name" jsonschema:"Trigger name (1-120 chars)"`
 	FilterSeverities string   `json:"filter_severities" jsonschema:"CSV severity filter (e.g. 'critical,warning'). Empty matches everything."`
 	FilterSources    string   `json:"filter_sources" jsonschema:"CSV source filter (e.g. 'container,endpoint'). Empty matches everything."`
-	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter (e.g. 'container:42,endpoint:7'). Pro only. Empty matches everything."`
-	FilterTags       string   `json:"filter_tags" jsonschema:"CSV tag filter. Pro only. Empty matches everything."`
+	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter (e.g. 'container:42,endpoint:7'). Needs the advanced filters capability. Empty matches everything."`
+	FilterTags       string   `json:"filter_tags" jsonschema:"CSV tag filter. Needs the advanced filters capability. Empty matches everything."`
 	Enabled          bool     `json:"enabled" jsonschema:"Whether the trigger is active"`
 	ChannelIDs       []string `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
 }
@@ -87,19 +87,14 @@ type deleteTriggerInput struct {
 
 // --- helpers ---
 
-// checkAdvancedFiltersEdition returns an error result when CE is used with Pro-only filters.
-func checkAdvancedFiltersEdition(scopes, tags string) (*gomcp.CallToolResult, any, error) {
+// checkAdvancedFilters refuses scope/tag filters the running edition does not
+// open. Only the "are advanced filters even in play" shortcut lives here; the
+// edition decision itself goes through the registry like every other.
+func checkAdvancedFilters(scopes, tags string) (*gomcp.CallToolResult, any, error) {
 	if scopes == "" && tags == "" {
 		return nil, nil, nil
 	}
-	if extension.CurrentEdition() == extension.Pro {
-		return nil, nil, nil
-	}
-	msg := `{"error":"edition_required","feature":"alert_advanced_filters","message":"Advanced filters (scopes, tags) require Maintenant Pro. Upgrade at https://maintenant.dev/pro"}`
-	return &gomcp.CallToolResult{
-		Content: []gomcp.Content{&gomcp.TextContent{Text: msg}},
-		IsError: true,
-	}, nil, nil
+	return checkCapability(extension.CapAlertAdvancedFilters)
 }
 
 func validateTriggerCommon(t *triggerInput) error {
@@ -154,7 +149,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 		if svc.Triggers == nil || svc.Channels == nil {
 			return errResult("trigger or channel store not available")
 		}
-		if r, v, err := checkAdvancedFiltersEdition(input.FilterScopes, input.FilterTags); r != nil {
+		if r, v, err := checkAdvancedFilters(input.FilterScopes, input.FilterTags); r != nil {
 			return r, v, err
 		}
 		if err := validateTriggerCommon(&input); err != nil {
@@ -202,7 +197,7 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		if existing == nil {
 			return errResult("trigger not found")
 		}
-		if r, v, err := checkAdvancedFiltersEdition(input.FilterScopes, input.FilterTags); r != nil {
+		if r, v, err := checkAdvancedFilters(input.FilterScopes, input.FilterTags); r != nil {
 			return r, v, err
 		}
 		if err := validateTriggerCommon(&input.triggerInput); err != nil {

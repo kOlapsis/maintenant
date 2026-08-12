@@ -14,6 +14,45 @@
  */
 
 import { AuthChallengeError, isAuthChallenge, probeAuth, reportAuthChallenge } from './authGuard'
+import type { ApiErrorDetail } from './editionApi'
+
+/**
+ * An API error that keeps the structured body instead of flattening it to a
+ * message. Edition and quota refusals carry the capability, the resource, the
+ * limit and the edition that lifts it — callers read those fields rather than
+ * matching on English text, which breaks the moment the wording changes.
+ */
+export class ApiError extends Error {
+  readonly status: number
+  readonly detail: ApiErrorDetail | null
+
+  constructor(status: number, detail: ApiErrorDetail | null, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.detail = detail
+  }
+
+  get code(): string {
+    return this.detail?.code ?? ''
+  }
+
+  /** True for the refusals that mean "your edition does not allow this". */
+  get isEditionRefusal(): boolean {
+    return this.code === 'EDITION_REQUIRED'
+  }
+
+  /** True for the refusals that mean "you have reached a cap". */
+  get isQuotaRefusal(): boolean {
+    return this.code === 'QUOTA_EXCEEDED' || this.code === 'HOST_LIMIT_REACHED'
+  }
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  const body = await res.json().catch(() => ({}))
+  const detail = (body?.error ?? null) as ApiErrorDetail | null
+  return new ApiError(res.status, detail, detail?.message || `HTTP ${res.status}`)
+}
 
 // Sentinel agent id the backend sends for server-local entities. Treat it as
 // "local" everywhere a host is grouped or displayed.
@@ -48,8 +87,7 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await guardedFetch(url, init)
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body?.error?.message || `HTTP ${res.status}`)
+    throw await toApiError(res)
   }
 
   return res.json()
@@ -59,7 +97,6 @@ export async function apiFetchVoid(url: string, init?: RequestInit): Promise<voi
   const res = await guardedFetch(url, init)
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body?.error?.message || `HTTP ${res.status}`)
+    throw await toApiError(res)
   }
 }

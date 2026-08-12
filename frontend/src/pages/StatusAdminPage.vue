@@ -30,7 +30,7 @@ import FaqSection from '@/components/personalization/FaqSection.vue'
 import LocalizationSection from '@/components/personalization/LocalizationSection.vue'
 import type { PalettePayload } from '@/services/personalizationApi'
 
-const { hasFeature, isPro, statusURL } = useEdition()
+const { hasFeature, editionPermits, statusURL } = useEdition()
 
 const store = useStatusAdminStore()
 const persoStore = usePersonalizationStore()
@@ -250,7 +250,7 @@ onUnmounted(() => {
     </FeatureGate>
     <FeatureGate v-else-if="activeTab === 'smtp'" feature="smtp" title="SMTP Configuration" description="Use your own mail server to send notifications. Full control over sender address, branding, and deliverability.">
       <StatusSmtpConfig />
-      <template v-if="isPro" #placeholder>
+      <template v-if="editionPermits('smtp')" #placeholder>
         <SmtpNotConfigured />
       </template>
     </FeatureGate>

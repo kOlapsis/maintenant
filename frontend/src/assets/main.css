@@ -138,6 +138,14 @@
     --mnt-sev-neutral-bg: rgba(136, 146, 168, 0.14);
     --mnt-sev-neutral-border: rgba(136, 146, 168, 0.4);
 
+    /* Edition tiers — three visually distinct states (FR-041). Pro reuses the
+       accent green; Personal needs its own hue so a paying Personal user is
+       never mistaken for either of the other two. AA-validated text. */
+    --mnt-edition-personal: #4F46E5;
+    --mnt-edition-personal-text: #4338CA;
+    --mnt-edition-personal-bg: rgba(79, 70, 229, 0.12);
+    --mnt-edition-personal-border: rgba(67, 56, 202, 0.45);
+
     /* Shadows — lighter for light theme */
     --mnt-shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
     --mnt-shadow-elevated: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
@@ -280,6 +288,12 @@
     --mnt-sev-neutral-text: #8892A8;
     --mnt-sev-neutral-bg: rgba(107, 117, 144, 0.12);
     --mnt-sev-neutral-border: rgba(107, 117, 144, 0.3);
+
+    /* Edition tiers — dark. */
+    --mnt-edition-personal: #818CF8;
+    --mnt-edition-personal-text: #A5B4FC;
+    --mnt-edition-personal-bg: rgba(129, 140, 248, 0.15);
+    --mnt-edition-personal-border: rgba(129, 140, 248, 0.35);
 
     /* Status glow shadows */
     --mnt-glow-ok: 0 0 8px rgba(62, 207, 142, 0.5);

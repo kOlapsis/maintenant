@@ -12,21 +12,33 @@
 -->
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { MonitorDot } from 'lucide-vue-next'
+import EditionBadge from '@/components/EditionBadge.vue'
+import type { Edition } from '@/services/editionApi'
 
-defineProps<{
+const props = defineProps<{
   used: number
   limit: number
+  /**
+   * The edition that lifts this cap, taken from the refusal the server sent.
+   * Absent when the caller has no refusal to hand — the dialog then falls back
+   * to the direct-contact wording rather than naming a tier it guessed.
+   */
+  requiredEdition?: Edition | null
 }>()
 
 const emit = defineEmits<{
   close: []
 }>()
 
+const requiredEdition = computed(() => props.requiredEdition ?? null)
+
 const mailto =
   'mailto:benjamin@kolapsis.com' +
   '?subject=' +
-  encodeURIComponent('Maintenant — monitoring more hosts')
+  encodeURIComponent('Maintenant: monitoring more hosts')
 </script>
 
 <template>
@@ -69,12 +81,31 @@ const mailto =
             </div>
           </div>
 
-          <p class="text-sm text-mnt-muted leading-relaxed">
+          <p v-if="requiredEdition" class="text-sm text-mnt-muted leading-relaxed">
+            The
+            <EditionBadge :edition="requiredEdition" class="mx-0.5 align-middle" />
+            edition lifts this limit.
+          </p>
+          <p v-else class="text-sm text-mnt-muted leading-relaxed">
             Need to monitor more hosts? Get in touch directly and I'll help you set it up.
           </p>
 
           <div class="flex flex-col gap-2">
+            <RouterLink
+              v-if="requiredEdition"
+              :to="{ name: 'editions' }"
+              class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
+              :style="{
+                backgroundColor: 'var(--mnt-accent)',
+                color: 'var(--mnt-text-inverted)',
+                borderRadius: 'var(--mnt-radius-md)',
+              }"
+              @click="emit('close')"
+            >
+              Compare editions
+            </RouterLink>
             <a
+              v-else
               :href="mailto"
               class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90"
               :style="{

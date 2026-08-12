@@ -128,16 +128,15 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 		}
 	}
 
-	// Quota check for Community edition (max 3 components).
-	if extension.CurrentEdition() != extension.Pro {
+	// Component cap, read from the single declaration. -1 means unlimited.
+	if limit := extension.Limit(extension.ResourceStatusComponents); limit >= 0 {
 		existing, err := h.components.ListComponents(r.Context())
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		if len(existing) >= 3 {
-			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
-				"Community edition is limited to 3 status page components. Upgrade to Pro for unlimited components.")
+		if len(existing) >= limit {
+			refuseQuota(w, extension.ResourceStatusComponents)
 			return
 		}
 	}

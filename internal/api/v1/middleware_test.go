@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,43 +15,86 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// requirePro middleware
+// requireCapability middleware
 // ---------------------------------------------------------------------------
 
-func TestRequirePro_CommunityBlocked(t *testing.T) {
-	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Community }
-	defer func() { extension.CurrentEdition = original }()
-
-	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	req := httptest.NewRequest("POST", "/api/v1/status/incidents", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+func withEdition(t *testing.T, e extension.Edition) {
+	t.Helper()
+	prev := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return e }
+	t.Cleanup(func() { extension.CurrentEdition = prev })
 }
 
-func TestRequirePro_ProAllowed(t *testing.T) {
-	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
-	defer func() { extension.CurrentEdition = original }()
+// TestRequireCapability_Matrix walks every (edition, capability) pair and
+// asserts the middleware decides exactly what the registry declares, and that a
+// refusal names the capability and the edition that would grant it.
+func TestRequireCapability_Matrix(t *testing.T) {
+	for _, edition := range []extension.Edition{extension.Community, extension.Personal, extension.Pro} {
+		for capability, min := range extension.Catalog() {
+			t.Run(string(edition)+"/"+string(capability), func(t *testing.T) {
+				withEdition(t, edition)
 
-	handlerCalled := false
-	handler := requirePro(func(w http.ResponseWriter, r *http.Request) {
-		handlerCalled = true
-		w.WriteHeader(http.StatusOK)
-	})
+				called := false
+				handler := requireCapability(capability, func(w http.ResponseWriter, _ *http.Request) {
+					called = true
+					w.WriteHeader(http.StatusOK)
+				})
 
-	req := httptest.NewRequest("POST", "/api/v1/status/incidents", nil)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, httptest.NewRequest("POST", "/api/v1/whatever", nil))
+
+				if edition.AtLeast(min) {
+					assert.Equal(t, http.StatusOK, rec.Code)
+					assert.True(t, called, "the handler must run when the edition allows it")
+					return
+				}
+
+				require.False(t, called, "the handler must not run when the edition refuses")
+				assert.Equal(t, http.StatusForbidden, rec.Code)
+
+				var body ErrorResponse
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+				assert.Equal(t, "EDITION_REQUIRED", body.Error.Code)
+				assert.Equal(t, string(capability), body.Error.Feature)
+				assert.Equal(t, string(min), body.Error.RequiredEdition,
+					"the refusal must name the edition that grants the capability, not Pro by default")
+				assert.NotContains(t, body.Error.Message, "Upgrade to Pro")
+			})
+		}
+	}
+}
+
+// TestRequireCapability_NamesTheRightEdition is the point of the whole change:
+// a Personal-tier capability must not tell a Community user to buy Pro.
+func TestRequireCapability_NamesTheRightEdition(t *testing.T) {
+	withEdition(t, extension.Community)
+
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	requireCapability(extension.CapIncidents, func(http.ResponseWriter, *http.Request) {}).
+		ServeHTTP(rec, httptest.NewRequest("POST", "/api/v1/status/incidents", nil))
 
-	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.True(t, handlerCalled)
+	var body ErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "personal", body.Error.RequiredEdition)
+	assert.Contains(t, body.Error.Message, "Personal")
+	assert.NotContains(t, body.Error.Message, "Pro")
+}
+
+// TestRequireCapability_UngatedCapabilitiesNeverRefuse: the capabilities whose
+// minimum is Community are open to everyone.
+func TestRequireCapability_UngatedCapabilitiesNeverRefuse(t *testing.T) {
+	withEdition(t, extension.Community)
+
+	for _, c := range []extension.Capability{
+		extension.CapAlertRouting, extension.CapSwarmDashboard, extension.CapK8sCluster,
+	} {
+		rec := httptest.NewRecorder()
+		requireCapability(c, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}).ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/whatever", nil))
+
+		assert.Equal(t, http.StatusOK, rec.Code, "capability %q must be open on Community", c)
+	}
 }
 
 // ---------------------------------------------------------------------------

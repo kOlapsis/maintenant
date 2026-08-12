@@ -19,7 +19,7 @@ maintenant connects to the domain, performs a full TLS handshake, parses the cer
 - Expiry date
 - Days until expiration
 - Chain validity
-- OCSP staple (Pro — see [OCSP Stapling](#ocsp-stapling) below)
+- OCSP staple (Personal, see [OCSP Stapling](#ocsp-stapling) below)
 
 ---
 
@@ -98,7 +98,7 @@ A host that is genuinely unreachable — timeout, DNS failure, connection refuse
 
 ---
 
-## OCSP Stapling :material-crown:{ title="Pro" }
+## OCSP Stapling :material-star-four-points:{ title="Personal" }
 
 Expired isn't the only way a certificate goes bad — it can also be **revoked** by the issuing CA while still well within its validity period (private key compromise, mis-issuance, decommissioned service). maintenant catches this by reading the **OCSP staple** delivered by the server during the TLS handshake.
 

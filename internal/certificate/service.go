@@ -42,12 +42,17 @@ type LicenseChecker interface {
 	CanCreateCertificate(currentCount int) bool
 }
 
-// DefaultLicenseChecker implements Community edition limits.
+// DefaultLicenseChecker caps how many certificate monitors may exist. A
+// negative maximum means unlimited (extension.Limit reports -1 for an uncapped
+// resource).
 type DefaultLicenseChecker struct {
 	MaxCertificates int
 }
 
 func (c *DefaultLicenseChecker) CanCreateCertificate(currentCount int) bool {
+	if c.MaxCertificates < 0 {
+		return true
+	}
 	return currentCount < c.MaxCertificates
 }
 
@@ -623,9 +628,9 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 		result.ChainError = raw.ChainError
 		result.HostnameMatch = &raw.HostnameMatch
 
-		// OCSP stapling is a Pro feature — capture is free but the fields are only
-		// persisted, exposed and alerted on in Pro.
-		if extension.CurrentEdition() == extension.Pro {
+		// Capture is free; the fields are only persisted, exposed and alerted on
+		// where the edition opens the capability.
+		if extension.Allows(extension.CapOCSPStapling) {
 			result.OCSPStapled = raw.OCSPStapled
 			result.OCSPStatus = raw.OCSPStatus
 			result.OCSPProducedAt = raw.OCSPProducedAt

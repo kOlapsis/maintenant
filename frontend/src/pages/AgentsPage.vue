@@ -13,7 +13,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+
 import { useAgentsStore } from '@/stores/agents'
 import { useEdition } from '@/composables/useEdition'
 import FeatureGate from '@/components/FeatureGate.vue'
@@ -24,6 +24,9 @@ import AgentDetailPanel from '@/components/AgentDetailPanel.vue'
 import { docUrl } from '@/utils/docs'
 import { MonitorDot, Server, Boxes, ShieldCheck } from 'lucide-vue-next'
 import type { Agent, EnrollmentTokenCreated } from '@/services/agentApi'
+import type { Edition } from '@/services/editionApi'
+import { ApiError } from '@/services/apiFetch'
+import UnlockCta from '@/components/UnlockCta.vue'
 
 const { hasFeature, getQuota } = useEdition()
 const store = useAgentsStore()
@@ -35,6 +38,7 @@ const generatingToken = ref(false)
 const tokenModalData = ref<EnrollmentTokenCreated | null>(null)
 const tokenError = ref<string | null>(null)
 const showLimitDialog = ref(false)
+const limitRefusalEdition = ref<Edition | null>(null)
 
 const detailOpen = ref(false)
 const selectedAgent = ref<Agent | null>(null)
@@ -58,8 +62,11 @@ onUnmounted(() => {
 })
 
 async function handleGenerateToken() {
-  // At the host cap, invite a direct conversation instead of enrolling more.
+  // At the host cap the server refuses anyway; showing the dialog first saves a
+  // round trip. The edition that lifts the cap is only known from a refusal, so
+  // it stays null on this local shortcut.
   if (hostQuota.value.isAtLimit) {
+    limitRefusalEdition.value = null
     showLimitDialog.value = true
     return
   }
@@ -68,6 +75,12 @@ async function handleGenerateToken() {
   try {
     tokenModalData.value = await store.createToken(24)
   } catch (e) {
+    // A server-side HOST_LIMIT_REACHED carries the edition that lifts the cap.
+    if (e instanceof ApiError && e.code === 'HOST_LIMIT_REACHED') {
+      limitRefusalEdition.value = e.detail?.required_edition ?? null
+      showLimitDialog.value = true
+      return
+    }
     tokenError.value = e instanceof Error ? e.message : 'Failed to generate token'
   } finally {
     generatingToken.value = false
@@ -280,14 +293,15 @@ function runtimeLabel(rt: string): string {
               </div>
               <h2 class="text-base font-bold text-mnt-primary mb-1">Multi-host Agents</h2>
               <p class="text-sm text-mnt-muted max-w-md mb-6 leading-relaxed">
-                Enroll lightweight agents on remote hosts to monitor Docker, Swarm and Kubernetes from this single server — no extra dashboards, no per-host setup.
+                Enroll lightweight agents on remote hosts to monitor Docker, Swarm and Kubernetes from this single server. No extra dashboards, no per-host setup.
               </p>
 
               <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
                 <li class="flex items-start gap-3">
                   <Server :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
                   <span class="text-sm text-mnt-secondary">
-                    Monitor unlimited remote hosts from one server with token-based enrollment
+                    Monitor up to 20 remote hosts from one server with token-based enrollment,
+                    or an unlimited number on Pro
                   </span>
                 </li>
                 <li class="flex items-start gap-3">
@@ -304,12 +318,7 @@ function runtimeLabel(rt: string): string {
                 </li>
               </ul>
 
-              <RouterLink
-                to="/pro-edition"
-                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted shadow-lg shadow-mnt-green-500/20 transition-colors"
-              >
-                Unlock with Pro
-              </RouterLink>
+              <UnlockCta />
             </div>
           </div>
         </template>
@@ -325,11 +334,12 @@ function runtimeLabel(rt: string): string {
     @close="handleModalClose"
   />
 
-  <!-- Host cap reached — invite a direct conversation -->
+  <!-- Host cap reached: invite a direct conversation -->
   <HostLimitDialog
     v-if="showLimitDialog"
     :used="hostQuota.used"
     :limit="hostQuota.limit"
+    :required-edition="limitRefusalEdition"
     @close="showLimitDialog = false"
   />
 

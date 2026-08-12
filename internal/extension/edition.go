@@ -13,13 +13,50 @@ package extension
 
 import "errors"
 
-// Edition identifies whether the running binary is Community or Pro.
+// Edition identifies the capability tier the running binary operates at.
+// The three editions are ordered: Community < Personal < Pro.
 type Edition string
 
 const (
 	Community Edition = "community"
+	Personal  Edition = "personal"
 	Pro       Edition = "pro"
 )
+
+// rank orders the editions. An unrecognised edition ranks -1 and never
+// satisfies AtLeast, so a value this binary does not know grants nothing.
+func (e Edition) rank() int {
+	switch e {
+	case Community:
+		return 0
+	case Personal:
+		return 1
+	case Pro:
+		return 2
+	default:
+		return -1
+	}
+}
+
+// AtLeast reports whether e is at or above other in the edition order.
+// It is false as soon as either side is unrecognised.
+func (e Edition) AtLeast(other Edition) bool {
+	er, or := e.rank(), other.rank()
+	if er < 0 || or < 0 {
+		return false
+	}
+	return er >= or
+}
+
+// ParseEdition converts a wire value to an Edition. The second result reports
+// whether the value was recognised; callers decide what an unknown value means.
+func ParseEdition(s string) (Edition, bool) {
+	e := Edition(s)
+	if e.rank() < 0 {
+		return Community, false
+	}
+	return e, true
+}
 
 // ErrNotAvailable is returned by no-op implementations when an extension is not available.
 var ErrNotAvailable = errors.New("this feature requires an extended edition of maintenant")
@@ -27,19 +64,3 @@ var ErrNotAvailable = errors.New("this feature requires an extended edition of m
 // CurrentEdition returns the edition of the running binary.
 // CE always returns Community. Extended editions override this via the build.
 var CurrentEdition = func() Edition { return Community }
-
-// proAgentHostLimit caps the number of remote agent hosts (the local runtime is
-// never counted) an installation may enroll on the Pro edition.
-const proAgentHostLimit = 10
-
-// AgentHostLimit returns the maximum number of enrolled agent hosts (local
-// runtime excluded) for the running edition: -1 means unlimited, 0 means none.
-// Community cannot enroll agents (multi-host is Pro-only); Pro is capped.
-func AgentHostLimit() int {
-	switch CurrentEdition() {
-	case Pro:
-		return proAgentHostLimit
-	default:
-		return 0
-	}
-}

@@ -13,12 +13,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { RouterLink } from 'vue-router'
+
 import FeatureGate from '@/components/FeatureGate.vue'
 import PolicyList from '@/components/escalation/PolicyList.vue'
 import PolicyEditor from '@/components/escalation/PolicyEditor.vue'
 import { useEscalationStore } from '@/stores/escalation'
 import type { EscalationPolicy } from '@/types/escalation'
+import UnlockCta from '@/components/UnlockCta.vue'
 import { Plus, BellRing, CheckCircle2, ShieldAlert } from 'lucide-vue-next'
 
 const store = useEscalationStore()
@@ -163,12 +164,7 @@ onMounted(() => {
                 </li>
               </ul>
 
-              <RouterLink
-                to="/pro-edition"
-                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted shadow-lg shadow-mnt-green-500/20 transition-colors"
-              >
-                Unlock with Pro
-              </RouterLink>
+              <UnlockCta />
             </div>
           </div>
         </template>

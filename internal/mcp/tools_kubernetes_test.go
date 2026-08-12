@@ -76,14 +76,19 @@ func TestListKubernetesPods_Filters(t *testing.T) {
 	assert.Equal(t, "Running", store.lastFilters.Status)
 }
 
-func TestListKubernetesNodes_CE_EditionRequired(t *testing.T) {
+// TestListKubernetesNodes_OpenOnCommunity: the cluster views are Community.
+// Namespaces, workloads and pods were already open; the node and cluster views
+// joined them rather than staying behind a paywall that cut a single feature in
+// half. The node list reads the cluster's own API — it consumes no agent.
+func TestListKubernetesNodes_OpenOnCommunity(t *testing.T) {
 	withEdition(t, extension.Community)
-	svc := &Services{Kubernetes: &mcpK8sStore{}, Logger: slog.Default(), Version: "test"}
+	store := &mcpK8sStore{nodes: []kubernetes.K8sNode{{Name: "node-a"}}}
+	svc := &Services{Kubernetes: store, Logger: slog.Default(), Version: "test"}
 
 	result, _, err := listKubernetesNodesHandler(svc)(context.Background(), nil, listKubernetesNodesInput{})
 	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
+	assert.False(t, result.IsError, "kubernetes nodes must not be gated")
+	assert.Contains(t, textFromContent(t, result.Content), "node-a")
 }
 
 func TestListKubernetesNodes_Pro_Success(t *testing.T) {

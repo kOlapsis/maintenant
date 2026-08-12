@@ -31,20 +31,62 @@ func TestErrNotAvailable(t *testing.T) {
 	}
 }
 
-func TestAgentHostLimit(t *testing.T) {
-	orig := CurrentEdition
-	t.Cleanup(func() { CurrentEdition = orig })
+// TestEditionOrder pins Community < Personal < Pro. Everything else in the
+// authorization model is expressed in terms of this order.
+func TestEditionOrder(t *testing.T) {
+	if Community.rank() >= Personal.rank() || Personal.rank() >= Pro.rank() {
+		t.Fatalf("editions are out of order: community=%d personal=%d pro=%d",
+			Community.rank(), Personal.rank(), Pro.rank())
+	}
+}
 
-	// Community cannot enroll agents (multi-host is Pro-only).
-	CurrentEdition = func() Edition { return Community }
-	if got := AgentHostLimit(); got != 0 {
-		t.Fatalf("Community: expected 0, got %d", got)
+func TestAtLeast(t *testing.T) {
+	cases := []struct {
+		edition, required Edition
+		want              bool
+	}{
+		{Community, Community, true},
+		{Community, Personal, false},
+		{Community, Pro, false},
+		{Personal, Community, true},
+		{Personal, Personal, true},
+		{Personal, Pro, false},
+		{Pro, Community, true},
+		{Pro, Personal, true},
+		{Pro, Pro, true},
+
+		// An unrecognised edition grants nothing, and nothing satisfies it.
+		{"enterprise", Community, false},
+		{"enterprise", Pro, false},
+		{Pro, "enterprise", false},
+		{"", Community, false},
 	}
 
-	// Pro is capped (a future higher edition would lift this to -1).
-	CurrentEdition = func() Edition { return Pro }
-	if got := AgentHostLimit(); got != proAgentHostLimit {
-		t.Fatalf("Pro: expected %d, got %d", proAgentHostLimit, got)
+	for _, c := range cases {
+		if got := c.edition.AtLeast(c.required); got != c.want {
+			t.Errorf("Edition(%q).AtLeast(%q) = %v, want %v", c.edition, c.required, got, c.want)
+		}
+	}
+}
+
+func TestParseEdition(t *testing.T) {
+	for _, want := range []Edition{Community, Personal, Pro} {
+		got, ok := ParseEdition(string(want))
+		if !ok || got != want {
+			t.Errorf("ParseEdition(%q) = (%q, %v), want (%q, true)", want, got, ok, want)
+		}
+	}
+
+	// An unknown value falls back to the most restrictive edition and says so,
+	// leaving the caller to log the discrepancy (FR-010).
+	for _, s := range []string{"enterprise", "PRO", "", "personal "} {
+		got, ok := ParseEdition(s)
+		if ok {
+			t.Errorf("ParseEdition(%q) reported the value as known", s)
+		}
+		if got != Community {
+			t.Errorf("ParseEdition(%q) = %q, want %q", s, got, Community)
+		}
 	}
 }
 

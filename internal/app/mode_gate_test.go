@@ -17,8 +17,10 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 )
 
-// gateErrFragment is the part of the mode-gate error these tests key on.
-const gateErrFragment = "requires the Pro edition"
+// gateErrFragment is the part of the mode-gate error these tests key on. The
+// gate follows the multihost capability, so the edition it names is whatever
+// the registry declares — not a hardcoded tier.
+var gateErrFragment = "requires the " + string(extension.MinEdition(extension.CapMultihost)) + " edition"
 
 func withEdition(t *testing.T, e extension.Edition) {
 	t.Helper()
@@ -100,9 +102,9 @@ func TestNew_ServerMode_DoesNotGateOnEdition(t *testing.T) {
 	require.NotNil(t, a)
 }
 
-// TestStart_ServerMode_RejectedOutsidePro: the gate still guards, and reports
-// rather than calling os.Exit — the caller decides what to do with the error.
-func TestStart_ServerMode_RejectedOutsidePro(t *testing.T) {
+// TestStart_ServerMode_RejectedWithoutMultihost: the gate still guards, and
+// reports rather than calling os.Exit — the caller decides what to do with it.
+func TestStart_ServerMode_RejectedWithoutMultihost(t *testing.T) {
 	withEdition(t, extension.Community)
 	cfg, logger := modeGateCfg(t, "server")
 
@@ -110,25 +112,31 @@ func TestStart_ServerMode_RejectedOutsidePro(t *testing.T) {
 	require.NoError(t, err)
 
 	err = startAndCollect(t, a, 5*time.Second)
-	require.Error(t, err, "server mode must be refused outside Pro")
+	require.Error(t, err, "server mode must be refused where multi-host is closed")
 	assert.Contains(t, err.Error(), gateErrFragment)
 	assert.Contains(t, err.Error(), string(extension.Community),
 		"the refusal must name the edition actually in force")
 }
 
-// TestStart_ServerMode_AllowedInPro is the case that never worked: a valid Pro
-// license must let server mode boot.
-func TestStart_ServerMode_AllowedInPro(t *testing.T) {
-	withEdition(t, extension.Pro)
-	cfg, logger := modeGateCfg(t, "server")
+// TestStart_ServerMode_AllowedWhereMultihostIsOpen is the case that never
+// worked: a license that opens multi-host must let server mode boot. Both
+// paying editions qualify — multi-host is Personal, capped, not Pro-only.
+func TestStart_ServerMode_AllowedWhereMultihostIsOpen(t *testing.T) {
+	for _, edition := range []extension.Edition{extension.Personal, extension.Pro} {
+		t.Run(string(edition), func(t *testing.T) {
+			withEdition(t, edition)
+			require.True(t, extension.Allows(extension.CapMultihost))
 
-	a, err := app.New(cfg, logger)
-	require.NoError(t, err)
+			cfg, logger := modeGateCfg(t, "server")
+			a, err := app.New(cfg, logger)
+			require.NoError(t, err)
 
-	err = startAndCollect(t, a, 2*time.Second)
-	if err != nil {
-		assert.NotContains(t, err.Error(), gateErrFragment,
-			"server mode must not be refused under a Pro edition")
+			err = startAndCollect(t, a, 2*time.Second)
+			if err != nil {
+				assert.NotContains(t, err.Error(), gateErrFragment,
+					"server mode must not be refused when multi-host is open")
+			}
+		})
 	}
 }
 

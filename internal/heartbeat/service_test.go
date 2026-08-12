@@ -1008,3 +1008,23 @@ func TestService_ProcessExitCodePing_PayloadPreservedForPro(t *testing.T) {
 	require.NotNil(t, lastPing.Payload)
 	assert.Equal(t, payload, *lastPing.Payload)
 }
+
+// TestDefaultLicenseChecker_Unlimited: -1 means no cap, not a cap of -1.
+func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxHeartbeats: -1}
+	for _, count := range []int{0, 1, 5, 500} {
+		if !c.CanCreateHeartbeat(count) {
+			t.Errorf("CanCreateHeartbeat(%d) = false with an unlimited cap", count)
+		}
+	}
+}
+
+func TestDefaultLicenseChecker_Capped(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxHeartbeats: 5}
+	if !c.CanCreateHeartbeat(4) {
+		t.Error("the fifth heartbeat must be allowed")
+	}
+	if c.CanCreateHeartbeat(5) {
+		t.Error("the sixth heartbeat must be refused")
+	}
+}

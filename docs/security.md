@@ -68,7 +68,7 @@ These routes provide full read/write access to your monitoring system. **Always 
     The admin API provides unrestricted access to all monitoring data and configuration: creating webhooks, managing heartbeats, viewing container logs, acknowledging alerts, and more. There is no **user-level** authorization layer — any authenticated request that reaches the API is trusted, so the reverse proxy is your only access control.
 
 !!! note "A 403 on `/api/v1/*` is edition gating, not the proxy"
-    Some routes are reserved for the Pro edition (e.g. `/api/v1/agents`, `/api/v1/swarm/*`, `/api/v1/security/posture`, `/api/v1/cve`). In Community edition they return `403 PRO_REQUIRED` regardless of authentication — this is feature gating, not a reverse-proxy or trust problem. The dashboard hides these features, so a correctly-loaded SPA never calls them. Edition itself is reported by `/api/v1/edition` (always public-readable behind auth).
+    Some routes need a paid edition (e.g. `/api/v1/agents` and `/api/v1/security/posture` from Personal, `/api/v1/escalation-policies` from Pro). Below the required edition they return `403 EDITION_REQUIRED` regardless of authentication, naming the capability and the edition that grants it. This is feature gating, not a reverse-proxy or trust problem. The dashboard hides these features, so a correctly-loaded SPA never calls them. Edition and the capability catalogue are reported by `/api/v1/edition` (always public-readable behind auth).
 
 ---
 

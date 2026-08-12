@@ -48,9 +48,17 @@ type ErrorResponse struct {
 }
 
 // ErrorDetail contains the error code and human-readable message.
+// ErrorDetail is the body of an error response. The four optional fields carry
+// what an edition refusal needs so the interface can build its message and its
+// upgrade link without parsing the text. Every other API error keeps the shape
+// it has always had — the fields are omitted when empty.
 type ErrorDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code            string `json:"code"`
+	Message         string `json:"message"`
+	Feature         string `json:"feature,omitempty"`          // EDITION_REQUIRED
+	Resource        string `json:"resource,omitempty"`         // QUOTA_EXCEEDED, HOST_LIMIT_REACHED
+	Limit           *int   `json:"limit,omitempty"`            // QUOTA_EXCEEDED, HOST_LIMIT_REACHED
+	RequiredEdition string `json:"required_edition,omitempty"` // both
 }
 
 // HandlerDeps holds all dependencies needed to build the API handler.
@@ -268,7 +276,7 @@ func NewRouter(d HandlerDeps) *Router {
 			rh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 		}
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/current", rh.HandleGetCurrent)
-		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", requirePro(rh.HandleGetHistory))
+		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", requireCapability(extension.CapResourceHistory, rh.HandleGetHistory))
 		r.mux.HandleFunc("GET /api/v1/resources/summary", rh.HandleGetSummary)
 		r.mux.HandleFunc("GET /api/v1/resources/hosts", rh.HandleGetHosts)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/alerts", rh.HandleGetAlertConfig)
@@ -326,50 +334,50 @@ func NewRouter(d HandlerDeps) *Router {
 		// Incidents
 		if d.StatusIncidents != nil {
 			r.mux.HandleFunc("GET /api/v1/status/incidents", sh.HandleListIncidents)
-			r.mux.HandleFunc("POST /api/v1/status/incidents", requirePro(sh.HandleCreateIncident))
-			r.mux.HandleFunc("PUT /api/v1/status/incidents/{id}", requirePro(sh.HandleUpdateIncident))
-			r.mux.HandleFunc("DELETE /api/v1/status/incidents/{id}", requirePro(sh.HandleDeleteIncident))
-			r.mux.HandleFunc("POST /api/v1/status/incidents/{id}/updates", requirePro(sh.HandlePostUpdate))
+			r.mux.HandleFunc("POST /api/v1/status/incidents", requireCapability(extension.CapIncidents, sh.HandleCreateIncident))
+			r.mux.HandleFunc("PUT /api/v1/status/incidents/{id}", requireCapability(extension.CapIncidents, sh.HandleUpdateIncident))
+			r.mux.HandleFunc("DELETE /api/v1/status/incidents/{id}", requireCapability(extension.CapIncidents, sh.HandleDeleteIncident))
+			r.mux.HandleFunc("POST /api/v1/status/incidents/{id}/updates", requireCapability(extension.CapIncidents, sh.HandlePostUpdate))
 		}
 		// Maintenance windows
 		if d.StatusMaintenance != nil {
 			r.mux.HandleFunc("GET /api/v1/status/maintenance", sh.HandleListMaintenance)
-			r.mux.HandleFunc("POST /api/v1/status/maintenance", requirePro(sh.HandleCreateMaintenance))
-			r.mux.HandleFunc("PUT /api/v1/status/maintenance/{id}", requirePro(sh.HandleUpdateMaintenance))
-			r.mux.HandleFunc("DELETE /api/v1/status/maintenance/{id}", requirePro(sh.HandleDeleteMaintenance))
+			r.mux.HandleFunc("POST /api/v1/status/maintenance", requireCapability(extension.CapMaintenanceWindows, sh.HandleCreateMaintenance))
+			r.mux.HandleFunc("PUT /api/v1/status/maintenance/{id}", requireCapability(extension.CapMaintenanceWindows, sh.HandleUpdateMaintenance))
+			r.mux.HandleFunc("DELETE /api/v1/status/maintenance/{id}", requireCapability(extension.CapMaintenanceWindows, sh.HandleDeleteMaintenance))
 		}
 		// Subscribers
 		if d.StatusSubscribers != nil {
-			r.mux.HandleFunc("GET /api/v1/status/subscribers", requirePro(sh.HandleListSubscribers))
+			r.mux.HandleFunc("GET /api/v1/status/subscribers", requireCapability(extension.CapSubscribers, sh.HandleListSubscribers))
 		}
 		// SMTP config (Pro only)
-		r.mux.HandleFunc("GET /api/v1/status/smtp", requirePro(sh.HandleGetSmtpConfig))
-		r.mux.HandleFunc("PUT /api/v1/status/smtp", requirePro(sh.HandleUpdateSmtpConfig))
-		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requirePro(sh.HandleTestSmtp))
+		r.mux.HandleFunc("GET /api/v1/status/smtp", requireCapability(extension.CapSMTP, sh.HandleGetSmtpConfig))
+		r.mux.HandleFunc("PUT /api/v1/status/smtp", requireCapability(extension.CapSMTP, sh.HandleUpdateSmtpConfig))
+		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requireCapability(extension.CapSMTP, sh.HandleTestSmtp))
 	}
 
 	// Status page personalization (Pro only)
 	if d.PersonalizationSvc != nil {
 		ph := NewPersonalizationHandler(d.PersonalizationSvc)
 		// Settings
-		r.mux.HandleFunc("GET /api/v1/status-page/settings", requirePro(ph.HandleGetSettings))
-		r.mux.HandleFunc("PUT /api/v1/status-page/settings", requirePro(ph.HandlePutSettings))
+		r.mux.HandleFunc("GET /api/v1/status-page/settings", requireCapability(extension.CapPersonalization, ph.HandleGetSettings))
+		r.mux.HandleFunc("PUT /api/v1/status-page/settings", requireCapability(extension.CapPersonalization, ph.HandlePutSettings))
 		// Assets
-		r.mux.HandleFunc("PUT /api/v1/status-page/assets/{role}", requirePro(ph.HandlePutAsset))
-		r.mux.HandleFunc("GET /api/v1/status-page/assets/{role}", requirePro(ph.HandleGetAsset))
-		r.mux.HandleFunc("DELETE /api/v1/status-page/assets/{role}", requirePro(ph.HandleDeleteAsset))
+		r.mux.HandleFunc("PUT /api/v1/status-page/assets/{role}", requireCapability(extension.CapPersonalization, ph.HandlePutAsset))
+		r.mux.HandleFunc("GET /api/v1/status-page/assets/{role}", requireCapability(extension.CapPersonalization, ph.HandleGetAsset))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/assets/{role}", requireCapability(extension.CapPersonalization, ph.HandleDeleteAsset))
 		// Footer links
-		r.mux.HandleFunc("GET /api/v1/status-page/footer-links", requirePro(ph.HandleListFooterLinks))
-		r.mux.HandleFunc("POST /api/v1/status-page/footer-links", requirePro(ph.HandleCreateFooterLink))
-		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/order", requirePro(ph.HandleReorderFooterLinks))
-		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/{id}", requirePro(ph.HandleUpdateFooterLink))
-		r.mux.HandleFunc("DELETE /api/v1/status-page/footer-links/{id}", requirePro(ph.HandleDeleteFooterLink))
+		r.mux.HandleFunc("GET /api/v1/status-page/footer-links", requireCapability(extension.CapPersonalization, ph.HandleListFooterLinks))
+		r.mux.HandleFunc("POST /api/v1/status-page/footer-links", requireCapability(extension.CapPersonalization, ph.HandleCreateFooterLink))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/order", requireCapability(extension.CapPersonalization, ph.HandleReorderFooterLinks))
+		r.mux.HandleFunc("PUT /api/v1/status-page/footer-links/{id}", requireCapability(extension.CapPersonalization, ph.HandleUpdateFooterLink))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/footer-links/{id}", requireCapability(extension.CapPersonalization, ph.HandleDeleteFooterLink))
 		// FAQ
-		r.mux.HandleFunc("GET /api/v1/status-page/faq", requirePro(ph.HandleListFAQ))
-		r.mux.HandleFunc("POST /api/v1/status-page/faq", requirePro(ph.HandleCreateFAQItem))
-		r.mux.HandleFunc("PUT /api/v1/status-page/faq/order", requirePro(ph.HandleReorderFAQ))
-		r.mux.HandleFunc("PUT /api/v1/status-page/faq/{id}", requirePro(ph.HandleUpdateFAQItem))
-		r.mux.HandleFunc("DELETE /api/v1/status-page/faq/{id}", requirePro(ph.HandleDeleteFAQItem))
+		r.mux.HandleFunc("GET /api/v1/status-page/faq", requireCapability(extension.CapPersonalization, ph.HandleListFAQ))
+		r.mux.HandleFunc("POST /api/v1/status-page/faq", requireCapability(extension.CapPersonalization, ph.HandleCreateFAQItem))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/order", requireCapability(extension.CapPersonalization, ph.HandleReorderFAQ))
+		r.mux.HandleFunc("PUT /api/v1/status-page/faq/{id}", requireCapability(extension.CapPersonalization, ph.HandleUpdateFAQItem))
+		r.mux.HandleFunc("DELETE /api/v1/status-page/faq/{id}", requireCapability(extension.CapPersonalization, ph.HandleDeleteFAQItem))
 	}
 
 	// Escalation policies
@@ -478,17 +486,17 @@ func (r *Router) registerEscalationRoutes(d HandlerDeps) {
 		return
 	}
 	eh := NewEscalationHandler(d.EscalationSvc)
-	r.mux.HandleFunc("POST /api/v1/escalation-policies", requirePro(eh.HandleCreatePolicy))
-	r.mux.HandleFunc("GET /api/v1/escalation-policies", requirePro(eh.HandleListPolicies))
+	r.mux.HandleFunc("POST /api/v1/escalation-policies", requireCapability(extension.CapAlertEscalation, eh.HandleCreatePolicy))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies", requireCapability(extension.CapAlertEscalation, eh.HandleListPolicies))
 	// overlap-probe must be registered before /{id} to avoid the wildcard matching the literal segment.
-	r.mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requirePro(eh.HandleOverlapProbe))
-	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requirePro(eh.HandleGetPolicy))
-	r.mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requirePro(eh.HandleDeletePolicy))
-	r.mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requirePro(eh.HandleUpdatePolicy))
-	r.mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requirePro(eh.HandleSetPolicyActive))
-	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requirePro(eh.HandleListPolicyRuns))
-	r.mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requirePro(eh.HandleGetRun))
-	r.mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requirePro(eh.HandleListAlertRuns))
+	r.mux.HandleFunc("POST /api/v1/escalation-policies/overlap-probe", requireCapability(extension.CapAlertEscalation, eh.HandleOverlapProbe))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}", requireCapability(extension.CapAlertEscalation, eh.HandleGetPolicy))
+	r.mux.HandleFunc("DELETE /api/v1/escalation-policies/{id}", requireCapability(extension.CapAlertEscalation, eh.HandleDeletePolicy))
+	r.mux.HandleFunc("PUT /api/v1/escalation-policies/{id}", requireCapability(extension.CapAlertEscalation, eh.HandleUpdatePolicy))
+	r.mux.HandleFunc("PATCH /api/v1/escalation-policies/{id}/active", requireCapability(extension.CapAlertEscalation, eh.HandleSetPolicyActive))
+	r.mux.HandleFunc("GET /api/v1/escalation-policies/{id}/runs", requireCapability(extension.CapAlertEscalation, eh.HandleListPolicyRuns))
+	r.mux.HandleFunc("GET /api/v1/escalation-runs/{run_id}", requireCapability(extension.CapAlertEscalation, eh.HandleGetRun))
+	r.mux.HandleFunc("GET /api/v1/alerts/{alert_id}/escalation-runs", requireCapability(extension.CapAlertEscalation, eh.HandleListAlertRuns))
 }
 
 // registerUIRoutes registers optional UI endpoints (daily uptime, log streaming, top resources).
@@ -528,26 +536,44 @@ func (r *Router) registerUIRoutes(d HandlerDeps) {
 	}
 }
 
+// rfc3339OrEmpty renders a date the license may not carry. A perpetual license
+// has no end date, and an instance outside no update window has neither of the
+// two window dates. Serialising the zero time would emit year 1, which reads as
+// a deadline long past — an empty string is the only value that cannot be
+// mistaken for one.
+func rfc3339OrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
+
+// licenseStatusPayload is the wire shape of GET /api/v1/license/status. Every
+// branch goes through it so the response always carries the same keys.
+func licenseStatusPayload(state *license.State, edition extension.Edition) map[string]interface{} {
+	return map[string]interface{}{
+		"status":             state.Status,
+		"edition":            string(edition),
+		"plan":               state.Plan,
+		"message":            state.Message,
+		"verified_at":        rfc3339OrEmpty(state.VerifiedAt),
+		"expires_at":         rfc3339OrEmpty(state.ExpiresAt),
+		"updates_until":      rfc3339OrEmpty(state.UpdatesUntil),
+		"update_grace_until": rfc3339OrEmpty(state.UpdateGraceUntil),
+	}
+}
+
 func (r *Router) registerLicenseRoutes(mgr *license.Manager) {
 	r.mux.HandleFunc("GET /api/v1/license/status", func(w http.ResponseWriter, req *http.Request) {
 		// No license configured (Community): report an inactive state rather than
 		// leaving the documented route unregistered (404).
 		if mgr == nil {
-			WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"status":  "inactive",
-				"plan":    "",
-				"message": "",
-			})
+			WriteJSON(w, http.StatusOK,
+				licenseStatusPayload(&license.State{Status: "inactive"}, extension.Community))
 			return
 		}
-		state := mgr.State()
-		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"status":      state.Status,
-			"plan":        state.Plan,
-			"message":     state.Message,
-			"verified_at": state.VerifiedAt,
-			"expires_at":  state.ExpiresAt,
-		})
+
+		WriteJSON(w, http.StatusOK, licenseStatusPayload(mgr.State(), mgr.Edition()))
 	})
 }
 
@@ -579,8 +605,8 @@ func (r *Router) registerUpdateRoutes(d HandlerDeps) {
 	// Risk scoring routes (Pro only)
 	// Note: history uses a query param (?history=1) to avoid conflict with {container_id...}.
 	rh := NewRiskHandler(d.UpdateStore)
-	r.mux.HandleFunc("GET /api/v1/risk", requirePro(rh.HandleListRiskScores))
-	r.mux.HandleFunc("GET /api/v1/risk/{container_id...}", requirePro(rh.HandleGetContainerRisk))
+	r.mux.HandleFunc("GET /api/v1/risk", requireCapability(extension.CapRiskScoring, rh.HandleListRiskScores))
+	r.mux.HandleFunc("GET /api/v1/risk/{container_id...}", requireCapability(extension.CapRiskScoring, rh.HandleGetContainerRisk))
 }
 
 func (r *Router) registerSecurityRoutes(d HandlerDeps) {
@@ -605,14 +631,14 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore, d.AlertStore, d.SecuritySvc, d.Broker)
 
 	// Posture endpoints
-	r.mux.HandleFunc("GET /api/v1/security/posture", requirePro(ph.HandleGetPosture))
-	r.mux.HandleFunc("GET /api/v1/security/posture/containers", requirePro(ph.HandleListContainerPostures))
-	r.mux.HandleFunc("GET /api/v1/security/posture/containers/{container_id}", requirePro(ph.HandleGetContainerPosture))
+	r.mux.HandleFunc("GET /api/v1/security/posture", requireCapability(extension.CapSecurityPosture, ph.HandleGetPosture))
+	r.mux.HandleFunc("GET /api/v1/security/posture/containers", requireCapability(extension.CapSecurityPosture, ph.HandleListContainerPostures))
+	r.mux.HandleFunc("GET /api/v1/security/posture/containers/{container_id}", requireCapability(extension.CapSecurityPosture, ph.HandleGetContainerPosture))
 
 	// Acknowledgment endpoints
-	r.mux.HandleFunc("POST /api/v1/security/acknowledgments", requirePro(ph.HandleCreateAcknowledgment))
-	r.mux.HandleFunc("GET /api/v1/security/acknowledgments", requirePro(ph.HandleListAcknowledgments))
-	r.mux.HandleFunc("DELETE /api/v1/security/acknowledgments/{id}", requirePro(ph.HandleDeleteAcknowledgment))
+	r.mux.HandleFunc("POST /api/v1/security/acknowledgments", requireCapability(extension.CapSecurityPosture, ph.HandleCreateAcknowledgment))
+	r.mux.HandleFunc("GET /api/v1/security/acknowledgments", requireCapability(extension.CapSecurityPosture, ph.HandleListAcknowledgments))
+	r.mux.HandleFunc("DELETE /api/v1/security/acknowledgments/{id}", requireCapability(extension.CapSecurityPosture, ph.HandleDeleteAcknowledgment))
 }
 
 func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
@@ -646,10 +672,10 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("GET /api/v1/kubernetes/pods/{namespace}/{name}", kh.HandleGetPodDetail)
 
 	// Pro endpoints
-	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes", requirePro(kh.HandleListNodes))
-	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes/{name}/resources", requirePro(kh.HandleGetNodeResources))
-	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}/resources", requirePro(kh.HandleGetWorkloadResources))
-	r.mux.HandleFunc("GET /api/v1/kubernetes/cluster", requirePro(kh.HandleGetCluster))
+	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes", kh.HandleListNodes)
+	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes/{name}/resources", kh.HandleGetNodeResources)
+	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}/resources", kh.HandleGetWorkloadResources)
+	r.mux.HandleFunc("GET /api/v1/kubernetes/cluster", kh.HandleGetCluster)
 }
 
 func (r *Router) registerSwarmRoutes(d HandlerDeps) {
@@ -672,14 +698,14 @@ func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("GET /api/v1/swarm/tasks", sh.HandleListTasks)
 
 	// Pro node endpoints
-	r.mux.HandleFunc("GET /api/v1/swarm/nodes", requirePro(sh.HandleListNodes))
-	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", requirePro(sh.HandleGetNodeDetail))
+	r.mux.HandleFunc("GET /api/v1/swarm/nodes", sh.HandleListNodes)
+	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", sh.HandleGetNodeDetail)
 
 	// Pro update status, resources, dashboard, and cluster endpoints
-	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", requirePro(sh.HandleGetUpdateStatus))
-	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/resources", requirePro(sh.HandleGetServiceResources))
-	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", requirePro(sh.HandleGetDashboard))
-	r.mux.HandleFunc("GET /api/v1/swarm/cluster", requirePro(sh.HandleGetCluster))
+	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", sh.HandleGetUpdateStatus)
+	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/resources", sh.HandleGetServiceResources)
+	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", sh.HandleGetDashboard)
+	r.mux.HandleFunc("GET /api/v1/swarm/cluster", sh.HandleGetCluster)
 }
 
 // Handler returns the HTTP handler with the full middleware chain applied.
@@ -711,6 +737,12 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
+// WriteErrorDetail writes an error carrying the structured fields — the edition
+// refusals and the quota refusals. Plain errors keep using WriteError.
+func WriteErrorDetail(w http.ResponseWriter, status int, detail ErrorDetail) {
+	WriteJSON(w, status, ErrorResponse{Error: detail})
+}
+
 // handleHealth returns the health check response.
 func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	resp := map[string]interface{}{
@@ -732,48 +764,43 @@ func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		isPro := extension.CurrentEdition() == extension.Pro
 
-		// Compute quotas
-		quotas := r.computeQuotas(ctx, d, isPro)
+		// Both objects are projected from the same registry, so they carry
+		// exactly the same keys and cannot disagree with the middleware.
+		catalog := extension.Catalog()
+		features := make(map[string]bool, len(catalog))
+		featureEditions := make(map[string]string, len(catalog))
+		for c, min := range catalog {
+			features[string(c)] = extension.Allows(c)
+			featureEditions[string(c)] = string(min)
+		}
+
+		// smtp is the one flag that is not purely an edition decision: the
+		// capability says what the edition permits, the configuration says what
+		// is ready. The two refusals must stay distinguishable (FR-015).
+		features[string(extension.CapSMTP)] = extension.Allows(extension.CapSMTP) && smtpConfigured
 
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": r.organisationName,
 			"status_url":        r.statusURL,
-			"features": map[string]bool{
-				"cve_enrichment":         isPro,
-				"risk_scoring":           isPro,
-				"changelog":              isPro,
-				"incidents":              isPro,
-				"maintenance_windows":    isPro,
-				"subscribers":            isPro,
-				"smtp":                   smtpConfigured && isPro,
-				"slack":                  isPro,
-				"teams":                  isPro,
-				"resource_history":       isPro,
-				"alert_escalation":       isPro,
-				"alert_routing":          true,
-				"alert_advanced_filters": isPro,
-				"alert_entity_routing":   isPro,
-				"security_posture":       isPro,
-				"ocsp_stapling":          isPro,
-				"swarm_dashboard":        isPro,
-				"k8s_cluster":            isPro,
-				"personalization":        isPro,
-				"multihost":              isPro,
-			},
-			"quotas": quotas,
+			"features":          features,
+			"feature_editions":  featureEditions,
+			"quotas":            r.computeQuotas(ctx, d),
 		})
 	}
 }
 
-// computeQuotas returns quota information for all gated resources.
-func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isPro bool) map[string]interface{} {
+// computeQuotas returns real usage and the applicable limit for every capped
+// resource, in every edition. A limit of -1 means unlimited.
+func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps) map[string]interface{} {
 	quotas := make(map[string]interface{})
 
-	// Agent hosts: capped even on Pro (a future higher edition lifts the cap).
-	// The local runtime is never counted (CountByStatus excludes it).
+	// Usage is counted in every edition. It used to be short-circuited to 0 on
+	// Pro, which reported "0 endpoints" to an instance running fifty of them.
+	// Limits all come from extension.Limit, never from a literal here.
+
+	// Agent hosts. The local runtime is never counted (CountByStatus excludes it).
 	if d.AgentStore != nil {
 		used, _, err := d.AgentStore.CountByStatus(ctx)
 		if err != nil {
@@ -782,22 +809,10 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isPro bool) m
 		}
 		quotas["agent_hosts"] = map[string]interface{}{
 			"used":  used,
-			"limit": extension.AgentHostLimit(),
+			"limit": extension.Limit(extension.ResourceAgentHosts),
 		}
 	}
 
-	// For Pro, all other gated limits are unlimited (-1).
-	if isPro {
-		quotas["endpoints"] = map[string]interface{}{"used": 0, "limit": -1}
-		quotas["heartbeats"] = map[string]interface{}{"used": 0, "limit": -1}
-		quotas["certificates"] = map[string]interface{}{"used": 0, "limit": -1}
-		quotas["status_components"] = map[string]interface{}{"used": 0, "limit": -1}
-		return quotas
-	}
-
-	// Community edition: compute actual usage
-
-	// Endpoints: max 10
 	if d.Endpoints != nil {
 		used, err := d.Endpoints.CountActiveEndpoints(ctx)
 		if err != nil {
@@ -806,11 +821,10 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isPro bool) m
 		}
 		quotas["endpoints"] = map[string]interface{}{
 			"used":  used,
-			"limit": 10,
+			"limit": extension.Limit(extension.ResourceEndpoints),
 		}
 	}
 
-	// Heartbeats: max 5
 	if d.Heartbeats != nil {
 		used, err := d.Heartbeats.CountActiveHeartbeats(ctx)
 		if err != nil {
@@ -819,11 +833,11 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isPro bool) m
 		}
 		quotas["heartbeats"] = map[string]interface{}{
 			"used":  used,
-			"limit": 5,
+			"limit": extension.Limit(extension.ResourceHeartbeats),
 		}
 	}
 
-	// Certificates (standalone only): max 5
+	// Certificates: standalone monitors only.
 	if d.Certificates != nil {
 		used, err := d.Certificates.CountStandaloneMonitors(ctx)
 		if err != nil {
@@ -832,11 +846,10 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isPro bool) m
 		}
 		quotas["certificates"] = map[string]interface{}{
 			"used":  used,
-			"limit": 5,
+			"limit": extension.Limit(extension.ResourceCertificates),
 		}
 	}
 
-	// Status page components: max 3
 	if d.StatusComponents != nil {
 		components, err := d.StatusComponents.ListComponents(ctx)
 		if err != nil {
@@ -845,7 +858,7 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps, isPro bool) m
 		}
 		quotas["status_components"] = map[string]interface{}{
 			"used":  len(components),
-			"limit": 3,
+			"limit": extension.Limit(extension.ResourceStatusComponents),
 		}
 	}
 
@@ -863,16 +876,16 @@ func (r *Router) registerAgentRoutes(d HandlerDeps) {
 	ah := NewAgentHandler(d.AgentStore, d.AgentSessions, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen, staleThreshold)
 
 	// Enrollment token endpoints (order matters: specific paths before wildcards)
-	r.mux.HandleFunc("GET /api/v1/agents/metrics", requirePro(ah.HandleGetAgentMetrics))
-	r.mux.HandleFunc("POST /api/v1/agents/enrollment-tokens", requirePro(ah.HandleCreateEnrollmentToken))
-	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens", requirePro(ah.HandleListEnrollmentTokens))
-	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens/{token_id}", requirePro(ah.HandleGetEnrollmentToken))
-	r.mux.HandleFunc("DELETE /api/v1/agents/enrollment-tokens/{token_id}", requirePro(ah.HandleDeleteEnrollmentToken))
+	r.mux.HandleFunc("GET /api/v1/agents/metrics", requireCapability(extension.CapMultihost, ah.HandleGetAgentMetrics))
+	r.mux.HandleFunc("POST /api/v1/agents/enrollment-tokens", requireCapability(extension.CapMultihost, ah.HandleCreateEnrollmentToken))
+	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens", requireCapability(extension.CapMultihost, ah.HandleListEnrollmentTokens))
+	r.mux.HandleFunc("GET /api/v1/agents/enrollment-tokens/{token_id}", requireCapability(extension.CapMultihost, ah.HandleGetEnrollmentToken))
+	r.mux.HandleFunc("DELETE /api/v1/agents/enrollment-tokens/{token_id}", requireCapability(extension.CapMultihost, ah.HandleDeleteEnrollmentToken))
 
 	// Agent endpoints
-	r.mux.HandleFunc("GET /api/v1/agents", requirePro(ah.HandleListAgents))
-	r.mux.HandleFunc("GET /api/v1/agents/{id}", requirePro(ah.HandleGetAgent))
-	r.mux.HandleFunc("PATCH /api/v1/agents/{id}", requirePro(ah.HandleUpdateAgent))
-	r.mux.HandleFunc("POST /api/v1/agents/{id}/revoke", requirePro(ah.HandleRevokeAgent))
-	r.mux.HandleFunc("DELETE /api/v1/agents/{id}", requirePro(ah.HandleDeleteAgent))
+	r.mux.HandleFunc("GET /api/v1/agents", requireCapability(extension.CapMultihost, ah.HandleListAgents))
+	r.mux.HandleFunc("GET /api/v1/agents/{id}", requireCapability(extension.CapMultihost, ah.HandleGetAgent))
+	r.mux.HandleFunc("PATCH /api/v1/agents/{id}", requireCapability(extension.CapMultihost, ah.HandleUpdateAgent))
+	r.mux.HandleFunc("POST /api/v1/agents/{id}/revoke", requireCapability(extension.CapMultihost, ah.HandleRevokeAgent))
+	r.mux.HandleFunc("DELETE /api/v1/agents/{id}", requireCapability(extension.CapMultihost, ah.HandleDeleteAgent))
 }

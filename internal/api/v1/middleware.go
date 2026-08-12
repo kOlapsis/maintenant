@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -154,13 +155,84 @@ func bodyLimit(maxBytes int64, next http.Handler) http.Handler {
 	})
 }
 
-// requirePro wraps a handler to reject requests in Community edition.
-func requirePro(next http.HandlerFunc) http.HandlerFunc {
+// requireCapability wraps a handler to reject requests the running edition does
+// not open. The refusal names the capability and the edition that would grant
+// it, so the interface can build its message and its upgrade link without
+// parsing the text.
+func requireCapability(c extension.Capability, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if extension.CurrentEdition() != extension.Pro {
-			WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+		if !extension.Allows(c) {
+			required := extension.MinEdition(c)
+			WriteErrorDetail(w, http.StatusForbidden, ErrorDetail{
+				Code:            "EDITION_REQUIRED",
+				Message:         "This feature requires the " + titleEdition(required) + " edition.",
+				Feature:         string(c),
+				RequiredEdition: string(required),
+			})
 			return
 		}
 		next(w, r)
 	}
+}
+
+// refuseCapability writes the same refusal as requireCapability, for handlers
+// that check a capability partway through rather than at the door.
+func refuseCapability(w http.ResponseWriter, c extension.Capability) {
+	required := extension.MinEdition(c)
+	WriteErrorDetail(w, http.StatusForbidden, ErrorDetail{
+		Code:            "EDITION_REQUIRED",
+		Message:         "This feature requires the " + titleEdition(required) + " edition.",
+		Feature:         string(c),
+		RequiredEdition: string(required),
+	})
+}
+
+// resourceLabel is how a capped resource is named in a refusal message.
+var resourceLabel = map[extension.Resource]string{
+	extension.ResourceEndpoints:        "endpoints",
+	extension.ResourceHeartbeats:       "heartbeat monitors",
+	extension.ResourceCertificates:     "certificate monitors",
+	extension.ResourceStatusComponents: "status page components",
+	extension.ResourceAgentHosts:       "remote agents",
+}
+
+// refuseQuota writes the 403 QUOTA_EXCEEDED refusal shared by the four capped
+// creation paths. resource, limit and the edition that lifts the cap all come
+// from extension.Limit — the interface composes its own sentence from them and
+// never parses this text.
+func refuseQuota(w http.ResponseWriter, resource extension.Resource) {
+	writeQuotaRefusal(w, http.StatusForbidden, "QUOTA_EXCEEDED", resource)
+}
+
+func writeQuotaRefusal(w http.ResponseWriter, status int, code string, resource extension.Resource) {
+	limit := extension.Limit(resource)
+	label := resourceLabel[resource]
+	if label == "" {
+		label = string(resource)
+	}
+
+	// The next edition up is the one that lifts the cap. Personal lifts every
+	// cap except agent hosts, which only Pro makes unlimited.
+	required := extension.Personal
+	if resource == extension.ResourceAgentHosts && extension.CurrentEdition().AtLeast(extension.Personal) {
+		required = extension.Pro
+	}
+
+	WriteErrorDetail(w, status, ErrorDetail{
+		Code: code,
+		Message: fmt.Sprintf("The %s edition is limited to %d %s.",
+			titleEdition(extension.CurrentEdition()), limit, label),
+		Resource:        string(resource),
+		Limit:           &limit,
+		RequiredEdition: string(required),
+	})
+}
+
+// titleEdition renders an edition for display: "personal" reads as "Personal".
+func titleEdition(e extension.Edition) string {
+	s := string(e)
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

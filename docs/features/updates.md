@@ -194,7 +194,7 @@ The compose working directory is extracted from the `com.docker.compose.project.
 
 ---
 
-## CVE Enrichment & Risk Scoring :material-crown:{ title="Pro" }
+## CVE Enrichment & Risk Scoring :material-star-four-points:{ title="Personal" }
 With maintenant Pro, update intelligence goes beyond digest comparison. Each available update is enriched with vulnerability data:
 
 - **CVE details** — Known vulnerabilities affecting the current and target versions
