@@ -207,7 +207,7 @@ Maintenant comes in three editions, in order: **Community**, **Personal**, **Pro
 
 A Personal license never expires and includes one year of product updates.
 Every version released inside that year stays licensed for life; a further year
-of updates costs €59. See [COMMERCIAL-LICENSE.md](../../COMMERCIAL-LICENSE.md).
+of updates costs €59. See [COMMERCIAL-LICENSE.md](https://github.com/kOlapsis/maintenant/blob/main/COMMERCIAL-LICENSE.md).
 
 To unlock Personal or Pro, set the `MAINTENANT_LICENSE_KEY` environment variable:
 
