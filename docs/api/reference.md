@@ -44,6 +44,7 @@ All endpoints are under `/api/v1/`. Responses are JSON. Errors follow a standard
 | `GET` | `/api/v1/endpoints` | List all monitored endpoints |
 | `GET` | `/api/v1/endpoints/{id}` | Get endpoint details |
 | `GET` | `/api/v1/endpoints/{id}/checks` | List check results |
+| `POST` | `/api/v1/endpoints/{id}/check` | Probe now and return the refreshed endpoint |
 | `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime percentages |
 
 ---
@@ -85,6 +86,7 @@ These routes do not require authentication:
 | `PUT` | `/api/v1/certificates/{id}` | Update a certificate monitor |
 | `DELETE` | `/api/v1/certificates/{id}` | Delete a certificate monitor |
 | `GET` | `/api/v1/certificates/{id}/checks` | List check history |
+| `POST` | `/api/v1/certificates/{id}/check` | Scan now and return the refreshed monitor |
 
 ---
 

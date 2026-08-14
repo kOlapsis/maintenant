@@ -21,6 +21,14 @@ maintenant connects to the domain, performs a full TLS handshake, parses the cer
 - Chain validity
 - OCSP staple (Personal, see [OCSP Stapling](#ocsp-stapling) below)
 
+### Checking on demand
+
+Monitors are scanned on their own interval, which is usually a day. After renewing a certificate by hand, **Check now** in the certificate panel scans it immediately: the status, the chain and the alert are recomputed on the spot, and the next scheduled scan is pushed a full interval out. No need to wait for the nightly run to see an incident close.
+
+The button is only offered for monitors the server scans itself. A monitor discovered by an agent is scanned from that agent's network, on a one-minute cycle, so it refreshes on its own.
+
+Endpoints have the same button in their panel, for the same reason.
+
 ---
 
 ## Alert Thresholds
@@ -178,6 +186,7 @@ Several monitors can target the same `hostname:port` with different `server_name
 | `PUT` | `/api/v1/certificates/{id}` | Update a monitor |
 | `DELETE` | `/api/v1/certificates/{id}` | Delete a monitor |
 | `GET` | `/api/v1/certificates/{id}/checks` | List check history |
+| `POST` | `/api/v1/certificates/{id}/check` | Scan now, without waiting for the next scheduled check |
 
 ---
 

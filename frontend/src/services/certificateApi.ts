@@ -119,6 +119,14 @@ export function getCertificate(id: string): Promise<CertificateDetailResponse> {
   return fetchJSON<CertificateDetailResponse>(`${API_BASE}/certificates/${id}`)
 }
 
+// checkCertificateNow scans the target immediately and resolves with the refreshed
+// monitor. Rejects with a 409 when an agent owns the scan or a check is running.
+export function checkCertificateNow(id: string): Promise<CertificateDetailResponse> {
+  return fetchJSON<CertificateDetailResponse>(`${API_BASE}/certificates/${id}/check`, {
+    method: 'POST',
+  })
+}
+
 export function createCertificate(data: CreateCertificateInput): Promise<CertificateCreateResponse> {
   return fetchJSON<CertificateCreateResponse>(`${API_BASE}/certificates`, {
     method: 'POST',

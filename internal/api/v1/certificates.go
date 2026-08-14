@@ -12,6 +12,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -91,14 +92,50 @@ func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	WriteJSON(w, http.StatusOK, h.monitorResponse(r.Context(), monitor))
+}
+
+// HandleCheckNow handles POST /api/v1/certificates/{id}/check. It scans the target
+// right away and answers with the refreshed monitor, so a renewed certificate can
+// be confirmed without waiting for the next scheduled check.
+func (h *CertificateHandler) HandleCheckNow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
+		return
+	}
+
+	monitor, err := h.svc.CheckNow(r.Context(), id)
+	switch {
+	case errors.Is(err, certificate.ErrMonitorNotFound):
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Certificate monitor not found")
+		return
+	case errors.Is(err, certificate.ErrAgentScanned):
+		WriteError(w, http.StatusConflict, "AGENT_SCANNED",
+			"This certificate is scanned by its agent, which re-checks it on its own cycle")
+		return
+	case errors.Is(err, certificate.ErrCheckInProgress):
+		WriteError(w, http.StatusConflict, "CHECK_IN_PROGRESS", "A check is already running for this monitor")
+		return
+	case err != nil:
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check certificate")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, h.monitorResponse(r.Context(), monitor))
+}
+
+// monitorResponse builds the monitor payload with its latest check result and
+// chain. Shared by the read and the on-demand check so both answer the same shape.
+func (h *CertificateHandler) monitorResponse(ctx context.Context, monitor *certificate.CertMonitor) map[string]interface{} {
 	response := map[string]interface{}{
 		"certificate": monitor,
 	}
 
 	// Include latest check result with chain
-	latest, err := h.svc.GetLatestCheckResult(r.Context(), id)
+	latest, err := h.svc.GetLatestCheckResult(ctx, monitor.ID)
 	if err == nil && latest != nil {
-		chain, _ := h.svc.GetChainEntries(r.Context(), latest.ID)
+		chain, _ := h.svc.GetChainEntries(ctx, latest.ID)
 		if chain == nil {
 			chain = []*certificate.CertChainEntry{}
 		}
@@ -136,7 +173,7 @@ func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		response["latest_check"] = latestCheckMap
 	}
 
-	WriteJSON(w, http.StatusOK, response)
+	return response
 }
 
 // HandleCreate handles POST /api/v1/certificates

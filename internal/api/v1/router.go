@@ -243,6 +243,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("PUT /api/v1/endpoints/{id}", eh.HandleUpdateEndpoint)
 		r.mux.HandleFunc("DELETE /api/v1/endpoints/{id}", eh.HandleDeleteEndpoint)
 		r.mux.HandleFunc("GET /api/v1/endpoints/{id}/checks", eh.HandleListChecks)
+		r.mux.HandleFunc("POST /api/v1/endpoints/{id}/check", eh.HandleCheckNow)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/endpoints", eh.HandleListContainerEndpoints)
 	}
 
@@ -292,6 +293,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("PUT /api/v1/certificates/{id}", certH.HandleUpdate)
 		r.mux.HandleFunc("DELETE /api/v1/certificates/{id}", certH.HandleDelete)
 		r.mux.HandleFunc("GET /api/v1/certificates/{id}/checks", certH.HandleListChecks)
+		r.mux.HandleFunc("POST /api/v1/certificates/{id}/check", certH.HandleCheckNow)
 	}
 
 	// Alert engine endpoints

@@ -4,10 +4,17 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -317,8 +324,8 @@ func (m *mockCertStore) CountStandaloneMonitors(_ context.Context) (int, error) 
 }
 
 // Stub implementations for required interface methods
-func (m *mockCertStore) GetMonitorByID(_ context.Context, _ string) (*CertMonitor, error) {
-	return nil, nil
+func (m *mockCertStore) GetMonitorByID(_ context.Context, id string) (*CertMonitor, error) {
+	return m.monitors[id], nil
 }
 func (m *mockCertStore) GetMonitorByEndpointID(_ context.Context, _ string) (*CertMonitor, error) {
 	return nil, nil
@@ -478,4 +485,164 @@ func TestDefaultLicenseChecker_Capped(t *testing.T) {
 	if c.CanCreateCertificate(5) {
 		t.Error("the sixth monitor must be refused")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// CheckNow — issue #44: confirm a fix without waiting for the next daily check
+// ---------------------------------------------------------------------------
+
+// checkNowService returns a service over a mock store holding monitor, and the
+// id the monitor was stored under.
+func checkNowService(t *testing.T, monitor *CertMonitor) (*Service, string) {
+	t.Helper()
+	svc, id, _ := checkNowServiceWithEvents(t, monitor)
+	return svc, id
+}
+
+// checkNowServiceWithEvents also returns a recorder of the emitted event types.
+func checkNowServiceWithEvents(t *testing.T, monitor *CertMonitor) (*Service, string, func() []string) {
+	t.Helper()
+	store := newMockCertStore()
+	monitor.ID = uid.New()
+	store.monitors[monitor.ID] = monitor
+
+	var mu sync.Mutex
+	var events []string
+	svc := NewService(Deps{
+		Store:  store,
+		Logger: noopLogger(),
+		EventCallback: func(eventType string, _ interface{}) {
+			mu.Lock()
+			events = append(events, eventType)
+			mu.Unlock()
+		},
+	})
+	return svc, monitor.ID, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), events...)
+	}
+}
+
+// tlsTestTarget starts a TLS server and returns its host and port.
+func tlsTestTarget(t *testing.T) (string, int) {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	t.Cleanup(srv.Close)
+
+	host, portStr, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "https://"))
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+	return host, port
+}
+
+// A renewed certificate must be confirmable on the spot: the scan runs, the
+// status is recomputed and the next scheduled check is pushed a full interval out.
+func TestCheckNow_ScansAndRefreshesTheMonitor(t *testing.T) {
+	host, port := tlsTestTarget(t)
+
+	svc, id := checkNowService(t, &CertMonitor{
+		Hostname:             host,
+		Port:                 port,
+		Source:               SourceStandalone,
+		Status:               StatusError,
+		LastError:            "dial failed",
+		CheckIntervalSeconds: 86400,
+		WarningThresholds:    DefaultWarningThresholds(),
+		AgentID:              uid.LocalAgent,
+	})
+
+	monitor, err := svc.CheckNow(context.Background(), id)
+	require.NoError(t, err)
+	require.NotNil(t, monitor.LastCheckAt)
+	assert.Empty(t, monitor.LastError, "a successful scan must clear the previous error")
+	assert.NotEqual(t, StatusError, monitor.Status, "the status must be recomputed from the scan")
+	require.NotNil(t, monitor.NextCheckAt)
+	assert.True(t, monitor.NextCheckAt.After(time.Now().Add(23*time.Hour)),
+		"the next scheduled check must be pushed a full interval out")
+}
+
+// A monitor an agent scans is unreachable from the server: better a clear refusal
+// than a check that dials nothing and reports a false failure.
+func TestCheckNow_RefusesAnAgentScannedMonitor(t *testing.T) {
+	svc, id := checkNowService(t, &CertMonitor{
+		Hostname: "internal.example.invalid", Port: 443,
+		Source: SourceLabel, AgentID: uid.New(),
+	})
+
+	_, err := svc.CheckNow(context.Background(), id)
+	assert.ErrorIs(t, err, ErrAgentScanned)
+}
+
+func TestCheckNow_UnknownMonitor(t *testing.T) {
+	svc := NewService(Deps{Store: newMockCertStore(), Logger: noopLogger()})
+
+	_, err := svc.CheckNow(context.Background(), uid.New())
+	assert.ErrorIs(t, err, ErrMonitorNotFound)
+}
+
+// Two clicks must not mean two concurrent dials at the same target.
+func TestCheckNow_RefusesAConcurrentCheck(t *testing.T) {
+	svc, id := checkNowService(t, &CertMonitor{
+		Hostname: "example.invalid", Port: 443,
+		Source: SourceStandalone, AgentID: uid.LocalAgent,
+	})
+	svc.manualChecks.Store(id, struct{}{})
+
+	_, err := svc.CheckNow(context.Background(), id)
+	assert.ErrorIs(t, err, ErrCheckInProgress)
+}
+
+// A status change must reach the UI: previousStatus is captured before the scan
+// overwrites it, otherwise the comparison is always false and the SSE event that
+// refreshes the certificate list never leaves the server.
+func TestProcessCheckResult_EmitsStatusChanged(t *testing.T) {
+	host, port := tlsTestTarget(t)
+
+	svc, id, events := checkNowServiceWithEvents(t, &CertMonitor{
+		Hostname:             host,
+		Port:                 port,
+		Source:               SourceStandalone,
+		Status:               StatusError,
+		CheckIntervalSeconds: 86400,
+		WarningThresholds:    DefaultWarningThresholds(),
+		AgentID:              uid.LocalAgent,
+	})
+
+	monitor, err := svc.CheckNow(context.Background(), id)
+	require.NoError(t, err)
+	require.NotEqual(t, StatusError, monitor.Status, "the scan must move the monitor off error")
+	assert.Contains(t, events(), event.CertificateStatusChanged,
+		"a status change must be broadcast")
+}
+
+// The same scan twice in a row is not a change, and must not be announced as one.
+func TestProcessCheckResult_NoEventWhenStatusHolds(t *testing.T) {
+	host, port := tlsTestTarget(t)
+
+	svc, id, events := checkNowServiceWithEvents(t, &CertMonitor{
+		Hostname:             host,
+		Port:                 port,
+		Source:               SourceStandalone,
+		Status:               StatusError,
+		CheckIntervalSeconds: 86400,
+		WarningThresholds:    DefaultWarningThresholds(),
+		AgentID:              uid.LocalAgent,
+	})
+
+	_, err := svc.CheckNow(context.Background(), id)
+	require.NoError(t, err)
+	first := len(events())
+
+	_, err = svc.CheckNow(context.Background(), id)
+	require.NoError(t, err)
+
+	var changed int
+	for _, e := range events()[first:] {
+		if e == event.CertificateStatusChanged {
+			changed++
+		}
+	}
+	assert.Zero(t, changed, "an unchanged status must not be announced again")
 }
