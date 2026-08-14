@@ -40,7 +40,7 @@ const canUseAdvancedFilters = computed(() => hasFeature('alert_advanced_filters'
 const advancedFiltersEdition = computed(() => requiredEditionFor('alert_advanced_filters'))
 
 const SEVERITY_OPTIONS = ['critical', 'warning']
-const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'monitor', 'resource', 'update']
+const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'monitor', 'resource', 'update', 'agent']
 
 const name = ref(props.trigger?.name ?? '')
 const enabled = ref(props.trigger?.enabled ?? true)

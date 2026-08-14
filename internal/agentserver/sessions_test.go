@@ -13,9 +13,12 @@ package agentserver_test
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/stretchr/testify/assert"
@@ -141,6 +144,120 @@ func TestSessions_LifecycleAlertHook(t *testing.T) {
 	assert.Equal(t, call{"agent-A", "stream_ended", false}, calls[1], "Close should pass reason and connected=false")
 	assert.Equal(t, call{"ghost-deleted", "deleted", false}, calls[2], "delete of offline agent resolves its alert")
 	assert.Equal(t, call{"ghost-revoked", "revoked", false}, calls[3], "revoke of offline agent resolves its alert")
+}
+
+// --- Issue #54: an agent absent with no live stream must still be reported ---
+
+// hookRecorder captures lifecycle hook calls as "agentID/reason/connected".
+type hookRecorder struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (r *hookRecorder) record(agentID, reason string, connected bool) {
+	r.mu.Lock()
+	r.calls = append(r.calls, fmt.Sprintf("%s/%s/%t", agentID, reason, connected))
+	r.mu.Unlock()
+}
+
+func (r *hookRecorder) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.calls...)
+}
+
+// discardLogger writes nowhere, so watcher logs never touch a nil writer.
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+// staleFn returns a StaleAgentsFn reporting the given ids on every sweep.
+func staleFn(ids ...string) func(context.Context, time.Duration) ([]string, error) {
+	return func(context.Context, time.Duration) ([]string, error) { return ids, nil }
+}
+
+// An agent that is stale with no session at all is invisible to the
+// connect/disconnect transitions — the state left behind by a server restart or
+// by the suppressed shutdown storm. The watcher must report it, exactly once.
+func TestSessions_StaleWatcher_ReportsAgentAbsentWithNoSession(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-gone"))
+
+	require.Eventually(t, func() bool { return len(rec.snapshot()) > 0 }, time.Second, 5*time.Millisecond,
+		"an agent absent with no live stream must be reported")
+
+	time.Sleep(60 * time.Millisecond) // several more sweeps
+	assert.Equal(t, []string{"agent-gone/stale/false"}, rec.snapshot(),
+		"the outage is announced once, not on every sweep")
+}
+
+// The grace period covers the restart window: agents are still reconnecting with
+// their backoff, and must not page for merely being late.
+func TestSessions_StaleWatcher_GraceHoldsBackOfflineReports(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, time.Hour, staleFn("agent-gone"))
+
+	time.Sleep(60 * time.Millisecond)
+	assert.Empty(t, rec.snapshot(), "an agent still on its way back must not page during the grace period")
+}
+
+// The grace only holds back agents with no session: a live stream gone stale is
+// a dead stream, and reaping it stays immediate.
+func TestSessions_StaleWatcher_ReapsDeadStreamDuringGrace(t *testing.T) {
+	broadcaster := &testBroadcaster{}
+	sessions := agentserver.NewSessions(discardLogger(), broadcaster)
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	sessions.Open("agent-A", func(error) {}, "addr", nil, nil)
+
+	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, time.Hour, staleFn("agent-A"))
+
+	require.Eventually(t, func() bool { return !sessions.IsConnected("agent-A") }, time.Second, 5*time.Millisecond,
+		"a stale live stream must be reaped whatever the grace period")
+	assert.Equal(t, []string{"agent-A//true", "agent-A/stale/false"}, rec.snapshot())
+	assert.True(t, broadcaster.hasEvent("agent.disconnected"))
+}
+
+// A drop already announced by Close must not be announced again by the watcher.
+func TestSessions_StaleWatcher_DoesNotRepeatAnAnnouncedDrop(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	sessions.Open("agent-A", func(error) {}, "addr", nil, nil)
+	sessions.Close("agent-A", "stream_ended")
+
+	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-A"))
+
+	time.Sleep(60 * time.Millisecond)
+	assert.Equal(t, []string{"agent-A//true", "agent-A/stream_ended/false"}, rec.snapshot(),
+		"the watcher must not duplicate an outage Close already announced")
+}
+
+// Coming back re-arms the reporting: a second outage is a second announcement.
+func TestSessions_StaleWatcher_ReconnectReArmsReporting(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleFn("agent-gone"))
+
+	require.Eventually(t, func() bool { return len(rec.snapshot()) == 1 }, time.Second, 5*time.Millisecond)
+
+	// The agent reconnects, then its stream goes stale again.
+	sessions.Open("agent-gone", func(error) {}, "addr", nil, nil)
+	require.Eventually(t, func() bool { return len(rec.snapshot()) == 3 }, time.Second, 5*time.Millisecond,
+		"an agent that comes back and drops again must be reported again")
+
+	assert.Equal(t, []string{"agent-gone/stale/false", "agent-gone//true", "agent-gone/stale/false"},
+		rec.snapshot())
 }
 
 func TestSessions_EventsPerSecond5m(t *testing.T) {

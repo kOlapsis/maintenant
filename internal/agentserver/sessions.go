@@ -142,6 +142,14 @@ type Sessions struct {
 	broadcaster EventBroadcaster
 	ring        ringBuffer
 
+	// offlineReported holds the agents whose outage the alert hook already
+	// announced, so the stale watcher re-derives the state without firing on
+	// every sweep. It is deliberately in-memory only: a restart empties it, and
+	// the first sweep after the grace period re-announces whatever is still
+	// absent, which is how an outage that started while the server was down gets
+	// reported at all. Guarded by mu.
+	offlineReported map[string]struct{}
+
 	// alertHook, if set, is invoked on every connect/disconnect transition so
 	// the app layer can raise an alert (connected=false) or clear one
 	// (connected=true). reason carries the disconnect cause ("stream_ended",
@@ -153,9 +161,10 @@ type Sessions struct {
 // broadcaster may be nil (SSE events will not be emitted).
 func NewSessions(logger *slog.Logger, broadcaster EventBroadcaster) *Sessions {
 	return &Sessions{
-		active:      make(map[string]*activeStream),
-		logger:      logger,
-		broadcaster: broadcaster,
+		active:          make(map[string]*activeStream),
+		offlineReported: make(map[string]struct{}),
+		logger:          logger,
+		broadcaster:     broadcaster,
 	}
 }
 
@@ -180,6 +189,7 @@ func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr str
 		existing.cancel(ErrSessionReplaced)
 		existing.closeAll()
 	}
+	delete(s.offlineReported, agentID)
 	s.active[agentID] = &activeStream{
 		cancel:      cancel,
 		addr:        addr,
@@ -227,7 +237,15 @@ func (s *Sessions) Close(agentID, reason string) {
 	// Fire the lifecycle hook on a real stream close (had) OR on intentional
 	// removal (revoke/delete), so a pending disconnect alert is resolved even
 	// when the agent was already offline with no live session to close.
-	if s.alertHook != nil && (had || reason == "revoked" || reason == "deleted") {
+	terminal := reason == "revoked" || reason == "deleted"
+	if s.alertHook != nil && (had || terminal) {
+		s.mu.Lock()
+		if terminal {
+			delete(s.offlineReported, agentID)
+		} else {
+			s.offlineReported[agentID] = struct{}{}
+		}
+		s.mu.Unlock()
 		s.alertHook(agentID, reason, false)
 	}
 }
@@ -478,14 +496,29 @@ func (s *Sessions) StartRingAdvancer(ctx context.Context) {
 // Passed to StartStaleWatcher so sessions doesn't import the sqlite package.
 type StaleAgentsFn func(ctx context.Context, threshold time.Duration) ([]string, error)
 
+// OfflineReportGrace is how long after startup the stale watcher waits before
+// reporting agents that are absent with no live stream. An agent reconnects with
+// a backoff capped at 60s ±25% jitter, so a shorter delay would page for every
+// agent still on its way back after a server restart.
+const OfflineReportGrace = 2 * time.Minute
+
 // StartStaleWatcher emits agent.disconnected SSE for agents that have not been
-// seen within threshold but still appear in the sessions map (dead stream).
+// seen within threshold but still appear in the sessions map (dead stream), and
+// reports the outage of stale agents that have no session at all.
+//
+// That second half is what makes an absent agent visible across a restart: the
+// connect/disconnect hook only fires on a transition, so an agent that went down
+// while the server was stopped (or during the shutdown storm, where alerts are
+// suppressed on purpose) would otherwise stay silently disconnected forever.
+// grace holds that reporting back after startup, giving healthy agents time to
+// reconnect; each outage is announced once, until the agent is back.
 // Runs until ctx is done.
-func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold time.Duration, staleAgents StaleAgentsFn) {
+func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, grace time.Duration, staleAgents StaleAgentsFn) {
 	if s.broadcaster == nil || staleAgents == nil {
 		return
 	}
 	go func() {
+		startedAt := time.Now()
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
@@ -498,23 +531,38 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold ti
 					s.logger.Error("stale watcher query failed", "err", err)
 					continue
 				}
+				settled := time.Since(startedAt) >= grace
 				for _, agentID := range ids {
 					s.mu.Lock()
-					if st, connected := s.active[agentID]; connected {
+					st, connected := s.active[agentID]
+					if connected {
 						st.cancel(ErrSessionStale)
 						delete(s.active, agentID)
-						s.mu.Unlock()
+					}
+					_, reported := s.offlineReported[agentID]
+					// Marked only when the hook is there to announce it, so a
+					// sweep racing an unwired hook cannot swallow the outage.
+					announce := s.alertHook != nil && (connected || (settled && !reported))
+					if announce {
+						s.offlineReported[agentID] = struct{}{}
+					}
+					s.mu.Unlock()
+
+					if connected {
 						st.closeAll()
 						s.logger.Info("agent.stream_closed", "agent_id", agentID, "reason", "stale")
 						s.broadcaster.BroadcastEvent(event.AgentDisconnected, map[string]any{
 							"agent_id": agentID,
 						})
-						if s.alertHook != nil {
-							s.alertHook(agentID, "stale", false)
-						}
-					} else {
-						s.mu.Unlock()
 					}
+					if !announce {
+						continue
+					}
+					if !connected {
+						s.logger.Info("agent.offline", "agent_id", agentID,
+							"detail", "absent with no live stream")
+					}
+					s.alertHook(agentID, "stale", false)
 				}
 			}
 		}

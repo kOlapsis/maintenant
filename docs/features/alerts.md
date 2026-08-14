@@ -16,6 +16,9 @@ maintenant generates alerts from every monitoring subsystem:
 | **Certificate** | `expiring`, `expired`, `chain_invalid` | Critical |
 | **Resource** | `cpu_threshold`, `memory_threshold` | Warning |
 | **Update** | `available` | Info |
+| **Agent** | `disconnected` | Warning |
+
+An agent alert fires when a remote agent stops reporting, whether its stream dropped or it never came back after a restart, and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one.
 
 ---
 

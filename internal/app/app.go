@@ -782,7 +782,8 @@ func (a *App) Start(ctx context.Context) error {
 		if threshold == 0 {
 			threshold = 60 * time.Second
 		}
-		a.agentSessions.StartStaleWatcher(ctx, 10*time.Second, threshold, a.agentStore.StaleAgents)
+		a.agentSessions.StartStaleWatcher(ctx, 10*time.Second, threshold,
+			agentserver.OfflineReportGrace, a.agentStore.StaleAgents)
 	}
 
 	// Enrollment token GC: purge unconsumed tokens older than 7 days, every hour.

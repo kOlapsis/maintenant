@@ -101,6 +101,7 @@ const selectStyle = 'background: var(--mnt-bg-elevated); border-color: var(--mnt
         <option value="heartbeat">Heartbeat</option>
         <option value="certificate">Certificate</option>
         <option value="resource">Resource</option>
+        <option value="agent">Agent</option>
       </select>
 
       <select
