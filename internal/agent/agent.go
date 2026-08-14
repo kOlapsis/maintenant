@@ -79,6 +79,10 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 		logger.Info("agent already enrolled", "agent_id", id.AgentID)
 	}
 
+	// From here the agent is enrolled and about to stream: report liveness so the
+	// container healthcheck has something to read (the agent serves no HTTP).
+	StartHealthReporter(ctx, cfg.DataDir, HealthInterval, logger)
+
 	err = RunWithReconnect(ctx, grpcClient, id, logger, func(ctx context.Context, stream *PushStream) error {
 		logger.Info("agent: stream authenticated, starting collector", "agent_id", id.AgentID)
 		return RunCollector(ctx, id, rt, rtLabel, stream, logger)

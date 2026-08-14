@@ -220,6 +220,12 @@ The keypair lives in the data volume (`/var/lib/maintenant`). Keep that volume t
 
 If the host stays `disconnected` for more than 60 s, see [Troubleshooting](#troubleshooting).
 
+- **Docker health**: `docker ps` reports the agent container as `healthy` once it is streaming.
+
+The image ships a healthcheck that works in both modes, so no override is needed in your compose file. An agent has no HTTP port: it refreshes a `health` file in its data dir every 15 s, and `/app/maintenant healthcheck` reads it. A server is probed on the address in `MAINTENANT_ADDR` instead.
+
+The check answers "is this agent working", not "does it reach the server". An agent that has lost the server stays `healthy` and keeps retrying, because restarting it would fix nothing. The outage is reported server-side, as a disconnected-agent alert.
+
 ---
 
 ## Useful flags
