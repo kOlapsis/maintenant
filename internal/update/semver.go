@@ -12,6 +12,7 @@
 package update
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -59,6 +60,34 @@ func ParseTag(tag string) (*semver.Version, error) {
 	return v, nil
 }
 
+// semverPrecision counts the numeric components a version part is written with:
+// "v3" → 1, "1.2" → 2, "1.20.1" → 3, "1.2-rc1" → 2.
+// Anything below 3 is a floating tag: the registry moves it to the newest release
+// of that line, so the container already runs whatever it currently resolves to.
+func semverPrecision(versionPart string) int {
+	core := strings.TrimPrefix(versionPart, "v")
+	if i := strings.IndexAny(core, "-+"); i >= 0 {
+		core = core[:i]
+	}
+	return strings.Count(core, ".") + 1
+}
+
+// hasVPrefix reports whether a version part is written with a "v" prefix ("v3" vs "3").
+// A repository sticks to one form; the other is an alias at best.
+func hasVPrefix(versionPart string) bool {
+	return strings.HasPrefix(versionPart, "v")
+}
+
+// digitCount returns the number of decimal digits in a version component.
+func digitCount(n uint64) int {
+	count := 1
+	for n >= 10 {
+		n /= 10
+		count++
+	}
+	return count
+}
+
 // ClassifyUpdate determines the type of version bump between two versions.
 func ClassifyUpdate(current, latest *semver.Version) UpdateType {
 	if current == nil || latest == nil {
@@ -87,15 +116,18 @@ type tagVersion struct {
 // requireDots, when true, skips candidates whose version part has no dots —
 // this filters out pure numeric build IDs (e.g. "608111629") that Masterminds/semver
 // accepts as valid single-component versions but are not real release tags.
-func sortTagVersions(tags []string, variant string, requireDots bool) []tagVersion {
+// precision, when non-zero, keeps only tags written with that many numeric components.
+func sortTagVersions(tags []string, variant string, requireDots bool, precision int) []tagVersion {
 	var result []tagVersion
 	for _, tag := range tags {
-		_, tv := splitVariant(tag)
+		versionPart, tv := splitVariant(tag)
 		if !strings.EqualFold(tv, variant) {
 			continue
 		}
-		versionPart, _ := splitVariant(tag)
 		if requireDots && !strings.Contains(strings.TrimPrefix(versionPart, "v"), ".") {
+			continue
+		}
+		if precision > 0 && semverPrecision(versionPart) != precision {
 			continue
 		}
 		v, err := semver.NewVersion(versionPart)
@@ -131,31 +163,68 @@ func SortTags(tags []string) []*semver.Version {
 	return versions
 }
 
+// digestOnly returns the current tag for digest comparison when the registry still
+// publishes it, so a republished or moved tag is detected. It never switches channel.
+func digestOnly(currentTag string, allTags []string) (string, UpdateType) {
+	if slices.Contains(allTags, currentTag) {
+		return currentTag, UpdateTypeDigestOnly
+	}
+	return "", UpdateTypeUnknown
+}
+
+// bestFloatingUpdate returns the highest tag strictly newer than the current one and
+// written the same way: same variant suffix, same "v" prefix, same number of numeric
+// components. Candidates whose major has far more digits than the current one are
+// build IDs (e.g. "608111629"), not releases.
+func bestFloatingUpdate(currentVer *semver.Version, versionPart, variant string, allTags []string) *tagVersion {
+	candidates := sortTagVersions(allTags, variant, false, semverPrecision(versionPart))
+
+	var best *tagVersion
+	for i := range candidates {
+		c := &candidates[i]
+		candidatePart, _ := splitVariant(c.original)
+		if hasVPrefix(candidatePart) != hasVPrefix(versionPart) {
+			continue
+		}
+		if digitCount(c.version.Major()) > digitCount(currentVer.Major())+1 {
+			continue
+		}
+		if c.version.GreaterThan(currentVer) {
+			best = c
+		}
+	}
+	return best
+}
+
 // FindBestUpdate finds the best available update for the given current tag among all tags.
-// For semver tags: finds the highest version with the same variant suffix (e.g. -alpine).
-// For non-semver tags: returns the latest tag if digests differ (digest_only mode).
+// For pinned semver tags (major.minor.patch): finds the highest version with the same
+// variant suffix (e.g. -alpine).
+// For floating tags (non-semver channels like "latest" or "lts", and partial versions
+// like "v3" or "1.2"), the registry already moves the tag to the newest release of that
+// line, so a more precise tag underneath it is what the container runs, not an update.
+// Only a higher tag of the same shape counts; otherwise the same tag is returned so the
+// scanner compares digests.
 func FindBestUpdate(currentTag string, allTags []string) (bestTag string, updateType UpdateType) {
 	versionPart, variant := splitVariant(currentTag)
 
 	currentVer, err := semver.NewVersion(versionPart)
 	if err != nil {
-		// Non-semver tag (e.g. "lts", "alpine", "stable", "latest"):
-		// return the same tag so the scanner can do digest-only comparison.
-		// Never suggest switching to a different channel like "latest".
-		for _, t := range allTags {
-			if t == currentTag {
-				return currentTag, UpdateTypeDigestOnly
-			}
-		}
-		return "", UpdateTypeUnknown
+		// Non-semver tag (e.g. "lts", "alpine", "stable", "latest").
+		return digestOnly(currentTag, allTags)
 	}
 
-	// Determine whether the current version part uses dots (e.g. "1.20.1", "v1.20.1").
+	// Partial version tag (e.g. "v3", "1.2", "16-bookworm"): floating channel.
+	if semverPrecision(versionPart) < 3 {
+		best := bestFloatingUpdate(currentVer, versionPart, variant, allTags)
+		if best == nil {
+			return digestOnly(currentTag, allTags)
+		}
+		return best.original, ClassifyUpdate(currentVer, best.version)
+	}
+
 	// Tags without dots (e.g. "608111629") are build IDs or timestamps that happen to be
 	// valid single-component semver — they must be excluded when the current tag is dotted.
-	currentHasDots := strings.Contains(strings.TrimPrefix(versionPart, "v"), ".")
-
-	candidates := sortTagVersions(allTags, variant, currentHasDots)
+	candidates := sortTagVersions(allTags, variant, true, 0)
 	if len(candidates) == 0 {
 		return "", UpdateTypeUnknown
 	}
