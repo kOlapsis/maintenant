@@ -41,11 +41,11 @@ func TestFindBestUpdate_VariantSuffix(t *testing.T) {
 		wantType   UpdateType
 	}{
 		{
-			name:       "same version different variant is not an update",
+			name:       "same version different variant falls back to digest comparison",
 			currentTag: "18.3-alpine",
 			allTags:    []string{"18.3", "18.3-alpine", "18.2", "18.2-alpine"},
-			wantTag:    "",
-			wantType:   UpdateTypeUnknown,
+			wantTag:    "18.3-alpine",
+			wantType:   UpdateTypeDigestOnly,
 		},
 		{
 			name:       "newer alpine version is an update",
@@ -62,11 +62,11 @@ func TestFindBestUpdate_VariantSuffix(t *testing.T) {
 			wantType:   UpdateTypeMinor,
 		},
 		{
-			name:       "no update available same variant",
+			name:       "no newer variant tag falls back to digest comparison",
 			currentTag: "1.25-alpine",
 			allTags:    []string{"1.25-alpine", "1.25", "1.24-alpine"},
-			wantTag:    "",
-			wantType:   UpdateTypeUnknown,
+			wantTag:    "1.25-alpine",
+			wantType:   UpdateTypeDigestOnly,
 		},
 		{
 			name:       "major update with bookworm",
@@ -138,6 +138,57 @@ func TestFindBestUpdate_VariantSuffix(t *testing.T) {
 			wantTag:    "3.20-slim-bookworm",
 			wantType:   UpdateTypeMinor,
 		},
+		{
+			// Issue #62: "v3" already resolves to the newest v3.x.y, so proposing
+			// v3.7.10 tells the user to install what they are already running.
+			name:       "major-only tag never proposes the release it already resolves to",
+			currentTag: "v3",
+			allTags:    []string{"v2", "v2.11.0", "v3", "v3.7.9", "v3.7.10"},
+			wantTag:    "v3",
+			wantType:   UpdateTypeDigestOnly,
+		},
+		{
+			name:       "major-only tag proposes the next major of the same shape",
+			currentTag: "v3",
+			allTags:    []string{"v3", "v3.7.10", "v4", "v4.0.1"},
+			wantTag:    "v4",
+			wantType:   UpdateTypeMajor,
+		},
+		{
+			name:       "major-only tag ignores candidates written without the v prefix",
+			currentTag: "v3",
+			allTags:    []string{"v3", "4"},
+			wantTag:    "v3",
+			wantType:   UpdateTypeDigestOnly,
+		},
+		{
+			name:       "minor-level tag never proposes its own patch releases",
+			currentTag: "1.2",
+			allTags:    []string{"1.2", "1.2.8", "1.2.9"},
+			wantTag:    "1.2",
+			wantType:   UpdateTypeDigestOnly,
+		},
+		{
+			name:       "minor-level tag proposes a higher minor of the same shape",
+			currentTag: "1.2",
+			allTags:    []string{"1.2", "1.2.9", "1.3", "1.3.4", "2.0"},
+			wantTag:    "2.0",
+			wantType:   UpdateTypeMajor,
+		},
+		{
+			name:       "numeric build ID is not a major upgrade for a partial tag",
+			currentTag: "3",
+			allTags:    []string{"3", "3.7.10", "608111629"},
+			wantTag:    "3",
+			wantType:   UpdateTypeDigestOnly,
+		},
+		{
+			name:       "partial tag no longer published returns empty",
+			currentTag: "v3",
+			allTags:    []string{"v3.7.10", "v4.0.0"},
+			wantTag:    "",
+			wantType:   UpdateTypeUnknown,
+		},
 	}
 
 	for _, tt := range tests {
@@ -145,6 +196,27 @@ func TestFindBestUpdate_VariantSuffix(t *testing.T) {
 			gotTag, gotType := FindBestUpdate(tt.currentTag, tt.allTags)
 			assert.Equal(t, tt.wantTag, gotTag)
 			assert.Equal(t, tt.wantType, gotType)
+		})
+	}
+}
+
+func TestSemverPrecision(t *testing.T) {
+	tests := []struct {
+		versionPart string
+		want        int
+	}{
+		{"v3", 1},
+		{"3", 1},
+		{"1.2", 2},
+		{"1.20.1", 3},
+		{"v1.20.1", 3},
+		{"1.2-rc1", 2},
+		{"1.2.3+build.5", 3},
+		{"608111629", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.versionPart, func(t *testing.T) {
+			assert.Equal(t, tt.want, semverPrecision(tt.versionPart))
 		})
 	}
 }

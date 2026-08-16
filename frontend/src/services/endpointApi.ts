@@ -147,6 +147,14 @@ export function listChecks(id: string, params?: ListChecksParams): Promise<Check
   return fetchJSON<ChecksResponse>(url.toString())
 }
 
+// checkEndpointNow probes the target immediately and resolves with the refreshed
+// endpoint. Rejects with a 409 when an agent owns the probe or a check is running.
+export function checkEndpointNow(id: string): Promise<EndpointDetailResponse> {
+  return apiFetch<EndpointDetailResponse>(`${API_BASE}/endpoints/${id}/check`, {
+    method: 'POST',
+  })
+}
+
 export function createEndpoint(data: CreateEndpointInput): Promise<{ endpoint: Endpoint }> {
   return apiFetch<{ endpoint: Endpoint }>(`${API_BASE}/endpoints`, {
     method: 'POST',

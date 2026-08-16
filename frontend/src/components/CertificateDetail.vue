@@ -13,7 +13,9 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
-import { getCertificate, type CertificateDetailResponse, type CertChainEntry } from '@/services/certificateApi'
+import { RefreshCw } from 'lucide-vue-next'
+import { getCertificate, checkCertificateNow, type CertificateDetailResponse, type CertChainEntry } from '@/services/certificateApi'
+import { isLocalAgent } from '@/services/apiFetch'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
 import OCSPStatusBadge from './OCSPStatusBadge.vue'
 import CertificateChecksHistory from './CertificateChecksHistory.vue'
@@ -46,6 +48,26 @@ async function load() {
 
 onMounted(load)
 watch(() => props.certificateId, load)
+
+const checking = ref(false)
+const checkError = ref<string | null>(null)
+
+// Only monitors the server scans itself can be re-checked from here: an agent's
+// targets sit on its network, and it rescans them every minute anyway.
+const canCheckNow = computed(() => isLocalAgent(detail.value?.certificate.agent_id))
+
+async function checkNow() {
+  if (checking.value) return
+  checking.value = true
+  checkError.value = null
+  try {
+    detail.value = await checkCertificateNow(props.certificateId)
+  } catch (e) {
+    checkError.value = e instanceof Error ? e.message : 'Check failed'
+  } finally {
+    checking.value = false
+  }
+}
 
 function formatDate(iso: string | undefined): string {
   if (!iso) return '-'
@@ -139,6 +161,35 @@ function countdownBgColor(days: number | undefined): string {
         >
           {{ detail.certificate.source }}
         </span>
+        <button
+          v-if="canCheckNow"
+          type="button"
+          class="ml-auto flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all disabled:cursor-default"
+          :style="{
+            backgroundColor: 'var(--mnt-bg-elevated)',
+            color: checking ? 'var(--mnt-text-muted)' : 'var(--mnt-accent)',
+            border: '1px solid var(--mnt-border-default)',
+            borderRadius: 'var(--mnt-radius-sm)',
+          }"
+          :disabled="checking"
+          :title="'Scan this certificate now instead of waiting for the next scheduled check'"
+          @click="checkNow"
+        >
+          <RefreshCw :size="12" :class="{ 'animate-spin': checking }" />
+          {{ checking ? 'Checking...' : 'Check now' }}
+        </button>
+      </div>
+
+      <div
+        v-if="checkError"
+        class="mb-4 rounded p-2 text-xs"
+        :style="{
+          backgroundColor: 'var(--mnt-status-down-bg)',
+          color: 'var(--mnt-status-down)',
+          borderRadius: 'var(--mnt-radius-sm)',
+        }"
+      >
+        {{ checkError }}
       </div>
 
       <!-- Tabs -->

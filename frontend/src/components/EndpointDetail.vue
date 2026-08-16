@@ -13,13 +13,16 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { RefreshCw } from 'lucide-vue-next'
 import {
   getEndpoint,
   listChecks,
   deleteEndpoint,
+  checkEndpointNow,
   type Endpoint,
   type CheckResult,
 } from '@/services/endpointApi'
+import { isLocalAgent } from '@/services/apiFetch'
 import { fetchEndpointDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import { useEndpointsStore } from '@/stores/endpoints'
 import { useConfirm } from '@/composables/useConfirm'
@@ -80,6 +83,30 @@ async function loadData() {
     error.value = e instanceof Error ? e.message : 'Failed to load endpoint'
   } finally {
     loading.value = false
+  }
+}
+
+const checking = ref(false)
+const checkError = ref<string | null>(null)
+
+// Only endpoints the server probes itself can be re-checked from here: an agent's
+// targets sit on its network, and it re-probes them every 30 seconds anyway.
+const canCheckNow = computed(() => isLocalAgent(endpoint.value?.agent_id))
+
+async function checkNow() {
+  if (checking.value) return
+  checking.value = true
+  checkError.value = null
+  try {
+    const res = await checkEndpointNow(props.endpointId)
+    fetched.value = res.endpoint
+    // A check that changes nothing emits no SSE event, so feed the store directly.
+    endpointsStore.applyEndpoint(res.endpoint)
+    checks.value = (await listChecks(props.endpointId, { limit: 100 })).checks || []
+  } catch (e) {
+    checkError.value = e instanceof Error ? e.message : 'Check failed'
+  } finally {
+    checking.value = false
   }
 }
 
@@ -222,6 +249,31 @@ watch(() => props.endpointId, () => {
         <span v-if="isHttp && endpoint.last_http_status" style="color: var(--mnt-text-muted)">
           HTTP {{ endpoint.last_http_status }}
         </span>
+        <button
+          v-if="canCheckNow"
+          type="button"
+          class="ml-auto flex cursor-pointer items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all disabled:cursor-default"
+          :style="{
+            backgroundColor: 'var(--mnt-bg-elevated)',
+            color: checking ? 'var(--mnt-text-muted)' : 'var(--mnt-accent)',
+            border: '1px solid var(--mnt-border-default)',
+            borderRadius: 'var(--mnt-radius-sm)',
+          }"
+          :disabled="checking"
+          title="Probe this endpoint now instead of waiting for the next scheduled check"
+          @click="checkNow"
+        >
+          <RefreshCw :size="12" :class="{ 'animate-spin': checking }" />
+          {{ checking ? 'Checking…' : 'Check now' }}
+        </button>
+      </div>
+
+      <div
+        v-if="checkError"
+        class="mb-6 break-words rounded-lg px-3 py-2 text-xs"
+        :style="{ backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)' }"
+      >
+        {{ checkError }}
       </div>
 
       <!-- Last error -->

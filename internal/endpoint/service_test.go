@@ -16,6 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
@@ -737,4 +739,80 @@ func TestDefaultLicenseChecker_Capped(t *testing.T) {
 	if c.CanCreateEndpoint(10) {
 		t.Error("the eleventh endpoint must be refused")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// CheckNow — issue #44: confirm a fix without waiting for the next check
+// ---------------------------------------------------------------------------
+
+// An endpoint fixed by hand must be confirmable on the spot: the probe runs, the
+// result is persisted and the endpoint state follows.
+func TestService_CheckNow_ProbesAndPersists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-check-now", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: srv.URL,
+		Status: StatusDown, AlertState: AlertAlerting,
+		ConsecutiveFailures: 3,
+		Config:              DefaultConfig(), Active: true,
+		AgentID: uid.LocalAgent,
+	})
+
+	ep, err := svc.CheckNow(context.Background(), id)
+	require.NoError(t, err)
+	require.NotNil(t, ep)
+	assert.Equal(t, StatusUp, ep.Status, "a reachable target must come back up immediately")
+	assert.Zero(t, ep.ConsecutiveFailures, "a success resets the failure streak")
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.results, 1, "the on-demand result must be persisted like a scheduled one")
+	assert.Equal(t, id, store.results[0].EndpointID)
+}
+
+// An endpoint probed by an agent lives on that agent's network: dialing it from
+// here would report a failure that says nothing about the target.
+func TestService_CheckNow_RefusesAnAgentProbedEndpoint(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-agent", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: "http://10.0.0.5:8080",
+		Status: StatusDown, AlertState: AlertNormal,
+		Config: DefaultConfig(), Active: true,
+		AgentID: uid.New(),
+	})
+
+	_, err := svc.CheckNow(context.Background(), id)
+	assert.ErrorIs(t, err, ErrAgentProbed)
+}
+
+func TestService_CheckNow_UnknownEndpoint(t *testing.T) {
+	svc := NewService(Deps{Store: newMemStore(), Engine: noopEngine(), Logger: noopLogger()})
+
+	_, err := svc.CheckNow(context.Background(), uid.New())
+	assert.ErrorIs(t, err, ErrEndpointNotFound)
+}
+
+// Two clicks must not mean two concurrent probes at the same target.
+func TestService_CheckNow_RefusesAConcurrentCheck(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-busy", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: "http://127.0.0.1:1",
+		Status: StatusUp, AlertState: AlertNormal,
+		Config: DefaultConfig(), Active: true,
+		AgentID: uid.LocalAgent,
+	})
+	svc.manualChecks.Store(id, struct{}{})
+
+	_, err := svc.CheckNow(context.Background(), id)
+	assert.ErrorIs(t, err, ErrCheckInProgress)
 }

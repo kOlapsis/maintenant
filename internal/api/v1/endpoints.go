@@ -227,6 +227,39 @@ func (h *EndpointHandler) HandleListChecks(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// HandleCheckNow handles POST /api/v1/endpoints/{id}/check. It probes the target
+// right away and answers with the refreshed endpoint, so the UI can confirm a fix
+// without waiting for the next scheduled check.
+func (h *EndpointHandler) HandleCheckNow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
+		return
+	}
+
+	ep, err := h.service.CheckNow(r.Context(), id)
+	switch {
+	case errors.Is(err, endpoint.ErrEndpointNotFound):
+		WriteError(w, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found")
+		return
+	case errors.Is(err, endpoint.ErrAgentProbed):
+		WriteError(w, http.StatusConflict, "AGENT_PROBED",
+			"This endpoint is probed by its agent, which re-checks it on its own cycle")
+		return
+	case errors.Is(err, endpoint.ErrCheckInProgress):
+		WriteError(w, http.StatusConflict, "CHECK_IN_PROGRESS", "A check is already running for this endpoint")
+		return
+	case err != nil:
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check endpoint")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"endpoint": h.markStale(ep),
+		"uptime":   h.service.CalculateUptime(r.Context(), id),
+	})
+}
+
 // createEndpointInput is the JSON body for POST /api/v1/endpoints.
 type createEndpointInput struct {
 	Name         string            `json:"name"`

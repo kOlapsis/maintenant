@@ -32,7 +32,17 @@ var (
 	publicKeyB64 = ""
 )
 
+// defaultAgentDataDir is where an agent keeps its identity and liveness file
+// when MAINTENANT_DATA_DIR is unset.
+const defaultAgentDataDir = "/var/lib/maintenant"
+
 func main() {
+	// healthcheck is the image's HEALTHCHECK command: it inspects a running
+	// instance and exits, so it must run before any flag or config work.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
+	}
+
 	mcpStdio := len(os.Args) > 1 && os.Args[1] == "--mcp-stdio"
 
 	// Multi-host flags (parsed before --mcp-stdio check so --mode is always available).
@@ -112,7 +122,7 @@ func main() {
 	if cfg.Mode == "agent" {
 		dataDir := os.Getenv("MAINTENANT_DATA_DIR")
 		if dataDir == "" {
-			dataDir = "/var/lib/maintenant"
+			dataDir = defaultAgentDataDir
 		}
 		agentCfg := agent.AgentConfig{
 			DataDir:            dataDir,

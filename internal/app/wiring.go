@@ -633,7 +633,7 @@ func (a *App) wireSwarmCallbacks() {
 // alert. The caller sets Timestamp.
 func agentLifecycleEvent(agentID, name, reason string, connected bool) alert.Event {
 	evt := alert.Event{
-		Source:     "agent",
+		Source:     alert.SourceAgent,
 		AlertType:  "disconnected",
 		EntityType: "agent",
 		EntityID:   agentID,

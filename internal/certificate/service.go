@@ -26,6 +26,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 var (
@@ -35,6 +36,12 @@ var (
 	ErrInvalidInput        = errors.New("invalid input")
 	ErrCannotDeleteAuto    = errors.New("cannot delete auto-detected certificate monitors")
 	ErrLimitReached        = errors.New("certificate monitor limit reached")
+	// ErrAgentScanned rejects an on-demand check for a monitor the server never
+	// dials itself: it lives on an agent's network, and that agent scans it.
+	ErrAgentScanned = errors.New("certificate is scanned by a remote agent")
+	// ErrCheckInProgress rejects a second on-demand check while one is running,
+	// so a stuck button cannot turn the server into a load generator.
+	ErrCheckInProgress = errors.New("a check is already running for this monitor")
 )
 
 // LicenseChecker determines license-gated capabilities for certificate monitors.
@@ -56,6 +63,9 @@ func (c *DefaultLicenseChecker) CanCreateCertificate(currentCount int) bool {
 	return currentCount < c.MaxCertificates
 }
 
+// checkTimeout bounds a single TLS dial, scheduled or on demand.
+const checkTimeout = 10 * time.Second
+
 // EventCallback is called when a certificate event occurs (for SSE broadcasting).
 type EventCallback func(eventType string, data interface{})
 
@@ -74,6 +84,9 @@ type Service struct {
 	licenseChecker LicenseChecker
 	onEvent        EventCallback
 	mu             sync.Mutex
+
+	// manualChecks holds the monitor ids with an on-demand check in flight.
+	manualChecks sync.Map
 }
 
 // NewService creates a new certificate service.
@@ -590,7 +603,7 @@ func (s *Service) runScheduledChecks(ctx context.Context) {
 			defer func() { <-sem }()
 
 			s.logger.Debug("certificate: checking", "hostname", monitor.Hostname, "port", monitor.Port, "server_name", monitor.ServerName, "source", string(monitor.Source))
-			result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, 10*time.Second)
+			result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
 			s.processCheckResult(ctx, monitor, result)
 		}(m)
 	}
@@ -598,11 +611,45 @@ func (s *Service) runScheduledChecks(ctx context.Context) {
 	wg.Wait()
 }
 
+// CheckNow scans a monitor immediately and processes the result exactly like a
+// scheduled run: same persistence, same status, same alert evaluation, and the
+// next scheduled check is pushed a full interval out. It backs the UI's refresh
+// button, so a certificate renewed by hand stops alerting right away instead of
+// waiting for a daily check to come round.
+//
+// Only monitors the server scans itself can be checked this way; an agent's
+// targets are unreachable from here, and the agent rescans them every minute.
+func (s *Service) CheckNow(ctx context.Context, monitorID string) (*CertMonitor, error) {
+	monitor, err := s.GetMonitor(ctx, monitorID)
+	if err != nil {
+		return nil, err
+	}
+	if monitor.AgentID != uid.LocalAgent {
+		return nil, ErrAgentScanned
+	}
+
+	if _, running := s.manualChecks.LoadOrStore(monitorID, struct{}{}); running {
+		return nil, ErrCheckInProgress
+	}
+	defer s.manualChecks.Delete(monitorID)
+
+	s.logger.Info("certificate: on-demand check", "monitor_id", monitorID,
+		"hostname", monitor.Hostname, "port", monitor.Port)
+	result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
+	s.processCheckResult(ctx, monitor, result)
+
+	return s.GetMonitor(ctx, monitorID)
+}
+
 // --- Core: Process check result + alerts ---
 
 func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, raw *CheckCertificateResult) *CertCheckResult {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Captured before the scan overwrites it: everything below compares against
+	// the status the monitor had when it came in.
+	previousStatus := monitor.Status
 
 	now := time.Now()
 	result := &CertCheckResult{
@@ -676,7 +723,6 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 	}
 
 	// Evaluate alerts (US3)
-	previousStatus := monitor.Status
 	s.evaluateAlerts(ctx, monitor, result)
 
 	// Update monitor in DB

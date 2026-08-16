@@ -84,6 +84,15 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     }
   }
 
+  // applyEndpoint upserts a freshly fetched endpoint. An on-demand check only
+  // emits an SSE event when the status actually changes, so the caller feeds the
+  // result back here to keep the list in step without refetching everything.
+  function applyEndpoint(ep: Endpoint) {
+    const idx = endpoints.value.findIndex((e) => e.id === ep.id)
+    if (idx >= 0) endpoints.value[idx] = ep
+    else endpoints.value.push(ep)
+  }
+
   function onDiscovered() {
     fetchEndpoints()
   }
@@ -211,6 +220,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     endpointsByContainer,
     statusCounts,
     fetchEndpoints,
+    applyEndpoint,
     connectSSE,
     disconnectSSE,
   }

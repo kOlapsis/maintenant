@@ -16,15 +16,23 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 var (
 	ErrNotStandalone    = errors.New("endpoint is not standalone")
 	ErrEndpointNotFound = errors.New("endpoint not found")
 	ErrLimitReached     = errors.New("endpoint limit reached")
+	// ErrAgentProbed rejects an on-demand check for an endpoint the server never
+	// dials itself: it lives on an agent's network, and that agent probes it.
+	ErrAgentProbed = errors.New("endpoint is probed by a remote agent")
+	// ErrCheckInProgress rejects a second on-demand check while one is running,
+	// so a stuck button cannot turn the server into a load generator.
+	ErrCheckInProgress = errors.New("a check is already running for this endpoint")
 )
 
 // LicenseChecker determines license-gated capabilities for endpoints.
@@ -78,6 +86,9 @@ type Service struct {
 	alertCallback     AlertCallback
 	onEndpointRemoved EndpointRemovedCallback
 	ctx               context.Context
+
+	// manualChecks holds the endpoint ids with an on-demand check in flight.
+	manualChecks sync.Map
 }
 
 // NewService creates a new endpoint service with all dependencies.
@@ -322,6 +333,48 @@ func statusForResult(result CheckResult) EndpointStatus {
 	default:
 		return StatusDown
 	}
+}
+
+// CheckNow probes an endpoint immediately and processes the result exactly like a
+// scheduled run: same persistence, same status-change event, same alert evaluation.
+// It backs the UI's refresh button, so a target fixed by hand stops alerting right
+// away instead of at the next scheduled check.
+//
+// Only endpoints the server probes itself can be checked this way; an agent's
+// endpoints are unreachable from here, and the agent re-probes them on its own
+// short cycle anyway.
+func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, error) {
+	ep, err := s.store.GetEndpointByID(ctx, endpointID)
+	if err != nil {
+		return nil, fmt.Errorf("get endpoint: %w", err)
+	}
+	if ep == nil {
+		return nil, ErrEndpointNotFound
+	}
+	if ep.AgentID != "" && ep.AgentID != uid.LocalAgent {
+		return nil, ErrAgentProbed
+	}
+
+	if _, running := s.manualChecks.LoadOrStore(endpointID, struct{}{}); running {
+		return nil, ErrCheckInProgress
+	}
+	defer s.manualChecks.Delete(endpointID)
+
+	var result CheckResult
+	switch ep.EndpointType {
+	case TypeHTTP:
+		result = CheckHTTP(ctx, ep, s.logger)
+	case TypeTCP:
+		result = CheckTCP(ctx, ep, s.logger)
+	default:
+		return nil, fmt.Errorf("unsupported endpoint type %q", ep.EndpointType)
+	}
+
+	s.logger.Info("endpoint: on-demand check", "endpoint_id", endpointID,
+		"target", ep.Target, "success", result.Success)
+	s.ProcessCheckResult(ctx, endpointID, result)
+
+	return s.store.GetEndpointByID(ctx, endpointID)
 }
 
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.

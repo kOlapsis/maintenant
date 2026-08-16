@@ -24,6 +24,7 @@ const (
 	SourceCertificate = "certificate"
 	SourceResource    = "resource"
 	SourceSecurity    = "security"
+	SourceAgent       = "agent"
 )
 
 // Security alert types.

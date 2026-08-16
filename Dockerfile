@@ -68,8 +68,11 @@ LABEL org.opencontainers.image.title="maintenant" \
 EXPOSE 8080
 VOLUME /data
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
+# One image, two modes: the binary knows how to check itself. A server answers on
+# the address it was configured with, an agent has no port at all and reports
+# liveness through a file, so an HTTP probe here would fail every agent forever.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["/app/maintenant", "healthcheck"]
 
 # Entrypoint runs as root only to chown root-owned volume mounts and auto-detect
 # the Docker socket group, then drops to uid 65534 via setpriv (see

@@ -148,9 +148,12 @@ func (c Config) ValidateHTTP() error {
 	return nil
 }
 
+// DefaultAddr is the HTTP listen address used when MAINTENANT_ADDR is unset.
+const DefaultAddr = "127.0.0.1:8080"
+
 // ConfigFromEnv reads configuration from environment variables.
 func ConfigFromEnv() Config {
-	addr := envOr("MAINTENANT_ADDR", "127.0.0.1:8080")
+	addr := envOr("MAINTENANT_ADDR", DefaultAddr)
 	cfg := Config{
 		Addr:    addr,
 		BaseURL: envOr("MAINTENANT_BASE_URL", "http://"+addr),

@@ -429,6 +429,92 @@ func TestScanner_DigestOnlyMode_NoBaselineChange_NoUpdate(t *testing.T) {
 	assert.Empty(t, results)
 }
 
+// --- Issue #62: partial version tags are floating, not pinned ---
+
+// TestScanner_PartialSemverTag_NoUpdateWhenTagUnmoved verifies that a container on a
+// major-only tag like "v3" is not told to install v3.7.10 — the tag it runs already
+// resolves there. With the remote digest unchanged, nothing is reported.
+func TestScanner_PartialSemverTag_NoUpdateWhenTagUnmoved(t *testing.T) {
+	reg := &stubRegistry{
+		tags: map[string][]string{
+			"library/traefik": {"v2", "v2.11.0", "v3", "v3.7.9", "v3.7.10"},
+		},
+		digest: "sha256:aabbccdd11223344",
+	}
+
+	baseline := &DigestBaseline{
+		ContainerID:  "ctr1",
+		Image:        "traefik:v3",
+		Tag:          "v3",
+		RemoteDigest: "sha256:aabbccdd11223344",
+		CheckedAt:    time.Now().Add(-24 * time.Hour),
+	}
+	sc := newTestScanner(reg, &stubStore{baseline: baseline})
+
+	containers := []ContainerInfo{
+		{ExternalID: "ctr1", Name: "traefik", Image: "traefik:v3"},
+	}
+
+	results, errs := sc.Scan(context.Background(), containers)
+	require.Empty(t, errs)
+	assert.Empty(t, results)
+}
+
+// TestScanner_PartialSemverTag_DigestChangeIsTheUpdate verifies that the real signal for
+// a floating tag is the digest: when "v3" is republished, the update is reported against
+// the same tag rather than as a jump to a more precise one.
+func TestScanner_PartialSemverTag_DigestChangeIsTheUpdate(t *testing.T) {
+	reg := &stubRegistry{
+		tags: map[string][]string{
+			"library/traefik": {"v2", "v3", "v3.7.9", "v3.7.10"},
+		},
+		digest: "sha256:aabbccdd11223344",
+	}
+
+	baseline := &DigestBaseline{
+		ContainerID:  "ctr1",
+		Image:        "traefik:v3",
+		Tag:          "v3",
+		RemoteDigest: "sha256:00112233445566778",
+		CheckedAt:    time.Now().Add(-24 * time.Hour),
+	}
+	sc := newTestScanner(reg, &stubStore{baseline: baseline})
+
+	containers := []ContainerInfo{
+		{ExternalID: "ctr1", Name: "traefik", Image: "traefik:v3"},
+	}
+
+	results, errs := sc.Scan(context.Background(), containers)
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "v3", results[0].CurrentTag)
+	assert.Equal(t, "v3", results[0].LatestTag)
+	assert.Equal(t, UpdateTypeDigestOnly, results[0].UpdateType)
+	assert.True(t, results[0].HasUpdate)
+}
+
+// TestScanner_PartialSemverTag_NextMajorIsStillReported verifies that a genuine upgrade,
+// a new major published with the same tag shape, is still surfaced.
+func TestScanner_PartialSemverTag_NextMajorIsStillReported(t *testing.T) {
+	reg := &stubRegistry{
+		tags: map[string][]string{
+			"library/traefik": {"v2", "v3", "v3.7.10", "v4", "v4.0.1"},
+		},
+		digest: "sha256:aabbccdd11223344",
+	}
+	sc := newTestScanner(reg, &stubStore{})
+
+	containers := []ContainerInfo{
+		{ExternalID: "ctr1", Name: "traefik", Image: "traefik:v3"},
+	}
+
+	results, errs := sc.Scan(context.Background(), containers)
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "v4", results[0].LatestTag)
+	assert.Equal(t, UpdateTypeMajor, results[0].UpdateType)
+}
+
 // --- Combined include+exclude ---
 
 // TestScanner_IncludeAndExclude_BothApply verifies that when both labels are set,
