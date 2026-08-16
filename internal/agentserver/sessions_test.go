@@ -221,6 +221,10 @@ func TestSessions_StaleWatcher_ReapsDeadStreamDuringGrace(t *testing.T) {
 
 	require.Eventually(t, func() bool { return !sessions.IsConnected("agent-A") }, time.Second, 5*time.Millisecond,
 		"a stale live stream must be reaped whatever the grace period")
+	// IsConnected flips before the lifecycle hook runs, so wait for the hook
+	// itself instead of asserting right after the connection check.
+	require.Eventually(t, func() bool { return len(rec.snapshot()) == 2 }, time.Second, 5*time.Millisecond,
+		"the reap must announce the outage through the lifecycle hook")
 	assert.Equal(t, []string{"agent-A//true", "agent-A/stale/false"}, rec.snapshot())
 	assert.True(t, broadcaster.hasEvent("agent.disconnected"))
 }
