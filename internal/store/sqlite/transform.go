@@ -423,9 +423,9 @@ func copyStatements() []stmt {
 
 		// -------- alert triggers (minted) + channels join -----------------------
 		{"alert_triggers", `INSERT INTO alert_triggers
-			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, created_at, updated_at)
+			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, notify_on_resolve, created_at, updated_at)
 			SELECT mt.new_id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes, t.filter_tags,
-			 t.enabled, ` + epoch("t.created_at") + `, ` + epoch("t.updated_at") + `
+			 t.enabled, t.notify_on_resolve, ` + epoch("t.created_at") + `, ` + epoch("t.updated_at") + `
 			FROM _old_alert_triggers t JOIN _map_trigger mt ON t.id = mt.old_id`},
 
 		{"alert_trigger_channels", `INSERT INTO alert_trigger_channels (trigger_id, channel_id)

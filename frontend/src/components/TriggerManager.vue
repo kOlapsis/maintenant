@@ -67,6 +67,7 @@ async function handleToggleEnabled(t: AlertTrigger) {
     filter_scopes: t.filter_scopes,
     filter_tags: t.filter_tags,
     enabled: !t.enabled,
+    notify_on_resolve: t.notify_on_resolve,
     channel_ids: t.channel_ids,
   })
 }

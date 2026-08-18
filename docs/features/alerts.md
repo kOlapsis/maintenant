@@ -95,11 +95,14 @@ POST /api/v1/alert-triggers
   "filter_scopes": "",
   "filter_tags": "",
   "enabled": true,
+  "notify_on_resolve": true,
   "channel_ids": [3, 7]
 }
 ```
 
 Filters are CSV strings, combined in AND between fields and OR within a field. An empty filter matches everything. Multiple triggers can share the same channel without duplicating deliveries (the engine de-dupes per alert).
+
+A trigger relays both the initial alert and its recovery. Set `notify_on_resolve` to `false` (default `true`) for a channel that should only receive failures.
 
 **CE vs Pro filters** :
 

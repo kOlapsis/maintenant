@@ -42,9 +42,9 @@ func (s *TriggerStoreImpl) InsertTrigger(ctx context.Context, t *alert.AlertTrig
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO alert_triggers
-			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags, boolToInt(t.Enabled), now, now,
+			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, notify_on_resolve, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags, boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), now, now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert trigger: %w", err)
@@ -58,7 +58,7 @@ func (s *TriggerStoreImpl) InsertTrigger(ctx context.Context, t *alert.AlertTrig
 func (s *TriggerStoreImpl) GetTrigger(ctx context.Context, id string) (*alert.AlertTrigger, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, filter_severities, filter_sources, filter_scopes, filter_tags,
-			enabled, created_at, updated_at
+			enabled, notify_on_resolve, created_at, updated_at
 			FROM alert_triggers WHERE id = ?`, id)
 
 	t, err := scanTrigger(row)
@@ -89,7 +89,7 @@ func (s *TriggerStoreImpl) ListEnabledTriggers(ctx context.Context) ([]*alert.Al
 func (s *TriggerStoreImpl) listTriggersWhere(ctx context.Context, where string) ([]*alert.AlertTrigger, error) {
 	// #nosec G202 -- `where` is a package-internal constant, never caller input.
 	query := `SELECT id, name, filter_severities, filter_sources, filter_scopes, filter_tags,
-		enabled, created_at, updated_at
+		enabled, notify_on_resolve, created_at, updated_at
 		FROM alert_triggers ` + where + ` ORDER BY created_at ASC`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -126,10 +126,10 @@ func (s *TriggerStoreImpl) UpdateTrigger(ctx context.Context, t *alert.AlertTrig
 	_, err := s.writer.Exec(ctx,
 		`UPDATE alert_triggers
 			SET name=?, filter_severities=?, filter_sources=?, filter_scopes=?, filter_tags=?,
-				enabled=?, updated_at=?
+				enabled=?, notify_on_resolve=?, updated_at=?
 			WHERE id=?`,
 		t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags,
-		boolToInt(t.Enabled), time.Now().Unix(), t.ID,
+		boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), time.Now().Unix(), t.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update trigger: %w", err)
@@ -202,7 +202,7 @@ func (s *TriggerStoreImpl) ListChannelsForTrigger(ctx context.Context, triggerID
 func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID string) ([]*alert.AlertTrigger, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT t.id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes, t.filter_tags,
-			t.enabled, t.created_at, t.updated_at
+			t.enabled, t.notify_on_resolve, t.created_at, t.updated_at
 			FROM alert_triggers t
 			JOIN alert_trigger_channels atc ON atc.trigger_id = t.id
 			WHERE atc.channel_id = ?
@@ -240,14 +240,15 @@ func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID
 
 func scanTrigger(row *sql.Row) (*alert.AlertTrigger, error) {
 	t := &alert.AlertTrigger{}
-	var enabled int
+	var enabled, notifyOnResolve int
 	var createdAt, updatedAt int64
 	err := row.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
-		&t.FilterScopes, &t.FilterTags, &enabled, &createdAt, &updatedAt)
+		&t.FilterScopes, &t.FilterTags, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
 	t.Enabled = enabled == 1
+	t.NotifyOnResolve = notifyOnResolve == 1
 	t.CreatedAt = time.Unix(createdAt, 0)
 	t.UpdatedAt = time.Unix(updatedAt, 0)
 	return t, nil
@@ -255,14 +256,15 @@ func scanTrigger(row *sql.Row) (*alert.AlertTrigger, error) {
 
 func scanTriggerRow(rows *sql.Rows) (*alert.AlertTrigger, error) {
 	t := &alert.AlertTrigger{}
-	var enabled int
+	var enabled, notifyOnResolve int
 	var createdAt, updatedAt int64
 	err := rows.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
-		&t.FilterScopes, &t.FilterTags, &enabled, &createdAt, &updatedAt)
+		&t.FilterScopes, &t.FilterTags, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
 	t.Enabled = enabled == 1
+	t.NotifyOnResolve = notifyOnResolve == 1
 	t.CreatedAt = time.Unix(createdAt, 0)
 	t.UpdatedAt = time.Unix(updatedAt, 0)
 	return t, nil

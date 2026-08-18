@@ -161,6 +161,8 @@ Triggers route alerts to channels based on filters (severity, source, scope, tag
 
 Filters `filter_scopes` and `filter_tags` require Personal or above; `filter_severities` and `filter_sources` are available on every edition.
 
+`notify_on_resolve` (boolean, default `true`) controls whether the trigger also relays `alert.resolved` events; set it to `false` for a channel that should only receive failures.
+
 ---
 
 ## Escalation Policies :material-crown:{ title="Pro" }

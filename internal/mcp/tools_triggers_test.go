@@ -246,6 +246,40 @@ func TestCreateTriggerHandler_ChannelNotFound(t *testing.T) {
 	assert.Contains(t, textFromContent(t, result.Content), "999")
 }
 
+func TestCreateTriggerHandler_NotifyOnResolve_DefaultsTrue(t *testing.T) {
+	svc, ts := buildTriggerServices()
+	handler := createTriggerHandler(svc)
+
+	result, _, err := handler(context.Background(), nil, triggerInput{
+		Name:       "NoField",
+		ChannelIDs: []string{"1"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	got := ts.triggers["1"]
+	require.NotNil(t, got)
+	assert.True(t, got.NotifyOnResolve)
+}
+
+func TestCreateTriggerHandler_NotifyOnResolve_False(t *testing.T) {
+	svc, ts := buildTriggerServices()
+	handler := createTriggerHandler(svc)
+
+	notifyOnResolve := false
+	result, _, err := handler(context.Background(), nil, triggerInput{
+		Name:            "FiresOnly",
+		NotifyOnResolve: &notifyOnResolve,
+		ChannelIDs:      []string{"1"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	got := ts.triggers["1"]
+	require.NotNil(t, got)
+	assert.False(t, got.NotifyOnResolve)
+}
+
 func TestCreateTriggerHandler_FilterScopes_CommunityBlocked(t *testing.T) {
 	original := extension.CurrentEdition
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
@@ -322,6 +356,56 @@ func TestUpdateTriggerHandler_Happy(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "AfterUpdate")
+}
+
+func TestUpdateTriggerHandler_NotifyOnResolve_False(t *testing.T) {
+	svc, ts := buildTriggerServices()
+	id, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
+		Name: "BeforeUpdate", Enabled: true, NotifyOnResolve: true, ChannelIDs: []string{"1"},
+	})
+	require.NoError(t, err)
+
+	notifyOnResolve := false
+	handler := updateTriggerHandler(svc)
+	result, _, err := handler(context.Background(), nil, updateTriggerInputWithID{
+		ID: id,
+		triggerInput: triggerInput{
+			Name:            "AfterUpdate",
+			Enabled:         true,
+			NotifyOnResolve: &notifyOnResolve,
+			ChannelIDs:      []string{"1"},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	got := ts.triggers[id]
+	require.NotNil(t, got)
+	assert.False(t, got.NotifyOnResolve)
+}
+
+func TestUpdateTriggerHandler_NotifyOnResolve_OmittedKeepsExisting(t *testing.T) {
+	svc, ts := buildTriggerServices()
+	id, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
+		Name: "BeforeUpdate", Enabled: true, NotifyOnResolve: false, ChannelIDs: []string{"1"},
+	})
+	require.NoError(t, err)
+
+	handler := updateTriggerHandler(svc)
+	result, _, err := handler(context.Background(), nil, updateTriggerInputWithID{
+		ID: id,
+		triggerInput: triggerInput{
+			Name:       "AfterUpdate",
+			Enabled:    true,
+			ChannelIDs: []string{"1"},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	got := ts.triggers[id]
+	require.NotNil(t, got)
+	assert.False(t, got.NotifyOnResolve, "omitted field must keep the existing value")
 }
 
 func TestUpdateTriggerHandler_NotFound(t *testing.T) {
