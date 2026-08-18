@@ -50,7 +50,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_alerts",
-		Description: "List alerts. By default returns only active (unresolved) alerts. Set active_only to false to include recent resolved alerts.",
+		Description: "List alerts. By default returns only active (unresolved) alerts. Set active_only to false to also return recent resolved and silenced alerts (last 100).",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAlertsHandler(svc))
 
@@ -123,7 +123,7 @@ type getContainerLogsInput struct {
 	Timestamps  bool   `json:"timestamps,omitempty" jsonschema:"Include timestamps in log output"`
 }
 type listAlertsInput struct {
-	ActiveOnly bool `json:"active_only,omitempty" jsonschema:"Only return active alerts, default true"`
+	ActiveOnly *bool `json:"active_only,omitempty" jsonschema:"Only return active alerts, default true"`
 }
 type getResourcesInput struct{}
 type getTopConsumersInput struct {
@@ -236,8 +236,8 @@ func getContainerLogsHandler(svc *Services) gomcp.ToolHandlerFor[getContainerLog
 
 func listAlertsHandler(svc *Services) gomcp.ToolHandlerFor[listAlertsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listAlertsInput) (*gomcp.CallToolResult, any, error) {
-		// Default to active only
-		if input.ActiveOnly || input == (listAlertsInput{}) {
+		// Default (nil) and explicit true both mean active only.
+		if input.ActiveOnly == nil || *input.ActiveOnly {
 			alerts, err := svc.Alerts.ListActiveAlerts(ctx)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to list active alerts: %w", err)

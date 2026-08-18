@@ -13,9 +13,13 @@ package alert_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -125,6 +129,102 @@ func fireEvent(eng *alert.Engine, severity, source, entityType string, entityID 
 		Timestamp:  time.Now(),
 	}
 	time.Sleep(150 * time.Millisecond)
+}
+
+// capturingWebhookServer records every JSON payload POSTed to it.
+func capturingWebhookServer(t *testing.T) (*httptest.Server, func() []map[string]any) {
+	t.Helper()
+	var mu sync.Mutex
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		mu.Lock()
+		bodies = append(bodies, payload)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []map[string]any {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make([]map[string]any, len(bodies))
+		copy(out, bodies)
+		return out
+	}
+}
+
+// TestEngineRecovery_NotificationReadsAsRecovery pins FIX 1: a recovery must
+// route by the original alert (so a trigger filtered on the original severity
+// still matches) but the notified payload must read as the recovery, not repeat
+// the original failure's message/severity.
+func TestEngineRecovery_NotificationReadsAsRecovery(t *testing.T) {
+	ctx, cancel, db, alertStore, channelStore, triggerStore, _, eng := engineTestSetup(t)
+	defer cancel()
+	_ = db
+
+	srv, capturedBodies := capturingWebhookServer(t)
+	chID, err := channelStore.InsertChannel(ctx, &alert.NotificationChannel{
+		Name: "hb-channel", Type: "webhook", URL: srv.URL, Enabled: true,
+	})
+	require.NoError(t, err)
+	seedTriggerForChannel(t, triggerStore, "CriticalHeartbeats", true, "critical", "heartbeat", []string{chID})
+
+	eng.EventChannel() <- alert.Event{
+		Source:     "heartbeat",
+		AlertType:  "deadline_missed",
+		Severity:   "critical",
+		EntityType: "heartbeat",
+		EntityID:   "hb-1",
+		EntityName: "backup",
+		Message:    "Heartbeat 'backup' missed deadline",
+		Timestamp:  time.Now(),
+	}
+	time.Sleep(150 * time.Millisecond)
+
+	alerts, err := alertStore.ListActiveAlerts(ctx)
+	require.NoError(t, err)
+	require.Len(t, alerts, 1)
+	originalID := alerts[0].ID
+	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, originalID, chID), "initial critical alert must be delivered")
+
+	eng.EventChannel() <- alert.Event{
+		Source:     "heartbeat",
+		AlertType:  "deadline_missed",
+		Severity:   "info",
+		IsRecover:  true,
+		EntityType: "heartbeat",
+		EntityID:   "hb-1",
+		EntityName: "backup",
+		Message:    "Heartbeat 'backup' recovered",
+		Timestamp:  time.Now(),
+	}
+	time.Sleep(150 * time.Millisecond)
+
+	active, err := alertStore.ListActiveAlerts(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, active, "original alert must be resolved")
+
+	resolved, err := alertStore.GetAlert(ctx, originalID)
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	assert.Equal(t, alert.StatusResolved, resolved.Status)
+	require.NotNil(t, resolved.ResolvedAt)
+	require.NotNil(t, resolved.ResolvedByID, "resolved_by_id must point at the recovery record")
+
+	// The trigger matches on the ORIGINAL severity (critical), so the recovery
+	// must still be delivered to the same channel — but with the recovery payload.
+	assert.Equal(t, 2, countDeliveriesForChannel(t, channelStore, originalID, chID), "recovery must still be delivered, trigger matched on the original severity")
+
+	bodies := capturedBodies()
+	require.Len(t, bodies, 2, "webhook must have received both the failure and the recovery")
+	recoveryPayload, ok := bodies[1]["alert"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, originalID, recoveryPayload["id"], "recovery payload must carry the original alert's ID")
+	assert.Equal(t, alert.StatusResolved, recoveryPayload["status"])
+	assert.Equal(t, "Heartbeat 'backup' recovered", recoveryPayload["message"], "must read as a recovery, not repeat the failure message")
+	assert.Equal(t, alert.SeverityInfo, recoveryPayload["severity"], "must carry the recovery severity, not the original critical severity")
+	assert.NotEmpty(t, recoveryPayload["resolved_at"])
 }
 
 func recoverEvent(eng *alert.Engine, severity, source, entityType string, entityID string) {

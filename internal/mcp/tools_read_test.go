@@ -12,9 +12,12 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"testing"
 
+	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/uid"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -139,18 +142,61 @@ func TestErrResult_InvalidInput(t *testing.T) {
 	assert.Equal(t, "invalid input: container_id must be a valid integer", textFromContent(t, result.Content))
 }
 
-func TestListAlertsInput_DefaultsToActiveOnly(t *testing.T) {
-	// When the input is zero-valued (no fields set), the handler defaults to active-only.
-	// The handler checks: input.ActiveOnly || input == (listAlertsInput{})
-	// So a zero-valued struct triggers the active-only path.
-	input := listAlertsInput{}
-	zeroValue := listAlertsInput{}
-	assert.Equal(t, zeroValue, input, "zero-valued input should be equal to default")
+// mcpListAlertsSpy wraps mcpAlertStore to record which listing method the
+// handler called, so the active_only tri-state (nil/true/false) can be pinned.
+type mcpListAlertsSpy struct {
+	*mcpAlertStore
+	activeOnlyCalled bool
+	listAlertsCalled bool
+	listAlertsOpts   alert.ListAlertsOpts
 }
 
-func TestListAlertsInput_ExplicitActiveOnly(t *testing.T) {
-	input := listAlertsInput{ActiveOnly: true}
-	assert.True(t, input.ActiveOnly)
+func newMCPListAlertsSpy() *mcpListAlertsSpy {
+	return &mcpListAlertsSpy{mcpAlertStore: newMCPAlertStore()}
+}
+
+func (m *mcpListAlertsSpy) ListActiveAlerts(ctx context.Context) ([]*alert.Alert, error) {
+	m.activeOnlyCalled = true
+	return m.mcpAlertStore.ListActiveAlerts(ctx)
+}
+
+func (m *mcpListAlertsSpy) ListAlerts(ctx context.Context, opts alert.ListAlertsOpts) ([]*alert.Alert, error) {
+	m.listAlertsCalled = true
+	m.listAlertsOpts = opts
+	return m.mcpAlertStore.ListAlerts(ctx, opts)
+}
+
+func TestListAlertsHandler_DefaultActiveOnly(t *testing.T) {
+	spy := newMCPListAlertsSpy()
+	svc := &Services{Alerts: spy, Logger: slog.Default(), Version: "test"}
+
+	_, _, err := listAlertsHandler(svc)(context.Background(), nil, listAlertsInput{})
+	require.NoError(t, err)
+	assert.True(t, spy.activeOnlyCalled, "nil active_only must default to ListActiveAlerts")
+	assert.False(t, spy.listAlertsCalled)
+}
+
+func TestListAlertsHandler_ExplicitActiveOnlyTrue(t *testing.T) {
+	spy := newMCPListAlertsSpy()
+	svc := &Services{Alerts: spy, Logger: slog.Default(), Version: "test"}
+	activeOnly := true
+
+	_, _, err := listAlertsHandler(svc)(context.Background(), nil, listAlertsInput{ActiveOnly: &activeOnly})
+	require.NoError(t, err)
+	assert.True(t, spy.activeOnlyCalled)
+	assert.False(t, spy.listAlertsCalled)
+}
+
+func TestListAlertsHandler_ActiveOnlyFalse_ReturnsAllStatuses(t *testing.T) {
+	spy := newMCPListAlertsSpy()
+	svc := &Services{Alerts: spy, Logger: slog.Default(), Version: "test"}
+	activeOnly := false
+
+	_, _, err := listAlertsHandler(svc)(context.Background(), nil, listAlertsInput{ActiveOnly: &activeOnly})
+	require.NoError(t, err)
+	assert.False(t, spy.activeOnlyCalled, "active_only:false must not call ListActiveAlerts")
+	assert.True(t, spy.listAlertsCalled)
+	assert.Equal(t, 100, spy.listAlertsOpts.Limit)
 }
 
 func TestGetContainerLogsInput_Defaults(t *testing.T) {

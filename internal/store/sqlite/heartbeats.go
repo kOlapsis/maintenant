@@ -203,8 +203,9 @@ func (s *HeartbeatStore) UpdateHeartbeatState(ctx context.Context, id string,
 
 func (s *HeartbeatStore) PauseHeartbeat(ctx context.Context, id string) error {
 	now := time.Now().Unix()
+	// Pausing stops monitoring, so alert_state must not stay stuck on alerting.
 	_, err := s.writer.Exec(ctx,
-		`UPDATE heartbeats SET status='paused', next_deadline_at=NULL, updated_at=? WHERE id=?`,
+		`UPDATE heartbeats SET status='paused', alert_state='normal', next_deadline_at=NULL, updated_at=? WHERE id=?`,
 		now, id)
 	if err != nil {
 		return fmt.Errorf("pause heartbeat %s: %w", id, err)

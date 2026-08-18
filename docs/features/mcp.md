@@ -151,7 +151,7 @@ read-only except the ones listed under [Actions](#actions-write).
 | `get_endpoint_history` | Check history for a specific endpoint | Community |
 | `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
 | `list_certificates` | TLS certificates with expiration, issuer, chain validity | Community |
-| `list_alerts` | Active alerts (or full history with `active_only: false`) | Community |
+| `list_alerts` | Active alerts (or recent resolved/silenced ones with `active_only: false`) | Community |
 | `get_resources` | Host resource summary: CPU, memory, network, disk | Community |
 | `get_top_consumers` | Containers ranked by CPU or memory usage | Community |
 | `get_updates` | Available image updates for monitored containers | Community |
