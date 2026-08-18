@@ -265,8 +265,9 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		}
 	})
 
-	// Endpoint removal → certificate monitor cleanup + status component dangling ref cleanup.
+	// Endpoint removal → alert, certificate monitor and status component cleanup.
 	a.endpointSvc.SetEndpointRemovedCallback(func(callCtx context.Context, endpointID string) {
+		a.alertEngine.ResolveByEntity(callCtx, "endpoint", endpointID)
 		a.certSvc.DeleteByEndpointID(callCtx, endpointID)
 		if err := a.statusCompStore.RemoveDanglingMonitorRefs(callCtx, "endpoint", endpointID); err != nil {
 			a.logger.Error("failed to remove dangling endpoint refs from status components", "endpoint_id", endpointID, "error", err)
@@ -318,6 +319,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 
 		if eventType == event.CertificateDeleted {
 			certID := toString(m["monitor_id"])
+			a.alertEngine.ResolveByEntity(ctx, "certificate", certID)
 			if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "certificate", certID); err != nil {
 				a.logger.Error("failed to remove dangling certificate refs from status components", "certificate_id", certID, "error", err)
 			}

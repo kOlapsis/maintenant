@@ -34,27 +34,36 @@ import (
 const localTopologyReconcileInterval = 30 * time.Second
 
 // pruneOrphanAlerts resolves active alerts whose underlying entity no longer
-// exists: a container that was removed, or an agent that was deleted while
-// already offline (its lifecycle hook never fired a recover at delete time, so
-// the disconnect alert lingered). Idempotent — safe to run on every startup.
+// exists: a container that was removed, an agent deleted while already offline,
+// or a heartbeat/endpoint/certificate monitor deleted before its alert was
+// resolved. Idempotent, safe to run on every startup.
 func (a *App) pruneOrphanAlerts(ctx context.Context) {
 	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
 	if err != nil {
 		return
 	}
 	for _, al := range activeAlerts {
+		var orphan bool
 		switch al.EntityType {
 		case "container":
 			c, err := a.containerSvc.GetContainer(ctx, al.EntityID)
-			if err != nil || c == nil {
-				a.alertEngine.ResolveByEntity(ctx, "container", al.EntityID)
-				a.logger.Info("pruned orphan container alert", "alert_id", al.ID, "entity_id", al.EntityID)
-			}
+			orphan = err != nil || c == nil
 		case "agent":
-			if _, err := a.agentStore.Get(ctx, al.EntityID); errors.Is(err, agent.ErrAgentNotFound) {
-				a.alertEngine.ResolveByEntity(ctx, "agent", al.EntityID)
-				a.logger.Info("pruned orphan agent alert", "alert_id", al.ID, "entity_id", al.EntityID)
-			}
+			_, err := a.agentStore.Get(ctx, al.EntityID)
+			orphan = errors.Is(err, agent.ErrAgentNotFound)
+		case "heartbeat":
+			h, err := a.hbStore.GetHeartbeatByID(ctx, al.EntityID)
+			orphan = err == nil && h == nil
+		case "endpoint":
+			ep, err := a.epStore.GetEndpointByID(ctx, al.EntityID)
+			orphan = err == nil && ep == nil
+		case "certificate":
+			m, err := a.certStore.GetMonitorByID(ctx, al.EntityID)
+			orphan = err == nil && m == nil
+		}
+		if orphan {
+			a.alertEngine.ResolveByEntity(ctx, al.EntityType, al.EntityID)
+			a.logger.Info("pruned orphan alert", "alert_id", al.ID, "entity_type", al.EntityType, "entity_id", al.EntityID)
 		}
 	}
 }

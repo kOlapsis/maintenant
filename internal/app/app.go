@@ -736,6 +736,8 @@ func (a *App) Start(ctx context.Context) error {
 	}
 
 	a.alertEngine.Start(ctx)
+	// Runs here too so DB-backed monitors are swept even without a container runtime.
+	a.pruneOrphanAlerts(ctx)
 
 	if extension.Allows(extension.CapAlertEscalation) {
 		go a.escalationSvc.RunRetentionLoop(ctx)

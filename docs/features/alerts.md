@@ -20,6 +20,8 @@ maintenant generates alerts from every monitoring subsystem:
 
 An agent alert fires when a remote agent stops reporting, whether its stream dropped or it never came back after a restart, and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one.
 
+Deleting a monitored entity (container, agent, heartbeat, endpoint, certificate) resolves its active alerts. On every startup, maintenant also resolves any active alert whose entity no longer exists, so alerts left behind by an earlier version cannot linger.
+
 ---
 
 ## Notification Channels
