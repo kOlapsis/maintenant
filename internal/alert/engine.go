@@ -342,7 +342,7 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 
 	// Dispatch notifications (only if not silenced)
 	if !silenced && e.notifier != nil {
-		e.dispatchNotifications(ctx, a)
+		e.dispatchNotifications(ctx, a, a)
 	}
 }
 
@@ -397,7 +397,7 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 	}
 
 	if e.notifier != nil {
-		e.dispatchNotifications(ctx, existing)
+		e.dispatchNotifications(ctx, existing, existing)
 	}
 }
 
@@ -487,9 +487,12 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 	// SSE broadcast
 	e.broadcastResolved(activeAlert)
 
-	// Dispatch recovery notifications
+	// Route by the original alert, but notify a payload that reads as a recovery.
 	if e.notifier != nil {
-		e.dispatchNotifications(ctx, activeAlert)
+		payload := *activeAlert
+		payload.Message = evt.Message
+		payload.Severity = evt.Severity
+		e.dispatchNotifications(ctx, activeAlert, &payload)
 	}
 }
 
@@ -555,7 +558,9 @@ func matchesSilenceRule(rule *SilenceRule, evt Event) bool {
 	return true
 }
 
-func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
+// dispatchNotifications matches triggers and the entity router against routeBy,
+// then delivers payload (they differ only for recoveries).
+func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payload *Alert) {
 	if e.channelStore == nil || e.notifier == nil {
 		return
 	}
@@ -569,7 +574,7 @@ func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
 			e.logger.Error("alert engine: list triggers", "error", err)
 		}
 		for _, t := range triggers {
-			if !matchesTrigger(t, a) {
+			if !matchesTrigger(t, routeBy) {
 				continue
 			}
 			for _, chID := range t.ChannelIDs {
@@ -585,14 +590,14 @@ func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
 					continue
 				}
 				dispatched[chID] = true
-				e.enqueueDelivery(ctx, ch, a)
+				e.enqueueDelivery(ctx, ch, payload)
 			}
 		}
 	}
 
 	// Consult entity router extension for additional channels (Pro: per-entity routing).
 	// Continues to operate independently from triggers.
-	extraIDs, err := e.entityRouter.Route(ctx, a.EntityType, a.EntityID, a.Severity)
+	extraIDs, err := e.entityRouter.Route(ctx, routeBy.EntityType, routeBy.EntityID, routeBy.Severity)
 	if err != nil {
 		e.logger.Error("alert engine: entity router error", "error", err)
 	}
@@ -609,7 +614,7 @@ func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
 			continue
 		}
 		dispatched[chID] = true
-		e.enqueueDelivery(ctx, ch, a)
+		e.enqueueDelivery(ctx, ch, payload)
 	}
 }
 

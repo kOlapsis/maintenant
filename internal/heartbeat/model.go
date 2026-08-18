@@ -41,6 +41,12 @@ const (
 	PingExitCode PingType = "exit_code"
 )
 
+// Heartbeat alert types (Source is always SourceHeartbeat in internal/alert).
+const (
+	AlertTypeDeadlineMissed  = "deadline_missed"
+	AlertTypeExitCodeFailure = "exit_code_failure"
+)
+
 // ExecutionOutcome represents the result of a job execution.
 type ExecutionOutcome string
 

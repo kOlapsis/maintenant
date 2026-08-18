@@ -12,7 +12,7 @@ maintenant generates alerts from every monitoring subsystem:
 |--------|--------|------------------|
 | **Container** | `restart_loop`, `health_unhealthy` | Warning |
 | **Endpoint** | `consecutive_failure` | Critical |
-| **Heartbeat** | `deadline_missed` | Critical |
+| **Heartbeat** | `deadline_missed`, `exit_code_failure` | Critical |
 | **Certificate** | `expiring`, `expired`, `chain_invalid` | Critical |
 | **Resource** | `cpu_threshold`, `memory_threshold` | Warning |
 | **Update** | `available` | Info |

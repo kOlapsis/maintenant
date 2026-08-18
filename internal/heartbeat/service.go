@@ -301,10 +301,11 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 		}
 	}
 
-	// Update state
+	// Update state. Recover from a missed deadline or from an alerting state left
+	// by a start/finish pair (down -> start -> finish never crosses StatusDown here).
 	alertState := h.AlertState
-	wasDown := previousStatus == StatusDown
-	if wasDown {
+	recovering := previousStatus == StatusDown || h.AlertState == AlertAlerting
+	if recovering {
 		alertState = AlertNormal
 	}
 
@@ -333,7 +334,7 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 	}
 
 	// Recovery alert
-	if wasDown {
+	if recovering {
 		s.emitEvent(event.HeartbeatRecovery, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
@@ -544,7 +545,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 		s.emitEvent(event.HeartbeatAlert, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
-			"alert_type":   "exit_code_failure",
+			"alert_type":   AlertTypeExitCodeFailure,
 			"details":      fmt.Sprintf("exit code %d", exitCode),
 		})
 		if s.alertCallback != nil {
@@ -552,6 +553,8 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 				"heartbeat_id": h.ID,
 				"name":         h.Name,
 				"exit_code":    exitCode,
+				"alert_type":   AlertTypeExitCodeFailure,
+				"message":      fmt.Sprintf("exit code %d", exitCode),
 			})
 		}
 	} else if previousStatus == StatusDown || h.AlertState == AlertAlerting {
@@ -640,7 +643,7 @@ func (s *Service) checkDeadlines(ctx context.Context) {
 		s.emitEvent(event.HeartbeatAlert, map[string]interface{}{
 			"heartbeat_id": h.ID,
 			"name":         h.Name,
-			"alert_type":   "deadline_missed",
+			"alert_type":   AlertTypeDeadlineMissed,
 			"details":      alertMsg,
 		})
 
@@ -648,7 +651,7 @@ func (s *Service) checkDeadlines(ctx context.Context) {
 			s.alertCallback(h, "alert", map[string]interface{}{
 				"heartbeat_id": h.ID,
 				"name":         h.Name,
-				"alert_type":   "deadline_missed",
+				"alert_type":   AlertTypeDeadlineMissed,
 				"message":      alertMsg,
 			})
 		}
