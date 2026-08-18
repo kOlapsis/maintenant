@@ -98,6 +98,7 @@ func seedTriggerForChannel(t *testing.T, ts alert.TriggerStore, name string, ena
 		FilterSeverities: severities,
 		FilterSources:    sources,
 		Enabled:          enabled,
+		NotifyOnResolve:  true,
 		ChannelIDs:       channelIDs,
 	}
 	id, err := ts.InsertTrigger(context.Background(), trig)
