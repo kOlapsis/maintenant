@@ -44,7 +44,7 @@ func registerTriggerTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "create_trigger",
-		Description: "Create a new alert trigger. Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
+		Description: "Create a new alert trigger, notifying recoveries by default. Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
 	}, createTriggerHandler(svc))
 
 	gomcp.AddTool(server, &gomcp.Tool{
@@ -73,6 +73,7 @@ type triggerInput struct {
 	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter (e.g. 'container:42,endpoint:7'). Needs the advanced filters capability. Empty matches everything."`
 	FilterTags       string   `json:"filter_tags" jsonschema:"CSV tag filter. Needs the advanced filters capability. Empty matches everything."`
 	Enabled          bool     `json:"enabled" jsonschema:"Whether the trigger is active"`
+	NotifyOnResolve  *bool    `json:"notify_on_resolve,omitempty" jsonschema:"Relay recovery (resolved) notifications, default true"`
 	ChannelIDs       []string `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
 }
 
@@ -165,6 +166,11 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 			}
 		}
 
+		notifyOnResolve := true
+		if input.NotifyOnResolve != nil {
+			notifyOnResolve = *input.NotifyOnResolve
+		}
+
 		t := &alert.AlertTrigger{
 			Name:             input.Name,
 			FilterSeverities: input.FilterSeverities,
@@ -172,6 +178,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 			FilterScopes:     input.FilterScopes,
 			FilterTags:       input.FilterTags,
 			Enabled:          input.Enabled,
+			NotifyOnResolve:  notifyOnResolve,
 			ChannelIDs:       input.ChannelIDs,
 		}
 		if _, err := svc.Triggers.InsertTrigger(ctx, t); err != nil {
@@ -219,6 +226,9 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		existing.FilterScopes = input.FilterScopes
 		existing.FilterTags = input.FilterTags
 		existing.Enabled = input.Enabled
+		if input.NotifyOnResolve != nil {
+			existing.NotifyOnResolve = *input.NotifyOnResolve
+		}
 		existing.ChannelIDs = input.ChannelIDs
 
 		if err := svc.Triggers.UpdateTrigger(ctx, existing); err != nil {

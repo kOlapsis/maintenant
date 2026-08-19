@@ -217,6 +217,32 @@ func TestHandleCreateTrigger_NameConflict(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "name_conflict")
 }
 
+func TestHandleCreateTrigger_NotifyOnResolve_DefaultsTrue(t *testing.T) {
+	h, ts := newTriggerHandler(true)
+	body := `{"name":"NoField","channel_ids":["1"]}`
+	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.HandleCreateTrigger(rec, req)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	got := ts.triggers["1"]
+	require.NotNil(t, got)
+	assert.True(t, got.NotifyOnResolve)
+}
+
+func TestHandleCreateTrigger_NotifyOnResolve_False(t *testing.T) {
+	h, ts := newTriggerHandler(true)
+	body := `{"name":"FiresOnly","notify_on_resolve":false,"channel_ids":["1"]}`
+	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.HandleCreateTrigger(rec, req)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	got := ts.triggers["1"]
+	require.NotNil(t, got)
+	assert.False(t, got.NotifyOnResolve)
+}
+
 func TestHandleCreateTrigger_ProFilterScopes_CommunityBlocked(t *testing.T) {
 	original := extension.CurrentEdition
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
@@ -276,6 +302,38 @@ func TestHandleUpdateTrigger_Happy(t *testing.T) {
 	h.HandleUpdateTrigger(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "Updated")
+}
+
+func TestHandleUpdateTrigger_NotifyOnResolve_False(t *testing.T) {
+	h, ts := newTriggerHandler(true)
+	id := seedTrigger(t, ts, "Original")
+	body := `{"name":"Updated","notify_on_resolve":false,"channel_ids":["1"]}`
+	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	h.HandleUpdateTrigger(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	got := ts.triggers[id]
+	require.NotNil(t, got)
+	assert.False(t, got.NotifyOnResolve)
+}
+
+func TestHandleUpdateTrigger_NotifyOnResolve_OmittedKeepsExisting(t *testing.T) {
+	h, ts := newTriggerHandler(true)
+	id := seedTrigger(t, ts, "Original")
+	ts.triggers[id].NotifyOnResolve = false
+
+	body := `{"name":"Updated","channel_ids":["1"]}`
+	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	h.HandleUpdateTrigger(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	got := ts.triggers[id]
+	require.NotNil(t, got)
+	assert.False(t, got.NotifyOnResolve, "omitted field must keep the existing value")
 }
 
 func TestHandleUpdateTrigger_NotFound(t *testing.T) {

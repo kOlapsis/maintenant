@@ -98,6 +98,7 @@ func seedTriggerForChannel(t *testing.T, ts alert.TriggerStore, name string, ena
 		FilterSeverities: severities,
 		FilterSources:    sources,
 		Enabled:          enabled,
+		NotifyOnResolve:  true,
 		ChannelIDs:       channelIDs,
 	}
 	id, err := ts.InsertTrigger(context.Background(), trig)
@@ -225,6 +226,35 @@ func TestEngineRecovery_NotificationReadsAsRecovery(t *testing.T) {
 	assert.Equal(t, "Heartbeat 'backup' recovered", recoveryPayload["message"], "must read as a recovery, not repeat the failure message")
 	assert.Equal(t, alert.SeverityInfo, recoveryPayload["severity"], "must carry the recovery severity, not the original critical severity")
 	assert.NotEmpty(t, recoveryPayload["resolved_at"])
+}
+
+func recoverEvent(eng *alert.Engine, severity, source, entityType string, entityID string) {
+	eng.EventChannel() <- alert.Event{
+		Source:     source,
+		AlertType:  "test",
+		Severity:   severity,
+		IsRecover:  true,
+		EntityType: entityType,
+		EntityID:   entityID,
+		EntityName: "test-entity",
+		Timestamp:  time.Now(),
+	}
+	time.Sleep(150 * time.Millisecond)
+}
+
+func seedTriggerNotifyOnResolve(t *testing.T, ts alert.TriggerStore, name string, notifyOnResolve bool, severities, sources string, channelIDs []string) string {
+	t.Helper()
+	trig := &alert.AlertTrigger{
+		Name:             name,
+		FilterSeverities: severities,
+		FilterSources:    sources,
+		Enabled:          true,
+		NotifyOnResolve:  notifyOnResolve,
+		ChannelIDs:       channelIDs,
+	}
+	id, err := ts.InsertTrigger(context.Background(), trig)
+	require.NoError(t, err)
+	return id
 }
 
 // T077 — E2E test 1: trigger matches → delivery created for each channel.
@@ -372,4 +402,48 @@ func TestEngineDispatch_ReservedEscalationChannel_NoInitialDelivery(t *testing.T
 	triggersForCTO, err := triggerStore.ListTriggersForChannel(ctx, emailCTO)
 	require.NoError(t, err)
 	assert.Empty(t, triggersForCTO, "email-cto must have zero triggers (reserved-escalation pattern)")
+}
+
+// NotifyOnResolve=false: fire delivers, recovery does not.
+func TestEngineDispatch_NotifyOnResolveFalse_NoRecoveryDelivery(t *testing.T) {
+	ctx, cancel, db, alertStore, channelStore, triggerStore, _, eng := engineTestSetup(t)
+	_ = db
+	defer cancel()
+
+	chID := seedWebhookChannel(t, channelStore, "fires-only-ch", true)
+	seedTriggerNotifyOnResolve(t, triggerStore, "FiresOnly", false, "critical", "container", []string{chID})
+
+	fireEvent(eng, "critical", "container", "container", "80")
+
+	alerts, err := alertStore.ListActiveAlerts(ctx)
+	require.NoError(t, err)
+	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
+	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger must deliver the fire")
+
+	recoverEvent(eng, "critical", "container", "container", "80")
+
+	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger with notify_on_resolve=false must not deliver the recovery")
+}
+
+// NotifyOnResolve=true (default): both fire and recovery deliver.
+func TestEngineDispatch_NotifyOnResolveTrue_RecoveryDelivered(t *testing.T) {
+	ctx, cancel, db, alertStore, channelStore, triggerStore, _, eng := engineTestSetup(t)
+	_ = db
+	defer cancel()
+
+	chID := seedWebhookChannel(t, channelStore, "fires-and-recovers-ch", true)
+	seedTriggerNotifyOnResolve(t, triggerStore, "FiresAndRecovers", true, "critical", "container", []string{chID})
+
+	fireEvent(eng, "critical", "container", "container", "90")
+
+	alerts, err := alertStore.ListActiveAlerts(ctx)
+	require.NoError(t, err)
+	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
+	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger must deliver the fire")
+
+	recoverEvent(eng, "critical", "container", "container", "90")
+
+	assert.Equal(t, 2, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger with notify_on_resolve=true must also deliver the recovery")
 }

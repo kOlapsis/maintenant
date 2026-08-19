@@ -62,6 +62,11 @@ function summarizeFilter(t: AlertTrigger): string {
             v-if="!t.enabled"
             class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-mnt-elevated text-mnt-muted"
           >disabled</span>
+          <span
+            v-if="!t.notify_on_resolve"
+            class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-mnt-elevated text-mnt-muted"
+            title="This trigger only relays fires, not recoveries"
+          >fires only</span>
         </div>
         <p class="mt-1 text-[11px] text-mnt-muted">{{ summarizeFilter(t) }}</p>
         <p class="mt-1 text-[11px] text-mnt-muted">

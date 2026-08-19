@@ -46,6 +46,7 @@ type triggerInput struct {
 	FilterScopes     string   `json:"filter_scopes"`
 	FilterTags       string   `json:"filter_tags"`
 	Enabled          *bool    `json:"enabled"`
+	NotifyOnResolve  *bool    `json:"notify_on_resolve"`
 	ChannelIDs       []string `json:"channel_ids"`
 }
 
@@ -107,6 +108,10 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
+	notifyOnResolve := true
+	if input.NotifyOnResolve != nil {
+		notifyOnResolve = *input.NotifyOnResolve
+	}
 
 	t := &alert.AlertTrigger{
 		Name:             input.Name,
@@ -115,6 +120,7 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 		FilterScopes:     input.FilterScopes,
 		FilterTags:       input.FilterTags,
 		Enabled:          enabled,
+		NotifyOnResolve:  notifyOnResolve,
 		ChannelIDs:       input.ChannelIDs,
 	}
 
@@ -181,6 +187,10 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
+	notifyOnResolve := existing.NotifyOnResolve
+	if input.NotifyOnResolve != nil {
+		notifyOnResolve = *input.NotifyOnResolve
+	}
 
 	existing.Name = input.Name
 	existing.FilterSeverities = input.FilterSeverities
@@ -188,6 +198,7 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 	existing.FilterScopes = input.FilterScopes
 	existing.FilterTags = input.FilterTags
 	existing.Enabled = enabled
+	existing.NotifyOnResolve = notifyOnResolve
 	existing.ChannelIDs = input.ChannelIDs
 
 	if err := h.triggerStore.UpdateTrigger(r.Context(), existing); err != nil {

@@ -650,6 +650,9 @@ func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a
 // FilterTags is treated as no-op for now: Alert does not yet expose tags.
 // The match is enforced via filter_severities, filter_sources and filter_scopes.
 func matchesTrigger(t *AlertTrigger, a *Alert) bool {
+	if a.Status == StatusResolved && !t.NotifyOnResolve {
+		return false
+	}
 	if t.FilterSeverities != "" && !containsCSV(t.FilterSeverities, a.Severity) {
 		return false
 	}

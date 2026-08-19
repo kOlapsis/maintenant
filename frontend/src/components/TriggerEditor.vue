@@ -44,6 +44,7 @@ const SOURCE_OPTIONS = ['container', 'endpoint', 'heartbeat', 'certificate', 'mo
 
 const name = ref(props.trigger?.name ?? '')
 const enabled = ref(props.trigger?.enabled ?? true)
+const notifyOnResolve = ref(props.trigger?.notify_on_resolve ?? true)
 const severities = ref<string[]>(toCsvArray(props.trigger?.filter_severities ?? ''))
 const sources = ref<string[]>(toCsvArray(props.trigger?.filter_sources ?? ''))
 const scopesCsv = ref(props.trigger?.filter_scopes ?? '')
@@ -58,6 +59,7 @@ watch(
   (t) => {
     name.value = t?.name ?? ''
     enabled.value = t?.enabled ?? true
+    notifyOnResolve.value = t?.notify_on_resolve ?? true
     severities.value = toCsvArray(t?.filter_severities ?? '')
     sources.value = toCsvArray(t?.filter_sources ?? '')
     scopesCsv.value = t?.filter_scopes ?? ''
@@ -119,6 +121,7 @@ async function handleSave() {
       filter_scopes: scopesCsv.value.trim(),
       filter_tags: tagsCsv.value.trim(),
       enabled: enabled.value,
+      notify_on_resolve: notifyOnResolve.value,
       channel_ids: selectedChannelIds.value,
     }
     if (props.trigger) {
@@ -205,6 +208,26 @@ async function handleSave() {
           <span
             class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
             :class="enabled ? 'translate-x-4' : 'translate-x-0'"
+          />
+        </button>
+      </div>
+
+      <!-- Notify on recovery toggle -->
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-mnt-secondary">Notify on recovery</p>
+          <p class="text-[10px] text-mnt-muted mt-0.5">
+            Also send a notification when the alert resolves.
+          </p>
+        </div>
+        <button
+          class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
+          :class="notifyOnResolve ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
+          @click="notifyOnResolve = !notifyOnResolve"
+        >
+          <span
+            class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+            :class="notifyOnResolve ? 'translate-x-4' : 'translate-x-0'"
           />
         </button>
       </div>

@@ -116,6 +116,7 @@ type AlertTrigger struct {
 	FilterScopes     string    `json:"filter_scopes"`
 	FilterTags       string    `json:"filter_tags"`
 	Enabled          bool      `json:"enabled"`
+	NotifyOnResolve  bool      `json:"notify_on_resolve"`
 	ChannelIDs       []string  `json:"channel_ids"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`

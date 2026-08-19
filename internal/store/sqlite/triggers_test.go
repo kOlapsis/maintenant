@@ -53,6 +53,7 @@ func setupTriggerTestDB(t *testing.T) (*TriggerStoreImpl, *sql.DB) {
 			filter_scopes     TEXT    NOT NULL DEFAULT '',
 			filter_tags       TEXT    NOT NULL DEFAULT '',
 			enabled           INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+			notify_on_resolve INTEGER NOT NULL DEFAULT 1 CHECK (notify_on_resolve IN (0,1)),
 			created_at        BIGINT  NOT NULL DEFAULT 0,
 			updated_at        BIGINT  NOT NULL DEFAULT 0
 		);
@@ -97,6 +98,7 @@ func TestTriggerStore_InsertAndGet(t *testing.T) {
 		FilterSeverities: "critical",
 		FilterSources:    "container",
 		Enabled:          true,
+		NotifyOnResolve:  true,
 		ChannelIDs:       []string{chID},
 	}
 	id, err := store.InsertTrigger(ctx, trig)
@@ -110,7 +112,32 @@ func TestTriggerStore_InsertAndGet(t *testing.T) {
 	assert.Equal(t, "critical", got.FilterSeverities)
 	assert.Equal(t, "container", got.FilterSources)
 	assert.True(t, got.Enabled)
+	assert.True(t, got.NotifyOnResolve)
 	assert.Equal(t, []string{chID}, got.ChannelIDs)
+}
+
+func TestTriggerStore_NotifyOnResolve_RoundTrip(t *testing.T) {
+	store, rawDB := setupTriggerTestDB(t)
+	ctx := context.Background()
+
+	chID := seedChannelForTrigger(t, rawDB, "notify-ch")
+
+	trig := &alert.AlertTrigger{Name: "FiresOnly", Enabled: true, NotifyOnResolve: false, ChannelIDs: []string{chID}}
+	id, err := store.InsertTrigger(ctx, trig)
+	require.NoError(t, err)
+
+	got, err := store.GetTrigger(ctx, id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.False(t, got.NotifyOnResolve)
+
+	got.NotifyOnResolve = true
+	require.NoError(t, store.UpdateTrigger(ctx, got))
+
+	got, err = store.GetTrigger(ctx, id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.True(t, got.NotifyOnResolve)
 }
 
 func TestTriggerStore_GetNotFound(t *testing.T) {
