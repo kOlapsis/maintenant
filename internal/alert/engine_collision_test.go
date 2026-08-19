@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/alert"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // syncBuffer is a goroutine-safe sink for the engine's structured logs.
@@ -57,18 +57,18 @@ func TestEngine_DedupKeyCollision_LogsAndRefreshes(t *testing.T) {
 	logs := &syncBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "eng.db"), logger)
+	db, err := store.Open(filepath.Join(t.TempDir(), "eng.db"), logger)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
+	require.NoError(t, store.Migrate(db.ReadDB(), logger))
 	db.StartWriter(ctx)
 
-	alertStore := sqlite.NewAlertStore(db)
+	alertStore := store.NewAlertStore(db)
 	eng := alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
-		ChannelStore: sqlite.NewChannelStore(db),
-		TriggerStore: sqlite.NewTriggerStore(db),
-		SilenceStore: sqlite.NewSilenceStore(db),
+		ChannelStore: store.NewChannelStore(db),
+		TriggerStore: store.NewTriggerStore(db),
+		SilenceStore: store.NewSilenceStore(db),
 		Logger:       logger,
 	})
 	eng.Start(ctx)

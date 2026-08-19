@@ -14,13 +14,13 @@ package app
 import (
 	"context"
 
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // agentRuntimeResolver adapts the agent store to container.AgentRuntimeResolver,
 // so containers reported by a remote agent are tagged with that agent's runtime.
 type agentRuntimeResolver struct {
-	store *sqlite.AgentStore
+	store *store.AgentStore
 }
 
 func (r agentRuntimeResolver) DetectedRuntime(ctx context.Context, agentID string) (string, error) {

@@ -31,7 +31,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/extension"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -41,22 +41,22 @@ func (noopBroadcasterUnit) BroadcastEvent(string, any) {}
 
 // newHostLimitTestImpl builds an ingestImpl backed by a real temp SQLite store,
 // without standing up the gRPC server — RegisterAgent is called in-process.
-func newHostLimitTestImpl(t *testing.T) (*ingestImpl, *sqlite.AgentStore) {
+func newHostLimitTestImpl(t *testing.T) (*ingestImpl, *store.AgentStore) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
 	require.NoError(t, err)
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
+	require.NoError(t, store.Migrate(db.ReadDB(), logger))
 	ctx, cancel := context.WithCancel(context.Background())
 	db.StartWriter(ctx)
 	t.Cleanup(func() { cancel(); _ = db.Close() })
 
-	store := sqlite.NewAgentStore(db)
+	store := store.NewAgentStore(db)
 	impl := &ingestImpl{deps: Deps{AgentStore: store, Broadcaster: noopBroadcasterUnit{}, Logger: logger}}
 	return impl, store
 }
 
-func insertActiveAgents(t *testing.T, store *sqlite.AgentStore, n int) {
+func insertActiveAgents(t *testing.T, store *store.AgentStore, n int) {
 	t.Helper()
 	ctx := context.Background()
 	for i := range n {
@@ -75,7 +75,7 @@ func insertActiveAgents(t *testing.T, store *sqlite.AgentStore, n int) {
 
 // insertToken stores tok the way the creation handler does — hash and display
 // prefix only — and returns the cleartext for the caller to enroll with.
-func insertToken(t *testing.T, store *sqlite.AgentStore, id, tok string) string {
+func insertToken(t *testing.T, store *store.AgentStore, id, tok string) string {
 	t.Helper()
 	require.NoError(t, store.InsertToken(context.Background(), &agent.EnrollmentToken{
 		TokenID:     id,

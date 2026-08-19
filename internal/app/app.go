@@ -46,7 +46,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/telemetry"
 	"github.com/kolapsis/maintenant/internal/update"
@@ -60,7 +60,7 @@ type App struct {
 	logger *slog.Logger
 
 	// Infrastructure
-	db *sqlite.DB
+	db *store.DB
 	rt runtime.Runtime
 
 	// Core services
@@ -78,7 +78,7 @@ type App struct {
 	// Alert pipeline
 	alertEngine     *alert.Engine
 	notifier        *alert.Notifier
-	escalationStore *sqlite.EscalationStore
+	escalationStore *store.EscalationStore
 	escalationSvc   *escalation.Service
 
 	// HTTP
@@ -91,18 +91,18 @@ type App struct {
 	// Stores (needed for retention cleanup and reconciliation)
 	alertStore     alert.AlertStore
 	updateStore    update.UpdateStore
-	containerStore *sqlite.ContainerStore
-	epStore        *sqlite.EndpointStore
-	hbStore        *sqlite.HeartbeatStore
-	certStore      *sqlite.CertificateStore
-	resStore       *sqlite.ResourceStore
-	agentStore     *sqlite.AgentStore
+	containerStore *store.ContainerStore
+	epStore        *store.EndpointStore
+	hbStore        *store.HeartbeatStore
+	certStore      *store.CertificateStore
+	resStore       *store.ResourceStore
+	agentStore     *store.AgentStore
 	agentSessions  *agentserver.Sessions
 	agentSrv       *agentserver.Server
 	// shuttingDown suppresses agent-disconnect alerts during graceful shutdown,
 	// where every stream ends at once and would otherwise page for the whole fleet.
 	shuttingDown    atomic.Bool
-	statusCompStore *sqlite.StatusComponentStoreImpl
+	statusCompStore *store.StatusComponentStoreImpl
 
 	// Background services
 	checkEngine    *endpoint.CheckEngine
@@ -127,8 +127,8 @@ type App struct {
 	swarmCluster        *swarm.SwarmCluster
 	swarmDiscovery      *swarm.ServiceDiscovery
 	swarmEvents         *swarm.EventProcessor
-	swarmNodeStore      *sqlite.SwarmNodeStore
-	swarmTopologyStore  *sqlite.SwarmTopologyStore
+	swarmNodeStore      *store.SwarmNodeStore
+	swarmTopologyStore  *store.SwarmTopologyStore
 	swarmIngest         *swarm.IngestService
 	swarmNodeSvc        *swarm.NodeService
 	swarmCrashLoop      *swarm.CrashLoopDetector
@@ -137,7 +137,7 @@ type App struct {
 	swarmReplicaChecker *swarm.ReplicaHealthChecker
 
 	// Kubernetes
-	k8sStore  *sqlite.KubernetesStore
+	k8sStore  *store.KubernetesStore
 	k8sIngest *kubernetes.IngestService
 }
 
@@ -165,43 +165,43 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	// --- Database ---
-	db, err := sqlite.Open(cfg.DBPath, logger)
+	db, err := store.Open(cfg.DBPath, logger)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 	a.db = db
 
-	if err := sqlite.Migrate(db.ReadDB(), logger); err != nil {
+	if err := store.Migrate(db.ReadDB(), logger); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
 	// --- Stores ---
-	store := sqlite.NewContainerStore(db)
-	a.containerStore = store
-	epStore := sqlite.NewEndpointStore(db)
+	containerStore := store.NewContainerStore(db)
+	a.containerStore = containerStore
+	epStore := store.NewEndpointStore(db)
 	a.epStore = epStore
-	hbStore := sqlite.NewHeartbeatStore(db)
+	hbStore := store.NewHeartbeatStore(db)
 	a.hbStore = hbStore
-	certStore := sqlite.NewCertificateStore(db)
+	certStore := store.NewCertificateStore(db)
 	a.certStore = certStore
-	resStore := sqlite.NewResourceStore(db)
+	resStore := store.NewResourceStore(db)
 	a.resStore = resStore
-	alertStore := sqlite.NewAlertStore(db)
+	alertStore := store.NewAlertStore(db)
 	a.alertStore = alertStore
-	channelStore := sqlite.NewChannelStore(db)
-	triggerStore := sqlite.NewTriggerStore(db)
-	silenceStore := sqlite.NewSilenceStore(db)
-	statusCompStore := sqlite.NewStatusComponentStore(db)
+	channelStore := store.NewChannelStore(db)
+	triggerStore := store.NewTriggerStore(db)
+	silenceStore := store.NewSilenceStore(db)
+	statusCompStore := store.NewStatusComponentStore(db)
 	a.statusCompStore = statusCompStore
-	personalizationStore := sqlite.NewPersonalizationStore(db)
-	incidentStore := sqlite.NewIncidentStore(db)
-	maintenanceStore := sqlite.NewMaintenanceStore(db)
-	subscriberStore := sqlite.NewSubscriberStore(db)
-	webhookStore := sqlite.NewWebhookStore(db)
-	updateStore := sqlite.NewUpdateStore(db)
+	personalizationStore := store.NewPersonalizationStore(db)
+	incidentStore := store.NewIncidentStore(db)
+	maintenanceStore := store.NewMaintenanceStore(db)
+	subscriberStore := store.NewSubscriberStore(db)
+	webhookStore := store.NewWebhookStore(db)
+	updateStore := store.NewUpdateStore(db)
 	a.updateStore = updateStore
-	agentStore := sqlite.NewAgentStore(db)
+	agentStore := store.NewAgentStore(db)
 	a.agentStore = agentStore
 
 	// The mode gate lives in Start(), after the license manager has resolved the
@@ -239,14 +239,14 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// may report a swarm even when this server's own runtime is docker or
 	// kubernetes. The local runtime reconciles into the same tables under the
 	// LocalAgent id (see lifecycle reconcile loop).
-	a.swarmNodeStore = sqlite.NewSwarmNodeStore(db)
-	a.swarmTopologyStore = sqlite.NewSwarmTopologyStore(db)
+	a.swarmNodeStore = store.NewSwarmNodeStore(db)
+	a.swarmTopologyStore = store.NewSwarmTopologyStore(db)
 	a.swarmIngest = swarm.NewIngestService(a.swarmTopologyStore, a.swarmNodeStore, logger)
 
 	// Kubernetes topology store + ingest, also created unconditionally so a
 	// remote kubernetes agent can report into per-agent tables regardless of the
 	// server's own runtime.
-	a.k8sStore = sqlite.NewKubernetesStore(db)
+	a.k8sStore = store.NewKubernetesStore(db)
 	a.k8sIngest = kubernetes.NewIngestService(a.k8sStore, logger)
 
 	// --- Swarm detection (only when runtime is connected) ---
@@ -291,14 +291,14 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		logFetcher = lf
 	}
 	a.containerSvc = container.NewService(container.Deps{
-		Store:          store,
+		Store:          containerStore,
 		Logger:         logger,
 		LogFetcher:     logFetcher,
-		RestartChecker: alert.NewRestartDetector(store, logger),
+		RestartChecker: alert.NewRestartDetector(containerStore, logger),
 		Discoverer:     rt,
 		AgentRuntime:   agentRuntimeResolver{store: agentStore},
 	})
-	uptimeCalc := container.NewUptimeCalculator(store)
+	uptimeCalc := container.NewUptimeCalculator(containerStore)
 
 	a.securitySvc = security.NewService(security.Deps{Logger: logger})
 	a.resourceSvc = resource.NewService(resource.Deps{
@@ -470,7 +470,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	})
 
 	// --- Security posture scoring ---
-	ackStore := sqlite.NewAcknowledgmentStore(db)
+	ackStore := store.NewAcknowledgmentStore(db)
 	a.scorer = security.NewScorer(security.ScorerDeps{
 		Certs:     &CertPostureAdapter{CertSvc: a.certSvc},
 		CVEs:      &CVEPostureAdapter{Store: updateStore},
@@ -485,7 +485,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	// --- Escalation policies ---
-	a.escalationStore = sqlite.NewEscalationStore(db)
+	a.escalationStore = store.NewEscalationStore(db)
 
 	// Maintenance suppressor: real implementation in Pro, noop in CE.
 	var suppressor alert.MaintenanceSuppressor = extension.NoopMaintenanceSuppressor{}
@@ -529,7 +529,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.wireAgentLifecycleAlerts()
 
 	// --- Router ---
-	uptimeDailyStore := sqlite.NewUptimeDailyStore(db)
+	uptimeDailyStore := store.NewUptimeDailyStore(db)
 	a.router = v1.NewRouter(v1.HandlerDeps{
 		// Core services
 		Broker:       a.broker,
@@ -647,7 +647,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Disabled:   cfg.DisableTelemetry,
 		AppVersion: cfg.Version,
 	}, telemetry.Deps{
-		Containers:       store,
+		Containers:       containerStore,
 		Endpoints:        epStore,
 		Heartbeats:       hbStore,
 		Certificates:     certStore,

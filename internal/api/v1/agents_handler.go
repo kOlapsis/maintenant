@@ -23,11 +23,11 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 type AgentHandler struct {
-	store          *sqlite.AgentStore
+	store          *store.AgentStore
 	sessions       AgentSessions
 	broker         *SSEBroker
 	logger         *slog.Logger
@@ -37,7 +37,7 @@ type AgentHandler struct {
 }
 
 func NewAgentHandler(
-	store *sqlite.AgentStore,
+	store *store.AgentStore,
 	sessions AgentSessions,
 	broker *SSEBroker,
 	logger *slog.Logger,

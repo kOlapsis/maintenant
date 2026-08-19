@@ -24,7 +24,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/maintenance"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -33,17 +33,17 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	defer cancel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
+	require.NoError(t, store.Migrate(db.ReadDB(), logger))
 	db.StartWriter(ctx)
 
-	alertStore := sqlite.NewAlertStore(db)
-	channelStore := sqlite.NewChannelStore(db)
-	triggerStore := sqlite.NewTriggerStore(db)
-	silenceStore := sqlite.NewSilenceStore(db)
-	maintenanceStore := sqlite.NewMaintenanceStore(db)
+	alertStore := store.NewAlertStore(db)
+	channelStore := store.NewChannelStore(db)
+	triggerStore := store.NewTriggerStore(db)
+	silenceStore := store.NewSilenceStore(db)
+	maintenanceStore := store.NewMaintenanceStore(db)
 
 	suppressor := maintenance.NewSuppressor(maintenanceStore, logger)
 

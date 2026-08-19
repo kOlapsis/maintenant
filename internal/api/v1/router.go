@@ -30,7 +30,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
@@ -124,13 +124,13 @@ type HandlerDeps struct {
 	SwarmUpdateTracker  *swarm.UpdateTracker
 	SwarmCrashLoop      *swarm.CrashLoopDetector
 	SwarmReplicaChecker *swarm.ReplicaHealthChecker
-	SwarmTopologyStore  *sqlite.SwarmTopologyStore
+	SwarmTopologyStore  *store.SwarmTopologyStore
 
 	// Kubernetes (per-agent store-backed reads)
-	KubernetesStore *sqlite.KubernetesStore
+	KubernetesStore *store.KubernetesStore
 
 	// Multi-host agents (Pro)
-	AgentStore          *sqlite.AgentStore
+	AgentStore          *store.AgentStore
 	AgentSessions       AgentSessions
 	GRPCPublicURL       string
 	GRPCListen          string
@@ -148,7 +148,7 @@ type HandlerDeps struct {
 // agentStoreDirectory adapts the sqlite agent store to AgentDirectory so the
 // container handler can resolve agent_id → hostname/label for remote containers.
 type agentStoreDirectory struct {
-	store *sqlite.AgentStore
+	store *store.AgentStore
 }
 
 func (d agentStoreDirectory) AgentNames(ctx context.Context) (map[string]AgentName, error) {

@@ -50,7 +50,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // noopBroadcaster satisfies agentserver.EventBroadcaster without side-effects.
@@ -96,16 +96,16 @@ func withMultiHostEdition(t *testing.T) {
 }
 
 // openIntegrationDB opens a temp SQLite DB with migrations and writer started.
-func openIntegrationDB(t *testing.T) *sqlite.DB {
+func openIntegrationDB(t *testing.T) *store.DB {
 	t.Helper()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	db, err := sqlite.Open(dbPath, logger)
+	db, err := store.Open(dbPath, logger)
 	require.NoError(t, err, "open integration DB")
 
-	err = sqlite.Migrate(db.ReadDB(), logger)
+	err = store.Migrate(db.ReadDB(), logger)
 	require.NoError(t, err, "run migrations on integration DB")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -198,7 +198,7 @@ func TestIntegration_Enrollment(t *testing.T) {
 	withMultiHostEdition(t)
 
 	db := openIntegrationDB(t)
-	store := sqlite.NewAgentStore(db)
+	store := store.NewAgentStore(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	// Start the gRPC server on a random loopback port.
@@ -316,8 +316,8 @@ func TestIntegration_PushStream(t *testing.T) {
 	defer cancel()
 
 	db := openIntegrationDB(t)
-	agentStore := sqlite.NewAgentStore(db)
-	containerStore := sqlite.NewContainerStore(db)
+	agentStore := store.NewAgentStore(db)
+	containerStore := store.NewContainerStore(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	broadcaster := &captureBroadcaster{}
@@ -499,7 +499,7 @@ func TestIntegration_LogsCommandRoundTrip(t *testing.T) {
 	defer cancel()
 
 	db := openIntegrationDB(t)
-	agentStore := sqlite.NewAgentStore(db)
+	agentStore := store.NewAgentStore(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	sessions := agentserver.NewSessions(logger, noopBroadcaster{})
