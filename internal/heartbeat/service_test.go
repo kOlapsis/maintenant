@@ -602,6 +602,52 @@ func TestService_ProcessPing_StartedToUpCompletionCalculatesDuration(t *testing.
 	assert.NotNil(t, execs[0].CompletedAt)
 }
 
+func TestService_ProcessPing_DownStartFinish_RecoversOnCompletion(t *testing.T) {
+	store := newMockStore()
+
+	var alertCalls []string
+	svc := newService(store, &mockLicense{canCreate: true})
+	svc.SetAlertCallback(func(_ *Heartbeat, alertType string, _ map[string]interface{}) {
+		alertCalls = append(alertCalls, alertType)
+	})
+
+	seedHeartbeat(store, "uuid-startfinish-1", StatusDown, AlertAlerting)
+
+	_, err := svc.ProcessStartPing(context.Background(), "uuid-startfinish-1", "127.0.0.1", "GET")
+	require.NoError(t, err)
+	assert.Empty(t, alertCalls, "the start ping alone must not emit a recovery")
+
+	result, err := svc.ProcessPing(context.Background(), "uuid-startfinish-1", "127.0.0.1", "GET", nil, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, StatusUp, result.Status)
+	assert.Equal(t, AlertNormal, result.AlertState)
+	require.Len(t, alertCalls, 1, "the completion ping after down->start must emit exactly one recovery")
+	assert.Equal(t, "recovery", alertCalls[0])
+}
+
+func TestService_ProcessPing_UpButAlerting_EmitsRecoveryAndResetsAlertState(t *testing.T) {
+	store := newMockStore()
+
+	var alertCalls []string
+	svc := newService(store, &mockLicense{canCreate: true})
+	svc.SetAlertCallback(func(_ *Heartbeat, alertType string, _ map[string]interface{}) {
+		alertCalls = append(alertCalls, alertType)
+	})
+
+	// Status is already "up" (e.g. after the fix to ProcessExitCodePing/ProcessPing
+	// itself), but AlertState is stuck "alerting" from an earlier failure mode.
+	seedHeartbeat(store, "uuid-stale-alerting-1", StatusUp, AlertAlerting)
+
+	result, err := svc.ProcessPing(context.Background(), "uuid-stale-alerting-1", "127.0.0.1", "GET", nil, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, StatusUp, result.Status)
+	assert.Equal(t, AlertNormal, result.AlertState)
+	require.Len(t, alertCalls, 1, "a stale alerting state must be cleared by the next successful ping")
+	assert.Equal(t, "recovery", alertCalls[0])
+}
+
 func TestService_ProcessPing_UnknownUUID(t *testing.T) {
 	store := newMockStore()
 	svc := newService(store, &mockLicense{canCreate: true})
@@ -718,6 +764,26 @@ func TestService_ProcessExitCodePing_NonZeroExitCodeFiresAlert(t *testing.T) {
 
 	require.Len(t, alertCalls, 1)
 	assert.Equal(t, "alert", alertCalls[0])
+}
+
+func TestService_ProcessExitCodePing_AlertTypeIsExitCodeFailure(t *testing.T) {
+	store := newMockStore()
+
+	var gotDetails map[string]interface{}
+	svc := newService(store, &mockLicense{canCreate: true})
+	svc.SetAlertCallback(func(_ *Heartbeat, alertType string, details map[string]interface{}) {
+		if alertType == "alert" {
+			gotDetails = details
+		}
+	})
+
+	seedHeartbeat(store, "uuid-exit-alerttype-1", StatusUp, AlertNormal)
+
+	_, err := svc.ProcessExitCodePing(context.Background(), "uuid-exit-alerttype-1", 7, "127.0.0.1", "GET", nil)
+	require.NoError(t, err)
+
+	require.NotNil(t, gotDetails)
+	assert.Equal(t, AlertTypeExitCodeFailure, gotDetails["alert_type"])
 }
 
 func TestService_ProcessExitCodePing_ConsecutiveFailuresIncrement(t *testing.T) {

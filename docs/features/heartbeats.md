@@ -103,7 +103,7 @@ For each heartbeat monitor, maintenant records:
 
 ## Deadline Missed Alerts
 
-When a heartbeat monitor does not receive a ping within its configured deadline, maintenant fires a `deadline_missed` alert with **Critical** severity.
+When a heartbeat monitor does not receive a ping within its configured deadline, maintenant fires a `deadline_missed` alert with **Critical** severity. A ping reporting a non-zero exit code fires an `exit_code_failure` alert instead, also Critical. Both resolve automatically, with a recovery notification, on the next successful ping; deleting or pausing a heartbeat clears its active alerts too.
 
 This means your cron job either:
 

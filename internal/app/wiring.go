@@ -26,6 +26,42 @@ import (
 	"github.com/kolapsis/maintenant/internal/security"
 )
 
+// heartbeatAlertEvents builds the alert events for a heartbeat callback. A recovery
+// clears both failure keys (the engine ignores the one not active). Caller sets Timestamp.
+func heartbeatAlertEvents(h *heartbeat.Heartbeat, alertType string, details map[string]any) []alert.Event {
+	build := func(t string, isRecover bool, severity, message string) alert.Event {
+		return alert.Event{
+			Source:     alert.SourceHeartbeat,
+			AlertType:  t,
+			Severity:   severity,
+			IsRecover:  isRecover,
+			Message:    message,
+			EntityType: "heartbeat",
+			EntityID:   h.ID,
+			EntityName: h.Name,
+			Details:    details,
+		}
+	}
+
+	if alertType == "recovery" {
+		msg := fmt.Sprintf("Heartbeat '%s' recovered", h.Name)
+		return []alert.Event{
+			build(heartbeat.AlertTypeDeadlineMissed, true, alert.SeverityInfo, msg),
+			build(heartbeat.AlertTypeExitCodeFailure, true, alert.SeverityInfo, msg),
+		}
+	}
+
+	hbAlertType := heartbeat.AlertTypeDeadlineMissed
+	if t, ok := details["alert_type"].(string); ok {
+		hbAlertType = t
+	}
+	msg := fmt.Sprintf("Heartbeat '%s' missed deadline", h.Name)
+	if hbAlertType == heartbeat.AlertTypeExitCodeFailure {
+		msg = fmt.Sprintf("Heartbeat '%s' failed with exit code %v", h.Name, details["exit_code"])
+	}
+	return []alert.Event{build(hbAlertType, false, alert.SeverityCritical, msg)}
+}
+
 // wireAlertCallbacks wires all service event callbacks for SSE broadcasting,
 // alert event forwarding, and status page integration.
 func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
@@ -229,8 +265,9 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		}
 	})
 
-	// Endpoint removal → certificate monitor cleanup + status component dangling ref cleanup.
+	// Endpoint removal → alert, certificate monitor and status component cleanup.
 	a.endpointSvc.SetEndpointRemovedCallback(func(callCtx context.Context, endpointID string) {
+		a.alertEngine.ResolveByEntity(callCtx, "endpoint", endpointID)
 		a.certSvc.DeleteByEndpointID(callCtx, endpointID)
 		if err := a.statusCompStore.RemoveDanglingMonitorRefs(callCtx, "endpoint", endpointID); err != nil {
 			a.logger.Error("failed to remove dangling endpoint refs from status components", "endpoint_id", endpointID, "error", err)
@@ -240,41 +277,30 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 	// Heartbeat alerts
 	a.heartbeatSvc.SetAlertCallback(func(h *heartbeat.Heartbeat, alertType string, details map[string]any) {
 		a.statusSvc.NotifyMonitorChanged(ctx, "heartbeat", h.ID)
-
-		isRecover := alertType == "recovery"
-		severity := alert.SeverityCritical
-		msg := fmt.Sprintf("Heartbeat '%s' missed deadline", h.Name)
-		if isRecover {
-			severity = alert.SeverityInfo
-			msg = fmt.Sprintf("Heartbeat '%s' recovered", h.Name)
+		for _, evt := range heartbeatAlertEvents(h, alertType, details) {
+			evt.Timestamp = time.Now()
+			sendAlert(evt)
 		}
-		hbAlertType := "deadline_missed"
-		if t, ok := details["alert_type"].(string); ok {
-			hbAlertType = t
-		}
-		sendAlert(alert.Event{
-			Source:     alert.SourceHeartbeat,
-			AlertType:  hbAlertType,
-			Severity:   severity,
-			IsRecover:  isRecover,
-			Message:    msg,
-			EntityType: "heartbeat",
-			EntityID:   h.ID,
-			EntityName: h.Name,
-			Details:    details,
-			Timestamp:  time.Now(),
-		})
 	})
 
 	// Heartbeat events
 	a.heartbeatSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-		if eventType == event.HeartbeatDeleted {
-			if m, ok := data.(map[string]any); ok {
-				hid := toString(m["heartbeat_id"])
-				if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "heartbeat", hid); err != nil {
-					a.logger.Error("failed to remove dangling heartbeat refs from status components", "heartbeat_id", hid, "error", err)
-				}
+		m, ok := data.(map[string]any)
+		if !ok {
+			return
+		}
+		switch eventType {
+		case event.HeartbeatDeleted:
+			hid := toString(m["heartbeat_id"])
+			a.alertEngine.ResolveByEntity(ctx, "heartbeat", hid)
+			if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "heartbeat", hid); err != nil {
+				a.logger.Error("failed to remove dangling heartbeat refs from status components", "heartbeat_id", hid, "error", err)
+			}
+		case event.HeartbeatStatusChanged:
+			// Pausing takes the heartbeat out of monitoring: clear its active alerts.
+			if newStatus, _ := m["new_status"].(string); newStatus == string(heartbeat.StatusPaused) {
+				a.alertEngine.ResolveByEntity(ctx, "heartbeat", toString(m["heartbeat_id"]))
 			}
 		}
 	})
@@ -293,6 +319,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 
 		if eventType == event.CertificateDeleted {
 			certID := toString(m["monitor_id"])
+			a.alertEngine.ResolveByEntity(ctx, "certificate", certID)
 			if err := a.statusCompStore.RemoveDanglingMonitorRefs(ctx, "certificate", certID); err != nil {
 				a.logger.Error("failed to remove dangling certificate refs from status components", "certificate_id", certID, "error", err)
 			}

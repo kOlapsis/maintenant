@@ -12,13 +12,15 @@ maintenant generates alerts from every monitoring subsystem:
 |--------|--------|------------------|
 | **Container** | `restart_loop`, `health_unhealthy` | Warning |
 | **Endpoint** | `consecutive_failure` | Critical |
-| **Heartbeat** | `deadline_missed` | Critical |
+| **Heartbeat** | `deadline_missed`, `exit_code_failure` | Critical |
 | **Certificate** | `expiring`, `expired`, `chain_invalid` | Critical |
 | **Resource** | `cpu_threshold`, `memory_threshold` | Warning |
 | **Update** | `available` | Info |
 | **Agent** | `disconnected` | Warning |
 
 An agent alert fires when a remote agent stops reporting, whether its stream dropped or it never came back after a restart, and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one.
+
+Deleting a monitored entity (container, agent, heartbeat, endpoint, certificate) resolves its active alerts. On every startup, maintenant also resolves any active alert whose entity no longer exists, so alerts left behind by an earlier version cannot linger.
 
 ---
 
