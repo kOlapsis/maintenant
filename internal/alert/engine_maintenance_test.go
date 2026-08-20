@@ -15,7 +15,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/maintenance"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -33,11 +33,7 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	defer cancel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-	require.NoError(t, store.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
+	db := storetest.Open(t, logger)
 
 	alertStore := store.NewAlertStore(db)
 	channelStore := store.NewChannelStore(db)
@@ -59,10 +55,10 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 
 	// Seed: maintenance window covering container:42
 	now := time.Now()
-	rawDB := db.ReadDB()
+	rawDB := db.Reader()
 
 	componentID := uid.New()
-	_, err = rawDB.ExecContext(ctx,
+	_, err := rawDB.ExecContext(ctx,
 		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name, display_order, visible, created_at, updated_at)
 		 VALUES (?, 'explicit', NULL, 'Test', 0, 1, ?, ?)`,
 		componentID, now.Unix(), now.Unix(),

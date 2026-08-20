@@ -24,14 +24,14 @@ import (
 
 // WebhookStoreImpl implements webhook.WebhookSubscriptionStore using SQLite.
 type WebhookStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewWebhookStore creates a new SQLite-backed webhook subscription store.
 func NewWebhookStore(d *DB) *WebhookStoreImpl {
 	return &WebhookStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

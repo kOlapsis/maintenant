@@ -25,14 +25,14 @@ import (
 
 // TriggerStoreImpl implements alert.TriggerStore using SQLite.
 type TriggerStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewTriggerStore creates a new SQLite-backed trigger store.
 func NewTriggerStore(d *DB) *TriggerStoreImpl {
 	return &TriggerStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

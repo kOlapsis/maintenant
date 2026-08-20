@@ -103,6 +103,7 @@ func applyMigration21Down(t *testing.T, rawDB *sql.DB) {
 // its children (transitions, snapshots, alert configs) reference it via FKs
 // without ON DELETE CASCADE.
 func TestMigration21_BeforeUp_DeleteContainerFailsWithFKError(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreCascadeDB(t)
 	ctx := context.Background()
 	seedContainerWithChildren(t, rawDB)
@@ -114,6 +115,7 @@ func TestMigration21_BeforeUp_DeleteContainerFailsWithFKError(t *testing.T) {
 
 // After migration 21, deleting a container cascades to all three child tables.
 func TestMigration21Up_DeleteContainerCascadesChildren(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreCascadeDB(t)
 	ctx := context.Background()
 	seedContainerWithChildren(t, rawDB)
@@ -136,6 +138,7 @@ func TestMigration21Up_DeleteContainerCascadesChildren(t *testing.T) {
 
 // The down migration restores the strict (non-cascading) FK behavior.
 func TestMigration21Down_RestoresStrictFK(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreCascadeDB(t)
 	ctx := context.Background()
 	seedContainerWithChildren(t, rawDB)

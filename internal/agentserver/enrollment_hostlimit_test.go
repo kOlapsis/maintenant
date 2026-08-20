@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -32,6 +31,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -44,12 +44,7 @@ func (noopBroadcasterUnit) BroadcastEvent(string, any) {}
 func newHostLimitTestImpl(t *testing.T) (*ingestImpl, *store.AgentStore) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	require.NoError(t, store.Migrate(db.ReadDB(), logger))
-	ctx, cancel := context.WithCancel(context.Background())
-	db.StartWriter(ctx)
-	t.Cleanup(func() { cancel(); _ = db.Close() })
+	db := storetest.Open(t, logger)
 
 	store := store.NewAgentStore(db)
 	impl := &ingestImpl{deps: Deps{AgentStore: store, Broadcaster: noopBroadcasterUnit{}, Logger: logger}}

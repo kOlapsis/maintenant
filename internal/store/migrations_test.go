@@ -94,6 +94,7 @@ func tableExists(t *testing.T, rawDB *sql.DB, table string) bool {
 
 // Migration test 1: channel + 2 routing_rules → 2 AlertTriggers "Rule for *" + 2 M:N links.
 func TestMigration19Up_RoutingRulesConvertedToTriggers(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreMigrationDB(t)
 	ctx := context.Background()
 
@@ -121,6 +122,7 @@ func TestMigration19Up_RoutingRulesConvertedToTriggers(t *testing.T) {
 
 // Migration test 2: enabled channel without any rule → 1 Default trigger + 1 M:N link.
 func TestMigration19Up_EnabledChannelNoRule_DefaultTriggerCreated(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreMigrationDB(t)
 	ctx := context.Background()
 
@@ -141,6 +143,7 @@ func TestMigration19Up_EnabledChannelNoRule_DefaultTriggerCreated(t *testing.T) 
 
 // Migration test 3: disabled channel without any rule → 0 Default triggers created.
 func TestMigration19Up_DisabledChannelNoRule_NoDefaultTrigger(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreMigrationDB(t)
 	ctx := context.Background()
 
@@ -155,6 +158,7 @@ func TestMigration19Up_DisabledChannelNoRule_NoDefaultTrigger(t *testing.T) {
 
 // Migration test 4: routing_rules table must not exist after migration up.
 func TestMigration19Up_RoutingRulesTableDropped(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreMigrationDB(t)
 	applyMigrationUp(t, rawDB)
 	assert.False(t, tableExists(t, rawDB, "routing_rules"), "routing_rules table must be dropped after migration up")
@@ -162,6 +166,7 @@ func TestMigration19Up_RoutingRulesTableDropped(t *testing.T) {
 
 // Migration test 5: down after up restores routing_rules with "Rule for *" rows.
 func TestMigration19DownAfterUp_RestoresRoutingRules(t *testing.T) {
+	requireSQLite(t)
 	rawDB := setupPreMigrationDB(t)
 	ctx := context.Background()
 

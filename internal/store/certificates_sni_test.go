@@ -23,6 +23,7 @@ import (
 )
 
 func TestCertificateStore_SNIMonitorsCoexist(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	store := NewCertificateStore(db)
 	ctx := context.Background()
@@ -67,6 +68,7 @@ func TestCertificateStore_SNIMonitorsCoexist(t *testing.T) {
 // a database shaped like a pre-SNI UUID conversion: three-column UNIQUE
 // constraint plus the server_name column appended by migration 25.
 func TestRebuildCertMonitorsForSNI(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	rw := db.ReadDB()
 	ctx := context.Background()
@@ -119,6 +121,7 @@ func TestRebuildCertMonitorsForSNI(t *testing.T) {
 // Compile-time-ish guard: the rebuild's CREATE TABLE must embed the exact
 // constraint string the idempotency check looks for.
 func TestCertSNIConstraint_MatchesSchema(t *testing.T) {
+	requireSQLite(t)
 	schema, err := os.ReadFile("uuid_schema.sql")
 	require.NoError(t, err)
 	require.True(t, strings.Contains(string(schema), certSNIConstraint),

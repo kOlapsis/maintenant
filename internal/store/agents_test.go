@@ -178,7 +178,7 @@ func TestAgentStore_Delete_CascadePurge(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)
 	ctx := context.Background()
-	rw := db.ReadDB()
+	rw := db.Reader()
 
 	insertAgent := func(id string) {
 		t.Helper()

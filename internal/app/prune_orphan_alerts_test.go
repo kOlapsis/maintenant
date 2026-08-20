@@ -15,7 +15,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -28,6 +27,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
 
 // TestPruneOrphanAlerts_ResolvesDeletedAgent verifies that a disconnect alert
@@ -37,11 +37,7 @@ func TestPruneOrphanAlerts_ResolvesDeletedAgent(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-	require.NoError(t, store.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
+	db := storetest.Open(t, logger)
 
 	alertStore := store.NewAlertStore(db)
 	agentStore := store.NewAgentStore(db)
@@ -100,11 +96,7 @@ func TestPruneOrphanAlerts_ResolvesDeletedMonitors(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-	require.NoError(t, store.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
+	db := storetest.Open(t, logger)
 
 	alertStore := store.NewAlertStore(db)
 	hbStore := store.NewHeartbeatStore(db)

@@ -23,14 +23,14 @@ import (
 
 // AcknowledgmentStoreImpl implements security.AcknowledgmentStore using SQLite.
 type AcknowledgmentStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewAcknowledgmentStore creates a new SQLite-backed acknowledgment store.
 func NewAcknowledgmentStore(d *DB) *AcknowledgmentStoreImpl {
 	return &AcknowledgmentStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

@@ -48,9 +48,14 @@ func init() {
 
 // DB wraps a SQLite database connection with maintenant configuration.
 type DB struct {
-	db     *sql.DB
-	writer *Writer
-	logger *slog.Logger
+	db      *sql.DB
+	writer  *Writer
+	logger  *slog.Logger
+	dialect Dialect
+
+	// dsn is the raw PostgreSQL connection string; kept private, only ever
+	// exposed through RedactDSN/DSNHost/DSNDatabase. Empty on SQLite.
+	dsn string
 
 	// incrementalVacuum records whether the file header allows reclaiming pages
 	// without a full VACUUM. Databases created before auto_vacuum was set stay
@@ -81,9 +86,10 @@ func Open(dbPath string, logger *slog.Logger) (*DB, error) {
 	db.SetMaxOpenConns(4)
 
 	sdb := &DB{
-		db:     db,
-		writer: NewWriter(db, logger),
-		logger: logger,
+		db:      db,
+		writer:  NewWriter(db, DialectSQLite, logger),
+		logger:  logger,
+		dialect: DialectSQLite,
 	}
 	sdb.readStorageMode()
 
@@ -132,6 +138,50 @@ func (d *DB) Writer() *Writer {
 // ReadDB returns the underlying sql.DB for read operations.
 func (d *DB) ReadDB() *sql.DB {
 	return d.db
+}
+
+// Dialect returns the engine this DB was opened with.
+func (d *DB) Dialect() Dialect {
+	return d.dialect
+}
+
+// Engine returns the engine name for logs, health and telemetry.
+func (d *DB) Engine() string {
+	return d.dialect.String()
+}
+
+// PingContext reports whether the database answers right now.
+func (d *DB) PingContext(ctx context.Context) error {
+	return d.db.PingContext(ctx)
+}
+
+// Reader is the read handle stores keep: the same QueryContext /
+// QueryRowContext / ExecContext surface as *sql.DB, with `?` placeholders
+// rebound for the active engine.
+type Reader struct {
+	db      *sql.DB
+	dialect Dialect
+}
+
+func (d *DB) Reader() *Reader {
+	return &Reader{db: d.db, dialect: d.dialect}
+}
+
+func (r *Reader) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	return r.db.QueryContext(ctx, r.dialect.Rebind(query), args...)
+}
+
+func (r *Reader) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	return r.db.QueryRowContext(ctx, r.dialect.Rebind(query), args...)
+}
+
+func (r *Reader) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	return r.db.ExecContext(ctx, r.dialect.Rebind(query), args...)
+}
+
+// Dialect returns the engine this reader rebinds for.
+func (r *Reader) Dialect() Dialect {
+	return r.dialect
 }
 
 // Close closes the database connection.

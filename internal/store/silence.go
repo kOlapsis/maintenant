@@ -23,14 +23,14 @@ import (
 
 // SilenceStoreImpl implements alert.SilenceStore using SQLite.
 type SilenceStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewSilenceStore creates a new SQLite-backed silence store.
 func NewSilenceStore(d *DB) *SilenceStoreImpl {
 	return &SilenceStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }
@@ -57,14 +57,16 @@ func (s *SilenceStoreImpl) ListSilenceRules(ctx context.Context, activeOnly bool
 	query := `SELECT id, entity_type, entity_id, source, reason, starts_at, duration_seconds, cancelled_at, created_at
 		FROM silence_rules`
 
+	var args []interface{}
 	if activeOnly {
 		query += ` WHERE cancelled_at IS NULL
-			AND (starts_at + duration_seconds) > strftime('%s','now')`
+			AND (starts_at + duration_seconds) > ?`
+		args = append(args, time.Now().Unix())
 	}
 
 	query += ` ORDER BY created_at DESC`
 
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list silence rules: %w", err)
 	}
@@ -99,7 +101,7 @@ func (s *SilenceStoreImpl) GetActiveSilenceRules(ctx context.Context) ([]*alert.
 		`SELECT id, entity_type, entity_id, source, reason, starts_at, duration_seconds, cancelled_at, created_at
 		FROM silence_rules
 		WHERE cancelled_at IS NULL
-			AND (starts_at + duration_seconds) > strftime('%s','now')`)
+			AND (starts_at + duration_seconds) > ?`, time.Now().Unix())
 	if err != nil {
 		return nil, fmt.Errorf("get active silence rules: %w", err)
 	}

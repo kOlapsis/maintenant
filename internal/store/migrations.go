@@ -17,46 +17,65 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/database"
+	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
-//go:embed migrations/sqlite/*.sql
+// Two migration sources, one version number. SQLite carries the full history
+// (1..N). PostgreSQL starts at a single baseline numbered at the SQLite head
+// of the day it was written (28), then shares every migration from 29 onward
+// under the same number. A dedicated test compares the two heads and fails on
+// divergence: any migration >= 29 is written for both engines or not at all.
+//
+//go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
 var migrationFS embed.FS
 
-// Migrate runs all pending database migrations using golang-migrate v4.
-// On the first run after upgrading from the custom migration system, it bootstraps
-// the schema_migrations table from the old schema_version table.
-func Migrate(db *sql.DB, logger *slog.Logger) error {
-	// Bootstrap from custom schema_version if upgrading from an old system
-	if err := bootstrapFromCustomSchema(db, logger); err != nil {
-		return fmt.Errorf("bootstrap from custom schema: %w", err)
+// Migrate brings db's schema to the embedded head using golang-migrate v4. On
+// SQLite it also runs the historical one-time conversions; PostgreSQL has no
+// such past. A schema written by a newer release is refused (FR-017), on both
+// engines, rather than written into.
+func Migrate(ctx context.Context, db *DB, logger *slog.Logger) error {
+	if db.dialect == DialectSQLite {
+		// Bootstrap from the pre-golang-migrate custom schema_version table.
+		if err := bootstrapFromCustomSchema(db.db, logger); err != nil {
+			return fmt.Errorf("bootstrap from custom schema: %w", err)
+		}
 	}
 
-	// Create iofs source from embedded migration files
-	source, err := iofs.New(migrationFS, "migrations/sqlite")
+	source, err := iofs.New(migrationFS, "migrations/"+db.dialect.String())
 	if err != nil {
 		return fmt.Errorf("create iofs source: %w", err)
 	}
 
-	// Create sqlite3 database driver from an existing connection
-	driver, err := sqlite3.WithInstance(db, &sqlite3.Config{
-		NoTxWrap: false,
-	})
+	var driver database.Driver
+	switch db.dialect {
+	case DialectPostgres:
+		driver, err = migratepgx.WithInstance(db.db, &migratepgx.Config{})
+	default:
+		driver, err = migratesqlite.WithInstance(db.db, &migratesqlite.Config{NoTxWrap: false})
+	}
 	if err != nil {
-		return fmt.Errorf("create sqlite3 driver: %w", err)
+		return fmt.Errorf("create %s migrate driver: %w", db.dialect, err)
 	}
 
-	// Create migrator
-	m, err := migrate.NewWithInstance("iofs", source, "sqlite3", driver)
+	m, err := migrate.NewWithInstance("iofs", source, db.dialect.String(), driver)
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}
 
-	// Log current version before applying
+	head, err := EmbeddedHeadVersion(db.dialect)
+	if err != nil {
+		return fmt.Errorf("read embedded head version: %w", err)
+	}
+
 	version, dirty, err := m.Version()
 	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
 		return fmt.Errorf("get current version: %w", err)
@@ -67,6 +86,13 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 		logger.Info("database migration", "current_version", version, "dirty", dirty)
 	}
 
+	// FR-017: never write into a schema produced by a newer release. The
+	// version numbers are comparable across engines by construction.
+	if version > head {
+		return fmt.Errorf("%w: schema version %d, this binary knows up to %d",
+			ErrSchemaNewer, version, head)
+	}
+
 	if dirty {
 		logger.Warn("dirty migration state detected — auto-recovering", "version", version)
 		if forceErr := m.Force(int(version) - 1); forceErr != nil {
@@ -74,7 +100,8 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 		}
 	}
 
-	// Apply all pending migrations
+	// Apply all pending migrations. On concurrent first starts the pgx driver
+	// serializes appliers with a pg_advisory_lock, so exactly one installs.
 	err = m.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply migrations: %w", err)
@@ -86,31 +113,76 @@ func Migrate(db *sql.DB, logger *slog.Logger) error {
 		logger.Info("database migration", "status", "migrations applied", "new_version", newVersion)
 	}
 
+	if db.dialect != DialectSQLite {
+		return nil
+	}
+
+	// Historical one-time conversions, SQLite path only: they describe the
+	// local file's past, which no PostgreSQL database has.
+
 	// One-time, in-place conversion of the integer-keyed schema to the
 	// UUID-native schema. Guarded by the schema_meta marker it creates.
-	if err := convertToUUID(context.Background(), db, logger); err != nil {
+	if err := convertToUUID(ctx, db.db, logger); err != nil {
 		return fmt.Errorf("uuid conversion: %w", err)
 	}
 
 	// One-time rebuild extending the cert monitor identity with the SNI
 	// server_name, for databases converted before that column existed.
-	if err := rebuildCertMonitorsForSNI(context.Background(), db, logger); err != nil {
+	if err := rebuildCertMonitorsForSNI(ctx, db.db, logger); err != nil {
 		return fmt.Errorf("cert sni rebuild: %w", err)
 	}
 
 	// One-time rebuild widening the endpoint status CHECK to accept 'degraded',
 	// for databases converted before that state existed.
-	if err := rebuildEndpointsForDegraded(context.Background(), db, logger); err != nil {
+	if err := rebuildEndpointsForDegraded(ctx, db.db, logger); err != nil {
 		return fmt.Errorf("endpoint degraded rebuild: %w", err)
 	}
 
 	// One-time rebuild replacing the cleartext enrollment token with its hash,
 	// for databases converted before the token stopped being stored in clear.
-	if err := rebuildEnrollmentTokensForHashing(context.Background(), db, logger); err != nil {
+	if err := rebuildEnrollmentTokensForHashing(ctx, db.db, logger); err != nil {
 		return fmt.Errorf("enrollment token hash rebuild: %w", err)
 	}
 
 	return nil
+}
+
+// EmbeddedHeadVersion returns the highest migration number embedded for the
+// dialect. It is what FR-017 compares the database's version against.
+func EmbeddedHeadVersion(d Dialect) (uint, error) {
+	entries, err := fs.ReadDir(migrationFS, "migrations/"+d.String())
+	if err != nil {
+		return 0, fmt.Errorf("read embedded migrations: %w", err)
+	}
+	var head uint64
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".up.sql") {
+			continue
+		}
+		n, err := strconv.ParseUint(strings.SplitN(name, "_", 2)[0], 10, 32)
+		if err != nil {
+			return 0, fmt.Errorf("malformed migration name %q: %w", name, err)
+		}
+		if n > head {
+			head = n
+		}
+	}
+	if head == 0 {
+		return 0, fmt.Errorf("no embedded migrations for dialect %s", d)
+	}
+	return uint(head), nil
+}
+
+// SchemaVersion reads the applied schema version, for the startup log line and
+// the health diagnostic. golang-migrate keeps exactly one row.
+func (d *DB) SchemaVersion(ctx context.Context) (uint, error) {
+	var v uint
+	err := d.db.QueryRowContext(ctx, "SELECT version FROM schema_migrations LIMIT 1").Scan(&v)
+	if err != nil {
+		return 0, fmt.Errorf("read schema version: %w", err)
+	}
+	return v, nil
 }
 
 // bootstrapFromCustomSchema checks if the old custom schema_version table exists

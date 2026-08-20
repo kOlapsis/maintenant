@@ -28,13 +28,13 @@ import (
 // snapshot upserts the rows it carries and hard-deletes the agent's rows that
 // are absent from it.
 type SwarmTopologyStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewSwarmTopologyStore creates a SQLite-backed swarm topology store.
 func NewSwarmTopologyStore(d *DB) *SwarmTopologyStore {
-	return &SwarmTopologyStore{db: d.ReadDB(), writer: d.Writer()}
+	return &SwarmTopologyStore{db: d.Reader(), writer: d.Writer()}
 }
 
 // ReplaceServicesForAgent upserts every service in the snapshot and hard-deletes

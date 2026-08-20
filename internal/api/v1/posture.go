@@ -17,13 +17,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // PostureHandler handles security posture HTTP endpoints.
@@ -237,7 +237,7 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 
 	id, err := h.ackStore.InsertAcknowledgment(r.Context(), ack)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "ALREADY_ACKNOWLEDGED", "finding already acknowledged")
 			return
 		}

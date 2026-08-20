@@ -171,7 +171,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	a.db = db
 
-	if err := store.Migrate(db.ReadDB(), logger); err != nil {
+	if err := store.Migrate(context.Background(), db, logger); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}

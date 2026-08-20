@@ -13,6 +13,7 @@ import (
 )
 
 func TestWriterAvailableBeforeStart(t *testing.T) {
+	requireSQLite(t)
 	// The Writer must be non-nil immediately after Open, before StartWriter is called.
 	// Stores capture d.Writer() at construction time (in app.New), but StartWriter
 	// is only called later (in app.Start). A nil Writer causes a panic on first write.
@@ -32,6 +33,7 @@ func TestWriterAvailableBeforeStart(t *testing.T) {
 // is what lets retention hand freed pages back to the filesystem. The mode can
 // only be set while the file is still empty, so this has to hold from the start.
 func TestOpenEnablesIncrementalAutoVacuum(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 
 	var mode int
@@ -45,6 +47,7 @@ func TestOpenEnablesIncrementalAutoVacuum(t *testing.T) {
 // pool happened to hand out. An unbounded WAL on the other connections is what
 // let the -wal file reach hundreds of megabytes in production.
 func TestOpenAppliesPragmasToEveryPooledConnection(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	ctx := context.Background()
 

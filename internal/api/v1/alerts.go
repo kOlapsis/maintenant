@@ -19,13 +19,13 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/ssrf"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // AlertHandler handles alert-related HTTP endpoints.
@@ -281,7 +281,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 
 	id, err := h.channelStore.InsertChannel(r.Context(), ch)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "DUPLICATE_NAME", "A channel with this name already exists")
 			return
 		}

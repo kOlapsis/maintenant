@@ -20,6 +20,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // AlertTriggerHandler handles /api/v1/alert-triggers/* endpoints.
@@ -289,24 +290,7 @@ func (h *AlertTriggerHandler) checkChannelsExist(r *http.Request, ids []string) 
 	return nil
 }
 
-// isUniqueErr is a best-effort check for the SQLite UNIQUE constraint failure.
+// isUniqueErr reports a unique-constraint failure on either storage engine.
 func isUniqueErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return contains(msg, "UNIQUE constraint failed")
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (indexOf(s, sub) >= 0)
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
+	return store.IsUniqueViolation(err)
 }

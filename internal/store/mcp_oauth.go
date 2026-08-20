@@ -12,14 +12,14 @@ import (
 
 // MCPOAuthStoreImpl implements oauth.MCPOAuthStore using SQLite.
 type MCPOAuthStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewMCPOAuthStore creates a new SQLite-backed MCP OAuth store.
 func NewMCPOAuthStore(d *DB) *MCPOAuthStoreImpl {
 	return &MCPOAuthStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

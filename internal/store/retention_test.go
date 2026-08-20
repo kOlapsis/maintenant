@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -32,14 +33,14 @@ func testLogger() *slog.Logger {
 // the test runtime at these volumes.
 func seedSnapshots(t *testing.T, db *DB, containerID string, count int, newest time.Time) {
 	t.Helper()
-	_, err := db.Writer().Exec(context.Background(), fmt.Sprintf(`
-		WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i < %d)
+	_, err := db.Writer().Exec(context.Background(), `
+		WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i < `+strconv.Itoa(count-1)+`)
 		INSERT INTO resource_snapshots
 			(id, container_id, agent_id, cpu_percent, mem_used, mem_limit,
 			 net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp)
-		SELECT lower(hex(randomblob(16))), ?, (SELECT agent_id FROM containers WHERE id = ?),
+		SELECT `+db.Dialect().UUIDExpr()+`, ?, (SELECT agent_id FROM containers WHERE id = ?),
 			1.0, 100, 200, 0, 0, 0, 0, ? - i
-		FROM n`, count-1),
+		FROM n`,
 		containerID, containerID, newest.Unix())
 	require.NoError(t, err)
 }
@@ -47,13 +48,13 @@ func seedSnapshots(t *testing.T, db *DB, containerID string, count int, newest t
 // seedBuckets fills resource_hourly or resource_daily with count rows.
 func seedBuckets(t *testing.T, db *DB, table, containerID string, count int, newest time.Time) {
 	t.Helper()
-	_, err := db.Writer().Exec(context.Background(), fmt.Sprintf(`
-		WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i < %d)
-		INSERT INTO %s
+	_, err := db.Writer().Exec(context.Background(), `
+		WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i < `+strconv.Itoa(count-1)+`)
+		INSERT INTO `+table+`
 			(id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit,
 			 avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
-		SELECT lower(hex(randomblob(16))), ?, ? - i*3600, 1.0, 100, 200, 0, 0, 1
-		FROM n`, count-1, table),
+		SELECT `+db.Dialect().UUIDExpr()+`, ?, ? - i*3600, 1.0, 100, 200, 0, 0, 1
+		FROM n`,
 		containerID, newest.Unix())
 	require.NoError(t, err)
 }

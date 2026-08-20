@@ -56,6 +56,7 @@ VALUES ('legacy-ep', 'web', 'http', 'ext-1', 'http', 'https://legacy.example.com
 `
 
 func TestRebuildEndpointsForDegraded(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	rw := db.ReadDB()
 	ctx := context.Background()
@@ -95,6 +96,7 @@ func TestRebuildEndpointsForDegraded(t *testing.T) {
 // The rebuild's CREATE TABLE must embed the exact constraint string the
 // idempotency guard looks for, or fresh installs would be rebuilt on every boot.
 func TestEndpointStatusConstraint_MatchesSchema(t *testing.T) {
+	requireSQLite(t)
 	schema, err := os.ReadFile("uuid_schema.sql")
 	require.NoError(t, err)
 	require.True(t, strings.Contains(string(schema), endpointStatusConstraint),

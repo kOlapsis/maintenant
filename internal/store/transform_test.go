@@ -117,6 +117,7 @@ func scanString(t *testing.T, db *sql.DB, query string, args ...any) string {
 }
 
 func TestConvertToUUID(t *testing.T) {
+	requireSQLite(t)
 	db := setupLegacyDB(t)
 	seedLegacyGraph(t, db)
 
@@ -182,6 +183,7 @@ func TestConvertToUUID(t *testing.T) {
 // entity_id/monitor_id columns. They fall back to the original id as text and the
 // rows are preserved — no silent drop.
 func TestConvertToUUID_OrphanedPolymorphicRefs(t *testing.T) {
+	requireSQLite(t)
 	db := setupLegacyDB(t)
 	ctx := context.Background()
 
@@ -217,6 +219,7 @@ func TestConvertToUUID_OrphanedPolymorphicRefs(t *testing.T) {
 // integer, so the conversion must pass integer timestamps through unchanged
 // rather than NULL them (which would crash NOT NULL columns like checked_at).
 func TestConvertToUUID_EpochIntTimestamps(t *testing.T) {
+	requireSQLite(t)
 	db := setupLegacyDB(t)
 	ctx := context.Background()
 

@@ -24,14 +24,14 @@ import (
 
 // StatusComponentStoreImpl implements status.ComponentStore using SQLite.
 type StatusComponentStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewStatusComponentStore creates a new SQLite-backed component store.
 func NewStatusComponentStore(d *DB) *StatusComponentStoreImpl {
 	return &StatusComponentStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

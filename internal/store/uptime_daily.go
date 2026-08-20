@@ -30,13 +30,13 @@ type DailyUptime struct {
 
 // UptimeDailyStore provides daily uptime aggregation queries.
 type UptimeDailyStore struct {
-	db *sql.DB
+	db *Reader
 }
 
 // NewUptimeDailyStore creates a new daily uptime store.
 func NewUptimeDailyStore(d *DB) *UptimeDailyStore {
 	return &UptimeDailyStore{
-		db: d.ReadDB(),
+		db: d.Reader(),
 	}
 }
 

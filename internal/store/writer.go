@@ -1,4 +1,4 @@
-// Copyright 2026 Benjamin Touchard (kOlapsis)
+// Copyright 2026 Benjamin Touchard (Kolapsis)
 //
 // Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
 // or a commercial license. You may not use this file except in compliance
@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -22,25 +23,60 @@ import (
 
 const writerBufferSize = 256
 
-// WriteOp represents a single write operation to be serialized. When Fn is set,
-// it runs inside a transaction on the writer goroutine and Query/Args are ignored.
 type WriteOp struct {
 	Query string
 	Args  []interface{}
-	Fn    func(context.Context, *sql.Tx) error
+	Fn    func(context.Context, *Tx) error
 	Done  chan WriteResult
 }
 
-// WriteResult contains the result of a write operation.
 type WriteResult struct {
-	LastInsertID int64
 	RowsAffected int64
 	Err          error
 }
 
-// Writer serializes all database writes through a single goroutine.
+// Tx wraps *sql.Tx so statements written with `?` placeholders run on either
+// engine. It is what Writer.Tx callbacks receive.
+type Tx struct {
+	tx      *sql.Tx
+	dialect Dialect
+}
+
+func (t *Tx) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	return t.tx.ExecContext(ctx, t.dialect.Rebind(query), args...)
+}
+
+func (t *Tx) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	return t.tx.QueryContext(ctx, t.dialect.Rebind(query), args...)
+}
+
+func (t *Tx) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	return t.tx.QueryRowContext(ctx, t.dialect.Rebind(query), args...)
+}
+
+// Serialize makes check-then-write sections of this transaction mutually
+// exclusive across writers of table. On SQLite the single writer goroutine
+// already guarantees it, so this is free; on PostgreSQL concurrent
+// transactions would otherwise all pass the check before any of them writes.
+// SHARE ROW EXCLUSIVE conflicts with itself without blocking readers.
+func (t *Tx) Serialize(ctx context.Context, table string) error {
+	if t.dialect != DialectPostgres {
+		return nil
+	}
+	// table is a package-level literal, never user input.
+	if _, err := t.tx.ExecContext(ctx, "LOCK TABLE "+table+" IN SHARE ROW EXCLUSIVE MODE"); err != nil {
+		return fmt.Errorf("serialize writers of %s: %w", table, err)
+	}
+	return nil
+}
+
+// Writer serializes writes through a single goroutine on SQLite, working
+// around its single-writer discipline. On PostgreSQL the engine governs
+// concurrency itself, so writes go straight to the pool: funneling them
+// through one goroutine would cap the engine at a single writer for nothing.
 type Writer struct {
 	db      *sql.DB
+	dialect Dialect
 	ch      chan WriteOp
 	logger  *slog.Logger
 	stopped atomic.Bool
@@ -48,28 +84,29 @@ type Writer struct {
 	once    sync.Once
 }
 
-// NewWriter creates a new serialized writer.
-func NewWriter(db *sql.DB, logger *slog.Logger) *Writer {
+func NewWriter(db *sql.DB, dialect Dialect, logger *slog.Logger) *Writer {
 	return &Writer{
-		db:     db,
-		ch:     make(chan WriteOp, writerBufferSize),
-		logger: logger,
+		db:      db,
+		dialect: dialect,
+		ch:      make(chan WriteOp, writerBufferSize),
+		logger:  logger,
 	}
 }
 
-// Start begins the single-writer goroutine. Blocks until ctx is cancelled.
 func (w *Writer) Start(ctx context.Context) {
+	if w.dialect == DialectPostgres {
+		// Direct path: nothing to run in the background.
+		return
+	}
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
-				// Mark as stopped, wait for in-flight Exec calls, then close the channel once.
 				w.once.Do(func() {
 					w.stopped.Store(true)
 					w.wg.Wait()
 					close(w.ch)
 				})
-				// Drain remaining ops
 				for op := range w.ch {
 					op.Done <- WriteResult{Err: ctx.Err()}
 				}
@@ -85,7 +122,6 @@ func (w *Writer) Start(ctx context.Context) {
 				result, err := w.db.ExecContext(ctx, op.Query, op.Args...)
 				wr := WriteResult{Err: err}
 				if err == nil {
-					wr.LastInsertID, _ = result.LastInsertId()
 					wr.RowsAffected, _ = result.RowsAffected()
 				}
 				op.Done <- wr
@@ -94,27 +130,33 @@ func (w *Writer) Start(ctx context.Context) {
 	}()
 }
 
-// Exec sends a write operation and waits for the result.
 func (w *Writer) Exec(ctx context.Context, query string, args ...interface{}) (WriteResult, error) {
+	query = w.dialect.Rebind(query)
+	if w.dialect == DialectPostgres {
+		result, err := w.db.ExecContext(ctx, query, args...)
+		wr := WriteResult{Err: err}
+		if err == nil {
+			wr.RowsAffected, _ = result.RowsAffected()
+		}
+		return wr, err
+	}
 	return w.submit(ctx, WriteOp{Query: query, Args: args})
 }
 
-// Tx runs fn inside a single transaction executed on the writer goroutine, so
-// the whole read-modify-write is serialized against every other write — no other
-// write can interleave between fn's reads and its writes. fn must use the
-// provided *sql.Tx for all statements; calling Exec/Tx from within fn deadlocks.
-func (w *Writer) Tx(ctx context.Context, fn func(context.Context, *sql.Tx) error) error {
+func (w *Writer) Tx(ctx context.Context, fn func(context.Context, *Tx) error) error {
+	if w.dialect == DialectPostgres {
+		res := w.runTx(ctx, fn)
+		return res.Err
+	}
 	_, err := w.submit(ctx, WriteOp{Fn: fn})
 	return err
 }
 
-// submit enqueues an op on the writer goroutine and waits for its result.
 func (w *Writer) submit(ctx context.Context, op WriteOp) (WriteResult, error) {
 	if w.stopped.Load() {
 		return WriteResult{}, errors.New("writer is stopped")
 	}
 	w.wg.Add(1)
-	// Re-check after Add to avoid racing with shutdown.
 	if w.stopped.Load() {
 		w.wg.Done()
 		return WriteResult{}, errors.New("writer is stopped")
@@ -135,14 +177,12 @@ func (w *Writer) submit(ctx context.Context, op WriteOp) (WriteResult, error) {
 	}
 }
 
-// runTx executes fn within a transaction, rolling back on any error. It runs on
-// the writer goroutine, so it is the only writer for its duration.
-func (w *Writer) runTx(ctx context.Context, fn func(context.Context, *sql.Tx) error) WriteResult {
+func (w *Writer) runTx(ctx context.Context, fn func(context.Context, *Tx) error) WriteResult {
 	tx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return WriteResult{Err: err}
 	}
-	if err := fn(ctx, tx); err != nil {
+	if err := fn(ctx, &Tx{tx: tx, dialect: w.dialect}); err != nil {
 		_ = tx.Rollback()
 		return WriteResult{Err: err}
 	}

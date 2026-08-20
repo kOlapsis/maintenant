@@ -24,14 +24,14 @@ import (
 
 // MaintenanceStoreImpl implements status.MaintenanceStore using SQLite.
 type MaintenanceStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewMaintenanceStore creates a new SQLite-backed maintenance store.
 func NewMaintenanceStore(d *DB) *MaintenanceStoreImpl {
 	return &MaintenanceStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

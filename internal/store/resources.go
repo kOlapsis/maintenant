@@ -24,14 +24,14 @@ import (
 
 // ResourceStore implements resource.ResourceStore using SQLite.
 type ResourceStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewResourceStore creates a new SQLite-backed resource store.
 func NewResourceStore(d *DB) *ResourceStore {
 	return &ResourceStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }
@@ -340,7 +340,7 @@ func (s *ResourceStore) AggregateHourlyRollup(ctx context.Context, bucketStart, 
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO resource_hourly (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit,
 			avg_net_rx_bytes, avg_net_tx_bytes, avg_block_read_bytes, avg_block_write_bytes, sample_count)
-		SELECT `+rollupRowID+`, container_id, ? AS bucket,
+		SELECT `+s.db.Dialect().UUIDExpr()+`, container_id, ? AS bucket,
 			AVG(cpu_percent), CAST(AVG(mem_used) AS INTEGER), CAST(AVG(mem_limit) AS INTEGER),
 			CAST(AVG(net_rx_bytes) AS INTEGER), CAST(AVG(net_tx_bytes) AS INTEGER),
 			CAST(AVG(block_read_bytes) AS INTEGER), CAST(AVG(block_write_bytes) AS INTEGER),
@@ -366,7 +366,7 @@ func (s *ResourceStore) AggregateHourlyRollup(ctx context.Context, bucketStart, 
 func (s *ResourceStore) AggregateDailyRollup(ctx context.Context, bucketStart, bucketEnd time.Time) error {
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO resource_daily (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
-		SELECT `+rollupRowID+`, container_id, ? AS bucket,
+		SELECT `+s.db.Dialect().UUIDExpr()+`, container_id, ? AS bucket,
 			AVG(avg_cpu_percent), CAST(AVG(avg_mem_used) AS INTEGER), CAST(AVG(avg_mem_limit) AS INTEGER),
 			CAST(AVG(avg_net_rx_bytes) AS INTEGER), CAST(AVG(avg_net_tx_bytes) AS INTEGER),
 			SUM(sample_count)
@@ -384,15 +384,6 @@ func (s *ResourceStore) AggregateDailyRollup(ctx context.Context, bucketStart, b
 	}
 	return nil
 }
-
-// rollupRowID generates a unique, well-formed UUID string per aggregated row.
-// Set-based INSERT...SELECT cannot mint ids in Go, so the PK is built in SQL
-// from randomblob bytes; only the INSERT branch uses it (the DO UPDATE path
-// keeps the existing row's id).
-const rollupRowID = `lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-' || ` +
-	`'7' || substr(lower(hex(randomblob(2))), 2) || '-' || ` +
-	`substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' || ` +
-	`lower(hex(randomblob(6)))`
 
 func (s *ResourceStore) DeleteHourlyBefore(ctx context.Context, before time.Time, batchSize int) (int64, error) {
 	deleted, _, err := s.deleteHourlyBefore(ctx, before, batchOpts{batchSize: batchSize})

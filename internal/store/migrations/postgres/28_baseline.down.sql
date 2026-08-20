@@ -1,0 +1,2 @@
+-- Migration rollback is intentionally a no-op per the project convention
+-- (see the SQLite side, e.g. 20_cert_ocsp.down.sql).

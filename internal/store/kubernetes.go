@@ -27,13 +27,13 @@ import (
 // pods, nodes). Each Replace*ForAgent reconciles the snapshot it is given,
 // upserting present rows and hard-deleting the agent's rows that are gone.
 type KubernetesStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewKubernetesStore creates a SQLite-backed Kubernetes topology store.
 func NewKubernetesStore(d *DB) *KubernetesStore {
-	return &KubernetesStore{db: d.ReadDB(), writer: d.Writer()}
+	return &KubernetesStore{db: d.Reader(), writer: d.Writer()}
 }
 
 // ReplaceNamespacesForAgent replaces the agent's namespace list wholesale.

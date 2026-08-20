@@ -27,14 +27,14 @@ const swarmNodeColumns = `id, agent_id, node_id, hostname, role, status, availab
 
 // SwarmNodeStore implements swarm node persistence using SQLite.
 type SwarmNodeStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewSwarmNodeStore creates a new SQLite-backed swarm node store.
 func NewSwarmNodeStore(d *DB) *SwarmNodeStore {
 	return &SwarmNodeStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

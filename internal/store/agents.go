@@ -26,14 +26,14 @@ import (
 // table primary key is `id` (the agent-generated UUID); timestamps are stored as
 // epoch-second BIGINTs.
 type AgentStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewAgentStore creates a new AgentStore.
 func NewAgentStore(d *DB) *AgentStore {
 	return &AgentStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }
@@ -232,7 +232,10 @@ func (s *AgentStore) InsertToken(ctx context.Context, t *agent.EnrollmentToken) 
 // ErrHostLimitReached, ErrTokenNotFound, ErrTokenAlreadyConsumed, or
 // ErrTokenExpired.
 func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext string, a *agent.Agent) error {
-	return s.writer.Tx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if err := tx.Serialize(ctx, "agents"); err != nil {
+			return err
+		}
 		if limit >= 0 {
 			var active int
 			if err := tx.QueryRowContext(ctx,
@@ -279,7 +282,7 @@ func (s *AgentStore) EnrollAtomic(ctx context.Context, limit int, tokenCleartext
 }
 
 // classifyTokenFailure determines why a token UPDATE matched no rows.
-func classifyTokenFailure(ctx context.Context, tx *sql.Tx, tokenHash string, now int64) error {
+func classifyTokenFailure(ctx context.Context, tx *Tx, tokenHash string, now int64) error {
 	var consumed sql.NullInt64
 	var expiresAt int64
 	err := tx.QueryRowContext(ctx,

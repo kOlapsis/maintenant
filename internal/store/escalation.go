@@ -21,19 +21,18 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/uid"
-	"github.com/mattn/go-sqlite3"
 )
 
 // EscalationStore implements escalation.Store using SQLite.
 type EscalationStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewEscalationStore creates a new SQLite-backed escalation store.
 func NewEscalationStore(d *DB) *EscalationStore {
 	return &EscalationStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }
@@ -413,8 +412,7 @@ func (s *EscalationStore) InsertDelivery(ctx context.Context, d *escalation.Deli
 		d.AttemptStartedAt.Unix(), nullableTime(d.SentAt),
 	)
 	if err != nil {
-		var sqliteErr sqlite3.Error
-		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+		if IsUniqueViolation(err) {
 			return "", escalation.ErrDeliveryDuplicate
 		}
 		return "", fmt.Errorf("insert delivery: %w", err)

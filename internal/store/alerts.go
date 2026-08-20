@@ -24,14 +24,14 @@ import (
 
 // AlertStoreImpl implements alert.AlertStore using SQLite.
 type AlertStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewAlertStore creates a new SQLite-backed alert store.
 func NewAlertStore(d *DB) *AlertStoreImpl {
 	return &AlertStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

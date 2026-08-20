@@ -114,27 +114,27 @@ func setupTestDB(t *testing.T) *DB {
 	return db
 }
 
-func insertCheckResult(t *testing.T, db *sql.DB, endpointID string, success int, ts time.Time) {
+func insertCheckResult(t *testing.T, db *Reader, endpointID string, success int, ts time.Time) {
 	t.Helper()
-	_, err := db.Exec(
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO check_results (id, endpoint_id, success, response_time_ms, timestamp) VALUES (?, ?, ?, 100, ?)`,
 		uid.New(), endpointID, success, ts.Unix(),
 	)
 	require.NoError(t, err)
 }
 
-func insertHeartbeatPing(t *testing.T, db *sql.DB, heartbeatID string, pingType string, ts time.Time) {
+func insertHeartbeatPing(t *testing.T, db *Reader, heartbeatID string, pingType string, ts time.Time) {
 	t.Helper()
-	_, err := db.Exec(
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO heartbeat_pings (id, heartbeat_id, ping_type, source_ip, http_method, timestamp) VALUES (?, ?, ?, '127.0.0.1', 'GET', ?)`,
 		uid.New(), heartbeatID, pingType, ts.Unix(),
 	)
 	require.NoError(t, err)
 }
 
-func insertTransition(t *testing.T, db *sql.DB, containerID, prevState, newState string, ts time.Time) {
+func insertTransition(t *testing.T, db *Reader, containerID, prevState, newState string, ts time.Time) {
 	t.Helper()
-	_, err := db.Exec(
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO state_transitions (id, container_id, previous_state, new_state, timestamp) VALUES (?, ?, ?, ?, ?)`,
 		uid.New(), containerID, prevState, newState, ts.Unix(),
 	)
@@ -158,7 +158,7 @@ func TestContainerDailyUptime(t *testing.T) {
 
 	t.Run("running since before the window is 100% today", func(t *testing.T) {
 		d := setupTestDB(t)
-		insertTransition(t, d.ReadDB(), "c1", "created", "running", today.AddDate(0, 0, -5))
+		insertTransition(t, d.Reader(), "c1", "created", "running", today.AddDate(0, 0, -5))
 		result, err := NewUptimeDailyStore(d).GetContainerDailyUptime(context.Background(), "c1", 1)
 		require.NoError(t, err)
 		require.Len(t, result, 1)
@@ -170,11 +170,11 @@ func TestContainerDailyUptime(t *testing.T) {
 	t.Run("full past day with a down period is time-weighted", func(t *testing.T) {
 		d := setupTestDB(t)
 		// Running well before the window so every day is seeded as up.
-		insertTransition(t, d.ReadDB(), "c1", "created", "running", today.AddDate(0, 0, -10))
+		insertTransition(t, d.Reader(), "c1", "created", "running", today.AddDate(0, 0, -10))
 		// Two days ago: down from +8h to +16h (8h of a full 24h day -> 66.66% up).
 		twoDaysAgo := today.AddDate(0, 0, -2)
-		insertTransition(t, d.ReadDB(), "c1", "running", "exited", twoDaysAgo.Add(8*time.Hour))
-		insertTransition(t, d.ReadDB(), "c1", "exited", "running", twoDaysAgo.Add(16*time.Hour))
+		insertTransition(t, d.Reader(), "c1", "running", "exited", twoDaysAgo.Add(8*time.Hour))
+		insertTransition(t, d.Reader(), "c1", "exited", "running", twoDaysAgo.Add(16*time.Hour))
 
 		result, err := NewUptimeDailyStore(d).GetContainerDailyUptime(context.Background(), "c1", 3)
 		require.NoError(t, err)
@@ -203,7 +203,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 		name          string
 		endpointID    string
 		days          int
-		setup         func(t *testing.T, db *sql.DB)
+		setup         func(t *testing.T, db *Reader)
 		wantLen       int
 		checkFirstDay func(t *testing.T, du DailyUptime)
 		checkNullDays bool // expect null uptime for days with no data
@@ -212,7 +212,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 			name:       "no checks returns all null days",
 			endpointID: "1",
 			days:       3,
-			setup:      func(t *testing.T, db *sql.DB) {},
+			setup:      func(t *testing.T, db *Reader) {},
 			wantLen:    3,
 			checkFirstDay: func(t *testing.T, du DailyUptime) {
 				assert.Equal(t, today.Format("2006-01-02"), du.Date)
@@ -225,7 +225,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 			name:       "100% uptime day",
 			endpointID: "1",
 			days:       1,
-			setup: func(t *testing.T, db *sql.DB) {
+			setup: func(t *testing.T, db *Reader) {
 				for i := 0; i < 10; i++ {
 					insertCheckResult(t, db, "1", 1, today.Add(time.Duration(i)*time.Hour))
 				}
@@ -241,7 +241,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 			name:       "0% uptime day",
 			endpointID: "2",
 			days:       1,
-			setup: func(t *testing.T, db *sql.DB) {
+			setup: func(t *testing.T, db *Reader) {
 				for i := 0; i < 5; i++ {
 					insertCheckResult(t, db, "2", 0, today.Add(time.Duration(i)*time.Hour))
 				}
@@ -256,7 +256,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 			name:       "partial uptime with incident",
 			endpointID: "3",
 			days:       1,
-			setup: func(t *testing.T, db *sql.DB) {
+			setup: func(t *testing.T, db *Reader) {
 				// 4 success, then 1 failure = 80% uptime, 1 incident
 				for i := 0; i < 4; i++ {
 					insertCheckResult(t, db, "3", 1, today.Add(time.Duration(i)*time.Hour))
@@ -274,7 +274,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 			name:       "multi-day with gap",
 			endpointID: "4",
 			days:       3,
-			setup: func(t *testing.T, db *sql.DB) {
+			setup: func(t *testing.T, db *Reader) {
 				// Today: 2 checks both success
 				insertCheckResult(t, db, "4", 1, today.Add(1*time.Hour))
 				insertCheckResult(t, db, "4", 1, today.Add(2*time.Hour))
@@ -295,14 +295,14 @@ func TestEndpointDailyUptime(t *testing.T) {
 			name:       "default days clamped from 0 to 90",
 			endpointID: "1",
 			days:       0,
-			setup:      func(t *testing.T, db *sql.DB) {},
+			setup:      func(t *testing.T, db *Reader) {},
 			wantLen:    90,
 		},
 		{
 			name:       "max days clamped to 365",
 			endpointID: "1",
 			days:       500,
-			setup:      func(t *testing.T, db *sql.DB) {},
+			setup:      func(t *testing.T, db *Reader) {},
 			wantLen:    365,
 		},
 	}
@@ -311,7 +311,7 @@ func TestEndpointDailyUptime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := setupTestDB(t)
 			store := NewUptimeDailyStore(d)
-			tt.setup(t, d.ReadDB())
+			tt.setup(t, d.Reader())
 
 			result, err := store.GetEndpointDailyUptime(context.Background(), tt.endpointID, tt.days)
 			require.NoError(t, err)
@@ -343,7 +343,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 		name          string
 		heartbeatID   string
 		days          int
-		setup         func(t *testing.T, db *sql.DB)
+		setup         func(t *testing.T, db *Reader)
 		wantLen       int
 		checkFirstDay func(t *testing.T, du DailyUptime)
 		checkNullDays bool
@@ -352,7 +352,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 			name:        "no pings returns null days",
 			heartbeatID: "1",
 			days:        3,
-			setup:       func(t *testing.T, db *sql.DB) {},
+			setup:       func(t *testing.T, db *Reader) {},
 			wantLen:     3,
 			checkFirstDay: func(t *testing.T, du DailyUptime) {
 				assert.Nil(t, du.UptimePercent)
@@ -364,7 +364,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 			name:        "all success pings = 100%",
 			heartbeatID: "1",
 			days:        1,
-			setup: func(t *testing.T, db *sql.DB) {
+			setup: func(t *testing.T, db *Reader) {
 				for i := 0; i < 6; i++ {
 					insertHeartbeatPing(t, db, "1", "success", today.Add(time.Duration(i)*time.Hour))
 				}
@@ -380,7 +380,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 			name:        "mixed pings with exit_code type",
 			heartbeatID: "2",
 			days:        1,
-			setup: func(t *testing.T, db *sql.DB) {
+			setup: func(t *testing.T, db *Reader) {
 				// 3 successes + 1 exit_code (not success) = 75%
 				insertHeartbeatPing(t, db, "2", "success", today.Add(1*time.Hour))
 				insertHeartbeatPing(t, db, "2", "success", today.Add(2*time.Hour))
@@ -398,7 +398,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 			name:        "90 day window default",
 			heartbeatID: "1",
 			days:        0,
-			setup:       func(t *testing.T, db *sql.DB) {},
+			setup:       func(t *testing.T, db *Reader) {},
 			wantLen:     90,
 		},
 	}
@@ -407,7 +407,7 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := setupTestDB(t)
 			store := NewUptimeDailyStore(d)
-			tt.setup(t, d.ReadDB())
+			tt.setup(t, d.Reader())
 
 			result, err := store.GetHeartbeatDailyUptime(context.Background(), tt.heartbeatID, tt.days)
 			require.NoError(t, err)

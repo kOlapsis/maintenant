@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +28,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
 
 // newTokenTestHandler wires an AgentHandler over a temp database, at an edition
@@ -41,16 +41,7 @@ func newTokenTestHandler(t *testing.T) (*AgentHandler, *store.AgentStore) {
 	t.Cleanup(func() { extension.CurrentEdition = prev })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	db, err := store.Open(filepath.Join(t.TempDir(), "tok.db"), logger)
-	require.NoError(t, err)
-	require.NoError(t, store.Migrate(db.ReadDB(), logger))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	db.StartWriter(ctx)
-	t.Cleanup(func() {
-		cancel()
-		_ = db.Close()
-	})
+	db := storetest.Open(t, logger)
 
 	store := store.NewAgentStore(db)
 	return NewAgentHandler(store, nil, nil, logger, "grpcs://example.test:8443", "127.0.0.1:8443", time.Minute), store

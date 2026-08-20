@@ -69,18 +69,22 @@ func runBatchedDelete(ctx context.Context, o batchOpts, step func(context.Contex
 }
 
 // deleteRowsBefore drains every row of table whose col is older than before.
-// It deletes by rowid: the subquery is then served by the index on col alone,
-// without reading the table to resolve a TEXT uuid primary key.
+// The statement's form is the dialect's: rowid subquery on SQLite, primary-key
+// subquery on PostgreSQL. Every table in the schema keys on `id`.
 //
 // table and col are package-level literals, never user input.
 func deleteRowsBefore(ctx context.Context, w *Writer, o batchOpts, table, col string, before time.Time) (int64, bool, error) {
-	query := fmt.Sprintf(
-		`DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE %s<? LIMIT ?)`,
-		table, table, col)
-	cutoff := before.Unix()
+	return deleteRowsWhere(ctx, w, o, table, col+"<?", before.Unix())
+}
+
+// deleteRowsWhere drains every row of table matching the where fragment, in
+// dialect-appropriate bounded batches. where uses `?` placeholders bound to
+// args; the batch size is appended as the statement's last parameter.
+func deleteRowsWhere(ctx context.Context, w *Writer, o batchOpts, table, where string, args ...interface{}) (int64, bool, error) {
+	query := w.dialect.BatchDeleteSQL(table, "id", where)
 
 	total, truncated, err := runBatchedDelete(ctx, o, func(ctx context.Context, batchSize int) (int64, error) {
-		res, err := w.Exec(ctx, query, cutoff, batchSize)
+		res, err := w.Exec(ctx, query, append(append([]interface{}{}, args...), batchSize)...)
 		if err != nil {
 			return res.RowsAffected, fmt.Errorf("delete from %s: %w", table, err)
 		}

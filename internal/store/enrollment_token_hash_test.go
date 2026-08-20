@@ -50,6 +50,7 @@ const legacyPendingToken = "mnt_enr_pendinglegacytoken"
 // rebuild derives the hash from the stored cleartext, so nobody has to reissue
 // tokens — and once it has run, the cleartext is gone for good.
 func TestRebuildEnrollmentTokensForHashing(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	rw := db.ReadDB()
 	ctx := context.Background()
@@ -102,6 +103,7 @@ func TestRebuildEnrollmentTokensForHashing(t *testing.T) {
 // The failure is injected by squatting the scratch table name, which makes the
 // first statement (CREATE TABLE enrollment_tokens_new) fail before the copy.
 func TestRebuildEnrollmentTokensForHashing_RollsBackOnFailure(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	rw := db.ReadDB()
 	ctx := context.Background()
@@ -137,6 +139,7 @@ func TestRebuildEnrollmentTokensForHashing_RollsBackOnFailure(t *testing.T) {
 // columns only — it says nothing about pages freed inside the file, which
 // secure_delete addresses but which no test here proves.
 func TestRebuildEnrollmentTokensForHashing_LeavesNoCleartext(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	rw := db.ReadDB()
 	ctx := context.Background()
@@ -166,6 +169,7 @@ func TestRebuildEnrollmentTokensForHashing_LeavesNoCleartext(t *testing.T) {
 // A fresh install must come out of uuid_schema.sql already hashed, never
 // through the rebuild.
 func TestFreshSchema_EnrollmentTokensAreHashed(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	rw := db.ReadDB()
 
@@ -178,6 +182,7 @@ func TestFreshSchema_EnrollmentTokensAreHashed(t *testing.T) {
 // The rebuild's CREATE TABLE must embed the exact column string the idempotency
 // guard looks for, or fresh installs would be rebuilt on every boot.
 func TestEnrollmentTokenHashColumn_MatchesSchema(t *testing.T) {
+	requireSQLite(t)
 	schema, err := os.ReadFile("uuid_schema.sql")
 	require.NoError(t, err)
 	require.True(t, strings.Contains(string(schema), enrollmentTokenHashColumn),
@@ -187,6 +192,7 @@ func TestEnrollmentTokenHashColumn_MatchesSchema(t *testing.T) {
 // End-to-end through the store: what goes in as cleartext is queryable by
 // cleartext, but only ever stored as a hash.
 func TestAgentStore_TokenRoundTripIsHashed(t *testing.T) {
+	requireSQLite(t)
 	db := openTestDB(t)
 	store := NewAgentStore(db)
 	ctx := context.Background()

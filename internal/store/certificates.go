@@ -25,14 +25,14 @@ import (
 
 // CertificateStore implements certificate.CertificateStore using SQLite.
 type CertificateStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewCertificateStore creates a new SQLite-backed certificate store.
 func NewCertificateStore(d *DB) *CertificateStore {
 	return &CertificateStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }
@@ -79,6 +79,12 @@ func (s *CertificateStore) CreateMonitor(ctx context.Context, m *certificate.Cer
 		nextCheckAt, now, m.ExternalID,
 	)
 	if err != nil {
+		// The deterministic id upserts, so a unique violation can only be the
+		// (agent_id, hostname, port, server_name) constraint: same monitor,
+		// different id (e.g. a standalone minted id racing a derived one).
+		if IsUniqueViolation(err) {
+			return "", fmt.Errorf("insert cert monitor: %w", certificate.ErrDuplicateMonitor)
+		}
 		return "", fmt.Errorf("insert cert monitor: %w", err)
 	}
 	return m.ID, nil
@@ -418,6 +424,7 @@ func (s *CertificateStore) DeleteCheckResultsBefore(ctx context.Context, before 
 
 func (s *CertificateStore) deleteCheckResultsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
 	cutoff := before.Unix()
+	deleteResults := s.writer.dialect.BatchDeleteSQL("cert_check_results", "id", "checked_at<?")
 	return runBatchedDelete(ctx, o, func(ctx context.Context, batchSize int) (int64, error) {
 		// First, delete chain entries for the check results we're about to delete
 		if _, err := s.writer.Exec(ctx,
@@ -427,10 +434,7 @@ func (s *CertificateStore) deleteCheckResultsBefore(ctx context.Context, before 
 			return 0, fmt.Errorf("delete cert chain entries: %w", err)
 		}
 
-		res, err := s.writer.Exec(ctx,
-			`DELETE FROM cert_check_results WHERE rowid IN (
-				SELECT rowid FROM cert_check_results WHERE checked_at<? LIMIT ?
-			)`, cutoff, batchSize)
+		res, err := s.writer.Exec(ctx, deleteResults, cutoff, batchSize)
 		if err != nil {
 			return res.RowsAffected, fmt.Errorf("delete cert check results: %w", err)
 		}

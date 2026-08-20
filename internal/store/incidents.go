@@ -24,14 +24,14 @@ import (
 
 // IncidentStoreImpl implements status.IncidentStore using SQLite.
 type IncidentStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewIncidentStore creates a new SQLite-backed incident store.
 func NewIncidentStore(d *DB) *IncidentStoreImpl {
 	return &IncidentStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

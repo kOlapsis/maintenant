@@ -69,7 +69,7 @@ func TestInsertSnapshot_PersistsAgentID(t *testing.T) {
 	require.NoError(t, err)
 
 	var got string
-	require.NoError(t, db.ReadDB().QueryRowContext(ctx,
+	require.NoError(t, db.Reader().QueryRowContext(ctx,
 		`SELECT agent_id FROM resource_snapshots WHERE id = ?`, id).Scan(&got))
 	assert.Equal(t, agentID, got)
 }

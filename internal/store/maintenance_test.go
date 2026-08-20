@@ -69,7 +69,7 @@ func setupMaintenanceTestDB(t *testing.T) (*MaintenanceStoreImpl, *sql.DB) {
 	require.NoError(t, err)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	writer := NewWriter(rawDB, logger)
+	writer := NewWriter(rawDB, DialectSQLite, logger)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	writer.Start(ctx)

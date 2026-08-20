@@ -24,14 +24,14 @@ import (
 
 // ChannelStoreImpl implements alert.ChannelStore using SQLite.
 type ChannelStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewChannelStore creates a new SQLite-backed channel store.
 func NewChannelStore(d *DB) *ChannelStoreImpl {
 	return &ChannelStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

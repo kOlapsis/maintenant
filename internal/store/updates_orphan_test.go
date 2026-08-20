@@ -255,7 +255,7 @@ func TestDeleteArchivedContainersBefore_RemovesUpdateArtifacts(t *testing.T) {
 	}
 
 	var leftover int
-	require.NoError(t, db.ReadDB().QueryRowContext(ctx,
+	require.NoError(t, db.Reader().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM image_updates WHERE container_id = 'task-old'`).Scan(&leftover))
 	assert.Zero(t, leftover, "the purged container must not leave a finding behind")
 }

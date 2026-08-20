@@ -69,7 +69,7 @@ func setupTriggerTestDB(t *testing.T) (*TriggerStoreImpl, *sql.DB) {
 	`)
 	require.NoError(t, err)
 
-	writer := NewWriter(rawDB, logger)
+	writer := NewWriter(rawDB, DialectSQLite, logger)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	writer.Start(ctx)

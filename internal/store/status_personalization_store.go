@@ -11,13 +11,13 @@ import (
 )
 
 type PersonalizationStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 func NewPersonalizationStore(d *DB) *PersonalizationStoreImpl {
 	return &PersonalizationStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

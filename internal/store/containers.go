@@ -24,14 +24,14 @@ import (
 
 // ContainerStore implements container.ContainerStore using SQLite.
 type ContainerStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewContainerStore creates a new SQLite-backed container store.
 func NewContainerStore(d *DB) *ContainerStore {
 	return &ContainerStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

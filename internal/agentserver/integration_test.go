@@ -29,7 +29,6 @@ import (
 	"math/big"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -51,6 +50,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
 
 // noopBroadcaster satisfies agentserver.EventBroadcaster without side-effects.
@@ -95,26 +95,13 @@ func withMultiHostEdition(t *testing.T) {
 	t.Cleanup(func() { extension.CurrentEdition = orig })
 }
 
-// openIntegrationDB opens a temp SQLite DB with migrations and writer started.
+// openIntegrationDB opens a migrated test DB with its writer started. The
+// engine follows MAINTENANT_TEST_DATABASE_URL: SQLite by default, PostgreSQL
+// when a test server is configured.
 func openIntegrationDB(t *testing.T) *store.DB {
 	t.Helper()
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "test.db")
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-
-	db, err := store.Open(dbPath, logger)
-	require.NoError(t, err, "open integration DB")
-
-	err = store.Migrate(db.ReadDB(), logger)
-	require.NoError(t, err, "run migrations on integration DB")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	db.StartWriter(ctx)
-	t.Cleanup(func() {
-		cancel()
-		_ = db.Close()
-	})
-	return db
+	return storetest.Open(t, logger)
 }
 
 // selfSignedTLS generates a self-signed TLS certificate valid for 127.0.0.1.

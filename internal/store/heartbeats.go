@@ -24,14 +24,14 @@ import (
 
 // HeartbeatStore implements heartbeat.HeartbeatStore using SQLite.
 type HeartbeatStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewHeartbeatStore creates a new SQLite-backed heartbeat store.
 func NewHeartbeatStore(d *DB) *HeartbeatStore {
 	return &HeartbeatStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }
@@ -426,17 +426,8 @@ func (s *HeartbeatStore) DeleteExecutionsBefore(ctx context.Context, before time
 }
 
 func (s *HeartbeatStore) deleteExecutionsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
-	cutoff := before.Unix()
-	return runBatchedDelete(ctx, o, func(ctx context.Context, batchSize int) (int64, error) {
-		res, err := s.writer.Exec(ctx,
-			`DELETE FROM heartbeat_executions WHERE rowid IN (
-				SELECT rowid FROM heartbeat_executions WHERE completed_at IS NOT NULL AND completed_at<? LIMIT ?
-			)`, cutoff, batchSize)
-		if err != nil {
-			return res.RowsAffected, fmt.Errorf("delete heartbeat executions: %w", err)
-		}
-		return res.RowsAffected, nil
-	})
+	return deleteRowsWhere(ctx, s.writer, o, "heartbeat_executions",
+		"completed_at IS NOT NULL AND completed_at<?", before.Unix())
 }
 
 // --- Scanners ---

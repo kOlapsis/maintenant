@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
 
 // engineTestSetup opens a fresh temp DB, runs all migrations, starts the writer,
@@ -51,13 +51,7 @@ func engineTestSetup(t *testing.T) (
 	ctx, cancel = context.WithCancel(context.Background())
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	var err error
-	db, err = store.Open(filepath.Join(t.TempDir(), "eng.db"), logger)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	require.NoError(t, store.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
+	db = storetest.Open(t, logger)
 
 	alertStore = store.NewAlertStore(db)
 	channelStore = store.NewChannelStore(db)

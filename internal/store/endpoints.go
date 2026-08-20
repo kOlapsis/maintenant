@@ -25,14 +25,14 @@ import (
 
 // EndpointStore implements endpoint.EndpointStore using SQLite.
 type EndpointStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewEndpointStore creates a new SQLite-backed endpoint store.
 func NewEndpointStore(d *DB) *EndpointStore {
 	return &EndpointStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

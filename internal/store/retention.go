@@ -329,6 +329,11 @@ func runEndpointCleanup(ctx context.Context, store *EndpointStore, logger *slog.
 // says auto_vacuum NONE there is nothing to reclaim without a full VACUUM, so
 // only the checkpoint runs — Open already told the operator why.
 func reclaimSpace(ctx context.Context, db *DB, logger *slog.Logger, budget time.Duration, deleted int64) {
+	if db.dialect != DialectSQLite {
+		// PostgreSQL reclaims space through autovacuum; there is nothing for
+		// the product to run here.
+		return
+	}
 	if db.incrementalVacuum {
 		incrementalVacuum(ctx, db, logger, budget)
 	}

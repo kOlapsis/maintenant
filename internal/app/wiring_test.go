@@ -100,7 +100,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-	require.NoError(t, store.Migrate(db.ReadDB(), logger))
+	require.NoError(t, store.Migrate(context.Background(), db, logger))
 	db.StartWriter(ctx)
 
 	store := store.NewEscalationStore(db)

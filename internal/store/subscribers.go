@@ -24,14 +24,14 @@ import (
 
 // SubscriberStoreImpl implements status.SubscriberStore using SQLite.
 type SubscriberStoreImpl struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewSubscriberStore creates a new SQLite-backed subscriber store.
 func NewSubscriberStore(d *DB) *SubscriberStoreImpl {
 	return &SubscriberStoreImpl{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }

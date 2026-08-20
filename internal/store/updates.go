@@ -25,14 +25,14 @@ import (
 
 // UpdateStore implements update.UpdateStore using SQLite.
 type UpdateStore struct {
-	db     *sql.DB
+	db     *Reader
 	writer *Writer
 }
 
 // NewUpdateStore creates a new SQLite-backed update store.
 func NewUpdateStore(d *DB) *UpdateStore {
 	return &UpdateStore{
-		db:     d.ReadDB(),
+		db:     d.Reader(),
 		writer: d.Writer(),
 	}
 }
