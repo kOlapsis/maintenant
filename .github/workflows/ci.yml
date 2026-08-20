@@ -181,9 +181,24 @@ jobs:
     name: Tests (go test -race)
     needs: [lint]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
+    # The store suite runs twice: once on SQLite, once on PostgreSQL. The same
+    # business assertions must hold on both engines (SC-002), and the schema
+    # equivalence test needs a real server to introspect.
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_PASSWORD: ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Harden the runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -203,14 +218,27 @@ jobs:
       - name: Prepare embedded assets
         run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
 
+      # The default pass: SQLite, which is what an unconfigured install uses.
+      # PostgreSQL cases skip when MAINTENANT_TEST_DATABASE_URL is unset.
       - name: Unit tests with race detector
         run: go test -race -cover ./...
 
+      # The same suites again, against PostgreSQL. Anything that diverges
+      # between the two engines fails here rather than in production.
+      - name: Store and server tests on PostgreSQL
+        env:
+          MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
+        run: |
+          go test -race ./internal/store/... ./internal/app/... ./internal/api/v1/... \
+            ./internal/agentserver/... ./internal/alert/... ./cmd/maintenant/...
+
       # Behind the `integration` build tag, so `go test ./...` skips it entirely.
       # Without this step the suite rots unnoticed — it had stopped compiling and
-      # nobody found out. It needs no external service: loopback TLS gRPC and a
-      # temp SQLite file.
+      # nobody found out. The failover tests need PostgreSQL; the rest runs on a
+      # loopback TLS gRPC server and a temp SQLite file.
       - name: Integration tests with race detector
+        env:
+          MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
         run: go test -race -tags=integration ./...
 
   sast:

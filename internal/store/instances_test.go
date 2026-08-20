@@ -93,3 +93,27 @@ func TestInstanceStore_PurgeStale(t *testing.T) {
 		"SELECT COUNT(*) FROM instances").Scan(&count))
 	assert.Equal(t, 1, count, "only the live instance remains")
 }
+
+// TestInstanceStore_Deregister pins what a clean shutdown owes the next start:
+// its own row is gone, so a restart does not report itself as a peer while the
+// stale purge has not caught up yet.
+func TestInstanceStore_Deregister(t *testing.T) {
+	db := openTestDB(t)
+	s := NewInstanceStore(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	leaving := testInstance("host-leaving", now)
+	staying := testInstance("host-staying", now)
+	require.NoError(t, s.Register(ctx, leaving))
+	require.NoError(t, s.Register(ctx, staying))
+
+	require.NoError(t, s.Deregister(ctx, leaving.ID))
+
+	peers, err := s.Peers(ctx, staying.ID, now.Add(-time.Minute))
+	require.NoError(t, err)
+	assert.Empty(t, peers, "a departed instance is no longer a peer")
+
+	// Deregistering twice, or an unknown id, is not an error.
+	require.NoError(t, s.Deregister(ctx, leaving.ID))
+}

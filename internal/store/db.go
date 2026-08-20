@@ -63,13 +63,15 @@ type DB struct {
 	incrementalVacuum bool
 }
 
-// Open creates and configures a SQLite database connection with WAL mode.
+// Open creates and configures a SQLite database connection with WAL mode. It
+// is the default and the only storage an agent ever uses; OpenPostgres is its
+// counterpart for an operator-supplied server database.
 //
-// This is the only SQLite-specific seam: the schema (uuid_schema.sql) and all
-// queries use the portable common subset (TEXT/BIGINT/INTEGER/REAL/BLOB ids and
-// timestamps, ON CONFLICT upserts, `?` placeholders, no AUTOINCREMENT/PRAGMA).
-// A Postgres backend is a drop-in: its own Open (pgx DSN), a `?`→`$n` placeholder
-// rewrite, and a Postgres migrations dir — no schema or query changes.
+// The PRAGMAs below are the SQLite-specific part. Everything else — the schema
+// (uuid_schema.sql) and the queries — stays in the portable common subset
+// (TEXT/BIGINT/INTEGER ids and timestamps, ON CONFLICT upserts, `?`
+// placeholders, no AUTOINCREMENT), and the few genuine differences go through
+// Dialect.
 func Open(dbPath string, logger *slog.Logger) (*DB, error) {
 	// auto_vacuum has to be part of the DSN, not a later Exec: switching to WAL
 	// writes the file header, and once that is done the pragma is silently

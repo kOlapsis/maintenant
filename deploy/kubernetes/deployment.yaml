@@ -41,6 +41,17 @@ spec:
               value: "kubernetes"
             - name: MAINTENANT_DB
               value: "/data/maintenant.db"
+            # Optional: back the server data set with a PostgreSQL you already
+            # operate, so a replacement pod picks the fleet back up instead of
+            # needing every host re-enrolled. Unset means SQLite on the volume
+            # above, which is the default and needs nothing here.
+            # The /data volume must still follow the instance: it carries the
+            # licence cache and the update window record.
+            # - name: MAINTENANT_DATABASE_URL
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: maintenant-database
+            #       key: url
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

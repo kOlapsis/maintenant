@@ -60,6 +60,7 @@ func main() {
 	fEmbeddedAgent := flag.Bool("embedded-agent", false, "also run a local agent (server mode, Pro)")
 	fDatabaseURL := flag.String("database-url", "", "PostgreSQL connection string (server/embedded mode only); empty means SQLite")
 	fCopyStoreTo := flag.String("copy-store-to", "", "copy this install into an empty PostgreSQL database, then exit")
+	fDB := flag.String("db", "", "override MAINTENANT_DB (path of the local SQLite file)")
 	fAssumeYes := flag.Bool("yes", false, "skip the confirmation prompt (for scripts)")
 
 	// flag.Parse handles --foo and -foo; ignore unknown flags for --mcp-stdio compat.
@@ -118,7 +119,10 @@ func main() {
 	cfg.MultiHost.InsecureSkipVerify = *fInsecureSkip
 	cfg.MultiHost.EmbeddedAgent = *fEmbeddedAgent
 
-	// The flag wins over the variable, as everywhere else in the product.
+	// Flags win over variables, as everywhere else in the product.
+	if *fDB != "" {
+		cfg.DBPath = *fDB
+	}
 	if *fDatabaseURL != "" {
 		cfg.DatabaseURL = *fDatabaseURL
 	}

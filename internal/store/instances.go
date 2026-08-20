@@ -94,6 +94,21 @@ func (s *InstanceStore) Peers(ctx context.Context, selfID string, since time.Tim
 	return peers, nil
 }
 
+// Deregister removes this instance's row on a clean shutdown, so a restart
+// does not see its own previous run as a peer for the next few minutes.
+// A process that dies without getting here is caught by PurgeStale instead.
+//
+// It writes through the pool rather than the serialized writer: shutdown runs
+// after the writer's context is cancelled, so submitting there would be
+// dropped. Nothing else writes at that point, so SQLite's single-writer
+// discipline is not at stake.
+func (s *InstanceStore) Deregister(ctx context.Context, id string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM instances WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("deregister instance: %w", err)
+	}
+	return nil
+}
+
 // PurgeStale removes instances whose heartbeat stopped before the cutoff, so
 // crashed processes do not read as peers forever.
 func (s *InstanceStore) PurgeStale(ctx context.Context, before time.Time) (int64, error) {

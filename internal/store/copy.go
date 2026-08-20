@@ -387,6 +387,7 @@ func copyTable(ctx context.Context, src *sql.DB, tx *sql.Tx, table string) (int6
 	}
 	columnList := strings.Join(quoted, ", ")
 
+	// #nosec G202 -- table comes from carriedTables (package literals), columnList from the target's own information_schema.
 	rows, err := src.QueryContext(ctx, "SELECT "+columnList+" FROM "+table)
 	if err != nil {
 		return 0, fmt.Errorf("read %s from source: %w", table, err)

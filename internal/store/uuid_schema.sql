@@ -1,4 +1,11 @@
 -- maintenant — UUID-native, portable (SQLite/Postgres) schema (target).
+--
+-- This is the SQLite head, the shape migrations converge on. Its PostgreSQL
+-- counterpart is migrations/postgres/28_baseline.up.sql, derived from this
+-- file (REAL -> DOUBLE PRECISION, BLOB -> BYTEA). A test migrates a fresh
+-- database on each engine and fails on any divergence between the two heads,
+-- so a change here needs its counterpart there.
+--
 -- Conventions:
 --   * id TEXT PRIMARY KEY (UUID) everywhere except join tables (composite PK)
 --     and natural-key tables (role / hash / token).

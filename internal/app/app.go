@@ -904,6 +904,15 @@ func (a *App) Shutdown() error {
 		a.licenseMgr.Stop()
 	}
 
+	// Drop this instance's row before closing: a clean restart must not see
+	// its own previous run as a peer until the stale purge catches up.
+	if a.instanceStore != nil {
+		if err := a.instanceStore.Deregister(shutdownCtx, a.instanceID); err != nil {
+			a.logger.Warn("instance deregistration failed, a restart may report itself as a peer until the stale purge runs",
+				"error", err)
+		}
+	}
+
 	_ = a.rt.Close()
 	_ = a.db.Close()
 
