@@ -236,3 +236,72 @@ func TestNew_UnreachablePostgres(t *testing.T) {
 	_, statErr := os.Stat(cfg.DBPath)
 	assert.True(t, os.IsNotExist(statErr), "no silent fallback to SQLite")
 }
+
+// TestNew_SQLiteStorage_UnchangedForUnconfiguredInstalls is US3 scenario 1 and
+// FR-029: an install that configured nothing sees no difference. Same engine,
+// same file, and — the part that is easy to break — not one new log line.
+func TestNew_SQLiteStorage_UnchangedForUnconfiguredInstalls(t *testing.T) {
+	cfg, logs, logger := storageEnv(t)
+	require.Empty(t, cfg.DatabaseURL, "nothing configured")
+
+	a, err := New(cfg, logger)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = a.db.Close() })
+
+	assert.Equal(t, "sqlite", a.db.Engine())
+	_, statErr := os.Stat(cfg.DBPath)
+	assert.NoError(t, statErr, "the local file is where it has always been")
+
+	body := healthPayload(t, a)
+	st, ok := body["storage"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "sqlite", st["engine"])
+	assert.Equal(t, true, st["connected"])
+	assert.Equal(t, float64(0), st["peers"])
+
+	// The messages this feature added are all on the PostgreSQL path. An
+	// unconfigured install must not read a single one of them.
+	for _, added := range []string{
+		"storage opened",
+		"another instance is working on this database",
+		"database unreachable",
+		"database credentials refused",
+		"instance registration failed",
+	} {
+		assert.NotContains(t, logs.String(), added,
+			"an unconfigured install must see no new message (US3 scenario 1)")
+	}
+	assert.NotContains(t, logs.String(), "postgres")
+}
+
+// TestSQLiteMigrationsStillReachHead pins FR-029 for an existing install: a
+// database created before this feature migrates to the new head without any
+// conversion or rebuild, and keeps its data.
+func TestSQLiteMigrationsStillReachHead(t *testing.T) {
+	cfg, _, logger := storageEnv(t)
+
+	a, err := New(cfg, logger)
+	require.NoError(t, err)
+
+	head, err := store.EmbeddedHeadVersion(store.DialectSQLite)
+	require.NoError(t, err)
+	version, err := a.db.SchemaVersion(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, head, version)
+
+	// The UUID conversion marker is intact: the historical conversions ran on
+	// this path and only on this path.
+	var format string
+	require.NoError(t, a.db.Reader().QueryRowContext(context.Background(),
+		"SELECT value FROM schema_meta WHERE key = 'format'").Scan(&format))
+	assert.Equal(t, "uuid-v1", format)
+	require.NoError(t, a.db.Close())
+
+	// Reopening the same file finds the schema and changes nothing.
+	b, err := New(cfg, logger)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.db.Close() })
+	version2, err := b.db.SchemaVersion(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, version, version2)
+}

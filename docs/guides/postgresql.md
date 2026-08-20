@@ -70,8 +70,12 @@ Two states live in the data directory rather than in the database:
 
 | State | File | If the directory does not follow |
 |---|---|---|
-| Signed licence cache | `<dataDir>/.maintenant-license-cache` | Re-verified online at startup. Offline: Community until the network returns. |
+| Signed licence cache | `<dataDir>/.maintenant-license` | Re-verified online at startup. Offline: Community until the network returns. |
 | Update window record | `<dataDir>/.maintenant-update-window` | A fresh grace window opens, which plays in your favour. |
+
+Anonymous telemetry keeps its own state under `MAINTENANT_TELEMETRY_DATADIR`
+(`/data/shm` by default). Losing it only breaks the continuity of anonymous
+counters; nothing about the fleet depends on it.
 
 So keep the `/data` volume with the instance when it moves. It is the only case
 where a move is not fully transparent, and it is settled by carrying the volume,
