@@ -78,6 +78,19 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     For production, place maintenant behind a reverse proxy with authentication.
     See the [Configuration](configuration.md) page for a Traefik + Authelia example.
 
+!!! note "Watching a fleet?"
+    The server holds what the agents cannot rebuild: their identity and their
+    enrolment. On the default local file, losing that machine means re-enrolling
+    every host by hand. If you already operate a PostgreSQL, point the server at
+    it and the instance becomes replaceable — see
+    [PostgreSQL storage](../guides/postgresql.md). An existing install moves
+    over with one command:
+
+    ```bash
+    maintenant --db /data/maintenant.db \
+      --copy-store-to "postgres://maintenant:secret@db.internal:5432/maintenant?sslmode=require"
+    ```
+
 ---
 
 ## Kubernetes

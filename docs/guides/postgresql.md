@@ -83,10 +83,71 @@ which any cluster manager can do.
 
 ## Migrating an existing install
 
-See the dedicated section once the migration command ships. In short: it copies
-what the fleet cannot rebuild (agent identities, enrolments, declared monitors,
-channels, triggers, status page), announces what it leaves behind before
-writing, and refuses a non-empty target.
+An install already running on the local file can move to PostgreSQL without
+touching a single monitored machine. One command carries what the fleet cannot
+rebuild; everything else is re-reported or recomputed.
+
+```bash
+# 1. Stop the instance: the source must not move during the copy.
+docker stop maintenant
+
+# 2. Carry what does not rebuild itself.
+docker run --rm -v maintenant-data:/data ghcr.io/kolapsis/maintenant:latest \
+  --db /data/maintenant.db \
+  --copy-store-to "postgres://maintenant:secret@db.internal:5432/maintenant?sslmode=require"
+
+# 3. Restart with the connection string.
+docker run -d --name maintenant \
+  -e MAINTENANT_DATABASE_URL="postgres://maintenant:secret@db.internal:5432/maintenant?sslmode=require" \
+  -v maintenant-data:/data -p 127.0.0.1:8080:8080 \
+  ghcr.io/kolapsis/maintenant:latest
+```
+
+The agents reconnect on their own, with the identity they already had. Add
+`--yes` to skip the confirmation prompt in a script.
+
+### What travels
+
+Agent identities and enrolment tokens, container rows, declared endpoint,
+heartbeat and certificate monitors, notification channels and their secrets,
+alert triggers, silences, escalation policies, webhook subscriptions,
+per-container thresholds, the whole status page (settings, components, assets,
+FAQ, footer, **subscribers**), published incidents, planned maintenance
+windows, and your operator decisions: update exclusions, version pins,
+acknowledged findings.
+
+### What does not, and what you will notice
+
+Everything the fleet rebuilds by itself: agent inventories (re-sent within
+30 s), check and resource history, state transitions, active alerts and their
+deliveries, CVE and image-update intelligence, ephemeral OAuth tokens.
+
+Two effects are worth knowing **before** you start, and the command says them
+before writing anything:
+
+- **An alert acknowledged before the copy comes back unacknowledged** if it is
+  still active. The acknowledgement lives on the alert row, which does not
+  travel. One click to redo, but it should not surprise you.
+- **Curves start from zero**: resource, uptime and check history. Aggregates
+  rebuild at their usual intervals.
+
+### Guarantees
+
+| Situation | What happens |
+|---|---|
+| The target is not empty | Refused before writing anything. Merging would need conflict rules nothing can settle correctly. |
+| The copy fails half-way | The whole transaction rolls back, schema included. The target is empty again and you can retry. |
+| Whatever happens | The source is opened read-only and never written to. Your original install stays usable. |
+| The copy succeeds | Row counts are compared table by table, source against target, and any difference is an error. |
+
+Exit codes: `0` copied and verified, `1` refused (non-empty target, unreadable
+or out-of-date source, unreachable target, or you declined), `2` failed
+mid-copy and rolled back.
+
+The copy does not switch your configuration: you set
+`MAINTENANT_DATABASE_URL` and restart yourself, deliberately. It does not run
+in the other direction either — going back means removing the variable, which
+returns to the local file as you left it.
 
 ## Latency
 
