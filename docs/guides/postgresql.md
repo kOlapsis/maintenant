@@ -177,9 +177,11 @@ action it takes.
 
 ## Testing against PostgreSQL
 
-The store test suite runs on SQLite by default and on PostgreSQL when a test
+Two levels, both able to run on either engine.
+
+**The Go suites.** They run on SQLite by default, and on PostgreSQL when a test
 server is configured. `make test-pg` starts a disposable PostgreSQL 14, points
-`MAINTENANT_TEST_DATABASE_URL` at it and runs the suite:
+`MAINTENANT_TEST_DATABASE_URL` at it and runs the store suite:
 
 ```bash
 make test-pg
@@ -187,6 +189,31 @@ make test-pg
 
 Without that variable, the PostgreSQL cases are skipped, never failed, so
 `go test ./...` still works without Docker.
+
+**The whole product.** A test stack builds the image and runs it with the
+services a real install talks to (SMTP catcher, webhook receiver, a container
+to watch), then drives it through its HTTP surface:
+
+```bash
+make e2e-sqlite     # the stack on the default local file
+make e2e-postgres   # the same stack, on PostgreSQL 14
+make e2e-both       # both in turn, on clean state — this is the one that matters
+```
+
+`e2e-both` is the check worth running before shipping anything that touches
+storage: identical results on both engines is the claim, and a difference shows
+up as a failed line rather than as a surprise in production.
+
+To poke at a running stack instead: `make e2e-up-postgres`, then
+<http://127.0.0.1:18090> (mail on `:18091`, webhooks on `:18092`). `make
+e2e-logs` follows the instance, `make e2e-down` removes everything including
+the volumes. Ports are overridable (`E2E_HTTP_PORT`, `E2E_DB_PORT`, …) if
+something already listens there.
+
+**The migration, end to end.** `make e2e-migrate` takes a running SQLite stack,
+stops it, copies it into the PostgreSQL one the way an operator would, restarts
+on the database and re-runs the checks — so the path from an existing install
+to an external database is exercised, not just described.
 
 ## Going back
 
