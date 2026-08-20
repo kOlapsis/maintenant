@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	v1 "github.com/kolapsis/maintenant/internal/api/v1"
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -213,4 +215,56 @@ func (a *App) reportPeers(ctx context.Context) {
 	a.logger.Warn("another instance is working on this database",
 		"peers", len(peers), "hosts", hosts, "versions", versions,
 		"note", "exclusion belongs to your cluster manager; this instance does not arbitrate")
+}
+
+// storageProbeInterval is how often the supervisor asks the database whether
+// it is there. Short enough that the interface reacts, long enough that an
+// idle instance does not chatter.
+const storageProbeInterval = 10 * time.Second
+
+// startStorageSupervisor watches the storage and reports its transitions. It
+// runs on both engines — the same code, because a full disk or a deleted file
+// makes SQLite unavailable too. It never restarts, reopens or fails over:
+// FR-019 asks the instance to survive an outage and recover on its own, which
+// is what the connection pool already does. The supervisor's job is to say so.
+func (a *App) startStorageSupervisor(ctx context.Context) {
+	if a.storage == nil {
+		return
+	}
+	a.broadcastStorageAvailability()
+
+	go func() {
+		ticker := time.NewTicker(storageProbeInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				was := a.storage.connected.Load()
+				now := a.storage.probe(ctx)
+				if now == was {
+					continue
+				}
+				if now {
+					a.logger.Info("storage reachable again", "engine", a.storage.Engine())
+				} else {
+					a.logger.Warn("storage unreachable, the interface keeps serving what it knows",
+						"engine", a.storage.Engine())
+				}
+				a.broadcastStorageAvailability()
+			}
+		}
+	}()
+}
+
+// broadcastStorageAvailability pushes the storage state to connected clients.
+func (a *App) broadcastStorageAvailability() {
+	a.broker.Broadcast(v1.SSEEvent{
+		Type: event.StorageAvailabilityChanged,
+		Data: map[string]interface{}{
+			"engine":    a.storage.Engine(),
+			"connected": a.storage.connected.Load(),
+		},
+	})
 }

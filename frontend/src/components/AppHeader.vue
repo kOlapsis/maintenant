@@ -18,6 +18,7 @@ import { useDashboardStore } from '@/stores/dashboard'
 import { useAlertsStore } from '@/stores/alerts'
 import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
+import { useStorageStore } from '@/stores/storage'
 import { useAgentsStore } from '@/stores/agents'
 import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
@@ -30,6 +31,7 @@ const dashboard = useDashboardStore()
 const alertsStore = useAlertsStore()
 const resources = useResourcesStore()
 const containers = useContainersStore()
+const storage = useStorageStore()
 const agentsStore = useAgentsStore()
 
 // Active enrolled agents drive the global host filter (the dropdown lives in the
@@ -359,6 +361,16 @@ const themeTooltip = computed(() => {
     label="RUNTIME OFFLINE"
   >
     <strong class="font-semibold">{{ containers.runtimeLabel }}</strong> runtime disconnected — monitoring paused until connection is restored.
+  </AlertBanner>
+
+  <!-- Storage outage banner: the screens keep whatever they already know
+       rather than emptying out, and say why they are not refreshing. -->
+  <AlertBanner
+    v-if="!storage.connected"
+    severity="critical"
+    label="STORAGE OFFLINE"
+  >
+    Database unreachable — what you see may be out of date. Monitoring resumes on its own once the database answers again.
   </AlertBanner>
 </template>
 

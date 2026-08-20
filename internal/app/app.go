@@ -738,6 +738,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Registered after the writer starts: on SQLite every write goes through it.
 	a.startInstanceHeartbeat(ctx)
+	a.startStorageSupervisor(ctx)
 
 	if a.licenseMgr != nil {
 		a.wireLicenseSubscriber(ctx)

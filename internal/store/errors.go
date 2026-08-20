@@ -14,8 +14,10 @@ package store
 import (
 	"database/sql/driver"
 	"errors"
+	"io"
 	"net"
 	"strings"
+	"syscall"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mattn/go-sqlite3"
@@ -74,10 +76,13 @@ func IsBusy(err error) bool {
 }
 
 // IsUnavailable reports whether err means the storage cannot serve requests
-// right now but may recover on its own: network failures, a PostgreSQL
-// resource-exhaustion error (class 53: disk full, too many connections), a
-// shutdown in progress (57P01..57P03, seen during managed-provider failovers),
-// or SQLITE_FULL on the local file.
+// right now but may recover on its own: the connection could not be made or
+// was dropped mid-flight, a PostgreSQL resource-exhaustion error (class 53:
+// disk full, too many connections), a shutdown in progress (57P01..57P03,
+// seen during managed-provider failovers), or SQLITE_FULL on the local file.
+//
+// It is what separates an outage the operator should wait out from a mistake
+// the caller made: the API answers 503 on the former and 500 on the latter.
 func IsUnavailable(err error) bool {
 	if err == nil {
 		return false
@@ -86,13 +91,26 @@ func IsUnavailable(err error) bool {
 	if errors.As(err, &se) {
 		return se.Code == sqlite3.ErrFull
 	}
+	// A server-side error carries a class; only some classes are outages.
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) {
 		return strings.HasPrefix(pe.Code, "53") ||
 			pe.Code == "57P01" || pe.Code == "57P02" || pe.Code == "57P03"
 	}
+	// The connection could not be established at all.
+	var ce *pgconn.ConnectError
+	if errors.As(err, &ce) {
+		return true
+	}
 	var ne net.Error
 	if errors.As(err, &ne) {
+		return true
+	}
+	// A connection dropped mid-flight surfaces as an I/O error: the driver
+	// read half a message, or the peer reset the socket.
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) {
 		return true
 	}
 	return errors.Is(err, driver.ErrBadConn) || pgconn.SafeToRetry(err)

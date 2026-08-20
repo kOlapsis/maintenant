@@ -84,7 +84,7 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 
 	endpoints, err := h.service.ListEndpoints(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list endpoints")
+		WriteStoreError(w, err, "Failed to list endpoints")
 		return
 	}
 
@@ -113,7 +113,7 @@ func (h *EndpointHandler) HandleGetEndpoint(w http.ResponseWriter, r *http.Reque
 
 	ep, err := h.service.GetEndpoint(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get endpoint")
+		WriteStoreError(w, err, "Failed to get endpoint")
 		return
 	}
 	if ep == nil {
@@ -139,7 +139,7 @@ func (h *EndpointHandler) HandleListContainerEndpoints(w http.ResponseWriter, r 
 
 	c, err := h.containerSvc.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {
@@ -151,7 +151,7 @@ func (h *EndpointHandler) HandleListContainerEndpoints(w http.ResponseWriter, r 
 		ContainerName: c.Name,
 	})
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list endpoints")
+		WriteStoreError(w, err, "Failed to list endpoints")
 		return
 	}
 
@@ -211,7 +211,7 @@ func (h *EndpointHandler) HandleListChecks(w http.ResponseWriter, r *http.Reques
 
 	checks, total, err := h.service.ListCheckResults(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list check results")
+		WriteStoreError(w, err, "Failed to list check results")
 		return
 	}
 
@@ -376,7 +376,7 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 	// Get current endpoint to merge with input
 	existing, err := h.service.GetEndpoint(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get endpoint")
+		WriteStoreError(w, err, "Failed to get endpoint")
 		return
 	}
 	if existing == nil {

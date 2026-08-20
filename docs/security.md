@@ -176,6 +176,27 @@ server {
 
 ---
 
+## External database credentials
+
+When the server is pointed at a PostgreSQL with `MAINTENANT_DATABASE_URL`, the
+connection string carries a password. It is never written to the logs (at any
+level, including inside wrapped errors), never returned by the API, never
+rendered in the interface, and never sent with the telemetry. Where a target
+must be named it appears redacted:
+`postgres://maintenant@db.internal:5432/maintenant`. A dedicated test injects a
+sentinel password and fails on any output containing it.
+
+**Transport is encrypted by default.** When the connection string carries no
+explicit `sslmode` and the host is not a loopback address or a Unix socket, the
+product adds `sslmode=require`. An explicit value always wins, `disable`
+included, so a database on the same host can be relaxed deliberately. For a
+database reached across a network you do not control, prefer
+`sslmode=verify-full`: it also checks the server certificate against its
+hostname, which `require` does not.
+
+Give the instance a role scoped to its own database. It needs to create its
+schema on first start and read/write it afterwards; nothing more.
+
 ## Built-in Protections
 
 ### Rate Limiting

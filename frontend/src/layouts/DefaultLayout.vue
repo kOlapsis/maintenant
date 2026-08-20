@@ -13,6 +13,7 @@ import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
+import { useStorageStore } from '@/stores/storage'
 import {
   detailSlideOverKey,
   parseSelectedParam,
@@ -65,6 +66,7 @@ const {
 } = useEdition()
 const swarmStore = useSwarmStore()
 const runtimeStore = useRuntimeStore()
+const storageStore = useStorageStore()
 const resources = useResourcesStore()
 const { availableRuntimes } = useFleetRuntimes()
 
@@ -78,6 +80,8 @@ onMounted(() => {
   swarmStore.loadInfo()
   runtimeStore.fetchStatus()
   runtimeStore.startListening()
+  storageStore.fetchStatus()
+  storageStore.startListening()
   // Parse ?selected=<type>-<id> on initial load
   const parsed = parseSelectedParam(route.query.selected)
   if (parsed) {

@@ -194,3 +194,57 @@ Take a backup first. Running out of disk space mid-VACUUM leaves a journal file 
 
 Newer versions set, on every connection, a `journal_size_limit` of 64 MiB, so the WAL is truncated back after each
 checkpoint. Up to 1.3.7 it was unbounded and only shrank when the process restarted.
+
+## PostgreSQL storage refuses to start, or goes quiet
+
+These apply when `MAINTENANT_DATABASE_URL` is set. Without it, the instance
+uses its local SQLite file and none of this concerns you.
+
+### The instance exits at startup
+
+The message names the cause and what to correct. There is deliberately no
+fallback to the local file: starting on an empty local database while the
+external one is misconfigured would look like it worked, and silently strand
+the fleet.
+
+| Message | What happened | What to check |
+|---|---|---|
+| the database connection string cannot be read | The value is not a PostgreSQL URL | Expected `postgres://user:password@host:5432/database[?sslmode=require]` |
+| the database does not answer | Nothing listens, or the route is blocked | Host, port, network route, firewall, and that the server is up |
+| the database refused the credentials | It answered and said no | User, password, and that this role may connect to this database |
+| the database version is not supported | Older than PostgreSQL 14 | Upgrade the server; 14 is the oldest release still supported upstream |
+| the database schema was written by a newer release | A newer binary already migrated it | Run that version, or upgrade this one — it will not write into a schema it does not understand |
+| MAINTENANT_DATABASE_URL is not accepted in agent mode | An agent was handed a connection string | Drop the setting: an agent always stores its state locally |
+
+None of these messages contain the password. Where the target is named it
+appears as `postgres://user@host:5432/database`.
+
+!!! note "The schema check also applies to SQLite"
+
+    A binary older than the schema it opens refuses to start on the local file
+    too. This is the one behaviour change for an existing local install, and it
+    only triggers on a downgrade: it stops the older binary from writing into a
+    schema it does not know, which used to corrupt data silently.
+
+### The database becomes unreachable while running
+
+The instance stays up. It does not restart, does not fall back, and recovers on
+its own when the database answers again — the connection pool renews its
+connections. You will see:
+
+- a **STORAGE OFFLINE** banner in the interface, and screens keeping what they
+  already knew rather than emptying out;
+- `503 STORAGE_UNAVAILABLE` on API reads that need the database;
+- `storage.connected: false` in `/api/v1/health`, which still answers `200`.
+
+That last point is deliberate and important: `/api/v1/health` is the target of
+the Kubernetes liveness and startup probes. **Do not make the probe fail on a
+database outage** — it would restart the instance exactly when the database
+needs to be left alone. Read `storage.connected` instead.
+
+### Two instances warn about each other
+
+If the log says another instance is working on the same database, and `peers`
+is non-zero in `/api/v1/health`, two instances are running against it. The
+product does not arbitrate — exclusion is your cluster manager's job. Data is
+not corrupted, but purges and alert evaluation run twice. Stop one of them.

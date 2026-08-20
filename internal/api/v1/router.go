@@ -735,6 +735,19 @@ func WriteJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 // WriteError writes a standard JSON error response.
+// WriteStoreError answers a failed read the way the operator needs to read it:
+// a storage outage is a 503 the interface can explain and retry, not a 500 it
+// can only render as an empty screen (FR-023). Anything else keeps the
+// existing 500.
+func WriteStoreError(w http.ResponseWriter, err error, message string) {
+	if store.IsUnavailable(err) {
+		WriteError(w, http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE",
+			"storage temporarily unavailable")
+		return
+	}
+	WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", message)
+}
+
 func WriteError(w http.ResponseWriter, status int, code, message string) {
 	WriteJSON(w, status, ErrorResponse{
 		Error: ErrorDetail{

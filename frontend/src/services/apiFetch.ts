@@ -46,6 +46,16 @@ export class ApiError extends Error {
   get isQuotaRefusal(): boolean {
     return this.code === 'QUOTA_EXCEEDED' || this.code === 'HOST_LIMIT_REACHED'
   }
+
+  /**
+   * True when the database is momentarily unreachable. The request failed for
+   * a reason that repairs itself, so callers should keep what they already
+   * have on screen rather than clearing it: the storage banner explains why
+   * the data is not refreshing (FR-023).
+   */
+  get isStorageOutage(): boolean {
+    return this.status === 503 && this.code === 'STORAGE_UNAVAILABLE'
+  }
 }
 
 async function toApiError(res: Response): Promise<ApiError> {

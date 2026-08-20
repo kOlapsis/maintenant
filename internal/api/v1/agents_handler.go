@@ -93,7 +93,7 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 	// persisted is the hash and a display prefix.
 	tokenStr, tokenHash, tokenID, tokenPrefix, err := agent.NewToken()
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to generate token")
+		WriteStoreError(w, err, "Failed to generate token")
 		return
 	}
 
@@ -263,7 +263,7 @@ func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http
 
 	tokens, err := h.store.ListTokens(r.Context(), includeExpired, includeConsumed)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list tokens")
+		WriteStoreError(w, err, "Failed to list tokens")
 		return
 	}
 	if tokens == nil {
@@ -300,7 +300,7 @@ func (h *AgentHandler) HandleGetEnrollmentToken(w http.ResponseWriter, r *http.R
 		return
 	}
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get token")
+		WriteStoreError(w, err, "Failed to get token")
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{
@@ -325,7 +325,7 @@ func (h *AgentHandler) HandleDeleteEnrollmentToken(w http.ResponseWriter, r *htt
 		return
 	}
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete token")
+		WriteStoreError(w, err, "Failed to delete token")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -337,7 +337,7 @@ func (h *AgentHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) 
 
 	agents, err := h.store.List(r.Context(), statusFilter)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list agents")
+		WriteStoreError(w, err, "Failed to list agents")
 		return
 	}
 	if agents == nil {
@@ -364,7 +364,7 @@ func (h *AgentHandler) HandleGetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get agent")
+		WriteStoreError(w, err, "Failed to get agent")
 		return
 	}
 	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a)))
@@ -404,7 +404,7 @@ func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request)
 
 	a, err := h.store.Get(r.Context(), agentID)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve updated agent")
+		WriteStoreError(w, err, "Failed to retrieve updated agent")
 		return
 	}
 
@@ -438,7 +438,7 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 
 	a, err := h.store.Get(r.Context(), agentID)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve revoked agent")
+		WriteStoreError(w, err, "Failed to retrieve revoked agent")
 		return
 	}
 	WriteJSON(w, http.StatusOK, agentToMap(a, "disconnected"))
@@ -470,12 +470,12 @@ func (h *AgentHandler) HandleDeleteAgent(w http.ResponseWriter, r *http.Request)
 func (h *AgentHandler) HandleGetAgentMetrics(w http.ResponseWriter, r *http.Request) {
 	active, revoked, err := h.store.CountByStatus(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch agent metrics")
+		WriteStoreError(w, err, "Failed to fetch agent metrics")
 		return
 	}
 	docker, swarmCount, kubernetes, err := h.store.CountByRuntime(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch agent metrics")
+		WriteStoreError(w, err, "Failed to fetch agent metrics")
 		return
 	}
 
