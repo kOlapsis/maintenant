@@ -88,6 +88,7 @@ nav:
       - Docker Labels Reference: guides/docker-labels.md
       - Kubernetes Guide: guides/kubernetes.md
       - Docker Swarm Deployment: guides/swarm.md
+      - PostgreSQL Storage: guides/postgresql.md
   - API:
       - API Reference: api/reference.md
   - Security: security.md

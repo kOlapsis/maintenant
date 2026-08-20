@@ -58,6 +58,7 @@ func main() {
 	fInsecureSkip := flag.Bool("grpc-insecure-skip-tls-verify", false, "disable TLS verification (debug only)")
 	fCACert := flag.String("ca-cert", "", "PEM bundle of extra root CAs to trust, added to the system store")
 	fEmbeddedAgent := flag.Bool("embedded-agent", false, "also run a local agent (server mode, Pro)")
+	fDatabaseURL := flag.String("database-url", "", "PostgreSQL connection string (server/embedded mode only); empty means SQLite")
 
 	// flag.Parse handles --foo and -foo; ignore unknown flags for --mcp-stdio compat.
 	flag.CommandLine.SetOutput(os.Stderr)
@@ -115,6 +116,19 @@ func main() {
 	cfg.MultiHost.InsecureSkipVerify = *fInsecureSkip
 	cfg.MultiHost.EmbeddedAgent = *fEmbeddedAgent
 
+	// The flag wins over the variable, as everywhere else in the product.
+	if *fDatabaseURL != "" {
+		cfg.DatabaseURL = *fDatabaseURL
+	}
+	// Checked before the agent branch: an agent handed a connection string
+	// must refuse it, not ignore it (FR-003, FR-030).
+	if err := cfg.ValidateStorage(); err != nil {
+		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
+			logger.Error("invalid storage configuration", "error", err)
+		}
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -142,7 +156,9 @@ func main() {
 
 	application, err := app.New(cfg, logger)
 	if err != nil {
-		logger.Error("failed to initialize application", "error", err)
+		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
+			logger.Error("failed to initialize application", "error", err)
+		}
 		os.Exit(1)
 	}
 

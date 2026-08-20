@@ -55,6 +55,10 @@ type Deps struct {
 	Webhooks         counter
 	StatusComponents counter
 	Edition          editionSource
+	// StorageEngine reports the engine backing this instance, "sqlite" or
+	// "postgres". Nothing else about the database is collected: no host, no
+	// version, no size.
+	StorageEngine func() string
 }
 
 // Service owns the SHM SDK client and its single reporting goroutine.

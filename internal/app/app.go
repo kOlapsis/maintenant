@@ -61,7 +61,14 @@ type App struct {
 
 	// Infrastructure
 	db *store.DB
-	rt runtime.Runtime
+
+	// Instance visibility: this process's row in the instances table and the
+	// storage state served by the health diagnostic (FR-012, FR-020).
+	instanceStore  *store.InstanceStore
+	instanceID     string
+	instanceRecord store.Instance
+	storage        *storageState
+	rt             runtime.Runtime
 
 	// Core services
 	containerSvc       *container.Service
@@ -165,15 +172,25 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	// --- Database ---
-	db, err := store.Open(cfg.DBPath, logger)
+	// No connection string means SQLite, in every edition and every mode.
+	// A configured but unusable external database refuses to start: there is
+	// no silent fallback to the local file (FR-004).
+	ctx := context.Background()
+	db, err := openStorage(ctx, cfg, logger)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+		return nil, err
 	}
 	a.db = db
 
-	if err := store.Migrate(context.Background(), db, logger); err != nil {
+	if err := store.Migrate(ctx, db, logger); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+	logStorageOpened(ctx, db, logger)
+
+	if err := a.registerInstance(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 
 	// --- Stores ---
@@ -222,7 +239,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	// --- Runtime detection ---
-	ctx := context.Background()
 	rt, err := runtime.Detect(ctx, logger)
 	if err != nil {
 		_ = db.Close()
@@ -534,6 +550,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		// Core services
 		Broker:       a.broker,
 		Runtime:      rt,
+		Storage:      a.storage,
 		Containers:   a.containerSvc,
 		Uptime:       uptimeCalc,
 		Endpoints:    a.endpointSvc,
@@ -654,6 +671,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Webhooks:         webhookStore,
 		StatusComponents: statusCompStore,
 		Edition:          telemetry.EditionFunc(extension.CurrentEdition),
+		StorageEngine:    db.Engine,
 	}, logger.With("component", "telemetry"))
 
 	// --- Build HTTP server ---
@@ -717,6 +735,9 @@ func (a *App) Start(ctx context.Context) error {
 	}
 
 	a.db.StartWriter(ctx)
+
+	// Registered after the writer starts: on SQLite every write goes through it.
+	a.startInstanceHeartbeat(ctx)
 
 	if a.licenseMgr != nil {
 		a.wireLicenseSubscriber(ctx)

@@ -243,6 +243,7 @@ Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Quer
 | ----------------------------------- | ----------------------- | ----------------------------------------------- |
 | `MAINTENANT_ADDR`                   | `127.0.0.1:8080`        | HTTP bind address                               |
 | `MAINTENANT_DB`                     | `./maintenant.db`       | SQLite database path                            |
+| `MAINTENANT_DATABASE_URL`           | *(empty)*               | PostgreSQL DSN, server/embedded only            |
 | `MAINTENANT_BASE_URL`               | `http://localhost:8080` | Base URL (used for heartbeat ping URLs and as the status page fallback) |
 | `MAINTENANT_STATUS_URL`             | —                       | Canonical public URL of the status page (e.g. `https://status.example.com`). Optional — falls back to `{BASE_URL}/status`. |
 | `MAINTENANT_ORGANISATION_NAME`      | `Maintenant`            | Organisation name on the status page            |
@@ -377,6 +378,7 @@ Each snapshot contains the following fields and **nothing else** (full wire form
 **Application fields** (this product owns these):
 
 - `edition` — `community`, `personal` or `pro`
+- `storage_engine` — `sqlite` or `postgres` (nothing else about the database)
 - `containers_total` — count of auto-discovered containers
 - `endpoints_total` — count of configured HTTP/TCP endpoints
 - `heartbeats_total` — count of configured heartbeat monitors

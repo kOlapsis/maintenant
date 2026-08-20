@@ -64,8 +64,11 @@ type ErrorDetail struct {
 // HandlerDeps holds all dependencies needed to build the API handler.
 type HandlerDeps struct {
 	// Core services
-	Broker       *SSEBroker
-	Runtime      runtime.Runtime
+	Broker  *SSEBroker
+	Runtime runtime.Runtime
+	// Storage reports the engine backing this instance, whether it answers,
+	// and how many other instances beat on the same database (FR-020).
+	Storage      StorageStatus
 	Containers   *container.Service
 	Uptime       *container.UptimeCalculator
 	Endpoints    *endpoint.Service
@@ -169,6 +172,7 @@ type Router struct {
 	broker           *SSEBroker
 	logger           *slog.Logger
 	runtime          runtime.Runtime
+	storage          StorageStatus
 	containerHandler *ContainerHandler
 	corsOrigins      []string
 	maxBodySize      int64
@@ -189,6 +193,7 @@ func NewRouter(d HandlerDeps) *Router {
 		broker:           d.Broker,
 		logger:           d.Logger,
 		runtime:          d.Runtime,
+		storage:          d.Storage,
 		corsOrigins:      parseCORSOrigins(d.CORSOrigins),
 		maxBodySize:      maxBody,
 		buildVersion:     d.BuildVersion,
@@ -745,7 +750,21 @@ func WriteErrorDetail(w http.ResponseWriter, status int, detail ErrorDetail) {
 	WriteJSON(w, status, ErrorResponse{Error: detail})
 }
 
+// StorageStatus is the health view of the storage engine. It never exposes
+// the connection string, the host or any credential (FR-021).
+type StorageStatus interface {
+	Engine() string
+	Connected() bool
+	Peers() int
+}
+
 // handleHealth returns the health check response.
+//
+// It answers 200 even when the database is momentarily unreachable: this
+// endpoint is the target of the Kubernetes liveness and startup probes, and
+// failing it on a ten-second network blip would restart the instance exactly
+// when the database needs to be left alone. The outage is read from
+// storage.connected, not from the HTTP status.
 func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	resp := map[string]interface{}{
 		"status": "ok",
@@ -757,6 +776,13 @@ func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		resp["runtime"] = map[string]interface{}{
 			"name":      r.runtime.Name(),
 			"connected": r.runtime.IsConnected(),
+		}
+	}
+	if r.storage != nil {
+		resp["storage"] = map[string]interface{}{
+			"engine":    r.storage.Engine(),
+			"connected": r.storage.Connected(),
+			"peers":     r.storage.Peers(),
 		}
 	}
 	WriteJSON(w, http.StatusOK, resp)
