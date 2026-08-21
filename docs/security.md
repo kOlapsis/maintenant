@@ -415,11 +415,24 @@ Inside a Docker container, use `0.0.0.0:8080` (the Dockerfile sets this automati
 
 ### Database
 
-SQLite in WAL mode. The database file contains all monitoring data, alert history, webhook configurations, and (if MCP OAuth is enabled) hashed tokens.
+Whichever engine backs it, the database holds all monitoring data, alert
+history, webhook configurations, agent identities and enrolment tokens, and (if
+MCP OAuth is enabled) hashed tokens. Treat it as the sensitive asset it is.
+
+**SQLite (the default).**
 
 - Store on a **local filesystem** — NFS and network-mounted volumes cause locking issues with SQLite.
 - **Back up** by copying the `.db`, `.db-wal`, and `.db-shm` files while maintenant is stopped, or use `sqlite3 .backup` while running.
 - **File permissions** — ensure only the maintenant process can read/write the database file.
+
+**PostgreSQL (when you supply one).** Backups, restores and access control are
+yours; the product connects, it does not administer. Give the instance a role
+scoped to its own database — it creates its schema on first start and
+reads/writes it afterwards, nothing more. Transport is encrypted by default
+(`sslmode=require` towards a non-local host) and the connection string never
+reaches logs, API responses, the interface or telemetry. See
+[External database credentials](#external-database-credentials) and
+[PostgreSQL storage](guides/postgresql.md).
 
 ### Heartbeat UUIDs
 

@@ -633,7 +633,7 @@ Full REST API under `/api/v1/` for automation and integration.
 ```
 
 - **Single binary** — Frontend embedded via `embed.FS`. One file to deploy. The same binary runs in three modes: `embedded` (single host, default), `server` (central ingestion), and `agent` (remote host) — see [Multi-Host Monitoring](#multi-host-monitoring).
-- **Zero dependencies** — SQLite is the only required datastore. No Redis, no Postgres, no message queue. The container runtime (Docker / Kubernetes) is **optional**: maintenant starts and serves endpoints, SSL, and heartbeat monitors even without a runtime socket — container monitoring resumes automatically when the runtime becomes available.
+- **Zero dependencies** — SQLite is the only required datastore. No Redis, no message queue, nothing to administer. A fleet operator may optionally back the server on a PostgreSQL they already run ([why](docs/guides/postgresql.md)); an agent is always SQLite. The container runtime (Docker / Kubernetes) is **optional**: maintenant starts and serves endpoints, SSL, and heartbeat monitors even without a runtime socket — container monitoring resumes automatically when the runtime becomes available.
 - **Real-time** — SSE pushes every state change to the browser instantly.
 - **Read-only** — maintenant never touches your containers. Observe only.
 - **Label-driven** — Configure monitoring through Docker labels. No YAML to maintain.
