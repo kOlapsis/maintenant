@@ -33,6 +33,32 @@ import (
 // CREATE DATABASE) runs the suite on PostgreSQL, one fresh database per test.
 const EnvVar = "MAINTENANT_TEST_DATABASE_URL"
 
+// RequireEnvVar turns every PostgreSQL skip into a failure. CI sets it on the
+// steps that are supposed to exercise PostgreSQL, so a typo in EnvVar, a
+// service that never came up, or a step that silently lost its environment
+// fails loudly instead of passing green having tested nothing.
+//
+// Without it, a suite whose PostgreSQL cases all skip reports "ok" — which is
+// exactly the failure mode this guard exists to make impossible.
+const RequireEnvVar = "MAINTENANT_REQUIRE_POSTGRES"
+
+// AdminDSN returns the configured admin DSN. It skips the test when none is
+// configured, unless RequireEnvVar says PostgreSQL coverage was promised, in
+// which case its absence is the bug.
+func AdminDSN(t *testing.T) string {
+	t.Helper()
+	dsn := os.Getenv(EnvVar)
+	if dsn != "" {
+		return dsn
+	}
+	if os.Getenv(RequireEnvVar) != "" {
+		t.Fatalf("%s is set, so this run must exercise PostgreSQL, but %s is empty: "+
+			"the coverage it promises would silently not happen", RequireEnvVar, EnvVar)
+	}
+	t.Skip("PostgreSQL test database not configured (" + EnvVar + ")")
+	return ""
+}
+
 // Open returns a migrated *store.DB with its writer running, torn down with
 // the test. The engine follows EnvVar.
 func Open(t *testing.T, logger *slog.Logger) *store.DB {
@@ -42,6 +68,10 @@ func Open(t *testing.T, logger *slog.Logger) *store.DB {
 	}
 	if adminDSN := os.Getenv(EnvVar); adminDSN != "" {
 		return openPostgres(t, adminDSN, logger)
+	}
+	if os.Getenv(RequireEnvVar) != "" {
+		t.Fatalf("%s is set, so this run must exercise PostgreSQL, but %s is empty: "+
+			"the coverage it promises would silently not happen", RequireEnvVar, EnvVar)
 	}
 	return openSQLite(t, logger)
 }

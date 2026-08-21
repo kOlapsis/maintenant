@@ -17,7 +17,6 @@ import (
 	"database/sql"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,10 +26,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
-
-const copyTestDatabaseURLEnv = "MAINTENANT_TEST_DATABASE_URL"
 
 // sourceInstall creates a migrated local install to copy from.
 func sourceInstall(t *testing.T) string {
@@ -48,10 +46,7 @@ func sourceInstall(t *testing.T) string {
 // emptyTargetDSN creates an empty PostgreSQL database, or skips.
 func emptyTargetDSN(t *testing.T) string {
 	t.Helper()
-	adminDSN := os.Getenv(copyTestDatabaseURLEnv)
-	if adminDSN == "" {
-		t.Skip("PostgreSQL test database not configured (" + copyTestDatabaseURLEnv + ")")
-	}
+	adminDSN := storetest.AdminDSN(t)
 
 	name := "t_" + strings.ReplaceAll(uid.New(), "-", "")
 	admin, err := sql.Open("pgx", adminDSN)

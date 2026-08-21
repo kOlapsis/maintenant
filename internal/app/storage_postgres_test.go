@@ -31,23 +31,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
-const (
-	testDatabaseURLEnv = "MAINTENANT_TEST_DATABASE_URL"
-	sentinelPassword   = "s3cr3t-Sentinel-app"
-)
+const sentinelPassword = "s3cr3t-Sentinel-app"
 
 // freshPostgresDSN creates an empty database on the configured test server and
 // returns its DSN, or skips when no server is configured (R11: skipped, never
 // failed).
 func freshPostgresDSN(t *testing.T) string {
 	t.Helper()
-	adminDSN := os.Getenv(testDatabaseURLEnv)
-	if adminDSN == "" {
-		t.Skip("PostgreSQL test database not configured (" + testDatabaseURLEnv + ")")
-	}
+	adminDSN := storetest.AdminDSN(t)
 
 	name := "t_" + strings.ReplaceAll(uid.New(), "-", "")
 	admin, err := sql.Open("pgx", adminDSN)
@@ -155,10 +150,7 @@ func TestNew_PostgresStorage(t *testing.T) {
 // through the whole successful open path, which is what SC-007 must prove.
 func sentinelRoleDSN(t *testing.T) string {
 	t.Helper()
-	adminDSN := os.Getenv(testDatabaseURLEnv)
-	if adminDSN == "" {
-		t.Skip("PostgreSQL test database not configured (" + testDatabaseURLEnv + ")")
-	}
+	adminDSN := storetest.AdminDSN(t)
 	dsn := freshPostgresDSN(t)
 
 	admin, err := sql.Open("pgx", adminDSN)

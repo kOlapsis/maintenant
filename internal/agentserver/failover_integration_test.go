@@ -35,6 +35,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -43,16 +44,11 @@ import (
 // gRPC server, the stores, the database handle — and brings a new one up on
 // the same external database. Nothing is done to the agents.
 
-const failoverTestDatabaseURLEnv = "MAINTENANT_TEST_DATABASE_URL"
-
 // failoverDSN creates an empty database on the configured test server, or
 // skips. The database outlives each simulated instance, which is the point.
 func failoverDSN(t *testing.T) string {
 	t.Helper()
-	adminDSN := os.Getenv(failoverTestDatabaseURLEnv)
-	if adminDSN == "" {
-		t.Skip("PostgreSQL test database not configured (" + failoverTestDatabaseURLEnv + ")")
-	}
+	adminDSN := storetest.AdminDSN(t)
 
 	name := "t_" + strings.ReplaceAll(uid.New(), "-", "")
 	admin, err := sql.Open("pgx", adminDSN)

@@ -190,6 +190,16 @@ make test-pg
 Without that variable, the PostgreSQL cases are skipped, never failed, so
 `go test ./...` still works without Docker.
 
+That skip is convenient locally and dangerous in CI: a typo in the variable
+name, or a database service that never came up, would skip every PostgreSQL
+case and report success. `MAINTENANT_REQUIRE_POSTGRES=1` turns each of those
+skips into a failure, and CI sets it on every step that is supposed to exercise
+PostgreSQL. Use it whenever a green run is meant to prove PostgreSQL coverage:
+
+```bash
+MAINTENANT_TEST_DATABASE_URL=... MAINTENANT_REQUIRE_POSTGRES=1 go test ./internal/store/...
+```
+
 **The whole product.** A test stack builds the image and runs it with the
 services a real install talks to (SMTP catcher, webhook receiver, a container
 to watch), then drives it through its HTTP surface:

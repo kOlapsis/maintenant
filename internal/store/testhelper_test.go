@@ -29,6 +29,26 @@ import (
 // cases skip, never fail, when it is unset (R11).
 const testDatabaseURLEnv = "MAINTENANT_TEST_DATABASE_URL"
 
+// requirePostgresEnv turns every PostgreSQL skip into a failure. CI sets it on
+// the steps meant to exercise PostgreSQL, so a typo in the DSN variable, a
+// service that never came up, or a step that lost its environment fails loudly
+// instead of reporting "ok" having tested nothing.
+//
+// This package cannot import store/storetest (that would be a cycle), so the
+// constant is repeated here; storetest.RequireEnvVar is the same string.
+const requirePostgresEnv = "MAINTENANT_REQUIRE_POSTGRES"
+
+// skipUnlessRequired skips for the stated reason, unless this run promised
+// PostgreSQL coverage — in which case skipping is the bug.
+func skipUnlessRequired(t *testing.T, reason string) {
+	t.Helper()
+	if os.Getenv(requirePostgresEnv) != "" {
+		t.Fatalf("%s is set, so this run must exercise PostgreSQL, but %s: "+
+			"the coverage it promises would silently not happen", requirePostgresEnv, reason)
+	}
+	t.Skip(reason)
+}
+
 // openTestDB creates a temporary database with all migrations applied and the
 // writer running for the duration of the test. The engine is selected by
 // MAINTENANT_TEST_DATABASE_URL.
@@ -122,7 +142,7 @@ func requirePostgres(t *testing.T) *DB {
 	t.Helper()
 	adminDSN := os.Getenv(testDatabaseURLEnv)
 	if adminDSN == "" {
-		t.Skip("PostgreSQL test database not configured (" + testDatabaseURLEnv + ")")
+		skipUnlessRequired(t, testDatabaseURLEnv+" is empty")
 	}
 	return openTestPostgres(t, adminDSN)
 }
@@ -132,7 +152,7 @@ func testAdminDSN(t *testing.T) string {
 	t.Helper()
 	adminDSN := os.Getenv(testDatabaseURLEnv)
 	if adminDSN == "" {
-		t.Skip("PostgreSQL test database not configured (" + testDatabaseURLEnv + ")")
+		skipUnlessRequired(t, testDatabaseURLEnv+" is empty")
 	}
 	return adminDSN
 }
