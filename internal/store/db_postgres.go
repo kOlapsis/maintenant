@@ -76,6 +76,40 @@ func OpenPostgres(ctx context.Context, dsn string, logger *slog.Logger) (*DB, er
 	}, nil
 }
 
+// migrationLockKey is the advisory lock instances take for their whole
+// migration sequence. golang-migrate takes one of its own, but only around the
+// apply: the version read and the dirty recovery that precede it sit outside
+// it, so without this an instance starting while another migrates reads that
+// instance's in-flight dirty flag, mistakes it for a crash, and rewinds the
+// version under it. The key sits above the uint32 range golang-migrate derives
+// its own ids in, so the two can never collide.
+const migrationLockKey int64 = 0x6D61696E74656E00 // "maintena"
+
+// lockMigrations blocks until no other instance is migrating and returns the
+// release. The lock is session-scoped: an instance that dies holding it
+// releases it as PostgreSQL drops its connection, so nothing has to be
+// unstuck by hand.
+func (d *DB) lockMigrations(ctx context.Context) (func(), error) {
+	conn, err := d.db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockKey); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return func() {
+		// Deliberately not ctx: a startup cancelled mid-migration must still
+		// release, or the pooled session carries the lock until the process
+		// exits and the next instance waits on nothing.
+		release := context.WithoutCancel(ctx)
+		if _, err := conn.ExecContext(release, "SELECT pg_advisory_unlock($1)", migrationLockKey); err != nil {
+			d.logger.Warn("release migration lock", "error", err)
+		}
+		_ = conn.Close()
+	}, nil
+}
+
 // checkServerVersion refuses engines older than the supported minimum, naming
 // the version required (FR-018).
 func checkServerVersion(versionNum int) error {

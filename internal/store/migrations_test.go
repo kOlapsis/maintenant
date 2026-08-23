@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -191,4 +192,31 @@ func TestMigration19DownAfterUp_RestoresRoutingRules(t *testing.T) {
 	err = rawDB.QueryRowContext(ctx, `SELECT count(*) FROM routing_rules`).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "down migration must reconstitute the 'Rule for *' row")
+}
+
+// TestMigrateSQLite_DirtyFirstMigrationRecovers pins the recovery path when the
+// interrupted migration is the first one: there is no version below it to fall
+// back to, so recovery has to go back to the empty database and replay.
+func TestMigrateSQLite_DirtyFirstMigrationRecovers(t *testing.T) {
+	requireSQLite(t)
+	ctx := context.Background()
+	logger := testLogger()
+
+	db, err := Open(filepath.Join(t.TempDir(), "dirty.db"), logger)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.ReadDB().Exec(`CREATE TABLE schema_migrations (
+		version BIGINT NOT NULL PRIMARY KEY, dirty BOOLEAN NOT NULL)`)
+	require.NoError(t, err)
+	_, err = db.ReadDB().Exec("INSERT INTO schema_migrations (version, dirty) VALUES (1, 1)")
+	require.NoError(t, err)
+
+	require.NoError(t, Migrate(ctx, db, logger))
+
+	head, err := EmbeddedHeadVersion(DialectSQLite)
+	require.NoError(t, err)
+	v, err := db.SchemaVersion(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, head, v, "the interrupted install must be replayed to the head")
 }

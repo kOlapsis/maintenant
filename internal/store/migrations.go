@@ -43,11 +43,20 @@ var migrationFS embed.FS
 // such past. A schema written by a newer release is refused (FR-017), on both
 // engines, rather than written into.
 func Migrate(ctx context.Context, db *DB, logger *slog.Logger) error {
-	if db.dialect == DialectSQLite {
+	switch db.dialect {
+	case DialectSQLite:
 		// Bootstrap from the pre-golang-migrate custom schema_version table.
 		if err := bootstrapFromCustomSchema(db.db, logger); err != nil {
 			return fmt.Errorf("bootstrap from custom schema: %w", err)
 		}
+	case DialectPostgres:
+		// Instances start together against one database (FR-016), so the whole
+		// sequence below has to be serialized, not just the apply.
+		unlock, err := db.lockMigrations(ctx)
+		if err != nil {
+			return fmt.Errorf("acquire migration lock: %w", err)
+		}
+		defer unlock()
 	}
 
 	source, err := iofs.New(migrationFS, "migrations/"+db.dialect.String())
@@ -94,14 +103,24 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) error {
 	}
 
 	if dirty {
-		logger.Warn("dirty migration state detected — auto-recovering", "version", version)
-		if forceErr := m.Force(int(version) - 1); forceErr != nil {
+		// Back to the previous embedded migration, which is not version-1:
+		// PostgreSQL's history starts at the baseline, so stepping back by one
+		// from it lands on a number no file describes and every later Up()
+		// fails on it. No predecessor means back to the empty database.
+		target := -1
+		if prev, prevErr := source.Prev(version); prevErr == nil {
+			target = int(prev)
+		}
+		logger.Warn("dirty migration state detected, auto-recovering",
+			"version", version, "recover_to", target)
+		if forceErr := m.Force(target); forceErr != nil {
 			return fmt.Errorf("database is in dirty state at version %d and auto-recovery failed: %w", version, forceErr)
 		}
 	}
 
-	// Apply all pending migrations. On concurrent first starts the pgx driver
-	// serializes appliers with a pg_advisory_lock, so exactly one installs.
+	// Apply all pending migrations. Instances that started together are
+	// waiting on the lock taken above, so exactly one installs and the others
+	// find nothing to do.
 	err = m.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply migrations: %w", err)
