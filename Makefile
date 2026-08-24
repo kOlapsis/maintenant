@@ -76,13 +76,11 @@ e2e-down:
 	docker compose $(E2E_BASE) down -v --remove-orphans 2>/dev/null || true
 
 ## Migrate a running SQLite test stack onto the PostgreSQL one, the way an
-## operator would: stop, copy, restart on the database.
+## operator would: stop, copy, restart on the database. The copy is the
+## copy-store service of the overlay, which is where the connection string
+## lives; run starts the database and waits for it to be healthy.
 e2e-migrate:
 	docker compose $(E2E_BASE) stop maintenant
-	docker compose $(E2E_PG) up -d db
-	docker compose $(E2E_PG) run --rm --entrypoint /app/maintenant maintenant \
-		--db /data/maintenant.db \
-		--copy-store-to "postgres://maintenant:e2e-throwaway-password@db:5432/maintenant?sslmode=disable" \
-		--yes
+	docker compose $(E2E_PG) run --rm copy-store
 	docker compose $(E2E_PG) up -d maintenant
 	scripts/e2e-check.sh postgres
