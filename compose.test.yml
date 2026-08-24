@@ -23,9 +23,9 @@ services:
     build:
       context: .
       args:
-        - VERSION=e2e
-        - COMMIT=e2e
-        - BUILD_DATE=2026-01-01
+        VERSION: "e2e"
+        COMMIT: "e2e"
+        BUILD_DATE: "2026-01-01"
     container_name: maintenant-test
     restart: unless-stopped
     read_only: true
