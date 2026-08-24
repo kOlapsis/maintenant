@@ -9,6 +9,11 @@
 # PostgreSQL 14 on purpose: it is the oldest release the product supports, so
 # it is the one worth testing. A newer server would hide a 14 incompatibility.
 
+# The connection string, written once. Everything that needs it takes it from
+# here, so the stack and the copy can never drift onto two different databases.
+x-database-url: &database-url
+  "postgres://maintenant:e2e-throwaway-password@db:5432/maintenant?sslmode=disable"
+
 services:
   db:
     image: postgres:14-alpine
@@ -34,7 +39,49 @@ services:
       # sslmode=disable because the test server speaks plaintext on a private
       # network. Towards a real database, leave sslmode out and the product
       # adds require by itself.
-      MAINTENANT_DATABASE_URL: "postgres://maintenant:e2e-throwaway-password@db:5432/maintenant?sslmode=disable"
+      MAINTENANT_DATABASE_URL: *database-url
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The migration from the docs, as a one-shot service:
+  # https://docs.maintenant.dev/guides/postgresql/#migrating-an-existing-install
+  #
+  #   docker compose -f compose.test.yml -f compose.test.postgres.yml \
+  #     run --rm copy-store
+  #
+  # Stop the instance first: the source must not move during the copy. The
+  # profile keeps it out of `up`, and `run` enables the profile by itself.
+  #
+  # It runs the released image, the released entrypoint and the same unprivileged
+  # user as the instance, so what is exercised is the command an operator types,
+  # not a convenient approximation of it.
+  copy-store:
+    profiles: ["migrate"]
+    image: ghcr.io/kolapsis/maintenant:test
+    build:
+      context: .
+      args:
+        VERSION: "e2e"
+        COMMIT: "e2e"
+        BUILD_DATE: "2026-01-01"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    volumes:
+      # The same volume the instance writes to: the copy reads the real file
+      # the stack has been filling, and opens it read-only.
+      - maintenant_test_data:/data
+    # No MAINTENANT_DATABASE_URL here on purpose: the source is the local file,
+    # and the target is the argument. Giving it both would blur which is which.
+    command:
+      - "--db"
+      - "/data/maintenant.db"
+      - "--copy-store-to"
+      - *database-url
+      - "--yes"
     depends_on:
       db:
         condition: service_healthy
