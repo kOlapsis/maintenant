@@ -22,6 +22,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -207,7 +208,7 @@ func TestHandleCreateTrigger_ChannelNotFound(t *testing.T) {
 
 func TestHandleCreateTrigger_NameConflict(t *testing.T) {
 	h, ts := newTriggerHandler(true)
-	ts.insertErr = fmt.Errorf("UNIQUE constraint failed: alert_triggers.name")
+	ts.insertErr = fmt.Errorf("insert trigger: %w", sqlite3.Error{Code: sqlite3.ErrConstraint, ExtendedCode: sqlite3.ErrConstraintUnique})
 	body := `{"name":"Existing","channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

@@ -13,12 +13,14 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/resource"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // Config holds all application configuration parsed from environment variables.
@@ -28,8 +30,13 @@ type Config struct {
 	BaseURL string
 
 	// Database
-	DBPath    string
-	Retention RetentionConfig
+	DBPath string
+	// DatabaseURL is the operator-supplied PostgreSQL connection string.
+	// Empty — the default and the only supported agent setup — means SQLite
+	// on DBPath. It carries a password: never log or render it directly,
+	// always through store.RedactDSN.
+	DatabaseURL string
+	Retention   RetentionConfig
 
 	// License
 	LicenseKey string
@@ -137,9 +144,32 @@ var ErrMCPUnauthenticated = errors.New(
 		"and alerts to anyone reaching it. Set both, or set MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true " +
 		"to accept that on a trusted network")
 
+// ErrDatabaseURLInAgentMode refuses an external database in agent mode rather
+// than ignoring the setting: the agent's local store is not negotiable
+// (FR-003, FR-030), and a silently dropped connection string would read as
+// accepted.
+var ErrDatabaseURLInAgentMode = errors.New(
+	"MAINTENANT_DATABASE_URL is set but --mode=agent")
+
 // ValidateHTTP rejects a configuration that must not be served over HTTP. It is
 // deliberately not called from New(): --mcp-stdio shares that path and never
 // listens, so refusing there would break a local stdio client for no gain.
+// ValidateStorage refuses a storage configuration the mode cannot honour.
+// The agent stores its state in SQLite, always (FR-003, FR-030); server and
+// embedded both run the same server plane and accept an external database.
+func (c Config) ValidateStorage() error {
+	if c.DatabaseURL == "" {
+		return nil
+	}
+	if c.Mode == "agent" {
+		return fmt.Errorf("%w: the agent always stores its state locally", ErrDatabaseURLInAgentMode)
+	}
+	if _, err := store.ParseDSN(c.DatabaseURL); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c Config) ValidateHTTP() error {
 	if c.MCP.Enabled && !c.MCP.AllowUnauthenticated &&
 		(c.MCP.ClientID == "" || c.MCP.ClientSecret == "") {
@@ -155,9 +185,10 @@ const DefaultAddr = "127.0.0.1:8080"
 func ConfigFromEnv() Config {
 	addr := envOr("MAINTENANT_ADDR", DefaultAddr)
 	cfg := Config{
-		Addr:    addr,
-		BaseURL: envOr("MAINTENANT_BASE_URL", "http://"+addr),
-		DBPath:  envOr("MAINTENANT_DB", "./maintenant.db"),
+		Addr:        addr,
+		BaseURL:     envOr("MAINTENANT_BASE_URL", "http://"+addr),
+		DBPath:      envOr("MAINTENANT_DB", "./maintenant.db"),
+		DatabaseURL: os.Getenv("MAINTENANT_DATABASE_URL"),
 
 		LicenseKey: os.Getenv("MAINTENANT_LICENSE_KEY"),
 

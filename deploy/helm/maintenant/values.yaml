@@ -63,6 +63,23 @@ extraEnv: []
 # - name: MAINTENANT_WEBHOOK_URL
 #   value: "https://hooks.example.com/..."
 
+## External PostgreSQL for the server data set (optional).
+##
+## Leave `existingSecret` empty and the instance uses SQLite on its volume,
+## which is the default and requires nothing. Set it and the instance becomes
+## replaceable: a pod started elsewhere on the same database keeps the fleet,
+## with no action on the monitored hosts.
+##
+## The product connects to a database you operate; it never installs, backs up
+## or supervises one. The persistent volume must still follow the instance: it
+## carries the licence cache and the update window record.
+database:
+  ## Name of an existing Secret holding the connection string.
+  existingSecret: ""
+  ## Key inside that Secret. The value looks like:
+  ##   postgres://maintenant:secret@db.internal:5432/maintenant?sslmode=require
+  urlKey: url
+
 serviceAccount:
   ## Set to false to bring your own ServiceAccount
   create: true

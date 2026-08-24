@@ -39,6 +39,20 @@ The port is optional and defaults to `443` — only add it (e.g. `:8443`) if age
 
 If not set, the server infers the URL from the HTTP request headers (`X-Forwarded-Host`, `Host`). A warning is shown in the UI if the resolved URL appears to be a private address.
 
+### Making the server replaceable
+
+The server holds what the fleet cannot rebuild: agent identities and their
+enrolments. On the default SQLite file, losing the machine means re-enrolling
+every host by hand. Point the server at a PostgreSQL you already operate and a
+replacement instance, started elsewhere with the same connection string, picks
+the fleet back up with no action on any monitored machine.
+
+Two files stay next to the instance rather than in the database — the signed
+licence cache and the update window record — so keep the data directory with
+the instance when it moves. See [PostgreSQL storage](../guides/postgresql.md).
+
+Agents are unaffected either way: an agent stores its state in SQLite, always.
+
 ### Starting the server
 
 Three TLS modes are supported — choose one:

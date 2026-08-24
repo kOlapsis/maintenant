@@ -159,7 +159,7 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	groups, total, archivedCount, err := h.service.ListContainersGrouped(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list containers")
+		WriteStoreError(w, err, "Failed to list containers")
 		return
 	}
 
@@ -244,7 +244,7 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 	c, err := h.service.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {
@@ -350,7 +350,7 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 
 	transitions, total, err := h.service.ListTransitions(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list transitions")
+		WriteStoreError(w, err, "Failed to list transitions")
 		return
 	}
 
@@ -377,7 +377,7 @@ func (h *ContainerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) 
 
 	c, err := h.service.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {
@@ -413,7 +413,7 @@ func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
 
 	c, err := h.service.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {

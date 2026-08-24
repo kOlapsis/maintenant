@@ -19,13 +19,13 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/ssrf"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // AlertHandler handles alert-related HTTP endpoints.
@@ -84,7 +84,7 @@ func (h *AlertHandler) HandleListAlerts(w http.ResponseWriter, r *http.Request) 
 
 	alerts, err := h.alertStore.ListAlerts(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list alerts")
+		WriteStoreError(w, err, "Failed to list alerts")
 		return
 	}
 
@@ -107,7 +107,7 @@ func (h *AlertHandler) HandleListAlerts(w http.ResponseWriter, r *http.Request) 
 func (h *AlertHandler) HandleGetActiveAlerts(w http.ResponseWriter, r *http.Request) {
 	alerts, err := h.alertStore.ListActiveAlerts(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list active alerts")
+		WriteStoreError(w, err, "Failed to list active alerts")
 		return
 	}
 
@@ -136,7 +136,7 @@ func (h *AlertHandler) HandleGetAlert(w http.ResponseWriter, r *http.Request) {
 
 	a, err := h.alertStore.GetAlert(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get alert")
+		WriteStoreError(w, err, "Failed to get alert")
 		return
 	}
 	if a == nil {
@@ -169,7 +169,7 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 
 	a, err := h.alertStore.GetAlert(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get alert")
+		WriteStoreError(w, err, "failed to get alert")
 		return
 	}
 	if a == nil {
@@ -205,7 +205,7 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request) {
 	channels, err := h.channelStore.ListChannels(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list channels")
+		WriteStoreError(w, err, "Failed to list channels")
 		return
 	}
 
@@ -281,7 +281,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 
 	id, err := h.channelStore.InsertChannel(r.Context(), ch)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "DUPLICATE_NAME", "A channel with this name already exists")
 			return
 		}
@@ -305,7 +305,7 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 
 	ch, err := h.channelStore.GetChannel(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get channel")
+		WriteStoreError(w, err, "Failed to get channel")
 		return
 	}
 	if ch == nil {
@@ -373,7 +373,7 @@ func (h *AlertHandler) HandleDeleteChannel(w http.ResponseWriter, r *http.Reques
 
 	ch, err := h.channelStore.GetChannel(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get channel")
+		WriteStoreError(w, err, "Failed to get channel")
 		return
 	}
 	if ch == nil {
@@ -400,7 +400,7 @@ func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request)
 
 	ch, err := h.channelStore.GetChannel(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get channel")
+		WriteStoreError(w, err, "Failed to get channel")
 		return
 	}
 	if ch == nil {
@@ -436,7 +436,7 @@ func (h *AlertHandler) HandleListSilenceRules(w http.ResponseWriter, r *http.Req
 
 	rules, err := h.silenceStore.ListSilenceRules(r.Context(), activeOnly)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list silence rules")
+		WriteStoreError(w, err, "Failed to list silence rules")
 		return
 	}
 

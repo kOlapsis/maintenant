@@ -28,7 +28,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // EventBroadcaster is the minimal interface required to publish SSE events to connected clients.
@@ -38,7 +38,7 @@ type EventBroadcaster interface {
 
 // Deps groups the dependencies required by the agent gRPC server.
 type Deps struct {
-	AgentStore  *sqlite.AgentStore
+	AgentStore  *store.AgentStore
 	Broadcaster EventBroadcaster
 	Sessions    *Sessions
 	Limiter     *Limiter

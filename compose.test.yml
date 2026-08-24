@@ -1,0 +1,105 @@
+# Full-product test stack, on the default storage: SQLite.
+#
+#   make e2e-sqlite     stack + end-to-end checks on SQLite
+#   make e2e-postgres   the same, on PostgreSQL 14
+#   make e2e-both       both in turn, so a difference between engines shows up
+#
+# Or by hand:
+#   docker compose -f compose.test.yml up -d --build
+#   docker compose -f compose.test.yml -f compose.test.postgres.yml up -d --build
+#
+# PostgreSQL is an overlay rather than a profile on purpose: with no overlay
+# nothing extra runs, and the stack is exactly what an unconfigured install is.
+# The overlay is the only place the connection string exists.
+#
+# Everything here binds to loopback and uses throwaway credentials. It is a
+# test stack; do not point it at anything you care about.
+
+name: maintenant-test
+
+services:
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:test
+    build:
+      context: .
+      args:
+        - VERSION=e2e
+        - COMMIT=e2e
+        - BUILD_DATE=2026-01-01
+    container_name: maintenant-test
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    volumes:
+      - maintenant_test_data:/data
+      # Read-only container discovery: the stack watches itself, which is
+      # enough to exercise containers, resources and update intelligence.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+    environment:
+      MAINTENANT_LOG_LEVEL: "${MAINTENANT_LOG_LEVEL:-info}"
+      MAINTENANT_ADDR: "0.0.0.0:8080"
+      MAINTENANT_DB: "/data/maintenant.db"
+      # Empty means SQLite. The PostgreSQL overlay is what fills it.
+      MAINTENANT_DATABASE_URL: "${MAINTENANT_DATABASE_URL:-}"
+      MAINTENANT_ORGANISATION_NAME: "e2e"
+      MAINTENANT_DISABLE_TELEMETRY: "true"
+      MAINTENANT_TELEMETRY_DATADIR: "/data"
+      MAINTENANT_SMTP_HOST: mailpit
+      MAINTENANT_SMTP_PORT: "1025"
+      MAINTENANT_SMTP_FROM: "e2e@maintenant.test"
+      MAINTENANT_ALLOW_PRIVATE_WEBHOOKS: "true"
+      # Optional: export MAINTENANT_LICENSE_KEY to exercise the paid editions
+      # (server mode, escalation policies, security posture). Without it the
+      # stack runs in Community, which covers everything storage touches.
+      MAINTENANT_LICENSE_KEY: "${MAINTENANT_LICENSE_KEY:-}"
+      MAINTENANT_TZ: "Europe/Paris"
+    healthcheck:
+      # Same probe as the image, on a shorter cycle: a test run should not
+      # wait 30s to learn the instance is up.
+      test: ["CMD", "/app/maintenant", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      mailpit:
+        condition: service_started
+      webhook-tester:
+        condition: service_started
+    ports:
+      # Override with E2E_HTTP_PORT if something already listens there.
+      - "127.0.0.1:${E2E_HTTP_PORT:-18090}:8080"
+
+  # SMTP catcher: notification channels deliver here instead of the internet.
+  # Web UI on http://localhost:18091, and its API answers what was received.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: maintenant-test-mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${E2E_MAILPIT_PORT:-18091}:8025"
+
+  # Webhook receiver, so webhook channels have somewhere real to deliver.
+  webhook-tester:
+    image: tarampampam/webhook-tester:2
+    container_name: maintenant-test-webhook
+    restart: unless-stopped
+    command: start --port 8080 --public-url-root http://webhook-tester:8080 --auto-create-sessions
+    ports:
+      - "127.0.0.1:${E2E_WEBHOOK_PORT:-18092}:8080"
+
+  # Something to watch: a container that stays up, and one that restarts, so
+  # container monitoring and restart detection have real events to report.
+  demo-web:
+    image: nginx:alpine
+    container_name: maintenant-test-demo-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${E2E_DEMO_PORT:-18093}:80"
+
+volumes:
+  maintenant_test_data:

@@ -187,6 +187,15 @@ readinessProbe:
     `failureThreshold: 60` above grants 10 minutes; raise it if an upgrade needs
     more.
 
+!!! warning "Do not make the probe fail on a database outage"
+    With an external PostgreSQL, `/api/v1/health` deliberately answers `200`
+    even when the database is unreachable — the outage is reported in
+    `storage.connected`. A probe that failed on it would restart the pod exactly
+    when the database needs to be left alone, and restarting fixes nothing: the
+    instance recovers on its own once the database answers. If you want to
+    alert on it, read `storage.connected`; do not wire it to a probe. See
+    [PostgreSQL storage](postgresql.md).
+
 ---
 
 ## Resource Limits

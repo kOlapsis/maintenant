@@ -98,6 +98,12 @@ const (
 	RuntimeAvailabilityChanged = "runtime.availability_changed"
 )
 
+// Storage availability events. Emitted once per transition, so the interface
+// can say the database is unreachable instead of showing empty screens.
+const (
+	StorageAvailabilityChanged = "storage.availability_changed"
+)
+
 // Update intelligence events.
 const (
 	UpdateScanStarted   = "update.scan_started"

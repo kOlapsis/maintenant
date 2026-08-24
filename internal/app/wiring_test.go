@@ -29,7 +29,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/license"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -97,13 +97,13 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"), logger)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
+	require.NoError(t, store.Migrate(context.Background(), db, logger))
 	db.StartWriter(ctx)
 
-	store := sqlite.NewEscalationStore(db)
+	store := store.NewEscalationStore(db)
 	svc := escalation.NewService(
 		store,
 		&noopChannelStore{},

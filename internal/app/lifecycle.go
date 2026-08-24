@@ -24,7 +24,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -316,12 +316,12 @@ func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
 // startRetentionCleanup starts background retention cleanup goroutines.
 func (a *App) startRetentionCleanup(ctx context.Context) {
 	// Core store retention cleanup
-	sqlite.StartRetentionCleanupWithOpts(ctx, a.containerStore, a.db, a.logger, sqlite.RetentionOpts{
+	store.StartRetentionCleanupWithOpts(ctx, a.containerStore, a.db, a.logger, store.RetentionOpts{
 		EndpointStore:    a.epStore,
 		HeartbeatStore:   a.hbStore,
 		CertificateStore: a.certStore,
 		ResourceStore:    a.resStore,
-		Config: sqlite.RetentionConfig{
+		Config: store.RetentionConfig{
 			Snapshots: a.cfg.Retention.Snapshots,
 			Interval:  a.cfg.Retention.Interval,
 			BatchSize: a.cfg.Retention.BatchSize,

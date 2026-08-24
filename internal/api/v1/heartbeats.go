@@ -45,7 +45,7 @@ func (h *HeartbeatHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	heartbeats, err := h.svc.ListHeartbeats(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list heartbeats")
+		WriteStoreError(w, err, "Failed to list heartbeats")
 		return
 	}
 
@@ -244,7 +244,7 @@ func (h *HeartbeatHandler) HandleListExecutions(w http.ResponseWriter, r *http.R
 
 	executions, total, err := h.svc.ListExecutions(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list executions")
+		WriteStoreError(w, err, "Failed to list executions")
 		return
 	}
 
@@ -294,7 +294,7 @@ func (h *HeartbeatHandler) HandleListPings(w http.ResponseWriter, r *http.Reques
 
 	pings, total, err := h.svc.ListPings(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list pings")
+		WriteStoreError(w, err, "Failed to list pings")
 		return
 	}
 

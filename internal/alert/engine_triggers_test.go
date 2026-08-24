@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -27,7 +26,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/alert"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
 
 // engineTestSetup opens a fresh temp DB, runs all migrations, starts the writer,
@@ -40,7 +40,7 @@ import (
 func engineTestSetup(t *testing.T) (
 	ctx context.Context,
 	cancel context.CancelFunc,
-	db *sqlite.DB,
+	db *store.DB,
 	alertStore alert.AlertStore,
 	channelStore alert.ChannelStore,
 	triggerStore alert.TriggerStore,
@@ -51,18 +51,12 @@ func engineTestSetup(t *testing.T) (
 	ctx, cancel = context.WithCancel(context.Background())
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	var err error
-	db, err = sqlite.Open(filepath.Join(t.TempDir(), "eng.db"), logger)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	db = storetest.Open(t, logger)
 
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
-
-	alertStore = sqlite.NewAlertStore(db)
-	channelStore = sqlite.NewChannelStore(db)
-	triggerStore = sqlite.NewTriggerStore(db)
-	silenceStore := sqlite.NewSilenceStore(db)
+	alertStore = store.NewAlertStore(db)
+	channelStore = store.NewChannelStore(db)
+	triggerStore = store.NewTriggerStore(db)
+	silenceStore := store.NewSilenceStore(db)
 	notifier = alert.NewNotifier(channelStore, logger, true)
 	notifier.Start(ctx)
 

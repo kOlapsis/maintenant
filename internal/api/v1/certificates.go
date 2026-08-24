@@ -45,7 +45,7 @@ func (h *CertificateHandler) HandleList(w http.ResponseWriter, r *http.Request) 
 
 	monitors, err := h.svc.ListMonitors(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list certificates")
+		WriteStoreError(w, err, "Failed to list certificates")
 		return
 	}
 
@@ -301,7 +301,7 @@ func (h *CertificateHandler) HandleListChecks(w http.ResponseWriter, r *http.Req
 
 	checks, total, err := h.svc.ListCheckResults(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list check results")
+		WriteStoreError(w, err, "Failed to list check results")
 		return
 	}
 

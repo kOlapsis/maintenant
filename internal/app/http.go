@@ -25,7 +25,7 @@ import (
 
 	"github.com/kolapsis/maintenant/cmd/maintenant/web"
 	mcpoauth "github.com/kolapsis/maintenant/internal/mcp/oauth"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
@@ -205,7 +205,7 @@ func (a *App) buildHTTPServer() *http.Server {
 		var mcpHandler http.Handler = mcpHTTPHandler
 
 		if a.cfg.MCP.ClientID != "" && a.cfg.MCP.ClientSecret != "" {
-			mcpOAuthStore := sqlite.NewMCPOAuthStore(a.db)
+			mcpOAuthStore := store.NewMCPOAuthStore(a.db)
 			oauthSrv := mcpoauth.NewOAuthServer(mcpoauth.Config{
 				ClientID:            a.cfg.MCP.ClientID,
 				ClientSecret:        a.cfg.MCP.ClientSecret,

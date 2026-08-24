@@ -1,0 +1,43 @@
+# PostgreSQL overlay for the test stack. Layer it on compose.test.yml:
+#
+#   docker compose -f compose.test.yml -f compose.test.postgres.yml up -d --build
+#
+# It adds the database and the one setting that switches the engine. Without
+# this file the stack is on SQLite, which is what an unconfigured install uses
+# and what the product must keep working as.
+#
+# PostgreSQL 14 on purpose: it is the oldest release the product supports, so
+# it is the one worth testing. A newer server would hide a 14 incompatibility.
+
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: maintenant-test-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: maintenant
+      POSTGRES_PASSWORD: e2e-throwaway-password
+      POSTGRES_DB: maintenant
+    volumes:
+      - maintenant_test_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maintenant -d maintenant"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      # Exposed so the copy command and psql can reach it from the host.
+      - "127.0.0.1:${E2E_DB_PORT:-15433}:5432"
+
+  maintenant:
+    environment:
+      # sslmode=disable because the test server speaks plaintext on a private
+      # network. Towards a real database, leave sslmode out and the product
+      # adds require by itself.
+      MAINTENANT_DATABASE_URL: "postgres://maintenant:e2e-throwaway-password@db:5432/maintenant?sslmode=disable"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  maintenant_test_db:

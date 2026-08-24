@@ -10,6 +10,7 @@ maintenant is configured entirely through environment variables. No configuratio
 |----------|---------|-------------|
 | `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers; on a host install, bind the interface you actually need. See [Choosing a Bind Address](#choosing-a-bind-address). |
 | `MAINTENANT_DB` | `./maintenant.db` | SQLite database file path. |
+| `MAINTENANT_DATABASE_URL` | *(empty)* | PostgreSQL connection string, server/embedded mode only. Empty means SQLite. Refused in agent mode. See [PostgreSQL storage](../guides/postgresql.md). |
 | `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and as the fallback target for the status page link. |
 | `MAINTENANT_STATUS_URL` | — | Canonical public URL of the status page (e.g. `https://status.example.com`). When set, the admin UI's *View public status page* link points here. Optional — falls back to `{MAINTENANT_BASE_URL}/status` when unset. See [Public Status Page → Status URL](../features/status-page.md#status-url). |
 | `MAINTENANT_CORS_ORIGINS` | same-origin | CORS allowed origins (comma-separated). Empty means same-origin only. Set to `*` for wildcard. |

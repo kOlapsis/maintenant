@@ -271,7 +271,7 @@ func (h *ResourceHandler) HandleGetHistory(w http.ResponseWriter, r *http.Reques
 
 	snaps, granularity, err := h.service.GetHistory(r.Context(), id, timeRange)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch resource history")
+		WriteStoreError(w, err, "Failed to fetch resource history")
 		return
 	}
 
@@ -307,7 +307,7 @@ func (h *ResourceHandler) HandleGetAlertConfig(w http.ResponseWriter, r *http.Re
 
 	cfg, err := h.service.GetAlertConfig(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch alert config")
+		WriteStoreError(w, err, "Failed to fetch alert config")
 		return
 	}
 

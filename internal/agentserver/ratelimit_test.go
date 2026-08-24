@@ -19,96 +19,70 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// slowRate keeps the exhaustion tests free of wall-clock refill: at 5 events per
+// second the bucket regains a token every 200 ms, far more than a handful of
+// calls takes, so draining the burst always ends on a denial. At the default
+// 1000/s a token comes back every millisecond, fast enough to outrun the drain
+// on a loaded machine.
+const slowRate = 5
+
 func TestLimiter_NewLimiterIsNotNil(t *testing.T) {
 	l := NewLimiter(defaultAgentEventsPerSecond)
 
 	require.NotNil(t, l)
 }
 
-// TestLimiter_BurstOf1000AllowedThenDenied verifies the token-bucket semantics:
-// exactly 1000 tokens are available per agent at construction time (burst).
-// After the burst is consumed, further calls are denied with a positive retry-after.
-//
-// To avoid flakiness from wall-clock refill (rate = 1000 tok/s ≈ 1 tok/ms):
-//   - we count all allowed calls in the first 2000 attempts;
-//   - the burst guarantees at least 1000 are allowed;
-//   - any call that is denied must carry a positive retry-after duration.
-func TestLimiter_BurstOf1000AllowedThenDenied(t *testing.T) {
+// TestLimiter_DefaultBurstAllowsOneThousand verifies the token-bucket semantics
+// of the default rate: 1000 tokens are available per agent at construction time,
+// so the first 1000 calls all pass. Tokens only ever refill, never expire, which
+// makes the count exact whatever the timing.
+func TestLimiter_DefaultBurstAllowsOneThousand(t *testing.T) {
 	l := NewLimiter(defaultAgentEventsPerSecond)
 	agentID := "agent-burst"
 
-	var firstDeniedRetryAfter time.Duration
 	allowed := 0
-	denied := 0
-
-	for i := range 2000 {
-		ok, retryAfter := l.Allow(agentID)
-		if ok {
+	for range defaultAgentEventsPerSecond {
+		if ok, _ := l.Allow(agentID); ok {
 			allowed++
-		} else {
-			denied++
-			if i == allowed { // first denial
-				firstDeniedRetryAfter = retryAfter
-			}
 		}
 	}
 
-	// At least burst-many calls must have been allowed.
-	assert.GreaterOrEqual(t, allowed, defaultAgentEventsPerSecond,
-		"at least %d calls should be allowed (burst)", defaultAgentEventsPerSecond)
-
-	// After the burst is exhausted some calls must be denied.
-	assert.Positive(t, denied, "some calls should be denied after burst is exhausted")
-
-	// Any retry-after observed on the first denial must be non-negative.
-	// (It may be zero if the bucket refilled in the meantime, but never negative.)
-	assert.GreaterOrEqual(t, firstDeniedRetryAfter, time.Duration(0))
+	assert.Equal(t, defaultAgentEventsPerSecond, allowed,
+		"the first %d calls must all be allowed (burst)", defaultAgentEventsPerSecond)
 }
 
-// TestLimiter_DeniedCallReturnsPositiveRetryAfter drains the bucket with a very
-// large call count so that denial is certain regardless of refill timing.
+// TestLimiter_DeniedCallReturnsPositiveRetryAfter drains the burst and checks the
+// denial carries the delay until the next token.
 func TestLimiter_DeniedCallReturnsPositiveRetryAfter(t *testing.T) {
-	l := NewLimiter(defaultAgentEventsPerSecond)
+	l := NewLimiter(slowRate)
 	agentID := "agent-retry"
 
-	// Consume burst + a generous margin to guarantee denial.
-	for range defaultAgentEventsPerSecond {
-		l.Allow(agentID)
+	for range slowRate {
+		ok, _ := l.Allow(agentID)
+		require.True(t, ok, "the burst must cover the first %d calls", slowRate)
 	}
 
-	// Keep calling until we get a definitive denial (at most 10 extra calls).
-	var gotDenied bool
-	var retryAfter time.Duration
-	for range 10 {
-		ok, ra := l.Allow(agentID)
-		if !ok {
-			gotDenied = true
-			retryAfter = ra
-			break
-		}
-	}
+	ok, retryAfter := l.Allow(agentID)
 
-	assert.True(t, gotDenied, "should be denied after burst is exhausted")
+	assert.False(t, ok, "should be denied after the burst is exhausted")
 	assert.Positive(t, retryAfter, "retry-after must be positive when denied")
+	assert.LessOrEqual(t, retryAfter, time.Second, "retry-after must not exceed the refill period")
 }
 
 func TestLimiter_DifferentAgentsAreIndependent(t *testing.T) {
-	l := NewLimiter(defaultAgentEventsPerSecond)
+	l := NewLimiter(slowRate)
 	agentA := "agent-indep-a"
 	agentB := "agent-indep-b"
 
-	// Deplete agent-a's budget. Continue until we observe a denial.
-	var agentADenied bool
-	for range defaultAgentEventsPerSecond + 10 {
+	// Deplete agent-a's budget.
+	for range slowRate {
 		ok, _ := l.Allow(agentA)
-		if !ok {
-			agentADenied = true
-			break
-		}
+		require.True(t, ok, "the burst must cover the first %d calls", slowRate)
 	}
-	require.True(t, agentADenied, "agent-a should be rate-limited after exhausting burst")
+	allowedA, _ := l.Allow(agentA)
+	require.False(t, allowedA, "agent-a should be rate-limited after exhausting its burst")
 
-	// agent-b has its own independent bucket — first call must succeed.
+	// agent-b has its own independent bucket: the first call must succeed.
 	allowedB, _ := l.Allow(agentB)
 	assert.True(t, allowedB, "agent-b should not be affected by agent-a's rate limit")
 }
@@ -124,22 +98,23 @@ func TestLimiter_RetryAfterIsZeroWhenAllowed(t *testing.T) {
 }
 
 // TestLimiter_SameAgentSharesSingleBucket verifies that calls for the same
-// agentID always draw from the same bucket across multiple invocations.
+// agentID always draw from the same bucket: a later call sees the tokens the
+// earlier ones consumed, and the agent holds a single entry.
 func TestLimiter_SameAgentSharesSingleBucket(t *testing.T) {
-	l := NewLimiter(defaultAgentEventsPerSecond)
+	l := NewLimiter(slowRate)
 	agentID := "agent-shared"
 
-	// Drain the shared bucket until we observe a denial.
-	var denied bool
-	for range defaultAgentEventsPerSecond + 10 {
+	for range slowRate {
 		ok, _ := l.Allow(agentID)
-		if !ok {
-			denied = true
-			break
-		}
+		require.True(t, ok, "the burst must cover the first %d calls", slowRate)
 	}
 
-	assert.True(t, denied, "repeated calls for the same agentID share one bucket and exhaust it")
+	ok, _ := l.Allow(agentID)
+	assert.False(t, ok, "a later call must see the tokens consumed by the earlier ones")
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	assert.Len(t, l.limiters, 1, "one bucket per agentID, not one per call")
 }
 
 // TestLimiter_RespectsConfiguredRate verifies the per-second rate passed to

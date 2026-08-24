@@ -20,6 +20,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # So the end-to-end job can be run on a branch on demand, without waiting
+  # for a merge to main to learn the product still works on both engines.
+  workflow_dispatch:
 
 # Deny-by-default: jobs opt into the scopes they need, nothing is inherited.
 permissions: {}
@@ -181,9 +184,24 @@ jobs:
     name: Tests (go test -race)
     needs: [lint]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
+    # The store suite runs twice: once on SQLite, once on PostgreSQL. The same
+    # business assertions must hold on both engines (SC-002), and the schema
+    # equivalence test needs a real server to introspect.
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_PASSWORD: ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Harden the runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -203,15 +221,121 @@ jobs:
       - name: Prepare embedded assets
         run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
 
+      # The default pass: SQLite, which is what an unconfigured install uses.
+      # PostgreSQL cases skip when MAINTENANT_TEST_DATABASE_URL is unset.
       - name: Unit tests with race detector
         run: go test -race -cover ./...
 
+      # The same suites again, against PostgreSQL. Anything that diverges
+      # between the two engines fails here rather than in production.
+      #
+      # MAINTENANT_REQUIRE_POSTGRES turns every PostgreSQL skip into a failure.
+      # Without it, a typo in the DSN variable or a service that never came up
+      # would skip every PostgreSQL case and report "ok" — a green run that
+      # tested none of what this step exists for.
+      - name: Store and server tests on PostgreSQL
+        env:
+          MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
+          MAINTENANT_REQUIRE_POSTGRES: "1"
+        run: |
+          go test -race ./internal/store/... ./internal/app/... ./internal/api/v1/... \
+            ./internal/agentserver/... ./internal/alert/... ./cmd/maintenant/...
+
       # Behind the `integration` build tag, so `go test ./...` skips it entirely.
       # Without this step the suite rots unnoticed — it had stopped compiling and
-      # nobody found out. It needs no external service: loopback TLS gRPC and a
-      # temp SQLite file.
+      # nobody found out. The failover tests need PostgreSQL; the rest runs on a
+      # loopback TLS gRPC server and a temp SQLite file.
       - name: Integration tests with race detector
+        env:
+          MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
+          MAINTENANT_REQUIRE_POSTGRES: "1"
         run: go test -race -tags=integration ./...
+
+      # Principle VI grants exactly one CGO exception, and the PostgreSQL
+      # driver was chosen pure Go to keep it that way. Nothing enforced it.
+      - name: CGO dependencies stay at one
+        run: scripts/check-cgo.sh
+
+  # The test job above pins PostgreSQL 14, the oldest release the product
+  # supports. Operators run newer ones, so the store package — the dialect, the
+  # migrations, the schema equivalence — runs against those too. Only that
+  # package: it is where every engine difference lives, and a full second pass
+  # would cost minutes to re-prove what 14 already proved.
+  store-postgres-versions:
+    name: Store on PostgreSQL ${{ matrix.postgres }}
+    needs: [lint]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["16", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_PASSWORD: ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Store tests
+        env:
+          MAINTENANT_TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/postgres?sslmode=disable
+          MAINTENANT_REQUIRE_POSTGRES: "1"
+        run: go test -race ./internal/store/...
+
+  # The whole product, built and run on both engines, driven through its HTTP
+  # surface. It builds an image and starts five containers, so it runs on main
+  # and on demand rather than on every push to a branch. What it catches that
+  # the Go suites cannot: wiring, the entrypoint, the migrations running inside
+  # the real image, and the two engines behaving the same end to end.
+  e2e:
+    name: End-to-end (both engines)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Both engines, same checks
+        run: make e2e-both
+
+      - name: Tear the stack down
+        if: always()
+        run: make e2e-down
 
   sast:
     name: SAST (gosec)

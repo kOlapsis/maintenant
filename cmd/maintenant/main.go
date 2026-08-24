@@ -58,6 +58,10 @@ func main() {
 	fInsecureSkip := flag.Bool("grpc-insecure-skip-tls-verify", false, "disable TLS verification (debug only)")
 	fCACert := flag.String("ca-cert", "", "PEM bundle of extra root CAs to trust, added to the system store")
 	fEmbeddedAgent := flag.Bool("embedded-agent", false, "also run a local agent (server mode, Pro)")
+	fDatabaseURL := flag.String("database-url", "", "PostgreSQL connection string (server/embedded mode only); empty means SQLite")
+	fCopyStoreTo := flag.String("copy-store-to", "", "copy this install into an empty PostgreSQL database, then exit")
+	fDB := flag.String("db", "", "override MAINTENANT_DB (path of the local SQLite file)")
+	fAssumeYes := flag.Bool("yes", false, "skip the confirmation prompt (for scripts)")
 
 	// flag.Parse handles --foo and -foo; ignore unknown flags for --mcp-stdio compat.
 	flag.CommandLine.SetOutput(os.Stderr)
@@ -115,6 +119,33 @@ func main() {
 	cfg.MultiHost.InsecureSkipVerify = *fInsecureSkip
 	cfg.MultiHost.EmbeddedAgent = *fEmbeddedAgent
 
+	// Flags win over variables, as everywhere else in the product.
+	if *fDB != "" {
+		cfg.DBPath = *fDB
+	}
+	if *fDatabaseURL != "" {
+		cfg.DatabaseURL = *fDatabaseURL
+	}
+	// Checked before the agent branch: an agent handed a connection string
+	// must refuse it, not ignore it (FR-003, FR-030).
+	if err := cfg.ValidateStorage(); err != nil {
+		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
+			logger.Error("invalid storage configuration", "error", err)
+		}
+		os.Exit(1)
+	}
+
+	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary
+	// has no subcommands and this feature does not introduce any.
+	if *fCopyStoreTo != "" {
+		if cfg.Mode == "agent" {
+			logger.Error("--copy-store-to is not accepted in agent mode",
+				"fix", "an agent has no server data set to carry")
+			os.Exit(copyExitAgentBad)
+		}
+		os.Exit(runCopy(cfg.DBPath, *fCopyStoreTo, *fAssumeYes, os.Stdout, os.Stdin, logger))
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -142,7 +173,9 @@ func main() {
 
 	application, err := app.New(cfg, logger)
 	if err != nil {
-		logger.Error("failed to initialize application", "error", err)
+		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
+			logger.Error("failed to initialize application", "error", err)
+		}
 		os.Exit(1)
 	}
 

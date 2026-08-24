@@ -30,7 +30,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
@@ -64,8 +64,11 @@ type ErrorDetail struct {
 // HandlerDeps holds all dependencies needed to build the API handler.
 type HandlerDeps struct {
 	// Core services
-	Broker       *SSEBroker
-	Runtime      runtime.Runtime
+	Broker  *SSEBroker
+	Runtime runtime.Runtime
+	// Storage reports the engine backing this instance, whether it answers,
+	// and how many other instances beat on the same database (FR-020).
+	Storage      StorageStatus
 	Containers   *container.Service
 	Uptime       *container.UptimeCalculator
 	Endpoints    *endpoint.Service
@@ -124,13 +127,13 @@ type HandlerDeps struct {
 	SwarmUpdateTracker  *swarm.UpdateTracker
 	SwarmCrashLoop      *swarm.CrashLoopDetector
 	SwarmReplicaChecker *swarm.ReplicaHealthChecker
-	SwarmTopologyStore  *sqlite.SwarmTopologyStore
+	SwarmTopologyStore  *store.SwarmTopologyStore
 
 	// Kubernetes (per-agent store-backed reads)
-	KubernetesStore *sqlite.KubernetesStore
+	KubernetesStore *store.KubernetesStore
 
 	// Multi-host agents (Pro)
-	AgentStore          *sqlite.AgentStore
+	AgentStore          *store.AgentStore
 	AgentSessions       AgentSessions
 	GRPCPublicURL       string
 	GRPCListen          string
@@ -148,7 +151,7 @@ type HandlerDeps struct {
 // agentStoreDirectory adapts the sqlite agent store to AgentDirectory so the
 // container handler can resolve agent_id → hostname/label for remote containers.
 type agentStoreDirectory struct {
-	store *sqlite.AgentStore
+	store *store.AgentStore
 }
 
 func (d agentStoreDirectory) AgentNames(ctx context.Context) (map[string]AgentName, error) {
@@ -169,6 +172,7 @@ type Router struct {
 	broker           *SSEBroker
 	logger           *slog.Logger
 	runtime          runtime.Runtime
+	storage          StorageStatus
 	containerHandler *ContainerHandler
 	corsOrigins      []string
 	maxBodySize      int64
@@ -189,6 +193,7 @@ func NewRouter(d HandlerDeps) *Router {
 		broker:           d.Broker,
 		logger:           d.Logger,
 		runtime:          d.Runtime,
+		storage:          d.Storage,
 		corsOrigins:      parseCORSOrigins(d.CORSOrigins),
 		maxBodySize:      maxBody,
 		buildVersion:     d.BuildVersion,
@@ -730,6 +735,19 @@ func WriteJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 // WriteError writes a standard JSON error response.
+// WriteStoreError answers a failed read the way the operator needs to read it:
+// a storage outage is a 503 the interface can explain and retry, not a 500 it
+// can only render as an empty screen (FR-023). Anything else keeps the
+// existing 500.
+func WriteStoreError(w http.ResponseWriter, err error, message string) {
+	if store.IsUnavailable(err) {
+		WriteError(w, http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE",
+			"storage temporarily unavailable")
+		return
+	}
+	WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", message)
+}
+
 func WriteError(w http.ResponseWriter, status int, code, message string) {
 	WriteJSON(w, status, ErrorResponse{
 		Error: ErrorDetail{
@@ -745,7 +763,21 @@ func WriteErrorDetail(w http.ResponseWriter, status int, detail ErrorDetail) {
 	WriteJSON(w, status, ErrorResponse{Error: detail})
 }
 
+// StorageStatus is the health view of the storage engine. It never exposes
+// the connection string, the host or any credential (FR-021).
+type StorageStatus interface {
+	Engine() string
+	Connected() bool
+	Peers() int
+}
+
 // handleHealth returns the health check response.
+//
+// It answers 200 even when the database is momentarily unreachable: this
+// endpoint is the target of the Kubernetes liveness and startup probes, and
+// failing it on a ten-second network blip would restart the instance exactly
+// when the database needs to be left alone. The outage is read from
+// storage.connected, not from the HTTP status.
 func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	resp := map[string]interface{}{
 		"status": "ok",
@@ -757,6 +789,13 @@ func (r *Router) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		resp["runtime"] = map[string]interface{}{
 			"name":      r.runtime.Name(),
 			"connected": r.runtime.IsConnected(),
+		}
+	}
+	if r.storage != nil {
+		resp["storage"] = map[string]interface{}{
+			"engine":    r.storage.Engine(),
+			"connected": r.storage.Connected(),
+			"peers":     r.storage.Peers(),
 		}
 	}
 	WriteJSON(w, http.StatusOK, resp)

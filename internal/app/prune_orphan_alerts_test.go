@@ -15,7 +15,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -27,7 +26,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
 
 // TestPruneOrphanAlerts_ResolvesDeletedAgent verifies that a disconnect alert
@@ -37,19 +37,15 @@ func TestPruneOrphanAlerts_ResolvesDeletedAgent(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
+	db := storetest.Open(t, logger)
 
-	alertStore := sqlite.NewAlertStore(db)
-	agentStore := sqlite.NewAgentStore(db)
+	alertStore := store.NewAlertStore(db)
+	agentStore := store.NewAgentStore(db)
 	engine := alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
-		ChannelStore: sqlite.NewChannelStore(db),
-		TriggerStore: sqlite.NewTriggerStore(db),
-		SilenceStore: sqlite.NewSilenceStore(db),
+		ChannelStore: store.NewChannelStore(db),
+		TriggerStore: store.NewTriggerStore(db),
+		SilenceStore: store.NewSilenceStore(db),
 		Logger:       logger,
 	})
 
@@ -100,21 +96,17 @@ func TestPruneOrphanAlerts_ResolvesDeletedMonitors(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
+	db := storetest.Open(t, logger)
 
-	alertStore := sqlite.NewAlertStore(db)
-	hbStore := sqlite.NewHeartbeatStore(db)
-	epStore := sqlite.NewEndpointStore(db)
-	certStore := sqlite.NewCertificateStore(db)
+	alertStore := store.NewAlertStore(db)
+	hbStore := store.NewHeartbeatStore(db)
+	epStore := store.NewEndpointStore(db)
+	certStore := store.NewCertificateStore(db)
 	engine := alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
-		ChannelStore: sqlite.NewChannelStore(db),
-		TriggerStore: sqlite.NewTriggerStore(db),
-		SilenceStore: sqlite.NewSilenceStore(db),
+		ChannelStore: store.NewChannelStore(db),
+		TriggerStore: store.NewTriggerStore(db),
+		SilenceStore: store.NewSilenceStore(db),
 		Logger:       logger,
 	})
 

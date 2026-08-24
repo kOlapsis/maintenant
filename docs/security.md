@@ -176,6 +176,27 @@ server {
 
 ---
 
+## External database credentials
+
+When the server is pointed at a PostgreSQL with `MAINTENANT_DATABASE_URL`, the
+connection string carries a password. It is never written to the logs (at any
+level, including inside wrapped errors), never returned by the API, never
+rendered in the interface, and never sent with the telemetry. Where a target
+must be named it appears redacted:
+`postgres://maintenant@db.internal:5432/maintenant`. A dedicated test injects a
+sentinel password and fails on any output containing it.
+
+**Transport is encrypted by default.** When the connection string carries no
+explicit `sslmode` and the host is not a loopback address or a Unix socket, the
+product adds `sslmode=require`. An explicit value always wins, `disable`
+included, so a database on the same host can be relaxed deliberately. For a
+database reached across a network you do not control, prefer
+`sslmode=verify-full`: it also checks the server certificate against its
+hostname, which `require` does not.
+
+Give the instance a role scoped to its own database. It needs to create its
+schema on first start and read/write it afterwards; nothing more.
+
 ## Built-in Protections
 
 ### Rate Limiting
@@ -394,11 +415,24 @@ Inside a Docker container, use `0.0.0.0:8080` (the Dockerfile sets this automati
 
 ### Database
 
-SQLite in WAL mode. The database file contains all monitoring data, alert history, webhook configurations, and (if MCP OAuth is enabled) hashed tokens.
+Whichever engine backs it, the database holds all monitoring data, alert
+history, webhook configurations, agent identities and enrolment tokens, and (if
+MCP OAuth is enabled) hashed tokens. Treat it as the sensitive asset it is.
+
+**SQLite (the default).**
 
 - Store on a **local filesystem** — NFS and network-mounted volumes cause locking issues with SQLite.
 - **Back up** by copying the `.db`, `.db-wal`, and `.db-shm` files while maintenant is stopped, or use `sqlite3 .backup` while running.
 - **File permissions** — ensure only the maintenant process can read/write the database file.
+
+**PostgreSQL (when you supply one).** Backups, restores and access control are
+yours; the product connects, it does not administer. Give the instance a role
+scoped to its own database — it creates its schema on first start and
+reads/writes it afterwards, nothing more. Transport is encrypted by default
+(`sslmode=require` towards a non-local host) and the connection string never
+reaches logs, API responses, the interface or telemetry. See
+[External database credentials](#external-database-credentials) and
+[PostgreSQL storage](guides/postgresql.md).
 
 ### Heartbeat UUIDs
 

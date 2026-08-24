@@ -16,14 +16,14 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // UptimeDailyFetcher abstracts the daily uptime store for testing.
 type UptimeDailyFetcher interface {
-	GetEndpointDailyUptime(ctx context.Context, endpointID string, days int) ([]sqlite.DailyUptime, error)
-	GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int) ([]sqlite.DailyUptime, error)
-	GetContainerDailyUptime(ctx context.Context, containerID string, days int) ([]sqlite.DailyUptime, error)
+	GetEndpointDailyUptime(ctx context.Context, endpointID string, days int) ([]store.DailyUptime, error)
+	GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int) ([]store.DailyUptime, error)
+	GetContainerDailyUptime(ctx context.Context, containerID string, days int) ([]store.DailyUptime, error)
 }
 
 // UptimeDailyHandler handles daily uptime aggregation endpoints.

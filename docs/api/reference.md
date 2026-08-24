@@ -17,9 +17,28 @@ All endpoints are under `/api/v1/`. Responses are JSON. Errors follow a standard
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/health` | Health check, returns `{"status": "ok", "version": "..."}` |
+| `GET` | `/api/v1/health` | Health check, returns `{"status": "ok", "version": "...", "runtime": {...}, "storage": {...}}` |
 | `GET` | `/api/v1/runtime/status` | Runtime info (docker/kubernetes, connection state) |
 | `GET` | `/api/v1/edition` | Edition and feature flags |
+
+The `storage` object reports the engine backing this instance, whether it
+answers, and how many other instances beat on the same database:
+
+```json
+{ "engine": "postgres", "connected": true, "peers": 0 }
+```
+
+`engine` is `sqlite` or `postgres`. It never carries the connection string, the
+host or any credential.
+
+!!! warning "This endpoint answers 200 during a database outage"
+
+    An unreachable database is reported in `storage.connected`, not in the HTTP
+    status. `/api/v1/health` is the target of the Kubernetes liveness and
+    startup probes: failing it on a blip would restart the instance exactly when
+    the database needs to be left alone. Reads that need the database answer
+    `503 STORAGE_UNAVAILABLE` in the meantime, which clients should ride out
+    rather than treat as data loss.
 
 ---
 
@@ -393,6 +412,7 @@ This is a Server-Sent Events (SSE) endpoint. Each event has a `type` field and a
 | `update.detected` | Update | New update found |
 | `update.pinned` | Update | Version pinned |
 | `update.unpinned` | Update | Version unpinned |
+| `storage.availability_changed` | Storage | Database became unreachable, or answered again (`{engine, connected}`) |
 
 ### Status Page SSE
 

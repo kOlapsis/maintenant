@@ -15,7 +15,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,7 +23,8 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/maintenance"
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -33,17 +33,13 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 	defer cancel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"), logger)
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-	require.NoError(t, sqlite.Migrate(db.ReadDB(), logger))
-	db.StartWriter(ctx)
+	db := storetest.Open(t, logger)
 
-	alertStore := sqlite.NewAlertStore(db)
-	channelStore := sqlite.NewChannelStore(db)
-	triggerStore := sqlite.NewTriggerStore(db)
-	silenceStore := sqlite.NewSilenceStore(db)
-	maintenanceStore := sqlite.NewMaintenanceStore(db)
+	alertStore := store.NewAlertStore(db)
+	channelStore := store.NewChannelStore(db)
+	triggerStore := store.NewTriggerStore(db)
+	silenceStore := store.NewSilenceStore(db)
+	maintenanceStore := store.NewMaintenanceStore(db)
 
 	suppressor := maintenance.NewSuppressor(maintenanceStore, logger)
 
@@ -59,10 +55,10 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 
 	// Seed: maintenance window covering container:42
 	now := time.Now()
-	rawDB := db.ReadDB()
+	rawDB := db.Reader()
 
 	componentID := uid.New()
-	_, err = rawDB.ExecContext(ctx,
+	_, err := rawDB.ExecContext(ctx,
 		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name, display_order, visible, created_at, updated_at)
 		 VALUES (?, 'explicit', NULL, 'Test', 0, 1, ?, ?)`,
 		componentID, now.Unix(), now.Unix(),

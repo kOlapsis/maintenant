@@ -164,7 +164,7 @@ func (s *Service) EnsureAutoDetected(ctx context.Context, endpointID string, tar
 	if err != nil {
 		// Race condition: another goroutine created the monitor concurrently.
 		// Fall back to reading the existing one.
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		if errors.Is(err, ErrDuplicateMonitor) {
 			existing, rerr := s.store.GetMonitorByHostPort(ctx, hostname, port, "")
 			if rerr != nil {
 				return nil, fmt.Errorf("create auto monitor: %w (fallback: %w)", err, rerr)

@@ -19,20 +19,20 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // mockUptimeDailyStore is a test double for UptimeDailyFetcher.
 type mockUptimeDailyStore struct {
-	endpointResults  map[string][]sqlite.DailyUptime
-	heartbeatResults map[string][]sqlite.DailyUptime
-	containerResults map[string][]sqlite.DailyUptime
+	endpointResults  map[string][]store.DailyUptime
+	heartbeatResults map[string][]store.DailyUptime
+	containerResults map[string][]store.DailyUptime
 	err              error
 }
 
-func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpointID string, days int) ([]sqlite.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpointID string, days int) ([]store.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -43,14 +43,14 @@ func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpoin
 		return results, nil
 	}
 	// Return null days for missing endpoints.
-	result := make([]sqlite.DailyUptime, days)
+	result := make([]store.DailyUptime, days)
 	for i := range result {
-		result[i] = sqlite.DailyUptime{Date: fmt.Sprintf("2026-01-%02d", days-i), UptimePercent: nil}
+		result[i] = store.DailyUptime{Date: fmt.Sprintf("2026-01-%02d", days-i), UptimePercent: nil}
 	}
 	return result, nil
 }
 
-func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartbeatID string, days int) ([]sqlite.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartbeatID string, days int) ([]store.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -60,14 +60,14 @@ func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartb
 		}
 		return results, nil
 	}
-	result := make([]sqlite.DailyUptime, days)
+	result := make([]store.DailyUptime, days)
 	for i := range result {
-		result[i] = sqlite.DailyUptime{Date: fmt.Sprintf("2026-01-%02d", days-i), UptimePercent: nil}
+		result[i] = store.DailyUptime{Date: fmt.Sprintf("2026-01-%02d", days-i), UptimePercent: nil}
 	}
 	return result, nil
 }
 
-func (m *mockUptimeDailyStore) GetContainerDailyUptime(_ context.Context, containerID string, days int) ([]sqlite.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetContainerDailyUptime(_ context.Context, containerID string, days int) ([]store.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -77,9 +77,9 @@ func (m *mockUptimeDailyStore) GetContainerDailyUptime(_ context.Context, contai
 		}
 		return results, nil
 	}
-	result := make([]sqlite.DailyUptime, days)
+	result := make([]store.DailyUptime, days)
 	for i := range result {
-		result[i] = sqlite.DailyUptime{Date: fmt.Sprintf("2026-01-%02d", days-i), UptimePercent: nil}
+		result[i] = store.DailyUptime{Date: fmt.Sprintf("2026-01-%02d", days-i), UptimePercent: nil}
 	}
 	return result, nil
 }
@@ -98,7 +98,7 @@ func TestHandleEndpointDailyUptime(t *testing.T) {
 			name: "valid endpoint with data",
 			url:  "/api/v1/endpoints/5/uptime/daily",
 			store: &mockUptimeDailyStore{
-				endpointResults: map[string][]sqlite.DailyUptime{
+				endpointResults: map[string][]store.DailyUptime{
 					"5": {
 						{Date: "2026-02-25", UptimePercent: ptrFloat(100.0), IncidentCount: 0},
 						{Date: "2026-02-24", UptimePercent: ptrFloat(95.5), IncidentCount: 1},
@@ -189,7 +189,7 @@ func TestHandleHeartbeatDailyUptime(t *testing.T) {
 			name: "valid heartbeat with data",
 			url:  "/api/v1/heartbeats/3/uptime/daily",
 			store: &mockUptimeDailyStore{
-				heartbeatResults: map[string][]sqlite.DailyUptime{
+				heartbeatResults: map[string][]store.DailyUptime{
 					"3": {
 						{Date: "2026-02-25", UptimePercent: ptrFloat(100.0), IncidentCount: 0},
 					},
