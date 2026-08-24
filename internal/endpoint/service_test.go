@@ -110,11 +110,17 @@ func (m *memStore) GetEndpointByID(_ context.Context, id string) (*Endpoint, err
 	return c, nil
 }
 
-func (m *memStore) ListEndpoints(_ context.Context, _ ListEndpointsOpts) ([]*Endpoint, error) {
+func (m *memStore) ListEndpoints(_ context.Context, opts ListEndpointsOpts) ([]*Endpoint, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]*Endpoint, 0, len(m.endpoints))
 	for _, ep := range m.endpoints {
+		if opts.Source != "" && string(ep.Source) != opts.Source {
+			continue
+		}
+		if !opts.IncludeInactive && !ep.Active {
+			continue
+		}
 		c := m.cloneEp(ep)
 		out = append(out, c)
 	}
@@ -249,6 +255,16 @@ func (m *memStore) UpdateStandaloneEndpoint(_ context.Context, id string, name, 
 	ep.Name = name
 	ep.Target = target
 	ep.EndpointType = epType
+	return nil
+}
+
+func (m *memStore) DeleteEndpoint(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.endpoints[id]; !ok {
+		return fmt.Errorf("endpoint %s not found", id)
+	}
+	delete(m.endpoints, id)
 	return nil
 }
 
@@ -815,4 +831,123 @@ func TestService_CheckNow_RefusesAConcurrentCheck(t *testing.T) {
 
 	_, err := svc.CheckNow(context.Background(), id)
 	assert.ErrorIs(t, err, ErrCheckInProgress)
+}
+
+// ---------------------------------------------------------------------------
+// SweepOrphanedLabelEndpoints: the destroy event nobody heard
+// ---------------------------------------------------------------------------
+
+func TestService_SweepOrphanedLabelEndpoints_RetiresGoneContainer(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "web", LabelKey: "maintenant.endpoint.http", ExternalID: "gone",
+		EndpointType: TypeHTTP, Target: "http://web/health", Source: SourceLabel,
+	})
+
+	swept := svc.SweepOrphanedLabelEndpoints(ctx, map[string]struct{}{"still-here": {}})
+
+	require.Equal(t, 1, swept)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.False(t, ep.Active, "an endpoint whose container is gone must not stay active")
+}
+
+func TestService_SweepOrphanedLabelEndpoints_KeepsDiscoveredContainer(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "web", LabelKey: "maintenant.endpoint.http", ExternalID: "here",
+		EndpointType: TypeHTTP, Target: "http://web/health", Source: SourceLabel,
+	})
+
+	swept := svc.SweepOrphanedLabelEndpoints(ctx, map[string]struct{}{"here": {}})
+
+	require.Equal(t, 0, swept)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.True(t, ep.Active)
+}
+
+func TestService_SweepOrphanedLabelEndpoints_LeavesStandaloneAlone(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	// A standalone endpoint has no container, so an empty discovery pass must
+	// not read as "its container disappeared".
+	id := seedEndpoint(t, store, &Endpoint{
+		LabelKey: "manual", ExternalID: "", Name: "public API",
+		EndpointType: TypeHTTP, Target: "https://example.com", Source: SourceStandalone,
+	})
+
+	swept := svc.SweepOrphanedLabelEndpoints(ctx, map[string]struct{}{})
+
+	require.Equal(t, 0, swept)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.True(t, ep.Active)
+}
+
+// ---------------------------------------------------------------------------
+// Delete: who owns the endpoint
+// ---------------------------------------------------------------------------
+
+func TestService_Delete_RefusesEndpointOfLivingContainer(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "web", LabelKey: "maintenant.endpoint.http", ExternalID: "here",
+		EndpointType: TypeHTTP, Target: "http://web/health", Source: SourceLabel,
+	})
+
+	// Deleting it would only last until the next discovery pass recreated it.
+	err := svc.Delete(ctx, id)
+
+	require.ErrorIs(t, err, ErrEndpointLive)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.NotNil(t, ep)
+}
+
+func TestService_Delete_AllowsOrphanedLabelEndpoint(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "maintenant-maintenant-run-ba08fd7ce2f0",
+		LabelKey:      "maintenant.endpoint.http", ExternalID: "gone",
+		EndpointType: TypeHTTP, Target: "https://example.com/health", Source: SourceLabel,
+	})
+	require.NoError(t, store.DeactivateEndpoint(ctx, id))
+
+	require.NoError(t, svc.Delete(ctx, id))
+
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.Nil(t, ep, "an orphaned endpoint must be removable without SQL")
+}
+
+func TestService_Delete_AllowsStandalone(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		LabelKey: "manual", Name: "public API",
+		EndpointType: TypeHTTP, Target: "https://example.com", Source: SourceStandalone,
+	})
+
+	require.NoError(t, svc.Delete(ctx, id))
+
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.Nil(t, ep)
 }

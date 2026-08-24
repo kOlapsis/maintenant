@@ -365,6 +365,16 @@ onUnmounted(() => {
           {{ name }}
         </option>
       </select>
+
+      <select
+        v-model="store.showRetired"
+        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
+        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
+        @change="store.fetchEndpoints()"
+      >
+        <option :value="false">Live only</option>
+        <option :value="true">Include retired</option>
+      </select>
     </div>
 
     <!-- Loading -->

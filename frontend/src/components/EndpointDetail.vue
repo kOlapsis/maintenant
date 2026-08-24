@@ -59,6 +59,9 @@ const endpoint = computed<Endpoint | null>(() => liveEndpoint.value ?? fetched.v
 const isHttp = computed(() => endpoint.value?.endpoint_type === 'http')
 const isOffline = computed(() => Boolean(endpoint.value?.stale || endpoint.value?.agent_offline))
 const isStandalone = computed(() => endpoint.value?.source === 'standalone')
+// Its container is gone and nothing will recreate it, so it is deletable.
+const isRetired = computed(() => !isStandalone.value && endpoint.value?.active === false)
+const canDelete = computed(() => isStandalone.value || isRetired.value)
 
 // Close the panel if the open endpoint disappears (deleted elsewhere via SSE).
 const sawInStore = ref(false)
@@ -405,12 +408,13 @@ watch(() => props.endpointId, () => {
         </div>
       </div>
 
-      <!-- Delete (standalone only) -->
+      <!-- Delete: standalone, or a label endpoint whose container is gone -->
       <div
-        v-if="isStandalone"
+        v-if="canDelete"
         class="flex items-center pt-2"
         :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       >
+        <span v-if="isRetired" class="text-xs text-mnt-muted">Container gone</span>
         <button
           class="ml-auto rounded px-2 py-1 text-xs transition hover:opacity-80"
           :style="{ color: 'var(--mnt-status-down)' }"

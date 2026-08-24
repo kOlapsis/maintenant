@@ -25,6 +25,7 @@ import (
 
 var (
 	ErrNotStandalone    = errors.New("endpoint is not standalone")
+	ErrEndpointLive     = errors.New("endpoint is still discovered from container labels")
 	ErrEndpointNotFound = errors.New("endpoint not found")
 	ErrLimitReached     = errors.New("endpoint limit reached")
 	// ErrAgentProbed rejects an on-demand check for an endpoint the server never
@@ -508,6 +509,45 @@ func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string)
 	}
 }
 
+// SweepOrphanedLabelEndpoints deactivates label-discovered endpoints whose
+// container is absent from a full discovery pass, and returns how many it
+// deactivated.
+//
+// The destroy event is what normally retires them, but an event that arrives
+// while the process is down is an event nobody hears, and the instance is
+// meant to be stopped for a storage migration, which is exactly when one-off
+// containers come and go. Without this sweep such an endpoint stays active
+// forever, reporting a container that no longer exists.
+func (s *Service) SweepOrphanedLabelEndpoints(ctx context.Context, seen map[string]struct{}) int {
+	endpoints, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceLabel)})
+	if err != nil {
+		s.logger.Error("list label endpoints for orphan sweep", "error", err)
+		return 0
+	}
+
+	swept := 0
+	for _, ep := range endpoints {
+		if _, ok := seen[ep.ExternalID]; ok {
+			continue
+		}
+		s.engine.RemoveEndpoint(ep.ID)
+		if err := s.store.DeactivateEndpoint(ctx, ep.ID); err != nil {
+			s.logger.Error("deactivate orphaned endpoint", "endpoint_id", ep.ID, "error", err)
+			continue
+		}
+		if s.onEndpointRemoved != nil {
+			s.onEndpointRemoved(ctx, ep.ID)
+		}
+		s.emitEvent(event.EndpointRemoved, map[string]interface{}{
+			"endpoint_id":    ep.ID,
+			"container_name": ep.ContainerName,
+			"reason":         "container_gone",
+		})
+		swept++
+	}
+	return swept
+}
+
 // ListEndpoints returns endpoints matching the given options.
 func (s *Service) ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]*Endpoint, error) {
 	return s.store.ListEndpoints(ctx, opts)
@@ -624,8 +664,16 @@ func (s *Service) UpdateStandalone(ctx context.Context, id string, name, target 
 	return full, nil
 }
 
-// DeleteStandalone removes a standalone endpoint and stops monitoring it.
-func (s *Service) DeleteStandalone(ctx context.Context, id string) error {
+// Delete removes an endpoint and stops monitoring it.
+//
+// A standalone endpoint is the operator's to delete at any time. A
+// label-discovered one is the container's, and is refused while that container
+// is still around: the next discovery pass would recreate it, so the deletion
+// would be theatre. Once the container is gone the endpoint is deactivated and
+// nothing will bring it back, and then it is deletable. Otherwise an endpoint
+// orphaned by a container that vanished while the instance was down could only
+// be removed with SQL.
+func (s *Service) Delete(ctx context.Context, id string) error {
 	existing, err := s.store.GetEndpointByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get endpoint: %w", err)
@@ -633,8 +681,8 @@ func (s *Service) DeleteStandalone(ctx context.Context, id string) error {
 	if existing == nil {
 		return ErrEndpointNotFound
 	}
-	if existing.Source != SourceStandalone {
-		return ErrNotStandalone
+	if existing.Source != SourceStandalone && existing.Active {
+		return ErrEndpointLive
 	}
 
 	s.engine.RemoveEndpoint(id)
@@ -643,7 +691,7 @@ func (s *Service) DeleteStandalone(ctx context.Context, id string) error {
 		s.onEndpointRemoved(ctx, id)
 	}
 
-	if err := s.store.DeleteStandaloneEndpoint(ctx, id); err != nil {
+	if err := s.store.DeleteEndpoint(ctx, id); err != nil {
 		return err
 	}
 

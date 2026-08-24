@@ -457,14 +457,14 @@ func (h *EndpointHandler) HandleDeleteEndpoint(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if err := h.service.DeleteStandalone(r.Context(), id); err != nil {
+	if err := h.service.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, endpoint.ErrEndpointNotFound) {
 			WriteError(w, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found")
 			return
 		}
-		if errors.Is(err, endpoint.ErrNotStandalone) {
-			WriteError(w, http.StatusBadRequest, "NOT_STANDALONE",
-				"Only standalone endpoints can be deleted; label-discovered endpoints are managed via container labels")
+		if errors.Is(err, endpoint.ErrEndpointLive) {
+			WriteError(w, http.StatusConflict, "ENDPOINT_LIVE",
+				"This endpoint comes from the labels of a running container; remove the label or the container. It becomes deletable once its container is gone")
 			return
 		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete endpoint")
