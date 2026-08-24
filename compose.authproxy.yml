@@ -22,10 +22,10 @@ services:
     build:
       context: .
       args:
-        - VERSION=dev
-        - COMMIT=xxxxx
-        - BUILD_DATE=2026-03-01
-        - LICENSE_PUBLIC_KEY=XRnZAk+VcCWdtsNrIsJZ4GBKKzbP6RyH/EO0F4qYdyI=
+        VERSION: "dev"
+        COMMIT: "xxxxx"
+        BUILD_DATE: "2026-03-01"
+        LICENSE_PUBLIC_KEY: "XRnZAk+VcCWdtsNrIsJZ4GBKKzbP6RyH/EO0F4qYdyI="
     container_name: authlab-maintenant
     restart: unless-stopped
     read_only: true

@@ -332,12 +332,12 @@ services:
     image: tecnativa/docker-socket-proxy:latest
     environment:
       # The only endpoint groups maintenant needs — all read-only:
-      - CONTAINERS=1        # discovery, inspect, stats, logs
-      - INFO=1              # runtime + Swarm detection
-      - NETWORKS=1          # network metadata
+      CONTAINERS: "1"       # discovery, inspect, stats, logs
+      INFO: "1"             # runtime + Swarm detection
+      NETWORKS: "1"         # network metadata
       # EVENTS, PING and VERSION are already enabled by default.
       # POST defaults to 0 -> every write returns 403.
-      # On a Swarm manager, also enable: SWARM=1, NODES=1, SERVICES=1, TASKS=1
+      # On a Swarm manager, also enable: SWARM, NODES, SERVICES and TASKS.
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [dockerapi]
