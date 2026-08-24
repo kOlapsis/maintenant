@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -26,6 +27,7 @@ const (
 	labelComposeProject    = "com.docker.compose.project"
 	labelComposeService    = "com.docker.compose.service"
 	labelComposeWorkingDir = "com.docker.compose.project.working_dir"
+	labelComposeOneOff     = "com.docker.compose.oneoff"
 	labelPBIgnore          = "maintenant.ignore"
 	labelPBGroup           = "maintenant.group"
 	labelPBSeverity        = "maintenant.alert.severity"
@@ -61,6 +63,17 @@ type DiscoveryResult struct {
 	SecurityConfig *SecurityConfig
 }
 
+// IsOneOff reports whether a container was created by `docker compose run`.
+//
+// Compose copies the service definition onto these containers, our labels
+// included, but gives them a generated name. Since a label-discovered monitor
+// is keyed on the container name, a one-off would mint a second monitor for a
+// service that already has one, and that monitor outlives the container it came
+// from. They are not part of the fleet, so discovery skips them entirely.
+func IsOneOff(labels map[string]string) bool {
+	return strings.EqualFold(labels[labelComposeOneOff], "true")
+}
+
 // DiscoverAll performs a full container list + inspect pass, returning all discovered containers.
 func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 	list, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
@@ -72,6 +85,9 @@ func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 	containers := make([]*cmodel.Container, 0, len(list))
 
 	for _, dc := range list {
+		if IsOneOff(dc.Labels) {
+			continue
+		}
 		result, err := c.inspectAndMap(ctx, dc, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
@@ -96,6 +112,9 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 	results := make([]*DiscoveryResult, 0, len(list))
 
 	for _, dc := range list {
+		if IsOneOff(dc.Labels) {
+			continue
+		}
 		result, err := c.inspectAndMap(ctx, dc, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)

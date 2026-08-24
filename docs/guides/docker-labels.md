@@ -23,6 +23,17 @@ labels:
   maintenant.alert.channels: "slack,email"     # Route to channels
 ```
 
+!!! note "One-off containers are skipped"
+
+    `docker compose run` copies the service definition onto a throwaway
+    container, labels included, but gives it a generated name. Since a
+    label-discovered monitor is keyed on the container name, such a container
+    would mint a second monitor for a service that already has one, and that
+    monitor would outlive the container it came from.
+
+    maintenant skips any container stamped `com.docker.compose.oneoff=True`,
+    so a one-off run never appears in your fleet and never creates a monitor.
+
 ---
 
 ## Endpoint Monitoring

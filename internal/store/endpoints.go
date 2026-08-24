@@ -364,6 +364,24 @@ func (s *EndpointStore) UpdateStandaloneEndpoint(ctx context.Context, id string,
 	return nil
 }
 
+// DeleteEndpoint permanently removes an endpoint and its check results,
+// whatever its source. The caller decides what may be deleted; see
+// endpoint.Service.Delete.
+func (s *EndpointStore) DeleteEndpoint(ctx context.Context, id string) error {
+	if _, err := s.writer.Exec(ctx, `DELETE FROM check_results WHERE endpoint_id=?`, id); err != nil {
+		return fmt.Errorf("delete check results for endpoint %s: %w", id, err)
+	}
+
+	res, err := s.writer.Exec(ctx, `DELETE FROM endpoints WHERE id=?`, id)
+	if err != nil {
+		return fmt.Errorf("delete endpoint %s: %w", id, err)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("endpoint %s not found", id)
+	}
+	return nil
+}
+
 // DeleteStandaloneEndpoint permanently removes a standalone endpoint and its check results.
 func (s *EndpointStore) DeleteStandaloneEndpoint(ctx context.Context, id string) error {
 	// Delete check results first

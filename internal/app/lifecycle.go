@@ -113,7 +113,9 @@ func (a *App) reconcile(ctx context.Context) {
 			}
 
 			now := time.Now()
+			seen := make(map[string]struct{}, len(results))
 			for _, r := range results {
+				seen[r.Container.ExternalID] = struct{}{}
 				a.endpointSvc.SyncEndpoints(ctx, r.Container.Name, r.Container.ExternalID, r.Labels,
 					r.Container.OrchestrationGroup, r.Container.OrchestrationUnit)
 				a.certSvc.SyncFromLabels(ctx, r.Container.ExternalID, r.Labels)
@@ -136,6 +138,9 @@ func (a *App) reconcile(ctx context.Context) {
 					}, now)
 					a.securitySvc.UpdateContainer(dbC.ID, dbC.Name, insights)
 				}
+			}
+			if swept := a.endpointSvc.SweepOrphanedLabelEndpoints(ctx, seen); swept > 0 {
+				a.logger.Info("retired endpoints whose container is gone", "count", swept)
 			}
 			a.logger.Info("endpoint discovery complete", "active_checks", a.checkEngine.ActiveCount())
 		} else {
@@ -162,6 +167,13 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 						go a.swarmUpdateTracker.CheckService(ctx, evt.ExternalID)
 					}
 				}
+				continue
+			}
+
+			// A `docker compose run` container carries the service's labels under
+			// a generated name; monitoring it would duplicate the service it was
+			// run from. Discovery skips them, and so does the event stream.
+			if docker.IsOneOff(evt.Labels) {
 				continue
 			}
 

@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Endpoint } from '@/services/endpointApi'
 import { deleteEndpoint } from '@/services/endpointApi'
 import { fetchEndpointDailyUptime, type UptimeDay } from '@/services/uptimeApi'
@@ -33,6 +33,12 @@ const emit = defineEmits<{
 
 const confirm = useConfirm()
 const deleting = ref(false)
+
+// A retired endpoint came from container labels, but that container is gone.
+// Nothing will bring it back, so it is the operator's to remove, unlike a
+// live label endpoint, which the next discovery pass would recreate.
+const isRetired = computed(() => props.endpoint.source !== 'standalone' && !props.endpoint.active)
+const canDelete = computed(() => props.endpoint.source === 'standalone' || isRetired.value)
 
 async function handleDelete() {
   const ok = await confirm({
@@ -189,11 +195,12 @@ function formatResponseTime(ms: number | undefined): string {
 
     <!-- Actions -->
     <div
-      v-if="endpoint.source === 'standalone'"
+      v-if="canDelete"
       class="mt-3 flex items-center pt-2"
       :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       @click.stop
     >
+      <span v-if="isRetired" class="text-xs text-mnt-muted">Container gone</span>
       <button
         class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
         :style="{ color: 'var(--mnt-status-down)' }"
