@@ -10,6 +10,11 @@
 # Deep static analysis lives in codeql.yml; the image build and its Trivy scan
 # in build-docker.yml; the signed release chain in release.yml.
 #
+# Ahead of all of it, `changes` classifies the paths this run touches, and the
+# jobs that cannot be affected by them are skipped. It fails open: an unknown
+# path runs everything. A pipeline that runs too much wastes minutes, one that
+# skips a check by mistake ships a bug.
+#
 # Hardening baseline: every action is pinned to a full commit SHA, the default
 # token has no permissions, each job grants only what it needs, checkout never
 # persists credentials, and jobs are time-boxed.
@@ -32,6 +37,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # What this run has to consider. Every heavy job below is gated on it, so a
+  # change that cannot alter a verdict does not pay for one. The classification
+  # lives in scripts/ci-changed-paths.sh and fails open: an unknown path, a
+  # missing range or a diff that errors turns the whole pipeline back on.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # Full history: the classification diffs against the base commit, which a
+      # shallow clone does not carry.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify the changed paths
+        id: classify
+        env:
+          # Both are empty on any other event, and an empty range is what makes
+          # a manual dispatch, a schedule or a release run everything.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: scripts/ci-changed-paths.sh
+
   # Fast security gate — every heavier job depends on the three scanners below.
   zizmor:
     name: Zizmor (workflow static analysis)
@@ -141,6 +182,12 @@ jobs:
       - name: Poutine
         run: poutine analyze_local .
 
+  # This chain carries no condition of its own: a job whose need was skipped is
+  # skipped too, so the `if:` on sast and audit switches off lint, test, the
+  # PostgreSQL matrix and e2e with it. The one consequence worth knowing is that
+  # a frontend-only change no longer reaches e2e. What e2e drives is the HTTP
+  # surface, and a SPA that stops building fails build-docker, which does run on
+  # a frontend change. workflow_dispatch forces the whole thing when in doubt.
   lint:
     name: Lint (golangci-lint)
     needs: [sast, audit]
@@ -339,7 +386,8 @@ jobs:
 
   sast:
     name: SAST (gosec)
-    needs: [zizmor, actionlint, poutine]
+    needs: [changes, zizmor, actionlint, poutine]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -381,7 +429,9 @@ jobs:
 
   audit:
     name: Dependency audit (govulncheck + Trivy)
-    needs: [zizmor, actionlint, poutine]
+    needs: [changes, zizmor, actionlint, poutine]
+    # Trivy scans both lockfiles, govulncheck only the Go one.
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -437,7 +487,8 @@ jobs:
 
   frontend:
     name: Frontend (eslint + vitest)
-    needs: [zizmor, actionlint, poutine]
+    needs: [changes, zizmor, actionlint, poutine]
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

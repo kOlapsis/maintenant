@@ -10,6 +10,7 @@ on:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - ".github/workflows/deploy-docs.yml"
   workflow_dispatch:
 
 # No default rights: every job declares the strict minimum it needs.
