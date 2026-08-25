@@ -84,11 +84,11 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     every host by hand. If you already operate a PostgreSQL, point the server at
     it and the instance becomes replaceable — see
     [PostgreSQL storage](../guides/postgresql.md). An existing install moves
-    over with one command:
+    over with a one-shot service you add next to the instance:
 
     ```bash
-    maintenant --db /data/maintenant.db \
-      --copy-store-to "postgres://maintenant:secret@db.internal:5432/maintenant?sslmode=require"
+    docker compose stop maintenant
+    docker compose run --rm copy-store
     ```
 
 ---
