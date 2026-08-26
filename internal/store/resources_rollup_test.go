@@ -108,3 +108,43 @@ func TestAggregateHourlyRollup_EmptyWindowKeepsExistingBucket(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.EqualValues(t, 42, rows[0].CPUPercent, "the aggregate must outlive the raw rows")
 }
+
+// Memory limits and cumulative network counters routinely exceed 2 GiB: the
+// rollup casts must land on a 64-bit integer on both engines.
+func TestAggregateHourlyRollup_ValuesAboveInt32(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cid := seedHostContainer(t, NewContainerStore(db), "ext-rollup-big", "")
+	store := NewResourceStore(db)
+
+	const memLimit = int64(16) << 30
+	const netRx = int64(5) << 30
+	bucket := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Hour)
+	for i := 0; i < 2; i++ {
+		_, err := store.InsertSnapshot(ctx, &resource.ResourceSnapshot{
+			ContainerID: cid,
+			CPUPercent:  10,
+			MemUsed:     memLimit / 2,
+			MemLimit:    memLimit,
+			NetRxBytes:  netRx,
+			NetTxBytes:  netRx,
+			Timestamp:   bucket.Add(time.Duration(i) * time.Minute),
+		})
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, store.AggregateHourlyRollup(ctx, bucket, bucket.Add(time.Hour)))
+	rows, err := store.ListHourlyInRange(ctx, cid, bucket.Add(-time.Hour), bucket.Add(time.Hour))
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, memLimit, rows[0].MemLimit)
+	assert.Equal(t, netRx, rows[0].NetRxBytes)
+
+	day := bucket.Truncate(24 * time.Hour)
+	require.NoError(t, store.AggregateDailyRollup(ctx, day, day.Add(24*time.Hour)))
+
+	aggregated, err := store.ListSnapshotsAggregated(ctx, cid, bucket, bucket.Add(time.Hour), resource.Granularity1m)
+	require.NoError(t, err)
+	require.NotEmpty(t, aggregated)
+	assert.Equal(t, memLimit, aggregated[0].MemLimit)
+}

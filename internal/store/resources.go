@@ -80,9 +80,9 @@ func (s *ResourceStore) ListSnapshotsAggregated(ctx context.Context, containerID
 	bucketSec := granularityToSeconds(granularity)
 	rows, err := s.db.QueryContext(ctx,
 		fmt.Sprintf(`SELECT '' AS id, container_id, MAX(agent_id) AS agent_id,
-			AVG(cpu_percent), CAST(AVG(mem_used) AS INTEGER), CAST(AVG(mem_limit) AS INTEGER),
-			CAST(AVG(net_rx_bytes) AS INTEGER), CAST(AVG(net_tx_bytes) AS INTEGER),
-			CAST(AVG(block_read_bytes) AS INTEGER), CAST(AVG(block_write_bytes) AS INTEGER),
+			AVG(cpu_percent), CAST(AVG(mem_used) AS BIGINT), CAST(AVG(mem_limit) AS BIGINT),
+			CAST(AVG(net_rx_bytes) AS BIGINT), CAST(AVG(net_tx_bytes) AS BIGINT),
+			CAST(AVG(block_read_bytes) AS BIGINT), CAST(AVG(block_write_bytes) AS BIGINT),
 			(timestamp / %d) * %d AS bucket
 		FROM resource_snapshots
 		WHERE container_id = ? AND timestamp >= ? AND timestamp <= ?
@@ -341,9 +341,9 @@ func (s *ResourceStore) AggregateHourlyRollup(ctx context.Context, bucketStart, 
 		`INSERT INTO resource_hourly (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit,
 			avg_net_rx_bytes, avg_net_tx_bytes, avg_block_read_bytes, avg_block_write_bytes, sample_count)
 		SELECT `+s.db.Dialect().UUIDExpr()+`, container_id, ? AS bucket,
-			AVG(cpu_percent), CAST(AVG(mem_used) AS INTEGER), CAST(AVG(mem_limit) AS INTEGER),
-			CAST(AVG(net_rx_bytes) AS INTEGER), CAST(AVG(net_tx_bytes) AS INTEGER),
-			CAST(AVG(block_read_bytes) AS INTEGER), CAST(AVG(block_write_bytes) AS INTEGER),
+			AVG(cpu_percent), CAST(AVG(mem_used) AS BIGINT), CAST(AVG(mem_limit) AS BIGINT),
+			CAST(AVG(net_rx_bytes) AS BIGINT), CAST(AVG(net_tx_bytes) AS BIGINT),
+			CAST(AVG(block_read_bytes) AS BIGINT), CAST(AVG(block_write_bytes) AS BIGINT),
 			COUNT(*)
 		FROM resource_snapshots
 		WHERE timestamp >= ? AND timestamp < ?
@@ -367,8 +367,8 @@ func (s *ResourceStore) AggregateDailyRollup(ctx context.Context, bucketStart, b
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO resource_daily (id, container_id, bucket, avg_cpu_percent, avg_mem_used, avg_mem_limit, avg_net_rx_bytes, avg_net_tx_bytes, sample_count)
 		SELECT `+s.db.Dialect().UUIDExpr()+`, container_id, ? AS bucket,
-			AVG(avg_cpu_percent), CAST(AVG(avg_mem_used) AS INTEGER), CAST(AVG(avg_mem_limit) AS INTEGER),
-			CAST(AVG(avg_net_rx_bytes) AS INTEGER), CAST(AVG(avg_net_tx_bytes) AS INTEGER),
+			AVG(avg_cpu_percent), CAST(AVG(avg_mem_used) AS BIGINT), CAST(AVG(avg_mem_limit) AS BIGINT),
+			CAST(AVG(avg_net_rx_bytes) AS BIGINT), CAST(AVG(avg_net_tx_bytes) AS BIGINT),
 			SUM(sample_count)
 		FROM resource_hourly
 		WHERE bucket >= ? AND bucket < ?
