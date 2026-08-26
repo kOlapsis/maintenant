@@ -20,11 +20,12 @@ import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
 import { useStorageStore } from '@/stores/storage'
 import { useAgentsStore } from '@/stores/agents'
-import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor } from 'lucide-vue-next'
+import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor, MessageSquare } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
 import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import { useTheme } from '@/composables/useTheme'
+import { useFeedbackUrl } from '@/composables/useFeedbackUrl'
 
 const router = useRouter()
 const dashboard = useDashboardStore()
@@ -166,6 +167,8 @@ const themeTooltip = computed(() => {
   if (theme.value === 'dark') return 'Dark mode'
   return 'Follow system theme'
 })
+
+const { feedbackUrl } = useFeedbackUrl()
 </script>
 
 <template>
@@ -254,7 +257,7 @@ const themeTooltip = computed(() => {
       </div>
     </div>
 
-    <!-- Right: runtime badge + theme toggle + bell -->
+    <!-- Right: runtime badge + theme toggle + feedback + bell -->
     <div class="flex items-center gap-4">
       <!-- Runtime badge with popover -->
       <RuntimeBadge />
@@ -270,6 +273,18 @@ const themeTooltip = computed(() => {
         <Moon v-else-if="theme === 'dark'" :size="18" />
         <Monitor v-else :size="18" />
       </button>
+
+      <!-- Feedback form on maintenant.dev, opened by the browser in a new tab -->
+      <a
+        :href="feedbackUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Give feedback"
+        aria-label="Give feedback"
+        class="p-2 text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated rounded-lg transition-all"
+      >
+        <MessageSquare :size="18" />
+      </a>
 
       <div
         class="relative"
