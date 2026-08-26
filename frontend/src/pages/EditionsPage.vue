@@ -15,6 +15,7 @@
 import { computed, onMounted } from 'vue'
 import { Check, Minus, ExternalLink } from 'lucide-vue-next'
 import { useEdition } from '@/composables/useEdition'
+import { useFeedbackUrl } from '@/composables/useFeedbackUrl'
 import type { Edition, QuotaResource } from '@/services/editionApi'
 import EditionBadge from '@/components/EditionBadge.vue'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
@@ -31,6 +32,8 @@ const {
 } = useEdition()
 
 onMounted(loadLicenseStatus)
+
+const { feedbackUrl } = useFeedbackUrl()
 
 const TIERS = ['community', 'personal', 'pro'] as const
 type Tier = (typeof TIERS)[number]
@@ -277,6 +280,23 @@ function isUpgrade(tier: Tier): boolean {
       to use Maintenant on behalf of others, support, and the features a team needs to be
       paged and to address third parties.
     </p>
+
+    <!-- Feedback: a plain link the browser opens, the instance sends nothing. -->
+    <section class="mt-8 rounded-xl border border-mnt-default bg-mnt-surface p-5">
+      <h2 class="text-sm font-semibold text-mnt-primary">Tell me how you use Maintenant</h2>
+      <p class="mt-1 text-xs leading-relaxed text-mnt-muted">
+        Two minutes, read by the developer, quoted only if you allow it.
+      </p>
+      <a
+        :href="feedbackUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-mnt-default px-3 py-1.5 text-xs font-semibold text-mnt-primary hover:bg-mnt-hover"
+      >
+        Give feedback
+        <ExternalLink class="h-3 w-3" />
+      </a>
+    </section>
   </div>
 </template>
 
