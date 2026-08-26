@@ -785,27 +785,33 @@ MAINTENANT_LICENSE_KEY=your-license-key
 
 ## Support the project
 
-maintenant is built independently in Bordeaux, France. No VC, no tracking, no telemetry, no data collection, no acquisition exit. The only way this keeps going is if users who benefit from it give back. **Here's how, ranked by impact:**
+maintenant is built independently in Bordeaux, France. No VC, no tracking, no acquisition exit, and no data collection beyond [anonymous opt-out telemetry](#telemetry). The only way this keeps going is if users who benefit from it give back. **Here's how, ranked by impact:**
 
 <table>
   <tr>
-    <td width="33%" valign="top" align="center">
+    <td width="25%" valign="top" align="center">
       <h3>1. Buy a licence</h3>
       <p><strong>Personal €149</strong> once · <strong>Pro €29/mo</strong></p>
       <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development. Personal if the infrastructure is yours, Pro if you run it for others.</sub></p>
       <p><a href="https://maintenant.dev/pricing/"><strong>See editions →</strong></a></p>
     </td>
-    <td width="33%" valign="top" align="center">
+    <td width="25%" valign="top" align="center">
       <h3>2. Sponsor</h3>
       <p><strong>Any amount</strong> · one-off or monthly</p>
       <p><sub>Don't need a paid edition? Sponsor on GitHub. Every sponsor gets credited in the <a href="#backers">Backers</a> wall below.</sub></p>
       <p><a href="https://github.com/sponsors/kolapsis"><strong>Sponsor →</strong></a></p>
     </td>
-    <td width="33%" valign="top" align="center">
+    <td width="25%" valign="top" align="center">
       <h3>3. Spread the word</h3>
       <p><strong>Free · 10 seconds</strong></p>
       <p><sub>Star the repo, share on HN / Lobsters / Reddit / LinkedIn. Discoverability is oxygen for indie projects.</sub></p>
       <p><a href="https://github.com/kolapsis/maintenant"><strong>Star repo →</strong></a></p>
+    </td>
+    <td width="25%" valign="top" align="center">
+      <h3>4. Tell me how you use it</h3>
+      <p><strong>Two minutes</strong></p>
+      <p><sub>Read by the developer, quoted only if you allow it.</sub></p>
+      <p><a href="https://maintenant.dev/feedback/"><strong>Give feedback →</strong></a></p>
     </td>
   </tr>
 </table>
