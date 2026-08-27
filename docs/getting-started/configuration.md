@@ -202,9 +202,9 @@ Maintenant comes in three editions, in order: **Community**, **Personal**, **Pro
 
 | Edition | Price | Unlocks |
 |---------|-------|---------|
-| Community | Free | Containers, endpoints, heartbeats, certificates, the public status page, and the full Swarm and Kubernetes views. Capped at 10 endpoints, 5 heartbeats, 5 certificate monitors and 3 status components, on a single host. |
-| Personal | €149 once, for life | Every cap lifted, up to 20 remote hosts, plus email alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, resource history, advanced trigger filters and OCSP stapling. Covers one person on infrastructure they own or run for themselves, freelancers included. |
-| Pro | €29/month or €290/year | Everything above with unlimited hosts, plus Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, and the right to use Maintenant on behalf of others, with support. |
+| Community | Free | Containers, endpoints, heartbeats, certificates, the public status page, and the full Swarm and Kubernetes views, with 7 days of resource history. Capped at 10 endpoints, 5 heartbeats, 5 certificate monitors and 3 status components, on a single host. |
+| Personal | €149 once, for life | Every cap lifted, up to 20 remote hosts, plus email alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, 30 days of resource history, advanced trigger filters and OCSP stapling. Covers one person on infrastructure they own or run for themselves, freelancers included. |
+| Pro | €29/month or €290/year | Everything above with unlimited hosts, plus Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, 90 days of resource history, and the right to use Maintenant on behalf of others, with support. |
 
 A Personal license never expires and includes one year of product updates.
 Every version released inside that year stays licensed for life; a further year

@@ -33,8 +33,8 @@ maintenant stores metric snapshots and displays them as interactive time-series 
 |--------|---------|-------------|-------------|
 | 1 hour | Community | raw samples | raw |
 | 6 hours | Community | raw samples | 1 minute |
-| 24 hours | :material-star-four-points:{ title="Personal" } Personal | raw samples | 5 minutes |
-| 7 days | :material-star-four-points:{ title="Personal" } Personal | hourly rollup | 1 hour |
+| 24 hours | Community | raw samples | 5 minutes |
+| 7 days | Community | hourly rollup | 1 hour |
 | 30 days | :material-star-four-points:{ title="Personal" } Personal | hourly rollup | 1 hour |
 | 90 days | :material-star-four-points:{ title="Pro" } Pro | daily rollup | 1 day |
 
@@ -54,8 +54,8 @@ GET /api/v1/edition
 ```json
 {
   "resource_history": {
-    "max_window": "6h",
-    "max_window_seconds": 21600,
+    "max_window": "7d",
+    "max_window_seconds": 604800,
     "windows": [
       { "window": "1h",  "seconds": 3600,    "min_edition": "community" },
       { "window": "90d", "seconds": 7776000, "min_edition": "pro" }
@@ -176,6 +176,7 @@ See [Multi-Host Monitoring](multihost.md) for the full agent/server setup.
 **2026-08-27, history windows per edition.** Until this release the history API
 was open to Personal and above as a whole, so a Community instance saw no chart
 at all, and the 30-day period of the top consumers endpoint was reachable from
-any edition by calling it directly. Both are fixed: Community now sees 1h and
-6h, Pro gains a 90-day window, and every surface enforces the cap server-side.
-The tiering above is what the product serves, and what the pricing page states.
+any edition by calling it directly. Both are fixed: Community now sees up to
+7 days, Pro gains a 90-day window, and every surface enforces the cap
+server-side. The tiering above is what the product serves, and what the pricing
+page states.

@@ -144,7 +144,7 @@ One tool is not a plain yes or no: `get_top_consumers` ranks either the live
 samples or a history window, and how far back a window may go depends on the
 edition. The live ranking (`period` omitted, or `"current"`) is open everywhere;
 a `period` of `1h`, `6h`, `24h`, `7d`, `30d` or `90d` is held to the same cap as
-the charts (Community up to 6h, Personal up to 30d, Pro up to 90d), and a window
+the charts (Community up to 7d, Personal up to 30d, Pro up to 90d), and a window
 above it returns `edition_required` carrying `window` and `max_window`.
 See [Resource Metrics](resources.md#historical-charts). An MCP client has no
 interface in front of it, which is exactly why the cap is enforced here and not

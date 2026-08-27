@@ -249,7 +249,7 @@ func TestGetTopConsumers_RefusesAWindowAboveTheCap(t *testing.T) {
 	assert.Contains(t, text, "edition_required")
 	assert.Contains(t, text, `"required_edition":"personal"`)
 	assert.Contains(t, text, `"window":"30d"`)
-	assert.Contains(t, text, `"max_window":"6h"`)
+	assert.Contains(t, text, `"max_window":"7d"`)
 }
 
 func TestGetTopConsumers_RefusesAWindowTheProductDoesNotKnow(t *testing.T) {

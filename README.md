@@ -660,7 +660,7 @@ Full REST API under `/api/v1/` for automation and integration.
         <li>HTTP / TCP endpoint monitoring <sub>(up to 10)</sub></li>
         <li>Heartbeat &amp; cron monitoring <sub>(up to 5)</sub></li>
         <li>TLS certificate tracking <sub>(up to 5)</sub></li>
-        <li>Resource metrics (CPU, RAM, net, disk)</li>
+        <li>Resource metrics (CPU, RAM, net, disk) <sub>(7 days of history)</sub></li>
         <li>Network security insights</li>
         <li>Update intelligence (digest scan)</li>
         <li>Alert engine + webhook + Discord</li>
@@ -681,7 +681,7 @@ Full REST API under `/api/v1/` for automation and integration.
         <li><strong>CVE enrichment</strong> + risk scoring per container</li>
         <li><strong>Unified security posture</strong> dashboard</li>
         <li><strong>Incident management</strong> with public timeline</li>
-        <li>Changelog, resource history, OCSP stapling</li>
+        <li>Changelog, <strong>30 days</strong> of resource history, OCSP stapling</li>
       </ul>
       <p>For one person, on infrastructure they own or run for themselves — freelancers included. It does not cover monitoring someone else's infrastructure or reselling Maintenant as a service, and carries no support commitment.</p>
       <p>Includes <strong>one year of product updates</strong>, then €59 per extra year. Every version released inside that year stays licensed for life.</p>
@@ -700,6 +700,7 @@ Full REST API under `/api/v1/` for automation and integration.
         <li><strong>Subscriber notifications</strong> (email, webhook)</li>
         <li><strong>Status page branding</strong></li>
         <li><strong>The right to use Maintenant on behalf of others</strong></li>
+        <li><strong>90 days</strong> of resource history</li>
         <li><strong>Priority email support</strong></li>
       </ul>
       <p><a href="https://maintenant.dev/pricing/"><strong>Start free trial →</strong></a></p>

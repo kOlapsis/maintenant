@@ -38,7 +38,7 @@ type HistoryWindowSpec struct {
 // duration and not a list of windows on purpose: adding a window to the product
 // must not require editing this table.
 var editionHistoryCap = map[Edition]time.Duration{
-	Community: 6 * time.Hour,
+	Community: 7 * 24 * time.Hour,
 	Personal:  30 * 24 * time.Hour,
 	Pro:       90 * 24 * time.Hour,
 }

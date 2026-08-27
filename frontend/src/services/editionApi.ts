@@ -47,7 +47,7 @@ export interface HistoryWindowSpec {
 }
 
 export interface ResourceHistoryContract {
-  /** The largest window the running edition opens, e.g. "6h". */
+  /** The largest window the running edition opens, e.g. "7d". */
   max_window: string
   max_window_seconds: number
   windows: HistoryWindowSpec[]

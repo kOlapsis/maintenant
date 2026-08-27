@@ -70,8 +70,8 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 // edition means the window is open.
 var windowMatrix = map[extension.Edition]map[string]string{
 	extension.Community: {
-		"1h": "", "6h": "",
-		"24h": "personal", "7d": "personal", "30d": "personal",
+		"1h": "", "6h": "", "24h": "", "7d": "",
+		"30d": "personal",
 		"90d": "pro",
 	},
 	extension.Personal: {
@@ -109,7 +109,7 @@ func TestHistoryWindows_Matrix(t *testing.T) {
 				// The cap is the running edition's own, not the required one's:
 				// it is what the interface shows as "you have up to this".
 				expectedCap := map[extension.Edition]string{
-					extension.Community: "6h", extension.Personal: "30d", extension.Pro: "90d",
+					extension.Community: "7d", extension.Personal: "30d", extension.Pro: "90d",
 				}[edition]
 				assert.Equal(t, expectedCap, detail["max_window"])
 			})

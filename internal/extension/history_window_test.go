@@ -25,8 +25,8 @@ func TestHistoryWindowCatalog_IsOrderedByDuration(t *testing.T) {
 // the table the specification states, and nothing writes it by hand.
 func TestMinEditionForHistoryWindow_IsDerivedFromTheCaps(t *testing.T) {
 	want := map[string]Edition{
-		"1h": Community, "6h": Community,
-		"24h": Personal, "7d": Personal, "30d": Personal,
+		"1h": Community, "6h": Community, "24h": Community, "7d": Community,
+		"30d": Personal,
 		"90d": Pro,
 	}
 	for name, expected := range want {
@@ -53,7 +53,7 @@ func TestHistoryWindowCatalog_IsTheSameInEveryEdition(t *testing.T) {
 
 func TestMaxHistoryWindow_PerEdition(t *testing.T) {
 	for edition, want := range map[Edition]string{
-		Community: "6h",
+		Community: "7d",
 		Personal:  "30d",
 		Pro:       "90d",
 	} {
@@ -70,17 +70,20 @@ func TestAllowsHistoryWindow_MatchesTheCaps(t *testing.T) {
 	matrix := map[Edition]map[string]want{
 		Community: {
 			"1h": {true, Community}, "6h": {true, Community},
-			"24h": {false, Personal}, "7d": {false, Personal}, "30d": {false, Personal},
+			"24h": {true, Community}, "7d": {true, Community},
+			"30d": {false, Personal},
 			"90d": {false, Pro},
 		},
 		Personal: {
 			"1h": {true, Community}, "6h": {true, Community},
-			"24h": {true, Personal}, "7d": {true, Personal}, "30d": {true, Personal},
+			"24h": {true, Community}, "7d": {true, Community},
+			"30d": {true, Personal},
 			"90d": {false, Pro},
 		},
 		Pro: {
 			"1h": {true, Community}, "6h": {true, Community},
-			"24h": {true, Personal}, "7d": {true, Personal}, "30d": {true, Personal},
+			"24h": {true, Community}, "7d": {true, Community},
+			"30d": {true, Personal},
 			"90d": {true, Pro},
 		},
 	}
@@ -111,7 +114,7 @@ func TestResolveHistoryWindow_RejectsWhatTheProductDoesNotServe(t *testing.T) {
 func TestMaxHistoryWindow_UnknownEditionFallsBackToTheFloor(t *testing.T) {
 	withEdition(t, Edition("enterprise-2030"))
 
-	assert.Equal(t, "6h", MaxHistoryWindow().Name)
+	assert.Equal(t, "7d", MaxHistoryWindow().Name)
 
 	paid, ok := ResolveHistoryWindow("30d")
 	require.True(t, ok)
@@ -127,7 +130,7 @@ func TestHistoryWindowNames_ListsTheWholeCatalogue(t *testing.T) {
 // The caps themselves, asserted once so a change of tiering is a deliberate act
 // and not a silent edit.
 func TestEditionHistoryCap_IsTheAnnouncedTiering(t *testing.T) {
-	assert.Equal(t, 6*time.Hour, editionHistoryCap[Community])
+	assert.Equal(t, 7*24*time.Hour, editionHistoryCap[Community])
 	assert.Equal(t, 30*24*time.Hour, editionHistoryCap[Personal])
 	assert.Equal(t, 90*24*time.Hour, editionHistoryCap[Pro])
 }
