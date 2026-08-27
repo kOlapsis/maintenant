@@ -126,3 +126,84 @@ func TestGetTopConsumersByPeriod_HostFilter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{agentCID}, ids(agentRows))
 }
+
+// The two periods this feature adds to the top consumers, so both endpoints
+// accept the same catalogue. 6h reads raw samples like 1h, 90d reads the daily
+// rollup like 7d and 30d.
+func TestGetTopConsumersByPeriod_AddedWindows(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cstore := NewContainerStore(db)
+	rstore := NewResourceStore(db)
+
+	cid := seedHostContainer(t, cstore, "ext-windows", "")
+
+	// Raw sample three hours back: inside 6h, outside 1h.
+	_, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
+		ContainerID: cid, CPUPercent: 42, MemUsed: 10, MemLimit: 100,
+		Timestamp: time.Now().Add(-3 * time.Hour),
+	})
+	require.NoError(t, err)
+
+	// Daily bucket sixty days back: inside 90d, outside 30d.
+	require.NoError(t, rstore.InsertDailyRollup(ctx, &resource.RollupRow{
+		ContainerID:   cid,
+		Bucket:        time.Now().UTC().AddDate(0, 0, -60).Truncate(24 * time.Hour),
+		AvgCPUPercent: 77,
+		AvgMemLimit:   100,
+		SampleCount:   24,
+	}))
+
+	sixHours, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "6h", 10, nil)
+	require.NoError(t, err)
+	require.Len(t, sixHours, 1)
+	assert.EqualValues(t, 42, sixHours[0].AvgValue)
+
+	oneHour, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, nil)
+	require.NoError(t, err)
+	assert.Empty(t, oneHour, "the sample is older than an hour")
+
+	ninetyDays, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, nil)
+	require.NoError(t, err)
+	require.Len(t, ninetyDays, 1)
+	assert.EqualValues(t, 77, ninetyDays[0].AvgValue)
+
+	thirtyDays, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "30d", 10, nil)
+	require.NoError(t, err)
+	assert.Empty(t, thirtyDays, "the bucket is older than thirty days")
+}
+
+// The host filter applies to the added periods like to the others.
+func TestGetTopConsumersByPeriod_AddedWindowsRespectTheHostFilter(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	agentStore := NewAgentStore(db)
+	cstore := NewContainerStore(db)
+	rstore := NewResourceStore(db)
+
+	agentID := "agent-windows"
+	require.NoError(t, agentStore.Insert(ctx, &agent.Agent{
+		AgentID: agentID, PublicKey: make([]byte, 32), Hostname: "h", Label: "edge",
+		OSArch: "linux/amd64", AgentVersion: "dev", DetectedRuntime: "docker",
+		Status: "active", CreatedAt: time.Now(),
+	}))
+
+	localCID := seedHostContainer(t, cstore, "ext-local-w", "")
+	agentCID := seedHostContainer(t, cstore, "ext-agent-w", agentID)
+
+	bucket := time.Now().UTC().AddDate(0, 0, -60).Truncate(24 * time.Hour)
+	for _, cid := range []string{localCID, agentCID} {
+		require.NoError(t, rstore.InsertDailyRollup(ctx, &resource.RollupRow{
+			ContainerID: cid, Bucket: bucket, AvgCPUPercent: 50, AvgMemLimit: 100, SampleCount: 24,
+		}))
+	}
+
+	all, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, nil)
+	require.NoError(t, err)
+	assert.Len(t, all, 2)
+
+	onlyAgent, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, &agentID)
+	require.NoError(t, err)
+	require.Len(t, onlyAgent, 1)
+	assert.Equal(t, agentCID, onlyAgent[0].ContainerID)
+}

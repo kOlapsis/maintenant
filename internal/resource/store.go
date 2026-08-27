@@ -24,6 +24,9 @@ const (
 	Granularity1m  Granularity = "1m"
 	Granularity5m  Granularity = "5m"
 	Granularity1h  Granularity = "1h"
+	// Granularity1d labels the points of the 90-day window. It is not an
+	// on-the-fly bucket size: the daily rollup already holds those buckets.
+	Granularity1d Granularity = "1d"
 )
 
 // DefaultSnapshotRetention is how long raw samples are kept. Only the ranges up
@@ -39,6 +42,7 @@ type ResourceStore interface {
 	ListSnapshots(ctx context.Context, containerID string, from, to time.Time) ([]*ResourceSnapshot, error)
 	ListSnapshotsAggregated(ctx context.Context, containerID string, from, to time.Time, granularity Granularity) ([]*ResourceSnapshot, error)
 	ListHourlyInRange(ctx context.Context, containerID string, from, to time.Time) ([]*ResourceSnapshot, error)
+	ListDailyInRange(ctx context.Context, containerID string, from, to time.Time) ([]*ResourceSnapshot, error)
 
 	GetAlertConfig(ctx context.Context, containerID string) (*ResourceAlertConfig, error)
 	UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfig) error

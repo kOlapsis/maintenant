@@ -35,6 +35,11 @@ type mockResourceStore struct {
 
 	hourlyRows       []*ResourceSnapshot
 	hourlyRangeCalls int
+
+	dailyRows       []*ResourceSnapshot
+	dailyRangeCalls int
+	dailyFrom       time.Time
+	dailyTo         time.Time
 }
 
 func newMockResourceStore() *mockResourceStore {
@@ -84,6 +89,11 @@ func (m *mockResourceStore) ListSnapshotsAggregated(_ context.Context, _ string,
 func (m *mockResourceStore) ListHourlyInRange(_ context.Context, _ string, _, _ time.Time) ([]*ResourceSnapshot, error) {
 	m.hourlyRangeCalls++
 	return m.hourlyRows, nil
+}
+func (m *mockResourceStore) ListDailyInRange(_ context.Context, _ string, from, to time.Time) ([]*ResourceSnapshot, error) {
+	m.dailyRangeCalls++
+	m.dailyFrom, m.dailyTo = from, to
+	return m.dailyRows, nil
 }
 func (m *mockResourceStore) DeleteSnapshotsBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
 	return 0, nil
@@ -685,6 +695,98 @@ func TestService_GetHistory_TimeRangeToGranularityMapping(t *testing.T) {
 			assert.Equal(t, tc.expectedGranularity, gran)
 			assert.Equal(t, tc.expectedGranularity, store.capturedGranularity,
 				"granularity passed to store must match returned granularity")
+		})
+	}
+}
+
+// The 30-day range reads the same hourly rollup as 7d. It must not group raw
+// snapshots, which are kept 48 hours and could not cover a month anyway.
+func TestService_GetHistory_30dReadsHourlyRollup(t *testing.T) {
+	store := &granularityCapturingStore{}
+	store.hourlyRows = []*ResourceSnapshot{
+		{ContainerID: "ctr-1", CPUPercent: 7, Timestamp: time.Now().Add(-20 * 24 * time.Hour)},
+	}
+	svc := newTestService(store, nil, nil)
+
+	snaps, gran, err := svc.GetHistory(context.Background(), "ctr-1", "30d")
+	require.NoError(t, err)
+
+	assert.Equal(t, Granularity1h, gran)
+	assert.Equal(t, 1, store.hourlyRangeCalls, "30d must read resource_hourly")
+	assert.Empty(t, store.capturedGranularity, "30d must not group raw snapshots")
+	require.Len(t, snaps, 1)
+}
+
+// TopConsumersNow ranks the latest samples. It is what answers the live ranking
+// on every surface, and it is open in every edition: the tiering caps how far
+// back a history goes, not the live picture.
+func TestService_TopConsumersNow(t *testing.T) {
+	svc := newTestService(&mockResourceStore{}, buildContainerSvc(newMockContainerStore()), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+	svc.collector.latest = map[string]*ResourceSnapshot{
+		"low":  {ContainerID: "low", CPUPercent: 5, MemUsed: 100, MemLimit: 1000},
+		"high": {ContainerID: "high", CPUPercent: 90, MemUsed: 900, MemLimit: 1000},
+		"mid":  {ContainerID: "mid", CPUPercent: 40, MemUsed: 400, MemLimit: 1000, AgentID: "agent-1"},
+	}
+
+	rows := svc.TopConsumersNow("cpu", 10, nil)
+	require.Len(t, rows, 3)
+	assert.Equal(t, "high", rows[0].ContainerID, "ranked by value, descending")
+	assert.Equal(t, "low", rows[2].ContainerID)
+
+	assert.Len(t, svc.TopConsumersNow("cpu", 2, nil), 2, "the limit caps the ranking")
+
+	mem := svc.TopConsumersNow("memory", 1, nil)
+	require.Len(t, mem, 1)
+	assert.EqualValues(t, 900, mem[0].AvgValue)
+	assert.InDelta(t, 90.0, mem[0].AvgPercent, 0.01, "percent is used over limit")
+
+	agent := "agent-1"
+	scoped := svc.TopConsumersNow("cpu", 10, &agent)
+	require.Len(t, scoped, 1)
+	assert.Equal(t, "mid", scoped[0].ContainerID)
+
+	local := ""
+	assert.Len(t, svc.TopConsumersNow("cpu", 10, &local), 2, "the local host owns the two unlabelled samples")
+}
+
+// The 90-day window must come from the daily rollup, kept a year, and not from
+// the hourly one, kept exactly 90 days: served from there its oldest buckets
+// would fall away mid-read.
+func TestService_GetHistory_90dReadsDailyRollup(t *testing.T) {
+	store := &granularityCapturingStore{}
+	store.dailyRows = []*ResourceSnapshot{
+		{ContainerID: "ctr-1", CPUPercent: 3, Timestamp: time.Now().AddDate(0, 0, -80)},
+	}
+	svc := newTestService(store, nil, nil)
+
+	snaps, gran, err := svc.GetHistory(context.Background(), "ctr-1", "90d")
+	require.NoError(t, err)
+
+	assert.Equal(t, Granularity1d, gran)
+	assert.Equal(t, 1, store.dailyRangeCalls, "90d must read resource_daily")
+	assert.Zero(t, store.hourlyRangeCalls, "90d must not read the hourly rollup")
+	assert.Empty(t, store.capturedGranularity, "90d must not group raw snapshots")
+	require.Len(t, snaps, 1)
+
+	// 90 days of daily buckets is 90 points, in any season: the rollup cuts on
+	// UTC midnight, so a daylight-saving change cannot make it 89 or 91.
+	span := store.dailyTo.Sub(store.dailyFrom)
+	assert.InDelta(t, (90 * 24 * time.Hour).Hours(), span.Hours(), 1.0,
+		"the requested span must be 90 days, not 89 or 91")
+}
+
+// An open window whose data does not cover the whole interval returns what
+// exists, with no error: a young instance is not a fault (FR-009).
+func TestService_GetHistory_OpenButEmptyWindowIsNotAnError(t *testing.T) {
+	for _, window := range []string{"1h", "6h", "24h", "7d", "30d", "90d"} {
+		t.Run(window, func(t *testing.T) {
+			store := &granularityCapturingStore{}
+			svc := newTestService(store, nil, nil)
+
+			snaps, _, err := svc.GetHistory(context.Background(), "ctr-1", window)
+			require.NoError(t, err)
+			assert.Empty(t, snaps)
 		})
 	}
 }

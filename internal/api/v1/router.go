@@ -59,6 +59,8 @@ type ErrorDetail struct {
 	Resource        string `json:"resource,omitempty"`         // QUOTA_EXCEEDED, HOST_LIMIT_REACHED
 	Limit           *int   `json:"limit,omitempty"`            // QUOTA_EXCEEDED, HOST_LIMIT_REACHED
 	RequiredEdition string `json:"required_edition,omitempty"` // both
+	Window          string `json:"window,omitempty"`           // EDITION_REQUIRED on a history window
+	MaxWindow       string `json:"max_window,omitempty"`       // the running edition's cap
 }
 
 // HandlerDeps holds all dependencies needed to build the API handler.
@@ -282,7 +284,9 @@ func NewRouter(d HandlerDeps) *Router {
 			rh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 		}
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/current", rh.HandleGetCurrent)
-		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", requireCapability(extension.CapResourceHistory, rh.HandleGetHistory))
+		// Open in every edition: the handler caps the window instead of the
+		// route refusing the whole history (FR-002).
+		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/history", rh.HandleGetHistory)
 		r.mux.HandleFunc("GET /api/v1/resources/summary", rh.HandleGetSummary)
 		r.mux.HandleFunc("GET /api/v1/resources/hosts", rh.HandleGetHosts)
 		r.mux.HandleFunc("GET /api/v1/containers/{id}/resources/alerts", rh.HandleGetAlertConfig)
@@ -821,6 +825,12 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 		// is ready. The two refusals must stay distinguishable (FR-015).
 		features[string(extension.CapSMTP)] = extension.Allows(extension.CapSMTP) && smtpConfigured
 
+		// The history cap is a duration, not a flag, so it travels beside the
+		// capabilities rather than among them. The catalogue is the same in
+		// every edition: it describes the product, which is what lets the
+		// interface show a closed window and name what would open it.
+		maxWindow := extension.MaxHistoryWindow()
+
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": r.organisationName,
@@ -828,6 +838,11 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 			"features":          features,
 			"feature_editions":  featureEditions,
 			"quotas":            r.computeQuotas(ctx, d),
+			"resource_history": map[string]interface{}{
+				"max_window":         maxWindow.Name,
+				"max_window_seconds": int64(maxWindow.Duration / time.Second),
+				"windows":            extension.HistoryWindowCatalog(),
+			},
 		})
 	}
 }

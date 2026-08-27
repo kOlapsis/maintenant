@@ -12,6 +12,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"runtime"
@@ -21,15 +22,23 @@ import (
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
+// ResourceHistoryService is what the history endpoint reads, and no more. It
+// exists so the window gate can be exercised without standing up a store, a
+// runtime and a container service behind it.
+type ResourceHistoryService interface {
+	GetHistory(ctx context.Context, containerID string, window string) ([]*resource.ResourceSnapshot, resource.Granularity, error)
+}
+
 // ResourceHandler handles resource monitoring HTTP endpoints.
 type ResourceHandler struct {
 	service *resource.Service
+	history ResourceHistoryService
 	agents  AgentDirectory // optional — names hosts in the /resources/hosts list
 }
 
 // NewResourceHandler creates a new resource handler.
 func NewResourceHandler(service *resource.Service) *ResourceHandler {
-	return &ResourceHandler{service: service}
+	return &ResourceHandler{service: service, history: service}
 }
 
 // SetAgentDirectory wires the agent directory so /resources/hosts can label
@@ -262,14 +271,14 @@ func (h *ResourceHandler) HandleGetHistory(w http.ResponseWriter, r *http.Reques
 		timeRange = "1h"
 	}
 
-	switch timeRange {
-	case "1h", "6h", "24h", "7d":
-	default:
-		WriteError(w, http.StatusBadRequest, "INVALID_RANGE", "Range must be 1h, 6h, 24h, or 7d")
+	// The window is both validated and gated here: the route itself is open in
+	// every edition, and what an edition buys is how far back it may look.
+	window, ok := resolveHistoryWindow(w, timeRange, "INVALID_RANGE")
+	if !ok {
 		return
 	}
 
-	snaps, granularity, err := h.service.GetHistory(r.Context(), id, timeRange)
+	snaps, granularity, err := h.history.GetHistory(r.Context(), id, window.Name)
 	if err != nil {
 		WriteStoreError(w, err, "Failed to fetch resource history")
 		return
@@ -291,7 +300,7 @@ func (h *ResourceHandler) HandleGetHistory(w http.ResponseWriter, r *http.Reques
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"container_id": id,
-		"range":        timeRange,
+		"range":        window.Name,
 		"granularity":  granularity,
 		"points":       points,
 	})

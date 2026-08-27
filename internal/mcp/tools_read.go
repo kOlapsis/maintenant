@@ -128,7 +128,7 @@ type listAlertsInput struct {
 type getResourcesInput struct{}
 type getTopConsumersInput struct {
 	Metric string `json:"metric" jsonschema:"Resource metric to sort by: cpu or memory"`
-	Period string `json:"period,omitempty" jsonschema:"Time period for ranking: current, 1h, or 24h"`
+	Period string `json:"period,omitempty" jsonschema:"Time period for ranking: current (live), or one of 1h, 6h, 24h, 7d, 30d, 90d. How far back a history window may go depends on the edition."`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of containers to return, default 10"`
 }
 type listEndpointsInput struct {
@@ -307,15 +307,28 @@ func getTopConsumersHandler(svc *Services) gomcp.ToolHandlerFor[getTopConsumersI
 		if input.Metric != "cpu" && input.Metric != "memory" {
 			return errResult("invalid input: metric must be 'cpu' or 'memory'")
 		}
-		period := input.Period
-		if period == "" {
-			period = "current"
-		}
 		limit := input.Limit
 		if limit <= 0 {
 			limit = 10
 		}
-		rows, err := svc.Resources.GetTopConsumersByPeriod(ctx, input.Metric, period, limit, nil)
+
+		// No period, or the live ranking: open in every edition, and the only
+		// path that used to be reachable here at all: "current" was passed
+		// straight to the store, which has never known that value.
+		period := input.Period
+		if period == "" || period == "current" {
+			return jsonResult(svc.Resources.TopConsumersNow(input.Metric, limit, nil))
+		}
+
+		window, known := extension.ResolveHistoryWindow(period)
+		if !known {
+			return errResult("invalid input: period must be 'current' or one of " + extension.HistoryWindowNames())
+		}
+		if allowed, required := extension.AllowsHistoryWindow(window); !allowed {
+			return refuseHistoryWindow(window, required)
+		}
+
+		rows, err := svc.Resources.GetTopConsumersByPeriod(ctx, input.Metric, window.Name, limit, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get top consumers: %w", err)
 		}

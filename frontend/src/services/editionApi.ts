@@ -34,6 +34,25 @@ export type QuotaResource =
  */
 export type Edition = 'community' | 'personal' | 'pro' | (string & {})
 
+/**
+ * One window of the resource-history catalogue, as the engine declares it. The
+ * whole catalogue is reported in every edition (it describes the product, not
+ * the running tier), which is what lets the interface show a closed window and
+ * name the edition that opens it without holding a table of its own.
+ */
+export interface HistoryWindowSpec {
+  window: string
+  seconds: number
+  min_edition: Edition
+}
+
+export interface ResourceHistoryContract {
+  /** The largest window the running edition opens, e.g. "6h". */
+  max_window: string
+  max_window_seconds: number
+  windows: HistoryWindowSpec[]
+}
+
 export interface EditionResponse {
   edition: Edition
   organisation_name: string
@@ -42,6 +61,8 @@ export interface EditionResponse {
   /** capability -> minimum edition that opens it, projected from the backend registry */
   feature_editions?: Record<string, Edition>
   quotas?: Partial<Record<QuotaResource, QuotaEntry>>
+  /** Absent on an engine older than the tiered history: no catalogue, no cap. */
+  resource_history?: ResourceHistoryContract
 }
 
 /**
@@ -57,6 +78,9 @@ export interface ApiErrorDetail {
   resource?: QuotaResource | string
   limit?: number
   required_edition?: Edition
+  /** EDITION_REQUIRED on a history window: what was asked, and the current cap. */
+  window?: string
+  max_window?: string
 }
 
 export function fetchEdition(): Promise<EditionResponse> {

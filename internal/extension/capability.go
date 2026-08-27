@@ -24,6 +24,10 @@ const (
 	CapAlertRouting   Capability = "alert_routing"
 	CapSwarmDashboard Capability = "swarm_dashboard"
 	CapK8sCluster     Capability = "k8s_cluster"
+	// CapResourceHistory is the right to see a history at all, which every
+	// edition now has. What separates the editions is how far back they may
+	// look, and that is a duration. See history_window.go.
+	CapResourceHistory Capability = "resource_history"
 
 	// Personal
 	CapMultihost            Capability = "multihost"
@@ -32,7 +36,6 @@ const (
 	CapChangelog            Capability = "changelog"
 	CapIncidents            Capability = "incidents"
 	CapSMTP                 Capability = "smtp"
-	CapResourceHistory      Capability = "resource_history"
 	CapAlertAdvancedFilters Capability = "alert_advanced_filters"
 	CapSecurityPosture      Capability = "security_posture"
 	CapOCSPStapling         Capability = "ocsp_stapling"
@@ -51,9 +54,10 @@ const (
 // middleware, the MCP tools and the /api/v1/edition response all read it, which
 // is what keeps the three surfaces from drifting apart.
 var minEdition = map[Capability]Edition{
-	CapAlertRouting:   Community,
-	CapSwarmDashboard: Community,
-	CapK8sCluster:     Community,
+	CapAlertRouting:    Community,
+	CapSwarmDashboard:  Community,
+	CapK8sCluster:      Community,
+	CapResourceHistory: Community,
 
 	CapMultihost:            Personal,
 	CapCVEEnrichment:        Personal,
@@ -61,7 +65,6 @@ var minEdition = map[Capability]Edition{
 	CapChangelog:            Personal,
 	CapIncidents:            Personal,
 	CapSMTP:                 Personal,
-	CapResourceHistory:      Personal,
 	CapAlertAdvancedFilters: Personal,
 	CapSecurityPosture:      Personal,
 	CapOCSPStapling:         Personal,

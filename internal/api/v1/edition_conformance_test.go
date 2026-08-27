@@ -118,6 +118,70 @@ func TestConformance_SMTPSeparatesPermissionFromConfiguration(t *testing.T) {
 		unconfigured["feature_editions"].(map[string]any)["smtp"])
 }
 
+// TestConformance_HistoryWindowsMatchWhatTheEndpointsAccept is FR-016 and
+// SC-003: for each edition, the set of windows the interface is told are open
+// must be exactly the set both history endpoints actually serve. A drift here
+// is the defect the whole feature exists to prevent: a window offered and then
+// refused, or refused and quietly served.
+func TestConformance_HistoryWindowsMatchWhatTheEndpointsAccept(t *testing.T) {
+	for _, edition := range []extension.Edition{extension.Community, extension.Personal, extension.Pro} {
+		t.Run(string(edition), func(t *testing.T) {
+			withEdition(t, edition)
+
+			body := editionResponse(t, true)
+			history, ok := body["resource_history"].(map[string]any)
+			require.True(t, ok, "the edition response carries no resource_history object")
+
+			windows, ok := history["windows"].([]any)
+			require.True(t, ok)
+			require.Len(t, windows, 6)
+
+			maxSeconds, ok := history["max_window_seconds"].(float64)
+			require.True(t, ok)
+
+			// max_window is always one of the catalogue's own names, never empty.
+			maxName, _ := history["max_window"].(string)
+			require.NotEmpty(t, maxName)
+
+			announcedOpen := map[string]bool{}
+			foundMax := false
+			for _, raw := range windows {
+				spec := raw.(map[string]any)
+				name := spec["window"].(string)
+				seconds := spec["seconds"].(float64)
+				announcedOpen[name] = seconds <= maxSeconds
+				if name == maxName {
+					foundMax = true
+				}
+
+				// The two ways of saying the same thing must agree: "within the
+				// cap" and "the edition ranks at or above the window's minimum".
+				minEdition := extension.Edition(spec["min_edition"].(string))
+				assert.Equal(t, edition.AtLeast(minEdition), announcedOpen[name],
+					"window %q: cap says %v, edition ranking says %v",
+					name, announcedOpen[name], edition.AtLeast(minEdition))
+			}
+			assert.True(t, foundMax, "max_window %q is not in the catalogue", maxName)
+
+			for name, open := range announcedOpen {
+				historyStub := &stubHistoryService{}
+				gotHistory := historyRequest(t, historyStub, name).Code
+
+				topStub := &stubTopService{}
+				gotTop := topRequest(t, topStub, "period="+name).Code
+
+				if open {
+					assert.Equal(t, http.StatusOK, gotHistory, "%s announced open, history refused it", name)
+					assert.Equal(t, http.StatusOK, gotTop, "%s announced open, top consumers refused it", name)
+					continue
+				}
+				assert.Equal(t, http.StatusForbidden, gotHistory, "%s announced closed, history served it", name)
+				assert.Equal(t, http.StatusForbidden, gotTop, "%s announced closed, top consumers served it", name)
+			}
+		})
+	}
+}
+
 // TestConformance_QuotasReportRealUsage: `used` used to be pinned to 0 on Pro,
 // so an instance running fifty endpoints reported none. Every edition now
 // counts, and the limit always comes from extension.Limit.

@@ -34,7 +34,6 @@ import PostureScoreBadge from './PostureScoreBadge.vue'
 import PostureCategoryBreakdown from './PostureCategoryBreakdown.vue'
 import ResourceCharts from './ResourceCharts.vue'
 import ResourceAlertConfig from './ResourceAlertConfig.vue'
-import FeatureGate from './FeatureGate.vue'
 import { useSecurityStore } from '@/stores/security'
 import { usePostureStore } from '@/stores/posture'
 import { useEdition } from '@/composables/useEdition'
@@ -416,14 +415,10 @@ watch(() => props.containerId, () => {
         <!-- v-if, not v-show: the charts only fetch their history once the tab
              is opened, so the panel costs nothing until then. -->
         <div v-else-if="activeTab === 'resources'" class="space-y-5 p-5">
-          <FeatureGate
-            feature="resource_history"
-            title="Resource History"
-            description="Track CPU, memory, network and block I/O over time, and alert on thresholds."
-          >
-            <ResourceCharts :container-id="containerId" />
-            <ResourceAlertConfig :container-id="containerId" class="mt-5" />
-          </FeatureGate>
+          <!-- Open in every edition: what an edition buys is how far back the
+               charts may look, and the window selector carries that (FR-004c). -->
+          <ResourceCharts :container-id="containerId" />
+          <ResourceAlertConfig :container-id="containerId" class="mt-5" />
         </div>
 
         <!-- INFO TAB -->

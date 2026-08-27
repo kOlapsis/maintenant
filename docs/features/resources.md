@@ -27,21 +27,52 @@ maintenant collects the following metrics for each container:
 
 ## Historical Charts
 
-maintenant stores metric snapshots and displays them as interactive time-series charts (powered by uPlot). Available time ranges:
+maintenant stores metric snapshots and displays them as interactive time-series charts (powered by uPlot). Every edition sees a history: what an edition buys is how far back it goes.
 
-| Range | Description | Edition |
-|-------|-------------|---------|
-| 1 hour | Fine-grained, per-second resolution | Community |
-| 6 hours | Recent activity | Community |
-| 24 hours | Full day view | :material-star-four-points:{ title="Personal" } Personal |
-| 7 days | Weekly trends | :material-star-four-points:{ title="Personal" } Personal |
-| 30 days | Monthly trends | :material-star-four-points:{ title="Personal" } Personal |
+| Window | Edition | Served from | Granularity |
+|--------|---------|-------------|-------------|
+| 1 hour | Community | raw samples | raw |
+| 6 hours | Community | raw samples | 1 minute |
+| 24 hours | :material-star-four-points:{ title="Personal" } Personal | raw samples | 5 minutes |
+| 7 days | :material-star-four-points:{ title="Personal" } Personal | hourly rollup | 1 hour |
+| 30 days | :material-star-four-points:{ title="Personal" } Personal | hourly rollup | 1 hour |
+| 90 days | :material-star-four-points:{ title="Pro" } Pro | daily rollup | 1 day |
+
+Each window reads a table kept strictly longer than the window itself, so a retention pass can never shorten a chart while you are looking at it. That is why 90 days comes from the daily rollup, kept a year, and not from the hourly one, kept exactly ninety days.
+
+!!! note "Disk I/O on the 90-day window"
+    The daily rollup carries CPU, memory and network, but not the block I/O
+    counters. On the 90-day window only, **Disk I/O reads zero**. Every shorter
+    window has it.
+
+The cap is a duration, not a list. The window catalogue and the edition that opens each entry are reported by the API, so the interface never holds a copy that could drift:
+
+```
+GET /api/v1/edition
+```
+
+```json
+{
+  "resource_history": {
+    "max_window": "6h",
+    "max_window_seconds": 21600,
+    "windows": [
+      { "window": "1h",  "seconds": 3600,    "min_edition": "community" },
+      { "window": "90d", "seconds": 7776000, "min_edition": "pro" }
+    ]
+  }
+}
+```
 
 Access historical data via the API:
 
 ```
 GET /api/v1/containers/{id}/resources/history?range=24h
 ```
+
+A window above your edition's cap is refused with `403 EDITION_REQUIRED`, naming the edition that opens it and your current cap. It is never silently shortened to the cap. A window the product does not know is a `400` instead: a bad request, not an edition question.
+
+The same catalogue and the same cap apply to the [top consumers](#top-consumers-view) and to the `get_top_consumers` MCP tool. There is no window that one surface serves and another refuses.
 
 ---
 
@@ -75,8 +106,11 @@ PUT /api/v1/containers/{id}/resources/alerts
 The top consumers view shows which containers are using the most resources, sorted by CPU or memory usage. Useful for quick triage when your host is under pressure.
 
 ```
-GET /api/v1/resources/top?sort=cpu&limit=10
+GET /api/v1/resources/top?metric=cpu&limit=10           # live ranking, every edition
+GET /api/v1/resources/top?metric=cpu&period=30d&limit=10 # ranked over a history window
 ```
+
+Omitting `period` ranks containers on their latest sample and is open in every edition. Passing one reads history, and the edition cap applies exactly as it does to the per-container charts.
 
 ---
 
@@ -134,3 +168,14 @@ See [Multi-Host Monitoring](multihost.md) for the full agent/server setup.
 
 - [Container Monitoring](containers.md) — Container states and health checks
 - [Alert Engine](alerts.md) — Resource threshold alerts
+
+---
+
+## Changelog
+
+**2026-08-27, history windows per edition.** Until this release the history API
+was open to Personal and above as a whole, so a Community instance saw no chart
+at all, and the 30-day period of the top consumers endpoint was reachable from
+any edition by calling it directly. Both are fixed: Community now sees 1h and
+6h, Pro gains a 90-day window, and every surface enforces the cap server-side.
+The tiering above is what the product serves, and what the pricing page states.

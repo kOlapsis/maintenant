@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -221,3 +222,51 @@ func TestGetEndpointHistoryInput_DefaultLimit(t *testing.T) {
 	assert.Equal(t, "5", input.EndpointID)
 	assert.Equal(t, 0, input.Limit, "Limit should default to zero (handler applies default of 50)")
 }
+
+// --- get_top_consumers: the history cap applies here too (FR-015a) ---
+
+func pinEdition(t *testing.T, e extension.Edition) {
+	t.Helper()
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return e }
+	t.Cleanup(func() { extension.CurrentEdition = original })
+}
+
+// This surface has no interface in front of it, so a cap enforced only in the
+// frontend would not exist here at all.
+func TestGetTopConsumers_RefusesAWindowAboveTheCap(t *testing.T) {
+	pinEdition(t, extension.Community)
+
+	// Services is deliberately empty: a refused window must never reach the
+	// store, so a nil resource service is enough to prove it.
+	handler := getTopConsumersHandler(&Services{})
+	result, _, err := handler(context.Background(), nil, getTopConsumersInput{Metric: "cpu", Period: "30d"})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+
+	text := textFromContent(t, result.Content)
+	assert.Contains(t, text, "edition_required")
+	assert.Contains(t, text, `"required_edition":"personal"`)
+	assert.Contains(t, text, `"window":"30d"`)
+	assert.Contains(t, text, `"max_window":"6h"`)
+}
+
+func TestGetTopConsumers_RefusesAWindowTheProductDoesNotKnow(t *testing.T) {
+	pinEdition(t, extension.Pro)
+
+	handler := getTopConsumersHandler(&Services{})
+	result, _, err := handler(context.Background(), nil, getTopConsumersInput{Metric: "cpu", Period: "2d"})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+
+	text := textFromContent(t, result.Content)
+	assert.Contains(t, text, "invalid input")
+	assert.NotContains(t, text, "edition_required", "a bad request is not an edition question")
+}
+
+// The live ranking (period absent or "current") never reaches the store: it is
+// answered by resource.Service.TopConsumersNow, covered in that package. Before
+// this feature, "current" was handed to the store, which has never known that
+// value, so the tool failed every time it was called without a period.

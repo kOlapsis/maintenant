@@ -175,6 +175,37 @@ func requireCapability(c extension.Capability, next http.HandlerFunc) http.Handl
 	}
 }
 
+// resolveHistoryWindow turns a window parameter into a window the running
+// edition actually opens, and writes the refusal itself when it cannot.
+//
+// It is the single place both history endpoints decide from, so they cannot
+// drift: a window the product does not know is a bad request, a window it knows
+// but the edition does not open is an edition refusal, and the two never look
+// alike. Nothing here falls back to the cap: a caller asking for more than it
+// gets has to be told, not quietly served less.
+func resolveHistoryWindow(w http.ResponseWriter, name, invalidCode string) (extension.HistoryWindow, bool) {
+	window, known := extension.ResolveHistoryWindow(name)
+	if !known {
+		WriteError(w, http.StatusBadRequest, invalidCode,
+			"Window must be one of "+extension.HistoryWindowNames())
+		return extension.HistoryWindow{}, false
+	}
+
+	if allowed, required := extension.AllowsHistoryWindow(window); !allowed {
+		WriteErrorDetail(w, http.StatusForbidden, ErrorDetail{
+			Code:            "EDITION_REQUIRED",
+			Message:         "The " + window.Name + " window requires the " + titleEdition(required) + " edition.",
+			Feature:         string(extension.CapResourceHistory),
+			RequiredEdition: string(required),
+			Window:          window.Name,
+			MaxWindow:       extension.MaxHistoryWindow().Name,
+		})
+		return extension.HistoryWindow{}, false
+	}
+
+	return window, true
+}
+
 // refuseCapability writes the same refusal as requireCapability, for handlers
 // that check a capability partway through rather than at the door.
 func refuseCapability(w http.ResponseWriter, c extension.Capability) {

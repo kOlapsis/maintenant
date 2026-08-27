@@ -140,6 +140,16 @@ The **Edition** column is the minimum a tool needs. Below it, the tool returns a
 That is the same decision the REST API makes, from the same table. Every tool is
 read-only except the ones listed under [Actions](#actions-write).
 
+One tool is not a plain yes or no: `get_top_consumers` ranks either the live
+samples or a history window, and how far back a window may go depends on the
+edition. The live ranking (`period` omitted, or `"current"`) is open everywhere;
+a `period` of `1h`, `6h`, `24h`, `7d`, `30d` or `90d` is held to the same cap as
+the charts (Community up to 6h, Personal up to 30d, Pro up to 90d), and a window
+above it returns `edition_required` carrying `window` and `max_window`.
+See [Resource Metrics](resources.md#historical-charts). An MCP client has no
+interface in front of it, which is exactly why the cap is enforced here and not
+only in the web UI.
+
 ### Monitoring (read)
 
 | Tool | Description | Edition |
@@ -153,7 +163,7 @@ read-only except the ones listed under [Actions](#actions-write).
 | `list_certificates` | TLS certificates with expiration, issuer, chain validity | Community |
 | `list_alerts` | Active alerts (or recent resolved/silenced ones with `active_only: false`) | Community |
 | `get_resources` | Host resource summary: CPU, memory, network, disk | Community |
-| `get_top_consumers` | Containers ranked by CPU or memory usage | Community |
+| `get_top_consumers` | Containers ranked by CPU or memory usage, live or over a history window | Community (see below) |
 | `get_updates` | Available image updates for monitored containers | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
 | `list_agents` | Registered remote agents with connection state and runtime | Personal |
