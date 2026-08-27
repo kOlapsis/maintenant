@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 	"time"
 
@@ -32,6 +33,36 @@ type mockResourceTopService struct {
 
 func (m *mockResourceTopService) GetAllLatestSnapshots() map[string]*resource.ResourceSnapshot {
 	return m.snapshots
+}
+
+// TopConsumersNow mirrors what the real service does with the latest samples,
+// so these tests keep exercising the ranking the endpoint reports.
+func (m *mockResourceTopService) TopConsumersNow(metric string, limit int, agentID *string) []resource.TopConsumerRow {
+	rows := make([]resource.TopConsumerRow, 0, len(m.snapshots))
+	for id, snap := range m.snapshots {
+		if !hostMatches(snap.AgentID, agentID) {
+			continue
+		}
+		var value, percent float64
+		switch metric {
+		case "cpu":
+			value, percent = snap.CPUPercent, snap.CPUPercent
+		case "memory":
+			value = float64(snap.MemUsed)
+			if snap.MemLimit > 0 {
+				percent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
+			}
+		}
+		rows = append(rows, resource.TopConsumerRow{
+			ContainerID: id, ContainerName: m.GetContainerName(id),
+			AvgValue: value, AvgPercent: percent,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].AvgValue > rows[j].AvgValue })
+	if limit < len(rows) {
+		rows = rows[:limit]
+	}
+	return rows
 }
 
 func (m *mockResourceTopService) GetContainerName(containerID string) string {

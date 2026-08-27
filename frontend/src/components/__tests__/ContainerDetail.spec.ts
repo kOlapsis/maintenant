@@ -150,14 +150,17 @@ describe('ContainerDetail — Resources tab', () => {
     expect(wrapper.find('[data-test="resource-alerts"]').exists()).toBe(true)
   })
 
-  it('gates the tab content behind the resource_history feature', async () => {
+  // The history is no longer all-or-nothing: the tab opens in every edition and
+  // the window selector carries the cap (FR-004c).
+  it('opens the tab without an edition gate', async () => {
     const wrapper = mountDetail()
     await settle(wrapper)
 
     await resourcesTab(wrapper)!.trigger('click')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('[data-feature="resource_history"]').exists()).toBe(true)
+    expect(wrapper.find('[data-feature="resource_history"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="resource-charts"]').exists()).toBe(true)
   })
 
   it('leaves the Details tab intact', async () => {

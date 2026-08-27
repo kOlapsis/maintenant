@@ -148,3 +148,74 @@ func TestAggregateHourlyRollup_ValuesAboveInt32(t *testing.T) {
 	require.NotEmpty(t, aggregated)
 	assert.Equal(t, memLimit, aggregated[0].MemLimit)
 }
+
+// The 90-day chart reads resource_daily, kept a year, rather than
+// resource_hourly, kept exactly 90 days. Two consecutive reads must cover the
+// same period, which the hourly table cannot promise at its own boundary.
+func TestListDailyInRange(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cid := seedHostContainer(t, NewContainerStore(db), "ext-daily", "")
+	store := NewResourceStore(db)
+
+	day := func(n int) time.Time {
+		return time.Now().UTC().AddDate(0, 0, -n).Truncate(24 * time.Hour)
+	}
+	for _, n := range []int{80, 40, 2} {
+		require.NoError(t, store.InsertDailyRollup(ctx, &resource.RollupRow{
+			ContainerID:   cid,
+			Bucket:        day(n),
+			AvgCPUPercent: float64(n),
+			AvgMemUsed:    int64(n) * 10,
+			AvgMemLimit:   1000,
+			AvgNetRx:      int64(n),
+			AvgNetTx:      int64(n) * 2,
+			SampleCount:   24,
+		}))
+	}
+
+	rows, err := store.ListDailyInRange(ctx, cid, day(90), time.Now())
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+
+	// Ordered by bucket, oldest first.
+	assert.True(t, rows[0].Timestamp.Before(rows[1].Timestamp))
+	assert.True(t, rows[1].Timestamp.Before(rows[2].Timestamp))
+	assert.EqualValues(t, 80, rows[0].CPUPercent)
+	assert.EqualValues(t, 2, rows[2].CPUPercent)
+
+	// The daily schema carries no block counters, so this window reports zero
+	// rather than a wrong number. Adding them would need a migration.
+	for _, row := range rows {
+		assert.Zero(t, row.BlockReadBytes)
+		assert.Zero(t, row.BlockWriteBytes)
+	}
+
+	// A narrower window excludes what falls outside it.
+	recent, err := store.ListDailyInRange(ctx, cid, day(30), time.Now())
+	require.NoError(t, err)
+	require.Len(t, recent, 1)
+	assert.EqualValues(t, 2, recent[0].CPUPercent)
+}
+
+// A container deleted while its history is still readable must not break the
+// window: the rollups outlive the container row.
+func TestListDailyInRange_SurvivesADeletedContainer(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cstore := NewContainerStore(db)
+	cid := seedHostContainer(t, cstore, "ext-gone", "")
+	store := NewResourceStore(db)
+
+	bucket := time.Now().UTC().AddDate(0, 0, -5).Truncate(24 * time.Hour)
+	require.NoError(t, store.InsertDailyRollup(ctx, &resource.RollupRow{
+		ContainerID: cid, Bucket: bucket, AvgCPUPercent: 9, AvgMemLimit: 100, SampleCount: 24,
+	}))
+
+	require.NoError(t, cstore.DeleteContainerByID(ctx, cid))
+
+	rows, err := store.ListDailyInRange(ctx, cid, bucket.Add(-24*time.Hour), time.Now())
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.EqualValues(t, 9, rows[0].CPUPercent)
+}

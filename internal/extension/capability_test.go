@@ -52,10 +52,13 @@ func TestCatalog_ReturnsACopy(t *testing.T) {
 // silently change price.
 func TestMinEdition_TierMembership(t *testing.T) {
 	tiers := map[Edition][]Capability{
-		Community: {CapAlertRouting, CapSwarmDashboard, CapK8sCluster},
+		// resource_history is the right to see a history at all, which every
+		// edition has. What the paid editions buy is how far back: a duration,
+		// held in history_window.go, not a flag.
+		Community: {CapAlertRouting, CapSwarmDashboard, CapK8sCluster, CapResourceHistory},
 		Personal: {
 			CapMultihost, CapCVEEnrichment, CapRiskScoring, CapChangelog,
-			CapIncidents, CapSMTP, CapResourceHistory, CapAlertAdvancedFilters,
+			CapIncidents, CapSMTP, CapAlertAdvancedFilters,
 			CapSecurityPosture, CapOCSPStapling,
 		},
 		Pro: {

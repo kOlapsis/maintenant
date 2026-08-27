@@ -17,6 +17,7 @@ import {
   type EditionResponse,
   type LicenseStatus,
   type QuotaResource,
+  type HistoryWindowSpec,
 } from '@/services/editionApi'
 import { sseBus } from '@/services/sseBus'
 import { onProbePayload } from '@/services/authGuard'
@@ -234,6 +235,44 @@ export function useEdition() {
     })
   }
 
+  /**
+   * The resource-history catalogue, exactly as the engine declares it. An
+   * engine that does not report one gives an empty catalogue: the interface
+   * shows what it knows and invents nothing, which is the whole point of
+   * reading this from the server rather than from a table compiled in here.
+   */
+  const historyWindows = computed<HistoryWindowSpec[]>(
+    () => edition.value?.resource_history?.windows ?? [],
+  )
+
+  /** The largest window the running edition opens, or '' when unknown. */
+  const maxHistoryWindow = computed(() => edition.value?.resource_history?.max_window ?? '')
+
+  const maxHistoryWindowSeconds = computed(
+    () => edition.value?.resource_history?.max_window_seconds ?? 0,
+  )
+
+  function isWindowOpen(name: string): boolean {
+    const spec = historyWindows.value.find((w) => w.window === name)
+    if (!spec) return false
+    return spec.seconds <= maxHistoryWindowSeconds.value
+  }
+
+  /** The edition that opens a window, or null when this build has no catalogue. */
+  function requiredEditionForWindow(name: string): Edition | null {
+    return historyWindows.value.find((w) => w.window === name)?.min_edition ?? null
+  }
+
+  /**
+   * The fallback a view drops to when the window it was showing closes under
+   * it. The catalogue is ordered by duration, so the last open entry is the
+   * largest one.
+   */
+  const largestOpenWindow = computed<string>(() => {
+    const open = historyWindows.value.filter((w) => w.seconds <= maxHistoryWindowSeconds.value)
+    return open.length > 0 ? open[open.length - 1]!.window : ''
+  })
+
   const personalization = computed(() => hasFeature('personalization'))
 
   return {
@@ -249,6 +288,12 @@ export function useEdition() {
     organisationName,
     statusURL,
     hasFeature,
+    historyWindows,
+    maxHistoryWindow,
+    maxHistoryWindowSeconds,
+    isWindowOpen,
+    requiredEditionForWindow,
+    largestOpenWindow,
     personalization,
     load,
     reload,

@@ -99,6 +99,21 @@ type resumeMonitorInput struct {
 // REST requireCapability middleware does — same table, same names, so a
 // capability resolves identically whichever surface asks. The refusal names the
 // edition required; it does not advertise.
+// refuseHistoryWindow is the checkCapability of a history window: same shape of
+// answer, but the thing refused is a duration, not a flag. This surface has no
+// interface in front of it, which is exactly why the cap has to live here too.
+func refuseHistoryWindow(w extension.HistoryWindow, required extension.Edition) (*gomcp.CallToolResult, any, error) {
+	msg := fmt.Sprintf(
+		`{"error":"edition_required","feature":%q,"window":%q,"max_window":%q,"required_edition":%q,"message":"The %s window requires the %s edition of Maintenant."}`,
+		string(extension.CapResourceHistory), w.Name, extension.MaxHistoryWindow().Name,
+		string(required), w.Name, titleEdition(required),
+	)
+	return &gomcp.CallToolResult{
+		Content: []gomcp.Content{&gomcp.TextContent{Text: msg}},
+		IsError: true,
+	}, nil, nil
+}
+
 func checkCapability(c extension.Capability) (*gomcp.CallToolResult, any, error) {
 	if extension.Allows(c) {
 		return nil, nil, nil

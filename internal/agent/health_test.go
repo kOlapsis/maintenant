@@ -68,7 +68,11 @@ func TestStartHealthReporter_WritesImmediatelyThenRefreshes(t *testing.T) {
 	dir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	StartHealthReporter(t.Context(), dir, 10*time.Millisecond, logger)
+	// Registered after t.TempDir, so cleanups run it first: the reporter is
+	// stopped before the directory is removed. Without it the goroutine can
+	// recreate the liveness file mid-RemoveAll and fail the cleanup.
+	stopped := StartHealthReporter(t.Context(), dir, 10*time.Millisecond, logger)
+	t.Cleanup(func() { <-stopped })
 	require.NoError(t, CheckHealth(dir, HealthMaxAge, time.Now()),
 		"liveness must be published before the first tick")
 

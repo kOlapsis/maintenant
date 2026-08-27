@@ -58,13 +58,17 @@ func WriteHealth(dataDir string, t time.Time) error {
 	return nil
 }
 
-// StartHealthReporter refreshes the liveness file every interval until ctx is done.
+// StartHealthReporter refreshes the liveness file every interval until ctx is
+// done. The returned channel is closed once the reporter has stopped writing,
+// so a caller that needs the directory settled can wait for it: cancelling the
+// context only asks the goroutine to stop, it does not mean an in-flight write
+// has landed.
 //
 // Reachability of the server is deliberately not part of the signal: an agent
 // that cannot reach the server is already reported as disconnected there, and
 // letting an orchestrator restart the agent over it would fix nothing while
 // hiding the actual outage.
-func StartHealthReporter(ctx context.Context, dataDir string, interval time.Duration, logger *slog.Logger) {
+func StartHealthReporter(ctx context.Context, dataDir string, interval time.Duration, logger *slog.Logger) <-chan struct{} {
 	report := func() {
 		if err := WriteHealth(dataDir, time.Now()); err != nil {
 			logger.Warn("agent: liveness file refresh failed", "err", err)
@@ -72,7 +76,9 @@ func StartHealthReporter(ctx context.Context, dataDir string, interval time.Dura
 	}
 	report()
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
@@ -80,10 +86,18 @@ func StartHealthReporter(ctx context.Context, dataDir string, interval time.Dura
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				// A cancellation racing a tick leaves both cases ready and the
+				// select picks at random, so re-check before writing: without
+				// it the reporter can recreate the file after its owner
+				// believes it has stopped.
+				if ctx.Err() != nil {
+					return
+				}
 				report()
 			}
 		}
 	}()
+	return done
 }
 
 // CheckHealth reports whether an agent refreshed its liveness file within maxAge.

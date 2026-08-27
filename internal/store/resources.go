@@ -120,6 +120,32 @@ func (s *ResourceStore) ListHourlyInRange(ctx context.Context, containerID strin
 	return collectSnapshots(rows)
 }
 
+// ListDailyInRange returns the daily rollup for a container as snapshots. The
+// 90-day window reads it rather than the hourly rollup, which is kept exactly
+// 90 days: served from there, its oldest buckets would fall away mid-read and
+// two consecutive calls would not cover the same period.
+//
+// The daily schema carries no block I/O columns, so those two counters are 0 on
+// this window. Adding them would need a migration.
+func (s *ResourceStore) ListDailyInRange(ctx context.Context, containerID string, from, to time.Time) ([]*resource.ResourceSnapshot, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT '' AS id, container_id, '' AS agent_id,
+			avg_cpu_percent, avg_mem_used, avg_mem_limit,
+			avg_net_rx_bytes, avg_net_tx_bytes,
+			0 AS avg_block_read_bytes, 0 AS avg_block_write_bytes, bucket
+		FROM resource_daily
+		WHERE container_id = ? AND bucket >= ? AND bucket <= ?
+		ORDER BY bucket`,
+		containerID, from.Unix(), to.Unix())
+	if err != nil {
+		return nil, fmt.Errorf("list daily in range: %w", err)
+	}
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
+	return collectSnapshots(rows)
+}
+
 func (s *ResourceStore) GetAlertConfig(ctx context.Context, containerID string) (*resource.ResourceAlertConfig, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, container_id, cpu_threshold, mem_threshold, enabled, alert_state,
@@ -264,8 +290,12 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 	var table, timeCol, valExpr, pctExpr string
 	var from int64
 	switch period {
-	case "1h":
-		table, timeCol, from = "resource_snapshots", "timestamp", now.Add(-1*time.Hour).Unix()
+	case "1h", "6h":
+		hours := 1
+		if period == "6h" {
+			hours = 6
+		}
+		table, timeCol, from = "resource_snapshots", "timestamp", now.Add(-time.Duration(hours)*time.Hour).Unix()
 		switch metric {
 		case "cpu":
 			valExpr, pctExpr = "AVG(cpu_percent)", "AVG(cpu_percent)"
@@ -275,16 +305,18 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 		default:
 			return nil, fmt.Errorf("invalid metric: %s", metric)
 		}
-	case "24h", "7d", "30d":
+	case "24h", "7d", "30d", "90d":
 		table, timeCol = "resource_daily", "bucket"
 		switch period {
 		case "24h":
 			table = "resource_hourly"
 			from = now.Add(-24 * time.Hour).Unix()
 		case "7d":
-			from = now.Add(-7 * 24 * time.Hour).Unix()
+			from = now.AddDate(0, 0, -7).Unix()
+		case "90d":
+			from = now.AddDate(0, 0, -90).Unix()
 		default:
-			from = now.Add(-30 * 24 * time.Hour).Unix()
+			from = now.AddDate(0, 0, -30).Unix()
 		}
 		switch metric {
 		case "cpu":

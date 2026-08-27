@@ -65,7 +65,6 @@ const CAPABILITY_LABELS: Record<string, string> = {
   security_posture: 'Unified security posture',
   incidents: 'Status page incidents',
   changelog: 'Update changelog',
-  resource_history: 'Container resource history',
   alert_advanced_filters: 'Advanced trigger filters',
   ocsp_stapling: 'OCSP stapling',
   slack: 'Slack channel',
@@ -108,6 +107,10 @@ const rows = computed(() => {
   const entries = Object.entries(registry) as [string, Edition][]
 
   return entries
+    // resource_history is open in every edition; what differs is how far back,
+    // and a checkmark in all three columns would say the opposite of the truth.
+    // It gets its own row below, showing the cap per tier.
+    .filter(([capability]) => capability !== 'resource_history')
     .map(([capability, min]) => ({
       capability,
       label: CAPABILITY_LABELS[capability] ?? capability,
@@ -115,6 +118,25 @@ const rows = computed(() => {
       rank: RANK[min as Tier] ?? 99,
     }))
     .sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label))
+})
+
+/**
+ * The history cap per tier, derived from the catalogue the engine reports: for
+ * each tier, the largest window whose minimum edition that tier reaches. The
+ * three columns are computed, never written down, so this page cannot announce
+ * a window the server would refuse.
+ */
+const historyCapByTier = computed<Record<Tier, string>>(() => {
+  const windows = edition.value?.resource_history?.windows ?? []
+  const caps = { community: '', personal: '', pro: '' } as Record<Tier, string>
+
+  for (const tier of TIERS) {
+    for (const w of windows) {
+      const minRank = RANK[w.min_edition as Tier]
+      if (minRank !== undefined && RANK[tier] >= minRank) caps[tier] = w.window
+    }
+  }
+  return caps
 })
 
 function includedIn(minEdition: Edition, tier: Tier): boolean {
@@ -249,6 +271,20 @@ function isUpgrade(tier: Tier): boolean {
             <th colspan="4" class="px-4 py-3 text-left font-semibold text-mnt-primary">
               Features
             </th>
+          </tr>
+
+          <!-- A duration, not a checkmark: every edition sees a history, and
+               what it buys is how far back it goes (FR-004d). -->
+          <tr v-if="historyCapByTier.community" class="border-b border-mnt-subtle">
+            <td class="px-4 py-2.5 text-mnt-secondary">Container resource history</td>
+            <td
+              v-for="tier in TIERS"
+              :key="tier"
+              class="px-4 py-2.5 text-center"
+              :class="isActive(tier) ? 'text-mnt-primary font-medium' : 'text-mnt-muted'"
+            >
+              up to {{ historyCapByTier[tier] }}
+            </td>
           </tr>
 
           <tr

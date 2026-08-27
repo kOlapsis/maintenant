@@ -15,12 +15,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // EventCallback is the function signature for SSE event broadcasting.
@@ -130,14 +132,28 @@ func (s *Service) GetContainerName(containerID string) string {
 
 // GetHistory returns historical resource snapshots for charting.
 //
-// Ranges up to 24h group raw samples on the fly; 7d reads the hourly rollup,
-// which already holds exactly the buckets that range displays. That is what
-// keeps the raw retention window short — see DefaultSnapshotRetention.
+// Ranges up to 24h group raw samples on the fly; 7d and 30d read the hourly
+// rollup, which already holds exactly the buckets those ranges display. That is
+// what keeps the raw retention window short. See DefaultSnapshotRetention.
+//
+// Every range reads a table kept strictly longer than the range itself, so a
+// retention pass can never amputate a read in progress.
 func (s *Service) GetHistory(ctx context.Context, containerID string, timeRange string) ([]*ResourceSnapshot, Granularity, error) {
 	now := time.Now()
 
-	if timeRange == "7d" {
-		snaps, err := s.store.ListHourlyInRange(ctx, containerID, now.Add(-7*24*time.Hour), now)
+	switch timeRange {
+	case "90d":
+		snaps, err := s.store.ListDailyInRange(ctx, containerID, now.AddDate(0, 0, -90), now)
+		if err != nil {
+			return nil, "", err
+		}
+		return snaps, Granularity1d, nil
+	case "7d", "30d":
+		days := 7
+		if timeRange == "30d" {
+			days = 30
+		}
+		snaps, err := s.store.ListHourlyInRange(ctx, containerID, now.AddDate(0, 0, -days), now)
 		if err != nil {
 			return nil, "", err
 		}
@@ -173,6 +189,56 @@ func (s *Service) GetAlertConfig(ctx context.Context, containerID string) (*Reso
 // UpsertAlertConfig creates or updates alert configuration.
 func (s *Service) UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfig) error {
 	return s.store.UpsertAlertConfig(ctx, cfg)
+}
+
+// TopConsumersNow ranks containers on their latest sample rather than on a
+// history window. It is open in every edition: what the tiering caps is how far
+// back a history goes, not the live picture.
+//
+// agentID filters by host with the same convention as the historical ranking.
+func (s *Service) TopConsumersNow(metric string, limit int, agentID *string) []TopConsumerRow {
+	all := s.GetAllLatestSnapshots()
+
+	rows := make([]TopConsumerRow, 0, len(all))
+	for id, snap := range all {
+		if !hostMatchesFilter(snap.AgentID, agentID) {
+			continue
+		}
+		var value, percent float64
+		switch metric {
+		case "cpu":
+			value, percent = snap.CPUPercent, snap.CPUPercent
+		case "memory":
+			value = float64(snap.MemUsed)
+			if snap.MemLimit > 0 {
+				percent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
+			}
+		}
+		rows = append(rows, TopConsumerRow{ContainerID: id, AvgValue: value, AvgPercent: percent})
+	}
+
+	sort.Slice(rows, func(i, j int) bool { return rows[i].AvgValue > rows[j].AvgValue })
+
+	if limit < len(rows) {
+		rows = rows[:limit]
+	}
+	for i := range rows {
+		rows[i].ContainerName = s.GetContainerName(rows[i].ContainerID)
+	}
+	return rows
+}
+
+// hostMatchesFilter reports whether a sample belongs to the host being asked
+// for: nil means every host, "" means the local server, anything else is an
+// agent id.
+func hostMatchesFilter(snapAgent string, filter *string) bool {
+	if filter == nil {
+		return true
+	}
+	if *filter == "" {
+		return snapAgent == "" || snapAgent == uid.LocalAgent
+	}
+	return snapAgent == *filter
 }
 
 // GetTopConsumersByPeriod returns the top resource consumers averaged over a

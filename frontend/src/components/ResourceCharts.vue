@@ -12,10 +12,14 @@
 -->
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { getResourceHistory, type HistoryPoint } from '@/services/resourceApi'
 import { useChart } from '@/composables/useChart'
 import { useResourcesStore } from '@/stores/resources'
+import { useEdition } from '@/composables/useEdition'
+import { ApiError } from '@/services/apiFetch'
+import EditionBadge from '@/components/EditionBadge.vue'
+import { Lock } from 'lucide-vue-next'
 import type uPlot from 'uplot'
 
 const props = defineProps<{
@@ -23,10 +27,12 @@ const props = defineProps<{
 }>()
 
 const resourcesStore = useResourcesStore()
+const { historyWindows, isWindowOpen, requiredEditionForWindow, largestOpenWindow, reload } =
+  useEdition()
 const selectedRange = ref('1h')
-const ranges = ['1h', '6h', '24h', '7d']
 const loading = ref(false)
 const points = ref<HistoryPoint[]>([])
+const closedNotice = ref('')
 
 const cpuEl = ref<HTMLElement | null>(null)
 const memEl = ref<HTMLElement | null>(null)
@@ -125,8 +131,20 @@ async function fetchHistory() {
   try {
     const res = await getResourceHistory(props.containerId, selectedRange.value)
     points.value = res.points || []
-  } catch {
+  } catch (err) {
     points.value = []
+    // A license can expire between two refreshes, and the view must not break
+    // on the window it was already showing. The refusal itself is the signal:
+    // fall back to the largest window still open and say so (FR-021b).
+    if (err instanceof ApiError && err.isEditionRefusal) {
+      const closed = selectedRange.value
+      await reload()
+      const fallback = largestOpenWindow.value
+      if (fallback && fallback !== closed) {
+        closedNotice.value = `${closed} is no longer available on this edition. Showing ${fallback}.`
+        selectedRange.value = fallback
+      }
+    }
   } finally {
     loading.value = false
   }
@@ -163,6 +181,22 @@ function updateCharts() {
   ])
 }
 
+/**
+ * A closed window is shown, never hidden: seeing one hour of history is what
+ * makes thirty days worth wanting. Clicking it does nothing and asks nothing:
+ * the interface does not fire a request it knows will be refused (FR-018).
+ */
+/** The cheapest window the running edition does not open, or null when it opens everything. */
+const firstClosedWindow = computed(() => historyWindows.value.find((w) => !isWindowOpen(w.window)) ?? null)
+
+function selectRange(window: string) {
+  if (!isWindowOpen(window)) return
+  // The fallback notice stands until the user picks a window themselves; the
+  // refetch that follows the fallback must not erase what it just said.
+  closedNotice.value = ''
+  selectedRange.value = window
+}
+
 watch(selectedRange, () => fetchHistory())
 onMounted(() => fetchHistory())
 </script>
@@ -181,16 +215,26 @@ onMounted(() => fetchHistory())
         }"
       >
         <button
-          v-for="r in ranges"
-          :key="r"
-          class="px-3 py-1 text-xs font-medium transition"
+          v-for="w in historyWindows"
+          :key="w.window"
+          :data-test="`range-${w.window}`"
+          :data-locked="isWindowOpen(w.window) ? undefined : 'true'"
+          :disabled="!isWindowOpen(w.window)"
+          class="flex items-center gap-1 px-3 py-1 text-xs font-medium transition"
           :style="{
-            backgroundColor: selectedRange === r ? 'var(--mnt-accent)' : 'var(--mnt-bg-surface)',
-            color: selectedRange === r ? 'var(--mnt-text-inverted)' : 'var(--mnt-text-secondary)',
+            backgroundColor: selectedRange === w.window ? 'var(--mnt-accent)' : 'var(--mnt-bg-surface)',
+            color: selectedRange === w.window
+              ? 'var(--mnt-text-inverted)'
+              : isWindowOpen(w.window)
+                ? 'var(--mnt-text-secondary)'
+                : 'var(--mnt-text-muted)',
+            cursor: isWindowOpen(w.window) ? 'pointer' : 'not-allowed',
+            opacity: isWindowOpen(w.window) ? '1' : '0.6',
           }"
-          @click="selectedRange = r"
+          @click="selectRange(w.window)"
         >
-          {{ r }}
+          {{ w.window }}
+          <Lock v-if="!isWindowOpen(w.window)" class="h-3 w-3" />
         </button>
       </div>
       <div
@@ -198,6 +242,37 @@ onMounted(() => fetchHistory())
         class="ml-2 h-4 w-4 animate-spin rounded-full border-2"
         :style="{ borderColor: 'var(--mnt-border-default)', borderTopColor: 'var(--mnt-accent)' }"
       />
+
+      <!-- What the next window up would cost, in the vocabulary the rest of the
+           interface already uses for gating. -->
+      <router-link
+        v-if="firstClosedWindow"
+        :to="{ name: 'editions' }"
+        class="ml-1 flex items-center gap-1.5 text-xs"
+        :style="{ color: 'var(--mnt-text-muted)' }"
+      >
+        <Lock class="h-3 w-3" />
+        <span>{{ firstClosedWindow.window }} and beyond</span>
+        <EditionBadge
+          v-if="requiredEditionForWindow(firstClosedWindow.window)"
+          :edition="requiredEditionForWindow(firstClosedWindow.window)!"
+        />
+      </router-link>
+    </div>
+
+    <!-- The window closed under the view: said plainly, not as a failure. -->
+    <div
+      v-if="closedNotice"
+      class="rounded px-3 py-2 text-xs"
+      :style="{
+        backgroundColor: 'var(--mnt-bg-elevated)',
+        border: '1px solid var(--mnt-border-subtle)',
+        color: 'var(--mnt-text-secondary)',
+        borderRadius: 'var(--mnt-radius-md)',
+      }"
+      data-test="window-closed-notice"
+    >
+      {{ closedNotice }}
     </div>
 
     <!-- Empty state -->
