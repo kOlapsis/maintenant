@@ -15,6 +15,8 @@ helm install maintenant ./deploy/helm/maintenant \
 
 This is the recommended approach for production clusters. See the [Helm section](#helm) below for full options.
 
+On a cluster built with `kube-hetzner`, `hetzner-k3s` or Talos, add `--set persistence.storageClass=hcloud-volumes` so the PVC binds to the Hetzner CSI driver — see [Kubernetes on Hetzner](hetzner.md#kubernetes-on-hetzner).
+
 ### Raw manifests
 
 Apply the provided manifests:
@@ -358,6 +360,7 @@ helm uninstall maintenant -n maintenant
 ## Related
 
 - [Installation](../getting-started/installation.md) — Docker and source builds
+- [Hetzner Cloud Deployment](hetzner.md) — Clusters built with kube-hetzner, hetzner-k3s or Talos
 - [Configuration](../getting-started/configuration.md) — Environment variables
 - [Container Monitoring](../features/containers.md) — How workloads are tracked
 - [Resource Metrics](../features/resources.md) — CPU/memory from metrics-server

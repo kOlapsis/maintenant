@@ -87,6 +87,7 @@ nav:
       - Agent Setup: guides/agent-setup.md
       - Docker Labels Reference: guides/docker-labels.md
       - Kubernetes Guide: guides/kubernetes.md
+      - Hetzner Cloud Deployment: guides/hetzner.md
       - Docker Swarm Deployment: guides/swarm.md
       - PostgreSQL Storage: guides/postgresql.md
   - API:

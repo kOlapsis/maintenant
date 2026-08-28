@@ -183,6 +183,22 @@ maintenant --version
 
 > For pinning a specific version, air-gapped installs, uninstall, and supply-chain verification, see the **[install documentation](https://docs.maintenant.dev/install)**.
 
+### Hetzner Cloud
+
+```bash
+hcloud server create \
+  --name maintenant \
+  --type cx22 \
+  --image ubuntu-24.04 \
+  --location nbg1 \
+  --ssh-key my-key \
+  --user-data-from-file deploy/hetzner/cloud-init.yaml
+```
+
+The [cloud-init file](deploy/hetzner/cloud-init.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Cloud Firewall rules, Hetzner Volumes for the database, agent enrolment over a private Cloud Network, Load Balancer checks and Kubernetes clusters built with `kube-hetzner` / `hetzner-k3s` / Talos are covered in the **[Hetzner Cloud Deployment Guide](https://docs.maintenant.dev/guides/hetzner/)**.
+
+> For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
+
 ---
 
 ## Features
@@ -197,7 +213,13 @@ Monitor your entire fleet from a single pane of glass. One central **server** re
 
 ```bash
 # On each remote host — one command, generated for you in the UI
-curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+docker run -d \
+  --name maintenant-agent \
+  --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /proc:/host/proc:ro \
+  -v maintenant-agent-data:/var/lib/maintenant \
+  ghcr.io/kolapsis/maintenant:latest \
   --mode=agent \
   --server=grpcs://monitoring.example.com \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX \

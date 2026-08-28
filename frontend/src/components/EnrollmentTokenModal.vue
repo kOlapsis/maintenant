@@ -25,17 +25,17 @@ const emit = defineEmits<{
 
 const STORAGE_KEY = 'mnt:enrollment-modal-mode'
 const MODES: Array<{ id: InstallMode; label: string }> = [
-  { id: 'standalone', label: 'Standalone' },
   { id: 'docker_run', label: 'Docker run' },
   { id: 'docker_compose', label: 'Compose' },
   { id: 'kubernetes', label: 'Kubernetes' },
+  { id: 'standalone', label: 'Standalone (soon)' },
 ]
 
 function isValidMode(value: unknown): value is InstallMode {
   return typeof value === 'string' && MODES.some((m) => m.id === value)
 }
 
-const selectedMode = ref<InstallMode>('standalone')
+const selectedMode = ref<InstallMode>('docker_run')
 
 onMounted(() => {
   try {
@@ -178,6 +178,7 @@ const hasLocalWarning = props.token.warnings?.includes('public_url_appears_local
             >{{ currentTemplate }}</pre>
 
             <button
+              v-if="selectedMode !== 'standalone'"
               type="button"
               class="mt-2 w-full rounded-lg border border-mnt-default bg-mnt-primary px-4 py-2 text-sm font-medium text-mnt-secondary hover:bg-mnt-elevated transition-colors"
               @click="copyText(currentTemplate, 'command')"
