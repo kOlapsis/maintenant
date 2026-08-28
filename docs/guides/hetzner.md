@@ -144,14 +144,22 @@ MAINTENANT_GRPC_LISTEN=10.0.0.2:8443
 MAINTENANT_GRPC_URL=grpcs://maintenant.internal.example.com:8443
 ```
 
-Then enrol each other server with the agent, dialling the private address:
+Then enrol each other server. Generate a token from **Agents → Add host**: the modal hands you a ready-made command, with the server address already filled in. Run it on the host, over the private address:
 
 ```bash
-curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+docker run -d \
+  --name maintenant-agent \
+  --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /proc:/host/proc:ro \
+  -v maintenant-agent-data:/var/lib/maintenant \
+  ghcr.io/kolapsis/maintenant:latest \
   --mode=agent \
   --server=grpcs://maintenant.internal.example.com:8443 \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
 ```
+
+The token is consumed on first enrolment and cannot be retrieved again. The full walkthrough, including the Compose and Kubernetes variants, is in [Agent Setup](agent-setup.md).
 
 !!! important "Private does not mean plaintext"
     Binding on `10.0.0.2` keeps the listener off the public internet, but the agent still speaks
