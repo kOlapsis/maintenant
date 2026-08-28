@@ -199,9 +199,7 @@ Every release includes:
 | `maintenant-vX.Y.Z-linux-amd64` / `-arm64` | Binary for each architecture |
 | `install.sh` | The install script itself, stamped with the release tag |
 | `SHA256SUMS` | Checksums for the binaries and the script |
-| `SHA256SUMS.sig` | cosign signature of `SHA256SUMS` |
-| `SHA256SUMS.pem` | Sigstore ephemeral certificate |
-| `SHA256SUMS.bundle` | Sigstore bundle, for verifying by hand |
+| `SHA256SUMS.bundle` | Sigstore bundle: the cosign signature and its certificate |
 | `provenance.intoto.jsonl` | SLSA Build L3 attestation |
 
 The script published with a release carries that release's tag in its header, and
@@ -212,7 +210,9 @@ disk always names the script that produced it.
 
 1. Downloads the binary and `SHA256SUMS` into a temp directory.
 2. Verifies the binary against its SHA256 checksum — **mandatory**, exits code 21 on mismatch.
-3. If `cosign` is in `$PATH` and `--skip-cosign` is not set, verifies the `SHA256SUMS` signature against the Sigstore transparency log, asserting that the signature was produced by the official `release.yml` workflow on the correct tag.
+3. If `cosign` 3 or later is in `$PATH` and `--skip-cosign` is not set, verifies the `SHA256SUMS` signature from the bundle against the Sigstore transparency log, asserting that the signature was produced by the official `release.yml` workflow on the correct tag.
+
+**cosign 3 is required.** `sign-blob` dropped `--output-signature` and `--output-certificate`, so a release carries a bundle and nothing else, and reading that bundle needs a 3.x binary. An older cosign is treated like an absent one: the script says so and continues, rather than reporting a signature failure that would say nothing about the signature.
 
 The cosign check is **best-effort**: if `cosign` is absent, the script warns and continues. Install it for full supply-chain protection:
 
@@ -231,16 +231,14 @@ BASE=https://github.com/kolapsis/maintenant/releases/download/${VERSION}
 
 curl -LO ${BASE}/maintenant-${VERSION}-linux-${ARCH}
 curl -LO ${BASE}/SHA256SUMS
-curl -LO ${BASE}/SHA256SUMS.sig
-curl -LO ${BASE}/SHA256SUMS.pem
+curl -LO ${BASE}/SHA256SUMS.bundle
 
 # SHA256
 sha256sum -c SHA256SUMS --ignore-missing
 
-# cosign
+# cosign (3.x)
 cosign verify-blob \
-  --certificate SHA256SUMS.pem \
-  --signature SHA256SUMS.sig \
+  --bundle SHA256SUMS.bundle \
   --certificate-identity-regexp \
     "^https://github\.com/kolapsis/maintenant/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \

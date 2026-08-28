@@ -166,3 +166,46 @@ run_script() {
     [ "$status" -eq 0 ]
     rm -rf "$FAKE_TMPDIR" "$FAKE_INSTALL_DIR" "$FAKE_DATA_DIR" "$FAKE_CONFIG_DIR"
 }
+
+# ── cosign version gate ───────────────────────────────────────────────────────
+
+@test "_cosign_major: reads the major from cosign version output" {
+    result=$(bash -c "
+        cosign() { echo '  GitVersion:    v3.1.2'; }
+        export -f cosign
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        _cosign_major
+    ")
+    [ "$result" = "3" ]
+}
+
+@test "_cosign_major: empty when the version cannot be read" {
+    result=$(bash -c "
+        cosign() { echo 'not a version'; }
+        export -f cosign
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        _cosign_major
+    ")
+    [ -z "$result" ]
+}
+
+@test "download_and_verify: cosign 2 skips verification instead of failing" {
+    FAKE_TMPDIR=$(mktemp -d)
+    printf 'fakebinary' > "$FAKE_TMPDIR/maintenant-v1.0.0-linux-amd64"
+    (cd "$FAKE_TMPDIR" && sha256sum maintenant-v1.0.0-linux-amd64 > SHA256SUMS)
+
+    run bash -c "
+        NO_COLOR=1; export NO_COLOR
+        cosign() { echo '  GitVersion:    v2.4.1'; }
+        export -f cosign
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        VERSION=v1.0.0
+        ARCH=amd64
+        GITHUB_REPO=kOlapsis/maintenant
+        fetch_url_to() { cp '$FAKE_TMPDIR/'\"\$(basename \"\$2\")\" \"\$2\" 2>/dev/null || true; }
+        download_and_verify
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"cosign 3 or later is required"* ]]
+    rm -rf "$FAKE_TMPDIR"
+}
