@@ -42,7 +42,7 @@ MOCK_RELEASES_LIST='[
         log_info() { :; }; log_step() { :; }
         fetch_url() {
             case \"\$1\" in
-                *releases/latest) echo '{\"tag_name\": \"v1.5.0\"}' ;;
+                *releases/latest) printf '%s' '$MOCK_RELEASE_WITH_BINARIES' ;;
                 *) echo '[]' ;;
             esac
         }
@@ -105,4 +105,41 @@ MOCK_RELEASES_LIST='[
         resolve_version
     " 2>&1
     [ "$status" -eq 20 ]
+}
+
+@test "resolve_version: latest without standalone binaries exits 20" {
+    run bash -c "
+        MAINTENANT_VERSION=latest
+        NO_COLOR=1
+        export MAINTENANT_VERSION NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        log_info() { :; }; log_step() { :; }
+        fetch_url() {
+            case \"\$1\" in
+                *releases/latest) printf '%s' '$MOCK_RELEASE_WITHOUT_BINARIES' ;;
+                *) printf '%s' '$MOCK_RELEASES_LIST' ;;
+            esac
+        }
+        resolve_version
+    "
+    [ "$status" -eq 20 ]
+    [[ "$output" == *"does not include standalone binaries"* ]]
+}
+
+@test "_suggest_versions: only lists releases that carry a binary" {
+    run bash -c "
+        NO_COLOR=1
+        export NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        fetch_url() {
+            printf '%s' '[
+              {\"tag_name\": \"v1.5.0\", \"assets\": [{\"name\": \"maintenant-v1.5.0-linux-amd64\"}]},
+              {\"tag_name\": \"v1.0.0\", \"assets\": [{\"name\": \"Source code (zip)\"}]}
+            ]'
+        }
+        _suggest_versions
+    "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"v1.5.0"* ]]
+    [[ "$output" != *"v1.0.0"* ]]
 }

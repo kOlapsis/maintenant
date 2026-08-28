@@ -155,14 +155,34 @@ check_prereqs() {
 
 # ── resolve_version ───────────────────────────────────────────────────────────
 
+# ── _release_has_binaries ─────────────────────────────────────────────────────
+# True when the release payload carries a linux binary for that tag. Both the
+# pinned and the latest paths need it: a release published without its assets —
+# a version older than the installer, or a build job that failed after the
+# release was created — must fail here with a message, not with a 404 halfway
+# through the download.
+
+_release_has_binaries() {
+    printf '%s' "$1" | grep -q "\"name\": *\"maintenant-${2}-linux-"
+}
+
 resolve_version() {
     VERSION="${MAINTENANT_VERSION:-latest}"
 
     if [ "$VERSION" = "latest" ]; then
         log_step "Resolving latest version..."
-        VERSION=$(fetch_url "$GITHUB_API/repos/$GITHUB_REPO/releases/latest" \
+        RELEASE_JSON=$(fetch_url "$GITHUB_API/repos/$GITHUB_REPO/releases/latest" 2>/dev/null) \
+            || abort "Failed to reach GitHub Releases" 20
+        VERSION=$(printf '%s' "$RELEASE_JSON" \
             | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
         [ -n "$VERSION" ] || abort "Failed to resolve latest version from GitHub API" 20
+
+        if ! _release_has_binaries "$RELEASE_JSON" "$VERSION"; then
+            log_error "The latest release ($VERSION) does not include standalone binaries."
+            _suggest_versions
+            abort "No standalone binaries in the latest release" 20
+        fi
+
         log_info "Latest version: $VERSION"
         return
     fi
@@ -174,9 +194,7 @@ resolve_version() {
         abort "Version $VERSION not found on GitHub Releases" 20
     }
 
-    # Check that standalone binaries exist in this release
-    ASSET_PATTERN="maintenant-${VERSION}-linux-"
-    if ! printf '%s' "$RELEASE_JSON" | grep -q "\"name\": *\"${ASSET_PATTERN}"; then
+    if ! _release_has_binaries "$RELEASE_JSON" "$VERSION"; then
         log_error "Version $VERSION exists but does not include standalone binaries."
         log_error "Standalone binaries were introduced starting from a later release."
         _suggest_versions
@@ -187,14 +205,25 @@ resolve_version() {
 }
 
 _suggest_versions() {
+    RECENT_JSON=$(fetch_url "$GITHUB_API/repos/$GITHUB_REPO/releases?per_page=10" 2>/dev/null) || return 0
+    RECENT=$(printf '%s' "$RECENT_JSON" \
+        | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+    [ -n "$RECENT" ] || return 0
+
+    # The heading promises releases you can actually install, so the ones with no
+    # binary are filtered out instead of being offered and failing on the retry.
+    SUGGESTED=""
+    for v in $RECENT; do
+        if _release_has_binaries "$RECENT_JSON" "$v"; then
+            SUGGESTED="${SUGGESTED} $v"
+        fi
+    done
+    [ -n "$SUGGESTED" ] || return 0
+
     log_warn "Recent versions with standalone binaries:"
-    RECENT=$(fetch_url "$GITHUB_API/repos/$GITHUB_REPO/releases?per_page=5" 2>/dev/null \
-        | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/') || true
-    if [ -n "$RECENT" ]; then
-        printf '%s\n' "$RECENT" | while IFS= read -r v; do
-            log_warn "  $v"
-        done
-    fi
+    for v in $SUGGESTED; do
+        log_warn "  $v"
+    done
 }
 
 # ── download_and_verify ───────────────────────────────────────────────────────
