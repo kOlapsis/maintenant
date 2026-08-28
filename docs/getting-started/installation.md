@@ -82,6 +82,7 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     - [Hetzner Cloud](../guides/hetzner.md)
     - [DigitalOcean](../guides/digitalocean.md)
     - [Scaleway](../guides/scaleway.md)
+    - [OVHcloud](../guides/ovhcloud.md)
 
 !!! tip "Production deployment"
     For production, place maintenant behind a reverse proxy with authentication.

@@ -90,6 +90,7 @@ nav:
       - Hetzner Cloud Deployment: guides/hetzner.md
       - DigitalOcean Deployment: guides/digitalocean.md
       - Scaleway Deployment: guides/scaleway.md
+      - OVHcloud Deployment: guides/ovhcloud.md
       - Docker Swarm Deployment: guides/swarm.md
       - PostgreSQL Storage: guides/postgresql.md
   - API:

@@ -197,6 +197,10 @@ doctl compute droplet create maintenant --image ubuntu-24-04-x64 --size s-2vcpu-
 # Scaleway
 scw instance server create name=maintenant type=PLAY2-NANO image=ubuntu_noble \
   ip=new cloud-init=@deploy/cloud-init/maintenant.yaml
+
+# OVHcloud Public Cloud
+openstack server create --flavor d2-4 --image "Ubuntu 24.04" --key-name my-key \
+  --user-data deploy/cloud-init/maintenant.yaml maintenant
 ```
 
 The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes for the database, agent enrolment over a private network, load balancer checks and managed Kubernetes are per-provider:
@@ -204,6 +208,7 @@ The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and sta
 - **[Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/)**
 - **[DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)**
 - **[Scaleway](https://docs.maintenant.dev/guides/scaleway/)**
+- **[OVHcloud](https://docs.maintenant.dev/guides/ovhcloud/)**
 
 > For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
 
