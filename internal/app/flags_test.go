@@ -53,13 +53,82 @@ func TestRegistryCoversAllEnvVars(t *testing.T) {
 	}
 }
 
+// The other direction: a registry entry with no line in .env.example is an
+// option nobody discovers. Both files drift the moment one is edited alone.
+
+func TestEnvExampleCoversRegistry(t *testing.T) {
+	documented := envExampleVars(t)
+	for _, spec := range Registry {
+		if spec.NoEnv {
+			continue
+		}
+		if !documented[spec.EnvName] {
+			t.Errorf("%s is in the Registry but has no line in .env.example", spec.EnvName)
+		}
+	}
+}
+
+// envExampleVars reads every MAINTENANT_* name from .env.example, commented
+// lines included: a commented example is documentation too.
+func envExampleVars(t *testing.T) map[string]bool {
+	t.Helper()
+
+	f, err := os.Open(findEnvExample(t))
+	if err != nil {
+		t.Fatalf("open .env.example: %v", err)
+	}
+	defer f.Close()
+
+	varRe := regexp.MustCompile(`^#?\s*(MAINTENANT_[A-Z0-9_]+)=`)
+	found := make(map[string]bool)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if m := varRe.FindStringSubmatch(scanner.Text()); m != nil {
+			found[m[1]] = true
+		}
+	}
+	return found
+}
+
+// Every flag --help prints must survive parsing: advertising an option the
+// binary then rejects is worse than not having it.
+
+func TestParseFlagsAcceptsEveryRegistryFlag(t *testing.T) {
+	for _, spec := range Registry {
+		arg := "--" + spec.FlagName
+		args := []string{arg}
+		if spec.Type != FlagTypeBool {
+			args = append(args, sampleValueFor(spec))
+		}
+		visited, err := ParseFlagsOrDie(args)
+		if err != nil {
+			t.Errorf("%s: %v", arg, err)
+			continue
+		}
+		if _, ok := visited[spec.FlagName]; !ok {
+			t.Errorf("%s parsed but not reported as visited", arg)
+		}
+	}
+}
+
+func sampleValueFor(spec FlagSpec) string {
+	switch spec.Type {
+	case FlagTypeInt:
+		return "7"
+	case FlagTypeDuration:
+		return "5m"
+	default:
+		return "x"
+	}
+}
+
 // ── T028: FlagName derived from EnvName via algorithm R5 ─────────────────────
 
 // kebabFlags are the multi-host flags that shipped before the registry existed.
 // Their names are baked into running agents, systemd units and the docs, so they
 // keep their kebab-case spelling instead of the derived camelCase one.
 var kebabFlags = map[string]bool{
-	"enrollment-token": true,
+	"enrollment-token": true, "grpc-tls-insecure": true, "data-dir": true,
 	"grpc-listen": true, "grpc-url": true, "grpc-tls-cert": true,
 	"grpc-tls-key": true, "grpc-insecure-skip-tls-verify": true,
 	"embedded-agent": true, "ca-cert": true, "database-url": true,
@@ -134,32 +203,32 @@ func TestPrecedenceCliOverEnvOverDefault(t *testing.T) {
 	}{
 		// addr (string): env absent, CLI absent → default
 		{
-			name: "addr: no env, no CLI → default",
+			name:     "addr: no env, no CLI → default",
 			flagName: "addr", envName: "MAINTENANT_ADDR", envVal: "", cliVal: "",
 			want: func(c Config) any { return c.Addr },
 		},
 		// addr: env set, CLI absent → env wins
 		{
-			name: "addr: env set, no CLI → env",
+			name:     "addr: env set, no CLI → env",
 			flagName: "addr", envName: "MAINTENANT_ADDR", envVal: "0.0.0.0:9000", cliVal: "",
 			want: func(c Config) any { return c.Addr },
 		},
 		// addr: env set, CLI also set → CLI wins
 		{
-			name: "addr: env set, CLI set → CLI wins",
+			name:     "addr: env set, CLI set → CLI wins",
 			flagName: "addr", envName: "MAINTENANT_ADDR", envVal: "0.0.0.0:9000", cliVal: "127.0.0.1:7777",
 			want: func(c Config) any { return c.Addr },
 		},
 		// maxBodySize (int): CLI overrides env
 		{
-			name: "maxBodySize: CLI overrides env",
+			name:     "maxBodySize: CLI overrides env",
 			flagName: "maxBodySize", envName: "MAINTENANT_MAX_BODY_SIZE",
 			envVal: "2097152", cliVal: "4194304",
 			want: func(c Config) any { return c.MaxBodySize },
 		},
 		// disableTelemetry (bool): CLI true overrides env false
 		{
-			name: "disableTelemetry: CLI true overrides env false",
+			name:     "disableTelemetry: CLI true overrides env false",
 			flagName: "disableTelemetry", envName: "MAINTENANT_DISABLE_TELEMETRY",
 			envVal: "false", cliVal: "true",
 			want: func(c Config) any { return c.DisableTelemetry },

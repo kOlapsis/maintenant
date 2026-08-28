@@ -37,23 +37,21 @@ var (
 const defaultAgentDataDir = "/var/lib/maintenant"
 
 func main() {
-	// healthcheck is the image's HEALTHCHECK command: it inspects a running
-	// instance and exits, so it must run before any flag or config work.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(runHealthcheck())
 	}
 
 	args := os.Args[1:]
 
-	// Intercept --mcp-stdio before flag parsing (existing behaviour preserved),
-	// and drop it from the args so the registry does not see an unknown flag.
+	// --mcp-stdio is a mode, not a configuration option: it is read here and
+	// dropped from the args so the flag registry never sees an unknown flag.
 	mcpStdio := len(args) > 0 && args[0] == "--mcp-stdio"
 	if mcpStdio {
 		args = args[1:]
 	}
 
-	// Intercept --help / -h and --version / -v before logger init so that
-	// slog JSON output does not pollute the human-readable output.
+	// --help and --version answer before the logger exists, so slog JSON does
+	// not land in the middle of human-readable output.
 	for _, arg := range args {
 		switch arg {
 		case "--help", "-h":
@@ -66,14 +64,16 @@ func main() {
 		}
 	}
 
-	// Parse CLI flags — exit 2 on unknown flag or bad value.
+	// One parser for every option: app.Registry holds the flag, its environment
+	// variable and how it lands in Config, so --help cannot advertise a flag the
+	// binary would then refuse. Unknown flag or bad value exits 2.
 	visited, err := app.ParseFlagsOrDie(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
 
-	// Build config: env first, CLI overrides second.
+	// Environment first, CLI second: flags win, as the help text promises.
 	cfg := app.ConfigFromEnv()
 	cfg.Version = version
 	cfg.Commit = commit
@@ -116,22 +116,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary
-	// has no subcommands and this feature does not introduce any.
+	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary has
+	// no subcommands and this feature does not introduce any.
 	if target := visited["copy-store-to"]; target != "" {
 		if cfg.Mode == "agent" {
 			logger.Error("--copy-store-to is not accepted in agent mode",
 				"fix", "an agent has no server data set to carry")
 			os.Exit(copyExitAgentBad)
 		}
-		assumeYes := visited["yes"] == "true"
-		os.Exit(runCopy(cfg.DBPath, target, assumeYes, os.Stdout, os.Stdin, logger))
+		os.Exit(runCopy(cfg.DBPath, target, visited["yes"] == "true", os.Stdout, os.Stdin, logger))
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// mode=agent: run enrollment then exit — no HTTP server needed.
 	if cfg.Mode == "agent" {
 		dataDir := os.Getenv("MAINTENANT_DATA_DIR")
 		if dataDir == "" {

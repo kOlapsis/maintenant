@@ -47,14 +47,41 @@ mkdir -p "$RELEASE_DIR"
 # ── Build binary ──────────────────────────────────────────────────────────────
 if [ -z "$SKIP_BUILD" ]; then
     echo "==> Building binary ($ASSET_NAME) for linux/$ARCH..."
-    CGO_ENABLED=1 GOOS=linux GOARCH="$ARCH" \
-        go build \
-            -ldflags "-s -w \
-                -X main.version=${VERSION} \
-                -X main.commit=${COMMIT} \
-                -X main.buildDate=${BUILD_DATE}" \
-            -o "$RELEASE_DIR/$ASSET_NAME" \
-            ./cmd/maintenant
+    # Same static musl link as the release workflow, so what a VM tests is what
+    # a user downloads. Without docker the build falls back to a dynamic one,
+    # which only runs on hosts whose libc matches this machine's.
+    if [ -z "${NO_DOCKER:-}" ] && command -v docker >/dev/null 2>&1; then
+        docker run --rm \
+            -v "${REPO_ROOT}:/src" -w /src \
+            -e CGO_ENABLED=1 -e GOFLAGS=-trimpath -e GOARCH="$ARCH" \
+            -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+            -e VERSION="$VERSION" -e COMMIT="$COMMIT" -e BUILD_DATE="$BUILD_DATE" \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            golang:1.26-alpine \
+            sh -euc '
+              out="$1"
+              apk add --no-cache gcc musl-dev
+              go build \
+                -tags "netgo osusergo sqlite_omit_load_extension" \
+                -ldflags "-s -w -linkmode external -extldflags \"-static\" \
+                  -X main.version=${VERSION} \
+                  -X main.commit=${COMMIT} \
+                  -X main.buildDate=${BUILD_DATE}" \
+                -o "$out" \
+                ./cmd/maintenant
+              chown "${HOST_UID}:${HOST_GID}" "$out"
+            ' _ "${DIST_ROOT}/release/${VERSION}/${ASSET_NAME}"
+    else
+        echo "    docker not used — dynamic build, not what the release ships"
+        CGO_ENABLED=1 GOOS=linux GOARCH="$ARCH" \
+            go build \
+                -ldflags "-s -w \
+                    -X main.version=${VERSION} \
+                    -X main.commit=${COMMIT} \
+                    -X main.buildDate=${BUILD_DATE}" \
+                -o "$RELEASE_DIR/$ASSET_NAME" \
+                ./cmd/maintenant
+    fi
     echo "    Built $RELEASE_DIR/$ASSET_NAME"
 else
     echo "==> SKIP_BUILD=1 — expecting existing binary at $RELEASE_DIR/$ASSET_NAME"

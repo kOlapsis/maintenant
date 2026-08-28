@@ -1,6 +1,10 @@
 # Native Linux Install
 
-maintenant can run as a standalone systemd service on any amd64 or arm64 Linux host — no Docker, no container runtime required.
+maintenant can run as a standalone systemd service on any amd64 or arm64 Linux host: no Docker, no container runtime required.
+
+The published binaries are statically linked against musl, so a single file per
+architecture runs on Debian, Ubuntu, RHEL, Rocky, Alpine or Arch. There is no
+libc version to match and nothing to install alongside it.
 
 The install script handles everything: binary download, SHA256 verification, cosign signature check, system user creation, and service activation.
 
@@ -12,9 +16,10 @@ curl -fsSL https://install.maintenant.dev | sudo bash
 
 ## Prerequisites
 
-- Linux (amd64 or arm64)
+- Linux (amd64 or arm64), any distribution: the binary carries its own libc
 - `curl` or `wget`
-- `tar`, `useradd`, `systemctl`
+- `install` (coreutils) and `useradd`
+- `systemctl`, unless installing with `--no-service`
 - Root access (`sudo`)
 
 ---
@@ -99,6 +104,8 @@ Every `MAINTENANT_*` environment variable has a `--flagName` CLI equivalent. Pre
 | `--mcp` | `MAINTENANT_MCP` | bool | `false` |
 | `--mcpClientId` | `MAINTENANT_MCP_CLIENT_ID` | string | _(unset)_ |
 | `--mcpClientSecret` | `MAINTENANT_MCP_CLIENT_SECRET` | string | _(unset)_ |
+| `--mcpAllowedRedirectUris` | `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | string | _(unset)_ |
+| `--mcpAllowUnauthenticated` | `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | bool | `false` |
 | `--k8sNamespaces` | `MAINTENANT_K8S_NAMESPACES` | string | _(empty = all)_ |
 | `--k8sExcludeNamespaces` | `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | string | _(unset)_ |
 | `--statusUrl` | `MAINTENANT_STATUS_URL` | string | _(unset)_ |
@@ -113,7 +120,11 @@ Every `MAINTENANT_*` environment variable has a `--flagName` CLI equivalent. Pre
 | `--grpc-url` | `MAINTENANT_GRPC_URL` | string | _(unset)_ |
 | `--grpc-tls-cert` | `MAINTENANT_GRPC_TLS_CERT` | string | _(unset)_ |
 | `--grpc-tls-key` | `MAINTENANT_GRPC_TLS_KEY` | string | _(unset)_ |
+| `--grpc-tls-insecure` | `MAINTENANT_GRPC_TLS_INSECURE` | bool | `false` |
 | `--grpc-insecure-skip-tls-verify` | `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` | bool | `false` |
+| `--agentRateLimitPerSecond` | `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` | int | `1000` |
+| `--agentStaleThresholdSeconds` | `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` | int | `60` |
+| `--data-dir` | `MAINTENANT_DATA_DIR` | string | `/var/lib/maintenant` |
 | `--embedded-agent` | `MAINTENANT_EMBEDDED_AGENT` | bool | `false` |
 | `--ca-cert` | `MAINTENANT_CA_CERT` | string | _(unset)_ |
 | `--database-url` | `MAINTENANT_DATABASE_URL` | string | _(empty = SQLite)_ |

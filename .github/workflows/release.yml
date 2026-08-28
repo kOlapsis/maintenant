@@ -32,8 +32,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Standalone binaries for `curl … | sudo bash` installs. CGO is on (go-sqlite3),
-  # so each architecture builds on its own native runner rather than cross-compiling.
+  # Standalone binaries for `curl … | sudo bash` installs. CGO is on
+  # (go-sqlite3), so each architecture builds on its own native runner rather
+  # than cross-compiling, and the link is fully static against musl: one binary
+  # per architecture then runs on Debian, Ubuntu, RHEL, Alpine or Arch with no
+  # libc version to match. That is why the Go build happens inside the same
+  # golang:alpine image the Dockerfile uses, not on the runner itself.
   build-binaries:
     name: Build binary (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -63,12 +67,6 @@ jobs:
       # No cache is restored on a release build: a poisoned cache entry would
       # end up inside the binary users install (cache-poisoning hardening,
       # same rule as build-docker.yml).
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
       # No `cache:` input is given, so setup-node restores nothing; the audit
       # flags the action itself, hence the ignore.
       - name: Set up Node
@@ -76,6 +74,8 @@ jobs:
         with:
           node-version: "22"
 
+      # The SPA is embedded by cmd/maintenant/web, so it has to exist before Go
+      # compiles anything.
       - name: Build the frontend
         working-directory: frontend
         run: |
@@ -83,15 +83,13 @@ jobs:
           npm run build
 
       # The public key is a build-time constant, not a secret to protect at
-      # runtime, but it goes through env so it never lands in the shell command
-      # line (and so the workflow stays free of template injection).
-      - name: Build the binary
+      # runtime, but it goes through env so it never lands in a command line
+      # (and so the workflow stays free of template injection).
+      - name: Build the static binary
         env:
-          CGO_ENABLED: "1"
-          GOOS: linux
-          GOARCH: ${{ matrix.arch }}
           VERSION: ${{ github.event.release.tag_name }}
           COMMIT: ${{ github.sha }}
+          GOARCH: ${{ matrix.arch }}
           LICENSE_PUBLIC_KEY: ${{ secrets.LICENSE_PUBLIC_KEY }}
         run: |
           if [ -z "${LICENSE_PUBLIC_KEY}" ]; then
@@ -99,14 +97,43 @@ jobs:
             exit 1
           fi
           build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          go build \
-            -ldflags "-s -w \
-              -X main.version=${VERSION} \
-              -X main.commit=${COMMIT} \
-              -X main.buildDate=${build_date} \
-              -X main.publicKeyB64=${LICENSE_PUBLIC_KEY}" \
-            -o "maintenant-${VERSION}-linux-${GOARCH}" \
-            ./cmd/maintenant
+          asset="maintenant-${VERSION}-linux-${GOARCH}"
+          # netgo/osusergo keep DNS and user lookups in pure Go: a static libc
+          # cannot dlopen the NSS modules a dynamic one would.
+          docker run --rm \
+            -v "${PWD}:/src" -w /src \
+            -e CGO_ENABLED=1 -e GOFLAGS=-trimpath \
+            -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+            -e VERSION -e COMMIT -e LICENSE_PUBLIC_KEY -e BUILD_DATE="${build_date}" \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            golang:1.26-alpine \
+            sh -euc '
+              asset="$1"
+              apk add --no-cache gcc musl-dev
+              go build \
+                -tags "netgo osusergo sqlite_omit_load_extension" \
+                -ldflags "-s -w -linkmode external -extldflags \"-static\" \
+                  -X main.version=${VERSION} \
+                  -X main.commit=${COMMIT} \
+                  -X main.buildDate=${BUILD_DATE} \
+                  -X main.publicKeyB64=${LICENSE_PUBLIC_KEY}" \
+                -o "$asset" \
+                ./cmd/maintenant
+              chown "${HOST_UID}:${HOST_GID}" "$asset"
+            ' _ "${asset}"
+
+      # A dynamically linked binary would still pass every test here and fail on
+      # the first host with another libc, so the link is checked, not assumed.
+      - name: Check that the binary is static and runs
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          asset="maintenant-${VERSION}-linux-${GOARCH}"
+          file "${asset}"
+          file "${asset}" | grep -q "statically linked"
+          chmod +x "${asset}"
+          "./${asset}" --version
 
       - name: Upload the binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

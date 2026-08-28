@@ -77,6 +77,8 @@ Binary configuration flags (written to /etc/maintenant/maintenant.env):
   --mcp
   --mcpClientId <id>
   --mcpClientSecret <secret>
+  --mcpAllowedRedirectUris <list>
+  --mcpAllowUnauthenticated
   --k8sNamespaces <list>
   --k8sExcludeNamespaces <list>
   --statusUrl <url>
@@ -91,7 +93,11 @@ Binary configuration flags (written to /etc/maintenant/maintenant.env):
   --grpc-url <url>
   --grpc-tls-cert <path>
   --grpc-tls-key <path>
+  --grpc-tls-insecure
   --grpc-insecure-skip-tls-verify
+  --agentRateLimitPerSecond <int>
+  --agentStaleThresholdSeconds <int>
+  --data-dir <path>
   --embedded-agent
   --ca-cert <path>
   --database-url <postgres-url>
@@ -137,7 +143,8 @@ check_prereqs() {
         abort "curl or wget is required" 12
     fi
 
-    for cmd in tar install useradd; do
+    # No tar: the release assets are bare binaries, not archives.
+    for cmd in install useradd; do
         command -v "$cmd" >/dev/null 2>&1 || abort "Required command not found: $cmd" 12
     done
 
@@ -395,7 +402,8 @@ parse_maintenant_flags() {
                 FLAG="${1#--}"
                 # Boolean binary flags (no value)
                 case "$FLAG" in
-                    disableTelemetry|allowPrivateWebhooks|mcp|embedded-agent|grpc-insecure-skip-tls-verify)
+                    disableTelemetry|allowPrivateWebhooks|mcp|mcpAllowUnauthenticated|\
+                    embedded-agent|grpc-tls-insecure|grpc-insecure-skip-tls-verify)
                         _store_binary_flag "$FLAG" "true"
                         shift
                         ;;

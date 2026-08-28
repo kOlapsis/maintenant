@@ -151,7 +151,7 @@ maintenant auto-detects the in-cluster API. Read-only RBAC, namespace filtering,
 
 ### Native Linux install (no Docker)
 
-Run maintenant as a systemd service directly on any amd64 or arm64 Linux host.
+Run maintenant as a systemd service directly on any amd64 or arm64 Linux host. The published binaries are statically linked, so the same file runs on Debian, Ubuntu, RHEL, Alpine or Arch with nothing to install alongside it.
 
 **One-liner:**
 

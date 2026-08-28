@@ -234,6 +234,21 @@ func init() {
 		},
 		// Kubernetes
 		{
+			EnvName: "MAINTENANT_MCP_ALLOWED_REDIRECT_URIS", FlagName: "mcpAllowedRedirectUris",
+			Type: FlagTypeString, Default: "",
+			Description: "Comma-separated OAuth redirect URIs accepted by /mcp",
+			ApplyTo:     func(c *Config, v string) error { c.MCP.AllowedRedirectURIs = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_MCP_ALLOW_UNAUTHENTICATED", FlagName: "mcpAllowUnauthenticated",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Serve /mcp with no credentials (trusted network only)",
+			ApplyTo: func(c *Config, v string) error {
+				c.MCP.AllowUnauthenticated = parseTruthy(v)
+				return nil
+			},
+		},
+		{
 			EnvName: "MAINTENANT_K8S_NAMESPACES", FlagName: "k8sNamespaces",
 			Type: FlagTypeString, Default: "",
 			Description: "Kubernetes namespaces to monitor (comma-separated, empty = all)",
@@ -359,6 +374,51 @@ func init() {
 			},
 		},
 		{
+			EnvName: "MAINTENANT_GRPC_TLS_INSECURE", FlagName: "grpc-tls-insecure",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Serve gRPC as h2c, without TLS (trusted reverse proxy only)",
+			ApplyTo: func(c *Config, v string) error {
+				c.MultiHost.InsecureGRPC = parseTruthy(v)
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND", FlagName: "agentRateLimitPerSecond",
+			Type: FlagTypeInt, Default: "1000",
+			Description: "Maximum gRPC calls per second and per agent (server mode)",
+			ApplyTo: func(c *Config, v string) error {
+				n, err := strconv.Atoi(v)
+				if err != nil {
+					return err
+				}
+				c.MultiHost.AgentRateLimitPerSecond = n
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS", FlagName: "agentStaleThresholdSeconds",
+			Type: FlagTypeInt, Default: "60",
+			Description: "Seconds without a heartbeat before an agent is stale (server mode)",
+			ApplyTo: func(c *Config, v string) error {
+				n, err := strconv.Atoi(v)
+				if err != nil {
+					return err
+				}
+				c.MultiHost.AgentStaleThresholdSeconds = n
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_DATA_DIR", FlagName: "data-dir",
+			Type: FlagTypeString, Default: "/var/lib/maintenant",
+			Description: "Directory holding the agent identity and liveness files (agent mode)",
+			// Read straight from the environment where the agent starts, so the
+			// flag has to land there too.
+			ApplyTo: func(_ *Config, v string) error {
+				return os.Setenv("MAINTENANT_DATA_DIR", v)
+			},
+		},
+		{
 			EnvName: "MAINTENANT_CA_CERT", FlagName: "ca-cert",
 			Type: FlagTypeString, Default: "",
 			Description: "PEM bundle of extra root CAs, added to the system store",
@@ -421,12 +481,17 @@ func init() {
 		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "allowPrivateWebhooks")},
 		{Name: "Pro", Specs: specsFor("licenseKey")},
 		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom")},
-		{Name: "MCP", Specs: specsFor("mcp", "mcpClientId", "mcpClientSecret")},
+		{Name: "MCP", Specs: specsFor(
+			"mcp", "mcpClientId", "mcpClientSecret",
+			"mcpAllowedRedirectUris", "mcpAllowUnauthenticated",
+		)},
 		{Name: "Kubernetes", Specs: specsFor("k8sNamespaces", "k8sExcludeNamespaces")},
 		{Name: "Multi-host", Specs: specsFor(
 			"mode", "server", "enrollment-token", "label",
 			"grpc-listen", "grpc-url", "grpc-tls-cert", "grpc-tls-key",
-			"grpc-insecure-skip-tls-verify", "embedded-agent", "ca-cert",
+			"grpc-tls-insecure", "grpc-insecure-skip-tls-verify",
+			"agentRateLimitPerSecond", "agentStaleThresholdSeconds",
+			"embedded-agent", "ca-cert", "data-dir",
 		)},
 		{Name: "Storage (PostgreSQL)", Specs: specsFor("database-url", "copy-store-to", "yes")},
 	}
