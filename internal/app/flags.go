@@ -563,43 +563,43 @@ func specByFlagName(name string) (FlagSpec, bool) {
 
 // PrintHelp writes the formatted help text to w.
 func PrintHelp(w io.Writer, _ Config) {
-	fmt.Fprintln(w, "maintenant — infrastructure monitoring (single binary)")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  maintenant [FLAGS]")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Flags are equivalent to MAINTENANT_* environment variables.")
-	fmt.Fprintln(w, "Precedence: CLI flag > environment variable > default.")
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "maintenant — infrastructure monitoring (single binary)")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  maintenant [FLAGS]")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Flags are equivalent to MAINTENANT_* environment variables.")
+	_, _ = fmt.Fprintln(w, "Precedence: CLI flag > environment variable > default.")
+	_, _ = fmt.Fprintln(w)
 
 	for _, cat := range Categories {
-		fmt.Fprintf(w, "%s:\n", cat.Name)
+		_, _ = fmt.Fprintf(w, "%s:\n", cat.Name)
 		for _, spec := range cat.Specs {
 			typeSuffix := flagTypeSuffix(spec)
-			fmt.Fprintf(w, "  --%s%s\n", spec.FlagName, typeSuffix)
-			fmt.Fprintf(w, "      %s", spec.Description)
+			_, _ = fmt.Fprintf(w, "  --%s%s\n", spec.FlagName, typeSuffix)
+			_, _ = fmt.Fprintf(w, "      %s", spec.Description)
 			if spec.Default != "" && !spec.Sensitive {
-				fmt.Fprintf(w, " (default: %s)", spec.Default)
+				_, _ = fmt.Fprintf(w, " (default: %s)", spec.Default)
 			}
-			fmt.Fprintln(w)
+			_, _ = fmt.Fprintln(w)
 			if !spec.NoEnv {
-				fmt.Fprintf(w, "      env: %s", spec.EnvName)
+				_, _ = fmt.Fprintf(w, "      env: %s", spec.EnvName)
 				if spec.Sensitive {
-					fmt.Fprint(w, "  default: <unset>")
+					_, _ = fmt.Fprint(w, "  default: <unset>")
 				}
-				fmt.Fprintln(w)
+				_, _ = fmt.Fprintln(w)
 			}
 		}
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w)
 	}
 
-	fmt.Fprintln(w, "Special:")
-	fmt.Fprintln(w, "  --help, -h         Show this help and exit")
-	fmt.Fprintln(w, "  --version, -v      Show version and exit")
-	fmt.Fprintln(w, "  --mcp-stdio        Run as MCP stdio server (advanced)")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Documentation: https://docs.maintenant.dev")
-	fmt.Fprintln(w, "Install via script: curl -fsSL https://install.maintenant.dev | sudo bash")
+	_, _ = fmt.Fprintln(w, "Special:")
+	_, _ = fmt.Fprintln(w, "  --help, -h         Show this help and exit")
+	_, _ = fmt.Fprintln(w, "  --version, -v      Show version and exit")
+	_, _ = fmt.Fprintln(w, "  --mcp-stdio        Run as MCP stdio server (advanced)")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Documentation: https://docs.maintenant.dev")
+	_, _ = fmt.Fprintln(w, "Install via script: curl -fsSL https://install.maintenant.dev | sudo bash")
 }
 
 func flagTypeSuffix(spec FlagSpec) string {

@@ -197,10 +197,16 @@ Every release includes:
 | Asset | Purpose |
 |---|---|
 | `maintenant-vX.Y.Z-linux-amd64` / `-arm64` | Binary for each architecture |
-| `SHA256SUMS` | Checksums for all binaries |
+| `install.sh` | The install script itself, stamped with the release tag |
+| `SHA256SUMS` | Checksums for the binaries and the script |
 | `SHA256SUMS.sig` | cosign signature of `SHA256SUMS` |
 | `SHA256SUMS.pem` | Sigstore ephemeral certificate |
+| `SHA256SUMS.bundle` | Sigstore bundle, for verifying by hand |
 | `provenance.intoto.jsonl` | SLSA Build L3 attestation |
+
+The script published with a release carries that release's tag in its header, and
+writes it into `/etc/maintenant/maintenant.env` (`# Script version:`), so a file on
+disk always names the script that produced it.
 
 ### What the script does automatically
 

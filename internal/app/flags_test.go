@@ -31,7 +31,7 @@ func TestRegistryCoversAllEnvVars(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open .env.example: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	varRe := regexp.MustCompile(`^#?\s*(MAINTENANT_[A-Z_]+)=`)
 	registeredEnv := make(map[string]bool, len(Registry))
@@ -77,7 +77,7 @@ func envExampleVars(t *testing.T) map[string]bool {
 	if err != nil {
 		t.Fatalf("open .env.example: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	varRe := regexp.MustCompile(`^#?\s*(MAINTENANT_[A-Z0-9_]+)=`)
 	found := make(map[string]bool)
@@ -241,7 +241,7 @@ func TestPrecedenceCliOverEnvOverDefault(t *testing.T) {
 			if tc.envVal != "" {
 				t.Setenv(tc.envName, tc.envVal)
 			} else {
-				os.Unsetenv(tc.envName)
+				_ = os.Unsetenv(tc.envName)
 			}
 
 			cfg := ConfigFromEnv()
