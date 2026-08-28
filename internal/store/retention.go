@@ -160,14 +160,22 @@ func (p *retentionPass) add(deleted int64, truncated bool) {
 // StartRetentionCleanupWithOpts starts retention cleanup with all store types.
 // The first pass runs immediately: an instance that restarts every few hours
 // would otherwise never reach its first cleanup.
-func StartRetentionCleanupWithOpts(ctx context.Context, store *ContainerStore, db *DB, logger *slog.Logger, opts RetentionOpts) {
+// The returned channel is closed once the cleanup has stopped writing, so a
+// caller that needs the database settled can wait for it: cancelling the context
+// only asks the goroutine to stop, it does not mean the pass in flight has
+// landed. Shutdown waits on it before closing the database, and a test waits on
+// it before its temporary directory is removed.
+func StartRetentionCleanupWithOpts(ctx context.Context, store *ContainerStore, db *DB, logger *slog.Logger, opts RetentionOpts) <-chan struct{} {
 	cfg := opts.Config.withDefaults(logger)
 	logger.Info("retention cleanup: starting",
 		"interval", cfg.Interval.String(),
 		"batch_size", cfg.BatchSize,
 		"snapshot_window", cfg.Snapshots.String())
 
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
+
 		timer := time.NewTimer(0)
 		defer timer.Stop()
 
@@ -178,10 +186,19 @@ func StartRetentionCleanupWithOpts(ctx context.Context, store *ContainerStore, d
 			case <-timer.C:
 			}
 
+			// A cancellation racing the timer leaves both cases ready and the
+			// select picks at random, so re-check before starting a pass:
+			// without it the cleanup can write after its owner believes it has
+			// stopped.
+			if ctx.Err() != nil {
+				return
+			}
+
 			truncated := runRetentionPass(ctx, store, db, logger, opts, cfg)
 			timer.Reset(cfg.nextDelay(truncated))
 		}
 	}()
+	return stopped
 }
 
 // runRetentionPass runs every cleanup once and reports whether rows matching the
