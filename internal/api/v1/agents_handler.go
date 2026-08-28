@@ -131,18 +131,20 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 
 func buildInstallTemplates(serverURL, token string) map[string]string {
 	return map[string]string{
-		"standalone":     buildInstallStandalone(serverURL, token),
+		"standalone":     buildInstallStandalone(),
 		"docker_run":     buildInstallDockerRun(serverURL, token),
 		"docker_compose": buildInstallDockerCompose(serverURL, token),
 		"kubernetes":     buildInstallKubernetes(serverURL, token),
 	}
 }
 
-func buildInstallStandalone(serverURL, token string) string {
-	return "curl -fsSL https://install.maintenant.dev | sudo bash -s -- \\\n" +
-		"  --mode=agent \\\n" +
-		"  --server=" + serverURL + " \\\n" +
-		"  --enrollment-token=" + token
+// The standalone installer is not released yet. Until it is, the tab announces
+// itself rather than handing out an invocation that would fetch nothing.
+func buildInstallStandalone() string {
+	return "Coming soon.\n\n" +
+		"The standalone installer (binary + systemd unit) is not released yet.\n" +
+		"Run the agent with Docker in the meantime — see the Docker run,\n" +
+		"Compose and Kubernetes tabs."
 }
 
 func buildInstallDockerRun(serverURL, token string) string {

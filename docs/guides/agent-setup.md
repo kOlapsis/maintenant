@@ -133,14 +133,12 @@ Pick the tab matching the host environment. Replace `grpcs://agents.example.com`
 
 === "Standalone (binary + systemd)"
 
-    ```bash
-    curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
-      --mode=agent \
-      --server=grpcs://agents.example.com \
-      --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
-    ```
+    !!! warning "Not released yet"
+        The one-line installer that drops the binary and a systemd unit is still being built,
+        and the modal's **Standalone** tab says so. Until it ships, run the agent with Docker
+        (next tabs) or drive an already-installed binary yourself.
 
-    The install script drops the binary and a systemd unit. If the binary is already installed, the equivalent invocation is:
+    With the binary in place, the agent is a plain invocation:
 
     ```bash
     maintenant \

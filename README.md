@@ -179,7 +179,13 @@ Monitor your entire fleet from a single pane of glass. One central **server** re
 
 ```bash
 # On each remote host — one command, generated for you in the UI
-curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+docker run -d \
+  --name maintenant-agent \
+  --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /proc:/host/proc:ro \
+  -v maintenant-agent-data:/var/lib/maintenant \
+  ghcr.io/kolapsis/maintenant:latest \
   --mode=agent \
   --server=grpcs://monitoring.example.com \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX \
