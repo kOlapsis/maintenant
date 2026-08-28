@@ -221,7 +221,7 @@ Knows when your images have updates available. Scans OCI registries, compares di
 
 Unified alerts across all monitoring sources. Channels are silent by default and routed via **Alert Triggers** (filter by severity / source). Webhook and Discord channels included. Silence rules for planned maintenance, exponential backoff retry on delivery.
 
-> **[Personal](https://maintenant.dev/pricing/)** adds the Email channel and scope/tag trigger filters. **[Pro](https://maintenant.dev/pricing/)** adds Slack and Microsoft Teams channels, multi-level **escalation policies**, per-entity routing, and maintenance windows that pause and resume escalation chains.
+> **[Personal](https://maintenant.dev/pricing/)** adds the Email and Telegram channels and scope/tag trigger filters. **[Pro](https://maintenant.dev/pricing/)** adds Slack and Microsoft Teams channels, multi-level **escalation policies**, per-entity routing, and maintenance windows that pause and resume escalation chains.
 
 ### Public Status Page
 
@@ -567,7 +567,7 @@ Replace `1000` with the UID of the user running the rootless Docker daemon (`id 
 | Resource    | `cpu_threshold`, `memory_threshold`    | Warning           |
 | Update      | `available`                            | Info              |
 
-Deliver to Discord or any HTTP webhook. Email comes with Personal, Slack and Teams with Pro.
+Deliver to Discord or any HTTP webhook. Email and Telegram come with Personal, Slack and Teams with Pro.
 
 ---
 
@@ -681,6 +681,7 @@ Full REST API under `/api/v1/` for automation and integration.
         <li><strong>CVE enrichment</strong> + risk scoring per container</li>
         <li><strong>Unified security posture</strong> dashboard</li>
         <li><strong>Incident management</strong> with public timeline</li>
+        <li><strong>Telegram</strong> channel — bot token and chat id, no URL to wire</li>
         <li>Changelog, <strong>30 days</strong> of resource history, OCSP stapling</li>
       </ul>
       <p>For one person, on infrastructure they own or run for themselves — freelancers included. It does not cover monitoring someone else's infrastructure or reselling Maintenant as a service, and carries no support commitment.</p>

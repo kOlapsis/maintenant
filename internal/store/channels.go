@@ -40,9 +40,11 @@ func (s *ChannelStoreImpl) InsertChannel(ctx context.Context, ch *alert.Notifica
 	ch.ID = uid.New()
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
-		`INSERT INTO notification_channels (id, name, type, url, headers, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		ch.ID, ch.Name, ch.Type, ch.URL, NullableString(ch.Headers), boolToInt(ch.Enabled), now, now,
+		`INSERT INTO notification_channels (id, name, type, url, headers, secret, config, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ch.ID, ch.Name, ch.Type, ch.URL, NullableString(ch.Headers),
+		NullableString(ch.Secret), NullableString(ch.Config),
+		boolToInt(ch.Enabled), now, now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert channel: %w", err)
@@ -52,7 +54,7 @@ func (s *ChannelStoreImpl) InsertChannel(ctx context.Context, ch *alert.Notifica
 
 func (s *ChannelStoreImpl) GetChannel(ctx context.Context, id string) (*alert.NotificationChannel, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, type, url, headers, enabled, created_at, updated_at
+		`SELECT id, name, type, url, headers, secret, config, enabled, created_at, updated_at
 		FROM notification_channels WHERE id = ?`, id)
 
 	ch, err := scanChannel(row)
@@ -68,7 +70,7 @@ func (s *ChannelStoreImpl) GetChannel(ctx context.Context, id string) (*alert.No
 
 func (s *ChannelStoreImpl) ListChannels(ctx context.Context) ([]*alert.NotificationChannel, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, type, url, headers, enabled, created_at, updated_at
+		`SELECT id, name, type, url, headers, secret, config, enabled, created_at, updated_at
 		FROM notification_channels ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list channels: %w", err)
@@ -102,9 +104,10 @@ func (s *ChannelStoreImpl) ListChannels(ctx context.Context) ([]*alert.Notificat
 
 func (s *ChannelStoreImpl) UpdateChannel(ctx context.Context, ch *alert.NotificationChannel) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE notification_channels SET name=?, type=?, url=?, headers=?, enabled=?, updated_at=?
+		`UPDATE notification_channels SET name=?, type=?, url=?, headers=?, secret=?, config=?, enabled=?, updated_at=?
 		WHERE id=?`,
-		ch.Name, ch.Type, ch.URL, NullableString(ch.Headers), boolToInt(ch.Enabled),
+		ch.Name, ch.Type, ch.URL, NullableString(ch.Headers),
+		NullableString(ch.Secret), NullableString(ch.Config), boolToInt(ch.Enabled),
 		time.Now().Unix(), ch.ID,
 	)
 	if err != nil {
@@ -201,11 +204,11 @@ func (s *ChannelStoreImpl) ListDeliveriesByAlert(ctx context.Context, alertID st
 
 func scanChannel(row *sql.Row) (*alert.NotificationChannel, error) {
 	ch := &alert.NotificationChannel{}
-	var headers sql.NullString
+	var headers, secret, config sql.NullString
 	var enabled int
 	var createdAt, updatedAt int64
 
-	err := row.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &enabled, &createdAt, &updatedAt)
+	err := row.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &secret, &config, &enabled, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +217,9 @@ func scanChannel(row *sql.Row) (*alert.NotificationChannel, error) {
 	if headers.Valid {
 		ch.Headers = headers.String
 	}
+	ch.Secret = secret.String
+	ch.Config = config.String
+	ch.HasSecret = ch.Secret != ""
 	ch.CreatedAt = time.Unix(createdAt, 0)
 	ch.UpdatedAt = time.Unix(updatedAt, 0)
 	return ch, nil
@@ -221,11 +227,11 @@ func scanChannel(row *sql.Row) (*alert.NotificationChannel, error) {
 
 func scanChannelRow(rows *sql.Rows) (*alert.NotificationChannel, error) {
 	ch := &alert.NotificationChannel{}
-	var headers sql.NullString
+	var headers, secret, config sql.NullString
 	var enabled int
 	var createdAt, updatedAt int64
 
-	err := rows.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &enabled, &createdAt, &updatedAt)
+	err := rows.Scan(&ch.ID, &ch.Name, &ch.Type, &ch.URL, &headers, &secret, &config, &enabled, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -234,6 +240,9 @@ func scanChannelRow(rows *sql.Rows) (*alert.NotificationChannel, error) {
 	if headers.Valid {
 		ch.Headers = headers.String
 	}
+	ch.Secret = secret.String
+	ch.Config = config.String
+	ch.HasSecret = ch.Secret != ""
 	ch.CreatedAt = time.Unix(createdAt, 0)
 	ch.UpdatedAt = time.Unix(updatedAt, 0)
 	return ch, nil

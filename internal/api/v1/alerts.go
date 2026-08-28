@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -223,6 +224,11 @@ func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request
 // type is an HTTP webhook subject to the HTTPS + SSRF rules (fast-feedback;
 // skipped in dev, where the notifier's dial-time guard remains the boundary).
 func (h *AlertHandler) validateChannelURL(ctx context.Context, chType, rawURL string) error {
+	// Telegram's "url" column holds a chat id and the destination is fixed, so
+	// there is no user-supplied URL to guard against (FR-016).
+	if chType == "telegram" {
+		return alert.ValidateChatID(rawURL)
+	}
 	if chType == "email" {
 		if _, err := mail.ParseAddress(rawURL); err != nil {
 			return errors.New("invalid email address")
@@ -238,11 +244,13 @@ func (h *AlertHandler) validateChannelURL(ctx context.Context, chType, rawURL st
 // HandleCreateChannel handles POST /api/v1/channels.
 func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name    string `json:"name"`
-		Type    string `json:"type"`
-		URL     string `json:"url"`
-		Headers string `json:"headers"`
-		Enabled bool   `json:"enabled"`
+		Name    string          `json:"name"`
+		Type    string          `json:"type"`
+		URL     string          `json:"url"`
+		Headers string          `json:"headers"`
+		Secret  string          `json:"secret"`
+		Config  json.RawMessage `json:"config"`
+		Enabled bool            `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
@@ -271,11 +279,24 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	config := strings.TrimSpace(string(input.Config))
+	if config == "null" {
+		config = ""
+	}
+	if input.Type == "telegram" {
+		if err := validateTelegramCredentials(input.Secret, config); err != nil {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
+	}
+
 	ch := &alert.NotificationChannel{
 		Name:    input.Name,
 		Type:    input.Type,
 		URL:     input.URL,
 		Headers: input.Headers,
+		Secret:  input.Secret,
+		Config:  config,
 		Enabled: input.Enabled,
 	}
 
@@ -290,6 +311,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	ch.ID = id
+	ch.HasSecret = ch.Secret != ""
 
 	h.broker.Broadcast(SSEEvent{Type: event.ChannelCreated, Data: ch})
 	WriteJSON(w, http.StatusCreated, ch)
@@ -314,15 +336,35 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 	}
 
 	var input struct {
-		Name    *string `json:"name"`
-		Type    *string `json:"type"`
-		URL     *string `json:"url"`
-		Headers *string `json:"headers"`
-		Enabled *bool   `json:"enabled"`
+		Name    *string          `json:"name"`
+		Type    *string          `json:"type"`
+		URL     *string          `json:"url"`
+		Headers *string          `json:"headers"`
+		Secret  *string          `json:"secret"`
+		Config  *json.RawMessage `json:"config"`
+		Enabled *bool            `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
 		return
+	}
+
+	// A request that only switches the channel off never needs the edition that
+	// opens the type: an operator whose licence expired must still be able to
+	// silence a channel, and deleting it to do so is not a way out (FR-001d).
+	extends := input.Name != nil || input.Type != nil || input.URL != nil ||
+		input.Headers != nil || input.Secret != nil || input.Config != nil ||
+		(input.Enabled != nil && *input.Enabled)
+	if extends {
+		// Both the type it has and the type it would become: a downgraded
+		// instance may neither keep editing a gated channel nor turn a plain
+		// one into a gated one.
+		if refuseChannelCapability(w, ch.Type) {
+			return
+		}
+		if input.Type != nil && refuseChannelCapability(w, *input.Type) {
+			return
+		}
 	}
 
 	if input.Name != nil {
@@ -337,12 +379,33 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 	if input.Headers != nil {
 		ch.Headers = *input.Headers
 	}
+	// An absent secret keeps the stored one (FR-006); an empty one is refused,
+	// since a channel without its credential can no longer send and would say
+	// nothing about it.
+	if input.Secret != nil {
+		if *input.Secret == "" {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR",
+				"secret cannot be cleared; delete the channel instead")
+			return
+		}
+		ch.Secret = *input.Secret
+	}
+	if input.Config != nil {
+		config := strings.TrimSpace(string(*input.Config))
+		if config == "null" {
+			config = ""
+		}
+		ch.Config = config
+	}
 	if input.Enabled != nil {
 		ch.Enabled = *input.Enabled
 	}
 
-	if refuseChannelCapability(w, ch.Type) {
-		return
+	if ch.Type == "telegram" && (input.Secret != nil || input.Config != nil) {
+		if err := validateTelegramCredentials(ch.Secret, ch.Config); err != nil {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
 	}
 
 	// Re-validate the destination when the URL or type changed, so an update
@@ -358,6 +421,7 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update channel")
 		return
 	}
+	ch.HasSecret = ch.Secret != ""
 
 	h.broker.Broadcast(SSEEvent{Type: event.ChannelUpdated, Data: ch})
 	WriteJSON(w, http.StatusOK, ch)
@@ -509,8 +573,9 @@ func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Re
 }
 
 // channelCapability maps a channel type to the capability that opens it. Types
-// absent from the map are open in every edition. email is Personal, Slack and
-// Teams are Pro — the gating is per channel, not "paid edition or not".
+// absent from the map are open in every edition. email and Telegram are
+// Personal, Slack and Teams are Pro — the gating is per channel, not "paid
+// edition or not".
 func channelCapability(channelType string) (extension.Capability, bool) {
 	switch channelType {
 	case "slack":
@@ -519,9 +584,24 @@ func channelCapability(channelType string) (extension.Capability, bool) {
 		return extension.CapTeams, true
 	case "email":
 		return extension.CapSMTP, true
+	case "telegram":
+		return extension.CapTelegram, true
 	default:
 		return "", false
 	}
+}
+
+// validateTelegramCredentials checks the two values the operator types and the
+// optional topic id, before anything reaches the network (FR-004).
+func validateTelegramCredentials(secret, config string) error {
+	if err := alert.ValidateBotToken(secret); err != nil {
+		return err
+	}
+	cfg, err := alert.ParseTelegramConfig(config)
+	if err != nil {
+		return errors.New("config must be a JSON object")
+	}
+	return alert.ValidateThreadID(cfg.ThreadID)
 }
 
 // refuseChannelCapability writes the refusal when the running edition does not

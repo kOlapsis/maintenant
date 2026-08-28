@@ -12,10 +12,16 @@
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useChannelsStore } from '@/stores/channels'
 import { useConfirm } from '@/composables/useConfirm'
-import { createChannel, updateChannel, deleteChannel, testChannel } from '@/services/alertApi'
+import {
+  createChannel,
+  updateChannel,
+  deleteChannel,
+  testChannel,
+  type NotificationChannel,
+} from '@/services/alertApi'
 import ChannelWizard from '@/components/ChannelWizard.vue'
 
 const store = useChannelsStore()
@@ -23,27 +29,83 @@ const store = useChannelsStore()
 const showForm = ref(false)
 const showWizard = ref(false)
 const editingId = ref<string | null>(null)
-const form = ref({ name: '', url: '', headers: '', enabled: true })
+const form = ref({
+  name: '',
+  type: 'webhook',
+  url: '',
+  headers: '',
+  // Telegram only. An empty token means "keep the one on file" (FR-006): the
+  // server never sends it back, so there is nothing to prefill.
+  secret: '',
+  threadId: '',
+  enabled: true,
+})
+const editingHasSecret = ref(false)
 const testResult = ref<{ id: string; status: string; response_code?: number; error?: string } | null>(null)
 
 function resetForm() {
-  form.value = { name: '', url: '', headers: '', enabled: true }
+  form.value = { name: '', type: 'webhook', url: '', headers: '', secret: '', threadId: '', enabled: true }
+  editingHasSecret.value = false
   editingId.value = null
   showForm.value = false
 }
 
-function startEdit(ch: { id: string; name: string; url: string; headers: string; enabled: boolean }) {
+function startEdit(ch: NotificationChannel) {
   editingId.value = ch.id
-  form.value = { name: ch.name, url: ch.url, headers: ch.headers, enabled: ch.enabled }
+  let threadId = ''
+  try {
+    threadId = ch.config ? (JSON.parse(ch.config).thread_id ?? '') : ''
+  } catch {
+    threadId = ''
+  }
+  form.value = {
+    name: ch.name,
+    type: ch.type,
+    url: ch.url,
+    headers: ch.headers,
+    secret: '',
+    threadId,
+    enabled: ch.enabled,
+  }
+  editingHasSecret.value = ch.has_secret ?? false
   showForm.value = true
   showWizard.value = false
 }
 
+const isTelegram = computed(() => form.value.type === 'telegram')
+
+const destinationLabel = computed(() => {
+  if (form.value.type === 'email') return 'Email Address'
+  if (isTelegram.value) return 'Chat ID'
+  return 'Webhook URL'
+})
+
+const destinationInputType = computed(() => {
+  if (form.value.type === 'email') return 'email'
+  if (isTelegram.value) return 'text'
+  return 'url'
+})
+
+/** What a channel shows under its name: a URL for webhooks, the target as-is otherwise. */
+function channelTarget(ch: NotificationChannel): string {
+  if (ch.type === 'telegram' || ch.type === 'email') return ch.url
+  return maskUrl(ch.url)
+}
+
 async function submitForm() {
+  const payload = {
+    name: form.value.name,
+    url: form.value.url,
+    headers: form.value.headers,
+    enabled: form.value.enabled,
+    // Omitted when left empty, so the stored token survives an edit (FR-006).
+    ...(isTelegram.value && form.value.secret ? { secret: form.value.secret } : {}),
+    ...(isTelegram.value ? { config: { thread_id: form.value.threadId } } : {}),
+  }
   if (editingId.value) {
-    await updateChannel(editingId.value, form.value)
+    await updateChannel(editingId.value, payload)
   } else {
-    await createChannel(form.value)
+    await createChannel(payload)
   }
   resetForm()
   store.fetchChannels()
@@ -125,10 +187,26 @@ function handleWizardCreated() {
           <input v-model="form.name" required class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default" />
         </div>
         <div>
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Webhook URL</label>
-          <input v-model="form.url" required type="url" class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default" />
+          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">{{ destinationLabel }}</label>
+          <input v-model="form.url" required :type="destinationInputType" class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default" />
         </div>
-        <div>
+        <template v-if="isTelegram">
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Bot Token</label>
+            <input
+              v-model="form.secret"
+              type="password"
+              autocomplete="off"
+              :placeholder="editingHasSecret ? 'Token on file — leave empty to keep it' : '123456789:AA...'"
+              class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default"
+            />
+          </div>
+          <div>
+            <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Topic ID (optional)</label>
+            <input v-model="form.threadId" placeholder="42" class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default" />
+          </div>
+        </template>
+        <div v-if="!isTelegram">
           <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Custom Headers (JSON)</label>
           <input v-model="form.headers" placeholder='{"Authorization": "Bearer ..."}' class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default" />
         </div>
@@ -169,7 +247,7 @@ function handleWizardCreated() {
                 <span v-if="!ch.enabled" class="rounded px-1.5 py-0.5 text-xs bg-mnt-elevated text-mnt-muted">disabled</span>
                 <span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-mnt-elevated text-mnt-muted">{{ ch.type }}</span>
               </div>
-              <p class="text-xs text-mnt-muted">{{ maskUrl(ch.url) }}</p>
+              <p class="text-xs text-mnt-muted">{{ channelTarget(ch) }}</p>
             </div>
           </div>
           <div class="flex items-center gap-2">

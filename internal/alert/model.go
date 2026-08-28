@@ -93,11 +93,20 @@ type Alert struct {
 // Channels are silent by default — they only receive alerts when referenced
 // by an active AlertTrigger or by an EscalationLevel.
 type NotificationChannel struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	URL       string    `json:"url"`
-	Headers   string    `json:"headers,omitempty"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	URL     string `json:"url"`
+	Headers string `json:"headers,omitempty"`
+	// Secret holds the channel credential (a Telegram bot token, today). It is
+	// tagged "-" and not omitempty: omitempty would still serialize a non-empty
+	// token, which is exactly the value that must never leave the process.
+	Secret string `json:"-"`
+	// Config holds non-secret per-type settings as JSON, e.g. {"thread_id":"42"}.
+	Config string `json:"config,omitempty"`
+	// HasSecret is derived at scan time, never stored. It lets the interface show
+	// "token on file" without receiving the token.
+	HasSecret bool      `json:"has_secret"`
 	Enabled   bool      `json:"enabled"`
 	Health    string    `json:"health,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
