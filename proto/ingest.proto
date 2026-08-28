@@ -1,0 +1,452 @@
+// Maintenant — Multi-Server Agent Ingest Protocol
+// Originally specified by feature 012-multiserver-pro.
+//
+// This file is the source of truth for the committed stubs in
+// internal/agentpb/{ingest.pb.go, ingest_grpc.pb.go}. It lives here, tracked in
+// git, rather than under specs/ (which is untracked): generated code that ships
+// must not have an untracked input.
+//
+// Regenerate after any change: `make proto-gen`
+//
+// Compatibility rules, since servers and agents are upgraded independently:
+//   - never renumber or reuse a field number;
+//   - only ever append to a oneof — an unknown arm decodes to nil on the peer,
+//     which both sides already treat as "ignore";
+//   - keep AuthResponse's signed payload (nonce || uuid || timestamp) untouched;
+//     new fields there ride outside the signature and stay compatible.
+//
+// Wire layer is gRPC over TLS. Application-level auth is Ed25519 nonce
+// signature; see AuthChallenge / AuthResponse below.
+
+syntax = "proto3";
+
+package maintenant.agent.v1;
+
+option go_package = "github.com/kolapsis/maintenant/internal/agentpb;agentpb";
+
+import "google/protobuf/timestamp.proto";
+
+// ============================================================================
+// Service
+// ============================================================================
+
+service Ingest {
+  // RegisterAgent — first-boot enrollment.
+  // Called once per agent identity. Idempotent on the server side: re-calling
+  // with the same agent_id and a previously-consumed token returns
+  // FailedPrecondition.
+  rpc RegisterAgent(RegisterRequest) returns (RegisterResponse);
+
+  // Push — long-lived bidirectional stream.
+  // Server first sends AuthChallenge. Client sends AuthResponse, then a
+  // continuous stream of AgentEvent. Server may send error ServerMessage
+  // and close the stream at any time (e.g., revocation, rate-limit).
+  rpc Push(stream ClientMessage) returns (stream ServerMessage);
+}
+
+// ============================================================================
+// Enrollment (unary)
+// ============================================================================
+
+message RegisterRequest {
+  string agent_id          = 1;  // UUID v4 (lowercase, no braces) — canonical key
+  bytes  public_key        = 2;  // raw 32 bytes Ed25519
+  string enrollment_token  = 3;  // "mnt_enr_..." — one-time, TTL 24h
+  string hostname          = 4;
+  string os_arch           = 5;  // e.g. "linux/amd64"
+  string agent_version     = 6;  // semver — server checks major compat
+  Runtime detected_runtime = 7;
+  // Optional display label suggested by the agent (from --label= flag or
+  // the operator's preference). If empty, the server falls back to using
+  // `hostname` as the initial display value. Display-only — never used as
+  // an identifier in API/MCP/gRPC requests; agent_id is the only key.
+  // Max 64 chars enforced server-side. Editable later via PATCH /agents/:id.
+  string label             = 8;
+}
+
+message RegisterResponse {
+  google.protobuf.Timestamp server_time = 1;  // for clock-skew calibration
+  AgentConfig agent_config              = 2;
+}
+
+message AgentConfig {
+  // Server-side defaults pushed once at registration. The agent does NOT
+  // accept dynamic reconfiguration during streaming — push-only invariant.
+  uint32 resource_sample_interval_seconds = 1;  // default 10
+  uint32 certificate_scan_interval_seconds = 2; // default 60
+  uint32 max_events_per_second             = 3; // default 1000
+}
+
+enum Runtime {
+  RUNTIME_UNSPECIFIED = 0;
+  RUNTIME_DOCKER      = 1;
+  RUNTIME_SWARM       = 2;
+  RUNTIME_KUBERNETES  = 3;
+}
+
+// ============================================================================
+// Streaming (bidirectional, but semantically push-only after handshake)
+// ============================================================================
+
+message ClientMessage {
+  oneof payload {
+    AuthResponse  auth   = 1;    // first message only
+    AgentEvent    event  = 2;    // every subsequent message
+    CommandResult result = 3;    // reply to a server-issued AgentCommand
+  }
+}
+
+message ServerMessage {
+  oneof payload {
+    AuthChallenge challenge = 1;  // first message only
+    EventAck      ack       = 2;  // optional periodic ack (every N events or T seconds)
+    StreamError   error     = 3;  // server-initiated termination signal
+    AgentCommand  command   = 4;  // server asks the agent to do something
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Server-initiated commands
+// ----------------------------------------------------------------------------
+//
+// The stream stays push-only for telemetry; commands are the one exception, so
+// the server can reach a container that only the agent's runtime can see (logs
+// being the first use). Each command carries a server-minted request_id; the
+// agent replies with one or more CommandResult bearing the same id, the final
+// one flagged `last`. Unsolicited CommandResult are ignored.
+//
+// An agent advertises the command families it understands via
+// AuthResponse.capabilities, so the server can fail fast instead of waiting for
+// a timeout when talking to an older agent.
+
+message AgentCommand {
+  string request_id = 1;
+  oneof command {
+    LogsRequest   logs   = 10;
+    CancelRequest cancel = 11;  // stop work on request_id (viewer went away)
+  }
+}
+
+message LogsRequest {
+  string container_id = 1;  // runtime external id, not the maintenant UUID
+  uint32 lines        = 2;  // tail length; clamped server- and agent-side
+  bool   timestamps   = 3;
+  bool   follow       = 4;  // stream until cancelled instead of a one-shot tail
+}
+
+// CancelRequest carries no body: the enclosing AgentCommand.request_id names
+// the request to abort.
+message CancelRequest {}
+
+message CommandResult {
+  string request_id    = 1;
+  string error_code    = 2;  // empty on success; terminal when set
+  string error_message = 3;
+  bool   last          = 4;  // final message for this request_id
+  oneof result {
+    LogsChunk logs = 10;
+  }
+}
+
+message LogsChunk {
+  repeated string lines = 1;
+}
+
+// ----------------------------------------------------------------------------
+// Auth handshake
+// ----------------------------------------------------------------------------
+
+message AuthChallenge {
+  bytes nonce = 1;  // exactly 32 bytes random, generated server-side per stream
+}
+
+message AuthResponse {
+  string agent_id   = 1;  // UUID v4
+  int64  timestamp  = 2;  // unix seconds, client clock at signing time
+  bytes  signature  = 3;  // Ed25519.Sign(privkey, signing_payload)
+
+  // Reported on every connect, unlike RegisterRequest.agent_version which is
+  // frozen at enrollment time and goes stale the moment the agent is upgraded.
+  // The server refreshes the stored version from this.
+  string agent_version = 4;
+
+  // Command families this build understands, e.g. ["logs"]. Absent on agents
+  // predating the command channel, which is exactly how the server detects them.
+  // NOT part of the signing payload — adding fields here never breaks the
+  // signature, so old and new agents interoperate with old and new servers.
+  repeated string capabilities = 5;
+}
+
+// SIGNING PAYLOAD (byte-exact, client and server MUST agree):
+//   payload = nonce_bytes (32) || agent_uuid_bytes (16) || timestamp_be64 (8)
+//
+// agent_uuid_bytes = the 16 raw bytes of the UUID, big-endian fields per RFC 4122.
+// timestamp_be64   = uint64 big-endian encoding of the unix-seconds timestamp.
+//
+// Server verification:
+//   1. Look up agent by agent_id; fail PermissionDenied: agent_unknown.
+//   2. Check agent.status == active; fail PermissionDenied: agent_revoked.
+//   3. Compute |server_now - timestamp|; if > 300s fail DeadlineExceeded: clock_skew.
+//   4. Verify signature; if invalid fail PermissionDenied: bad_signature.
+//   5. Stream is authenticated for its lifetime.
+
+// ----------------------------------------------------------------------------
+// Acks and errors
+// ----------------------------------------------------------------------------
+
+message EventAck {
+  uint64 last_event_seq = 1;  // monotonic counter assigned by client per-stream
+  google.protobuf.Timestamp received_at = 2;
+}
+
+message StreamError {
+  string code    = 1;  // e.g. "agent_revoked", "rate_limited", "incompatible_version"
+  string message = 2;  // human-readable
+  uint32 retry_after_ms = 3;  // hint for client backoff (rate-limit case)
+}
+
+// ============================================================================
+// Events
+// ============================================================================
+
+message AgentEvent {
+  string agent_id   = 1;
+  string event_id   = 2;  // UUID v4 generated by agent
+  google.protobuf.Timestamp observed_at = 3;
+  uint64 seq        = 4;  // monotonic per-stream, used for EventAck
+
+  oneof body {
+    ContainerEvent   container   = 10;
+    EndpointEvent    endpoint    = 11;
+    HeartbeatEvent   heartbeat   = 12;
+    ResourceSample   resource    = 13;
+    CertificateInfo  certificate = 14;
+    SwarmTopology    swarm       = 15;
+    KubernetesTopology kubernetes = 16;
+    ContainerInventory inventory = 17;
+  }
+}
+
+// ----- Container ------------------------------------------------------------
+
+message ContainerEvent {
+  string container_id   = 1;
+  string name           = 2;
+  string image          = 3;
+  string image_digest   = 4;
+  ContainerState state  = 5;
+  string status_message = 6;
+  google.protobuf.Timestamp started_at = 7;
+  map<string, string> labels = 8;
+}
+
+// A full snapshot of every container the agent's runtime knows about, sent on
+// connect and periodically thereafter. The server reconciles it against the
+// rows it holds for this agent: containers present are un-archived, containers
+// absent are archived. Unlike SwarmTopology/KubernetesTopology, rows are
+// archived rather than deleted — containers carry history (transitions,
+// uptime, CVEs) that must outlive their removal.
+//
+// An inventory with no entries is never sent and never acted upon: the agent
+// skips it when discovery fails, so an empty snapshot could only mean "I could
+// not look", which the protocol cannot distinguish from "this host is empty".
+message ContainerInventory {
+  repeated ContainerEvent containers = 1;
+}
+
+enum ContainerState {
+  CONTAINER_STATE_UNSPECIFIED = 0;
+  CONTAINER_STATE_CREATED     = 1;
+  CONTAINER_STATE_RUNNING     = 2;
+  CONTAINER_STATE_PAUSED      = 3;
+  CONTAINER_STATE_RESTARTING  = 4;
+  CONTAINER_STATE_REMOVING    = 5;
+  CONTAINER_STATE_EXITED      = 6;
+  CONTAINER_STATE_DEAD        = 7;
+}
+
+// ----- Endpoint -------------------------------------------------------------
+
+message EndpointEvent {
+  string endpoint_id    = 1;  // server-assigned, originally distributed via AgentConfig or label
+  string url            = 2;
+  EndpointStatus status = 3;
+  uint32 status_code    = 4;  // 0 if non-HTTP probe
+  uint64 latency_ms     = 5;
+  string error_message  = 6;
+}
+
+enum EndpointStatus {
+  ENDPOINT_STATUS_UNSPECIFIED = 0;
+  ENDPOINT_STATUS_UP          = 1;
+  ENDPOINT_STATUS_DOWN        = 2;
+  ENDPOINT_STATUS_DEGRADED    = 3;
+}
+
+// ----- Heartbeat ------------------------------------------------------------
+
+message HeartbeatEvent {
+  string heartbeat_token = 1;  // matches existing heartbeat token in DB
+  string source_ip       = 2;
+}
+
+// ----- Resource sample ------------------------------------------------------
+
+message ResourceSample {
+  string container_id      = 1;  // empty for host-level samples
+  double cpu_percent       = 2;  // host CPU% when container_id empty
+  uint64 memory_bytes      = 3;  // host mem used when container_id empty
+  uint64 memory_limit_bytes = 4; // host mem total when container_id empty
+  uint64 network_rx_bytes  = 5;
+  uint64 network_tx_bytes  = 6;
+  uint64 disk_read_bytes   = 7;
+  uint64 disk_write_bytes  = 8;
+  // Host-level only (container_id empty): root filesystem capacity.
+  uint64 host_disk_total_bytes = 9;
+  uint64 host_disk_used_bytes  = 10;
+}
+
+// ----- Certificate ----------------------------------------------------------
+
+message CertificateInfo {
+  string host           = 1;
+  uint32 port           = 2;
+  string subject_cn     = 3;
+  string issuer_cn      = 4;
+  google.protobuf.Timestamp not_before = 5;
+  google.protobuf.Timestamp not_after  = 6;
+  bytes  fingerprint_sha256 = 7;
+  repeated string san_dns = 8;
+}
+
+// ----- Swarm topology -------------------------------------------------------
+//
+// A full snapshot of the agent's Swarm view (services, tasks, nodes). The
+// server reconciles each snapshot against the rows it already holds for this
+// agent: rows absent from the snapshot are hard-deleted. Sent periodically by
+// agents whose detected runtime is Swarm, and by the server's own local
+// runtime under the LocalAgent id.
+
+message SwarmTopology {
+  repeated SwarmServiceMsg services = 1;
+  repeated SwarmTaskMsg    tasks    = 2;
+  repeated SwarmNodeMsg    nodes    = 3;
+}
+
+message SwarmServiceMsg {
+  string service_id       = 1;
+  string name             = 2;
+  string image            = 3;
+  string mode             = 4;  // "replicated" or "global"
+  int32  desired_replicas = 5;
+  int32  running_replicas = 6;
+  map<string, string> labels = 7;
+  string stack_name       = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message SwarmTaskMsg {
+  string task_id       = 1;
+  string service_id    = 2;
+  string node_id       = 3;
+  int32  slot          = 4;
+  string state         = 5;
+  string desired_state = 6;
+  string container_id  = 7;
+  string error         = 8;
+  int32  exit_code     = 9;
+  bool   has_exit_code = 10;  // proto3 has no nullable int; gate exit_code with this
+  google.protobuf.Timestamp timestamp = 11;
+  string node_hostname = 12;
+}
+
+message SwarmNodeMsg {
+  string node_id        = 1;
+  string hostname       = 2;
+  string role           = 3;  // "manager" or "worker"
+  string status         = 4;  // "ready", "down", "disconnected", "unknown"
+  string availability   = 5;  // "active", "pause", "drain"
+  string engine_version = 6;
+  string address        = 7;
+  int32  task_count     = 8;
+}
+
+// ----- Kubernetes topology --------------------------------------------------
+//
+// A full snapshot of the agent's Kubernetes view. Same reconcile-and-prune
+// semantics as SwarmTopology. Workloads are also mirrored into the polymorphic
+// `containers` table via ContainerEvent; the workloads carried here drive the
+// dedicated Workloads view with replica/status detail.
+
+message KubernetesTopology {
+  repeated string         namespaces = 1;
+  repeated K8sWorkloadMsg workloads  = 2;
+  repeated K8sPodMsg      pods       = 3;
+  repeated K8sNodeMsg     nodes      = 4;
+  repeated K8sEventMsg    events     = 5;
+}
+
+message K8sEventMsg {
+  string type                = 1;  // Normal, Warning
+  string reason              = 2;
+  string message             = 3;
+  string source              = 4;
+  google.protobuf.Timestamp first_seen = 5;
+  google.protobuf.Timestamp last_seen  = 6;
+  int32  count               = 7;
+  string involved_kind       = 8;  // Pod, Deployment, StatefulSet, DaemonSet, Job
+  string involved_namespace  = 9;
+  string involved_name       = 10;
+}
+
+message K8sWorkloadMsg {
+  string id               = 1;  // "{namespace}/{kind}/{name}"
+  string name             = 2;
+  string namespace        = 3;
+  string kind             = 4;  // Deployment, StatefulSet, DaemonSet, Job
+  repeated string images  = 5;
+  int32  ready_replicas   = 6;
+  int32  desired_replicas = 7;
+  string status           = 8;  // healthy, degraded, progressing, failed
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message K8sPodMsg {
+  string name          = 1;
+  string namespace     = 2;
+  string status        = 3;  // Running, Pending, Succeeded, Failed, Unknown
+  string status_reason = 4;  // CrashLoopBackOff, ImagePullBackOff, ...
+  int32  restart_count = 5;
+  string node_name     = 6;
+  string pod_ip        = 7;
+  string host_ip       = 8;
+  string workload_ref  = 9;  // owning workload ID
+  repeated K8sContainerStatusMsg containers = 10;
+  google.protobuf.Timestamp created_at = 11;
+}
+
+message K8sContainerStatusMsg {
+  string name          = 1;
+  string image         = 2;
+  bool   ready         = 3;
+  int32  restart_count = 4;
+  string state         = 5;  // running, waiting, terminated
+  string state_reason  = 6;
+}
+
+message K8sNodeMsg {
+  string name               = 1;
+  repeated string roles     = 2;
+  string status             = 3;  // ready, not-ready, unknown
+  int32  running_pods       = 4;
+  string kubernetes_version = 5;
+  string os_image           = 6;
+  string architecture       = 7;
+  int64  capacity_cpu_millicores    = 8;
+  int64  capacity_memory_bytes      = 9;
+  int64  capacity_pods              = 10;
+  int64  allocatable_cpu_millicores = 11;
+  int64  allocatable_memory_bytes   = 12;
+  int64  allocatable_pods           = 13;
+  google.protobuf.Timestamp created_at = 14;
+}

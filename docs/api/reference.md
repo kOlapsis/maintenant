@@ -17,9 +17,28 @@ All endpoints are under `/api/v1/`. Responses are JSON. Errors follow a standard
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/health` | Health check, returns `{"status": "ok", "version": "..."}` |
+| `GET` | `/api/v1/health` | Health check, returns `{"status": "ok", "version": "...", "runtime": {...}, "storage": {...}}` |
 | `GET` | `/api/v1/runtime/status` | Runtime info (docker/kubernetes, connection state) |
 | `GET` | `/api/v1/edition` | Edition and feature flags |
+
+The `storage` object reports the engine backing this instance, whether it
+answers, and how many other instances beat on the same database:
+
+```json
+{ "engine": "postgres", "connected": true, "peers": 0 }
+```
+
+`engine` is `sqlite` or `postgres`. It never carries the connection string, the
+host or any credential.
+
+!!! warning "This endpoint answers 200 during a database outage"
+
+    An unreachable database is reported in `storage.connected`, not in the HTTP
+    status. `/api/v1/health` is the target of the Kubernetes liveness and
+    startup probes: failing it on a blip would restart the instance exactly when
+    the database needs to be left alone. Reads that need the database answer
+    `503 STORAGE_UNAVAILABLE` in the meantime, which clients should ride out
+    rather than treat as data loss.
 
 ---
 
@@ -44,6 +63,7 @@ All endpoints are under `/api/v1/`. Responses are JSON. Errors follow a standard
 | `GET` | `/api/v1/endpoints` | List all monitored endpoints |
 | `GET` | `/api/v1/endpoints/{id}` | Get endpoint details |
 | `GET` | `/api/v1/endpoints/{id}/checks` | List check results |
+| `POST` | `/api/v1/endpoints/{id}/check` | Probe now and return the refreshed endpoint |
 | `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime percentages |
 
 ---
@@ -85,6 +105,7 @@ These routes do not require authentication:
 | `PUT` | `/api/v1/certificates/{id}` | Update a certificate monitor |
 | `DELETE` | `/api/v1/certificates/{id}` | Delete a certificate monitor |
 | `GET` | `/api/v1/certificates/{id}/checks` | List check history |
+| `POST` | `/api/v1/certificates/{id}/check` | Scan now and return the refreshed monitor |
 
 ---
 
@@ -96,8 +117,28 @@ These routes do not require authentication:
 | `GET` | `/api/v1/containers/{id}/resources/history` | Historical metrics (`?range=24h`) | Pro |
 | `GET` | `/api/v1/containers/{id}/resources/alerts` | Get alert thresholds | |
 | `PUT` | `/api/v1/containers/{id}/resources/alerts` | Set alert thresholds | |
-| `GET` | `/api/v1/resources/summary` | Aggregate resource summary | |
-| `GET` | `/api/v1/resources/top` | Top consumers (`?sort=cpu&limit=10`) | |
+| `GET` | `/api/v1/resources/summary` | Aggregate resource summary (`?agent_id=local\|<id>` to scope to a host) | |
+| `GET` | `/api/v1/resources/top` | Top consumers (`?sort=cpu&limit=10`, `?agent_id=` to scope to a host) | |
+| `GET` | `/api/v1/resources/hosts` | List hosts (local + agents) with current CPU/memory/disk | Pro |
+
+---
+
+## Agents
+
+Multi-host agent management (`--mode=server`). All endpoints require **Personal** or above. Below that they return `403 EDITION_REQUIRED`, naming the capability and the edition that grants it. See [Multi-Host Monitoring](../features/multihost.md).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/agents` | List enrolled agents and their connection state |
+| `GET` | `/api/v1/agents/{id}` | Get an agent |
+| `PATCH` | `/api/v1/agents/{id}` | Update an agent's display label |
+| `POST` | `/api/v1/agents/{id}/revoke` | Revoke an agent (closes its stream, stops retries) |
+| `DELETE` | `/api/v1/agents/{id}` | Delete an agent and purge all its events |
+| `GET` | `/api/v1/agents/metrics` | Aggregate fleet metrics (counts by status) |
+| `POST` | `/api/v1/agents/enrollment-tokens` | Create a one-time enrollment token (`{ "ttl_hours": 24 }`) |
+| `GET` | `/api/v1/agents/enrollment-tokens` | List enrollment tokens (masked) |
+| `GET` | `/api/v1/agents/enrollment-tokens/{token_id}` | Get an enrollment token (masked) |
+| `DELETE` | `/api/v1/agents/enrollment-tokens/{token_id}` | Delete an enrollment token |
 
 ---
 
@@ -113,15 +154,54 @@ These routes do not require authentication:
 
 ## Notification Channels
 
+Channels are silent by default. They only fire when referenced by an [Alert Trigger](#alert-triggers) or an [Escalation Policy](#escalation-policies).
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/channels` | List notification channels |
-| `POST` | `/api/v1/channels` | Create a channel (slack, discord, teams, webhook) |
+| `POST` | `/api/v1/channels` | Create a channel (slack, discord, teams, webhook, email) |
 | `PUT` | `/api/v1/channels/{id}` | Update a channel |
 | `DELETE` | `/api/v1/channels/{id}` | Delete a channel |
 | `POST` | `/api/v1/channels/{id}/test` | Send a test alert |
-| `POST` | `/api/v1/channels/{id}/rules` | Create a routing rule |
-| `DELETE` | `/api/v1/channels/{id}/rules/{rule_id}` | Delete a routing rule |
+
+---
+
+## Alert Triggers
+
+Triggers route alerts to channels based on filters (severity, source, scope, tag).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/alert-triggers` | List all triggers |
+| `POST` | `/api/v1/alert-triggers` | Create a trigger |
+| `GET` | `/api/v1/alert-triggers/{id}` | Get trigger details |
+| `PUT` | `/api/v1/alert-triggers/{id}` | Update a trigger |
+| `DELETE` | `/api/v1/alert-triggers/{id}` | Delete a trigger |
+
+Filters `filter_scopes` and `filter_tags` require Personal or above; `filter_severities` and `filter_sources` are available on every edition.
+
+`notify_on_resolve` (boolean, default `true`) controls whether the trigger also relays `alert.resolved` events; set it to `false` for a channel that should only receive failures.
+
+---
+
+## Escalation Policies :material-crown:{ title="Pro" }
+
+Multi-level escalation chains for unacknowledged alerts.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/escalation-policies` | List all policies |
+| `POST` | `/api/v1/escalation-policies` | Create a policy |
+| `GET` | `/api/v1/escalation-policies/{id}` | Get a policy |
+| `PUT` | `/api/v1/escalation-policies/{id}` | Update a policy |
+| `PATCH` | `/api/v1/escalation-policies/{id}/active` | Activate / deactivate |
+| `DELETE` | `/api/v1/escalation-policies/{id}` | Delete a policy |
+| `POST` | `/api/v1/escalation-policies/overlap-probe` | Detect overlapping policies |
+| `GET` | `/api/v1/escalation-policies/{id}/runs` | List recent runs for a policy |
+| `GET` | `/api/v1/alerts/{id}/escalation-runs` | List runs for an alert |
+| `GET` | `/api/v1/escalation-runs/{id}` | Get run detail and deliveries |
+
+Endpoints return `403 edition_required` on Community.
 
 ---
 
@@ -144,6 +224,40 @@ These routes do not require authentication:
 | `DELETE` | `/api/v1/webhooks/{id}` | Delete a webhook subscription |
 | `POST` | `/api/v1/webhooks/{id}/test` | Send a test payload |
 
+### Delivery format
+
+Each delivery is a `POST` with a JSON body of the shape `{type, timestamp, data}`, where `data` is the raw event payload for that `type`:
+
+```json
+{
+  "type": "container.state_changed",
+  "timestamp": "2026-07-19T19:49:42Z",
+  "data": {
+    "id": "a1b2c3d4e5f6",
+    "state": "running",
+    "previous_state": "exited",
+    "health_status": "healthy",
+    "exit_code": 0,
+    "agent_id": "00000000-0000-0000-0000-000000000000"
+  }
+}
+```
+
+The `data` fields depend on `type` (`container.state_changed`, `endpoint.status_changed`, `heartbeat.status_changed`, `certificate.status_changed`, `alert.fired`, `alert.resolved`). Subscribe to specific types or `*` for all.
+
+Headers on every delivery:
+
+| Header | Value |
+|--------|-------|
+| `X-maintenant-Event` | the event `type` |
+| `X-maintenant-Delivery` | a unique delivery UUID |
+| `X-maintenant-Signature` | `sha256=<hmac>` — present only when the subscription has a secret |
+
+When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_request_body)` and comparing (constant-time) against the hex digest in `X-maintenant-Signature`. The signature is computed over the exact bytes of the request body.
+
+!!! note "Container recreation is noisy"
+    A `docker compose up -d` that recreates a stack legitimately produces several `container.state_changed` deliveries per service (the old container goes `running → exited`, the new one `created → running`, plus health transitions). Filter on `data.state` / `data.previous_state` if you only care about specific transitions.
+
 ---
 
 ## Status Page (Admin)
@@ -157,7 +271,7 @@ These routes do not require authentication:
 | `PUT` | `/api/v1/status/components/{id}` | Update a component |
 | `DELETE` | `/api/v1/status/components/{id}` | Delete a component |
 
-### Incidents (Pro)
+### Incidents :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -167,7 +281,7 @@ These routes do not require authentication:
 | `DELETE` | `/api/v1/status/incidents/{id}` | Delete an incident |
 | `POST` | `/api/v1/status/incidents/{id}/updates` | Add an incident update |
 
-### Maintenance Windows (Pro)
+### Maintenance Windows :material-crown:{ title="Pro" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -176,13 +290,13 @@ These routes do not require authentication:
 | `PUT` | `/api/v1/status/maintenance/{id}` | Update a maintenance window |
 | `DELETE` | `/api/v1/status/maintenance/{id}` | Delete a maintenance window |
 
-### Subscribers (Pro)
+### Subscribers :material-crown:{ title="Pro" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/status/subscribers` | List email subscribers |
 
-### SMTP Configuration (Pro)
+### SMTP Configuration :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -218,7 +332,7 @@ These routes do not require authentication:
 | `GET` | `/api/v1/security/insights/{container_id}` | Get insights for a specific container |
 | `GET` | `/api/v1/security/summary` | Aggregated counts by severity and type |
 
-### Security Posture (Pro)
+### Security Posture :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -231,7 +345,7 @@ These routes do not require authentication:
 
 ---
 
-## CVE Intelligence (Pro)
+## CVE Intelligence :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -240,7 +354,7 @@ These routes do not require authentication:
 
 ---
 
-## Risk Scoring (Pro)
+## Risk Scoring :material-star-four-points:{ title="Personal" }
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -298,6 +412,7 @@ This is a Server-Sent Events (SSE) endpoint. Each event has a `type` field and a
 | `update.detected` | Update | New update found |
 | `update.pinned` | Update | Version pinned |
 | `update.unpinned` | Update | Version unpinned |
+| `storage.availability_changed` | Storage | Database became unreachable, or answered again (`{engine, connected}`) |
 
 ### Status Page SSE
 

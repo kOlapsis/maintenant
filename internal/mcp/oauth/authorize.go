@@ -32,8 +32,8 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := url.ParseRequestURI(redirectURI); err != nil {
-		s.logger.Warn("authorization request with invalid redirect_uri", "redirect_uri", redirectURI, "client_id", clientID)
+	if _, err := url.ParseRequestURI(redirectURI); err != nil || !s.isRedirectURIAllowed(redirectURI) {
+		s.logger.Warn("authorization request with invalid or disallowed redirect_uri", "redirect_uri", redirectURI, "client_id", clientID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -92,6 +92,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		"code":  code,
 		"state": state,
 	})
+	// #nosec G710 -- redirect_uri validated by isRedirectURIAllowed before any redirect.
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
@@ -101,6 +102,7 @@ func oauthRedirectError(w http.ResponseWriter, r *http.Request, redirectURI, sta
 		"error_description": desc,
 		"state":             state,
 	})
+	// #nosec G710 -- callers only reach this after isRedirectURIAllowed passed.
 	http.Redirect(w, r, u, http.StatusFound)
 }
 

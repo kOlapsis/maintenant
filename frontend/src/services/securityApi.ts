@@ -25,7 +25,7 @@ export type InsightType =
 export interface SecurityInsight {
   type: InsightType
   severity: string
-  container_id: number
+  container_id: string
   container_name: string
   title: string
   description: string
@@ -34,7 +34,7 @@ export interface SecurityInsight {
 }
 
 export interface ContainerInsights {
-  container_id: number
+  container_id: string
   container_name: string
   highest_severity: string | null
   count: number
@@ -58,7 +58,7 @@ export function fetchInsights(): Promise<SecurityResponse> {
   return apiFetch(`${API_BASE}/security/insights`)
 }
 
-export function fetchContainerInsights(containerId: number): Promise<ContainerInsights> {
+export function fetchContainerInsights(containerId: string): Promise<ContainerInsights> {
   return apiFetch(`${API_BASE}/security/insights/${containerId}`)
 }
 

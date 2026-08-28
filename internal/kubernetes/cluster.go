@@ -18,14 +18,14 @@ import (
 
 // K8sClusterOverview holds aggregated cluster state for the dashboard.
 type K8sClusterOverview struct {
-	NamespaceCount  int                    `json:"namespace_count"`
-	NodeCount       int                    `json:"node_count"`
-	NodeReadyCount  int                    `json:"node_ready_count"`
-	PodStatus       K8sPodStatusBreakdown  `json:"pod_status"`
-	WorkloadCount   int                    `json:"workload_count"`
-	WorkloadHealthy int                    `json:"workload_healthy"`
-	ClusterHealth   string                 `json:"cluster_health"` // healthy, degraded, unhealthy
-	Namespaces      []K8sNamespaceSummary  `json:"namespaces"`
+	NamespaceCount  int                   `json:"namespace_count"`
+	NodeCount       int                   `json:"node_count"`
+	NodeReadyCount  int                   `json:"node_ready_count"`
+	PodStatus       K8sPodStatusBreakdown `json:"pod_status"`
+	WorkloadCount   int                   `json:"workload_count"`
+	WorkloadHealthy int                   `json:"workload_healthy"`
+	ClusterHealth   string                `json:"cluster_health"` // healthy, degraded, unhealthy
+	Namespaces      []K8sNamespaceSummary `json:"namespaces"`
 }
 
 // K8sPodStatusBreakdown counts pods by phase.
@@ -109,9 +109,10 @@ func (r *Runtime) ClusterOverview(ctx context.Context) (*K8sClusterOverview, err
 	anyNodeNotReady := false
 	anyNodeWarning := false
 	for _, n := range nodes {
-		if n.Status == "ready" {
+		switch n.Status {
+		case "ready":
 			nodeReadyCount++
-		} else if n.Status == "not-ready" {
+		case "not-ready":
 			anyNodeNotReady = true
 		}
 		// Check for pressure conditions.

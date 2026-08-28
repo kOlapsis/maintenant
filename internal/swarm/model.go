@@ -24,23 +24,25 @@ type SwarmCluster struct {
 
 // SwarmService represents a Swarm service with aggregated state (volatile/in-memory).
 type SwarmService struct {
-	ServiceID       string            `json:"service_id"`
-	Name            string            `json:"name"`
-	Image           string            `json:"image"`
-	Mode            string            `json:"mode"` // "replicated" or "global"
-	DesiredReplicas int               `json:"desired_replicas"`
-	RunningReplicas int               `json:"running_replicas"`
-	Labels          map[string]string `json:"labels,omitempty"`
-	StackName       string            `json:"stack_name,omitempty"`
+	ServiceID       string              `json:"service_id"`
+	AgentID         string              `json:"agent_id,omitempty"`
+	Name            string              `json:"name"`
+	Image           string              `json:"image"`
+	Mode            string              `json:"mode"` // "replicated" or "global"
+	DesiredReplicas int                 `json:"desired_replicas"`
+	RunningReplicas int                 `json:"running_replicas"`
+	Labels          map[string]string   `json:"labels,omitempty"`
+	StackName       string              `json:"stack_name,omitempty"`
 	Networks        []NetworkAttachment `json:"networks,omitempty"`
-	Ports           []PortConfig      `json:"ports,omitempty"`
-	UpdateStatus    *UpdateStatus     `json:"update_status,omitempty"`
-	CreatedAt       time.Time         `json:"created_at"`
+	Ports           []PortConfig        `json:"ports,omitempty"`
+	UpdateStatus    *UpdateStatus       `json:"update_status,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
 }
 
 // SwarmTask represents a single instance (replica) of a service (volatile/in-memory).
 type SwarmTask struct {
 	TaskID       string    `json:"task_id"`
+	AgentID      string    `json:"agent_id,omitempty"`
 	ServiceID    string    `json:"service_id"`
 	NodeID       string    `json:"node_id"`
 	Slot         int       `json:"slot"`
@@ -63,12 +65,12 @@ type NetworkAttachment struct {
 // PortConfig represents a published port on a Swarm service.
 type PortConfig struct {
 	Protocol      string `json:"protocol"`       // "tcp", "udp", "sctp"
-	TargetPort    uint32 `json:"target_port"`     // container port
-	PublishedPort uint32 `json:"published_port"`  // host/ingress port
-	PublishMode   string `json:"publish_mode"`    // "ingress" or "host"
+	TargetPort    uint32 `json:"target_port"`    // container port
+	PublishedPort uint32 `json:"published_port"` // host/ingress port
+	PublishMode   string `json:"publish_mode"`   // "ingress" or "host"
 }
 
-// UpdateStatus represents the rolling update status of a Swarm service (Enterprise).
+// UpdateStatus represents the rolling update status of a Swarm service (Pro).
 type UpdateStatus struct {
 	State       string     `json:"state"` // "updating", "paused", "completed", "rollback_started", "rollback_completed", "rollback_paused"
 	StartedAt   *time.Time `json:"started_at,omitempty"`
@@ -76,14 +78,26 @@ type UpdateStatus struct {
 	Message     string     `json:"message,omitempty"`
 }
 
-// SwarmNode represents a machine in the Swarm cluster (persisted for Enterprise).
+// TopologySnapshot is a full point-in-time view of an agent's swarm: every
+// service, task and node it currently sees. The server reconciles it against
+// the rows already held for that agent, hard-deleting anything absent from the
+// snapshot. Produced by both the server's local runtime (under the LocalAgent
+// id) and remote agents (under their own id).
+type TopologySnapshot struct {
+	Services []SwarmService
+	Tasks    []SwarmTask
+	Nodes    []SwarmNode
+}
+
+// SwarmNode represents a machine in the Swarm cluster (persisted for Pro).
 type SwarmNode struct {
-	ID                 int64     `json:"id"`
+	ID                 string    `json:"id"`
+	AgentID            string    `json:"agent_id"`
 	NodeID             string    `json:"node_id"`
 	Hostname           string    `json:"hostname"`
 	Role               string    `json:"role"`         // "manager" or "worker"
-	Status             string    `json:"status"`        // "ready", "down", "disconnected", "unknown"
-	Availability       string    `json:"availability"`  // "active", "pause", "drain"
+	Status             string    `json:"status"`       // "ready", "down", "disconnected", "unknown"
+	Availability       string    `json:"availability"` // "active", "pause", "drain"
 	EngineVersion      string    `json:"engine_version,omitempty"`
 	Address            string    `json:"address,omitempty"`
 	TaskCount          int       `json:"task_count"`

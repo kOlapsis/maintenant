@@ -35,10 +35,19 @@ func Register(name string, f Factory) {
 	factoryMu.Unlock()
 }
 
-// Detect auto-detects the container runtime or uses the MAINTENANT_RUNTIME override.
+// Detect auto-detects the container runtime or uses the MAINTENANT_RUNTIME env override.
 // Detection order: env override → KUBERNETES_SERVICE_HOST → KUBECONFIG → Docker socket.
 func Detect(ctx context.Context, logger *slog.Logger) (Runtime, error) {
-	override := os.Getenv("MAINTENANT_RUNTIME")
+	return DetectWithOverride(ctx, logger, "")
+}
+
+// DetectWithOverride is like Detect but allows the caller to pass an explicit
+// override (e.g. from a CLI flag). When override is empty, the MAINTENANT_RUNTIME
+// env variable is consulted as a fallback.
+func DetectWithOverride(ctx context.Context, logger *slog.Logger, override string) (Runtime, error) {
+	if override == "" {
+		override = os.Getenv("MAINTENANT_RUNTIME")
+	}
 
 	if override != "" {
 		f, ok := factories[override]
@@ -60,12 +69,12 @@ func Detect(ctx context.Context, logger *slog.Logger) (Runtime, error) {
 			logger.Info("detected Kubernetes in-cluster environment", "method", "KUBERNETES_SERVICE_HOST")
 			rt, err := f(ctx, logger)
 			if err != nil {
-				return nil, fmt.Errorf("Kubernetes in-cluster runtime failed: %w", err)
+				return nil, fmt.Errorf("kubernetes in-cluster runtime failed: %w", err)
 			}
 			logger.Info("runtime initialized", "runtime", rt.Name(), "method", "auto_detect_in_cluster")
 			return rt, nil
 		}
-		return nil, fmt.Errorf("Kubernetes environment detected (KUBERNETES_SERVICE_HOST set) but kubernetes runtime not yet implemented; registered: %v", registeredNames())
+		return nil, fmt.Errorf("kubernetes environment detected (KUBERNETES_SERVICE_HOST set) but kubernetes runtime not yet implemented; registered: %v", registeredNames())
 	}
 
 	// Try KUBECONFIG for out-of-cluster K8s development.
@@ -100,7 +109,7 @@ func Detect(ctx context.Context, logger *slog.Logger) (Runtime, error) {
 	if f, ok := factories["docker"]; ok {
 		rt, err := f(ctx, logger)
 		if err != nil {
-			return nil, fmt.Errorf("Docker runtime unavailable: %w. Set MAINTENANT_RUNTIME or ensure Docker socket is mounted", err)
+			return nil, fmt.Errorf("docker runtime unavailable: %w. Set MAINTENANT_RUNTIME or ensure Docker socket is mounted", err)
 		}
 		logger.Info("runtime initialized", "runtime", rt.Name(), "method", "auto_detect_docker")
 		return rt, nil

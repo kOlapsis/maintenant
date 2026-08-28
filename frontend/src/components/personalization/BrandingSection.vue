@@ -116,7 +116,7 @@ defineExpose({ flushPendingAssets })
   <div class="space-y-6">
     <h3
       class="text-[10px] font-bold uppercase tracking-widest"
-      style="color: var(--pb-text-muted)"
+      style="color: var(--mnt-text-muted)"
     >
       Branding
     </h3>
@@ -125,40 +125,40 @@ defineExpose({ flushPendingAssets })
       <div>
         <label
           class="block text-xs mb-1"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
         >Page Title</label>
         <input
           v-model="title"
           type="text"
           maxlength="100"
-          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-pb-accent"
-          style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
+          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
           placeholder="System Status"
         />
-        <p class="mt-1 text-[11px]" style="color: var(--pb-text-muted)">1–100 characters</p>
+        <p class="mt-1 text-[11px]" style="color: var(--mnt-text-muted)">1–100 characters</p>
       </div>
 
       <div>
         <label
           class="block text-xs mb-1"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
         >Subtitle</label>
         <input
           v-model="subtitle"
           type="text"
           maxlength="200"
-          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-pb-accent"
-          style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
+          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
           placeholder="Real-time service health"
         />
-        <p class="mt-1 text-[11px]" style="color: var(--pb-text-muted)">0–200 characters</p>
+        <p class="mt-1 text-[11px]" style="color: var(--mnt-text-muted)">0–200 characters</p>
       </div>
     </div>
 
     <!-- Logo -->
     <div class="space-y-2">
-      <label class="block text-xs" style="color: var(--pb-text-muted)">Logo</label>
-      <p class="text-[11px]" style="color: var(--pb-text-muted)">
+      <label class="block text-xs" style="color: var(--mnt-text-muted)">Logo</label>
+      <p class="text-[11px]" style="color: var(--mnt-text-muted)">
         PNG, JPEG, WebP or SVG — max 200 KB. Recommended: 200×80px
       </p>
       <div class="flex flex-wrap items-center gap-2">
@@ -172,7 +172,7 @@ defineExpose({ flushPendingAssets })
         <button
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
           @click="logoInputRef?.click()"
         >
           <Upload :size="13" />
@@ -181,7 +181,7 @@ defineExpose({ flushPendingAssets })
         <span
           v-if="logoFile"
           class="truncate max-w-[200px] text-xs"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
           :title="logoFile.name"
         >
           {{ logoFile.name }}
@@ -190,7 +190,7 @@ defineExpose({ flushPendingAssets })
           v-if="logoFile"
           type="button"
           class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
           @click="clearSelection('logo')"
         >
           <X :size="12" />
@@ -199,8 +199,8 @@ defineExpose({ flushPendingAssets })
         <button
           v-if="hasLogo && !logoFile && !removeLogo"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-red-400"
-          style="background: transparent; border-color: var(--pb-border-default); color: var(--pb-text-muted)"
+          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
+          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
           @click="markForRemoval('logo')"
         >
           <Trash2 :size="12" />
@@ -225,16 +225,16 @@ defineExpose({ flushPendingAssets })
         v-model="logoAlt"
         type="text"
         maxlength="200"
-        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-pb-accent"
-        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
+        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
         placeholder="Alt text for logo"
       />
     </div>
 
     <!-- Favicon -->
     <div class="space-y-2">
-      <label class="block text-xs" style="color: var(--pb-text-muted)">Favicon</label>
-      <p class="text-[11px]" style="color: var(--pb-text-muted)">
+      <label class="block text-xs" style="color: var(--mnt-text-muted)">Favicon</label>
+      <p class="text-[11px]" style="color: var(--mnt-text-muted)">
         PNG, ICO or SVG — max 50 KB. Recommended: 32×32px
       </p>
       <div class="flex flex-wrap items-center gap-2">
@@ -248,7 +248,7 @@ defineExpose({ flushPendingAssets })
         <button
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
           @click="faviconInputRef?.click()"
         >
           <Upload :size="13" />
@@ -257,7 +257,7 @@ defineExpose({ flushPendingAssets })
         <span
           v-if="faviconFile"
           class="truncate max-w-[200px] text-xs"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
           :title="faviconFile.name"
         >
           {{ faviconFile.name }}
@@ -266,7 +266,7 @@ defineExpose({ flushPendingAssets })
           v-if="faviconFile"
           type="button"
           class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
           @click="clearSelection('favicon')"
         >
           <X :size="12" />
@@ -275,8 +275,8 @@ defineExpose({ flushPendingAssets })
         <button
           v-if="hasFavicon && !faviconFile && !removeFavicon"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-red-400"
-          style="background: transparent; border-color: var(--pb-border-default); color: var(--pb-text-muted)"
+          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
+          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
           @click="markForRemoval('favicon')"
         >
           <Trash2 :size="12" />
@@ -301,8 +301,8 @@ defineExpose({ flushPendingAssets })
 
     <!-- Hero -->
     <div class="space-y-2">
-      <label class="block text-xs" style="color: var(--pb-text-muted)">Hero Image</label>
-      <p class="text-[11px]" style="color: var(--pb-text-muted)">
+      <label class="block text-xs" style="color: var(--mnt-text-muted)">Hero Image</label>
+      <p class="text-[11px]" style="color: var(--mnt-text-muted)">
         PNG, JPEG or WebP — max 500 KB. Recommended: 1200×400px
       </p>
       <div class="flex flex-wrap items-center gap-2">
@@ -316,7 +316,7 @@ defineExpose({ flushPendingAssets })
         <button
           type="button"
           class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
           @click="heroInputRef?.click()"
         >
           <Upload :size="13" />
@@ -325,7 +325,7 @@ defineExpose({ flushPendingAssets })
         <span
           v-if="heroFile"
           class="truncate max-w-[200px] text-xs"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
           :title="heroFile.name"
         >
           {{ heroFile.name }}
@@ -334,7 +334,7 @@ defineExpose({ flushPendingAssets })
           v-if="heroFile"
           type="button"
           class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--pb-text-muted)"
+          style="color: var(--mnt-text-muted)"
           @click="clearSelection('hero')"
         >
           <X :size="12" />
@@ -343,8 +343,8 @@ defineExpose({ flushPendingAssets })
         <button
           v-if="hasHero && !heroFile && !removeHero"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-red-400"
-          style="background: transparent; border-color: var(--pb-border-default); color: var(--pb-text-muted)"
+          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
+          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
           @click="markForRemoval('hero')"
         >
           <Trash2 :size="12" />
@@ -369,8 +369,8 @@ defineExpose({ flushPendingAssets })
         v-model="heroAlt"
         type="text"
         maxlength="200"
-        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-pb-accent"
-        style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
+        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
         placeholder="Alt text for hero image"
       />
     </div>

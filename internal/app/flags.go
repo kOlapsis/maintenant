@@ -40,7 +40,11 @@ type FlagSpec struct {
 	Default     string
 	Description string
 	Sensitive   bool
-	ApplyTo     func(*Config, string) error
+	// NoEnv marks an action flag that has no environment equivalent
+	// (--copy-store-to, --yes): it drives what the process does, it is not
+	// part of the configuration an operator writes in maintenant.env.
+	NoEnv   bool
+	ApplyTo func(*Config, string) error
 }
 
 // FlagCategory groups related flags for --help display.
@@ -95,8 +99,10 @@ func init() {
 			EnvName: "MAINTENANT_RUNTIME", FlagName: "runtime",
 			Type: FlagTypeString, Default: "",
 			Description: "Force container runtime (docker|kubernetes; default: autodetect)",
-			// Propagate to env so pbruntime.Detect() picks it up
-			ApplyTo: func(_ *Config, v string) error {
+			// Propagate to env so pbruntime.Detect() picks it up, and to the
+			// agent config, which carries the same override over the wire.
+			ApplyTo: func(c *Config, v string) error {
+				c.MultiHost.RuntimeOverride = v
 				return os.Setenv("MAINTENANT_RUNTIME", v)
 			},
 		},
@@ -239,6 +245,145 @@ func init() {
 			Description: "Kubernetes namespaces to exclude (comma-separated)",
 			ApplyTo:     func(c *Config, v string) error { c.K8sExcludeNS = v; return nil },
 		},
+		{
+			EnvName: "MAINTENANT_STATUS_URL", FlagName: "statusUrl",
+			Type: FlagTypeString, Default: "",
+			Description: "Public status page URL advertised in notifications",
+			ApplyTo:     func(c *Config, v string) error { c.StatusURL = v; return nil },
+		},
+		// Retention
+		{
+			EnvName: "MAINTENANT_RETENTION_SNAPSHOTS", FlagName: "retentionSnapshots",
+			Type: FlagTypeDuration, Default: "48h",
+			Description: "How long raw resource samples are kept",
+			ApplyTo: func(c *Config, v string) error {
+				d, err := time.ParseDuration(v)
+				if err != nil {
+					return err
+				}
+				c.Retention.Snapshots = d
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_RETENTION_INTERVAL", FlagName: "retentionInterval",
+			Type: FlagTypeDuration, Default: "1h",
+			Description: "How often the retention cleanup runs",
+			ApplyTo: func(c *Config, v string) error {
+				d, err := time.ParseDuration(v)
+				if err != nil {
+					return err
+				}
+				c.Retention.Interval = d
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_RETENTION_BATCH_SIZE", FlagName: "retentionBatchSize",
+			Type: FlagTypeInt, Default: "1000",
+			Description: "Rows deleted per retention batch",
+			ApplyTo: func(c *Config, v string) error {
+				n, err := strconv.Atoi(v)
+				if err != nil {
+					return err
+				}
+				c.Retention.BatchSize = n
+				return nil
+			},
+		},
+		// Multi-host
+		{
+			EnvName: "MAINTENANT_MODE", FlagName: "mode",
+			Type: FlagTypeString, Default: "embedded",
+			Description: "Operating mode (embedded|server|agent)",
+			ApplyTo:     func(c *Config, v string) error { c.Mode = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_SERVER", FlagName: "server",
+			Type: FlagTypeString, Default: "",
+			Description: "gRPC server URL to enrol against (agent mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.ServerURL = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_ENROLLMENT_TOKEN", FlagName: "enrollment-token",
+			Type: FlagTypeString, Default: "", Sensitive: true,
+			Description: "Enrollment token (agent mode, first boot)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.EnrollmentToken = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_LABEL", FlagName: "label",
+			Type: FlagTypeString, Default: "",
+			Description: "Display label for this agent (agent mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.Label = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_GRPC_LISTEN", FlagName: "grpc-listen",
+			Type: FlagTypeString, Default: "127.0.0.1:8443",
+			Description: "gRPC listen address (server mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.GRPCListen = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_GRPC_URL", FlagName: "grpc-url",
+			Type: FlagTypeString, Default: "",
+			Description: "Public gRPC URL handed to agents (server mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.GRPCPublicURL = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_GRPC_TLS_CERT", FlagName: "grpc-tls-cert",
+			Type: FlagTypeString, Default: "",
+			Description: "TLS certificate file for the gRPC listener (server mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.TLSCertFile = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_GRPC_TLS_KEY", FlagName: "grpc-tls-key",
+			Type: FlagTypeString, Default: "",
+			Description: "TLS key file for the gRPC listener (server mode)",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.TLSKeyFile = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY", FlagName: "grpc-insecure-skip-tls-verify",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Disable TLS verification against the server (debug only)",
+			ApplyTo: func(c *Config, v string) error {
+				c.MultiHost.InsecureSkipVerify = parseTruthy(v)
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_EMBEDDED_AGENT", FlagName: "embedded-agent",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Also run a local agent (server mode, Pro)",
+			ApplyTo: func(c *Config, v string) error {
+				c.MultiHost.EmbeddedAgent = parseTruthy(v)
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_CA_CERT", FlagName: "ca-cert",
+			Type: FlagTypeString, Default: "",
+			Description: "PEM bundle of extra root CAs, added to the system store",
+			ApplyTo:     func(c *Config, v string) error { c.CACertFile = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_DATABASE_URL", FlagName: "database-url",
+			Type: FlagTypeString, Default: "", Sensitive: true,
+			Description: "PostgreSQL connection string (server/embedded only; empty = SQLite)",
+			ApplyTo:     func(c *Config, v string) error { c.DatabaseURL = v; return nil },
+		},
+		// Actions — read straight from the visited map by main, they configure
+		// nothing.
+		{
+			FlagName: "copy-store-to", NoEnv: true,
+			Type: FlagTypeString, Default: "",
+			Description: "Copy this install into an empty PostgreSQL database, then exit",
+			ApplyTo:     func(*Config, string) error { return nil },
+		},
+		{
+			FlagName: "yes", NoEnv: true,
+			Type: FlagTypeBool, Default: "false",
+			Description: "Skip the confirmation prompt (for scripts)",
+			ApplyTo:     func(*Config, string) error { return nil },
+		},
 	}
 
 	// Validate registry invariants at init time (panics = internal bug)
@@ -249,6 +394,12 @@ func init() {
 			panic("flags: duplicate FlagName: " + spec.FlagName)
 		}
 		names[spec.FlagName] = true
+		if spec.NoEnv {
+			if spec.EnvName != "" {
+				panic("flags: NoEnv spec must not set EnvName: " + spec.FlagName)
+			}
+			continue
+		}
 		if envNames[spec.EnvName] {
 			panic("flags: duplicate EnvName: " + spec.EnvName)
 		}
@@ -261,7 +412,8 @@ func init() {
 	Categories = []FlagCategory{
 		{Name: "Server", Specs: specsFor("addr", "baseUrl", "corsOrigins")},
 		{Name: "Storage", Specs: specsFor("db")},
-		{Name: "Branding", Specs: specsFor("organisationName")},
+		{Name: "Retention", Specs: specsFor("retentionSnapshots", "retentionInterval", "retentionBatchSize")},
+		{Name: "Branding", Specs: specsFor("organisationName", "statusUrl")},
 		{Name: "Runtime", Specs: specsFor("runtime")},
 		{Name: "Logging", Specs: specsFor("logLevel")},
 		{Name: "HTTP", Specs: specsFor("maxBodySize")},
@@ -271,6 +423,12 @@ func init() {
 		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom")},
 		{Name: "MCP", Specs: specsFor("mcp", "mcpClientId", "mcpClientSecret")},
 		{Name: "Kubernetes", Specs: specsFor("k8sNamespaces", "k8sExcludeNamespaces")},
+		{Name: "Multi-host", Specs: specsFor(
+			"mode", "server", "enrollment-token", "label",
+			"grpc-listen", "grpc-url", "grpc-tls-cert", "grpc-tls-key",
+			"grpc-insecure-skip-tls-verify", "embedded-agent", "ca-cert",
+		)},
+		{Name: "Storage (PostgreSQL)", Specs: specsFor("database-url", "copy-store-to", "yes")},
 	}
 }
 
@@ -293,10 +451,15 @@ func ParseFlagsOrDie(args []string) (map[string]string, error) {
 	fs := flag.NewFlagSet("maintenant", flag.ContinueOnError)
 	fs.Usage = func() {} // suppress default usage; handled by PrintHelp
 
-	holders := make(map[string]*string, len(Registry))
+	// Booleans are declared as booleans, not strings: `--yes` and
+	// `--embedded-agent` are used without a value, and a string flag would
+	// swallow the next argument.
 	for _, spec := range Registry {
-		s := spec.Default
-		holders[spec.FlagName] = fs.String(spec.FlagName, s, spec.Description)
+		if spec.Type == FlagTypeBool {
+			fs.Bool(spec.FlagName, parseTruthy(spec.Default), spec.Description)
+			continue
+		}
+		fs.String(spec.FlagName, spec.Default, spec.Description)
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -354,11 +517,13 @@ func PrintHelp(w io.Writer, _ Config) {
 				fmt.Fprintf(w, " (default: %s)", spec.Default)
 			}
 			fmt.Fprintln(w)
-			fmt.Fprintf(w, "      env: %s", spec.EnvName)
-			if spec.Sensitive {
-				fmt.Fprint(w, "  default: <unset>")
+			if !spec.NoEnv {
+				fmt.Fprintf(w, "      env: %s", spec.EnvName)
+				if spec.Sensitive {
+					fmt.Fprint(w, "  default: <unset>")
+				}
+				fmt.Fprintln(w)
 			}
-			fmt.Fprintln(w)
 		}
 		fmt.Fprintln(w)
 	}

@@ -23,7 +23,7 @@ export interface CategoryScore {
 }
 
 export interface ContainerRisk {
-  container_id: number
+  container_id: string
   container_name: string
   score: number
   color: string
@@ -48,7 +48,7 @@ export interface InfrastructurePosture {
 }
 
 export interface SecurityScore {
-  container_id: number
+  container_id: string
   container_name: string
   score: number
   color: string
@@ -66,7 +66,7 @@ export interface ContainerPostureList {
 }
 
 export interface RiskAcknowledgment {
-  id: number
+  id: string
   container_external_id: string
   finding_type: string
   finding_key: string
@@ -83,7 +83,7 @@ export function getPosture(): Promise<InfrastructurePosture> {
   return apiFetch(`${API_BASE}/security/posture`)
 }
 
-export function getContainerPosture(id: number): Promise<SecurityScore> {
+export function getContainerPosture(id: string): Promise<SecurityScore> {
   return apiFetch(`${API_BASE}/security/posture/containers/${id}`)
 }
 
@@ -92,7 +92,7 @@ export function listContainerPostures(limit = 50, offset = 0): Promise<Container
 }
 
 export function createAcknowledgment(body: {
-  container_id: number
+  container_id: string
   finding_type: string
   finding_key: string
   acknowledged_by: string
@@ -105,13 +105,13 @@ export function createAcknowledgment(body: {
   })
 }
 
-export function deleteAcknowledgment(id: number): Promise<void> {
+export function deleteAcknowledgment(id: string): Promise<void> {
   return apiFetchVoid(`${API_BASE}/security/acknowledgments/${id}`, {
     method: 'DELETE',
   })
 }
 
-export function listAcknowledgments(containerId?: number): Promise<AcknowledgmentList> {
+export function listAcknowledgments(containerId?: string): Promise<AcknowledgmentList> {
   const params = containerId ? `?container_id=${containerId}` : ''
   return apiFetch(`${API_BASE}/security/acknowledgments${params}`)
 }

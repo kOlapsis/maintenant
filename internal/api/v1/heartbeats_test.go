@@ -47,7 +47,7 @@ func TestEnrichPings(t *testing.T) {
 		{
 			name: "single ping has expected_at and grace_deadline",
 			pings: []*heartbeat.HeartbeatPing{
-				{ID: 1, HeartbeatID: 1, PingType: heartbeat.PingSuccess, Timestamp: baseTime},
+				{ID: "1", HeartbeatID: "1", PingType: heartbeat.PingSuccess, Timestamp: baseTime},
 			},
 			intervalSec: interval,
 			graceSec:    grace,
@@ -64,9 +64,9 @@ func TestEnrichPings(t *testing.T) {
 			name: "multiple pings have sequential expected_at",
 			pings: []*heartbeat.HeartbeatPing{
 				// Most recent first
-				{ID: 3, HeartbeatID: 1, PingType: heartbeat.PingSuccess, Timestamp: baseTime.Add(2 * time.Hour)},
-				{ID: 2, HeartbeatID: 1, PingType: heartbeat.PingSuccess, Timestamp: baseTime.Add(1 * time.Hour)},
-				{ID: 1, HeartbeatID: 1, PingType: heartbeat.PingSuccess, Timestamp: baseTime},
+				{ID: "3", HeartbeatID: "1", PingType: heartbeat.PingSuccess, Timestamp: baseTime.Add(2 * time.Hour)},
+				{ID: "2", HeartbeatID: "1", PingType: heartbeat.PingSuccess, Timestamp: baseTime.Add(1 * time.Hour)},
+				{ID: "1", HeartbeatID: "1", PingType: heartbeat.PingSuccess, Timestamp: baseTime},
 			},
 			intervalSec: interval,
 			graceSec:    grace,
@@ -74,8 +74,8 @@ func TestEnrichPings(t *testing.T) {
 			checks: func(t *testing.T, result []EnrichedPing) {
 				require.Len(t, result, 3)
 				for _, p := range result {
-					require.NotNil(t, p.ExpectedAt, "ping %d should have expected_at", p.ID)
-					require.NotNil(t, p.GraceDeadline, "ping %d should have grace_deadline", p.ID)
+					require.NotNil(t, p.ExpectedAt, "ping %s should have expected_at", p.ID)
+					require.NotNil(t, p.GraceDeadline, "ping %s should have grace_deadline", p.ID)
 				}
 				// Second ping's expected_at should be oldest ping timestamp + interval
 				assert.Equal(t, baseTime.Add(1*time.Hour), *result[1].ExpectedAt)
@@ -86,7 +86,7 @@ func TestEnrichPings(t *testing.T) {
 		{
 			name: "grace_deadline accounts for grace period",
 			pings: []*heartbeat.HeartbeatPing{
-				{ID: 1, HeartbeatID: 1, PingType: heartbeat.PingSuccess, Timestamp: baseTime},
+				{ID: "1", HeartbeatID: "1", PingType: heartbeat.PingSuccess, Timestamp: baseTime},
 			},
 			intervalSec: 600, // 10 minutes
 			graceSec:    120, // 2 minutes
@@ -101,7 +101,7 @@ func TestEnrichPings(t *testing.T) {
 			name: "preserves original ping fields",
 			pings: []*heartbeat.HeartbeatPing{
 				{
-					ID: 42, HeartbeatID: 3, PingType: heartbeat.PingSuccess,
+					ID: "42", HeartbeatID: "3", PingType: heartbeat.PingSuccess,
 					SourceIP: "192.168.1.1", HTTPMethod: "POST",
 					Timestamp: baseTime,
 				},
@@ -111,8 +111,8 @@ func TestEnrichPings(t *testing.T) {
 			createdAt:   createdAt,
 			checks: func(t *testing.T, result []EnrichedPing) {
 				require.Len(t, result, 1)
-				assert.Equal(t, int64(42), result[0].ID)
-				assert.Equal(t, int64(3), result[0].HeartbeatID)
+				assert.Equal(t, "42", result[0].ID)
+				assert.Equal(t, "3", result[0].HeartbeatID)
 				assert.Equal(t, heartbeat.PingSuccess, result[0].PingType)
 				assert.Equal(t, "192.168.1.1", result[0].SourceIP)
 				assert.Equal(t, "POST", result[0].HTTPMethod)

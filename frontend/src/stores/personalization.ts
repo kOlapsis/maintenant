@@ -55,19 +55,19 @@ export const usePersonalizationStore = defineStore('personalization', () => {
     return link
   }
 
-  async function updateFooterLink(id: number, label: string, url: string) {
+  async function updateFooterLink(id: string, label: string, url: string) {
     const link = await personalizationApi.updateFooterLink(id, label, url)
     const idx = footerLinks.value.findIndex((l) => l.id === id)
     if (idx !== -1) footerLinks.value[idx] = link
     return link
   }
 
-  async function deleteFooterLink(id: number) {
+  async function deleteFooterLink(id: string) {
     await personalizationApi.deleteFooterLink(id)
     footerLinks.value = footerLinks.value.filter((l) => l.id !== id)
   }
 
-  async function reorderFooterLinks(ids: number[]) {
+  async function reorderFooterLinks(ids: string[]) {
     const res = await personalizationApi.reorderFooterLinks(ids)
     footerLinks.value = res.items ?? []
   }
@@ -83,19 +83,19 @@ export const usePersonalizationStore = defineStore('personalization', () => {
     return item
   }
 
-  async function updateFAQItem(id: number, question: string, answerMD: string) {
+  async function updateFAQItem(id: string, question: string, answerMD: string) {
     const item = await personalizationApi.updateFAQItem(id, question, answerMD)
     const idx = faqItems.value.findIndex((f) => f.id === id)
     if (idx !== -1) faqItems.value[idx] = item
     return item
   }
 
-  async function deleteFAQItem(id: number) {
+  async function deleteFAQItem(id: string) {
     await personalizationApi.deleteFAQItem(id)
     faqItems.value = faqItems.value.filter((f) => f.id !== id)
   }
 
-  async function reorderFAQ(ids: number[]) {
+  async function reorderFAQ(ids: string[]) {
     const res = await personalizationApi.reorderFAQ(ids)
     faqItems.value = res.items ?? []
   }

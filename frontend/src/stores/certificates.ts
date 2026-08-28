@@ -17,6 +17,7 @@ import {
   type CertStatus,
 } from '@/services/certificateApi'
 import { sseBus } from '@/services/sseBus'
+import { useResourcesStore } from '@/stores/resources'
 
 export const useCertificatesStore = defineStore('certificates', () => {
   const certificates = ref<CertMonitor[]>([])
@@ -44,7 +45,7 @@ export const useCertificatesStore = defineStore('certificates', () => {
     loading.value = true
     error.value = null
     try {
-      const res = await listCertificates()
+      const res = await listCertificates({ agent_id: useResourcesStore().entityQuery })
       certificates.value = res.certificates || []
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch certificates'

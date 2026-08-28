@@ -24,6 +24,7 @@ import (
 
 // K8sNode represents a Kubernetes cluster node.
 type K8sNode struct {
+	AgentID           string // reporting agent; empty/LocalAgent for the server's own cluster
 	Name              string
 	Roles             []string
 	Conditions        []K8sCondition

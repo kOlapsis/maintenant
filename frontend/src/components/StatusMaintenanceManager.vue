@@ -25,13 +25,13 @@ import {
 const store = useStatusAdminStore()
 
 const showForm = ref(false)
-const editingId = ref<number | null>(null)
+const editingId = ref<string | null>(null)
 const form = ref({
   title: '',
   description: '',
   starts_at: '',
   ends_at: '',
-  component_ids: [] as number[],
+  component_ids: [] as string[],
 })
 
 function resetForm() {
@@ -70,7 +70,7 @@ async function submitForm() {
 
 const confirm = useConfirm()
 
-async function handleDelete(id: number) {
+async function handleDelete(id: string) {
   const ok = await confirm({
     title: 'Delete maintenance window',
     message: 'Remove this maintenance window? This cannot be undone.',
@@ -90,70 +90,70 @@ function statusLabel(mw: MaintenanceWindow): string {
 }
 
 function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
-  if (mw.active) return { bg: 'rgba(59, 130, 246, 0.15)', color: 'var(--pb-accent)' }
+  if (mw.active) return { bg: 'rgba(59, 130, 246, 0.15)', color: 'var(--mnt-accent)' }
   const now = new Date()
-  if (new Date(mw.ends_at) < now) return { bg: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)' }
-  return { bg: 'var(--pb-status-warn-bg)', color: 'var(--pb-status-warn)' }
+  if (new Date(mw.ends_at) < now) return { bg: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-muted)' }
+  return { bg: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)' }
 }
 </script>
 
 <template>
   <div>
     <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-lg font-semibold" style="color: var(--pb-text-primary)">Maintenance Windows</h2>
+      <h2 class="text-lg font-semibold" style="color: var(--mnt-text-primary)">Maintenance Windows</h2>
       <button
         @click="showForm = true"
-        class="rounded-md px-3 py-1.5 text-sm font-medium text-pb-primary"
-        style="background: var(--pb-accent)"
+        class="rounded-md px-3 py-1.5 text-sm font-medium text-mnt-primary"
+        style="background: var(--mnt-accent)"
       >
         Schedule Maintenance
       </button>
     </div>
 
-    <div v-if="showForm" class="mb-4 rounded-lg border p-4" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-      <h3 class="mb-3 text-sm font-medium" style="color: var(--pb-text-primary)">
+    <div v-if="showForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+      <h3 class="mb-3 text-sm font-medium" style="color: var(--mnt-text-primary)">
         {{ editingId ? 'Edit Maintenance' : 'Schedule Maintenance' }}
       </h3>
       <form @submit.prevent="submitForm" class="space-y-3">
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Title</label>
-          <input v-model="form.title" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Title</label>
+          <input v-model="form.title" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
         </div>
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Description</label>
-          <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"></textarea>
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Description</label>
+          <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"></textarea>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Start Time</label>
-            <input v-model="form.starts_at" type="datetime-local" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Start Time</label>
+            <input v-model="form.starts_at" type="datetime-local" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
           </div>
           <div>
-            <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">End Time</label>
-            <input v-model="form.ends_at" type="datetime-local" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">End Time</label>
+            <input v-model="form.ends_at" type="datetime-local" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
           </div>
         </div>
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Affected Components</label>
-          <div class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border p-2" style="border-color: var(--pb-border-default); background: var(--pb-bg-elevated)">
-            <label v-for="c in store.components" :key="c.id" class="flex items-center gap-2 text-sm" style="color: var(--pb-text-secondary)">
-              <input type="checkbox" :value="c.id" v-model="form.component_ids" class="rounded" style="accent-color: var(--pb-accent)" />
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Affected Components</label>
+          <div class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border p-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
+            <label v-for="c in store.components" :key="c.id" class="flex items-center gap-2 text-sm" style="color: var(--mnt-text-secondary)">
+              <input type="checkbox" :value="c.id" v-model="form.component_ids" class="rounded" style="accent-color: var(--mnt-accent)" />
               {{ c.display_name }}
             </label>
-            <p v-if="(store.components?.length ?? 0) === 0" class="text-xs" style="color: var(--pb-text-muted)">No components configured</p>
+            <p v-if="(store.components?.length ?? 0) === 0" class="text-xs" style="color: var(--mnt-text-muted)">No components configured</p>
           </div>
         </div>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-pb-primary" style="background: var(--pb-accent)">
+          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-mnt-primary" style="background: var(--mnt-accent)">
             {{ editingId ? 'Update' : 'Schedule' }}
           </button>
-          <button type="button" @click="resetForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)">Cancel</button>
+          <button type="button" @click="resetForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)">Cancel</button>
         </div>
       </form>
     </div>
 
-    <div v-if="(store.maintenance?.length ?? 0) === 0 && !store.maintenanceLoading" class="rounded-lg border p-6 text-center" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-      <p class="text-sm" style="color: var(--pb-text-muted)">No maintenance windows scheduled</p>
+    <div v-if="(store.maintenance?.length ?? 0) === 0 && !store.maintenanceLoading" class="rounded-lg border p-6 text-center" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+      <p class="text-sm" style="color: var(--mnt-text-muted)">No maintenance windows scheduled</p>
     </div>
 
     <div class="space-y-2">
@@ -161,7 +161,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
         v-for="mw in store.maintenance"
         :key="mw.id"
         class="rounded-lg border p-4"
-        style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+        style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
       >
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
@@ -171,22 +171,22 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
             >
               {{ statusLabel(mw) }}
             </span>
-            <span class="text-sm font-medium" style="color: var(--pb-text-primary)">{{ mw.title }}</span>
+            <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ mw.title }}</span>
           </div>
           <div class="flex items-center gap-2">
             <button
               v-if="!mw.active && new Date(mw.ends_at) > new Date()"
               @click="startEdit(mw)"
               class="rounded border px-2 py-1 text-xs"
-              style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+              style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
             >
               Edit
             </button>
-            <button @click="handleDelete(mw.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--pb-status-down); color: var(--pb-status-down)">Delete</button>
+            <button @click="handleDelete(mw.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--mnt-status-down); color: var(--mnt-status-down)">Delete</button>
           </div>
         </div>
-        <p v-if="mw.description" class="mt-1 text-xs" style="color: var(--pb-text-muted)">{{ mw.description }}</p>
-        <div class="mt-1 text-xs" style="color: var(--pb-text-muted)">
+        <p v-if="mw.description" class="mt-1 text-xs" style="color: var(--mnt-text-muted)">{{ mw.description }}</p>
+        <div class="mt-1 text-xs" style="color: var(--mnt-text-muted)">
           {{ new Date(mw.starts_at).toLocaleString() }} &mdash; {{ new Date(mw.ends_at).toLocaleString() }}
         </div>
         <div v-if="mw.components?.length" class="mt-1 flex flex-wrap gap-1">
@@ -194,7 +194,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
             v-for="c in mw.components"
             :key="c.component_id"
             class="rounded px-1.5 py-0.5 text-xs"
-            style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
+            style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
           >
             {{ c.name }}
           </span>

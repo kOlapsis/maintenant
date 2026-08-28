@@ -15,13 +15,13 @@ import (
 	"context"
 	"fmt"
 
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // getHealthInfo returns health info for a workload identified by externalID.
-func (r *Runtime) getHealthInfo(ctx context.Context, externalID string) (*pbruntime.HealthInfo, error) {
+func (r *Runtime) getHealthInfo(ctx context.Context, externalID string) (*runtime.HealthInfo, error) {
 	ns, kind, name, err := parseExternalID(externalID)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func (r *Runtime) getHealthInfo(ctx context.Context, externalID string) (*pbrunt
 	return r.podHealth(ctx, ns, name)
 }
 
-func (r *Runtime) podHealth(ctx context.Context, ns, podName string) (*pbruntime.HealthInfo, error) {
+func (r *Runtime) podHealth(ctx context.Context, ns, podName string) (*runtime.HealthInfo, error) {
 	pod, err := r.clientset.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get pod %s/%s: %w", ns, podName, err)
@@ -42,7 +42,7 @@ func (r *Runtime) podHealth(ctx context.Context, ns, podName string) (*pbruntime
 	return mapPodHealth(pod), nil
 }
 
-func (r *Runtime) controllerHealth(ctx context.Context, ns, kind, name string) (*pbruntime.HealthInfo, error) {
+func (r *Runtime) controllerHealth(ctx context.Context, ns, kind, name string) (*runtime.HealthInfo, error) {
 	selector, err := r.controllerSelector(ctx, ns, kind, name)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (r *Runtime) controllerHealth(ctx context.Context, ns, kind, name string) (
 	}
 
 	if len(podList.Items) == 0 {
-		return &pbruntime.HealthInfo{
+		return &runtime.HealthInfo{
 			HasHealthCheck: false,
 			Status:         "none",
 		}, nil
@@ -113,7 +113,7 @@ func (r *Runtime) controllerHealth(ctx context.Context, ns, kind, name string) (
 		status = "none"
 	}
 
-	return &pbruntime.HealthInfo{
+	return &runtime.HealthInfo{
 		HasHealthCheck: hasProbes,
 		Status:         status,
 		FailingStreak:  int(maxRestarts),
@@ -121,7 +121,7 @@ func (r *Runtime) controllerHealth(ctx context.Context, ns, kind, name string) (
 	}, nil
 }
 
-func mapPodHealth(pod *corev1.Pod) *pbruntime.HealthInfo {
+func mapPodHealth(pod *corev1.Pod) *runtime.HealthInfo {
 	hasProbes := false
 	for _, c := range pod.Spec.Containers {
 		if c.ReadinessProbe != nil {
@@ -131,7 +131,7 @@ func mapPodHealth(pod *corev1.Pod) *pbruntime.HealthInfo {
 	}
 
 	if !hasProbes {
-		return &pbruntime.HealthInfo{
+		return &runtime.HealthInfo{
 			HasHealthCheck: false,
 			Status:         "none",
 		}
@@ -160,7 +160,7 @@ func mapPodHealth(pod *corev1.Pod) *pbruntime.HealthInfo {
 		status = "unhealthy"
 	}
 
-	return &pbruntime.HealthInfo{
+	return &runtime.HealthInfo{
 		HasHealthCheck: true,
 		Status:         status,
 		FailingStreak:  int(maxRestarts),

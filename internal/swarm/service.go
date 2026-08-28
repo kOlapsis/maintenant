@@ -278,7 +278,7 @@ func mapService(svc swarm.Service) *SwarmService {
 	if svc.Spec.Mode.Replicated != nil {
 		ss.Mode = "replicated"
 		if svc.Spec.Mode.Replicated.Replicas != nil {
-			ss.DesiredReplicas = int(*svc.Spec.Mode.Replicated.Replicas)
+			ss.DesiredReplicas = int(*svc.Spec.Mode.Replicated.Replicas) // #nosec G115 -- swarm desired replica count, bounded small value
 		}
 	} else if svc.Spec.Mode.Global != nil {
 		ss.Mode = "global"
@@ -303,7 +303,7 @@ func mapService(svc swarm.Service) *SwarmService {
 		})
 	}
 
-	// Update status (Enterprise feature, but captured always).
+	// Update status (Pro feature, but captured always).
 	if svc.UpdateStatus != nil && svc.UpdateStatus.State != "" {
 		us := &UpdateStatus{
 			State:   string(svc.UpdateStatus.State),

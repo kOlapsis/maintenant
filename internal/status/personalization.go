@@ -42,17 +42,17 @@ const (
 )
 
 type Settings struct {
-	Version          int64
-	Title            string
-	Subtitle         string
-	Colors           Palette
-	Announcement     Announcement
-	FooterTextMD     string
-	FooterTextHTML   string
-	Locale           string
-	Timezone         string
-	DateFormat       string
-	UpdatedAt        time.Time
+	Version        int64
+	Title          string
+	Subtitle       string
+	Colors         Palette
+	Announcement   Announcement
+	FooterTextMD   string
+	FooterTextHTML string
+	Locale         string
+	Timezone       string
+	DateFormat     string
+	UpdatedAt      time.Time
 }
 
 type Palette struct {
@@ -84,7 +84,7 @@ type Asset struct {
 }
 
 type FooterLink struct {
-	ID        int64
+	ID        string
 	Position  int
 	Label     string
 	URL       string
@@ -93,7 +93,7 @@ type FooterLink struct {
 }
 
 type FAQItem struct {
-	ID         int64
+	ID         string
 	Position   int
 	Question   string
 	AnswerMD   string

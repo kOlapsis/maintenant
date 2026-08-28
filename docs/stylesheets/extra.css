@@ -1,8 +1,18 @@
-/* Pro edition crown icon */
+/* Edition markers. Two paid tiers, two colours, so a reader can tell which
+   edition a feature needs and not only that it is not free. The crown is Pro,
+   the four-pointed star is Personal. */
+h1 .twemoji,
 h2 .twemoji,
 h3 .twemoji,
 td .twemoji {
-  color: #f59e0b;
+  color: #f59e0b; /* Pro */
+}
+
+h1 .twemoji[title="Personal"],
+h2 .twemoji[title="Personal"],
+h3 .twemoji[title="Personal"],
+td .twemoji[title="Personal"] {
+  color: #818cf8; /* Personal */
 }
 
 /* Screenshot styling — standalone images in article content */

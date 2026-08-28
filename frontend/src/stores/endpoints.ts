@@ -17,6 +17,7 @@ import {
   type ListEndpointsParams,
 } from '@/services/endpointApi'
 import { sseBus } from '@/services/sseBus'
+import { useResourcesStore } from '@/stores/resources'
 
 export const useEndpointsStore = defineStore('endpoints', () => {
   const endpoints = ref<Endpoint[]>([])
@@ -30,6 +31,11 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   const statusFilter = ref<string>('')
   const typeFilter = ref<string>('')
   const containerFilter = ref<string>('')
+  // Retired endpoints are the ones whose container is gone. They are hidden by
+  // default (a fleet with churn would otherwise accumulate dead cards), but
+  // they have to be reachable, because they are the only ones you can delete
+  // by hand.
+  const showRetired = ref(false)
 
   const endpointsCount = computed(() => totalCount.value)
 
@@ -58,8 +64,11 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   })
 
   const statusCounts = computed(() => {
-    const counts = { up: 0, down: 0, unknown: 0 }
+    const counts = { up: 0, down: 0, degraded: 0, unknown: 0 }
     for (const ep of endpoints.value) {
+      // A retired endpoint has no container behind it any more; its last known
+      // status is history, not a state of the fleet.
+      if (!ep.active) continue
       if (ep.status in counts) {
         counts[ep.status as keyof typeof counts]++
       }
@@ -68,10 +77,15 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   })
 
   async function fetchEndpoints(params?: ListEndpointsParams) {
+    const q = useResourcesStore().entityQuery
+    let mergedParams = q ? { ...params, agent_id: q } : params
+    if (showRetired.value) {
+      mergedParams = { ...mergedParams, include_inactive: true }
+    }
     loading.value = true
     error.value = null
     try {
-      const res = await listEndpoints(params)
+      const res = await listEndpoints(mergedParams)
       endpoints.value = res.endpoints || []
       totalCount.value = res.total || 0
     } catch (e) {
@@ -79,6 +93,15 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  // applyEndpoint upserts a freshly fetched endpoint. An on-demand check only
+  // emits an SSE event when the status actually changes, so the caller feeds the
+  // result back here to keep the list in step without refetching everything.
+  function applyEndpoint(ep: Endpoint) {
+    const idx = endpoints.value.findIndex((e) => e.id === ep.id)
+    if (idx >= 0) endpoints.value[idx] = ep
+    else endpoints.value.push(ep)
   }
 
   function onDiscovered() {
@@ -204,10 +227,12 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     statusFilter,
     typeFilter,
     containerFilter,
+    showRetired,
     filteredEndpoints,
     endpointsByContainer,
     statusCounts,
     fetchEndpoints,
+    applyEndpoint,
     connectSSE,
     disconnectSSE,
   }

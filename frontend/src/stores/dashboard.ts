@@ -10,24 +10,29 @@
 // Source: https://github.com/kolapsis/maintenant
 
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useContainersStore } from './containers'
 import { useEndpointsStore } from './endpoints'
 import { useHeartbeatsStore } from './heartbeats'
 import { useCertificatesStore } from './certificates'
 import { useAlertsStore } from './alerts'
 import { useResourcesStore } from './resources'
+import { useKubernetesStore } from './kubernetes'
+import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
+import { buildUnifiedAttention } from '@/composables/attentionAggregator'
 import { apiFetch } from '@/services/apiFetch'
+import { sseBus } from '@/services/sseBus'
 import type { Container } from '@/services/containerApi'
 import type { Endpoint } from '@/services/endpointApi'
 import type { Heartbeat } from '@/services/heartbeatApi'
 import type { CertMonitor } from '@/services/certificateApi'
+import type { K8sWorkload } from '@/services/kubernetesApi'
 import type { IncidentTimelineEntry } from '@/components/dashboard/IncidentBanner.vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
 export type UnifiedStatus = 'ok' | 'warning' | 'down' | 'paused' | 'unknown'
-export type MonitorType = 'container' | 'endpoint' | 'heartbeat' | 'certificate'
+export type MonitorType = 'container' | 'endpoint' | 'heartbeat' | 'certificate' | 'workload'
 
 export interface UnifiedMonitor {
   id: string
@@ -46,6 +51,7 @@ export interface UnifiedMonitor {
 }
 
 function containerStatus(c: Container): { status: UnifiedStatus; label: string } {
+  if (c.stale) return { status: 'unknown', label: 'Agent offline' }
   if (c.state === 'paused') return { status: 'paused', label: 'Paused' }
   if (c.state === 'completed') return { status: 'paused', label: 'Completed' }
   if (c.state === 'running') {
@@ -57,8 +63,11 @@ function containerStatus(c: Container): { status: UnifiedStatus; label: string }
 }
 
 function endpointStatus(e: Endpoint): { status: UnifiedStatus; label: string } {
+  if (e.stale) return { status: 'unknown', label: 'Agent offline' }
   if (e.status === 'up') return { status: 'ok', label: 'Up' }
   if (e.status === 'down') return { status: 'down', label: 'Down' }
+  // Reachable, but its certificate is not trusted.
+  if (e.status === 'degraded') return { status: 'warning', label: 'Degraded' }
   return { status: 'unknown', label: 'Unknown' }
 }
 
@@ -84,6 +93,25 @@ function certStatus(c: CertMonitor): { status: UnifiedStatus; label: string } {
   return { status: 'unknown', label: 'Pending' }
 }
 
+// A K8s workload is the cluster analogue of a Docker container / Swarm service —
+// "the service you monitor" — so it maps onto the same unified status set.
+function workloadStatus(w: K8sWorkload): { status: UnifiedStatus; label: string } {
+  // The reporting agent is offline — its last-known status is no longer live.
+  if (w.stale) return { status: 'unknown', label: 'Agent offline' }
+  switch (w.status) {
+    case 'healthy':
+      return { status: 'ok', label: 'Healthy' }
+    case 'progressing':
+      return { status: 'warning', label: 'Progressing' }
+    case 'degraded':
+      return { status: 'warning', label: 'Degraded' }
+    case 'failed':
+      return { status: 'down', label: 'Failed' }
+    default:
+      return { status: 'unknown', label: 'Unknown' }
+  }
+}
+
 const statusOrder: Record<UnifiedStatus, number> = {
   down: 0,
   warning: 1,
@@ -99,6 +127,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const certificates = useCertificatesStore()
   const alertsStore = useAlertsStore()
   const resourcesStore = useResourcesStore()
+  const kubernetes = useKubernetesStore()
+  const { availableRuntimes } = useFleetRuntimes()
+
+  // Kubernetes contributes workloads (not containers); only surface them when the
+  // selected host scope actually offers a Kubernetes runtime, so a Docker-only
+  // install never queries the K8s endpoints.
+  const kubernetesInScope = computed(() => availableRuntimes.value.includes('kubernetes'))
 
   const searchQuery = ref('')
 
@@ -201,6 +236,29 @@ export const useDashboardStore = defineStore('dashboard', () => {
       })
     }
 
+    if (kubernetesInScope.value) {
+      for (const group of kubernetes.workloadGroups) {
+        for (const w of group.workloads) {
+          const s = workloadStatus(w)
+          result.push({
+            id: `workload:${w.id}`,
+            type: 'workload',
+            name: w.name,
+            status: s.status,
+            statusLabel: s.label,
+            subtitle: `${w.kind} · ${w.namespace}`,
+            group: w.namespace,
+            sparklineData: null,
+            sparklineType: null,
+            metricValue: `${w.ready_replicas}/${w.desired_replicas}`,
+            metricLabel: 'ready',
+            link: { name: 'workloads' },
+            updatedAt: w.last_transition || w.created_at,
+          })
+        }
+      }
+    }
+
     return result
   })
 
@@ -253,6 +311,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
     return incidents
   })
 
+  function fetchWorkloadsIfInScope() {
+    return kubernetesInScope.value ? kubernetes.fetchWorkloadsList() : Promise.resolve()
+  }
+
   async function fetchAll() {
     await Promise.all([
       containers.fetchContainers(),
@@ -261,7 +323,34 @@ export const useDashboardStore = defineStore('dashboard', () => {
       certificates.fetchCertificates(),
       alertsStore.fetchActiveAlerts(),
       fetchSparklines(),
+      fetchWorkloadsIfInScope(),
     ])
+  }
+
+  // refetchForFilter re-fetches every entity list so they pick up the current
+  // global host filter (resources.entityQuery). Called by resources.setFilter.
+  async function refetchForFilter() {
+    await Promise.all([
+      containers.fetchContainers(),
+      endpoints.fetchEndpoints(),
+      heartbeats.fetchHeartbeats(),
+      certificates.fetchCertificates(),
+      fetchWorkloadsIfInScope(),
+    ])
+  }
+
+  // The fleet only learns it has a Kubernetes runtime once the agent list loads,
+  // which can race the initial fetchAll() (e.g. a persisted K8s-agent filter on a
+  // fresh page load). Backfill the workloads when K8s enters scope.
+  watch(kubernetesInScope, (inScope) => {
+    if (inScope) kubernetes.fetchWorkloadsList()
+  })
+
+  // Dashboard-owned K8s liveness. We register our OWN handlers (distinct refs from
+  // the kubernetes store's startListening singletons) so a K8s page unmounting and
+  // calling stopListening can't tear down the dashboard's refresh.
+  function onWorkloadTopologyChanged() {
+    if (kubernetesInScope.value) kubernetes.fetchWorkloadsList()
   }
 
   function connectAllSSE() {
@@ -271,6 +360,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     certificates.connectSSE()
     alertsStore.connectSSE()
     resourcesStore.connectSSE()
+    sseBus.on('kubernetes.workload_changed', onWorkloadTopologyChanged)
+    sseBus.on('kubernetes.topology_changed', onWorkloadTopologyChanged)
 
     // Refresh sparklines every 60s
     if (!sparklineInterval) {
@@ -285,6 +376,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     certificates.disconnectSSE()
     alertsStore.disconnectSSE()
     resourcesStore.disconnectSSE()
+    sseBus.off('kubernetes.workload_changed', onWorkloadTopologyChanged)
+    sseBus.off('kubernetes.topology_changed', onWorkloadTopologyChanged)
 
     if (sparklineInterval) {
       clearInterval(sparklineInterval)
@@ -293,19 +386,26 @@ export const useDashboardStore = defineStore('dashboard', () => {
   }
 
   const globalStats = computed(() => {
-    let running = 0, down = 0, warning = 0
+    let running = 0
     for (const m of monitors.value) {
       if (m.status === 'ok') running++
-      else if (m.status === 'down') down++
-      else if (m.status === 'warning') warning++
     }
-    // Split alert severities: incidents = critical alerts, warnings = warning
-    // alerts. This avoids the confusing mix where restart-loop warnings were
-    // counted as "incidents" while the header "WARNINGS" counter only showed
-    // health-check unhealthy monitors.
-    const incidents = alertsStore.activeAlerts.critical?.length ?? 0
-    const warningAlerts = alertsStore.activeAlerts.warning?.length ?? 0
-    return { running, incidents, warnings: warning + warningAlerts }
+    // Incident/warning counts derive from the SAME unified attention model as
+    // the dashboard panel, so the header counters, the verdict banner and the
+    // "Needs attention" list can never disagree. Built from the globally
+    // available signals only (monitors + engine alerts + disconnected agents),
+    // deduplicated per entity (a down monitor that also fired a critical alert
+    // counts once). Critical updates are warning-only and dashboard-scoped, so
+    // they are deliberately excluded from these counters.
+    const active = alertsStore.activeAlerts
+    const allAlerts = [...active.critical, ...active.warning, ...active.info]
+    const unified = buildUnifiedAttention(monitors.value, allAlerts, Date.now())
+    let incidents = 0, warnings = 0
+    for (const it of unified) {
+      if (it.severity === 'incident') incidents++
+      else if (it.severity === 'warning') warnings++
+    }
+    return { running, incidents, warnings }
   })
 
   return {
@@ -319,6 +419,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     certificateSummary,
     activeIncidents,
     fetchAll,
+    refetchForFilter,
     connectAllSSE,
     disconnectAllSSE,
   }

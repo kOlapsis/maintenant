@@ -1,12 +1,10 @@
 package v1
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/kolapsis/maintenant/internal/status"
@@ -96,32 +94,32 @@ func (h *PersonalizationHandler) HandlePutSettings(w http.ResponseWriter, r *htt
 	resp := settingsToResponse(out)
 	if len(warnings) > 0 {
 		type withWarnings struct {
-			Version      int64                      `json:"version"`
-			Title        string                     `json:"title"`
-			Subtitle     string                     `json:"subtitle"`
-			Colors       settingsColorsResp         `json:"colors"`
-			Announcement settingsAnnouncementResp   `json:"announcement"`
-			FooterTextMD string                     `json:"footer_text_md"`
-			FooterTextHTML string                   `json:"footer_text_html"`
-			Locale       string                     `json:"locale"`
-			Timezone     string                     `json:"timezone"`
-			DateFormat   string                     `json:"date_format"`
-			UpdatedAt    string                     `json:"updated_at"`
-			Warnings     map[string][]status.ContrastWarning `json:"warnings"`
+			Version        int64                               `json:"version"`
+			Title          string                              `json:"title"`
+			Subtitle       string                              `json:"subtitle"`
+			Colors         settingsColorsResp                  `json:"colors"`
+			Announcement   settingsAnnouncementResp            `json:"announcement"`
+			FooterTextMD   string                              `json:"footer_text_md"`
+			FooterTextHTML string                              `json:"footer_text_html"`
+			Locale         string                              `json:"locale"`
+			Timezone       string                              `json:"timezone"`
+			DateFormat     string                              `json:"date_format"`
+			UpdatedAt      string                              `json:"updated_at"`
+			Warnings       map[string][]status.ContrastWarning `json:"warnings"`
 		}
 		WriteJSON(w, http.StatusOK, withWarnings{
-			Version:      out.Version,
-			Title:        out.Title,
-			Subtitle:     out.Subtitle,
-			Colors:       resp.Colors,
-			Announcement: resp.Announcement,
+			Version:        out.Version,
+			Title:          out.Title,
+			Subtitle:       out.Subtitle,
+			Colors:         resp.Colors,
+			Announcement:   resp.Announcement,
 			FooterTextMD:   out.FooterTextMD,
 			FooterTextHTML: out.FooterTextHTML,
-			Locale:       out.Locale,
-			Timezone:     out.Timezone,
-			DateFormat:   out.DateFormat,
-			UpdatedAt:    out.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-			Warnings:     map[string][]status.ContrastWarning{"contrast": warnings},
+			Locale:         out.Locale,
+			Timezone:       out.Timezone,
+			DateFormat:     out.DateFormat,
+			UpdatedAt:      out.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+			Warnings:       map[string][]status.ContrastWarning{"contrast": warnings},
 		})
 		return
 	}
@@ -143,7 +141,7 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 	cap := status.AssetSizeCap(role)
 	r.Body = http.MaxBytesReader(w, r.Body, cap+1024) // +1024 for form overhead
 
-	if err := r.ParseMultipartForm(cap); err != nil {
+	if err := r.ParseMultipartForm(cap); err != nil { // #nosec G120 -- body bounded by http.MaxBytesReader above
 		if strings.Contains(err.Error(), "request body too large") {
 			WriteError(w, http.StatusBadRequest, "payload_too_large", "asset exceeds size limit")
 			return
@@ -157,7 +155,7 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 		WriteError(w, http.StatusBadRequest, "validation_error", "file part is required")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, cap+1))
 	if err != nil {
@@ -186,10 +184,10 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"role":       string(role),
-		"mime":       mime,
-		"byte_size":  len(data),
-		"alt_text":   altText,
+		"role":      string(role),
+		"mime":      mime,
+		"byte_size": len(data),
+		"alt_text":  altText,
 	})
 }
 
@@ -206,7 +204,12 @@ func (h *PersonalizationHandler) HandleGetAsset(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Type", asset.MIME)
 	w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// Neutralizes scripts in an allowlisted SVG opened by direct navigation.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	w.WriteHeader(http.StatusOK)
+	// #nosec G705 -- bytes stored by the authenticated admin; MIME sniffed and
+	// allowlisted per role at upload (DetectAssetMIME), CSP above covers SVG.
 	_, _ = w.Write(asset.Bytes)
 }
 
@@ -249,8 +252,8 @@ func (h *PersonalizationHandler) HandleCreateFooterLink(w http.ResponseWriter, r
 }
 
 func (h *PersonalizationHandler) HandleUpdateFooterLink(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -276,8 +279,8 @@ func (h *PersonalizationHandler) HandleUpdateFooterLink(w http.ResponseWriter, r
 }
 
 func (h *PersonalizationHandler) HandleDeleteFooterLink(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -294,7 +297,7 @@ func (h *PersonalizationHandler) HandleDeleteFooterLink(w http.ResponseWriter, r
 
 func (h *PersonalizationHandler) HandleReorderFooterLinks(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		IDs []int64 `json:"ids"`
+		IDs []string `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
@@ -338,8 +341,8 @@ func (h *PersonalizationHandler) HandleCreateFAQItem(w http.ResponseWriter, r *h
 }
 
 func (h *PersonalizationHandler) HandleUpdateFAQItem(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -365,8 +368,8 @@ func (h *PersonalizationHandler) HandleUpdateFAQItem(w http.ResponseWriter, r *h
 }
 
 func (h *PersonalizationHandler) HandleDeleteFAQItem(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid id")
 		return
 	}
@@ -383,7 +386,7 @@ func (h *PersonalizationHandler) HandleDeleteFAQItem(w http.ResponseWriter, r *h
 
 func (h *PersonalizationHandler) HandleReorderFAQ(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		IDs []int64 `json:"ids"`
+		IDs []string `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "validation_error", "invalid JSON")
@@ -464,7 +467,7 @@ func settingsToResponse(s status.Settings) settingsResp {
 }
 
 type footerLinkResp struct {
-	ID        int64  `json:"id"`
+	ID        string `json:"id"`
 	Position  int    `json:"position"`
 	Label     string `json:"label"`
 	URL       string `json:"url"`
@@ -492,7 +495,7 @@ func footerLinksToResponse(links []status.FooterLink) []footerLinkResp {
 }
 
 type faqItemResp struct {
-	ID         int64  `json:"id"`
+	ID         string `json:"id"`
 	Position   int    `json:"position"`
 	Question   string `json:"question"`
 	AnswerMD   string `json:"answer_md"`
@@ -519,13 +522,6 @@ func faqItemsToResponse(items []status.FAQItem) []faqItemResp {
 		out[i] = faqItemToResponse(item)
 	}
 	return out
-}
-
-func assetDataURL(a *status.Asset) string {
-	if a == nil {
-		return ""
-	}
-	return "data:" + a.MIME + ";base64," + base64.StdEncoding.EncodeToString(a.Bytes)
 }
 
 func mapSettingsError(err error) (int, string) {

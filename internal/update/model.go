@@ -64,7 +64,7 @@ const (
 
 // ScanRecord stores the result of each periodic scan cycle.
 type ScanRecord struct {
-	ID                int64      `json:"id"`
+	ID                string     `json:"id"`
 	StartedAt         time.Time  `json:"started_at"`
 	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 	ContainersScanned int        `json:"containers_scanned"`
@@ -75,8 +75,8 @@ type ScanRecord struct {
 
 // ImageUpdate stores a detected update per container image.
 type ImageUpdate struct {
-	ID                 int64      `json:"id"`
-	ScanID             int64      `json:"scan_id"`
+	ID                 string     `json:"id"`
+	ScanID             string     `json:"scan_id"`
 	ContainerID        string     `json:"container_id"`
 	ContainerName      string     `json:"container_name"`
 	Image              string     `json:"image"`
@@ -116,7 +116,7 @@ func BaseRiskScore(ut UpdateType) int {
 
 // VersionPin tracks a pinned (intentionally frozen) image.
 type VersionPin struct {
-	ID           int64     `json:"id"`
+	ID           string    `json:"id"`
 	ContainerID  string    `json:"container_id"`
 	Image        string    `json:"image"`
 	PinnedTag    string    `json:"pinned_tag"`
@@ -127,7 +127,7 @@ type VersionPin struct {
 
 // UpdateExclusion is a global exclusion rule for images or tags.
 type UpdateExclusion struct {
-	ID          int64         `json:"id"`
+	ID          string        `json:"id"`
 	Pattern     string        `json:"pattern"`
 	PatternType ExclusionType `json:"pattern_type"`
 	CreatedAt   time.Time     `json:"created_at"`
@@ -160,6 +160,18 @@ type ScanError struct {
 	Error         error
 }
 
+// StaleImageUpdate identifies a pending update that a fresh scan no longer
+// found (the container was upgraded). Both id and name are carried so the
+// recovery event can resolve the alert by its real entity id.
+type StaleImageUpdate struct {
+	ContainerID   string
+	ContainerName string
+	// ContainerUID is the maintenant id, filled for findings whose container is
+	// gone from the scan set and can no longer be looked up by the caller. Empty
+	// when the container row itself has been deleted.
+	ContainerUID string
+}
+
 // CVESeverity classifies the severity of a CVE.
 type CVESeverity string
 
@@ -172,7 +184,7 @@ const (
 
 // CVECacheEntry caches CVE lookup results from OSV.dev.
 type CVECacheEntry struct {
-	ID             int64       `json:"id"`
+	ID             string      `json:"id"`
 	Ecosystem      string      `json:"ecosystem"`
 	PackageName    string      `json:"package_name"`
 	PackageVersion string      `json:"package_version"`
@@ -189,7 +201,7 @@ type CVECacheEntry struct {
 
 // ContainerCVE links a container to an active CVE.
 type ContainerCVE struct {
-	ID              int64       `json:"id"`
+	ID              string      `json:"id"`
 	ContainerID     string      `json:"container_id"`
 	CVEID           string      `json:"cve_id"`
 	Severity        CVESeverity `json:"severity"`
@@ -208,7 +220,7 @@ type ListCVEsOpts struct {
 
 // RiskScoreRecord stores historical risk scores for trend tracking.
 type RiskScoreRecord struct {
-	ID          int64     `json:"id"`
+	ID          string    `json:"id"`
 	ContainerID string    `json:"container_id"`
 	Score       int       `json:"score"`
 	FactorsJSON string    `json:"factors_json"`

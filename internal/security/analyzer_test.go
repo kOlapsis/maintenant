@@ -28,7 +28,7 @@ func TestAnalyzeDocker_PortExposedOnAllInterfaces(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 
 	require.Len(t, insights, 1)
 	assert.Equal(t, PortExposedAllInterfaces, insights[0].Type)
@@ -44,7 +44,7 @@ func TestAnalyzeDocker_PortOnLocalhost_NoInsight(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 	assert.Empty(t, insights)
 }
 
@@ -55,7 +55,7 @@ func TestAnalyzeDocker_PortOnSpecificIP_NoInsight(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 	assert.Empty(t, insights)
 }
 
@@ -66,7 +66,7 @@ func TestAnalyzeDocker_EmptyHostIP_TreatedAsAllInterfaces(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 	require.Len(t, insights, 1)
 	assert.Equal(t, PortExposedAllInterfaces, insights[0].Type)
 }
@@ -78,7 +78,7 @@ func TestAnalyzeDocker_IPv6AllInterfaces(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 	require.Len(t, insights, 1)
 	assert.Equal(t, PortExposedAllInterfaces, insights[0].Type)
 }
@@ -102,7 +102,7 @@ func TestAnalyzeDocker_DatabasePortExposed(t *testing.T) {
 				},
 			}
 
-			insights := AnalyzeDocker(1, "test-db", cfg, testNow)
+			insights := AnalyzeDocker("c1", "test-db", cfg, testNow)
 
 			// Should have only DatabasePortExposed (not both)
 			require.Len(t, insights, 1)
@@ -119,7 +119,7 @@ func TestAnalyzeDocker_NonStandardDBPort_NoDatabaseInsight(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-redis", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-redis", cfg, testNow)
 
 	// Only PortExposedAllInterfaces, NOT DatabasePortExposed
 	require.Len(t, insights, 1)
@@ -131,7 +131,7 @@ func TestAnalyzeDocker_HostNetworkMode(t *testing.T) {
 		NetworkMode: "host",
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 
 	require.Len(t, insights, 1)
 	assert.Equal(t, HostNetworkMode, insights[0].Type)
@@ -146,7 +146,7 @@ func TestAnalyzeDocker_HostNetworkMode_SkipsPortBindings(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 
 	// Only host network mode, NOT port exposed
 	require.Len(t, insights, 1)
@@ -158,7 +158,7 @@ func TestAnalyzeDocker_Privileged(t *testing.T) {
 		Privileged: true,
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 
 	require.Len(t, insights, 1)
 	assert.Equal(t, PrivilegedContainer, insights[0].Type)
@@ -173,7 +173,7 @@ func TestAnalyzeDocker_MultipleIssues(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 
 	// DatabasePortExposed + PrivilegedContainer (not PortExposedAllInterfaces for DB ports)
 	require.Len(t, insights, 2)
@@ -194,6 +194,6 @@ func TestAnalyzeDocker_NoIssues(t *testing.T) {
 		},
 	}
 
-	insights := AnalyzeDocker(1, "test-container", cfg, testNow)
+	insights := AnalyzeDocker("c1", "test-container", cfg, testNow)
 	assert.Empty(t, insights)
 }

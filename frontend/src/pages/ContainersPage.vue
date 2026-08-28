@@ -15,11 +15,11 @@
 import { inject, computed } from 'vue'
 import ContainerList from '@/components/ContainerList.vue'
 import ResourceSummary from '@/components/ResourceSummary.vue'
+import RuntimeDegradedBanner from '@/components/RuntimeDegradedBanner.vue'
 import { useContainersStore } from '@/stores/containers'
 import { useUpdatesStore } from '@/stores/updates'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import type { Container } from '@/services/containerApi'
-import InlineAlert from '@/components/ui/InlineAlert.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import { docUrl } from '@/utils/docs'
 
@@ -39,35 +39,32 @@ function handleSelect(container: Container) {
 <template>
   <div class="overflow-y-auto p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
-    <div class="mb-6">
-      <h1 class="text-2xl font-black text-pb-primary">Containers</h1>
-      <p class="mt-1 text-sm text-slate-500">
-        Auto-discovered {{ store.runtimeLabel }} containers
-      </p>
+    <div class="mb-6 flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-black text-mnt-primary">Containers</h1>
+        <p class="mt-1 text-sm text-mnt-muted">
+          Auto-discovered {{ store.runtimeLabel }} containers
+        </p>
+      </div>
     </div>
 
-    <!-- Runtime unavailable warning -->
-    <InlineAlert
-      v-if="!store.runtimeConnected"
-      severity="critical"
-      tag="OFFLINE"
-      class="mb-6"
-    >
-      <template #title>{{ store.runtimeLabel }} runtime unavailable</template>
-      Cannot connect to the container runtime. Check that maintenant has access to the {{ store.runtimeLabel }} API.
-    </InlineAlert>
+    <!-- Degraded mode banner -->
+    <RuntimeDegradedBanner
+      v-if="!store.isContainerMonitoringAvailable"
+      class="mb-4"
+    />
 
     <FeatureHint
-      v-if="store.runtimeConnected"
+      v-if="store.isContainerMonitoringAvailable"
       storage-key="containers"
       legacy-storage-key="pb:hideLabelTips"
       :title="`Customize with ${labelOrAnnotation}s`"
       :doc-href="docUrl(isK8s ? 'features/containers/#grouping' : 'features/containers/#auto-discovery')"
     >
       Use {{ labelOrAnnotation }}s to configure container behavior:
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.ignore</code> to hide a container,
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.group</code> to group containers,
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.alert.severity</code> to set alert severity.
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.ignore</code> to hide a container,
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.group</code> to group containers,
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.alert.severity</code> to set alert severity.
     </FeatureHint>
 
     <ResourceSummary />

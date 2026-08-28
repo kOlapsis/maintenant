@@ -1,22 +1,22 @@
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS spa-builder
+# syntax=docker/dockerfile:1.7
+FROM node:22-bookworm-slim AS spa-builder
 WORKDIR /src/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --ignore-scripts
 
 COPY frontend/ ./
 RUN npm run build-only
 
-FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.6.1 AS xx
+FROM golang:1.26-alpine AS builder
 
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
-
-COPY --from=xx / /
-RUN apk add --no-cache clang lld
+RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
@@ -26,19 +26,17 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 ARG LICENSE_PUBLIC_KEY
-ARG TARGETPLATFORM
 
-RUN xx-apk add --no-cache gcc musl-dev
-RUN xx-go --wrap
-RUN CGO_ENABLED=1 go build \
-    -ldflags="-s -w \
-      -X main.version=${VERSION} \
-      -X main.commit=${COMMIT} \
-      -X main.buildDate=${BUILD_DATE} \
-      -X main.publicKeyB64=${LICENSE_PUBLIC_KEY}" \
-    -o /out/maintenant \
-    ./cmd/maintenant
-RUN xx-verify /out/maintenant
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 go build \
+        -ldflags="-s -w \
+          -X main.version=${VERSION} \
+          -X main.commit=${COMMIT} \
+          -X main.buildDate=${BUILD_DATE} \
+          -X main.publicKeyB64=${LICENSE_PUBLIC_KEY}" \
+        -o /out/maintenant \
+        ./cmd/maintenant
 
 FROM alpine:3.21
 
@@ -46,14 +44,40 @@ RUN apk add --no-cache ca-certificates tzdata setpriv \
     && mkdir -p /data \
     && chown 65534:65534 /data
 
+# Keep SQLite's temp files (statement journals, temp B-trees used by the one-time
+# UUID conversion of large tables) on the data volume. The hardened runtime mounts
+# /tmp as a tiny tmpfs, which SQLITE_FULL-fails the conversion; /data has real space.
+ENV SQLITE_TMPDIR=/data
+
 COPY --from=builder --chmod=555 /out/maintenant /app/maintenant
 COPY --chmod=555 docker-entrypoint.sh /docker-entrypoint.sh
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="maintenant" \
+      org.opencontainers.image.description="Monitor everything. Manage nothing." \
+      org.opencontainers.image.url="https://github.com/kOlapsis/maintenant" \
+      org.opencontainers.image.source="https://github.com/kOlapsis/maintenant" \
+      org.opencontainers.image.vendor="kOlapsis" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 EXPOSE 8080
 VOLUME /data
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:8080/api/v1/health || exit 1
+# One image, two modes: the binary knows how to check itself. A server answers on
+# the address it was configured with, an agent has no port at all and reports
+# liveness through a file, so an HTTP probe here would fail every agent forever.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["/app/maintenant", "healthcheck"]
 
+# Entrypoint runs as root only to chown root-owned volume mounts and auto-detect
+# the Docker socket group, then drops to uid 65534 via setpriv (see
+# docker-entrypoint.sh); a build-time USER would break that chown and detection.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/docker-entrypoint.sh"]
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["/app/maintenant"]

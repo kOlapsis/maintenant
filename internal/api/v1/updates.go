@@ -16,11 +16,10 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -99,7 +98,7 @@ func (h *UpdateHandler) HandleGetUpdateSummary(w http.ResponseWriter, r *http.Re
 		"counts":      summary,
 	}
 
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.Allows(extension.CapCVEEnrichment) {
 		if cveCounts, err := h.store.GetCVESummaryCounts(r.Context()); err == nil {
 			resp["cve_counts"] = cveCounts
 		}
@@ -151,7 +150,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 		}
 	}
 
-	if extension.CurrentEdition() == extension.Enterprise {
+	if extension.Allows(extension.CapChangelog) {
 		resp["source_url"] = u.SourceURL
 		resp["previous_digest"] = u.PreviousDigest
 		resp["changelog_url"] = u.ChangelogURL
@@ -205,9 +204,8 @@ func (h *UpdateHandler) HandleTriggerScan(w http.ResponseWriter, r *http.Request
 
 // HandleGetScanStatus handles GET /api/v1/updates/scan/{scan_id}.
 func (h *UpdateHandler) HandleGetScanStatus(w http.ResponseWriter, r *http.Request) {
-	scanIDStr := r.PathValue("scan_id")
-	scanID, err := strconv.ParseInt(scanIDStr, 10, 64)
-	if err != nil {
+	scanID := r.PathValue("scan_id")
+	if scanID == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid scan ID")
 		return
 	}
@@ -385,7 +383,7 @@ func (h *UpdateHandler) HandleCreateExclusion(w http.ResponseWriter, r *http.Req
 
 	id, err := h.store.InsertExclusion(r.Context(), exc)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "DUPLICATE_EXCLUSION", "An exclusion with this pattern already exists")
 			return
 		}
@@ -404,8 +402,8 @@ func (h *UpdateHandler) HandleCreateExclusion(w http.ResponseWriter, r *http.Req
 
 // HandleDeleteExclusion handles DELETE /api/v1/updates/exclusions/{id}.
 func (h *UpdateHandler) HandleDeleteExclusion(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid exclusion ID")
 		return
 	}

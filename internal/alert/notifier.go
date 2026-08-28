@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/ssrf"
 )
 
 const (
@@ -44,6 +45,20 @@ type NotificationJob struct {
 	Delivery *NotificationDelivery
 	Channel  *NotificationChannel
 	Alert    *Alert
+	// Body, when non-nil, is the pre-rendered request body sent verbatim
+	// (used by webhook subscriptions, which dispatch the raw event payload
+	// they already marshalled and signed). When nil, the body is formatted
+	// from Alert.
+	Body []byte
+}
+
+// jobAlertID returns the job's alert id for logging, or "" when the job has no
+// alert (a pre-rendered Body job).
+func jobAlertID(job NotificationJob) string {
+	if job.Alert == nil {
+		return ""
+	}
+	return job.Alert.ID
 }
 
 // WebhookPayload is the JSON body sent to generic webhook URLs.
@@ -55,22 +70,22 @@ type WebhookPayload struct {
 
 // Notifier dispatches webhook notifications with a bounded worker pool.
 type Notifier struct {
-	jobs           chan NotificationJob
-	channelStore   ChannelStore
-	httpClient     *http.Client
-	smtpSender *SMTPSender
-	logger     *slog.Logger
+	jobs         chan NotificationJob
+	channelStore ChannelStore
+	httpClient   *http.Client
+	smtpSender   *SMTPSender
+	logger       *slog.Logger
 }
 
-// NewNotifier creates a new webhook notifier.
-func NewNotifier(channelStore ChannelStore, logger *slog.Logger) *Notifier {
+// NewNotifier creates a new webhook notifier. Its HTTP client blocks delivery
+// to private/internal IPs (SSRF guard) at dial time unless allowPrivate is set
+// (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS).
+func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool) *Notifier {
 	return &Notifier{
-		jobs:           make(chan NotificationJob, notifierChannelBuffer),
-		channelStore:   channelStore,
-		httpClient: &http.Client{
-			Timeout: webhookTimeout,
-		},
-		logger: logger,
+		jobs:         make(chan NotificationJob, notifierChannelBuffer),
+		channelStore: channelStore,
+		httpClient:   ssrf.NewHTTPClient(webhookTimeout, allowPrivate),
+		logger:       logger,
 	}
 }
 
@@ -98,7 +113,7 @@ func (n *Notifier) Enqueue(job NotificationJob) {
 	case n.jobs <- job:
 	default:
 		n.logger.Warn("notifier: job queue full, dropping notification",
-			"alert_id", job.Alert.ID, "channel_id", job.Channel.ID)
+			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
 	}
 }
 
@@ -117,6 +132,13 @@ func (n *Notifier) worker(ctx context.Context) {
 }
 
 func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
+	// Pre-rendered body: webhook subscriptions dispatch the raw event payload
+	// (already marshalled and signed), so there is no alert to format from.
+	if job.Body != nil {
+		n.deliverWebhook(ctx, job, job.Body)
+		return
+	}
+
 	eventType := event.AlertFired
 	if job.Alert.Status == StatusResolved {
 		eventType = event.AlertResolved
@@ -136,14 +158,19 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		return
 	}
 
+	n.deliverWebhook(ctx, job, body)
+}
+
+// deliverWebhook POSTs body to the job's channel using the shared retry/backoff
+// policy and records the delivery outcome.
+func (n *Notifier) deliverWebhook(ctx context.Context, job NotificationJob, body []byte) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			backoff := retryBackoffs[attempt-1]
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(backoff):
+			case <-time.After(retryBackoffs[attempt-1]):
 			}
 		}
 
@@ -151,22 +178,22 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		lastErr = n.sendWebhook(ctx, job.Channel, body)
 		if lastErr == nil {
 			job.Delivery.Status = DeliveryDelivered
-			if job.Delivery.ID != 0 {
+			if job.Delivery.ID != "" {
 				if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
 					n.logger.Error("notifier: update delivery status", "error", updateErr)
 				}
 			}
 			n.logger.Debug("alert notifier: delivered",
-				"alert_id", job.Alert.ID,
+				"alert_id", jobAlertID(job),
 				"channel_id", job.Channel.ID,
-				"channel_type", channelType,
+				"channel_type", job.Channel.Type,
 			)
 			return
 		}
 
 		n.logger.Warn("notifier: webhook delivery attempt failed",
 			"attempt", attempt+1, "channel_id", job.Channel.ID,
-			"alert_id", job.Alert.ID, "error", lastErr)
+			"alert_id", jobAlertID(job), "error", lastErr)
 	}
 
 	// All retries exhausted
@@ -197,7 +224,7 @@ func (n *Notifier) processEmailJob(ctx context.Context, job NotificationJob, eve
 		err := n.smtpSender.Send(ctx, to, subject, body)
 		if err == nil {
 			job.Delivery.Status = DeliveryDelivered
-			if job.Delivery.ID != 0 {
+			if job.Delivery.ID != "" {
 				if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
 					n.logger.Error("notifier: update delivery status", "error", updateErr)
 				}
@@ -243,7 +270,7 @@ func (n *Notifier) sendWebhook(ctx context.Context, ch *NotificationChannel, bod
 	if err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("non-2xx response: %d", resp.StatusCode)
@@ -255,11 +282,71 @@ func (n *Notifier) sendWebhook(ctx context.Context, ch *NotificationChannel, bod
 func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, errMsg string) {
 	d.Status = DeliveryFailed
 	d.LastError = errMsg
-	if d.ID != 0 {
+	if d.ID != "" {
 		if updateErr := n.channelStore.UpdateDelivery(ctx, d); updateErr != nil {
 			n.logger.Error("notifier: update failed delivery", "error", updateErr)
 		}
 	}
+}
+
+// SendNow performs a synchronous send to the given channel with internal retries.
+// Unlike Enqueue, it does not write to the notification_deliveries table — the
+// caller (e.g. the escalation Runner) manages its own delivery row state.
+// Returns nil on success, or the last error after maxRetries attempts.
+func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChannel) error {
+	eventType := event.AlertFired
+	if a.Status == StatusResolved {
+		eventType = event.AlertResolved
+	}
+
+	if ch.Type == "email" {
+		if n.smtpSender == nil {
+			return fmt.Errorf("SMTP not configured")
+		}
+		subject := formatEmailSubject(eventType, a)
+		body := formatEmailBody(eventType, a)
+
+		var lastErr error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if attempt > 0 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(retryBackoffs[attempt-1]):
+				}
+			}
+			lastErr = n.smtpSender.Send(ctx, ch.URL, subject, body)
+			if lastErr == nil {
+				return nil
+			}
+			n.logger.Warn("notifier: email attempt failed",
+				"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
+		}
+		return lastErr
+	}
+
+	body, err := formatPayload(ch.Type, eventType, a)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retryBackoffs[attempt-1]):
+			}
+		}
+		lastErr = n.sendWebhook(ctx, ch, body)
+		if lastErr == nil {
+			return nil
+		}
+		n.logger.Warn("notifier: webhook attempt failed",
+			"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
+	}
+	return lastErr
 }
 
 // SendTestWebhook sends a test notification to verify a channel is reachable.
@@ -312,7 +399,7 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -484,20 +571,20 @@ func formatEmailSubject(eventType string, a *Alert) string {
 
 func formatEmailBody(eventType string, a *Alert) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Event: %s\n", eventType))
-	b.WriteString(fmt.Sprintf("Source: %s\n", a.Source))
-	b.WriteString(fmt.Sprintf("Severity: %s\n", a.Severity))
-	b.WriteString(fmt.Sprintf("Entity: %s (%s)\n", a.EntityName, a.EntityType))
-	b.WriteString(fmt.Sprintf("Message: %s\n", a.Message))
-	b.WriteString(fmt.Sprintf("Time: %s\n", a.FiredAt.UTC().Format(time.RFC3339)))
+	fmt.Fprintf(&b, "Event: %s\n", eventType)
+	fmt.Fprintf(&b, "Source: %s\n", a.Source)
+	fmt.Fprintf(&b, "Severity: %s\n", a.Severity)
+	fmt.Fprintf(&b, "Entity: %s (%s)\n", a.EntityName, a.EntityType)
+	fmt.Fprintf(&b, "Message: %s\n", a.Message)
+	fmt.Fprintf(&b, "Time: %s\n", a.FiredAt.UTC().Format(time.RFC3339))
 
 	if a.Source == "update" {
 		if details := parseAlertDetails(a.Details); details != nil {
 			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
-				b.WriteString(fmt.Sprintf("\nUpdate command:\n  %s\n", cmd))
+				fmt.Fprintf(&b, "\nUpdate command:\n  %s\n", cmd)
 			}
 			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
-				b.WriteString(fmt.Sprintf("\nRollback command:\n  %s\n", cmd))
+				fmt.Fprintf(&b, "\nRollback command:\n  %s\n", cmd)
 			}
 		}
 	}

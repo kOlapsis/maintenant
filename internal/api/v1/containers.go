@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ContainerNameLister lists container names in a K8s workload pod spec.
@@ -27,7 +28,42 @@ type ContainerNameLister interface {
 
 // SecurityInsightProvider provides security insight counts for containers.
 type SecurityInsightProvider interface {
-	InsightCount(containerID int64) (int, string)
+	InsightCount(containerID string) (int, string)
+}
+
+// RuntimeChecker reports whether the container runtime is currently connected.
+type RuntimeChecker interface {
+	IsConnected() bool
+}
+
+// AgentName holds the display identity of a remote agent.
+type AgentName struct {
+	Hostname string
+	Label    string
+}
+
+// AgentDirectory resolves agent_id → display identity so container responses can
+// show which agent a remote container belongs to.
+type AgentDirectory interface {
+	AgentNames(ctx context.Context) (map[string]AgentName, error)
+}
+
+// enrichAgentFields tags a response row with the remote agent that reported it,
+// for the multi-host list views. Local rows (the server's own runtime) get no
+// agent fields, so single-host installs and the "local" scope stay clean.
+func enrichAgentFields(m map[string]interface{}, agentID string, names map[string]AgentName) {
+	if agentID == "" || agentID == uid.LocalAgent {
+		return
+	}
+	m["agent_id"] = agentID
+	if n, ok := names[agentID]; ok {
+		if n.Hostname != "" {
+			m["agent_hostname"] = n.Hostname
+		}
+		if n.Label != "" {
+			m["agent_label"] = n.Label
+		}
+	}
 }
 
 // ContainerHandler handles container-related HTTP endpoints.
@@ -37,6 +73,21 @@ type ContainerHandler struct {
 	logFetcher       LogFetcher
 	containerLister  ContainerNameLister
 	securityProvider SecurityInsightProvider
+	runtimeChecker   RuntimeChecker
+	agentDirectory   AgentDirectory
+	sessions         agentLiveness
+	logRequester     AgentLogRequester
+}
+
+// SetLogRequester wires the command channel used to read logs of containers that
+// live on a remote agent's host, which the server's own runtime cannot see.
+func (h *ContainerHandler) SetLogRequester(lr AgentLogRequester) {
+	h.logRequester = lr
+}
+
+// agentLabel resolves a human-friendly name for an agent, for error messages.
+func (h *ContainerHandler) agentLabel(ctx context.Context, agentID string) string {
+	return resolveAgentLabel(ctx, h.agentDirectory, agentID)
 }
 
 // NewContainerHandler creates a new container handler.
@@ -44,9 +95,33 @@ func NewContainerHandler(service *container.Service, uptime *container.UptimeCal
 	return &ContainerHandler{service: service, uptime: uptime}
 }
 
+// SetRuntimeChecker injects the runtime availability checker.
+func (h *ContainerHandler) SetRuntimeChecker(rc RuntimeChecker) {
+	h.runtimeChecker = rc
+}
+
 // SetSecurityProvider sets the security insight provider for enriching container responses.
 func (h *ContainerHandler) SetSecurityProvider(sp SecurityInsightProvider) {
 	h.securityProvider = sp
+}
+
+// SetAgentSessions wires live agent-stream state so containers reported by a
+// disconnected remote agent can be flagged stale (their last-known state is no
+// longer live). The runtimeChecker still governs the local runtime separately.
+func (h *ContainerHandler) SetAgentSessions(s agentLiveness) {
+	h.sessions = s
+}
+
+// agentOffline reports whether a remote agent has no live stream. The local
+// runtime (empty/LocalAgent) is governed by the runtime checker, not sessions.
+func (h *ContainerHandler) agentOffline(agentID string) bool {
+	return agentID != "" && agentID != uid.LocalAgent && h.sessions != nil && !h.sessions.IsConnected(agentID)
+}
+
+// SetAgentDirectory sets the agent directory for enriching remote containers with
+// their originating agent's hostname/label.
+func (h *ContainerHandler) SetAgentDirectory(ad AgentDirectory) {
+	h.agentDirectory = ad
 }
 
 // SetLogFetcher sets the log fetcher for the logs endpoint.
@@ -72,10 +147,19 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	if s := r.URL.Query().Get("state"); s != "" {
 		opts.StateFilter = s
 	}
+	if a := r.URL.Query().Get("agent_id"); a != "" {
+		// The container store matches agent_id verbatim, so resolve the "local"
+		// alias to the sentinel id here (unlike the cert/endpoint/heartbeat
+		// stores, which special-case "local" internally).
+		if a == "local" {
+			a = uid.LocalAgent
+		}
+		opts.AgentFilter = &a
+	}
 
 	groups, total, archivedCount, err := h.service.ListContainersGrouped(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list containers")
+		WriteStoreError(w, err, "Failed to list containers")
 		return
 	}
 
@@ -83,16 +167,28 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 		groups = []*container.ContainerGroup{}
 	}
 
-	// Enrich with security insight counts if provider is available
+	// Enrich with security insight counts and remote-agent identity if available.
 	type enrichedContainer struct {
 		*container.Container
 		SecurityInsightCount    int     `json:"security_insight_count"`
 		SecurityHighestSeverity *string `json:"security_highest_severity"`
+		AgentHostname           *string `json:"agent_hostname,omitempty"`
+		AgentLabel              *string `json:"agent_label,omitempty"`
+		Stale                   *bool   `json:"stale,omitempty"`
+		AgentOffline            *bool   `json:"agent_offline,omitempty"`
 	}
 	type enrichedGroup struct {
-		Name       string               `json:"name"`
-		Source     string               `json:"source"`
-		Containers []enrichedContainer  `json:"containers"`
+		Name       string              `json:"name"`
+		Source     string              `json:"source"`
+		Containers []enrichedContainer `json:"containers"`
+	}
+
+	// Resolve agent identities once for the whole response.
+	var agentNames map[string]AgentName
+	if h.agentDirectory != nil {
+		if names, err := h.agentDirectory.AgentNames(r.Context()); err == nil {
+			agentNames = names
+		}
 	}
 
 	enrichedGroups := make([]enrichedGroup, 0, len(groups))
@@ -108,30 +204,47 @@ func (h *ContainerHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 					ec.SecurityHighestSeverity = &sev
 				}
 			}
+			if c.AgentID != "" && c.AgentID != uid.LocalAgent && agentNames != nil {
+				if an, ok := agentNames[c.AgentID]; ok {
+					hostname, label := an.Hostname, an.Label
+					ec.AgentHostname = &hostname
+					if label != "" {
+						ec.AgentLabel = &label
+					}
+				}
+			}
+			if h.agentOffline(c.AgentID) {
+				t := true
+				ec.Stale = &t
+				ec.AgentOffline = &t
+			}
 			eg.Containers = append(eg.Containers, ec)
 		}
 		enrichedGroups = append(enrichedGroups, eg)
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"groups":         enrichedGroups,
 		"total":          total,
 		"archived_count": archivedCount,
-	})
+	}
+	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+		resp["stale"] = true
+	}
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 // HandleGet handles GET /api/v1/containers/{id}.
 func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
 	c, err := h.service.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {
@@ -183,15 +296,22 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+		detail["stale"] = true
+	}
+	if h.agentOffline(c.AgentID) {
+		detail["stale"] = true
+		detail["agent_offline"] = true
+	}
+
 	WriteJSON(w, http.StatusOK, detail)
 }
 
 // HandleTransitions handles GET /api/v1/containers/{id}/transitions.
 func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
@@ -230,31 +350,34 @@ func (h *ContainerHandler) HandleTransitions(w http.ResponseWriter, r *http.Requ
 
 	transitions, total, err := h.service.ListTransitions(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list transitions")
+		WriteStoreError(w, err, "Failed to list transitions")
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"container_id": id,
 		"transitions":  transitions,
 		"total":        total,
 		"has_more":     opts.Offset+len(transitions) < total,
-	})
+	}
+	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+		resp["stale"] = true
+	}
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 // HandleDelete handles DELETE /api/v1/containers/{id}.
 // Only allows deletion of non-running containers.
 func (h *ContainerHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
 	c, err := h.service.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {
@@ -282,16 +405,15 @@ type LogFetcher interface {
 
 // HandleLogs handles GET /api/v1/containers/{id}/logs.
 func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
 	c, err := h.service.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {
@@ -311,16 +433,34 @@ func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
 
 	timestamps := r.URL.Query().Get("timestamps") == "true"
 
-	if h.logFetcher == nil {
-		WriteError(w, http.StatusBadGateway, "RUNTIME_UNAVAILABLE",
-			"Cannot connect to container runtime for log retrieval.")
-		return
-	}
+	var logLines []string
 
-	logLines, err := h.logFetcher.FetchLogs(r.Context(), c.ExternalID, lines, timestamps)
-	if err != nil {
-		WriteError(w, http.StatusBadGateway, "LOGS_UNAVAILABLE", "Cannot retrieve logs from Docker")
-		return
+	// A container on a remote agent is invisible to our own runtime; only the
+	// agent that reported it can read its logs.
+	if isRemoteAgent(c.AgentID) {
+		if h.logRequester == nil {
+			WriteError(w, http.StatusBadGateway, "RUNTIME_UNAVAILABLE",
+				"Multi-host agent support is not enabled on this server.")
+			return
+		}
+		remote, err := fetchRemoteLogs(r.Context(), h.logRequester, c.AgentID, c.ExternalID, lines, timestamps)
+		if err != nil {
+			writeRemoteLogsError(w, h.agentLabel(r.Context(), c.AgentID), err)
+			return
+		}
+		logLines = remote
+	} else {
+		if h.logFetcher == nil {
+			WriteError(w, http.StatusBadGateway, "RUNTIME_UNAVAILABLE",
+				"Cannot connect to container runtime for log retrieval.")
+			return
+		}
+		local, err := h.logFetcher.FetchLogs(r.Context(), c.ExternalID, lines, timestamps)
+		if err != nil {
+			WriteError(w, http.StatusBadGateway, "LOGS_UNAVAILABLE", "Cannot retrieve logs from Docker")
+			return
+		}
+		logLines = local
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{

@@ -16,11 +16,13 @@ export type CertStatus = 'valid' | 'expiring' | 'expired' | 'error' | 'unknown'
 export type CertSource = 'auto' | 'standalone'
 
 export interface CertMonitor {
-  id: number
+  id: string
   hostname: string
   port: number
+  /** SNI sent during the check; the cert is validated against it instead of hostname. */
+  server_name?: string
   source: CertSource
-  endpoint_id?: number
+  endpoint_id?: string
   status: CertStatus
   check_interval_seconds: number
   warning_thresholds: number[]
@@ -29,10 +31,13 @@ export interface CertMonitor {
   last_error?: string
   created_at: string
   latest_check?: CertCheckResult
+  agent_id?: string | null
 }
 
+export type OCSPStatus = 'good' | 'revoked' | 'unknown' | 'error'
+
 export interface CertCheckResult {
-  id: number
+  id: string
   subject_cn: string
   issuer_cn: string
   issuer_org: string
@@ -48,6 +53,11 @@ export interface CertCheckResult {
   error_message?: string
   checked_at: string
   chain?: CertChainEntry[]
+  ocsp_stapled?: boolean
+  ocsp_status?: OCSPStatus
+  ocsp_produced_at?: string
+  ocsp_next_update?: string
+  ocsp_error?: string
 }
 
 export interface CertChainEntry {
@@ -61,6 +71,7 @@ export interface CertChainEntry {
 export interface CreateCertificateInput {
   hostname: string
   port?: number
+  server_name?: string
   check_interval_seconds?: number
   warning_thresholds?: number[]
 }
@@ -86,7 +97,7 @@ export interface CertificateCreateResponse {
 }
 
 export interface ChecksResponse {
-  monitor_id: number
+  monitor_id: string
   checks: CertCheckResult[]
   total: number
   has_more: boolean
@@ -96,15 +107,24 @@ function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   return apiFetch<T>(url, init)
 }
 
-export function listCertificates(params?: { status?: string; source?: string }): Promise<CertificatesResponse> {
+export function listCertificates(params?: { status?: string; source?: string; agent_id?: string }): Promise<CertificatesResponse> {
   const url = new URL(`${API_BASE}/certificates`, window.location.origin)
   if (params?.status) url.searchParams.set('status', params.status)
   if (params?.source) url.searchParams.set('source', params.source)
+  if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id)
   return fetchJSON<CertificatesResponse>(url.toString())
 }
 
-export function getCertificate(id: number): Promise<CertificateDetailResponse> {
+export function getCertificate(id: string): Promise<CertificateDetailResponse> {
   return fetchJSON<CertificateDetailResponse>(`${API_BASE}/certificates/${id}`)
+}
+
+// checkCertificateNow scans the target immediately and resolves with the refreshed
+// monitor. Rejects with a 409 when an agent owns the scan or a check is running.
+export function checkCertificateNow(id: string): Promise<CertificateDetailResponse> {
+  return fetchJSON<CertificateDetailResponse>(`${API_BASE}/certificates/${id}/check`, {
+    method: 'POST',
+  })
 }
 
 export function createCertificate(data: CreateCertificateInput): Promise<CertificateCreateResponse> {
@@ -115,7 +135,7 @@ export function createCertificate(data: CreateCertificateInput): Promise<Certifi
   })
 }
 
-export function updateCertificate(id: number, data: UpdateCertificateInput): Promise<{ certificate: CertMonitor }> {
+export function updateCertificate(id: string, data: UpdateCertificateInput): Promise<{ certificate: CertMonitor }> {
   return fetchJSON<{ certificate: CertMonitor }>(`${API_BASE}/certificates/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -123,11 +143,11 @@ export function updateCertificate(id: number, data: UpdateCertificateInput): Pro
   })
 }
 
-export function deleteCertificate(id: number): Promise<void> {
+export function deleteCertificate(id: string): Promise<void> {
   return fetchJSON<void>(`${API_BASE}/certificates/${id}`, { method: 'DELETE' })
 }
 
-export function listChecks(id: number, params?: { limit?: number; offset?: number }): Promise<ChecksResponse> {
+export function listChecks(id: string, params?: { limit?: number; offset?: number }): Promise<ChecksResponse> {
   const url = new URL(`${API_BASE}/certificates/${id}/checks`, window.location.origin)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   if (params?.offset) url.searchParams.set('offset', String(params.offset))

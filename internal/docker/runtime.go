@@ -15,6 +15,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	goruntime "runtime"
 	"sync"
@@ -22,11 +23,11 @@ import (
 
 	"github.com/docker/docker/pkg/stdcopy"
 	cmodel "github.com/kolapsis/maintenant/internal/container"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 func init() {
-	pbruntime.Register("docker", func(ctx context.Context, logger *slog.Logger) (pbruntime.Runtime, error) {
+	runtime.Register("docker", func(ctx context.Context, logger *slog.Logger) (runtime.Runtime, error) {
 		return NewRuntime(os.Getenv("DOCKER_HOST"), logger)
 	})
 }
@@ -62,6 +63,10 @@ func (r *Runtime) Connect(ctx context.Context) error {
 	return r.client.ConnectWithRetry(ctx)
 }
 
+func (r *Runtime) TryConnect(ctx context.Context) error {
+	return r.client.TryConnect(ctx)
+}
+
 func (r *Runtime) IsConnected() bool {
 	return r.client.IsConnected()
 }
@@ -87,16 +92,17 @@ func (r *Runtime) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult
 	return r.client.DiscoverAllWithLabels(ctx)
 }
 
-func (r *Runtime) StreamEvents(ctx context.Context) <-chan pbruntime.RuntimeEvent {
+func (r *Runtime) StreamEvents(ctx context.Context) <-chan runtime.RuntimeEvent {
 	dockerCh := r.client.StreamEvents(ctx)
-	out := make(chan pbruntime.RuntimeEvent, 64)
+	out := make(chan runtime.RuntimeEvent, 64)
 	go func() {
 		defer close(out)
 		for evt := range dockerCh {
-			out <- pbruntime.RuntimeEvent{
+			out <- runtime.RuntimeEvent{
 				Action:       evt.Action,
 				ExternalID:   evt.ExternalID,
 				Name:         evt.Name,
+				Image:        evt.Image,
 				ExitCode:     evt.ExitCode,
 				HealthStatus: evt.HealthStatus,
 				ResourceType: evt.ResourceType,
@@ -108,7 +114,7 @@ func (r *Runtime) StreamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 	return out
 }
 
-func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbruntime.RawStats, error) {
+func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*runtime.RawStats, error) {
 	stats, err := r.client.StatsOneShot(ctx, externalID)
 	if err != nil {
 		return nil, err
@@ -117,8 +123,8 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbrunt
 	// Sum network bytes across all interfaces.
 	var netRx, netTx int64
 	for _, ns := range stats.Networks {
-		netRx += int64(ns.RxBytes)
-		netTx += int64(ns.TxBytes)
+		netRx += clampInt64(ns.RxBytes)
+		netTx += clampInt64(ns.TxBytes)
 	}
 
 	// Sum block I/O.
@@ -126,16 +132,16 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbrunt
 	for _, entry := range stats.BlkioStats.IoServiceBytesRecursive {
 		switch entry.Op {
 		case "read", "Read":
-			blockRead += int64(entry.Value)
+			blockRead += clampInt64(entry.Value)
 		case "write", "Write":
-			blockWrite += int64(entry.Value)
+			blockWrite += clampInt64(entry.Value)
 		}
 	}
 
 	// Memory: working-set = Usage - inactive_file.
-	memUsed := int64(stats.MemoryStats.Usage)
+	memUsed := clampInt64(stats.MemoryStats.Usage)
 	if inactive, ok := stats.MemoryStats.Stats["inactive_file"]; ok {
-		memUsed -= int64(inactive)
+		memUsed -= clampInt64(inactive)
 		if memUsed < 0 {
 			memUsed = 0
 		}
@@ -179,10 +185,10 @@ func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbrunt
 		cpuPercent = (cpuDelta / systemDelta) * numCPUs * 100.0
 	}
 
-	return &pbruntime.RawStats{
+	return &runtime.RawStats{
 		CPUPercent:      cpuPercent,
 		MemUsed:         memUsed,
-		MemLimit:        int64(stats.MemoryStats.Limit),
+		MemLimit:        clampInt64(stats.MemoryStats.Limit),
 		NetRxBytes:      netRx,
 		NetTxBytes:      netTx,
 		BlockReadBytes:  blockRead,
@@ -212,12 +218,12 @@ func (r *Runtime) StreamLogs(ctx context.Context, externalID string, lines int, 
 	return newDemuxReader(reader), nil
 }
 
-func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*pbruntime.HealthInfo, error) {
+func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*runtime.HealthInfo, error) {
 	hi, err := r.client.GetHealthInfo(ctx, externalID)
 	if err != nil {
 		return nil, err
 	}
-	result := &pbruntime.HealthInfo{
+	result := &runtime.HealthInfo{
 		HasHealthCheck: hi.HasHealthCheck,
 		Status:         "none",
 	}
@@ -248,11 +254,11 @@ func newDemuxReader(r io.ReadCloser) *demuxReader {
 	go func() {
 		_, err := stdcopy.StdCopy(pw, pw, r)
 		if err != nil {
-			pw.CloseWithError(err)
+			_ = pw.CloseWithError(err)
 		} else {
-			pw.Close()
+			_ = pw.Close()
 		}
-		r.Close()
+		_ = r.Close()
 	}()
 	return &demuxReader{pr: pr, original: r}
 }
@@ -263,6 +269,15 @@ func (d *demuxReader) Read(p []byte) (int, error) {
 
 func (d *demuxReader) Close() error {
 	err := d.pr.Close()
-	d.original.Close()
+	_ = d.original.Close()
 	return err
+}
+
+// clampInt64 converts an unsigned Docker stats counter to int64, saturating at
+// MaxInt64 so an out-of-range value can never wrap to a negative number.
+func clampInt64(v uint64) int64 {
+	if v > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(v)
 }

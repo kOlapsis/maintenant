@@ -12,14 +12,19 @@
 -->
 
 <script setup lang="ts">
-import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
+import { inject, ref, onMounted, onUnmounted } from 'vue'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { useEdition } from '@/composables/useEdition'
 import { createHeartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
+import { Heart } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
+import QuotaRefusal from '@/components/QuotaRefusal.vue'
 
 const store = useHeartbeatsStore()
 const { openDetail } = inject(detailSlideOverKey)!
@@ -27,11 +32,8 @@ const { getQuota, reload } = useEdition()
 const quota = getQuota('heartbeats')
 
 const showCreateForm = ref(false)
-const createError = ref<string | null>(null)
+const createError = ref<unknown>(null)
 
-const isQuotaError = computed(() => {
-  return createError.value?.includes('Upgrade to Pro') || false
-})
 
 const form = ref({
   name: '',
@@ -68,7 +70,7 @@ async function handleCreate() {
     store.fetchHeartbeats()
     reload()
   } catch (e) {
-    createError.value = e instanceof Error ? e.message : 'Failed to create heartbeat'
+    createError.value = e
   }
 }
 </script>
@@ -78,8 +80,8 @@ async function handleCreate() {
   <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-black text-pb-primary">Heartbeats</h1>
-        <p class="mt-1 text-sm" :style="{ color: 'var(--pb-text-muted)' }">
+        <h1 class="text-2xl font-black text-mnt-primary">Heartbeats</h1>
+        <p class="mt-1 text-sm" :style="{ color: 'var(--mnt-text-muted)' }">
           Passive cron &amp; scheduled task monitoring
         </p>
       </div>
@@ -88,28 +90,28 @@ async function handleCreate() {
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"
           :style="{
-            backgroundColor: quota.isAtLimit ? 'var(--pb-status-down-bg)' : quota.nearLimit ? 'var(--pb-status-warn-bg)' : 'var(--pb-bg-elevated)',
-            color: quota.isAtLimit ? 'var(--pb-status-down)' : quota.nearLimit ? 'var(--pb-status-warn)' : 'var(--pb-text-secondary)',
+            backgroundColor: quota.isAtLimit ? 'var(--mnt-status-down-bg)' : quota.nearLimit ? 'var(--mnt-status-warn-bg)' : 'var(--mnt-bg-elevated)',
+            color: quota.isAtLimit ? 'var(--mnt-status-down)' : quota.nearLimit ? 'var(--mnt-status-warn)' : 'var(--mnt-text-secondary)',
           }"
         >
           {{ quota.used }}/{{ quota.limit }}
         </span>
         <router-link
           v-if="quota.nearLimit && !quota.isAtLimit"
-          :to="{ name: 'pro-edition' }"
+          :to="{ name: 'editions' }"
           class="text-xs font-medium transition-opacity hover:opacity-80"
-          style="color: var(--pb-accent)"
+          style="color: var(--mnt-accent)"
         >
           Upgrade
         </router-link>
         <button
           class="min-h-[44px]"
           :disabled="quota.isAtLimit"
-          :title="quota.isAtLimit ? `Community edition limited to ${quota.limit} heartbeats` : ''"
+          :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} heartbeats` : ''"
           :style="{
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -129,11 +131,11 @@ async function handleCreate() {
       :doc-href="docUrl('features/heartbeats/#ping-url-format')"
     >
       Each monitor gets a unique public ping URL
-      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/ping/{uuid}</code>).
+      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/ping/{uuid}</code>).
       Hit it from a cron job, systemd timer, or any script to report success &mdash; append
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/$?</code>
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/$?</code>
       to forward the exit code, or use
-      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">/start</code>
+      <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/start</code>
       + exit code to track duration. If no ping arrives before the deadline (interval + grace), a <em>deadline missed</em> alert fires.
     </FeatureHint>
 
@@ -142,49 +144,26 @@ async function handleCreate() {
       v-if="showCreateForm"
       class="mb-6 p-4"
       :style="{
-        backgroundColor: 'var(--pb-bg-surface)',
-        border: '1px solid var(--pb-border-default)',
-        borderRadius: 'var(--pb-radius-lg)',
+        backgroundColor: 'var(--mnt-bg-surface)',
+        border: '1px solid var(--mnt-border-default)',
+        borderRadius: 'var(--mnt-radius-lg)',
       }"
     >
-      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--pb-text-primary)' }">Create Heartbeat Monitor</h3>
-      <div
-        v-if="createError"
-        class="mb-3 rounded p-2 text-sm"
-        :style="{
-          backgroundColor: 'var(--pb-status-down-bg)',
-          color: 'var(--pb-status-down)',
-          borderRadius: 'var(--pb-radius-sm)',
-        }"
-      >
-        <template v-if="isQuotaError">
-          {{ createError.split('Upgrade to Pro')[0] }}
-          <a
-            href="/pro-edition"
-            class="font-medium underline transition-opacity hover:opacity-80"
-            style="color: #a78bfa"
-          >
-            Upgrade to Pro
-          </a>
-          {{ createError.split('Upgrade to Pro')[1] }}
-        </template>
-        <template v-else>
-          {{ createError }}
-        </template>
-      </div>
+      <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Heartbeat Monitor</h3>
+      <QuotaRefusal v-if="createError" :error="createError" />
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Name</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Name</label>
           <input
             v-model="form.name"
             type="text"
             placeholder="e.g., Nightly Backup"
             :style="{
               width: '100%',
-              borderRadius: 'var(--pb-radius-md)',
-              border: '1px solid var(--pb-border-default)',
-              backgroundColor: 'var(--pb-bg-elevated)',
-              color: 'var(--pb-text-primary)',
+              borderRadius: 'var(--mnt-radius-md)',
+              border: '1px solid var(--mnt-border-default)',
+              backgroundColor: 'var(--mnt-bg-elevated)',
+              color: 'var(--mnt-text-primary)',
               padding: '0.375rem 0.75rem',
               fontSize: '0.875rem',
               minHeight: '44px',
@@ -193,7 +172,7 @@ async function handleCreate() {
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Expected Interval</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Expected Interval</label>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="preset in intervalPresets"
@@ -202,14 +181,14 @@ async function handleCreate() {
               class="rounded-full px-3 py-1 text-xs font-medium transition"
               :style="{
                 border: form.interval_seconds === preset.value
-                  ? '1px solid var(--pb-accent)'
-                  : '1px solid var(--pb-border-default)',
+                  ? '1px solid var(--mnt-accent)'
+                  : '1px solid var(--mnt-border-default)',
                 backgroundColor: form.interval_seconds === preset.value
-                  ? 'var(--pb-accent)'
+                  ? 'var(--mnt-accent)'
                   : 'transparent',
                 color: form.interval_seconds === preset.value
-                  ? 'var(--pb-text-inverted)'
-                  : 'var(--pb-text-secondary)',
+                  ? 'var(--mnt-text-inverted)'
+                  : 'var(--mnt-text-secondary)',
               }"
               @click="form.interval_seconds = preset.value"
             >
@@ -218,7 +197,7 @@ async function handleCreate() {
           </div>
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">Grace Period (seconds)</label>
+          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Grace Period (seconds)</label>
           <input
             v-model.number="form.grace_seconds"
             type="number"
@@ -226,10 +205,10 @@ async function handleCreate() {
             :max="form.interval_seconds"
             :style="{
               width: '100%',
-              borderRadius: 'var(--pb-radius-md)',
-              border: '1px solid var(--pb-border-default)',
-              backgroundColor: 'var(--pb-bg-elevated)',
-              color: 'var(--pb-text-primary)',
+              borderRadius: 'var(--mnt-radius-md)',
+              border: '1px solid var(--mnt-border-default)',
+              backgroundColor: 'var(--mnt-bg-elevated)',
+              color: 'var(--mnt-text-primary)',
               padding: '0.375rem 0.75rem',
               fontSize: '0.875rem',
               minHeight: '44px',
@@ -240,9 +219,9 @@ async function handleCreate() {
           type="submit"
           :style="{
             alignSelf: 'flex-start',
-            borderRadius: 'var(--pb-radius-lg)',
-            backgroundColor: 'var(--pb-accent)',
-            color: 'var(--pb-text-inverted)',
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
             padding: '0.5rem 1rem',
             fontSize: '0.875rem',
             fontWeight: '500',
@@ -255,64 +234,46 @@ async function handleCreate() {
 
     <!-- Status summary -->
     <div class="mb-6 flex gap-4 text-sm">
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-ok-bg)', color: 'var(--pb-status-ok)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-status-ok)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.up }} up
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-down-bg)', color: 'var(--pb-status-down)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.down }} down
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-ok-bg)', color: 'var(--pb-accent)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-accent)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.started }} started
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-bg-elevated)', color: 'var(--pb-text-muted)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-muted)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.new }} new
       </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--pb-status-warn-bg)', color: 'var(--pb-status-warn)', padding: '0.25rem 0.75rem' }">
+      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)', padding: '0.25rem 0.75rem' }">
         {{ store.statusCounts.paused }} paused
       </span>
     </div>
 
     <!-- Loading -->
-    <div v-if="store.loading" class="py-12 text-center" :style="{ color: 'var(--pb-text-muted)' }">
-      Loading heartbeats...
-    </div>
+    <LoadingSkeleton v-if="store.loading" variant="cards" :count="6" />
 
     <!-- Error -->
-    <div
-      v-else-if="store.error"
-      class="rounded-lg p-4 text-sm"
-      :style="{
-        backgroundColor: 'var(--pb-status-down-bg)',
-        border: '1px solid var(--pb-status-down)',
-        color: 'var(--pb-status-down)',
-        borderRadius: 'var(--pb-radius-lg)',
-      }"
-    >
-      {{ store.error }}
-    </div>
+    <ErrorState v-else-if="store.error" :message="store.error" />
 
     <!-- Empty state -->
-    <div
+    <EmptyState
       v-else-if="store.heartbeats.length === 0"
-      class="flex flex-col items-center justify-center py-16 text-center"
+      :icon="Heart"
+      title="No heartbeat monitors"
+      description="Heartbeat monitors track cron jobs and scheduled tasks. Create one and integrate the ping URL into your scripts."
     >
-      <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4" style="color: var(--pb-text-muted)">
-        <rect x="8" y="8" width="40" height="40" rx="8" />
-        <path d="M18 28l4 4 6-8 4 4 6-8" stroke-linecap="round" stroke-linejoin="round" />
-        <circle cx="28" cy="38" r="2" fill="currentColor" stroke="none" />
-      </svg>
-      <h3 class="text-lg font-medium mb-1" style="color: var(--pb-text-primary)">No heartbeat monitors</h3>
-      <p class="text-sm mb-4 max-w-sm" style="color: var(--pb-text-muted)">
-        Heartbeat monitors track cron jobs and scheduled tasks. Create one and integrate the ping URL into your scripts.
-      </p>
-      <button
-        class="min-h-[44px] rounded-lg px-4 text-sm font-medium"
-        style="background-color: var(--pb-accent); color: var(--pb-text-inverted); border-radius: var(--pb-radius-lg)"
-        @click="showCreateForm = true"
-      >
-        Create Your First Heartbeat
-      </button>
-    </div>
+      <template #action>
+        <button
+          class="min-h-[44px] rounded-lg px-4 text-sm font-medium"
+          style="background-color: var(--mnt-accent); color: var(--mnt-text-inverted); border-radius: var(--mnt-radius-lg)"
+          @click="showCreateForm = true"
+        >
+          Create your first heartbeat
+        </button>
+      </template>
+    </EmptyState>
 
     <!-- Heartbeat grid -->
     <div

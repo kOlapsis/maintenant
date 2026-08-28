@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -30,7 +29,7 @@ type activeAlertKey struct {
 	Source     string
 	AlertType  string
 	EntityType string
-	EntityID   int64
+	EntityID   string
 }
 
 // SSEBroadcaster is the interface for broadcasting SSE events.
@@ -40,10 +39,11 @@ type SSEBroadcaster interface {
 
 // EngineDeps holds all dependencies for the alert Engine.
 type EngineDeps struct {
-	AlertStore   AlertStore   // required
-	ChannelStore ChannelStore // required
-	SilenceStore SilenceStore // required
-	Logger       *slog.Logger // required
+	AlertStore   AlertStore     // required
+	ChannelStore ChannelStore   // required
+	TriggerStore TriggerStore   // required
+	SilenceStore SilenceStore   // required
+	Logger       *slog.Logger   // required
 	Notifier     *Notifier      // optional — nil-safe
 	Broadcaster  SSEBroadcaster // optional — nil-safe
 }
@@ -54,6 +54,7 @@ type Engine struct {
 	eventCh      chan Event
 	alertStore   AlertStore
 	channelStore ChannelStore
+	triggerStore TriggerStore
 	silenceStore SilenceStore
 	notifier     *Notifier
 	broadcaster  SSEBroadcaster
@@ -77,6 +78,9 @@ func NewEngine(d EngineDeps) *Engine {
 	if d.ChannelStore == nil {
 		panic("alert.NewEngine: ChannelStore is required")
 	}
+	if d.TriggerStore == nil {
+		panic("alert.NewEngine: TriggerStore is required")
+	}
 	if d.SilenceStore == nil {
 		panic("alert.NewEngine: SilenceStore is required")
 	}
@@ -87,6 +91,7 @@ func NewEngine(d EngineDeps) *Engine {
 		eventCh:      make(chan Event, engineChannelBuffer),
 		alertStore:   d.AlertStore,
 		channelStore: d.ChannelStore,
+		triggerStore: d.TriggerStore,
 		silenceStore: d.SilenceStore,
 		notifier:     d.Notifier,
 		broadcaster:  d.Broadcaster,
@@ -103,6 +108,11 @@ func (e *Engine) SetEscalator(esc Escalator) {
 	e.escalator = esc
 }
 
+// Escalator returns the current escalator implementation.
+func (e *Engine) Escalator() Escalator {
+	return e.escalator
+}
+
 // SetEntityRouter sets the entity routing extension.
 func (e *Engine) SetEntityRouter(r EntityRouter) {
 	e.entityRouter = r
@@ -116,9 +126,13 @@ func (e *Engine) SetMaintenanceSuppressor(s MaintenanceSuppressor) {
 // noopEscalator is the Engine-internal no-op default.
 type noopEscalator struct{}
 
-func (noopEscalator) Evaluate(_ context.Context, _ string, _ time.Duration) (*EscalationAction, error) {
-	return nil, nil
+func (noopEscalator) EvaluateCycle(_ context.Context) error            { return nil }
+func (noopEscalator) OnAlertCreated(_ context.Context, _ *Alert) error { return nil }
+func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ string, _ Acknowledgment) error {
+	return nil
 }
+func (noopEscalator) OnAlertResolved(_ context.Context, _ string, _ time.Time) error { return nil }
+func (noopEscalator) OnEditionDowngraded(_ context.Context) error                    { return nil }
 
 // noopEntityRouter is the Engine-internal no-op default.
 type noopEntityRouter struct{}
@@ -189,60 +203,10 @@ func (e *Engine) runEscalationEvaluator(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			e.evaluateEscalations(ctx)
+			if err := e.escalator.EvaluateCycle(ctx); err != nil {
+				e.logger.ErrorContext(ctx, "alert engine: escalation cycle error", "error", err)
+			}
 		}
-	}
-}
-
-func (e *Engine) evaluateEscalations(ctx context.Context) {
-	alerts, err := e.alertStore.ListUnacknowledgedActiveAlerts(ctx)
-	if err != nil {
-		e.logger.Error("alert engine: list unacked alerts for escalation", "error", err)
-		return
-	}
-
-	now := time.Now()
-	for _, a := range alerts {
-		elapsed := now.Sub(a.FiredAt)
-		action, evalErr := e.escalator.Evaluate(ctx, strconv.FormatInt(a.ID, 10), elapsed)
-		if evalErr != nil {
-			e.logger.Error("alert engine: escalator evaluate error",
-				"error", evalErr, "alert_id", a.ID)
-			continue
-		}
-		if action == nil {
-			continue
-		}
-
-		// Dispatch escalation notification
-		chID, parseErr := strconv.ParseInt(action.ChannelID, 10, 64)
-		if parseErr != nil {
-			e.logger.Error("alert engine: invalid escalation channel ID",
-				"channel_id", action.ChannelID, "alert_id", a.ID)
-			continue
-		}
-
-		ch, chErr := e.channelStore.GetChannel(ctx, chID)
-		if chErr != nil || ch == nil {
-			e.logger.Error("alert engine: get escalation channel",
-				"error", chErr, "channel_id", chID, "alert_id", a.ID)
-			continue
-		}
-
-		e.enqueueDelivery(ctx, ch, a)
-
-		// Mark as escalated to prevent re-escalation
-		if setErr := e.alertStore.SetEscalatedAt(ctx, a.ID, now); setErr != nil {
-			e.logger.Error("alert engine: set escalated_at",
-				"error", setErr, "alert_id", a.ID)
-		}
-
-		e.logger.Info("alert escalated by policy",
-			"alert_id", a.ID,
-			"entity", a.EntityName,
-			"channel_id", chID,
-			"elapsed", elapsed,
-		)
 	}
 }
 
@@ -289,6 +253,21 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	e.mu.RUnlock()
 
 	if exists {
+		// Collision guard: one dedup key must identify exactly one subject. If an
+		// incoming event lands on an existing alert but names a DIFFERENT entity,
+		// two distinct subjects are sharing a key — almost always a missing/blank
+		// entity_id in the emitting source. Log loudly so it can never corrupt
+		// silently (this is the "keycloak message on bitwarden entity" signature).
+		if evt.EntityName != existing.EntityName {
+			e.logger.Error("alert engine: dedup key collision — one key claimed by two entities (emitting source likely omits a unique entity_id)",
+				"source", evt.Source,
+				"alert_type", evt.AlertType,
+				"entity_type", evt.EntityType,
+				"entity_id", evt.EntityID,
+				"existing_entity", existing.EntityName,
+				"incoming_entity", evt.EntityName,
+			)
+		}
 		if severityRank(evt.Severity) > severityRank(existing.Severity) {
 			e.escalateAlert(ctx, existing, evt)
 		} else {
@@ -353,19 +332,40 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 	// SSE broadcast
 	e.broadcastAlert(a, silenced)
 
+	// Notify the escalator that a new alert is live so it can start any
+	// matching policy runs. Skipped for silenced alerts (suppressed by rule).
+	if !silenced {
+		if err := e.escalator.OnAlertCreated(ctx, a); err != nil {
+			e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", a.ID)
+		}
+	}
+
 	// Dispatch notifications (only if not silenced)
 	if !silenced && e.notifier != nil {
-		e.dispatchNotifications(ctx, a)
+		e.dispatchNotifications(ctx, a, a)
 	}
 }
 
 func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) {
 	oldSeverity := existing.Severity
+
+	// Refresh the record to the escalating event in full — severity, message AND
+	// entity name/details — so an escalation can never leave a record mixing two
+	// events' fields. EntityID/EntityType are part of the dedup key and therefore
+	// already identical, so they are intentionally not touched.
+	detailsJSON := "{}"
+	if evt.Details != nil {
+		if b, err := json.Marshal(evt.Details); err == nil {
+			detailsJSON = string(b)
+		}
+	}
 	existing.Severity = evt.Severity
 	existing.Message = evt.Message
+	existing.EntityName = evt.EntityName
+	existing.Details = detailsJSON
 
-	if err := e.alertStore.UpdateAlertSeverity(ctx, existing.ID, evt.Severity, evt.Message); err != nil {
-		e.logger.Error("alert engine: escalate severity", "error", err, "alert_id", existing.ID)
+	if err := e.alertStore.UpdateAlertOnEscalation(ctx, existing.ID, evt.Severity, evt.Message, evt.EntityName, detailsJSON); err != nil {
+		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
 		return
 	}
 
@@ -388,8 +388,16 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 
 	// Broadcast the escalation and dispatch notifications at the new severity
 	e.broadcastAlert(existing, false)
+
+	// Re-evaluate escalation policies: a higher severity may match policies
+	// that did not at the previous level. The escalator dedupes per
+	// (alert, policy) so existing runs continue untouched.
+	if err := e.escalator.OnAlertCreated(ctx, existing); err != nil {
+		e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", existing.ID)
+	}
+
 	if e.notifier != nil {
-		e.dispatchNotifications(ctx, existing)
+		e.dispatchNotifications(ctx, existing, existing)
 	}
 }
 
@@ -467,6 +475,10 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 		e.logger.Error("alert engine: resolve original alert", "error", err)
 	}
 
+	if err := e.escalator.OnAlertResolved(ctx, activeAlert.ID, now); err != nil {
+		e.logger.ErrorContext(ctx, "alert engine: OnAlertResolved hook error", "error", err, "alert_id", activeAlert.ID)
+	}
+
 	// Update the resolved alert fields for broadcasting
 	activeAlert.Status = StatusResolved
 	activeAlert.ResolvedAt = &now
@@ -475,9 +487,12 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 	// SSE broadcast
 	e.broadcastResolved(activeAlert)
 
-	// Dispatch recovery notifications
+	// Route by the original alert, but notify a payload that reads as a recovery.
 	if e.notifier != nil {
-		e.dispatchNotifications(ctx, activeAlert)
+		payload := *activeAlert
+		payload.Message = evt.Message
+		payload.Severity = evt.Severity
+		e.dispatchNotifications(ctx, activeAlert, &payload)
 	}
 }
 
@@ -504,7 +519,7 @@ func (e *Engine) checkSilenceRules(ctx context.Context, evt Event) bool {
 	}
 
 	// Consult maintenance suppressor extension (Pro: calendar-based suppression)
-	suppressed, err := e.suppressor.IsSuppressed(ctx, evt.Source, evt.EntityType, fmt.Sprintf("%d", evt.EntityID))
+	suppressed, err := e.suppressor.IsSuppressed(ctx, evt.Source, evt.EntityType, evt.EntityID)
 	if err != nil {
 		e.logger.Error("alert engine: maintenance suppressor error", "error", err)
 	} else if suppressed {
@@ -543,41 +558,50 @@ func matchesSilenceRule(rule *SilenceRule, evt Event) bool {
 	return true
 }
 
-func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
+// dispatchNotifications matches triggers and the entity router against routeBy,
+// then delivers payload (they differ only for recoveries).
+func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payload *Alert) {
 	if e.channelStore == nil || e.notifier == nil {
 		return
 	}
 
-	channels, err := e.channelStore.ListChannels(ctx)
-	if err != nil {
-		e.logger.Error("alert engine: list channels", "error", err)
-		return
+	dispatched := make(map[string]bool)
+
+	// Resolve channels from active alert triggers.
+	if e.triggerStore != nil {
+		triggers, err := e.triggerStore.ListEnabledTriggers(ctx)
+		if err != nil {
+			e.logger.Error("alert engine: list triggers", "error", err)
+		}
+		for _, t := range triggers {
+			if !matchesTrigger(t, routeBy) {
+				continue
+			}
+			for _, chID := range t.ChannelIDs {
+				if dispatched[chID] {
+					continue
+				}
+				ch, chErr := e.channelStore.GetChannel(ctx, chID)
+				if chErr != nil {
+					e.logger.Error("alert engine: get trigger channel", "error", chErr, "channel_id", chID)
+					continue
+				}
+				if ch == nil || !ch.Enabled {
+					continue
+				}
+				dispatched[chID] = true
+				e.enqueueDelivery(ctx, ch, payload)
+			}
+		}
 	}
 
-	// Collect channels matching standard routing rules
-	dispatched := make(map[int64]bool)
-	for _, ch := range channels {
-		if !ch.Enabled {
-			continue
-		}
-		if !matchesRoutingRules(ch, a) {
-			continue
-		}
-		dispatched[ch.ID] = true
-		e.enqueueDelivery(ctx, ch, a)
-	}
-
-	// Consult entity router extension for additional channels (Pro: per-entity routing)
-	extraIDs, err := e.entityRouter.Route(ctx, a.EntityType, fmt.Sprintf("%d", a.EntityID), a.Severity)
+	// Consult entity router extension for additional channels (Pro: per-entity routing).
+	// Continues to operate independently from triggers.
+	extraIDs, err := e.entityRouter.Route(ctx, routeBy.EntityType, routeBy.EntityID, routeBy.Severity)
 	if err != nil {
 		e.logger.Error("alert engine: entity router error", "error", err)
 	}
-	for _, chIDStr := range extraIDs {
-		chID, parseErr := strconv.ParseInt(chIDStr, 10, 64)
-		if parseErr != nil {
-			e.logger.Error("alert engine: invalid entity-routed channel ID", "channel_id", chIDStr)
-			continue
-		}
+	for _, chID := range extraIDs {
 		if dispatched[chID] {
 			continue // dedup
 		}
@@ -590,7 +614,7 @@ func (e *Engine) dispatchNotifications(ctx context.Context, a *Alert) {
 			continue
 		}
 		dispatched[chID] = true
-		e.enqueueDelivery(ctx, ch, a)
+		e.enqueueDelivery(ctx, ch, payload)
 	}
 }
 
@@ -619,24 +643,29 @@ func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a
 	})
 }
 
-func matchesRoutingRules(ch *NotificationChannel, a *Alert) bool {
-	if len(ch.RoutingRules) == 0 {
-		// No rules = receive everything
-		return true
+// matchesTrigger reports whether an alert satisfies all of a trigger's
+// non-empty filters (AND between fields, OR within a CSV field). An empty
+// filter matches everything.
+//
+// FilterTags is treated as no-op for now: Alert does not yet expose tags.
+// The match is enforced via filter_severities, filter_sources and filter_scopes.
+func matchesTrigger(t *AlertTrigger, a *Alert) bool {
+	if a.Status == StatusResolved && !t.NotifyOnResolve {
+		return false
 	}
-
-	for _, rule := range ch.RoutingRules {
-		if matchesRule(rule, a) {
-			return true
+	if t.FilterSeverities != "" && !containsCSV(t.FilterSeverities, a.Severity) {
+		return false
+	}
+	if t.FilterSources != "" && !containsCSV(t.FilterSources, a.Source) {
+		return false
+	}
+	if t.FilterScopes != "" {
+		scope := fmt.Sprintf("%s:%s", a.EntityType, a.EntityID)
+		if !containsCSV(t.FilterScopes, scope) {
+			return false
 		}
 	}
-	return false
-}
-
-func matchesRule(rule RoutingRule, a *Alert) bool {
-	sourceMatch := rule.SourceFilter == "" || containsCSV(rule.SourceFilter, a.Source)
-	severityMatch := rule.SeverityFilter == "" || containsCSV(rule.SeverityFilter, a.Severity)
-	return sourceMatch && severityMatch
+	return true
 }
 
 func containsCSV(csv, value string) bool {
@@ -747,7 +776,7 @@ func alertToMap(a *Alert) map[string]interface{} {
 // ResolveByEntity resolves all active alerts for a given entity (e.g. when a
 // container is destroyed). This prevents stale alerts from accumulating when
 // containers are recreated with new internal IDs.
-func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityID int64) {
+func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityID string) {
 	now := time.Now()
 
 	e.mu.Lock()
@@ -764,6 +793,9 @@ func (e *Engine) ResolveByEntity(ctx context.Context, entityType string, entityI
 		if err := e.alertStore.UpdateAlertStatus(ctx, a.ID, StatusResolved, &now, nil); err != nil {
 			e.logger.Error("alert engine: resolve on entity removal", "error", err, "alert_id", a.ID)
 			continue
+		}
+		if err := e.escalator.OnAlertResolved(ctx, a.ID, now); err != nil {
+			e.logger.ErrorContext(ctx, "alert engine: OnAlertResolved hook error", "error", err, "alert_id", a.ID)
 		}
 		a.Status = StatusResolved
 		a.ResolvedAt = &now
@@ -801,5 +833,5 @@ func NewSSEBroadcasterFunc(fn func(eventType string, data interface{})) SSEBroad
 var _ fmt.Stringer = (*activeAlertKey)(nil) // removed — not needed
 
 func (k activeAlertKey) String() string {
-	return fmt.Sprintf("%s/%s/%s/%d", k.Source, k.AlertType, k.EntityType, k.EntityID)
+	return fmt.Sprintf("%s/%s/%s/%s", k.Source, k.AlertType, k.EntityType, k.EntityID)
 }

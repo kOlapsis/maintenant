@@ -181,14 +181,14 @@ func parseEndpointTarget(labelKey string, epType EndpointType, value string) (*P
 func applyConfigLabels(cfg *EndpointConfig, labels map[string]string, logger *slog.Logger) {
 	if v, ok := labels["interval"]; ok {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			cfg.Interval = d
+			cfg.Interval = Duration(d)
 		} else {
 			logger.Warn("invalid endpoint interval", "value", v)
 		}
 	}
 	if v, ok := labels["timeout"]; ok {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			cfg.Timeout = d
+			cfg.Timeout = Duration(d)
 		} else {
 			logger.Warn("invalid endpoint timeout", "value", v)
 		}

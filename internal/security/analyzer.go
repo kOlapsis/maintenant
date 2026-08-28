@@ -40,7 +40,7 @@ var knownDatabasePorts = map[int]string{
 }
 
 // AnalyzeDocker inspects a Docker container's security configuration and returns all detected insights.
-func AnalyzeDocker(containerID int64, containerName string, cfg DockerSecurityConfig, now time.Time) []Insight {
+func AnalyzeDocker(containerID string, containerName string, cfg DockerSecurityConfig, now time.Time) []Insight {
 	var insights []Insight
 
 	// Host network mode subsumes port binding checks.
@@ -75,7 +75,7 @@ func AnalyzeDocker(containerID int64, containerName string, cfg DockerSecurityCo
 	return insights
 }
 
-func analyzePortBindings(containerID int64, containerName string, bindings []PortBinding, now time.Time) []Insight {
+func analyzePortBindings(containerID string, containerName string, bindings []PortBinding, now time.Time) []Insight {
 	var insights []Insight
 	for _, b := range bindings {
 		if !isExposedOnAllInterfaces(b.HostIP) {

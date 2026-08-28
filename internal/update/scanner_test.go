@@ -45,19 +45,19 @@ type stubStore struct {
 	baseline *DigestBaseline
 }
 
-func (s *stubStore) InsertScanRecord(_ context.Context, _ *ScanRecord) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertScanRecord(_ context.Context, _ *ScanRecord) (string, error) {
+	return "", nil
 }
 func (s *stubStore) UpdateScanRecord(_ context.Context, _ *ScanRecord) error { return nil }
-func (s *stubStore) GetScanRecord(_ context.Context, _ int64) (*ScanRecord, error) {
+func (s *stubStore) GetScanRecord(_ context.Context, _ string) (*ScanRecord, error) {
 	return nil, nil
 }
 func (s *stubStore) GetLatestScanRecord(_ context.Context) (*ScanRecord, error) { return nil, nil }
-func (s *stubStore) InsertImageUpdate(_ context.Context, _ *ImageUpdate) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertImageUpdate(_ context.Context, _ *ImageUpdate) (string, error) {
+	return "", nil
 }
 func (s *stubStore) UpdateImageUpdate(_ context.Context, _ *ImageUpdate) error { return nil }
-func (s *stubStore) GetImageUpdate(_ context.Context, _ int64) (*ImageUpdate, error) {
+func (s *stubStore) GetImageUpdate(_ context.Context, _ string) (*ImageUpdate, error) {
 	return nil, nil
 }
 func (s *stubStore) GetImageUpdateByContainer(_ context.Context, _ string) (*ImageUpdate, error) {
@@ -66,23 +66,30 @@ func (s *stubStore) GetImageUpdateByContainer(_ context.Context, _ string) (*Ima
 func (s *stubStore) ListImageUpdates(_ context.Context, _ ListImageUpdatesOpts) ([]*ImageUpdate, error) {
 	return nil, nil
 }
-func (s *stubStore) GetUpdateSummary(_ context.Context) (*UpdateSummary, error) { return nil, nil }
+func (s *stubStore) GetUpdateSummary(_ context.Context) (*UpdateSummary, error)      { return nil, nil }
 func (s *stubStore) DeleteImageUpdatesByContainer(_ context.Context, _ string) error { return nil }
-func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ int64, _ []string) (int64, error) {
+func (s *stubStore) DeleteStaleImageUpdates(_ context.Context, _ string, _ []string) (int64, error) {
 	return 0, nil
 }
-func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (int64, error) {
-	return 0, nil
+func (s *stubStore) ListStaleImageUpdates(_ context.Context, _ string, _ []string) ([]StaleImageUpdate, error) {
+	return nil, nil
+}
+func (s *stubStore) ListOrphanImageUpdates(_ context.Context) ([]StaleImageUpdate, error) {
+	return nil, nil
+}
+func (s *stubStore) DeleteOrphanImageUpdates(_ context.Context) (int64, error) { return 0, nil }
+func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, error) {
+	return "", nil
 }
 func (s *stubStore) GetVersionPin(_ context.Context, _ string) (*VersionPin, error) { return nil, nil }
-func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error              { return nil }
-func (s *stubStore) InsertExclusion(_ context.Context, _ *UpdateExclusion) (int64, error) {
-	return 0, nil
+func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error             { return nil }
+func (s *stubStore) InsertExclusion(_ context.Context, _ *UpdateExclusion) (string, error) {
+	return "", nil
 }
 func (s *stubStore) ListExclusions(_ context.Context) ([]*UpdateExclusion, error) { return nil, nil }
-func (s *stubStore) DeleteExclusion(_ context.Context, _ int64) error             { return nil }
-func (s *stubStore) InsertCVECacheEntry(_ context.Context, _ *CVECacheEntry) (int64, error) {
-	return 0, nil
+func (s *stubStore) DeleteExclusion(_ context.Context, _ string) error            { return nil }
+func (s *stubStore) InsertCVECacheEntry(_ context.Context, _ *CVECacheEntry) (string, error) {
+	return "", nil
 }
 func (s *stubStore) GetCVECacheEntries(_ context.Context, _, _, _ string) ([]*CVECacheEntry, error) {
 	return nil, nil
@@ -106,8 +113,8 @@ func (s *stubStore) UpsertDigestBaseline(_ context.Context, _ *DigestBaseline) e
 func (s *stubStore) GetDigestBaseline(_ context.Context, _ string) (*DigestBaseline, error) {
 	return s.baseline, nil
 }
-func (s *stubStore) InsertRiskScoreRecord(_ context.Context, _ *RiskScoreRecord) (int64, error) {
-	return 0, nil
+func (s *stubStore) InsertRiskScoreRecord(_ context.Context, _ *RiskScoreRecord) (string, error) {
+	return "", nil
 }
 func (s *stubStore) ListRiskScoreHistory(_ context.Context, _ string, _, _ time.Time) ([]*RiskScoreRecord, error) {
 	return nil, nil
@@ -420,6 +427,92 @@ func TestScanner_DigestOnlyMode_NoBaselineChange_NoUpdate(t *testing.T) {
 	results, errs := sc.Scan(context.Background(), containers)
 	require.Empty(t, errs)
 	assert.Empty(t, results)
+}
+
+// --- Issue #62: partial version tags are floating, not pinned ---
+
+// TestScanner_PartialSemverTag_NoUpdateWhenTagUnmoved verifies that a container on a
+// major-only tag like "v3" is not told to install v3.7.10 — the tag it runs already
+// resolves there. With the remote digest unchanged, nothing is reported.
+func TestScanner_PartialSemverTag_NoUpdateWhenTagUnmoved(t *testing.T) {
+	reg := &stubRegistry{
+		tags: map[string][]string{
+			"library/traefik": {"v2", "v2.11.0", "v3", "v3.7.9", "v3.7.10"},
+		},
+		digest: "sha256:aabbccdd11223344",
+	}
+
+	baseline := &DigestBaseline{
+		ContainerID:  "ctr1",
+		Image:        "traefik:v3",
+		Tag:          "v3",
+		RemoteDigest: "sha256:aabbccdd11223344",
+		CheckedAt:    time.Now().Add(-24 * time.Hour),
+	}
+	sc := newTestScanner(reg, &stubStore{baseline: baseline})
+
+	containers := []ContainerInfo{
+		{ExternalID: "ctr1", Name: "traefik", Image: "traefik:v3"},
+	}
+
+	results, errs := sc.Scan(context.Background(), containers)
+	require.Empty(t, errs)
+	assert.Empty(t, results)
+}
+
+// TestScanner_PartialSemverTag_DigestChangeIsTheUpdate verifies that the real signal for
+// a floating tag is the digest: when "v3" is republished, the update is reported against
+// the same tag rather than as a jump to a more precise one.
+func TestScanner_PartialSemverTag_DigestChangeIsTheUpdate(t *testing.T) {
+	reg := &stubRegistry{
+		tags: map[string][]string{
+			"library/traefik": {"v2", "v3", "v3.7.9", "v3.7.10"},
+		},
+		digest: "sha256:aabbccdd11223344",
+	}
+
+	baseline := &DigestBaseline{
+		ContainerID:  "ctr1",
+		Image:        "traefik:v3",
+		Tag:          "v3",
+		RemoteDigest: "sha256:00112233445566778",
+		CheckedAt:    time.Now().Add(-24 * time.Hour),
+	}
+	sc := newTestScanner(reg, &stubStore{baseline: baseline})
+
+	containers := []ContainerInfo{
+		{ExternalID: "ctr1", Name: "traefik", Image: "traefik:v3"},
+	}
+
+	results, errs := sc.Scan(context.Background(), containers)
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "v3", results[0].CurrentTag)
+	assert.Equal(t, "v3", results[0].LatestTag)
+	assert.Equal(t, UpdateTypeDigestOnly, results[0].UpdateType)
+	assert.True(t, results[0].HasUpdate)
+}
+
+// TestScanner_PartialSemverTag_NextMajorIsStillReported verifies that a genuine upgrade,
+// a new major published with the same tag shape, is still surfaced.
+func TestScanner_PartialSemverTag_NextMajorIsStillReported(t *testing.T) {
+	reg := &stubRegistry{
+		tags: map[string][]string{
+			"library/traefik": {"v2", "v3", "v3.7.10", "v4", "v4.0.1"},
+		},
+		digest: "sha256:aabbccdd11223344",
+	}
+	sc := newTestScanner(reg, &stubStore{})
+
+	containers := []ContainerInfo{
+		{ExternalID: "ctr1", Name: "traefik", Image: "traefik:v3"},
+	}
+
+	results, errs := sc.Scan(context.Background(), containers)
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "v4", results[0].LatestTag)
+	assert.Equal(t, UpdateTypeMajor, results[0].UpdateType)
 }
 
 // --- Combined include+exclude ---

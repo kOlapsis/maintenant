@@ -15,11 +15,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // EventCallback is the function signature for SSE event broadcasting.
@@ -27,11 +30,15 @@ type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the resource Service.
 type Deps struct {
-	Store        ResourceStore        // required
-	Runtime      pbruntime.Runtime    // required
-	ContainerSvc *container.Service   // required
-	Logger       *slog.Logger         // required
-	EventCallback EventCallback       // optional — nil-safe
+	Store         ResourceStore      // required
+	Runtime       runtime.Runtime    // required
+	ContainerSvc  *container.Service // required
+	Logger        *slog.Logger       // required
+	EventCallback EventCallback      // optional — nil-safe
+
+	// RawWindow mirrors the raw retention window so the rollup backfills exactly
+	// as far as raw samples still exist. Zero uses DefaultSnapshotRetention.
+	RawWindow time.Duration
 }
 
 // Service orchestrates resource collection, persistence, and alerting.
@@ -41,6 +48,17 @@ type Service struct {
 	collector     *Collector
 	logger        *slog.Logger
 	eventCallback EventCallback
+
+	// hosts holds the latest host-level sample reported by each remote agent.
+	hosts *hostRegistry
+
+	// noAlertConfigLogged tracks container IDs for which we've already logged
+	// "alerts not configured" once. Set membership is the only signal — values
+	// are unused.
+	noAlertConfigLogged sync.Map
+
+	// rawWindow bounds how far back the rollup backfills.
+	rawWindow time.Duration
 }
 
 // NewService creates a resource monitoring service.
@@ -57,11 +75,17 @@ func NewService(d Deps) *Service {
 	if d.Logger == nil {
 		panic("resource.NewService: Logger is required")
 	}
+	rawWindow := d.RawWindow
+	if rawWindow <= 0 {
+		rawWindow = DefaultSnapshotRetention
+	}
 	s := &Service{
 		store:         d.Store,
 		containerSvc:  d.ContainerSvc,
 		logger:        d.Logger,
 		eventCallback: d.EventCallback,
+		hosts:         newHostRegistry(),
+		rawWindow:     rawWindow,
 	}
 
 	s.collector = NewCollector(d.Runtime, d.ContainerSvc, d.Logger)
@@ -83,12 +107,12 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // GetCurrentSnapshot returns the latest in-memory snapshot for a container.
-func (s *Service) GetCurrentSnapshot(containerID int64) *ResourceSnapshot {
+func (s *Service) GetCurrentSnapshot(containerID string) *ResourceSnapshot {
 	return s.collector.GetLatestSnapshot(containerID)
 }
 
 // GetAllLatestSnapshots returns the latest snapshots for all containers.
-func (s *Service) GetAllLatestSnapshots() map[int64]*ResourceSnapshot {
+func (s *Service) GetAllLatestSnapshots() map[string]*ResourceSnapshot {
 	return s.collector.GetAllLatest()
 }
 
@@ -98,20 +122,46 @@ func (s *Service) GetHostStat() *HostStatReader {
 }
 
 // GetContainerName resolves a container ID to its name via the container service.
-func (s *Service) GetContainerName(containerID int64) string {
+func (s *Service) GetContainerName(containerID string) string {
 	c, err := s.containerSvc.GetContainer(context.Background(), containerID)
 	if err != nil || c == nil {
-		return fmt.Sprintf("container-%d", containerID)
+		return fmt.Sprintf("container-%s", containerID)
 	}
 	return c.Name
 }
 
 // GetHistory returns historical resource snapshots for charting.
-func (s *Service) GetHistory(ctx context.Context, containerID int64, timeRange string) ([]*ResourceSnapshot, Granularity, error) {
+//
+// Ranges up to 24h group raw samples on the fly; 7d and 30d read the hourly
+// rollup, which already holds exactly the buckets those ranges display. That is
+// what keeps the raw retention window short. See DefaultSnapshotRetention.
+//
+// Every range reads a table kept strictly longer than the range itself, so a
+// retention pass can never amputate a read in progress.
+func (s *Service) GetHistory(ctx context.Context, containerID string, timeRange string) ([]*ResourceSnapshot, Granularity, error) {
 	now := time.Now()
+
+	switch timeRange {
+	case "90d":
+		snaps, err := s.store.ListDailyInRange(ctx, containerID, now.AddDate(0, 0, -90), now)
+		if err != nil {
+			return nil, "", err
+		}
+		return snaps, Granularity1d, nil
+	case "7d", "30d":
+		days := 7
+		if timeRange == "30d" {
+			days = 30
+		}
+		snaps, err := s.store.ListHourlyInRange(ctx, containerID, now.AddDate(0, 0, -days), now)
+		if err != nil {
+			return nil, "", err
+		}
+		return snaps, Granularity1h, nil
+	}
+
 	var from time.Time
 	var granularity Granularity
-
 	switch timeRange {
 	case "6h":
 		from = now.Add(-6 * time.Hour)
@@ -119,9 +169,6 @@ func (s *Service) GetHistory(ctx context.Context, containerID int64, timeRange s
 	case "24h":
 		from = now.Add(-24 * time.Hour)
 		granularity = Granularity5m
-	case "7d":
-		from = now.Add(-7 * 24 * time.Hour)
-		granularity = Granularity1h
 	default: // "1h"
 		from = now.Add(-1 * time.Hour)
 		granularity = GranularityRaw
@@ -135,7 +182,7 @@ func (s *Service) GetHistory(ctx context.Context, containerID int64, timeRange s
 }
 
 // GetAlertConfig returns the alert configuration for a container.
-func (s *Service) GetAlertConfig(ctx context.Context, containerID int64) (*ResourceAlertConfig, error) {
+func (s *Service) GetAlertConfig(ctx context.Context, containerID string) (*ResourceAlertConfig, error) {
 	return s.store.GetAlertConfig(ctx, containerID)
 }
 
@@ -144,9 +191,61 @@ func (s *Service) UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfi
 	return s.store.UpsertAlertConfig(ctx, cfg)
 }
 
-// GetTopConsumersByPeriod returns the top resource consumers averaged over a period.
-func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int) ([]TopConsumerRow, error) {
-	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, limit)
+// TopConsumersNow ranks containers on their latest sample rather than on a
+// history window. It is open in every edition: what the tiering caps is how far
+// back a history goes, not the live picture.
+//
+// agentID filters by host with the same convention as the historical ranking.
+func (s *Service) TopConsumersNow(metric string, limit int, agentID *string) []TopConsumerRow {
+	all := s.GetAllLatestSnapshots()
+
+	rows := make([]TopConsumerRow, 0, len(all))
+	for id, snap := range all {
+		if !hostMatchesFilter(snap.AgentID, agentID) {
+			continue
+		}
+		var value, percent float64
+		switch metric {
+		case "cpu":
+			value, percent = snap.CPUPercent, snap.CPUPercent
+		case "memory":
+			value = float64(snap.MemUsed)
+			if snap.MemLimit > 0 {
+				percent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
+			}
+		}
+		rows = append(rows, TopConsumerRow{ContainerID: id, AvgValue: value, AvgPercent: percent})
+	}
+
+	sort.Slice(rows, func(i, j int) bool { return rows[i].AvgValue > rows[j].AvgValue })
+
+	if limit < len(rows) {
+		rows = rows[:limit]
+	}
+	for i := range rows {
+		rows[i].ContainerName = s.GetContainerName(rows[i].ContainerID)
+	}
+	return rows
+}
+
+// hostMatchesFilter reports whether a sample belongs to the host being asked
+// for: nil means every host, "" means the local server, anything else is an
+// agent id.
+func hostMatchesFilter(snapAgent string, filter *string) bool {
+	if filter == nil {
+		return true
+	}
+	if *filter == "" {
+		return snapAgent == "" || snapAgent == uid.LocalAgent
+	}
+	return snapAgent == *filter
+}
+
+// GetTopConsumersByPeriod returns the top resource consumers averaged over a
+// period. agentID filters by host: nil = all hosts, *agentID == "" = the local
+// server, *agentID == id = that agent.
+func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]TopConsumerRow, error) {
+	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, limit, agentID)
 	if err != nil {
 		return nil, fmt.Errorf("get top consumers by period: %w", err)
 	}
@@ -180,6 +279,7 @@ func (s *Service) processSnapshot(snap *ResourceSnapshot) {
 			"block_read_bytes":  snap.BlockReadBytes,
 			"block_write_bytes": snap.BlockWriteBytes,
 			"timestamp":         snap.Timestamp,
+			"agent_id":          snap.AgentID,
 		})
 	}
 
@@ -193,7 +293,9 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 		return
 	}
 	if cfg == nil || !cfg.Enabled {
-		s.logger.Debug("resource: alerts not configured", "container_id", snap.ContainerID)
+		if _, alreadyLogged := s.noAlertConfigLogged.LoadOrStore(snap.ContainerID, struct{}{}); !alreadyLogged {
+			s.logger.Debug("resource: alerts not configured", "container_id", snap.ContainerID)
+		}
 		return
 	}
 
@@ -278,9 +380,10 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 	if newState == AlertStateNormal && prevState != AlertStateNormal {
 		if s.eventCallback != nil {
 			recoveredType := "cpu"
-			if prevState == AlertStateMemory {
+			switch prevState {
+			case AlertStateMemory:
 				recoveredType = "memory"
-			} else if prevState == AlertStateBoth {
+			case AlertStateBoth:
 				recoveredType = "both"
 			}
 			s.eventCallback(event.ResourceRecovery, map[string]interface{}{

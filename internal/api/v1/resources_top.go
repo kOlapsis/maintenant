@@ -14,7 +14,6 @@ package v1
 import (
 	"context"
 	"net/http"
-	"sort"
 	"strconv"
 
 	"github.com/kolapsis/maintenant/internal/resource"
@@ -22,9 +21,9 @@ import (
 
 // ResourceTopService abstracts the resource service for top consumers.
 type ResourceTopService interface {
-	GetAllLatestSnapshots() map[int64]*resource.ResourceSnapshot
-	GetContainerName(containerID int64) string
-	GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int) ([]resource.TopConsumerRow, error)
+	GetContainerName(containerID string) string
+	TopConsumersNow(metric string, limit int, agentID *string) []resource.TopConsumerRow
+	GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]resource.TopConsumerRow, error)
 }
 
 // ResourceTopHandler handles top resource consumers endpoints.
@@ -39,14 +38,14 @@ func NewResourceTopHandler(svc ResourceTopService) *ResourceTopHandler {
 
 // TopConsumer represents a ranked container in the top consumers response.
 type TopConsumer struct {
-	ContainerID   int64   `json:"container_id"`
+	ContainerID   string  `json:"container_id"`
 	ContainerName string  `json:"container_name"`
 	Value         float64 `json:"value"`
 	Percent       float64 `json:"percent"`
 	Rank          int     `json:"rank"`
 }
 
-// HandleGetTopConsumers handles GET /api/v1/resources/top?metric=cpu|memory&limit=5&period=1h|24h|7d|30d.
+// HandleGetTopConsumers handles GET /api/v1/resources/top?metric=cpu|memory&limit=5&period=<window>.
 func (h *ResourceTopHandler) HandleGetTopConsumers(w http.ResponseWriter, r *http.Request) {
 	metric := r.URL.Query().Get("metric")
 	if metric != "cpu" && metric != "memory" {
@@ -64,17 +63,29 @@ func (h *ResourceTopHandler) HandleGetTopConsumers(w http.ResponseWriter, r *htt
 		}
 	}
 
+	hostFilter := parseHostFilter(r)
+
+	// No period at all is the realtime ranking, open in every edition: the cap
+	// is about history, not about live metrics (FR-024).
 	period := r.URL.Query().Get("period")
-	if period == "1h" || period == "24h" || period == "7d" || period == "30d" {
-		h.handlePeriodQuery(w, r, metric, period, limit)
+	if period == "" {
+		h.handleRealtimeQuery(w, metric, limit, hostFilter)
 		return
 	}
 
-	h.handleRealtimeQuery(w, metric, limit)
+	// Same catalogue and same cap as the per-container chart, decided in the
+	// same place. This endpoint served its 30d period to any edition until now
+	// (FR-014): the refusal below is what closes that.
+	window, ok := resolveHistoryWindow(w, period, "INVALID_PERIOD")
+	if !ok {
+		return
+	}
+
+	h.handlePeriodQuery(w, r, metric, window.Name, limit, hostFilter)
 }
 
-func (h *ResourceTopHandler) handlePeriodQuery(w http.ResponseWriter, r *http.Request, metric, period string, limit int) {
-	rows, err := h.svc.GetTopConsumersByPeriod(r.Context(), metric, period, limit)
+func (h *ResourceTopHandler) handlePeriodQuery(w http.ResponseWriter, r *http.Request, metric, period string, limit int, agentID *string) {
+	rows, err := h.svc.GetTopConsumersByPeriod(r.Context(), metric, period, limit, agentID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch top consumers")
 		return
@@ -98,47 +109,16 @@ func (h *ResourceTopHandler) handlePeriodQuery(w http.ResponseWriter, r *http.Re
 	})
 }
 
-func (h *ResourceTopHandler) handleRealtimeQuery(w http.ResponseWriter, metric string, limit int) {
-	all := h.svc.GetAllLatestSnapshots()
+func (h *ResourceTopHandler) handleRealtimeQuery(w http.ResponseWriter, metric string, limit int, agentID *string) {
+	rows := h.svc.TopConsumersNow(metric, limit, agentID)
 
-	type entry struct {
-		id      int64
-		value   float64
-		percent float64
-	}
-	entries := make([]entry, 0, len(all))
-	for cID, snap := range all {
-		var value, pct float64
-		switch metric {
-		case "cpu":
-			value = snap.CPUPercent
-			pct = snap.CPUPercent
-		case "memory":
-			value = float64(snap.MemUsed)
-			pct = 0.0
-			if snap.MemLimit > 0 {
-				pct = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
-			}
-		}
-		entries = append(entries, entry{id: cID, value: value, percent: pct})
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].value > entries[j].value
-	})
-
-	if limit > len(entries) {
-		limit = len(entries)
-	}
-	consumers := make([]TopConsumer, 0, limit)
-	for i := 0; i < limit; i++ {
-		e := entries[i]
-		name := h.svc.GetContainerName(e.id)
+	consumers := make([]TopConsumer, 0, len(rows))
+	for i, row := range rows {
 		consumers = append(consumers, TopConsumer{
-			ContainerID:   e.id,
-			ContainerName: name,
-			Value:         e.value,
-			Percent:       e.percent,
+			ContainerID:   row.ContainerID,
+			ContainerName: row.ContainerName,
+			Value:         row.AvgValue,
+			Percent:       row.AvgPercent,
 			Rank:          i + 1,
 		})
 	}

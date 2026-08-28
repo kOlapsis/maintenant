@@ -62,6 +62,13 @@ spec:
                   name: {{ include "maintenant.fullname" . }}-license
                   key: license-key
             {{- end }}
+            {{- if .Values.database.existingSecret }}
+            - name: MAINTENANT_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.urlKey }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -76,6 +83,15 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
+          # Migrations run before the HTTP listener starts, so /health is silent for
+          # their whole duration. Without this the liveness probe kills the pod
+          # mid-migration and leaves the schema dirty — see values.yaml.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
           livenessProbe:
             httpGet:
               path: /api/v1/health

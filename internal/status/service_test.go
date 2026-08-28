@@ -50,7 +50,7 @@ func (m *mockComponentStore) ListVisibleComponents(ctx context.Context) ([]Compo
 	return m.visibleComponents, m.visibleErr
 }
 
-func (m *mockComponentStore) ListComponentsByMonitor(ctx context.Context, monitorType string, monitorID int64) ([]Component, error) {
+func (m *mockComponentStore) ListComponentsByMonitor(ctx context.Context, monitorType string, monitorID string) ([]Component, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.componentsByMonitorErr != nil {
@@ -59,10 +59,10 @@ func (m *mockComponentStore) ListComponentsByMonitor(ctx context.Context, monito
 	return m.componentsByMonitor, nil
 }
 
-func (m *mockComponentStore) RemoveDanglingMonitorRefs(ctx context.Context, monitorType string, monitorID int64) error {
+func (m *mockComponentStore) RemoveDanglingMonitorRefs(ctx context.Context, monitorType string, monitorID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.removeDanglingCalls = append(m.removeDanglingCalls, fmt.Sprintf("%s:%d", monitorType, monitorID))
+	m.removeDanglingCalls = append(m.removeDanglingCalls, fmt.Sprintf("%s:%s", monitorType, monitorID))
 	return nil
 }
 
@@ -70,25 +70,25 @@ func (m *mockComponentStore) RemoveDanglingMonitorRefs(ctx context.Context, moni
 func (m *mockComponentStore) ListComponents(ctx context.Context) ([]Component, error) {
 	return nil, nil
 }
-func (m *mockComponentStore) GetComponent(ctx context.Context, id int64) (*Component, error) {
+func (m *mockComponentStore) GetComponent(ctx context.Context, id string) (*Component, error) {
 	return nil, nil
 }
-func (m *mockComponentStore) CreateComponent(ctx context.Context, c *Component) (int64, error) {
-	return 0, nil
+func (m *mockComponentStore) CreateComponent(ctx context.Context, c *Component) (string, error) {
+	return "", nil
 }
 func (m *mockComponentStore) UpdateComponent(ctx context.Context, c *Component) error { return nil }
-func (m *mockComponentStore) DeleteComponent(ctx context.Context, id int64) error     { return nil }
+func (m *mockComponentStore) DeleteComponent(ctx context.Context, id string) error    { return nil }
 
 // mockIncidentStore implements IncidentStore. Call counts and arguments are
 // captured so tests can assert what was called.
 type mockIncidentStore struct {
 	mu                   sync.Mutex
-	activeByComponent    map[int64]*Incident
+	activeByComponent    map[string]*Incident
 	activeByComponentErr error
-	createIncidentID     int64
+	createIncidentID     string
 	createIncidentErr    error
 	createIncidentCalls  []createIncidentCall
-	createUpdateID       int64
+	createUpdateID       string
 	createUpdateErr      error
 	createUpdateCalls    []IncidentUpdate
 	listActiveIncidents  []Incident
@@ -99,11 +99,11 @@ type mockIncidentStore struct {
 
 type createIncidentCall struct {
 	incident       Incident
-	componentIDs   []int64
+	componentIDs   []string
 	initialMessage string
 }
 
-func (m *mockIncidentStore) GetActiveIncidentByComponent(ctx context.Context, componentID int64) (*Incident, error) {
+func (m *mockIncidentStore) GetActiveIncidentByComponent(ctx context.Context, componentID string) (*Incident, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.activeByComponentErr != nil {
@@ -115,11 +115,11 @@ func (m *mockIncidentStore) GetActiveIncidentByComponent(ctx context.Context, co
 	return m.activeByComponent[componentID], nil
 }
 
-func (m *mockIncidentStore) CreateIncident(ctx context.Context, inc *Incident, componentIDs []int64, initialMessage string) (int64, error) {
+func (m *mockIncidentStore) CreateIncident(ctx context.Context, inc *Incident, componentIDs []string, initialMessage string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.createIncidentErr != nil {
-		return 0, m.createIncidentErr
+		return "", m.createIncidentErr
 	}
 	m.createIncidentCalls = append(m.createIncidentCalls, createIncidentCall{
 		incident:       *inc,
@@ -129,11 +129,11 @@ func (m *mockIncidentStore) CreateIncident(ctx context.Context, inc *Incident, c
 	return m.createIncidentID, nil
 }
 
-func (m *mockIncidentStore) CreateUpdate(ctx context.Context, u *IncidentUpdate) (int64, error) {
+func (m *mockIncidentStore) CreateUpdate(ctx context.Context, u *IncidentUpdate) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.createUpdateErr != nil {
-		return 0, m.createUpdateErr
+		return "", m.createUpdateErr
 	}
 	m.createUpdateCalls = append(m.createUpdateCalls, *u)
 	return m.createUpdateID, nil
@@ -155,14 +155,14 @@ func (m *mockIncidentStore) ListRecentIncidents(ctx context.Context, days int) (
 func (m *mockIncidentStore) ListIncidents(ctx context.Context, opts ListIncidentsOpts) ([]Incident, int, error) {
 	return nil, 0, nil
 }
-func (m *mockIncidentStore) GetIncident(ctx context.Context, id int64) (*Incident, error) {
+func (m *mockIncidentStore) GetIncident(ctx context.Context, id string) (*Incident, error) {
 	return nil, nil
 }
-func (m *mockIncidentStore) UpdateIncident(ctx context.Context, inc *Incident, componentIDs []int64) error {
+func (m *mockIncidentStore) UpdateIncident(ctx context.Context, inc *Incident, componentIDs []string) error {
 	return nil
 }
-func (m *mockIncidentStore) DeleteIncident(ctx context.Context, id int64) error { return nil }
-func (m *mockIncidentStore) ListUpdates(ctx context.Context, incidentID int64) ([]IncidentUpdate, error) {
+func (m *mockIncidentStore) DeleteIncident(ctx context.Context, id string) error { return nil }
+func (m *mockIncidentStore) ListUpdates(ctx context.Context, incidentID string) ([]IncidentUpdate, error) {
 	return nil, nil
 }
 func (m *mockIncidentStore) DeleteIncidentsOlderThan(ctx context.Context, days int) (int64, error) {
@@ -186,9 +186,9 @@ func newTestService(cs ComponentStore, is IncidentStore) *Service {
 func strPtr(s string) *string { return &s }
 
 // makeExplicitComponent creates a component with explicit composition mode and one monitor.
-func makeExplicitComponent(monitorType string, monitorID int64) *Component {
+func makeExplicitComponent(monitorType string, monitorID string) *Component {
 	return &Component{
-		ID:              10,
+		ID:              "comp-10",
 		DisplayName:     "API Gateway",
 		CompositionMode: CompositionExplicit,
 		Monitors:        []MonitorRef{{Type: monitorType, ID: monitorID}},
@@ -234,14 +234,14 @@ func TestService_DeriveComponentStatus_OverrideTakesPrecedence(t *testing.T) {
 	cs := &mockComponentStore{}
 	svc := newTestService(cs, nil)
 
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusDegraded
 	})
 
 	override := StatusMajorOutage
 	c := &Component{
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "endpoint", ID: 1}},
+		Monitors:        []MonitorRef{{Type: "endpoint", ID: "1"}},
 		StatusOverride:  &override,
 	}
 
@@ -252,8 +252,8 @@ func TestService_DeriveComponentStatus_OverrideTakesPrecedence(t *testing.T) {
 func TestService_DeriveComponentStatus_ExplicitSingleMonitor(t *testing.T) {
 	cs := &mockComponentStore{}
 	svc := newTestService(cs, nil)
-	svc.SetMonitorStatusProvider(func(_ context.Context, monitorType string, monitorID int64) string {
-		if monitorType == "endpoint" && monitorID == 42 {
+	svc.SetMonitorStatusProvider(func(_ context.Context, monitorType string, monitorID string) string {
+		if monitorType == "endpoint" && monitorID == "42" {
 			return StatusPartialOutage
 		}
 		return StatusOperational
@@ -261,7 +261,7 @@ func TestService_DeriveComponentStatus_ExplicitSingleMonitor(t *testing.T) {
 
 	c := &Component{
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "endpoint", ID: 42}},
+		Monitors:        []MonitorRef{{Type: "endpoint", ID: "42"}},
 	}
 	got := svc.DeriveComponentStatus(context.Background(), c)
 	assert.Equal(t, StatusPartialOutage, got)
@@ -270,8 +270,8 @@ func TestService_DeriveComponentStatus_ExplicitSingleMonitor(t *testing.T) {
 func TestService_DeriveComponentStatus_ExplicitMultiMonitor(t *testing.T) {
 	cs := &mockComponentStore{}
 	svc := newTestService(cs, nil)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id int64) string {
-		if id == 1 {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id string) string {
+		if id == "1" {
 			return StatusMajorOutage
 		}
 		return StatusOperational
@@ -280,8 +280,8 @@ func TestService_DeriveComponentStatus_ExplicitMultiMonitor(t *testing.T) {
 	c := &Component{
 		CompositionMode: CompositionExplicit,
 		Monitors: []MonitorRef{
-			{Type: "endpoint", ID: 1},
-			{Type: "endpoint", ID: 2},
+			{Type: "endpoint", ID: "1"},
+			{Type: "endpoint", ID: "2"},
 		},
 	}
 	got := svc.DeriveComponentStatus(context.Background(), c)
@@ -322,12 +322,12 @@ func TestService_DeriveComponentStatus_MatchAllAggregates(t *testing.T) {
 	svc := newTestService(cs, nil)
 	svc.SetMonitorPopulationProvider(func(_ context.Context, _ string) []MonitorRef {
 		return []MonitorRef{
-			{Type: "container", ID: 1},
-			{Type: "container", ID: 2},
+			{Type: "container", ID: "1"},
+			{Type: "container", ID: "2"},
 		}
 	})
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id int64) string {
-		if id == 1 {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id string) string {
+		if id == "1" {
 			return StatusMajorOutage
 		}
 		return StatusOperational
@@ -344,14 +344,14 @@ func TestService_DeriveComponentStatus_MatchAllAggregates(t *testing.T) {
 func TestService_DeriveComponentStatus_OverrideBlocksAggregate(t *testing.T) {
 	cs := &mockComponentStore{}
 	svc := newTestService(cs, nil)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusMajorOutage
 	})
 
 	override := StatusUnderMaint
 	c := &Component{
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "endpoint", ID: 1}},
+		Monitors:        []MonitorRef{{Type: "endpoint", ID: "1"}},
 		StatusOverride:  &override,
 	}
 	got := svc.DeriveComponentStatus(context.Background(), c)
@@ -361,13 +361,13 @@ func TestService_DeriveComponentStatus_OverrideBlocksAggregate(t *testing.T) {
 func TestService_DeriveComponentStatus_EmptyProviderResultDefaultsToOperational(t *testing.T) {
 	cs := &mockComponentStore{}
 	svc := newTestService(cs, nil)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return "" // provider returns empty — treated as operational by aggregate
 	})
 
 	c := &Component{
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "endpoint", ID: 7}},
+		Monitors:        []MonitorRef{{Type: "endpoint", ID: "7"}},
 	}
 	got := svc.DeriveComponentStatus(context.Background(), c)
 	// empty string is not StatusMajorOutage/Degraded/Partial → treated as operational
@@ -380,7 +380,7 @@ func TestService_DeriveComponentStatus_NoProviderDefaultsToOperational(t *testin
 
 	c := &Component{
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "heartbeat", ID: 3}},
+		Monitors:        []MonitorRef{{Type: "heartbeat", ID: "3"}},
 	}
 	got := svc.DeriveComponentStatus(context.Background(), c)
 	assert.Equal(t, StatusOperational, got)
@@ -391,8 +391,8 @@ func TestService_DeriveComponentStatus_NoProviderDefaultsToOperational(t *testin
 func TestService_ComputeGlobalStatus_AllOperational(t *testing.T) {
 	cs := &mockComponentStore{
 		visibleComponents: []Component{
-			{ID: 1, CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: 1}}},
-			{ID: 2, CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: 2}}},
+			{ID: "1", CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: "1"}}},
+			{ID: "2", CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: "2"}}},
 		},
 	}
 	svc := newTestService(cs, nil)
@@ -405,13 +405,13 @@ func TestService_ComputeGlobalStatus_AllOperational(t *testing.T) {
 func TestService_ComputeGlobalStatus_OneDegraded(t *testing.T) {
 	cs := &mockComponentStore{
 		visibleComponents: []Component{
-			{ID: 1, CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: 1}}},
-			{ID: 2, CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: 2}}},
+			{ID: "1", CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: "1"}}},
+			{ID: "2", CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: "2"}}},
 		},
 	}
 	svc := newTestService(cs, nil)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id int64) string {
-		if id == 2 {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id string) string {
+		if id == "2" {
 			return StatusDegraded
 		}
 		return StatusOperational
@@ -425,11 +425,11 @@ func TestService_ComputeGlobalStatus_OneDegraded(t *testing.T) {
 func TestService_ComputeGlobalStatus_OnePartialOutage(t *testing.T) {
 	cs := &mockComponentStore{
 		visibleComponents: []Component{
-			{ID: 1, CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: 1}}},
+			{ID: "1", CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: "1"}}},
 		},
 	}
 	svc := newTestService(cs, nil)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusPartialOutage
 	})
 
@@ -441,13 +441,13 @@ func TestService_ComputeGlobalStatus_OnePartialOutage(t *testing.T) {
 func TestService_ComputeGlobalStatus_OneMajorOutage(t *testing.T) {
 	cs := &mockComponentStore{
 		visibleComponents: []Component{
-			{ID: 1, CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: 1}}},
-			{ID: 2, CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: 2}}},
+			{ID: "1", CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: "1"}}},
+			{ID: "2", CompositionMode: CompositionExplicit, Monitors: []MonitorRef{{Type: "endpoint", ID: "2"}}},
 		},
 	}
 	svc := newTestService(cs, nil)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id int64) string {
-		if id == 1 {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, id string) string {
+		if id == "1" {
 			return StatusMajorOutage
 		}
 		return StatusOperational
@@ -461,10 +461,10 @@ func TestService_ComputeGlobalStatus_OneMajorOutage(t *testing.T) {
 func TestService_ComputeGlobalStatus_WorstWins(t *testing.T) {
 	cs := &mockComponentStore{
 		visibleComponents: []Component{
-			{ID: 1, CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusDegraded)},
-			{ID: 2, CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusPartialOutage)},
-			{ID: 3, CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusMajorOutage)},
-			{ID: 4, CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusUnderMaint)},
+			{ID: "1", CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusDegraded)},
+			{ID: "2", CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusPartialOutage)},
+			{ID: "3", CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusMajorOutage)},
+			{ID: "4", CompositionMode: CompositionExplicit, StatusOverride: strPtr(StatusUnderMaint)},
 		},
 	}
 	svc := newTestService(cs, nil)
@@ -536,20 +536,20 @@ func makeAlertEvent(severity string, isRecover bool) alert.Event {
 		IsRecover:  isRecover,
 		Message:    "connection refused",
 		EntityType: "endpoint",
-		EntityID:   5,
+		EntityID:   "ep-5",
 		EntityName: "API Gateway",
 		Timestamp:  time.Now(),
 	}
 }
 
 func TestService_HandleAlertEvent_CreatesAutoIncident(t *testing.T) {
-	comp := makeExplicitComponent("endpoint", 5)
+	comp := makeExplicitComponent("endpoint", "ep-5")
 	cs := &mockComponentStore{}
 	cs.setComponentsByMonitor([]Component{*comp})
 
-	is := &mockIncidentStore{createIncidentID: 99}
+	is := &mockIncidentStore{createIncidentID: "inc-99"}
 	svc := newTestService(cs, is)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusMajorOutage
 	})
 
@@ -564,7 +564,7 @@ func TestService_HandleAlertEvent_CreatesAutoIncident(t *testing.T) {
 	assert.Equal(t, SeverityCritical, call.incident.Severity)
 	assert.Equal(t, IncidentInvestigating, call.incident.Status)
 	assert.Contains(t, call.incident.Title, comp.DisplayName)
-	assert.Equal(t, []int64{comp.ID}, call.componentIDs)
+	assert.Equal(t, []string{comp.ID}, call.componentIDs)
 	assert.Equal(t, evt.Message, call.initialMessage)
 }
 
@@ -580,13 +580,13 @@ func TestService_HandleAlertEvent_SeverityMapping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.alertSeverity, func(t *testing.T) {
-			comp := makeExplicitComponent("endpoint", 5)
+			comp := makeExplicitComponent("endpoint", "ep-5")
 			cs := &mockComponentStore{}
 			cs.setComponentsByMonitor([]Component{*comp})
 
-			is := &mockIncidentStore{createIncidentID: 1}
+			is := &mockIncidentStore{createIncidentID: "inc-1"}
 			svc := newTestService(cs, is)
-			svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+			svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 				return StatusMajorOutage
 			})
 
@@ -602,17 +602,17 @@ func TestService_HandleAlertEvent_SeverityMapping(t *testing.T) {
 }
 
 func TestService_HandleAlertEvent_ResolvesExistingIncident(t *testing.T) {
-	comp := makeExplicitComponent("endpoint", 5)
+	comp := makeExplicitComponent("endpoint", "ep-5")
 	cs := &mockComponentStore{}
 	cs.setComponentsByMonitor([]Component{*comp})
 
-	existing := &Incident{ID: 77, Title: "API Gateway - connection refused", Status: IncidentInvestigating}
+	existing := &Incident{ID: "inc-77", Title: "API Gateway - connection refused", Status: IncidentInvestigating}
 	is := &mockIncidentStore{
-		activeByComponent: map[int64]*Incident{comp.ID: existing},
+		activeByComponent: map[string]*Incident{comp.ID: existing},
 	}
 	svc := newTestService(cs, is)
 	// Monitor is now operational (recovery).
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusOperational
 	})
 
@@ -632,16 +632,16 @@ func TestService_HandleAlertEvent_ResolvesExistingIncident(t *testing.T) {
 }
 
 func TestService_HandleAlertEvent_UpdatesExistingIncidentOnRepeat(t *testing.T) {
-	comp := makeExplicitComponent("endpoint", 5)
+	comp := makeExplicitComponent("endpoint", "ep-5")
 	cs := &mockComponentStore{}
 	cs.setComponentsByMonitor([]Component{*comp})
 
-	existing := &Incident{ID: 55, Title: "API Gateway - first alert", Status: IncidentInvestigating}
+	existing := &Incident{ID: "inc-55", Title: "API Gateway - first alert", Status: IncidentInvestigating}
 	is := &mockIncidentStore{
-		activeByComponent: map[int64]*Incident{comp.ID: existing},
+		activeByComponent: map[string]*Incident{comp.ID: existing},
 	}
 	svc := newTestService(cs, is)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusMajorOutage
 	})
 
@@ -684,10 +684,10 @@ func TestService_HandleAlertEvent_SkipsWhenComponentNotFound(t *testing.T) {
 
 func TestService_HandleAlertEvent_SkipsWhenComponentNotAutoIncident(t *testing.T) {
 	comp := &Component{
-		ID:              10,
+		ID:              "comp-10",
 		DisplayName:     "API Gateway",
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "endpoint", ID: 5}},
+		Monitors:        []MonitorRef{{Type: "endpoint", ID: "ep-5"}},
 		AutoIncident:    false,
 	}
 	cs := &mockComponentStore{}
@@ -695,7 +695,7 @@ func TestService_HandleAlertEvent_SkipsWhenComponentNotAutoIncident(t *testing.T
 
 	is := &mockIncidentStore{}
 	svc := newTestService(cs, is)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusMajorOutage
 	})
 
@@ -723,13 +723,13 @@ func TestService_HandleAlertEvent_SkipsWhenComponentStoreLookupFails(t *testing.
 }
 
 func TestService_HandleAlertEvent_RecoverWithNoActiveIncidentIsNoop(t *testing.T) {
-	comp := makeExplicitComponent("endpoint", 5)
+	comp := makeExplicitComponent("endpoint", "ep-5")
 	cs := &mockComponentStore{}
 	cs.setComponentsByMonitor([]Component{*comp})
 
 	is := &mockIncidentStore{}
 	svc := newTestService(cs, is)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusOperational
 	})
 
@@ -743,25 +743,25 @@ func TestService_HandleAlertEvent_RecoverWithNoActiveIncidentIsNoop(t *testing.T
 
 func TestService_HandleAlertEvent_MultiComponentBroadcast(t *testing.T) {
 	comp1 := &Component{
-		ID:              10,
+		ID:              "comp-10",
 		DisplayName:     "API Gateway",
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "endpoint", ID: 5}},
+		Monitors:        []MonitorRef{{Type: "endpoint", ID: "ep-5"}},
 		AutoIncident:    true,
 	}
 	comp2 := &Component{
-		ID:              20,
+		ID:              "comp-20",
 		DisplayName:     "Frontend",
 		CompositionMode: CompositionExplicit,
-		Monitors:        []MonitorRef{{Type: "endpoint", ID: 5}},
+		Monitors:        []MonitorRef{{Type: "endpoint", ID: "ep-5"}},
 		AutoIncident:    true,
 	}
 	cs := &mockComponentStore{}
 	cs.setComponentsByMonitor([]Component{*comp1, *comp2})
 
-	is := &mockIncidentStore{createIncidentID: 1}
+	is := &mockIncidentStore{createIncidentID: "inc-1"}
 	svc := newTestService(cs, is)
-	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ int64) string {
+	svc.SetMonitorStatusProvider(func(_ context.Context, _ string, _ string) string {
 		return StatusMajorOutage
 	})
 

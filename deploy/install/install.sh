@@ -79,6 +79,30 @@ Binary configuration flags (written to /etc/maintenant/maintenant.env):
   --mcpClientSecret <secret>
   --k8sNamespaces <list>
   --k8sExcludeNamespaces <list>
+  --statusUrl <url>
+  --retentionSnapshots <duration>
+  --retentionInterval <duration>
+  --retentionBatchSize <int>
+  --mode <embedded|server|agent>
+  --server <url>
+  --enrollment-token <token>
+  --label <name>
+  --grpc-listen <host:port>
+  --grpc-url <url>
+  --grpc-tls-cert <path>
+  --grpc-tls-key <path>
+  --grpc-insecure-skip-tls-verify
+  --embedded-agent
+  --ca-cert <path>
+  --database-url <postgres-url>
+
+Examples:
+  # Standalone server on this host
+  install.sh --addr 0.0.0.0:8080 --baseUrl https://maintenant.example.com
+
+  # Native agent reporting to an existing server
+  install.sh --mode agent --server grpcs://maintenant.example.com:8443 \
+             --enrollment-token TOKEN --label web-01
 
 Environment variables:
   MAINTENANT_VERSION       Version to install (default: latest)
@@ -354,7 +378,9 @@ parse_maintenant_flags() {
     NO_SERVICE=""
     DO_UNINSTALL=""
     DO_PURGE=""
-    SKIP_COSIGN=""
+    # Kept from the environment when already set: MAINTENANT_SKIP_COSIGN and the
+    # test harness both drive it that way.
+    SKIP_COSIGN="${SKIP_COSIGN:-${MAINTENANT_SKIP_COSIGN:-}}"
     BINARY_FLAG_KEYS=""
     BINARY_FLAG_VALS=""
 
@@ -369,7 +395,7 @@ parse_maintenant_flags() {
                 FLAG="${1#--}"
                 # Boolean binary flags (no value)
                 case "$FLAG" in
-                    disableTelemetry|allowPrivateWebhooks|mcp)
+                    disableTelemetry|allowPrivateWebhooks|mcp|embedded-agent|grpc-insecure-skip-tls-verify)
                         _store_binary_flag "$FLAG" "true"
                         shift
                         ;;
@@ -390,13 +416,14 @@ parse_maintenant_flags() {
 
 # ── flag_to_env ───────────────────────────────────────────────────────────────
 # Converts camelCase flag name to MAINTENANT_SCREAMING_SNAKE_CASE env name.
-# Algorithm: inverse of R5.
+# Algorithm: inverse of R5. Kebab-case multi-host flags (--grpc-listen) map the
+# same way, their separator is already the one the env name uses.
 
 flag_to_env() {
     flagname="$1"
     # Insert underscore before each uppercase letter, then upper-case all
     result=$(printf '%s' "$flagname" \
-        | sed 's/\([A-Z]\)/_\1/g' \
+        | sed 's/\([A-Z]\)/_\1/g; s/-/_/g' \
         | tr '[:lower:]' '[:upper:]')
     printf 'MAINTENANT_%s' "$result"
 }

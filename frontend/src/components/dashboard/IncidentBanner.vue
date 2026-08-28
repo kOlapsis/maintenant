@@ -16,7 +16,7 @@ import { ref } from 'vue'
 import { X, ChevronDown } from 'lucide-vue-next'
 
 export interface IncidentTimelineEntry {
-  id: number
+  id: string
   monitorType: string
   monitorName: string
   severity: 'critical' | 'warning' | 'info'
@@ -30,34 +30,29 @@ defineProps<{
 }>()
 
 const dismissed = ref(false)
-const expandedId = ref<number | null>(null)
+const expandedId = ref<string | null>(null)
 
 const severityDotClasses: Record<string, string> = {
-  critical: 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]',
-  warning: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]',
-  info: 'bg-pb-green-500',
+  critical: 'bg-mnt-sev-incident-solid shadow-[0_0_8px_rgba(244,63,94,0.5)]',
+  warning: 'bg-mnt-sev-warning-solid shadow-[0_0_8px_rgba(245,158,11,0.4)]',
+  info: 'bg-mnt-green-500',
 }
 
 const severityBorderClasses: Record<string, string> = {
   critical: 'border-l-rose-500',
   warning: 'border-l-amber-500',
-  info: 'border-l-pb-green-500',
+  info: 'border-l-mnt-green-500',
 }
 
 const timelineSteps = ['detected', 'alerted', 'acknowledged', 'resolved']
 
-function toggleExpand(id: number) {
+function toggleExpand(id: string) {
   expandedId.value = expandedId.value === id ? null : id
 }
 
 function getStepTimestamp(incident: IncidentTimelineEntry, step: string): string | null {
   const state = incident.states.find(s => s.status === step)
   return state ? state.timestamp : null
-}
-
-function formatTimestamp(ts: string): string {
-  const d = new Date(ts)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatFullTimestamp(ts: string): string {
@@ -68,15 +63,15 @@ function formatFullTimestamp(ts: string): string {
 <template>
   <div
     v-if="incidents.length > 0 && !dismissed"
-    class="bg-pb-surface rounded-2xl border border-slate-800 p-4 mb-4 shadow-lg"
+    class="bg-mnt-surface rounded-2xl border border-mnt-default p-4 mb-4 shadow-lg"
   >
     <div class="flex items-center justify-between mb-3">
-      <span class="text-sm font-bold text-pb-status-down">
+      <span class="text-sm font-bold text-mnt-status-down">
         {{ incidents.length }} Active Incident{{ incidents.length > 1 ? 's' : '' }}
       </span>
       <button
         @click="dismissed = true"
-        class="p-1.5 rounded-lg text-slate-500 hover:text-pb-primary hover:bg-slate-800 transition-colors"
+        class="p-1.5 rounded-lg text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated transition-colors"
         aria-label="Dismiss"
       >
         <X :size="14" />
@@ -86,26 +81,26 @@ function formatFullTimestamp(ts: string): string {
     <div
       v-for="incident in incidents"
       :key="incident.id"
-      class="border-t first:border-t-0 border-slate-800/50"
+      class="border-t first:border-t-0 border-mnt-default/50"
     >
       <!-- Main incident row -->
       <div
-        class="flex items-center gap-3 py-2.5 cursor-pointer rounded-lg transition-colors hover:bg-slate-800/20 border-l-2 pl-3"
+        class="flex items-center gap-3 py-2.5 cursor-pointer rounded-lg transition-colors hover:bg-mnt-elevated border-l-2 pl-3"
         :class="severityBorderClasses[incident.severity] || 'border-l-slate-600'"
         @click="toggleExpand(incident.id)"
       >
         <!-- Severity dot -->
         <span
           class="w-2 h-2 rounded-full shrink-0"
-          :class="severityDotClasses[incident.severity] || 'bg-slate-500'"
+          :class="severityDotClasses[incident.severity] || 'bg-mnt-sev-neutral-solid'"
         />
 
         <!-- Info -->
         <div class="flex-1 min-w-0">
-          <span class="text-sm font-medium text-pb-primary">
+          <span class="text-sm font-medium text-mnt-primary">
             {{ incident.monitorName }}
           </span>
-          <span class="text-xs ml-2 text-slate-500">
+          <span class="text-xs ml-2 text-mnt-muted">
             {{ incident.message }}
           </span>
         </div>
@@ -118,7 +113,7 @@ function formatFullTimestamp(ts: string): string {
               :class="
                 incident.states.some(s => s.status === step)
                   ? severityDotClasses[incident.severity]
-                  : 'bg-transparent border-slate-700'
+                  : 'bg-transparent border-mnt-default'
               "
               :title="step + (getStepTimestamp(incident, step) ? ' at ' + formatFullTimestamp(getStepTimestamp(incident, step)!) : ' (pending)')"
             />
@@ -126,7 +121,7 @@ function formatFullTimestamp(ts: string): string {
               v-if="idx < timelineSteps.length - 1"
               class="w-3 h-px"
               :class="
-                incident.states.some(s => s.status === step) ? 'bg-slate-500' : 'bg-slate-700'
+                incident.states.some(s => s.status === step) ? 'bg-mnt-sev-neutral-solid' : 'bg-mnt-elevated'
               "
             />
           </template>
@@ -135,7 +130,7 @@ function formatFullTimestamp(ts: string): string {
         <!-- Expand chevron -->
         <ChevronDown
           :size="14"
-          class="shrink-0 text-slate-500 transition-transform"
+          class="shrink-0 text-mnt-muted transition-transform"
           :class="{ 'rotate-180': expandedId === incident.id }"
         />
       </div>
@@ -147,10 +142,10 @@ function formatFullTimestamp(ts: string): string {
       >
         <div class="relative ml-2">
           <!-- Vertical connector line -->
-          <div class="absolute left-[5px] top-0 h-full w-px bg-slate-800" />
+          <div class="absolute left-[5px] top-0 h-full w-px bg-mnt-elevated" />
 
           <div
-            v-for="(step, idx) in timelineSteps"
+            v-for="step in timelineSteps"
             :key="step"
             class="relative flex items-start gap-3 pb-3 last:pb-0"
           >
@@ -160,7 +155,7 @@ function formatFullTimestamp(ts: string): string {
               :class="
                 incident.states.some(s => s.status === step)
                   ? severityDotClasses[incident.severity]
-                  : 'bg-pb-surface border-slate-700'
+                  : 'bg-mnt-surface border-mnt-default'
               "
             />
 
@@ -169,26 +164,26 @@ function formatFullTimestamp(ts: string): string {
               <div class="flex items-center gap-2">
                 <span
                   class="text-xs font-medium capitalize"
-                  :class="incident.states.some(s => s.status === step) ? 'text-pb-primary' : 'text-slate-500'"
+                  :class="incident.states.some(s => s.status === step) ? 'text-mnt-primary' : 'text-mnt-muted'"
                 >
                   {{ step }}
                 </span>
                 <span
                   v-if="getStepTimestamp(incident, step)"
-                  class="text-[11px] text-slate-500"
+                  class="text-[11px] text-mnt-muted"
                 >
                   {{ formatFullTimestamp(getStepTimestamp(incident, step)!) }}
                 </span>
                 <span
                   v-else
-                  class="text-[11px] italic text-slate-600"
+                  class="text-[11px] italic text-mnt-muted"
                 >
                   pending
                 </span>
               </div>
               <p
                 v-if="incident.states.find(s => s.status === step)?.actor"
-                class="text-[11px] mt-0.5 text-slate-500"
+                class="text-[11px] mt-0.5 text-mnt-muted"
               >
                 by {{ incident.states.find(s => s.status === step)!.actor }}
               </p>

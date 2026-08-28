@@ -26,7 +26,7 @@ type UptimeCalculator struct {
 }
 
 type cacheKey struct {
-	containerID int64
+	containerID string
 	window      string
 }
 
@@ -42,7 +42,7 @@ func NewUptimeCalculator(store ContainerStore) *UptimeCalculator {
 
 // Calculate computes uptime for a container across all windows.
 // Community tier receives only 24h; Pro+ gets all windows.
-func (u *UptimeCalculator) Calculate(ctx context.Context, containerID int64, proLicense bool) (*UptimeResult, error) {
+func (u *UptimeCalculator) Calculate(ctx context.Context, containerID string, proLicense bool) (*UptimeResult, error) {
 	result := &UptimeResult{}
 
 	h24, err := u.calculateWindow(ctx, containerID, 24*time.Hour, "24h")
@@ -74,7 +74,7 @@ func (u *UptimeCalculator) Calculate(ctx context.Context, containerID int64, pro
 	return result, nil
 }
 
-func (u *UptimeCalculator) calculateWindow(ctx context.Context, containerID int64, window time.Duration, windowName string) (*float64, error) {
+func (u *UptimeCalculator) calculateWindow(ctx context.Context, containerID string, window time.Duration, windowName string) (*float64, error) {
 	key := cacheKey{containerID: containerID, window: windowName}
 
 	// Check cache for 24h window
@@ -155,6 +155,12 @@ func computeUptime(transitions []*StateTransition, from, to time.Time) float64 {
 	}
 	// Round to 2 decimal places
 	return float64(int(pct*100)) / 100
+}
+
+// ComputeUptime is the exported entry point for the time-weighted uptime
+// calculation, reused by the per-day uptime aggregation in package sqlite.
+func ComputeUptime(transitions []*StateTransition, from, to time.Time) float64 {
+	return computeUptime(transitions, from, to)
 }
 
 func isUp(t *StateTransition) bool {

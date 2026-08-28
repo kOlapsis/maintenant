@@ -19,8 +19,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/app"
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 var (
@@ -30,11 +32,25 @@ var (
 	publicKeyB64 = ""
 )
 
+// defaultAgentDataDir is where an agent keeps its identity and liveness file
+// when MAINTENANT_DATA_DIR is unset.
+const defaultAgentDataDir = "/var/lib/maintenant"
+
 func main() {
+	// healthcheck is the image's HEALTHCHECK command: it inspects a running
+	// instance and exits, so it must run before any flag or config work.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
+	}
+
 	args := os.Args[1:]
 
-	// Intercept --mcp-stdio before flag parsing (existing behaviour preserved).
+	// Intercept --mcp-stdio before flag parsing (existing behaviour preserved),
+	// and drop it from the args so the registry does not see an unknown flag.
 	mcpStdio := len(args) > 0 && args[0] == "--mcp-stdio"
+	if mcpStdio {
+		args = args[1:]
+	}
 
 	// Intercept --help / -h and --version / -v before logger init so that
 	// slog JSON output does not pollute the human-readable output.
@@ -63,7 +79,6 @@ func main() {
 	cfg.Commit = commit
 	cfg.BuildDate = buildDate
 	cfg.PublicKeyB64 = publicKeyB64
-
 	if err := app.MergeArgsIntoConfig(&cfg, visited); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
@@ -76,14 +91,73 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
 		Level: slogLevelFrom(cfg.LogLevel),
 	}))
-	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate)
+	if cfg.MultiHost.InsecureSkipVerify {
+		logger.Warn("insecure TLS verification disabled — do not use in production")
+	}
+	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate, "mode", cfg.Mode)
+
+	// Loaded before anything can probe: both server and agent modes run from
+	// here, and a bad path must stop the process rather than turn every TLS
+	// check into a misleading "unknown authority".
+	if err := trust.Load(cfg.CACertFile); err != nil {
+		logger.Error("failed to load extra CA bundle", "error", err)
+		os.Exit(1)
+	}
+	if cfg.CACertFile != "" {
+		logger.Info("extra CA bundle trusted", "path", cfg.CACertFile)
+	}
+
+	// Checked before the agent branch: an agent handed a connection string
+	// must refuse it, not ignore it (FR-003, FR-030).
+	if err := cfg.ValidateStorage(); err != nil {
+		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
+			logger.Error("invalid storage configuration", "error", err)
+		}
+		os.Exit(1)
+	}
+
+	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary
+	// has no subcommands and this feature does not introduce any.
+	if target := visited["copy-store-to"]; target != "" {
+		if cfg.Mode == "agent" {
+			logger.Error("--copy-store-to is not accepted in agent mode",
+				"fix", "an agent has no server data set to carry")
+			os.Exit(copyExitAgentBad)
+		}
+		assumeYes := visited["yes"] == "true"
+		os.Exit(runCopy(cfg.DBPath, target, assumeYes, os.Stdout, os.Stdin, logger))
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// mode=agent: run enrollment then exit — no HTTP server needed.
+	if cfg.Mode == "agent" {
+		dataDir := os.Getenv("MAINTENANT_DATA_DIR")
+		if dataDir == "" {
+			dataDir = defaultAgentDataDir
+		}
+		agentCfg := agent.AgentConfig{
+			DataDir:            dataDir,
+			ServerURL:          cfg.MultiHost.ServerURL,
+			EnrollmentToken:    cfg.MultiHost.EnrollmentToken,
+			RuntimeOverride:    cfg.MultiHost.RuntimeOverride,
+			Label:              cfg.MultiHost.Label,
+			AgentVersion:       version,
+			InsecureSkipVerify: cfg.MultiHost.InsecureSkipVerify,
+		}
+		if err := agent.Run(ctx, agentCfg, logger); err != nil {
+			logger.Error("agent run failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	application, err := app.New(cfg, logger)
 	if err != nil {
-		logger.Error("failed to initialize application", "error", err)
+		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
+			logger.Error("failed to initialize application", "error", err)
+		}
 		os.Exit(1)
 	}
 

@@ -27,7 +27,8 @@ import (
 
 // K8sWorkload represents a Kubernetes controller.
 type K8sWorkload struct {
-	ID              string            // "{namespace}/{kind}/{name}"
+	ID              string // "{namespace}/{kind}/{name}"
+	AgentID         string // reporting agent; empty/LocalAgent for the server's own cluster
 	Name            string
 	Namespace       string
 	Kind            string // Deployment, StatefulSet, DaemonSet, Job
@@ -43,6 +44,7 @@ type K8sWorkload struct {
 
 // K8sPod represents a single Kubernetes pod.
 type K8sPod struct {
+	AgentID      string // reporting agent; empty/LocalAgent for the server's own cluster
 	Name         string
 	Namespace    string
 	Status       string // Running, Pending, Succeeded, Failed, Unknown
@@ -91,6 +93,15 @@ type K8sEvent struct {
 	FirstSeen time.Time
 	LastSeen  time.Time
 	Count     int32
+}
+
+// K8sEventRef is a K8sEvent plus the object it concerns, so the server can store
+// it per-agent and serve it back for the matching workload or pod detail view.
+type K8sEventRef struct {
+	K8sEvent
+	InvolvedKind      string
+	InvolvedNamespace string
+	InvolvedName      string
 }
 
 // PodFilters are optional filters for ListPods.
@@ -377,6 +388,43 @@ func (r *Runtime) listPodEvents(ctx context.Context, ns, name string) ([]K8sEven
 	return r.fetchEvents(ctx, ns, fieldSelector)
 }
 
+// ListAllEvents returns recent events across all allowed namespaces, each tagged
+// with the object it concerns, so the server can persist them per-agent and
+// serve them back on workload/pod detail views.
+func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
+	evtList, err := r.clientset.CoreV1().Events("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list all events: %w", err)
+	}
+
+	result := make([]K8sEventRef, 0, len(evtList.Items))
+	for i := range evtList.Items {
+		e := &evtList.Items[i]
+		if !r.nsFilter.IsAllowed(e.InvolvedObject.Namespace) {
+			continue
+		}
+		source := e.Source.Component
+		if e.Source.Host != "" {
+			source += "/" + e.Source.Host
+		}
+		result = append(result, K8sEventRef{
+			K8sEvent: K8sEvent{
+				Type:      e.Type,
+				Reason:    e.Reason,
+				Message:   e.Message,
+				Source:    source,
+				FirstSeen: e.FirstTimestamp.Time,
+				LastSeen:  e.LastTimestamp.Time,
+				Count:     e.Count,
+			},
+			InvolvedKind:      e.InvolvedObject.Kind,
+			InvolvedNamespace: e.InvolvedObject.Namespace,
+			InvolvedName:      e.InvolvedObject.Name,
+		})
+	}
+	return result, nil
+}
+
 func (r *Runtime) fetchEvents(ctx context.Context, ns, fieldSelector string) ([]K8sEvent, error) {
 	evtList, err := r.clientset.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
 		FieldSelector: fieldSelector,
@@ -443,7 +491,7 @@ func mapDeploymentWorkload(dep *appsv1.Deployment) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}
@@ -478,7 +526,7 @@ func mapStatefulSetWorkload(ss *appsv1.StatefulSet) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}
@@ -510,7 +558,7 @@ func mapDaemonSetWorkload(ds *appsv1.DaemonSet) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}
@@ -545,7 +593,7 @@ func mapJobWorkload(job *batchv1.Job) K8sWorkload {
 			Message:        c.Message,
 			LastTransition: c.LastTransitionTime.Time,
 		})
-		if c.LastTransitionTime.Time.After(lastTransition) {
+		if c.LastTransitionTime.After(lastTransition) {
 			lastTransition = c.LastTransitionTime.Time
 		}
 	}

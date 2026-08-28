@@ -41,6 +41,12 @@ const (
 	PingExitCode PingType = "exit_code"
 )
 
+// Heartbeat alert types (Source is always SourceHeartbeat in internal/alert).
+const (
+	AlertTypeDeadlineMissed  = "deadline_missed"
+	AlertTypeExitCodeFailure = "exit_code_failure"
+)
+
 // ExecutionOutcome represents the result of a job execution.
 type ExecutionOutcome string
 
@@ -59,10 +65,10 @@ const (
 	MaxNameLength      = 255
 )
 
-// Heartbeat represents a passive heartbeat monitor.
+// Heartbeat represents a passive heartbeat monitor. Its ID is the public ping
+// token (a UUID), which doubles as the primary key.
 type Heartbeat struct {
-	ID                   int64           `json:"id"`
-	UUID                 string          `json:"uuid"`
+	ID                   string          `json:"id"`
 	Name                 string          `json:"name"`
 	Status               HeartbeatStatus `json:"status"`
 	AlertState           AlertState      `json:"alert_state"`
@@ -78,17 +84,18 @@ type Heartbeat struct {
 	Active               bool            `json:"active"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
+	AgentID              string          `json:"agent_id"`
 }
 
-// PingURL returns the relative ping URL for this heartbeat.
+// PingURL returns the relative ping URL for this heartbeat. The id is the token.
 func (h *Heartbeat) PingURL() string {
-	return "/ping/" + h.UUID
+	return "/ping/" + h.ID
 }
 
 // HeartbeatPing represents a raw ping event.
 type HeartbeatPing struct {
-	ID          int64     `json:"id"`
-	HeartbeatID int64     `json:"heartbeat_id"`
+	ID          string    `json:"id"`
+	HeartbeatID string    `json:"heartbeat_id"`
 	PingType    PingType  `json:"ping_type"`
 	ExitCode    *int      `json:"exit_code,omitempty"`
 	SourceIP    string    `json:"source_ip"`
@@ -99,8 +106,8 @@ type HeartbeatPing struct {
 
 // HeartbeatExecution represents a logical job run.
 type HeartbeatExecution struct {
-	ID          int64            `json:"id"`
-	HeartbeatID int64            `json:"heartbeat_id"`
+	ID          string           `json:"id"`
+	HeartbeatID string           `json:"heartbeat_id"`
 	StartedAt   *time.Time       `json:"started_at,omitempty"`
 	CompletedAt *time.Time       `json:"completed_at,omitempty"`
 	DurationMs  *int64           `json:"duration_ms,omitempty"`
@@ -113,6 +120,9 @@ type HeartbeatExecution struct {
 type ListHeartbeatsOpts struct {
 	Status          string
 	IncludeInactive bool
+	// AgentFilter filters by agent_id. Nil = no filter; "local" = the local
+	// sentinel agent; UUID = specific agent.
+	AgentFilter *string
 }
 
 // ListPingsOpts configures ping listing queries.

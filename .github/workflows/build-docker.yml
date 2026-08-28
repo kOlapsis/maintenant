@@ -1,3 +1,17 @@
+# Builds the multi-architecture image, scans it, and publishes it to GHCR.
+#
+# Three call paths share one definition:
+# - pull_request: both architectures are built but never pushed, and the amd64
+#   image is loaded locally and scanned with Trivy. This is the image gate.
+# - push to main: the `main` and short-sha tags are published.
+# - workflow_call from release.yml: the semver tags and `latest` are published,
+#   and the manifest list digest is returned so the caller can attest and sign it.
+#
+# Security model: no default token permissions, every action pinned to a full
+# commit SHA, checkout without persisted credentials, dynamic values passed
+# through env: rather than interpolated into run: blocks, and no build cache on
+# the path that publishes (a pull request can poison the GHA cache, and a
+# published image must restore nothing from it).
 name: Build and Push Docker
 
 on:
@@ -8,56 +22,254 @@ on:
         required: false
         type: boolean
         default: true
+    outputs:
+      image:
+        description: "Full reference of the published image (no tag)"
+        value: ${{ jobs.merge.outputs.image }}
+      digest:
+        description: "Immutable digest of the published manifest list"
+        value: ${{ jobs.merge.outputs.digest }}
+      version:
+        description: "Primary tag computed by docker/metadata-action"
+        value: ${{ jobs.merge.outputs.version }}
   push:
     branches: [main]
-    tags:
-      - "v*"
   pull_request:
     branches: [main]
+
+# No default rights: every job declares the strict minimum it needs.
+permissions: {}
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: kolapsis/maintenant
 
+concurrency:
+  group: build-docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # What this run has to consider. Every heavy job below is gated on it, so a
+  # change that cannot alter a verdict does not pay for one. The classification
+  # lives in scripts/ci-changed-paths.sh and fails open: an unknown path, a
+  # missing range or a diff that errors turns the whole pipeline back on.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # Full history: the classification diffs against the base commit, which a
+      # shallow clone does not carry.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify the changed paths
+        id: classify
+        env:
+          # Both are empty on any other event, and an empty range is what makes
+          # a manual dispatch, a schedule or a release run everything.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: scripts/ci-changed-paths.sh
+
   build:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.platform }})
+    needs: [changes]
+    # Nothing that reaches the image changed, so the image would come out
+    # identical. On a release the range is empty, so this is always true.
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: amd64
+            runner: ubuntu-24.04
+          - platform: arm64
+            runner: ubuntu-24.04-arm
 
     steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
       - name: Validate required secrets
+        env:
+          LICENSE_PUBLIC_KEY: ${{ vars.LICENSE_PUBLIC_KEY }}
         run: |
           if [ -z "$LICENSE_PUBLIC_KEY" ]; then
             echo "::error::LICENSE_PUBLIC_KEY secret is not set. Aborting build."
             exit 1
           fi
-        env:
-          LICENSE_PUBLIC_KEY: ${{ secrets.LICENSE_PUBLIC_KEY }}
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Compute build metadata
         run: |
-          # VERSION: strip leading 'v' from tag, or use ref name
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "BUILD_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-            echo "IMAGE_TAG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
           else
             echo "BUILD_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
           fi
-          # BUILD_DATE: ISO 8601 timestamp
           echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
 
+      # Dynamic data goes through env: and never through ${{ }} inside run:
+      # (template injection).
+      - name: Compute push decision
+        id: push_decision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PUSH: ${{ inputs.push }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" ]] && \
+             [[ "$INPUT_PUSH" == "true" || \
+                "$IS_TAG" == "true" || \
+                "$REF" == "refs/heads/main" ]]; then
+            echo "should_push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_push=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Login to GitHub Container Registry
+        if: steps.push_decision.outputs.should_push == 'true'
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        if: steps.push_decision.outputs.should_push == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          # No cache on the publishing path: a PR can poison the GHA cache, and
+          # a published image must restore nothing from it.
+          no-cache: true
+          build-args: |
+            VERSION=${{ env.BUILD_VERSION }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            LICENSE_PUBLIC_KEY=${{ vars.LICENSE_PUBLIC_KEY }}
+
+      - name: Build (PR validation)
+        if: steps.push_decision.outputs.should_push != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.platform }}
+          push: false
+          # The amd64 image is loaded into the local daemon so Trivy can scan it.
+          load: ${{ matrix.platform == 'amd64' }}
+          tags: local/maintenant:validation
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          build-args: |
+            VERSION=${{ env.BUILD_VERSION }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            LICENSE_PUBLIC_KEY=${{ vars.LICENSE_PUBLIC_KEY }}
+
+      # --ignore-unfixed: block on fixable CVEs only, not on Alpine OS advisories
+      # with no upstream fix, which are outside our control.
+      - name: Scan the image (Trivy)
+        if: steps.push_decision.outputs.should_push != 'true' && matrix.platform == 'amd64'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: local/maintenant:validation
+          scan-type: image
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Export digest
+        if: steps.push_decision.outputs.should_push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: steps.push_decision.outputs.should_push == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.platform }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: build
+    if: github.event_name != 'pull_request' && (inputs.push || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.refs.outputs.image }}
+      digest: ${{ steps.digest.outputs.digest }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -68,29 +280,35 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Expose the image reference
+        id: refs
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: echo "image=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' && (inputs.push || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') }}
-          provenance: false
-          tags: |
-            ${{ steps.meta.outputs.tags }}
-            ${{ env.IMAGE_TAG && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, env.IMAGE_TAG) || '' }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            VERSION=${{ env.BUILD_VERSION }}
-            COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ env.BUILD_DATE }}
-            LICENSE_PUBLIC_KEY=${{ secrets.LICENSE_PUBLIC_KEY }}
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${IMAGE_REF}@sha256:%s " *)
+
+      # The manifest list digest is the subject of the release attestations.
+      - name: Read the manifest list digest
+        id: digest
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          digest="$(docker buildx imagetools inspect "${IMAGE_REF}:${VERSION}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect image
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: docker buildx imagetools inspect "${IMAGE_REF}:${VERSION}"

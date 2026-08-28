@@ -14,10 +14,14 @@ import type { ContainerGroup } from '@/stores/containers.ts'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
 export interface Container {
-  id: number
+  id: string
   external_id: string
   name: string
   image: string
+  // Set by the server when the reporting agent has no live stream: the state
+  // below is last-known, not live. The UI degrades it to offline.
+  stale?: boolean
+  agent_offline?: boolean
   state: string
   health_status: string | null
   has_health_check: boolean
@@ -47,6 +51,9 @@ export interface Container {
   swarm_node_id?: string
   swarm_task_slot?: number
   swarm_desired_replicas?: number
+  agent_id?: string | null
+  agent_hostname?: string | null
+  agent_label?: string | null
 }
 
 export interface ContainerListResponse {
@@ -68,7 +75,7 @@ export interface ContainerDetailResponse extends Container {
 }
 
 export interface StateTransition {
-  id: number
+  id: string
   previous_state: string
   new_state: string
   previous_health?: string
@@ -79,7 +86,7 @@ export interface StateTransition {
 }
 
 export interface TransitionsResponse {
-  container_id: number
+  container_id: string
   transitions: StateTransition[]
   total: number
   has_more: boolean
@@ -89,6 +96,7 @@ export interface ListContainersParams {
   archived?: boolean
   group?: string
   state?: string
+  agent_id?: string
 }
 
 export interface ListTransitionsParams {
@@ -98,7 +106,7 @@ export interface ListTransitionsParams {
   offset?: number
 }
 
-import { apiFetch } from './apiFetch'
+import { apiFetch, guardedFetch } from './apiFetch'
 
 function fetchJSON<T>(url: string): Promise<T> {
   return apiFetch<T>(url)
@@ -109,19 +117,20 @@ export function listContainers(params?: ListContainersParams): Promise<Container
   if (params?.archived) url.searchParams.set('archived', 'true')
   if (params?.group) url.searchParams.set('group', params.group)
   if (params?.state) url.searchParams.set('state', params.state)
+  if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id)
   return fetchJSON<ContainerListResponse>(url.toString())
 }
 
-export function getContainer(id: number): Promise<ContainerDetailResponse> {
+export function getContainer(id: string): Promise<ContainerDetailResponse> {
   return fetchJSON<ContainerDetailResponse>(`${API_BASE}/containers/${id}`)
 }
 
-export async function deleteContainer(id: number): Promise<void> {
-  await fetch(`${API_BASE}/containers/${id}`, { method: 'DELETE' })
+export async function deleteContainer(id: string): Promise<void> {
+  await guardedFetch(`${API_BASE}/containers/${id}`, { method: 'DELETE' })
 }
 
 export function listTransitions(
-  id: number,
+  id: string,
   params?: ListTransitionsParams,
 ): Promise<TransitionsResponse> {
   const url = new URL(`${API_BASE}/containers/${id}/transitions`, window.location.origin)

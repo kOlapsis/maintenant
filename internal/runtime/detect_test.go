@@ -24,8 +24,9 @@ import (
 // fakeRuntime is a minimal Runtime implementation for testing detection.
 type fakeRuntime struct{ name string }
 
-func (f *fakeRuntime) Connect(context.Context) error { return nil }
-func (f *fakeRuntime) IsConnected() bool             { return true }
+func (f *fakeRuntime) Connect(context.Context) error    { return nil }
+func (f *fakeRuntime) TryConnect(context.Context) error { return nil }
+func (f *fakeRuntime) IsConnected() bool                { return true }
 func (f *fakeRuntime) SetDisconnected()              {}
 func (f *fakeRuntime) Close() error                  { return nil }
 func (f *fakeRuntime) Name() string                  { return f.name }

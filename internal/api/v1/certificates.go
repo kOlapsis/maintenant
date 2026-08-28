@@ -12,6 +12,7 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"strconv"
 
 	"github.com/kolapsis/maintenant/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // CertificateHandler handles certificate monitor CRUD endpoints.
@@ -37,10 +39,13 @@ func (h *CertificateHandler) HandleList(w http.ResponseWriter, r *http.Request) 
 		Status: r.URL.Query().Get("status"),
 		Source: r.URL.Query().Get("source"),
 	}
+	if a := r.URL.Query().Get("agent_id"); a != "" {
+		opts.AgentFilter = &a
+	}
 
 	monitors, err := h.svc.ListMonitors(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list certificates")
+		WriteStoreError(w, err, "Failed to list certificates")
 		return
 	}
 
@@ -71,8 +76,8 @@ func (h *CertificateHandler) HandleList(w http.ResponseWriter, r *http.Request) 
 
 // HandleGet handles GET /api/v1/certificates/{id}
 func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}
@@ -87,18 +92,54 @@ func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	WriteJSON(w, http.StatusOK, h.monitorResponse(r.Context(), monitor))
+}
+
+// HandleCheckNow handles POST /api/v1/certificates/{id}/check. It scans the target
+// right away and answers with the refreshed monitor, so a renewed certificate can
+// be confirmed without waiting for the next scheduled check.
+func (h *CertificateHandler) HandleCheckNow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
+		return
+	}
+
+	monitor, err := h.svc.CheckNow(r.Context(), id)
+	switch {
+	case errors.Is(err, certificate.ErrMonitorNotFound):
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Certificate monitor not found")
+		return
+	case errors.Is(err, certificate.ErrAgentScanned):
+		WriteError(w, http.StatusConflict, "AGENT_SCANNED",
+			"This certificate is scanned by its agent, which re-checks it on its own cycle")
+		return
+	case errors.Is(err, certificate.ErrCheckInProgress):
+		WriteError(w, http.StatusConflict, "CHECK_IN_PROGRESS", "A check is already running for this monitor")
+		return
+	case err != nil:
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check certificate")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, h.monitorResponse(r.Context(), monitor))
+}
+
+// monitorResponse builds the monitor payload with its latest check result and
+// chain. Shared by the read and the on-demand check so both answer the same shape.
+func (h *CertificateHandler) monitorResponse(ctx context.Context, monitor *certificate.CertMonitor) map[string]interface{} {
 	response := map[string]interface{}{
 		"certificate": monitor,
 	}
 
 	// Include latest check result with chain
-	latest, err := h.svc.GetLatestCheckResult(r.Context(), id)
+	latest, err := h.svc.GetLatestCheckResult(ctx, monitor.ID)
 	if err == nil && latest != nil {
-		chain, _ := h.svc.GetChainEntries(r.Context(), latest.ID)
+		chain, _ := h.svc.GetChainEntries(ctx, latest.ID)
 		if chain == nil {
 			chain = []*certificate.CertChainEntry{}
 		}
-		response["latest_check"] = map[string]interface{}{
+		latestCheckMap := map[string]interface{}{
 			"id":                  latest.ID,
 			"subject_cn":          latest.SubjectCN,
 			"issuer_cn":           latest.IssuerCN,
@@ -116,9 +157,23 @@ func (h *CertificateHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 			"checked_at":          latest.CheckedAt,
 			"chain":               chain,
 		}
+		if latest.OCSPStapled {
+			latestCheckMap["ocsp_stapled"] = true
+			latestCheckMap["ocsp_status"] = latest.OCSPStatus
+			if latest.OCSPProducedAt != nil {
+				latestCheckMap["ocsp_produced_at"] = latest.OCSPProducedAt
+			}
+			if latest.OCSPNextUpdate != nil {
+				latestCheckMap["ocsp_next_update"] = latest.OCSPNextUpdate
+			}
+			if latest.OCSPError != "" {
+				latestCheckMap["ocsp_error"] = latest.OCSPError
+			}
+		}
+		response["latest_check"] = latestCheckMap
 	}
 
-	WriteJSON(w, http.StatusOK, response)
+	return response
 }
 
 // HandleCreate handles POST /api/v1/certificates
@@ -142,8 +197,7 @@ func (h *CertificateHandler) HandleCreate(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if errors.Is(err, certificate.ErrLimitReached) {
-			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
-				"Community edition is limited to 5 certificate monitors. Upgrade to Pro for unlimited monitoring.")
+			refuseQuota(w, extension.ResourceCertificates)
 			return
 		}
 		if errors.Is(err, certificate.ErrInvalidInput) {
@@ -163,8 +217,8 @@ func (h *CertificateHandler) HandleCreate(w http.ResponseWriter, r *http.Request
 
 // HandleUpdate handles PUT /api/v1/certificates/{id}
 func (h *CertificateHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}
@@ -196,8 +250,8 @@ func (h *CertificateHandler) HandleUpdate(w http.ResponseWriter, r *http.Request
 
 // HandleDelete handles DELETE /api/v1/certificates/{id}
 func (h *CertificateHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}
@@ -221,8 +275,8 @@ func (h *CertificateHandler) HandleDelete(w http.ResponseWriter, r *http.Request
 
 // HandleListChecks handles GET /api/v1/certificates/{id}/checks
 func (h *CertificateHandler) HandleListChecks(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid certificate monitor ID")
 		return
 	}
@@ -247,17 +301,39 @@ func (h *CertificateHandler) HandleListChecks(w http.ResponseWriter, r *http.Req
 
 	checks, total, err := h.svc.ListCheckResults(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list check results")
+		WriteStoreError(w, err, "Failed to list check results")
 		return
 	}
 
-	if checks == nil {
-		checks = []*certificate.CertCheckResult{}
+	enriched := make([]map[string]interface{}, 0, len(checks))
+	for _, c := range checks {
+		m := map[string]interface{}{
+			"id":             c.ID,
+			"checked_at":     c.CheckedAt,
+			"days_remaining": c.DaysRemaining(),
+		}
+		if c.ErrorMessage != "" {
+			m["error_message"] = c.ErrorMessage
+		}
+		if c.NotAfter != nil {
+			m["not_after"] = c.NotAfter
+		}
+		if c.ChainValid != nil {
+			m["chain_valid"] = *c.ChainValid
+		}
+		if c.HostnameMatch != nil {
+			m["hostname_match"] = *c.HostnameMatch
+		}
+		if c.OCSPStapled {
+			m["ocsp_stapled"] = true
+			m["ocsp_status"] = c.OCSPStatus
+		}
+		enriched = append(enriched, m)
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"monitor_id": id,
-		"checks":     checks,
+		"checks":     enriched,
 		"total":      total,
 		"has_more":   opts.Offset+len(checks) < total,
 	})

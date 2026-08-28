@@ -24,26 +24,26 @@ const badgeConfig = computed(() => {
   if (!props.update) return null
 
   if (props.update.status === 'pinned') {
-    return { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)', icon: Pin, label: 'Pinned' }
+    return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)', icon: Pin, label: 'Pinned' }
   }
 
   switch (props.update.update_type) {
     case 'major':
-      return { color: 'var(--pb-status-down)', bg: 'var(--pb-status-down-bg)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
+      return { color: 'var(--mnt-status-down)', bg: 'var(--mnt-status-down-bg)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
     case 'minor':
-      return { color: 'var(--pb-status-warn)', bg: 'var(--pb-status-warn-bg)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
+      return { color: 'var(--mnt-status-warn)', bg: 'var(--mnt-status-warn-bg)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
     case 'patch':
       return { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', icon: ArrowRight, label: `${props.update.current_tag} → ${props.update.latest_tag}` }
     case 'digest_only':
-      return { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)', icon: ArrowRight, label: 'New digest' }
+      return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)', icon: ArrowRight, label: 'New digest' }
     default:
-      return { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)', icon: ArrowRight, label: 'Update' }
+      return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)', icon: ArrowRight, label: 'Update' }
   }
 })
 </script>
 
 <template>
-  <div v-if="!update" class="inline-flex items-center gap-1 text-[10px]" :style="{ color: 'var(--pb-status-ok)' }">
+  <div v-if="!update" class="inline-flex items-center gap-1 text-[10px]" :style="{ color: 'var(--mnt-status-ok)' }">
     <Check :size="10" />
     <span class="font-medium">Up to date</span>
   </div>

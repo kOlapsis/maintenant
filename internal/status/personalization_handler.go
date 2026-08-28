@@ -102,9 +102,8 @@ func (h *PersonalizationPublicHandler) HandleSettingsJSON(w http.ResponseWriter,
 		return
 	}
 
-	isEnterprise := extension.CurrentEdition() == extension.Enterprise
-
-	if !isEnterprise {
+	// The configuration stays readable; only its public application stops.
+	if !extension.Allows(extension.CapPersonalization) {
 		settings = DefaultSettings()
 	}
 
@@ -148,7 +147,7 @@ func (h *PersonalizationPublicHandler) HandleSettingsJSON(w http.ResponseWriter,
 		DateFormat: settings.DateFormat,
 	}
 
-	if isEnterprise {
+	if extension.Allows(extension.CapPersonalization) {
 		for _, role := range []AssetRole{AssetRoleLogo, AssetRoleFavicon, AssetRoleHero} {
 			asset, err := h.svc.GetAsset(ctx, role)
 			if err != nil {

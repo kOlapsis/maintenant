@@ -59,6 +59,7 @@ func newMetricsProvider(deps Deps, logger *slog.Logger) func() map[string]any {
 
 		return map[string]any{
 			"edition":                 safeEdition(deps.Edition, logger),
+			"storage_engine":          safeStorageEngine(deps.StorageEngine),
 			"containers_total":        safeCount(ctx, deps.Containers, "containers", logger),
 			"endpoints_total":         safeCount(ctx, deps.Endpoints, "endpoints", logger),
 			"heartbeats_total":        safeCount(ctx, deps.Heartbeats, "heartbeats", logger),
@@ -67,6 +68,18 @@ func newMetricsProvider(deps Deps, logger *slog.Logger) func() map[string]any {
 			"status_components_total": safeCount(ctx, deps.StatusComponents, "status_components", logger),
 		}
 	}
+}
+
+// safeStorageEngine reports the storage engine, defaulting to the engine
+// every install has when nothing says otherwise.
+func safeStorageEngine(f func() string) string {
+	if f == nil {
+		return "sqlite"
+	}
+	if engine := f(); engine != "" {
+		return engine
+	}
+	return "sqlite"
 }
 
 // safeCount calls c.CountConfigured under recover. On panic or error,

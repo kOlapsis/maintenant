@@ -19,6 +19,7 @@ import {
   type SwarmNodeResponse,
   type SwarmClusterResponse,
 } from '@/services/swarmApi'
+import { useResourcesStore } from '@/stores/resources'
 import { sseBus } from '@/services/sseBus'
 
 export interface CrashLoopState {
@@ -50,7 +51,7 @@ export const useSwarmStore = defineStore('swarm', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // Enterprise state
+  // Pro state
   const crashLoops = ref<Map<string, CrashLoopState>>(new Map())
   const updateProgress = ref<Map<string, UpdateProgressState>>(new Map())
 
@@ -86,7 +87,7 @@ export const useSwarmStore = defineStore('swarm', () => {
     loading.value = true
     error.value = null
     try {
-      const resp = await fetchSwarmNodes()
+      const resp = await fetchSwarmNodes(useResourcesStore().entityQuery)
       nodes.value = resp.nodes
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load nodes'
@@ -116,7 +117,9 @@ export const useSwarmStore = defineStore('swarm', () => {
         nodes.value[idx] = {
           ...existing,
           status: (data.new_status ?? data.status ?? existing.status) as string,
-          availability: (data.new_availability ?? data.availability ?? existing.availability) as string,
+          availability: (data.new_availability ??
+            data.availability ??
+            existing.availability) as string,
           last_seen_at: new Date().toISOString(),
           last_status_change_at: new Date().toISOString(),
         }
@@ -125,7 +128,9 @@ export const useSwarmStore = defineStore('swarm', () => {
       }
       // Refresh cluster overview when node state changes.
       loadCluster()
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onSwarmStatus(e: MessageEvent) {
@@ -138,7 +143,9 @@ export const useSwarmStore = defineStore('swarm', () => {
         manager_count: data.manager_count,
         worker_count: data.worker_count,
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onNodeStatusChanged(e: MessageEvent) {
@@ -150,14 +157,18 @@ export const useSwarmStore = defineStore('swarm', () => {
         nodes.value[idx] = {
           ...existing,
           status: (data.new_status ?? data.status ?? existing.status) as string,
-          availability: (data.new_availability ?? data.availability ?? existing.availability) as string,
+          availability: (data.new_availability ??
+            data.availability ??
+            existing.availability) as string,
           last_seen_at: new Date().toISOString(),
           last_status_change_at: new Date().toISOString(),
         }
       } else {
         loadNodes()
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onCrashLoopDetected(e: MessageEvent) {
@@ -170,14 +181,18 @@ export const useSwarmStore = defineStore('swarm', () => {
         last_error: data.last_error,
         timestamp: data.timestamp,
       })
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onCrashLoopRecovered(e: MessageEvent) {
     try {
       const data = JSON.parse(e.data)
       crashLoops.value.delete(data.service_id)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onUpdateProgressEvent(e: MessageEvent) {
@@ -194,20 +209,40 @@ export const useSwarmStore = defineStore('swarm', () => {
         message: data.message,
         timestamp: data.timestamp,
       })
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onUpdateCompleted(e: MessageEvent) {
     try {
       const data = JSON.parse(e.data)
       updateProgress.value.delete(data.service_id)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // onTopologyChanged refetches nodes when a remote agent's swarm snapshot is
+  // reconciled and matches the current host scope ('local' uses the live
+  // node_status/node_updated events instead).
+  function onTopologyChanged(e: MessageEvent) {
+    try {
+      const data = JSON.parse(e.data) as { agent_id: string }
+      const sel = useResourcesStore().selected
+      if (sel === 'local') return
+      if (sel !== null && sel !== data.agent_id) return
+      loadNodes()
+    } catch {
+      /* ignore */
+    }
   }
 
   function startListening() {
     sseBus.on('swarm.status', onSwarmStatus)
     sseBus.on('swarm.node_status_changed', onNodeStatusChanged)
     sseBus.on('swarm.node_updated', onSwarmNodeUpdated)
+    sseBus.on('swarm.topology_changed', onTopologyChanged)
     sseBus.on('swarm.crash_loop_detected', onCrashLoopDetected)
     sseBus.on('swarm.crash_loop_recovered', onCrashLoopRecovered)
     sseBus.on('swarm.update_progress', onUpdateProgressEvent)
@@ -218,6 +253,7 @@ export const useSwarmStore = defineStore('swarm', () => {
     sseBus.off('swarm.status', onSwarmStatus)
     sseBus.off('swarm.node_status_changed', onNodeStatusChanged)
     sseBus.off('swarm.node_updated', onSwarmNodeUpdated)
+    sseBus.off('swarm.topology_changed', onTopologyChanged)
     sseBus.off('swarm.crash_loop_detected', onCrashLoopDetected)
     sseBus.off('swarm.crash_loop_recovered', onCrashLoopRecovered)
     sseBus.off('swarm.update_progress', onUpdateProgressEvent)

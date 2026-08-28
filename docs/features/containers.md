@@ -1,6 +1,6 @@
 # Container Monitoring
 
-Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked the moment it starts.
+Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked the moment it starts. The container runtime is **optional** — endpoint, SSL certificate, and heartbeat monitors continue working fully even without it.
 
 ![Container Monitoring](../screen-captures/2-containers.png)
 
@@ -9,6 +9,8 @@ Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked
 ## How It Works
 
 maintenant connects to your container runtime (Docker socket or Kubernetes API) and watches for container lifecycle events in real time. There is nothing to configure — every container is discovered automatically.
+
+If the runtime is unreachable at startup, maintenant enters **degraded mode**: it starts normally, all non-container monitors remain fully operational, and container monitoring resumes automatically once the runtime becomes available — no restart required.
 
 When a new container starts, maintenant immediately begins tracking:
 
@@ -127,6 +129,23 @@ This is useful for infrastructure containers (reverse proxies, sidecars) that ad
 Each container's detail panel displays network security insights detected by maintenant's analyzer. These include exposed ports binding to `0.0.0.0`, database ports without restriction, host-network mode, and privileged containers.
 
 See [Network Security Insights](security.md) for full details.
+
+---
+
+## Degraded Mode
+
+If the container runtime (Docker socket or Kubernetes API) is unavailable when maintenant starts, or becomes unavailable while running, container monitoring enters **degraded mode**:
+
+- The app starts and serves the full UI and API normally.
+- Endpoint, SSL certificate, and heartbeat monitors are **unaffected** — they continue checking and alerting as usual.
+- Container list and detail pages show **last-known data** (marked as stale) so history is preserved.
+- Live operations (log streaming, real-time stats) return a clear error instead of crashing.
+- A non-blocking banner appears on the Containers and Dashboard pages.
+- The runtime availability is exposed on `GET /api/v1/health` (`runtime.connected: false`) and broadcast in real time via SSE when the state changes.
+
+**Automatic recovery**: maintenant retries the runtime connection in the background. When the runtime becomes reachable again, container monitoring resumes — reconciliation runs, the event stream restarts, and the banner disappears — all without a restart.
+
+This makes it safe to run maintenant without mounting the Docker socket, or to temporarily stop Docker during a host maintenance window while keeping all other monitors active.
 
 ---
 

@@ -24,6 +24,7 @@ const (
 	SourceCertificate = "certificate"
 	SourceResource    = "resource"
 	SourceSecurity    = "security"
+	SourceAgent       = "agent"
 )
 
 // Security alert types.
@@ -61,7 +62,7 @@ type Event struct {
 	IsRecover  bool           // true if this is a recovery event
 	Message    string         // human-readable description
 	EntityType string         // "container", "endpoint", "heartbeat", "certificate"
-	EntityID   int64          // ID in source table
+	EntityID   string         // UUID of the referenced entity in its source table
 	EntityName string         // display name
 	Details    map[string]any // source-specific metadata
 	Timestamp  time.Time      // when condition was detected
@@ -69,17 +70,17 @@ type Event struct {
 
 // Alert represents a persisted alert record.
 type Alert struct {
-	ID             int64      `json:"id"`
+	ID             string     `json:"id"`
 	Source         string     `json:"source"`
 	AlertType      string     `json:"alert_type"`
 	Severity       string     `json:"severity"`
 	Status         string     `json:"status"`
 	Message        string     `json:"message"`
 	EntityType     string     `json:"entity_type"`
-	EntityID       int64      `json:"entity_id"`
+	EntityID       string     `json:"entity_id"`
 	EntityName     string     `json:"entity_name"`
 	Details        string     `json:"details"`
-	ResolvedByID   *int64     `json:"resolved_by_id"`
+	ResolvedByID   *string    `json:"resolved_by_id"`
 	FiredAt        time.Time  `json:"fired_at"`
 	ResolvedAt     *time.Time `json:"resolved_at"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
@@ -89,33 +90,43 @@ type Alert struct {
 }
 
 // NotificationChannel represents a configured delivery target.
+// Channels are silent by default — they only receive alerts when referenced
+// by an active AlertTrigger or by an EscalationLevel.
 type NotificationChannel struct {
-	ID           int64         `json:"id"`
-	Name         string        `json:"name"`
-	Type         string        `json:"type"`
-	URL          string        `json:"url"`
-	Headers      string        `json:"headers,omitempty"`
-	Enabled      bool          `json:"enabled"`
-	RoutingRules []RoutingRule `json:"routing_rules,omitempty"`
-	Health       string        `json:"health,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
+	URL       string    `json:"url"`
+	Headers   string    `json:"headers,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	Health    string    `json:"health,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// RoutingRule represents a filter attached to a channel.
-type RoutingRule struct {
-	ID             int64     `json:"id"`
-	ChannelID      int64     `json:"channel_id"`
-	SourceFilter   string    `json:"source_filter,omitempty"`
-	SeverityFilter string    `json:"severity_filter,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+// AlertTrigger is a routing rule that maps an alert filter to one or more channels.
+// Filters are stored as CSV strings; an empty filter matches anything.
+// Filters are combined in AND between fields, OR within a field.
+// FilterScopes and FilterTags are Pro-only (gated at the handler level).
+type AlertTrigger struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	FilterSeverities string    `json:"filter_severities"`
+	FilterSources    string    `json:"filter_sources"`
+	FilterScopes     string    `json:"filter_scopes"`
+	FilterTags       string    `json:"filter_tags"`
+	Enabled          bool      `json:"enabled"`
+	NotifyOnResolve  bool      `json:"notify_on_resolve"`
+	ChannelIDs       []string  `json:"channel_ids"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // NotificationDelivery represents a delivery attempt record.
 type NotificationDelivery struct {
-	ID        int64     `json:"id"`
-	AlertID   int64     `json:"alert_id"`
-	ChannelID int64     `json:"channel_id"`
+	ID        string    `json:"id"`
+	AlertID   string    `json:"alert_id"`
+	ChannelID string    `json:"channel_id"`
 	Status    string    `json:"status"`
 	Attempts  int       `json:"attempts"`
 	LastError string    `json:"last_error,omitempty"`
@@ -125,9 +136,9 @@ type NotificationDelivery struct {
 
 // SilenceRule represents a time-bounded notification suppression.
 type SilenceRule struct {
-	ID              int64      `json:"id"`
+	ID              string     `json:"id"`
 	EntityType      string     `json:"entity_type,omitempty"`
-	EntityID        *int64     `json:"entity_id,omitempty"`
+	EntityID        *string    `json:"entity_id,omitempty"`
 	Source          string     `json:"source,omitempty"`
 	Reason          string     `json:"reason,omitempty"`
 	StartsAt        time.Time  `json:"starts_at"`
@@ -147,15 +158,19 @@ type ListAlertsOpts struct {
 	Limit    int
 }
 
-// Escalator evaluates whether an unacknowledged alert should escalate to a secondary channel.
+// Escalator manages Pro escalation policy execution.
 type Escalator interface {
-	Evaluate(ctx context.Context, alertID string, elapsed time.Duration) (*EscalationAction, error)
+	EvaluateCycle(ctx context.Context) error
+	OnAlertCreated(ctx context.Context, a *Alert) error
+	OnAlertAcknowledged(ctx context.Context, alertID string, ack Acknowledgment) error
+	OnAlertResolved(ctx context.Context, alertID string, resolvedAt time.Time) error
+	OnEditionDowngraded(ctx context.Context) error
 }
 
-// EscalationAction describes where and what to escalate.
-type EscalationAction struct {
-	ChannelID string
-	Message   string
+// Acknowledgment carries info about an alert ack event.
+type Acknowledgment struct {
+	By string
+	At time.Time
 }
 
 // EntityRouter provides per-entity alert routing.
@@ -170,41 +185,54 @@ type MaintenanceSuppressor interface {
 
 // AlertStore defines the persistence interface for alerts.
 type AlertStore interface {
-	InsertAlert(ctx context.Context, a *Alert) (int64, error)
-	GetAlert(ctx context.Context, id int64) (*Alert, error)
+	InsertAlert(ctx context.Context, a *Alert) (string, error)
+	GetAlert(ctx context.Context, id string) (*Alert, error)
 	ListAlerts(ctx context.Context, opts ListAlertsOpts) ([]*Alert, error)
-	UpdateAlertStatus(ctx context.Context, id int64, status string, resolvedAt *time.Time, resolvedByID *int64) error
-	UpdateAlertSeverity(ctx context.Context, id int64, severity, message string) error
-	GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID int64) (*Alert, error)
+	UpdateAlertStatus(ctx context.Context, id string, status string, resolvedAt *time.Time, resolvedByID *string) error
+	// UpdateAlertOnEscalation refreshes a live alert to the latest event:
+	// severity, message AND entity name/details, so an escalation never leaves a
+	// record mixing two events' fields.
+	UpdateAlertOnEscalation(ctx context.Context, id, severity, message, entityName, details string) error
+	GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID string) (*Alert, error)
 	ListActiveAlerts(ctx context.Context) ([]*Alert, error)
 	DeleteAlertsOlderThan(ctx context.Context, before time.Time) (int64, error)
-	AcknowledgeAlert(ctx context.Context, id int64, by string, at time.Time) error
-	SetEscalatedAt(ctx context.Context, id int64, at time.Time) error
+	AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) error
+	SetEscalatedAt(ctx context.Context, id string, at time.Time) error
 	ListUnacknowledgedActiveAlerts(ctx context.Context) ([]*Alert, error)
 }
 
 // ChannelStore defines the persistence interface for notification channels.
 type ChannelStore interface {
-	InsertChannel(ctx context.Context, ch *NotificationChannel) (int64, error)
-	GetChannel(ctx context.Context, id int64) (*NotificationChannel, error)
+	InsertChannel(ctx context.Context, ch *NotificationChannel) (string, error)
+	GetChannel(ctx context.Context, id string) (*NotificationChannel, error)
 	ListChannels(ctx context.Context) ([]*NotificationChannel, error)
 	UpdateChannel(ctx context.Context, ch *NotificationChannel) error
-	DeleteChannel(ctx context.Context, id int64) error
-	GetChannelHealth(ctx context.Context, channelID int64) (string, error)
+	DeleteChannel(ctx context.Context, id string) error
+	GetChannelHealth(ctx context.Context, channelID string) (string, error)
 
-	InsertRoutingRule(ctx context.Context, rule *RoutingRule) (int64, error)
-	DeleteRoutingRule(ctx context.Context, id int64) error
-	ListRoutingRulesByChannel(ctx context.Context, channelID int64) ([]RoutingRule, error)
-
-	InsertDelivery(ctx context.Context, d *NotificationDelivery) (int64, error)
+	InsertDelivery(ctx context.Context, d *NotificationDelivery) (string, error)
 	UpdateDelivery(ctx context.Context, d *NotificationDelivery) error
-	ListDeliveriesByAlert(ctx context.Context, alertID int64) ([]*NotificationDelivery, error)
+	ListDeliveriesByAlert(ctx context.Context, alertID string) ([]*NotificationDelivery, error)
+}
+
+// TriggerStore defines the persistence interface for AlertTrigger objects
+// and their M:N relationship with channels.
+type TriggerStore interface {
+	InsertTrigger(ctx context.Context, t *AlertTrigger) (string, error)
+	GetTrigger(ctx context.Context, id string) (*AlertTrigger, error)
+	ListTriggers(ctx context.Context) ([]*AlertTrigger, error)
+	ListEnabledTriggers(ctx context.Context) ([]*AlertTrigger, error)
+	UpdateTrigger(ctx context.Context, t *AlertTrigger) error
+	DeleteTrigger(ctx context.Context, id string) error
+	SetChannels(ctx context.Context, triggerID string, channelIDs []string) error
+	ListChannelsForTrigger(ctx context.Context, triggerID string) ([]string, error)
+	ListTriggersForChannel(ctx context.Context, channelID string) ([]*AlertTrigger, error)
 }
 
 // SilenceStore defines the persistence interface for silence rules.
 type SilenceStore interface {
-	InsertSilenceRule(ctx context.Context, rule *SilenceRule) (int64, error)
+	InsertSilenceRule(ctx context.Context, rule *SilenceRule) (string, error)
 	ListSilenceRules(ctx context.Context, activeOnly bool) ([]*SilenceRule, error)
-	CancelSilenceRule(ctx context.Context, id int64) error
+	CancelSilenceRule(ctx context.Context, id string) error
 	GetActiveSilenceRules(ctx context.Context) ([]*SilenceRule, error)
 }

@@ -16,6 +16,16 @@ Each check records:
 - **Status** — Up or down, based on HTTP status code or TCP connection success
 - **Uptime history** — 90-day uptime with daily breakdowns and sparkline charts
 
+When the container behind a label-discovered endpoint disappears, the endpoint
+is **retired**: checks stop and it leaves the list. Retirement happens on the
+container's `destroy` event, and again at every startup for anything that
+vanished while the instance was down.
+
+Retired endpoints are hidden by default; the **Include retired** filter brings
+them back so you can delete them without waiting for retention to do it. A
+label endpoint whose container is still running cannot be deleted: the next
+discovery pass would recreate it. Remove the label, or the container.
+
 ---
 
 ## Quick Start

@@ -17,7 +17,7 @@ import { createSilenceRule, type CreateSilenceRuleInput } from '@/services/alert
 
 const props = defineProps<{
   entityType?: string
-  entityId?: number
+  entityId?: string
   source?: string
 }>()
 
@@ -87,11 +87,11 @@ onUnmounted(() => {
       @click.stop="open = !open"
       class="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors"
       :style="{
-        background: open ? 'var(--pb-bg-hover)' : 'transparent',
-        color: 'var(--pb-text-muted)',
+        background: open ? 'var(--mnt-bg-hover)' : 'transparent',
+        color: 'var(--mnt-text-muted)',
       }"
-      @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--pb-bg-hover)'"
-      @mouseleave="($event.currentTarget as HTMLElement).style.background = open ? 'var(--pb-bg-hover)' : 'transparent'"
+      @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
+      @mouseleave="($event.currentTarget as HTMLElement).style.background = open ? 'var(--mnt-bg-hover)' : 'transparent'"
       title="Silence alerts"
     >
       <!-- Bell-off icon -->
@@ -107,10 +107,10 @@ onUnmounted(() => {
     <div
       v-if="open"
       class="absolute right-0 z-50 mt-1 w-56 rounded-lg border shadow-lg"
-      style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); box-shadow: var(--pb-shadow-elevated)"
+      style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); box-shadow: var(--mnt-shadow-elevated)"
     >
       <div class="p-2">
-        <p class="mb-2 px-2 text-xs font-medium" style="color: var(--pb-text-muted)">Silence for</p>
+        <p class="mb-2 px-2 text-xs font-medium" style="color: var(--mnt-text-muted)">Silence for</p>
 
         <!-- Preset durations -->
         <button
@@ -119,23 +119,23 @@ onUnmounted(() => {
           @click="silence(preset.seconds)"
           :disabled="submitting"
           class="flex w-full items-center rounded px-2 py-1.5 text-sm transition-colors disabled:opacity-50"
-          style="color: var(--pb-text-secondary)"
-          @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--pb-bg-hover)'"
+          style="color: var(--mnt-text-secondary)"
+          @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
           @mouseleave="($event.currentTarget as HTMLElement).style.background = 'transparent'"
         >
           {{ preset.label }}
         </button>
 
         <!-- Divider -->
-        <div class="my-1 h-px" style="background: var(--pb-border-subtle)"></div>
+        <div class="my-1 h-px" style="background: var(--mnt-border-subtle)"></div>
 
         <!-- Custom toggle -->
         <button
           v-if="!showCustom"
           @click.stop="showCustom = true"
           class="flex w-full items-center rounded px-2 py-1.5 text-sm transition-colors"
-          style="color: var(--pb-text-secondary)"
-          @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--pb-bg-hover)'"
+          style="color: var(--mnt-text-secondary)"
+          @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
           @mouseleave="($event.currentTarget as HTMLElement).style.background = 'transparent'"
         >
           Custom duration...
@@ -150,21 +150,21 @@ onUnmounted(() => {
               min="1"
               max="720"
               class="w-16 rounded border px-2 py-1 text-sm outline-none"
-              style="background: var(--pb-bg-surface); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+              style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
             />
-            <span class="text-xs" style="color: var(--pb-text-muted)">hours</span>
+            <span class="text-xs" style="color: var(--mnt-text-muted)">hours</span>
           </div>
           <input
             v-model="reason"
             placeholder="Reason (optional)"
             class="w-full rounded border px-2 py-1 text-xs outline-none"
-            style="background: var(--pb-bg-surface); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+            style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
           />
           <button
             @click="silenceCustom"
             :disabled="submitting"
-            class="w-full rounded px-2 py-1 text-xs font-medium text-pb-primary disabled:opacity-50"
-            style="background: var(--pb-accent)"
+            class="w-full rounded px-2 py-1 text-xs font-medium text-mnt-primary disabled:opacity-50"
+            style="background: var(--mnt-accent)"
           >
             {{ submitting ? 'Creating...' : 'Apply Silence' }}
           </button>

@@ -8,7 +8,7 @@ Drop a single container. Watch everything. Sleep at night.
 
 ## What is maintenant?
 
-Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, one for uptime, one for certs, one for metrics, and yet another for a status page. maintenant replaces all of them with a single binary, zero external dependencies, and zero configuration to get started.
+Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, one for uptime, one for certs, one for metrics, and yet another for a status page. maintenant replaces all of them with a single binary, nothing to install on the datastore layer (no Redis, no message queue — SQLite, and no configuration to get started). A fleet operator who already runs PostgreSQL can point the server at it so the instance stops being tied to its machine, but nothing requires it. The container runtime (Docker socket or Kubernetes API) is **optional**: endpoint, SSL, and heartbeat monitors work fully without it.
 
 Deploy one container, and maintenant auto-discovers your entire stack. Docker or Kubernetes — it does not matter.
 
@@ -19,6 +19,7 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 ## Key Features
 
 - **[Container Monitoring](features/containers.md)** — Zero-config auto-discovery for Docker and Kubernetes. State tracking, health checks, restart loop detection, log streaming.
+- **[Multi-Host Monitoring](features/multihost.md)** — Monitor many hosts from one central server. Lightweight agents stream container state, endpoints, certificates and per-host resource metrics over mutually-authenticated gRPC. Personal (up to 20 hosts) or Pro (unlimited).
 - **[Docker Swarm Monitoring](features/swarm.md)** — Automatic Swarm service discovery, stack grouping, node health, crash-loop detection, rolling update tracking. CE + Enterprise.
 - **[Endpoint Monitoring](features/endpoints.md)** — HTTP and TCP checks defined as Docker labels. Response times, uptime history, sparklines.
 - **[Heartbeat & Cron Monitoring](features/heartbeats.md)** — Create a monitor, get a URL, curl from your cron job. Tracks durations, exit codes, missed deadlines.
@@ -26,9 +27,9 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 - **[Resource Metrics](features/resources.md)** — CPU, memory, network I/O, disk I/O per container. Historical charts, alert thresholds, top consumers view.
 - **[Update Intelligence](features/updates.md)** — OCI registry scanning, digest comparison. Compose-aware update commands. Know when your images have updates available.
 - **[Network Security Insights](features/security.md)** — Automatic detection of exposed ports, dangerous network configurations, and privileged containers. CVE ecosystem mapping via OCI manifest inspection.
-- **[Alert Engine](features/alerts.md)** — Unified alerts across all sources. Webhook and Discord channels. Silence rules, exponential backoff. Slack, Teams, and Email with Pro.
+- **[Alert Engine](features/alerts.md)** — Unified alerts across all sources. Channels silent by default, routed via Alert Triggers. Webhook and Discord channels. Silence rules, exponential backoff. Slack, Teams, Email and multi-level escalation policies with Pro.
 - **[Public Status Page](features/status-page.md)** — Component groups, live SSE updates. Incident management, maintenance windows, and subscriber notifications with Pro.
-- **[MCP Server](features/mcp.md)** — Expose monitoring data to AI assistants (Claude Code, Cursor) via the Model Context Protocol. 18 tools, stdio and HTTP transports.
+- **[MCP Server](features/mcp.md)** — Expose monitoring data to AI assistants (Claude Code, Cursor) via the Model Context Protocol. 44 tools across monitoring, security, Kubernetes, Swarm and alert routing; stdio and HTTP transports.
 
 ---
 
@@ -49,6 +50,7 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 | Kubernetes native | **Yes** | No | Yes | No |
 | MCP for AI assistants | **Yes** | No | No | No |
 | Single binary, zero deps | **Yes** | Node.js | Docker API | Docker API |
+| Container runtime optional | **Yes** | No | No | No |
 
 ---
 
@@ -66,8 +68,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"  # match host's docker group
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:

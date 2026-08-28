@@ -30,15 +30,15 @@ const props = withDefaults(defineProps<{
 })
 
 const statusColors: Record<string, string> = {
-  'on-time': 'var(--pb-status-ok)',
-  'late': 'var(--pb-status-warn)',
-  'missed': 'var(--pb-status-down)',
+  'on-time': 'var(--mnt-status-ok)',
+  'late': 'var(--mnt-status-warn)',
+  'missed': 'var(--mnt-status-down)',
 }
 
 const statusBgColors: Record<string, string> = {
-  'on-time': 'var(--pb-status-ok-bg)',
-  'late': 'var(--pb-status-warn-bg)',
-  'missed': 'var(--pb-status-down-bg)',
+  'on-time': 'var(--mnt-status-ok-bg)',
+  'late': 'var(--mnt-status-warn-bg)',
+  'missed': 'var(--mnt-status-down-bg)',
 }
 
 const timeRange = computed(() => {
@@ -90,25 +90,25 @@ function formatTooltip(entry: HeartbeatTimelineEntry): string {
 <template>
   <div class="w-full">
     <div class="mb-2 flex items-center gap-4">
-      <h4 class="text-xs font-semibold uppercase tracking-wide" style="color: var(--pb-text-muted)">
+      <h4 class="text-xs font-semibold uppercase tracking-wide" style="color: var(--mnt-text-muted)">
         Ping Timeline ({{ hours }}h)
       </h4>
-      <div class="flex items-center gap-3 text-xs" style="color: var(--pb-text-muted)">
+      <div class="flex items-center gap-3 text-xs" style="color: var(--mnt-text-muted)">
         <span class="flex items-center gap-1">
-          <span class="inline-block h-2 w-2 rounded-full" style="background: var(--pb-status-ok)"></span> On-time
+          <span class="inline-block h-2 w-2 rounded-full" style="background: var(--mnt-status-ok)"></span> On-time
         </span>
         <span class="flex items-center gap-1">
-          <span class="inline-block h-2 w-2 rounded-full" style="background: var(--pb-status-warn)"></span> Late
+          <span class="inline-block h-2 w-2 rounded-full" style="background: var(--mnt-status-warn)"></span> Late
         </span>
         <span class="flex items-center gap-1">
-          <span class="inline-block h-2 w-2 rounded-full" style="background: var(--pb-status-down)"></span> Missed
+          <span class="inline-block h-2 w-2 rounded-full" style="background: var(--mnt-status-down)"></span> Missed
         </span>
       </div>
     </div>
 
     <div
       class="relative rounded-lg border p-3"
-      style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+      style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
     >
       <!-- Time axis labels -->
       <div class="relative mb-1 h-4">
@@ -116,7 +116,7 @@ function formatTooltip(entry: HeartbeatTimelineEntry): string {
           v-for="(label, idx) in timeLabels"
           :key="idx"
           class="absolute -translate-x-1/2 text-[10px]"
-          :style="{ left: label.pct + '%', color: 'var(--pb-text-muted)' }"
+          :style="{ left: label.pct + '%', color: 'var(--mnt-text-muted)' }"
         >
           {{ label.time }}
         </span>
@@ -125,14 +125,14 @@ function formatTooltip(entry: HeartbeatTimelineEntry): string {
       <!-- Timeline track -->
       <div
         class="relative h-8 rounded"
-        style="background: var(--pb-bg-elevated)"
+        style="background: var(--mnt-bg-elevated)"
       >
         <!-- Grid lines -->
         <span
           v-for="(label, idx) in timeLabels"
           :key="'grid-' + idx"
           class="absolute top-0 h-full w-px"
-          :style="{ left: label.pct + '%', background: 'var(--pb-border-subtle)' }"
+          :style="{ left: label.pct + '%', background: 'var(--mnt-border-subtle)' }"
         />
 
         <!-- Expected windows (light bars) -->
@@ -167,7 +167,7 @@ function formatTooltip(entry: HeartbeatTimelineEntry): string {
       <!-- Now indicator -->
       <div
         class="absolute right-3 top-1/2 -translate-y-1/2"
-        style="color: var(--pb-text-muted)"
+        style="color: var(--mnt-text-muted)"
       >
         <span class="text-[10px]">Now</span>
       </div>
@@ -177,7 +177,7 @@ function formatTooltip(entry: HeartbeatTimelineEntry): string {
     <p
       v-if="entries.length === 0"
       class="mt-2 text-center text-xs"
-      style="color: var(--pb-text-muted)"
+      style="color: var(--mnt-text-muted)"
     >
       No ping data available for this time period
     </p>

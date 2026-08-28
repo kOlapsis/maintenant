@@ -128,16 +128,15 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 		}
 	}
 
-	// Quota check for Community edition (max 3 components).
-	if extension.CurrentEdition() != extension.Enterprise {
+	// Component cap, read from the single declaration. -1 means unlimited.
+	if limit := extension.Limit(extension.ResourceStatusComponents); limit >= 0 {
 		existing, err := h.components.ListComponents(r.Context())
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		if len(existing) >= 3 {
-			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
-				"Community edition is limited to 3 status page components. Upgrade to Pro for unlimited components.")
+		if len(existing) >= limit {
+			refuseQuota(w, extension.ResourceStatusComponents)
 			return
 		}
 	}
@@ -166,8 +165,8 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 }
 
 func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid component ID")
 		return
 	}
@@ -257,8 +256,8 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 }
 
 func (h *StatusAdminHandler) HandleDeleteComponent(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid component ID")
 		return
 	}
@@ -295,11 +294,11 @@ func (h *StatusAdminHandler) HandleListIncidents(w http.ResponseWriter, r *http.
 
 func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title        string  `json:"title"`
-		Severity     string  `json:"severity"`
-		Status       string  `json:"status"`
-		ComponentIDs []int64 `json:"component_ids"`
-		Message      string  `json:"message"`
+		Title        string   `json:"title"`
+		Severity     string   `json:"severity"`
+		Status       string   `json:"status"`
+		ComponentIDs []string `json:"component_ids"`
+		Message      string   `json:"message"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
@@ -343,8 +342,8 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 }
 
 func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid incident ID")
 		return
 	}
@@ -394,8 +393,8 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 }
 
 func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid incident ID")
 		return
 	}
@@ -405,9 +404,9 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		return
 	}
 	var req struct {
-		Title        *string `json:"title"`
-		Severity     *string `json:"severity"`
-		ComponentIDs []int64 `json:"component_ids"`
+		Title        *string  `json:"title"`
+		Severity     *string  `json:"severity"`
+		ComponentIDs []string `json:"component_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
@@ -431,8 +430,8 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 }
 
 func (h *StatusAdminHandler) HandleDeleteIncident(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid incident ID")
 		return
 	}
@@ -461,11 +460,11 @@ func (h *StatusAdminHandler) HandleListMaintenance(w http.ResponseWriter, r *htt
 
 func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Title        string  `json:"title"`
-		Description  string  `json:"description"`
-		StartsAt     string  `json:"starts_at"`
-		EndsAt       string  `json:"ends_at"`
-		ComponentIDs []int64 `json:"component_ids"`
+		Title        string   `json:"title"`
+		Description  string   `json:"description"`
+		StartsAt     string   `json:"starts_at"`
+		EndsAt       string   `json:"ends_at"`
+		ComponentIDs []string `json:"component_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
@@ -508,8 +507,8 @@ func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *h
 }
 
 func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid maintenance ID")
 		return
 	}
@@ -523,11 +522,11 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		return
 	}
 	var req struct {
-		Title        *string `json:"title"`
-		Description  *string `json:"description"`
-		StartsAt     *string `json:"starts_at"`
-		EndsAt       *string `json:"ends_at"`
-		ComponentIDs []int64 `json:"component_ids"`
+		Title        *string  `json:"title"`
+		Description  *string  `json:"description"`
+		StartsAt     *string  `json:"starts_at"`
+		EndsAt       *string  `json:"ends_at"`
+		ComponentIDs []string `json:"component_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
@@ -567,8 +566,8 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 }
 
 func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid maintenance ID")
 		return
 	}
@@ -594,7 +593,7 @@ func (h *StatusAdminHandler) HandleListSubscribers(w http.ResponseWriter, r *htt
 	}
 
 	type maskedSub struct {
-		ID        int64     `json:"id"`
+		ID        string    `json:"id"`
 		Email     string    `json:"email"`
 		Confirmed bool      `json:"confirmed"`
 		CreatedAt time.Time `json:"created_at"`

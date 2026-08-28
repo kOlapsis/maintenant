@@ -22,6 +22,7 @@ import (
 
 // ContainerInfo holds the minimal container data needed for scanning.
 type ContainerInfo struct {
+	UID                string // canonical store PK (uid.Container) — used as alert EntityID
 	ExternalID         string
 	Name               string
 	Image              string
@@ -202,7 +203,8 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		return nil, nil
 	}
 
-	// Digest-only mode: non-semver tags like "lts", "alpine", "stable", "latest".
+	// Digest-only mode: floating tags, i.e. non-semver channels like "lts", "alpine",
+	// "stable", "latest", plus partial versions like "v3" or "1.2" that the registry moves.
 	// Compare the current remote digest against the stored baseline to detect rebuilds.
 	if bestTag == currentTag && updateType == UpdateTypeDigestOnly {
 		tagRef := fullRef + ":" + currentTag

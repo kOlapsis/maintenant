@@ -12,10 +12,15 @@ maintenant generates alerts from every monitoring subsystem:
 |--------|--------|------------------|
 | **Container** | `restart_loop`, `health_unhealthy` | Warning |
 | **Endpoint** | `consecutive_failure` | Critical |
-| **Heartbeat** | `deadline_missed` | Critical |
+| **Heartbeat** | `deadline_missed`, `exit_code_failure` | Critical |
 | **Certificate** | `expiring`, `expired`, `chain_invalid` | Critical |
 | **Resource** | `cpu_threshold`, `memory_threshold` | Warning |
 | **Update** | `available` | Info |
+| **Agent** | `disconnected` | Warning |
+
+An agent alert fires when a remote agent stops reporting, whether its stream dropped or it never came back after a restart, and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one.
+
+Deleting a monitored entity (container, agent, heartbeat, endpoint, certificate) resolves its active alerts. On every startup, maintenant also resolves any active alert whose entity no longer exists, so alerts left behind by an earlier version cannot linger.
 
 ---
 
@@ -51,8 +56,14 @@ POST /api/v1/channels
 
 maintenant sends a JSON payload with alert details to the configured URL.
 
-### Slack, Teams & Email :material-crown:{ title="Pro" } 
-maintenant Pro adds native Slack (Block Kit), Microsoft Teams (MessageCard), and Email (SMTP) channels with platform-specific formatting.
+### Email (SMTP) :material-star-four-points:{ title="Personal" }
+
+Native email delivery over your own SMTP server. Available from the Personal edition.
+
+### Slack & Teams :material-crown:{ title="Pro" }
+
+Native Slack (Block Kit) and Microsoft Teams (MessageCard) channels, with
+platform-specific formatting.
 
 ```bash
 POST /api/v1/channels
@@ -65,24 +76,58 @@ POST /api/v1/channels
 
 ---
 
-## Routing Rules :material-crown:{ title="Pro" } 
-Route specific alerts to specific channels. Routing rules filter by source, severity, or entity.
+## Channels are silent by default
+
+A `notification_channel` represents **where** to send (an URL/email/webhook target). It does not decide *when* to send. After creating a channel, it stays silent until referenced by an [Alert Trigger](#alert-triggers) or by an [Escalation Policy](alert-escalation.md).
+
+This decoupling enables the **reserved-escalation** pattern: a channel that only fires through an escalation policy at a delayed level (e.g. CTO email at T+1h), without receiving the initial alert.
+
+---
+
+## Alert Triggers
+
+Triggers are the routing layer. Each trigger combines a filter and a list of channel destinations: when an alert matches a trigger's filter, the alert is dispatched to all of its channels.
 
 ```bash
-POST /api/v1/channels/{id}/rules
+POST /api/v1/alert-triggers
 {
-  "source": "endpoint",
-  "severity": "critical"
+  "name": "Critical containers → ops",
+  "filter_severities": "critical",
+  "filter_sources": "container",
+  "filter_scopes": "",
+  "filter_tags": "",
+  "enabled": true,
+  "notify_on_resolve": true,
+  "channel_ids": [3, 7]
 }
 ```
 
-You can also route alerts per container using Docker labels:
+Filters are CSV strings, combined in AND between fields and OR within a field. An empty filter matches everything. Multiple triggers can share the same channel without duplicating deliveries (the engine de-dupes per alert).
 
-```yaml
-labels:
-  maintenant.alert.channels: "ops-webhook,ops-discord"
-  maintenant.alert.severity: "critical"
-```
+A trigger relays both the initial alert and its recovery. Set `notify_on_resolve` to `false` (default `true`) for a channel that should only receive failures.
+
+**CE vs Pro filters** :
+
+| Filter | CE | Pro |
+|---|---|---|
+| `filter_severities` (e.g. `critical,warning`) | ✅ | ✅ |
+| `filter_sources` (e.g. `container,endpoint`) | ✅ | ✅ |
+| `filter_scopes` (e.g. `container:42,endpoint:7`) | — | ✅ |
+| `filter_tags` (e.g. `prod,payments`) | — | ✅ |
+
+Trigger CRUD endpoints :
+
+| Method | Path |
+|--------|------|
+| `GET` | `/api/v1/alert-triggers` |
+| `POST` | `/api/v1/alert-triggers` |
+| `GET` | `/api/v1/alert-triggers/{id}` |
+| `PUT` | `/api/v1/alert-triggers/{id}` |
+| `DELETE` | `/api/v1/alert-triggers/{id}` |
+
+Triggers can also be managed via MCP tools: `list_triggers`, `get_trigger`, `create_trigger`, `update_trigger`, `delete_trigger`.
+
+> **Migration note**: previous versions used `routing_rules` attached to channels. On upgrade, those rules are auto-converted to AlertTriggers (one trigger per rule). Channels without any rule receive a generated `Default — all alerts → {channel name}` trigger to preserve the legacy broadcast behavior. The legacy `/api/v1/channels/{id}/rules*` endpoints have been removed.
 
 ---
 
@@ -178,8 +223,11 @@ GET /api/v1/alerts/{id}
 | `PUT` | `/api/v1/channels/{id}` | Update a channel |
 | `DELETE` | `/api/v1/channels/{id}` | Delete a channel |
 | `POST` | `/api/v1/channels/{id}/test` | Send test alert |
-| `POST` | `/api/v1/channels/{id}/rules` | Create routing rule |
-| `DELETE` | `/api/v1/channels/{id}/rules/{rule_id}` | Delete routing rule |
+| `GET POST` | `/api/v1/alert-triggers` | List / create triggers |
+| `GET PUT DELETE` | `/api/v1/alert-triggers/{id}` | Manage a trigger |
+| `GET POST` | `/api/v1/escalation-policies` | List / create policies (Pro) |
+| `GET PUT PATCH DELETE` | `/api/v1/escalation-policies/{id}` | Manage a policy (Pro) |
+| `GET` | `/api/v1/alerts/{id}/escalation-runs` | List runs for an alert (Pro) |
 | `GET` | `/api/v1/silence` | List silence rules |
 | `POST` | `/api/v1/silence` | Create silence rule |
 | `DELETE` | `/api/v1/silence/{id}` | Cancel silence rule |
@@ -188,6 +236,7 @@ GET /api/v1/alerts/{id}
 
 ## Related
 
+- [Alert Escalation](alert-escalation.md) — Pro: multi-level escalation chains
 - [Container Monitoring](containers.md) — Restart loop and health check alerts
 - [Endpoint Monitoring](endpoints.md) — Consecutive failure alerts
 - [Heartbeat Monitoring](heartbeats.md) — Deadline missed alerts

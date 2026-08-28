@@ -27,13 +27,17 @@ export interface EndpointConfig {
 export type EndpointSource = 'label' | 'standalone'
 
 export interface Endpoint {
-  id: number
+  id: string
   container_name: string
   external_id: string
   endpoint_type: 'http' | 'tcp'
+  // Set by the server when the probing agent has no live stream: the status
+  // below is last-known, not live. The UI degrades it to offline.
+  stale?: boolean
+  agent_offline?: boolean
   target: string
   label_key: string
-  status: 'up' | 'down' | 'unknown'
+  status: 'up' | 'down' | 'degraded' | 'unknown'
   alert_state: 'normal' | 'alerting'
   consecutive_failures: number
   consecutive_successes: number
@@ -49,11 +53,12 @@ export interface Endpoint {
   orchestration_unit?: string
   source: EndpointSource
   name?: string
+  agent_id?: string | null
 }
 
 export interface CheckResult {
-  id: number
-  endpoint_id: number
+  id: string
+  endpoint_id: string
   success: boolean
   response_time_ms: number
   http_status?: number
@@ -68,6 +73,7 @@ export interface ListEndpointsParams {
   type?: string
   source?: string
   include_inactive?: boolean
+  agent_id?: string
 }
 
 export interface CreateEndpointInput {
@@ -107,7 +113,7 @@ export interface EndpointDetailResponse {
 }
 
 export interface ChecksResponse {
-  endpoint_id: number
+  endpoint_id: string
   checks: CheckResult[]
   total: number
   has_more: boolean
@@ -125,19 +131,28 @@ export function listEndpoints(params?: ListEndpointsParams): Promise<EndpointsRe
   if (params?.type) url.searchParams.set('type', params.type)
   if (params?.source) url.searchParams.set('source', params.source)
   if (params?.include_inactive) url.searchParams.set('include_inactive', 'true')
+  if (params?.agent_id) url.searchParams.set('agent_id', params.agent_id)
   return fetchJSON<EndpointsResponse>(url.toString())
 }
 
-export function getEndpoint(id: number): Promise<EndpointDetailResponse> {
+export function getEndpoint(id: string): Promise<EndpointDetailResponse> {
   return fetchJSON<EndpointDetailResponse>(`${API_BASE}/endpoints/${id}`)
 }
 
-export function listChecks(id: number, params?: ListChecksParams): Promise<ChecksResponse> {
+export function listChecks(id: string, params?: ListChecksParams): Promise<ChecksResponse> {
   const url = new URL(`${API_BASE}/endpoints/${id}/checks`, window.location.origin)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   if (params?.offset) url.searchParams.set('offset', String(params.offset))
   if (params?.since) url.searchParams.set('since', String(params.since))
   return fetchJSON<ChecksResponse>(url.toString())
+}
+
+// checkEndpointNow probes the target immediately and resolves with the refreshed
+// endpoint. Rejects with a 409 when an agent owns the probe or a check is running.
+export function checkEndpointNow(id: string): Promise<EndpointDetailResponse> {
+  return apiFetch<EndpointDetailResponse>(`${API_BASE}/endpoints/${id}/check`, {
+    method: 'POST',
+  })
 }
 
 export function createEndpoint(data: CreateEndpointInput): Promise<{ endpoint: Endpoint }> {
@@ -148,7 +163,7 @@ export function createEndpoint(data: CreateEndpointInput): Promise<{ endpoint: E
   })
 }
 
-export function updateEndpoint(id: number, data: UpdateEndpointInput): Promise<{ endpoint: Endpoint }> {
+export function updateEndpoint(id: string, data: UpdateEndpointInput): Promise<{ endpoint: Endpoint }> {
   return apiFetch<{ endpoint: Endpoint }>(`${API_BASE}/endpoints/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -156,7 +171,7 @@ export function updateEndpoint(id: number, data: UpdateEndpointInput): Promise<{
   })
 }
 
-export function deleteEndpoint(id: number): Promise<void> {
+export function deleteEndpoint(id: string): Promise<void> {
   return apiFetchVoid(`${API_BASE}/endpoints/${id}`, {
     method: 'DELETE',
   })

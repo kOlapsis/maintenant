@@ -7,6 +7,10 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ocsp"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 // CheckCertificateResult holds the raw result of a TLS certificate check.
@@ -24,6 +28,12 @@ type CheckCertificateResult struct {
 	HostnameMatch      bool
 	Chain              []ChainCert
 	Error              string
+
+	OCSPStapled    bool
+	OCSPStatus     string
+	OCSPProducedAt *time.Time
+	OCSPNextUpdate *time.Time
+	OCSPError      string
 }
 
 // ChainCert represents a certificate in the chain.
@@ -35,15 +45,22 @@ type ChainCert struct {
 }
 
 // CheckCertificate performs a TLS handshake to the given hostname:port and extracts
-// certificate details including chain validation.
-func CheckCertificate(hostname string, port int, timeout time.Duration) *CheckCertificateResult {
+// certificate details including chain validation. A non-empty serverName is sent
+// as SNI and used for chain validation and hostname matching instead of hostname,
+// so a failover proxy can be checked for the certificate it serves a given vhost.
+func CheckCertificate(hostname string, port int, serverName string, timeout time.Duration) *CheckCertificateResult {
 	addr := fmt.Sprintf("%s:%d", hostname, port)
+	validationName := serverName
+	if validationName == "" {
+		validationName = hostname
+	}
 
 	// Connect with InsecureSkipVerify so we can inspect even invalid certs
 	dialer := &net.Dialer{Timeout: timeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
-		InsecureSkipVerify: true,
-		ServerName:         hostname,
+		InsecureSkipVerify: true, // #nosec G402 -- inspection dial: invalid certs must be retrieved to be reported; chain is validated manually below.
+		ServerName:         validationName,
+		MinVersion:         tls.VersionTLS10, // inspection dial: reach legacy hosts down to TLS 1.0
 	})
 	if err != nil {
 		return &CheckCertificateResult{
@@ -65,17 +82,19 @@ func CheckCertificate(hostname string, port int, timeout time.Duration) *CheckCe
 	result := extractCertDetails(leaf, state.PeerCertificates)
 
 	// Validate chain
-	result.ChainValid, result.ChainError = validateChain(leaf, state.PeerCertificates[1:], hostname)
+	result.ChainValid, result.ChainError = validateChain(leaf, state.PeerCertificates[1:], validationName)
 
 	// Check hostname match
-	result.HostnameMatch = checkHostnameMatch(leaf, hostname)
+	result.HostnameMatch = checkHostnameMatch(leaf, validationName)
+
+	applyOCSPStaple(result, state.OCSPResponse, state.PeerCertificates)
 
 	return result
 }
 
 // CheckCertificateFromPeerCerts processes pre-fetched TLS peer certificates
 // (from an HTTP response) without making a new TLS connection.
-func CheckCertificateFromPeerCerts(certs []*x509.Certificate, hostname string) *CheckCertificateResult {
+func CheckCertificateFromPeerCerts(certs []*x509.Certificate, hostname string, ocspResponse []byte) *CheckCertificateResult {
 	if len(certs) == 0 {
 		return &CheckCertificateResult{
 			Error: "no TLS certificate presented",
@@ -91,7 +110,53 @@ func CheckCertificateFromPeerCerts(certs []*x509.Certificate, hostname string) *
 	// Check hostname match
 	result.HostnameMatch = checkHostnameMatch(leaf, hostname)
 
+	applyOCSPStaple(result, ocspResponse, certs)
+
 	return result
+}
+
+func applyOCSPStaple(result *CheckCertificateResult, ocspResponse []byte, certs []*x509.Certificate) {
+	if len(ocspResponse) == 0 {
+		return
+	}
+	result.OCSPStapled = true
+	if len(certs) < 2 {
+		result.OCSPStatus = "error"
+		result.OCSPError = "issuer certificate not available in chain"
+		return
+	}
+	status, producedAt, nextUpdate, errMsg := parseOCSPResponse(ocspResponse, certs[0], certs[1])
+	result.OCSPStatus = status
+	result.OCSPProducedAt = producedAt
+	result.OCSPNextUpdate = nextUpdate
+	result.OCSPError = errMsg
+}
+
+func parseOCSPResponse(raw []byte, leaf, issuer *x509.Certificate) (string, *time.Time, *time.Time, string) {
+	resp, err := ocsp.ParseResponseForCert(raw, leaf, issuer)
+	if err != nil {
+		return "error", nil, nil, err.Error()
+	}
+
+	producedAt := resp.ProducedAt
+	nextUpdate := resp.NextUpdate
+
+	// A stale staple (NextUpdate in the past) downgrades to "unknown" rather
+	// than the parsed status — stale OCSP data is not authoritative.
+	if !nextUpdate.IsZero() && nextUpdate.Before(time.Now()) {
+		return "unknown", &producedAt, &nextUpdate, ""
+	}
+
+	switch resp.Status {
+	case ocsp.Good:
+		return "good", &producedAt, &nextUpdate, ""
+	case ocsp.Revoked:
+		return "revoked", &producedAt, &nextUpdate, ""
+	case ocsp.Unknown:
+		return "unknown", &producedAt, &nextUpdate, ""
+	default:
+		return "error", nil, nil, fmt.Sprintf("unexpected OCSP status: %d", resp.Status)
+	}
 }
 
 func extractCertDetails(leaf *x509.Certificate, allCerts []*x509.Certificate) *CheckCertificateResult {
@@ -132,7 +197,10 @@ func validateChain(leaf *x509.Certificate, intermediates []*x509.Certificate, ho
 	opts := x509.VerifyOptions{
 		DNSName:       hostname,
 		Intermediates: pool,
-		// Roots: nil uses system CA pool
+		// nil falls back to the system pool. Without this the endpoint probe
+		// would go green on an internal CA while the monitor kept reporting an
+		// untrusted root.
+		Roots: trust.Pool(),
 	}
 
 	_, err := leaf.Verify(opts)

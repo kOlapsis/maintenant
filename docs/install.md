@@ -101,6 +101,38 @@ Every `MAINTENANT_*` environment variable has a `--flagName` CLI equivalent. Pre
 | `--mcpClientSecret` | `MAINTENANT_MCP_CLIENT_SECRET` | string | _(unset)_ |
 | `--k8sNamespaces` | `MAINTENANT_K8S_NAMESPACES` | string | _(empty = all)_ |
 | `--k8sExcludeNamespaces` | `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | string | _(unset)_ |
+| `--statusUrl` | `MAINTENANT_STATUS_URL` | string | _(unset)_ |
+| `--retentionSnapshots` | `MAINTENANT_RETENTION_SNAPSHOTS` | duration | `48h` |
+| `--retentionInterval` | `MAINTENANT_RETENTION_INTERVAL` | duration | `1h` |
+| `--retentionBatchSize` | `MAINTENANT_RETENTION_BATCH_SIZE` | int | `1000` |
+| `--mode` | `MAINTENANT_MODE` | string | `embedded` |
+| `--server` | `MAINTENANT_SERVER` | string | _(unset)_ |
+| `--enrollment-token` | `MAINTENANT_ENROLLMENT_TOKEN` | string | _(unset)_ |
+| `--label` | `MAINTENANT_LABEL` | string | _(unset)_ |
+| `--grpc-listen` | `MAINTENANT_GRPC_LISTEN` | string | `127.0.0.1:8443` |
+| `--grpc-url` | `MAINTENANT_GRPC_URL` | string | _(unset)_ |
+| `--grpc-tls-cert` | `MAINTENANT_GRPC_TLS_CERT` | string | _(unset)_ |
+| `--grpc-tls-key` | `MAINTENANT_GRPC_TLS_KEY` | string | _(unset)_ |
+| `--grpc-insecure-skip-tls-verify` | `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` | bool | `false` |
+| `--embedded-agent` | `MAINTENANT_EMBEDDED_AGENT` | bool | `false` |
+| `--ca-cert` | `MAINTENANT_CA_CERT` | string | _(unset)_ |
+| `--database-url` | `MAINTENANT_DATABASE_URL` | string | _(empty = SQLite)_ |
+
+The multi-host flags keep their kebab-case spelling: they shipped before the
+flag registry existed and are baked into running agents and systemd units.
+
+### Installing a native agent
+
+A host that only reports to an existing server installs the same binary in agent
+mode:
+
+```sh
+curl -fsSL https://install.maintenant.dev | sudo sh -s -- \
+  --mode agent \
+  --server grpcs://maintenant.example.com:8443 \
+  --enrollment-token TOKEN \
+  --label web-01
+```
 
 Run `maintenant --help` to see this list with descriptions at any time.
 

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/webhook"
 )
 
@@ -73,10 +74,15 @@ func (h *WebhookHandler) HandleCreateWebhook(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Validate URL (must be HTTPS unless AllowPrivateWebhooks is set for local dev).
-	if !h.allowPrivateWebhooks && (req.URL == "" || !strings.HasPrefix(req.URL, "https://")) {
-		WriteError(w, http.StatusBadRequest, "invalid_input", "URL must be a valid HTTPS URL")
-		return
+	// Validate URL: require HTTPS and reject internal/private IPs (SSRF).
+	// Skipped when AllowPrivateWebhooks is set (local dev only). This is
+	// fast-feedback; the dial-time guard on the delivery client (used by both
+	// the dispatcher and HandleTestWebhook below) is the actual boundary.
+	if !h.allowPrivateWebhooks {
+		if err := ssrf.ValidateURL(r.Context(), req.URL); err != nil {
+			WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
 	}
 
 	// Reject platform-specific webhook URLs — they expect a proprietary payload format
@@ -167,6 +173,7 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// #nosec G704 -- delivered through the SSRF-guarded client below (internal/ssrf).
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, testSub.URL, bytes.NewReader(body))
 	if err != nil {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -179,8 +186,8 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 	req.Header.Set("X-maintenant-Event", "test")
 	req.Header.Set("X-maintenant-Delivery", uuid.New().String())
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	client := ssrf.NewHTTPClient(10*time.Second, h.allowPrivateWebhooks)
+	resp, err := client.Do(req) // #nosec G704 -- ssrf.NewHTTPClient blocks private ranges at dial time.
 	if err != nil {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "failed",

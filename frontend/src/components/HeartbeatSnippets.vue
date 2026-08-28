@@ -39,17 +39,17 @@ async function copySnippet(code: string) {
 
 <template>
   <div>
-    <h3 class="mb-2 text-sm font-semibold" style="color: var(--pb-text-primary)">Integration Snippets</h3>
+    <h3 class="mb-2 text-sm font-semibold" style="color: var(--mnt-text-primary)">Integration Snippets</h3>
 
     <!-- Tabs -->
-    <div class="mb-2 flex gap-1 border-b" style="border-color: var(--pb-border-default)">
+    <div class="mb-2 flex gap-1 border-b" style="border-color: var(--mnt-border-default)">
       <button
         v-for="tab in tabs"
         :key="tab.key"
         class="rounded-t px-3 py-1.5 text-xs font-medium transition-colors"
         :style="{
-          borderBottom: activeTab === tab.key ? '2px solid var(--pb-accent)' : '2px solid transparent',
-          color: activeTab === tab.key ? 'var(--pb-accent)' : 'var(--pb-text-muted)',
+          borderBottom: activeTab === tab.key ? '2px solid var(--mnt-accent)' : '2px solid transparent',
+          color: activeTab === tab.key ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
         }"
         @click="activeTab = tab.key"
       >
@@ -61,13 +61,13 @@ async function copySnippet(code: string) {
     <div class="relative">
       <pre
         class="overflow-x-auto rounded-lg p-4 font-mono text-sm"
-        style="background: var(--pb-bg-elevated); color: var(--pb-text-primary)"
+        style="background: var(--mnt-bg-elevated); color: var(--mnt-text-primary)"
       >{{ snippets[activeTab] || '' }}</pre>
       <button
         class="absolute right-2 top-2 flex items-center gap-1 rounded px-2 py-1 text-xs transition-all"
         :style="{
-          background: copied ? 'var(--pb-status-ok-bg)' : 'var(--pb-bg-hover)',
-          color: copied ? 'var(--pb-status-ok)' : 'var(--pb-text-muted)',
+          background: copied ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-bg-hover)',
+          color: copied ? 'var(--mnt-status-ok)' : 'var(--mnt-text-muted)',
         }"
         aria-label="Copy snippet"
         @click="copySnippet(snippets[activeTab] || '')"

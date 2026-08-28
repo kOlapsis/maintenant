@@ -19,33 +19,36 @@ import (
 // UpdateStore defines the persistence interface for update intelligence data.
 type UpdateStore interface {
 	// Scan records
-	InsertScanRecord(ctx context.Context, r *ScanRecord) (int64, error)
+	InsertScanRecord(ctx context.Context, r *ScanRecord) (string, error)
 	UpdateScanRecord(ctx context.Context, r *ScanRecord) error
-	GetScanRecord(ctx context.Context, id int64) (*ScanRecord, error)
+	GetScanRecord(ctx context.Context, id string) (*ScanRecord, error)
 	GetLatestScanRecord(ctx context.Context) (*ScanRecord, error)
 
 	// Image updates
-	InsertImageUpdate(ctx context.Context, u *ImageUpdate) (int64, error)
+	InsertImageUpdate(ctx context.Context, u *ImageUpdate) (string, error)
 	UpdateImageUpdate(ctx context.Context, u *ImageUpdate) error
-	GetImageUpdate(ctx context.Context, id int64) (*ImageUpdate, error)
+	GetImageUpdate(ctx context.Context, id string) (*ImageUpdate, error)
 	GetImageUpdateByContainer(ctx context.Context, containerID string) (*ImageUpdate, error)
 	ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpts) ([]*ImageUpdate, error)
 	GetUpdateSummary(ctx context.Context) (*UpdateSummary, error)
 	DeleteImageUpdatesByContainer(ctx context.Context, containerID string) error
-	DeleteStaleImageUpdates(ctx context.Context, scanID int64, scannedContainerNames []string) (int64, error)
+	DeleteStaleImageUpdates(ctx context.Context, scanID string, scannedContainerNames []string) (int64, error)
+	ListStaleImageUpdates(ctx context.Context, scanID string, scannedContainerNames []string) ([]StaleImageUpdate, error)
+	ListOrphanImageUpdates(ctx context.Context) ([]StaleImageUpdate, error)
+	DeleteOrphanImageUpdates(ctx context.Context) (int64, error)
 
 	// Version pins
-	InsertVersionPin(ctx context.Context, p *VersionPin) (int64, error)
+	InsertVersionPin(ctx context.Context, p *VersionPin) (string, error)
 	GetVersionPin(ctx context.Context, containerID string) (*VersionPin, error)
 	DeleteVersionPin(ctx context.Context, containerID string) error
 
 	// Update exclusions
-	InsertExclusion(ctx context.Context, e *UpdateExclusion) (int64, error)
+	InsertExclusion(ctx context.Context, e *UpdateExclusion) (string, error)
 	ListExclusions(ctx context.Context) ([]*UpdateExclusion, error)
-	DeleteExclusion(ctx context.Context, id int64) error
+	DeleteExclusion(ctx context.Context, id string) error
 
 	// CVE cache
-	InsertCVECacheEntry(ctx context.Context, e *CVECacheEntry) (int64, error)
+	InsertCVECacheEntry(ctx context.Context, e *CVECacheEntry) (string, error)
 	GetCVECacheEntries(ctx context.Context, ecosystem, packageName, packageVersion string) ([]*CVECacheEntry, error)
 	IsCVECacheFresh(ctx context.Context, ecosystem, packageName, packageVersion string) (bool, error)
 
@@ -62,7 +65,7 @@ type UpdateStore interface {
 	GetDigestBaseline(ctx context.Context, containerID string) (*DigestBaseline, error)
 
 	// Risk score history
-	InsertRiskScoreRecord(ctx context.Context, r *RiskScoreRecord) (int64, error)
+	InsertRiskScoreRecord(ctx context.Context, r *RiskScoreRecord) (string, error)
 	ListRiskScoreHistory(ctx context.Context, containerID string, from, to time.Time) ([]*RiskScoreRecord, error)
 
 	// Retention cleanup

@@ -20,23 +20,23 @@ import (
 )
 
 // AlertCallback is called when security insights change and an alert should be fired.
-type AlertCallback func(containerID int64, containerName string, insights []Insight, isRecover bool)
+type AlertCallback func(containerID string, containerName string, insights []Insight, isRecover bool)
 
 // EventCallback is called to broadcast SSE events.
 type EventCallback func(eventType string, data any)
 
 // Deps holds all dependencies for the security Service.
 type Deps struct {
-	Logger        *slog.Logger   // required
-	AlertCallback AlertCallback  // optional — nil-safe
-	EventCallback EventCallback  // optional — nil-safe
+	Logger        *slog.Logger  // required
+	AlertCallback AlertCallback // optional — nil-safe
+	EventCallback EventCallback // optional — nil-safe
 }
 
 // Service manages in-memory security insight state and emits alerts/events on changes.
 type Service struct {
 	mu       sync.RWMutex
-	store    map[int64][]Insight       // containerID → current insights
-	previous map[int64]map[InsightType]bool // containerID → set of previously seen insight types
+	store    map[string][]Insight            // containerID → current insights
+	previous map[string]map[InsightType]bool // containerID → set of previously seen insight types
 	logger   *slog.Logger
 
 	onAlert AlertCallback
@@ -49,8 +49,8 @@ func NewService(d Deps) *Service {
 		panic("security.NewService: Logger is required")
 	}
 	return &Service{
-		store:    make(map[int64][]Insight),
-		previous: make(map[int64]map[InsightType]bool),
+		store:    make(map[string][]Insight),
+		previous: make(map[string]map[InsightType]bool),
 		logger:   d.Logger,
 		onAlert:  d.AlertCallback,
 		onEvent:  d.EventCallback,
@@ -69,7 +69,7 @@ func (s *Service) SetEventCallback(cb EventCallback) {
 
 // UpdateContainer processes new insights for a single container, computes diffs,
 // and emits alerts/events as needed.
-func (s *Service) UpdateContainer(containerID int64, containerName string, newInsights []Insight) {
+func (s *Service) UpdateContainer(containerID string, containerName string, newInsights []Insight) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -145,7 +145,7 @@ func (s *Service) UpdateContainer(containerID int64, containerName string, newIn
 }
 
 // RemoveContainer cleans up state for a container that no longer exists.
-func (s *Service) RemoveContainer(containerID int64) {
+func (s *Service) RemoveContainer(containerID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.store, containerID)
@@ -153,7 +153,7 @@ func (s *Service) RemoveContainer(containerID int64) {
 }
 
 // GetContainerInsights returns the current insights for a container.
-func (s *Service) GetContainerInsights(containerID int64) *ContainerInsights {
+func (s *Service) GetContainerInsights(containerID string) *ContainerInsights {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -225,7 +225,7 @@ func (s *Service) GetSummary(totalContainers int) Summary {
 }
 
 // InsightCount returns the count and highest severity for a container (used by container list API).
-func (s *Service) InsightCount(containerID int64) (int, string) {
+func (s *Service) InsightCount(containerID string) (int, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

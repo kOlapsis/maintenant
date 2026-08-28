@@ -24,7 +24,15 @@ export interface SwarmPortConfig {
   publish_mode: string
 }
 
-export interface SwarmServiceResponse {
+// Multi-host attribution: present on rows reported by a remote agent (the
+// server's own swarm rows omit these). Surfaced as a host badge in "all" scope.
+export interface SwarmAgentAttribution {
+  agent_id?: string
+  agent_hostname?: string
+  agent_label?: string
+}
+
+export interface SwarmServiceResponse extends SwarmAgentAttribution {
   service_id: string
   name: string
   image: string
@@ -44,7 +52,7 @@ export interface SwarmServiceResponse {
   }
 }
 
-export interface SwarmTaskResponse {
+export interface SwarmTaskResponse extends SwarmAgentAttribution {
   task_id: string
   slot: number
   state: string
@@ -70,9 +78,13 @@ export function fetchSwarmInfo(): Promise<SwarmInfo> {
   return apiFetch<SwarmInfo>(`${API_BASE}/swarm/info`)
 }
 
-export function fetchSwarmServices(stack?: string): Promise<SwarmServiceListResponse> {
+export function fetchSwarmServices(
+  stack?: string,
+  agentId?: string,
+): Promise<SwarmServiceListResponse> {
   const url = new URL(`${API_BASE}/swarm/services`, window.location.origin)
   if (stack) url.searchParams.set('stack', stack)
+  if (agentId) url.searchParams.set('agent_id', agentId)
   return apiFetch<SwarmServiceListResponse>(url.toString())
 }
 
@@ -81,7 +93,7 @@ export function fetchSwarmServiceDetail(serviceID: string): Promise<SwarmService
 }
 
 export interface SwarmNodeResponse {
-  id: number
+  id: string
   node_id: string
   hostname: string
   role: string
@@ -116,8 +128,10 @@ export interface SwarmNodeListResponse {
   worker_count: number
 }
 
-export function fetchSwarmNodes(): Promise<SwarmNodeListResponse> {
-  return apiFetch<SwarmNodeListResponse>(`${API_BASE}/swarm/nodes`)
+export function fetchSwarmNodes(agentId?: string): Promise<SwarmNodeListResponse> {
+  const url = new URL(`${API_BASE}/swarm/nodes`, window.location.origin)
+  if (agentId) url.searchParams.set('agent_id', agentId)
+  return apiFetch<SwarmNodeListResponse>(url.toString())
 }
 
 export function fetchSwarmNodeDetail(nodeID: string): Promise<SwarmNodeDetailResponse> {
@@ -193,7 +207,7 @@ export interface SwarmTaskListResponse {
   total: number
 }
 
-// --- Per-task resource usage (Enterprise) ---
+// --- Per-task resource usage (Pro) ---
 
 export interface SwarmTaskResourceEntry {
   task_id: string
@@ -215,14 +229,24 @@ export interface SwarmServiceResourcesResponse {
   tasks: SwarmTaskResourceEntry[]
 }
 
-export function fetchSwarmServiceResources(serviceID: string): Promise<SwarmServiceResourcesResponse> {
-  return apiFetch<SwarmServiceResourcesResponse>(`${API_BASE}/swarm/services/${serviceID}/resources`)
+export function fetchSwarmServiceResources(
+  serviceID: string,
+): Promise<SwarmServiceResourcesResponse> {
+  return apiFetch<SwarmServiceResourcesResponse>(
+    `${API_BASE}/swarm/services/${serviceID}/resources`,
+  )
 }
 
-export function fetchSwarmTasks(params?: { service?: string; node?: string; state?: string }): Promise<SwarmTaskListResponse> {
+export function fetchSwarmTasks(params?: {
+  service?: string
+  node?: string
+  state?: string
+  agentId?: string
+}): Promise<SwarmTaskListResponse> {
   const url = new URL(`${API_BASE}/swarm/tasks`, window.location.origin)
   if (params?.service) url.searchParams.set('service', params.service)
   if (params?.node) url.searchParams.set('node', params.node)
   if (params?.state) url.searchParams.set('state', params.state)
+  if (params?.agentId) url.searchParams.set('agent_id', params.agentId)
   return apiFetch<SwarmTaskListResponse>(url.toString())
 }

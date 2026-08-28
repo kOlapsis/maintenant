@@ -17,13 +17,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // PostureHandler handles security posture HTTP endpoints.
@@ -79,10 +79,9 @@ func (h *PostureHandler) HandleGetPosture(w http.ResponseWriter, r *http.Request
 
 // HandleGetContainerPosture handles GET /api/v1/security/posture/containers/{container_id}.
 func (h *PostureHandler) HandleGetContainerPosture(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("container_id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("container_id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
@@ -189,7 +188,7 @@ func (h *PostureHandler) HandleListContainerPostures(w http.ResponseWriter, r *h
 // HandleCreateAcknowledgment handles POST /api/v1/security/acknowledgments.
 func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ContainerID    int64  `json:"container_id"`
+		ContainerID    string `json:"container_id"`
 		FindingType    string `json:"finding_type"`
 		FindingKey     string `json:"finding_key"`
 		AcknowledgedBy string `json:"acknowledged_by"`
@@ -200,7 +199,7 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if req.ContainerID == 0 || req.FindingType == "" {
+	if req.ContainerID == "" || req.FindingType == "" {
 		WriteError(w, http.StatusBadRequest, "MISSING_FIELDS", "container_id and finding_type are required")
 		return
 	}
@@ -238,7 +237,7 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 
 	id, err := h.ackStore.InsertAcknowledgment(r.Context(), ack)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "ALREADY_ACKNOWLEDGED", "finding already acknowledged")
 			return
 		}
@@ -299,10 +298,9 @@ func (h *PostureHandler) tryAcknowledgeSecurityAlert(ctx context.Context, c *con
 
 // HandleDeleteAcknowledgment handles DELETE /api/v1/security/acknowledgments/{id}.
 func (h *PostureHandler) HandleDeleteAcknowledgment(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "ID is required")
 		return
 	}
 
@@ -328,12 +326,7 @@ func (h *PostureHandler) HandleDeleteAcknowledgment(w http.ResponseWriter, r *ht
 func (h *PostureHandler) HandleListAcknowledgments(w http.ResponseWriter, r *http.Request) {
 	var containerExternalID string
 
-	if cidStr := r.URL.Query().Get("container_id"); cidStr != "" {
-		cid, err := strconv.ParseInt(cidStr, 10, 64)
-		if err != nil {
-			WriteError(w, http.StatusBadRequest, "INVALID_ID", "container_id must be an integer")
-			return
-		}
+	if cid := r.URL.Query().Get("container_id"); cid != "" {
 		c, err := h.containerSvc.GetContainer(r.Context(), cid)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")

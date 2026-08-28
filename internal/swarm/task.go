@@ -18,9 +18,9 @@ import (
 
 // TaskPlacement represents the distribution of tasks across nodes for a service.
 type TaskPlacement struct {
-	ServiceID   string                  `json:"service_id"`
-	ServiceName string                  `json:"service_name"`
-	ByNode      map[string][]SwarmTask  `json:"by_node"` // keyed by node ID
+	ServiceID   string                 `json:"service_id"`
+	ServiceName string                 `json:"service_name"`
+	ByNode      map[string][]SwarmTask `json:"by_node"` // keyed by node ID
 }
 
 // TaskTracker aggregates task placement information from the Docker API.

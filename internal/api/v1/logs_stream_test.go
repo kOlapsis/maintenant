@@ -63,10 +63,12 @@ func TestHandleLogStream(t *testing.T) {
 			wantContains: "container.log_line",
 		},
 		{
-			name:       "invalid container ID",
-			url:        "/api/v1/containers/abc/logs/stream",
-			streamer:   &mockLogStreamer{},
-			wantStatus: http.StatusBadRequest,
+			name:         "non-numeric container ID is a valid string id",
+			url:          "/api/v1/containers/abc/logs/stream",
+			streamer:     &mockLogStreamer{},
+			wantStatus:   http.StatusOK,
+			wantSSE:      true,
+			wantContains: "container.log_error",
 		},
 		{
 			name:       "nil streamer returns bad gateway",

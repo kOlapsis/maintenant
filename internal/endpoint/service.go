@@ -16,15 +16,24 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 var (
 	ErrNotStandalone    = errors.New("endpoint is not standalone")
+	ErrEndpointLive     = errors.New("endpoint is still discovered from container labels")
 	ErrEndpointNotFound = errors.New("endpoint not found")
 	ErrLimitReached     = errors.New("endpoint limit reached")
+	// ErrAgentProbed rejects an on-demand check for an endpoint the server never
+	// dials itself: it lives on an agent's network, and that agent probes it.
+	ErrAgentProbed = errors.New("endpoint is probed by a remote agent")
+	// ErrCheckInProgress rejects a second on-demand check while one is running,
+	// so a stuck button cannot turn the server into a load generator.
+	ErrCheckInProgress = errors.New("a check is already running for this endpoint")
 )
 
 // LicenseChecker determines license-gated capabilities for endpoints.
@@ -32,12 +41,17 @@ type LicenseChecker interface {
 	CanCreateEndpoint(currentCount int) bool
 }
 
-// DefaultLicenseChecker implements Community edition limits.
+// DefaultLicenseChecker caps how many endpoints may exist. A negative maximum
+// means unlimited — the value comes straight from extension.Limit, where -1 is
+// the declared "no cap" value.
 type DefaultLicenseChecker struct {
 	MaxEndpoints int
 }
 
 func (c *DefaultLicenseChecker) CanCreateEndpoint(currentCount int) bool {
+	if c.MaxEndpoints < 0 {
+		return true
+	}
 	return currentCount < c.MaxEndpoints
 }
 
@@ -50,7 +64,7 @@ type EventCallback func(eventType string, data interface{})
 type AlertCallback func(ep *Endpoint, result CheckResult) (eventType string, eventData interface{})
 
 // EndpointRemovedCallback is called when an endpoint is deactivated (label removed or container destroyed).
-type EndpointRemovedCallback func(ctx context.Context, endpointID int64)
+type EndpointRemovedCallback func(ctx context.Context, endpointID string)
 
 // Deps holds all dependencies for the endpoint Service.
 type Deps struct {
@@ -73,6 +87,9 @@ type Service struct {
 	alertCallback     AlertCallback
 	onEndpointRemoved EndpointRemovedCallback
 	ctx               context.Context
+
+	// manualChecks holds the endpoint ids with an on-demand check in flight.
+	manualChecks sync.Map
 }
 
 // NewService creates a new endpoint service with all dependencies.
@@ -225,8 +242,144 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 	}
 }
 
+// SyncAgentEndpoints provisions label-discovered endpoints for a REMOTE agent's
+// container. Mirrors SyncEndpoints but (a) attributes every endpoint to agentID
+// and (b) never enrolls them in the local check engine — the agent probes them
+// on its own host and pushes results (FR-018a). Reconciles removed labels.
+func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
+	parsed, parseErrors := ParseEndpointLabels(labels, s.logger)
+	for _, pe := range parseErrors {
+		s.emitEvent(event.EndpointConfigError, map[string]interface{}{
+			"endpoint_id":    nil,
+			"container_name": containerName,
+			"label_key":      pe.LabelKey,
+			"error":          pe.Message,
+			"agent_id":       agentID,
+			"timestamp":      time.Now(),
+		})
+	}
+
+	// external_id is unique per container, so this scopes to this agent's container.
+	existing, err := s.store.ListEndpointsByExternalID(ctx, externalID)
+	if err != nil {
+		s.logger.Error("list agent endpoints by external ID", "external_id", externalID, "error", err)
+		return
+	}
+	existingByKey := make(map[string]*Endpoint, len(existing))
+	for _, ep := range existing {
+		existingByKey[ep.LabelKey] = ep
+	}
+	parsedKeys := make(map[string]bool, len(parsed))
+
+	for _, p := range parsed {
+		parsedKeys[p.LabelKey] = true
+		ep := &Endpoint{
+			ContainerName: containerName,
+			LabelKey:      p.LabelKey,
+			ExternalID:    externalID,
+			EndpointType:  p.EndpointType,
+			Target:        p.Target,
+			Config:        p.Config,
+			Source:        SourceLabel,
+			AgentID:       agentID,
+		}
+		id, err := s.store.UpsertEndpoint(ctx, ep)
+		if err != nil {
+			s.logger.Error("upsert agent endpoint", "container", containerName, "label", p.LabelKey, "agent_id", agentID, "error", err)
+			continue
+		}
+		if _, wasExisting := existingByKey[p.LabelKey]; !wasExisting {
+			s.emitEvent(event.EndpointDiscovered, map[string]interface{}{
+				"endpoint_id":    id,
+				"container_name": containerName,
+				"endpoint_type":  string(p.EndpointType),
+				"target":         p.Target,
+				"agent_id":       agentID,
+			})
+		}
+		// Intentionally NOT enrolled in s.engine: the agent owns probing.
+	}
+
+	// Deactivate endpoints whose label was removed.
+	for key, ep := range existingByKey {
+		if parsedKeys[key] {
+			continue
+		}
+		if err := s.store.DeactivateEndpoint(ctx, ep.ID); err != nil {
+			s.logger.Error("deactivate agent endpoint", "id", ep.ID, "error", err)
+			continue
+		}
+		if s.onEndpointRemoved != nil {
+			s.onEndpointRemoved(ctx, ep.ID)
+		}
+		s.emitEvent(event.EndpointRemoved, map[string]interface{}{
+			"endpoint_id":    ep.ID,
+			"container_name": containerName,
+			"reason":         "label_removed",
+			"agent_id":       agentID,
+		})
+	}
+}
+
+// statusForResult maps a probe outcome to the endpoint's reported status. A
+// degraded host is reachable and serving, so it stays a success everywhere that
+// matters — uptime, consecutive counters, outage alerting — and differs only in
+// the status it shows.
+func statusForResult(result CheckResult) EndpointStatus {
+	switch {
+	case result.Success && result.Degraded:
+		return StatusDegraded
+	case result.Success:
+		return StatusUp
+	default:
+		return StatusDown
+	}
+}
+
+// CheckNow probes an endpoint immediately and processes the result exactly like a
+// scheduled run: same persistence, same status-change event, same alert evaluation.
+// It backs the UI's refresh button, so a target fixed by hand stops alerting right
+// away instead of at the next scheduled check.
+//
+// Only endpoints the server probes itself can be checked this way; an agent's
+// endpoints are unreachable from here, and the agent re-probes them on its own
+// short cycle anyway.
+func (s *Service) CheckNow(ctx context.Context, endpointID string) (*Endpoint, error) {
+	ep, err := s.store.GetEndpointByID(ctx, endpointID)
+	if err != nil {
+		return nil, fmt.Errorf("get endpoint: %w", err)
+	}
+	if ep == nil {
+		return nil, ErrEndpointNotFound
+	}
+	if ep.AgentID != "" && ep.AgentID != uid.LocalAgent {
+		return nil, ErrAgentProbed
+	}
+
+	if _, running := s.manualChecks.LoadOrStore(endpointID, struct{}{}); running {
+		return nil, ErrCheckInProgress
+	}
+	defer s.manualChecks.Delete(endpointID)
+
+	var result CheckResult
+	switch ep.EndpointType {
+	case TypeHTTP:
+		result = CheckHTTP(ctx, ep, s.logger)
+	case TypeTCP:
+		result = CheckTCP(ctx, ep, s.logger)
+	default:
+		return nil, fmt.Errorf("unsupported endpoint type %q", ep.EndpointType)
+	}
+
+	s.logger.Info("endpoint: on-demand check", "endpoint_id", endpointID,
+		"target", ep.Target, "success", result.Success)
+	s.ProcessCheckResult(ctx, endpointID, result)
+
+	return s.store.GetEndpointByID(ctx, endpointID)
+}
+
 // ProcessCheckResult handles a check result: updates the endpoint state and persists the result.
-func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, result CheckResult) {
+func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, result CheckResult) {
 	ep, err := s.store.GetEndpointByID(ctx, endpointID)
 	if err != nil || ep == nil {
 		s.logger.Error("get endpoint for check result", "endpoint_id", endpointID, "error", err)
@@ -235,13 +388,11 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, resu
 
 	previousStatus := ep.Status
 
-	var newStatus EndpointStatus
+	newStatus := statusForResult(result)
 	if result.Success {
-		newStatus = StatusUp
 		ep.ConsecutiveSuccesses++
 		ep.ConsecutiveFailures = 0
 	} else {
-		newStatus = StatusDown
 		ep.ConsecutiveFailures++
 		ep.ConsecutiveSuccesses = 0
 	}
@@ -270,6 +421,7 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, resu
 			"http_status":      result.HTTPStatus,
 			"error":            result.ErrorMessage,
 			"timestamp":        result.Timestamp,
+			"agent_id":         result.AgentID,
 		})
 	}
 
@@ -281,9 +433,10 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID int64, resu
 			if eventType, eventData := s.alertCallback(updated, result); eventType != "" {
 				// Update alert state in store
 				newAlertState := updated.AlertState
-				if eventType == "endpoint.alert" {
+				switch eventType {
+				case "endpoint.alert":
 					newAlertState = AlertAlerting
-				} else if eventType == "endpoint.recovery" {
+				case "endpoint.recovery":
 					newAlertState = AlertNormal
 				}
 				if err := s.store.UpdateCheckResult(ctx, endpointID, newStatus, newAlertState,
@@ -356,6 +509,45 @@ func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string)
 	}
 }
 
+// SweepOrphanedLabelEndpoints deactivates label-discovered endpoints whose
+// container is absent from a full discovery pass, and returns how many it
+// deactivated.
+//
+// The destroy event is what normally retires them, but an event that arrives
+// while the process is down is an event nobody hears, and the instance is
+// meant to be stopped for a storage migration, which is exactly when one-off
+// containers come and go. Without this sweep such an endpoint stays active
+// forever, reporting a container that no longer exists.
+func (s *Service) SweepOrphanedLabelEndpoints(ctx context.Context, seen map[string]struct{}) int {
+	endpoints, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{Source: string(SourceLabel)})
+	if err != nil {
+		s.logger.Error("list label endpoints for orphan sweep", "error", err)
+		return 0
+	}
+
+	swept := 0
+	for _, ep := range endpoints {
+		if _, ok := seen[ep.ExternalID]; ok {
+			continue
+		}
+		s.engine.RemoveEndpoint(ep.ID)
+		if err := s.store.DeactivateEndpoint(ctx, ep.ID); err != nil {
+			s.logger.Error("deactivate orphaned endpoint", "endpoint_id", ep.ID, "error", err)
+			continue
+		}
+		if s.onEndpointRemoved != nil {
+			s.onEndpointRemoved(ctx, ep.ID)
+		}
+		s.emitEvent(event.EndpointRemoved, map[string]interface{}{
+			"endpoint_id":    ep.ID,
+			"container_name": ep.ContainerName,
+			"reason":         "container_gone",
+		})
+		swept++
+	}
+	return swept
+}
+
 // ListEndpoints returns endpoints matching the given options.
 func (s *Service) ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]*Endpoint, error) {
 	return s.store.ListEndpoints(ctx, opts)
@@ -367,17 +559,17 @@ func (s *Service) CountActiveEndpoints(ctx context.Context) (int, error) {
 }
 
 // GetEndpoint retrieves an endpoint by ID.
-func (s *Service) GetEndpoint(ctx context.Context, id int64) (*Endpoint, error) {
+func (s *Service) GetEndpoint(ctx context.Context, id string) (*Endpoint, error) {
 	return s.store.GetEndpointByID(ctx, id)
 }
 
 // ListCheckResults returns check results for an endpoint.
-func (s *Service) ListCheckResults(ctx context.Context, endpointID int64, opts ListChecksOpts) ([]*CheckResult, int, error) {
+func (s *Service) ListCheckResults(ctx context.Context, endpointID string, opts ListChecksOpts) ([]*CheckResult, int, error) {
 	return s.store.ListCheckResults(ctx, endpointID, opts)
 }
 
 // CalculateUptime computes uptime percentages for an endpoint across multiple time windows.
-func (s *Service) CalculateUptime(ctx context.Context, endpointID int64) map[string]float64 {
+func (s *Service) CalculateUptime(ctx context.Context, endpointID string) map[string]float64 {
 	now := time.Now()
 	windows := map[string]time.Duration{
 		"1h":  1 * time.Hour,
@@ -443,7 +635,7 @@ func (s *Service) CreateStandalone(ctx context.Context, name, target string, epT
 }
 
 // UpdateStandalone updates a standalone endpoint's configuration and restarts monitoring.
-func (s *Service) UpdateStandalone(ctx context.Context, id int64, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
+func (s *Service) UpdateStandalone(ctx context.Context, id string, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
 	existing, err := s.store.GetEndpointByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get endpoint: %w", err)
@@ -472,8 +664,16 @@ func (s *Service) UpdateStandalone(ctx context.Context, id int64, name, target s
 	return full, nil
 }
 
-// DeleteStandalone removes a standalone endpoint and stops monitoring it.
-func (s *Service) DeleteStandalone(ctx context.Context, id int64) error {
+// Delete removes an endpoint and stops monitoring it.
+//
+// A standalone endpoint is the operator's to delete at any time. A
+// label-discovered one is the container's, and is refused while that container
+// is still around: the next discovery pass would recreate it, so the deletion
+// would be theatre. Once the container is gone the endpoint is deactivated and
+// nothing will bring it back, and then it is deletable. Otherwise an endpoint
+// orphaned by a container that vanished while the instance was down could only
+// be removed with SQL.
+func (s *Service) Delete(ctx context.Context, id string) error {
 	existing, err := s.store.GetEndpointByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get endpoint: %w", err)
@@ -481,8 +681,8 @@ func (s *Service) DeleteStandalone(ctx context.Context, id int64) error {
 	if existing == nil {
 		return ErrEndpointNotFound
 	}
-	if existing.Source != SourceStandalone {
-		return ErrNotStandalone
+	if existing.Source != SourceStandalone && existing.Active {
+		return ErrEndpointLive
 	}
 
 	s.engine.RemoveEndpoint(id)
@@ -491,7 +691,7 @@ func (s *Service) DeleteStandalone(ctx context.Context, id int64) error {
 		s.onEndpointRemoved(ctx, id)
 	}
 
-	if err := s.store.DeleteStandaloneEndpoint(ctx, id); err != nil {
+	if err := s.store.DeleteEndpoint(ctx, id); err != nil {
 		return err
 	}
 

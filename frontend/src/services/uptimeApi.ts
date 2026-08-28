@@ -18,10 +18,25 @@ export interface UptimeDay {
   incident_count: number
 }
 
-export function fetchEndpointDailyUptime(id: number, days = 90): Promise<UptimeDay[]> {
-  return apiFetch<UptimeDay[]>(`${API_BASE}/endpoints/${id}/uptime/daily?days=${days}`)
+// The daily uptime endpoints wrap the series in an envelope; unwrap `days` so
+// callers receive the bare array they expect.
+interface DailyUptimeResponse {
+  monitor_id: string
+  monitor_type: string
+  days: UptimeDay[]
 }
 
-export function fetchHeartbeatDailyUptime(id: number, days = 90): Promise<UptimeDay[]> {
-  return apiFetch<UptimeDay[]>(`${API_BASE}/heartbeats/${id}/uptime/daily?days=${days}`)
+export async function fetchEndpointDailyUptime(id: string, days = 90): Promise<UptimeDay[]> {
+  const res = await apiFetch<DailyUptimeResponse>(`${API_BASE}/endpoints/${id}/uptime/daily?days=${days}`)
+  return res.days ?? []
+}
+
+export async function fetchHeartbeatDailyUptime(id: string, days = 90): Promise<UptimeDay[]> {
+  const res = await apiFetch<DailyUptimeResponse>(`${API_BASE}/heartbeats/${id}/uptime/daily?days=${days}`)
+  return res.days ?? []
+}
+
+export async function fetchContainerDailyUptime(id: string, days = 90): Promise<UptimeDay[]> {
+  const res = await apiFetch<DailyUptimeResponse>(`${API_BASE}/containers/${id}/uptime/daily?days=${days}`)
+  return res.days ?? []
 }

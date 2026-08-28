@@ -69,8 +69,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:
@@ -96,6 +94,15 @@ docker stack deploy -c docker-compose.yml maintenant
 
 !!! important "Manager constraint"
     Always use `node.role == manager` as a placement constraint. This ensures maintenant runs on a manager node and has access to the Swarm management API.
+
+!!! warning "Don't use `group_add` on Swarm"
+    `docker stack deploy` **silently ignores** `group_add` — it is not part of the Swarm
+    service spec. On Swarm, the container would never join the `docker` group and the socket
+    would be unreachable (`permission denied … /var/run/docker.sock`).
+
+    You don't need it: the maintenant entrypoint **auto-detects the mounted socket's group**
+    and grants the unprivileged runtime user access automatically — on Swarm and plain Compose
+    alike. Just mount `/var/run/docker.sock` and you're done.
 
 ---
 
@@ -126,9 +133,11 @@ maintenant sees all nodes, services, and tasks across the entire cluster from an
 
 ---
 
-## Enterprise Features
+## What a Multi-Node Cluster Unlocks
 
-Enterprise features require a multi-node cluster to be meaningful:
+Every Swarm view is available in the Community edition, with no license required.
+What some of them need is not an edition but **more than one node**: a single-node
+swarm has nothing to say about quorum or task placement.
 
 | Feature | Requires |
 |---------|----------|
@@ -140,14 +149,13 @@ Enterprise features require a multi-node cluster to be meaningful:
 | Rolling update tracking | Any cluster size |
 | Dedicated Swarm dashboard | Any cluster size |
 
-### Recommended Setup for Enterprise
+### Recommended Setup
 
-For the full Enterprise experience:
+To get everything the Swarm views can show:
 
 - **3 manager nodes** — For quorum monitoring and high availability
 - **1+ worker nodes** — For task placement and distribution visibility
 - **maintenant on a manager** — Constraint to `node.role == manager`
-- **Enterprise license** — Activate via the settings page
 
 ---
 
@@ -246,13 +254,14 @@ maintenant handles edge cases without user intervention:
     docker service logs maintenant 2>&1 | grep -i swarm
     ```
 
-### Node health not showing (Enterprise)
+### Node health not showing
 
-Node health monitoring is an Enterprise feature. Verify your license:
+Node health needs a swarm manager to query, not a license. The views are open
+in every edition. Check what maintenant is connected to:
 
-- Navigate to the settings page
-- Check that the edition shows "Enterprise"
-- The `/swarm` dashboard route requires Enterprise
+- maintenant must run **on a manager node**, since workers cannot list nodes
+- Constrain the service with `node.role == manager`
+- Check the logs for a Swarm detection message
 
 ### Services show 0/N running
 

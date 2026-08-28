@@ -58,11 +58,9 @@ func (s *SMTPSender) Send(_ context.Context, to, subject, textBody string) error
 		_ = c.Close()
 	}(c)
 
-	// STARTTLS
-	tlsCfg := &tls.Config{ServerName: s.cfg.Host}
-	if err := c.StartTLS(tlsCfg); err != nil {
-		// Non-fatal: some servers don't support STARTTLS
-	}
+	// STARTTLS best-effort: some servers don't support it, so continue in plaintext on error.
+	tlsCfg := &tls.Config{ServerName: s.cfg.Host, MinVersion: tls.VersionTLS12}
+	_ = c.StartTLS(tlsCfg)
 
 	// AUTH PLAIN if credentials are configured
 	if s.cfg.Username != "" {
@@ -97,12 +95,17 @@ func (s *SMTPSender) Send(_ context.Context, to, subject, textBody string) error
 
 func buildMIME(from, to, subject, body string) string {
 	var b strings.Builder
-	b.WriteString("From: " + from + "\r\n")
-	b.WriteString("To: " + to + "\r\n")
-	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("From: " + sanitizeHeader(from) + "\r\n")
+	b.WriteString("To: " + sanitizeHeader(to) + "\r\n")
+	b.WriteString("Subject: " + sanitizeHeader(subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("\r\n")
 	b.WriteString(body)
 	return b.String()
+}
+
+// sanitizeHeader strips CR and LF from email header values to prevent injection.
+func sanitizeHeader(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
 }

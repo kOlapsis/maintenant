@@ -22,6 +22,7 @@ import {
   type K8sNodeResponse,
 } from '@/services/kubernetesApi'
 import { useNamespacesStore } from '@/stores/namespaces'
+import { useResourcesStore } from '@/stores/resources'
 import { sseBus } from '@/services/sseBus'
 
 export const useKubernetesStore = defineStore('kubernetes', () => {
@@ -43,6 +44,7 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
         namespaces: namespacesStore.namespacesParam || undefined,
         kind: params?.kind,
         status: params?.status,
+        agentId: useResourcesStore().entityQuery,
       })
       workloadGroups.value = resp.groups
     } catch (e) {
@@ -62,6 +64,7 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
         workload: params?.workload,
         node: params?.node,
         status: params?.status,
+        agentId: useResourcesStore().entityQuery,
       })
       pods.value = resp.pods
     } catch (e) {
@@ -75,7 +78,7 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     clusterLoading.value = true
     error.value = null
     try {
-      clusterOverview.value = await fetchClusterOverview()
+      clusterOverview.value = await fetchClusterOverview(useResourcesStore().entityQuery)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load cluster overview'
     } finally {
@@ -87,7 +90,7 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     nodesLoading.value = true
     error.value = null
     try {
-      const resp = await fetchNodes()
+      const resp = await fetchNodes(useResourcesStore().entityQuery)
       nodes.value = resp.nodes
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load nodes'
@@ -102,7 +105,9 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
       if (data.namespace) {
         fetchWorkloadsList()
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onPodChanged(e: MessageEvent) {
@@ -111,7 +116,9 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
       if (data.namespace) {
         fetchPodsList()
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   function onNodeChanged(_e: MessageEvent) {
@@ -122,16 +129,43 @@ export const useKubernetesStore = defineStore('kubernetes', () => {
     }
   }
 
+  // topologyMatchesScope reports whether a remote agent's topology event is
+  // relevant to the current host scope. 'local' uses the runtime's own informer
+  // events (workload/pod/node_changed), so it ignores topology_changed.
+  function topologyMatchesScope(agentId: string): boolean {
+    const sel = useResourcesStore().selected
+    if (sel === null) return true
+    if (sel === 'local') return false
+    return sel === agentId
+  }
+
+  // onTopologyChanged handles a remote agent's full-snapshot reconcile: refetch
+  // the lists currently in view for the matching scope.
+  function onTopologyChanged(e: MessageEvent) {
+    try {
+      const data = JSON.parse(e.data) as { agent_id: string }
+      if (!topologyMatchesScope(data.agent_id)) return
+      fetchWorkloadsList()
+      fetchPodsList()
+      if (nodes.value.length > 0) fetchNodesList()
+      if (clusterOverview.value !== null) fetchCluster()
+    } catch {
+      /* ignore */
+    }
+  }
+
   function startListening() {
     sseBus.on('kubernetes.workload_changed', onWorkloadChanged)
     sseBus.on('kubernetes.pod_changed', onPodChanged)
     sseBus.on('kubernetes.node_changed', onNodeChanged)
+    sseBus.on('kubernetes.topology_changed', onTopologyChanged)
   }
 
   function stopListening() {
     sseBus.off('kubernetes.workload_changed', onWorkloadChanged)
     sseBus.off('kubernetes.pod_changed', onPodChanged)
     sseBus.off('kubernetes.node_changed', onNodeChanged)
+    sseBus.off('kubernetes.topology_changed', onTopologyChanged)
   }
 
   return {

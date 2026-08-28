@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import {
   getAlertConfig,
   updateAlertConfig,
@@ -20,7 +20,7 @@ import {
 } from '@/services/resourceApi'
 
 const props = defineProps<{
-  containerId: number
+  containerId: string
 }>()
 
 const config = ref<ResourceAlertConfig | null>(null)
@@ -31,11 +31,22 @@ const saving = ref(false)
 const error = ref<string | null>(null)
 const saved = ref(false)
 
+// Chrome derives the unfilled range track from accent-color, which turns it
+// near-black under our green. The track is drawn as a gradient instead, so both
+// halves come from design tokens; these are the split points.
+const cpuFill = computed(() => fillPercent(cpuThreshold.value, 1, 1000))
+const memFill = computed(() => fillPercent(memThreshold.value, 1, 100))
+
+function fillPercent(value: number, min: number, max: number): string {
+  const ratio = (value - min) / (max - min)
+  return `${Math.min(Math.max(ratio, 0), 1) * 100}%`
+}
+
 const alertStateColors: Record<string, string> = {
-  normal: 'text-green-600',
-  cpu_alert: 'text-red-600',
-  mem_alert: 'text-red-600',
-  both_alert: 'text-red-600',
+  normal: 'text-mnt-status-ok',
+  cpu_alert: 'text-mnt-status-down',
+  mem_alert: 'text-mnt-status-down',
+  both_alert: 'text-mnt-status-down',
 }
 
 onMounted(async () => {
@@ -70,13 +81,22 @@ async function save() {
 </script>
 
 <template>
-  <div class="rounded border border-gray-200 bg-white p-4">
+  <div
+    class="rounded border p-4"
+    :style="{
+      backgroundColor: 'var(--mnt-bg-surface)',
+      borderColor: 'var(--mnt-border-default)',
+      borderRadius: 'var(--mnt-radius-md)',
+    }"
+  >
     <div class="mb-3 flex items-center justify-between">
-      <h4 class="text-sm font-semibold text-slate-700">Resource Alerts</h4>
+      <h4 class="text-sm font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">
+        Resource Alerts
+      </h4>
       <span
         v-if="config"
         class="text-xs font-medium"
-        :class="alertStateColors[config.alert_state] || 'text-slate-500'"
+        :class="alertStateColors[config.alert_state] || 'text-mnt-muted'"
       >
         {{ config.alert_state }}
       </span>
@@ -85,13 +105,18 @@ async function save() {
     <div class="space-y-3">
       <!-- Enable toggle -->
       <label class="flex items-center gap-2 text-sm">
-        <input v-model="enabled" type="checkbox" class="rounded border-gray-300" />
-        <span class="text-slate-700">Enable alerts</span>
+        <input
+          v-model="enabled"
+          type="checkbox"
+          class="rounded"
+          style="accent-color: var(--mnt-accent)"
+        />
+        <span class="text-mnt-muted">Enable alerts</span>
       </label>
 
       <!-- CPU threshold -->
       <div>
-        <label class="block text-xs text-slate-500">CPU Threshold (%)</label>
+        <label class="block text-xs text-mnt-muted">CPU Threshold (%)</label>
         <div class="flex items-center gap-2">
           <input
             v-model.number="cpuThreshold"
@@ -99,20 +124,26 @@ async function save() {
             min="1"
             max="1000"
             class="flex-1"
+            :style="{ '--fill': cpuFill }"
           />
           <input
             v-model.number="cpuThreshold"
             type="number"
             min="1"
             max="1000"
-            class="w-16 rounded border border-gray-300 px-2 py-1 text-xs"
+            class="w-16 rounded-md border px-2 py-1 text-xs outline-none"
+            style="
+              background: var(--mnt-bg-elevated);
+              border-color: var(--mnt-border-default);
+              color: var(--mnt-text-primary);
+            "
           />
         </div>
       </div>
 
       <!-- Memory threshold -->
       <div>
-        <label class="block text-xs text-slate-500">Memory Threshold (%)</label>
+        <label class="block text-xs text-mnt-muted">Memory Threshold (%)</label>
         <div class="flex items-center gap-2">
           <input
             v-model.number="memThreshold"
@@ -120,13 +151,19 @@ async function save() {
             min="1"
             max="100"
             class="flex-1"
+            :style="{ '--fill': memFill }"
           />
           <input
             v-model.number="memThreshold"
             type="number"
             min="1"
             max="100"
-            class="w-16 rounded border border-gray-300 px-2 py-1 text-xs"
+            class="w-16 rounded-md border px-2 py-1 text-xs outline-none"
+            style="
+              background: var(--mnt-bg-elevated);
+              border-color: var(--mnt-border-default);
+              color: var(--mnt-text-primary);
+            "
           />
         </div>
       </div>
@@ -134,15 +171,49 @@ async function save() {
       <!-- Save button -->
       <div class="flex items-center gap-2">
         <button
-          class="rounded bg-pb-green-600 px-3 py-1.5 text-xs font-medium text-slate-950 hover:bg-pb-green-700 disabled:opacity-50"
+          class="rounded bg-mnt-green-600 px-3 py-1.5 text-xs font-medium text-mnt-inverted hover:bg-mnt-green-700 disabled:opacity-50"
           :disabled="saving"
           @click="save"
         >
           {{ saving ? 'Saving...' : 'Save' }}
         </button>
-        <span v-if="saved" class="text-xs text-green-600">Saved</span>
-        <span v-if="error" class="text-xs text-red-600">{{ error }}</span>
+        <span v-if="saved" class="text-xs text-mnt-status-ok">Saved</span>
+        <span v-if="error" class="text-xs text-mnt-status-down">{{ error }}</span>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+input[type='range'] {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--mnt-accent) var(--fill),
+    var(--mnt-bg-elevated) var(--fill)
+  );
+  outline: none;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--mnt-accent);
+  cursor: pointer;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--mnt-accent);
+  cursor: pointer;
+}
+</style>

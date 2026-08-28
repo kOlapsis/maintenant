@@ -16,13 +16,14 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/kolapsis/maintenant/internal/store/sqlite"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // UptimeDailyFetcher abstracts the daily uptime store for testing.
 type UptimeDailyFetcher interface {
-	GetEndpointDailyUptime(ctx context.Context, endpointID int64, days int) ([]sqlite.DailyUptime, error)
-	GetHeartbeatDailyUptime(ctx context.Context, heartbeatID int64, days int) ([]sqlite.DailyUptime, error)
+	GetEndpointDailyUptime(ctx context.Context, endpointID string, days int) ([]store.DailyUptime, error)
+	GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int) ([]store.DailyUptime, error)
+	GetContainerDailyUptime(ctx context.Context, containerID string, days int) ([]store.DailyUptime, error)
 }
 
 // UptimeDailyHandler handles daily uptime aggregation endpoints.
@@ -37,9 +38,9 @@ func NewUptimeDailyHandler(store UptimeDailyFetcher) *UptimeDailyHandler {
 
 // HandleEndpointDailyUptime handles GET /api/v1/endpoints/{id}/uptime/daily.
 func (h *UptimeDailyHandler) HandleEndpointDailyUptime(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
@@ -60,9 +61,9 @@ func (h *UptimeDailyHandler) HandleEndpointDailyUptime(w http.ResponseWriter, r 
 
 // HandleHeartbeatDailyUptime handles GET /api/v1/heartbeats/{id}/uptime/daily.
 func (h *UptimeDailyHandler) HandleHeartbeatDailyUptime(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Heartbeat ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Heartbeat ID is required")
 		return
 	}
 
@@ -77,6 +78,29 @@ func (h *UptimeDailyHandler) HandleHeartbeatDailyUptime(w http.ResponseWriter, r
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"monitor_id":   id,
 		"monitor_type": "heartbeat",
+		"days":         results,
+	})
+}
+
+// HandleContainerDailyUptime handles GET /api/v1/containers/{id}/uptime/daily.
+func (h *UptimeDailyHandler) HandleContainerDailyUptime(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
+		return
+	}
+
+	days := parseDaysParam(r)
+
+	results, err := h.store.GetContainerDailyUptime(r.Context(), id, days)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch daily uptime")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"monitor_id":   id,
+		"monitor_type": "container",
 		"days":         results,
 	})
 }

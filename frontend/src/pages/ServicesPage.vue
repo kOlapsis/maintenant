@@ -12,9 +12,12 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed, onMounted, inject } from 'vue'
+import { ref, computed, onMounted, watch, inject } from 'vue'
 import { fetchSwarmServices, type SwarmServiceResponse } from '@/services/swarmApi'
+import { useResourcesStore } from '@/stores/resources'
+import { useTopologyRefetch } from '@/composables/useTopologyRefetch'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
+import HostBadge from '@/components/HostBadge.vue'
 import { timeAgo } from '@/utils/time'
 import { Layers, ChevronDown, ChevronRight } from 'lucide-vue-next'
 
@@ -24,10 +27,24 @@ interface ServiceGroup {
 }
 
 const { openDetail } = inject(detailSlideOverKey)!
+const resources = useResourcesStore()
 
 const services = ref<SwarmServiceResponse[]>([])
 const loading = ref(true)
 const expandedGroups = ref<Set<string>>(new Set())
+
+async function loadServices() {
+  loading.value = true
+  try {
+    const resp = await fetchSwarmServices(undefined, resources.entityQuery)
+    services.value = resp.services
+    for (const g of groups.value) {
+      expandedGroups.value.add(g.stack)
+    }
+  } finally {
+    loading.value = false
+  }
+}
 
 const groups = computed<ServiceGroup[]>(() => {
   const map = new Map<string, SwarmServiceResponse[]>()
@@ -49,18 +66,11 @@ const groups = computed<ServiceGroup[]>(() => {
     })
 })
 
-onMounted(async () => {
-  try {
-    const resp = await fetchSwarmServices()
-    services.value = resp.services
-    // Expand all groups by default
-    for (const g of groups.value) {
-      expandedGroups.value.add(g.stack)
-    }
-  } finally {
-    loading.value = false
-  }
-})
+onMounted(loadServices)
+
+// Refresh when the host scope changes, or a matching remote agent reports.
+watch(() => resources.selected, loadServices)
+useTopologyRefetch('swarm.topology_changed', loadServices)
 
 function toggleGroup(stack: string) {
   if (expandedGroups.value.has(stack)) {
@@ -71,9 +81,9 @@ function toggleGroup(stack: string) {
 }
 
 function replicaColor(running: number, desired: number): string {
-  if (running >= desired) return 'text-pb-status-ok'
-  if (running > 0) return 'text-amber-400'
-  return 'text-red-400'
+  if (running >= desired) return 'text-mnt-status-ok'
+  if (running > 0) return 'text-mnt-status-warn'
+  return 'text-mnt-status-down'
 }
 
 function imageTag(image: string): { name: string; tag: string } {
@@ -84,13 +94,16 @@ function imageTag(image: string): { name: string; tag: string } {
 
 function updateStateStyle(state: string): string {
   switch (state) {
-    case 'updating': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-    case 'paused': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+    case 'updating':
+      return 'text-mnt-secondary bg-sky-400/10 border-sky-400/20'
+    case 'paused':
+      return 'text-mnt-status-warn bg-mnt-status-warn border-mnt-sev-warning'
     case 'rollback_started':
     case 'rollback_paused':
     case 'rollback_completed':
-      return 'text-red-400 bg-red-400/10 border-red-400/20'
-    default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
+      return 'text-mnt-status-down bg-mnt-status-down border-mnt-sev-incident'
+    default:
+      return 'text-mnt-muted bg-mnt-elevated border-mnt-default'
   }
 }
 
@@ -104,23 +117,23 @@ function handleSelect(svc: SwarmServiceResponse) {
     <div class="max-w-7xl mx-auto">
       <!-- Page header -->
       <div class="mb-6">
-        <h1 class="text-2xl font-black text-pb-primary">Services</h1>
-        <p class="mt-1 text-sm text-slate-500">Swarm services grouped by stack</p>
+        <h1 class="text-2xl font-black text-mnt-primary">Services</h1>
+        <p class="mt-1 text-sm text-mnt-muted">Swarm services grouped by stack</p>
       </div>
 
       <!-- Loading -->
       <div v-if="loading" class="flex items-center justify-center py-16">
-        <span class="text-sm text-slate-500">Loading services…</span>
+        <span class="text-sm text-mnt-muted">Loading services…</span>
       </div>
 
       <!-- Empty -->
       <div
         v-else-if="services.length === 0"
-        class="bg-pb-surface rounded-xl border border-slate-800 px-6 py-12 text-center"
+        class="bg-mnt-surface rounded-xl border border-mnt-default px-6 py-12 text-center"
       >
-        <Layers :size="32" class="mx-auto mb-3 text-slate-600" />
-        <p class="text-sm text-slate-500">No services found</p>
-        <p class="mt-1 text-xs text-slate-600">Make sure this node is a Swarm manager</p>
+        <Layers :size="32" class="mx-auto mb-3 text-mnt-muted" />
+        <p class="text-sm text-mnt-muted">No services found</p>
+        <p class="mt-1 text-xs text-mnt-muted">Make sure this node is a Swarm manager</p>
       </div>
 
       <!-- Groups -->
@@ -128,60 +141,80 @@ function handleSelect(svc: SwarmServiceResponse) {
         <div
           v-for="group in groups"
           :key="group.stack"
-          class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden"
+          class="bg-mnt-surface rounded-xl border border-mnt-default overflow-hidden"
         >
           <!-- Group header -->
           <button
-            class="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-800/25 transition-all"
+            class="w-full flex items-center justify-between px-4 py-3 hover:bg-mnt-elevated transition-all"
             @click="toggleGroup(group.stack)"
           >
             <div class="flex items-center gap-3">
               <component
                 :is="expandedGroups.has(group.stack) ? ChevronDown : ChevronRight"
                 :size="14"
-                class="text-slate-500 flex-shrink-0"
+                class="text-mnt-muted flex-shrink-0"
               />
-              <span class="text-sm font-semibold text-pb-primary">{{ group.stack }}</span>
-              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
+              <span class="text-sm font-semibold text-mnt-primary">{{ group.stack }}</span>
+              <span
+                class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded"
+              >
                 {{ group.services.length }} service{{ group.services.length === 1 ? '' : 's' }}
               </span>
             </div>
-            <div class="flex items-center gap-2 text-xs text-slate-500">
+            <div class="flex items-center gap-2 text-xs text-mnt-muted">
               <span
                 :class="[
                   'font-semibold tabular-nums',
-                  group.services.every(s => s.running_replicas >= s.desired_replicas)
-                    ? 'text-pb-status-ok'
-                    : group.services.some(s => s.running_replicas > 0)
-                      ? 'text-amber-400'
-                      : 'text-red-400',
+                  group.services.every((s) => s.running_replicas >= s.desired_replicas)
+                    ? 'text-mnt-status-ok'
+                    : group.services.some((s) => s.running_replicas > 0)
+                      ? 'text-mnt-status-warn'
+                      : 'text-mnt-status-down',
                 ]"
               >
-                {{ group.services.reduce((sum, s) => sum + s.running_replicas, 0) }}/{{ group.services.reduce((sum, s) => sum + s.desired_replicas, 0) }}
+                {{ group.services.reduce((sum, s) => sum + s.running_replicas, 0) }}/{{
+                  group.services.reduce((sum, s) => sum + s.desired_replicas, 0)
+                }}
               </span>
             </div>
           </button>
 
           <!-- Service rows -->
-          <div v-if="expandedGroups.has(group.stack)" class="border-t border-slate-800 divide-y divide-slate-800/60">
+          <div
+            v-if="expandedGroups.has(group.stack)"
+            class="border-t border-mnt-default divide-y divide-slate-800/60"
+          >
             <div
               v-for="svc in group.services"
               :key="svc.service_id"
-              class="px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
+              class="px-4 py-3 hover:bg-mnt-elevated transition-all cursor-pointer group"
               @click="handleSelect(svc)"
             >
               <div class="flex items-center justify-between gap-4">
                 <!-- Left: name + badges -->
                 <div class="flex items-center gap-2 min-w-0">
-                  <span class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors">
+                  <span
+                    class="text-sm text-mnt-primary font-medium truncate group-hover:text-mnt-green-400 transition-colors"
+                  >
                     {{ svc.name }}
                   </span>
-                  <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded flex-shrink-0">
+                  <span
+                    class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded flex-shrink-0"
+                  >
                     {{ svc.mode }}
                   </span>
+                  <HostBadge
+                    :agent-id="svc.agent_id"
+                    :hostname="svc.agent_hostname"
+                    :label="svc.agent_label"
+                    class="flex-shrink-0"
+                  />
                   <span
                     v-if="svc.update_status?.state && svc.update_status.state !== 'completed'"
-                    :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', updateStateStyle(svc.update_status.state)]"
+                    :class="[
+                      'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                      updateStateStyle(svc.update_status.state),
+                    ]"
                   >
                     {{ svc.update_status.state.replace(/_/g, ' ') }}
                   </span>
@@ -189,16 +222,27 @@ function handleSelect(svc: SwarmServiceResponse) {
 
                 <!-- Right: replicas + image + updated -->
                 <div class="flex items-center gap-4 flex-shrink-0">
-                  <span :class="['text-sm font-semibold tabular-nums', replicaColor(svc.running_replicas, svc.desired_replicas)]">
+                  <span
+                    :class="[
+                      'text-sm font-semibold tabular-nums',
+                      replicaColor(svc.running_replicas, svc.desired_replicas),
+                    ]"
+                  >
                     {{ svc.running_replicas }}/{{ svc.desired_replicas }}
                   </span>
                   <div class="hidden sm:flex items-center gap-1.5 max-w-48">
-                    <span class="text-xs text-slate-500 font-mono truncate">{{ imageTag(svc.image).name.split('/').pop() }}</span>
-                    <span class="text-[10px] font-mono text-slate-600 bg-slate-800 px-1 py-0.5 rounded flex-shrink-0">
+                    <span class="text-xs text-mnt-muted font-mono truncate">{{
+                      imageTag(svc.image).name.split('/').pop()
+                    }}</span>
+                    <span
+                      class="text-[10px] font-mono text-mnt-muted bg-mnt-elevated px-1 py-0.5 rounded flex-shrink-0"
+                    >
                       {{ imageTag(svc.image).tag }}
                     </span>
                   </div>
-                  <span class="text-xs text-slate-500 tabular-nums hidden md:block">{{ timeAgo(svc.created_at) }}</span>
+                  <span class="text-xs text-mnt-muted tabular-nums hidden md:block">{{
+                    timeAgo(svc.created_at)
+                  }}</span>
                 </div>
               </div>
             </div>

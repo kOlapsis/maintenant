@@ -16,6 +16,7 @@ import { computed } from 'vue'
 import { useEdition } from '@/composables/useEdition'
 import { Lock, Sparkles } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
+import EditionBadge from '@/components/EditionBadge.vue'
 
 const props = defineProps<{
   feature: string
@@ -23,8 +24,15 @@ const props = defineProps<{
   description?: string
 }>()
 
-const { edition } = useEdition()
-const enabled = computed(() => edition.value?.features[props.feature] === true)
+const { hasFeature, requiredEditionFor } = useEdition()
+const enabled = computed(() => hasFeature(props.feature))
+
+/**
+ * The edition this specific capability needs, read from the backend registry.
+ * Null when the engine did not declare it — in that case the placeholder stays
+ * generic rather than naming a tier it would be guessing at.
+ */
+const required = computed(() => requiredEditionFor(props.feature))
 </script>
 
 <template>
@@ -34,27 +42,26 @@ const enabled = computed(() => edition.value?.features[props.feature] === true)
       <!-- Default placeholder when no custom one is provided -->
       <div
         v-if="title"
-        class="relative w-full rounded-xl border border-zinc-800 bg-pb-surface px-5 py-5"
+        class="relative w-full rounded-xl border border-mnt-default bg-mnt-surface px-5 py-5"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="flex items-center gap-2 mb-1">
-              <Sparkles class="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-              <span class="text-sm font-semibold text-zinc-300">{{ title }}</span>
+              <Sparkles class="h-3.5 w-3.5 text-mnt-muted shrink-0" />
+              <span class="text-sm font-semibold text-mnt-primary">{{ title }}</span>
             </div>
-            <p v-if="description" class="text-xs leading-relaxed text-zinc-500 pl-5.5">
+            <p v-if="description" class="text-xs leading-relaxed text-mnt-muted pl-5.5">
               {{ description }}
             </p>
           </div>
-          <router-link
-            :to="{ name: 'pro-edition' }"
-            class="flex items-center gap-1.5 shrink-0 mt-0.5"
-          >
-            <Lock class="h-3 w-3 text-indigo-400/60" />
+          <router-link :to="{ name: 'editions' }" class="flex items-center gap-1.5 shrink-0 mt-0.5">
+            <Lock class="h-3 w-3 text-mnt-muted" />
+            <EditionBadge v-if="required" :edition="required" />
             <span
-              class="rounded-full bg-indigo-600/15 px-2.5 py-0.5 text-[10px] font-semibold text-indigo-400"
+              v-else
+              class="rounded-full border border-mnt-default px-2.5 py-0.5 text-[10px] font-semibold text-mnt-muted"
             >
-              Pro
+              Locked
             </span>
           </router-link>
         </div>

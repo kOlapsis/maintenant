@@ -50,7 +50,7 @@ func (c *Client) FetchLogs(ctx context.Context, containerID string, lines int, t
 	if err != nil {
 		return nil, fmt.Errorf("container logs: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	return demuxLogs(reader)
 }
@@ -67,7 +67,7 @@ func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (strin
 	if err != nil {
 		return "", fmt.Errorf("container logs snippet: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	lines, err := demuxLogs(reader)
 	if err != nil {

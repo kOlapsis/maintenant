@@ -14,6 +14,7 @@ package heartbeat
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -32,8 +33,7 @@ import (
 type mockStore struct {
 	mu         sync.Mutex
 	nextID     int64
-	heartbeats map[int64]*Heartbeat
-	byUUID     map[string]*Heartbeat
+	heartbeats map[string]*Heartbeat
 	pings      []*HeartbeatPing
 	executions []*HeartbeatExecution
 	// overdue is injected per-test for checkDeadlines scenarios
@@ -42,36 +42,39 @@ type mockStore struct {
 
 func newMockStore() *mockStore {
 	return &mockStore{
-		heartbeats: make(map[int64]*Heartbeat),
-		byUUID:     make(map[string]*Heartbeat),
+		heartbeats: make(map[string]*Heartbeat),
 	}
 }
 
-// seed inserts a heartbeat directly, bypassing service logic.
+// nextStrID mints a unique string id for telemetry rows (pings/executions).
+func (m *mockStore) nextStrID() string {
+	m.nextID++
+	return fmt.Sprintf("id-%d", m.nextID)
+}
+
+// seed inserts a heartbeat directly, bypassing service logic. h.ID (the token)
+// is the key.
 func (m *mockStore) seed(h *Heartbeat) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.nextID++
-	h.ID = m.nextID
 	cp := *h
 	m.heartbeats[cp.ID] = &cp
-	m.byUUID[cp.UUID] = &cp
 }
 
-func (m *mockStore) CreateHeartbeat(_ context.Context, h *Heartbeat) (int64, error) {
+func (m *mockStore) CreateHeartbeat(_ context.Context, h *Heartbeat) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.nextID++
-	h.ID = m.nextID
+	if h.ID == "" {
+		h.ID = m.nextStrID()
+	}
 	cp := *h
 	cp.CreatedAt = time.Now()
 	cp.UpdatedAt = time.Now()
 	m.heartbeats[cp.ID] = &cp
-	m.byUUID[cp.UUID] = &cp
 	return cp.ID, nil
 }
 
-func (m *mockStore) GetHeartbeatByID(_ context.Context, id int64) (*Heartbeat, error) {
+func (m *mockStore) GetHeartbeatByID(_ context.Context, id string) (*Heartbeat, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
@@ -82,10 +85,10 @@ func (m *mockStore) GetHeartbeatByID(_ context.Context, id int64) (*Heartbeat, e
 	return &cp, nil
 }
 
-func (m *mockStore) GetHeartbeatByUUID(_ context.Context, uuid string) (*Heartbeat, error) {
+func (m *mockStore) GetHeartbeatByUUID(_ context.Context, token string) (*Heartbeat, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	h, ok := m.byUUID[uuid]
+	h, ok := m.heartbeats[token]
 	if !ok {
 		return nil, nil
 	}
@@ -104,7 +107,7 @@ func (m *mockStore) ListHeartbeats(_ context.Context, _ ListHeartbeatsOpts) ([]*
 	return out, nil
 }
 
-func (m *mockStore) UpdateHeartbeat(_ context.Context, id int64, input UpdateHeartbeatInput) error {
+func (m *mockStore) UpdateHeartbeat(_ context.Context, id string, input UpdateHeartbeatInput) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
@@ -121,24 +124,20 @@ func (m *mockStore) UpdateHeartbeat(_ context.Context, id int64, input UpdateHea
 		h.GraceSeconds = *input.GraceSeconds
 	}
 	h.UpdatedAt = time.Now()
-	// keep byUUID in sync
-	m.byUUID[h.UUID] = h
 	return nil
 }
 
-func (m *mockStore) DeleteHeartbeat(_ context.Context, id int64) error {
+func (m *mockStore) DeleteHeartbeat(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	h, ok := m.heartbeats[id]
-	if !ok {
+	if _, ok := m.heartbeats[id]; !ok {
 		return errors.New("not found")
 	}
-	delete(m.byUUID, h.UUID)
 	delete(m.heartbeats, id)
 	return nil
 }
 
-func (m *mockStore) UpdateHeartbeatState(_ context.Context, id int64,
+func (m *mockStore) UpdateHeartbeatState(_ context.Context, id string,
 	status HeartbeatStatus, alertState AlertState,
 	lastPingAt *time.Time, nextDeadlineAt *time.Time, currentRunStartedAt *time.Time,
 	lastExitCode *int, lastDurationMs *int64,
@@ -159,11 +158,10 @@ func (m *mockStore) UpdateHeartbeatState(_ context.Context, id int64,
 	h.ConsecutiveFailures = consecutiveFailures
 	h.ConsecutiveSuccesses = consecutiveSuccesses
 	h.UpdatedAt = time.Now()
-	m.byUUID[h.UUID] = h
 	return nil
 }
 
-func (m *mockStore) PauseHeartbeat(_ context.Context, id int64) error {
+func (m *mockStore) PauseHeartbeat(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
@@ -171,11 +169,10 @@ func (m *mockStore) PauseHeartbeat(_ context.Context, id int64) error {
 		return errors.New("not found")
 	}
 	h.Status = StatusPaused
-	m.byUUID[h.UUID] = h
 	return nil
 }
 
-func (m *mockStore) ResumeHeartbeat(_ context.Context, id int64, nextDeadlineAt time.Time) error {
+func (m *mockStore) ResumeHeartbeat(_ context.Context, id string, nextDeadlineAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
@@ -184,7 +181,6 @@ func (m *mockStore) ResumeHeartbeat(_ context.Context, id int64, nextDeadlineAt 
 	}
 	h.Status = StatusUp
 	h.NextDeadlineAt = &nextDeadlineAt
-	m.byUUID[h.UUID] = h
 	return nil
 }
 
@@ -206,17 +202,16 @@ func (m *mockStore) CountActiveHeartbeats(_ context.Context) (int, error) {
 	return count, nil
 }
 
-func (m *mockStore) InsertPing(_ context.Context, p *HeartbeatPing) (int64, error) {
+func (m *mockStore) InsertPing(_ context.Context, p *HeartbeatPing) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.nextID++
-	p.ID = m.nextID
+	p.ID = m.nextStrID()
 	cp := *p
 	m.pings = append(m.pings, &cp)
 	return cp.ID, nil
 }
 
-func (m *mockStore) ListPings(_ context.Context, heartbeatID int64, opts ListPingsOpts) ([]*HeartbeatPing, int, error) {
+func (m *mockStore) ListPings(_ context.Context, heartbeatID string, opts ListPingsOpts) ([]*HeartbeatPing, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*HeartbeatPing
@@ -238,17 +233,16 @@ func (m *mockStore) ListPings(_ context.Context, heartbeatID int64, opts ListPin
 	return out, total, nil
 }
 
-func (m *mockStore) InsertExecution(_ context.Context, e *HeartbeatExecution) (int64, error) {
+func (m *mockStore) InsertExecution(_ context.Context, e *HeartbeatExecution) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.nextID++
-	e.ID = m.nextID
+	e.ID = m.nextStrID()
 	cp := *e
 	m.executions = append(m.executions, &cp)
 	return cp.ID, nil
 }
 
-func (m *mockStore) UpdateExecution(_ context.Context, id int64, completedAt *time.Time, durationMs *int64, exitCode *int, outcome ExecutionOutcome, payload *string) error {
+func (m *mockStore) UpdateExecution(_ context.Context, id string, completedAt *time.Time, durationMs *int64, exitCode *int, outcome ExecutionOutcome, payload *string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, e := range m.executions {
@@ -264,7 +258,7 @@ func (m *mockStore) UpdateExecution(_ context.Context, id int64, completedAt *ti
 	return errors.New("execution not found")
 }
 
-func (m *mockStore) GetCurrentExecution(_ context.Context, heartbeatID int64) (*HeartbeatExecution, error) {
+func (m *mockStore) GetCurrentExecution(_ context.Context, heartbeatID string) (*HeartbeatExecution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// The "current" execution is the last in_progress one for this heartbeat.
@@ -278,7 +272,7 @@ func (m *mockStore) GetCurrentExecution(_ context.Context, heartbeatID int64) (*
 	return current, nil
 }
 
-func (m *mockStore) ListExecutions(_ context.Context, heartbeatID int64, opts ListExecutionsOpts) ([]*HeartbeatExecution, int, error) {
+func (m *mockStore) ListExecutions(_ context.Context, heartbeatID string, opts ListExecutionsOpts) ([]*HeartbeatExecution, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*HeartbeatExecution
@@ -309,7 +303,7 @@ func (m *mockStore) DeleteExecutionsBefore(_ context.Context, _ time.Time, _ int
 }
 
 // pingsFor returns all pings stored for the given heartbeat ID.
-func (m *mockStore) pingsFor(heartbeatID int64) []*HeartbeatPing {
+func (m *mockStore) pingsFor(heartbeatID string) []*HeartbeatPing {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*HeartbeatPing
@@ -323,7 +317,7 @@ func (m *mockStore) pingsFor(heartbeatID int64) []*HeartbeatPing {
 }
 
 // executionsFor returns all executions stored for the given heartbeat ID.
-func (m *mockStore) executionsFor(heartbeatID int64) []*HeartbeatExecution {
+func (m *mockStore) executionsFor(heartbeatID string) []*HeartbeatExecution {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*HeartbeatExecution
@@ -342,12 +336,12 @@ func (m *mockStore) executionsFor(heartbeatID int64) []*HeartbeatExecution {
 
 // mockLicense implements LicenseChecker.
 type mockLicense struct {
-	canCreate      bool
+	canCreate       bool
 	canStorePayload bool
 }
 
 func (l *mockLicense) CanCreateHeartbeat(_ int) bool { return l.canCreate }
-func (l *mockLicense) CanStorePayload() bool          { return l.canStorePayload }
+func (l *mockLicense) CanStorePayload() bool         { return l.canStorePayload }
 
 func newService(store *mockStore, lc LicenseChecker) *Service {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -358,10 +352,11 @@ func newService(store *mockStore, lc LicenseChecker) *Service {
 	})
 }
 
-// seedHeartbeat creates a heartbeat in the mock store ready for ping tests.
-func seedHeartbeat(store *mockStore, uuid string, status HeartbeatStatus, alertState AlertState) *Heartbeat {
+// seedHeartbeat creates a heartbeat in the mock store ready for ping tests. The
+// token is the heartbeat's id.
+func seedHeartbeat(store *mockStore, token string, status HeartbeatStatus, alertState AlertState) *Heartbeat {
 	h := &Heartbeat{
-		UUID:            uuid,
+		ID:              token,
 		Name:            "test-heartbeat",
 		Status:          status,
 		AlertState:      alertState,
@@ -372,8 +367,6 @@ func seedHeartbeat(store *mockStore, uuid string, status HeartbeatStatus, alertS
 	store.seed(h)
 	return h
 }
-
-func strPtr(s string) *string { return &s }
 
 // ---------------------------------------------------------------------------
 // CreateHeartbeat tests
@@ -392,14 +385,14 @@ func TestService_CreateHeartbeat_ValidInput(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, h)
 
-	assert.Equal(t, "uuid-001", h.UUID)
+	assert.Equal(t, "uuid-001", h.ID)
 	assert.Equal(t, "my-job", h.Name)
 	assert.Equal(t, StatusNew, h.Status)
 	assert.Equal(t, AlertNormal, h.AlertState)
 	assert.Equal(t, 300, h.IntervalSeconds)
 	assert.Equal(t, 60, h.GraceSeconds)
 	assert.True(t, h.Active)
-	assert.Greater(t, h.ID, int64(0))
+	assert.NotEmpty(t, h.ID)
 }
 
 func TestService_CreateHeartbeat_InvalidName(t *testing.T) {
@@ -493,7 +486,7 @@ func TestService_ProcessPing_NewToUp(t *testing.T) {
 	h := seedHeartbeat(store, "uuid-ping-1", StatusNew, AlertNormal)
 	before := time.Now()
 
-	result, err := svc.ProcessPing(context.Background(), "uuid-ping-1", "127.0.0.1", "GET", nil)
+	result, err := svc.ProcessPing(context.Background(), "uuid-ping-1", "127.0.0.1", "GET", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -523,7 +516,7 @@ func TestService_ProcessPing_ConsecutiveSuccessesIncrement(t *testing.T) {
 	seedHeartbeat(store, "uuid-ping-2", StatusUp, AlertNormal)
 
 	for i := 1; i <= 3; i++ {
-		result, err := svc.ProcessPing(context.Background(), "uuid-ping-2", "127.0.0.1", "GET", nil)
+		result, err := svc.ProcessPing(context.Background(), "uuid-ping-2", "127.0.0.1", "GET", nil, nil)
 		require.NoError(t, err)
 		assert.Equal(t, i, result.ConsecutiveSuccesses, "ping #%d", i)
 		assert.Equal(t, 0, result.ConsecutiveFailures)
@@ -541,7 +534,7 @@ func TestService_ProcessPing_DownToUpRecovery(t *testing.T) {
 
 	seedHeartbeat(store, "uuid-ping-3", StatusDown, AlertAlerting)
 
-	result, err := svc.ProcessPing(context.Background(), "uuid-ping-3", "127.0.0.1", "POST", nil)
+	result, err := svc.ProcessPing(context.Background(), "uuid-ping-3", "127.0.0.1", "POST", nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, StatusUp, result.Status)
@@ -563,7 +556,7 @@ func TestService_ProcessPing_UpToUpNoRecoveryAlert(t *testing.T) {
 
 	seedHeartbeat(store, "uuid-ping-4", StatusUp, AlertNormal)
 
-	_, err := svc.ProcessPing(context.Background(), "uuid-ping-4", "127.0.0.1", "GET", nil)
+	_, err := svc.ProcessPing(context.Background(), "uuid-ping-4", "127.0.0.1", "GET", nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 0, alertCalls, "no alert callback for up→up transition")
 }
@@ -574,7 +567,7 @@ func TestService_ProcessPing_StartedToUpCompletionCalculatesDuration(t *testing.
 
 	startedAt := time.Now().Add(-5 * time.Second)
 	h := &Heartbeat{
-		UUID:                "uuid-ping-5",
+		ID:                  "uuid-ping-5",
 		Name:                "job",
 		Status:              StatusStarted,
 		AlertState:          AlertNormal,
@@ -594,7 +587,7 @@ func TestService_ProcessPing_StartedToUpCompletionCalculatesDuration(t *testing.
 	require.NoError(t, err)
 	_ = execID
 
-	result, err := svc.ProcessPing(context.Background(), "uuid-ping-5", "127.0.0.1", "GET", nil)
+	result, err := svc.ProcessPing(context.Background(), "uuid-ping-5", "127.0.0.1", "GET", nil, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, StatusUp, result.Status)
@@ -609,11 +602,57 @@ func TestService_ProcessPing_StartedToUpCompletionCalculatesDuration(t *testing.
 	assert.NotNil(t, execs[0].CompletedAt)
 }
 
+func TestService_ProcessPing_DownStartFinish_RecoversOnCompletion(t *testing.T) {
+	store := newMockStore()
+
+	var alertCalls []string
+	svc := newService(store, &mockLicense{canCreate: true})
+	svc.SetAlertCallback(func(_ *Heartbeat, alertType string, _ map[string]interface{}) {
+		alertCalls = append(alertCalls, alertType)
+	})
+
+	seedHeartbeat(store, "uuid-startfinish-1", StatusDown, AlertAlerting)
+
+	_, err := svc.ProcessStartPing(context.Background(), "uuid-startfinish-1", "127.0.0.1", "GET")
+	require.NoError(t, err)
+	assert.Empty(t, alertCalls, "the start ping alone must not emit a recovery")
+
+	result, err := svc.ProcessPing(context.Background(), "uuid-startfinish-1", "127.0.0.1", "GET", nil, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, StatusUp, result.Status)
+	assert.Equal(t, AlertNormal, result.AlertState)
+	require.Len(t, alertCalls, 1, "the completion ping after down->start must emit exactly one recovery")
+	assert.Equal(t, "recovery", alertCalls[0])
+}
+
+func TestService_ProcessPing_UpButAlerting_EmitsRecoveryAndResetsAlertState(t *testing.T) {
+	store := newMockStore()
+
+	var alertCalls []string
+	svc := newService(store, &mockLicense{canCreate: true})
+	svc.SetAlertCallback(func(_ *Heartbeat, alertType string, _ map[string]interface{}) {
+		alertCalls = append(alertCalls, alertType)
+	})
+
+	// Status is already "up" (e.g. after the fix to ProcessExitCodePing/ProcessPing
+	// itself), but AlertState is stuck "alerting" from an earlier failure mode.
+	seedHeartbeat(store, "uuid-stale-alerting-1", StatusUp, AlertAlerting)
+
+	result, err := svc.ProcessPing(context.Background(), "uuid-stale-alerting-1", "127.0.0.1", "GET", nil, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, StatusUp, result.Status)
+	assert.Equal(t, AlertNormal, result.AlertState)
+	require.Len(t, alertCalls, 1, "a stale alerting state must be cleared by the next successful ping")
+	assert.Equal(t, "recovery", alertCalls[0])
+}
+
 func TestService_ProcessPing_UnknownUUID(t *testing.T) {
 	store := newMockStore()
 	svc := newService(store, &mockLicense{canCreate: true})
 
-	_, err := svc.ProcessPing(context.Background(), "nonexistent-uuid", "127.0.0.1", "GET", nil)
+	_, err := svc.ProcessPing(context.Background(), "nonexistent-uuid", "127.0.0.1", "GET", nil, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHeartbeatNotFound)
 }
@@ -727,6 +766,26 @@ func TestService_ProcessExitCodePing_NonZeroExitCodeFiresAlert(t *testing.T) {
 	assert.Equal(t, "alert", alertCalls[0])
 }
 
+func TestService_ProcessExitCodePing_AlertTypeIsExitCodeFailure(t *testing.T) {
+	store := newMockStore()
+
+	var gotDetails map[string]interface{}
+	svc := newService(store, &mockLicense{canCreate: true})
+	svc.SetAlertCallback(func(_ *Heartbeat, alertType string, details map[string]interface{}) {
+		if alertType == "alert" {
+			gotDetails = details
+		}
+	})
+
+	seedHeartbeat(store, "uuid-exit-alerttype-1", StatusUp, AlertNormal)
+
+	_, err := svc.ProcessExitCodePing(context.Background(), "uuid-exit-alerttype-1", 7, "127.0.0.1", "GET", nil)
+	require.NoError(t, err)
+
+	require.NotNil(t, gotDetails)
+	assert.Equal(t, AlertTypeExitCodeFailure, gotDetails["alert_type"])
+}
+
 func TestService_ProcessExitCodePing_ConsecutiveFailuresIncrement(t *testing.T) {
 	store := newMockStore()
 	svc := newService(store, &mockLicense{canCreate: true})
@@ -772,7 +831,7 @@ func TestService_ProcessExitCodePing_StartedToUpCalculatesDuration(t *testing.T)
 
 	startedAt := time.Now().Add(-10 * time.Second)
 	h := &Heartbeat{
-		UUID:                "uuid-exit-6",
+		ID:                  "uuid-exit-6",
 		Name:                "job",
 		Status:              StatusStarted,
 		AlertState:          AlertNormal,
@@ -927,7 +986,7 @@ func TestService_ResumeHeartbeat_NotFound(t *testing.T) {
 	store := newMockStore()
 	svc := newService(store, &mockLicense{canCreate: true})
 
-	_, err := svc.ResumeHeartbeat(context.Background(), 9999)
+	_, err := svc.ResumeHeartbeat(context.Background(), "nonexistent-id")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrHeartbeatNotFound)
 }
@@ -989,7 +1048,7 @@ func TestService_ProcessPing_PayloadDroppedForCommunity(t *testing.T) {
 	seedHeartbeat(store, "uuid-payload-1", StatusUp, AlertNormal)
 
 	payload := "job output"
-	_, err := svc.ProcessPing(context.Background(), "uuid-payload-1", "127.0.0.1", "POST", &payload)
+	_, err := svc.ProcessPing(context.Background(), "uuid-payload-1", "127.0.0.1", "POST", &payload, nil)
 	require.NoError(t, err)
 
 	// Find the ping for this heartbeat.
@@ -1014,4 +1073,24 @@ func TestService_ProcessExitCodePing_PayloadPreservedForPro(t *testing.T) {
 	lastPing := allPings[len(allPings)-1]
 	require.NotNil(t, lastPing.Payload)
 	assert.Equal(t, payload, *lastPing.Payload)
+}
+
+// TestDefaultLicenseChecker_Unlimited: -1 means no cap, not a cap of -1.
+func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxHeartbeats: -1}
+	for _, count := range []int{0, 1, 5, 500} {
+		if !c.CanCreateHeartbeat(count) {
+			t.Errorf("CanCreateHeartbeat(%d) = false with an unlimited cap", count)
+		}
+	}
+}
+
+func TestDefaultLicenseChecker_Capped(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxHeartbeats: 5}
+	if !c.CanCreateHeartbeat(4) {
+		t.Error("the fifth heartbeat must be allowed")
+	}
+	if c.CanCreateHeartbeat(5) {
+		t.Error("the sixth heartbeat must be refused")
+	}
 }

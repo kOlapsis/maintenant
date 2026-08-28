@@ -18,6 +18,8 @@ import (
 
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
+
+	"github.com/kolapsis/maintenant/internal/retry"
 )
 
 // ContainerEvent represents a processed Docker container/service/node event.
@@ -25,6 +27,7 @@ type ContainerEvent struct {
 	Action       string
 	ExternalID   string
 	Name         string
+	Image        string
 	ExitCode     string
 	HealthStatus string
 	ResourceType string // "container", "service", or "node"
@@ -42,7 +45,7 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 		defer close(out)
 
 		var since string
-		backoff := initialBackoff
+		backoff := retry.New(initialBackoff, maxBackoff, 0)
 
 		for {
 			if err := ctx.Err(); err != nil {
@@ -52,8 +55,8 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 			opts := events.ListOptions{
 				Filters: filters.NewArgs(
 					filters.Arg("type", string(events.ContainerEventType)),
-				filters.Arg("type", string(events.ServiceEventType)),
-				filters.Arg("type", string(events.NodeEventType)),
+					filters.Arg("type", string(events.ServiceEventType)),
+					filters.Arg("type", string(events.NodeEventType)),
 				),
 			}
 			if since != "" {
@@ -70,7 +73,7 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 					if !ok {
 						goto reconnect
 					}
-					backoff = initialBackoff // reset on successful message
+					backoff.Reset() // reset on successful message
 
 					since = timeToSince(msg.Time, msg.TimeNano)
 
@@ -96,16 +99,12 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 			}
 
 		reconnect:
-			c.logger.Info("reconnecting Docker event stream", "backoff", backoff)
+			delay := backoff.Next()
+			c.logger.Info("reconnecting Docker event stream", "backoff", delay)
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(backoff):
-			}
-
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
+			case <-time.After(delay):
 			}
 
 			// Try to reconnect
@@ -150,6 +149,7 @@ func processEvent(msg events.Message) *ContainerEvent {
 		Action:       action,
 		ExternalID:   msg.Actor.ID,
 		Name:         msg.Actor.Attributes["name"],
+		Image:        msg.Actor.Attributes["image"],
 		ResourceType: "container",
 		Timestamp:    eventTimestamp(msg.Time, msg.TimeNano),
 		Labels:       msg.Actor.Attributes,

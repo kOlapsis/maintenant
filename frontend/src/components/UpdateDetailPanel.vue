@@ -14,12 +14,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useUpdatesStore } from '@/stores/updates'
+import { useAlertsStore } from '@/stores/alerts'
 import { type ContainerUpdateDetail, fetchContainerUpdate } from '@/services/updateApi'
+import { type Alert } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
 import RiskScoreGauge from '@/components/RiskScoreGauge.vue'
 import CveList from '@/components/CveList.vue'
 import ChangelogViewer from '@/components/ChangelogViewer.vue'
 import FeatureGate from '@/components/FeatureGate.vue'
+import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import { AlertTriangle, ArrowRight, Check, Copy, ExternalLink, Pin, PinOff } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -29,6 +32,7 @@ const props = defineProps<{
 }>()
 
 const updates = useUpdatesStore()
+const alertsStore = useAlertsStore()
 const detail = ref<ContainerUpdateDetail | null>(null)
 const loading = ref(true)
 const copied = ref(false)
@@ -45,10 +49,32 @@ const riskLevel = computed(() => {
   return 'low'
 })
 
+// L'alerte update active de ce conteneur. Le panel ne connaît que l'ExternalID,
+// mais l'alerte update porte le nom du conteneur (source='update') — on matche
+// par nom + source (au plus une alerte update active par conteneur).
+const updateAlert = computed<Alert | undefined>(() => {
+  const name = detail.value?.container_name
+  if (!name) return undefined
+  const all = [
+    ...alertsStore.activeAlerts.critical,
+    ...alertsStore.activeAlerts.warning,
+    ...alertsStore.activeAlerts.info,
+  ]
+  return all.find((a) => a.source === 'update' && a.entity_name === name)
+})
+
 async function loadDetail() {
   loading.value = true
   try {
     detail.value = await fetchContainerUpdate(props.containerId)
+    // Les alertes actives sont déjà chargées et tenues à jour app-wide
+    // (AppHeader → dashboard.fetchAll + SSE). On ne refetch QUE si le store est
+    // vide : sinon un refetch (snapshot pré-ack) écraserait la mise à jour
+    // optimiste d'un acquittement en cours.
+    const active = alertsStore.activeAlerts
+    if (active.critical.length + active.warning.length + active.info.length === 0) {
+      void alertsStore.fetchActiveAlerts()
+    }
     if (hasFeature('cve_enrichment')) {
       await updates.fetchContainerCves(props.containerId)
     }
@@ -106,46 +132,49 @@ onMounted(loadDetail)
 <template>
   <div v-if="loading" class="flex items-center justify-center py-12">
     <div
-      class="w-6 h-6 border-2 border-pb-green-500 border-t-transparent rounded-full animate-spin"
+      class="w-6 h-6 border-2 border-mnt-green-500 border-t-transparent rounded-full animate-spin"
     />
   </div>
 
   <div v-else-if="detail" class="space-y-5">
     <!-- 1. Version info -->
-    <div class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-      <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Version</h4>
+    <div class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Version</h4>
+        <AcknowledgeButton v-if="updateAlert" :alert="updateAlert" />
+      </div>
       <div class="flex items-center gap-3">
         <div class="text-center">
-          <p class="text-xs text-slate-500 mb-0.5">Current</p>
-          <p class="text-sm font-bold text-pb-primary font-mono">
+          <p class="text-xs text-mnt-muted mb-0.5">Current</p>
+          <p class="text-sm font-bold text-mnt-primary font-mono">
             {{ detail.current_tag || 'latest' }}
           </p>
         </div>
-        <ArrowRight :size="16" class="text-pb-green-500 shrink-0" />
+        <ArrowRight :size="16" class="text-mnt-green-500 shrink-0" />
         <div class="text-center">
-          <p class="text-xs text-slate-500 mb-0.5">Available</p>
-          <p class="text-sm font-bold text-pb-green-400 font-mono">{{ detail.latest_tag }}</p>
+          <p class="text-xs text-mnt-muted mb-0.5">Available</p>
+          <p class="text-sm font-bold text-mnt-green-400 font-mono">{{ detail.latest_tag }}</p>
         </div>
       </div>
       <div class="mt-2 flex items-center gap-2">
         <span
           class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
           :class="{
-            'bg-pb-status-down text-pb-status-down': detail.update_type === 'major',
-            'bg-amber-500/10 text-amber-400': detail.update_type === 'minor',
-            'bg-pb-green-500/10 text-pb-green-400': detail.update_type === 'patch',
-            'bg-slate-500/10 text-slate-400': detail.update_type === 'digest_only',
+            'bg-mnt-status-down text-mnt-status-down': detail.update_type === 'major',
+            'bg-mnt-status-warn text-mnt-status-warn': detail.update_type === 'minor',
+            'bg-mnt-green-500/10 text-mnt-green-400': detail.update_type === 'patch',
+            'bg-mnt-sev-neutral-solid/10 text-mnt-muted': detail.update_type === 'digest_only',
           }"
           >{{ detail.update_type }}</span
         >
         <span
           v-if="detail.pinned"
-          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400"
+          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-mnt-sev-neutral-solid/10 text-mnt-muted"
         >
           <Pin :size="8" class="inline mr-0.5" /> Pinned
         </span>
       </div>
-      <p v-if="detail.pinned && detail.pin_reason" class="mt-2 text-xs text-slate-400 italic">
+      <p v-if="detail.pinned && detail.pin_reason" class="mt-2 text-xs text-mnt-muted italic">
         {{ detail.pin_reason }}
       </p>
     </div>
@@ -153,32 +182,32 @@ onMounted(loadDetail)
     <!-- 2. Tag Filter (when configured) -->
     <div
       v-if="detail.tag_include || detail.tag_exclude"
-      class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+      class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
     >
-      <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+      <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest mb-3">
         Tag Filter
       </h4>
       <div class="space-y-2">
         <div v-if="detail.tag_include" class="flex items-start gap-2">
-          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest shrink-0 pt-0.5 w-14">Include</span>
-          <code class="text-[11px] text-pb-green-400 font-mono bg-pb-green-500/5 px-2 py-0.5 rounded break-all">{{ detail.tag_include }}</code>
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest shrink-0 pt-0.5 w-14">Include</span>
+          <code class="text-[11px] text-mnt-green-400 font-mono bg-mnt-green-500/5 px-2 py-0.5 rounded break-all">{{ detail.tag_include }}</code>
         </div>
         <div v-if="detail.tag_exclude" class="flex items-start gap-2">
-          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest shrink-0 pt-0.5 w-14">Exclude</span>
-          <code class="text-[11px] text-rose-400 font-mono bg-rose-500/5 px-2 py-0.5 rounded break-all">{{ detail.tag_exclude }}</code>
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest shrink-0 pt-0.5 w-14">Exclude</span>
+          <code class="text-[11px] text-mnt-status-down font-mono bg-mnt-status-down px-2 py-0.5 rounded break-all">{{ detail.tag_exclude }}</code>
         </div>
       </div>
     </div>
 
     <!-- 3. Update command -->
-    <div v-if="detail.update_command" class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
+    <div v-if="detail.update_command" class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
       <div class="flex items-center justify-between mb-2">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+        <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">
           Update Command
         </h4>
         <button
           @click="copyCommand"
-          class="text-[10px] text-pb-green-500 hover:text-pb-green-400 flex items-center gap-1 transition-colors"
+          class="text-[10px] text-mnt-green-500 hover:text-mnt-green-400 flex items-center gap-1 transition-colors"
           aria-label="Copy update command"
         >
           <component :is="copied ? Check : Copy" :size="10" />
@@ -186,12 +215,12 @@ onMounted(loadDetail)
         </button>
       </div>
       <pre
-        class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
+        class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
         >{{ detail.update_command }}</pre
       >
       <p
         v-if="detail.update_command.includes('<compose-project-dir>')"
-        class="text-[9px] text-slate-600 mt-2"
+        class="text-[9px] text-mnt-muted mt-2"
       >
         Replace &lt;compose-project-dir&gt; with the actual path to your docker-compose.yml
         directory.
@@ -206,11 +235,11 @@ onMounted(loadDetail)
     >
       <div
         v-if="detail.has_breaking_changes"
-        class="bg-rose-500/5 rounded-xl p-4 border border-rose-500/20"
+        class="bg-mnt-status-down rounded-xl p-4 border border-rose-500/20"
       >
         <div class="flex items-center gap-2">
-          <AlertTriangle :size="14" class="text-pb-status-down shrink-0" />
-          <h4 class="text-xs font-bold text-pb-status-down">Breaking Changes Detected</h4>
+          <AlertTriangle :size="14" class="text-mnt-status-down shrink-0" />
+          <h4 class="text-xs font-bold text-mnt-status-down">Breaking Changes Detected</h4>
         </div>
         <p class="text-[11px] text-rose-300/70 mt-1.5">
           This update contains breaking changes. Review the changelog carefully before proceeding.
@@ -224,8 +253,8 @@ onMounted(loadDetail)
       title="Risk Score"
       description="Instantly assess the risk of each update. A smart score combines CVE severity, breaking changes, and version jump to help you prioritize."
     >
-      <div v-if="detail.risk_score > 0" class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+      <div v-if="detail.risk_score > 0" class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+        <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest mb-3">
           Risk Score
         </h4>
         <RiskScoreGauge :score="detail.risk_score" :level="riskLevel" />
@@ -254,8 +283,8 @@ onMounted(loadDetail)
       title="Vulnerabilities (CVE)"
       description="See at a glance if your containers are exposed to known vulnerabilities. CVEs are automatically matched and ranked by severity."
     >
-      <div class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+      <div class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
+        <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest mb-3">
           Vulnerabilities (CVE)
         </h4>
         <CveList :cves="detail.active_cves || []" />
@@ -265,15 +294,15 @@ onMounted(loadDetail)
     <!-- 8. Rollback command -->
     <div
       v-if="detail.rollback_command"
-      class="bg-pb-primary rounded-xl p-4 border border-amber-900/30"
+      class="bg-mnt-primary rounded-xl p-4 border border-amber-900/30"
     >
       <div class="flex items-center justify-between mb-2">
-        <h4 class="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest">
+        <h4 class="text-[10px] font-bold text-mnt-status-warn/80 uppercase tracking-widest">
           Rollback Command
         </h4>
         <button
           @click="copyRollbackCommand"
-          class="text-[10px] text-amber-500 hover:text-amber-400 flex items-center gap-1 transition-colors"
+          class="text-[10px] text-mnt-status-warn hover:text-mnt-status-warn flex items-center gap-1 transition-colors"
           aria-label="Copy rollback command"
         >
           <component :is="copiedRollback ? Check : Copy" :size="10" />
@@ -281,17 +310,17 @@ onMounted(loadDetail)
         </button>
       </div>
       <pre
-        class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)"
+        class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
         >{{ detail.rollback_command }}</pre
       >
       <p
         v-if="detail.rollback_command.includes('<compose-project-dir>')"
-        class="text-[9px] text-slate-600 mt-2"
+        class="text-[9px] text-mnt-muted mt-2"
       >
         Replace &lt;compose-project-dir&gt; with the actual path to your docker-compose.yml
         directory.
       </p>
-      <p class="text-[9px] text-slate-600 mt-2">
+      <p class="text-[9px] text-mnt-muted mt-2">
         Digest availability depends on registry retention policies.
       </p>
     </div>
@@ -304,17 +333,17 @@ onMounted(loadDetail)
     >
       <div
         v-if="detail.previous_digest"
-        class="rounded-xl p-4 border" style="background: var(--pb-bg-surface); border-color: var(--pb-border-default)"
+        class="rounded-xl p-4 border" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
       >
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+        <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest mb-2">
           Previous Digest
         </h4>
-        <p class="text-[10px] text-slate-400 font-mono break-all">{{ detail.previous_digest }}</p>
+        <p class="text-[10px] text-mnt-muted font-mono break-all">{{ detail.previous_digest }}</p>
       </div>
     </FeatureGate>
 
     <!-- Actions -->
-    <div class="pt-4 border-t border-slate-800 space-y-3">
+    <div class="pt-4 border-t border-mnt-default space-y-3">
       <!-- Pin / Unpin -->
       <div>
         <button
@@ -323,8 +352,8 @@ onMounted(loadDetail)
           class="w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
           :class="
             detail.pinned
-              ? 'bg-slate-700 hover:bg-slate-600 text-pb-secondary'
-              : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/20'
+              ? 'bg-mnt-elevated hover:opacity-80 text-mnt-secondary'
+              : 'bg-mnt-status-warn hover:opacity-80 text-mnt-status-warn border border-mnt-sev-warning'
           "
         >
           <component :is="detail.pinned ? PinOff : Pin" :size="13" />
@@ -335,12 +364,12 @@ onMounted(loadDetail)
             v-model="pinReason"
             rows="2"
             placeholder="Reason (optional)"
-            class="w-full px-3 py-2 rounded-lg text-xs placeholder-slate-600 focus:outline-none resize-none"
-            style="background: var(--pb-bg-elevated); border: 1px solid var(--pb-border-default); color: var(--pb-text-primary)"
+            class="w-full px-3 py-2 rounded-lg text-xs placeholder:text-mnt-muted focus:outline-none resize-none"
+            style="background: var(--mnt-bg-elevated); border: 1px solid var(--mnt-border-default); color: var(--mnt-text-primary)"
           />
           <button
             @click="handlePin"
-            class="mt-2 w-full py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 rounded-lg text-xs font-bold transition-all"
+            class="mt-2 w-full py-2 bg-mnt-sev-warning-solid hover:bg-mnt-sev-warning-solid text-mnt-inverted rounded-lg text-xs font-bold transition-all"
           >
             Confirm pin
           </button>
@@ -353,7 +382,7 @@ onMounted(loadDetail)
         :href="detail.source_url"
         target="_blank"
         rel="noopener noreferrer"
-        class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-pb-secondary rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+        class="w-full py-2.5 bg-mnt-elevated hover:bg-mnt-elevated text-mnt-secondary rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
       >
         <ExternalLink :size="13" />
         View source code
@@ -362,6 +391,6 @@ onMounted(loadDetail)
   </div>
 
   <div v-else class="text-center py-12">
-    <p class="text-sm text-slate-600">No update data available</p>
+    <p class="text-sm text-mnt-muted">No update data available</p>
   </div>
 </template>

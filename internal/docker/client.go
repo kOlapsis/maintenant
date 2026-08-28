@@ -11,6 +11,8 @@ import (
 
 	dtypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+
+	"github.com/kolapsis/maintenant/internal/retry"
 )
 
 const (
@@ -69,28 +71,39 @@ func (c *Client) Connect(ctx context.Context) error {
 }
 
 // ConnectWithRetry attempts to connect with exponential backoff.
+func (c *Client) TryConnect(ctx context.Context) error {
+	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err := c.cli.Ping(tctx)
+	if err != nil {
+		c.mu.Lock()
+		c.connected = false
+		c.mu.Unlock()
+		return fmt.Errorf("docker ping failed: %w", err)
+	}
+	c.mu.Lock()
+	c.connected = true
+	c.mu.Unlock()
+	c.logger.Info("connected to Docker daemon")
+	return nil
+}
+
 func (c *Client) ConnectWithRetry(ctx context.Context) error {
-	backoff := initialBackoff
+	b := retry.New(initialBackoff, maxBackoff, 0)
 	for {
 		err := c.Connect(ctx)
 		if err == nil {
 			return nil
 		}
-
+		delay := b.Next()
 		c.logger.Warn("Docker connection failed, retrying",
 			"error", err,
-			"retry_in", backoff,
+			"retry_in", delay,
 		)
-
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(backoff):
-		}
-
-		backoff *= 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
+		case <-time.After(delay):
 		}
 	}
 }
@@ -146,7 +159,7 @@ type SocketUnavailableError struct {
 }
 
 func (e *SocketUnavailableError) Error() string {
-	return fmt.Sprintf("Docker socket unavailable: %v. Ensure /var/run/docker.sock is mounted with: -v /var/run/docker.sock:/var/run/docker.sock:ro", e.Err)
+	return fmt.Sprintf("Docker API unavailable: %v. Mount the socket (-v /var/run/docker.sock:/var/run/docker.sock:ro) or set DOCKER_HOST to a reachable endpoint (e.g. a socket proxy: tcp://socketproxy:2375)", e.Err)
 }
 
 func (e *SocketUnavailableError) Unwrap() error {

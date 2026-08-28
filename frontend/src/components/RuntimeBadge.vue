@@ -63,7 +63,7 @@ function formatDetectedAt(iso: string | null): string {
 <template>
   <div class="relative" @mouseenter="onEnter" @mouseleave="onLeave">
     <button
-      class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-slate-800/60 border border-transparent hover:border-slate-700/50 cursor-pointer"
+      class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-mnt-elevated border border-transparent hover:border-mnt-default/50 cursor-pointer"
       @click="onClick"
     >
       <!-- Status dot -->
@@ -73,12 +73,12 @@ function formatDetectedAt(iso: string | null): string {
       />
 
       <!-- Runtime icon -->
-      <Layers v-if="isSwarm" :size="16" class="text-slate-400 shrink-0" />
-      <Cloud v-else-if="isKubernetes" :size="16" class="text-slate-400 shrink-0" />
-      <Box v-else :size="16" class="text-slate-400 shrink-0" />
+      <Layers v-if="isSwarm" :size="16" class="text-mnt-muted shrink-0" />
+      <Cloud v-else-if="isKubernetes" :size="16" class="text-mnt-muted shrink-0" />
+      <Box v-else :size="16" class="text-mnt-muted shrink-0" />
 
       <!-- Label -->
-      <span class="text-pb-secondary">{{ capitalize(runtimeContext) }}</span>
+      <span class="text-mnt-secondary">{{ capitalize(runtimeContext) }}</span>
     </button>
 
     <!-- Popover -->
@@ -92,72 +92,72 @@ function formatDetectedAt(iso: string | null): string {
     >
       <div
         v-if="open"
-        class="absolute right-0 top-full mt-2 w-64 rounded-xl border border-slate-700 bg-pb-surface shadow-2xl shadow-black/40 overflow-hidden z-50"
+        class="absolute right-0 top-full mt-2 w-64 rounded-xl border border-mnt-default bg-mnt-surface shadow-2xl shadow-black/40 overflow-hidden z-50"
         @mouseenter="onEnter"
         @mouseleave="onLeave"
       >
         <!-- Header -->
-        <div class="px-4 py-3 border-b border-slate-800">
-          <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Runtime Context</span>
+        <div class="px-4 py-3 border-b border-mnt-default">
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Runtime Context</span>
         </div>
 
         <!-- Body -->
         <div class="px-4 py-3 space-y-2">
           <!-- Runtime -->
           <div class="flex justify-between items-center">
-            <span class="text-xs text-slate-500">Runtime</span>
-            <span class="text-sm text-pb-primary">{{ capitalize(store.runtime) }}</span>
+            <span class="text-xs text-mnt-muted">Runtime</span>
+            <span class="text-sm text-mnt-primary">{{ capitalize(store.runtime) }}</span>
           </div>
 
           <!-- Context -->
           <div class="flex justify-between items-center">
-            <span class="text-xs text-slate-500">Context</span>
-            <span class="text-sm text-pb-primary">{{ capitalize(runtimeContext) }}</span>
+            <span class="text-xs text-mnt-muted">Context</span>
+            <span class="text-sm text-mnt-primary">{{ capitalize(runtimeContext) }}</span>
           </div>
 
           <!-- Status -->
           <div class="flex justify-between items-center">
-            <span class="text-xs text-slate-500">Status</span>
+            <span class="text-xs text-mnt-muted">Status</span>
             <span
               class="text-sm font-medium"
-              :class="connected ? 'text-pb-status-ok' : 'text-pb-status-down'"
+              :class="connected ? 'text-mnt-status-ok' : 'text-mnt-status-down'"
             >{{ connected ? 'Connected' : 'Disconnected' }}</span>
           </div>
 
           <!-- Detected at -->
           <div class="flex justify-between items-center">
-            <span class="text-xs text-slate-500">Detected at</span>
-            <span class="text-sm text-slate-400">{{ formatDetectedAt(store.detectedAt) }}</span>
+            <span class="text-xs text-mnt-muted">Detected at</span>
+            <span class="text-sm text-mnt-muted">{{ formatDetectedAt(store.detectedAt) }}</span>
           </div>
 
           <!-- Swarm metadata -->
           <template v-if="isSwarm && 'cluster_id' in store.metadata">
-            <div class="pt-1 mt-1 border-t border-slate-800/60 space-y-2">
+            <div class="pt-1 mt-1 border-t border-mnt-default/60 space-y-2">
               <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-500">Cluster ID</span>
-                <span class="text-sm text-pb-primary font-mono">{{ (store.metadata as { cluster_id: string }).cluster_id.slice(0, 12) }}</span>
+                <span class="text-xs text-mnt-muted">Cluster ID</span>
+                <span class="text-sm text-mnt-primary font-mono">{{ (store.metadata as { cluster_id: string }).cluster_id.slice(0, 12) }}</span>
               </div>
               <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-500">Managers</span>
-                <span class="text-sm text-pb-primary">{{ (store.metadata as { manager_count: number }).manager_count }}</span>
+                <span class="text-xs text-mnt-muted">Managers</span>
+                <span class="text-sm text-mnt-primary">{{ (store.metadata as { manager_count: number }).manager_count }}</span>
               </div>
               <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-500">Workers</span>
-                <span class="text-sm text-pb-primary">{{ (store.metadata as { worker_count: number }).worker_count }}</span>
+                <span class="text-xs text-mnt-muted">Workers</span>
+                <span class="text-sm text-mnt-primary">{{ (store.metadata as { worker_count: number }).worker_count }}</span>
               </div>
             </div>
           </template>
 
           <!-- Kubernetes metadata -->
           <template v-if="isKubernetes && 'namespace_count' in store.metadata">
-            <div class="pt-1 mt-1 border-t border-slate-800/60 space-y-2">
+            <div class="pt-1 mt-1 border-t border-mnt-default/60 space-y-2">
               <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-500">Namespaces</span>
-                <span class="text-sm text-pb-primary">{{ (store.metadata as { namespace_count: number }).namespace_count }}</span>
+                <span class="text-xs text-mnt-muted">Namespaces</span>
+                <span class="text-sm text-mnt-primary">{{ (store.metadata as { namespace_count: number }).namespace_count }}</span>
               </div>
               <div class="flex justify-between items-center">
-                <span class="text-xs text-slate-500">Nodes</span>
-                <span class="text-sm text-pb-primary">{{ (store.metadata as { node_count: number }).node_count }}</span>
+                <span class="text-xs text-mnt-muted">Nodes</span>
+                <span class="text-sm text-mnt-primary">{{ (store.metadata as { node_count: number }).node_count }}</span>
               </div>
             </div>
           </template>

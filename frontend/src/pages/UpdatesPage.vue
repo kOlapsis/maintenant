@@ -66,10 +66,10 @@ const enabledCVE = computed(() => edition.value?.features['cve_enrichment'] === 
 
 function updateTypeColor(type_: string): string {
   switch (type_) {
-    case 'major': return 'text-pb-status-down'
-    case 'minor': return 'text-amber-400'
-    case 'patch': return 'text-pb-green-400'
-    default: return 'text-slate-400'
+    case 'major': return 'text-mnt-status-down'
+    case 'minor': return 'text-mnt-status-warn'
+    case 'patch': return 'text-mnt-green-400'
+    default: return 'text-mnt-muted'
   }
 }
 
@@ -110,19 +110,19 @@ onUnmounted(() => {
       <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-bold text-pb-primary">Updates</h1>
-          <p class="text-xs text-slate-500 mt-0.5">
+          <h1 class="text-2xl font-black text-mnt-primary">Updates</h1>
+          <p class="mt-1 text-sm text-mnt-muted">
             Automatic container update detection
           </p>
         </div>
         <div class="flex items-center gap-3">
-          <span v-if="updates.summary" class="text-[10px] text-slate-500 font-bold">
+          <span v-if="updates.summary" class="text-[10px] text-mnt-muted font-bold">
             Last scan: {{ formatTime(updates.summary.last_scan) }}
           </span>
           <button
             @click="updates.startScan()"
             :disabled="updates.scanning"
-            class="px-4 py-2 bg-pb-green-600 hover:bg-pb-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-pb-green-500/20"
+            class="px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 disabled:bg-mnt-elevated disabled:text-mnt-muted text-mnt-inverted rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-mnt-green-500/20"
           >
             <RefreshCw :size="13" :class="{ 'animate-spin': updates.scanning }" />
             {{ updates.scanning ? 'Scanning...' : 'Check now' }}
@@ -135,59 +135,59 @@ onUnmounted(() => {
         title="OCI digest scanning, digest-only or semver"
         :doc-href="docUrl('features/updates/#tag-filtering')"
       >
-        maintenant scans the source registry of each image and compares digests. For semver tags, it compares versions while respecting variant suffixes (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">-alpine</code>, <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">-bookworm</code>). Constrain candidates with
-        <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">maintenant.update.tag-include</code>
+        maintenant scans the source registry of each image and compares digests. For semver tags, it compares versions while respecting variant suffixes (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">-alpine</code>, <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">-bookworm</code>). Constrain candidates with
+        <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">maintenant.update.tag-include</code>
         /
-        <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--pb-bg-elevated); color: var(--pb-text-secondary)">tag-exclude</code>
+        <code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">tag-exclude</code>
         (Go regex), pin a container's current version, or exclude whole images entirely.
       </FeatureHint>
 
       <!-- Summary Cards -->
       <div v-if="updates.summary?.counts" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
+        <div class="bg-mnt-surface rounded-xl p-4 border border-mnt-default">
           <div class="flex items-center gap-1.5 mb-1">
-            <AlertTriangle :size="11" class="text-pb-status-down" />
-            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Critical</span>
+            <AlertTriangle :size="11" class="text-mnt-status-down" />
+            <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Critical</span>
           </div>
-          <p class="text-2xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-pb-status-down' : 'text-slate-500'">
+          <p class="text-2xl font-black" :class="updates.summary.counts.critical > 0 ? 'text-mnt-status-down' : 'text-mnt-muted'">
             {{ updates.summary.counts.critical }}
           </p>
         </div>
-        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
+        <div class="bg-mnt-surface rounded-xl p-4 border border-mnt-default">
           <div class="flex items-center gap-1.5 mb-1">
-            <ArrowUpCircle :size="11" class="text-amber-500" />
-            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Recommended</span>
+            <ArrowUpCircle :size="11" class="text-mnt-status-warn" />
+            <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Recommended</span>
           </div>
-          <p class="text-2xl font-black" :class="updates.summary.counts.recommended > 0 ? 'text-amber-400' : 'text-slate-500'">
+          <p class="text-2xl font-black" :class="updates.summary.counts.recommended > 0 ? 'text-mnt-status-warn' : 'text-mnt-muted'">
             {{ updates.summary.counts.recommended }}
           </p>
         </div>
-        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
+        <div class="bg-mnt-surface rounded-xl p-4 border border-mnt-default">
           <div class="flex items-center gap-1.5 mb-1">
-            <ArrowUpCircle :size="11" class="text-pb-green-500" />
-            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Available</span>
+            <ArrowUpCircle :size="11" class="text-mnt-green-500" />
+            <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Available</span>
           </div>
-          <p class="text-2xl font-black" :class="updates.summary.counts.available > 0 ? 'text-pb-green-400' : 'text-slate-500'">
+          <p class="text-2xl font-black" :class="updates.summary.counts.available > 0 ? 'text-mnt-green-400' : 'text-mnt-muted'">
             {{ updates.summary.counts.available }}
           </p>
         </div>
-        <div class="bg-pb-surface rounded-xl p-4 border border-slate-800">
+        <div class="bg-mnt-surface rounded-xl p-4 border border-mnt-default">
           <div class="flex items-center gap-1.5 mb-1">
-            <CheckCircle :size="11" class="text-pb-status-ok" />
-            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Up to date</span>
+            <CheckCircle :size="11" class="text-mnt-status-ok" />
+            <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Up to date</span>
           </div>
-          <p class="text-2xl font-black text-pb-status-ok">
+          <p class="text-2xl font-black text-mnt-status-ok">
             {{ updates.summary.counts.up_to_date }}
           </p>
         </div>
       </div>
 
       <!-- CVE summary (Pro) -->
-      <div v-if="enabledCVE && updates.summary?.cve_counts && (updates.summary.cve_counts.critical > 0 || updates.summary.cve_counts.high > 0)" class="flex items-center gap-2 text-xs bg-pb-surface rounded-xl px-4 py-3 border border-slate-800">
-        <Shield :size="13" class="text-pb-status-down" />
-        <span class="text-slate-400 font-bold">Active CVEs:</span>
-        <span v-if="updates.summary.cve_counts.critical > 0" class="text-pb-status-down font-bold">{{ updates.summary.cve_counts.critical }} critical</span>
-        <span v-if="updates.summary.cve_counts.high > 0" class="text-amber-400 font-bold">{{ updates.summary.cve_counts.high }} high</span>
+      <div v-if="enabledCVE && updates.summary?.cve_counts && (updates.summary.cve_counts.critical > 0 || updates.summary.cve_counts.high > 0)" class="flex items-center gap-2 text-xs bg-mnt-surface rounded-xl px-4 py-3 border border-mnt-default">
+        <Shield :size="13" class="text-mnt-status-down" />
+        <span class="text-mnt-muted font-bold">Active CVEs:</span>
+        <span v-if="updates.summary.cve_counts.critical > 0" class="text-mnt-status-down font-bold">{{ updates.summary.cve_counts.critical }} critical</span>
+        <span v-if="updates.summary.cve_counts.high > 0" class="text-mnt-status-warn font-bold">{{ updates.summary.cve_counts.high }} high</span>
       </div>
 
       <!-- Update Groups -->
@@ -197,48 +197,48 @@ onUnmounted(() => {
         'Available': groupedUpdates.available,
         'Pinned': groupedUpdates.pinned,
       }" :key="key">
-        <div v-if="group.length > 0" class="bg-pb-surface rounded-2xl border border-slate-800 overflow-hidden">
-          <div class="px-5 py-3 border-b border-slate-800 flex items-center gap-2">
-            <AlertTriangle v-if="key === 'Critical'" :size="13" class="text-pb-status-down" />
-            <ArrowUpCircle v-else-if="key === 'Recommended'" :size="13" class="text-amber-500" />
-            <ArrowUpCircle v-else-if="key === 'Available'" :size="13" class="text-pb-green-500" />
-            <Shield v-else :size="13" class="text-slate-500" />
-            <h3 class="text-sm font-bold text-pb-primary">{{ key }}</h3>
-            <span class="text-[10px] text-slate-500 font-bold ml-1">({{ group.length }})</span>
+        <div v-if="group.length > 0" class="bg-mnt-surface rounded-2xl border border-mnt-default overflow-hidden">
+          <div class="px-5 py-3 border-b border-mnt-default flex items-center gap-2">
+            <AlertTriangle v-if="key === 'Critical'" :size="13" class="text-mnt-status-down" />
+            <ArrowUpCircle v-else-if="key === 'Recommended'" :size="13" class="text-mnt-status-warn" />
+            <ArrowUpCircle v-else-if="key === 'Available'" :size="13" class="text-mnt-green-500" />
+            <Shield v-else :size="13" class="text-mnt-muted" />
+            <h3 class="text-sm font-bold text-mnt-primary">{{ key }}</h3>
+            <span class="text-[10px] text-mnt-muted font-bold ml-1">({{ group.length }})</span>
           </div>
 
           <div class="divide-y divide-slate-800/40">
             <div
               v-for="u in group"
               :key="u.id"
-              class="flex items-center gap-4 px-5 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
+              class="flex items-center gap-4 px-5 py-3 hover:bg-mnt-elevated transition-all cursor-pointer group"
               @click="selectUpdate(u)"
             >
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <p class="text-sm font-semibold text-pb-primary group-hover:text-pb-green-400 transition-colors truncate">
+                  <p class="text-sm font-semibold text-mnt-primary group-hover:text-mnt-green-400 transition-colors truncate">
                     {{ u.container_name }}
                   </p>
                   <UpdateBadge :update="u" />
                 </div>
-                <p class="text-[10px] text-slate-500 mt-0.5 truncate">{{ u.image.split('@')[0] }}</p>
-                <p v-if="u.status === 'pinned' && u.pin_reason" class="text-[10px] text-slate-500 mt-0.5 truncate italic">{{ u.pin_reason }}</p>
+                <p class="text-[10px] text-mnt-muted mt-0.5 truncate">{{ u.image.split('@')[0] }}</p>
+                <p v-if="u.status === 'pinned' && u.pin_reason" class="text-[10px] text-mnt-muted mt-0.5 truncate italic">{{ u.pin_reason }}</p>
               </div>
               <div class="text-right shrink-0">
                 <p :class="['text-xs font-bold', updateTypeColor(u.update_type)]">
                   {{ shortTag(u.current_tag) }} → {{ shortTag(u.latest_tag) }}
                 </p>
-                <p class="text-[10px] text-slate-500 mt-0.5">{{ formatTime(u.detected_at) }}</p>
+                <p class="text-[10px] text-mnt-muted mt-0.5">{{ formatTime(u.detected_at) }}</p>
               </div>
               <FeatureGate feature="risk_scoring">
                 <div v-if="u.risk_score > 0" class="shrink-0 w-10 text-center">
                   <span
                     class="text-xs font-black"
-                    :class="u.risk_score >= 81 ? 'text-pb-status-down' : u.risk_score >= 31 ? 'text-amber-400' : 'text-pb-green-400'"
+                    :class="u.risk_score >= 81 ? 'text-mnt-status-down' : u.risk_score >= 31 ? 'text-mnt-status-warn' : 'text-mnt-green-400'"
                   >{{ u.risk_score }}</span>
                 </div>
               </FeatureGate>
-              <ChevronRight :size="14" class="text-slate-700 group-hover:text-slate-400 shrink-0 transition-colors" />
+              <ChevronRight :size="14" class="text-mnt-muted group-hover:text-mnt-muted shrink-0 transition-colors" />
             </div>
           </div>
         </div>
@@ -247,8 +247,8 @@ onUnmounted(() => {
       <!-- Empty state -->
       <div v-if="updates.updates.length === 0 && !updates.loading" class="flex flex-col items-center justify-center py-16">
         <CheckCircle :size="40" class="text-emerald-500/30 mb-3" />
-        <p class="text-sm text-slate-500 font-medium">All containers are up to date</p>
-        <p class="text-[10px] text-slate-700 mt-1">Run a scan to check for available updates</p>
+        <p class="text-sm text-mnt-muted font-medium">All containers are up to date</p>
+        <p class="text-[10px] text-mnt-muted mt-1">Run a scan to check for available updates</p>
       </div>
     </div>
 

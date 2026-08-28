@@ -55,8 +55,22 @@ func TestRegistryCoversAllEnvVars(t *testing.T) {
 
 // ── T028: FlagName derived from EnvName via algorithm R5 ─────────────────────
 
+// kebabFlags are the multi-host flags that shipped before the registry existed.
+// Their names are baked into running agents, systemd units and the docs, so they
+// keep their kebab-case spelling instead of the derived camelCase one.
+var kebabFlags = map[string]bool{
+	"enrollment-token": true,
+	"grpc-listen": true, "grpc-url": true, "grpc-tls-cert": true,
+	"grpc-tls-key": true, "grpc-insecure-skip-tls-verify": true,
+	"embedded-agent": true, "ca-cert": true, "database-url": true,
+	"copy-store-to": true, "yes": true,
+}
+
 func TestFlagNameDerivedFromEnvName(t *testing.T) {
 	for _, spec := range Registry {
+		if kebabFlags[spec.FlagName] {
+			continue
+		}
 		got := envNameToFlagName(spec.EnvName)
 		if got != spec.FlagName {
 			t.Errorf("R5(%q) = %q, want %q", spec.EnvName, got, spec.FlagName)
@@ -98,6 +112,9 @@ func TestFlagNamesUnique(t *testing.T) {
 
 func TestEnvNamesPrefixed(t *testing.T) {
 	for _, spec := range Registry {
+		if spec.NoEnv {
+			continue
+		}
 		if !strings.HasPrefix(spec.EnvName, "MAINTENANT_") {
 			t.Errorf("EnvName %q must start with MAINTENANT_", spec.EnvName)
 		}

@@ -19,9 +19,9 @@ import (
 
 func TestParseTagOSVariant(t *testing.T) {
 	tests := []struct {
-		tag      string
-		wantEco  string
-		wantOK   bool
+		tag     string
+		wantEco string
+		wantOK  bool
 	}{
 		// Full tag = OS variant
 		{"alpine", "Alpine:3.20", true},

@@ -17,6 +17,9 @@ import {
   type ListContainersParams,
 } from '@/services/containerApi'
 import { sseBus } from '@/services/sseBus'
+import { isLocalAgent } from '@/services/apiFetch'
+import { useRuntimeStore } from '@/stores/runtime'
+import { useResourcesStore } from '@/stores/resources'
 
 export interface ContainerGroup {
   name: string
@@ -37,6 +40,12 @@ export const useContainersStore = defineStore('containers', () => {
 
   const expandedControllers = ref<Set<string>>(new Set())
 
+  // Derived from the runtime store: false when container monitoring is unavailable.
+  const isContainerMonitoringAvailable = computed(() => {
+    const runtimeStore = useRuntimeStore()
+    return runtimeStore.connected
+  })
+
   const allContainers = computed(() =>
     groups.value.flatMap((g) => g.containers),
   )
@@ -46,6 +55,17 @@ export const useContainersStore = defineStore('containers', () => {
   )
 
   const containerCount = computed(() => activeContainers.value.length)
+
+  // Number of distinct hosts across the visible containers (local server +
+  // remote agents). Used to hide the per-card host badge when there is nothing
+  // to disambiguate (a single host).
+  const hostCount = computed(() => {
+    const hosts = new Set<string>()
+    for (const c of allContainers.value) {
+      hosts.add(isLocalAgent(c.agent_id) ? 'local' : c.agent_id!)
+    }
+    return hosts.size
+  })
 
   const isKubernetesMode = computed(() => runtimeName.value === 'kubernetes')
   const isSwarmMode = ref(false)
@@ -62,7 +82,7 @@ export const useContainersStore = defineStore('containers', () => {
     return expandedControllers.value.has(key)
   }
 
-  function findContainerIndex(id: number): { groupIdx: number; containerIdx: number } | null {
+  function findContainerIndex(id: string): { groupIdx: number; containerIdx: number } | null {
     for (let gi = 0; gi < groups.value.length; gi++) {
       const ci = groups.value[gi]!.containers.findIndex((c) => c.id === id)
       if (ci >= 0) return { groupIdx: gi, containerIdx: ci }
@@ -71,10 +91,12 @@ export const useContainersStore = defineStore('containers', () => {
   }
 
   async function fetchContainers(params?: ListContainersParams) {
+    const q = useResourcesStore().entityQuery
+    const mergedParams = q ? { ...params, agent_id: q } : params
     loading.value = true
     error.value = null
     try {
-      const res = await listContainers(params)
+      const res = await listContainers(mergedParams)
       groups.value = res.groups || []
       totalCount.value = res.total || 0
       archivedCount.value = res.archived_count || 0
@@ -210,11 +232,13 @@ export const useContainersStore = defineStore('containers', () => {
     runtimeConnected,
     runtimeName,
     runtimeLabel,
+    isContainerMonitoringAvailable,
     isKubernetesMode,
     isSwarmMode,
     allContainers,
     activeContainers,
     containerCount,
+    hostCount,
     totalCount,
     archivedCount,
     expandedControllers,

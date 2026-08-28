@@ -58,7 +58,7 @@ var languageEcosystemImages = map[string]string{
 
 // knownScratchImages are images that should return nil (no ecosystem).
 var knownScratchImages = map[string]bool{
-	"scratch":    true,
+	"scratch":                         true,
 	"gcr.io/distroless/static":        true,
 	"gcr.io/distroless/base":          true,
 	"gcr.io/distroless/cc":            true,
@@ -70,21 +70,21 @@ const ociBaseNameLabel = "org.opencontainers.image.base.name"
 
 // knownPublicRegistries are registries where unauthenticated access is allowed.
 var knownPublicRegistries = map[string]bool{
-	"docker.io":      true,
+	"docker.io":            true,
 	"registry-1.docker.io": true,
-	"ghcr.io":        true,
-	"quay.io":        true,
-	"gcr.io":         true,
-	"public.ecr.aws": true,
+	"ghcr.io":              true,
+	"quay.io":              true,
+	"gcr.io":               true,
+	"public.ecr.aws":       true,
 }
 
 // baseImageEcosystems maps base image names to their OSV ecosystem identifier.
 var baseImageEcosystems = map[string]string{
-	"debian":  "Debian",
-	"ubuntu":  "Ubuntu",
-	"alpine":  "Alpine",
-	"centos":  "CentOS",
-	"fedora":  "Fedora",
+	"debian": "Debian",
+	"ubuntu": "Ubuntu",
+	"alpine": "Alpine",
+	"centos": "CentOS",
+	"fedora": "Fedora",
 }
 
 // baseImageVersions maps codenames/tags to version numbers for OSV.
@@ -383,7 +383,7 @@ func looksLikeHash(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}

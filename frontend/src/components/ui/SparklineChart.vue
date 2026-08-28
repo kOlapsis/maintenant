@@ -26,7 +26,7 @@ const props = withDefaults(
   {
     width: 80,
     height: 24,
-    color: 'var(--pb-accent)',
+    color: 'var(--mnt-accent)',
     fillOpacity: 0.1,
     highlightLast: true,
   },

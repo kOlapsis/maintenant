@@ -78,7 +78,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 	require.NotNil(t, result)
 
 	expectedTools := []string{
-		// Read tools (12)
+		// Read tools (13)
 		"list_containers",
 		"get_container",
 		"get_container_logs",
@@ -91,6 +91,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		"list_certificates",
 		"get_updates",
 		"get_health",
+		"list_agents",
 		// Write tools (6)
 		"acknowledge_alert",
 		"create_incident",
@@ -98,6 +99,36 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		"create_maintenance",
 		"pause_monitor",
 		"resume_monitor",
+		// Escalation tools (8)
+		"list_escalation_policies",
+		"get_escalation_policy",
+		"create_escalation_policy",
+		"update_escalation_policy",
+		"set_escalation_policy_active",
+		"delete_escalation_policy",
+		"list_alert_escalation_runs",
+		"get_escalation_run",
+		// Trigger tools (5)
+		"list_triggers",
+		"get_trigger",
+		"create_trigger",
+		"update_trigger",
+		"delete_trigger",
+		// Security tools (4)
+		"get_security_insights",
+		"list_cve",
+		"list_risk_scores",
+		"get_security_posture",
+		// Kubernetes tools (4)
+		"list_kubernetes_namespaces",
+		"list_kubernetes_workloads",
+		"list_kubernetes_pods",
+		"list_kubernetes_nodes",
+		// Swarm tools (4)
+		"get_swarm_info",
+		"list_swarm_services",
+		"list_swarm_tasks",
+		"list_swarm_nodes",
 	}
 
 	toolNames := make(map[string]bool)
@@ -105,7 +136,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 
-	assert.Len(t, result.Tools, 18, "expected exactly 18 tools registered")
+	assert.Len(t, result.Tools, 44, "expected exactly 44 tools registered")
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "expected tool %q to be registered", name)
 	}

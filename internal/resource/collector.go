@@ -18,7 +18,8 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 const (
@@ -29,25 +30,25 @@ const (
 
 // Collector periodically collects resource stats from the active runtime.
 type Collector struct {
-	rt           pbruntime.Runtime
+	rt           runtime.Runtime
 	containerSvc *container.Service
 	interval     time.Duration
 	logger       *slog.Logger
 	onSnapshot   func(snap *ResourceSnapshot)
 
 	mu       sync.Mutex
-	latest   map[int64]*ResourceSnapshot // keyed by container_id
+	latest   map[string]*ResourceSnapshot // keyed by container_id
 	hostStat *HostStatReader
 }
 
 // NewCollector creates a resource stats collector.
-func NewCollector(rt pbruntime.Runtime, containerSvc *container.Service, logger *slog.Logger) *Collector {
+func NewCollector(rt runtime.Runtime, containerSvc *container.Service, logger *slog.Logger) *Collector {
 	return &Collector{
 		rt:           rt,
 		containerSvc: containerSvc,
 		interval:     defaultCollectInterval,
 		logger:       logger,
-		latest:       make(map[int64]*ResourceSnapshot),
+		latest:       make(map[string]*ResourceSnapshot),
 		hostStat:     NewHostStatReader(),
 	}
 }
@@ -63,17 +64,17 @@ func (c *Collector) SetOnSnapshot(fn func(snap *ResourceSnapshot)) {
 }
 
 // GetLatestSnapshot returns the most recent in-memory snapshot for a container.
-func (c *Collector) GetLatestSnapshot(containerID int64) *ResourceSnapshot {
+func (c *Collector) GetLatestSnapshot(containerID string) *ResourceSnapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.latest[containerID]
 }
 
 // GetAllLatest returns the latest snapshots for all containers.
-func (c *Collector) GetAllLatest() map[int64]*ResourceSnapshot {
+func (c *Collector) GetAllLatest() map[string]*ResourceSnapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	result := make(map[int64]*ResourceSnapshot, len(c.latest))
+	result := make(map[string]*ResourceSnapshot, len(c.latest))
 	for k, v := range c.latest {
 		result[k] = v
 	}
@@ -107,6 +108,9 @@ func (c *Collector) GetHostStat() *HostStatReader {
 }
 
 func (c *Collector) collect(ctx context.Context) {
+	if !c.rt.IsConnected() {
+		return
+	}
 	containers, err := c.containerSvc.ListContainers(ctx, container.ListContainersOpts{})
 	if err != nil {
 		c.logger.Error("resource collector: list containers", "error", err)
@@ -160,6 +164,7 @@ func (c *Collector) collect(ctx context.Context) {
 				BlockReadBytes:  raw.BlockReadBytes,
 				BlockWriteBytes: raw.BlockWriteBytes,
 				Timestamp:       raw.Timestamp,
+				AgentID:         uid.LocalAgent,
 			}
 
 			c.mu.Lock()
@@ -179,7 +184,7 @@ func (c *Collector) collect(ctx context.Context) {
 }
 
 func (c *Collector) cleanStale(running []*container.Container) {
-	runningIDs := make(map[int64]struct{}, len(running))
+	runningIDs := make(map[string]struct{}, len(running))
 	for _, ct := range running {
 		runningIDs[ct.ID] = struct{}{}
 	}

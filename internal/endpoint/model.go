@@ -17,6 +17,28 @@ import (
 	"time"
 )
 
+// Duration is a time.Duration that marshals to/from a human-readable string (e.g., "30s").
+type Duration time.Duration
+
+func (d Duration) String() string { return time.Duration(d).String() }
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(dur)
+	return nil
+}
+
 // EndpointSource represents the origin of an endpoint definition.
 type EndpointSource string
 
@@ -37,9 +59,12 @@ const (
 type EndpointStatus string
 
 const (
-	StatusUp      EndpointStatus = "up"
-	StatusDown    EndpointStatus = "down"
-	StatusUnknown EndpointStatus = "unknown"
+	StatusUp   EndpointStatus = "up"
+	StatusDown EndpointStatus = "down"
+	// StatusDegraded is reachable and serving, but its certificate is not
+	// trusted. Distinct from down: the host is not the problem, its chain is.
+	StatusDegraded EndpointStatus = "degraded"
+	StatusUnknown  EndpointStatus = "unknown"
 )
 
 // AlertState represents the current alert state of an endpoint.
@@ -52,7 +77,7 @@ const (
 
 // Endpoint represents a monitored HTTP or TCP target.
 type Endpoint struct {
-	ID                   int64          `json:"id"`
+	ID                   string         `json:"id"`
 	ContainerName        string         `json:"container_name"`
 	LabelKey             string         `json:"label_key"`
 	ExternalID           string         `json:"external_id"`
@@ -74,6 +99,7 @@ type Endpoint struct {
 	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
 	Source               EndpointSource `json:"source"`
 	Name                 string         `json:"name,omitempty"`
+	AgentID              string         `json:"agent_id"`
 }
 
 // ConfigJSON returns the JSON-encoded configuration.
@@ -84,20 +110,27 @@ func (e *Endpoint) ConfigJSON() string {
 
 // CheckResult represents a single probe result for an endpoint.
 type CheckResult struct {
-	ID                  int64               `json:"id"`
-	EndpointID          int64               `json:"endpoint_id"`
-	Success             bool                `json:"success"`
-	ResponseTimeMs      int64               `json:"response_time_ms"`
-	HTTPStatus          *int                `json:"http_status,omitempty"`
-	ErrorMessage        string              `json:"error_message,omitempty"`
-	Timestamp           time.Time           `json:"timestamp"`
+	ID             string    `json:"id"`
+	EndpointID     string    `json:"endpoint_id"`
+	Success        bool      `json:"success"`
+	ResponseTimeMs int64     `json:"response_time_ms"`
+	HTTPStatus     *int      `json:"http_status,omitempty"`
+	ErrorMessage   string    `json:"error_message,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
+	// Degraded marks a host that answered but whose certificate we refuse to
+	// trust. Success stays true — it is reachable and serving — so uptime is
+	// unaffected and only the status and alert severity change.
+	Degraded            bool                `json:"degraded,omitempty"`
+	DegradedReason      string              `json:"degraded_reason,omitempty"`
 	TLSPeerCertificates []*x509.Certificate `json:"-"`
+	TLSOCSPResponse     []byte              `json:"-"`
+	AgentID             string              `json:"agent_id"`
 }
 
 // EndpointConfig holds the configuration parameters for endpoint checks.
 type EndpointConfig struct {
-	Interval          time.Duration     `json:"interval"`
-	Timeout           time.Duration     `json:"timeout"`
+	Interval          Duration          `json:"interval"`
+	Timeout           Duration          `json:"timeout"`
 	FailureThreshold  int               `json:"failure_threshold"`
 	RecoveryThreshold int               `json:"recovery_threshold"`
 	Method            string            `json:"method,omitempty"`
@@ -110,8 +143,8 @@ type EndpointConfig struct {
 // DefaultConfig returns an EndpointConfig with sensible defaults.
 func DefaultConfig() EndpointConfig {
 	return EndpointConfig{
-		Interval:          30 * time.Second,
-		Timeout:           10 * time.Second,
+		Interval:          Duration(30 * time.Second),
+		Timeout:           Duration(10 * time.Second),
 		FailureThreshold:  3,
 		RecoveryThreshold: 2,
 		Method:            "GET",
@@ -122,73 +155,6 @@ func DefaultConfig() EndpointConfig {
 	}
 }
 
-// MarshalJSON implements custom JSON marshaling for EndpointConfig to use string durations.
-func (c EndpointConfig) MarshalJSON() ([]byte, error) {
-	type Alias struct {
-		Interval          string            `json:"interval"`
-		Timeout           string            `json:"timeout"`
-		FailureThreshold  int               `json:"failure_threshold"`
-		RecoveryThreshold int               `json:"recovery_threshold"`
-		Method            string            `json:"method,omitempty"`
-		ExpectedStatus    string            `json:"expected_status,omitempty"`
-		TLSVerify         bool              `json:"tls_verify"`
-		Headers           map[string]string `json:"headers,omitempty"`
-		MaxRedirects      int               `json:"max_redirects,omitempty"`
-	}
-	return json.Marshal(Alias{
-		Interval:          c.Interval.String(),
-		Timeout:           c.Timeout.String(),
-		FailureThreshold:  c.FailureThreshold,
-		RecoveryThreshold: c.RecoveryThreshold,
-		Method:            c.Method,
-		ExpectedStatus:    c.ExpectedStatus,
-		TLSVerify:         c.TLSVerify,
-		Headers:           c.Headers,
-		MaxRedirects:      c.MaxRedirects,
-	})
-}
-
-// UnmarshalJSON implements custom JSON unmarshaling for EndpointConfig with string durations.
-func (c EndpointConfig) UnmarshalJSON(data []byte) error {
-	type Alias struct {
-		Interval          string            `json:"interval"`
-		Timeout           string            `json:"timeout"`
-		FailureThreshold  int               `json:"failure_threshold"`
-		RecoveryThreshold int               `json:"recovery_threshold"`
-		Method            string            `json:"method,omitempty"`
-		ExpectedStatus    string            `json:"expected_status,omitempty"`
-		TLSVerify         bool              `json:"tls_verify"`
-		Headers           map[string]string `json:"headers,omitempty"`
-		MaxRedirects      int               `json:"max_redirects,omitempty"`
-	}
-	var a Alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return err
-	}
-	if a.Interval != "" {
-		d, err := time.ParseDuration(a.Interval)
-		if err != nil {
-			return err
-		}
-		c.Interval = d
-	}
-	if a.Timeout != "" {
-		d, err := time.ParseDuration(a.Timeout)
-		if err != nil {
-			return err
-		}
-		c.Timeout = d
-	}
-	c.FailureThreshold = a.FailureThreshold
-	c.RecoveryThreshold = a.RecoveryThreshold
-	c.Method = a.Method
-	c.ExpectedStatus = a.ExpectedStatus
-	c.TLSVerify = a.TLSVerify
-	c.Headers = a.Headers
-	c.MaxRedirects = a.MaxRedirects
-	return nil
-}
-
 // ListEndpointsOpts configures endpoint listing queries.
 type ListEndpointsOpts struct {
 	Status             string
@@ -197,6 +163,7 @@ type ListEndpointsOpts struct {
 	EndpointType       string
 	Source             string
 	IncludeInactive    bool
+	AgentFilter        *string
 }
 
 // ListChecksOpts configures check result listing queries.

@@ -13,6 +13,9 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +24,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -31,10 +35,10 @@ type stubChannelStore struct {
 	ch *alert.NotificationChannel
 }
 
-func (s *stubChannelStore) InsertChannel(_ context.Context, ch *alert.NotificationChannel) (int64, error) {
-	return 1, nil
+func (s *stubChannelStore) InsertChannel(_ context.Context, ch *alert.NotificationChannel) (string, error) {
+	return "1", nil
 }
-func (s *stubChannelStore) GetChannel(_ context.Context, _ int64) (*alert.NotificationChannel, error) {
+func (s *stubChannelStore) GetChannel(_ context.Context, _ string) (*alert.NotificationChannel, error) {
 	return s.ch, nil
 }
 func (s *stubChannelStore) ListChannels(_ context.Context) ([]*alert.NotificationChannel, error) {
@@ -43,24 +47,17 @@ func (s *stubChannelStore) ListChannels(_ context.Context) ([]*alert.Notificatio
 func (s *stubChannelStore) UpdateChannel(_ context.Context, _ *alert.NotificationChannel) error {
 	return nil
 }
-func (s *stubChannelStore) DeleteChannel(_ context.Context, _ int64) error { return nil }
-func (s *stubChannelStore) GetChannelHealth(_ context.Context, _ int64) (string, error) {
+func (s *stubChannelStore) DeleteChannel(_ context.Context, _ string) error { return nil }
+func (s *stubChannelStore) GetChannelHealth(_ context.Context, _ string) (string, error) {
 	return "ok", nil
 }
-func (s *stubChannelStore) InsertRoutingRule(_ context.Context, _ *alert.RoutingRule) (int64, error) {
-	return 1, nil
-}
-func (s *stubChannelStore) DeleteRoutingRule(_ context.Context, _ int64) error { return nil }
-func (s *stubChannelStore) ListRoutingRulesByChannel(_ context.Context, _ int64) ([]alert.RoutingRule, error) {
-	return nil, nil
-}
-func (s *stubChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (int64, error) {
-	return 1, nil
+func (s *stubChannelStore) InsertDelivery(_ context.Context, _ *alert.NotificationDelivery) (string, error) {
+	return "1", nil
 }
 func (s *stubChannelStore) UpdateDelivery(_ context.Context, _ *alert.NotificationDelivery) error {
 	return nil
 }
-func (s *stubChannelStore) ListDeliveriesByAlert(_ context.Context, _ int64) ([]*alert.NotificationDelivery, error) {
+func (s *stubChannelStore) ListDeliveriesByAlert(_ context.Context, _ string) ([]*alert.NotificationDelivery, error) {
 	return nil, nil
 }
 
@@ -70,32 +67,58 @@ func (s *stubChannelStore) ListDeliveriesByAlert(_ context.Context, _ int64) ([]
 
 func TestHandleCreateChannel_TypeGating(t *testing.T) {
 	tests := []struct {
-		name       string
-		edition    extension.Edition
-		body       string
-		wantStatus int
-		wantCode   string
+		name         string
+		edition      extension.Edition
+		body         string
+		wantStatus   int
+		wantCode     string
+		wantFeature  string
+		wantRequired string
 	}{
 		{
-			name:       "community + slack blocked",
-			edition:    extension.Community,
-			body:       `{"type":"slack","name":"test","url":"https://example.com"}`,
-			wantStatus: http.StatusForbidden,
-			wantCode:   "PRO_REQUIRED",
+			name:         "community + slack blocked",
+			edition:      extension.Community,
+			body:         `{"type":"slack","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "slack",
+			wantRequired: "pro",
 		},
 		{
-			name:       "community + teams blocked",
-			edition:    extension.Community,
-			body:       `{"type":"teams","name":"test","url":"https://example.com"}`,
-			wantStatus: http.StatusForbidden,
-			wantCode:   "PRO_REQUIRED",
+			name:         "community + teams blocked",
+			edition:      extension.Community,
+			body:         `{"type":"teams","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "teams",
+			wantRequired: "pro",
 		},
 		{
-			name:       "community + email blocked",
-			edition:    extension.Community,
-			body:       `{"type":"email","name":"test","url":"https://example.com"}`,
-			wantStatus: http.StatusForbidden,
-			wantCode:   "PRO_REQUIRED",
+			// Email is Personal, not Pro. The refusal must say so rather than
+			// pushing every blocked channel towards the top tier.
+			name:         "community + email blocked, names Personal",
+			edition:      extension.Community,
+			body:         `{"type":"email","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "smtp",
+			wantRequired: "personal",
+		},
+		{
+			// And a Personal instance gets the email channel it paid for.
+			name:       "personal + email passes type check",
+			edition:    extension.Personal,
+			body:       `{"type":"email","name":"test","url":"not-an-address"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:         "personal + slack still blocked",
+			edition:      extension.Personal,
+			body:         `{"type":"slack","name":"test","url":"https://example.com"}`,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "EDITION_REQUIRED",
+			wantFeature:  "slack",
+			wantRequired: "pro",
 		},
 		{
 			name:    "community + webhook passes type check",
@@ -105,8 +128,8 @@ func TestHandleCreateChannel_TypeGating(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:    "enterprise + slack passes type check",
-			edition: extension.Enterprise,
+			name:    "pro + slack passes type check",
+			edition: extension.Pro,
 			// http:// URL fails HTTPS scheme check → 400, not 403
 			body:       `{"type":"slack","name":"test","url":"http://not-https.example"}`,
 			wantStatus: http.StatusBadRequest,
@@ -129,8 +152,48 @@ func TestHandleCreateChannel_TypeGating(t *testing.T) {
 
 			assert.Equal(t, tc.wantStatus, rec.Code)
 			if tc.wantCode != "" {
-				assert.Contains(t, rec.Body.String(), tc.wantCode)
+				var body ErrorResponse
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+				assert.Equal(t, tc.wantCode, body.Error.Code)
+				assert.Equal(t, tc.wantFeature, body.Error.Feature)
+				assert.Equal(t, tc.wantRequired, body.Error.RequiredEdition)
 			}
+		})
+	}
+}
+
+// An email channel carries its recipient address in URL and is delivered over
+// SMTP, so it must be exempt from the HTTPS/SSRF rule and validated as an
+// address instead.
+func TestHandleCreateChannel_EmailValidation(t *testing.T) {
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	defer func() { extension.CurrentEdition = original }()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	cases := []struct {
+		name       string
+		url        string
+		wantStatus int
+	}{
+		{"valid address accepted", "alerts@example.com", http.StatusCreated},
+		{"malformed address rejected", "not-an-email", http.StatusBadRequest},
+		{"empty rejected", "", http.StatusBadRequest},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &AlertHandler{channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
+
+			body := `{"type":"email","name":"team","url":"` + tc.url + `"}`
+			req := httptest.NewRequest("POST", "/api/v1/channels", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			h.HandleCreateChannel(rec, req)
+
+			assert.Equal(t, tc.wantStatus, rec.Code, rec.Body.String())
 		})
 	}
 }
@@ -144,7 +207,7 @@ func TestHandleTestChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: 1, Type: "slack"}}
+	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "slack"}}
 	h := &AlertHandler{channelStore: store}
 
 	req := httptest.NewRequest("POST", "/api/v1/channels/1/test", nil)
@@ -154,7 +217,7 @@ func TestHandleTestChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	h.HandleTestChannel(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+	assert.Contains(t, rec.Body.String(), "EDITION_REQUIRED")
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +229,7 @@ func TestHandleUpdateChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: 1, Type: "webhook"}}
+	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "webhook"}}
 	h := &AlertHandler{channelStore: store}
 
 	body := `{"type":"slack"}`
@@ -178,7 +241,7 @@ func TestHandleUpdateChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	h.HandleUpdateChannel(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+	assert.Contains(t, rec.Body.String(), "EDITION_REQUIRED")
 }
 
 func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
@@ -186,8 +249,8 @@ func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
-	// Channel already has type "slack" (created under Enterprise, now downgraded)
-	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: 1, Type: "slack"}}
+	// Channel already has type "slack" (created under Pro, now downgraded)
+	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "slack"}}
 	h := &AlertHandler{channelStore: store}
 
 	body := `{"name":"renamed"}`
@@ -199,5 +262,5 @@ func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
 	h.HandleUpdateChannel(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "PRO_REQUIRED")
+	assert.Contains(t, rec.Body.String(), "EDITION_REQUIRED")
 }

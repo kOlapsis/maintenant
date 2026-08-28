@@ -13,21 +13,26 @@ package telemetry
 
 import "github.com/kolapsis/maintenant/internal/extension"
 
-// editionCommunity / editionPro are the only two values ever emitted on the
-// wire (per spec FR-001 and contracts/telemetry-payload.md). Trial, paid,
-// and in-grace Pro states all collapse to "pro".
+// The three values ever emitted on the wire. Trial, paid and in-grace states
+// all collapse to the edition they currently grant.
 const (
 	editionCommunity = "community"
+	editionPersonal  = "personal"
 	editionPro       = "pro"
 )
 
-// mapEdition translates the in-process extension.Edition value to the
-// stable wire value. Anything that is not extension.Enterprise resolves
-// to "community" — including a Pro-capable build whose license has
-// expired or is missing.
+// mapEdition translates the in-process extension.Edition to the stable wire
+// value. It reports the edition actually in force, not the one that was bought:
+// a Pro instance whose license has expired emits "community". An edition this
+// build does not recognise also emits "community", rather than inventing a
+// value consumers would have to guess at.
 func mapEdition(e extension.Edition) string {
-	if e == extension.Enterprise {
+	switch e {
+	case extension.Pro:
 		return editionPro
+	case extension.Personal:
+		return editionPersonal
+	default:
+		return editionCommunity
 	}
-	return editionCommunity
 }

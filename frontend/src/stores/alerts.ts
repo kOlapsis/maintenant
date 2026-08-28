@@ -14,14 +14,17 @@ import { ref, computed } from 'vue'
 import {
   listAlerts,
   getActiveAlerts,
-  listChannels,
   listSilenceRules,
+  acknowledgeAlert as ackAlert,
   type Alert,
-  type NotificationChannel,
   type SilenceRule,
   type ListAlertsParams,
 } from '@/services/alertApi'
 import { sseBus } from '@/services/sseBus'
+
+// Identité envoyée au backend pour `acknowledged_by` (non vide requis).
+// Placeholder constant tant qu'il n'y a pas d'auth/utilisateur dans l'app.
+const ACK_ACTOR = 'operator'
 
 export const useAlertsStore = defineStore('alerts', () => {
   // Alert state
@@ -34,10 +37,6 @@ export const useAlertsStore = defineStore('alerts', () => {
   const hasMore = ref(false)
   const loading = ref(false)
   const error = ref<string | null>(null)
-
-  // Channel state
-  const channels = ref<NotificationChannel[]>([])
-  const channelsLoading = ref(false)
 
   // Silence state
   const silenceRules = ref<SilenceRule[]>([])
@@ -78,18 +77,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
-  async function fetchChannels() {
-    channelsLoading.value = true
-    try {
-      const res = await listChannels()
-      channels.value = res.channels
-    } catch (e) {
-      console.error('Failed to fetch channels:', e)
-    } finally {
-      channelsLoading.value = false
-    }
-  }
-
   async function fetchSilenceRules(activeOnly = false) {
     silenceLoading.value = true
     try {
@@ -100,6 +87,15 @@ export const useAlertsStore = defineStore('alerts', () => {
     } finally {
       silenceLoading.value = false
     }
+  }
+
+  async function acknowledgeAlert(id: string) {
+    const updated = await ackAlert(id, ACK_ACTOR)
+    // Mise à jour immédiate ; l'event SSE `alert.acknowledged` qui suivra
+    // refait le même travail (idempotent).
+    updateAlertInList(updated)
+    upsertActive(updated)
+    return updated
   }
 
   function clearNewAlertCount() {
@@ -146,8 +142,10 @@ export const useAlertsStore = defineStore('alerts', () => {
     } catch {
       return
     }
+    // Une alerte acquittée reste active : on la met à jour en place
+    // (badge « Acquittée »), on ne la retire surtout pas de la liste active.
     updateAlertInList(alert)
-    removeFromActive(alert.id)
+    upsertActive(alert)
   }
 
   function onAlertSilenced(e: MessageEvent) {
@@ -158,37 +156,6 @@ export const useAlertsStore = defineStore('alerts', () => {
       return
     }
     alerts.value = [alert, ...alerts.value]
-  }
-
-  function onChannelCreated(e: MessageEvent) {
-    let channel: NotificationChannel
-    try {
-      channel = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    channels.value = [...channels.value, channel]
-  }
-
-  function onChannelUpdated(e: MessageEvent) {
-    let channel: NotificationChannel
-    try {
-      channel = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    const idx = channels.value.findIndex((c) => c.id === channel.id)
-    if (idx >= 0) channels.value[idx] = channel
-  }
-
-  function onChannelDeleted(e: MessageEvent) {
-    let data
-    try {
-      data = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    channels.value = channels.value.filter((c) => c.id !== data.id)
   }
 
   function onSilenceCreated(e: MessageEvent) {
@@ -216,7 +183,6 @@ export const useAlertsStore = defineStore('alerts', () => {
 
   function onReconnected() {
     fetchActiveAlerts()
-    fetchChannels()
   }
 
   function connectSSE() {
@@ -224,9 +190,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     sseBus.on('alert.resolved', onAlertResolved)
     sseBus.on('alert.acknowledged', onAlertAcknowledged)
     sseBus.on('alert.silenced', onAlertSilenced)
-    sseBus.on('channel.created', onChannelCreated)
-    sseBus.on('channel.updated', onChannelUpdated)
-    sseBus.on('channel.deleted', onChannelDeleted)
     sseBus.on('silence.created', onSilenceCreated)
     sseBus.on('silence.cancelled', onSilenceCancelled)
     sseBus.on('sse.reconnected', onReconnected)
@@ -238,9 +201,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     sseBus.off('alert.resolved', onAlertResolved)
     sseBus.off('alert.acknowledged', onAlertAcknowledged)
     sseBus.off('alert.silenced', onAlertSilenced)
-    sseBus.off('channel.created', onChannelCreated)
-    sseBus.off('channel.updated', onChannelUpdated)
-    sseBus.off('channel.deleted', onChannelDeleted)
     sseBus.off('silence.created', onSilenceCreated)
     sseBus.off('silence.cancelled', onSilenceCancelled)
     sseBus.off('sse.reconnected', onReconnected)
@@ -269,7 +229,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
-  function removeFromActive(alertId: number) {
+  function removeFromActive(alertId: string) {
     for (const key of ['critical', 'warning', 'info'] as const) {
       activeAlerts.value[key] = activeAlerts.value[key].filter((a) => a.id !== alertId)
     }
@@ -288,8 +248,6 @@ export const useAlertsStore = defineStore('alerts', () => {
     hasMore,
     loading,
     error,
-    channels,
-    channelsLoading,
     silenceRules,
     silenceLoading,
     newAlertCount,
@@ -297,8 +255,8 @@ export const useAlertsStore = defineStore('alerts', () => {
     activeSilenceCount,
     fetchAlerts,
     fetchActiveAlerts,
-    fetchChannels,
     fetchSilenceRules,
+    acknowledgeAlert,
     clearNewAlertCount,
     connectSSE,
     disconnectSSE,

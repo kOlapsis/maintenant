@@ -25,17 +25,31 @@ const WebhooksPage = () => import('../pages/WebhooksPage.vue')
 const UpdatesPage = () => import('../pages/UpdatesPage.vue')
 const PublicStatusPage = () => import('../pages/PublicStatusPage.vue')
 const SecurityPosturePage = () => import('../pages/SecurityPosturePage.vue')
-const ProPage = () => import('../pages/ProPage.vue')
+const EditionsPage = () => import('../pages/EditionsPage.vue')
 const ServicesPage = () => import('../pages/ServicesPage.vue')
 const TasksPage = () => import('../pages/TasksPage.vue')
 const WorkloadsPage = () => import('../pages/WorkloadsPage.vue')
 const PodsPage = () => import('../pages/PodsPage.vue')
 const ClusterOverviewPage = () => import('../pages/ClusterOverviewPage.vue')
 const NodesPage = () => import('../pages/NodesPage.vue')
+const EscalationPage = () => import('../pages/EscalationPage.vue')
+const ChannelsPage = () => import('../pages/ChannelsPage.vue')
+const AgentsPage = () => import('../pages/AgentsPage.vue')
+
+const isStatusSubdomain = (window as unknown as { __MAINTENANT_STATUS?: boolean }).__MAINTENANT_STATUS === true
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    ...(isStatusSubdomain
+      ? [
+          {
+            path: '/',
+            component: PublicLayout,
+            children: [{ path: '', name: 'status-public', component: PublicStatusPage }],
+          },
+        ]
+      : []),
     {
       path: '/',
       component: DefaultLayout,
@@ -46,7 +60,8 @@ const router = createRouter({
         { path: 'endpoints', name: 'endpoints', component: EndpointsPage },
         { path: 'heartbeats', name: 'heartbeats', component: HeartbeatsPage },
         { path: 'certificates', name: 'certificates', component: CertificatesPage },
-        { path: 'alerts/:tab(history|channels|silence)?', name: 'alerts', component: AlertsPage },
+        { path: 'alerts/:tab(history|triggers|silence|channels)?', name: 'alerts', component: AlertsPage },
+        { path: 'channels', name: 'channels', component: ChannelsPage },
         { path: 'status-admin', name: 'status-admin', component: StatusAdminPage },
         { path: 'webhooks', name: 'webhooks', component: WebhooksPage },
         { path: 'updates', name: 'updates', component: UpdatesPage },
@@ -57,14 +72,27 @@ const router = createRouter({
         { path: 'pods', name: 'pods', component: PodsPage },
         { path: 'cluster', name: 'cluster', component: ClusterOverviewPage },
         { path: 'nodes', name: 'nodes', component: NodesPage },
-        { path: 'pro-edition', name: 'pro-edition', component: ProPage },
-
+        { path: 'escalation', name: 'escalation', component: EscalationPage },
+        { path: 'agents', name: 'agents', component: AgentsPage },
+        { path: 'editions', name: 'editions', component: EditionsPage },
+        // The old offer page: keep the address working, send it to the comparison.
+        { path: 'pro-edition', redirect: { name: 'editions' } },
+        // Dev-only design system gallery (not linked in nav, excluded from prod build)
+        ...(import.meta.env.DEV
+          ? [
+              {
+                path: '_ds',
+                name: 'design-system',
+                component: () => import('../pages/DesignSystemPage.vue'),
+              },
+            ]
+          : []),
       ],
     },
     {
       path: '/status',
       component: PublicLayout,
-      children: [{ path: '', name: 'status-public', component: PublicStatusPage }],
+      children: [{ path: '', name: isStatusSubdomain ? 'status-public-admin' : 'status-public', component: PublicStatusPage }],
     },
   ],
 })

@@ -13,11 +13,12 @@
   <a href="https://github.com/kolapsis/maintenant/releases"><img src="https://img.shields.io/github/v/release/kolapsis/maintenant?style=flat-square&color=blue" alt="Release" /></a>
   <a href="https://github.com/kolapsis/maintenant/pkgs/container/maintenant"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fmaintenant-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/maintenant?style=flat-square" alt="License" /></a>
-  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Pro-%E2%82%AC29%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €29/mo, 14-day trial" /></a>
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Personal-%E2%82%AC149%20once%20%C2%B7%20for%20life-8b5cf6?style=flat-square" alt="Personal — €149 once, for life" /></a>
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Pro-%E2%82%AC29%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €29/mo, 14-day trial" /></a>
 </p>
 
 <p align="center">
-  <a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#pricing">Pricing</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
+  <a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
 </p>
 
 ---
@@ -25,9 +26,9 @@
 <table align="center" width="100%">
   <tr>
     <td align="center" width="100%">
-      <h3>Keep maintenant alive — <a href="#pricing">go Pro for €29/mo</a></h3>
-      <sub>Built in the open by <strong>one developer in Bordeaux, France</strong> — no VC, no tracking, no dark patterns.<br>If maintenant replaces 3 SaaS tools in your stack, <strong>a Pro subscription pays for itself on day one</strong>.</sub><br><br>
-      <a href="https://maintenant.dev/#pricing"><strong>Start 14-day free trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
+      <h3>Keep maintenant alive: <a href="https://maintenant.dev/pricing/">Personal, €149 once</a> · <a href="https://maintenant.dev/pricing/">Pro, €29/mo</a></h3>
+      <sub>Built in the open by <strong>one developer in Bordeaux, France</strong>. No VC, no tracking, no dark patterns.<br>Running your own infrastructure? <strong>Personal lifts every cap for a single payment, for life.</strong> Running it for others? <strong>Pro adds team channels, escalation and the right to do so.</strong></sub><br><br>
+      <a href="https://maintenant.dev/pricing/"><strong>Buy Personal →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/"><strong>Start Pro trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
     </td>
   </tr>
 </table>
@@ -51,6 +52,7 @@ Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, o
 | Alerting (webhook, Discord)  | **Yes**    | Yes         | Limited    | No         |
 | Kubernetes native            | **Yes**    | No          | Yes        | No         |
 | Single binary, zero deps     | **Yes**    | Node.js     | Docker API | Docker API |
+| Container runtime optional   | **Yes**    | No          | No         | No         |
 
 **One container. One dashboard. Everything monitored.**
 
@@ -113,8 +115,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"  # match host's docker group — see note below
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:
@@ -136,8 +136,8 @@ docker compose up -d
 
 Open **http://localhost:8080** — your containers are already there. No configuration needed.
 
-> **Finding your DOCKER_GID**
-> Run `getent group docker | cut -d: -f3` on the host. The number printed is your Docker group GID. The fallback `983` is not universal — it varies by distribution and installation method. Create a `.env` file next to your `docker-compose.yml` with `DOCKER_GID=<number>` so Compose picks it up automatically.
+> **Docker socket access is automatic**
+> The entrypoint reads the mounted socket's group and grants the unprivileged user access to it — no `group_add` needed, on plain Compose **and** Docker Swarm (where `docker stack deploy` silently ignores `group_add`). Set `DOCKER_GID` (e.g. `stat -c '%g' /var/run/docker.sock`) only to pin a specific GID for a non-standard socket path or socket proxy.
 >
 > If containers are not discovered (permission error on the socket), see [Troubleshooting](#troubleshooting).
 
@@ -191,6 +191,26 @@ maintenant --version
 
 Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked the moment it starts — state changes, health checks, restart loops, log streaming with stdout/stderr demux. Compose projects are auto-grouped. Kubernetes workloads (Deployments, DaemonSets, StatefulSets) are first-class citizens.
 
+### Multi-Host Monitoring
+
+Monitor your entire fleet from a single pane of glass. One central **server** receives events from lightweight **agents** running on your remote hosts, over a persistent, mutually-authenticated gRPC stream — no shared database, no message queue.
+
+```bash
+# On each remote host — one command, generated for you in the UI
+curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+  --mode=agent \
+  --server=grpcs://monitoring.example.com \
+  --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX \
+  --label="prod-worker-01"
+```
+
+- **Agents are read-only and tiny** — they detect the local runtime (Docker, Swarm, or Kubernetes), stream container state, endpoints, certificates and resource metrics, and reconnect on their own with backoff.
+- **Per-host resource metrics** — each agent reports its machine's CPU, memory and disk. The dashboard's resource header gets a **host selector** to switch between machines; top consumers can be scoped to a single host.
+- **Zero-PKI security** — agents enroll with a one-time token and an Ed25519 keypair generated locally; every stream is challenge-response authenticated. Revoke or delete an agent from the UI at any time.
+- Every monitored entity is attributed to its origin host, so containers, alerts and metrics are never mixed across machines.
+
+> **[Personal](https://maintenant.dev/pricing/)** feature, up to 20 remote machines, unlimited on **Pro**. Community Edition runs in single-host (`embedded`) mode. See the [Multi-Host guide](./docs/features/multihost.md) for server setup, enrollment and the streaming protocol.
+
 ### Endpoint Monitoring
 
 Define HTTP or TCP checks directly as Docker labels — no config files, no UI clicks. maintenant picks them up automatically when a container starts. Response times, uptime history, 90-day sparklines, configurable failure/recovery thresholds.
@@ -211,7 +231,7 @@ Create a monitor, get a unique URL, add one `curl` to your cron job. maintenant 
 curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
-> Community includes up to 5 heartbeats. **[Pro](#pricing)** lifts the cap for unlimited jobs.
+> Community includes up to 5 heartbeats. **[Personal](https://maintenant.dev/pricing/)** lifts the cap for unlimited jobs.
 
 ### SSL/TLS Certificate Monitoring
 
@@ -219,7 +239,7 @@ Automatic detection from your HTTPS endpoints, plus standalone monitors for any 
 
 ### Resource Metrics
 
-Real-time CPU, memory, network I/O, and disk I/O per container. Historical charts from 1 hour to 30 days (Pro). Per-container alert thresholds with debounce to avoid noise. Top consumers view for instant triage.
+Real-time CPU, memory, network I/O, and disk I/O per container. Historical charts from 1 hour to 30 days (Personal). Per-container alert thresholds with debounce to avoid noise. Top consumers view for instant triage. In [multi-host](#multi-host-monitoring) deployments, host-level CPU/memory/disk is reported per machine and the resource header offers a host selector.
 
 ### Network Security Insights
 
@@ -231,15 +251,15 @@ Knows when your images have updates available. Scans OCI registries, compares di
 
 ### Alert Engine
 
-Unified alerts across all monitoring sources. Webhook and Discord channels included. Silence rules for planned maintenance. Exponential backoff retry on delivery.
+Unified alerts across all monitoring sources. Channels are silent by default and routed via **Alert Triggers** (filter by severity / source). Webhook and Discord channels included. Silence rules for planned maintenance, exponential backoff retry on delivery.
 
-> **[Pro](#pricing)** adds Slack, Microsoft Teams, and Email channels, plus escalation chains and maintenance windows.
+> **[Personal](https://maintenant.dev/pricing/)** adds the Email channel and scope/tag trigger filters. **[Pro](https://maintenant.dev/pricing/)** adds Slack and Microsoft Teams channels, multi-level **escalation policies**, per-entity routing, and maintenance windows that pause and resume escalation chains.
 
 ### Public Status Page
 
 Give your users a clean, real-time status page. Live SSE updates, severity aggregation across all monitors.
 
-> **[Pro](#pricing)** adds incident timelines and subscriber notifications (email + webhook) — turn outages into trust-building moments.
+> **[Personal](https://maintenant.dev/pricing/)** adds incident timelines. **[Pro](https://maintenant.dev/pricing/)** adds subscriber notifications (email + webhook) and status page branding, turning outages into trust-building moments.
 
 ### MCP Server
 
@@ -255,16 +275,20 @@ Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Quer
 | ----------------------------------- | ----------------------- | ----------------------------------------------- |
 | `MAINTENANT_ADDR`                   | `127.0.0.1:8080`        | HTTP bind address                               |
 | `MAINTENANT_DB`                     | `./maintenant.db`       | SQLite database path                            |
-| `MAINTENANT_BASE_URL`               | `http://localhost:8080` | Base URL (used for heartbeat ping URLs)         |
+| `MAINTENANT_DATABASE_URL`           | *(empty)*               | PostgreSQL DSN, server/embedded only            |
+| `MAINTENANT_BASE_URL`               | `http://localhost:8080` | Base URL (used for heartbeat ping URLs and as the status page fallback) |
+| `MAINTENANT_STATUS_URL`             | —                       | Canonical public URL of the status page (e.g. `https://status.example.com`). Optional — falls back to `{BASE_URL}/status`. |
 | `MAINTENANT_ORGANISATION_NAME`      | `Maintenant`            | Organisation name on the status page            |
 | `MAINTENANT_CORS_ORIGINS`           | same-origin             | CORS allowed origins (comma-separated)          |
 | `MAINTENANT_RUNTIME`                | auto-detect             | Force `docker` or `kubernetes`                  |
 | `MAINTENANT_MAX_BODY_SIZE`          | `1048576`               | Max request body size in bytes (1 MB)           |
 | `MAINTENANT_UPDATE_INTERVAL`        | `24h`                   | Update intelligence scan interval               |
-| `MAINTENANT_LICENSE_KEY`            | —                       | Pro license key (enables Pro features)          |
+| `MAINTENANT_LICENSE_KEY`            | —                       | Personal or Pro license key                     |
 | `MAINTENANT_MCP`                    | `false`                 | Enable MCP server (Streamable HTTP on `/mcp`)   |
 | `MAINTENANT_MCP_CLIENT_ID`          | —                       | OAuth2 client ID for MCP authentication         |
 | `MAINTENANT_MCP_CLIENT_SECRET`      | —                       | OAuth2 client secret for MCP authentication     |
+| `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | —                    | Comma-separated allowlist of OAuth2 `redirect_uri` values. Required when `MAINTENANT_MCP_CLIENT_*` are set. |
+| `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false`              | Serve `/mcp` unauthenticated. Without it, MCP without OAuth credentials refuses to start. |
 | `MAINTENANT_K8S_NAMESPACES`         | all                     | Namespace allowlist (comma-separated)           |
 | `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | none                    | Namespace blocklist                             |
 | `MAINTENANT_DISABLE_TELEMETRY`      | unset (telemetry on)    | Set to `1`/`true`/`yes` to disable telemetry    |
@@ -385,7 +409,8 @@ Each snapshot contains the following fields and **nothing else** (full wire form
 
 **Application fields** (this product owns these):
 
-- `edition` — `community` or `pro`
+- `edition` — `community`, `personal` or `pro`
+- `storage_engine` — `sqlite` or `postgres` (nothing else about the database)
 - `containers_total` — count of auto-discovered containers
 - `endpoints_total` — count of configured HTTP/TCP endpoints
 - `heartbeats_total` — count of configured heartbeat monitors
@@ -522,30 +547,24 @@ services:
 permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock
 ```
 
-**Why it happens:** maintenant runs as `nobody` (uid 65534) by design. The Docker socket on the host is owned by `root:docker`. Without `group_add`, the `nobody` user has no group membership that grants access to the socket — even with a read-only mount, the kernel rejects the open call.
+**Why it happens:** maintenant runs as `nobody` (uid 65534) by design. The Docker socket on the host is owned by `root:docker`, so the process needs membership in the socket's group — without it the kernel rejects the open call even with a read-only mount.
 
-**Fix:** find the Docker group GID on the host and pass it via `group_add`.
+**Normally automatic:** the entrypoint detects the mounted socket's group and grants the unprivileged user access to it — on plain Compose **and** Swarm (where `docker stack deploy` silently ignores `group_add`). Mounting `/var/run/docker.sock` is enough.
 
-```bash
-# On the host
-getent group docker | cut -d: -f3
-```
-
-Create a `.env` file next to your `docker-compose.yml`:
+**If it still fails** (non-standard socket path, socket proxy, or to pin the GID), set `DOCKER_GID` explicitly. Find the socket's group on the host:
 
 ```bash
-DOCKER_GID=998   # replace with the number printed above
+stat -c '%g' /var/run/docker.sock
+# or: getent group docker | cut -d: -f3
 ```
 
-Then restart:
+Pass it to the container via a `.env` file and the `DOCKER_GID` environment variable, then restart:
 
 ```bash
 docker compose up -d
 ```
 
-The fallback `983` in the Compose template is a common value but not universal — it varies by distribution, Docker install method, and host configuration.
-
-**SELinux (Fedora / RHEL / Rocky / CentOS):** if the GID fix above does not resolve the error, SELinux may be blocking the socket access. Check with:
+**SELinux (Fedora / RHEL / Rocky / CentOS):** if setting the GID does not resolve the error, SELinux may be blocking the socket access. Check with:
 
 ```bash
 ausearch -m AVC -ts recent
@@ -580,7 +599,7 @@ Replace `1000` with the UID of the user running the rootless Docker daemon (`id 
 | Resource    | `cpu_threshold`, `memory_threshold`    | Warning           |
 | Update      | `available`                            | Info              |
 
-Deliver to Discord or any HTTP webhook. Slack, Teams, and email available with maintenant Pro.
+Deliver to Discord or any HTTP webhook. Email comes with Personal, Slack and Teams with Pro.
 
 ---
 
@@ -597,8 +616,9 @@ Full REST API under `/api/v1/` for automation and integration.
 | Endpoints    | `GET /endpoints` `GET /endpoints/{id}` `GET /endpoints/{id}/checks` `GET /endpoints/{id}/uptime/daily`  |
 | Heartbeats   | `GET POST /heartbeats` `GET PUT DELETE /heartbeats/{id}` `POST /heartbeats/{id}/pause\|resume`          |
 | Certificates | `GET POST /certificates` `GET PUT DELETE /certificates/{id}`                                            |
-| Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top`                         |
-| Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /silence`                             |
+| Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top\|hosts`                  |
+| Agents       | `GET /agents` `GET PATCH DELETE /agents/{id}` `POST /agents/{id}/revoke` `GET POST /agents/enrollment-tokens` *(Personal)* |
+| Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /alert-triggers` `GET POST /escalation-policies` *(Pro)* `GET POST /silence` |
 | Webhooks     | `GET POST /webhooks` `POST /webhooks/{id}/test`                                                         |
 | Status Page  | `GET POST /status/components\|incidents\|maintenance`                                                   |
 | Updates      | `GET /updates` `POST /updates/scan`                                                                     |
@@ -644,8 +664,8 @@ Full REST API under `/api/v1/` for automation and integration.
 └──────────────────────────────────────────────────────┘
 ```
 
-- **Single binary** — Frontend embedded via `embed.FS`. One file to deploy.
-- **Zero dependencies** — SQLite is the only database. No Redis, no Postgres, no message queue.
+- **Single binary** — Frontend embedded via `embed.FS`. One file to deploy. The same binary runs in three modes: `embedded` (single host, default), `server` (central ingestion), and `agent` (remote host) — see [Multi-Host Monitoring](#multi-host-monitoring).
+- **Zero dependencies** — SQLite is the only required datastore. No Redis, no message queue, nothing to administer. A fleet operator may optionally back the server on a PostgreSQL they already run ([why](docs/guides/postgresql.md)); an agent is always SQLite. The container runtime (Docker / Kubernetes) is **optional**: maintenant starts and serves endpoints, SSL, and heartbeat monitors even without a runtime socket — container monitoring resumes automatically when the runtime becomes available.
 - **Real-time** — SSE pushes every state change to the browser instantly.
 - **Read-only** — maintenant never touches your containers. Observe only.
 - **Label-driven** — Configure monitoring through Docker labels. No YAML to maintain.
@@ -656,62 +676,81 @@ Full REST API under `/api/v1/` for automation and integration.
 ## Pricing
 
 <p align="center">
-  <strong>Community Edition is free forever. Pro keeps the project alive.</strong><br>
-  <sub>If you ship real software, <strong>€29/mo is less than two hours of debugging</strong> the outage you didn't see coming.<br>
-  And <strong>100% of revenue funds full-time development</strong> — no investors to pay back, no salespeople to feed.</sub>
+  <strong>Three editions, in order: Community, Personal, Pro.</strong><br>
+  <sub>Community is free forever. Personal is bought once. Pro is what a team needs.<br>
+  <strong>100% of revenue funds full-time development</strong> — no investors to pay back, no salespeople to feed.</sub>
 </p>
 
 <table>
   <tr>
-    <td width="50%" valign="top" align="left">
+    <td width="33%" valign="top" align="left">
       <h3>Community</h3>
       <p><strong>Free</strong> · AGPL-3.0 · self-hosted forever</p>
       <ul>
         <li>Container auto-discovery (Docker + Kubernetes)</li>
-        <li>HTTP / TCP endpoint monitoring</li>
+        <li>Full Swarm and Kubernetes views</li>
+        <li>HTTP / TCP endpoint monitoring <sub>(up to 10)</sub></li>
         <li>Heartbeat &amp; cron monitoring <sub>(up to 5)</sub></li>
-        <li>TLS certificate tracking</li>
-        <li>Resource metrics (CPU, RAM, net, disk)</li>
+        <li>TLS certificate tracking <sub>(up to 5)</sub></li>
+        <li>Resource metrics (CPU, RAM, net, disk) <sub>(7 days of history)</sub></li>
         <li>Network security insights</li>
         <li>Update intelligence (digest scan)</li>
         <li>Alert engine + webhook + Discord</li>
-        <li>Public status page</li>
+        <li>Public status page <sub>(up to 3 components)</sub></li>
         <li>REST API + SSE + MCP server</li>
         <li>PWA support</li>
       </ul>
-      <p><em>Everything a solo self-hoster needs.</em></p>
+      <p><em>A single host, no account required.</em></p>
     </td>
-    <td width="50%" valign="top" align="left" style="background:#0B0E13">
-      <h3>Pro&nbsp;&nbsp;<sub><code>Recommended · 14-day free trial</code></sub></h3>
-      <p><strong>€29</strong>/month · or <strong>€290</strong>/year <sub>(save 2 months)</sub></p>
+    <td width="33%" valign="top" align="left" style="background:#0B0E13">
+      <h3>Personal</h3>
+      <p><strong>€149</strong> once, for life</p>
       <p><em>Everything in Community, plus:</em></p>
       <ul>
-        <li><strong>Unlimited</strong> heartbeats</li>
-        <li><strong>Slack, Microsoft Teams, Email</strong> channels</li>
-        <li><strong>Alert escalation &amp; routing</strong> — page the right person, not a dead channel</li>
-        <li><strong>Maintenance windows</strong> — silence cleanly during deploys</li>
-        <li><strong>Unified security posture</strong> dashboard</li>
+        <li><strong>Every cap lifted</strong> — endpoints, heartbeats, certificates, status components</li>
+        <li><strong>Multi-host monitoring</strong> <sub>(up to 20 remote machines)</sub></li>
+        <li><strong>Email alerts</strong> and advanced trigger filters</li>
         <li><strong>CVE enrichment</strong> + risk scoring per container</li>
+        <li><strong>Unified security posture</strong> dashboard</li>
         <li><strong>Incident management</strong> with public timeline</li>
+        <li>Changelog, <strong>30 days</strong> of resource history, OCSP stapling</li>
+      </ul>
+      <p>For one person, on infrastructure they own or run for themselves — freelancers included. It does not cover monitoring someone else's infrastructure or reselling Maintenant as a service, and carries no support commitment.</p>
+      <p>Includes <strong>one year of product updates</strong>, then €59 per extra year. Every version released inside that year stays licensed for life.</p>
+      <p><a href="https://maintenant.dev/pricing/"><strong>Buy Personal →</strong></a></p>
+    </td>
+    <td width="33%" valign="top" align="left">
+      <h3>Pro&nbsp;&nbsp;<sub><code>14-day free trial</code></sub></h3>
+      <p><strong>€29</strong>/month · or <strong>€290</strong>/year <sub>(save 2 months)</sub></p>
+      <p><em>Everything in Personal, plus:</em></p>
+      <ul>
+        <li><strong>Unlimited</strong> remote machines</li>
+        <li><strong>Slack and Microsoft Teams</strong> channels</li>
+        <li><strong>Alert escalation</strong> — page the right person, not a dead channel</li>
+        <li><strong>Per-entity routing</strong></li>
+        <li><strong>Maintenance windows</strong> — silence cleanly during deploys</li>
         <li><strong>Subscriber notifications</strong> (email, webhook)</li>
+        <li><strong>Status page branding</strong></li>
+        <li><strong>The right to use Maintenant on behalf of others</strong></li>
+        <li><strong>90 days</strong> of resource history</li>
         <li><strong>Priority email support</strong></li>
       </ul>
-      <p><a href="https://maintenant.dev/#pricing"><strong>Start free trial →</strong></a></p>
+      <p><a href="https://maintenant.dev/pricing/"><strong>Start free trial →</strong></a></p>
     </td>
   </tr>
 </table>
 
-### Why upgrade to Pro?
+### Why pay at all?
 
-- **Sleep through the night.** Escalation chains page the on-call engineer, then the backup, then the lead — instead of dying silently in a muted Discord.
+- **Lift every limit, once.** Personal removes the caps and adds the security layer for a single payment, and the licence never expires.
 - **Prioritize the vulnerabilities that matter.** CVE enrichment and per-container risk scoring surface what's critical in *your* environment — not a generic feed.
+- **Sleep through the night.** Pro escalation chains page the on-call engineer, then the backup, then the lead — instead of dying silently in a muted Discord.
 - **Turn outages into trust.** Public incident timelines and subscriber notifications keep your users informed automatically.
-- **Get direct answers.** Priority email support, straight to the developer who wrote it.
-- **Fund independent software.** maintenant is built in Bordeaux, France — by one developer, with no VC, no tracking, no dark patterns. Your subscription is the roadmap.
+- **Fund independent software.** maintenant is built in Bordeaux, France — by one developer, with no VC, no tracking, no dark patterns. Your purchase is the roadmap.
 
 <p align="center">
-  <a href="./docs/screen-captures/11-security-posture.png"><img src="./docs/screen-captures/11-security-posture.png" alt="Pro — Unified Security Posture" width="680" /></a>
-  <br><sub><strong>Pro</strong> — Unified security posture with CVE enrichment &amp; risk scoring</sub>
+  <a href="./docs/screen-captures/11-security-posture.png"><img src="./docs/screen-captures/11-security-posture.png" alt="Personal — Unified Security Posture" width="680" /></a>
+  <br><sub><strong>Personal</strong> — Unified security posture with CVE enrichment &amp; risk scoring</sub>
 </p>
 
 ### Flexible billing — your choice of processor
@@ -723,8 +762,9 @@ Pick the processor that fits where you are:
 | Global          | **Stripe** | Credit / debit card                                     |
 | European Union  | **Mollie** | Card, SEPA Direct Debit, iDEAL, Bancontact, and more    |
 
-- 14-day free trial — plenty of time to evaluate against a real stack
-- Cancel anytime from your dashboard
+- Personal is a single payment, with no subscription to cancel and no expiry
+- Pro comes with a 14-day free trial, plenty of time to evaluate against a real stack
+- Cancel a Pro subscription anytime from your dashboard
 - VAT-compliant invoices issued automatically
 - **Self-hosted means self-hosted** — your monitoring data never leaves your infrastructure
 
@@ -735,19 +775,19 @@ Fair question. Here's the honest answer:
 <details>
 <summary><strong>Is the Community Edition really everything I need?</strong></summary>
 
-Yes. Community is not crippleware — it runs production infrastructure every day. Pro exists for teams that need escalation routing, CVE intelligence, and premium channels. If you don't need those, stay on Community, and consider <a href="https://github.com/sponsors/kolapsis">sponsoring</a> instead.
+Yes. Community is not crippleware — it runs production infrastructure every day. Personal exists for one person who has outgrown the caps or wants the security layer. Pro exists for teams that need escalation routing and premium channels. If you need neither, stay on Community, and consider <a href="https://github.com/sponsors/kolapsis">sponsoring</a> instead.
 </details>
 
 <details>
 <summary><strong>If I don't pay, does the project die?</strong></summary>
 
-maintenant is AGPL-3.0 and will always be free. But one developer can only sustain this full-time if users pay. Every Pro subscription is a direct vote for "keep shipping" — no investors to please, no enterprise pivot, no acquisition exit.
+maintenant is AGPL-3.0 and will always be free. But one developer can only sustain this full-time if users pay. Every purchase is a direct vote for "keep shipping" — no investors to please, no enterprise pivot, no acquisition exit.
 </details>
 
 <details>
-<summary><strong>Can I self-host Pro? Does my data leave my infra?</strong></summary>
+<summary><strong>Can I self-host a paid edition? Does my data leave my infra?</strong></summary>
 
-Yes, self-host Pro exactly like Community — it's the same binary. License validation is stateless and offline-tolerant. Your monitoring data never touches our servers. Ever.
+Yes, self-host Personal and Pro exactly like Community — it's the same binary. The key is checked against the license server and the signed answer is cached, so an outage or a few weeks offline change nothing. Your monitoring data never touches our servers. Ever.
 </details>
 
 <details>
@@ -756,54 +796,62 @@ Yes, self-host Pro exactly like Community — it's the same binary. License vali
 Yes — for teams needing SSO, audit logs, custom SLAs, or on-prem support contracts. Email <a href="mailto:hello@kolapsis.com">hello@kolapsis.com</a>.
 </details>
 
-### Activate Pro
+### Activate a paid edition
 
-Grab a key from [maintenant.dev/#pricing](https://maintenant.dev/#pricing), set it in your environment, restart — done.
+Grab a key from [maintenant.dev/pricing/](https://maintenant.dev/pricing/), set it in your environment, restart — done. The same variable carries a Personal or a Pro key.
 
 ```bash
 MAINTENANT_LICENSE_KEY=your-license-key
 ```
 
 <p align="center">
-  <a href="https://maintenant.dev/#pricing"><img src="https://img.shields.io/badge/Start%20your%2014--day%20free%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start 14-day free trial — €29/mo" /></a>
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Buy%20Personal-%E2%82%AC149%20once-8b5cf6?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Buy Personal — €149 once" /></a>
+  &nbsp;&nbsp;
+  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Start%20your%2014--day%20Pro%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start your 14-day Pro trial — €29/mo" /></a>
 </p>
 
 <p align="center">
-  <sub>14-day free trial · cancel anytime · VAT-compliant invoices</sub>
+  <sub>Personal: one payment, no expiry · Pro: 14-day free trial, cancel anytime · VAT-compliant invoices</sub>
 </p>
 
 ---
 
 ## Support the project
 
-maintenant is built independently in Bordeaux, France. No VC, no tracking, no telemetry, no data collection, no acquisition exit. The only way this keeps going is if users who benefit from it give back. **Here's how, ranked by impact:**
+maintenant is built independently in Bordeaux, France. No VC, no tracking, no acquisition exit, and no data collection beyond [anonymous opt-out telemetry](#telemetry). The only way this keeps going is if users who benefit from it give back. **Here's how, ranked by impact:**
 
 <table>
   <tr>
-    <td width="33%" valign="top" align="center">
-      <h3>1. Go Pro</h3>
-      <p><strong>€29/mo</strong> · 14-day trial</p>
-      <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development.</sub></p>
-      <p><a href="https://maintenant.dev/#pricing"><strong>Start trial →</strong></a></p>
+    <td width="25%" valign="top" align="center">
+      <h3>1. Buy a licence</h3>
+      <p><strong>Personal €149</strong> once · <strong>Pro €29/mo</strong></p>
+      <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development. Personal if the infrastructure is yours, Pro if you run it for others.</sub></p>
+      <p><a href="https://maintenant.dev/pricing/"><strong>See editions →</strong></a></p>
     </td>
-    <td width="33%" valign="top" align="center">
+    <td width="25%" valign="top" align="center">
       <h3>2. Sponsor</h3>
       <p><strong>Any amount</strong> · one-off or monthly</p>
-      <p><sub>Don't need Pro? Sponsor on GitHub. Every sponsor gets credited in the <a href="#backers">Backers</a> wall below.</sub></p>
+      <p><sub>Don't need a paid edition? Sponsor on GitHub. Every sponsor gets credited in the <a href="#backers">Backers</a> wall below.</sub></p>
       <p><a href="https://github.com/sponsors/kolapsis"><strong>Sponsor →</strong></a></p>
     </td>
-    <td width="33%" valign="top" align="center">
+    <td width="25%" valign="top" align="center">
       <h3>3. Spread the word</h3>
       <p><strong>Free · 10 seconds</strong></p>
       <p><sub>Star the repo, share on HN / Lobsters / Reddit / LinkedIn. Discoverability is oxygen for indie projects.</sub></p>
       <p><a href="https://github.com/kolapsis/maintenant"><strong>Star repo →</strong></a></p>
+    </td>
+    <td width="25%" valign="top" align="center">
+      <h3>4. Tell me how you use it</h3>
+      <p><strong>Two minutes</strong></p>
+      <p><sub>Read by the developer, quoted only if you allow it.</sub></p>
+      <p><a href="https://maintenant.dev/feedback/"><strong>Give feedback →</strong></a></p>
     </td>
   </tr>
 </table>
 
 ### Backers
 
-<sub>Every Pro subscriber and GitHub sponsor keeps this project independent. Thank you.</sub>
+<sub>Every Personal owner, Pro subscriber and GitHub sponsor keeps this project independent. Thank you.</sub>
 
 <a href="https://github.com/sponsors/kolapsis"><img src="https://img.shields.io/github/sponsors/kolapsis?style=for-the-badge&label=GitHub%20Sponsors&color=ea4aaa" alt="GitHub Sponsors" /></a>
 
@@ -828,5 +876,5 @@ Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) 
 ---
 
 <p align="center">
-  <sub>Built with care in Bordeaux, France — if maintenant saves you an outage, <a href="https://maintenant.dev/#pricing">buy the developer a coffee (or a year of runway)</a>.</sub>
+  <sub>Built with care in Bordeaux, France — if maintenant saves you an outage, <a href="https://maintenant.dev/pricing/">buy the developer a coffee (or a year of runway)</a>.</sub>
 </p>

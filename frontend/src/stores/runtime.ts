@@ -41,6 +41,29 @@ export const useRuntimeStore = defineStore('runtime', () => {
   const detectedAt = ref<string | null>(null)
   const metadata = ref<SwarmMetadata | KubernetesMetadata | DockerMetadata>({})
   const loading = ref(false)
+  const error = ref<string | null>(null)
+  // false until the first successful status fetch — runtime-specific nav waits
+  // for the real runtime instead of flashing the optimistic 'docker' default.
+  const loaded = ref(false)
+
+  // A failed fetch used to leave `loaded` false for the rest of the session,
+  // which silently strips every runtime-specific nav entry (Containers,
+  // Services, Tasks, Workloads, Pods) — the pages still worked by direct URL,
+  // so it read as the entries never having existed. Retry with capped backoff
+  // so a transient failure repairs itself instead.
+  const RETRY_CAP_MS = 30_000
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let retryAttempt = 0
+
+  function scheduleRetry() {
+    if (retryTimer) return
+    const delay = Math.min(RETRY_CAP_MS, 1000 * 2 ** retryAttempt)
+    retryAttempt++
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      void fetchStatus()
+    }, delay)
+  }
 
   const isDocker = computed(() => context.value === 'docker')
   const isSwarm = computed(() => context.value === 'swarm')
@@ -56,6 +79,12 @@ export const useRuntimeStore = defineStore('runtime', () => {
       label.value = status.label
       detectedAt.value = status.detected_at
       metadata.value = status.metadata
+      loaded.value = true
+      error.value = null
+      retryAttempt = 0
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch runtime status'
+      scheduleRetry()
     } finally {
       loading.value = false
     }
@@ -76,15 +105,40 @@ export const useRuntimeStore = defineStore('runtime', () => {
       if (data.message) {
         showToast(data.message, 'info')
       }
+      // Refresh full status so metadata (incl. service_count) stays authoritative.
+      void fetchStatus()
+    } catch { /* ignore */ }
+  }
+
+  // Service deploy/remove changes the Swarm service count, which decides whether
+  // the Docker "Containers" view stays visible — refetch so the nav reacts live.
+  function onServiceCountChanged() {
+    void fetchStatus()
+  }
+
+  function onAvailabilityChanged(e: MessageEvent) {
+    try {
+      const data = JSON.parse(e.data) as { name: string; connected: boolean }
+      connected.value = data.connected
     } catch { /* ignore */ }
   }
 
   function startListening() {
     sseBus.on('runtime.context_changed', onContextChanged)
+    sseBus.on('runtime.availability_changed', onAvailabilityChanged)
+    sseBus.on('swarm.service_discovered', onServiceCountChanged)
+    sseBus.on('swarm.service_removed', onServiceCountChanged)
   }
 
   function stopListening() {
     sseBus.off('runtime.context_changed', onContextChanged)
+    sseBus.off('runtime.availability_changed', onAvailabilityChanged)
+    sseBus.off('swarm.service_discovered', onServiceCountChanged)
+    sseBus.off('swarm.service_removed', onServiceCountChanged)
+    if (retryTimer) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
   }
 
   return {
@@ -95,6 +149,8 @@ export const useRuntimeStore = defineStore('runtime', () => {
     detectedAt,
     metadata,
     loading,
+    error,
+    loaded,
     isDocker,
     isSwarm,
     isKubernetes,

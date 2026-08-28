@@ -174,10 +174,10 @@ func TestResolve_ContextCancelled(t *testing.T) {
 // TestParseBaseImageLabel tests OCI label parsing directly.
 func TestParseBaseImageLabel(t *testing.T) {
 	tests := []struct {
-		name     string
-		labels   map[string]string
-		wantEco  string
-		wantOK   bool
+		name    string
+		labels  map[string]string
+		wantEco string
+		wantOK  bool
 	}{
 		{
 			"debian bookworm",

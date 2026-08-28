@@ -12,18 +12,20 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/url"
+	"net/mail"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/ssrf"
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // AlertHandler handles alert-related HTTP endpoints.
@@ -34,10 +36,11 @@ type AlertHandler struct {
 	notifier             *alert.Notifier
 	broker               *SSEBroker
 	allowPrivateWebhooks bool
+	escalator            alert.Escalator
 }
 
 // NewAlertHandler creates a new alert handler.
-func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool) *AlertHandler {
+func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool, escalator alert.Escalator) *AlertHandler {
 	return &AlertHandler{
 		alertStore:           alertStore,
 		channelStore:         channelStore,
@@ -45,6 +48,7 @@ func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStor
 		notifier:             notifier,
 		broker:               broker,
 		allowPrivateWebhooks: allowPrivateWebhooks,
+		escalator:            escalator,
 	}
 }
 
@@ -80,7 +84,7 @@ func (h *AlertHandler) HandleListAlerts(w http.ResponseWriter, r *http.Request) 
 
 	alerts, err := h.alertStore.ListAlerts(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list alerts")
+		WriteStoreError(w, err, "Failed to list alerts")
 		return
 	}
 
@@ -103,7 +107,7 @@ func (h *AlertHandler) HandleListAlerts(w http.ResponseWriter, r *http.Request) 
 func (h *AlertHandler) HandleGetActiveAlerts(w http.ResponseWriter, r *http.Request) {
 	alerts, err := h.alertStore.ListActiveAlerts(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list active alerts")
+		WriteStoreError(w, err, "Failed to list active alerts")
 		return
 	}
 
@@ -124,15 +128,15 @@ func (h *AlertHandler) HandleGetActiveAlerts(w http.ResponseWriter, r *http.Requ
 
 // HandleGetAlert handles GET /api/v1/alerts/{id}.
 func (h *AlertHandler) HandleGetAlert(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid alert ID")
 		return
 	}
 
 	a, err := h.alertStore.GetAlert(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get alert")
+		WriteStoreError(w, err, "Failed to get alert")
 		return
 	}
 	if a == nil {
@@ -145,8 +149,8 @@ func (h *AlertHandler) HandleGetAlert(w http.ResponseWriter, r *http.Request) {
 
 // HandleAcknowledgeAlert handles POST /api/v1/alerts/{id}/acknowledge.
 func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid alert ID")
 		return
 	}
@@ -165,7 +169,7 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 
 	a, err := h.alertStore.GetAlert(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get alert")
+		WriteStoreError(w, err, "failed to get alert")
 		return
 	}
 	if a == nil {
@@ -187,6 +191,11 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 	a.AcknowledgedBy = input.AcknowledgedBy
 
 	h.broker.Broadcast(SSEEvent{Type: event.AlertAcknowledged, Data: a})
+
+	if err := h.escalator.OnAlertAcknowledged(r.Context(), id, alert.Acknowledgment{By: input.AcknowledgedBy, At: now}); err != nil {
+		slog.ErrorContext(r.Context(), "alert engine: OnAlertAcknowledged hook error", "error", err, "alert_id", id)
+	}
+
 	WriteJSON(w, http.StatusOK, a)
 }
 
@@ -196,7 +205,7 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request) {
 	channels, err := h.channelStore.ListChannels(r.Context())
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list channels")
+		WriteStoreError(w, err, "Failed to list channels")
 		return
 	}
 
@@ -207,6 +216,23 @@ func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"channels": channels,
 	})
+}
+
+// validateChannelURL validates a channel's destination. Email channels carry a
+// recipient address delivered over SMTP — validate the address. Every other
+// type is an HTTP webhook subject to the HTTPS + SSRF rules (fast-feedback;
+// skipped in dev, where the notifier's dial-time guard remains the boundary).
+func (h *AlertHandler) validateChannelURL(ctx context.Context, chType, rawURL string) error {
+	if chType == "email" {
+		if _, err := mail.ParseAddress(rawURL); err != nil {
+			return errors.New("invalid email address")
+		}
+		return nil
+	}
+	if h.allowPrivateWebhooks {
+		return nil
+	}
+	return ssrf.ValidateURL(ctx, rawURL)
 }
 
 // HandleCreateChannel handles POST /api/v1/channels.
@@ -223,9 +249,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[input.Type] && extension.CurrentEdition() != extension.Enterprise {
-		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+	if refuseChannelCapability(w, input.Type) {
 		return
 	}
 
@@ -238,38 +262,13 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate webhook URL: require HTTPS and reject internal/private IPs.
-	// Both checks are skipped when AllowPrivateWebhooks is set (local dev only).
-	parsed, err := url.Parse(input.URL)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid URL format")
-		return
-	}
-	if !h.allowPrivateWebhooks {
-		if parsed.Scheme != "https" {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must use https scheme")
-			return
-		}
-		hostname := parsed.Hostname()
-		addrs, err := net.DefaultResolver.LookupHost(r.Context(), hostname)
-		if err != nil {
-			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "cannot resolve webhook hostname: "+hostname)
-			return
-		}
-		for _, addr := range addrs {
-			ip := net.ParseIP(addr)
-			if ip == nil {
-				continue
-			}
-			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate() {
-				WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", "webhook URL must not resolve to a private or internal IP address")
-				return
-			}
-		}
-	}
-
 	if input.Type == "" {
 		input.Type = "webhook"
+	}
+
+	if err := h.validateChannelURL(r.Context(), input.Type, input.URL); err != nil {
+		WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
 	}
 
 	ch := &alert.NotificationChannel{
@@ -282,7 +281,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 
 	id, err := h.channelStore.InsertChannel(r.Context(), ch)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
+		if store.IsUniqueViolation(err) {
 			WriteError(w, http.StatusConflict, "DUPLICATE_NAME", "A channel with this name already exists")
 			return
 		}
@@ -298,15 +297,15 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 
 // HandleUpdateChannel handles PUT /api/v1/channels/{id}.
 func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
 		return
 	}
 
 	ch, err := h.channelStore.GetChannel(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get channel")
+		WriteStoreError(w, err, "Failed to get channel")
 		return
 	}
 	if ch == nil {
@@ -342,10 +341,17 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		ch.Enabled = *input.Enabled
 	}
 
-	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Enterprise {
-		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+	if refuseChannelCapability(w, ch.Type) {
 		return
+	}
+
+	// Re-validate the destination when the URL or type changed, so an update
+	// can't smuggle in a private/internal URL the create path would reject.
+	if input.URL != nil || input.Type != nil {
+		if err := h.validateChannelURL(r.Context(), ch.Type, ch.URL); err != nil {
+			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+			return
+		}
 	}
 
 	if err := h.channelStore.UpdateChannel(r.Context(), ch); err != nil {
@@ -359,15 +365,15 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 
 // HandleDeleteChannel handles DELETE /api/v1/channels/{id}.
 func (h *AlertHandler) HandleDeleteChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
 		return
 	}
 
 	ch, err := h.channelStore.GetChannel(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get channel")
+		WriteStoreError(w, err, "Failed to get channel")
 		return
 	}
 	if ch == nil {
@@ -386,15 +392,15 @@ func (h *AlertHandler) HandleDeleteChannel(w http.ResponseWriter, r *http.Reques
 
 // HandleTestChannel handles POST /api/v1/channels/{id}/test.
 func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
 		return
 	}
 
 	ch, err := h.channelStore.GetChannel(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get channel")
+		WriteStoreError(w, err, "Failed to get channel")
 		return
 	}
 	if ch == nil {
@@ -402,9 +408,7 @@ func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	proChannelTypes := map[string]bool{"slack": true, "teams": true, "email": true}
-	if proChannelTypes[ch.Type] && extension.CurrentEdition() != extension.Enterprise {
-		WriteError(w, http.StatusForbidden, "PRO_REQUIRED", "This feature requires the Pro edition")
+	if refuseChannelCapability(w, ch.Type) {
 		return
 	}
 
@@ -424,58 +428,6 @@ func (h *AlertHandler) HandleTestChannel(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// --- Routing Rule handlers ---
-
-// HandleCreateRoutingRule handles POST /api/v1/channels/{id}/rules.
-func (h *AlertHandler) HandleCreateRoutingRule(w http.ResponseWriter, r *http.Request) {
-	channelID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid channel ID")
-		return
-	}
-
-	var input struct {
-		SourceFilter   string `json:"source_filter"`
-		SeverityFilter string `json:"severity_filter"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
-		return
-	}
-
-	rule := &alert.RoutingRule{
-		ChannelID:      channelID,
-		SourceFilter:   input.SourceFilter,
-		SeverityFilter: input.SeverityFilter,
-	}
-
-	ruleID, err := h.channelStore.InsertRoutingRule(r.Context(), rule)
-	if err != nil {
-		slog.Error("failed to create routing rule", "error", err, "channel_id", channelID)
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create routing rule")
-		return
-	}
-	rule.ID = ruleID
-
-	WriteJSON(w, http.StatusCreated, rule)
-}
-
-// HandleDeleteRoutingRule handles DELETE /api/v1/channels/{id}/rules/{rule_id}.
-func (h *AlertHandler) HandleDeleteRoutingRule(w http.ResponseWriter, r *http.Request) {
-	ruleID, err := strconv.ParseInt(r.PathValue("rule_id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid rule ID")
-		return
-	}
-
-	if err := h.channelStore.DeleteRoutingRule(r.Context(), ruleID); err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete routing rule")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // --- Silence Rule handlers ---
 
 // HandleListSilenceRules handles GET /api/v1/silence.
@@ -484,7 +436,7 @@ func (h *AlertHandler) HandleListSilenceRules(w http.ResponseWriter, r *http.Req
 
 	rules, err := h.silenceStore.ListSilenceRules(r.Context(), activeOnly)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list silence rules")
+		WriteStoreError(w, err, "Failed to list silence rules")
 		return
 	}
 
@@ -500,11 +452,11 @@ func (h *AlertHandler) HandleListSilenceRules(w http.ResponseWriter, r *http.Req
 // HandleCreateSilenceRule handles POST /api/v1/silence.
 func (h *AlertHandler) HandleCreateSilenceRule(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		EntityType      string `json:"entity_type"`
-		EntityID        *int64 `json:"entity_id"`
-		Source          string `json:"source"`
-		Reason          string `json:"reason"`
-		DurationSeconds int    `json:"duration_seconds"`
+		EntityType      string  `json:"entity_type"`
+		EntityID        *string `json:"entity_id"`
+		Source          string  `json:"source"`
+		Reason          string  `json:"reason"`
+		DurationSeconds int     `json:"duration_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
@@ -541,8 +493,8 @@ func (h *AlertHandler) HandleCreateSilenceRule(w http.ResponseWriter, r *http.Re
 
 // HandleCancelSilenceRule handles DELETE /api/v1/silence/{id}.
 func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "invalid silence rule ID")
 		return
 	}
@@ -554,4 +506,37 @@ func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Re
 
 	h.broker.Broadcast(SSEEvent{Type: event.SilenceCancelled, Data: map[string]interface{}{"id": id}})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// channelCapability maps a channel type to the capability that opens it. Types
+// absent from the map are open in every edition. email is Personal, Slack and
+// Teams are Pro — the gating is per channel, not "paid edition or not".
+func channelCapability(channelType string) (extension.Capability, bool) {
+	switch channelType {
+	case "slack":
+		return extension.CapSlack, true
+	case "teams":
+		return extension.CapTeams, true
+	case "email":
+		return extension.CapSMTP, true
+	default:
+		return "", false
+	}
+}
+
+// refuseChannelCapability writes the refusal when the running edition does not
+// open this channel type, and reports whether it did.
+func refuseChannelCapability(w http.ResponseWriter, channelType string) bool {
+	c, gated := channelCapability(channelType)
+	if !gated || extension.Allows(c) {
+		return false
+	}
+	required := extension.MinEdition(c)
+	WriteErrorDetail(w, http.StatusForbidden, ErrorDetail{
+		Code:            "EDITION_REQUIRED",
+		Message:         "The " + channelType + " channel requires the " + titleEdition(required) + " edition.",
+		Feature:         string(c),
+		RequiredEdition: string(required),
+	})
+	return true
 }

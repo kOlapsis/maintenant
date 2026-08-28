@@ -130,7 +130,7 @@ function hideTooltip() {
 
 <template>
   <div>
-    <div class="mb-1 text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">
+    <div class="mb-1 text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">
       Event Timeline ({{ hours }}h)
     </div>
 
@@ -161,7 +161,7 @@ function hideTooltip() {
           left: label.pct + '%',
           transform: 'translateX(-50%)',
           fontSize: '0.625rem',
-          color: 'var(--pb-text-muted)',
+          color: 'var(--mnt-text-muted)',
           whiteSpace: 'nowrap',
         }"
       >
@@ -178,13 +178,13 @@ function hideTooltip() {
           left: tooltip.x + 'px',
           top: (tooltip.y - 8) + 'px',
           transform: 'translate(-50%, -100%)',
-          backgroundColor: 'var(--pb-bg-elevated)',
-          color: 'var(--pb-text-primary)',
-          border: '1px solid var(--pb-border-default)',
-          borderRadius: 'var(--pb-radius-md)',
+          backgroundColor: 'var(--mnt-bg-elevated)',
+          color: 'var(--mnt-text-primary)',
+          border: '1px solid var(--mnt-border-default)',
+          borderRadius: 'var(--mnt-radius-md)',
           padding: '0.5rem 0.75rem',
           fontSize: '0.75rem',
-          boxShadow: 'var(--pb-shadow-elevated)',
+          boxShadow: 'var(--mnt-shadow-elevated)',
           zIndex: 9999,
           pointerEvents: 'none',
           whiteSpace: 'nowrap',
@@ -193,7 +193,7 @@ function hideTooltip() {
         <div :style="{ fontWeight: '600', marginBottom: '0.125rem', color: stateColor(tooltip.state) }">
           {{ tooltip.state }}
         </div>
-        <div :style="{ color: 'var(--pb-text-muted)' }">
+        <div :style="{ color: 'var(--mnt-text-muted)' }">
           {{ tooltip.from }} &mdash; {{ tooltip.to }}
         </div>
       </div>

@@ -92,42 +92,42 @@ function onPasswordInput() {
 
 <template>
   <div>
-    <h2 class="mb-4 text-lg font-semibold" style="color: var(--pb-text-primary)">SMTP Configuration</h2>
-    <p class="mb-4 text-sm" style="color: var(--pb-text-muted)">Configure SMTP to enable email subscriptions for status updates.</p>
+    <h2 class="mb-4 text-lg font-semibold" style="color: var(--mnt-text-primary)">SMTP Configuration</h2>
+    <p class="mb-4 text-sm" style="color: var(--mnt-text-muted)">Configure SMTP to enable email subscriptions for status updates.</p>
 
-    <div v-if="loading" class="text-sm" style="color: var(--pb-text-muted)">Loading...</div>
+    <div v-if="loading" class="text-sm" style="color: var(--mnt-text-muted)">Loading...</div>
 
     <form v-else @submit.prevent="handleSave" class="max-w-lg space-y-3">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">SMTP Host</label>
-          <input v-model="form.host" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" placeholder="smtp.example.com" />
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">SMTP Host</label>
+          <input v-model="form.host" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" placeholder="smtp.example.com" />
         </div>
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Port</label>
-          <input v-model.number="form.port" type="number" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Port</label>
+          <input v-model.number="form.port" type="number" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
         </div>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Username</label>
-          <input v-model="form.username" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" />
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Username</label>
+          <input v-model="form.username" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
         </div>
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">Password</label>
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Password</label>
           <input
             v-model="form.password"
             @input="onPasswordInput"
             type="password"
             class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)"
+            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
             :placeholder="form.password_set ? 'Password configured' : ''"
           />
         </div>
       </div>
       <div>
-        <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">TLS Policy</label>
-        <select v-model="form.tls_policy" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)">
+        <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">TLS Policy</label>
+        <select v-model="form.tls_policy" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)">
           <option value="opportunistic">Opportunistic</option>
           <option value="mandatory">Mandatory</option>
           <option value="none">None</option>
@@ -135,12 +135,12 @@ function onPasswordInput() {
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">From Address</label>
-          <input v-model="form.from_address" type="email" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" placeholder="status@example.com" />
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">From Address</label>
+          <input v-model="form.from_address" type="email" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" placeholder="status@example.com" />
         </div>
         <div>
-          <label class="block text-xs font-medium" style="color: var(--pb-text-secondary)">From Name</label>
-          <input v-model="form.from_name" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--pb-bg-elevated); border-color: var(--pb-border-default); color: var(--pb-text-primary)" placeholder="maintenant Status" />
+          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">From Name</label>
+          <input v-model="form.from_name" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" placeholder="maintenant Status" />
         </div>
       </div>
 
@@ -148,8 +148,8 @@ function onPasswordInput() {
         <button
           type="submit"
           :disabled="saving"
-          class="rounded-md px-4 py-1.5 text-sm font-medium text-pb-primary disabled:opacity-50"
-          style="background: var(--pb-accent)"
+          class="rounded-md px-4 py-1.5 text-sm font-medium text-mnt-primary disabled:opacity-50"
+          style="background: var(--mnt-accent)"
         >
           {{ saving ? 'Saving...' : 'Save' }}
         </button>
@@ -157,13 +157,13 @@ function onPasswordInput() {
           type="button"
           @click="handleTest"
           class="rounded-md border px-4 py-1.5 text-sm"
-          style="border-color: var(--pb-border-default); color: var(--pb-text-secondary)"
+          style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
         >
           Send Test Email
         </button>
       </div>
 
-      <div v-if="saveMessage" class="rounded border px-3 py-1.5 text-xs" style="background: var(--pb-status-ok-bg); border-color: var(--pb-status-ok); color: var(--pb-status-ok)">
+      <div v-if="saveMessage" class="rounded border px-3 py-1.5 text-xs" style="background: var(--mnt-status-ok-bg); border-color: var(--mnt-status-ok); color: var(--mnt-status-ok)">
         {{ saveMessage }}
       </div>
 
@@ -171,9 +171,9 @@ function onPasswordInput() {
         v-if="testResult"
         class="rounded border px-3 py-1.5 text-xs"
         :style="{
-          background: testResult.status === 'sent' ? 'var(--pb-status-ok-bg)' : 'var(--pb-status-down-bg)',
-          borderColor: testResult.status === 'sent' ? 'var(--pb-status-ok)' : 'var(--pb-status-down)',
-          color: testResult.status === 'sent' ? 'var(--pb-status-ok)' : 'var(--pb-status-down)',
+          background: testResult.status === 'sent' ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-down-bg)',
+          borderColor: testResult.status === 'sent' ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)',
+          color: testResult.status === 'sent' ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)',
         }"
       >
         {{ testResult.status === 'sent' ? 'Test email sent successfully' : `Failed: ${testResult.error}` }}

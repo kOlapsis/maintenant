@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 )
 
@@ -38,10 +39,13 @@ func (h *HeartbeatHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	opts := heartbeat.ListHeartbeatsOpts{
 		Status: r.URL.Query().Get("status"),
 	}
+	if a := r.URL.Query().Get("agent_id"); a != "" {
+		opts.AgentFilter = &a
+	}
 
 	heartbeats, err := h.svc.ListHeartbeats(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list heartbeats")
+		WriteStoreError(w, err, "Failed to list heartbeats")
 		return
 	}
 
@@ -57,8 +61,8 @@ func (h *HeartbeatHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 // HandleGet handles GET /api/v1/heartbeats/{id}
 func (h *HeartbeatHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -80,7 +84,7 @@ func (h *HeartbeatHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	// Include snippets
 	baseURL := h.svc.BaseURL()
 	if baseURL != "" {
-		response["snippets"] = heartbeat.GenerateSnippets(baseURL, hb.UUID)
+		response["snippets"] = heartbeat.GenerateSnippets(baseURL, hb.ID)
 	}
 
 	WriteJSON(w, http.StatusOK, response)
@@ -98,8 +102,9 @@ func (h *HeartbeatHandler) HandleCreate(w http.ResponseWriter, r *http.Request) 
 	hb, err := h.svc.CreateHeartbeat(r.Context(), input, newUUID)
 	if err != nil {
 		if errors.Is(err, heartbeat.ErrLimitReached) {
-			WriteError(w, http.StatusConflict, "HEARTBEAT_LIMIT_REACHED",
-				"Community edition allows up to 5 heartbeat monitors. Upgrade to Pro for unlimited monitors.")
+			// Was 409 HEARTBEAT_LIMIT_REACHED; heartbeats now answer like the
+			// three other capped resources (FR-022).
+			refuseQuota(w, extension.ResourceHeartbeats)
 			return
 		}
 		if errors.Is(err, heartbeat.ErrInvalidInput) {
@@ -116,8 +121,8 @@ func (h *HeartbeatHandler) HandleCreate(w http.ResponseWriter, r *http.Request) 
 
 // HandleUpdate handles PUT /api/v1/heartbeats/{id}
 func (h *HeartbeatHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -147,8 +152,8 @@ func (h *HeartbeatHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) 
 
 // HandleDelete handles DELETE /api/v1/heartbeats/{id}
 func (h *HeartbeatHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -167,8 +172,8 @@ func (h *HeartbeatHandler) HandleDelete(w http.ResponseWriter, r *http.Request) 
 
 // HandlePause handles POST /api/v1/heartbeats/{id}/pause
 func (h *HeartbeatHandler) HandlePause(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -188,8 +193,8 @@ func (h *HeartbeatHandler) HandlePause(w http.ResponseWriter, r *http.Request) {
 
 // HandleResume handles POST /api/v1/heartbeats/{id}/resume
 func (h *HeartbeatHandler) HandleResume(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -213,8 +218,8 @@ func (h *HeartbeatHandler) HandleResume(w http.ResponseWriter, r *http.Request) 
 
 // HandleListExecutions handles GET /api/v1/heartbeats/{id}/executions
 func (h *HeartbeatHandler) HandleListExecutions(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -239,7 +244,7 @@ func (h *HeartbeatHandler) HandleListExecutions(w http.ResponseWriter, r *http.R
 
 	executions, total, err := h.svc.ListExecutions(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list executions")
+		WriteStoreError(w, err, "Failed to list executions")
 		return
 	}
 
@@ -262,8 +267,8 @@ type EnrichedPing struct {
 
 // HandleListPings handles GET /api/v1/heartbeats/{id}/pings
 func (h *HeartbeatHandler) HandleListPings(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id := r.PathValue("id")
+	if id == "" {
 		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Invalid heartbeat ID")
 		return
 	}
@@ -289,7 +294,7 @@ func (h *HeartbeatHandler) HandleListPings(w http.ResponseWriter, r *http.Reques
 
 	pings, total, err := h.svc.ListPings(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list pings")
+		WriteStoreError(w, err, "Failed to list pings")
 		return
 	}
 

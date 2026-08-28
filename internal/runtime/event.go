@@ -25,6 +25,7 @@ type RuntimeEvent struct {
 	Action       string
 	ExternalID   string
 	Name         string
+	Image        string
 	ExitCode     string
 	HealthStatus string
 	ErrorDetail  string

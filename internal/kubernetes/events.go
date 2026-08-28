@@ -6,7 +6,7 @@ import (
 	"time"
 
 	cmodel "github.com/kolapsis/maintenant/internal/container"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -14,15 +14,15 @@ import (
 
 // streamEvents uses SharedInformerFactory to watch pods and controllers,
 // converting events to runtime.RuntimeEvent.
-func (r *Runtime) streamEvents(ctx context.Context) <-chan pbruntime.RuntimeEvent {
-	out := make(chan pbruntime.RuntimeEvent, 128)
+func (r *Runtime) streamEvents(ctx context.Context) <-chan runtime.RuntimeEvent {
+	out := make(chan runtime.RuntimeEvent, 128)
 
 	podInformer := r.factory.Core().V1().Pods().Informer()
 	depInformer := r.factory.Apps().V1().Deployments().Informer()
 	ssInformer := r.factory.Apps().V1().StatefulSets().Informer()
 	dsInformer := r.factory.Apps().V1().DaemonSets().Informer()
 
-	emit := func(evt pbruntime.RuntimeEvent) {
+	emit := func(evt runtime.RuntimeEvent) {
 		select {
 		case out <- evt:
 		case <-ctx.Done():
@@ -170,7 +170,7 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan pbruntime.RuntimeEven
 	return out
 }
 
-func podToEvent(action string, pod *corev1.Pod) pbruntime.RuntimeEvent {
+func podToEvent(action string, pod *corev1.Pod) runtime.RuntimeEvent {
 	state, errorDetail := podState(pod)
 	healthStatus := ""
 	if state == cmodel.StateRunning {
@@ -183,7 +183,7 @@ func podToEvent(action string, pod *corev1.Pod) pbruntime.RuntimeEvent {
 		}
 	}
 
-	return pbruntime.RuntimeEvent{
+	return runtime.RuntimeEvent{
 		Action:       action,
 		ExternalID:   fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
 		Name:         pod.Name,
@@ -194,8 +194,8 @@ func podToEvent(action string, pod *corev1.Pod) pbruntime.RuntimeEvent {
 	}
 }
 
-func podUpdateEvents(oldPod, newPod *corev1.Pod) []pbruntime.RuntimeEvent {
-	var events []pbruntime.RuntimeEvent
+func podUpdateEvents(oldPod, newPod *corev1.Pod) []runtime.RuntimeEvent {
+	var events []runtime.RuntimeEvent
 
 	oldState, _ := podState(oldPod)
 	newState, newDetail := podState(newPod)
@@ -211,7 +211,7 @@ func podUpdateEvents(oldPod, newPod *corev1.Pod) []pbruntime.RuntimeEvent {
 			action = "stop"
 		}
 
-		events = append(events, pbruntime.RuntimeEvent{
+		events = append(events, runtime.RuntimeEvent{
 			Action:      action,
 			ExternalID:  fmt.Sprintf("%s/%s", newPod.Namespace, newPod.Name),
 			Name:        newPod.Name,
@@ -225,7 +225,7 @@ func podUpdateEvents(oldPod, newPod *corev1.Pod) []pbruntime.RuntimeEvent {
 	oldHealth := podHealthString(oldPod)
 	newHealth := podHealthString(newPod)
 	if oldHealth != newHealth && newHealth != "" {
-		events = append(events, pbruntime.RuntimeEvent{
+		events = append(events, runtime.RuntimeEvent{
 			Action:       "health_status",
 			ExternalID:   fmt.Sprintf("%s/%s", newPod.Namespace, newPod.Name),
 			Name:         newPod.Name,
@@ -253,7 +253,7 @@ func podHealthString(pod *corev1.Pod) string {
 	return ""
 }
 
-func deploymentToEvent(action string, dep *appsv1.Deployment) pbruntime.RuntimeEvent {
+func deploymentToEvent(action string, dep *appsv1.Deployment) runtime.RuntimeEvent {
 	state, errorDetail := deploymentState(dep)
 	_ = state
 	replicas := int32(1)
@@ -269,7 +269,7 @@ func deploymentToEvent(action string, dep *appsv1.Deployment) pbruntime.RuntimeE
 		healthStatus = "unhealthy"
 	}
 
-	return pbruntime.RuntimeEvent{
+	return runtime.RuntimeEvent{
 		Action:       action,
 		ExternalID:   fmt.Sprintf("%s/Deployment/%s", dep.Namespace, dep.Name),
 		Name:         dep.Name,
@@ -280,7 +280,7 @@ func deploymentToEvent(action string, dep *appsv1.Deployment) pbruntime.RuntimeE
 	}
 }
 
-func statefulSetToEvent(action string, ss *appsv1.StatefulSet) pbruntime.RuntimeEvent {
+func statefulSetToEvent(action string, ss *appsv1.StatefulSet) runtime.RuntimeEvent {
 	replicas := int32(1)
 	if ss.Spec.Replicas != nil {
 		replicas = *ss.Spec.Replicas
@@ -294,7 +294,7 @@ func statefulSetToEvent(action string, ss *appsv1.StatefulSet) pbruntime.Runtime
 		healthStatus = "unhealthy"
 	}
 
-	return pbruntime.RuntimeEvent{
+	return runtime.RuntimeEvent{
 		Action:       action,
 		ExternalID:   fmt.Sprintf("%s/StatefulSet/%s", ss.Namespace, ss.Name),
 		Name:         ss.Name,
@@ -304,7 +304,7 @@ func statefulSetToEvent(action string, ss *appsv1.StatefulSet) pbruntime.Runtime
 	}
 }
 
-func daemonSetToEvent(action string, ds *appsv1.DaemonSet) pbruntime.RuntimeEvent {
+func daemonSetToEvent(action string, ds *appsv1.DaemonSet) runtime.RuntimeEvent {
 	healthStatus := ""
 	if ds.Status.NumberReady >= ds.Status.DesiredNumberScheduled && ds.Status.DesiredNumberScheduled > 0 {
 		healthStatus = "healthy"
@@ -314,7 +314,7 @@ func daemonSetToEvent(action string, ds *appsv1.DaemonSet) pbruntime.RuntimeEven
 		healthStatus = "unhealthy"
 	}
 
-	return pbruntime.RuntimeEvent{
+	return runtime.RuntimeEvent{
 		Action:       action,
 		ExternalID:   fmt.Sprintf("%s/DaemonSet/%s", ds.Namespace, ds.Name),
 		Name:         ds.Name,

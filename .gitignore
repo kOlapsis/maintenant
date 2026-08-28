@@ -51,3 +51,8 @@ specs/
 /compose.prod.yml
 /.specify/
 /compose.docs.yml
+/semgrep-results-*
+/codeql_*-diagnostics/
+/codeql_1-results/
+/codeql-extensions/
+/compose.agent.yml

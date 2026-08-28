@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import type { SecurityInsight } from '@/services/securityApi'
 import type { RiskAcknowledgment } from '@/services/postureApi'
-import { ShieldAlert, Network, Lock, Server, CheckCircle } from 'lucide-vue-next'
+import { ShieldAlert, ShieldCheck, Network, Lock, Server, CheckCircle } from 'lucide-vue-next'
 
 const props = defineProps<{
   insights: SecurityInsight[]
@@ -30,13 +30,13 @@ const emit = defineEmits<{
 function severityStyle(severity: string) {
   switch (severity) {
     case 'critical':
-      return { color: 'var(--pb-status-down)', bg: 'var(--pb-status-down-bg)' }
+      return { color: 'var(--mnt-status-down)', bg: 'var(--mnt-status-down-bg)' }
     case 'high':
-      return { color: 'var(--pb-status-warn)', bg: 'var(--pb-status-warn-bg)' }
+      return { color: 'var(--mnt-status-warn)', bg: 'var(--mnt-status-warn-bg)' }
     case 'medium':
       return { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' }
     default:
-      return { color: 'var(--pb-text-muted)', bg: 'var(--pb-bg-elevated)' }
+      return { color: 'var(--mnt-text-muted)', bg: 'var(--mnt-bg-elevated)' }
   }
 }
 
@@ -92,7 +92,7 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
 
 <template>
   <div v-if="insights.length > 0">
-    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider" :style="{ color: 'var(--pb-text-muted)' }">
+    <h3 class="mb-3 text-xs font-bold uppercase tracking-wider" :style="{ color: 'var(--mnt-text-muted)' }">
       Security Insights
     </h3>
     <div class="space-y-2">
@@ -101,8 +101,8 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
         :key="idx"
         class="flex items-start gap-3 rounded-lg px-3 py-2.5"
         :style="{
-          backgroundColor: 'var(--pb-bg-elevated)',
-          border: '1px solid var(--pb-border-subtle)',
+          backgroundColor: 'var(--mnt-bg-elevated)',
+          border: '1px solid var(--mnt-border-subtle)',
         }"
       >
         <component
@@ -113,7 +113,7 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
         />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
-            <span class="text-xs font-semibold" :style="{ color: 'var(--pb-text-primary)' }">
+            <span class="text-xs font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">
               {{ insight.title }}
             </span>
             <span
@@ -125,36 +125,37 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
             >{{ insight.severity }}</span>
             <span
               v-if="getAck(insight)"
-              class="flex items-center gap-1 rounded-full bg-pb-status-ok px-1.5 py-0.5 text-[10px] font-medium text-pb-status-ok"
+              class="flex items-center gap-1 rounded-full bg-mnt-status-ok px-1.5 py-0.5 text-[10px] font-medium text-mnt-status-ok"
             >
               <CheckCircle :size="10" />
-              acknowledged
+              Risque accepté
             </span>
           </div>
-          <p class="mt-0.5 text-xs" :style="{ color: 'var(--pb-text-secondary)' }">
+          <p class="mt-0.5 text-xs" :style="{ color: 'var(--mnt-text-secondary)' }">
             {{ insight.description }}
           </p>
           <p
             v-if="formatDetail(insight)"
             class="mt-1 font-mono text-[10px]"
-            :style="{ color: 'var(--pb-text-muted)' }"
+            :style="{ color: 'var(--mnt-text-muted)' }"
           >
             {{ formatDetail(insight) }}
           </p>
           <div v-if="showAcknowledge" class="mt-1.5">
             <button
               v-if="!getAck(insight)"
-              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-slate-400 hover:bg-slate-700/50 hover:text-pb-primary transition-colors"
+              class="flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium text-mnt-muted hover:bg-mnt-elevated hover:text-mnt-primary transition-colors"
               @click.stop="emit('acknowledge', insight)"
             >
-              Acknowledge
+              <ShieldCheck :size="11" />
+              Accepter le risque
             </button>
             <button
               v-else
-              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-pb-status-ok hover:bg-red-500/10 hover:text-red-400 transition-colors"
+              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-mnt-status-ok hover:bg-mnt-status-down hover:text-mnt-status-down transition-colors"
               @click.stop="emit('revoke', getAck(insight)!)"
             >
-              Revoke
+              Révoquer
             </button>
           </div>
         </div>

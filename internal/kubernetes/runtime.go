@@ -21,7 +21,7 @@ import (
 	"time"
 
 	cmodel "github.com/kolapsis/maintenant/internal/container"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	k8s "k8s.io/client-go/kubernetes"
@@ -32,7 +32,7 @@ import (
 )
 
 func init() {
-	pbruntime.Register("kubernetes", func(ctx context.Context, logger *slog.Logger) (pbruntime.Runtime, error) {
+	runtime.Register("kubernetes", func(ctx context.Context, logger *slog.Logger) (runtime.Runtime, error) {
 		allowNS := os.Getenv("MAINTENANT_K8S_NAMESPACES")
 		excludeNS := os.Getenv("MAINTENANT_K8S_EXCLUDE_NAMESPACES")
 		nsFilter := NewNamespaceFilter(allowNS, excludeNS)
@@ -125,6 +125,12 @@ func (r *Runtime) Connect(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runtime) TryConnect(ctx context.Context) error {
+	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return r.Connect(tctx)
+}
+
 func buildConfig() (*rest.Config, error) {
 	// In-cluster first.
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
@@ -143,6 +149,7 @@ func buildConfig() (*rest.Config, error) {
 		}
 	}
 	if kubeconfig != "" {
+		// #nosec G703 -- path from the operator's KUBECONFIG env or home dir, not remote input.
 		if _, err := os.Stat(kubeconfig); err == nil {
 			return clientcmd.BuildConfigFromFlags("", kubeconfig)
 		}
@@ -189,11 +196,11 @@ func (r *Runtime) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 	return r.discoverAll(ctx)
 }
 
-func (r *Runtime) StreamEvents(ctx context.Context) <-chan pbruntime.RuntimeEvent {
+func (r *Runtime) StreamEvents(ctx context.Context) <-chan runtime.RuntimeEvent {
 	return r.streamEvents(ctx)
 }
 
-func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*pbruntime.RawStats, error) {
+func (r *Runtime) StatsSnapshot(ctx context.Context, externalID string) (*runtime.RawStats, error) {
 	return r.statsSnapshot(ctx, externalID)
 }
 
@@ -205,7 +212,7 @@ func (r *Runtime) StreamLogs(ctx context.Context, externalID string, lines int, 
 	return r.streamLogs(ctx, externalID, lines, timestamps)
 }
 
-func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*pbruntime.HealthInfo, error) {
+func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*runtime.HealthInfo, error) {
 	return r.getHealthInfo(ctx, externalID)
 }
 

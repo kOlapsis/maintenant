@@ -55,10 +55,10 @@ type UpdateReader interface {
 
 // AcknowledgmentStore persists risk acknowledgments.
 type AcknowledgmentStore interface {
-	InsertAcknowledgment(ctx context.Context, ack *RiskAcknowledgment) (int64, error)
-	DeleteAcknowledgment(ctx context.Context, id int64) error
+	InsertAcknowledgment(ctx context.Context, ack *RiskAcknowledgment) (string, error)
+	DeleteAcknowledgment(ctx context.Context, id string) error
 	ListAcknowledgments(ctx context.Context, containerExternalID string) ([]*RiskAcknowledgment, error)
-	GetAcknowledgment(ctx context.Context, id int64) (*RiskAcknowledgment, error)
+	GetAcknowledgment(ctx context.Context, id string) (*RiskAcknowledgment, error)
 	IsAcknowledged(ctx context.Context, containerExternalID, findingType, findingKey string) (bool, error)
 }
 
@@ -87,12 +87,12 @@ type cachedScore struct {
 
 // ScorerDeps holds all dependencies for the security Scorer.
 type ScorerDeps struct {
-	Certs              CertificateReader    // optional — nil skips TLS scoring
-	CVEs               CVEReader            // optional — nil skips CVE scoring
-	Updates            UpdateReader         // optional — nil skips update scoring
-	Security           *Service             // optional — nil skips network exposure scoring
-	Acks               AcknowledgmentStore  // required
-	Threshold          int                  // optional — 0 disables alerts
+	Certs                CertificateReader    // optional — nil skips TLS scoring
+	CVEs                 CVEReader            // optional — nil skips CVE scoring
+	Updates              UpdateReader         // optional — nil skips update scoring
+	Security             *Service             // optional — nil skips network exposure scoring
+	Acks                 AcknowledgmentStore  // required
+	Threshold            int                  // optional — 0 disables alerts
 	PostureAlertCallback PostureAlertCallback // optional — nil-safe
 	PostureEventCallback PostureEventCallback // optional — nil-safe
 }
@@ -106,7 +106,7 @@ type Scorer struct {
 	acks    AcknowledgmentStore
 
 	mu             sync.RWMutex
-	cache          map[int64]cachedScore
+	cache          map[string]cachedScore
 	threshold      int
 	lastInfraScore int
 	onPostureAlert PostureAlertCallback
@@ -125,7 +125,7 @@ func NewScorer(d ScorerDeps) *Scorer {
 		updates:        d.Updates,
 		sec:            d.Security,
 		acks:           d.Acks,
-		cache:          make(map[int64]cachedScore),
+		cache:          make(map[string]cachedScore),
 		threshold:      d.Threshold,
 		onPostureAlert: d.PostureAlertCallback,
 		onPostureEvent: d.PostureEventCallback,
@@ -133,7 +133,7 @@ func NewScorer(d ScorerDeps) *Scorer {
 }
 
 // ScoreContainer computes the security score for a single container.
-func (s *Scorer) ScoreContainer(ctx context.Context, containerID int64, containerExternalID string, containerName string) (*SecurityScore, error) {
+func (s *Scorer) ScoreContainer(ctx context.Context, containerID string, containerExternalID string, containerName string) (*SecurityScore, error) {
 	s.mu.RLock()
 	if cached, ok := s.cache[containerID]; ok && time.Now().Before(cached.expiresAt) {
 		s.mu.RUnlock()
@@ -155,7 +155,7 @@ func (s *Scorer) ScoreContainer(ctx context.Context, containerID int64, containe
 	return score, nil
 }
 
-func (s *Scorer) computeContainerScore(ctx context.Context, containerID int64, containerExternalID string, containerName string) (*SecurityScore, error) {
+func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, containerExternalID string, containerName string) (*SecurityScore, error) {
 	type categoryResult struct {
 		name       string
 		weight     int
@@ -173,7 +173,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID int64, c
 	if s.certs != nil {
 		certs, err := s.certs.ListCertificatesForContainer(ctx, containerExternalID)
 		if err != nil {
-			return nil, fmt.Errorf("scoring tls for container %d: %w", containerID, err)
+			return nil, fmt.Errorf("scoring tls for container %s: %w", containerID, err)
 		}
 		if len(certs) > 0 {
 			tlsResult.applicable = true
@@ -187,7 +187,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID int64, c
 	if s.cves != nil {
 		cves, err := s.cves.ListCVEsForContainer(ctx, containerExternalID)
 		if err != nil {
-			return nil, fmt.Errorf("scoring cves for container %d: %w", containerID, err)
+			return nil, fmt.Errorf("scoring cves for container %s: %w", containerID, err)
 		}
 		if len(cves) > 0 {
 			// Filter out acknowledged CVEs
@@ -209,7 +209,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID int64, c
 	if s.updates != nil {
 		updates, err := s.updates.ListUpdatesForContainer(ctx, containerExternalID)
 		if err != nil {
-			return nil, fmt.Errorf("scoring updates for container %d: %w", containerID, err)
+			return nil, fmt.Errorf("scoring updates for container %s: %w", containerID, err)
 		}
 
 		updateResult.applicable = true
@@ -310,7 +310,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID int64, c
 
 // ContainerInfo holds minimal container data for infrastructure scoring.
 type ContainerInfo struct {
-	ID         int64
+	ID         string
 	ExternalID string
 	Name       string
 }
@@ -407,7 +407,7 @@ func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []Container
 }
 
 // InvalidateCache removes a container's cached score.
-func (s *Scorer) InvalidateCache(containerID int64) {
+func (s *Scorer) InvalidateCache(containerID string) {
 	s.mu.Lock()
 	delete(s.cache, containerID)
 	s.mu.Unlock()

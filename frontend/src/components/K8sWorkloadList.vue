@@ -16,6 +16,7 @@ import { ref } from 'vue'
 import { type K8sWorkloadGroup, type K8sWorkload } from '@/services/kubernetesApi'
 import { timeAgo } from '@/utils/time'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import HostBadge from '@/components/HostBadge.vue'
 
 defineProps<{
   groups: K8sWorkloadGroup[]
@@ -49,25 +50,33 @@ function ensureExpanded(groups: K8sWorkloadGroup[]) {
 
 function statusStyle(status: K8sWorkload['status']): string {
   switch (status) {
-    case 'healthy': return 'text-pb-status-ok bg-pb-status-ok border-emerald-400/20'
-    case 'degraded': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
-    case 'progressing': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-    case 'failed': return 'text-red-400 bg-red-400/10 border-red-400/20'
+    case 'healthy':
+      return 'text-mnt-status-ok bg-mnt-status-ok border-emerald-400/20'
+    case 'degraded':
+      return 'text-mnt-status-warn bg-mnt-status-warn border-mnt-sev-warning'
+    case 'progressing':
+      return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
+    case 'failed':
+      return 'text-mnt-status-down bg-mnt-status-down border-mnt-sev-incident'
   }
 }
 
 function replicaColor(ready: number, desired: number): string {
-  if (ready >= desired && desired > 0) return 'text-pb-status-ok'
-  if (ready > 0) return 'text-amber-400'
-  return 'text-red-400'
+  if (ready >= desired && desired > 0) return 'text-mnt-status-ok'
+  if (ready > 0) return 'text-mnt-status-warn'
+  return 'text-mnt-status-down'
 }
 
 function kindStyle(kind: K8sWorkload['kind']): string {
   switch (kind) {
-    case 'Deployment': return 'text-sky-400 bg-sky-400/10 border-sky-400/20'
-    case 'StatefulSet': return 'text-violet-400 bg-violet-400/10 border-violet-400/20'
-    case 'DaemonSet': return 'text-amber-400 bg-amber-400/10 border-amber-400/20'
-    case 'Job': return 'text-slate-400 bg-slate-400/10 border-slate-400/20'
+    case 'Deployment':
+      return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
+    case 'StatefulSet':
+      return 'text-mnt-secondary bg-mnt-elevated border-mnt-default'
+    case 'DaemonSet':
+      return 'text-mnt-status-warn bg-mnt-status-warn border-mnt-sev-warning'
+    case 'Job':
+      return 'text-mnt-muted bg-mnt-elevated border-mnt-default'
   }
 }
 
@@ -89,21 +98,23 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
     <div
       v-for="group in groups"
       :key="group.namespace"
-      class="bg-pb-surface rounded-xl border border-slate-800 overflow-hidden"
+      class="bg-mnt-surface rounded-xl border border-mnt-default overflow-hidden"
     >
       <!-- Namespace header -->
       <button
-        class="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-800/25 transition-all"
+        class="w-full flex items-center justify-between px-4 py-3 hover:bg-mnt-elevated transition-all"
         @click="toggleGroup(group.namespace)"
       >
         <div class="flex items-center gap-3">
           <component
             :is="isExpanded(group.namespace) ? ChevronDown : ChevronRight"
             :size="14"
-            class="text-slate-500 flex-shrink-0"
+            class="text-mnt-muted flex-shrink-0"
           />
-          <span class="text-sm font-semibold text-pb-primary font-mono">{{ group.namespace }}</span>
-          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
+          <span class="text-sm font-semibold text-mnt-primary font-mono">{{ group.namespace }}</span>
+          <span
+            class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded"
+          >
             {{ group.workloads.length }} workload{{ group.workloads.length === 1 ? '' : 's' }}
           </span>
         </div>
@@ -111,14 +122,17 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
           <span
             :class="[
               'text-xs font-semibold tabular-nums',
-              group.workloads.every(w => w.status === 'healthy')
-                ? 'text-pb-status-ok'
-                : group.workloads.some(w => w.status === 'failed')
-                  ? 'text-red-400'
-                  : 'text-amber-400',
+              group.workloads.every((w) => w.status === 'healthy')
+                ? 'text-mnt-status-ok'
+                : group.workloads.some((w) => w.status === 'failed')
+                  ? 'text-mnt-status-down'
+                  : 'text-mnt-status-warn',
             ]"
           >
-            {{ group.workloads.filter(w => w.status === 'healthy').length }}/{{ group.workloads.length }} healthy
+            {{ group.workloads.filter((w) => w.status === 'healthy').length }}/{{
+              group.workloads.length
+            }}
+            healthy
           </span>
         </div>
       </button>
@@ -126,42 +140,78 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
       <!-- Workload rows -->
       <div
         v-if="isExpanded(group.namespace)"
-        class="border-t border-slate-800 divide-y divide-slate-800/60"
+        class="border-t border-mnt-default divide-y divide-slate-800/60"
       >
         <div
           v-for="workload in group.workloads"
           :key="workload.id"
-          class="px-4 py-3 hover:bg-slate-800/25 transition-all cursor-pointer group"
+          class="px-4 py-3 hover:bg-mnt-elevated transition-all cursor-pointer group"
           @click="emit('select', workload)"
         >
           <div class="flex items-center justify-between gap-4">
             <!-- Left: name + badges -->
             <div class="flex items-center gap-2 min-w-0">
-              <span class="text-sm text-pb-primary font-medium truncate group-hover:text-pb-green-400 transition-colors">
+              <span
+                class="text-sm text-mnt-primary font-medium truncate group-hover:text-mnt-green-400 transition-colors"
+              >
                 {{ workload.name }}
               </span>
-              <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', kindStyle(workload.kind)]">
+              <span
+                :class="[
+                  'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                  kindStyle(workload.kind),
+                ]"
+              >
                 {{ workload.kind }}
               </span>
-              <span :class="['text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0', statusStyle(workload.status)]">
+              <HostBadge
+                :agent-id="workload.agent_id"
+                :hostname="workload.agent_hostname"
+                :label="workload.agent_label"
+                class="flex-shrink-0"
+              />
+              <span
+                v-if="workload.stale"
+                class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0 text-mnt-sev-unknown bg-mnt-sev-unknown border-mnt-sev-unknown"
+                :title="`Agent offline · last known: ${workload.status}`"
+              >
+                offline
+              </span>
+              <span
+                v-else
+                :class="[
+                  'text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border flex-shrink-0',
+                  statusStyle(workload.status),
+                ]"
+              >
                 {{ workload.status }}
               </span>
             </div>
 
             <!-- Right: replicas + image + age -->
             <div class="flex items-center gap-4 flex-shrink-0">
-              <span :class="['text-sm font-semibold tabular-nums', replicaColor(workload.ready_replicas, workload.desired_replicas)]">
+              <span
+                :class="[
+                  'text-sm font-semibold tabular-nums',
+                  replicaColor(workload.ready_replicas, workload.desired_replicas),
+                ]"
+              >
                 {{ workload.ready_replicas }}/{{ workload.desired_replicas }}
               </span>
-              <div v-if="workload.images.length > 0" class="hidden sm:flex items-center gap-1.5 max-w-48">
-                <span class="text-xs text-slate-500 font-mono truncate">
+              <div
+                v-if="workload.images.length > 0"
+                class="hidden sm:flex items-center gap-1.5 max-w-48"
+              >
+                <span class="text-xs text-mnt-muted font-mono truncate">
                   {{ primaryImage(workload.images).name.split('/').pop() }}
                 </span>
-                <span class="text-[10px] font-mono text-slate-600 bg-slate-800 px-1 py-0.5 rounded flex-shrink-0">
+                <span
+                  class="text-[10px] font-mono text-mnt-muted bg-mnt-elevated px-1 py-0.5 rounded flex-shrink-0"
+                >
                   {{ primaryImage(workload.images).tag }}
                 </span>
               </div>
-              <span class="text-xs text-slate-500 tabular-nums hidden md:block">
+              <span class="text-xs text-mnt-muted tabular-nums hidden md:block">
                 {{ timeAgo(workload.last_transition) }}
               </span>
             </div>

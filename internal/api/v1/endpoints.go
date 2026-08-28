@@ -23,17 +23,47 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // EndpointHandler handles endpoint-related HTTP endpoints.
 type EndpointHandler struct {
 	service      *endpoint.Service
 	containerSvc *container.Service
+	sessions     agentLiveness
+}
+
+// enrichedEndpoint adds presentation-only liveness flags to an endpoint. When an
+// endpoint is probed by a remote agent whose stream is gone, its last result is
+// no longer live, so the UI degrades it to offline.
+type enrichedEndpoint struct {
+	*endpoint.Endpoint
+	Stale        *bool `json:"stale,omitempty"`
+	AgentOffline *bool `json:"agent_offline,omitempty"`
 }
 
 // NewEndpointHandler creates a new endpoint handler.
 func NewEndpointHandler(service *endpoint.Service, containerSvc *container.Service) *EndpointHandler {
 	return &EndpointHandler{service: service, containerSvc: containerSvc}
+}
+
+// SetAgentSessions wires live agent-stream state so agent-probed endpoints can be
+// flagged stale when their reporting agent disconnects. Server-probed endpoints
+// (no agent) are unaffected.
+func (h *EndpointHandler) SetAgentSessions(s agentLiveness) {
+	h.sessions = s
+}
+
+// markStale wraps an endpoint, flagging it stale when its remote agent is offline.
+func (h *EndpointHandler) markStale(ep *endpoint.Endpoint) enrichedEndpoint {
+	ee := enrichedEndpoint{Endpoint: ep}
+	if ep.AgentID != "" && ep.AgentID != uid.LocalAgent && h.sessions != nil && !h.sessions.IsConnected(ep.AgentID) {
+		t := true
+		ee.Stale = &t
+		ee.AgentOffline = &t
+	}
+	return ee
 }
 
 // HandleListEndpoints handles GET /api/v1/endpoints.
@@ -48,10 +78,13 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 		Source:             q.Get("source"),
 		IncludeInactive:    q.Get("include_inactive") == "true",
 	}
+	if a := q.Get("agent_id"); a != "" {
+		opts.AgentFilter = &a
+	}
 
 	endpoints, err := h.service.ListEndpoints(r.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list endpoints")
+		WriteStoreError(w, err, "Failed to list endpoints")
 		return
 	}
 
@@ -59,24 +92,28 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 		endpoints = []*endpoint.Endpoint{}
 	}
 
+	enriched := make([]enrichedEndpoint, 0, len(endpoints))
+	for _, ep := range endpoints {
+		enriched = append(enriched, h.markStale(ep))
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"endpoints": endpoints,
-		"total":     len(endpoints),
+		"endpoints": enriched,
+		"total":     len(enriched),
 	})
 }
 
 // HandleGetEndpoint handles GET /api/v1/endpoints/{id}.
 func (h *EndpointHandler) HandleGetEndpoint(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
 	ep, err := h.service.GetEndpoint(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get endpoint")
+		WriteStoreError(w, err, "Failed to get endpoint")
 		return
 	}
 	if ep == nil {
@@ -87,23 +124,22 @@ func (h *EndpointHandler) HandleGetEndpoint(w http.ResponseWriter, r *http.Reque
 	uptime := h.service.CalculateUptime(r.Context(), id)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"endpoint": ep,
+		"endpoint": h.markStale(ep),
 		"uptime":   uptime,
 	})
 }
 
 // HandleListContainerEndpoints handles GET /api/v1/containers/{id}/endpoints.
 func (h *EndpointHandler) HandleListContainerEndpoints(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Container ID is required")
 		return
 	}
 
 	c, err := h.containerSvc.GetContainer(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get container")
+		WriteStoreError(w, err, "Failed to get container")
 		return
 	}
 	if c == nil {
@@ -115,7 +151,7 @@ func (h *EndpointHandler) HandleListContainerEndpoints(w http.ResponseWriter, r 
 		ContainerName: c.Name,
 	})
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list endpoints")
+		WriteStoreError(w, err, "Failed to list endpoints")
 		return
 	}
 
@@ -144,10 +180,9 @@ func (h *EndpointHandler) HandleListContainerEndpoints(w http.ResponseWriter, r 
 
 // HandleListChecks handles GET /api/v1/endpoints/{id}/checks.
 func (h *EndpointHandler) HandleListChecks(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
@@ -176,7 +211,7 @@ func (h *EndpointHandler) HandleListChecks(w http.ResponseWriter, r *http.Reques
 
 	checks, total, err := h.service.ListCheckResults(r.Context(), id, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list check results")
+		WriteStoreError(w, err, "Failed to list check results")
 		return
 	}
 
@@ -189,6 +224,39 @@ func (h *EndpointHandler) HandleListChecks(w http.ResponseWriter, r *http.Reques
 		"checks":      checks,
 		"total":       total,
 		"has_more":    opts.Offset+len(checks) < total,
+	})
+}
+
+// HandleCheckNow handles POST /api/v1/endpoints/{id}/check. It probes the target
+// right away and answers with the refreshed endpoint, so the UI can confirm a fix
+// without waiting for the next scheduled check.
+func (h *EndpointHandler) HandleCheckNow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
+		return
+	}
+
+	ep, err := h.service.CheckNow(r.Context(), id)
+	switch {
+	case errors.Is(err, endpoint.ErrEndpointNotFound):
+		WriteError(w, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found")
+		return
+	case errors.Is(err, endpoint.ErrAgentProbed):
+		WriteError(w, http.StatusConflict, "AGENT_PROBED",
+			"This endpoint is probed by its agent, which re-checks it on its own cycle")
+		return
+	case errors.Is(err, endpoint.ErrCheckInProgress):
+		WriteError(w, http.StatusConflict, "CHECK_IN_PROGRESS", "A check is already running for this endpoint")
+		return
+	case err != nil:
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check endpoint")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"endpoint": h.markStale(ep),
+		"uptime":   h.service.CalculateUptime(r.Context(), id),
 	})
 }
 
@@ -243,7 +311,7 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= 5s")
 			return
 		}
-		config.Interval = d
+		config.Interval = endpoint.Duration(d)
 	}
 	if input.Timeout != "" {
 		d, err := time.ParseDuration(input.Timeout)
@@ -251,7 +319,7 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be a valid duration >= 1s")
 			return
 		}
-		config.Timeout = d
+		config.Timeout = endpoint.Duration(d)
 	}
 	if config.Timeout > config.Interval {
 		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than or equal to interval")
@@ -267,8 +335,7 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 	ep, err := h.service.CreateStandalone(r.Context(), input.Name, input.Target, epType, config)
 	if err != nil {
 		if errors.Is(err, endpoint.ErrLimitReached) {
-			WriteError(w, http.StatusForbidden, "QUOTA_EXCEEDED",
-				"Community edition is limited to 10 endpoints. Upgrade to Pro for unlimited monitoring.")
+			refuseQuota(w, extension.ResourceEndpoints)
 			return
 		}
 		slog.Error("failed to create endpoint", "error", err, "name", input.Name, "target", input.Target)
@@ -294,9 +361,9 @@ type updateEndpointInput struct {
 
 // HandleUpdateEndpoint handles PUT /api/v1/endpoints/{id}.
 func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
@@ -309,7 +376,7 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 	// Get current endpoint to merge with input
 	existing, err := h.service.GetEndpoint(r.Context(), id)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get endpoint")
+		WriteStoreError(w, err, "Failed to get endpoint")
 		return
 	}
 	if existing == nil {
@@ -341,7 +408,7 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= 5s")
 			return
 		}
-		config.Interval = d
+		config.Interval = endpoint.Duration(d)
 	}
 	if input.Timeout != "" {
 		d, err := time.ParseDuration(input.Timeout)
@@ -349,7 +416,7 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be a valid duration >= 1s")
 			return
 		}
-		config.Timeout = d
+		config.Timeout = endpoint.Duration(d)
 	}
 	if config.Timeout > config.Interval {
 		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "timeout must be less than or equal to interval")
@@ -384,20 +451,20 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 
 // HandleDeleteEndpoint handles DELETE /api/v1/endpoints/{id}.
 func (h *EndpointHandler) HandleDeleteEndpoint(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID must be an integer")
+	id := r.PathValue("id")
+	if id == "" {
+		WriteError(w, http.StatusBadRequest, "INVALID_ID", "Endpoint ID is required")
 		return
 	}
 
-	if err := h.service.DeleteStandalone(r.Context(), id); err != nil {
+	if err := h.service.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, endpoint.ErrEndpointNotFound) {
 			WriteError(w, http.StatusNotFound, "ENDPOINT_NOT_FOUND", "Endpoint not found")
 			return
 		}
-		if errors.Is(err, endpoint.ErrNotStandalone) {
-			WriteError(w, http.StatusBadRequest, "NOT_STANDALONE",
-				"Only standalone endpoints can be deleted; label-discovered endpoints are managed via container labels")
+		if errors.Is(err, endpoint.ErrEndpointLive) {
+			WriteError(w, http.StatusConflict, "ENDPOINT_LIVE",
+				"This endpoint comes from the labels of a running container; remove the label or the container. It becomes deletable once its container is gone")
 			return
 		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete endpoint")

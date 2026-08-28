@@ -10,7 +10,7 @@ imagePullSecrets: []
 ## Runtime: "kubernetes" or "docker"
 runtime: kubernetes
 
-## License key (Enterprise edition)
+## License key (Pro edition)
 license:
   key: ""
   ## Use an existing secret instead of the inline key above.
@@ -21,9 +21,20 @@ persistence:
   enabled: true
   storageClass: ""
   accessMode: ReadWriteOnce
-  size: 1Gi
+  ## Migrations that rebuild a table copy it before dropping the original, and
+  ## SQLite temp files are written here too (SQLITE_TMPDIR=/data). Allow several
+  ## times the expected database size or an upgrade can run the volume out of space.
+  size: 10Gi
   ## Use an existing PVC (persistence.enabled is ignored when set)
   existingClaim: ""
+
+## Schema migrations run before the HTTP listener starts, so /health does not
+## answer while they work — minutes on a large database. The startup probe holds
+## the liveness probe off for periodSeconds x failureThreshold (10 min by
+## default); raise failureThreshold if an upgrade needs longer.
+startupProbe:
+  periodSeconds: 10
+  failureThreshold: 60
 
 service:
   type: ClusterIP
@@ -51,6 +62,23 @@ resources:
 extraEnv: []
 # - name: MAINTENANT_WEBHOOK_URL
 #   value: "https://hooks.example.com/..."
+
+## External PostgreSQL for the server data set (optional).
+##
+## Leave `existingSecret` empty and the instance uses SQLite on its volume,
+## which is the default and requires nothing. Set it and the instance becomes
+## replaceable: a pod started elsewhere on the same database keeps the fleet,
+## with no action on the monitored hosts.
+##
+## The product connects to a database you operate; it never installs, backs up
+## or supervises one. The persistent volume must still follow the instance: it
+## carries the licence cache and the update window record.
+database:
+  ## Name of an existing Secret holding the connection string.
+  existingSecret: ""
+  ## Key inside that Secret. The value looks like:
+  ##   postgres://maintenant:secret@db.internal:5432/maintenant?sslmode=require
+  urlKey: url
 
 serviceAccount:
   ## Set to false to bring your own ServiceAccount

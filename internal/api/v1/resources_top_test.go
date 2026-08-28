@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 	"time"
 
@@ -26,36 +27,66 @@ import (
 
 // mockResourceTopService is a test double for ResourceTopService.
 type mockResourceTopService struct {
-	snapshots map[int64]*resource.ResourceSnapshot
-	names     map[int64]string
+	snapshots map[string]*resource.ResourceSnapshot
+	names     map[string]string
 }
 
-func (m *mockResourceTopService) GetAllLatestSnapshots() map[int64]*resource.ResourceSnapshot {
+func (m *mockResourceTopService) GetAllLatestSnapshots() map[string]*resource.ResourceSnapshot {
 	return m.snapshots
 }
 
-func (m *mockResourceTopService) GetContainerName(containerID int64) string {
+// TopConsumersNow mirrors what the real service does with the latest samples,
+// so these tests keep exercising the ranking the endpoint reports.
+func (m *mockResourceTopService) TopConsumersNow(metric string, limit int, agentID *string) []resource.TopConsumerRow {
+	rows := make([]resource.TopConsumerRow, 0, len(m.snapshots))
+	for id, snap := range m.snapshots {
+		if !hostMatches(snap.AgentID, agentID) {
+			continue
+		}
+		var value, percent float64
+		switch metric {
+		case "cpu":
+			value, percent = snap.CPUPercent, snap.CPUPercent
+		case "memory":
+			value = float64(snap.MemUsed)
+			if snap.MemLimit > 0 {
+				percent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
+			}
+		}
+		rows = append(rows, resource.TopConsumerRow{
+			ContainerID: id, ContainerName: m.GetContainerName(id),
+			AvgValue: value, AvgPercent: percent,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].AvgValue > rows[j].AvgValue })
+	if limit < len(rows) {
+		rows = rows[:limit]
+	}
+	return rows
+}
+
+func (m *mockResourceTopService) GetContainerName(containerID string) string {
 	if name, ok := m.names[containerID]; ok {
 		return name
 	}
 	return ""
 }
 
-func (m *mockResourceTopService) GetTopConsumersByPeriod(_ context.Context, _ string, _ string, _ int) ([]resource.TopConsumerRow, error) {
+func (m *mockResourceTopService) GetTopConsumersByPeriod(_ context.Context, _ string, _ string, _ int, _ *string) ([]resource.TopConsumerRow, error) {
 	return nil, nil
 }
 
 func TestHandleGetTopConsumers(t *testing.T) {
 	baseSvc := &mockResourceTopService{
-		snapshots: map[int64]*resource.ResourceSnapshot{
-			1: {ContainerID: 1, CPUPercent: 65.2, MemUsed: 500 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
-			2: {ContainerID: 2, CPUPercent: 34.1, MemUsed: 200 * 1024 * 1024, MemLimit: 512 * 1024 * 1024, Timestamp: time.Now()},
-			3: {ContainerID: 3, CPUPercent: 90.5, MemUsed: 800 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
+		snapshots: map[string]*resource.ResourceSnapshot{
+			"1": {ContainerID: "1", CPUPercent: 65.2, MemUsed: 500 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
+			"2": {ContainerID: "2", CPUPercent: 34.1, MemUsed: 200 * 1024 * 1024, MemLimit: 512 * 1024 * 1024, Timestamp: time.Now()},
+			"3": {ContainerID: "3", CPUPercent: 90.5, MemUsed: 800 * 1024 * 1024, MemLimit: 1024 * 1024 * 1024, Timestamp: time.Now()},
 		},
-		names: map[int64]string{
-			1: "postgres",
-			2: "redis",
-			3: "app",
+		names: map[string]string{
+			"1": "postgres",
+			"2": "redis",
+			"3": "app",
 		},
 	}
 
@@ -132,8 +163,8 @@ func TestHandleGetTopConsumers(t *testing.T) {
 			name: "empty snapshots",
 			url:  "/api/v1/resources/top?metric=cpu",
 			svc: &mockResourceTopService{
-				snapshots: map[int64]*resource.ResourceSnapshot{},
-				names:     map[int64]string{},
+				snapshots: map[string]*resource.ResourceSnapshot{},
+				names:     map[string]string{},
 			},
 			wantStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body map[string]interface{}) {

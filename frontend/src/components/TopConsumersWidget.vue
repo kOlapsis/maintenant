@@ -16,10 +16,15 @@ import { ref } from 'vue'
 import { useEdition } from '@/composables/useEdition'
 import { Lock } from 'lucide-vue-next'
 
-export type Period = '1h' | '24h' | '7d' | '30d'
+/**
+ * A period is whatever the engine's catalogue declares. It used to be a fixed
+ * union split into a free list and a paid one, which is how the widget ended up
+ * being the only thing standing between an edition and a paid period.
+ */
+export type Period = string
 
 export interface TopConsumer {
-  containerId: number
+  containerId: string
   containerName: string
   value: number
   percent: number
@@ -37,10 +42,7 @@ const emit = defineEmits<{
   'update:period': [value: Period]
 }>()
 
-const { hasFeature } = useEdition()
-
-const cePeriods: Period[] = ['1h']
-const proPeriods: Period[] = ['24h', '7d', '30d']
+const { historyWindows, isWindowOpen } = useEdition()
 
 const activeMetric = ref<'cpu' | 'memory'>(props.metric)
 const activePeriod = ref<Period>(props.period)
@@ -51,15 +53,17 @@ function switchMetric(m: 'cpu' | 'memory') {
 }
 
 function switchPeriod(p: Period) {
-  if (proPeriods.includes(p) && !hasFeature('resource_history')) return
+  // The server refuses a closed period anyway; not asking is what keeps the
+  // interface from firing a request it knows will come back refused.
+  if (!isWindowOpen(p)) return
   activePeriod.value = p
   emit('update:period', p)
 }
 
 function barColor(percent: number): string {
-  if (percent >= 90) return 'var(--pb-status-down)'
-  if (percent >= 70) return 'var(--pb-status-warn)'
-  return 'var(--pb-status-ok)'
+  if (percent >= 90) return 'var(--mnt-status-down)'
+  if (percent >= 70) return 'var(--mnt-status-warn)'
+  return 'var(--mnt-status-ok)'
 }
 
 function formatValue(consumer: TopConsumer): string {
@@ -84,9 +88,9 @@ function formatValue(consumer: TopConsumer): string {
           :key="m"
           class="rounded-full px-3 py-1 text-xs font-medium transition cursor-pointer"
           :style="{
-            backgroundColor: activeMetric === m ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-            color: activeMetric === m ? 'var(--pb-text-inverted)' : 'var(--pb-text-secondary)',
-            border: activeMetric === m ? '1px solid var(--pb-accent)' : '1px solid var(--pb-border-default)',
+            backgroundColor: activeMetric === m ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
+            color: activeMetric === m ? 'var(--mnt-text-inverted)' : 'var(--mnt-text-secondary)',
+            border: activeMetric === m ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
           }"
           @click="switchMetric(m)"
         >
@@ -96,44 +100,38 @@ function formatValue(consumer: TopConsumer): string {
 
       <div
         class="h-4 w-px"
-        :style="{ backgroundColor: 'var(--pb-border-default)' }"
+        :style="{ backgroundColor: 'var(--mnt-border-default)' }"
       />
 
       <div class="flex gap-1">
         <button
-          v-for="p in cePeriods"
-          :key="p"
-          class="rounded-full px-2.5 py-1 text-xs font-medium transition cursor-pointer"
-          :style="{
-            backgroundColor: activePeriod === p ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-            color: activePeriod === p ? 'var(--pb-text-inverted)' : 'var(--pb-text-secondary)',
-            border: activePeriod === p ? '1px solid var(--pb-accent)' : '1px solid var(--pb-border-default)',
-          }"
-          @click="switchPeriod(p)"
-        >
-          {{ p }}
-        </button>
-        <button
-          v-for="p in proPeriods"
-          :key="p"
+          v-for="w in historyWindows"
+          :key="w.window"
+          :data-test="`period-${w.window}`"
+          :data-locked="isWindowOpen(w.window) ? undefined : 'true'"
+          :disabled="!isWindowOpen(w.window)"
           class="rounded-full px-2.5 py-1 text-xs font-medium transition flex items-center gap-1"
           :style="{
-            backgroundColor: hasFeature('resource_history') && activePeriod === p ? 'var(--pb-accent)' : 'var(--pb-bg-elevated)',
-            color: hasFeature('resource_history') && activePeriod === p ? 'var(--pb-text-inverted)' : hasFeature('resource_history') ? 'var(--pb-text-secondary)' : 'var(--pb-text-muted)',
-            border: hasFeature('resource_history') && activePeriod === p ? '1px solid var(--pb-accent)' : '1px solid var(--pb-border-default)',
-            cursor: hasFeature('resource_history') ? 'pointer' : 'not-allowed',
-            opacity: hasFeature('resource_history') ? '1' : '0.5',
+            backgroundColor: activePeriod === w.window ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
+            color: activePeriod === w.window
+              ? 'var(--mnt-text-inverted)'
+              : isWindowOpen(w.window)
+                ? 'var(--mnt-text-secondary)'
+                : 'var(--mnt-text-muted)',
+            border: activePeriod === w.window ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
+            cursor: isWindowOpen(w.window) ? 'pointer' : 'not-allowed',
+            opacity: isWindowOpen(w.window) ? '1' : '0.5',
           }"
-          @click="switchPeriod(p)"
+          @click="switchPeriod(w.window)"
         >
-          {{ p }}
-          <Lock v-if="!hasFeature('resource_history')" :size="9" />
+          {{ w.window }}
+          <Lock v-if="!isWindowOpen(w.window)" :size="9" />
         </button>
       </div>
     </div>
 
     <!-- Ranked list -->
-    <div v-if="consumers.length === 0" class="text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+    <div v-if="consumers.length === 0" class="text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
       No resource data available.
     </div>
     <div v-else class="space-y-2">
@@ -145,19 +143,19 @@ function formatValue(consumer: TopConsumer): string {
         <!-- Rank -->
         <span
           class="w-5 text-center text-xs font-semibold"
-          :style="{ color: 'var(--pb-text-muted)' }"
+          :style="{ color: 'var(--mnt-text-muted)' }"
         >
           {{ consumer.rank }}
         </span>
 
         <!-- Name + bar -->
         <div class="min-w-0 flex-1">
-          <div class="mb-0.5 truncate text-xs font-medium" :style="{ color: 'var(--pb-text-primary)' }">
+          <div class="mb-0.5 truncate text-xs font-medium" :style="{ color: 'var(--mnt-text-primary)' }">
             {{ consumer.containerName }}
           </div>
           <div
             class="h-1.5 w-full rounded-full"
-            :style="{ backgroundColor: 'var(--pb-bg-elevated)' }"
+            :style="{ backgroundColor: 'var(--mnt-bg-elevated)' }"
           >
             <div
               class="h-1.5 rounded-full transition-all"
@@ -170,7 +168,7 @@ function formatValue(consumer: TopConsumer): string {
         </div>
 
         <!-- Value -->
-        <span class="shrink-0 text-xs font-medium" :style="{ color: 'var(--pb-text-secondary)' }">
+        <span class="shrink-0 text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">
           {{ formatValue(consumer) }}
         </span>
       </div>

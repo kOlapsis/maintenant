@@ -18,8 +18,12 @@ import {
 } from '@/services/resourceApi'
 import { sseBus } from '@/services/sseBus'
 
+// Persisted global host filter: null = all resources, 'local' = the server's own
+// runtime, '<agent_id>' = a specific enrolled agent.
+const FILTER_KEY = 'mnt:host-filter:selected'
+
 export interface ResourceAlert {
-  container_id: number
+  container_id: string
   container_name: string
   alert_type: string
   current_value: number
@@ -30,10 +34,25 @@ export interface ResourceAlert {
 const SPARKLINE_BUFFER_SIZE = 20
 
 export const useResourcesStore = defineStore('resources', () => {
-  const snapshots = ref<Record<number, ResourceSnapshot>>({})
-  const alerts = ref<Record<number, ResourceAlert>>({})
+  const snapshots = ref<Record<string, ResourceSnapshot>>({})
+  const alerts = ref<Record<string, ResourceAlert>>({})
   const summary = ref<ResourceSummary | null>(null)
-  const cpuSparklines = ref<Record<number, number[]>>({})
+  const cpuSparklines = ref<Record<string, number[]>>({})
+
+  // Global host filter — the single source of truth that scopes every list
+  // (containers, endpoints, certificates, heartbeats) and the dashboard.
+  // null = all resources, 'local' = the server's own runtime, '<id>' = an agent.
+  const selected = ref<string | null>((localStorage.getItem(FILTER_KEY) ?? localStorage.getItem('pb:host-filter:selected')) || null)
+
+  // Query value for entity lists: passes 'local'/'<id>' through verbatim (the
+  // backend understands both); null → undefined → no filter (all resources).
+  const entityQuery = computed<string | undefined>(() => selected.value ?? undefined)
+
+  // Query value for the per-host resource summary (header gauges). There is no
+  // multi-host aggregate, so 'all' falls back to the local server, same as 'local'.
+  const summaryQuery = computed<string | undefined>(() =>
+    selected.value === null || selected.value === 'local' ? undefined : selected.value,
+  )
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B'
@@ -48,15 +67,15 @@ export const useResourcesStore = defineStore('resources', () => {
   }
 
   const getSnapshot = computed(() => {
-    return (containerId: number) => snapshots.value[containerId] || null
+    return (containerId: string) => snapshots.value[containerId] || null
   })
 
   const getAlert = computed(() => {
-    return (containerId: number) => alerts.value[containerId] || null
+    return (containerId: string) => alerts.value[containerId] || null
   })
 
   const formattedSnapshot = computed(() => {
-    return (containerId: number) => {
+    return (containerId: string) => {
       const snap = snapshots.value[containerId]
       if (!snap) return null
       return {
@@ -129,9 +148,32 @@ export const useResourcesStore = defineStore('resources', () => {
 
   async function fetchSummary() {
     try {
-      summary.value = await getSummary()
+      summary.value = await getSummary(summaryQuery.value)
     } catch {
       // ignore
+    }
+  }
+
+  // setFilter changes the global host filter and persists it. Reacting to the
+  // change (refetching the entity lists + gauges) is wired in AppHeader, which
+  // owns the dropdown and is always mounted — this keeps the store free of a
+  // dashboard import cycle.
+  function setFilter(value: string | null) {
+    selected.value = value
+    try {
+      if (value) localStorage.setItem(FILTER_KEY, value)
+      else localStorage.removeItem(FILTER_KEY)
+    } catch {
+      // ignore (private mode)
+    }
+  }
+
+  // reconcile clears the selection when the selected agent is no longer enrolled
+  // (revoked/deleted), falling back to "all resources".
+  function reconcile(activeAgentIds: Set<string>) {
+    const s = selected.value
+    if (s && s !== 'local' && !activeAgentIds.has(s)) {
+      setFilter(null)
     }
   }
 
@@ -140,6 +182,9 @@ export const useResourcesStore = defineStore('resources', () => {
     alerts,
     summary,
     cpuSparklines,
+    selected,
+    entityQuery,
+    summaryQuery,
     getSnapshot,
     getAlert,
     formattedSnapshot,
@@ -148,5 +193,7 @@ export const useResourcesStore = defineStore('resources', () => {
     connectSSE,
     disconnectSSE,
     fetchSummary,
+    setFilter,
+    reconcile,
   }
 })

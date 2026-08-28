@@ -72,7 +72,7 @@ func TestService_ContextCancellationExits(t *testing.T) {
 		Containers:       fakeCounter{value: 0},
 		Endpoints:        fakeCounter{value: 0},
 		Heartbeats:       fakeCounter{value: 0},
-		Certificates:    fakeCounter{value: 0},
+		Certificates:     fakeCounter{value: 0},
 		Webhooks:         fakeCounter{value: 0},
 		StatusComponents: fakeCounter{value: 0},
 	}, logger)
@@ -134,7 +134,7 @@ func TestService_PanickingProvider_ContainedAtStart(t *testing.T) {
 		Containers:       fakeCounter{panic: "containers panic"},
 		Endpoints:        fakeCounter{value: 1},
 		Heartbeats:       fakeCounter{value: 0},
-		Certificates:    fakeCounter{value: 0},
+		Certificates:     fakeCounter{value: 0},
 		Webhooks:         fakeCounter{value: 0},
 		StatusComponents: fakeCounter{value: 0},
 		Edition:          staticEdition{value: extension.Community},

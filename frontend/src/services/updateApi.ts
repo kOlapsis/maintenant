@@ -13,7 +13,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch, apiFetchVoid } from './apiFetch'
 
 export interface ImageUpdate {
-  id: number
+  id: string
   container_id: string
   container_name: string
   image: string
@@ -120,7 +120,7 @@ export interface RiskListResponse {
 }
 
 export interface ScanStatus {
-  scan_id: number
+  scan_id: string
   status: string
   started_at: string
   completed_at?: string
@@ -130,10 +130,18 @@ export interface ScanStatus {
 }
 
 export interface Exclusion {
-  id: number
+  id: string
   pattern: string
   pattern_type: string
   created_at: string
+}
+
+export interface PinVersionResponse {
+  container_id: string
+  pinned_tag: string
+  pinned_digest: string
+  reason: string
+  pinned_at: string
 }
 
 // Updates
@@ -158,7 +166,7 @@ export function triggerScan(): Promise<{ status: string; started_at: string }> {
   return apiFetch(`${API_BASE}/updates/scan`, { method: 'POST' })
 }
 
-export function fetchScanStatus(scanId: number): Promise<ScanStatus> {
+export function fetchScanStatus(scanId: string): Promise<ScanStatus> {
   return apiFetch(`${API_BASE}/updates/scan/${scanId}`)
 }
 
@@ -166,12 +174,12 @@ export function fetchDryRun(): Promise<{ would_update: Array<{ container_id: str
   return apiFetch(`${API_BASE}/updates/dry-run`)
 }
 
-export function fetchDigest(): Promise<any> {
+export function fetchDigest(): Promise<unknown> {
   return apiFetch(`${API_BASE}/updates/digest`)
 }
 
 // Pinning
-export function pinVersion(containerId: string, reason?: string): Promise<any> {
+export function pinVersion(containerId: string, reason?: string): Promise<PinVersionResponse> {
   return apiFetch(`${API_BASE}/updates/pin/${containerId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -196,7 +204,7 @@ export function addExclusion(pattern: string, patternType: string): Promise<Excl
   })
 }
 
-export function removeExclusion(id: number): Promise<void> {
+export function removeExclusion(id: string): Promise<void> {
   return apiFetchVoid(`${API_BASE}/updates/exclusions/${id}`, { method: 'DELETE' })
 }
 
@@ -218,7 +226,7 @@ export function fetchRiskScores(): Promise<RiskListResponse> {
   return apiFetch(`${API_BASE}/risk`)
 }
 
-export function fetchContainerRisk(containerId: string): Promise<any> {
+export function fetchContainerRisk(containerId: string): Promise<RiskScore> {
   return apiFetch(`${API_BASE}/risk/${containerId}`)
 }
 

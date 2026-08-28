@@ -16,6 +16,10 @@ import { onMounted, ref, computed } from 'vue'
 import { useContainersStore } from '@/stores/containers'
 import type { Container } from '@/services/containerApi'
 import ContainerCard from './ContainerCard.vue'
+import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
+import ErrorState from '@/components/ui/ErrorState.vue'
+import { ChevronDown, Box } from 'lucide-vue-next'
 
 const store = useContainersStore()
 const collapsedGroups = ref<Set<string>>(new Set())
@@ -89,45 +93,18 @@ onMounted(() => {
 <template>
   <div>
     <!-- Loading state -->
-    <div v-if="store.loading" class="flex items-center justify-center py-12">
-      <div
-        class="h-8 w-8 animate-spin rounded-full border-4"
-        :style="{ borderColor: 'var(--pb-border-default)', borderTopColor: 'var(--pb-accent)' }"
-      />
-    </div>
+    <LoadingSkeleton v-if="store.loading" variant="cards" :count="8" />
 
     <!-- Error state -->
-    <div
-      v-else-if="store.error"
-      class="rounded-lg p-4 text-center text-sm"
-      :style="{
-        backgroundColor: 'var(--pb-status-down-bg)',
-        border: '1px solid var(--pb-status-down)',
-        color: 'var(--pb-status-down)',
-        borderRadius: 'var(--pb-radius-lg)',
-      }"
-    >
-      {{ store.error }}
-    </div>
+    <ErrorState v-else-if="store.error" :message="store.error" />
 
     <!-- Empty state -->
-    <div
+    <EmptyState
       v-else-if="store.groups.length === 0"
-      class="flex flex-col items-center justify-center py-16 text-center"
-    >
-      <svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4" style="color: var(--pb-text-muted)">
-        <rect x="12" y="8" width="32" height="24" rx="4" />
-        <rect x="8" y="24" width="40" height="24" rx="4" />
-        <circle cx="18" cy="20" r="2" fill="currentColor" stroke="none" />
-        <circle cx="24" cy="20" r="2" fill="currentColor" stroke="none" />
-        <circle cx="18" cy="36" r="2" fill="currentColor" stroke="none" />
-        <circle cx="24" cy="36" r="2" fill="currentColor" stroke="none" />
-      </svg>
-      <h3 class="text-lg font-medium mb-1" style="color: var(--pb-text-primary)">No containers detected</h3>
-      <p class="text-sm max-w-sm" style="color: var(--pb-text-muted)">
-        maintenant will automatically discover containers when they start. Make sure your container runtime is accessible.
-      </p>
-    </div>
+      :icon="Box"
+      title="No containers detected"
+      description="maintenant will automatically discover containers when they start. Make sure your container runtime is accessible."
+    />
 
     <!-- Grouped container display -->
     <div v-else class="space-y-6">
@@ -137,26 +114,25 @@ onMounted(() => {
           class="flex w-full items-center gap-2 text-left min-h-[44px]"
           @click="toggleGroup(group.name)"
         >
-          <span
-            class="text-xs transition-transform"
-            :style="{ color: 'var(--pb-text-muted)' }"
+          <ChevronDown
+            :size="14"
+            class="shrink-0 text-mnt-muted transition-transform"
             :class="{ '-rotate-90': collapsedGroups.has(group.name) }"
-          >
-            v
-          </span>
-          <h2 class="text-sm font-semibold" :style="{ color: 'var(--pb-text-secondary)' }">
+            aria-hidden="true"
+          />
+          <h2 class="text-sm font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">
             {{ group.name }}
           </h2>
           <span
             class="rounded-full px-2 py-0.5 text-xs"
             :style="{
-              backgroundColor: 'var(--pb-bg-elevated)',
-              color: 'var(--pb-text-muted)',
+              backgroundColor: 'var(--mnt-bg-elevated)',
+              color: 'var(--mnt-text-muted)',
             }"
           >
             {{ group.containers.filter(c => !c.archived).length }}
           </span>
-          <span class="text-xs" :style="{ color: 'var(--pb-text-muted)' }">
+          <span class="text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
             {{ group.source }}
           </span>
         </button>
@@ -170,23 +146,24 @@ onMounted(() => {
           >
             <button
               class="flex w-full items-center gap-2 text-left px-2 py-1.5 rounded"
-              :style="{ backgroundColor: 'var(--pb-bg-elevated)' }"
+              :style="{ backgroundColor: 'var(--mnt-bg-elevated)' }"
               @click="store.toggleController(`${group.name}/${ctrl.kind}/${ctrl.name}`)"
             >
-              <span
-                class="text-xs transition-transform"
-                :style="{ color: 'var(--pb-text-muted)' }"
+              <ChevronDown
+                :size="13"
+                class="shrink-0 text-mnt-muted transition-transform"
                 :class="{ '-rotate-90': !store.isControllerExpanded(`${group.name}/${ctrl.kind}/${ctrl.name}`) }"
-              >v</span>
+                aria-hidden="true"
+              />
               <span
                 class="rounded px-1.5 py-0.5 text-xs"
-                :style="{ backgroundColor: 'var(--pb-bg-surface)', color: 'var(--pb-text-secondary)' }"
+                :style="{ backgroundColor: 'var(--mnt-bg-surface)', color: 'var(--mnt-text-secondary)' }"
               >{{ ctrl.kind }}</span>
-              <span class="text-sm font-medium" :style="{ color: 'var(--pb-text-primary)' }">{{ ctrl.name }}</span>
+              <span class="text-sm font-medium" :style="{ color: 'var(--mnt-text-primary)' }">{{ ctrl.name }}</span>
               <span
                 class="text-xs"
                 :style="{
-                  color: ctrl.readyCount === ctrl.podCount ? 'var(--pb-status-ok)' : 'var(--pb-status-warn)',
+                  color: ctrl.readyCount === ctrl.podCount ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
                 }"
               >{{ ctrl.readyCount }}/{{ ctrl.podCount }} ready</span>
             </button>
@@ -236,7 +213,7 @@ onMounted(() => {
     <div v-if="!store.loading && store.archivedCount > 0" class="mt-6">
       <button
         class="text-sm"
-        :style="{ color: 'var(--pb-text-muted)' }"
+        :style="{ color: 'var(--mnt-text-muted)' }"
         @click="toggleArchived"
       >
         {{ showArchived ? 'Hide' : 'Show' }} archived ({{ store.archivedCount }})
@@ -247,11 +224,11 @@ onMounted(() => {
     <div
       v-if="!store.loading"
       class="mt-4 flex items-center gap-2 text-xs"
-      :style="{ color: 'var(--pb-text-muted)' }"
+      :style="{ color: 'var(--mnt-text-muted)' }"
     >
       <span
         class="inline-block h-2 w-2 rounded-full"
-        :style="{ backgroundColor: store.sseConnected ? 'var(--pb-status-ok)' : 'var(--pb-status-down)' }"
+        :style="{ backgroundColor: store.sseConnected ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)' }"
       />
       {{ store.sseConnected ? 'Live' : 'Disconnected' }}
       <span class="ml-auto">{{ store.containerCount }} containers</span>

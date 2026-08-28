@@ -8,19 +8,24 @@ maintenant is configured entirely through environment variables. No configuratio
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers. |
+| `MAINTENANT_ADDR` | `127.0.0.1:8080` | HTTP bind address. Use `0.0.0.0:8080` inside containers; on a host install, bind the interface you actually need. See [Choosing a Bind Address](#choosing-a-bind-address). |
 | `MAINTENANT_DB` | `./maintenant.db` | SQLite database file path. |
-| `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and status page links. |
+| `MAINTENANT_DATABASE_URL` | *(empty)* | PostgreSQL connection string, server/embedded mode only. Empty means SQLite. Refused in agent mode. See [PostgreSQL storage](../guides/postgresql.md). |
+| `MAINTENANT_BASE_URL` | `http://localhost:8080` | Public base URL. Used for heartbeat ping URLs and as the fallback target for the status page link. |
+| `MAINTENANT_STATUS_URL` | — | Canonical public URL of the status page (e.g. `https://status.example.com`). When set, the admin UI's *View public status page* link points here. Optional — falls back to `{MAINTENANT_BASE_URL}/status` when unset. See [Public Status Page → Status URL](../features/status-page.md#status-url). |
 | `MAINTENANT_CORS_ORIGINS` | same-origin | CORS allowed origins (comma-separated). Empty means same-origin only. Set to `*` for wildcard. |
 | `MAINTENANT_RUNTIME` | auto-detect | Force container runtime: `docker` or `kubernetes`. Auto-detected by default. |
+| `DOCKER_HOST` | local socket | Docker API endpoint (standard Docker SDK variable). Point it at a socket proxy (`tcp://socketproxy:2375`) to run without mounting `/var/run/docker.sock` — see [Security → Docker Socket Proxy](../security.md#recommended-docker-socket-proxy). |
 | `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes for POST/PUT requests (default: 1 MB). |
 | `MAINTENANT_UPDATE_INTERVAL` | `24h` | Update intelligence scan interval. Accepts Go duration format (e.g., `12h`, `30m`). |
 | `MAINTENANT_K8S_NAMESPACES` | all | Kubernetes namespace allowlist (comma-separated). Empty monitors all namespaces. |
 | `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | none | Kubernetes namespace blocklist (comma-separated). |
-| `MAINTENANT_LICENSE_KEY` | — | Pro license key. Enables Pro features when set to a valid key. |
+| `MAINTENANT_LICENSE_KEY` | — | License key. Unlocks the Personal or Pro edition, whichever the key grants. |
 | `MAINTENANT_MCP` | `false` | Enable the MCP server on `/mcp` (Streamable HTTP transport). |
 | `MAINTENANT_MCP_CLIENT_ID` | — | OAuth2 client ID for MCP authentication. |
 | `MAINTENANT_MCP_CLIENT_SECRET` | — | OAuth2 client secret for MCP authentication. |
+| `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | — | Comma-separated allowlist of OAuth2 `redirect_uri` values accepted by `/oauth/authorize`. Required when MCP credentials are set. |
+| `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false` | Serve `/mcp` with no authentication. Without it, enabling MCP without OAuth credentials refuses to start. Trusted networks only. |
 | `MAINTENANT_ORGANISATION_NAME` | `Maintenant` | Organisation name displayed on the public status page. |
 | `MAINTENANT_SMTP_HOST` | — | SMTP server hostname for email notifications. |
 | `MAINTENANT_SMTP_PORT` | `587` | SMTP server port. |
@@ -33,14 +38,21 @@ maintenant is configured entirely through environment variables. No configuratio
 ### Example `.env` File
 
 ```bash
-# Listen address (use 0.0.0.0 inside containers, 127.0.0.1 on host)
+# Listen address — see "Choosing a Bind Address" below.
+# In a container: keep 0.0.0.0:8080 and control exposure with the port mapping.
+# On the host: 127.0.0.1:8080 (local only) or <lan-ip>:8080 for LAN access.
 MAINTENANT_ADDR=127.0.0.1:8080
 
 # SQLite database path
 MAINTENANT_DB=./maintenant.db
 
-# Public base URL (used for heartbeat ping URLs and status page links)
+# Public base URL (used for heartbeat ping URLs and as the status page fallback)
 MAINTENANT_BASE_URL=https://maintenant.example.com
+
+# Canonical public URL of the status page (optional).
+# When set, the admin UI links to this URL instead of {BASE_URL}/status.
+# Use this when serving the status page on its own subdomain.
+# MAINTENANT_STATUS_URL=https://status.example.com
 
 # CORS allowed origins (comma-separated, empty = same-origin only)
 # MAINTENANT_CORS_ORIGINS=http://localhost:5173
@@ -64,6 +76,10 @@ MAINTENANT_BASE_URL=https://maintenant.example.com
 # MAINTENANT_ORGANISATION_NAME=Acme Corp
 
 # MCP Server (Model Context Protocol for AI assistants)
+# Both credentials are required: /mcp bypasses the reverse-proxy auth, so
+# without them maintenant refuses to start rather than serving your monitoring
+# data to anyone. Set MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true to accept that
+# on a trusted network.
 # MAINTENANT_MCP=true
 # MAINTENANT_MCP_CLIENT_ID=maintenant-mcp
 # MAINTENANT_MCP_CLIENT_SECRET=your-secret-here
@@ -82,6 +98,31 @@ MAINTENANT_BASE_URL=https://maintenant.example.com
 # Never set in production — disables SSRF protection.
 # MAINTENANT_ALLOW_PRIVATE_WEBHOOKS=true
 ```
+
+---
+
+## Choosing a Bind Address
+
+`MAINTENANT_ADDR` controls where the maintenant process itself listens. In Docker, the **published** port (the `ports:` mapping / `-p` flag) is a separate decision — and it is the one that determines what your network can reach.
+
+### Running in a container (recommended)
+
+Keep `MAINTENANT_ADDR=0.0.0.0:8080`. Inside a container this is required: Docker's port mapping reaches the process through the container's bridge interface, so binding `127.0.0.1` there would make the UI unreachable from outside the container. Control exposure with the port mapping instead:
+
+| Goal | Port mapping |
+|------|--------------|
+| Behind a reverse proxy on the same host | `127.0.0.1:8080:8080` — or no `ports:` at all when the proxy shares a Docker network with maintenant |
+| Headless server, direct access from your LAN | `192.168.1.50:8080:8080` (the server's LAN IP) |
+| Reachable from every interface | `8080:8080` — only behind a reverse proxy with authentication, or on a trusted network you accept exposing it to |
+
+### Running the binary directly on the host
+
+The default `127.0.0.1:8080` keeps the UI local-only. To reach it from your LAN without a reverse proxy, bind the server's LAN IP: `MAINTENANT_ADDR=192.168.1.50:8080`. Binding `0.0.0.0:8080` also works but listens on every interface of the host, including public ones if the machine has any.
+
+!!! note "\"Port exposed on all interfaces\" on maintenant's own container"
+    maintenant's security scanner analyzes **every** discovered container — including its own. If the UI port is published on all interfaces (`8080:8080`), it reports a critical `port_exposed_all_interfaces` finding against itself. That is expected behaviour, not a bug: the port really is reachable from any network interface.
+
+    Either restrict the published port to a specific interface as shown above, or — when the exposure is intentional (e.g. a trusted home LAN) — acknowledge the finding with an audit trail: see [Network Security Insights → Acknowledging Findings](../features/security.md#acknowledging-findings).
 
 ---
 
@@ -155,19 +196,31 @@ WARN  telemetry disabled  reason=datadir-unwritable  datadir=/data/shm  error=..
 
 ---
 
-## Pro License
+## License
 
-To enable Pro features (Slack/Teams/Email channels, CVE enrichment, incident management, maintenance windows, subscriber notifications, and more), set the `MAINTENANT_LICENSE_KEY` environment variable:
+Maintenant comes in three editions, in order: **Community**, **Personal**, **Pro**.
+
+| Edition | Price | Unlocks |
+|---------|-------|---------|
+| Community | Free | Containers, endpoints, heartbeats, certificates, the public status page, and the full Swarm and Kubernetes views, with 7 days of resource history. Capped at 10 endpoints, 5 heartbeats, 5 certificate monitors and 3 status components, on a single host. |
+| Personal | €149 once, for life | Every cap lifted, up to 20 remote hosts, plus email alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, 30 days of resource history, advanced trigger filters and OCSP stapling. Covers one person on infrastructure they own or run for themselves, freelancers included. |
+| Pro | €29/month or €290/year | Everything above with unlimited hosts, plus Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, 90 days of resource history, and the right to use Maintenant on behalf of others, with support. |
+
+A Personal license never expires and includes one year of product updates.
+Every version released inside that year stays licensed for life; a further year
+of updates costs €59. See [COMMERCIAL-LICENSE.md](https://github.com/kOlapsis/maintenant/blob/main/COMMERCIAL-LICENSE.md).
+
+To unlock Personal or Pro, set the `MAINTENANT_LICENSE_KEY` environment variable:
 
 ```yaml
 services:
   maintenant:
-    image: ghcr.io/kolapsis/maintenant-pro:latest
+    image: ghcr.io/kolapsis/maintenant:latest
     environment:
       MAINTENANT_LICENSE_KEY: "your-license-key"
 ```
 
-The license is verified periodically against the license server. If the server is temporarily unreachable, Pro features remain active from cache with a graceful degradation window.
+The license is verified periodically against the license server. If the server is temporarily unreachable, your edition remains active from cache with a graceful degradation window. A Personal license is perpetual: it carries no end date, and an absent date is never read as an expiry.
 
 You can check the current license status via the API:
 
@@ -187,7 +240,7 @@ Internet  →  Reverse Proxy (Traefik / Caddy / nginx)
           →  maintenant
 ```
 
-The `/api/v1/*` routes and the dashboard must be behind authentication. The `/ping/` and `/status/` routes must be publicly accessible. If MCP is enabled with OAuth2, the `/mcp`, `/oauth/`, and `/.well-known/` routes should bypass proxy auth (MCP handles its own).
+The `/api/v1/*` routes and the dashboard must be behind authentication. The `/ping`, `/status` (match the prefix, not the trailing slash) and `/manifest.webmanifest` routes must be publicly accessible — the browser fetches the PWA manifest without credentials. If MCP is enabled with OAuth2, the `/mcp`, `/oauth/`, and `/.well-known/` routes should bypass proxy auth (MCP handles its own).
 
 See the **[Security Guide](../security.md)** for the complete route reference, reverse proxy examples (Traefik, Caddy, nginx), built-in protections, MCP authentication details, and deployment hardening checklist.
 

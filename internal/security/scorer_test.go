@@ -51,11 +51,11 @@ type mockAckStore struct {
 	acks map[string]map[string]map[string]bool // externalID -> findingType -> findingKey -> acknowledged
 }
 
-func (m *mockAckStore) InsertAcknowledgment(_ context.Context, ack *RiskAcknowledgment) (int64, error) {
-	return 1, nil
+func (m *mockAckStore) InsertAcknowledgment(_ context.Context, ack *RiskAcknowledgment) (string, error) {
+	return "ack1", nil
 }
 
-func (m *mockAckStore) DeleteAcknowledgment(_ context.Context, _ int64) error {
+func (m *mockAckStore) DeleteAcknowledgment(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -63,7 +63,7 @@ func (m *mockAckStore) ListAcknowledgments(_ context.Context, _ string) ([]*Risk
 	return nil, nil
 }
 
-func (m *mockAckStore) GetAcknowledgment(_ context.Context, _ int64) (*RiskAcknowledgment, error) {
+func (m *mockAckStore) GetAcknowledgment(_ context.Context, _ string) (*RiskAcknowledgment, error) {
 	return nil, nil
 }
 
@@ -307,8 +307,8 @@ func TestColorLevel(t *testing.T) {
 func TestScorerScoreContainer(t *testing.T) {
 	ctx := context.Background()
 	secSvc := newTestService()
-	secSvc.UpdateContainer(1, "test-container", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityHigh, ContainerID: 1, ContainerName: "test-container"},
+	secSvc.UpdateContainer("c1", "test-container", []Insight{
+		{Type: PortExposedAllInterfaces, Severity: SeverityHigh, ContainerID: "c1", ContainerName: "test-container"},
 	})
 
 	scorer := NewScorer(ScorerDeps{
@@ -325,11 +325,11 @@ func TestScorerScoreContainer(t *testing.T) {
 		Acks:     &mockAckStore{},
 	})
 
-	score, err := scorer.ScoreContainer(ctx, 1, "ext-1", "test-container")
+	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test-container")
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
-	assert.Equal(t, int64(1), score.ContainerID)
+	assert.Equal(t, "c1", score.ContainerID)
 	assert.Equal(t, "test-container", score.ContainerName)
 	assert.True(t, score.TotalScore > 0 && score.TotalScore <= 100, "score %d out of range", score.TotalScore)
 	assert.NotEmpty(t, score.ColorLevel)
@@ -341,12 +341,12 @@ func TestScorerWeightRedistribution(t *testing.T) {
 	secSvc := newTestService()
 
 	// Only network exposure applicable (no certs, no CVEs, no updates)
-	secSvc.UpdateContainer(1, "test", []Insight{
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: 1},
+	secSvc.UpdateContainer("c1", "test", []Insight{
+		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1"},
 	})
 
 	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: &mockAckStore{}})
-	score, err := scorer.ScoreContainer(ctx, 1, "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -372,12 +372,12 @@ func TestScorerCache(t *testing.T) {
 	scorer := NewScorer(ScorerDeps{CVEs: cveReader, Security: secSvc, Acks: &mockAckStore{}})
 
 	// Wrap to count calls (we test via timing)
-	_, err := scorer.ScoreContainer(ctx, 1, "ext-1", "test")
+	_, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
 	require.NoError(t, err)
 	callCount++
 
 	// Second call should return cached
-	score2, err := scorer.ScoreContainer(ctx, 1, "ext-1", "test")
+	score2, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
 	require.NoError(t, err)
 	// Should get the same (cached) result
 	require.NotNil(t, score2)
@@ -387,9 +387,9 @@ func TestScorerCache(t *testing.T) {
 func TestScorerAcknowledgedFindingsExcluded(t *testing.T) {
 	ctx := context.Background()
 	secSvc := newTestService()
-	secSvc.UpdateContainer(1, "test", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: 1, Details: map[string]any{"port": 8080, "protocol": "tcp"}},
-		{Type: DatabasePortExposed, Severity: SeverityCritical, ContainerID: 1, Details: map[string]any{"port": 5432, "protocol": "tcp"}},
+	secSvc.UpdateContainer("c1", "test", []Insight{
+		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", Details: map[string]any{"port": 8080, "protocol": "tcp"}},
+		{Type: DatabasePortExposed, Severity: SeverityCritical, ContainerID: "c1", Details: map[string]any{"port": 5432, "protocol": "tcp"}},
 	})
 
 	ackStore := &mockAckStore{
@@ -402,7 +402,7 @@ func TestScorerAcknowledgedFindingsExcluded(t *testing.T) {
 
 	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: ackStore})
 
-	score, err := scorer.ScoreContainer(ctx, 1, "ext-1", "test")
+	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
@@ -422,15 +422,15 @@ func TestScorerAcknowledgedFindingsExcluded(t *testing.T) {
 func TestScoreInfrastructure(t *testing.T) {
 	ctx := context.Background()
 	secSvc := newTestService()
-	secSvc.UpdateContainer(1, "container-a", []Insight{
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: 1},
+	secSvc.UpdateContainer("c1", "container-a", []Insight{
+		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1"},
 	})
 
 	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: &mockAckStore{}})
 
 	containers := []ContainerInfo{
-		{ID: 1, ExternalID: "ext-1", Name: "container-a"},
-		{ID: 2, ExternalID: "ext-2", Name: "container-b"},
+		{ID: "c1", ExternalID: "ext-1", Name: "container-a"},
+		{ID: "c2", ExternalID: "ext-2", Name: "container-b"},
 	}
 
 	posture, err := scorer.ScoreInfrastructure(ctx, containers)
@@ -447,7 +447,7 @@ func TestScorerNoDataReturnsNil(t *testing.T) {
 
 	// All readers nil including security service → no applicable categories → nil score
 	scorer := NewScorer(ScorerDeps{Acks: &mockAckStore{}})
-	score, err := scorer.ScoreContainer(ctx, 99, "nonexistent", "ghost")
+	score, err := scorer.ScoreContainer(ctx, "c99", "nonexistent", "ghost")
 	require.NoError(t, err)
 	assert.Nil(t, score, "container with no data for any category should return nil")
 }
@@ -458,7 +458,7 @@ func TestScorerWithSecurityServiceNoInsights(t *testing.T) {
 
 	// Security service exists but no insights for this container → network_exposure applicable with score 100
 	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: &mockAckStore{}})
-	score, err := scorer.ScoreContainer(ctx, 99, "nonexistent", "ghost")
+	score, err := scorer.ScoreContainer(ctx, "c99", "nonexistent", "ghost")
 	require.NoError(t, err)
 	require.NotNil(t, score)
 	assert.Equal(t, 100, score.TotalScore, "no issues means perfect score")

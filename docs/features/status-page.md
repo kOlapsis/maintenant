@@ -3,21 +3,60 @@
 Give your users a clean status page. Incident management with timeline updates, scheduled maintenance windows.
 
 <div class="screenshot-pair">
-  <img src="../../screen-captures/7-status-page-all-ok.png" alt="Status Page — All Systems Operational" />
-  <img src="../../screen-captures/8-status-page-degraded.png" alt="Status Page — Degraded Performance" />
+  <img src="../screen-captures/7-status-page-all-ok.png" alt="Status Page — All Systems Operational" />
+  <img src="../screen-captures/8-status-page-degraded.png" alt="Status Page — Degraded Performance" />
 </div>
 
 ---
 
 ## How It Works
 
-maintenant serves a standalone public status page at `/status/`. It is a server-rendered HTML page (no JavaScript required) with a real-time SSE connection for live updates.
+maintenant serves the public status page through the same Vue SPA as the admin UI, with full personalization, branding, incidents, maintenance, FAQ and footer support. The page connects to a real-time SSE stream for live updates and reads a cached settings document so content changes are visible on the next refresh.
 
 The status page displays:
 
 - **Component status** — Operational, degraded, partial outage, major outage
 - **Active incidents** — Current issues with timeline updates
 - **Scheduled maintenance** — Upcoming planned downtime windows
+
+---
+
+## Status URL
+
+The status page can be reached two ways:
+
+| Mode | URL the visitor sees | When to use |
+|------|----------------------|-------------|
+| **Same domain** (default) | `https://app.example.com/status` | Simplest setup, no extra DNS or proxy work. |
+| **Dedicated subdomain** | `https://status.example.com/` | Cleaner public-facing URL, easier to keep behind a separate auth bypass, recommended for production. |
+
+Set [`MAINTENANT_STATUS_URL`](../getting-started/configuration.md#environment-variables) to the canonical public URL of the status page. The admin UI surfaces this as the *View public status page* link in `/status-admin`. The frontend reads it from `GET /api/v1/edition` as `status_url`. When unset, the link falls back to `{MAINTENANT_BASE_URL}/status`.
+
+### Subdomain deployment
+
+When serving the status page from its own subdomain, point the subdomain at the same backend container as the main app and rewrite only the root path to `/status/`. The Vue router detects the dedicated-status context and mounts the public status page at `/`, so the browser URL stays clean (`status.example.com/`) without a visible redirect.
+
+**Traefik example:**
+
+```yaml
+# Main app on app.example.com
+http.routers.maintenant.rule: "Host(`app.example.com`)"
+http.routers.maintenant.middlewares: "authelia@docker"
+
+# Public status page on status.example.com (no auth, root rewritten to /status/)
+http.routers.maintenant-status.rule: "Host(`status.example.com`)"
+http.routers.maintenant-status.middlewares: "status-rewrite@docker"
+http.middlewares.status-rewrite.replacepathregex.regex: "^/$"
+http.middlewares.status-rewrite.replacepathregex.replacement: "/status/"
+```
+
+Use `replacepathregex` (only rewriting `/` to `/status/`), not `addprefix=/status` — the latter would also prepend `/status` to SPA asset paths (`/assets/...`) and SSE endpoints (`/status/events`), causing 404s. All other paths (`/assets/...`, `/status/api`, `/status/events`, `/status/settings.json`) must pass through unchanged.
+
+Set the matching env var on the backend:
+
+```bash
+MAINTENANT_STATUS_URL=https://status.example.com
+```
 
 ---
 
@@ -71,21 +110,21 @@ maintenant automatically derives the component status from the linked monitor:
 
 ## Public Access
 
-The status page is served at `/status/` and is designed to be publicly accessible without authentication.
+The status page is designed to be publicly accessible without authentication. Configure your reverse proxy to allow unauthenticated access to:
+
+- `/status/` — the page itself (or the subdomain root if you use `MAINTENANT_STATUS_URL`)
+- `/status/api` — the JSON payload backing the page
+- `/status/events` — the real-time SSE stream
+- `/status/settings.json` — the cached personalization document
 
 !!! warning "Reverse proxy configuration"
-    Configure your reverse proxy to allow unauthenticated access to `/status/` paths.
-    See [Configuration](../getting-started/configuration.md#public-routes) for details.
+    See the [Security Guide → Public Routes](../security.md#public-routes) for the full list of routes that must bypass authentication, and worked examples for Traefik, Caddy, and nginx.
 
-The status page includes:
-
-- A real-time SSE stream at `/status/events` for live status updates
-- Self-contained HTML with embedded CSS (no external dependencies)
-- Responsive design for mobile and desktop
+The status page is a responsive Vue SPA with live SSE updates. It supports the full personalization model (branding, palette, FAQ, footer, localization) on both the same-domain and dedicated-subdomain deployments.
 
 ---
 
-## Incident Management :material-crown:{ title="Pro" }
+## Incident Management :material-star-four-points:{ title="Personal" }
 Track and communicate incidents with timeline updates. Each incident has a severity, status, and a history of updates visible on the public status page.
 
 ```bash
@@ -146,8 +185,8 @@ POST /status/subscribe
 | `POST` | `/api/v1/status/components` | Create a component |
 | `PUT` | `/api/v1/status/components/{id}` | Update a component |
 | `DELETE` | `/api/v1/status/components/{id}` | Delete a component |
-| `POST` | `/api/v1/status/incidents` | Create incident | :material-crown:{ title="Pro" } |
-| `POST` | `/api/v1/status/incidents/{id}/updates` | Post incident update | :material-crown:{ title="Pro" } |
+| `POST` | `/api/v1/status/incidents` | Create incident | :material-star-four-points:{ title="Personal" } |
+| `POST` | `/api/v1/status/incidents/{id}/updates` | Post incident update | :material-star-four-points:{ title="Personal" } |
 | `POST` | `/api/v1/status/maintenance` | Schedule maintenance | :material-crown:{ title="Pro" } |
 | `GET` | `/api/v1/status/subscribers` | List subscribers | :material-crown:{ title="Pro" } |
 
@@ -156,4 +195,4 @@ POST /status/subscribe
 ## Related
 
 - [Alert Engine](alerts.md) — Alerts that feed into incident creation
-- [Configuration](../getting-started/configuration.md#public-routes) — Public route setup
+- [Security](../security.md#public-routes) — Public route setup

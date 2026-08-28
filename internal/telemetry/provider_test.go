@@ -25,19 +25,20 @@ var expectedKeys = []string{
 	"endpoints_total",
 	"heartbeats_total",
 	"status_components_total",
+	"storage_engine",
 	"webhooks_total",
 }
 
-func TestProvider_HappyPath_AllSevenKeys(t *testing.T) {
+func TestProvider_HappyPath_AllKeys(t *testing.T) {
 	logger, _ := setupTestLogger()
 	deps := Deps{
 		Containers:       fakeCounter{value: 42},
 		Endpoints:        fakeCounter{value: 17},
 		Heartbeats:       fakeCounter{value: 5},
-		Certificates:    fakeCounter{value: 8},
+		Certificates:     fakeCounter{value: 8},
 		Webhooks:         fakeCounter{value: 2},
 		StatusComponents: fakeCounter{value: 12},
-		Edition:          staticEdition{value: extension.Enterprise},
+		Edition:          staticEdition{value: extension.Pro},
 	}
 	got := newMetricsProvider(deps, logger)()
 
@@ -48,6 +49,10 @@ func TestProvider_HappyPath_AllSevenKeys(t *testing.T) {
 
 	if got["edition"] != "pro" {
 		t.Errorf("edition: got %v, want \"pro\"", got["edition"])
+	}
+	// Nothing configured: the engine every install has.
+	if got["storage_engine"] != "sqlite" {
+		t.Errorf("storage_engine: got %v, want \"sqlite\"", got["storage_engine"])
 	}
 	if got["containers_total"] != 42 {
 		t.Errorf("containers_total: got %v, want 42", got["containers_total"])
@@ -76,7 +81,7 @@ func TestProvider_PartialFailure_OneCounterErrors(t *testing.T) {
 		Containers:       fakeCounter{value: 100},
 		Endpoints:        fakeCounter{err: boom}, // this one fails
 		Heartbeats:       fakeCounter{value: 5},
-		Certificates:    fakeCounter{value: 8},
+		Certificates:     fakeCounter{value: 8},
 		Webhooks:         fakeCounter{value: 2},
 		StatusComponents: fakeCounter{value: 12},
 		Edition:          staticEdition{value: extension.Community},
@@ -105,7 +110,7 @@ func TestProvider_PanicContained(t *testing.T) {
 		Containers:       fakeCounter{panic: "oh no"},
 		Endpoints:        fakeCounter{value: 1},
 		Heartbeats:       fakeCounter{value: 1},
-		Certificates:    fakeCounter{value: 1},
+		Certificates:     fakeCounter{value: 1},
 		Webhooks:         fakeCounter{value: 1},
 		StatusComponents: fakeCounter{value: 1},
 		Edition:          staticEdition{panic: "edition explodes"},
@@ -169,4 +174,33 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestProvider_StorageEngine pins the one storage field the payload carries:
+// the engine name, never empty, and nothing else about the database (no host,
+// no version, no size).
+func TestProvider_StorageEngine(t *testing.T) {
+	logger, _ := setupTestLogger()
+
+	for name, tc := range map[string]struct {
+		source func() string
+		want   string
+	}{
+		"postgres":   {func() string { return "postgres" }, "postgres"},
+		"sqlite":     {func() string { return "sqlite" }, "sqlite"},
+		"nil source": {nil, "sqlite"},
+		"empty":      {func() string { return "" }, "sqlite"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := newMetricsProvider(Deps{StorageEngine: tc.source}, logger)()
+			if got["storage_engine"] != tc.want {
+				t.Errorf("storage_engine: got %v, want %q", got["storage_engine"], tc.want)
+			}
+			for _, forbidden := range []string{"storage_host", "storage_version", "storage_size", "database_url"} {
+				if _, ok := got[forbidden]; ok {
+					t.Errorf("payload carries %q, which it must not", forbidden)
+				}
+			}
+		})
+	}
 }

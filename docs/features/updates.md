@@ -84,8 +84,10 @@ DELETE /api/v1/updates/exclusions/{id}
 
 By default, maintenant determines update candidates from the OCI registry tag list using two strategies:
 
-- **Semver mode** — For version tags (e.g. `1.24`, `3.19.1-alpine`), maintenant compares semver versions and respects variant suffixes (e.g. `-alpine`, `-bookworm`). A container running `nginx:1.24-alpine` will only be compared against other `-alpine` tags.
-- **Digest-only mode** — For non-semver channel tags (`latest`, `lts`, `stable`, etc.), maintenant compares the remote image digest against a stored baseline. If the digest changes (the image was rebuilt), an update is reported.
+- **Semver mode** — For pinned version tags (`major.minor.patch`, e.g. `1.24.0`, `3.19.1-alpine`), maintenant compares semver versions and respects variant suffixes (e.g. `-alpine`, `-bookworm`). A container running `nginx:1.24.0-alpine` will only be compared against other `-alpine` tags.
+- **Digest-only mode** — For floating tags, maintenant compares the remote image digest against a stored baseline. If the digest changes (the tag was moved or the image rebuilt), an update is reported. Floating tags are non-semver channels (`latest`, `lts`, `stable`, etc.) **and partial version tags** (`v3`, `1.2`, `16-bookworm`), which the registry keeps pointing at the newest release of that line.
+
+A partial tag is never told to move to a more precise tag beneath it: a container on `traefik:v3` already runs whatever `v3` currently resolves to, so `v3.7.10` is not an update. A newer tag written the same way (`v4`) still is, and is reported as a major update.
 
 ### Tag Filter Labels
 
@@ -194,7 +196,7 @@ The compose working directory is extracted from the `com.docker.compose.project.
 
 ---
 
-## CVE Enrichment & Risk Scoring :material-crown:{ title="Pro" }
+## CVE Enrichment & Risk Scoring :material-star-four-points:{ title="Personal" }
 With maintenant Pro, update intelligence goes beyond digest comparison. Each available update is enriched with vulnerability data:
 
 - **CVE details** — Known vulnerabilities affecting the current and target versions

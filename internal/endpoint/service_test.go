@@ -16,11 +16,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,19 +34,17 @@ import (
 
 type memStore struct {
 	mu        sync.Mutex
-	endpoints map[int64]*Endpoint
+	endpoints map[string]*Endpoint
 	results   []*CheckResult
-	nextID    int64
 
 	// Recorded calls for assertions
-	deactivated []int64
-	updated     []int64
+	deactivated []string
+	updated     []string
 }
 
 func newMemStore() *memStore {
 	return &memStore{
-		endpoints: make(map[int64]*Endpoint),
-		nextID:    1,
+		endpoints: make(map[string]*Endpoint),
 	}
 }
 
@@ -52,25 +53,24 @@ func (m *memStore) cloneEp(ep *Endpoint) *Endpoint {
 	return &c
 }
 
-func (m *memStore) UpsertEndpoint(_ context.Context, e *Endpoint) (int64, error) {
+func (m *memStore) UpsertEndpoint(_ context.Context, e *Endpoint) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Look for existing by ExternalID + LabelKey
-	for _, stored := range m.endpoints {
-		if stored.ExternalID == e.ExternalID && stored.LabelKey == e.LabelKey {
-			stored.Target = e.Target
-			stored.EndpointType = e.EndpointType
-			stored.Config = e.Config
-			stored.Active = true
-			return stored.ID, nil
-		}
+	// Identity is (agent_id, container_name, label_key), derived deterministically.
+	e.AgentID = uid.Agent(e.AgentID)
+	id := uid.EndpointLabel(e.AgentID, e.ContainerName, e.LabelKey)
+	e.ID = id
+
+	if stored, ok := m.endpoints[id]; ok {
+		stored.Target = e.Target
+		stored.EndpointType = e.EndpointType
+		stored.Config = e.Config
+		stored.Active = true
+		return id, nil
 	}
 
-	id := m.nextID
-	m.nextID++
 	ec := m.cloneEp(e)
-	ec.ID = id
 	ec.Active = true
 	m.endpoints[id] = ec
 	return id, nil
@@ -88,7 +88,18 @@ func (m *memStore) GetEndpointByIdentity(_ context.Context, containerName, label
 	return nil, nil
 }
 
-func (m *memStore) GetEndpointByID(_ context.Context, id int64) (*Endpoint, error) {
+func (m *memStore) GetActiveAgentEndpointByTarget(_ context.Context, agentID, target string) (*Endpoint, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ep := range m.endpoints {
+		if ep.AgentID == uid.Agent(agentID) && ep.Target == target && ep.Active {
+			return m.cloneEp(ep), nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *memStore) GetEndpointByID(_ context.Context, id string) (*Endpoint, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ep, ok := m.endpoints[id]
@@ -99,11 +110,17 @@ func (m *memStore) GetEndpointByID(_ context.Context, id int64) (*Endpoint, erro
 	return c, nil
 }
 
-func (m *memStore) ListEndpoints(_ context.Context, _ ListEndpointsOpts) ([]*Endpoint, error) {
+func (m *memStore) ListEndpoints(_ context.Context, opts ListEndpointsOpts) ([]*Endpoint, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make([]*Endpoint, 0, len(m.endpoints))
 	for _, ep := range m.endpoints {
+		if opts.Source != "" && string(ep.Source) != opts.Source {
+			continue
+		}
+		if !opts.IncludeInactive && !ep.Active {
+			continue
+		}
 		c := m.cloneEp(ep)
 		out = append(out, c)
 	}
@@ -135,7 +152,7 @@ func (m *memStore) CountActiveEndpoints(_ context.Context) (int, error) {
 	return count, nil
 }
 
-func (m *memStore) DeactivateEndpoint(_ context.Context, id int64) error {
+func (m *memStore) DeactivateEndpoint(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if ep, ok := m.endpoints[id]; ok {
@@ -145,7 +162,7 @@ func (m *memStore) DeactivateEndpoint(_ context.Context, id int64) error {
 	return nil
 }
 
-func (m *memStore) UpdateCheckResult(_ context.Context, id int64, status EndpointStatus, alertState AlertState,
+func (m *memStore) UpdateCheckResult(_ context.Context, id string, status EndpointStatus, alertState AlertState,
 	consecutiveFailures, consecutiveSuccesses int,
 	responseTimeMs int64, httpStatus *int, lastError string) error {
 	m.mu.Lock()
@@ -161,17 +178,17 @@ func (m *memStore) UpdateCheckResult(_ context.Context, id int64, status Endpoin
 	return nil
 }
 
-func (m *memStore) InsertCheckResult(_ context.Context, result *CheckResult) (int64, error) {
+func (m *memStore) InsertCheckResult(_ context.Context, result *CheckResult) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := int64(len(m.results) + 1)
+	id := uid.New()
 	r := *result
 	r.ID = id
 	m.results = append(m.results, &r)
 	return id, nil
 }
 
-func (m *memStore) ListCheckResults(_ context.Context, endpointID int64, opts ListChecksOpts) ([]*CheckResult, int, error) {
+func (m *memStore) ListCheckResults(_ context.Context, endpointID string, opts ListChecksOpts) ([]*CheckResult, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*CheckResult
@@ -192,7 +209,7 @@ func (m *memStore) ListCheckResults(_ context.Context, endpointID int64, opts Li
 	return out, total, nil
 }
 
-func (m *memStore) GetCheckResultsInWindow(_ context.Context, endpointID int64, from, to time.Time) (int, int, error) {
+func (m *memStore) GetCheckResultsInWindow(_ context.Context, endpointID string, from, to time.Time) (int, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	total, successes := 0, 0
@@ -215,11 +232,11 @@ func (m *memStore) DeleteInactiveEndpointsBefore(_ context.Context, _ time.Time)
 	return 0, nil
 }
 
-func (m *memStore) InsertStandaloneEndpoint(_ context.Context, e *Endpoint) (int64, error) {
+func (m *memStore) InsertStandaloneEndpoint(_ context.Context, e *Endpoint) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	id := m.nextID
-	m.nextID++
+	e.AgentID = uid.Agent(e.AgentID)
+	id := uid.EndpointLabel(e.AgentID, "", uid.New())
 	ec := m.cloneEp(e)
 	ec.ID = id
 	ec.Active = true
@@ -228,12 +245,12 @@ func (m *memStore) InsertStandaloneEndpoint(_ context.Context, e *Endpoint) (int
 	return id, nil
 }
 
-func (m *memStore) UpdateStandaloneEndpoint(_ context.Context, id int64, name, target string, epType EndpointType, _ string) error {
+func (m *memStore) UpdateStandaloneEndpoint(_ context.Context, id string, name, target string, epType EndpointType, _ string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ep, ok := m.endpoints[id]
 	if !ok || ep.Source != SourceStandalone {
-		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+		return fmt.Errorf("standalone endpoint %s not found or not standalone", id)
 	}
 	ep.Name = name
 	ep.Target = target
@@ -241,12 +258,22 @@ func (m *memStore) UpdateStandaloneEndpoint(_ context.Context, id int64, name, t
 	return nil
 }
 
-func (m *memStore) DeleteStandaloneEndpoint(_ context.Context, id int64) error {
+func (m *memStore) DeleteEndpoint(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.endpoints[id]; !ok {
+		return fmt.Errorf("endpoint %s not found", id)
+	}
+	delete(m.endpoints, id)
+	return nil
+}
+
+func (m *memStore) DeleteStandaloneEndpoint(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ep, ok := m.endpoints[id]
 	if !ok || ep.Source != SourceStandalone {
-		return fmt.Errorf("standalone endpoint %d not found or not standalone", id)
+		return fmt.Errorf("standalone endpoint %s not found or not standalone", id)
 	}
 	delete(m.endpoints, id)
 	return nil
@@ -265,7 +292,7 @@ func noopEngine() *CheckEngine {
 }
 
 // seedEndpoint inserts an endpoint into the store and returns its assigned ID.
-func seedEndpoint(t *testing.T, store *memStore, ep *Endpoint) int64 {
+func seedEndpoint(t *testing.T, store *memStore, ep *Endpoint) string {
 	t.Helper()
 	id, err := store.UpsertEndpoint(context.Background(), ep)
 	require.NoError(t, err)
@@ -530,7 +557,7 @@ func TestService_HandleContainerStop_SetsEndpointsUnknown(t *testing.T) {
 
 	svc.HandleContainerStop(ctx, externalID)
 
-	for _, id := range []int64{id1, id2} {
+	for _, id := range []string{id1, id2} {
 		ep, err := store.GetEndpointByID(ctx, id)
 		require.NoError(t, err)
 		require.NotNil(t, ep)
@@ -569,12 +596,12 @@ func TestService_HandleContainerStop_RemovesFromEngine(t *testing.T) {
 
 func TestService_HandleContainerDestroy_DeactivatesAndRemoves(t *testing.T) {
 	store := newMemStore()
-	var removedIDs []int64
+	var removedIDs []string
 	svc := NewService(Deps{
 		Store:  store,
 		Engine: noopEngine(),
 		Logger: noopLogger(),
-		EndpointRemovedCallback: func(_ context.Context, id int64) {
+		EndpointRemovedCallback: func(_ context.Context, id string) {
 			removedIDs = append(removedIDs, id)
 		},
 	})
@@ -595,7 +622,7 @@ func TestService_HandleContainerDestroy_DeactivatesAndRemoves(t *testing.T) {
 	svc.HandleContainerDestroy(ctx, externalID)
 
 	// Both endpoints must be deactivated
-	for _, id := range []int64{id1, id2} {
+	for _, id := range []string{id1, id2} {
 		ep, err := store.GetEndpointByID(ctx, id)
 		require.NoError(t, err)
 		require.NotNil(t, ep)
@@ -603,7 +630,7 @@ func TestService_HandleContainerDestroy_DeactivatesAndRemoves(t *testing.T) {
 	}
 
 	// onEndpointRemoved must have been called for each
-	assert.ElementsMatch(t, []int64{id1, id2}, removedIDs,
+	assert.ElementsMatch(t, []string{id1, id2}, removedIDs,
 		"EndpointRemovedCallback must be called for each endpoint on container destroy")
 }
 
@@ -624,10 +651,10 @@ func TestService_CalculateUptime_AllWindows(t *testing.T) {
 	now := time.Now()
 
 	// 4 results inside the 1h window: 3 successes, 1 failure → 75 %
-	for i := range 3 {
+	for range 3 {
 		store.mu.Lock()
 		store.results = append(store.results, &CheckResult{
-			ID:         int64(i + 1),
+			ID:         uid.New(),
 			EndpointID: id,
 			Success:    true,
 			Timestamp:  now.Add(-30 * time.Minute),
@@ -636,7 +663,7 @@ func TestService_CalculateUptime_AllWindows(t *testing.T) {
 	}
 	store.mu.Lock()
 	store.results = append(store.results, &CheckResult{
-		ID:         4,
+		ID:         uid.New(),
 		EndpointID: id,
 		Success:    false,
 		Timestamp:  now.Add(-30 * time.Minute),
@@ -706,4 +733,221 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 	count, err := store.CountActiveEndpoints(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
+}
+
+// TestDefaultLicenseChecker_Unlimited: extension.Limit reports -1 for an
+// uncapped resource, and the checker must read that as "no cap" rather than as
+// a maximum of minus one, which would refuse every creation.
+func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxEndpoints: -1}
+	for _, count := range []int{0, 1, 10, 1000} {
+		if !c.CanCreateEndpoint(count) {
+			t.Errorf("CanCreateEndpoint(%d) = false with an unlimited cap", count)
+		}
+	}
+}
+
+func TestDefaultLicenseChecker_Capped(t *testing.T) {
+	c := &DefaultLicenseChecker{MaxEndpoints: 10}
+	if !c.CanCreateEndpoint(9) {
+		t.Error("the tenth endpoint must be allowed")
+	}
+	if c.CanCreateEndpoint(10) {
+		t.Error("the eleventh endpoint must be refused")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CheckNow — issue #44: confirm a fix without waiting for the next check
+// ---------------------------------------------------------------------------
+
+// An endpoint fixed by hand must be confirmable on the spot: the probe runs, the
+// result is persisted and the endpoint state follows.
+func TestService_CheckNow_ProbesAndPersists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-check-now", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: srv.URL,
+		Status: StatusDown, AlertState: AlertAlerting,
+		ConsecutiveFailures: 3,
+		Config:              DefaultConfig(), Active: true,
+		AgentID: uid.LocalAgent,
+	})
+
+	ep, err := svc.CheckNow(context.Background(), id)
+	require.NoError(t, err)
+	require.NotNil(t, ep)
+	assert.Equal(t, StatusUp, ep.Status, "a reachable target must come back up immediately")
+	assert.Zero(t, ep.ConsecutiveFailures, "a success resets the failure streak")
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Len(t, store.results, 1, "the on-demand result must be persisted like a scheduled one")
+	assert.Equal(t, id, store.results[0].EndpointID)
+}
+
+// An endpoint probed by an agent lives on that agent's network: dialing it from
+// here would report a failure that says nothing about the target.
+func TestService_CheckNow_RefusesAnAgentProbedEndpoint(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-agent", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: "http://10.0.0.5:8080",
+		Status: StatusDown, AlertState: AlertNormal,
+		Config: DefaultConfig(), Active: true,
+		AgentID: uid.New(),
+	})
+
+	_, err := svc.CheckNow(context.Background(), id)
+	assert.ErrorIs(t, err, ErrAgentProbed)
+}
+
+func TestService_CheckNow_UnknownEndpoint(t *testing.T) {
+	svc := NewService(Deps{Store: newMemStore(), Engine: noopEngine(), Logger: noopLogger()})
+
+	_, err := svc.CheckNow(context.Background(), uid.New())
+	assert.ErrorIs(t, err, ErrEndpointNotFound)
+}
+
+// Two clicks must not mean two concurrent probes at the same target.
+func TestService_CheckNow_RefusesAConcurrentCheck(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{Store: store, Engine: noopEngine(), Logger: noopLogger()})
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "ctr-busy", LabelKey: "k1",
+		EndpointType: TypeHTTP, Target: "http://127.0.0.1:1",
+		Status: StatusUp, AlertState: AlertNormal,
+		Config: DefaultConfig(), Active: true,
+		AgentID: uid.LocalAgent,
+	})
+	svc.manualChecks.Store(id, struct{}{})
+
+	_, err := svc.CheckNow(context.Background(), id)
+	assert.ErrorIs(t, err, ErrCheckInProgress)
+}
+
+// ---------------------------------------------------------------------------
+// SweepOrphanedLabelEndpoints: the destroy event nobody heard
+// ---------------------------------------------------------------------------
+
+func TestService_SweepOrphanedLabelEndpoints_RetiresGoneContainer(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "web", LabelKey: "maintenant.endpoint.http", ExternalID: "gone",
+		EndpointType: TypeHTTP, Target: "http://web/health", Source: SourceLabel,
+	})
+
+	swept := svc.SweepOrphanedLabelEndpoints(ctx, map[string]struct{}{"still-here": {}})
+
+	require.Equal(t, 1, swept)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.False(t, ep.Active, "an endpoint whose container is gone must not stay active")
+}
+
+func TestService_SweepOrphanedLabelEndpoints_KeepsDiscoveredContainer(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "web", LabelKey: "maintenant.endpoint.http", ExternalID: "here",
+		EndpointType: TypeHTTP, Target: "http://web/health", Source: SourceLabel,
+	})
+
+	swept := svc.SweepOrphanedLabelEndpoints(ctx, map[string]struct{}{"here": {}})
+
+	require.Equal(t, 0, swept)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.True(t, ep.Active)
+}
+
+func TestService_SweepOrphanedLabelEndpoints_LeavesStandaloneAlone(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	// A standalone endpoint has no container, so an empty discovery pass must
+	// not read as "its container disappeared".
+	id := seedEndpoint(t, store, &Endpoint{
+		LabelKey: "manual", ExternalID: "", Name: "public API",
+		EndpointType: TypeHTTP, Target: "https://example.com", Source: SourceStandalone,
+	})
+
+	swept := svc.SweepOrphanedLabelEndpoints(ctx, map[string]struct{}{})
+
+	require.Equal(t, 0, swept)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.True(t, ep.Active)
+}
+
+// ---------------------------------------------------------------------------
+// Delete: who owns the endpoint
+// ---------------------------------------------------------------------------
+
+func TestService_Delete_RefusesEndpointOfLivingContainer(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "web", LabelKey: "maintenant.endpoint.http", ExternalID: "here",
+		EndpointType: TypeHTTP, Target: "http://web/health", Source: SourceLabel,
+	})
+
+	// Deleting it would only last until the next discovery pass recreated it.
+	err := svc.Delete(ctx, id)
+
+	require.ErrorIs(t, err, ErrEndpointLive)
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.NotNil(t, ep)
+}
+
+func TestService_Delete_AllowsOrphanedLabelEndpoint(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ContainerName: "maintenant-maintenant-run-ba08fd7ce2f0",
+		LabelKey:      "maintenant.endpoint.http", ExternalID: "gone",
+		EndpointType: TypeHTTP, Target: "https://example.com/health", Source: SourceLabel,
+	})
+	require.NoError(t, store.DeactivateEndpoint(ctx, id))
+
+	require.NoError(t, svc.Delete(ctx, id))
+
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.Nil(t, ep, "an orphaned endpoint must be removable without SQL")
+}
+
+func TestService_Delete_AllowsStandalone(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		LabelKey: "manual", Name: "public API",
+		EndpointType: TypeHTTP, Target: "https://example.com", Source: SourceStandalone,
+	})
+
+	require.NoError(t, svc.Delete(ctx, id))
+
+	ep, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.Nil(t, ep)
 }

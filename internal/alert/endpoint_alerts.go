@@ -19,7 +19,7 @@ import (
 
 // EndpointAlert represents an alert or recovery event for an endpoint.
 type EndpointAlert struct {
-	EndpointID    int64
+	EndpointID    string
 	ContainerName string
 	Target        string
 	Type          string // "alert" or "recovery"

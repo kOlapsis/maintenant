@@ -25,8 +25,8 @@ const (
 
 // ResourceSnapshot is a point-in-time measurement of a container's resource usage.
 type ResourceSnapshot struct {
-	ID              int64     `json:"id"`
-	ContainerID     int64     `json:"container_id"`
+	ID              string    `json:"id"`
+	ContainerID     string    `json:"container_id"`
 	CPUPercent      float64   `json:"cpu_percent"`
 	MemUsed         int64     `json:"mem_used"`
 	MemLimit        int64     `json:"mem_limit"`
@@ -35,12 +35,26 @@ type ResourceSnapshot struct {
 	BlockReadBytes  int64     `json:"block_read_bytes"`
 	BlockWriteBytes int64     `json:"block_write_bytes"`
 	Timestamp       time.Time `json:"timestamp"`
+	AgentID         string    `json:"agent_id"`
+}
+
+// HostSample is the latest host-level resource measurement for a single host:
+// the local server (AgentID == "") or a remote agent's machine. CPU is a
+// percentage 0-100; memory and disk are bytes for the root filesystem.
+type HostSample struct {
+	AgentID    string    `json:"agent_id"`
+	CPUPercent float64   `json:"cpu_percent"`
+	MemUsed    int64     `json:"mem_used"`
+	MemTotal   int64     `json:"mem_total"`
+	DiskTotal  uint64    `json:"disk_total"`
+	DiskUsed   uint64    `json:"disk_used"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 // ResourceAlertConfig holds per-container resource alert thresholds.
 type ResourceAlertConfig struct {
-	ID                     int64      `json:"id"`
-	ContainerID            int64      `json:"container_id"`
+	ID                     string     `json:"id"`
+	ContainerID            string     `json:"container_id"`
 	CPUThreshold           float64    `json:"cpu_threshold"`
 	MemThreshold           float64    `json:"mem_threshold"`
 	Enabled                bool       `json:"enabled"`
@@ -54,7 +68,7 @@ type ResourceAlertConfig struct {
 
 // RollupRow represents an aggregated resource measurement for a time bucket.
 type RollupRow struct {
-	ContainerID   int64
+	ContainerID   string
 	Bucket        time.Time
 	AvgCPUPercent float64
 	AvgMemUsed    int64
@@ -66,7 +80,7 @@ type RollupRow struct {
 
 // TopConsumerRow represents a container's average resource usage over a period.
 type TopConsumerRow struct {
-	ContainerID   int64
+	ContainerID   string
 	ContainerName string
 	AvgValue      float64
 	AvgPercent    float64

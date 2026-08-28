@@ -74,6 +74,13 @@ const (
 	ChannelDeleted = "channel.deleted"
 )
 
+// Alert trigger management events.
+const (
+	TriggerCreated = "trigger.created"
+	TriggerUpdated = "trigger.updated"
+	TriggerDeleted = "trigger.deleted"
+)
+
 // Silence rule management events.
 const (
 	SilenceCreated   = "silence.created"
@@ -87,7 +94,14 @@ const (
 
 // Runtime context change events.
 const (
-	RuntimeContextChanged = "runtime.context_changed"
+	RuntimeContextChanged      = "runtime.context_changed"
+	RuntimeAvailabilityChanged = "runtime.availability_changed"
+)
+
+// Storage availability events. Emitted once per transition, so the interface
+// can say the database is unreachable instead of showing empty screens.
+const (
+	StorageAvailabilityChanged = "storage.availability_changed"
 )
 
 // Update intelligence events.
@@ -95,6 +109,7 @@ const (
 	UpdateScanStarted   = "update.scan_started"
 	UpdateScanCompleted = "update.scan_completed"
 	UpdateDetected      = "update.detected"
+	UpdateResolved      = "update.resolved"
 	UpdatePinned        = "update.pinned"
 	UpdateUnpinned      = "update.unpinned"
 )
@@ -114,7 +129,7 @@ const (
 	SwarmStatus            = "swarm.status"
 )
 
-// Swarm monitoring events (Enterprise).
+// Swarm monitoring events (Pro).
 const (
 	SwarmNodeStatusChanged  = "swarm.node_status_changed"
 	SwarmTaskFailed         = "swarm.task_failed"
@@ -129,6 +144,16 @@ const (
 	KubernetesWorkloadChanged = "kubernetes.workload_changed"
 	KubernetesPodChanged      = "kubernetes.pod_changed"
 	KubernetesNodeChanged     = "kubernetes.node_changed"
+)
+
+// Multi-host agent events (Pro).
+const (
+	AgentCreated      = "agent.created"
+	AgentUpdated      = "agent.updated"
+	AgentRevoked      = "agent.revoked"
+	AgentDeleted      = "agent.deleted"
+	AgentConnected    = "agent.connected"
+	AgentDisconnected = "agent.disconnected"
 )
 
 // Public status page events.

@@ -48,8 +48,8 @@ type K8sAlertChecker struct {
 
 // podRestartState tracks restart count observations for crash-loop detection.
 type podRestartState struct {
-	lastCount      int32
-	observations   []time.Time
+	lastCount        int32
+	observations     []time.Time
 	alertedCrashLoop bool // true when a CrashLoopBackOff alert was already emitted
 }
 

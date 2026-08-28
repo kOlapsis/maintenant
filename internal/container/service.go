@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // RuntimeDiscoverer abstracts container/workload discovery operations.
@@ -48,17 +49,25 @@ type RestartChecker interface {
 	Check(ctx context.Context, c *Container) (interface{}, error)
 }
 
+// AgentRuntimeResolver resolves the detected runtime kind ("docker"/"swarm"/
+// "kubernetes") of a remote agent, so containers it reports are tagged correctly.
+// Defined here (consumer side) to avoid an import cycle with internal/agent.
+type AgentRuntimeResolver interface {
+	DetectedRuntime(ctx context.Context, agentID string) (string, error)
+}
+
 // EventCallback is called when a container event occurs (for SSE broadcasting).
 type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the container Service.
 type Deps struct {
-	Store          ContainerStore   // required
-	Logger         *slog.Logger     // required
-	EventCallback  EventCallback    // optional — nil-safe
-	LogFetcher     LogFetcher       // optional — nil-safe
-	RestartChecker RestartChecker   // optional — nil-safe
-	Discoverer     RuntimeDiscoverer // optional — nil-safe
+	Store          ContainerStore       // required
+	Logger         *slog.Logger         // required
+	EventCallback  EventCallback        // optional — nil-safe
+	LogFetcher     LogFetcher           // optional — nil-safe
+	RestartChecker RestartChecker       // optional — nil-safe
+	Discoverer     RuntimeDiscoverer    // optional — nil-safe
+	AgentRuntime   AgentRuntimeResolver // optional — nil-safe, fallback "docker"
 }
 
 // Service orchestrates container discovery, event processing, and persistence.
@@ -69,6 +78,7 @@ type Service struct {
 	logFetcher     LogFetcher
 	restartChecker RestartChecker
 	discoverer     RuntimeDiscoverer
+	agentRuntime   AgentRuntimeResolver
 }
 
 // NewService creates a new container service with all dependencies.
@@ -86,7 +96,21 @@ func NewService(d Deps) *Service {
 		logFetcher:     d.LogFetcher,
 		restartChecker: d.RestartChecker,
 		discoverer:     d.Discoverer,
+		agentRuntime:   d.AgentRuntime,
 	}
+}
+
+// resolveAgentRuntime returns the runtime kind for a remote agent, defaulting to
+// "docker" when no resolver is wired or the lookup fails.
+func (s *Service) resolveAgentRuntime(ctx context.Context, agentID string) string {
+	if s.agentRuntime == nil {
+		return "docker"
+	}
+	rt, err := s.agentRuntime.DetectedRuntime(ctx, agentID)
+	if err != nil || rt == "" {
+		return "docker"
+	}
+	return rt
 }
 
 // SetEventCallback sets the callback for broadcasting container events.
@@ -176,8 +200,10 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		transition.ExitCode = &ec
 	}
 
-	// Capture log snippet on die events with non-zero exit code (T028)
-	if evt.Action == "die" && s.logFetcher != nil {
+	// Capture log snippet on die events with non-zero exit code (T028).
+	// Only for local containers: logFetcher targets the server's own runtime and
+	// cannot read logs of a container living on a remote agent's host.
+	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == uid.LocalAgent {
 		snippet, err := s.logFetcher.FetchLogSnippet(ctx, evt.ExternalID)
 		if err != nil {
 			s.logger.Warn("fetch log snippet", "external_id", evt.ExternalID[:12], "error", err)
@@ -207,6 +233,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 				"container_id":   c.ID,
 				"container_name": c.Name,
 				"timestamp":      evt.Timestamp,
+				"agent_id":       c.AgentID,
 			})
 		}
 	}
@@ -218,6 +245,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		"health_status":  c.HealthStatus,
 		"exit_code":      transition.ExitCode,
 		"timestamp":      evt.Timestamp,
+		"agent_id":       c.AgentID,
 	})
 }
 
@@ -242,6 +270,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 	s.emitEvent(event.ContainerArchived, map[string]interface{}{
 		"id":          c.ID,
 		"archived_at": now,
+		"agent_id":    c.AgentID,
 	})
 }
 
@@ -283,6 +312,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		"health_status":   newHealth,
 		"previous_health": previousHealth,
 		"timestamp":       evt.Timestamp,
+		"agent_id":        c.AgentID,
 	})
 }
 
@@ -293,12 +323,17 @@ func (s *Service) emitEvent(eventType string, data interface{}) {
 }
 
 // GetContainer retrieves a container by its maintenant ID.
-func (s *Service) GetContainer(ctx context.Context, id int64) (*Container, error) {
+func (s *Service) GetContainer(ctx context.Context, id string) (*Container, error) {
 	return s.store.GetContainerByID(ctx, id)
 }
 
+// GetContainerByExternalID retrieves a container by its runtime-assigned external ID.
+func (s *Service) GetContainerByExternalID(ctx context.Context, externalID string) (*Container, error) {
+	return s.store.GetContainerByExternalID(ctx, externalID)
+}
+
 // DeleteContainer removes a container and its transitions from the database.
-func (s *Service) DeleteContainer(ctx context.Context, id int64) error {
+func (s *Service) DeleteContainer(ctx context.Context, id string) error {
 	if err := s.store.DeleteContainerByID(ctx, id); err != nil {
 		return err
 	}
@@ -326,7 +361,12 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 		currentByExternalID[c.ExternalID] = c
 	}
 
-	stored, err := s.store.ListContainers(ctx, ListContainersOpts{IncludeArchived: false, IncludeIgnored: true})
+	// Scoped to the local runtime: discoverer only sees the server's own daemon,
+	// so an unfiltered list would archive every remote agent's containers.
+	local := uid.LocalAgent
+	stored, err := s.store.ListContainers(ctx, ListContainersOpts{
+		IncludeArchived: false, IncludeIgnored: true, AgentFilter: &local,
+	})
 	if err != nil {
 		return fmt.Errorf("reconcile list stored: %w", err)
 	}
@@ -343,16 +383,17 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				s.logger.Error("reconcile archive", "external_id", sc.ExternalID, "error", err)
 			}
 			s.emitEvent(event.ContainerArchived, map[string]interface{}{
-				"id": sc.ID, "archived_at": now,
+				"id": sc.ID, "archived_at": now, "agent_id": sc.AgentID,
 			})
 			continue
 		}
 
 		// Check for state changes
 		if sc.State != dc.State {
+			previousState := sc.State
 			transition := &StateTransition{
 				ContainerID:   sc.ID,
-				PreviousState: sc.State,
+				PreviousState: previousState,
 				NewState:      dc.State,
 				Timestamp:     now,
 			}
@@ -367,7 +408,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			}
 
 			s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
-				"id": sc.ID, "state": dc.State, "previous_state": sc.State, "timestamp": now,
+				"id": sc.ID, "state": dc.State, "previous_state": previousState, "timestamp": now, "agent_id": sc.AgentID,
 			})
 		}
 	}
@@ -446,13 +487,15 @@ func (s *Service) ListContainersGrouped(ctx context.Context, opts ListContainers
 }
 
 // ListTransitions returns state transitions for a container.
-func (s *Service) ListTransitions(ctx context.Context, containerID int64, opts ListTransitionsOpts) ([]*StateTransition, int, error) {
+func (s *Service) ListTransitions(ctx context.Context, containerID string, opts ListTransitionsOpts) ([]*StateTransition, int, error) {
 	return s.store.ListTransitionsByContainer(ctx, containerID, opts)
 }
 
 func parseExitCode(s string) int {
 	var ec int
-	fmt.Sscanf(s, "%d", &ec)
+	if _, err := fmt.Sscanf(s, "%d", &ec); err != nil {
+		return 0
+	}
 	return ec
 }
 

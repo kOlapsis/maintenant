@@ -91,7 +91,9 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 
 		headersJSON, _ := json.Marshal(headers)
 
-		// Create a synthetic NotificationChannel to reuse the notifier
+		// Reuse the notifier's worker pool + retry policy, but send the raw
+		// event payload verbatim (the same bytes signed above) — not a synthetic
+		// alert, which would drop every field of the actual event.
 		ch := &alert.NotificationChannel{
 			Name:    sub.Name,
 			Type:    "webhook",
@@ -100,40 +102,28 @@ func (d *Dispatcher) HandleEvent(ctx context.Context, eventType string, data int
 			Enabled: true,
 		}
 
-		delivery := &alert.NotificationDelivery{
-			Status: alert.DeliveryPending,
-		}
-
-		syntheticAlert := &alert.Alert{
-			Source:    "webhook",
-			AlertType: webhookEventType,
-			Severity:  alert.SeverityInfo,
-			Status:    alert.StatusActive,
-			Message:   webhookEventType,
-		}
-
 		d.notifier.Enqueue(alert.NotificationJob{
-			Delivery: delivery,
+			Delivery: &alert.NotificationDelivery{Status: alert.DeliveryPending},
 			Channel:  ch,
-			Alert:    syntheticAlert,
+			Body:     payloadBytes,
 		})
 	}
 }
 
 // mapSSETypeToWebhookEvent maps internal SSE event types to webhook event types.
 func mapSSETypeToWebhookEvent(sseType string) string {
-	switch {
-	case sseType == event.ContainerStateChanged || sseType == event.ContainerDiscovered || sseType == "container.removed":
+	switch sseType {
+	case event.ContainerStateChanged, event.ContainerDiscovered, "container.removed":
 		return event.ContainerStateChanged
-	case sseType == event.EndpointStatusChanged || sseType == event.EndpointDiscovered || sseType == event.EndpointRemoved:
+	case event.EndpointStatusChanged, event.EndpointDiscovered, event.EndpointRemoved:
 		return event.EndpointStatusChanged
-	case sseType == event.HeartbeatStatusChanged:
+	case event.HeartbeatStatusChanged:
 		return event.HeartbeatStatusChanged
-	case sseType == event.CertificateStatusChanged:
+	case event.CertificateStatusChanged:
 		return event.CertificateStatusChanged
-	case sseType == event.AlertFired:
+	case event.AlertFired:
 		return event.AlertFired
-	case sseType == event.AlertResolved:
+	case event.AlertResolved:
 		return event.AlertResolved
 	default:
 		return ""

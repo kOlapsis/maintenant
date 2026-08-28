@@ -33,20 +33,20 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="flex items-center justify-between rounded-t-xl border border-b-0 border-slate-800 bg-pb-surface px-3 py-2"
+    class="flex items-center justify-between rounded-t-xl border border-b-0 border-mnt-default bg-mnt-surface px-3 py-2"
   >
     <div class="flex items-center gap-2">
-      <h3 class="text-xs font-semibold text-slate-400">Logs</h3>
+      <h3 class="text-xs font-semibold text-mnt-muted">Logs</h3>
       <span
         v-if="status === 'streaming'"
-        class="flex items-center gap-1 text-xs text-pb-green-400"
+        class="flex items-center gap-1 text-xs text-mnt-green-400"
       >
-        <span class="inline-block h-1.5 w-1.5 rounded-full bg-pb-green-400" />
+        <span class="inline-block h-1.5 w-1.5 rounded-full bg-mnt-green-400" />
         Streaming
       </span>
       <button
         v-if="status === 'closed' || status === 'error'"
-        class="rounded px-2 py-0.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-pb-primary"
+        class="rounded px-2 py-0.5 text-xs text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
         @click="emit('reconnect')"
       >
         Reconnect
@@ -60,7 +60,7 @@ const emit = defineEmits<{
       <!-- Search toggle button (when search closed) -->
       <button
         v-if="!search.isOpen.value"
-        class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-pb-primary"
+        class="rounded p-1.5 text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
         title="Search (Ctrl+K)"
         aria-label="Search logs"
         @click="search.open()"
@@ -69,8 +69,8 @@ const emit = defineEmits<{
       </button>
 
       <button
-        class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-pb-primary"
-        :class="{ 'text-pb-primary bg-slate-800': !wordWrap }"
+        class="rounded p-1.5 text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
+        :class="{ 'text-mnt-primary bg-mnt-elevated': !wordWrap }"
         :title="wordWrap ? 'Disable word wrap' : 'Enable word wrap'"
         :aria-label="wordWrap ? 'Disable word wrap' : 'Enable word wrap'"
         @click="emit('toggle-wrap')"
@@ -78,7 +78,7 @@ const emit = defineEmits<{
         <WrapText :size="14" />
       </button>
       <button
-        class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-800 hover:text-pb-primary"
+        class="rounded p-1.5 text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
         :title="isExpanded ? 'Collapse' : 'Expand'"
         :aria-label="isExpanded ? 'Collapse log viewer' : 'Expand log viewer'"
         @click="emit('toggle-expand')"

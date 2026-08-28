@@ -1,3 +1,5 @@
+import { guardedFetch } from './apiFetch'
+
 const BASE = '/api/v1/status-page'
 
 export interface PalettePayload {
@@ -53,7 +55,7 @@ export interface AssetMeta {
 }
 
 export interface FooterLink {
-  id: number
+  id: string
   position: number
   label: string
   url: string
@@ -62,7 +64,7 @@ export interface FooterLink {
 }
 
 export interface FAQItem {
-  id: number
+  id: string
   position: number
   question: string
   answer_md: string
@@ -72,7 +74,7 @@ export interface FAQItem {
 }
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const res = await guardedFetch(url, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
@@ -95,7 +97,7 @@ export const personalizationApi = {
     const form = new FormData()
     form.append('file', file)
     if (altText !== undefined) form.append('alt_text', altText)
-    const res = await fetch(`${BASE}/assets/${role}`, { method: 'PUT', body: form })
+    const res = await guardedFetch(`${BASE}/assets/${role}`, { method: 'PUT', body: form })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(err?.error?.message || `HTTP ${res.status}`)
@@ -114,13 +116,13 @@ export const personalizationApi = {
   createFooterLink: (label: string, url: string) =>
     request<FooterLink>('POST', `${BASE}/footer-links`, { label, url }),
 
-  updateFooterLink: (id: number, label: string, url: string) =>
+  updateFooterLink: (id: string, label: string, url: string) =>
     request<FooterLink>('PUT', `${BASE}/footer-links/${id}`, { label, url }),
 
-  deleteFooterLink: (id: number) =>
+  deleteFooterLink: (id: string) =>
     request<void>('DELETE', `${BASE}/footer-links/${id}`),
 
-  reorderFooterLinks: (ids: number[]) =>
+  reorderFooterLinks: (ids: string[]) =>
     request<{ items: FooterLink[] }>('PUT', `${BASE}/footer-links/order`, { ids }),
 
   listFAQ: () =>
@@ -129,12 +131,12 @@ export const personalizationApi = {
   createFAQItem: (question: string, answer_md: string) =>
     request<FAQItem>('POST', `${BASE}/faq`, { question, answer_md }),
 
-  updateFAQItem: (id: number, question: string, answer_md: string) =>
+  updateFAQItem: (id: string, question: string, answer_md: string) =>
     request<FAQItem>('PUT', `${BASE}/faq/${id}`, { question, answer_md }),
 
-  deleteFAQItem: (id: number) =>
+  deleteFAQItem: (id: string) =>
     request<void>('DELETE', `${BASE}/faq/${id}`),
 
-  reorderFAQ: (ids: number[]) =>
+  reorderFAQ: (ids: string[]) =>
     request<{ items: FAQItem[] }>('PUT', `${BASE}/faq/order`, { ids }),
 }

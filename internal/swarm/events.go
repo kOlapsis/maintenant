@@ -19,7 +19,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
-	pbruntime "github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 // EventCallback is called when a Swarm event produces a domain event.
@@ -60,16 +60,16 @@ func (ep *EventProcessor) SetCallback(cb EventCallback) {
 }
 
 // ProcessEvent handles a runtime event of type "service" or "node".
-func (ep *EventProcessor) ProcessEvent(ctx context.Context, evt pbruntime.RuntimeEvent) {
+func (ep *EventProcessor) ProcessEvent(ctx context.Context, evt runtime.RuntimeEvent) {
 	switch evt.ResourceType {
-	case pbruntime.ResourceService:
+	case runtime.ResourceService:
 		ep.processServiceEvent(ctx, evt)
-	case pbruntime.ResourceNode:
+	case runtime.ResourceNode:
 		ep.processNodeEvent(ctx, evt)
 	}
 }
 
-func (ep *EventProcessor) processServiceEvent(ctx context.Context, evt pbruntime.RuntimeEvent) {
+func (ep *EventProcessor) processServiceEvent(ctx context.Context, evt runtime.RuntimeEvent) {
 	serviceID := evt.ExternalID
 
 	switch evt.Action {
@@ -115,7 +115,7 @@ func (ep *EventProcessor) processServiceEvent(ctx context.Context, evt pbruntime
 	}
 }
 
-func (ep *EventProcessor) processNodeEvent(ctx context.Context, evt pbruntime.RuntimeEvent) {
+func (ep *EventProcessor) processNodeEvent(ctx context.Context, evt runtime.RuntimeEvent) {
 	ep.logger.Debug("Swarm node event", "node_id", evt.ExternalID, "action", evt.Action)
 
 	if ep.nodeSvc != nil {

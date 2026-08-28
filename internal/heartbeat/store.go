@@ -17,22 +17,24 @@ import (
 )
 
 // HeartbeatStore defines the persistence interface for heartbeat monitoring data.
+// A heartbeat's id is its public ping token; methods take that string.
 type HeartbeatStore interface {
 	// Heartbeat CRUD
-	CreateHeartbeat(ctx context.Context, h *Heartbeat) (int64, error)
-	GetHeartbeatByID(ctx context.Context, id int64) (*Heartbeat, error)
-	GetHeartbeatByUUID(ctx context.Context, uuid string) (*Heartbeat, error)
+	CreateHeartbeat(ctx context.Context, h *Heartbeat) (string, error)
+	GetHeartbeatByID(ctx context.Context, id string) (*Heartbeat, error)
+	// GetHeartbeatByUUID looks up by the ping token (which is the id).
+	GetHeartbeatByUUID(ctx context.Context, token string) (*Heartbeat, error)
 	ListHeartbeats(ctx context.Context, opts ListHeartbeatsOpts) ([]*Heartbeat, error)
-	UpdateHeartbeat(ctx context.Context, id int64, input UpdateHeartbeatInput) error
-	DeleteHeartbeat(ctx context.Context, id int64) error
+	UpdateHeartbeat(ctx context.Context, id string, input UpdateHeartbeatInput) error
+	DeleteHeartbeat(ctx context.Context, id string) error
 
 	// State updates
-	UpdateHeartbeatState(ctx context.Context, id int64, status HeartbeatStatus, alertState AlertState,
+	UpdateHeartbeatState(ctx context.Context, id string, status HeartbeatStatus, alertState AlertState,
 		lastPingAt *time.Time, nextDeadlineAt *time.Time, currentRunStartedAt *time.Time,
 		lastExitCode *int, lastDurationMs *int64,
 		consecutiveFailures, consecutiveSuccesses int) error
-	PauseHeartbeat(ctx context.Context, id int64) error
-	ResumeHeartbeat(ctx context.Context, id int64, nextDeadlineAt time.Time) error
+	PauseHeartbeat(ctx context.Context, id string) error
+	ResumeHeartbeat(ctx context.Context, id string, nextDeadlineAt time.Time) error
 
 	// Deadline scanning
 	ListOverdueHeartbeats(ctx context.Context, now time.Time) ([]*Heartbeat, error)
@@ -41,14 +43,14 @@ type HeartbeatStore interface {
 	CountActiveHeartbeats(ctx context.Context) (int, error)
 
 	// Pings
-	InsertPing(ctx context.Context, p *HeartbeatPing) (int64, error)
-	ListPings(ctx context.Context, heartbeatID int64, opts ListPingsOpts) ([]*HeartbeatPing, int, error)
+	InsertPing(ctx context.Context, p *HeartbeatPing) (string, error)
+	ListPings(ctx context.Context, heartbeatID string, opts ListPingsOpts) ([]*HeartbeatPing, int, error)
 
 	// Executions
-	InsertExecution(ctx context.Context, e *HeartbeatExecution) (int64, error)
-	UpdateExecution(ctx context.Context, id int64, completedAt *time.Time, durationMs *int64, exitCode *int, outcome ExecutionOutcome, payload *string) error
-	GetCurrentExecution(ctx context.Context, heartbeatID int64) (*HeartbeatExecution, error)
-	ListExecutions(ctx context.Context, heartbeatID int64, opts ListExecutionsOpts) ([]*HeartbeatExecution, int, error)
+	InsertExecution(ctx context.Context, e *HeartbeatExecution) (string, error)
+	UpdateExecution(ctx context.Context, id string, completedAt *time.Time, durationMs *int64, exitCode *int, outcome ExecutionOutcome, payload *string) error
+	GetCurrentExecution(ctx context.Context, heartbeatID string) (*HeartbeatExecution, error)
+	ListExecutions(ctx context.Context, heartbeatID string, opts ListExecutionsOpts) ([]*HeartbeatExecution, int, error)
 
 	// Retention
 	DeletePingsBefore(ctx context.Context, before time.Time, batchSize int) (int64, error)

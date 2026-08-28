@@ -68,9 +68,9 @@ function onTabClick(tab: Tab) {
 }
 
 function replicaColor(running: number, desired: number): string {
-  if (running >= desired) return 'text-pb-status-ok'
-  if (running > 0) return 'text-amber-400'
-  return 'text-red-400'
+  if (running >= desired) return 'text-mnt-status-ok'
+  if (running > 0) return 'text-mnt-status-warn'
+  return 'text-mnt-status-down'
 }
 
 function imageTag(image: string): { name: string; tag: string } {
@@ -93,17 +93,17 @@ function cpuBarWidth(cpu: number | null): string {
 }
 
 function cpuColor(cpu: number | null): string {
-  if (cpu === null) return 'bg-slate-700'
-  if (cpu > 80) return 'bg-red-500'
-  if (cpu > 50) return 'bg-amber-500'
-  return 'bg-emerald-500'
+  if (cpu === null) return 'bg-mnt-elevated'
+  if (cpu > 80) return 'bg-mnt-sev-incident-solid'
+  if (cpu > 50) return 'bg-mnt-sev-warning-solid'
+  return 'bg-mnt-sev-ok-solid'
 }
 
 function memColor(percent: number | null): string {
-  if (percent === null) return 'bg-slate-700'
-  if (percent > 85) return 'bg-red-500'
-  if (percent > 60) return 'bg-amber-500'
-  return 'bg-sky-500'
+  if (percent === null) return 'bg-mnt-elevated'
+  if (percent > 85) return 'bg-mnt-sev-incident-solid'
+  if (percent > 60) return 'bg-mnt-sev-warning-solid'
+  return 'bg-mnt-sev-neutral-solid'
 }
 
 const baseTabs: { key: Tab; label: string }[] = [
@@ -121,22 +121,22 @@ const tabs = hasFeature('swarm_dashboard')
   <div class="flex flex-col h-full">
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-16">
-      <span class="text-sm text-slate-500">Loading service…</span>
+      <span class="text-sm text-mnt-muted">Loading service…</span>
     </div>
 
     <template v-else-if="detail">
       <!-- Header -->
-      <div class="px-5 pt-4 pb-3 border-b border-slate-800">
+      <div class="px-5 pt-4 pb-3 border-b border-mnt-default">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
-            <h2 class="text-base font-bold text-pb-primary truncate">{{ detail.name }}</h2>
+            <h2 class="text-base font-bold text-mnt-primary truncate">{{ detail.name }}</h2>
             <div class="flex items-center gap-2 mt-1 flex-wrap">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded">
                 {{ detail.mode }}
               </span>
               <span
                 v-if="detail.stack_name"
-                class="text-[10px] font-bold uppercase tracking-wider text-sky-400 bg-sky-400/10 border border-sky-400/20 px-1.5 py-0.5 rounded"
+                class="text-[10px] font-bold uppercase tracking-wider text-mnt-secondary bg-sky-400/10 border border-sky-400/20 px-1.5 py-0.5 rounded"
               >
                 {{ detail.stack_name }}
               </span>
@@ -149,34 +149,34 @@ const tabs = hasFeature('swarm_dashboard')
 
         <!-- Image -->
         <div class="mt-3">
-          <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Image</p>
+          <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-1">Image</p>
           <div class="flex items-center gap-2">
-            <span class="text-xs text-pb-secondary font-mono truncate">{{ imageTag(detail.image).name }}</span>
-            <span class="text-[10px] font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded font-mono">
+            <span class="text-xs text-mnt-secondary font-mono truncate">{{ imageTag(detail.image).name }}</span>
+            <span class="text-[10px] font-bold text-mnt-muted bg-mnt-elevated px-1.5 py-0.5 rounded font-mono">
               {{ imageTag(detail.image).tag }}
             </span>
           </div>
         </div>
 
         <!-- Timestamps -->
-        <div class="mt-3 flex gap-6 text-xs text-slate-500">
-          <span>Created <span class="text-slate-400">{{ timeAgo(detail.created_at) }}</span></span>
+        <div class="mt-3 flex gap-6 text-xs text-mnt-muted">
+          <span>Created <span class="text-mnt-muted">{{ timeAgo(detail.created_at) }}</span></span>
           <span v-if="detail.update_status?.state">
-            Update <span :class="detail.update_status.state === 'completed' ? 'text-pb-status-ok' : 'text-amber-400'">{{ detail.update_status.state }}</span>
+            Update <span :class="detail.update_status.state === 'completed' ? 'text-mnt-status-ok' : 'text-mnt-status-warn'">{{ detail.update_status.state }}</span>
           </span>
         </div>
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-slate-800 px-5">
+      <div class="flex border-b border-mnt-default px-5">
         <button
           v-for="tab in tabs"
           :key="tab.key"
           :class="[
             'px-4 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
             activeTab === tab.key
-              ? 'border-pb-green-400 text-pb-green-400'
-              : 'border-transparent text-slate-500 hover:text-pb-secondary',
+              ? 'border-mnt-green-400 text-mnt-green-400'
+              : 'border-transparent text-mnt-muted hover:text-mnt-secondary',
           ]"
           @click="onTabClick(tab.key)"
         >
@@ -193,26 +193,26 @@ const tabs = hasFeature('swarm_dashboard')
 
         <!-- Ports tab -->
         <template v-else-if="activeTab === 'ports'">
-          <div v-if="detail.ports.length === 0" class="text-sm text-slate-500 py-4 text-center">
+          <div v-if="detail.ports.length === 0" class="text-sm text-mnt-muted py-4 text-center">
             No published ports
           </div>
           <div v-else class="space-y-1">
             <div
               v-for="(port, i) in detail.ports"
               :key="i"
-              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3 flex items-center justify-between"
+              class="bg-mnt-primary rounded-lg border border-mnt-default px-4 py-3 flex items-center justify-between"
             >
               <div class="flex items-center gap-3">
-                <span class="text-sm font-mono text-pb-primary">
+                <span class="text-sm font-mono text-mnt-primary">
                   {{ port.published_port ? `:${port.published_port}` : 'auto' }}
-                  <span class="text-slate-500 mx-1">→</span>
+                  <span class="text-mnt-muted mx-1">→</span>
                   :{{ port.target_port }}
                 </span>
-                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded">
                   {{ port.protocol }}
                 </span>
               </div>
-              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted">
                 {{ port.publish_mode }}
               </span>
             </div>
@@ -221,59 +221,59 @@ const tabs = hasFeature('swarm_dashboard')
 
         <!-- Networks tab -->
         <template v-else-if="activeTab === 'networks'">
-          <div v-if="detail.networks.length === 0" class="text-sm text-slate-500 py-4 text-center">
+          <div v-if="detail.networks.length === 0" class="text-sm text-mnt-muted py-4 text-center">
             No networks attached
           </div>
           <div v-else class="space-y-1">
             <div
               v-for="net in detail.networks"
               :key="net.network_id"
-              class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3 flex items-center justify-between"
+              class="bg-mnt-primary rounded-lg border border-mnt-default px-4 py-3 flex items-center justify-between"
             >
-              <span class="text-sm text-pb-primary font-medium">{{ net.network_name }}</span>
-              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-400/10 border border-slate-400/20 px-1.5 py-0.5 rounded">
+              <span class="text-sm text-mnt-primary font-medium">{{ net.network_name }}</span>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded">
                 {{ net.scope }}
               </span>
             </div>
           </div>
         </template>
 
-        <!-- Resources tab (Enterprise) -->
+        <!-- Resources tab (Pro) -->
         <template v-else-if="activeTab === 'resources'">
           <FeatureGate
             feature="swarm_dashboard"
             title="Task Resource Metrics"
             description="View per-task CPU, memory, and network usage for Swarm services."
           >
-            <div v-if="resourcesLoading" class="text-sm text-slate-500 py-4 text-center">
+            <div v-if="resourcesLoading" class="text-sm text-mnt-muted py-4 text-center">
               Loading resources...
             </div>
-            <div v-else-if="taskResources.length === 0" class="text-sm text-slate-500 py-4 text-center">
+            <div v-else-if="taskResources.length === 0" class="text-sm text-mnt-muted py-4 text-center">
               No resource data available
             </div>
             <div v-else class="space-y-2">
               <div
                 v-for="tr in taskResources"
                 :key="tr.task_id"
-                class="bg-pb-primary rounded-lg border border-slate-800 px-4 py-3"
+                class="bg-mnt-primary rounded-lg border border-mnt-default px-4 py-3"
               >
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-pb-primary">Slot {{ tr.slot }}</span>
-                    <span v-if="tr.node_hostname" class="text-xs text-slate-500 font-mono">{{ tr.node_hostname }}</span>
+                    <span class="text-sm font-semibold text-mnt-primary">Slot {{ tr.slot }}</span>
+                    <span v-if="tr.node_hostname" class="text-xs text-mnt-muted font-mono">{{ tr.node_hostname }}</span>
                   </div>
-                  <span v-if="tr.timestamp" class="text-[10px] text-slate-600">{{ timeAgo(tr.timestamp) }}</span>
+                  <span v-if="tr.timestamp" class="text-[10px] text-mnt-muted">{{ timeAgo(tr.timestamp) }}</span>
                 </div>
 
                 <!-- CPU bar -->
                 <div class="mb-2">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">CPU</span>
-                    <span class="text-xs text-slate-400 tabular-nums">
+                    <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">CPU</span>
+                    <span class="text-xs text-mnt-muted tabular-nums">
                       {{ tr.cpu_percent !== null ? `${tr.cpu_percent.toFixed(1)}%` : '-' }}
                     </span>
                   </div>
-                  <div class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden">
+                  <div class="h-1.5 bg-mnt-primary border border-mnt-default rounded-full overflow-hidden">
                     <div
                       :class="['h-full rounded-full transition-all', cpuColor(tr.cpu_percent)]"
                       :style="{ width: cpuBarWidth(tr.cpu_percent) }"
@@ -284,13 +284,13 @@ const tabs = hasFeature('swarm_dashboard')
                 <!-- Memory bar -->
                 <div class="mb-2">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Memory</span>
-                    <span class="text-xs text-slate-400 tabular-nums">
+                    <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Memory</span>
+                    <span class="text-xs text-mnt-muted tabular-nums">
                       {{ formatBytes(tr.mem_used) }} / {{ formatBytes(tr.mem_limit) }}
-                      <span v-if="tr.mem_percent !== null" class="text-slate-600 ml-1">({{ tr.mem_percent.toFixed(1) }}%)</span>
+                      <span v-if="tr.mem_percent !== null" class="text-mnt-muted ml-1">({{ tr.mem_percent.toFixed(1) }}%)</span>
                     </span>
                   </div>
-                  <div class="h-1.5 bg-pb-primary border border-slate-800 rounded-full overflow-hidden">
+                  <div class="h-1.5 bg-mnt-primary border border-mnt-default rounded-full overflow-hidden">
                     <div
                       :class="['h-full rounded-full transition-all', memColor(tr.mem_percent)]"
                       :style="{ width: tr.mem_percent !== null ? `${Math.min(tr.mem_percent, 100)}%` : '0%' }"
@@ -299,7 +299,7 @@ const tabs = hasFeature('swarm_dashboard')
                 </div>
 
                 <!-- Network -->
-                <div v-if="tr.net_rx_bytes !== null && tr.net_rx_bytes >= 0" class="flex items-center gap-4 text-xs text-slate-500">
+                <div v-if="tr.net_rx_bytes !== null && tr.net_rx_bytes >= 0" class="flex items-center gap-4 text-xs text-mnt-muted">
                   <span>RX {{ formatBytes(tr.net_rx_bytes) }}</span>
                   <span>TX {{ formatBytes(tr.net_tx_bytes) }}</span>
                 </div>
@@ -312,7 +312,7 @@ const tabs = hasFeature('swarm_dashboard')
 
     <!-- Error / no data -->
     <div v-else class="flex items-center justify-center py-16">
-      <span class="text-sm text-slate-500">Service not found.</span>
+      <span class="text-sm text-mnt-muted">Service not found.</span>
     </div>
   </div>
 </template>

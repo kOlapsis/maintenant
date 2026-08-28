@@ -65,6 +65,11 @@ func (b *SSEBroker) Broadcast(event SSEEvent) {
 	}
 }
 
+// BroadcastEvent is a convenience wrapper used by packages that cannot import SSEEvent directly.
+func (b *SSEBroker) BroadcastEvent(eventType string, data any) {
+	b.Broadcast(SSEEvent{Type: eventType, Data: data})
+}
+
 // AddObserver registers a channel that receives all broadcast events (non-blocking).
 func (b *SSEBroker) AddObserver(ch chan SSEEvent) {
 	b.mu.Lock()

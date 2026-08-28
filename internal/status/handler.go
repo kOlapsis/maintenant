@@ -12,7 +12,9 @@
 package status
 
 import (
+	"bytes"
 	"encoding/json"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -26,6 +28,7 @@ type Handler struct {
 	sseHandler      http.Handler
 	logger          *slog.Logger
 	personalization *PersonalizationPublicHandler
+	indexHTML       []byte
 
 	rateMu     sync.Mutex
 	rateMap    map[string][]time.Time
@@ -46,6 +49,11 @@ func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger) 
 	}
 }
 
+// SetIndexHTML provides the Vue SPA index.html used to serve the status page.
+func (h *Handler) SetIndexHTML(data []byte) {
+	h.indexHTML = data
+}
+
 // SetPersonalizationHandler attaches the personalization public handler.
 func (h *Handler) SetPersonalizationHandler(ph *PersonalizationPublicHandler) {
 	h.personalization = ph
@@ -54,8 +62,13 @@ func (h *Handler) SetPersonalizationHandler(ph *PersonalizationPublicHandler) {
 // Middleware wraps an http.Handler (e.g. rate limiter).
 type Middleware func(http.Handler) http.Handler
 
-// Register registers the status API and SSE routes directly on the given mux.
+// Register registers the status page, API, and SSE routes directly on the given mux.
+// /status/ serves the Vue SPA index.html — Traefik rewrites the status subdomain root
+// to /status/ so that Vue Router can initialise at the correct route.
 func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
+	// Page HTML — catch-all for /status/ (more specific patterns below take precedence).
+	mux.Handle("GET /status/", mw(http.HandlerFunc(h.HandleStatusPage)))
+	// API & SSE endpoints.
 	mux.Handle("GET /status/api", mw(http.HandlerFunc(h.HandleStatusAPI)))
 	mux.Handle("GET /status/events", mw(h.sseHandler))
 	mux.Handle("GET /status/feed.atom", mw(http.HandlerFunc(h.HandleAtomFeed)))
@@ -65,6 +78,26 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 	if h.personalization != nil {
 		mux.Handle("GET /status/settings.json", mw(http.HandlerFunc(h.personalization.HandleSettingsJSON)))
 	}
+}
+
+const urlFixScript = `<script>window.__MAINTENANT_STATUS=true</script>`
+
+// HandleStatusPage serves the Vue SPA index.html for the /status/ path.
+// A small inline script is injected so that Vue Router initialises at /status when
+// the page is accessed from the dedicated status subdomain (browser path is "/").
+func (h *Handler) HandleStatusPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/status/" && r.URL.Path != "/status" {
+		http.NotFound(w, r)
+		return
+	}
+	if h.indexHTML == nil {
+		http.Error(w, "Status page not available", http.StatusServiceUnavailable)
+		return
+	}
+	html := bytes.Replace(h.indexHTML, []byte("</head>"), []byte(urlFixScript+"</head>"), 1)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	_, _ = w.Write(html)
 }
 
 // StatusAPIResponse is the JSON snapshot of current status.
@@ -80,14 +113,14 @@ type StatusAPIResponse struct {
 
 // APIComponentBrief is a brief component in the JSON API.
 type APIComponentBrief struct {
-	ID     int64  `json:"id"`
+	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
 }
 
 // APIIncidentBrief is a brief incident in the JSON API.
 type APIIncidentBrief struct {
-	ID           int64           `json:"id"`
+	ID           string          `json:"id"`
 	Title        string          `json:"title"`
 	Severity     string          `json:"severity"`
 	Status       string          `json:"status"`
@@ -105,7 +138,7 @@ type APIUpdateBrief struct {
 
 // APIMaintBrief is a brief maintenance window in the JSON API.
 type APIMaintBrief struct {
-	ID         int64     `json:"id"`
+	ID         string    `json:"id"`
 	Title      string    `json:"title"`
 	StartsAt   time.Time `json:"starts_at"`
 	EndsAt     time.Time `json:"ends_at"`
@@ -301,9 +334,11 @@ func (h *Handler) HandleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 
 // writeSimpleHTML renders a minimal HTML page for confirm/unsubscribe results.
 func writeSimpleHTML(w http.ResponseWriter, statusCode int, title, message string) {
+	// Escaped: message can carry an error string derived from request input.
+	t, m := html.EscapeString(title), html.EscapeString(message)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(statusCode)
-	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>` + title + `</title>
+	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>` + t + `</title>
 <style>body{font-family:system-ui,sans-serif;max-width:480px;margin:80px auto;text-align:center;color:#333}h1{font-size:1.5rem}</style>
-</head><body><h1>` + title + `</h1><p>` + message + `</p></body></html>`))
+</head><body><h1>` + t + `</h1><p>` + m + `</p></body></html>`))
 }

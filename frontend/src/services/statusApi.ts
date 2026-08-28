@@ -16,13 +16,13 @@ import { apiFetch, apiFetchVoid } from './apiFetch'
 
 export interface MonitorRef {
   type: string   // 'container' | 'endpoint' | 'heartbeat' | 'certificate'
-  id: number
+  id: string
   name?: string
   status?: string
 }
 
 export interface StatusComponent {
-  id: number
+  id: string
   composition_mode: 'explicit' | 'match-all'
   monitors: MonitorRef[]
   match_all_type: string | null
@@ -39,7 +39,7 @@ export interface StatusComponent {
 }
 
 export interface Incident {
-  id: number
+  id: string
   title: string
   severity: string
   status: string
@@ -50,20 +50,20 @@ export interface Incident {
 }
 
 export interface IncidentComponentRef {
-  component_id: number
+  component_id: string
   name: string
 }
 
 export interface IncidentUpdate {
-  id: number
-  incident_id: number
+  id: string
+  incident_id: string
   status: string
   message: string
   created_at: string
 }
 
 export interface MaintenanceWindow {
-  id: number
+  id: string
   title: string
   description: string
   starts_at: string
@@ -74,7 +74,7 @@ export interface MaintenanceWindow {
 }
 
 export interface MaintenanceComponentRef {
-  component_id: number
+  component_id: string
   name: string
 }
 
@@ -85,7 +85,7 @@ export interface SubscriberListResponse {
 }
 
 export interface MaskedSubscriber {
-  id: number
+  id: string
   email: string
   confirmed: boolean
   created_at: string
@@ -123,7 +123,7 @@ export function createComponent(data: {
 }
 
 export function updateComponent(
-  id: number,
+  id: string,
   data: Partial<{
     monitors: MonitorRef[]
     display_name: string
@@ -140,7 +140,7 @@ export function updateComponent(
   })
 }
 
-export function deleteComponent(id: number): Promise<void> {
+export function deleteComponent(id: string): Promise<void> {
   return fetchNoContent(`${API_BASE}/status/components/${id}`, { method: 'DELETE' })
 }
 
@@ -164,7 +164,7 @@ export function createIncident(data: {
   title: string
   severity: string
   status?: string
-  component_ids: number[]
+  component_ids: string[]
   message: string
 }): Promise<Incident> {
   return fetchJSON(`${API_BASE}/status/incidents`, {
@@ -175,7 +175,7 @@ export function createIncident(data: {
 }
 
 export function postIncidentUpdate(
-  incidentId: number,
+  incidentId: string,
   data: { status: string; message: string },
 ): Promise<IncidentUpdate> {
   return fetchJSON(`${API_BASE}/status/incidents/${incidentId}/updates`, {
@@ -186,8 +186,8 @@ export function postIncidentUpdate(
 }
 
 export function updateIncident(
-  id: number,
-  data: Partial<{ title: string; severity: string; component_ids: number[] }>,
+  id: string,
+  data: Partial<{ title: string; severity: string; component_ids: string[] }>,
 ): Promise<Incident> {
   return fetchJSON(`${API_BASE}/status/incidents/${id}`, {
     method: 'PUT',
@@ -196,7 +196,7 @@ export function updateIncident(
   })
 }
 
-export function deleteIncident(id: number): Promise<void> {
+export function deleteIncident(id: string): Promise<void> {
   return fetchNoContent(`${API_BASE}/status/incidents/${id}`, { method: 'DELETE' })
 }
 
@@ -214,7 +214,7 @@ export function createMaintenance(data: {
   description?: string
   starts_at: string
   ends_at: string
-  component_ids: number[]
+  component_ids: string[]
 }): Promise<MaintenanceWindow> {
   return fetchJSON(`${API_BASE}/status/maintenance`, {
     method: 'POST',
@@ -224,13 +224,13 @@ export function createMaintenance(data: {
 }
 
 export function updateMaintenance(
-  id: number,
+  id: string,
   data: Partial<{
     title: string
     description: string
     starts_at: string
     ends_at: string
-    component_ids: number[]
+    component_ids: string[]
   }>,
 ): Promise<MaintenanceWindow> {
   return fetchJSON(`${API_BASE}/status/maintenance/${id}`, {
@@ -240,7 +240,7 @@ export function updateMaintenance(
   })
 }
 
-export function deleteMaintenance(id: number): Promise<void> {
+export function deleteMaintenance(id: string): Promise<void> {
   return fetchNoContent(`${API_BASE}/status/maintenance/${id}`, { method: 'DELETE' })
 }
 

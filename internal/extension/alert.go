@@ -21,9 +21,13 @@ import (
 // NoopEscalator is the CE default. Implements alert.Escalator.
 type NoopEscalator struct{}
 
-func (NoopEscalator) Evaluate(_ context.Context, _ string, _ time.Duration) (*alert.EscalationAction, error) {
-	return nil, nil
+func (NoopEscalator) EvaluateCycle(_ context.Context) error                  { return nil }
+func (NoopEscalator) OnAlertCreated(_ context.Context, _ *alert.Alert) error { return nil }
+func (NoopEscalator) OnAlertAcknowledged(_ context.Context, _ string, _ alert.Acknowledgment) error {
+	return nil
 }
+func (NoopEscalator) OnAlertResolved(_ context.Context, _ string, _ time.Time) error { return nil }
+func (NoopEscalator) OnEditionDowngraded(_ context.Context) error                    { return nil }
 
 // NoopEntityRouter is the CE default. Implements alert.EntityRouter.
 type NoopEntityRouter struct{}
@@ -38,4 +42,3 @@ type NoopMaintenanceSuppressor struct{}
 func (NoopMaintenanceSuppressor) IsSuppressed(_ context.Context, _ string, _ string, _ string) (bool, error) {
 	return false, nil
 }
-

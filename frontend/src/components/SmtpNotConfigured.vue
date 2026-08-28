@@ -17,8 +17,8 @@ defineProps<{
 
 <style scoped>
 .smtp-code {
-  background: var(--pb-alert-warn-tag-bg);
-  border-color: var(--pb-alert-warn-tag-border);
-  color: var(--pb-alert-warn-tag-text);
+  background: var(--mnt-alert-warn-tag-bg);
+  border-color: var(--mnt-alert-warn-tag-border);
+  color: var(--mnt-alert-warn-tag-text);
 }
 </style>

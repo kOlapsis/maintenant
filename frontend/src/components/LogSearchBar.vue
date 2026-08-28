@@ -57,15 +57,15 @@ const matchDisplay = computed(() => {
 <template>
   <div
     v-if="search.isOpen.value"
-    class="flex items-center gap-1.5 rounded-lg border bg-pb-primary px-2 py-1"
-    :class="search.isValid.value ? 'border-slate-800' : 'border-red-500'"
+    class="flex items-center gap-1.5 rounded-lg border bg-mnt-primary px-2 py-1"
+    :class="search.isValid.value ? 'border-mnt-default' : 'border-red-500'"
   >
     <input
       ref="inputRef"
       type="text"
       :value="search.query.value"
       placeholder="Search logs..."
-      class="w-32 bg-transparent text-xs text-pb-primary placeholder-slate-600 outline-none sm:w-48"
+      class="w-32 bg-transparent text-xs text-mnt-primary placeholder:text-mnt-muted outline-none sm:w-48"
       @input="onInput"
       @keydown="onKeydown"
     />
@@ -74,15 +74,15 @@ const matchDisplay = computed(() => {
     <span
       v-if="search.query.value"
       class="shrink-0 text-[10px] tabular-nums"
-      :class="search.matches.value.length > 0 ? 'text-slate-400' : 'text-slate-600'"
+      :class="search.matches.value.length > 0 ? 'text-mnt-muted' : 'text-mnt-muted'"
     >{{ matchDisplay }}</span>
 
     <!-- Case sensitive toggle -->
     <button
       class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
       :class="search.isCaseSensitive.value
-        ? 'bg-slate-700 text-pb-primary'
-        : 'text-slate-500 hover:text-pb-secondary'"
+        ? 'bg-mnt-elevated text-mnt-primary'
+        : 'text-mnt-muted hover:text-mnt-secondary'"
       title="Match Case"
       @click="search.toggleCaseSensitive()"
     >Aa</button>
@@ -91,15 +91,15 @@ const matchDisplay = computed(() => {
     <button
       class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
       :class="search.isRegex.value
-        ? 'bg-slate-700 text-pb-primary'
-        : 'text-slate-500 hover:text-pb-secondary'"
+        ? 'bg-mnt-elevated text-mnt-primary'
+        : 'text-mnt-muted hover:text-mnt-secondary'"
       title="Use Regular Expression"
       @click="search.toggleRegex()"
     >.*</button>
 
     <!-- Navigation -->
     <button
-      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
+      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
       title="Previous Match (Shift+Enter)"
       aria-label="Previous match"
       :disabled="search.matches.value.length === 0"
@@ -108,7 +108,7 @@ const matchDisplay = computed(() => {
       <ChevronUp :size="12" />
     </button>
     <button
-      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
+      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
       title="Next Match (Enter)"
       aria-label="Next match"
       :disabled="search.matches.value.length === 0"
@@ -119,7 +119,7 @@ const matchDisplay = computed(() => {
 
     <!-- Close -->
     <button
-      class="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-pb-secondary"
+      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
       title="Close (Escape)"
       aria-label="Close search"
       @click="search.close()"

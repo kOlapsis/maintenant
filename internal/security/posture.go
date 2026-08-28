@@ -15,7 +15,7 @@ import "time"
 
 // SecurityScore represents the computed security health score for a single container.
 type SecurityScore struct {
-	ContainerID     int64           `json:"container_id"`
+	ContainerID     string          `json:"container_id"`
 	ContainerName   string          `json:"container_name"`
 	TotalScore      int             `json:"score"`
 	ColorLevel      string          `json:"color"`
@@ -37,14 +37,14 @@ type CategoryScore struct {
 
 // InfrastructurePosture is the top-level aggregation across all containers.
 type InfrastructurePosture struct {
-	Score           int               `json:"score"`
-	ColorLevel      string            `json:"color"`
-	ContainerCount  int               `json:"container_count"`
-	ScoredCount     int               `json:"scored_count"`
-	IsPartial       bool              `json:"is_partial"`
-	Categories      []CategorySummary `json:"categories"`
-	TopRisks        []ContainerRisk   `json:"top_risks"`
-	ComputedAt      time.Time         `json:"computed_at"`
+	Score          int               `json:"score"`
+	ColorLevel     string            `json:"color"`
+	ContainerCount int               `json:"container_count"`
+	ScoredCount    int               `json:"scored_count"`
+	IsPartial      bool              `json:"is_partial"`
+	Categories     []CategorySummary `json:"categories"`
+	TopRisks       []ContainerRisk   `json:"top_risks"`
+	ComputedAt     time.Time         `json:"computed_at"`
 }
 
 // CategorySummary holds aggregated category data across all containers.
@@ -56,7 +56,7 @@ type CategorySummary struct {
 
 // ContainerRisk is a container's score entry for ranking purposes.
 type ContainerRisk struct {
-	ContainerID   int64  `json:"container_id"`
+	ContainerID   string `json:"container_id"`
 	ContainerName string `json:"container_name"`
 	Score         int    `json:"score"`
 	ColorLevel    string `json:"color"`
@@ -65,7 +65,7 @@ type ContainerRisk struct {
 
 // RiskAcknowledgment is a user-created marker indicating a specific risk finding is accepted.
 type RiskAcknowledgment struct {
-	ID                  int64     `json:"id"`
+	ID                  string    `json:"id"`
 	ContainerExternalID string    `json:"container_external_id"`
 	FindingType         string    `json:"finding_type"`
 	FindingKey          string    `json:"finding_key"`

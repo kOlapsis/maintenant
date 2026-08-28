@@ -19,7 +19,8 @@ func TestMapEdition(t *testing.T) {
 		want string
 	}{
 		{"community resolves to community", extension.Community, "community"},
-		{"enterprise resolves to pro", extension.Enterprise, "pro"},
+		{"personal is reported distinctly, never folded into community", extension.Personal, "personal"},
+		{"pro resolves to pro", extension.Pro, "pro"},
 		{"zero-value resolves to community", extension.Edition(""), "community"},
 		{"unknown resolves to community", extension.Edition("garbage"), "community"},
 	}
@@ -30,5 +31,15 @@ func TestMapEdition(t *testing.T) {
 				t.Fatalf("mapEdition(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestMapEdition_CoversEveryKnownEdition: a new edition must not silently be
+// reported as community. This fails the day one is added without a wire value.
+func TestMapEdition_CoversEveryKnownEdition(t *testing.T) {
+	for _, e := range []extension.Edition{extension.Community, extension.Personal, extension.Pro} {
+		if got := mapEdition(e); got != string(e) {
+			t.Errorf("mapEdition(%q) = %q; every known edition must map to its own value", e, got)
+		}
 	}
 }

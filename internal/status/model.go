@@ -60,16 +60,17 @@ const (
 
 // MonitorRef is a reference to a specific monitor with its type and id.
 // The Name field is populated on reads but ignored on writes.
+// ID is a polymorphic UUID referencing an endpoint/container/cert/heartbeat.
 type MonitorRef struct {
 	Type   string `json:"type"`
-	ID     int64  `json:"id"`
+	ID     string `json:"id"`
 	Name   string `json:"name,omitempty"`
 	Status string `json:"status,omitempty"`
 }
 
 // Component is a public-facing representation of a monitored application or service.
 type Component struct {
-	ID              int64           `json:"id"`
+	ID              string          `json:"id"`
 	CompositionMode CompositionMode `json:"composition_mode"`
 	Monitors        []MonitorRef    `json:"monitors,omitempty"`
 	MatchAllType    string          `json:"match_all_type,omitempty"`
@@ -87,12 +88,12 @@ type Component struct {
 
 // Incident represents a public-facing incident.
 type Incident struct {
-	ID                  int64             `json:"id"`
+	ID                  string            `json:"id"`
 	Title               string            `json:"title"`
 	Severity            string            `json:"severity"`
 	Status              string            `json:"status"`
 	IsMaintenance       bool              `json:"is_maintenance"`
-	MaintenanceWindowID *int64            `json:"maintenance_window_id,omitempty"`
+	MaintenanceWindowID *string           `json:"maintenance_window_id,omitempty"`
 	Components          []IncidentCompRef `json:"components,omitempty"`
 	Updates             []IncidentUpdate  `json:"updates,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
@@ -102,24 +103,24 @@ type Incident struct {
 
 // IncidentCompRef is a lightweight component reference for incident responses.
 type IncidentCompRef struct {
-	ID   int64  `json:"id"`
+	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
 // IncidentUpdate is a timestamped entry in an incident timeline.
 type IncidentUpdate struct {
-	ID         int64     `json:"id"`
-	IncidentID int64     `json:"incident_id"`
+	ID         string    `json:"id"`
+	IncidentID string    `json:"incident_id"`
 	Status     string    `json:"status"`
 	Message    string    `json:"message"`
 	IsAuto     bool      `json:"is_auto"`
-	AlertID    *int64    `json:"alert_id,omitempty"`
+	AlertID    *string   `json:"alert_id,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
 // StatusSubscriber is an email subscriber for incident notifications.
 type StatusSubscriber struct {
-	ID             int64      `json:"id"`
+	ID             string     `json:"id"`
 	Email          string     `json:"email"`
 	Confirmed      bool       `json:"confirmed"`
 	ConfirmToken   *string    `json:"-"`
@@ -130,13 +131,13 @@ type StatusSubscriber struct {
 
 // MaintenanceWindow represents a scheduled maintenance period.
 type MaintenanceWindow struct {
-	ID          int64             `json:"id"`
+	ID          string            `json:"id"`
 	Title       string            `json:"title"`
 	Description string            `json:"description"`
 	StartsAt    time.Time         `json:"starts_at"`
 	EndsAt      time.Time         `json:"ends_at"`
 	Active      bool              `json:"active"`
-	IncidentID  *int64            `json:"incident_id"`
+	IncidentID  *string           `json:"incident_id"`
 	Components  []IncidentCompRef `json:"components,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`

@@ -16,6 +16,7 @@ import {
   type Heartbeat,
 } from '@/services/heartbeatApi'
 import { sseBus } from '@/services/sseBus'
+import { useResourcesStore } from '@/stores/resources'
 
 export const useHeartbeatsStore = defineStore('heartbeats', () => {
   const heartbeats = ref<Heartbeat[]>([])
@@ -40,7 +41,7 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
     loading.value = true
     error.value = null
     try {
-      const res = await listHeartbeats()
+      const res = await listHeartbeats(useResourcesStore().entityQuery)
       heartbeats.value = res.heartbeats || []
       totalCount.value = res.total || 0
     } catch (e) {

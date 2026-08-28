@@ -11,7 +11,8 @@
   Source: https://github.com/kolapsis/maintenant
 */
 
-import { ref, watch, watchEffect, nextTick, type Ref } from 'vue'
+import { ref, watch, watchEffect, nextTick, type Ref, type ComponentPublicInstance } from 'vue'
+import { guardedFetch } from '@/services/apiFetch'
 import { parseAnsi, type AnsiToken } from './useAnsiParser'
 import { detectLogLevel, parseJsonLine, parseTimestamp } from './useLogParser'
 
@@ -35,7 +36,7 @@ export interface LogLine {
 }
 
 export interface UseLogStreamOptions {
-  containerId: Ref<number>
+  containerId: Ref<string>
   containerName?: Ref<string | undefined>
 }
 
@@ -50,6 +51,8 @@ export interface UseLogStreamReturn {
   scrollContainerRef: Ref<HTMLElement | null>
   scrollToBottom: () => void
   handleScroll: (event: Event) => void
+  toggleWordWrap: () => void
+  setScrollContainer: (el: Element | ComponentPublicInstance | null) => void
   connect: () => void
   disconnect: () => void
 }
@@ -147,6 +150,14 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     }
   }
 
+  function toggleWordWrap() {
+    wordWrap.value = !wordWrap.value
+  }
+
+  function setScrollContainer(el: Element | ComponentPublicInstance | null) {
+    scrollContainerRef.value = el instanceof HTMLElement ? el : null
+  }
+
   function connect() {
     disconnect()
     status.value = 'connecting'
@@ -216,7 +227,7 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
   async function fetchLogsStatic() {
     status.value = 'connecting'
     try {
-      const res = await fetch(
+      const res = await guardedFetch(
         `${API_BASE}/containers/${options.containerId.value}/logs?lines=100&timestamps=true`,
       )
       if (!res.ok) {
@@ -265,6 +276,8 @@ export function useLogStream(options: UseLogStreamOptions): UseLogStreamReturn {
     scrollContainerRef,
     scrollToBottom,
     handleScroll,
+    toggleWordWrap,
+    setScrollContainer,
     connect,
     disconnect,
   }

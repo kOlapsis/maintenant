@@ -15,17 +15,19 @@ import { apiFetch, apiFetchVoid } from './apiFetch'
 // --- Types ---
 
 export interface Alert {
-  id: number
+  id: string
   source: string
   alert_type: string
   severity: string
   status: string
   message: string
   entity_type: string
-  entity_id: number
+  entity_id: string
   entity_name: string
   details?: Record<string, unknown>
-  resolved_by_id?: number | null
+  resolved_by_id?: string | null
+  acknowledged_at?: string | null
+  acknowledged_by?: string | null
   fired_at: string
   resolved_at?: string | null
   created_at: string
@@ -51,30 +53,21 @@ export interface ActiveAlertsResponse {
 }
 
 export interface NotificationChannel {
-  id: number
+  id: string
   name: string
   type: string
   url: string
   headers: string
   enabled: boolean
-  routing_rules: RoutingRule[]
   health: string
   created_at: string
   updated_at: string
 }
 
-export interface RoutingRule {
-  id: number
-  channel_id: number
-  source_filter: string
-  severity_filter: string
-  created_at: string
-}
-
 export interface SilenceRule {
-  id: number
+  id: string
   entity_type: string
-  entity_id?: number | null
+  entity_id?: string | null
   source: string
   reason: string
   starts_at: string
@@ -88,7 +81,7 @@ export interface SilenceRule {
 export interface CreateSilenceRuleInput {
   duration_seconds: number
   entity_type?: string
-  entity_id?: number
+  entity_id?: string
   source?: string
   reason?: string
 }
@@ -119,8 +112,16 @@ export function getActiveAlerts(): Promise<ActiveAlertsResponse> {
   return fetchJSON<ActiveAlertsResponse>(`${API_BASE}/alerts/active`)
 }
 
-export function getAlert(id: number): Promise<Alert> {
+export function getAlert(id: string): Promise<Alert> {
   return fetchJSON<Alert>(`${API_BASE}/alerts/${id}`)
+}
+
+export function acknowledgeAlert(id: string, acknowledgedBy: string): Promise<Alert> {
+  return fetchJSON<Alert>(`${API_BASE}/alerts/${id}/acknowledge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ acknowledged_by: acknowledgedBy }),
+  })
 }
 
 // --- Channels ---
@@ -144,7 +145,7 @@ export function createChannel(data: {
 }
 
 export function updateChannel(
-  id: number,
+  id: string,
   data: Partial<{ name: string; type: string; url: string; headers: string; enabled: boolean }>,
 ): Promise<NotificationChannel> {
   return fetchJSON(`${API_BASE}/channels/${id}`, {
@@ -154,29 +155,12 @@ export function updateChannel(
   })
 }
 
-export function deleteChannel(id: number): Promise<void> {
+export function deleteChannel(id: string): Promise<void> {
   return fetchNoContent(`${API_BASE}/channels/${id}`, { method: 'DELETE' })
 }
 
-export function testChannel(id: number): Promise<{ status: string; response_code?: number; error?: string }> {
+export function testChannel(id: string): Promise<{ status: string; response_code?: number; error?: string }> {
   return fetchJSON(`${API_BASE}/channels/${id}/test`, { method: 'POST' })
-}
-
-// --- Routing Rules ---
-
-export function createRoutingRule(
-  channelId: number,
-  data: { source_filter?: string; severity_filter?: string },
-): Promise<RoutingRule> {
-  return fetchJSON(`${API_BASE}/channels/${channelId}/rules`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-}
-
-export function deleteRoutingRule(channelId: number, ruleId: number): Promise<void> {
-  return fetchNoContent(`${API_BASE}/channels/${channelId}/rules/${ruleId}`, { method: 'DELETE' })
 }
 
 // --- Silence Rules ---
@@ -195,6 +179,6 @@ export function createSilenceRule(data: CreateSilenceRuleInput): Promise<Silence
   })
 }
 
-export function cancelSilenceRule(id: number): Promise<void> {
+export function cancelSilenceRule(id: string): Promise<void> {
   return fetchNoContent(`${API_BASE}/silence/${id}`, { method: 'DELETE' })
 }

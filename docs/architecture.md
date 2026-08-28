@@ -41,7 +41,7 @@
 
 **Single binary** — The Vue 3 frontend is compiled to static assets and embedded in the Go binary via `embed.FS`. One file to deploy, nothing else to configure.
 
-**Zero external dependencies** — SQLite is the only database. No Redis, no Postgres, no message queue. The binary runs anywhere Go compiles.
+**Zero external dependencies** — SQLite by default, with nothing to install: no Redis, no message queue, no database to administer. The binary runs anywhere Go compiles. An operator watching a fleet *may* point the server at a PostgreSQL they already run, which is the only way agent identities survive losing the server's machine; absent that setting, nothing changes. Agents store their state in SQLite, always.
 
 **Real-time by default** — Every state change is pushed to the browser via Server-Sent Events (SSE). No polling, no stale data.
 
@@ -60,12 +60,14 @@
 | Technology | Purpose |
 |-----------|---------|
 | **Go** (>= 1.25) | Application runtime |
-| **SQLite** (WAL mode) | Persistence, single-writer pattern |
+| **SQLite** (WAL mode) | Persistence by default, single-writer pattern |
+| **PostgreSQL** 14+ (optional) | Persistence for the server data set, when the operator supplies one |
 | **`net/http`** (stdlib) | HTTP server, REST API, SSE |
 | **`github.com/docker/docker`** | Docker SDK for container discovery and events |
 | **`k8s.io/client-go`** | Kubernetes API client |
 | **`k8s.io/metrics`** | Kubernetes metrics API |
-| **`github.com/mattn/go-sqlite3`** | SQLite driver (CGO) |
+| **`github.com/mattn/go-sqlite3`** | SQLite driver (CGO — the only one) |
+| **`github.com/jackc/pgx/v5`** | PostgreSQL driver (pure Go) |
 | **`github.com/google/go-containerregistry`** | OCI registry scanning |
 | **`github.com/modelcontextprotocol/go-sdk`** | MCP server (AI assistant integration) |
 | **`embed.FS`** | Frontend embedding |
@@ -107,7 +109,7 @@ internal/                  Private packages
     runtime/               Runtime abstraction interface
     security/              Network security analysis, posture scoring
     status/                Public status page (handler, subscribers)
-    store/sqlite/          SQLite store layer, migrations, writer
+    store/                 Store layer, dialect, migrations, writer, copy
     update/                Update intelligence, registry scanning
     webhook/               Webhook dispatcher
 
@@ -157,14 +159,47 @@ Check Engine (ticker)
 
 ---
 
+## Storage engines
+
+One storage package, two dialects. SQLite is the default and the only agent
+storage; PostgreSQL backs the server data set when an operator supplies a
+connection string. Every engine difference goes through a `Dialect`, and there
+are six of them: placeholder syntax, batched deletes, opening PRAGMAs, error
+classification, write serialization, and SQL-side UUID generation for rollups.
+Nothing else in the ~50 query files knows which engine it runs on — the UUID
+rework had already made the schema portable (TEXT keys, epoch-second BIGINTs,
+`ON CONFLICT ... DO UPDATE`).
+
+**Migrations carry one version number across both engines.** SQLite keeps the
+full history; PostgreSQL starts from a single baseline numbered at the SQLite
+head of the day it was written (28). From 29 onward, a migration is written for
+both engines under the same number, or not at all. That rule is enforced by a
+test, not by discipline: it migrates a fresh database on each engine and
+compares the two heads — tables, columns, types, defaults, indexes, foreign
+keys, constraints — failing on any divergence.
+
+**Why it exists.** The server holds one class of data the fleet cannot rebuild:
+agent identities and enrolments. Kept on the machine that runs the process,
+that data makes the instance irreplaceable. Detached, a replacement instance
+started elsewhere picks the fleet back up with no action on any monitored host.
+
+**What the product does not do:** it never installs, backs up or supervises the
+database, and it does not orchestrate failover — no leader election, no mutual
+exclusion. Instances register in a table and beat; a second one is *reported*,
+never arbitrated. Exclusion belongs to the operator's cluster manager.
+
+---
+
 ## SQLite Architecture
 
 maintenant uses SQLite in WAL (Write-Ahead Logging) mode with a single-writer pattern:
 
 - **One writer goroutine** — All writes are serialized through a channel-based writer to avoid `SQLITE_BUSY` errors
 - **Multiple readers** — Read queries run concurrently without blocking
-- **Automatic migrations** — Schema migrations run at startup using embedded SQL files
-- **Retention cleanup** — Background goroutine prunes old data hourly (transitions: 90 days, check results: 30 days, heartbeat pings: 30 days, resource snapshots: 7 days, resource hourly: 90 days, resource daily: 1 year)
+- **Automatic migrations** — Schema migrations run at startup using embedded SQL files. A schema newer than the binary is refused rather than written into, on either engine.
+- **Resource history** — Charts up to 24h group raw samples; the 7-day range reads the hourly rollup, which holds exactly the buckets it displays. Raw samples are therefore only kept for 48 hours, and they are what dominates database size.
+- **Retention cleanup** — Background goroutine prunes old data (transitions: 90 days, check results: 30 days, heartbeat pings: 30 days, resource snapshots: 48 hours, resource hourly: 90 days, resource daily: 1 year). A pass runs at startup and then hourly, deleting in batches of 1000 rows until each table is drained. If a pass hits its 2-minute-per-table budget it reschedules itself a minute later instead of waiting for the next hour, so a backlog is cleared instead of accumulating. Tunable with `MAINTENANT_RETENTION_SNAPSHOTS`, `MAINTENANT_RETENTION_INTERVAL` and `MAINTENANT_RETENTION_BATCH_SIZE`.
+- **Bounded WAL** — Every pooled connection sets `journal_size_limit` (64 MiB) and `wal_autocheckpoint` (1000 pages) through a driver `ConnectHook`; pages freed by retention are returned to the filesystem with `incremental_vacuum` in slices
 
 ---
 

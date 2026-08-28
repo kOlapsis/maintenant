@@ -17,6 +17,8 @@ import SlideOverPanel from './ui/SlideOverPanel.vue'
 import ContainerDetail from './ContainerDetail.vue'
 import HeartbeatDetail from './HeartbeatDetail.vue'
 import CertificateDetail from './CertificateDetail.vue'
+import EndpointDetail from './EndpointDetail.vue'
+import UpdateDetailPanel from './UpdateDetailPanel.vue'
 import SwarmServiceDetail from './SwarmServiceDetail.vue'
 import K8sWorkloadDetail from './K8sWorkloadDetail.vue'
 import K8sPodDetail from './K8sPodDetail.vue'
@@ -24,24 +26,28 @@ import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlid
 import { useContainersStore } from '@/stores/containers'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { useCertificatesStore } from '@/stores/certificates'
+import { useEndpointsStore } from '@/stores/endpoints'
 
 const detail = inject(detailSlideOverKey)!
 
 const containersStore = useContainersStore()
 const heartbeatsStore = useHeartbeatsStore()
 const certificatesStore = useCertificatesStore()
+const endpointsStore = useEndpointsStore()
 
 // Ensure store data is loaded when opening a detail for an entity type
 watch(
   () => [detail.entityType.value, detail.entityId.value] as const,
   ([type]) => {
     if (!type) return
-    if (type === 'container' && containersStore.allContainers.length === 0) {
+    if ((type === 'container' || type === 'update') && containersStore.allContainers.length === 0) {
       containersStore.fetchContainers()
     } else if (type === 'heartbeat' && heartbeatsStore.heartbeats.length === 0) {
       heartbeatsStore.fetchHeartbeats()
     } else if (type === 'certificate' && certificatesStore.certificates.length === 0) {
       certificatesStore.fetchCertificates()
+    } else if (type === 'endpoint' && endpointsStore.endpoints.length === 0) {
+      endpointsStore.fetchEndpoints()
     }
   },
 )
@@ -61,28 +67,41 @@ const panelTitle = computed(() => {
 })
 
 const panelWidth = computed(() => {
-  return detail.entityType.value === 'container' ? 'max-w-2xl' : 'max-w-lg'
+  const type = detail.entityType.value
+  return type === 'container' || type === 'endpoint' ? 'max-w-2xl' : 'max-w-lg'
 })
 
-function resolveTitle(type: EntityType, id: number | string): string {
+// Update alerts carry the container UUID as entity id; UpdateDetailPanel is keyed
+// by the runtime ExternalID, so resolve it from the containers store.
+const updateExternalId = computed(() => {
+  if (detail.entityType.value !== 'update') return ''
+  const id = detail.entityId.value
+  if (!id) return ''
+  return containersStore.allContainers.find(c => c.id === id)?.external_id ?? ''
+})
+
+function resolveTitle(type: EntityType, id: string): string {
   switch (type) {
     case 'container': {
-      if (typeof id !== 'number') return ''
       const c = containersStore.allContainers.find(ct => ct.id === id)
       return c?.name ?? ''
     }
     case 'heartbeat': {
-      if (typeof id !== 'number') return ''
       const h = heartbeatsStore.heartbeats.find(hb => hb.id === id)
       return h?.name ?? ''
     }
     case 'certificate': {
-      if (typeof id !== 'number') return ''
       const cert = certificatesStore.certificates.find(c => c.id === id)
       return cert ? `${cert.hostname}:${cert.port}` : ''
     }
-    case 'endpoint':
-      return ''
+    case 'endpoint': {
+      const ep = endpointsStore.endpoints.find(e => e.id === id)
+      return ep ? (ep.name || ep.target) : ''
+    }
+    case 'update': {
+      const c = containersStore.allContainers.find(ct => ct.id === id)
+      return c?.name ?? ''
+    }
     case 'swarm-service':
       return ''
     case 'k8s-workload':
@@ -100,6 +119,11 @@ function handleDeleted() {
   detail.close()
   containersStore.fetchContainers()
 }
+
+function handleEndpointDeleted() {
+  detail.close()
+  endpointsStore.fetchEndpoints()
+}
 </script>
 
 <template>
@@ -108,20 +132,30 @@ function handleDeleted() {
       <span></span>
     </template>
     <ContainerDetail
-      v-if="detail.entityType.value === 'container' && typeof detail.entityId.value === 'number' && detail.entityId.value"
-      :container-id="(detail.entityId.value as number)"
+      v-if="detail.entityType.value === 'container' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :container-id="(detail.entityId.value as string)"
       @close="handleClose"
       @deleted="handleDeleted"
     />
     <HeartbeatDetail
-      v-if="detail.entityType.value === 'heartbeat' && typeof detail.entityId.value === 'number' && detail.entityId.value"
-      :heartbeat-id="(detail.entityId.value as number)"
+      v-if="detail.entityType.value === 'heartbeat' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :heartbeat-id="(detail.entityId.value as string)"
       @close="handleClose"
     />
     <CertificateDetail
-      v-if="detail.entityType.value === 'certificate' && typeof detail.entityId.value === 'number' && detail.entityId.value"
-      :certificate-id="(detail.entityId.value as number)"
+      v-if="detail.entityType.value === 'certificate' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :certificate-id="(detail.entityId.value as string)"
       @close="handleClose"
+    />
+    <EndpointDetail
+      v-if="detail.entityType.value === 'endpoint' && typeof detail.entityId.value === 'string' && detail.entityId.value"
+      :endpoint-id="(detail.entityId.value as string)"
+      @close="handleClose"
+      @deleted="handleEndpointDeleted"
+    />
+    <UpdateDetailPanel
+      v-if="detail.entityType.value === 'update' && updateExternalId"
+      :container-id="updateExternalId"
     />
     <SwarmServiceDetail
       v-if="detail.entityType.value === 'swarm-service' && typeof detail.entityId.value === 'string' && detail.entityId.value"

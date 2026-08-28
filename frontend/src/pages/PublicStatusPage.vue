@@ -15,6 +15,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import StatusComponentBreakdown from '@/components/StatusComponentBreakdown.vue'
 import { useStatusPageI18n } from '@/composables/useStatusPageI18n'
+import { guardedFetch } from '@/services/apiFetch'
 import type { MonitorRef } from '@/services/statusApi'
 
 // --- Personalization settings ---
@@ -49,7 +50,7 @@ const { t } = useStatusPageI18n(locale)
 
 async function fetchSettings() {
   try {
-    const res = await fetch('/status/settings.json')
+    const res = await guardedFetch('/status/settings.json')
     if (res.ok) settings.value = await res.json()
   } catch {
     // graceful degradation — defaults already applied via null checks
@@ -84,13 +85,13 @@ watch(settings, (s) => {
 // --- Status data ---
 interface IncidentUpdate { status: string; message: string; created_at: string }
 interface IncidentBrief {
-  id: number; title: string; severity: string; status: string
+  id: string; title: string; severity: string; status: string
   components: string[]; created_at: string; latest_update?: IncidentUpdate
 }
 interface MaintenanceBrief {
-  id: number; title: string; starts_at: string; ends_at: string; components: string[]
+  id: string; title: string; starts_at: string; ends_at: string; components: string[]
 }
-interface ComponentBrief { id: number; name: string; status: string; monitors?: MonitorRef[] }
+interface ComponentBrief { id: string; name: string; status: string; monitors?: MonitorRef[] }
 interface StatusData {
   global_status: string; global_message: string; updated_at: string
   components: ComponentBrief[]; active_incidents: IncidentBrief[]; upcoming_maintenance: MaintenanceBrief[]
@@ -99,14 +100,14 @@ interface StatusData {
 const data = ref<StatusData | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const expandedComponents = ref<Set<number>>(new Set())
+const expandedComponents = ref<Set<string>>(new Set())
 
-function toggleExpanded(id: number) {
+function toggleExpanded(id: string) {
   if (expandedComponents.value.has(id)) expandedComponents.value.delete(id)
   else expandedComponents.value.add(id)
 }
 
-function handleRowKeydown(e: KeyboardEvent, id: number) {
+function handleRowKeydown(e: KeyboardEvent, id: string) {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(id) }
   else if (e.key === 'Escape') { expandedComponents.value.delete(id); (e.currentTarget as HTMLElement).blur() }
 }
@@ -115,7 +116,7 @@ let eventSource: EventSource | null = null
 
 async function fetchStatus() {
   try {
-    const res = await fetch('/status/api')
+    const res = await guardedFetch('/status/api')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     data.value = await res.json()
   } catch (e) {
@@ -129,7 +130,7 @@ function handleComponentChangedEvent(e: Event) {
   const msgEvent = e as MessageEvent
   if (msgEvent.data) {
     try {
-      const payload = JSON.parse(msgEvent.data) as { id?: number; monitors?: MonitorRef[]; status?: string; name?: string }
+      const payload = JSON.parse(msgEvent.data) as { id?: string; monitors?: MonitorRef[]; status?: string; name?: string }
       if (payload.id !== undefined && data.value) {
         const comp = data.value.components.find(c => c.id === payload.id)
         if (comp) {
@@ -175,7 +176,7 @@ const globalBanner = computed(() => {
 const incidentSeverityStyle = (severity: string) => {
   if (severity === 'critical' || severity === 'major') return 'border-rose-500/40 bg-rose-500/5'
   if (severity === 'minor') return 'border-amber-500/40 bg-amber-500/5'
-  return 'border-pb-green-500/40 bg-pb-green-500/5'
+  return 'border-mnt-green-500/40 bg-mnt-green-500/5'
 }
 
 const incidentStatusLabel = (status: string) => {
@@ -190,11 +191,11 @@ const incidentStatusLabel = (status: string) => {
 
 const componentStatusStyle = (status: string) => {
   const styles: Record<string, { dot: string; label: string; text: string }> = {
-    operational: { dot: 'bg-emerald-500', label: t('statusOperational'), text: 'text-pb-status-ok' },
+    operational: { dot: 'bg-emerald-500', label: t('statusOperational'), text: 'text-mnt-status-ok' },
     degraded: { dot: 'bg-amber-500', label: t('statusDegraded'), text: 'text-amber-400' },
     partial_outage: { dot: 'bg-amber-500', label: t('statusPartialOutage'), text: 'text-amber-400' },
-    major_outage: { dot: 'bg-rose-500', label: t('statusMajorOutage'), text: 'text-pb-status-down' },
-    under_maintenance: { dot: 'bg-pb-green-500', label: 'Under Maintenance', text: 'text-pb-green-400' },
+    major_outage: { dot: 'bg-rose-500', label: t('statusMajorOutage'), text: 'text-mnt-status-down' },
+    under_maintenance: { dot: 'bg-mnt-green-500', label: 'Under Maintenance', text: 'text-mnt-green-400' },
   }
   return styles[status] || { dot: 'bg-slate-500', label: status, text: 'text-slate-400' }
 }
@@ -371,11 +372,11 @@ function formatDate(iso: string) {
             <div
               v-for="maint in data.upcoming_maintenance"
               :key="maint.id"
-              class="rounded-xl border border-pb-green-500/30 bg-pb-green-500/5 p-5"
+              class="rounded-xl border border-mnt-green-500/30 bg-mnt-green-500/5 p-5"
             >
               <div class="flex items-start justify-between gap-3 mb-1">
                 <span class="font-semibold text-sm">{{ maint.title }}</span>
-                <span class="shrink-0 text-[10px] px-2 py-0.5 rounded bg-pb-green-500/15 text-pb-green-400 border border-pb-green-500/30 font-medium">{{ t('maintenanceScheduled') }}</span>
+                <span class="shrink-0 text-[10px] px-2 py-0.5 rounded bg-mnt-green-500/15 text-mnt-green-400 border border-mnt-green-500/30 font-medium">{{ t('maintenanceScheduled') }}</span>
               </div>
               <p class="text-xs text-slate-500 mb-2">{{ formatDate(maint.starts_at) }} {{ t('maintenanceTo') }} {{ formatDate(maint.ends_at) }}</p>
               <div class="flex flex-wrap gap-1.5">
