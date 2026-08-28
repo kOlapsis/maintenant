@@ -89,6 +89,7 @@ nav:
       - Kubernetes Guide: guides/kubernetes.md
       - Hetzner Cloud Deployment: guides/hetzner.md
       - DigitalOcean Deployment: guides/digitalocean.md
+      - Scaleway Deployment: guides/scaleway.md
       - Docker Swarm Deployment: guides/swarm.md
       - PostgreSQL Storage: guides/postgresql.md
   - API:

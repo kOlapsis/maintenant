@@ -21,6 +21,7 @@ On a managed cluster, name the storage class your provider's CSI driver installs
 |---------|-------|
 | Hetzner (`kube-hetzner`, `hetzner-k3s`, Talos) | `--set persistence.storageClass=hcloud-volumes`, see [Kubernetes on Hetzner](hetzner.md#kubernetes-on-hetzner) |
 | DigitalOcean (DOKS) | `--set persistence.storageClass=do-block-storage-retain`, see [Kubernetes on DOKS](digitalocean.md#kubernetes-on-doks) |
+| Scaleway (Kapsule) | `--set persistence.storageClass=sbs-default`, see [Kubernetes on Kapsule](scaleway.md#kubernetes-on-kapsule) |
 
 ### Raw manifests
 
@@ -367,6 +368,7 @@ helm uninstall maintenant -n maintenant
 - [Installation](../getting-started/installation.md) — Docker and source builds
 - [Hetzner Cloud Deployment](hetzner.md) — Clusters built with kube-hetzner, hetzner-k3s or Talos
 - [DigitalOcean Deployment](digitalocean.md) — DOKS storage classes and Load Balancer checks
+- [Scaleway Deployment](scaleway.md) — Kapsule storage classes and Private Network DNS
 - [Configuration](../getting-started/configuration.md) — Environment variables
 - [Container Monitoring](../features/containers.md) — How workloads are tracked
 - [Resource Metrics](../features/resources.md) — CPU/memory from metrics-server

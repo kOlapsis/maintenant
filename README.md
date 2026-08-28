@@ -193,12 +193,17 @@ hcloud server create --name maintenant --type cx22 --image ubuntu-24.04 \
 # DigitalOcean
 doctl compute droplet create maintenant --image ubuntu-24-04-x64 --size s-2vcpu-4gb \
   --ssh-keys my-key --user-data-file deploy/cloud-init/maintenant.yaml --wait
+
+# Scaleway
+scw instance server create name=maintenant type=PLAY2-NANO image=ubuntu_noble \
+  ip=new cloud-init=@deploy/cloud-init/maintenant.yaml
 ```
 
 The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes for the database, agent enrolment over a private network, load balancer checks and managed Kubernetes are per-provider:
 
 - **[Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/)**
 - **[DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)**
+- **[Scaleway](https://docs.maintenant.dev/guides/scaleway/)**
 
 > For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
 

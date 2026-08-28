@@ -8,6 +8,8 @@
 #                     --user-data-from-file deploy/cloud-init/maintenant.yaml
 #   DigitalOcean    doctl compute droplet create --image ubuntu-24-04-x64 \
 #                     --user-data-file deploy/cloud-init/maintenant.yaml
+#   Scaleway        scw instance server create image=ubuntu_noble \
+#                     cloud-init=@deploy/cloud-init/maintenant.yaml
 #
 # The dashboard is published on 127.0.0.1:8080 only. Reach it through an SSH
 # tunnel, or put a reverse proxy with authentication in front of it:
