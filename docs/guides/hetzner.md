@@ -26,7 +26,7 @@ The image is published for `linux/amd64` **and** `linux/arm64`, so the Ampere-ba
 
 ## Step 1 — Provision the server
 
-The repository ships a ready-to-use cloud-config at [`deploy/hetzner/cloud-init.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/hetzner/cloud-init.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
+The repository ships a ready-to-use cloud-config at [`deploy/cloud-init/maintenant.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/cloud-init/maintenant.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
 
 ```bash
 hcloud server create \
@@ -35,7 +35,7 @@ hcloud server create \
   --image ubuntu-24.04 \
   --location nbg1 \
   --ssh-key my-key \
-  --user-data-from-file deploy/hetzner/cloud-init.yaml
+  --user-data-from-file deploy/cloud-init/maintenant.yaml
 ```
 
 Once the server is up:

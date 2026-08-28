@@ -192,10 +192,10 @@ hcloud server create \
   --image ubuntu-24.04 \
   --location nbg1 \
   --ssh-key my-key \
-  --user-data-from-file deploy/hetzner/cloud-init.yaml
+  --user-data-from-file deploy/cloud-init/maintenant.yaml
 ```
 
-The [cloud-init file](deploy/hetzner/cloud-init.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Cloud Firewall rules, Hetzner Volumes for the database, agent enrolment over a private Cloud Network, Load Balancer checks and Kubernetes clusters built with `kube-hetzner` / `hetzner-k3s` / Talos are covered in the **[Hetzner Cloud Deployment Guide](https://docs.maintenant.dev/guides/hetzner/)**.
+The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Cloud Firewall rules, Hetzner Volumes for the database, agent enrolment over a private Cloud Network, Load Balancer checks and Kubernetes clusters built with `kube-hetzner` / `hetzner-k3s` / Talos are covered in the **[Hetzner Cloud Deployment Guide](https://docs.maintenant.dev/guides/hetzner/)**.
 
 > For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
 

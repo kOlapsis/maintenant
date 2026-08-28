@@ -1,20 +1,19 @@
 #cloud-config
-# maintenant on Hetzner Cloud — first-boot provisioning.
+# maintenant — first-boot provisioning for any Ubuntu cloud server.
 #
-#   hcloud server create \
-#     --name maintenant \
-#     --type cx22 \
-#     --image ubuntu-24.04 \
-#     --location nbg1 \
-#     --ssh-key my-key \
-#     --user-data-from-file deploy/hetzner/cloud-init.yaml
+# Pass this file as user data when creating the server. Each provider spells
+# that differently:
+#
+#   Hetzner Cloud   hcloud server create --image ubuntu-24.04 \
+#                     --user-data-from-file deploy/cloud-init/maintenant.yaml
 #
 # The dashboard is published on 127.0.0.1:8080 only. Reach it through an SSH
 # tunnel, or put a reverse proxy with authentication in front of it:
 #
 #   ssh -L 8080:127.0.0.1:8080 root@<server-ip>
 #
-# Full guide: https://docs.maintenant.dev/guides/hetzner/
+# Per-provider guides (firewall, volumes, private network, managed Kubernetes):
+# https://docs.maintenant.dev/guides/hetzner/
 
 package_update: true
 package_upgrade: true
@@ -41,8 +40,9 @@ write_files:
           volumes:
             - /var/run/docker.sock:/var/run/docker.sock:ro
             - /proc:/host/proc:ro
-            # Swap for /mnt/HC_Volume_<id>/maintenant to keep the database on a
-            # Hetzner Volume that survives a server rebuild.
+            # Swap for a path on an attached block volume to keep the database
+            # on storage that survives a server rebuild. Your provider's guide
+            # gives the mount path.
             - maintenant-data:/data
           environment:
             MAINTENANT_ADDR: "0.0.0.0:8080"
