@@ -78,6 +78,9 @@ type Config struct {
 	// Dev
 	AllowPrivateWebhooks bool
 
+	// Runtime / logging (set via CLI flags; runtime override propagated to env)
+	LogLevel string
+
 	// Build info (injected via ldflags)
 	Version      string
 	Commit       string
@@ -201,7 +204,7 @@ func ConfigFromEnv() Config {
 		},
 
 		MCP: MCPConfig{
-			Enabled:              os.Getenv("MAINTENANT_MCP") == "true",
+			Enabled:              parseTruthy(os.Getenv("MAINTENANT_MCP")),
 			ClientID:             os.Getenv("MAINTENANT_MCP_CLIENT_ID"),
 			ClientSecret:         os.Getenv("MAINTENANT_MCP_CLIENT_SECRET"),
 			AllowedRedirectURIs:  os.Getenv("MAINTENANT_MCP_ALLOWED_REDIRECT_URIS"),
@@ -209,7 +212,7 @@ func ConfigFromEnv() Config {
 		},
 
 		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
-		MaxBodySize: 1048576,
+		MaxBodySize: int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
 		CACertFile:  os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
@@ -217,6 +220,8 @@ func ConfigFromEnv() Config {
 
 		K8sNamespaces: os.Getenv("MAINTENANT_K8S_NAMESPACES"),
 		K8sExcludeNS:  os.Getenv("MAINTENANT_K8S_EXCLUDE_NAMESPACES"),
+
+		LogLevel: envOr("MAINTENANT_LOG_LEVEL", "info"),
 	}
 
 	if thresholdStr := os.Getenv("MAINTENANT_SECURITY_SCORE_THRESHOLD"); thresholdStr != "" {
@@ -234,6 +239,8 @@ func ConfigFromEnv() Config {
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
 	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
+	cfg.Mode = envOr("MAINTENANT_MODE", "embedded")
+
 	cfg.MultiHost = MultiHostConfig{
 		GRPCPublicURL:              os.Getenv("MAINTENANT_GRPC_URL"),
 		GRPCListen:                 envOr("MAINTENANT_GRPC_LISTEN", "127.0.0.1:8443"),
@@ -242,15 +249,26 @@ func ConfigFromEnv() Config {
 		TLSCertFile:                os.Getenv("MAINTENANT_GRPC_TLS_CERT"),
 		TLSKeyFile:                 os.Getenv("MAINTENANT_GRPC_TLS_KEY"),
 		InsecureGRPC:               parseTruthy(os.Getenv("MAINTENANT_GRPC_TLS_INSECURE")),
+		ServerURL:                  os.Getenv("MAINTENANT_SERVER"),
+		EnrollmentToken:            os.Getenv("MAINTENANT_ENROLLMENT_TOKEN"),
+		RuntimeOverride:            os.Getenv("MAINTENANT_RUNTIME"),
+		Label:                      os.Getenv("MAINTENANT_LABEL"),
+		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
+		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
 	}
 
 	return cfg
 }
 
-// parseTruthy mirrors internal/telemetry/env.go semantics so the config
-// layer does not depend on the telemetry package (avoids an import cycle
-// at app wiring time). Truthy values: 1, t, true, y, yes, on
-// (case-insensitive, whitespace-trimmed).
+func int64OrDefault(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}
+
 func parseTruthy(raw string) bool {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "t", "true", "y", "yes", "on":

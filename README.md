@@ -149,6 +149,40 @@ kubectl apply -f deploy/kubernetes/
 
 maintenant auto-detects the in-cluster API. Read-only RBAC, namespace filtering, workload-level monitoring out of the box.
 
+### Native Linux install (no Docker)
+
+Run maintenant as a systemd service directly on any amd64 or arm64 Linux host. The published binaries are statically linked, so the same file runs on Debian, Ubuntu, RHEL, Alpine or Arch with nothing to install alongside it.
+
+**One-liner:**
+
+```bash
+curl -fsSL https://install.maintenant.dev | sudo bash
+```
+
+Installs the binary to `/usr/local/bin/maintenant`, creates a `maintenant` system user, enables the systemd service, and starts it immediately.
+
+**With custom configuration:**
+
+```bash
+curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+  --addr 0.0.0.0:8080 \
+  --baseUrl https://monitoring.example.com \
+  --organisationName "Acme Corp" \
+  --logLevel info
+```
+
+Configuration flags are persisted to `/etc/maintenant/maintenant.env` and reloaded on every `systemctl restart maintenant`. All `MAINTENANT_*` environment variables have a `--flagName` equivalent — run `maintenant --help` to see the full list.
+
+```bash
+# Useful commands after install
+systemctl status maintenant
+journalctl -fu maintenant
+maintenant --help
+maintenant --version
+```
+
+> For pinning a specific version, air-gapped installs, uninstall, and supply-chain verification, see the **[install documentation](https://docs.maintenant.dev/install)**.
+
 ### Hetzner Cloud
 
 ```bash

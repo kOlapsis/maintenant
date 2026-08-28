@@ -13,7 +13,7 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -37,61 +37,65 @@ var (
 const defaultAgentDataDir = "/var/lib/maintenant"
 
 func main() {
-	// healthcheck is the image's HEALTHCHECK command: it inspects a running
-	// instance and exits, so it must run before any flag or config work.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(runHealthcheck())
 	}
 
-	mcpStdio := len(os.Args) > 1 && os.Args[1] == "--mcp-stdio"
+	args := os.Args[1:]
 
-	// Multi-host flags (parsed before --mcp-stdio check so --mode is always available).
-	fMode := flag.String("mode", "embedded", "operating mode: embedded|server|agent")
-	fServer := flag.String("server", "", "gRPC server URL (agent mode)")
-	fEnrollToken := flag.String("enrollment-token", "", "enrollment token (agent mode, first boot)")
-	fRuntime := flag.String("runtime", "", "override runtime detection: docker|swarm|kubernetes")
-	fLabel := flag.String("label", "", "display label for this agent (agent mode)")
-	fGRPCListen := flag.String("grpc-listen", "", "override MAINTENANT_GRPC_LISTEN")
-	fGRPCPublicURL := flag.String("grpc-url", "", "override MAINTENANT_GRPC_URL")
-	fTLSCert := flag.String("grpc-tls-cert", "", "TLS certificate file (server mode)")
-	fTLSKey := flag.String("grpc-tls-key", "", "TLS key file (server mode)")
-	fInsecureSkip := flag.Bool("grpc-insecure-skip-tls-verify", false, "disable TLS verification (debug only)")
-	fCACert := flag.String("ca-cert", "", "PEM bundle of extra root CAs to trust, added to the system store")
-	fEmbeddedAgent := flag.Bool("embedded-agent", false, "also run a local agent (server mode, Pro)")
-	fDatabaseURL := flag.String("database-url", "", "PostgreSQL connection string (server/embedded mode only); empty means SQLite")
-	fCopyStoreTo := flag.String("copy-store-to", "", "copy this install into an empty PostgreSQL database, then exit")
-	fDB := flag.String("db", "", "override MAINTENANT_DB (path of the local SQLite file)")
-	fAssumeYes := flag.Bool("yes", false, "skip the confirmation prompt (for scripts)")
-
-	// flag.Parse handles --foo and -foo; ignore unknown flags for --mcp-stdio compat.
-	flag.CommandLine.SetOutput(os.Stderr)
-	flag.Parse()
-
-	logLevel := logLevelFromEnv()
-	logOutput := os.Stdout
+	// --mcp-stdio is a mode, not a configuration option: it is read here and
+	// dropped from the args so the flag registry never sees an unknown flag.
+	mcpStdio := len(args) > 0 && args[0] == "--mcp-stdio"
 	if mcpStdio {
-		logOutput = os.Stderr
-	}
-	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
-		Level: logLevel,
-	}))
-
-	if *fInsecureSkip {
-		logger.Warn("insecure TLS verification disabled — do not use in production")
+		args = args[1:]
 	}
 
-	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate, "mode", *fMode)
+	// --help and --version answer before the logger exists, so slog JSON does
+	// not land in the middle of human-readable output.
+	for _, arg := range args {
+		switch arg {
+		case "--help", "-h":
+			cfg := app.ConfigFromEnv()
+			app.PrintHelp(os.Stdout, cfg)
+			os.Exit(0)
+		case "--version", "-v":
+			fmt.Printf("maintenant version %s commit %s build %s\n", version, commit, buildDate)
+			os.Exit(0)
+		}
+	}
 
+	// One parser for every option: app.Registry holds the flag, its environment
+	// variable and how it lands in Config, so --help cannot advertise a flag the
+	// binary would then refuse. Unknown flag or bad value exits 2.
+	visited, err := app.ParseFlagsOrDie(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	// Environment first, CLI second: flags win, as the help text promises.
 	cfg := app.ConfigFromEnv()
 	cfg.Version = version
 	cfg.Commit = commit
 	cfg.BuildDate = buildDate
 	cfg.PublicKeyB64 = publicKeyB64
-	cfg.Mode = *fMode
-
-	if *fCACert != "" {
-		cfg.CACertFile = *fCACert
+	if err := app.MergeArgsIntoConfig(&cfg, visited); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
 	}
+
+	logOutput := os.Stdout
+	if mcpStdio {
+		logOutput = os.Stderr
+	}
+	logger := slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{
+		Level: slogLevelFrom(cfg.LogLevel),
+	}))
+	if cfg.MultiHost.InsecureSkipVerify {
+		logger.Warn("insecure TLS verification disabled — do not use in production")
+	}
+	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate, "mode", cfg.Mode)
+
 	// Loaded before anything can probe: both server and agent modes run from
 	// here, and a bad path must stop the process rather than turn every TLS
 	// check into a misleading "unknown authority".
@@ -103,29 +107,6 @@ func main() {
 		logger.Info("extra CA bundle trusted", "path", cfg.CACertFile)
 	}
 
-	// CLI overrides for MultiHost config
-	if *fGRPCListen != "" {
-		cfg.MultiHost.GRPCListen = *fGRPCListen
-	}
-	if *fGRPCPublicURL != "" {
-		cfg.MultiHost.GRPCPublicURL = *fGRPCPublicURL
-	}
-	cfg.MultiHost.TLSCertFile = *fTLSCert
-	cfg.MultiHost.TLSKeyFile = *fTLSKey
-	cfg.MultiHost.ServerURL = *fServer
-	cfg.MultiHost.EnrollmentToken = *fEnrollToken
-	cfg.MultiHost.RuntimeOverride = *fRuntime
-	cfg.MultiHost.Label = *fLabel
-	cfg.MultiHost.InsecureSkipVerify = *fInsecureSkip
-	cfg.MultiHost.EmbeddedAgent = *fEmbeddedAgent
-
-	// Flags win over variables, as everywhere else in the product.
-	if *fDB != "" {
-		cfg.DBPath = *fDB
-	}
-	if *fDatabaseURL != "" {
-		cfg.DatabaseURL = *fDatabaseURL
-	}
 	// Checked before the agent branch: an agent handed a connection string
 	// must refuse it, not ignore it (FR-003, FR-030).
 	if err := cfg.ValidateStorage(); err != nil {
@@ -135,21 +116,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary
-	// has no subcommands and this feature does not introduce any.
-	if *fCopyStoreTo != "" {
+	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary has
+	// no subcommands and this feature does not introduce any.
+	if target := visited["copy-store-to"]; target != "" {
 		if cfg.Mode == "agent" {
 			logger.Error("--copy-store-to is not accepted in agent mode",
 				"fix", "an agent has no server data set to carry")
 			os.Exit(copyExitAgentBad)
 		}
-		os.Exit(runCopy(cfg.DBPath, *fCopyStoreTo, *fAssumeYes, os.Stdout, os.Stdin, logger))
+		os.Exit(runCopy(cfg.DBPath, target, visited["yes"] == "true", os.Stdout, os.Stdin, logger))
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// mode=agent: run enrollment then exit — no HTTP server needed.
 	if cfg.Mode == "agent" {
 		dataDir := os.Getenv("MAINTENANT_DATA_DIR")
 		if dataDir == "" {
@@ -193,8 +173,8 @@ func main() {
 	}
 }
 
-func logLevelFromEnv() slog.Level {
-	switch os.Getenv("MAINTENANT_LOG_LEVEL") {
+func slogLevelFrom(level string) slog.Level {
+	switch level {
 	case "debug", "DEBUG":
 		return slog.LevelDebug
 	case "warn", "WARN", "warning", "WARNING":
