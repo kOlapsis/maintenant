@@ -45,7 +45,10 @@ jobs:
     permissions:
       contents: read
     strategy:
-      fail-fast: true
+      # Both architectures run to completion even when one fails: on a release
+      # the useful question is whether the break is architecture-specific, and
+      # cancelling the other build hides the answer.
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-24.04
@@ -81,6 +84,17 @@ jobs:
         run: |
           npm ci
           npm run build
+
+      # vite writes to frontend/dist, but the embed directive reads
+      # cmd/maintenant/web/dist, which is gitignored and therefore absent from a
+      # fresh checkout. Without this copy the Go build stops on "pattern
+      # all:dist: no matching files found". The Dockerfile does the same thing
+      # with its COPY --from=spa-builder step.
+      - name: Stage the SPA for embedding
+        run: |
+          rm -rf cmd/maintenant/web/dist
+          cp -r frontend/dist cmd/maintenant/web/dist
+          test -f cmd/maintenant/web/dist/index.html
 
       # The public key is a build-time constant, not a secret to protect at
       # runtime, but it goes through env so it never lands in a command line
