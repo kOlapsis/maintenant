@@ -38,6 +38,14 @@ openstack server create \
   --key-name my-key \
   --user-data deploy/cloud-init/maintenant.yaml \
   maintenant
+
+# Vultr (the CLI base64-encodes the file for you, do not do it yourself)
+vultr-cli instance create \
+  --region="ewr" \
+  --plan="vc2-2c-4gb" \
+  --os=2284 \
+  --label="maintenant" \
+  --userdata-file=deploy/cloud-init/maintenant.yaml
 ```
 
 The dashboard is published on `127.0.0.1:8080` only. Reach it through an SSH tunnel, or front it
@@ -50,3 +58,4 @@ enrolment over a private network, load balancer checks and managed Kubernetes â€
 - [DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)
 - [Scaleway](https://docs.maintenant.dev/guides/scaleway/)
 - [OVHcloud](https://docs.maintenant.dev/guides/ovhcloud/)
+- [Vultr](https://docs.maintenant.dev/guides/vultr/)
