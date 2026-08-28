@@ -227,10 +227,15 @@ func TestStartRetentionCleanup_RunsImmediately(t *testing.T) {
 
 	// An hour-long interval guarantees the timer never fires during the test:
 	// anything deleted came from the immediate first pass.
-	StartRetentionCleanupWithOpts(ctx, NewContainerStore(db), db, testLogger(), RetentionOpts{
+	// Registered after openTestDB, so cleanups run it first: the cleanup is
+	// stopped before the database is closed and the temporary directory
+	// removed. Without it a pass in flight can recreate the SQLite side files
+	// mid-RemoveAll and fail the cleanup.
+	stopped := StartRetentionCleanupWithOpts(ctx, NewContainerStore(db), db, testLogger(), RetentionOpts{
 		ResourceStore: NewResourceStore(db),
 		Config:        RetentionConfig{Interval: time.Hour},
 	})
+	t.Cleanup(func() { <-stopped })
 
 	require.Eventually(t, func() bool {
 		return countTableRows(t, db, "resource_snapshots") == 0

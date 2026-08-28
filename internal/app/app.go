@@ -111,6 +111,10 @@ type App struct {
 	shuttingDown    atomic.Bool
 	statusCompStore *store.StatusComponentStoreImpl
 
+	// Closed when the retention cleanup has stopped writing. Shutdown waits on
+	// it before closing the database.
+	retentionStopped <-chan struct{}
+
 	// Background services
 	checkEngine    *endpoint.CheckEngine
 	maintScheduler *status.MaintenanceScheduler
@@ -914,6 +918,19 @@ func (a *App) Shutdown() error {
 	}
 
 	_ = a.rt.Close()
+
+	// The cleanup deletes in batches and only notices the cancellation between
+	// them, so closing the database under it would abort a pass mid-write.
+	// Bounded by the same grace as the rest of the shutdown: a pass that is
+	// still running after that is left behind rather than holding the process.
+	if a.retentionStopped != nil {
+		select {
+		case <-a.retentionStopped:
+		case <-shutdownCtx.Done():
+			a.logger.Warn("retention cleanup still running at shutdown, closing the database anyway")
+		}
+	}
+
 	_ = a.db.Close()
 
 	a.logger.Info("maintenant stopped")
