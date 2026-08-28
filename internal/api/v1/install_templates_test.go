@@ -34,6 +34,11 @@ func TestBuildInstallTemplates_ReturnsFourModes(t *testing.T) {
 		if v == "" {
 			t.Errorf("template %q is empty", k)
 		}
+		// The standalone installer is unreleased: its tab carries an
+		// announcement, not a command, so it holds neither URL nor token.
+		if k == "standalone" {
+			continue
+		}
 		if !strings.Contains(v, serverURL) {
 			t.Errorf("template %q does not contain server URL %q", k, serverURL)
 		}
@@ -47,13 +52,15 @@ func TestBuildInstallTemplates_ReturnsFourModes(t *testing.T) {
 	}
 }
 
-func TestBuildInstallStandalone_StartsWithCurl(t *testing.T) {
-	out := buildInstallStandalone("grpcs://h:8443", "mnt_enr_xyz")
-	if !strings.HasPrefix(out, "curl -fsSL https://install.maintenant.dev") {
-		t.Errorf("standalone template should start with curl install.sh invocation, got:\n%s", out)
+func TestBuildInstallStandalone_AnnouncesComingSoon(t *testing.T) {
+	out := buildInstallStandalone()
+	if !strings.HasPrefix(out, "Coming soon.") {
+		t.Errorf("standalone template should announce the unreleased installer, got:\n%s", out)
 	}
-	if !strings.Contains(out, "--mode=agent") {
-		t.Errorf("standalone template missing --mode=agent")
+	// install.maintenant.dev serves the marketing site, so an invocation
+	// piping it into a shell would run HTML as root.
+	if strings.Contains(out, "install.maintenant.dev") {
+		t.Errorf("standalone template still points at the unpublished installer:\n%s", out)
 	}
 }
 

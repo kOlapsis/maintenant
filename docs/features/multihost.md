@@ -106,7 +106,7 @@ Content-Type: application/json
 The response contains:
 - `token` — the cleartext token, shown **once only**
 - `install_templates` — a map of ready-to-run install snippets, one per environment. Keys:
-  - `standalone` — `curl … | sudo bash` invocation of the install script (binary + systemd unit)
+  - `standalone` — a "coming soon" notice: the binary + systemd installer is not released yet
   - `docker_run` — single `docker run` command with the right socket/proc mounts
   - `docker_compose` — `compose.yml` snippet
   - `kubernetes` — Namespace + Secret + RBAC + DaemonSet manifest
@@ -121,16 +121,9 @@ The response contains:
 
 ### 2. Run the install command on the remote host
 
-Pick the snippet matching the host environment (the UI exposes these as tabs in the modal). For a bare-metal/VM host, the standalone snippet is:
+Pick the snippet matching the host environment (the UI exposes these as tabs in the modal). Docker is the way in today: the standalone installer is not released yet, and its tab says so.
 
-```bash
-curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
-  --mode=agent \
-  --server=grpcs://monitoring.example.com \
-  --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
-```
-
-For a host where the binary is already installed, the equivalent invocation is:
+For a host where the binary is already installed, the invocation is:
 
 ```bash
 maintenant \

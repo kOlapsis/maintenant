@@ -72,11 +72,16 @@ func TestCreateEnrollmentToken_ReturnsCleartextOnce(t *testing.T) {
 	assert.Equal(t, agent.TokenIDFromHash(agent.HashToken(cleartext)), out["token_id"])
 
 	// The install snippets have to embed the real token or the operator cannot
-	// copy-paste them.
+	// copy-paste them. The standalone tab is the exception: it announces an
+	// unreleased installer instead of handing out a command.
 	templates, ok := out["install_templates"].(map[string]any)
 	require.True(t, ok)
 	require.NotEmpty(t, templates)
 	for name, tmpl := range templates {
+		if name == "standalone" {
+			assert.NotContains(t, tmpl, cleartext, "the coming-soon notice must not carry the token")
+			continue
+		}
 		assert.Contains(t, tmpl, cleartext, "install template %q must carry the token", name)
 	}
 
