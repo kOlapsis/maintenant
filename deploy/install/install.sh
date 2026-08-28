@@ -228,6 +228,18 @@ _suggest_versions() {
 
 # ── download_and_verify ───────────────────────────────────────────────────────
 
+# ── _cosign_major ─────────────────────────────────────────────────────────────
+# Major version of the cosign on PATH, empty when it cannot be read. cosign 3
+# dropped --output-signature and --output-certificate from sign-blob, so a
+# release carries a bundle and nothing else; reading that bundle needs a 3.x
+# binary too.
+
+_cosign_major() {
+    cosign version 2>/dev/null \
+        | sed -n 's/^[[:space:]]*GitVersion:[[:space:]]*v\{0,1\}\([0-9]\{1,\}\).*/\1/p' \
+        | head -n 1
+}
+
 download_and_verify() {
     TMPDIR_INSTALL=$(mktemp -d)
     ASSET_NAME="maintenant-${VERSION}-linux-${ARCH}"
@@ -241,23 +253,26 @@ download_and_verify() {
     (cd "$TMPDIR_INSTALL" && sha256sum -c SHA256SUMS --ignore-missing) \
         || abort "SHA256 checksum mismatch — download may be corrupted" 21
 
-    if [ -z "${SKIP_COSIGN:-}" ] && command -v cosign >/dev/null 2>&1; then
-        fetch_url_to "$BASE_URL/SHA256SUMS.sig" "$TMPDIR_INSTALL/SHA256SUMS.sig"
-        fetch_url_to "$BASE_URL/SHA256SUMS.pem" "$TMPDIR_INSTALL/SHA256SUMS.pem"
+    if [ -n "${SKIP_COSIGN:-}" ]; then
+        log_warn "cosign verification skipped (--skip-cosign)"
+    elif ! command -v cosign >/dev/null 2>&1; then
+        log_warn "cosign not found — skipping signature verification (install cosign 3 for supply-chain protection)"
+    elif COSIGN_MAJOR=$(_cosign_major); [ -z "$COSIGN_MAJOR" ] || [ "$COSIGN_MAJOR" -lt 3 ]; then
+        # Not treated as a verification failure: a 2.x binary cannot read the
+        # bundle at all, and an unreadable version string says nothing about
+        # the signature either.
+        log_warn "cosign 3 or later is required to read the release bundle — skipping signature verification"
+    else
+        fetch_url_to "$BASE_URL/SHA256SUMS.bundle" "$TMPDIR_INSTALL/SHA256SUMS.bundle"
         log_step "Verifying cosign signature..."
         if ! cosign verify-blob \
-            --certificate "$TMPDIR_INSTALL/SHA256SUMS.pem" \
-            --signature "$TMPDIR_INSTALL/SHA256SUMS.sig" \
+            --bundle "$TMPDIR_INSTALL/SHA256SUMS.bundle" \
             --certificate-identity-regexp "^https://github\\.com/$GITHUB_REPO/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+\$" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$TMPDIR_INSTALL/SHA256SUMS"; then
             abort "cosign signature verification failed" 22
         fi
         log_info "cosign signature verified"
-    elif [ -z "${SKIP_COSIGN:-}" ]; then
-        log_warn "cosign not found — skipping signature verification (install cosign for supply-chain protection)"
-    else
-        log_warn "cosign verification skipped (--skip-cosign)"
     fi
 }
 
