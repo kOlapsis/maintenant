@@ -245,6 +245,7 @@ docker compose -f /opt/maintenant/compose.yml start
 ## Related
 
 - [Installation](../getting-started/installation.md) — Docker, Kubernetes and source builds
+- [DigitalOcean Deployment](digitalocean.md) — The same ground on DigitalOcean
 - [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
 - [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
 - [PostgreSQL Storage](postgresql.md) — Making the server replaceable

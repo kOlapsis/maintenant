@@ -183,19 +183,22 @@ maintenant --version
 
 > For pinning a specific version, air-gapped installs, uninstall, and supply-chain verification, see the **[install documentation](https://docs.maintenant.dev/install)**.
 
-### Hetzner Cloud
+### Cloud providers
 
 ```bash
-hcloud server create \
-  --name maintenant \
-  --type cx22 \
-  --image ubuntu-24.04 \
-  --location nbg1 \
-  --ssh-key my-key \
-  --user-data-from-file deploy/cloud-init/maintenant.yaml
+# Hetzner Cloud
+hcloud server create --name maintenant --type cx22 --image ubuntu-24.04 \
+  --ssh-key my-key --user-data-from-file deploy/cloud-init/maintenant.yaml
+
+# DigitalOcean
+doctl compute droplet create maintenant --image ubuntu-24-04-x64 --size s-2vcpu-4gb \
+  --ssh-keys my-key --user-data-file deploy/cloud-init/maintenant.yaml --wait
 ```
 
-The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Cloud Firewall rules, Hetzner Volumes for the database, agent enrolment over a private Cloud Network, Load Balancer checks and Kubernetes clusters built with `kube-hetzner` / `hetzner-k3s` / Talos are covered in the **[Hetzner Cloud Deployment Guide](https://docs.maintenant.dev/guides/hetzner/)**.
+The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes for the database, agent enrolment over a private network, load balancer checks and managed Kubernetes are per-provider:
+
+- **[Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/)**
+- **[DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)**
 
 > For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
 

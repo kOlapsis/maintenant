@@ -74,11 +74,13 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     [docker-socket-proxy](../security.md#recommended-docker-socket-proxy) that rejects every
     write with `403`. Recommended for production.
 
-!!! tip "Deploying on Hetzner Cloud"
-    A ready-to-use `cloud-init` file provisions a Hetzner Cloud server with Docker and maintenant
-    in one `hcloud server create`, with the dashboard bound to loopback. Firewall rules, Volumes,
-    private-network agents and Load Balancer checks are covered in the
-    [Hetzner Cloud Deployment Guide](../guides/hetzner.md).
+!!! tip "Deploying on a cloud provider"
+    A ready-to-use `cloud-init` file provisions any Ubuntu cloud server with Docker and
+    maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes,
+    private-network agents, load balancer checks and managed Kubernetes are per-provider:
+
+    - [Hetzner Cloud](../guides/hetzner.md)
+    - [DigitalOcean](../guides/digitalocean.md)
 
 !!! tip "Production deployment"
     For production, place maintenant behind a reverse proxy with authentication.
