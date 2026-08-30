@@ -30,6 +30,14 @@ scw instance server create \
   name=maintenant \
   ip=new \
   cloud-init=@deploy/cloud-init/maintenant.yaml
+
+# OVHcloud Public Cloud (source your OpenStack RC file first)
+openstack server create \
+  --flavor d2-4 \
+  --image "Ubuntu 24.04" \
+  --key-name my-key \
+  --user-data deploy/cloud-init/maintenant.yaml \
+  maintenant
 ```
 
 The dashboard is published on `127.0.0.1:8080` only. Reach it through an SSH tunnel, or front it
@@ -41,3 +49,4 @@ enrolment over a private network, load balancer checks and managed Kubernetes â€
 - [Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/)
 - [DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)
 - [Scaleway](https://docs.maintenant.dev/guides/scaleway/)
+- [OVHcloud](https://docs.maintenant.dev/guides/ovhcloud/)

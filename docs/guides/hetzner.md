@@ -247,6 +247,7 @@ docker compose -f /opt/maintenant/compose.yml start
 - [Installation](../getting-started/installation.md) — Docker, Kubernetes and source builds
 - [DigitalOcean Deployment](digitalocean.md) — The same ground on DigitalOcean
 - [Scaleway Deployment](scaleway.md) — The same ground on Scaleway
+- [OVHcloud Deployment](ovhcloud.md) — The same ground on OVHcloud
 - [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
 - [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
 - [PostgreSQL Storage](postgresql.md) — Making the server replaceable
