@@ -21,6 +21,15 @@ doctl compute droplet create maintenant \
   --ssh-keys my-key \
   --user-data-file deploy/cloud-init/maintenant.yaml \
   --wait
+
+# Scaleway
+scw instance server create \
+  zone=fr-par-1 \
+  type=PLAY2-NANO \
+  image=ubuntu_noble \
+  name=maintenant \
+  ip=new \
+  cloud-init=@deploy/cloud-init/maintenant.yaml
 ```
 
 The dashboard is published on `127.0.0.1:8080` only. Reach it through an SSH tunnel, or front it
@@ -31,3 +40,4 @@ enrolment over a private network, load balancer checks and managed Kubernetes â€
 
 - [Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/)
 - [DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)
+- [Scaleway](https://docs.maintenant.dev/guides/scaleway/)
