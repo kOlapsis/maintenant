@@ -2,6 +2,13 @@
 
 maintenant ships as a single binary with the frontend embedded. No external dependencies required — just deploy and go.
 
+Two ways in: a container, covered below, or the binary itself as a systemd
+service on a host with no container runtime — see **[Native Linux Install](../install.md)**.
+
+```bash
+curl -fsSL https://install.maintenant.dev | sudo bash
+```
+
 ---
 
 ## Docker Compose (Recommended)
