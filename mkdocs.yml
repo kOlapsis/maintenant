@@ -91,6 +91,7 @@ nav:
       - DigitalOcean Deployment: guides/digitalocean.md
       - Scaleway Deployment: guides/scaleway.md
       - OVHcloud Deployment: guides/ovhcloud.md
+      - Vultr Deployment: guides/vultr.md
       - Docker Swarm Deployment: guides/swarm.md
       - PostgreSQL Storage: guides/postgresql.md
   - API:

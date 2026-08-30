@@ -322,6 +322,7 @@ docker compose -f /opt/maintenant/compose.yml start
 - [Hetzner Cloud Deployment](hetzner.md) — The same ground on Hetzner
 - [DigitalOcean Deployment](digitalocean.md) — The same ground on DigitalOcean
 - [OVHcloud Deployment](ovhcloud.md) — The same ground on OVHcloud
+- [Vultr Deployment](vultr.md) — The same ground on Vultr
 - [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
 - [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
 - [PostgreSQL Storage](postgresql.md) — Making the server replaceable

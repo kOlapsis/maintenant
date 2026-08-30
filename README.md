@@ -201,6 +201,10 @@ scw instance server create name=maintenant type=PLAY2-NANO image=ubuntu_noble \
 # OVHcloud Public Cloud
 openstack server create --flavor d2-4 --image "Ubuntu 24.04" --key-name my-key \
   --user-data deploy/cloud-init/maintenant.yaml maintenant
+
+# Vultr
+vultr-cli instance create --region ewr --plan vc2-2c-4gb --os 2284 --label maintenant \
+  --userdata-file deploy/cloud-init/maintenant.yaml
 ```
 
 The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes for the database, agent enrolment over a private network, load balancer checks and managed Kubernetes are per-provider:
@@ -209,6 +213,7 @@ The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and sta
 - **[DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)**
 - **[Scaleway](https://docs.maintenant.dev/guides/scaleway/)**
 - **[OVHcloud](https://docs.maintenant.dev/guides/ovhcloud/)**
+- **[Vultr](https://docs.maintenant.dev/guides/vultr/)**
 
 > For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
 

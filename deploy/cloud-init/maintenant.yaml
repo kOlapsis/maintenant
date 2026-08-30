@@ -12,6 +12,8 @@
 #                     cloud-init=@deploy/cloud-init/maintenant.yaml
 #   OVHcloud        openstack server create --flavor d2-4 \
 #                     --user-data deploy/cloud-init/maintenant.yaml maintenant
+#   Vultr           vultr-cli instance create --os=2284 \
+#                     --userdata-file=deploy/cloud-init/maintenant.yaml
 #
 # The dashboard is published on 127.0.0.1:8080 only. Reach it through an SSH
 # tunnel, or put a reverse proxy with authentication in front of it:

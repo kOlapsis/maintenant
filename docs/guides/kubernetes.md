@@ -23,6 +23,7 @@ On a managed cluster, name the storage class your provider's CSI driver installs
 | DigitalOcean (DOKS) | `--set persistence.storageClass=do-block-storage-retain`, see [Kubernetes on DOKS](digitalocean.md#kubernetes-on-doks) |
 | Scaleway (Kapsule) | `--set persistence.storageClass=sbs-default`, see [Kubernetes on Kapsule](scaleway.md#kubernetes-on-kapsule) |
 | OVHcloud (MKS) | `--set persistence.storageClass=csi-cinder-high-speed`, see [Kubernetes on Managed Kubernetes](ovhcloud.md#kubernetes-on-managed-kubernetes) |
+| Vultr (VKE) | `--set persistence.storageClass=vultr-block-storage-retain`, see [Kubernetes on VKE](vultr.md#kubernetes-on-vke) |
 
 ### Raw manifests
 
@@ -371,6 +372,7 @@ helm uninstall maintenant -n maintenant
 - [DigitalOcean Deployment](digitalocean.md) — DOKS storage classes and Load Balancer checks
 - [Scaleway Deployment](scaleway.md) — Kapsule storage classes and Private Network DNS
 - [OVHcloud Deployment](ovhcloud.md) — MKS storage classes and zone-pinned volumes
+- [Vultr Deployment](vultr.md) — VKE storage classes and the 10Gi PVC floor
 - [Configuration](../getting-started/configuration.md) — Environment variables
 - [Container Monitoring](../features/containers.md) — How workloads are tracked
 - [Resource Metrics](../features/resources.md) — CPU/memory from metrics-server
