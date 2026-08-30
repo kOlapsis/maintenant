@@ -283,6 +283,12 @@ jobs:
         with:
           install-dir: /usr/local/bin
 
+      # `command` is a shell builtin, so `sudo command -v cosign` looks for an
+      # executable by that name and exits 1 before anything is installed. The
+      # shell has to be the one resolving it.
+      - name: Check that cosign is reachable under sudo
+        run: sudo sh -c 'command -v cosign'
+
       # Fetched from the release rather than taken from the checkout: what is
       # tested is the file users will actually download.
       - name: Run the published install script
@@ -291,7 +297,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          sudo command -v cosign
           gh release download "$MAINTENANT_VERSION" --pattern install.sh --output install.sh
           sudo -E sh install.sh --no-service 2>&1 | tee install.log
 
