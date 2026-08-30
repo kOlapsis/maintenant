@@ -2,6 +2,13 @@
 
 maintenant ships as a single binary with the frontend embedded. No external dependencies required — just deploy and go.
 
+Two ways in: a container, covered below, or the binary itself as a systemd
+service on a host with no container runtime — see **[Native Linux Install](../install.md)**.
+
+```bash
+curl -fsSL https://install.maintenant.dev | sudo bash
+```
+
 ---
 
 ## Docker Compose (Recommended)
@@ -73,6 +80,14 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
     read-only, and its client honours `DOCKER_HOST`, so it runs cleanly behind a
     [docker-socket-proxy](../security.md#recommended-docker-socket-proxy) that rejects every
     write with `403`. Recommended for production.
+
+!!! tip "Deploying on a cloud provider"
+    A ready-to-use `cloud-init` file provisions any Ubuntu cloud server with Docker and
+    maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes,
+    private-network agents, load balancer checks and managed Kubernetes are per-provider:
+
+    - [Hetzner Cloud](../guides/hetzner.md)
+    - [DigitalOcean](../guides/digitalocean.md)
 
 !!! tip "Production deployment"
     For production, place maintenant behind a reverse proxy with authentication.

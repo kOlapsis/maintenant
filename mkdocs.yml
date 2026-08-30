@@ -68,6 +68,7 @@ nav:
   - Home: index.md
   - Getting Started:
       - Installation: getting-started/installation.md
+      - Native Linux Install: install.md
       - Configuration: getting-started/configuration.md
   - Features:
       - Container Monitoring: features/containers.md
@@ -87,6 +88,8 @@ nav:
       - Agent Setup: guides/agent-setup.md
       - Docker Labels Reference: guides/docker-labels.md
       - Kubernetes Guide: guides/kubernetes.md
+      - Hetzner Cloud Deployment: guides/hetzner.md
+      - DigitalOcean Deployment: guides/digitalocean.md
       - Docker Swarm Deployment: guides/swarm.md
       - PostgreSQL Storage: guides/postgresql.md
   - API:

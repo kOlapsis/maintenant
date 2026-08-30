@@ -1,0 +1,72 @@
+# Gate for the native install script: ShellCheck for the shell itself, bats for
+# its behaviour. The Go side is covered by ci.yml; this file is what keeps
+# `curl … | sudo sh` from shipping a script nobody ran.
+name: Install script
+
+on:
+  pull_request:
+    paths:
+      - "deploy/install/**"
+      - ".github/workflows/shellcheck.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/install/**"
+      - ".github/workflows/shellcheck.yml"
+
+permissions: {}
+
+concurrency:
+  group: install-script-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installed rather than taken from the runner image: the job then runs the
+      # same way under `act` locally, which is how the CI is checked before a push.
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      # The script must stay POSIX sh: it runs under dash on Debian/Ubuntu when
+      # piped to `sh`, not under bash.
+      - name: Run ShellCheck
+        run: shellcheck -s sh deploy/install/*.sh
+
+  bats:
+    name: bats
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+
+      - name: Run the test suite
+        run: bats deploy/install/test/

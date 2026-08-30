@@ -328,7 +328,7 @@ func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
 // startRetentionCleanup starts background retention cleanup goroutines.
 func (a *App) startRetentionCleanup(ctx context.Context) {
 	// Core store retention cleanup
-	store.StartRetentionCleanupWithOpts(ctx, a.containerStore, a.db, a.logger, store.RetentionOpts{
+	a.retentionStopped = store.StartRetentionCleanupWithOpts(ctx, a.containerStore, a.db, a.logger, store.RetentionOpts{
 		EndpointStore:    a.epStore,
 		HeartbeatStore:   a.hbStore,
 		CertificateStore: a.certStore,

@@ -149,6 +149,57 @@ kubectl apply -f deploy/kubernetes/
 
 maintenant auto-detects the in-cluster API. Read-only RBAC, namespace filtering, workload-level monitoring out of the box.
 
+### Native Linux install (no Docker)
+
+Run maintenant as a systemd service directly on any amd64 or arm64 Linux host. The published binaries are statically linked, so the same file runs on Debian, Ubuntu, RHEL, Alpine or Arch with nothing to install alongside it.
+
+**One-liner:**
+
+```bash
+curl -fsSL https://install.maintenant.dev | sudo bash
+```
+
+Installs the binary to `/usr/local/bin/maintenant`, creates a `maintenant` system user, enables the systemd service, and starts it immediately.
+
+**With custom configuration:**
+
+```bash
+curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+  --addr 0.0.0.0:8080 \
+  --baseUrl https://monitoring.example.com \
+  --organisationName "Acme Corp" \
+  --logLevel info
+```
+
+Configuration flags are persisted to `/etc/maintenant/maintenant.env` and reloaded on every `systemctl restart maintenant`. All `MAINTENANT_*` environment variables have a `--flagName` equivalent — run `maintenant --help` to see the full list.
+
+```bash
+# Useful commands after install
+systemctl status maintenant
+journalctl -fu maintenant
+maintenant --help
+maintenant --version
+```
+
+> For pinning a specific version, air-gapped installs, uninstall, and supply-chain verification, see the **[install documentation](https://docs.maintenant.dev/install)**.
+
+### Cloud providers
+
+```bash
+# Hetzner Cloud
+hcloud server create --name maintenant --type cx22 --image ubuntu-24.04 \
+  --ssh-key my-key --user-data-from-file deploy/cloud-init/maintenant.yaml
+
+# DigitalOcean
+doctl compute droplet create maintenant --image ubuntu-24-04-x64 --size s-2vcpu-4gb \
+  --ssh-keys my-key --user-data-file deploy/cloud-init/maintenant.yaml --wait
+```
+
+The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes for the database, agent enrolment over a private network, load balancer checks and managed Kubernetes are per-provider:
+
+- **[Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/)**
+- **[DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)**
+
 > For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
 
 ---
@@ -165,7 +216,13 @@ Monitor your entire fleet from a single pane of glass. One central **server** re
 
 ```bash
 # On each remote host — one command, generated for you in the UI
-curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
+docker run -d \
+  --name maintenant-agent \
+  --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /proc:/host/proc:ro \
+  -v maintenant-agent-data:/var/lib/maintenant \
+  ghcr.io/kolapsis/maintenant:latest \
   --mode=agent \
   --server=grpcs://monitoring.example.com \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX \

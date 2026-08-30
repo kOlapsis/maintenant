@@ -1,0 +1,69 @@
+#cloud-config
+# maintenant — first-boot provisioning for any Ubuntu cloud server.
+#
+# Pass this file as user data when creating the server. Each provider spells
+# that differently:
+#
+#   Hetzner Cloud   hcloud server create --image ubuntu-24.04 \
+#                     --user-data-from-file deploy/cloud-init/maintenant.yaml
+#   DigitalOcean    doctl compute droplet create --image ubuntu-24-04-x64 \
+#                     --user-data-file deploy/cloud-init/maintenant.yaml
+#
+# The dashboard is published on 127.0.0.1:8080 only. Reach it through an SSH
+# tunnel, or put a reverse proxy with authentication in front of it:
+#
+#   ssh -L 8080:127.0.0.1:8080 root@<server-ip>
+#
+# Per-provider guides (firewall, volumes, private network, managed Kubernetes):
+# https://docs.maintenant.dev/guides/hetzner/
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+
+write_files:
+  - path: /opt/maintenant/compose.yml
+    permissions: "0644"
+    content: |
+      services:
+        maintenant:
+          image: ghcr.io/kolapsis/maintenant:latest
+          ports:
+            # Loopback only. Front it with a reverse proxy before exposing it.
+            - "127.0.0.1:8080:8080"
+          read_only: true
+          security_opt:
+            - no-new-privileges:true
+          tmpfs:
+            - /tmp:noexec,nosuid,size=64m
+          volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+            - /proc:/host/proc:ro
+            # Swap for a path on an attached block volume to keep the database
+            # on storage that survives a server rebuild. Your provider's guide
+            # gives the mount path.
+            - maintenant-data:/data
+          environment:
+            MAINTENANT_ADDR: "0.0.0.0:8080"
+            MAINTENANT_DB: "/data/maintenant.db"
+          restart: unless-stopped
+
+      volumes:
+        maintenant-data:
+
+runcmd:
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - >-
+    echo "deb [arch=$(dpkg --print-architecture)
+    signed-by=/etc/apt/keyrings/docker.asc]
+    https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable"
+    > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+  - docker compose -f /opt/maintenant/compose.yml up -d
