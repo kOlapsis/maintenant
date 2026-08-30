@@ -209,3 +209,11 @@ run_script() {
     [[ "$output" == *"cosign 3 or later is required"* ]]
     rm -rf "$FAKE_TMPDIR"
 }
+
+@test "GITHUB_REPO matches the repository spelling used in the certificate identity" {
+    # Sigstore matches the SAN case-sensitively. A lowercase spelling still
+    # downloads (GitHub URLs are case-insensitive) and then fails verification
+    # on every user machine, which is exactly what happened in v1.4.0.
+    result=$(bash -c "_INSTALL_SH_TESTING=1 . '$SCRIPT'; printf '%s' \"\$GITHUB_REPO\"")
+    [ "$result" = "kOlapsis/maintenant" ]
+}

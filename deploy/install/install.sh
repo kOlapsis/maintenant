@@ -11,7 +11,11 @@ DATA_DIR="${DATA_DIR:-${MAINTENANT_DATA_DIR:-/var/lib/maintenant}}"
 CONFIG_DIR="${CONFIG_DIR:-${MAINTENANT_CONFIG_DIR:-/etc/maintenant}}"
 SERVICE_USER="${SERVICE_USER:-maintenant}"
 SERVICE_FILE="${SERVICE_FILE:-/etc/systemd/system/maintenant.service}"
-GITHUB_REPO="kolapsis/maintenant"
+# Exact repository spelling, capital O included: it goes into the certificate
+# identity regexp below, and Sigstore matches that case-sensitively. GitHub URLs
+# are forgiving about case, which is why a wrong spelling here downloads fine and
+# only fails at verification.
+GITHUB_REPO="kOlapsis/maintenant"
 GITHUB_API="https://api.github.com"
 SCRIPT_VERSION="__GIT_SHA__"
 

@@ -66,8 +66,8 @@ The `-E` flag preserves the environment variable through `sudo`. If the version 
 
 ```bash
 # On a machine with internet access:
-curl -LO https://github.com/kolapsis/maintenant/releases/download/v1.6.0/maintenant-v1.6.0-linux-amd64
-curl -LO https://github.com/kolapsis/maintenant/releases/download/v1.6.0/SHA256SUMS
+curl -LO https://github.com/kOlapsis/maintenant/releases/download/v1.6.0/maintenant-v1.6.0-linux-amd64
+curl -LO https://github.com/kOlapsis/maintenant/releases/download/v1.6.0/SHA256SUMS
 
 # Transfer both files to the target host, then:
 sudo bash -s -- --no-service --skip-cosign
@@ -227,7 +227,7 @@ sudo install -m 0755 cosign-linux-amd64 /usr/local/bin/cosign
 ```bash
 VERSION=v1.6.0
 ARCH=amd64
-BASE=https://github.com/kolapsis/maintenant/releases/download/${VERSION}
+BASE=https://github.com/kOlapsis/maintenant/releases/download/${VERSION}
 
 curl -LO ${BASE}/maintenant-${VERSION}-linux-${ARCH}
 curl -LO ${BASE}/SHA256SUMS
@@ -240,12 +240,12 @@ sha256sum -c SHA256SUMS --ignore-missing
 cosign verify-blob \
   --bundle SHA256SUMS.bundle \
   --certificate-identity-regexp \
-    "^https://github\.com/kolapsis/maintenant/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
+    "^https://github\.com/kOlapsis/maintenant/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 
 # SLSA provenance
-gh attestation verify --owner kolapsis maintenant-${VERSION}-linux-${ARCH}
+gh attestation verify --owner kOlapsis maintenant-${VERSION}-linux-${ARCH}
 ```
 
 ---
