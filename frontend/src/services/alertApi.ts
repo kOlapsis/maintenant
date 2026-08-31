@@ -52,12 +52,24 @@ export interface ActiveAlertsResponse {
   info: Alert[]
 }
 
+/** Non-secret per-type settings. Telegram uses it for the optional forum topic. */
+export interface ChannelConfig {
+  thread_id?: string
+}
+
+/**
+ * The channel as the API returns it. There is deliberately no `secret`: the
+ * server never sends one back, so the read type must not pretend it might.
+ * `has_secret` is how the interface knows a credential is on file.
+ */
 export interface NotificationChannel {
   id: string
   name: string
   type: string
   url: string
   headers: string
+  config?: string
+  has_secret?: boolean
   enabled: boolean
   health: string
   created_at: string
@@ -135,6 +147,9 @@ export function createChannel(data: {
   type?: string
   url: string
   headers?: string
+  /** Write-only. Sent on create, never read back. */
+  secret?: string
+  config?: ChannelConfig
   enabled: boolean
 }): Promise<NotificationChannel> {
   return fetchJSON(`${API_BASE}/channels`, {
@@ -146,7 +161,16 @@ export function createChannel(data: {
 
 export function updateChannel(
   id: string,
-  data: Partial<{ name: string; type: string; url: string; headers: string; enabled: boolean }>,
+  data: Partial<{
+    name: string
+    type: string
+    url: string
+    headers: string
+    /** Write-only, and omitted to keep the stored one (FR-006). */
+    secret: string
+    config: ChannelConfig
+    enabled: boolean
+  }>,
 ): Promise<NotificationChannel> {
   return fetchJSON(`${API_BASE}/channels/${id}`, {
     method: 'PUT',

@@ -39,6 +39,7 @@ const (
 	CapAlertAdvancedFilters Capability = "alert_advanced_filters"
 	CapSecurityPosture      Capability = "security_posture"
 	CapOCSPStapling         Capability = "ocsp_stapling"
+	CapTelegram             Capability = "telegram"
 
 	// Pro
 	CapSlack              Capability = "slack"
@@ -68,6 +69,7 @@ var minEdition = map[Capability]Edition{
 	CapAlertAdvancedFilters: Personal,
 	CapSecurityPosture:      Personal,
 	CapOCSPStapling:         Personal,
+	CapTelegram:             Personal,
 
 	CapSlack:              Pro,
 	CapTeams:              Pro,

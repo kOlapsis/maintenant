@@ -12,12 +12,12 @@ func withEdition(t *testing.T, e Edition) {
 }
 
 // TestAllows_EveryEditionEveryCapability walks the whole matrix — 3 editions ×
-// 20 capabilities — and asserts Allows agrees with the declared order. This is
+// 21 capabilities — and asserts Allows agrees with the declared order. This is
 // SC-003 on the extension side.
 func TestAllows_EveryEditionEveryCapability(t *testing.T) {
 	catalog := Catalog()
-	if len(catalog) != 20 {
-		t.Fatalf("catalog holds %d capabilities, expected 20", len(catalog))
+	if len(catalog) != 21 {
+		t.Fatalf("catalog holds %d capabilities, expected 21", len(catalog))
 	}
 
 	for _, edition := range []Edition{Community, Personal, Pro} {
@@ -43,7 +43,7 @@ func TestCatalog_ReturnsACopy(t *testing.T) {
 	if got := MinEdition(CapAlertEscalation); got != Pro {
 		t.Errorf("mutating the Catalog copy changed the registry: alert_escalation = %q, want %q", got, Pro)
 	}
-	if len(Catalog()) != 20 {
+	if len(Catalog()) != 21 {
 		t.Errorf("mutating the Catalog copy changed the registry size: %d", len(Catalog()))
 	}
 }
@@ -59,7 +59,7 @@ func TestMinEdition_TierMembership(t *testing.T) {
 		Personal: {
 			CapMultihost, CapCVEEnrichment, CapRiskScoring, CapChangelog,
 			CapIncidents, CapSMTP, CapAlertAdvancedFilters,
-			CapSecurityPosture, CapOCSPStapling,
+			CapSecurityPosture, CapOCSPStapling, CapTelegram,
 		},
 		Pro: {
 			CapSlack, CapTeams, CapAlertEscalation, CapAlertEntityRouting,
@@ -76,8 +76,8 @@ func TestMinEdition_TierMembership(t *testing.T) {
 			}
 		}
 	}
-	if total != 20 {
-		t.Errorf("the three tiers list %d capabilities, expected 20", total)
+	if total != 21 {
+		t.Errorf("the three tiers list %d capabilities, expected 21", total)
 	}
 }
 

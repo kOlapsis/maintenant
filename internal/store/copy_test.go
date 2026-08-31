@@ -97,6 +97,13 @@ func seededSource(t *testing.T) (*DB, string) {
 	channelID, triggerID := uid.New(), uid.New()
 	exec(`INSERT INTO notification_channels (id, name, type, url, enabled, created_at, updated_at)
 		VALUES (?, 'ops', 'webhook', 'https://hooks.example/secret', 1, ?, ?)`, channelID, now, now)
+	// A Telegram channel: its credential and its per-type settings live in
+	// columns of their own, and a channel that arrived without its token would
+	// be a channel that can no longer send.
+	telegramID := uid.New()
+	exec(`INSERT INTO notification_channels (id, name, type, url, secret, config, enabled, created_at, updated_at)
+		VALUES (?, 'oncall-telegram', 'telegram', '-1001234567890', '8123456789:AAF-token', '{"thread_id":"42"}', 1, ?, ?)`,
+		telegramID, now, now)
 	exec(`INSERT INTO alert_triggers (id, name, filter_severities, enabled, created_at, updated_at)
 		VALUES (?, 'page ops', '["critical"]', 1, ?, ?)`, triggerID, now, now)
 	exec(`INSERT INTO alert_trigger_channels (trigger_id, channel_id) VALUES (?, ?)`, triggerID, channelID)
@@ -224,6 +231,14 @@ func TestCopy_CarriesWhatCannotBeRebuilt(t *testing.T) {
 	var channelURL string
 	require.NoError(t, dst.QueryRow("SELECT url FROM notification_channels").Scan(&channelURL))
 	assert.Equal(t, "https://hooks.example/secret", channelURL, "channel secrets travel with their channel")
+
+	var telegramSecret, telegramConfig string
+	require.NoError(t, dst.QueryRow(
+		"SELECT secret, config FROM notification_channels WHERE type = 'telegram'").
+		Scan(&telegramSecret, &telegramConfig))
+	assert.Equal(t, "8123456789:AAF-token", telegramSecret,
+		"a channel arriving without its token could no longer send")
+	assert.Equal(t, `{"thread_id":"42"}`, telegramConfig)
 
 	var webhookSecret string
 	require.NoError(t, dst.QueryRow("SELECT secret FROM webhook_subscriptions").Scan(&webhookSecret))

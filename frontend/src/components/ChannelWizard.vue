@@ -36,6 +36,9 @@ const form = ref({
   name: '',
   url: '',
   headers: '',
+  // Telegram only: the bot token, and the optional forum topic.
+  secret: '',
+  threadId: '',
   enabled: true,
 })
 
@@ -66,6 +69,14 @@ const gatedChannelTypes = [
     feature: 'smtp',
   },
   {
+    key: 'telegram',
+    label: 'Telegram',
+    description: 'Send alerts to a Telegram chat, group or channel',
+    icon: 'telegram',
+    urlPlaceholder: '-1001234567890 or @my_public_channel',
+    feature: 'telegram',
+  },
+  {
     key: 'slack',
     label: 'Slack',
     description: 'Send rich notifications to a Slack channel',
@@ -89,23 +100,42 @@ const selectedTypeConfig = computed(() =>
   allChannelTypes.find(t => t.key === selectedType.value)
 )
 
+// What the single destination field means depends on the type: an address, a
+// chat id, or a URL. Telegram is the one type where it is not a URL at all.
+const destinationLabel = computed(() => {
+  if (selectedType.value === 'email') return 'Email Address'
+  if (selectedType.value === 'telegram') return 'Chat ID'
+  return 'Webhook URL'
+})
+
+const destinationInputType = computed(() => {
+  if (selectedType.value === 'email') return 'email'
+  if (selectedType.value === 'telegram') return 'text'
+  return 'url'
+})
+
 function selectType(type: string) {
   selectedType.value = type
   step.value = 2
   form.value.name = ''
   form.value.url = ''
   form.value.headers = ''
+  form.value.secret = ''
+  form.value.threadId = ''
   submitError.value = ''
 }
 
 async function submitConfig() {
   submitError.value = ''
   try {
+    const isTelegram = selectedType.value === 'telegram'
     const result = await createChannel({
       name: form.value.name,
       type: selectedType.value!,
       url: form.value.url,
       headers: form.value.headers || undefined,
+      secret: isTelegram ? form.value.secret : undefined,
+      config: isTelegram && form.value.threadId ? { thread_id: form.value.threadId } : undefined,
       enabled: form.value.enabled,
     })
     createdChannelId.value = result.id
@@ -253,6 +283,10 @@ function goBack() {
                 <rect x="2" y="4" width="16" height="12" rx="2" />
                 <path d="M2 6l8 5 8-5" />
               </svg>
+              <!-- Telegram -->
+              <svg v-else-if="type.icon === 'telegram'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #229ED9">
+                <path d="M18 3L2 9.5l4.5 1.7L16 5.5l-7.5 7.2L8 17l2.7-3 3.6 2.7z" />
+              </svg>
               <!-- Slack -->
               <svg v-else-if="type.icon === 'slack'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-accent)">
                 <path d="M6 2v4M14 14v4M2 6h4M14 6h4M6 10h8M10 6v8" />
@@ -302,17 +336,59 @@ function goBack() {
         </div>
         <div>
           <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">
-            {{ selectedType === 'email' ? 'Email Address' : 'Webhook URL' }}
+            {{ destinationLabel }}
           </label>
           <input
             v-model="form.url"
             required
-            :type="selectedType === 'email' ? 'email' : 'url'"
+            :type="destinationInputType"
             :placeholder="selectedTypeConfig?.urlPlaceholder"
             class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
             style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
           />
         </div>
+        <!-- Telegram: a token and an optional topic instead of a URL. The
+             destination is fixed by the product, so there is nothing to type. -->
+        <template v-if="selectedType === 'telegram'">
+          <div>
+            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Bot Token</label>
+            <input
+              v-model="form.secret"
+              required
+              type="password"
+              autocomplete="off"
+              placeholder="123456789:AA..."
+              class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
+              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Topic ID (optional)</label>
+            <input
+              v-model="form.threadId"
+              placeholder="42"
+              class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
+              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
+            />
+          </div>
+          <div class="text-xs space-y-1" style="color: var(--mnt-text-muted)">
+            <p>
+              Create a bot with @BotFather to get the token. To find the chat id, send the bot a
+              message, then read <code>message.chat.id</code> from
+              <code>api.telegram.org/bot&lt;token&gt;/getUpdates</code>.
+            </p>
+            <ul class="space-y-0.5 pl-4 list-disc">
+              <li>Private conversation: a positive number, such as <code>123456789</code>.</li>
+              <li>Group or supergroup: a negative number, usually starting with <code>-100</code>. Paste it as it is, minus sign included.</li>
+              <li>Public channel: the number, or its <code>@name</code>.</li>
+            </ul>
+            <p>
+              The bot's own <code>@name</code> is not a destination: a bot cannot message itself. A
+              private conversation has no <code>@name</code> either, only a number.
+            </p>
+            <p>Leave the topic empty unless the group uses topics.</p>
+          </div>
+        </template>
         <div v-if="selectedType === 'webhook'">
           <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Custom Headers (JSON, optional)</label>
           <input

@@ -360,6 +360,8 @@ CREATE TABLE notification_channels (
     type          TEXT NOT NULL DEFAULT 'webhook',
     url           TEXT NOT NULL,
     headers       TEXT,
+    secret        TEXT,                                     -- channel credential; never serialized
+    config        TEXT,                                     -- non-secret per-type settings, JSON
     enabled       INTEGER NOT NULL DEFAULT 1,
     created_at    BIGINT NOT NULL DEFAULT 0,
     updated_at    BIGINT NOT NULL DEFAULT 0

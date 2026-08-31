@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -75,18 +76,35 @@ type Notifier struct {
 	httpClient   *http.Client
 	smtpSender   *SMTPSender
 	logger       *slog.Logger
+
+	// Telegram is reached at a fixed destination with a client of its own
+	// handle, so a test can point both at an httptest server. In production
+	// they are the real API and the notifier's own guarded client.
+	telegramAPIBase string
+	telegramClient  *http.Client
 }
 
 // NewNotifier creates a new webhook notifier. Its HTTP client blocks delivery
 // to private/internal IPs (SSRF guard) at dial time unless allowPrivate is set
 // (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS).
 func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool) *Notifier {
+	client := ssrf.NewHTTPClient(webhookTimeout, allowPrivate)
 	return &Notifier{
-		jobs:         make(chan NotificationJob, notifierChannelBuffer),
-		channelStore: channelStore,
-		httpClient:   ssrf.NewHTTPClient(webhookTimeout, allowPrivate),
-		logger:       logger,
+		jobs:            make(chan NotificationJob, notifierChannelBuffer),
+		channelStore:    channelStore,
+		httpClient:      client,
+		logger:          logger,
+		telegramAPIBase: TelegramAPIBase,
+		telegramClient:  client,
 	}
+}
+
+// SetTelegramTransport points Telegram delivery at another host with another
+// client. Tests use it: the guarded client refuses 127.0.0.1, where an
+// httptest server listens.
+func (n *Notifier) SetTelegramTransport(apiBase string, client *http.Client) {
+	n.telegramAPIBase = apiBase
+	n.telegramClient = client
 }
 
 // SetSMTPSender configures SMTP delivery for email channels.
@@ -149,6 +167,14 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 	// Email channel: use SMTP sender
 	if channelType == "email" {
 		n.processEmailJob(ctx, job, eventType)
+		return
+	}
+
+	// Telegram: not the generic webhook path. That path logs ch.URL, and a
+	// Telegram URL carries the bot token; it also reads nothing but the status
+	// code, where the operator needs Telegram's own words.
+	if channelType == "telegram" {
+		n.processTelegramJob(ctx, job, eventType)
 		return
 	}
 
@@ -244,6 +270,56 @@ func (n *Notifier) processEmailJob(ctx context.Context, job NotificationJob, eve
 	n.failDelivery(ctx, job.Delivery, "email delivery failed after retries")
 }
 
+// processTelegramJob mirrors deliverWebhook: the product's retry policy, three
+// attempts at 1s/5s/25s, with one difference — when Telegram names a delay, the
+// next attempt is never earlier than that (FR-013, FR-014).
+func (n *Notifier) processTelegramJob(ctx context.Context, job NotificationJob, eventType string) {
+	text := BuildTelegramMessage(eventType, job.Alert)
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(telegramBackoff(attempt, lastErr)):
+			}
+		}
+
+		job.Delivery.Attempts = attempt + 1
+		lastErr = SendTelegram(ctx, n.telegramClient, n.telegramAPIBase, job.Channel, text)
+		if lastErr == nil {
+			job.Delivery.Status = DeliveryDelivered
+			if job.Delivery.ID != "" {
+				if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
+					n.logger.Error("notifier: update delivery status", "error", updateErr)
+				}
+			}
+			n.logger.Debug("alert notifier: telegram delivered",
+				"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
+			return
+		}
+
+		n.logger.Warn("notifier: telegram delivery attempt failed",
+			"attempt", attempt+1, "channel_id", job.Channel.ID,
+			"alert_id", jobAlertID(job), "error", lastErr)
+	}
+
+	n.failDelivery(ctx, job.Delivery, lastErr.Error())
+}
+
+// telegramBackoff returns the wait before attempt n. It is the product's own
+// backoff, raised to the delay Telegram asked for when it asked for one: never
+// retrying sooner than Telegram allows, never replacing our policy with theirs.
+func telegramBackoff(attempt int, lastErr error) time.Duration {
+	wait := retryBackoffs[attempt-1]
+	var rateLimit *TelegramRateLimitError
+	if errors.As(lastErr, &rateLimit) && rateLimit.RetryAfter > wait {
+		return rateLimit.RetryAfter
+	}
+	return wait
+}
+
 func (n *Notifier) sendWebhook(ctx context.Context, ch *NotificationChannel, body []byte) error {
 	n.logger.Debug("alert notifier: sending webhook",
 		"url", ch.URL,
@@ -325,6 +401,27 @@ func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChanne
 		return lastErr
 	}
 
+	if ch.Type == "telegram" {
+		text := BuildTelegramMessage(eventType, a)
+		var lastErr error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if attempt > 0 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(telegramBackoff(attempt, lastErr)):
+				}
+			}
+			lastErr = SendTelegram(ctx, n.telegramClient, n.telegramAPIBase, ch, text)
+			if lastErr == nil {
+				return nil
+			}
+			n.logger.Warn("notifier: telegram attempt failed",
+				"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
+		}
+		return lastErr
+	}
+
 	body, err := formatPayload(ch.Type, eventType, a)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
@@ -361,6 +458,14 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 		EntityName: "test",
 		FiredAt:    time.Now().UTC(),
 		CreatedAt:  time.Now().UTC(),
+	}
+
+	if ch.Type == "telegram" {
+		if err := SendTelegram(ctx, n.telegramClient, n.telegramAPIBase, ch,
+			BuildTelegramMessage("test", testAlert)); err != nil {
+			return 0, err
+		}
+		return 200, nil
 	}
 
 	// Email channel: test via SMTP

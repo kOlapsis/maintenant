@@ -26,7 +26,7 @@ Deleting a monitored entity (container, agent, heartbeat, endpoint, certificate)
 
 ## Notification Channels
 
-maintenant delivers alerts to Discord, any HTTP webhook, and more. Each channel type formats the payload natively for the target platform.
+maintenant delivers alerts to Discord, Telegram, email, Slack, Teams, and any HTTP webhook. Each channel type formats the payload natively for the target platform.
 
 ### Discord
 
@@ -59,6 +59,61 @@ maintenant sends a JSON payload with alert details to the configured URL.
 ### Email (SMTP) :material-star-four-points:{ title="Personal" }
 
 Native email delivery over your own SMTP server. Available from the Personal edition.
+
+### Telegram :material-star-four-points:{ title="Personal" }
+
+A native Telegram channel: you supply a bot token and a chat id, never a URL.
+The destination is fixed, so nothing has to be worked around — neither the
+payload format a generic webhook gets wrong, nor the SSRF guard that refuses a
+local relay. Available from the Personal edition.
+
+**1. Create the bot.** Message [@BotFather](https://t.me/BotFather), send
+`/newbot`, follow the questions. It hands back a token shaped like
+`8123456789:AAF-…`. Treat it as a password: it is the bot.
+
+**2. Find the chat id.**
+
+- *Private chat*: message the bot once, then read `message.chat.id` from
+  `https://api.telegram.org/bot<token>/getUpdates`.
+- *Group or channel*: add the bot to it, post a message, same call. The id is
+  **negative**, often prefixed `-100`. Paste it exactly as it appears.
+
+**3. Create the channel.**
+
+```bash
+POST /api/v1/channels
+{
+  "name": "oncall-telegram",
+  "type": "telegram",
+  "url": "-1001234567890",
+  "secret": "8123456789:AAF-...",
+  "config": { "thread_id": "42" }
+}
+```
+
+`config.thread_id` is optional and only applies to groups organised in topics;
+leave it out and messages land in the general thread.
+
+The token is write-only. It is never returned by the API, never written to a
+log, and never appears in an error message; responses carry `has_secret` so the
+interface can say a token is on file without holding it. An update that omits
+`secret` keeps the stored one.
+
+Messages use Telegram's HTML formatting: a severity emoji and the entity on the
+first line, so a phone notification says what happened before you open it. A
+recovery arrives as a separate message, marked ✅. Anything over Telegram's
+4096-character limit is truncated with a visible marker rather than rejected.
+
+When a send fails, the delivery log carries Telegram's own words — `chat not
+found`, `bot was kicked from the supergroup chat`, `bot can't initiate
+conversation with a user` — because those name the fix, where an HTTP code does
+not. On a rate limit, the retry waits at least as long as Telegram asked.
+
+!!! note "What an expired licence changes"
+    A Telegram channel already created keeps delivering in any edition. What
+    Community closes is creating, testing, and editing it. Disabling and
+    deleting stay open: an expired licence must never leave you unable to
+    silence a channel.
 
 ### Slack & Teams :material-crown:{ title="Pro" }
 

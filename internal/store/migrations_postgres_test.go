@@ -110,11 +110,17 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, Migrate(ctx, db, logger))
 
-	// Rewind to the baseline: drop what migration 29 created and set the
-	// recorded version back.
-	_, err = db.ReadDB().Exec("DROP TABLE instances")
-	require.NoError(t, err)
-	_, err = db.ReadDB().Exec("UPDATE schema_migrations SET version = 28, dirty = false")
+	// Rewind to the baseline: undo every migration written above it, then set
+	// the recorded version back. Each new migration adds a line here — that is
+	// the price of a test that catches up over more than one step.
+	for _, undo := range []string{
+		"DROP TABLE instances", // 29
+		"ALTER TABLE notification_channels DROP COLUMN secret, DROP COLUMN config", // 30
+	} {
+		_, err = db.ReadDB().Exec(undo)
+		require.NoError(t, err, undo)
+	}
+	_, err = db.ReadDB().Exec("UPDATE schema_migrations SET version = $1, dirty = false", postgresBaselineVersion)
 	require.NoError(t, err)
 
 	const n = 4
@@ -135,9 +141,11 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 	for i, err := range errs {
 		assert.NoError(t, err, "concurrent catch-up %d", i)
 	}
+	head, err := EmbeddedHeadVersion(DialectPostgres)
+	require.NoError(t, err)
 	v, err := db.SchemaVersion(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, uint(29), v)
+	assert.Equal(t, head, v)
 	var one int
 	require.NoError(t, db.ReadDB().QueryRow("SELECT count(*) FROM instances").Scan(&one))
 	assert.Zero(t, one, "instances recreated empty")
