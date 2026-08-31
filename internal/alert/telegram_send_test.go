@@ -165,3 +165,28 @@ func TestSendTelegram_TransportFailureHidesTheURL(t *testing.T) {
 	assert.NotContains(t, err.Error(), sentinelToken)
 	assert.False(t, strings.Contains(err.Error(), srv.URL))
 }
+
+// Telegram answers "chat not found" whether the @name belongs to nothing, to a
+// private conversation, or to the bot itself. The operator reads the token as
+// the suspect and looks in the wrong place, so the destination is named.
+func TestSendTelegram_ExplainsAnUnresolvedUsername(t *testing.T) {
+	srv, _, _ := telegramStub(t, http.StatusBadRequest, `{"ok":false,"description":"chat not found"}`)
+
+	ch := telegramChannel()
+	ch.URL = "@my_bot"
+	err := SendTelegram(context.Background(), srv.Client(), srv.URL, ch, "hello")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "chat not found")
+	assert.Contains(t, err.Error(), "public channel")
+	assert.Contains(t, err.Error(), "numeric chat id")
+}
+
+// The hint is for the @name case only: on a numeric id it would send the
+// operator chasing a mistake they did not make.
+func TestSendTelegram_LeavesANumericChatIDReasonAlone(t *testing.T) {
+	srv, _, _ := telegramStub(t, http.StatusBadRequest, `{"ok":false,"description":"chat not found"}`)
+
+	err := SendTelegram(context.Background(), srv.Client(), srv.URL, telegramChannel(), "hello")
+	require.Error(t, err)
+	assert.Equal(t, "HTTP 400: chat not found", err.Error())
+}

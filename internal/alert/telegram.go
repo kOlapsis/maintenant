@@ -253,7 +253,7 @@ func SendTelegram(ctx context.Context, client *http.Client, apiBase string, ch *
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !parsed.OK {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, telegramReason(parsed.Description))
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, telegramReasonFor(ch.URL, parsed.Description))
 	}
 	return nil
 }
@@ -266,4 +266,17 @@ func telegramReason(description string) string {
 		return d
 	}
 	return "no reason given"
+}
+
+// telegramReasonFor adds what Telegram leaves out. "chat not found" on an
+// @name is almost always the same mistake: an @name only resolves for a public
+// channel, so a bot's own @name, or a private conversation, can never be one.
+// Telegram answers the same three words either way, which sends the operator
+// looking at the token instead of the destination.
+func telegramReasonFor(chatID, description string) string {
+	reason := telegramReason(description)
+	if strings.HasPrefix(chatID, "@") && strings.Contains(strings.ToLower(reason), "chat not found") {
+		return reason + " — an @name only works for a public channel; for a private conversation or a group, use the numeric chat id, and note that the bot's own @name is never a destination"
+	}
+	return reason
 }

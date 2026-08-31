@@ -73,7 +73,7 @@ const gatedChannelTypes = [
     label: 'Telegram',
     description: 'Send alerts to a Telegram chat, group or channel',
     icon: 'telegram',
-    urlPlaceholder: '-1001234567890',
+    urlPlaceholder: '-1001234567890 or @my_public_channel',
     feature: 'telegram',
   },
   {
@@ -371,12 +371,23 @@ function goBack() {
               style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
             />
           </div>
-          <p class="text-xs" style="color: var(--mnt-text-muted)">
-            Create a bot with @BotFather to get the token, then message the chat and read
-            <code>message.chat.id</code> from
-            <code>api.telegram.org/bot&lt;token&gt;/getUpdates</code>. Group and channel ids are
-            negative — paste them as they are. Leave the topic empty unless the group uses topics.
-          </p>
+          <div class="text-xs space-y-1" style="color: var(--mnt-text-muted)">
+            <p>
+              Create a bot with @BotFather to get the token. To find the chat id, send the bot a
+              message, then read <code>message.chat.id</code> from
+              <code>api.telegram.org/bot&lt;token&gt;/getUpdates</code>.
+            </p>
+            <ul class="space-y-0.5 pl-4 list-disc">
+              <li>Private conversation: a positive number, such as <code>123456789</code>.</li>
+              <li>Group or supergroup: a negative number, usually starting with <code>-100</code>. Paste it as it is, minus sign included.</li>
+              <li>Public channel: the number, or its <code>@name</code>.</li>
+            </ul>
+            <p>
+              The bot's own <code>@name</code> is not a destination: a bot cannot message itself. A
+              private conversation has no <code>@name</code> either, only a number.
+            </p>
+            <p>Leave the topic empty unless the group uses topics.</p>
+          </div>
         </template>
         <div v-if="selectedType === 'webhook'">
           <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Custom Headers (JSON, optional)</label>
