@@ -10,7 +10,7 @@
 // Source: https://github.com/kolapsis/maintenant
 
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   listAgents,
   updateAgentLabel as apiUpdateAgentLabel,
@@ -34,6 +34,11 @@ export const useAgentsStore = defineStore('agents', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const sseConnected = sseBus.connected
+
+  // True once at least one agent is enrolled: the install is multi-host, so
+  // naming the reporting host on every row stops being noise and starts
+  // answering "which of my dozen traefik is this?".
+  const hasRemoteAgents = computed(() => agents.value.some((a) => a.status === 'active'))
 
   async function fetchAgents() {
     loading.value = true
@@ -200,6 +205,7 @@ export const useAgentsStore = defineStore('agents', () => {
 
   return {
     agents,
+    hasRemoteAgents,
     tokens,
     metrics,
     loading,

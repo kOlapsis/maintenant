@@ -18,6 +18,7 @@ import { useCertificatesStore } from './certificates'
 import { useAlertsStore } from './alerts'
 import { useResourcesStore } from './resources'
 import { useKubernetesStore } from './kubernetes'
+import { useHostLabel } from '@/composables/useHostLabel'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
 import { buildUnifiedAttention } from '@/composables/attentionAggregator'
 import { apiFetch } from '@/services/apiFetch'
@@ -46,6 +47,9 @@ export interface UnifiedMonitor {
   sparklineType: 'latency' | 'uptime' | 'cpu' | null
   metricValue: string | null
   metricLabel: string | null
+  // Reporting host, or null when naming it adds nothing (single-host install,
+  // or a host already picked in the sidebar scope).
+  host: string | null
   link: { name: string; params?: Record<string, string>; query?: Record<string, string> }
   updatedAt: string
 }
@@ -128,6 +132,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const alertsStore = useAlertsStore()
   const resourcesStore = useResourcesStore()
   const kubernetes = useKubernetesStore()
+  const { hostOf } = useHostLabel()
   const { availableRuntimes } = useFleetRuntimes()
 
   // Kubernetes contributes workloads (not containers); only surface them when the
@@ -172,6 +177,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         sparklineType: cpuSpark?.length ? 'cpu' : null,
         metricValue: snap ? `${snap.cpu_percent.toFixed(1)}%` : null,
         metricLabel: snap ? 'cpu' : null,
+        host: hostOf(c),
         link: { name: 'containers', query: { selected: String(c.id) } },
         updatedAt: c.last_state_change_at,
       })
@@ -192,6 +198,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         sparklineType: 'latency',
         metricValue: e.last_response_time_ms != null ? `${e.last_response_time_ms}ms` : null,
         metricLabel: e.last_response_time_ms != null ? 'latency' : null,
+        host: hostOf(e),
         link: { name: 'endpoints', params: {} },
         updatedAt: e.last_check_at || e.first_seen_at,
       })
@@ -211,6 +218,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         sparklineType: null,
         metricValue: h.last_duration_ms != null ? `${h.last_duration_ms}ms` : null,
         metricLabel: h.last_duration_ms != null ? 'duration' : null,
+        host: hostOf(h),
         link: { name: 'heartbeats', params: {} },
         updatedAt: h.last_ping_at || h.created_at,
       })
@@ -231,6 +239,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         sparklineType: null,
         metricValue: days != null ? `${days}d` : null,
         metricLabel: days != null ? 'expires' : null,
+        host: hostOf(c),
         link: { name: 'certificates', params: {} },
         updatedAt: c.last_check_at || c.created_at,
       })
@@ -252,6 +261,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
             sparklineType: null,
             metricValue: `${w.ready_replicas}/${w.desired_replicas}`,
             metricLabel: 'ready',
+            host: hostOf(w),
             link: { name: 'workloads' },
             updatedAt: w.last_transition || w.created_at,
           })

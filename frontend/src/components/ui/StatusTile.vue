@@ -11,6 +11,8 @@ const props = defineProps<{
   severity: Severity
   name: string
   meta?: string
+  /** Reporting host — no room for it on a 118px tile, so it lives in the tooltip. */
+  host?: string
 }>()
 
 const emit = defineEmits<{ select: [] }>()
@@ -24,6 +26,7 @@ const tintClass = computed(() =>
       ? 'bg-mnt-sev-warning'
       : '',
 )
+const title = computed(() => (props.host ? `${props.name} · ${props.host}` : props.name))
 const marked = computed(() => props.severity === 'incident' || props.severity === 'warning')
 
 function onKey(e: KeyboardEvent) {
@@ -41,6 +44,7 @@ function onKey(e: KeyboardEvent) {
     role="button"
     tabindex="0"
     :style="{ borderLeftColor: severityVar(severity) }"
+    :title="title"
     @click="emit('select')"
     @keydown="onKey"
   >

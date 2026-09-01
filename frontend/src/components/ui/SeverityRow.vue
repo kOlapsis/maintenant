@@ -4,7 +4,7 @@
   or a commercial license. See COMMERCIAL-LICENSE.md.
 -->
 <script setup lang="ts">
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, Server } from 'lucide-vue-next'
 import StatusDot from './StatusDot.vue'
 import type { Severity } from '@/composables/useSeverity'
 
@@ -14,6 +14,8 @@ const props = withDefaults(
     name: string
     kind?: string
     description?: string
+    /** Reporting host, shown on multi-host installs so identically-named rows stay distinguishable. */
+    host?: string
     timestamp?: string
     metric?: string
     interactive?: boolean
@@ -50,6 +52,14 @@ function onKey(e: KeyboardEvent) {
       class="shrink-0 rounded border border-mnt-default px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-mnt-muted"
     >
       {{ kind }}
+    </span>
+    <span
+      v-if="host"
+      class="flex shrink-0 items-center gap-1 text-[11px] text-mnt-muted"
+      :title="`Host: ${host}`"
+    >
+      <Server :size="11" aria-hidden="true" />
+      <span class="max-w-[9rem] truncate">{{ host }}</span>
     </span>
     <span v-if="description" class="min-w-0 flex-1 truncate text-xs text-mnt-muted">{{ description }}</span>
     <span v-else class="flex-1" />

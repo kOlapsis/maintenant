@@ -34,7 +34,9 @@ import PostureScoreBadge from './PostureScoreBadge.vue'
 import PostureCategoryBreakdown from './PostureCategoryBreakdown.vue'
 import ResourceCharts from './ResourceCharts.vue'
 import ResourceAlertConfig from './ResourceAlertConfig.vue'
+import AgentBadge from './AgentBadge.vue'
 import { useSecurityStore } from '@/stores/security'
+import { useHostLabel } from '@/composables/useHostLabel'
 import { usePostureStore } from '@/stores/posture'
 import { useEdition } from '@/composables/useEdition'
 import type { SecurityScore } from '@/services/postureApi'
@@ -74,6 +76,7 @@ const logSearch = useLogSearch(logStream.lines)
 const deleting = ref(false)
 const confirmingDelete = ref(false)
 const resourcesStore = useResourcesStore()
+const { showHost } = useHostLabel()
 const securityStore = useSecurityStore()
 const postureStore = usePostureStore()
 const { hasFeature } = useEdition()
@@ -273,6 +276,15 @@ watch(() => props.containerId, () => {
             {{ container.image.split('@')[0] }}
           </p>
         </div>
+        <!-- Reporting host: which machine this container actually runs on -->
+        <AgentBadge
+          v-if="showHost"
+          :agent-id="container.agent_id"
+          :hostname="container.agent_hostname"
+          :label="container.agent_label"
+          show-local
+          class="shrink-0"
+        />
         <!-- State badge -->
         <span
           class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"

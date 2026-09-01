@@ -19,6 +19,8 @@ export interface GridItem {
   kind?: string
   /** Row description line. */
   description?: string
+  /** Reporting host, on multi-host installs only. */
+  host?: string
 }
 
 export interface GridGroup {

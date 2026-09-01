@@ -17,7 +17,6 @@ import {
   type ListContainersParams,
 } from '@/services/containerApi'
 import { sseBus } from '@/services/sseBus'
-import { isLocalAgent } from '@/services/apiFetch'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useResourcesStore } from '@/stores/resources'
 
@@ -55,17 +54,6 @@ export const useContainersStore = defineStore('containers', () => {
   )
 
   const containerCount = computed(() => activeContainers.value.length)
-
-  // Number of distinct hosts across the visible containers (local server +
-  // remote agents). Used to hide the per-card host badge when there is nothing
-  // to disambiguate (a single host).
-  const hostCount = computed(() => {
-    const hosts = new Set<string>()
-    for (const c of allContainers.value) {
-      hosts.add(isLocalAgent(c.agent_id) ? 'local' : c.agent_id!)
-    }
-    return hosts.size
-  })
 
   const isKubernetesMode = computed(() => runtimeName.value === 'kubernetes')
   const isSwarmMode = ref(false)
@@ -238,7 +226,6 @@ export const useContainersStore = defineStore('containers', () => {
     allContainers,
     activeContainers,
     containerCount,
-    hostCount,
     totalCount,
     archivedCount,
     expandedControllers,
