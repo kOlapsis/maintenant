@@ -40,7 +40,12 @@ func (s *agentEnrichStore) UpdateContainer(context.Context, *container.Container
 func (s *agentEnrichStore) GetContainerByExternalID(context.Context, string) (*container.Container, error) {
 	return nil, nil
 }
-func (s *agentEnrichStore) GetContainerByID(context.Context, string) (*container.Container, error) {
+func (s *agentEnrichStore) GetContainerByID(_ context.Context, id string) (*container.Container, error) {
+	for _, c := range s.containers {
+		if c.ID == id {
+			return c, nil
+		}
+	}
 	return nil, nil
 }
 func (s *agentEnrichStore) ArchiveContainer(context.Context, string, time.Time) error { return nil }
@@ -147,4 +152,40 @@ func TestHandleList_NoAgentDirectoryIsSafe(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandleGet_EnrichesAgentIdentity(t *testing.T) {
+	store := &agentEnrichStore{containers: []*container.Container{
+		{ID: "1", ExternalID: "ext-local", Name: "local-app", State: container.StateRunning},
+		{ID: "2", ExternalID: "ext-remote", Name: "remote-app", State: container.StateRunning, AgentID: "agent-1"},
+	}}
+	svc := container.NewService(container.Deps{Store: store, Logger: slog.Default()})
+
+	h := NewContainerHandler(svc, nil)
+	h.SetAgentDirectory(stubAgentDirectory{names: map[string]AgentName{
+		"agent-1": {Hostname: "edge-host", Label: "edge"},
+	}})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/containers/{id}", h.HandleGet)
+
+	get := func(id string) map[string]interface{} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/containers/"+id, nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var body map[string]interface{}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		return body
+	}
+
+	remote := get("2")
+	assert.Equal(t, "agent-1", remote["agent_id"])
+	assert.Equal(t, "edge-host", remote["agent_hostname"])
+	assert.Equal(t, "edge", remote["agent_label"])
+
+	local := get("1")
+	assert.NotContains(t, local, "agent_id", "local container must not carry agent identity")
+	assert.NotContains(t, local, "agent_hostname")
+	assert.NotContains(t, local, "agent_label")
 }

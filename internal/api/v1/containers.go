@@ -296,6 +296,14 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Which host reported this container — the detail panel names it, so a fleet
+	// with a dozen identically-named containers stays readable.
+	if h.agentDirectory != nil {
+		if names, err := h.agentDirectory.AgentNames(r.Context()); err == nil {
+			enrichAgentFields(detail, c.AgentID, names)
+		}
+	}
+
 	if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
 		detail["stale"] = true
 	}

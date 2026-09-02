@@ -41,6 +41,7 @@ function toItem(m: UnifiedMonitor): GridItem {
     meta: m.metricValue ? `${m.metricValue}${m.metricLabel ? ` ${m.metricLabel}` : ''}` : m.statusLabel,
     kind: TYPE_META[m.type].kind,
     description: m.subtitle,
+    host: m.host ?? undefined,
   }
 }
 

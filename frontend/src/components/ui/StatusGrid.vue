@@ -142,6 +142,7 @@ const viewModel = computed<string>({
               :severity="it.severity"
               :name="it.name"
               :meta="it.meta"
+              :host="it.host"
               @select="emit('select', it)"
               @mouseenter="emit('hover', it)"
               @mouseleave="emit('hover', null)"
@@ -156,6 +157,7 @@ const viewModel = computed<string>({
               :name="it.name"
               :kind="it.kind"
               :description="it.description"
+              :host="it.host"
               :metric="it.meta"
               @select="emit('select', it)"
             />

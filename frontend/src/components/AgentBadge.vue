@@ -14,38 +14,33 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Server } from 'lucide-vue-next'
-import { useAgentsStore } from '@/stores/agents'
 import { isLocalAgent } from '@/services/apiFetch'
+import { useHostLabel } from '@/composables/useHostLabel'
 
-const props = defineProps<{
-  agentId: string | null | undefined
-  // Optional identity provided directly by the API (agent_hostname / agent_label),
-  // preferred over the store lookup so the badge works without the agents store loaded.
-  hostname?: string | null
-  label?: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    agentId: string | null | undefined
+    // Optional identity provided directly by the API (agent_hostname / agent_label),
+    // preferred over the store lookup so the badge works without the agents store loaded.
+    hostname?: string | null
+    label?: string | null
+    // Name the server's own runtime too, as "Local". Off by default: on a
+    // single-host install the badge would be the same on every row.
+    showLocal?: boolean
+  }>(),
+  { showLocal: false },
+)
 
-const store = useAgentsStore()
+const { hostLabel } = useHostLabel()
 
-// Server-local entities carry the sentinel agent id; treat them as "no agent"
-// so the badge stays hidden (matching the prior behaviour when agent_id was unset).
-const isRemote = computed(() => !isLocalAgent(props.agentId))
+const isLocal = computed(() => isLocalAgent(props.agentId))
+const visible = computed(() => !isLocal.value || props.showLocal)
 
-const agent = computed(() => {
-  if (!isRemote.value) return null
-  return store.agents.find((a) => a.agent_id === props.agentId) ?? null
-})
-
-const displayName = computed(() => {
-  if (props.label) return props.label
-  if (props.hostname) return props.hostname
-  if (agent.value) return agent.value.label || agent.value.hostname
-  return props.agentId ?? '—'
-})
+const displayName = computed(() => hostLabel(props.agentId, props.hostname, props.label))
 
 // Explicit tooltip so the badge reads as a host, and exposes the raw agent id.
 const tooltip = computed(() => {
-  const parts = [`Hôte : ${displayName.value}`]
+  const parts = [`Host: ${displayName.value}`]
   if (props.agentId && props.agentId !== displayName.value) parts.push(props.agentId)
   return parts.join(' · ')
 })
@@ -53,12 +48,12 @@ const tooltip = computed(() => {
 
 <template>
   <span
-    v-if="isRemote"
+    v-if="visible"
     class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium max-w-[160px]"
     :style="{ backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-secondary)' }"
     :title="tooltip"
   >
-    <Server :size="11" class="shrink-0 text-mnt-green-500" />
+    <Server :size="11" class="shrink-0" :class="isLocal ? 'text-mnt-muted' : 'text-mnt-green-500'" />
     <span class="truncate">{{ displayName }}</span>
   </span>
 </template>

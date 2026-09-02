@@ -54,6 +54,7 @@ const rows = computed(() =>
           :name="row.item.name"
           :kind="row.item.kind"
           :description="row.item.description"
+          :host="row.item.host"
           :metric="row.item.meta"
           @select="emit('select', row.item)"
         />
