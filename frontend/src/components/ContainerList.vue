@@ -200,6 +200,7 @@ function toggleGroup(name: string) {
 const columns = computed<Column[]>(() => {
   const cols: Column[] = [
     { key: 'name', label: 'Name', sortable: true },
+    { key: 'group', label: 'Group', sortable: true, priority: 'sm', width: '132px' },
     { key: 'image', label: 'Image', priority: 'md' },
   ]
   if (showHost.value) cols.push({ key: 'host', label: 'Host', priority: 'lg', width: '140px' })
@@ -216,6 +217,8 @@ function sortValue(c: Container, key: string): string | number | undefined {
   switch (key) {
     case 'name':
       return c.name
+    case 'group':
+      return groupOfContainer.value.get(c.id)
     case 'image':
       return c.image
     case 'host':
@@ -315,7 +318,7 @@ onMounted(() => {
 
       <!-- Filters left nothing standing: distinct from having no containers at all. -->
       <EmptyState
-        v-if="visibleGroups.length === 0"
+        v-if="filter.filtered.value.length === 0"
         :icon="SearchX"
         title="No container matches your filters"
         description="Try a broader search term, or clear the status and secondary filters to see the whole fleet again."
@@ -331,10 +334,69 @@ onMounted(() => {
         </template>
       </EmptyState>
 
-      <!-- Grouped container display -->
+      <!-- Dense views ignore groups: a flat list is what a sortable table is for. -->
+      <div
+        v-else-if="view === 'rows'"
+        class="overflow-hidden rounded-xl border border-mnt-default"
+      >
+        <ContainerRow
+          v-for="container in filter.filtered.value"
+          :key="container.id"
+          :container="container"
+          :tone="toneOf(container)"
+          :group="groupOfContainer.get(container.id)"
+          @select="emit('select', $event)"
+        />
+      </div>
+
+      <DataTable
+        v-else-if="view === 'table'"
+        :columns="columns"
+        :rows="filter.filtered.value"
+        :row-key="(c: Container) => c.id"
+        :sort-value="sortValue"
+        :tone="toneOf"
+        default-sort="name"
+        caption="Containers"
+        @select="emit('select', $event)"
+      >
+        <template #cell-name="{ row }">
+          <span class="font-medium text-mnt-primary">{{ row.name }}</span>
+        </template>
+        <template #cell-group="{ row }">
+          <span class="text-mnt-muted">{{ groupOfContainer.get(row.id) }}</span>
+        </template>
+        <template #cell-image="{ row }">
+          <span class="text-mnt-muted">{{ row.image }}</span>
+        </template>
+        <template #cell-host="{ row }">
+          {{ hostLabel(row.agent_id, row.agent_hostname, row.agent_label) }}
+        </template>
+        <template #cell-state="{ row }">
+          <span
+            v-if="row.stale"
+            class="inline-flex items-center rounded-full bg-mnt-sev-unknown px-2 py-0.5 text-[10px] font-bold text-mnt-sev-unknown"
+          >offline</span>
+          <span
+            v-else
+            class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
+            :style="stateStyle(row)"
+          >{{ row.state }}</span>
+        </template>
+        <template #cell-cpu="{ row }">
+          <span class="font-mono">{{ cellMetrics(row)?.cpu ?? '-' }}</span>
+        </template>
+        <template #cell-memory="{ row }">
+          <span class="font-mono">{{ cellMetrics(row)?.memPercent ?? '-' }}</span>
+        </template>
+        <template #cell-changed="{ row }">
+          {{ timeAgo(row.last_state_change_at) }}
+        </template>
+      </DataTable>
+
+      <!-- Cards keep the groups, and the K8s/Swarm controller hierarchy inside them. -->
       <div v-else class="space-y-6">
         <div v-for="group in visibleGroups" :key="group.name">
-          <!-- Group header -->
           <button
             class="flex min-h-[44px] w-full items-center gap-2 text-left"
             :aria-expanded="!collapsedGroups.has(group.name)"
@@ -354,65 +416,7 @@ onMounted(() => {
           </button>
 
           <template v-if="!collapsedGroups.has(group.name)">
-            <!-- Dense rows: one flat block, the controller hierarchy is a cards-only affordance. -->
-            <div
-              v-if="view === 'rows'"
-              class="mt-2 overflow-hidden rounded-xl border border-mnt-default"
-            >
-              <ContainerRow
-                v-for="container in group.containers"
-                :key="container.id"
-                :container="container"
-                :tone="toneOf(container)"
-                @select="emit('select', $event)"
-              />
-            </div>
-
-            <DataTable
-              v-else-if="view === 'table'"
-              class="mt-2"
-              :columns="columns"
-              :rows="group.containers"
-              :row-key="(c: Container) => c.id"
-              :sort-value="sortValue"
-              :tone="toneOf"
-              default-sort="name"
-              :caption="`Containers in ${group.name}`"
-              @select="emit('select', $event)"
-            >
-              <template #cell-name="{ row }">
-                <span class="font-medium text-mnt-primary">{{ row.name }}</span>
-              </template>
-              <template #cell-image="{ row }">
-                <span class="text-mnt-muted">{{ row.image }}</span>
-              </template>
-              <template #cell-host="{ row }">
-                {{ hostLabel(row.agent_id, row.agent_hostname, row.agent_label) }}
-              </template>
-              <template #cell-state="{ row }">
-                <span
-                  v-if="row.stale"
-                  class="inline-flex items-center rounded-full bg-mnt-sev-unknown px-2 py-0.5 text-[10px] font-bold text-mnt-sev-unknown"
-                >offline</span>
-                <span
-                  v-else
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
-                  :style="stateStyle(row)"
-                >{{ row.state }}</span>
-              </template>
-              <template #cell-cpu="{ row }">
-                <span class="font-mono">{{ cellMetrics(row)?.cpu ?? '-' }}</span>
-              </template>
-              <template #cell-memory="{ row }">
-                <span class="font-mono">{{ cellMetrics(row)?.memPercent ?? '-' }}</span>
-              </template>
-              <template #cell-changed="{ row }">
-                {{ timeAgo(row.last_state_change_at) }}
-              </template>
-            </DataTable>
-
-            <!-- Cards with the K8s/Swarm controller hierarchy -->
-            <div v-else-if="hasControllerHierarchy" class="mt-2 space-y-3">
+            <div v-if="hasControllerHierarchy" class="mt-2 space-y-3">
               <div
                 v-for="ctrl in getControllerGroups(group.containers)"
                 :key="`${ctrl.kind}/${ctrl.name}`"
@@ -451,7 +455,6 @@ onMounted(() => {
                 </div>
               </div>
 
-              <!-- Bare pods (no controller) -->
               <div
                 v-if="getUngroupedContainers(group.containers).length > 0"
                 class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
@@ -465,7 +468,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- Docker mode: flat grid -->
             <div v-else class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <ContainerCard
                 v-for="container in group.containers"
@@ -477,6 +479,7 @@ onMounted(() => {
           </template>
         </div>
       </div>
+
     </template>
 
     <!-- Connection status -->

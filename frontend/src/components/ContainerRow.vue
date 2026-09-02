@@ -26,6 +26,8 @@ import type { ChipTone } from '@/components/ui/listFilters'
 const props = defineProps<{
   container: Container
   tone: ChipTone
+  /** Compose project or namespace, shown as context now that rows are flat. */
+  group?: string
 }>()
 
 const emit = defineEmits<{
@@ -97,7 +99,9 @@ const showMetrics = computed(() => props.container.state === 'running' && metric
           />
           <span class="truncate text-sm font-semibold text-mnt-primary">{{ container.name }}</span>
         </div>
-        <p class="truncate text-[11px] text-mnt-muted">{{ imageTag }}</p>
+        <p class="truncate text-[11px] text-mnt-muted">
+          <span v-if="group">{{ group }} &middot; </span>{{ imageTag }}
+        </p>
       </div>
 
       <div class="col-badges flex items-center justify-end gap-1.5">
