@@ -18,6 +18,7 @@ import {
 } from '@/services/endpointApi'
 import { sseBus } from '@/services/sseBus'
 import { useResourcesStore } from '@/stores/resources'
+import { useAgentsStore } from '@/stores/agents'
 
 export const useEndpointsStore = defineStore('endpoints', () => {
   const endpoints = ref<Endpoint[]>([])
@@ -28,6 +29,7 @@ export const useEndpointsStore = defineStore('endpoints', () => {
   const totalCount = ref(0)
 
   // Filters
+  const searchQuery = ref<string>('')
   const statusFilter = ref<string>('')
   const typeFilter = ref<string>('')
   const containerFilter = ref<string>('')
@@ -39,19 +41,54 @@ export const useEndpointsStore = defineStore('endpoints', () => {
 
   const endpointsCount = computed(() => totalCount.value)
 
-  const filteredEndpoints = computed(() => {
-    let result = endpoints.value
-    if (statusFilter.value) {
-      result = result.filter((e) => e.status === statusFilter.value)
-    }
-    if (typeFilter.value) {
-      result = result.filter((e) => e.endpoint_type === typeFilter.value)
-    }
-    if (containerFilter.value) {
-      result = result.filter((e) => e.container_name === containerFilter.value)
-    }
-    return result
+  // The reporting host is searchable too, so "web-02" narrows a fleet down to
+  // one machine's endpoints.
+  function agentText(ep: Endpoint): string {
+    if (!ep.agent_id) return ''
+    const agent = useAgentsStore().agents.find((a) => a.agent_id === ep.agent_id)
+    return agent ? `${agent.label} ${agent.hostname}` : ''
+  }
+
+  function matchesSearch(ep: Endpoint, q: string): boolean {
+    if (!q) return true
+    return [ep.name, ep.target, ep.container_name, agentText(ep)].some((f) =>
+      f?.toLowerCase().includes(q),
+    )
+  }
+
+  // Everything except the status chips, so the chip counts say exactly how many
+  // rows a chip would leave on screen.
+  const searchAndSecondaryFiltered = computed(() => {
+    const q = searchQuery.value.trim().toLowerCase()
+    return endpoints.value.filter((e) => {
+      if (typeFilter.value && e.endpoint_type !== typeFilter.value) return false
+      if (containerFilter.value && e.container_name !== containerFilter.value) return false
+      return matchesSearch(e, q)
+    })
   })
+
+  const filteredEndpoints = computed(() =>
+    statusFilter.value
+      ? searchAndSecondaryFiltered.value.filter((e) => e.status === statusFilter.value)
+      : searchAndSecondaryFiltered.value,
+  )
+
+  const activeFilterCount = computed(
+    () =>
+      (typeFilter.value ? 1 : 0) +
+      (containerFilter.value ? 1 : 0) +
+      (showRetired.value ? 1 : 0),
+  )
+
+  function resetFilters() {
+    const refetch = showRetired.value
+    searchQuery.value = ''
+    statusFilter.value = ''
+    typeFilter.value = ''
+    containerFilter.value = ''
+    showRetired.value = false
+    if (refetch) fetchEndpoints()
+  }
 
   const endpointsByContainer = computed(() => {
     const map = new Map<string, Endpoint[]>()
@@ -65,10 +102,11 @@ export const useEndpointsStore = defineStore('endpoints', () => {
 
   const statusCounts = computed(() => {
     const counts = { up: 0, down: 0, degraded: 0, unknown: 0 }
-    for (const ep of endpoints.value) {
+    for (const ep of searchAndSecondaryFiltered.value) {
       // A retired endpoint has no container behind it any more; its last known
-      // status is history, not a state of the fleet.
-      if (!ep.active) continue
+      // status is history, not a state of the fleet. Once the operator asks to
+      // see them, they count like the rest.
+      if (!ep.active && !showRetired.value) continue
       if (ep.status in counts) {
         counts[ep.status as keyof typeof counts]++
       }
@@ -224,11 +262,14 @@ export const useEndpointsStore = defineStore('endpoints', () => {
     error,
     sseConnected,
     configErrors,
+    searchQuery,
     statusFilter,
     typeFilter,
     containerFilter,
     showRetired,
     filteredEndpoints,
+    activeFilterCount,
+    resetFilters,
     endpointsByContainer,
     statusCounts,
     fetchEndpoints,

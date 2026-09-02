@@ -16,6 +16,16 @@ export type Density = 'compact' | 'comfortable'
 export type MonitorView = 'grid' | 'list'
 export type MonitorGroupBy = 'type' | 'severity'
 
+/** How a monitor list renders its items: rich cards, dense rows, or a sortable table. */
+export type ListView = 'cards' | 'rows' | 'table'
+/**
+ * Each list page remembers its own view, so Containers and Endpoints can differ.
+ * 'demo' belongs to the design system page and never touches a real page's choice.
+ */
+export type ListScope = 'containers' | 'endpoints' | 'certificates' | 'heartbeats' | 'demo'
+
+const LIST_VIEWS: readonly ListView[] = ['cards', 'rows', 'table']
+
 export const usePreferencesStore = defineStore('preferences', () => {
   function getInitialDensity(): Density {
     // Fallback to the legacy "pb-" key so existing users keep their choice.
@@ -55,10 +65,49 @@ export const usePreferencesStore = defineStore('preferences', () => {
 
   watch(density, applyDensity, { immediate: true })
 
+  // Per-page list view. Kept in one reactive record so a component only has to
+  // name its scope, and written straight through to localStorage on change.
+  const listViews = ref<Partial<Record<ListScope, ListView>>>({})
+
+  function listView(scope: ListScope): ListView {
+    const cached = listViews.value[scope]
+    if (cached) return cached
+    const stored = localStorage.getItem(`mnt-view:${scope}`) as ListView | null
+    const resolved = stored && LIST_VIEWS.includes(stored) ? stored : 'cards'
+    listViews.value[scope] = resolved
+    return resolved
+  }
+
+  function setListView(scope: ListScope, view: ListView) {
+    listViews.value[scope] = view
+    localStorage.setItem(`mnt-view:${scope}`, view)
+  }
+
+  // Collapsed state for foldable page panels, keyed by panel name.
+  const collapsedPanels = ref<Record<string, boolean>>({})
+
+  function isPanelCollapsed(key: string): boolean {
+    const cached = collapsedPanels.value[key]
+    if (cached !== undefined) return cached
+    const resolved = localStorage.getItem(`mnt-panel:${key}`) === 'collapsed'
+    collapsedPanels.value[key] = resolved
+    return resolved
+  }
+
+  function togglePanel(key: string) {
+    const next = !isPanelCollapsed(key)
+    collapsedPanels.value[key] = next
+    localStorage.setItem(`mnt-panel:${key}`, next ? 'collapsed' : 'expanded')
+  }
+
   return {
     density,
     toggleDensity,
     monitorsView,
     monitorsGroupBy,
+    listView,
+    setListView,
+    isPanelCollapsed,
+    togglePanel,
   }
 })

@@ -37,7 +37,7 @@ function handleSelect(container: Container) {
 </script>
 
 <template>
-  <div class="overflow-y-auto p-3 sm:p-6">
+  <div class="p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-start justify-between gap-4">
       <div>

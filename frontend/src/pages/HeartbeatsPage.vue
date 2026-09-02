@@ -12,21 +12,31 @@
 -->
 
 <script setup lang="ts">
-import { inject, ref, onMounted, onUnmounted } from 'vue'
+import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
+import { usePreferencesStore } from '@/stores/preferences'
 import { useEdition } from '@/composables/useEdition'
-import { createHeartbeat } from '@/services/heartbeatApi'
+import { useListFilter } from '@/composables/useListFilter'
+import { createHeartbeat, type Heartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
+import HeartbeatRow from '@/components/HeartbeatRow.vue'
+import HeartbeatStatusBadge from '@/components/HeartbeatStatusBadge.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
+import ListToolbar from '@/components/ui/ListToolbar.vue'
+import DataTable, { type Column } from '@/components/ui/DataTable.vue'
+import type { StatusChip } from '@/components/ui/listFilters'
+import { formatDeadline, formatInterval, heartbeatTone } from '@/utils/heartbeatFormat'
+import { timeAgo } from '@/utils/time'
 import { Heart } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
 
 const store = useHeartbeatsStore()
+const prefs = usePreferencesStore()
 const { openDetail } = inject(detailSlideOverKey)!
 const { getQuota, reload } = useEdition()
 const quota = getQuota('heartbeats')
@@ -52,6 +62,95 @@ const intervalPresets = [
   { label: '7d', value: 604800 },
 ]
 
+const view = computed(() => prefs.listView('heartbeats'))
+
+const intervalFilter = ref<'' | 'hour' | 'day' | 'beyond'>('')
+const alertingOnly = ref(false)
+
+const {
+  search,
+  status,
+  filtered,
+  statusCounts,
+  activeFilterCount,
+  reset: resetSearchAndStatus,
+} = useListFilter<Heartbeat>(
+  computed(() => store.heartbeats),
+  {
+    searchFields: (hb) => [hb.name, hb.id],
+    status: (hb) => hb.status,
+    extra: {
+      interval: computed(() => {
+        const bucket = intervalFilter.value
+        if (!bucket) return null
+        return (hb: Heartbeat) => {
+          if (bucket === 'hour') return hb.interval_seconds < 3600
+          if (bucket === 'day') return hb.interval_seconds >= 3600 && hb.interval_seconds < 86400
+          return hb.interval_seconds >= 86400
+        }
+      }),
+      alerting: computed(() =>
+        alertingOnly.value ? (hb: Heartbeat) => hb.alert_state === 'alerting' : null,
+      ),
+    },
+  },
+)
+
+// Counts come from the list the other filters already narrowed, so a chip
+// promising "3 down" really leaves 3 rows standing once it is clicked.
+const chips = computed<StatusChip[]>(() =>
+  ([
+    ['up', 'ok'],
+    ['down', 'down'],
+    ['started', 'ok'],
+    ['new', 'neutral'],
+    ['paused', 'warn'],
+  ] as const).map(([value, tone]) => ({
+    value,
+    label: value,
+    count: statusCounts.value.get(value) ?? 0,
+    tone,
+  })),
+)
+
+const sortedHeartbeats = computed(() =>
+  [...filtered.value].sort((a, b) => a.name.localeCompare(b.name)),
+)
+
+const columns: Column[] = [
+  { key: 'name', label: 'Name', sortable: true, width: 'minmax(0, 2fr)' },
+  { key: 'status', label: 'Status', sortable: true, width: '110px' },
+  { key: 'interval', label: 'Interval', sortable: true, align: 'right', width: '90px', priority: 'sm' },
+  { key: 'grace', label: 'Grace', align: 'right', width: '80px', priority: 'lg' },
+  { key: 'last_ping', label: 'Last ping', sortable: true, align: 'right', width: '110px' },
+  { key: 'deadline', label: 'Deadline', align: 'right', width: '120px', priority: 'md' },
+]
+
+function sortValue(hb: Heartbeat, key: string): string | number | undefined {
+  switch (key) {
+    case 'name':
+      return hb.name
+    case 'status':
+      return hb.status
+    case 'interval':
+      return hb.interval_seconds
+    case 'grace':
+      return hb.grace_seconds
+    case 'last_ping':
+      return hb.last_ping_at ? new Date(hb.last_ping_at).getTime() : undefined
+    case 'deadline':
+      return hb.next_deadline_at ? new Date(hb.next_deadline_at).getTime() : undefined
+    default:
+      return undefined
+  }
+}
+
+function resetFilters() {
+  resetSearchAndStatus()
+  intervalFilter.value = ''
+  alertingOnly.value = false
+}
+
 onMounted(() => {
   store.fetchHeartbeats()
   store.connectSSE()
@@ -76,7 +175,7 @@ async function handleCreate() {
 </script>
 
 <template>
-  <div class="overflow-y-auto p-3 sm:p-6">
+  <div class="p-3 sm:p-6">
   <div class="max-w-7xl mx-auto">
     <div class="mb-6 flex items-center justify-between">
       <div>
@@ -232,24 +331,35 @@ async function handleCreate() {
       </form>
     </div>
 
-    <!-- Status summary -->
-    <div class="mb-6 flex gap-4 text-sm">
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-status-ok)', padding: '0.25rem 0.75rem' }">
-        {{ store.statusCounts.up }} up
-      </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down)', padding: '0.25rem 0.75rem' }">
-        {{ store.statusCounts.down }} down
-      </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-accent)', padding: '0.25rem 0.75rem' }">
-        {{ store.statusCounts.started }} started
-      </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-muted)', padding: '0.25rem 0.75rem' }">
-        {{ store.statusCounts.new }} new
-      </span>
-      <span :style="{ borderRadius: '9999px', backgroundColor: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn)', padding: '0.25rem 0.75rem' }">
-        {{ store.statusCounts.paused }} paused
-      </span>
-    </div>
+    <ListToolbar
+      scope="heartbeats"
+      :search="search"
+      :status="status"
+      :chips="chips"
+      :result-count="filtered.length"
+      :active-filter-count="activeFilterCount"
+      search-placeholder="Search name or ping token"
+      @update:search="search = $event"
+      @update:status="status = $event"
+      @reset="resetFilters"
+    >
+      <template #filters>
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-mnt-secondary">Expected interval</span>
+          <select v-model="intervalFilter" class="filter-select focus-ring">
+            <option value="">Any interval</option>
+            <option value="hour">Under an hour</option>
+            <option value="day">Under a day</option>
+            <option value="beyond">A day or more</option>
+          </select>
+        </label>
+
+        <label class="flex min-h-[44px] items-center gap-2">
+          <input v-model="alertingOnly" type="checkbox" class="focus-ring h-4 w-4" />
+          <span class="text-xs font-semibold text-mnt-secondary">Alerting only</span>
+        </label>
+      </template>
+    </ListToolbar>
 
     <!-- Loading -->
     <LoadingSkeleton v-if="store.loading" variant="cards" :count="6" />
@@ -275,19 +385,91 @@ async function handleCreate() {
       </template>
     </EmptyState>
 
-    <!-- Heartbeat grid -->
-    <div
-      v-else
-      class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+    <!-- No match for the current search and filters -->
+    <EmptyState
+      v-else-if="filtered.length === 0"
+      :icon="Heart"
+      title="No heartbeat matches your filters"
+      description="Try a different search term, or clear the filters to see every heartbeat monitor."
     >
+      <template #action>
+        <button
+          class="focus-ring min-h-[44px] rounded-lg border border-mnt-default px-4 text-sm font-medium text-mnt-secondary hover:text-mnt-primary"
+          @click="resetFilters"
+        >
+          Clear filters
+        </button>
+      </template>
+    </EmptyState>
+
+    <!-- Cards -->
+    <div v-else-if="view === 'cards'" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <HeartbeatCard
-        v-for="hb in store.heartbeats"
+        v-for="hb in sortedHeartbeats"
         :key="hb.id"
         :heartbeat="hb"
         @refresh="store.fetchHeartbeats(); reload()"
         @select="openDetail('heartbeat', $event)"
       />
     </div>
+
+    <!-- Rows -->
+    <div
+      v-else-if="view === 'rows'"
+      class="overflow-hidden rounded-xl border border-mnt-default bg-mnt-surface"
+    >
+      <HeartbeatRow
+        v-for="hb in sortedHeartbeats"
+        :key="hb.id"
+        :heartbeat="hb"
+        @select="openDetail('heartbeat', $event)"
+      />
+    </div>
+
+    <!-- Table -->
+    <DataTable
+      v-else
+      :columns="columns"
+      :rows="filtered"
+      :row-key="(hb: Heartbeat) => hb.id"
+      :sort-value="sortValue"
+      :tone="(hb: Heartbeat) => heartbeatTone(hb.status)"
+      default-sort="name"
+      caption="Heartbeat monitors"
+      @select="openDetail('heartbeat', $event.id)"
+    >
+      <template #cell-name="{ row }">
+        <span class="font-medium text-mnt-primary">{{ row.name }}</span>
+      </template>
+      <template #cell-status="{ row }">
+        <HeartbeatStatusBadge :status="row.status" />
+      </template>
+      <template #cell-interval="{ row }">
+        <span class="font-mono tabular-nums">{{ formatInterval(row.interval_seconds) }}</span>
+      </template>
+      <template #cell-grace="{ row }">
+        <span class="font-mono tabular-nums">{{ formatInterval(row.grace_seconds) }}</span>
+      </template>
+      <template #cell-last_ping="{ row }">
+        {{ timeAgo(row.last_ping_at, 'never') }}
+      </template>
+      <template #cell-deadline="{ row }">
+        {{ row.status === 'paused' ? '-' : formatDeadline(row.next_deadline_at) }}
+      </template>
+    </DataTable>
   </div>
   </div>
 </template>
+
+<style scoped>
+.filter-select {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid var(--mnt-border-default);
+  border-radius: var(--mnt-radius-md);
+  background: var(--mnt-bg-elevated);
+  color: var(--mnt-text-primary);
+  padding: 0 0.5rem;
+  font-size: 0.8125rem;
+}
+</style>

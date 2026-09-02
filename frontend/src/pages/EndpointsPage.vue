@@ -17,22 +17,82 @@ import { useEndpointsStore } from '@/stores/endpoints'
 import { useContainersStore } from '@/stores/containers'
 import { useEdition } from '@/composables/useEdition'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
-import { createEndpoint } from '@/services/endpointApi'
+import { createEndpoint, type Endpoint } from '@/services/endpointApi'
 import EndpointCard from '@/components/EndpointCard.vue'
+import EndpointRow from '@/components/EndpointRow.vue'
 import { Globe } from 'lucide-vue-next'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
 import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
+import ListToolbar from '@/components/ui/ListToolbar.vue'
+import DataTable, { type Column } from '@/components/ui/DataTable.vue'
+import EndpointStatusBadge from '@/components/EndpointStatusBadge.vue'
+import type { StatusChip } from '@/components/ui/listFilters'
+import { usePreferencesStore } from '@/stores/preferences'
+import { endpointTone } from '@/utils/endpointTone'
+import { timeAgo } from '@/utils/time'
 import { docUrl } from '@/utils/docs'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
 
 const store = useEndpointsStore()
 const containers = useContainersStore()
+const prefs = usePreferencesStore()
 const { getQuota, reload } = useEdition()
 const quota = getQuota('endpoints')
 const { openDetail } = inject(detailSlideOverKey)!
+
+const view = computed(() => prefs.listView('endpoints'))
+
+const statusChips = computed<StatusChip[]>(() => [
+  { value: 'up', label: 'up', count: store.statusCounts.up, tone: 'ok' },
+  { value: 'down', label: 'down', count: store.statusCounts.down, tone: 'down' },
+  { value: 'degraded', label: 'degraded', count: store.statusCounts.degraded, tone: 'warn' },
+  { value: 'unknown', label: 'unknown', count: store.statusCounts.unknown, tone: 'unknown' },
+])
+
+const hasFilters = computed(
+  () => !!store.searchQuery || !!store.statusFilter || store.activeFilterCount > 0,
+)
+
+function onRetiredChange() {
+  store.fetchEndpoints()
+}
+
+const columns: Column[] = [
+  { key: 'target', label: 'Target', sortable: true },
+  { key: 'type', label: 'Type', width: '68px', priority: 'sm' },
+  { key: 'source', label: 'Source', width: 'minmax(0, 0.6fr)', priority: 'md' },
+  { key: 'status', label: 'Status', sortable: true, width: '110px' },
+  { key: 'response', label: 'Response', sortable: true, align: 'right', width: '90px', priority: 'sm' },
+  { key: 'interval', label: 'Interval', width: '80px', priority: 'lg' },
+  { key: 'last_check', label: 'Last check', sortable: true, align: 'right', width: '110px', priority: 'md' },
+]
+
+function sourceOf(ep: Endpoint): string {
+  return ep.source === 'standalone' ? ep.name || 'standalone' : ep.container_name
+}
+
+function formatResponseTime(ms: number | undefined): string {
+  if (ms === undefined || ms === null) return '-'
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
+}
+
+function sortValue(ep: Endpoint, key: string): string | number | undefined {
+  switch (key) {
+    case 'target':
+      return ep.target
+    case 'status':
+      return ep.status
+    case 'response':
+      return ep.last_response_time_ms
+    case 'last_check':
+      return ep.last_check_at ? new Date(ep.last_check_at).getTime() : undefined
+    default:
+      return undefined
+  }
+}
 
 const isK8s = computed(() => containers.runtimeName === 'kubernetes')
 const labelOrAnnotation = computed(() => isK8s.value ? 'annotation' : 'label')
@@ -98,7 +158,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="overflow-y-auto p-3 sm:p-6">
+  <div class="p-3 sm:p-6">
     <div class="mx-auto max-w-7xl">
     <div class="mb-6 flex items-center justify-between">
       <div>
@@ -308,74 +368,57 @@ onUnmounted(() => {
       </ul>
     </InlineAlert>
 
-    <!-- Status summary -->
-    <div class="mb-6 flex gap-3 text-sm">
-      <span class="rounded-full bg-mnt-status-ok text-mnt-status-ok px-3 py-1 font-medium">
-        {{ store.statusCounts.up }} up
-      </span>
-      <span class="rounded-full bg-mnt-status-down text-mnt-status-down px-3 py-1 font-medium">
-        {{ store.statusCounts.down }} down
-      </span>
-      <span
-        v-if="store.statusCounts.degraded > 0"
-        class="rounded-full bg-mnt-status-warn text-mnt-status-warn px-3 py-1 font-medium"
-      >
-        {{ store.statusCounts.degraded }} degraded
-      </span>
-      <span class="rounded-full bg-mnt-sev-unknown text-mnt-sev-unknown px-3 py-1 font-medium">
-        {{ store.statusCounts.unknown }} unknown
-      </span>
-    </div>
+    <ListToolbar
+      scope="endpoints"
+      :search="store.searchQuery"
+      :status="store.statusFilter"
+      :chips="statusChips"
+      :result-count="store.filteredEndpoints.length"
+      :active-filter-count="store.activeFilterCount"
+      search-placeholder="Search endpoints"
+      @update:search="store.searchQuery = $event"
+      @update:status="store.statusFilter = $event"
+      @reset="store.resetFilters()"
+    >
+      <template #filters>
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-mnt-muted">Type</span>
+          <select
+            v-model="store.typeFilter"
+            class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-elevated px-2 text-sm text-mnt-secondary"
+          >
+            <option value="">All types</option>
+            <option value="http">HTTP</option>
+            <option value="tcp">TCP</option>
+          </select>
+        </label>
 
-    <!-- Filters -->
-    <div class="mb-6 flex flex-wrap gap-3">
-      <select
-        v-model="store.statusFilter"
-        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-      >
-        <option value="">All statuses</option>
-        <option value="up">Up</option>
-        <option value="down">Down</option>
-        <option value="degraded">Degraded</option>
-        <option value="unknown">Unknown</option>
-      </select>
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-mnt-muted">Container</span>
+          <select
+            v-model="store.containerFilter"
+            class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-elevated px-2 text-sm text-mnt-secondary"
+          >
+            <option value="">All containers</option>
+            <option v-for="name in [...store.endpointsByContainer.keys()]" :key="name" :value="name">
+              {{ name }}
+            </option>
+          </select>
+        </label>
 
-      <select
-        v-model="store.typeFilter"
-        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-      >
-        <option value="">All types</option>
-        <option value="http">HTTP</option>
-        <option value="tcp">TCP</option>
-      </select>
-
-      <select
-        v-model="store.containerFilter"
-        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-      >
-        <option value="">All containers</option>
-        <option
-          v-for="name in [...store.endpointsByContainer.keys()]"
-          :key="name"
-          :value="name"
-        >
-          {{ name }}
-        </option>
-      </select>
-
-      <select
-        v-model="store.showRetired"
-        class="rounded-lg border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mnt-green-500 min-h-[44px]"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-        @change="store.fetchEndpoints()"
-      >
-        <option :value="false">Live only</option>
-        <option :value="true">Include retired</option>
-      </select>
-    </div>
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-mnt-muted">Retired</span>
+          <select
+            v-model="store.showRetired"
+            class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-elevated px-2 text-sm text-mnt-secondary"
+            @change="onRetiredChange"
+          >
+            <option :value="false">Live only</option>
+            <option :value="true">Include retired</option>
+          </select>
+        </label>
+      </template>
+    </ListToolbar>
 
     <!-- Loading -->
     <LoadingSkeleton v-if="store.loading" variant="cards" :count="6" />
@@ -383,19 +426,79 @@ onUnmounted(() => {
     <!-- Error -->
     <ErrorState v-else-if="store.error" :message="store.error" />
 
-    <!-- Endpoint grid -->
-    <div
-      v-else-if="store.filteredEndpoints.length > 0"
-      class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+    <template v-else-if="store.filteredEndpoints.length > 0">
+      <div v-if="view === 'cards'" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <EndpointCard
+          v-for="ep in store.filteredEndpoints"
+          :key="ep.id"
+          :endpoint="ep"
+          @select="openDetail('endpoint', ep.id)"
+          @deleted="store.fetchEndpoints(); reload()"
+        />
+      </div>
+
+      <div v-else-if="view === 'rows'" class="overflow-hidden rounded-xl border border-mnt-default">
+        <EndpointRow
+          v-for="ep in store.filteredEndpoints"
+          :key="ep.id"
+          :endpoint="ep"
+          @select="openDetail('endpoint', ep.id)"
+        />
+      </div>
+
+      <DataTable
+        v-else
+        :columns="columns"
+        :rows="store.filteredEndpoints"
+        :row-key="(ep: Endpoint) => ep.id"
+        :sort-value="sortValue"
+        :tone="endpointTone"
+        default-sort="target"
+        caption="Endpoints"
+        @select="(ep: Endpoint) => openDetail('endpoint', ep.id)"
+      >
+        <template #cell-target="{ row }">
+          <span class="font-medium text-mnt-primary">{{ row.target }}</span>
+        </template>
+        <template #cell-type="{ row }">
+          <span class="font-mono text-xs uppercase">{{ row.endpoint_type }}</span>
+        </template>
+        <template #cell-source="{ row }">{{ sourceOf(row) }}</template>
+        <template #cell-status="{ row }">
+          <span
+            v-if="row.stale"
+            class="rounded-full bg-mnt-sev-unknown px-2 py-0.5 text-xs font-medium text-mnt-sev-unknown"
+            :title="`Agent offline · last known: ${row.status}`"
+          >offline</span>
+          <EndpointStatusBadge v-else :status="row.status" />
+        </template>
+        <template #cell-response="{ row }">
+          <span class="font-mono tabular-nums">{{ formatResponseTime(row.last_response_time_ms) }}</span>
+        </template>
+        <template #cell-interval="{ row }">
+          <span class="font-mono text-xs">{{ row.config.interval }}</span>
+        </template>
+        <template #cell-last_check="{ row }">{{ timeAgo(row.last_check_at, 'never') }}</template>
+      </DataTable>
+    </template>
+
+    <!-- No match for the current filters, as opposed to no endpoints at all -->
+    <EmptyState
+      v-else-if="hasFilters"
+      :icon="Globe"
+      title="No endpoint matches your filters"
+      description="Try a different search term, or clear the filters to see every endpoint again."
     >
-      <EndpointCard
-        v-for="ep in store.filteredEndpoints"
-        :key="ep.id"
-        :endpoint="ep"
-        @select="openDetail('endpoint', ep.id)"
-        @deleted="store.fetchEndpoints(); reload()"
-      />
-    </div>
+      <template #action>
+        <button
+          type="button"
+          class="focus-ring min-h-[44px] rounded-lg border border-mnt-default px-4 text-sm font-medium text-mnt-secondary hover:text-mnt-primary"
+          @click="store.resetFilters()"
+        >
+          Clear filters
+        </button>
+      </template>
+    </EmptyState>
 
     <!-- Empty state -->
     <EmptyState

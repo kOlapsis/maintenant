@@ -7,7 +7,7 @@
   its variants and states so tokens + a11y can be reviewed in light and dark.
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Box, Globe, Shield, Heart, Sun, Moon, ServerOff } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
 import { severityVar, type Severity } from '@/composables/useSeverity'
@@ -24,6 +24,12 @@ import UiTooltip from '@/components/ui/UiTooltip.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
+import ListToolbar from '@/components/ui/ListToolbar.vue'
+import ListRow from '@/components/ui/ListRow.vue'
+import DataTable, { type Column } from '@/components/ui/DataTable.vue'
+import CollapsiblePanel from '@/components/ui/CollapsiblePanel.vue'
+import type { ChipTone, StatusChip } from '@/components/ui/listFilters'
+import { usePreferencesStore } from '@/stores/preferences'
 import EndpointStatusBadge from '@/components/EndpointStatusBadge.vue'
 import HeartbeatStatusBadge from '@/components/HeartbeatStatusBadge.vue'
 import CertificateStatusBadge from '@/components/CertificateStatusBadge.vue'
@@ -39,6 +45,58 @@ function flipTheme() {
 const severities: Severity[] = ['ok', 'warning', 'incident', 'unknown', 'neutral']
 
 const gridView = ref<'grid' | 'list'>('grid')
+
+// List primitives demo. Scope 'demo' keeps the real pages' view choice untouched.
+const prefs = usePreferencesStore()
+
+interface DemoRow {
+  id: string
+  name: string
+  target: string
+  status: 'up' | 'down' | 'degraded'
+  responseMs: number
+}
+
+const demoRows: DemoRow[] = [
+  { id: 'r1', name: 'traefik', target: 'https://maintenant.dev/health', status: 'up', responseMs: 42 },
+  { id: 'r2', name: 'shm-app', target: 'https://metrics.kolapsis.com/healthcheck', status: 'down', responseMs: 0 },
+  { id: 'r3', name: 'authentik', target: 'https://auth.kolapsis.com/-/health/live/', status: 'degraded', responseMs: 1840 },
+  { id: 'r4', name: 'registry', target: 'registry.kolapsis.com:5000', status: 'up', responseMs: 18 },
+]
+
+const demoSearch = ref('')
+const demoStatus = ref('')
+
+const demoFiltered = computed(() =>
+  demoRows.filter((r) => {
+    if (demoStatus.value && r.status !== demoStatus.value) return false
+    const q = demoSearch.value.trim().toLowerCase()
+    if (!q) return true
+    return r.name.toLowerCase().includes(q) || r.target.toLowerCase().includes(q)
+  }),
+)
+
+const demoChips = computed<StatusChip[]>(() => [
+  { value: 'up', label: 'up', count: demoRows.filter((r) => r.status === 'up').length, tone: 'ok' },
+  { value: 'degraded', label: 'degraded', count: demoRows.filter((r) => r.status === 'degraded').length, tone: 'warn' },
+  { value: 'down', label: 'down', count: demoRows.filter((r) => r.status === 'down').length, tone: 'down' },
+])
+
+const demoTone = (r: DemoRow): ChipTone =>
+  r.status === 'up' ? 'ok' : r.status === 'down' ? 'down' : 'warn'
+
+const demoColumns: Column[] = [
+  { key: 'name', label: 'Name', sortable: true, width: 'minmax(0, 1fr)' },
+  { key: 'target', label: 'Target', priority: 'md' },
+  { key: 'status', label: 'Status', sortable: true, width: '110px' },
+  { key: 'response', label: 'Response', sortable: true, align: 'right', width: '90px' },
+]
+
+function demoSortValue(row: DemoRow, key: string) {
+  if (key === 'response') return row.responseMs
+  if (key === 'status') return row.status
+  return row.name
+}
 
 function okItems(prefix: string, names: string[]) {
   return names.map((n, i) => ({
@@ -208,6 +266,95 @@ const lastSelected = ref('')
           </template>
         </UiTooltip>
       </div>
+    </section>
+
+    <!-- List primitives -->
+    <section class="space-y-3">
+      <SectionHeader title="ListToolbar + ListRow + DataTable (search · status chips · cards/rows/table)" />
+      <div class="rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <ListToolbar
+          v-model:search="demoSearch"
+          v-model:status="demoStatus"
+          scope="demo"
+          :chips="demoChips"
+          :result-count="demoFiltered.length"
+          search-placeholder="Search monitors"
+          :active-filter-count="0"
+        >
+          <template #filters>
+            <p class="text-xs text-mnt-muted">Secondary filters live here, one per page.</p>
+          </template>
+        </ListToolbar>
+
+        <div
+          v-if="prefs.listView('demo') === 'rows'"
+          class="overflow-hidden rounded-xl border border-mnt-default"
+        >
+          <ListRow
+            v-for="row in demoFiltered"
+            :key="row.id"
+            :tone="demoTone(row)"
+            @select="lastSelected = row.name"
+          >
+            <span class="min-w-0 flex-1 truncate text-sm font-semibold text-mnt-primary">{{ row.name }}</span>
+            <span class="hidden min-w-0 flex-1 truncate text-xs text-mnt-muted sm:block">{{ row.target }}</span>
+            <EndpointStatusBadge :status="row.status" />
+            <span class="w-14 text-right font-mono text-xs text-mnt-muted">
+              {{ row.responseMs ? `${row.responseMs}ms` : '-' }}
+            </span>
+          </ListRow>
+        </div>
+
+        <DataTable
+          v-else-if="prefs.listView('demo') === 'table'"
+          :columns="demoColumns"
+          :rows="demoFiltered"
+          :row-key="(r) => r.id"
+          :sort-value="demoSortValue"
+          :tone="demoTone"
+          default-sort="name"
+          caption="Demo monitors"
+          @select="lastSelected = $event.name"
+        >
+          <template #cell-name="{ row }">
+            <span class="truncate font-semibold text-mnt-primary">{{ row.name }}</span>
+          </template>
+          <template #cell-target="{ row }">
+            <span class="truncate font-mono text-xs text-mnt-muted">{{ row.target }}</span>
+          </template>
+          <template #cell-status="{ row }">
+            <EndpointStatusBadge :status="row.status" />
+          </template>
+          <template #cell-response="{ row }">
+            <span class="font-mono text-xs">{{ row.responseMs ? `${row.responseMs}ms` : '-' }}</span>
+          </template>
+        </DataTable>
+
+        <div v-else class="grid gap-3 sm:grid-cols-2">
+          <div
+            v-for="row in demoFiltered"
+            :key="row.id"
+            class="rounded-xl border border-mnt-default bg-mnt-elevated p-3"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate text-sm font-semibold text-mnt-primary">{{ row.name }}</span>
+              <EndpointStatusBadge :status="row.status" />
+            </div>
+            <p class="mt-1 truncate font-mono text-xs text-mnt-muted">{{ row.target }}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CollapsiblePanel -->
+    <section class="space-y-3">
+      <SectionHeader title="CollapsiblePanel (remembers its state)" />
+      <CollapsiblePanel storage-key="ds-demo" title="Top consumers">
+        <template #summary>4.2 GB / 16 GB RAM · 24 containers · matrix-coturn 38%</template>
+        <p class="text-sm text-mnt-secondary">
+          Panel contents. Collapsed, the summary above stands in for it.
+        </p>
+      </CollapsiblePanel>
     </section>
 
     <!-- Data states -->
