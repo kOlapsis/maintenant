@@ -16,6 +16,7 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useResourcesStore } from '@/stores/resources'
 import { getTopConsumers } from '@/services/resourceApi'
 import TopConsumersWidget, { type TopConsumer, type Period } from './TopConsumersWidget.vue'
+import CollapsiblePanel from '@/components/ui/CollapsiblePanel.vue'
 
 const store = useResourcesStore()
 
@@ -54,35 +55,37 @@ async function fetchTopConsumers() {
 
 onMounted(fetchTopConsumers)
 watch([topMetric, topPeriod, () => store.summaryQuery], fetchTopConsumers)
+
+const leader = computed(() => topConsumers.value.find((c) => c.rank === 1) ?? topConsumers.value[0] ?? null)
+
+const leaderValue = computed(() => {
+  const c = leader.value
+  if (!c) return ''
+  return topMetric.value === 'cpu' ? `${c.value.toFixed(1)}%` : store.formatBytes(c.value)
+})
 </script>
 
 <template>
-  <div
-    v-if="containerCount > 0"
-    class="mb-6 rounded-lg p-4"
-    :style="{
-      backgroundColor: 'var(--mnt-bg-surface)',
-      border: '1px solid var(--mnt-border-default)',
-      borderRadius: 'var(--mnt-radius-lg)',
-      boxShadow: 'var(--mnt-shadow-card)',
-    }"
-  >
-    <!-- Summary text -->
-    <div class="mb-3 flex items-center justify-between text-xs" :style="{ color: 'var(--mnt-text-muted)' }">
+  <CollapsiblePanel v-if="containerCount > 0" storage-key="top-consumers" title="Top consumers">
+    <template #summary>
+      <span class="truncate">
+        {{ store.formatBytes(totalMemUsed) }} / {{ store.formatBytes(totalMemLimit) }} RAM
+        &middot; {{ containerCount }} containers
+        <template v-if="leader">&middot; {{ leader.containerName }} {{ leaderValue }}</template>
+      </span>
+    </template>
+
+    <div class="mb-3 flex items-center justify-between text-xs text-mnt-muted">
       <span>{{ store.formatBytes(totalMemUsed) }} / {{ store.formatBytes(totalMemLimit) }} RAM</span>
       <span>{{ containerCount }} containers</span>
     </div>
 
-    <!-- Top consumers -->
-    <div>
-      <h4 class="mb-2 text-xs font-semibold" :style="{ color: 'var(--mnt-text-secondary)' }">Top Consumers</h4>
-      <TopConsumersWidget
-        :metric="topMetric"
-        :period="topPeriod"
-        :consumers="topConsumers"
-        @update:metric="topMetric = $event"
-        @update:period="topPeriod = $event"
-      />
-    </div>
-  </div>
+    <TopConsumersWidget
+      :metric="topMetric"
+      :period="topPeriod"
+      :consumers="topConsumers"
+      @update:metric="topMetric = $event"
+      @update:period="topPeriod = $event"
+    />
+  </CollapsiblePanel>
 </template>

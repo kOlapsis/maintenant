@@ -79,7 +79,9 @@
     --mnt-bg-primary: #F0F3FA;
     --mnt-bg-surface: #E8ECF4;
     --mnt-bg-elevated: #C8CED9;
-    --mnt-bg-hover: #A0A8B8;
+    /* One step under surface, mirroring the dark scale. It used to sit on the
+       border colour, which turned a hovered row into a grey slab. */
+    --mnt-bg-hover: #D9DFEA;
 
     /* Semantic: text */
     --mnt-text-primary: #12151C;

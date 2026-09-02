@@ -11,11 +11,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import {
-  listCertificates,
-  type CertMonitor,
-  type CertStatus,
-} from '@/services/certificateApi'
+import { listCertificates, type CertMonitor } from '@/services/certificateApi'
 import { sseBus } from '@/services/sseBus'
 import { useResourcesStore } from '@/stores/resources'
 
@@ -24,7 +20,6 @@ export const useCertificatesStore = defineStore('certificates', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const sseConnected = sseBus.connected
-  const statusFilter = ref<CertStatus | ''>('')
 
   const statusCounts = computed(() => {
     const counts = { valid: 0, expiring: 0, expired: 0, error: 0, unknown: 0 }
@@ -34,11 +29,6 @@ export const useCertificatesStore = defineStore('certificates', () => {
       }
     }
     return counts
-  })
-
-  const filteredCertificates = computed(() => {
-    if (!statusFilter.value) return certificates.value
-    return certificates.value.filter((c) => c.status === statusFilter.value)
   })
 
   async function fetchCertificates() {
@@ -144,9 +134,7 @@ export const useCertificatesStore = defineStore('certificates', () => {
     loading,
     error,
     sseConnected,
-    statusFilter,
     statusCounts,
-    filteredCertificates,
     fetchCertificates,
     connectSSE,
     disconnectSSE,
