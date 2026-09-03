@@ -16,6 +16,7 @@ maintenant is configured entirely through environment variables. No configuratio
 | `MAINTENANT_CORS_ORIGINS` | same-origin | CORS allowed origins (comma-separated). Empty means same-origin only. Set to `*` for wildcard. |
 | `MAINTENANT_RUNTIME` | auto-detect | Force container runtime: `docker` or `kubernetes`. Auto-detected by default. |
 | `DOCKER_HOST` | local socket | Docker API endpoint (standard Docker SDK variable). Point it at a socket proxy (`tcp://socketproxy:2375`) to run without mounting `/var/run/docker.sock` — see [Security → Docker Socket Proxy](../security.md#recommended-docker-socket-proxy). |
+| `DOCKER_GID` | auto-detected | Group ID granted to the unprivileged runtime so it can read the mounted Docker socket. The entrypoint detects the socket's group on its own; set this only to pin a GID (non-standard path, unix socket proxy) or to grant gid 0 on hosts whose socket is `root:root` and that have no `docker` group, such as Synology DSM. Granting gid 0 is root-equivalent access to the host: prefer a [socket proxy](../security.md#recommended-docker-socket-proxy). |
 | `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes for POST/PUT requests (default: 1 MB). |
 | `MAINTENANT_UPDATE_INTERVAL` | `24h` | Update intelligence scan interval. Accepts Go duration format (e.g., `12h`, `30m`). |
 | `MAINTENANT_K8S_NAMESPACES` | all | Kubernetes namespace allowlist (comma-separated). Empty monitors all namespaces. |

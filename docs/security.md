@@ -333,6 +333,13 @@ services:
     Set `DOCKER_GID` (e.g. from `stat -c '%g' /var/run/docker.sock`) only to override the
     detected GID, for a non-standard socket path, or for a socket proxy.
 
+    Auto-detection never grants gid 0: root's group is not something an unprivileged runtime
+    gets implicitly. On a host whose socket is `root:root` with no `docker` group (Synology DSM
+    Container Manager), the entrypoint logs that the socket is unreachable and container
+    discovery stays empty. `DOCKER_GID: "0"` unlocks it explicitly, at the cost of
+    root-equivalent access to the host; the [socket proxy](#recommended-docker-socket-proxy)
+    below is the better answer there.
+
 ### Docker Socket
 
 maintenant needs access to the Docker API to discover and monitor containers. Its entire API surface is **read-only**: container list/inspect/stats/logs, events, version/info, network metadata and — on Swarm managers — nodes, services and tasks. It never creates, modifies, or deletes anything.
@@ -458,7 +465,7 @@ A quick reference for securing your deployment:
 - [ ] `no-new-privileges:true` — blocks privilege escalation
 - [ ] **Preferred:** Docker API accessed through a [socket proxy](#recommended-docker-socket-proxy) (`DOCKER_HOST=tcp://socketproxy:2375`, no socket mount, writes rejected at the proxy)
 - [ ] Otherwise: Docker socket mounted read-only (`:ro`) — its group is auto-detected; `group_add` not required (remember `:ro` does not block API writes)
-- [ ] (Optional) `DOCKER_GID` set to override the detected socket GID (non-standard path or unix-socket proxy)
+- [ ] (Optional) `DOCKER_GID` set to override the detected socket GID (non-standard path or unix-socket proxy). `DOCKER_GID=0`, needed on root-owned sockets such as Synology DSM, is root-equivalent: prefer the socket proxy
 - [ ] Reverse proxy in front of maintenant with authentication enabled
 - [ ] `/api/v1/*` and `/` require authentication
 - [ ] `/ping`, `/status` (prefix, no trailing slash) and `/manifest.webmanifest` bypass authentication

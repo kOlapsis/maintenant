@@ -589,6 +589,8 @@ Pass it to the container via a `.env` file and the `DOCKER_GID` environment vari
 docker compose up -d
 ```
 
+**Synology DSM (Container Manager):** DSM ships no `docker` group, so the socket is `root:root` and the detected GID is `0` — which auto-detection refuses to grant, since root's group is not something an unprivileged runtime gets implicitly. Either set `DOCKER_GID: "0"` on the service to grant it explicitly, or put a [socket proxy](https://docs.maintenant.dev/security/#recommended-docker-socket-proxy) in front: it holds the socket, and maintenant talks to it over `DOCKER_HOST: "tcp://socketproxy:2375"` with no socket mount and no GID involved.
+
 **SELinux (Fedora / RHEL / Rocky / CentOS):** if setting the GID does not resolve the error, SELinux may be blocking the socket access. Check with:
 
 ```bash

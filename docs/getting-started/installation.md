@@ -48,7 +48,8 @@ Open **http://localhost:8080**. maintenant auto-discovers all your containers im
 !!! note "Docker socket access"
     The entrypoint reads the mounted socket's group and grants the unprivileged user access
     automatically — no `group_add` required, on Compose and Swarm alike. Set `DOCKER_GID` only
-    to pin a specific GID (non-standard socket path or socket proxy). See
+    to pin a specific GID (non-standard socket path or socket proxy), or to grant gid 0 on a host
+    whose socket is owned by `root:root` with no `docker` group (Synology DSM). See
     [Troubleshooting](../troubleshooting.md#permission-denied-on-varrundockersock) if access fails.
 
 !!! note "Why `0.0.0.0`? And the security finding it triggers"

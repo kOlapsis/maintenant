@@ -264,7 +264,8 @@ The full reference (server-side variables, rate limits, stale thresholds) is in 
 !!! failure "Permission denied on the Docker socket"
     The containerized agent runs unprivileged but auto-detects the mounted socket's group, so
     just mounting `/var/run/docker.sock` is normally enough. If it still can't read the socket
-    (non-standard path or socket proxy), pin the GID explicitly:
+    (non-standard path or socket proxy, or a `root:root` socket with no `docker` group as on
+    Synology DSM, where the GID to pin is `0`), pin the GID explicitly:
 
     ```bash
     # docker run
