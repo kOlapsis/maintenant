@@ -60,6 +60,28 @@ and pass it to the container (either as an environment variable, which the entry
 
 ---
 
+### Synology DSM (Container Manager) and other root-owned sockets
+
+Synology DSM ships no `docker` group: `/var/run/docker.sock` is `root:root`, so the GID the
+entrypoint detects is `0`. Auto-detection deliberately refuses to hand the unprivileged runtime
+root's group, so container discovery stays empty and the entrypoint logs:
+
+```
+maintenant: /var/run/docker.sock belongs to group root (gid 0) and the runtime drops to an
+unprivileged user, so the Docker API will be unreachable.
+```
+
+Two ways out:
+
+- **Grant gid 0 explicitly** — set `DOCKER_GID: "0"` on the service. Only an explicit value
+  unlocks the root group; nothing is granted implicitly.
+- **Front the socket with a proxy** (recommended, and the hardened setup on any host) — see
+  [Security → Docker socket proxy](security.md#recommended-docker-socket-proxy). The proxy holds
+  the socket and rejects every write at the HTTP layer; maintenant reaches it over
+  `DOCKER_HOST: "tcp://socketproxy:2375"`, so no socket mount and no GID are involved.
+
+---
+
 ### SELinux (Fedora / RHEL / Rocky / CentOS)
 
 If the GID fix above does not resolve the error, SELinux may be blocking the socket access. Check for recent denials:
