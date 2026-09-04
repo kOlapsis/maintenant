@@ -1,109 +1,31 @@
 <p align="center">
-  <img src="./docs/maintenant-hero.png" alt="maintenant — Unified monitoring" />
+  <img src="./docs/maintenant-hero.png" alt="maintenant, infrastructure monitoring in one container" />
 </p>
+
+<!-- TODO: replace the hero with a 10-15 s demo.gif: dashboard live, an endpoint failing, the alert landing in Discord. -->
 
 <h1 align="center">maintenant</h1>
 
 <p align="center">
-  <strong>Monitor everything. Manage nothing.</strong><br>
-  Drop a single container. Your entire stack is monitored in seconds.
+  <strong>Drop a container. Your stack is monitored.</strong><br>
+  Docker, Kubernetes, uptime, TLS, cron jobs, live logs, image updates, CVEs: auto-discovered, alerting on every one of them,<br>
+  from a single Go binary that idles at ~17 MB of RAM. No PromQL, no exporters, no dashboards to build.
 </p>
 
 <p align="center">
   <a href="https://github.com/kolapsis/maintenant/releases"><img src="https://img.shields.io/github/v/release/kolapsis/maintenant?style=flat-square&color=blue" alt="Release" /></a>
   <a href="https://github.com/kolapsis/maintenant/pkgs/container/maintenant"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fmaintenant-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/maintenant?style=flat-square" alt="License" /></a>
-  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Personal-%E2%82%AC149%20once%20%C2%B7%20for%20life-8b5cf6?style=flat-square" alt="Personal — €149 once, for life" /></a>
-  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Pro-%E2%82%AC29%2Fmo%20%C2%B7%2014--day%20trial-22c55e?style=flat-square" alt="Pro — €29/mo, 14-day trial" /></a>
+  <a href="https://github.com/kolapsis/maintenant/stargazers"><img src="https://img.shields.io/github/stars/kolapsis/maintenant?style=flat-square&color=yellow" alt="Stars" /></a>
 </p>
 
 <p align="center">
-  <a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#configuration">Configuration</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#api">API</a>
+  <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-maintenant">Why maintenant</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#editions">Editions</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>
 </p>
-
----
-
-<table align="center" width="100%">
-  <tr>
-    <td align="center" width="100%">
-      <h3>Keep maintenant alive: <a href="https://maintenant.dev/pricing/">Personal, €149 once</a> · <a href="https://maintenant.dev/pricing/">Pro, €29/mo</a></h3>
-      <sub>Built in the open by <strong>one developer in Bordeaux, France</strong>. No VC, no tracking, no dark patterns.<br>Running your own infrastructure? <strong>Personal lifts every cap for a single payment, for life.</strong> Running it for others? <strong>Pro adds team channels, escalation and the right to do so.</strong></sub><br><br>
-      <a href="https://maintenant.dev/pricing/"><strong>Buy Personal →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/"><strong>Start Pro trial →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/sponsors/kolapsis"><strong>Sponsor on GitHub</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://github.com/kolapsis/maintenant"><strong>Star the repo</strong></a>
-    </td>
-  </tr>
-</table>
-
----
-
-## Why maintenant?
-
-Most self-hosters juggle 3-5 tools to monitor their stack: one for containers, one for uptime, one for certs, one for metrics, and yet another for a status page. maintenant replaces all of them.
-
-|                              | maintenant | Uptime Kuma | Portainer  | Dozzle     |
-| ---------------------------- |:----------:|:-----------:|:----------:|:----------:|
-| Container auto-discovery     | **Yes**    | No          | Yes        | Yes        |
-| HTTP/TCP endpoint checks     | **Yes**    | Yes         | No         | No         |
-| Cron/heartbeat monitoring    | **Yes**    | Yes         | No         | No         |
-| SSL certificate tracking     | **Yes**    | Yes         | No         | No         |
-| CPU/memory/network metrics   | **Yes**    | No          | Limited    | No         |
-| Image update detection       | **Yes**    | No          | Yes        | No         |
-| Network security insights    | **Yes**    | No          | No         | No         |
-| Public status page           | **Yes**    | Yes         | No         | No         |
-| Alerting (webhook, Discord)  | **Yes**    | Yes         | Limited    | No         |
-| Kubernetes native            | **Yes**    | No          | Yes        | No         |
-| Single binary, zero deps     | **Yes**    | Node.js     | Docker API | Docker API |
-| Container runtime optional   | **Yes**    | No          | No         | No         |
-
-**One container. One dashboard. Everything monitored.**
-
----
-
-## Screenshots
-
-<table>
-  <tr>
-    <td colspan="2" align="center">
-      <a href="./docs/screen-captures/1-dashboard.png"><img src="./docs/screen-captures/1-dashboard.png" alt="Dashboard" width="680" /></a>
-      <br><sub>Dashboard — Uptime, response times, resources, unified monitors</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <a href="./docs/screen-captures/2-containers.png"><img src="./docs/screen-captures/2-containers.png" alt="Containers" width="340" /></a>
-      <br><sub>Container auto-discovery</sub>
-    </td>
-    <td align="center" width="50%">
-      <a href="./docs/screen-captures/3-endpoints.png"><img src="./docs/screen-captures/3-endpoints.png" alt="Endpoints" width="340" /></a>
-      <br><sub>Endpoint monitoring</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="./docs/screen-captures/4-certificates.png"><img src="./docs/screen-captures/4-certificates.png" alt="Certificates" width="340" /></a>
-      <br><sub>TLS certificate tracking</sub>
-    </td>
-    <td align="center">
-      <a href="./docs/screen-captures/5-updates.png"><img src="./docs/screen-captures/5-updates.png" alt="Updates" width="340" /></a>
-      <br><sub>Update intelligence</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="./docs/screen-captures/7-status-page-all-ok.png"><img src="./docs/screen-captures/7-status-page-all-ok.png" alt="Status Page — All OK" width="340" /></a>
-      <br><sub>Status page — All operational</sub>
-    </td>
-    <td align="center">
-      <a href="./docs/screen-captures/8-status-page-degraded.png"><img src="./docs/screen-captures/8-status-page-degraded.png" alt="Status Page — Degraded" width="340" /></a>
-      <br><sub>Status page — Degraded state</sub>
-    </td>
-  </tr>
-</table>
 
 ---
 
 ## Quick Start
-
-### Docker (30 seconds)
 
 ```yaml
 # docker-compose.yml
@@ -134,111 +56,189 @@ volumes:
 docker compose up -d
 ```
 
-Open **http://localhost:8080** — your containers are already there. No configuration needed.
+Open **http://localhost:8080**. Your containers are already there, with their health, restart loops, resources and logs. Nothing to configure.
 
-> **Docker socket access is automatic**
-> The entrypoint reads the mounted socket's group and grants the unprivileged user access to it — no `group_add` needed, on plain Compose **and** Docker Swarm (where `docker stack deploy` silently ignores `group_add`). Set `DOCKER_GID` (e.g. `stat -c '%g' /var/run/docker.sock`) only to pin a specific GID for a non-standard socket path or socket proxy.
->
-> If containers are not discovered (permission error on the socket), see [Troubleshooting](#troubleshooting).
+Docker socket access is automatic: the entrypoint reads the mounted socket's group and grants it to the unprivileged user, on Compose and on Swarm (where `docker stack deploy` silently ignores `group_add`). If containers do not show up, see [Troubleshooting](https://docs.maintenant.dev/troubleshooting/).
 
-### Kubernetes
+**Kubernetes**
 
 ```bash
 kubectl apply -f deploy/kubernetes/
 ```
 
-maintenant auto-detects the in-cluster API. Read-only RBAC, namespace filtering, workload-level monitoring out of the box.
+In-cluster API auto-detected, read-only RBAC, namespace filtering, workloads (Deployments, DaemonSets, StatefulSets) as first-class citizens. [Kubernetes guide](https://docs.maintenant.dev/guides/kubernetes/).
 
-### Native Linux install (no Docker)
-
-Run maintenant as a systemd service directly on any amd64 or arm64 Linux host. The published binaries are statically linked, so the same file runs on Debian, Ubuntu, RHEL, Alpine or Arch with nothing to install alongside it.
-
-**One-liner:**
+**Bare Linux, no Docker at all** (systemd, amd64 and arm64, statically linked)
 
 ```bash
 curl -fsSL https://install.maintenant.dev | sudo bash
 ```
 
-Installs the binary to `/usr/local/bin/maintenant`, creates a `maintenant` system user, enables the systemd service, and starts it immediately.
+Endpoints, certificates and heartbeats work without any container runtime. Container monitoring switches on by itself the moment a runtime shows up. [Install documentation](https://docs.maintenant.dev/install/) for pinned versions, air-gapped installs and supply-chain verification.
 
-**With custom configuration:**
+**Cloud**: one `cloud-init` file boots a hardened host with maintenant running on [Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/) or [DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/).
 
-```bash
-curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
-  --addr 0.0.0.0:8080 \
-  --baseUrl https://monitoring.example.com \
-  --organisationName "Acme Corp" \
-  --logLevel info
-```
+---
 
-Configuration flags are persisted to `/etc/maintenant/maintenant.env` and reloaded on every `systemctl restart maintenant`. All `MAINTENANT_*` environment variables have a `--flagName` equivalent — run `maintenant --help` to see the full list.
+## Why maintenant?
 
-```bash
-# Useful commands after install
-systemctl status maintenant
-journalctl -fu maintenant
-maintenant --help
-maintenant --version
-```
+Monitoring your own infrastructure with the standard stack means running Prometheus, Grafana, Alertmanager, node-exporter, cAdvisor, blackbox-exporter, a certificate exporter, Loki, Promtail, Trivy and something for image updates. Ten-odd components, each with its own config, upgrades and dashboards, to answer one question: **is my stack up, and what is burning?**
 
-> For pinning a specific version, air-gapped installs, uninstall, and supply-chain verification, see the **[install documentation](https://docs.maintenant.dev/install)**.
+maintenant answers that question with one container.
 
-### Cloud providers
+| Built into maintenant | What you would assemble instead |
+| --- | --- |
+| Container state, health checks, restart loops | cAdvisor + node-exporter + alert rules you write |
+| CPU, memory, network and disk, per container and per host | cAdvisor + node-exporter + Grafana dashboards you build |
+| HTTP / TCP endpoint checks, declared as Docker labels | blackbox-exporter + a config file per target |
+| TLS certificate expiry and chain validation | ssl_exporter |
+| Cron and heartbeat deadlines | Pushgateway + alert rules you write |
+| Live container logs, stdout/stderr demuxed | Dozzle, or Loki + Promtail |
+| Image update detection, with compose-aware update and rollback commands | Diun or Watchtower |
+| Network exposure audit: `0.0.0.0` binds, exposed database ports, host network, privileged containers | nothing standard |
+| CVE enrichment and per-container risk score *(Personal)* | Trivy + its exporter |
+| Alerts routed to Discord, webhooks, email, Telegram, Slack and Teams, with escalation *(Pro)* | Alertmanager |
+| Public status page with incidents and subscribers | Cachet, Uptime Kuma, or a SaaS |
+| One real-time dashboard for all of the above | Grafana + dashboards you build and maintain |
 
-```bash
-# Hetzner Cloud
-hcloud server create --name maintenant --type cx22 --image ubuntu-24.04 \
-  --ssh-key my-key --user-data-from-file deploy/cloud-init/maintenant.yaml
+> **Do I still need Prometheus?**
+> maintenant monitors your **infrastructure**. Prometheus monitors your **application**. There is no PromQL here, no custom exporters, no panels to design: maintenant already knows what a container, a certificate, an endpoint, a cron job and a CVE are, and starts watching them the moment they appear. If you ship business metrics and write your own queries, keep Prometheus for that. The two answer different questions, and plenty of people run both.
 
-# DigitalOcean
-doctl compute droplet create maintenant --image ubuntu-24-04-x64 --size s-2vcpu-4gb \
-  --ssh-keys my-key --user-data-file deploy/cloud-init/maintenant.yaml --wait
-```
+Against the tools self-hosters usually stack up:
 
-The [cloud-init file](deploy/cloud-init/maintenant.yaml) installs Docker and starts maintenant on first boot, with the dashboard bound to loopback. Firewall rules, block volumes for the database, agent enrolment over a private network, load balancer checks and managed Kubernetes are per-provider:
+|                              | maintenant     | Uptime Kuma | Portainer  | Dozzle     |
+| ---------------------------- |:--------------:|:-----------:|:----------:|:----------:|
+| Container auto-discovery     | **Yes**        | No          | Yes        | Yes        |
+| Live container logs          | **Yes**        | No          | Yes        | Yes        |
+| HTTP/TCP endpoint checks     | **Yes**        | Yes         | No         | No         |
+| Cron/heartbeat monitoring    | **Yes**        | Yes         | No         | No         |
+| SSL certificate tracking     | **Yes**        | Yes         | No         | No         |
+| CPU/memory/network metrics   | **Yes**        | No          | Limited    | No         |
+| Image update detection       | **Yes**        | No          | Yes        | No         |
+| Network security insights    | **Yes**        | No          | No         | No         |
+| CVE enrichment, risk scoring | **Personal**   | No          | No         | No         |
+| Public status page           | **Yes**        | Yes         | No         | No         |
+| Alerting with routing        | **Yes**        | Yes         | Limited    | No         |
+| Kubernetes native            | **Yes**        | No          | Yes        | No         |
+| Single binary, zero deps     | **Yes**        | Node.js     | Docker API | Docker API |
+| Runs without a runtime       | **Yes**        | No          | No         | No         |
 
-- **[Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/)**
-- **[DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/)**
+**One container. One dashboard. Everything monitored.**
 
-> For detailed setup instructions, advanced configuration, and label reference, see the **[full documentation](https://kolapsis.github.io/maintenant/)**.
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td colspan="2" align="center">
+      <a href="./docs/screen-captures/1-dashboard.png"><img src="./docs/screen-captures/1-dashboard.png" alt="Dashboard" width="680" /></a>
+      <br><sub>Dashboard: uptime, response times, resources, unified monitors</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <a href="./docs/screen-captures/7-unified-alerts.png"><img src="./docs/screen-captures/7-unified-alerts.png" alt="Unified alerts" width="340" /></a>
+      <br><sub>Unified alerts across every source</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="./docs/screen-captures/11-security-posture.png"><img src="./docs/screen-captures/11-security-posture.png" alt="Security posture" width="340" /></a>
+      <br><sub>Security posture with CVE enrichment and risk scoring (Personal)</sub>
+    </td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>More screenshots</strong></summary>
+<br>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="./docs/screen-captures/2-containers.png"><img src="./docs/screen-captures/2-containers.png" alt="Containers" width="340" /></a>
+      <br><sub>Container auto-discovery</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="./docs/screen-captures/2-system-resources.png"><img src="./docs/screen-captures/2-system-resources.png" alt="System resources" width="340" /></a>
+      <br><sub>Resources per container and per host</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="./docs/screen-captures/3-endpoints.png"><img src="./docs/screen-captures/3-endpoints.png" alt="Endpoints" width="340" /></a>
+      <br><sub>Endpoint monitoring</sub>
+    </td>
+    <td align="center">
+      <a href="./docs/screen-captures/4-heartbeats-cron.png"><img src="./docs/screen-captures/4-heartbeats-cron.png" alt="Heartbeats" width="340" /></a>
+      <br><sub>Heartbeat and cron monitoring</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="./docs/screen-captures/4-certificates.png"><img src="./docs/screen-captures/4-certificates.png" alt="Certificates" width="340" /></a>
+      <br><sub>TLS certificate tracking</sub>
+    </td>
+    <td align="center">
+      <a href="./docs/screen-captures/5-updates.png"><img src="./docs/screen-captures/5-updates.png" alt="Updates" width="340" /></a>
+      <br><sub>Update intelligence</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="./docs/screen-captures/13-network-security-insights.png"><img src="./docs/screen-captures/13-network-security-insights.png" alt="Network security insights" width="340" /></a>
+      <br><sub>Network security insights</sub>
+    </td>
+    <td align="center">
+      <a href="./docs/screen-captures/12-ai-assistant.png"><img src="./docs/screen-captures/12-ai-assistant.png" alt="AI assistant over MCP" width="340" /></a>
+      <br><sub>Your AI assistant, plugged in over MCP</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="./docs/screen-captures/7-status-page-all-ok.png"><img src="./docs/screen-captures/7-status-page-all-ok.png" alt="Status page, all operational" width="340" /></a>
+      <br><sub>Status page, all operational</sub>
+    </td>
+    <td align="center">
+      <a href="./docs/screen-captures/8-status-page-degraded.png"><img src="./docs/screen-captures/8-status-page-degraded.png" alt="Status page, degraded" width="340" /></a>
+      <br><sub>Status page, degraded</sub>
+    </td>
+  </tr>
+</table>
+</details>
 
 ---
 
 ## Features
 
-### Container Monitoring
+Every section links to its full documentation.
 
-Zero-config auto-discovery for Docker and Kubernetes. Every container is tracked the moment it starts — state changes, health checks, restart loops, log streaming with stdout/stderr demux. Compose projects are auto-grouped. Kubernetes workloads (Deployments, DaemonSets, StatefulSets) are first-class citizens.
+### [Container monitoring](https://docs.maintenant.dev/features/containers/)
 
-### Multi-Host Monitoring
+Zero-config auto-discovery for Docker, [Docker Swarm](https://docs.maintenant.dev/features/swarm/) and Kubernetes. Every container is tracked the moment it starts: state changes, health checks, restart loops, **live log streaming** with stdout/stderr demux. Compose projects are grouped automatically. Read-only: maintenant observes, it never touches your containers.
 
-Monitor your entire fleet from a single pane of glass. One central **server** receives events from lightweight **agents** running on your remote hosts, over a persistent, mutually-authenticated gRPC stream — no shared database, no message queue.
+### [Multi-host monitoring](https://docs.maintenant.dev/features/multihost/)
+
+One central **server**, lightweight read-only **agents** on your other hosts, a persistent mutually-authenticated gRPC stream between them. No shared database, no message queue, no PKI to run: an agent enrolls with a one-time token and an Ed25519 keypair generated locally, and every stream is challenge-response authenticated. Revoke it from the UI at any time.
 
 ```bash
-# On each remote host — one command, generated for you in the UI
-docker run -d \
-  --name maintenant-agent \
-  --restart unless-stopped \
+# On each remote host, one command, generated for you in the UI
+docker run -d --name maintenant-agent --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v /proc:/host/proc:ro \
   -v maintenant-agent-data:/var/lib/maintenant \
   ghcr.io/kolapsis/maintenant:latest \
-  --mode=agent \
-  --server=grpcs://monitoring.example.com \
-  --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX \
-  --label="prod-worker-01"
+  --mode=agent --server=grpcs://monitoring.example.com \
+  --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX --label="prod-worker-01"
 ```
 
-- **Agents are read-only and tiny** — they detect the local runtime (Docker, Swarm, or Kubernetes), stream container state, endpoints, certificates and resource metrics, and reconnect on their own with backoff.
-- **Per-host resource metrics** — each agent reports its machine's CPU, memory and disk. The dashboard's resource header gets a **host selector** to switch between machines; top consumers can be scoped to a single host.
-- **Zero-PKI security** — agents enroll with a one-time token and an Ed25519 keypair generated locally; every stream is challenge-response authenticated. Revoke or delete an agent from the UI at any time.
-- Every monitored entity is attributed to its origin host, so containers, alerts and metrics are never mixed across machines.
+Agents detect their local runtime (Docker, Swarm or Kubernetes), stream container state, endpoints, certificates, host CPU/memory/disk, and reconnect on their own. Every entity is attributed to its host, so nothing gets mixed across machines. *Personal: up to 20 remote machines. Pro: unlimited.*
 
-> **[Personal](https://maintenant.dev/pricing/)** feature, up to 20 remote machines, unlimited on **Pro**. Community Edition runs in single-host (`embedded`) mode. See the [Multi-Host guide](./docs/features/multihost.md) for server setup, enrollment and the streaming protocol.
+### [Update intelligence](https://docs.maintenant.dev/features/updates/)
 
-### Endpoint Monitoring
+Scans OCI registries and compares digests, so you know which images have an update before you `docker pull` blindly. Compose-aware update and rollback commands, with the right `--project-directory`. No Diun, no Watchtower, no extra container: it is part of the monitor.
 
-Define HTTP or TCP checks directly as Docker labels — no config files, no UI clicks. maintenant picks them up automatically when a container starts. Response times, uptime history, 90-day sparklines, configurable failure/recovery thresholds.
+### [Endpoint monitoring](https://docs.maintenant.dev/features/endpoints/)
+
+HTTP and TCP checks declared as Docker labels, picked up when the container starts. Response times, uptime history, 90-day sparklines, failure and recovery thresholds.
 
 ```yaml
 labels:
@@ -247,130 +247,49 @@ labels:
   maintenant.endpoint.failure-threshold: "3"
 ```
 
-### Heartbeat & Cron Monitoring
+### [Heartbeat and cron monitoring](https://docs.maintenant.dev/features/heartbeats/)
 
-Create a monitor, get a unique URL, add one `curl` to your cron job. maintenant tracks start/finish times, durations, exit codes, and alerts you when a job misses its deadline.
+Create a monitor, get a URL, add one `curl` to the job. maintenant tracks start and finish, duration, exit code, and alerts when the deadline is missed.
 
 ```bash
-# One-liner for any cron job
 curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
-> Community includes up to 5 heartbeats. **[Personal](https://maintenant.dev/pricing/)** lifts the cap for unlimited jobs.
+### [TLS certificate monitoring](https://docs.maintenant.dev/features/certificates/)
 
-### SSL/TLS Certificate Monitoring
+Auto-detected from your HTTPS endpoints, plus standalone monitors for any domain. Full chain validation, alerts at 30, 14, 7, 3 and 1 day before expiry, OCSP stapling checks (Personal).
 
-Automatic detection from your HTTPS endpoints, plus standalone monitors for any domain. Alerts at 30, 14, 7, 3, and 1 day before expiry. Full chain validation.
+### [Resource metrics](https://docs.maintenant.dev/features/resources/)
 
-### Resource Metrics
+Real-time CPU, memory, network and disk I/O per container and per host, top-consumers view for instant triage, per-container thresholds with debounce. History: 7 days on Community, 30 on Personal, 90 on Pro.
 
-Real-time CPU, memory, network I/O, and disk I/O per container. Historical charts from 1 hour to 30 days (Personal). Per-container alert thresholds with debounce to avoid noise. Top consumers view for instant triage. In [multi-host](#multi-host-monitoring) deployments, host-level CPU/memory/disk is reported per machine and the resource header offers a host selector.
+### [Network security insights](https://docs.maintenant.dev/features/security/)
 
-### Network Security Insights
+Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, Kubernetes NodePort and LoadBalancer services without a NetworkPolicy. Each image is mapped to its software ecosystem through OCI manifest inspection. **Personal** adds CVE enrichment, a risk score per container and a unified security posture dashboard.
 
-Automatic detection of dangerous network configurations across your containers. Flags ports binding to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, and Kubernetes-specific risks (NodePort, LoadBalancer without NetworkPolicy). Each container image is mapped to its software ecosystem via OCI manifest inspection for CVE-relevant context.
+### [Alert engine](https://docs.maintenant.dev/features/alerts/)
 
-### Update Intelligence
+One alert pipeline for every source: container restart loops and unhealthy checks, endpoint failures, missed heartbeats, expiring or invalid certificates, CPU and memory thresholds, available updates. Channels are silent by default and routed through **triggers** (severity, source, scope, tags). Silence rules for planned maintenance, exponential backoff on delivery.
 
-Knows when your images have updates available. Scans OCI registries, compares digests. Compose-aware update and rollback commands with the correct `--project-directory` flag. Stop running `docker pull` blindly.
+Channels: Discord and webhooks (Community), email and Telegram (Personal), Slack and Microsoft Teams (Pro). **Pro** adds [escalation policies](https://docs.maintenant.dev/features/alert-escalation/) that page the on-call, then the backup, then the lead, plus per-entity routing and maintenance windows.
 
-### Alert Engine
+### [Public status page](https://docs.maintenant.dev/features/status-page/)
 
-Unified alerts across all monitoring sources. Channels are silent by default and routed via **Alert Triggers** (filter by severity / source). Webhook and Discord channels included. Silence rules for planned maintenance, exponential backoff retry on delivery.
+Real-time status page with severity aggregation across every monitor, live over SSE. **Personal** adds incident timelines, **Pro** adds subscriber notifications (email and webhook) and branding.
 
-> **[Personal](https://maintenant.dev/pricing/)** adds the Email and Telegram channels and scope/tag trigger filters. **[Pro](https://maintenant.dev/pricing/)** adds Slack and Microsoft Teams channels, multi-level **escalation policies**, per-entity routing, and maintenance windows that pause and resume escalation chains.
+### [MCP server](https://docs.maintenant.dev/features/mcp/)
 
-### Public Status Page
-
-Give your users a clean, real-time status page. Live SSE updates, severity aggregation across all monitors.
-
-> **[Personal](https://maintenant.dev/pricing/)** adds incident timelines. **[Pro](https://maintenant.dev/pricing/)** adds subscriber notifications (email + webhook) and status page branding, turning outages into trust-building moments.
-
-### MCP Server
-
-Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Query your infrastructure, read logs, and check alert status from any MCP-compatible AI assistant. Supports both stdio and Streamable HTTP transports with full OAuth2 authentication for remote clients (Claude web, Claude mobile, Claude Desktop).
+Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Ask your AI assistant what is burning, read a container's logs, check the alert queue, acknowledge an alert, open an incident. stdio and Streamable HTTP transports, full OAuth2 for remote clients (Claude web, mobile and Desktop).
 
 ---
 
 ## Configuration
 
-### Environment Variables
+Everything is driven by **Docker labels** and a handful of **environment variables**. No YAML to maintain.
 
-| Variable                            | Default                 | Description                                     |
-| ----------------------------------- | ----------------------- | ----------------------------------------------- |
-| `MAINTENANT_ADDR`                   | `127.0.0.1:8080`        | HTTP bind address                               |
-| `MAINTENANT_DB`                     | `./maintenant.db`       | SQLite database path                            |
-| `MAINTENANT_DATABASE_URL`           | *(empty)*               | PostgreSQL DSN, server/embedded only            |
-| `MAINTENANT_BASE_URL`               | `http://localhost:8080` | Base URL (used for heartbeat ping URLs and as the status page fallback) |
-| `MAINTENANT_STATUS_URL`             | —                       | Canonical public URL of the status page (e.g. `https://status.example.com`). Optional — falls back to `{BASE_URL}/status`. |
-| `MAINTENANT_ORGANISATION_NAME`      | `Maintenant`            | Organisation name on the status page            |
-| `MAINTENANT_CORS_ORIGINS`           | same-origin             | CORS allowed origins (comma-separated)          |
-| `MAINTENANT_RUNTIME`                | auto-detect             | Force `docker` or `kubernetes`                  |
-| `MAINTENANT_MAX_BODY_SIZE`          | `1048576`               | Max request body size in bytes (1 MB)           |
-| `MAINTENANT_UPDATE_INTERVAL`        | `24h`                   | Update intelligence scan interval               |
-| `MAINTENANT_LICENSE_KEY`            | —                       | Personal or Pro license key                     |
-| `MAINTENANT_MCP`                    | `false`                 | Enable MCP server (Streamable HTTP on `/mcp`)   |
-| `MAINTENANT_MCP_CLIENT_ID`          | —                       | OAuth2 client ID for MCP authentication         |
-| `MAINTENANT_MCP_CLIENT_SECRET`      | —                       | OAuth2 client secret for MCP authentication     |
-| `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS` | —                    | Comma-separated allowlist of OAuth2 `redirect_uri` values. Required when `MAINTENANT_MCP_CLIENT_*` are set. |
-| `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` | `false`              | Serve `/mcp` unauthenticated. Without it, MCP without OAuth credentials refuses to start. |
-| `MAINTENANT_K8S_NAMESPACES`         | all                     | Namespace allowlist (comma-separated)           |
-| `MAINTENANT_K8S_EXCLUDE_NAMESPACES` | none                    | Namespace blocklist                             |
-| `MAINTENANT_DISABLE_TELEMETRY`      | unset (telemetry on)    | Set to `1`/`true`/`yes` to disable telemetry    |
-
-> Full configuration reference in the **[documentation](https://kolapsis.github.io/maintenant/)**.
-
-### Docker Labels Reference
-
-<details>
-<summary><strong>Container settings</strong></summary>
-
-```yaml
-labels:
-  maintenant.ignore: "true"                    # Exclude from monitoring
-  maintenant.group: "backend"                  # Custom group name
-  maintenant.alert.severity: "critical"        # critical | warning | info
-  maintenant.alert.restart_threshold: "5"      # Restart loop threshold
-  maintenant.alert.channels: "ops-webhook"     # Route to specific channels
-```
-
-</details>
-
-<details>
-<summary><strong>Endpoint monitoring</strong></summary>
-
-```yaml
-labels:
-  # Simple — one endpoint per container
-  maintenant.endpoint.http: "https://app:8443/health"
-  maintenant.endpoint.tcp: "db:5432"
-
-  # Indexed — multiple endpoints per container
-  maintenant.endpoint.0.http: "https://app:8443/health"
-  maintenant.endpoint.1.tcp: "redis:6379"
-
-  # Tuning
-  maintenant.endpoint.interval: "30s"
-  maintenant.endpoint.timeout: "10s"
-  maintenant.endpoint.http.method: "POST"
-  maintenant.endpoint.http.expected-status: "200,201"
-  maintenant.endpoint.http.tls-verify: "false"
-  maintenant.endpoint.http.headers: '{"Authorization":"Bearer tok"}'
-  maintenant.endpoint.failure-threshold: "3"
-  maintenant.endpoint.recovery-threshold: "2"
-```
-
-</details>
-
-<details>
-<summary><strong>TLS certificate monitoring</strong></summary>
-
-```yaml
-labels:
-  maintenant.tls.certificates: "example.com:443,api.example.com:443"
-```
-
-</details>
+- [Environment variables](https://docs.maintenant.dev/getting-started/configuration/): bind address, database, base URL, PostgreSQL DSN, MCP, Kubernetes namespaces, license key, telemetry.
+- [Docker labels reference](https://docs.maintenant.dev/guides/docker-labels/): endpoints, TLS, alert severity, restart thresholds, channel routing, grouping, ignore.
+- [REST API](https://docs.maintenant.dev/api/reference/) under `/api/v1/`, plus an SSE event stream.
 
 <details>
 <summary><strong>Full stack example</strong></summary>
@@ -384,8 +303,6 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
     volumes:
@@ -424,458 +341,65 @@ volumes:
 
 ---
 
-## Telemetry
+## Security model
 
-maintenant sends an **anonymous, opt-out** usage snapshot once an hour to `https://metrics.kolapsis.com`. No hostnames, IPs, container names, endpoint URLs, certificates, webhook targets, status-page component names, license keys, or operator-supplied free-form strings of any kind are transmitted.
-
-### What is collected
-
-Each snapshot contains the following fields and **nothing else** (full wire format: [`specs/015-shm-telemetry/contracts/telemetry-payload.md`](./specs/015-shm-telemetry/contracts/telemetry-payload.md)):
-
-**Application fields** (this product owns these):
-
-- `edition` — `community`, `personal` or `pro`
-- `storage_engine` — `sqlite` or `postgres` (nothing else about the database)
-- `containers_total` — count of auto-discovered containers
-- `endpoints_total` — count of configured HTTP/TCP endpoints
-- `heartbeats_total` — count of configured heartbeat monitors
-- `certificates_total` — count of TLS certificate monitors
-- `webhooks_total` — count of configured webhooks
-- `status_components_total` — count of status-page components
-
-**Runtime context** (collected automatically by the SHM SDK):
-
-- `sys_os`, `sys_arch`, `sys_cpu_cores`, `sys_go_version`, `sys_mode` (`docker` / `kubernetes` / `standalone`)
-- `app_mem_alloc_mb`, `app_goroutines`, `app_uptime_h`
-- An installation identifier generated by the SDK on first run and reused thereafter
-
-### How to disable it
-
-Set `MAINTENANT_DISABLE_TELEMETRY` to a truthy value before the process starts:
-
-```bash
-# Docker
-docker run -e MAINTENANT_DISABLE_TELEMETRY=1 ghcr.io/kolapsis/maintenant:latest
-
-# Kubernetes
-env:
-  - name: MAINTENANT_DISABLE_TELEMETRY
-    value: "1"
-
-# systemd / shell
-export MAINTENANT_DISABLE_TELEMETRY=1
-./maintenant
-```
-
-Truthy values (case-insensitive, whitespace-trimmed): `1`, `t`, `true`, `y`, `yes`, `on`. Anything else, including empty or unset, leaves telemetry enabled.
-
-When disabled, exactly one log line is emitted at startup and nothing else:
-
-```text
-INFO  telemetry disabled  reason=opt-out
-```
-
-No background goroutine, no DNS lookup of `metrics.kolapsis.com`, no outbound packets toward it.
-
-### Persistent install identity
-
-The SDK persists its identity to `/data/shm/shm_identity.json` on first run. Mount a persistent volume on `/data/shm` so the same installation isn't counted as new on every restart.
-
-The reference Docker Compose template above already mounts `/data` as a volume — `/data/shm` is a subpath, so it's covered by default. For Kubernetes:
-
-```yaml
-apiVersion: apps/v1
-kind: StatefulSet
-spec:
-  template:
-    spec:
-      containers:
-        - name: maintenant
-          volumeMounts:
-            - name: shm-data
-              mountPath: /data/shm
-  volumeClaimTemplates:
-    - metadata:
-        name: shm-data
-      spec:
-        accessModes: [ReadWriteOnce]
-        resources:
-          requests:
-            storage: 100Mi
-```
-
-Without the volume, every restart is counted as a fresh install. The privacy impact is zero (the identity is opaque), but our fleet stats will be distorted — please keep the volume.
-
-When `/data/shm` is unwritable (read-only mount, permission error), telemetry disables itself silently with a single WARN line:
-
-```text
-WARN  telemetry disabled  reason=datadir-unwritable  datadir=/data/shm  error=...
-```
-
-We deliberately don't fall back to an in-memory identity — that would inflate fleet-wide install counts.
-
----
-
-## Security Model
-
-maintenant does not include built-in authentication — by design.
-
-Like Dozzle, Prometheus, and most self-hosted monitoring tools, maintenant is designed to sit behind your existing reverse proxy + auth middleware. No need to manage yet another set of user accounts.
-
-```
-Internet  ->  Reverse Proxy (Traefik / Caddy / nginx)
-          ->  Auth (Authelia / Authentik / OAuth2 Proxy)
-          ->  maintenant
-```
-
-<details>
-<summary><strong>Example: Traefik + Authelia</strong></summary>
-
-```yaml
-services:
-  maintenant:
-    image: ghcr.io/kolapsis/maintenant:latest
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    group_add:
-      - "${DOCKER_GID:-983}"
-    tmpfs:
-      - /tmp:noexec,nosuid,size=64m
-    labels:
-      traefik.enable: "true"
-      traefik.http.routers.maintenant.rule: "Host(`now.example.com`)"
-      traefik.http.routers.maintenant.middlewares: "authelia@docker"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /proc:/host/proc:ro
-      - maintenant-data:/data
-    environment:
-      MAINTENANT_ADDR: "0.0.0.0:8080"
-      MAINTENANT_DB: "/data/maintenant.db"
-      MAINTENANT_BASE_URL: "https://now.example.com"
-```
-
-</details>
-
-> **Note:** `/ping/{uuid}` (heartbeat pings) and `/status/` (public status page) are meant to be publicly accessible. Configure your proxy rules accordingly.
-
----
-
-## Troubleshooting
-
-### Permission denied on /var/run/docker.sock
-
-**Symptom:** maintenant starts but shows no containers, and the logs contain something like:
-
-```text
-permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock
-```
-
-**Why it happens:** maintenant runs as `nobody` (uid 65534) by design. The Docker socket on the host is owned by `root:docker`, so the process needs membership in the socket's group — without it the kernel rejects the open call even with a read-only mount.
-
-**Normally automatic:** the entrypoint detects the mounted socket's group and grants the unprivileged user access to it — on plain Compose **and** Swarm (where `docker stack deploy` silently ignores `group_add`). Mounting `/var/run/docker.sock` is enough.
-
-**If it still fails** (non-standard socket path, socket proxy, or to pin the GID), set `DOCKER_GID` explicitly. Find the socket's group on the host:
-
-```bash
-stat -c '%g' /var/run/docker.sock
-# or: getent group docker | cut -d: -f3
-```
-
-Pass it to the container via a `.env` file and the `DOCKER_GID` environment variable, then restart:
-
-```bash
-docker compose up -d
-```
-
-**Synology DSM (Container Manager):** DSM ships no `docker` group, so the socket is `root:root` and the detected GID is `0` — which auto-detection refuses to grant, since root's group is not something an unprivileged runtime gets implicitly. Either set `DOCKER_GID: "0"` on the service to grant it explicitly, or put a [socket proxy](https://docs.maintenant.dev/security/#recommended-docker-socket-proxy) in front: it holds the socket, and maintenant talks to it over `DOCKER_HOST: "tcp://socketproxy:2375"` with no socket mount and no GID involved.
-
-**SELinux (Fedora / RHEL / Rocky / CentOS):** if setting the GID does not resolve the error, SELinux may be blocking the socket access. Check with:
-
-```bash
-ausearch -m AVC -ts recent
-```
-
-If you see a denial for `docker.sock`, add the `:z` relabel flag to the socket mount:
-
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock:ro,z
-```
-
-**Docker rootless:** the socket is not at `/var/run/docker.sock` but at `$XDG_RUNTIME_DIR/docker.sock` (typically `/run/user/1000/docker.sock`). Adjust the bind mount accordingly:
-
-```yaml
-volumes:
-  - /run/user/1000/docker.sock:/var/run/docker.sock:ro
-```
-
-Replace `1000` with the UID of the user running the rootless Docker daemon (`id -u` on the host).
-
----
-
-## Alert Sources
-
-| Source      | Events                                 | Default Severity  |
-| ----------- | -------------------------------------- | ----------------- |
-| Container   | `restart_loop`, `health_unhealthy`     | Warning           |
-| Endpoint    | `consecutive_failure`                  | Critical          |
-| Heartbeat   | `deadline_missed`                      | Critical          |
-| Certificate | `expiring`, `expired`, `chain_invalid` | Critical          |
-| Resource    | `cpu_threshold`, `memory_threshold`    | Warning           |
-| Update      | `available`                            | Info              |
-
-Deliver to Discord or any HTTP webhook. Email and Telegram come with Personal, Slack and Teams with Pro.
-
----
-
-## API
-
-Full REST API under `/api/v1/` for automation and integration.
-
-<details>
-<summary><strong>Endpoint reference</strong></summary>
-
-| Resource     | Endpoints                                                                                               |
-| ------------ | ------------------------------------------------------------------------------------------------------- |
-| Containers   | `GET /containers` `GET /containers/{id}` `GET /containers/{id}/transitions` `GET /containers/{id}/logs` |
-| Endpoints    | `GET /endpoints` `GET /endpoints/{id}` `GET /endpoints/{id}/checks` `GET /endpoints/{id}/uptime/daily`  |
-| Heartbeats   | `GET POST /heartbeats` `GET PUT DELETE /heartbeats/{id}` `POST /heartbeats/{id}/pause\|resume`          |
-| Certificates | `GET POST /certificates` `GET PUT DELETE /certificates/{id}`                                            |
-| Resources    | `GET /containers/{id}/resources/current\|history` `GET /resources/summary\|top\|hosts`                  |
-| Agents       | `GET /agents` `GET PATCH DELETE /agents/{id}` `POST /agents/{id}/revoke` `GET POST /agents/enrollment-tokens` *(Personal)* |
-| Alerts       | `GET /alerts` `GET /alerts/active` `GET POST /channels` `GET POST /alert-triggers` `GET POST /escalation-policies` *(Pro)* `GET POST /silence` |
-| Webhooks     | `GET POST /webhooks` `POST /webhooks/{id}/test`                                                         |
-| Status Page  | `GET POST /status/components\|incidents\|maintenance`                                                   |
-| Updates      | `GET /updates` `POST /updates/scan`                                                                     |
-| Security     | `GET /security/insights` `GET /security/summary` `GET /security/insights/{id}`                          |
-| Events       | `GET /containers/events` *(SSE stream)*                                                                 |
-| Health       | `GET /health`                                                                                           |
-
-</details>
+- **No built-in authentication, by design.** Like Dozzle and Prometheus, maintenant sits behind your reverse proxy and auth middleware (Traefik or Caddy, Authelia or Authentik). `/ping/{uuid}` and `/status/` are meant to stay public. [Reverse proxy setup](https://docs.maintenant.dev/security/#reverse-proxy-setup).
+- **Read-only everywhere.** Docker socket mounted `:ro`, read-only RBAC on Kubernetes, read-only agents. maintenant never starts, stops or modifies a container. A [socket proxy](https://docs.maintenant.dev/security/#recommended-docker-socket-proxy) is supported if you would rather not mount the socket at all.
+- **Hardened container.** Runs as `nobody`, `read_only` root filesystem, `no-new-privileges`.
+- **Anonymous, opt-out telemetry.** One counts-only snapshot per hour, no hostnames, IPs, names, URLs or keys, ever. `MAINTENANT_DISABLE_TELEMETRY=1` turns it off with no background goroutine and no outbound packet. [Exact payload and details](https://docs.maintenant.dev/getting-started/configuration/#telemetry).
 
 ---
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│                  Single Go Binary                    │
-│                                                      │
-│   ┌────────────────────────────────────────────┐     │
-│   │  Vue 3 + TypeScript + Tailwind (embed.FS)  │     │
-│   │  Real-time SSE  ·  uPlot charts  ·  PWA    │     │
-│   └────────────────────────────────────────────┘     │
-│                         |                            │
-│   ┌────────────────────────────────────────────┐     │
-│   │           REST API v1 + SSE Broker         │     │
-│   └────────────────────────────────────────────┘     │
-│          |                          |                │
-│   ┌─────────────┐  ┌──────────────────────┐         │
-│   │   Docker     │  │     Kubernetes       │         │
-│   │   Runtime    │  │     Runtime          │         │
-│   └─────────────┘  └──────────────────────┘         │
-│          |                          |                │
-│   ┌────────────────────────────────────────────┐     │
-│   │  Containers · Endpoints · Heartbeats ·     │     │
-│   │  Certificates · Resources · Alerts ·       │     │
-│   │  Updates · Security · Status Page ·        │     │
-│   │  Webhooks                                  │     │
-│   └────────────────────────────────────────────┘     │
-│                         |                            │
-│   ┌────────────────────────────────────────────┐     │
-│   │     SQLite  (WAL · single-writer · zero    │     │
-│   │              external dependencies)        │     │
-│   └────────────────────────────────────────────┘     │
-└──────────────────────────────────────────────────────┘
-```
+- **One binary, three modes.** Go backend, Vue 3 frontend embedded via `embed.FS`, SQLite inside. The same file runs `embedded` (single host, default), `server` (central ingestion) and `agent` (remote host).
+- **Zero dependencies.** SQLite is the only datastore. No Redis, no queue, nothing to administer. A fleet operator may back the server on a [PostgreSQL](https://docs.maintenant.dev/guides/postgresql/) they already run; agents always stay on SQLite.
+- **Runtime optional.** Endpoints, certificates and heartbeats run without any Docker socket or Kubernetes API. Container monitoring resumes on its own when a runtime becomes reachable.
+- **Real-time.** SSE pushes every state change to the browser and to the status page instantly.
+- **~17 MB of RAM.** Runs on a Raspberry Pi, a €4 VPS or a NAS.
 
-- **Single binary** — Frontend embedded via `embed.FS`. One file to deploy. The same binary runs in three modes: `embedded` (single host, default), `server` (central ingestion), and `agent` (remote host) — see [Multi-Host Monitoring](#multi-host-monitoring).
-- **Zero dependencies** — SQLite is the only required datastore. No Redis, no message queue, nothing to administer. A fleet operator may optionally back the server on a PostgreSQL they already run ([why](docs/guides/postgresql.md)); an agent is always SQLite. The container runtime (Docker / Kubernetes) is **optional**: maintenant starts and serves endpoints, SSL, and heartbeat monitors even without a runtime socket — container monitoring resumes automatically when the runtime becomes available.
-- **Real-time** — SSE pushes every state change to the browser instantly.
-- **Read-only** — maintenant never touches your containers. Observe only.
-- **Label-driven** — Configure monitoring through Docker labels. No YAML to maintain.
-- **~17 MB RAM** — Lightweight enough to run on any VPS or Raspberry Pi.
+Full write-up in the [architecture documentation](https://docs.maintenant.dev/architecture/).
 
 ---
 
-## Pricing
+## Editions
 
-<p align="center">
-  <strong>Three editions, in order: Community, Personal, Pro.</strong><br>
-  <sub>Community is free forever. Personal is bought once. Pro is what a team needs.<br>
-  <strong>100% of revenue funds full-time development</strong> — no investors to pay back, no salespeople to feed.</sub>
-</p>
+Community is free forever and runs production infrastructure every day: it is the full product on a single host, not a crippled trial. Personal is bought once. Pro is what a team needs.
 
-<table>
-  <tr>
-    <td width="33%" valign="top" align="left">
-      <h3>Community</h3>
-      <p><strong>Free</strong> · AGPL-3.0 · self-hosted forever</p>
-      <ul>
-        <li>Container auto-discovery (Docker + Kubernetes)</li>
-        <li>Full Swarm and Kubernetes views</li>
-        <li>HTTP / TCP endpoint monitoring <sub>(up to 10)</sub></li>
-        <li>Heartbeat &amp; cron monitoring <sub>(up to 5)</sub></li>
-        <li>TLS certificate tracking <sub>(up to 5)</sub></li>
-        <li>Resource metrics (CPU, RAM, net, disk) <sub>(7 days of history)</sub></li>
-        <li>Network security insights</li>
-        <li>Update intelligence (digest scan)</li>
-        <li>Alert engine + webhook + Discord</li>
-        <li>Public status page <sub>(up to 3 components)</sub></li>
-        <li>REST API + SSE + MCP server</li>
-        <li>PWA support</li>
-      </ul>
-      <p><em>A single host, no account required.</em></p>
-    </td>
-    <td width="33%" valign="top" align="left" style="background:#0B0E13">
-      <h3>Personal</h3>
-      <p><strong>€149</strong> once, for life</p>
-      <p><em>Everything in Community, plus:</em></p>
-      <ul>
-        <li><strong>Every cap lifted</strong> — endpoints, heartbeats, certificates, status components</li>
-        <li><strong>Multi-host monitoring</strong> <sub>(up to 20 remote machines)</sub></li>
-        <li><strong>Email alerts</strong> and advanced trigger filters</li>
-        <li><strong>CVE enrichment</strong> + risk scoring per container</li>
-        <li><strong>Unified security posture</strong> dashboard</li>
-        <li><strong>Incident management</strong> with public timeline</li>
-        <li><strong>Telegram</strong> channel — bot token and chat id, no URL to wire</li>
-        <li>Changelog, <strong>30 days</strong> of resource history, OCSP stapling</li>
-      </ul>
-      <p>For one person, on infrastructure they own or run for themselves — freelancers included. It does not cover monitoring someone else's infrastructure or reselling Maintenant as a service, and carries no support commitment.</p>
-      <p>Includes <strong>one year of product updates</strong>, then €59 per extra year. Every version released inside that year stays licensed for life.</p>
-      <p><a href="https://maintenant.dev/pricing/"><strong>Buy Personal →</strong></a></p>
-    </td>
-    <td width="33%" valign="top" align="left">
-      <h3>Pro&nbsp;&nbsp;<sub><code>14-day free trial</code></sub></h3>
-      <p><strong>€29</strong>/month · or <strong>€290</strong>/year <sub>(save 2 months)</sub></p>
-      <p><em>Everything in Personal, plus:</em></p>
-      <ul>
-        <li><strong>Unlimited</strong> remote machines</li>
-        <li><strong>Slack and Microsoft Teams</strong> channels</li>
-        <li><strong>Alert escalation</strong> — page the right person, not a dead channel</li>
-        <li><strong>Per-entity routing</strong></li>
-        <li><strong>Maintenance windows</strong> — silence cleanly during deploys</li>
-        <li><strong>Subscriber notifications</strong> (email, webhook)</li>
-        <li><strong>Status page branding</strong></li>
-        <li><strong>The right to use Maintenant on behalf of others</strong></li>
-        <li><strong>90 days</strong> of resource history</li>
-        <li><strong>Priority email support</strong></li>
-      </ul>
-      <p><a href="https://maintenant.dev/pricing/"><strong>Start free trial →</strong></a></p>
-    </td>
-  </tr>
-</table>
+|                           | **Community**            | **Personal**                       | **Pro**                              |
+| ------------------------- | ------------------------ | ---------------------------------- | ------------------------------------ |
+| Price                     | Free, AGPL-3.0           | **€149** once, for life            | **€29**/mo or €290/yr, 14-day trial  |
+| Hosts                     | 1                        | up to 20 remote machines           | unlimited                            |
+| Endpoints / heartbeats / certificates | 10 / 5 / 5   | unlimited                          | unlimited                            |
+| Resource history          | 7 days                   | 30 days                            | 90 days                              |
+| Alert channels            | Discord, webhooks        | + email, Telegram, advanced filters | + Slack, Teams, escalation, per-entity routing, maintenance windows |
+| Security                  | network insights         | + CVE enrichment, risk scoring, security posture, OCSP | same                     |
+| Status page               | 3 components             | unlimited, incident timelines      | + subscriber notifications, branding |
+| Use                       | anything                 | your own infrastructure            | + running it for others, priority support |
 
-### Why pay at all?
+Personal covers one person on infrastructure they own or run for themselves, freelancers included, and ships with one year of updates (then €59 per extra year; every version released inside a paid year stays licensed for life). Pro adds the right to monitor other people's infrastructure. Enterprise (SSO, audit logs, SLAs, on-prem support): [hello@kolapsis.com](mailto:hello@kolapsis.com).
 
-- **Lift every limit, once.** Personal removes the caps and adds the security layer for a single payment, and the licence never expires.
-- **Prioritize the vulnerabilities that matter.** CVE enrichment and per-container risk scoring surface what's critical in *your* environment — not a generic feed.
-- **Sleep through the night.** Pro escalation chains page the on-call engineer, then the backup, then the lead — instead of dying silently in a muted Discord.
-- **Turn outages into trust.** Public incident timelines and subscriber notifications keep your users informed automatically.
-- **Fund independent software.** maintenant is built in Bordeaux, France — by one developer, with no VC, no tracking, no dark patterns. Your purchase is the roadmap.
-
-<p align="center">
-  <a href="./docs/screen-captures/11-security-posture.png"><img src="./docs/screen-captures/11-security-posture.png" alt="Personal — Unified Security Posture" width="680" /></a>
-  <br><sub><strong>Personal</strong> — Unified security posture with CVE enrichment &amp; risk scoring</sub>
-</p>
-
-### Flexible billing — your choice of processor
-
-Pick the processor that fits where you are:
-
-| Region          | Processor | Methods                                                 |
-| --------------- | --------- | ------------------------------------------------------- |
-| Global          | **Stripe** | Credit / debit card                                     |
-| European Union  | **Mollie** | Card, SEPA Direct Debit, iDEAL, Bancontact, and more    |
-
-- Personal is a single payment, with no subscription to cancel and no expiry
-- Pro comes with a 14-day free trial, plenty of time to evaluate against a real stack
-- Cancel a Pro subscription anytime from your dashboard
-- VAT-compliant invoices issued automatically
-- **Self-hosted means self-hosted** — your monitoring data never leaves your infrastructure
-
-### "Why should I pay for open-source?"
-
-Fair question. Here's the honest answer:
-
-<details>
-<summary><strong>Is the Community Edition really everything I need?</strong></summary>
-
-Yes. Community is not crippleware — it runs production infrastructure every day. Personal exists for one person who has outgrown the caps or wants the security layer. Pro exists for teams that need escalation routing and premium channels. If you need neither, stay on Community, and consider <a href="https://github.com/sponsors/kolapsis">sponsoring</a> instead.
-</details>
-
-<details>
-<summary><strong>If I don't pay, does the project die?</strong></summary>
-
-maintenant is AGPL-3.0 and will always be free. But one developer can only sustain this full-time if users pay. Every purchase is a direct vote for "keep shipping" — no investors to please, no enterprise pivot, no acquisition exit.
-</details>
-
-<details>
-<summary><strong>Can I self-host a paid edition? Does my data leave my infra?</strong></summary>
-
-Yes, self-host Personal and Pro exactly like Community — it's the same binary. The key is checked against the license server and the signed answer is cached, so an outage or a few weeks offline change nothing. Your monitoring data never touches our servers. Ever.
-</details>
-
-<details>
-<summary><strong>Is there an Enterprise plan for larger teams?</strong></summary>
-
-Yes — for teams needing SSO, audit logs, custom SLAs, or on-prem support contracts. Email <a href="mailto:hello@kolapsis.com">hello@kolapsis.com</a>.
-</details>
-
-### Activate a paid edition
-
-Grab a key from [maintenant.dev/pricing/](https://maintenant.dev/pricing/), set it in your environment, restart — done. The same variable carries a Personal or a Pro key.
+Paid editions are the same binary, self-hosted the same way. The key is verified against the license server and the signed answer is cached, so being offline for weeks changes nothing. **Your monitoring data never leaves your infrastructure.**
 
 ```bash
-MAINTENANT_LICENSE_KEY=your-license-key
+MAINTENANT_LICENSE_KEY=your-license-key   # Personal or Pro, restart, done
 ```
 
 <p align="center">
-  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Buy%20Personal-%E2%82%AC149%20once-8b5cf6?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Buy Personal — €149 once" /></a>
-  &nbsp;&nbsp;
-  <a href="https://maintenant.dev/pricing/"><img src="https://img.shields.io/badge/Start%20your%2014--day%20Pro%20trial-%E2%82%AC29%2Fmo-22c55e?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJMMSA5bDExIDcgOS01LjcyVjE3aDJWOEwxMiAyeiIvPjwvc3ZnPg==" alt="Start your 14-day Pro trial — €29/mo" /></a>
-</p>
-
-<p align="center">
-  <sub>Personal: one payment, no expiry · Pro: 14-day free trial, cancel anytime · VAT-compliant invoices</sub>
+  <a href="https://maintenant.dev/pricing/"><strong>Buy Personal, €149 once →</strong></a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/"><strong>Start a 14-day Pro trial →</strong></a>
+  <br><sub>Stripe worldwide, Mollie in the EU (SEPA, iDEAL, Bancontact). VAT invoices. Cancel Pro anytime.</sub>
 </p>
 
 ---
 
 ## Support the project
 
-maintenant is built independently in Bordeaux, France. No VC, no tracking, no acquisition exit, and no data collection beyond [anonymous opt-out telemetry](#telemetry). The only way this keeps going is if users who benefit from it give back. **Here's how, ranked by impact:**
+maintenant is built by one developer in Bordeaux, France. No VC, no tracking, no acquisition exit. 100% of revenue funds full-time development. Ranked by impact:
 
-<table>
-  <tr>
-    <td width="25%" valign="top" align="center">
-      <h3>1. Buy a licence</h3>
-      <p><strong>Personal €149</strong> once · <strong>Pro €29/mo</strong></p>
-      <p><sub>The single most impactful way to support the project. Unlocks advanced features AND funds development. Personal if the infrastructure is yours, Pro if you run it for others.</sub></p>
-      <p><a href="https://maintenant.dev/pricing/"><strong>See editions →</strong></a></p>
-    </td>
-    <td width="25%" valign="top" align="center">
-      <h3>2. Sponsor</h3>
-      <p><strong>Any amount</strong> · one-off or monthly</p>
-      <p><sub>Don't need a paid edition? Sponsor on GitHub. Every sponsor gets credited in the <a href="#backers">Backers</a> wall below.</sub></p>
-      <p><a href="https://github.com/sponsors/kolapsis"><strong>Sponsor →</strong></a></p>
-    </td>
-    <td width="25%" valign="top" align="center">
-      <h3>3. Spread the word</h3>
-      <p><strong>Free · 10 seconds</strong></p>
-      <p><sub>Star the repo, share on HN / Lobsters / Reddit / LinkedIn. Discoverability is oxygen for indie projects.</sub></p>
-      <p><a href="https://github.com/kolapsis/maintenant"><strong>Star repo →</strong></a></p>
-    </td>
-    <td width="25%" valign="top" align="center">
-      <h3>4. Tell me how you use it</h3>
-      <p><strong>Two minutes</strong></p>
-      <p><sub>Read by the developer, quoted only if you allow it.</sub></p>
-      <p><a href="https://maintenant.dev/feedback/"><strong>Give feedback →</strong></a></p>
-    </td>
-  </tr>
-</table>
+1. **Buy a licence.** Personal if the infrastructure is yours, Pro if you run it for others. Unlocks features and pays for the roadmap. [See editions →](https://maintenant.dev/pricing/)
+2. **Sponsor.** Any amount, one-off or monthly, credited below. [GitHub Sponsors →](https://github.com/sponsors/kolapsis)
+3. **Spread the word.** Star the repo, share on HN, Lobsters, Reddit or LinkedIn. Discoverability is oxygen for indie projects.
+4. **Tell me how you use it.** Two minutes, read by the developer, quoted only with your permission. [Give feedback →](https://maintenant.dev/feedback/)
 
 ### Backers
 
@@ -883,26 +407,26 @@ maintenant is built independently in Bordeaux, France. No VC, no tracking, no ac
 
 <a href="https://github.com/sponsors/kolapsis"><img src="https://img.shields.io/github/sponsors/kolapsis?style=for-the-badge&label=GitHub%20Sponsors&color=ea4aaa" alt="GitHub Sponsors" /></a>
 
-> Want your company logo here? [Become a corporate sponsor](mailto:hello@kolapsis.com) — visibility for you, runway for the project.
+> Want your company logo here? [Become a corporate sponsor](mailto:hello@kolapsis.com): visibility for you, runway for the project.
 
 ---
 
 ## Contributing
 
-Code contributions are welcome. Please open an issue first to discuss bigger changes. Small fixes, typos, docs — just send the PR.
-
-For other ways to contribute (bug reports, feature ideas, feedback), see [Support the project](#support-the-project).
+Code contributions are welcome. Open an issue first for bigger changes; small fixes, typos and docs, just send the PR.
 
 ---
 
 ## License
 
-Copyright 2025-2026 Benjamin Touchard / kOlapsis — Bordeaux, France
+Copyright 2025-2026 Benjamin Touchard / kOlapsis, Bordeaux, France.
 
 Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) or a commercial license.
 
 ---
 
 <p align="center">
-  <sub>Built with care in Bordeaux, France — if maintenant saves you an outage, <a href="https://maintenant.dev/pricing/">buy the developer a coffee (or a year of runway)</a>.</sub>
+  <img src="./docs/logos/france-2030.png" alt="France 2030" width="80" /><br>
+  <sub>Lauréat de l'AAP Hyper Open X. Ce projet a été financé par le gouvernement dans le cadre de France 2030.</sub><br>
+  <sub><em>Winner of the Hyper Open X call for projects, funded by the French government under France 2030.</em></sub>
 </p>
