@@ -76,7 +76,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash
 
 Endpoints, certificates and heartbeats work without any container runtime. Container monitoring switches on by itself the moment a runtime shows up. [Install documentation](https://docs.maintenant.dev/install/) for pinned versions, air-gapped installs and supply-chain verification.
 
-**Cloud**: one `cloud-init` file boots a hardened host with maintenant running on [Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/) or [DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/).
+**Cloud**: one `cloud-init` file boots a hardened host with maintenant running on [Hetzner Cloud](https://docs.maintenant.dev/guides/hetzner/), [DigitalOcean](https://docs.maintenant.dev/guides/digitalocean/), [Scaleway](https://docs.maintenant.dev/guides/scaleway/), [OVHcloud](https://docs.maintenant.dev/guides/ovhcloud/) or [Vultr](https://docs.maintenant.dev/guides/vultr/).
 
 ---
 
