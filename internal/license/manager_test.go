@@ -216,9 +216,9 @@ func TestManager_InvalidSignature(t *testing.T) {
 	// Set an existing state to verify it's preserved
 	m.state.Store(&State{
 		Edition:    extension.Pro,
-		Status:       "active",
-		Plan:         "pro",
-		VerifiedAt:   time.Now(),
+		Status:     "active",
+		Plan:       "pro",
+		VerifiedAt: time.Now(),
 	})
 
 	m.check(context.Background())
@@ -404,12 +404,14 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 			mu.Unlock()
 		})
 
-		// First check: sets baseline (Pro), no dispatch
+		// First check: sets baseline (Pro), no dispatch. Negative check: held
+		// over a window since the dispatch (if it fired) would be async.
 		m.check(context.Background())
-		time.Sleep(10 * time.Millisecond)
-		mu.Lock()
-		assert.Equal(t, 0, callCount, "baseline should not trigger callback")
-		mu.Unlock()
+		assert.Never(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return callCount != 0
+		}, 300*time.Millisecond, 10*time.Millisecond, "baseline should not trigger callback")
 
 		// Simulate Pro→CE: override server to return expired
 		origOverride := licenseServerOverride
@@ -423,7 +425,11 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 		defer func() { licenseServerOverride = origOverride }()
 
 		m.check(context.Background())
-		time.Sleep(50 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return callCount == 1
+		}, 2*time.Second, 10*time.Millisecond, "Pro→CE should trigger callback")
 
 		mu.Lock()
 		assert.Equal(t, 1, callCount, "Pro→CE should trigger callback")
@@ -462,16 +468,22 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 			mu.Unlock()
 		})
 
-		// First check: sets baseline (expired → CE)
+		// First check: sets baseline (expired → CE). Negative check: held over
+		// a window since the dispatch (if it fired) would be async.
 		m.check(context.Background())
-		time.Sleep(10 * time.Millisecond)
-		mu.Lock()
-		assert.Equal(t, 0, callCount, "baseline should not trigger")
-		mu.Unlock()
+		assert.Never(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return callCount != 0
+		}, 300*time.Millisecond, 10*time.Millisecond, "baseline should not trigger")
 
 		// Second check: CE→Pro
 		m.check(context.Background())
-		time.Sleep(50 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return callCount == 1
+		}, 2*time.Second, 10*time.Millisecond, "CE→Pro should trigger callback")
 
 		mu.Lock()
 		assert.Equal(t, 1, callCount, "CE→Pro should trigger callback")
@@ -499,13 +511,14 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 			mu.Unlock()
 		})
 
-		// Single applyPayload — sets baseline, no dispatch
+		// Single applyPayload — sets baseline, no dispatch. Negative check:
+		// held over a window since a dispatch (if it fired) would be async.
 		m.check(context.Background())
-		time.Sleep(50 * time.Millisecond)
-
-		mu.Lock()
-		assert.Equal(t, 0, callCount, "initial state must not trigger callback")
-		mu.Unlock()
+		assert.Never(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return callCount != 0
+		}, 300*time.Millisecond, 10*time.Millisecond, "initial state must not trigger callback")
 	})
 
 	t.Run("pro_to_pro_no_dispatch", func(t *testing.T) {
@@ -525,14 +538,15 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 			mu.Unlock()
 		})
 
-		// Both checks return Pro — no transition, no dispatch
+		// Both checks return Pro — no transition, no dispatch. Negative check:
+		// held over a window since a dispatch (if it fired) would be async.
 		m.check(context.Background())
 		m.check(context.Background())
-		time.Sleep(50 * time.Millisecond)
-
-		mu.Lock()
-		assert.Equal(t, 0, callCount, "Pro→Pro must not trigger callback")
-		mu.Unlock()
+		assert.Never(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return callCount != 0
+		}, 300*time.Millisecond, 10*time.Millisecond, "Pro→Pro must not trigger callback")
 	})
 
 	t.Run("two_callbacks_both_invoked", func(t *testing.T) {
@@ -570,7 +584,11 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 
 		m.check(context.Background()) // baseline Pro
 		m.check(context.Background()) // transition → expired (CE)
-		time.Sleep(50 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return callCount == 2
+		}, 2*time.Second, 10*time.Millisecond, "both callbacks should be invoked")
 
 		mu.Lock()
 		assert.Equal(t, 2, callCount, "both callbacks should be invoked")
@@ -607,7 +625,11 @@ func TestLicenseManagerEditionChangeCallback(t *testing.T) {
 
 		m.check(context.Background()) // baseline
 		m.check(context.Background()) // transition
-		time.Sleep(100 * time.Millisecond)
+		require.Eventually(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return secondCalled
+		}, 2*time.Second, 10*time.Millisecond, "second callback must run even after first panicked")
 
 		mu.Lock()
 		assert.True(t, secondCalled, "second callback must run even after first panicked")
@@ -671,7 +693,9 @@ func TestManager_HTTP401NotifiesTheTransition(t *testing.T) {
 
 	unauthorized = true
 	m.check(context.Background())
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return len(seen()) == 1
+	}, 2*time.Second, 10*time.Millisecond, "an HTTP 401 must dispatch the transition, not just store the state")
 
 	assert.Equal(t, extension.Community, m.Edition())
 	assert.Equal(t, []extension.Edition{extension.Community}, seen(),
@@ -700,7 +724,9 @@ func TestManager_HTTP403NotifiesTheTransition(t *testing.T) {
 
 	forbidden = true
 	m.check(context.Background())
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return len(seen()) == 1
+	}, 2*time.Second, 10*time.Millisecond, "an HTTP 403 revocation must dispatch the transition")
 
 	assert.Equal(t, extension.Community, m.Edition())
 	assert.Equal(t, []extension.Edition{extension.Community}, seen(),
@@ -731,7 +757,9 @@ func TestManager_NetworkDegradationBeyondSixtyDaysNotifies(t *testing.T) {
 
 	down = true
 	m.check(context.Background())
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return len(seen()) == 1
+	}, 2*time.Second, 10*time.Millisecond, "crossing the 60-day offline window must dispatch the transition")
 
 	assert.Equal(t, extension.Community, m.Edition())
 	assert.Equal(t, []extension.Edition{extension.Community}, seen(),

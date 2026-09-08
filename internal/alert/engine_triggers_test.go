@@ -100,20 +100,35 @@ func seedTriggerForChannel(t *testing.T, ts alert.TriggerStore, name string, ena
 	return id
 }
 
-func countDeliveriesForChannel(t *testing.T, cs alert.ChannelStore, alertID, channelID string) int {
-	t.Helper()
+// deliveryCountForChannel is the error-returning core used by predicates
+// polled inside Eventually/Never: those run on a goroutine of testify's own,
+// and require/assert failures must only ever be raised from the test's own
+// goroutine.
+func deliveryCountForChannel(cs alert.ChannelStore, alertID, channelID string) (int, error) {
 	deliveries, err := cs.ListDeliveriesByAlert(context.Background(), alertID)
-	require.NoError(t, err)
+	if err != nil {
+		return 0, err
+	}
 	count := 0
 	for _, d := range deliveries {
 		if d.ChannelID == channelID {
 			count++
 		}
 	}
+	return count, nil
+}
+
+func countDeliveriesForChannel(t *testing.T, cs alert.ChannelStore, alertID, channelID string) int {
+	t.Helper()
+	count, err := deliveryCountForChannel(cs, alertID, channelID)
+	require.NoError(t, err)
 	return count
 }
 
-func fireEvent(eng *alert.Engine, severity, source, entityType string, entityID string) {
+// fireEvent sends a non-recovery event and waits until the engine has
+// persisted the resulting active alert, so callers can safely read it back.
+func fireEvent(t *testing.T, ctx context.Context, alertStore alert.AlertStore, eng *alert.Engine, severity, source, entityType string, entityID string) {
+	t.Helper()
 	eng.EventChannel() <- alert.Event{
 		Source:     source,
 		AlertType:  "test",
@@ -123,7 +138,10 @@ func fireEvent(eng *alert.Engine, severity, source, entityType string, entityID 
 		EntityName: "test-entity",
 		Timestamp:  time.Now(),
 	}
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		alerts, err := alertStore.ListActiveAlerts(ctx)
+		return err == nil && len(alerts) == 1
+	}, 5*time.Second, 10*time.Millisecond, "the alert engine must have created the active alert")
 }
 
 // capturingWebhookServer records every JSON payload POSTed to it.
@@ -175,12 +193,21 @@ func TestEngineRecovery_NotificationReadsAsRecovery(t *testing.T) {
 		Message:    "Heartbeat 'backup' missed deadline",
 		Timestamp:  time.Now(),
 	}
-	time.Sleep(150 * time.Millisecond)
 
-	alerts, err := alertStore.ListActiveAlerts(ctx)
-	require.NoError(t, err)
-	require.Len(t, alerts, 1)
-	originalID := alerts[0].ID
+	var originalID string
+	require.Eventually(t, func() bool {
+		alerts, err := alertStore.ListActiveAlerts(ctx)
+		if err != nil || len(alerts) != 1 {
+			return false
+		}
+		originalID = alerts[0].ID
+		return true
+	}, 5*time.Second, 10*time.Millisecond, "the alert engine must have created the active alert")
+
+	require.Eventually(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, originalID, chID)
+		return err == nil && n == 1
+	}, 5*time.Second, 10*time.Millisecond, "initial critical alert must be delivered")
 	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, originalID, chID), "initial critical alert must be delivered")
 
 	eng.EventChannel() <- alert.Event{
@@ -194,7 +221,12 @@ func TestEngineRecovery_NotificationReadsAsRecovery(t *testing.T) {
 		Message:    "Heartbeat 'backup' recovered",
 		Timestamp:  time.Now(),
 	}
-	time.Sleep(150 * time.Millisecond)
+
+	// The subsequent assertions read the captured webhook payload directly, so
+	// that (not the DB delivery count, which lands earlier) is the outcome to wait on.
+	require.Eventually(t, func() bool {
+		return len(capturedBodies()) == 2
+	}, 5*time.Second, 10*time.Millisecond, "webhook must have received both the failure and the recovery")
 
 	active, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
@@ -222,7 +254,11 @@ func TestEngineRecovery_NotificationReadsAsRecovery(t *testing.T) {
 	assert.NotEmpty(t, recoveryPayload["resolved_at"])
 }
 
-func recoverEvent(eng *alert.Engine, severity, source, entityType string, entityID string) {
+// recoverEvent sends a recovery event and waits until the engine has removed
+// the entity from the active-alert set, so callers can safely assert on
+// whatever the recovery is expected to have triggered (or not).
+func recoverEvent(t *testing.T, ctx context.Context, alertStore alert.AlertStore, eng *alert.Engine, severity, source, entityType string, entityID string) {
+	t.Helper()
 	eng.EventChannel() <- alert.Event{
 		Source:     source,
 		AlertType:  "test",
@@ -233,7 +269,18 @@ func recoverEvent(eng *alert.Engine, severity, source, entityType string, entity
 		EntityName: "test-entity",
 		Timestamp:  time.Now(),
 	}
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		alerts, err := alertStore.ListActiveAlerts(ctx)
+		if err != nil {
+			return false
+		}
+		for _, a := range alerts {
+			if a.EntityType == entityType && a.EntityID == entityID {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, 10*time.Millisecond, "the alert engine must have resolved the alert")
 }
 
 func seedTriggerNotifyOnResolve(t *testing.T, ts alert.TriggerStore, name string, notifyOnResolve bool, severities, sources string, channelIDs []string) string {
@@ -261,13 +308,18 @@ func TestEngineDispatch_TriggerMatch_DeliveriesCreated(t *testing.T) {
 	ch2 := seedWebhookChannel(t, channelStore, "slack-2", true)
 	seedTriggerForChannel(t, triggerStore, "CritAll", true, "critical", "container", []string{ch1, ch2})
 
-	fireEvent(eng, "critical", "container", "container", "10")
+	fireEvent(t, ctx, alertStore, eng, "critical", "container", "container", "10")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
-
 	alertID := alerts[0].ID
+
+	require.Eventually(t, func() bool {
+		n1, err1 := deliveryCountForChannel(channelStore, alertID, ch1)
+		n2, err2 := deliveryCountForChannel(channelStore, alertID, ch2)
+		return err1 == nil && err2 == nil && n1 == 1 && n2 == 1
+	}, 5*time.Second, 10*time.Millisecond, "both channels must receive a delivery")
 	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, ch1), "ch1 should have 1 delivery")
 	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, ch2), "ch2 should have 1 delivery")
 }
@@ -281,13 +333,19 @@ func TestEngineDispatch_DisabledChannel_NoDelivery(t *testing.T) {
 	chID := seedWebhookChannel(t, channelStore, "disabled-ch", false)
 	seedTriggerForChannel(t, triggerStore, "TrigDisCh", true, "critical", "endpoint", []string{chID})
 
-	fireEvent(eng, "critical", "endpoint", "endpoint", "20")
+	fireEvent(t, ctx, alertStore, eng, "critical", "endpoint", "endpoint", "20")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
 
-	assert.Equal(t, 0, countDeliveriesForChannel(t, channelStore, alerts[0].ID, chID), "disabled channel must not receive delivery")
+	// Negative check: a disabled channel must never receive a delivery, held
+	// over a window rather than sampled once.
+	assert.Never(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "disabled channel must not receive delivery")
 }
 
 // T077 — E2E test 3: disabled trigger → no delivery.
@@ -299,13 +357,18 @@ func TestEngineDispatch_DisabledTrigger_NoDelivery(t *testing.T) {
 	chID := seedWebhookChannel(t, channelStore, "ch-dis-trig", true)
 	seedTriggerForChannel(t, triggerStore, "DisabledTrigger", false, "", "", []string{chID})
 
-	fireEvent(eng, "warning", "container", "container", "30")
+	fireEvent(t, ctx, alertStore, eng, "warning", "container", "container", "30")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
 
-	assert.Equal(t, 0, countDeliveriesForChannel(t, channelStore, alerts[0].ID, chID), "disabled trigger must not produce delivery")
+	// Negative check: a disabled trigger must never produce a delivery.
+	assert.Never(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "disabled trigger must not produce delivery")
 }
 
 // T077 — E2E test 4: two triggers pointing same channel → single delivery (dedup).
@@ -318,13 +381,18 @@ func TestEngineDispatch_TwoTriggersOneChannel_Dedup(t *testing.T) {
 	seedTriggerForChannel(t, triggerStore, "Trigger-A", true, "critical", "", []string{chID})
 	seedTriggerForChannel(t, triggerStore, "Trigger-B", true, "critical", "", []string{chID})
 
-	fireEvent(eng, "critical", "heartbeat", "heartbeat", "40")
+	fireEvent(t, ctx, alertStore, eng, "critical", "heartbeat", "heartbeat", "40")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
 
-	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alerts[0].ID, chID), "channel must receive exactly 1 delivery even with two matching triggers")
+	require.Eventually(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n == 1
+	}, 5*time.Second, 10*time.Millisecond, "channel must receive exactly 1 delivery even with two matching triggers")
+	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chID), "channel must receive exactly 1 delivery even with two matching triggers")
 }
 
 // T077 — E2E test 5: alert doesn't match any trigger → no delivery.
@@ -337,13 +405,17 @@ func TestEngineDispatch_NoMatchingTrigger_NoDelivery(t *testing.T) {
 	// Trigger only fires on "critical"; we fire "warning" → no match.
 	seedTriggerForChannel(t, triggerStore, "CritOnly", true, "critical", "", []string{chID})
 
-	fireEvent(eng, "warning", "container", "container", "50")
+	fireEvent(t, ctx, alertStore, eng, "warning", "container", "container", "50")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
 
-	assert.Equal(t, 0, countDeliveriesForChannel(t, channelStore, alerts[0].ID, chID), "no delivery expected when alert doesn't match trigger filter")
+	assert.Never(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "no delivery expected when alert doesn't match trigger filter")
 }
 
 // T077 — E2E test 6: source filter narrows correctly.
@@ -359,14 +431,25 @@ func TestEngineDispatch_SourceFilter_OnlyMatchesCorrectSource(t *testing.T) {
 	seedTriggerForChannel(t, triggerStore, "EndpointOnly", true, "", "endpoint", []string{chEndpoint})
 
 	// Fire a container alert.
-	fireEvent(eng, "critical", "container", "container", "60")
+	fireEvent(t, ctx, alertStore, eng, "critical", "container", "container", "60")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
 
-	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alerts[0].ID, chContainer), "container trigger must deliver to container channel")
-	assert.Equal(t, 0, countDeliveriesForChannel(t, channelStore, alerts[0].ID, chEndpoint), "endpoint trigger must not fire for container alert")
+	require.Eventually(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chContainer)
+		return err == nil && n == 1
+	}, 5*time.Second, 10*time.Millisecond, "container trigger must deliver to container channel")
+	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chContainer), "container trigger must deliver to container channel")
+
+	// Negative check: the endpoint-only trigger's source filter must never
+	// match a container alert.
+	assert.Never(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chEndpoint)
+		return err == nil && n != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "endpoint trigger must not fire for container alert")
 }
 
 // T079 — Reserved-escalation channel: channel with no trigger → 0 initial deliveries.
@@ -383,14 +466,25 @@ func TestEngineDispatch_ReservedEscalationChannel_NoInitialDelivery(t *testing.T
 	slackOps := seedWebhookChannel(t, channelStore, "slack-ops", true)
 	seedTriggerForChannel(t, triggerStore, "AllAlerts", true, "", "", []string{slackOps})
 
-	fireEvent(eng, "critical", "container", "container", "70")
+	fireEvent(t, ctx, alertStore, eng, "critical", "container", "container", "70")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
+	alertID := alerts[0].ID
 
-	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alerts[0].ID, slackOps), "slack-ops should receive initial delivery")
-	assert.Equal(t, 0, countDeliveriesForChannel(t, channelStore, alerts[0].ID, emailCTO), "email-cto must not receive initial delivery — it is reserved for escalation only")
+	require.Eventually(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, slackOps)
+		return err == nil && n == 1
+	}, 5*time.Second, 10*time.Millisecond, "slack-ops should receive initial delivery")
+	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, slackOps), "slack-ops should receive initial delivery")
+
+	// Negative check: email-cto is reserved for escalation only, no trigger
+	// references it, so it must never receive an initial delivery.
+	assert.Never(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, emailCTO)
+		return err == nil && n != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "email-cto must not receive initial delivery — it is reserved for escalation only")
 
 	// Verify triggerStore confirms no trigger links email-cto.
 	triggersForCTO, err := triggerStore.ListTriggersForChannel(ctx, emailCTO)
@@ -407,17 +501,26 @@ func TestEngineDispatch_NotifyOnResolveFalse_NoRecoveryDelivery(t *testing.T) {
 	chID := seedWebhookChannel(t, channelStore, "fires-only-ch", true)
 	seedTriggerNotifyOnResolve(t, triggerStore, "FiresOnly", false, "critical", "container", []string{chID})
 
-	fireEvent(eng, "critical", "container", "container", "80")
+	fireEvent(t, ctx, alertStore, eng, "critical", "container", "container", "80")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
 	alertID := alerts[0].ID
+
+	require.Eventually(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n == 1
+	}, 5*time.Second, 10*time.Millisecond, "trigger must deliver the fire")
 	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger must deliver the fire")
 
-	recoverEvent(eng, "critical", "container", "container", "80")
+	recoverEvent(t, ctx, alertStore, eng, "critical", "container", "container", "80")
 
-	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger with notify_on_resolve=false must not deliver the recovery")
+	// Negative check: notify_on_resolve=false must never add a second delivery.
+	assert.Never(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n != 1
+	}, 300*time.Millisecond, 10*time.Millisecond, "trigger with notify_on_resolve=false must not deliver the recovery")
 }
 
 // NotifyOnResolve=true (default): both fire and recovery deliver.
@@ -429,15 +532,24 @@ func TestEngineDispatch_NotifyOnResolveTrue_RecoveryDelivered(t *testing.T) {
 	chID := seedWebhookChannel(t, channelStore, "fires-and-recovers-ch", true)
 	seedTriggerNotifyOnResolve(t, triggerStore, "FiresAndRecovers", true, "critical", "container", []string{chID})
 
-	fireEvent(eng, "critical", "container", "container", "90")
+	fireEvent(t, ctx, alertStore, eng, "critical", "container", "container", "90")
 
 	alerts, err := alertStore.ListActiveAlerts(ctx)
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
 	alertID := alerts[0].ID
+
+	require.Eventually(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n == 1
+	}, 5*time.Second, 10*time.Millisecond, "trigger must deliver the fire")
 	assert.Equal(t, 1, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger must deliver the fire")
 
-	recoverEvent(eng, "critical", "container", "container", "90")
+	recoverEvent(t, ctx, alertStore, eng, "critical", "container", "container", "90")
 
+	require.Eventually(t, func() bool {
+		n, err := deliveryCountForChannel(channelStore, alertID, chID)
+		return err == nil && n == 2
+	}, 5*time.Second, 10*time.Millisecond, "trigger with notify_on_resolve=true must also deliver the recovery")
 	assert.Equal(t, 2, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger with notify_on_resolve=true must also deliver the recovery")
 }
