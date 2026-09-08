@@ -67,36 +67,35 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 
 	if err != nil {
 		reason, isTrustFailure := trustFailureReason(err)
-		if !isTrustFailure {
+		if !cfg.TLSVerify || !isTrustFailure {
 			result.ResponseTimeMs = time.Since(start).Milliseconds()
 			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
 			return result
 		}
 
-		// The certificate was rejected, but that says nothing about whether the
-		// host is serving. Retry once without verification purely to find out:
-		// a host behind an internal PKI that answers is degraded, not down. The
-		// retry never yields "up" — it only tells the two apart, and it hands
-		// back the chain so expiry monitoring keeps working on these hosts.
-		insecure := newHTTPClient(cfg, timeout, true)
-		defer insecure.CloseIdleConnections()
+		// A bare handshake tells degraded from down and yields the chain; the
+		// request is never resent, so its secrets never reach an unverified peer.
+		result.ResponseTimeMs = time.Since(start).Milliseconds()
 
-		retryReq, reqErr := newRequest()
-		if reqErr != nil {
-			result.ResponseTimeMs = time.Since(start).Milliseconds()
-			result.ErrorMessage = fmt.Sprintf("create request: %v", reqErr)
+		addr, host, addrErr := hostPort(ep.Target)
+		if addrErr != nil {
+			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
 			return result
 		}
 
-		resp, err = insecure.Do(retryReq)
-		if err != nil {
-			result.ResponseTimeMs = time.Since(start).Milliseconds()
+		state, dialErr := trust.DialInspect(ctx, addr, host, timeout)
+		if dialErr != nil {
 			result.ErrorMessage = fmt.Sprintf("request failed: %v", err)
 			return result
 		}
 
 		result.Degraded = true
 		result.DegradedReason = reason
+		result.Success = true
+		result.TLSPeerCertificates = state.PeerCertificates
+		result.TLSOCSPResponse = state.OCSPResponse
+		result.ErrorMessage = reason
+		return result
 	}
 
 	result.ResponseTimeMs = time.Since(start).Milliseconds()
@@ -132,8 +131,8 @@ func CheckHTTP(ctx context.Context, ep *Endpoint, logger interface{ Warn(string,
 	return result
 }
 
-// newHTTPClient builds the probe client. skipVerify is used both for the
-// per-endpoint opt-out and for the diagnostic retry after a rejected certificate.
+// newHTTPClient builds the probe client. skipVerify is the per-endpoint
+// TLS-verify opt-out.
 func newHTTPClient(cfg EndpointConfig, timeout time.Duration, skipVerify bool) *http.Client {
 	maxRedirects := cfg.MaxRedirects
 	if maxRedirects < 0 {
@@ -143,7 +142,7 @@ func newHTTPClient(cfg EndpointConfig, timeout time.Duration, skipVerify bool) *
 	return &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: skipVerify, // #nosec G402 -- per-endpoint opt-out, or the diagnostic retry that classifies a rejected certificate.
+				InsecureSkipVerify: skipVerify, // #nosec G402 -- per-endpoint opt-out (maintenant.endpoint.http.tls-verify=false).
 				MinVersion:         tls.VersionTLS12,
 				RootCAs:            trust.Pool(), // nil unless an extra CA was configured: system store
 			},
@@ -158,6 +157,26 @@ func newHTTPClient(cfg EndpointConfig, timeout time.Duration, skipVerify bool) *
 			return nil
 		},
 	}
+}
+
+// hostPort splits a target URL into a dial address (port 443 by default) and the name to validate.
+func hostPort(target string) (addr, host string, err error) {
+	u, err := url.Parse(target)
+	if err != nil {
+		return "", "", err
+	}
+
+	host = u.Hostname()
+	if host == "" {
+		return "", "", fmt.Errorf("no host in target %q", target)
+	}
+
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+
+	return net.JoinHostPort(host, port), host, nil
 }
 
 // trustFailureReason reports whether err is the peer's certificate being
