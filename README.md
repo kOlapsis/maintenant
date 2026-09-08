@@ -9,7 +9,7 @@
 <p align="center">
   <strong>Drop a container. Your stack is monitored.</strong><br>
   Docker, Kubernetes, uptime, TLS, cron jobs, live logs, image updates, CVEs: auto-discovered, alerting on every one of them,<br>
-  from a single Go binary that idles at ~17 MB of RAM. No PromQL, no exporters, no dashboards to build.
+  from a single Go binary that idles under 30 MB of RAM. No PromQL, no exporters, no dashboards to build.
 </p>
 
 <p align="center">
@@ -104,7 +104,7 @@ maintenant answers that question with one container.
 > **Do I still need Prometheus?**
 > maintenant monitors your **infrastructure**. Prometheus monitors your **application**. There is no PromQL here, no custom exporters, no panels to design: maintenant already knows what a container, a certificate, an endpoint, a cron job and a CVE are, and starts watching them the moment they appear. If you ship business metrics and write your own queries, keep Prometheus for that. The two answer different questions, and plenty of people run both.
 
-Against the tools self-hosters usually stack up:
+Against the tools usually stacked up next to it:
 
 |                              | maintenant     | Uptime Kuma | Portainer  | Dozzle     |
 | ---------------------------- |:--------------:|:-----------:|:----------:|:----------:|
@@ -356,7 +356,7 @@ volumes:
 - **Zero dependencies.** SQLite is the only datastore. No Redis, no queue, nothing to administer. A fleet operator may back the server on a [PostgreSQL](https://docs.maintenant.dev/guides/postgresql/) they already run; agents always stay on SQLite.
 - **Runtime optional.** Endpoints, certificates and heartbeats run without any Docker socket or Kubernetes API. Container monitoring resumes on its own when a runtime becomes reachable.
 - **Real-time.** SSE pushes every state change to the browser and to the status page instantly.
-- **~17 MB of RAM.** Runs on a Raspberry Pi, a €4 VPS or a NAS.
+- **Under 30 MB of RAM at idle.** Runs on a Raspberry Pi, a €4 VPS or a NAS.
 
 Full write-up in the [architecture documentation](https://docs.maintenant.dev/architecture/).
 
@@ -370,7 +370,9 @@ Community is free forever and runs production infrastructure every day: it is th
 | ------------------------- | ------------------------ | ---------------------------------- | ------------------------------------ |
 | Price                     | Free, AGPL-3.0           | **€149** once, for life            | **€29**/mo or €290/yr, 14-day trial  |
 | Hosts                     | 1                        | up to 20 remote machines           | unlimited                            |
-| Endpoints / heartbeats / certificates | 10 / 5 / 5   | unlimited                          | unlimited                            |
+| Endpoints                 | 10                       | unlimited                          | unlimited                            |
+| Heartbeats                | 5                        | unlimited                          | unlimited                            |
+| Certificates              | 5                        | unlimited                          | unlimited                            |
 | Resource history          | 7 days                   | 30 days                            | 90 days                              |
 | Alert channels            | Discord, webhooks        | + email, Telegram, advanced filters | + Slack, Teams, escalation, per-entity routing, maintenance windows |
 | Security                  | network insights         | + CVE enrichment, risk scoring, security posture, OCSP | same                     |
@@ -394,7 +396,7 @@ MAINTENANT_LICENSE_KEY=your-license-key   # Personal or Pro, restart, done
 
 ## Support the project
 
-maintenant is built by one developer in Bordeaux, France. No VC, no tracking, no acquisition exit. 100% of revenue funds full-time development. Ranked by impact:
+maintenant is built by one developer in Bordeaux, France. No VC, no ads, no acquisition exit. 100% of revenue funds full-time development. Ranked by impact:
 
 1. **Buy a licence.** Personal if the infrastructure is yours, Pro if you run it for others. Unlocks features and pays for the roadmap. [See editions →](https://maintenant.dev/pricing/)
 2. **Sponsor.** Any amount, one-off or monthly, credited below. [GitHub Sponsors →](https://github.com/sponsors/kolapsis)

@@ -6,7 +6,7 @@ How to run maintenant on Hetzner Cloud — a single server with `cloud-init`, a 
 
 ## Why it fits a Hetzner box
 
-maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles around 17 MB of RAM and needs no database server, no Prometheus, no Redis. That makes it a natural fit for a small Hetzner Cloud server that already runs something else — it does not need a machine of its own.
+maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles under 30 MB of RAM and needs no database server, no Prometheus, no Redis. That makes it a natural fit for a small Hetzner Cloud server that already runs something else — it does not need a machine of its own.
 
 The image is published for `linux/amd64` **and** `linux/arm64`, so the Ampere-based **CAX** line works as well as the Intel/AMD **CX** and **CPX** lines.
 
