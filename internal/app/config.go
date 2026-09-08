@@ -14,11 +14,13 @@ package app
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/store"
 )
@@ -50,6 +52,9 @@ type Config struct {
 	// HTTP
 	CORSOrigins string
 	MaxBodySize int64
+	// TrustedProxies lists the CIDRs and addresses whose forwarded headers are
+	// believed, comma-separated. Empty means no header is ever read.
+	TrustedProxies string
 
 	// CACertFile is a PEM bundle appended to the system roots, so endpoints and
 	// certificates signed by an internal PKI validate without disabling checks.
@@ -180,6 +185,25 @@ func (c Config) ValidateStorage() error {
 	return nil
 }
 
+// ErrTrustedProxies refuses a proxy list that does not parse.
+var ErrTrustedProxies = errors.New(
+	"MAINTENANT_TRUSTED_PROXIES is not a valid list: use comma-separated CIDRs or IP addresses such as 10.0.0.0/8,192.168.1.4")
+
+// ParseTrustedProxies returns the prefixes whose forwarded headers are believed.
+func (c Config) ParseTrustedProxies() ([]netip.Prefix, error) {
+	prefixes, err := ratelimit.ParsePrefixes(c.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("%w (%v)", ErrTrustedProxies, err)
+	}
+	return prefixes, nil
+}
+
+// ValidateProxies refuses a trusted-proxy list that would silently be ignored.
+func (c Config) ValidateProxies() error {
+	_, err := c.ParseTrustedProxies()
+	return err
+}
+
 // ErrContainerDownAfter refuses a container-down threshold that does not parse.
 var ErrContainerDownAfter = errors.New(
 	"MAINTENANT_CONTAINER_DOWN_AFTER is not a valid duration: use a Go duration such as 5m, 30s or 1h30m")
@@ -231,9 +255,10 @@ func ConfigFromEnv() Config {
 			AllowUnauthenticated: parseTruthy(os.Getenv("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")),
 		},
 
-		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
-		MaxBodySize: int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
-		CACertFile:  os.Getenv("MAINTENANT_CA_CERT"),
+		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),
+		TrustedProxies: os.Getenv("MAINTENANT_TRUSTED_PROXIES"),
+		MaxBodySize:    int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
+		CACertFile:     os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
 		StatusURL: os.Getenv("MAINTENANT_STATUS_URL"),

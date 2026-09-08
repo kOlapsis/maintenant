@@ -122,6 +122,7 @@ type App struct {
 	scorer         *security.Scorer
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
+	subscribeRL    *ratelimit.Limiter
 	licenseMgr     *license.Manager
 	mcpServer      *gomcp.Server
 	// degradedPlanLogged keeps the multi-host degradation to one line: the
@@ -168,6 +169,22 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		cfg:    cfg,
 		logger: logger,
 	}
+
+	trustedProxies, err := cfg.ParseTrustedProxies()
+	if err != nil {
+		return nil, err
+	}
+	clientIP := ratelimit.NewClientIPResolver(trustedProxies)
+
+	// --- Rate limiters ---
+	// Public surfaces (/ping/, /status/, /mcp, /oauth/) take the tight bucket.
+	a.rl = ratelimit.New(10, 20, clientIP)
+	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
+	// parallel calls, so the tight bucket would 429 ordinary use. This is a
+	// flood ceiling, not a quota — it must never be reachable by the UI.
+	a.apiRL = ratelimit.New(50, 200, clientIP)
+	// Status-page subscriptions: five per hour and per address.
+	a.subscribeRL = ratelimit.New(5.0/3600.0, 5, clientIP)
 
 	if cfg.K8sNamespaces != "" {
 		logger.Info("K8s namespace allowlist configured", "namespaces", cfg.K8sNamespaces)
@@ -464,7 +481,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.maintScheduler = status.NewMaintenanceScheduler(maintenanceStore, statusCompStore, incidentStore, a.statusSvc, logger)
 	a.personalizationSvc = status.NewPersonalizationService(personalizationStore, logger.With("component", "personalization"))
 	personalizationPublicHandler := status.NewPersonalizationPublicHandler(a.personalizationSvc, logger)
-	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger)
+	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL)
 	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
 	// --- Webhook dispatcher ---
@@ -626,15 +643,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		BuildVersion:         cfg.Version,
 		OrganisationName:     cfg.OrgName,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
+		TrustedProxies:       trustedProxies,
 	})
-
-	// --- Rate limiters ---
-	// Public surfaces (/ping/, /status/, /mcp) take the tight bucket.
-	a.rl = ratelimit.New(10, 20)
-	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
-	// parallel calls, so the tight bucket would 429 ordinary use. This is a
-	// flood ceiling, not a quota — it must never be reachable by the UI.
-	a.apiRL = ratelimit.New(50, 200)
 
 	// --- MCP Server ---
 	mcpSvc := &mcp.Services{
@@ -810,6 +820,7 @@ func (a *App) Start(ctx context.Context) error {
 	// Background services (always run, regardless of runtime availability)
 	go a.rl.Start(ctx)
 	go a.apiRL.Start(ctx)
+	go a.subscribeRL.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
 	go a.maintScheduler.Start(ctx)

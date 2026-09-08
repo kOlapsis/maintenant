@@ -14,7 +14,10 @@ package agentserver
 import (
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
+
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 )
 
 // PublicURLConfig holds the inputs for resolving the gRPC public URL.
@@ -26,6 +29,9 @@ type PublicURLConfig struct {
 	// ListenAddr is the address the gRPC server is bound to (e.g. "127.0.0.1:8443").
 	// Used as fallback when neither Explicit nor request headers are available.
 	ListenAddr string
+
+	// TrustedProxies lists the peers whose X-Forwarded-* headers are believed.
+	TrustedProxies []netip.Prefix
 }
 
 // ResolvePublicURL returns the grpcs:// URL that remote agents should use plus a list
@@ -46,23 +52,21 @@ func ResolvePublicURL(req *http.Request, cfg PublicURLConfig) (string, []string)
 		return url, warnings
 	}
 
-	// 2. X-Forwarded-Host + X-Forwarded-Proto headers (reverse-proxy path).
+	// 2. X-Forwarded-Host headers, believed only from a configured proxy.
 	if req != nil {
-		fwdHost := req.Header.Get("X-Forwarded-Host")
-		fwdProto := req.Header.Get("X-Forwarded-Proto")
-		if fwdHost != "" {
-			// Normalise: remove standard gRPC port 443 suffix.
-			host := stripStandardPort(fwdHost, "443")
-			var url string
-			if fwdProto == "grpc" {
-				url = "grpc://" + host
-			} else {
-				url = "grpcs://" + host
+		if ratelimit.NewClientIPResolver(cfg.TrustedProxies).TrustsPeer(req) {
+			fwdHost := req.Header.Get("X-Forwarded-Host")
+			if fwdHost != "" {
+				// Normalise: remove standard gRPC port 443 suffix.
+				host := stripStandardPort(fwdHost, "443")
+				if proto := req.Header.Get("X-Forwarded-Proto"); proto == "grpc" {
+					warnings = append(warnings, "public_url_plaintext_refused")
+				}
+				if looksLocal(fwdHost) {
+					warnings = append(warnings, "public_url_appears_local")
+				}
+				return "grpcs://" + host, warnings
 			}
-			if looksLocal(fwdHost) {
-				warnings = append(warnings, "public_url_appears_local")
-			}
-			return url, warnings
 		}
 
 		// 3. Request Host header.
