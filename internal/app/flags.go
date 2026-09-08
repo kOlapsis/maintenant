@@ -266,6 +266,24 @@ func init() {
 			Description: "Public status page URL advertised in notifications",
 			ApplyTo:     func(c *Config, v string) error { c.StatusURL = v; return nil },
 		},
+		// Alerting
+		{
+			EnvName: "MAINTENANT_CONTAINER_DOWN_AFTER", FlagName: "containerDownAfter",
+			Type: FlagTypeDuration, Default: "0",
+			Description: "Raise an alert for a container stopped this long (e.g. 5m; 0 disables)",
+			ApplyTo: func(c *Config, v string) error {
+				d, err := time.ParseDuration(v)
+				if err != nil {
+					return err
+				}
+				if d < 0 {
+					return fmt.Errorf("must not be negative")
+				}
+				c.ContainerDownAfter = d
+				c.ContainerDownAfterInvalid = ""
+				return nil
+			},
+		},
 		// Retention
 		{
 			EnvName: "MAINTENANT_RETENTION_SNAPSHOTS", FlagName: "retentionSnapshots",
@@ -472,6 +490,7 @@ func init() {
 	Categories = []FlagCategory{
 		{Name: "Server", Specs: specsFor("addr", "baseUrl", "corsOrigins")},
 		{Name: "Storage", Specs: specsFor("db")},
+		{Name: "Alerting", Specs: specsFor("containerDownAfter")},
 		{Name: "Retention", Specs: specsFor("retentionSnapshots", "retentionInterval", "retentionBatchSize")},
 		{Name: "Branding", Specs: specsFor("organisationName", "statusUrl")},
 		{Name: "Runtime", Specs: specsFor("runtime")},

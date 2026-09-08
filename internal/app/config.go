@@ -68,6 +68,13 @@ type Config struct {
 	// Security
 	SecurityScoreThreshold int
 
+	// ContainerDownAfter is how long a container must stay stopped before it
+	// raises an alert. Zero disables the check.
+	ContainerDownAfter time.Duration
+	// ContainerDownAfterInvalid holds a rejected threshold verbatim, so a typo
+	// stops startup instead of silently leaving the check off.
+	ContainerDownAfterInvalid string
+
 	// Telemetry
 	DisableTelemetry bool
 
@@ -173,6 +180,19 @@ func (c Config) ValidateStorage() error {
 	return nil
 }
 
+// ErrContainerDownAfter refuses a container-down threshold that does not parse.
+var ErrContainerDownAfter = errors.New(
+	"MAINTENANT_CONTAINER_DOWN_AFTER is not a valid duration: use a Go duration such as 5m, 30s or 1h30m")
+
+// ValidateAlerting refuses an alerting configuration that would leave a check
+// silently off.
+func (c Config) ValidateAlerting() error {
+	if c.ContainerDownAfterInvalid != "" {
+		return fmt.Errorf("%w (got %q)", ErrContainerDownAfter, c.ContainerDownAfterInvalid)
+	}
+	return nil
+}
+
 func (c Config) ValidateHTTP() error {
 	if c.MCP.Enabled && !c.MCP.AllowUnauthenticated &&
 		(c.MCP.ClientID == "" || c.MCP.ClientSecret == "") {
@@ -236,6 +256,8 @@ func ConfigFromEnv() Config {
 		BatchSize: envIntOr("MAINTENANT_RETENTION_BATCH_SIZE", 1000),
 	}
 
+	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
+
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
 	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
@@ -292,6 +314,21 @@ func envIntOr(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// envOptionalDuration parses a duration whose absence is meaningful. It returns
+// the rejected raw value rather than a fallback: for a threshold that switches
+// a check on, falling back to "off" would read as accepted.
+func envOptionalDuration(key string) (time.Duration, string) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return 0, ""
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, v
+	}
+	return d, ""
 }
 
 func envDurationOr(key string, fallback time.Duration) time.Duration {
