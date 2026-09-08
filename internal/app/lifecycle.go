@@ -258,6 +258,29 @@ func (a *App) startNodeRefresh(ctx context.Context) {
 	}
 }
 
+// containerDownCheckInterval is how often the container-down sweep runs. It is
+// the alert's resolution, not its threshold: the threshold comes from the
+// operator's MAINTENANT_CONTAINER_DOWN_AFTER.
+const containerDownCheckInterval = 30 * time.Second
+
+// startContainerDownCheck sweeps for containers stopped past the configured
+// threshold. The first pass waits one tick so the initial runtime reconcile has
+// refreshed states the store may have been holding since the last shutdown.
+func (a *App) startContainerDownCheck(ctx context.Context) {
+	ticker := time.NewTicker(containerDownCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.downDetector.Check(ctx); err != nil {
+				a.logger.Warn("container down check failed", "error", err)
+			}
+		}
+	}
+}
+
 // startKubernetesReconcile periodically snapshots the server's own Kubernetes
 // runtime into the per-agent store under the LocalAgent id, so the store-backed
 // Workloads/Pods/Nodes views reflect the local cluster the same way they reflect

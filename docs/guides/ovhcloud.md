@@ -29,7 +29,7 @@ A VPS is still a fine home for a single maintenant server if you never plan to e
 
 ## Why it fits a small instance
 
-maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles around 17 MB of RAM and needs no database server, no Prometheus, no Redis.
+maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles under 30 MB of RAM and needs no database server, no Prometheus, no Redis.
 
 `d2-4` (Discovery) is the natural starting point for a monitoring server; `s1-4` is cheaper still if
 your project has access to it. Move up the `b3-` or `c3-` ranges only once you switch the store to

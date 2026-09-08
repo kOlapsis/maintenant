@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/resource"
 )
@@ -104,4 +105,37 @@ func TestConfigFromEnv_MCPAllowUnauthenticated(t *testing.T) {
 		t.Setenv("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED", "yes")
 		assert.True(t, ConfigFromEnv().MCP.AllowUnauthenticated)
 	})
+}
+
+func TestConfigFromEnv_ContainerDownAfter(t *testing.T) {
+	t.Setenv("MAINTENANT_CONTAINER_DOWN_AFTER", "5m")
+	cfg := ConfigFromEnv()
+
+	assert.Equal(t, 5*time.Minute, cfg.ContainerDownAfter)
+	assert.NoError(t, cfg.ValidateAlerting())
+}
+
+func TestConfigFromEnv_ContainerDownAfterUnsetIsOff(t *testing.T) {
+	t.Setenv("MAINTENANT_CONTAINER_DOWN_AFTER", "")
+	cfg := ConfigFromEnv()
+
+	assert.Zero(t, cfg.ContainerDownAfter)
+	assert.NoError(t, cfg.ValidateAlerting())
+}
+
+// A typo must stop startup rather than silently disable the check: an operator
+// who set a threshold believes containers are being watched.
+func TestConfigFromEnv_ContainerDownAfterInvalidIsRefused(t *testing.T) {
+	for _, raw := range []string{"5", "later", "-5m"} {
+		t.Run(raw, func(t *testing.T) {
+			t.Setenv("MAINTENANT_CONTAINER_DOWN_AFTER", raw)
+			cfg := ConfigFromEnv()
+
+			assert.Zero(t, cfg.ContainerDownAfter)
+			err := cfg.ValidateAlerting()
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrContainerDownAfter)
+			assert.Contains(t, err.Error(), raw)
+		})
+	}
 }

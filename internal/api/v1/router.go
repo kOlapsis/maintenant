@@ -869,8 +869,9 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps) map[string]in
 		}
 	}
 
+	// Endpoints: standalone only, like certificates.
 	if d.Endpoints != nil {
-		used, err := d.Endpoints.CountActiveEndpoints(ctx)
+		used, err := d.Endpoints.CountStandaloneEndpoints(ctx)
 		if err != nil {
 			r.logger.Error("failed to count endpoints for quota", "error", err)
 			used = 0

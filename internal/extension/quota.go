@@ -29,6 +29,9 @@ const Unlimited = -1
 // declaration of the caps: the value that refuses a creation and the value the
 // interface displays both come from here, so they cannot drift apart.
 //
+// endpoints and certificates count only what an operator created by hand;
+// entries discovered from container labels are never capped nor counted.
+//
 // agent_hosts is 0 on Community by design — the multihost capability itself is
 // Personal, so the REST routes refuse before any count happens. The 0 still
 // matters: it is what the gRPC enrollment barrier reads, and it has no

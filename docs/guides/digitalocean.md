@@ -6,7 +6,7 @@ How to run maintenant on DigitalOcean: a Droplet provisioned with cloud-init, a 
 
 ## Why it fits a small Droplet
 
-maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles around 17 MB of RAM and needs no database server, no Prometheus, no Redis. A Basic Droplet running your workload has room for it.
+maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles under 30 MB of RAM and needs no database server, no Prometheus, no Redis. A Basic Droplet running your workload has room for it.
 
 | Slug | vCPU | RAM | Typical fit |
 |------|------|-----|-------------|

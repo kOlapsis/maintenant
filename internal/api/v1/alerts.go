@@ -572,25 +572,6 @@ func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// channelCapability maps a channel type to the capability that opens it. Types
-// absent from the map are open in every edition. email and Telegram are
-// Personal, Slack and Teams are Pro — the gating is per channel, not "paid
-// edition or not".
-func channelCapability(channelType string) (extension.Capability, bool) {
-	switch channelType {
-	case "slack":
-		return extension.CapSlack, true
-	case "teams":
-		return extension.CapTeams, true
-	case "email":
-		return extension.CapSMTP, true
-	case "telegram":
-		return extension.CapTelegram, true
-	default:
-		return "", false
-	}
-}
-
 // validateTelegramCredentials checks the two values the operator types and the
 // optional topic id, before anything reaches the network (FR-004).
 func validateTelegramCredentials(secret, config string) error {
@@ -607,7 +588,7 @@ func validateTelegramCredentials(secret, config string) error {
 // refuseChannelCapability writes the refusal when the running edition does not
 // open this channel type, and reports whether it did.
 func refuseChannelCapability(w http.ResponseWriter, channelType string) bool {
-	c, gated := channelCapability(channelType)
+	c, gated := extension.ChannelCapability(channelType)
 	if !gated || extension.Allows(c) {
 		return false
 	}

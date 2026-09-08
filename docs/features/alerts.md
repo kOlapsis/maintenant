@@ -10,13 +10,19 @@ maintenant generates alerts from every monitoring subsystem:
 
 | Source | Events | Default Severity |
 |--------|--------|------------------|
-| **Container** | `restart_loop`, `health_unhealthy` | Warning |
+| **Container** | `restart_loop`, `health_unhealthy`, `container_down` | Warning |
 | **Endpoint** | `consecutive_failure` | Critical |
 | **Heartbeat** | `deadline_missed`, `exit_code_failure` | Critical |
 | **Certificate** | `expiring`, `expired`, `chain_invalid` | Critical |
 | **Resource** | `cpu_threshold`, `memory_threshold` | Warning |
 | **Update** | `available` | Info |
 | **Agent** | `disconnected` | Warning |
+
+### Container down
+
+A container that stops and stays stopped raises no alert on its own: `restart_loop` needs it to come back, and `health_unhealthy` needs a `HEALTHCHECK`. Set `MAINTENANT_CONTAINER_DOWN_AFTER` to a Go duration (`5m`, `30s`, `1h`) and `container_down` fires once a container has been in `exited` or `dead` for that long, at the severity configured on the container. It resolves on its own when the container runs again.
+
+The threshold is unset by default, because switching it on alerts retroactively on every container already stopped. A container that exited with code 0 is recorded as `completed` and never counts as down, so a finished job stays quiet. The sweep runs every 30 seconds, which is the alert's resolution, not its threshold.
 
 An agent alert fires when a remote agent stops reporting, whether its stream dropped or it never came back after a restart, and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one.
 
@@ -180,7 +186,7 @@ Trigger CRUD endpoints :
 | `PUT` | `/api/v1/alert-triggers/{id}` |
 | `DELETE` | `/api/v1/alert-triggers/{id}` |
 
-Triggers can also be managed via MCP tools: `list_triggers`, `get_trigger`, `create_trigger`, `update_trigger`, `delete_trigger`.
+Triggers can also be managed via MCP tools: `list_triggers`, `get_trigger`, `create_trigger`, `update_trigger`, `delete_trigger`. Channels have the matching set: `list_channels`, `get_channel`, `create_channel`, `update_channel`, `delete_channel`, `test_channel`.
 
 > **Migration note**: previous versions used `routing_rules` attached to channels. On upgrade, those rules are auto-converted to AlertTriggers (one trigger per rule). Channels without any rule receive a generated `Default — all alerts → {channel name}` trigger to preserve the legacy broadcast behavior. The legacy `/api/v1/channels/{id}/rules*` endpoints have been removed.
 

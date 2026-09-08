@@ -116,6 +116,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// A threshold that does not parse must stop startup: falling back to "off"
+	// would leave the operator believing the check runs.
+	if err := cfg.ValidateAlerting(); err != nil {
+		logger.Error("invalid alerting configuration", "error", err)
+		os.Exit(1)
+	}
+
 	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary has
 	// no subcommands and this feature does not introduce any.
 	if target := visited["copy-store-to"]; target != "" {

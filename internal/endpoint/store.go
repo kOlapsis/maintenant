@@ -25,7 +25,7 @@ type EndpointStore interface {
 	GetEndpointByID(ctx context.Context, id string) (*Endpoint, error)
 	ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]*Endpoint, error)
 	ListEndpointsByExternalID(ctx context.Context, externalID string) ([]*Endpoint, error)
-	CountActiveEndpoints(ctx context.Context) (int, error)
+	CountStandaloneEndpoints(ctx context.Context) (int, error)
 	DeactivateEndpoint(ctx context.Context, id string) error
 	DeleteEndpoint(ctx context.Context, id string) error
 

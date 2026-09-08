@@ -43,6 +43,10 @@ type AgentLister interface {
 }
 
 // SessionChecker reports whether an agent currently has an active gRPC stream.
+type ChannelTester interface {
+	SendTestWebhook(ctx context.Context, ch *alert.NotificationChannel) (int, error)
+}
+
 type SessionChecker interface {
 	IsConnected(agentID string) bool
 }
@@ -83,6 +87,7 @@ type Services struct {
 	Channels      alert.ChannelStore
 	Triggers      alert.TriggerStore
 	Escalator     alert.Escalator
+	ChannelTester ChannelTester
 	Updates       *update.Service
 	Incidents     status.IncidentStore
 	Maintenance   status.MaintenanceStore
@@ -105,8 +110,22 @@ type Services struct {
 	SwarmTopology  SwarmTopologyReader
 	SwarmNodes     SwarmNodeReader
 
+	// AllowPrivateWebhooks mirrors the REST flag: it relaxes the SSRF guard on
+	// channel destinations in development.
+	AllowPrivateWebhooks bool
+	// Broadcast forwards a store change to the SSE brokers so an interface open
+	// on the page sees an MCP write without reloading.
+	Broadcast func(eventType string, data any)
+
 	Version string
 	Logger  *slog.Logger
+}
+
+func (s *Services) logger() *slog.Logger {
+	if s.Logger != nil {
+		return s.Logger
+	}
+	return slog.Default()
 }
 
 // NewServer creates and configures an MCP server with all maintenant tools registered.
@@ -123,6 +142,8 @@ func NewServer(svc *Services) *gomcp.Server {
 	registerWriteTools(server, svc)
 	registerEscalationTools(server, svc)
 	registerTriggerTools(server, svc)
+	registerChannelTools(server, svc)
+	registerEditionTools(server, svc)
 	registerSecurityTools(server, svc)
 	registerKubernetesTools(server, svc)
 	registerSwarmTools(server, svc)
