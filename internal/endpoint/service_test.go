@@ -72,6 +72,9 @@ func (m *memStore) UpsertEndpoint(_ context.Context, e *Endpoint) (string, error
 
 	ec := m.cloneEp(e)
 	ec.Active = true
+	if ec.Source == "" {
+		ec.Source = SourceLabel
+	}
 	m.endpoints[id] = ec
 	return id, nil
 }
@@ -140,12 +143,12 @@ func (m *memStore) ListEndpointsByExternalID(_ context.Context, externalID strin
 	return out, nil
 }
 
-func (m *memStore) CountActiveEndpoints(_ context.Context) (int, error) {
+func (m *memStore) CountStandaloneEndpoints(_ context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0
 	for _, ep := range m.endpoints {
-		if ep.Active {
+		if ep.Active && ep.Source == SourceStandalone {
 			count++
 		}
 	}
@@ -730,9 +733,51 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 	assert.Nil(t, ep3)
 
 	// Verify count
-	count, err := store.CountActiveEndpoints(ctx)
+	count, err := store.CountStandaloneEndpoints(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
+}
+
+// Label-declared endpoints are outside the standalone cap: an operator running
+// a dozen of them must still be able to add one by hand.
+func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) {
+	store := newMemStore()
+	svc := NewService(Deps{
+		Store:          store,
+		Engine:         noopEngine(),
+		Logger:         noopLogger(),
+		LicenseChecker: &DefaultLicenseChecker{MaxEndpoints: 2},
+	})
+	ctx := context.Background()
+
+	labels := map[string]string{}
+	for i := 1; i <= 5; i++ {
+		labels[fmt.Sprintf("maintenant.endpoint.%d.http", i)] = fmt.Sprintf("http://svc:80%d/health", i)
+	}
+	svc.SyncEndpoints(ctx, "web", "container-1", labels, "", "")
+
+	all, err := store.ListEndpoints(ctx, ListEndpointsOpts{})
+	require.NoError(t, err)
+	require.Len(t, all, 5)
+
+	count, err := store.CountStandaloneEndpoints(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, count, "label endpoints must not count against the cap")
+
+	ep1, err := svc.CreateStandalone(ctx, "ep1", "http://example.com", TypeHTTP, DefaultConfig())
+	require.NoError(t, err)
+	require.NotNil(t, ep1)
+
+	ep2, err := svc.CreateStandalone(ctx, "ep2", "http://example.org", TypeHTTP, DefaultConfig())
+	require.NoError(t, err)
+	require.NotNil(t, ep2)
+
+	_, err = svc.CreateStandalone(ctx, "ep3", "http://example.net", TypeHTTP, DefaultConfig())
+	require.ErrorIs(t, err, ErrLimitReached)
+
+	count, err = store.CountStandaloneEndpoints(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, count, "the reported usage never exceeds the cap")
 }
 
 // TestDefaultLicenseChecker_Unlimited: extension.Limit reports -1 for an

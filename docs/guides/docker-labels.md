@@ -91,6 +91,8 @@ labels:
 
 Global config labels (without an index) apply as defaults to all indexed endpoints. Indexed config overrides global config.
 
+The number of endpoints declared by labels is not capped in any edition: the Community cap of 10 endpoints only counts the ones you add by hand from the interface.
+
 ---
 
 ## Certificate Monitoring
