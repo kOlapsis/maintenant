@@ -6,7 +6,7 @@ How to run maintenant on Vultr: an instance provisioned with cloud-init, a firew
 
 ## Why it fits a small instance
 
-maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles around 17 MB of RAM and needs no database server, no Prometheus, no Redis.
+maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles under 30 MB of RAM and needs no database server, no Prometheus, no Redis.
 
 | Plan | vCPU / RAM | $/month | Typical fit |
 |------|-----------|---------|-------------|

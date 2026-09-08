@@ -6,7 +6,7 @@ How to run maintenant on Scaleway: an Instance provisioned with cloud-init, a se
 
 ## Why it fits a small Instance
 
-maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles around 17 MB of RAM and needs no database server, no Prometheus, no Redis. An Instance already running your workload has room for it.
+maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles under 30 MB of RAM and needs no database server, no Prometheus, no Redis. An Instance already running your workload has room for it.
 
 | Type | vCPU / RAM | Arch | Typical fit |
 |------|-----------|------|-------------|
