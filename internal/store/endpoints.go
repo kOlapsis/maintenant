@@ -174,11 +174,12 @@ func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, externalI
 	return endpoints, rows.Err()
 }
 
-func (s *EndpointStore) CountActiveEndpoints(ctx context.Context) (int, error) {
+func (s *EndpointStore) CountStandaloneEndpoints(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM endpoints WHERE active=1`).Scan(&count)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM endpoints WHERE active=1 AND source='standalone'`).Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("count active endpoints: %w", err)
+		return 0, fmt.Errorf("count standalone endpoints: %w", err)
 	}
 	return count, nil
 }

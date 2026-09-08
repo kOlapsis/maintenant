@@ -553,9 +553,9 @@ func (s *Service) ListEndpoints(ctx context.Context, opts ListEndpointsOpts) ([]
 	return s.store.ListEndpoints(ctx, opts)
 }
 
-// CountActiveEndpoints returns the count of all active endpoints (both standalone and label-discovered).
-func (s *Service) CountActiveEndpoints(ctx context.Context) (int, error) {
-	return s.store.CountActiveEndpoints(ctx)
+// CountStandaloneEndpoints returns the number of active manually-created endpoints.
+func (s *Service) CountStandaloneEndpoints(ctx context.Context) (int, error) {
+	return s.store.CountStandaloneEndpoints(ctx)
 }
 
 // GetEndpoint retrieves an endpoint by ID.
@@ -593,7 +593,7 @@ func (s *Service) CalculateUptime(ctx context.Context, endpointID string) map[st
 
 // CreateStandalone creates a manually-defined endpoint and starts monitoring it.
 func (s *Service) CreateStandalone(ctx context.Context, name, target string, epType EndpointType, config EndpointConfig) (*Endpoint, error) {
-	count, err := s.store.CountActiveEndpoints(ctx)
+	count, err := s.store.CountStandaloneEndpoints(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("count endpoints: %w", err)
 	}
