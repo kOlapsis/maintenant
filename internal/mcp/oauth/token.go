@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -42,7 +43,8 @@ func (s *OAuthServer) handleAuthorizationCode(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Consume authorization code (marks as used atomically)
+	// Consume the authorization code: the store marks it used atomically, so
+	// only one concurrent exchange of the same code can ever succeed.
 	codeHash := HashToken(code)
 	authCode, err := s.store.ConsumeCode(r.Context(), codeHash)
 	if err != nil {
@@ -89,41 +91,34 @@ func (s *OAuthServer) handleRefreshToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Look up the refresh token
+	// Consume the refresh token: the store revokes it atomically, so only one
+	// concurrent refresh of the same token can ever rotate it.
 	tokenHash := HashToken(refreshTokenRaw)
-	storedToken, err := s.store.GetToken(r.Context(), tokenHash)
+	storedToken, err := s.store.ConsumeRefreshToken(r.Context(), tokenHash)
 	if err != nil {
-		s.logger.Warn("refresh with unknown token", "error", err)
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "invalid refresh token")
-		return
-	}
-
-	// Check token type
-	if storedToken.TokenType != "refresh" {
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "not a refresh token")
-		return
-	}
-
-	// Replay detection: if already revoked, revoke the entire family
-	if storedToken.Revoked {
-		s.logger.Warn("refresh token replay detected, revoking family",
-			"family_id", storedToken.FamilyID, "client_id", clientID)
-		if err := s.store.RevokeFamily(r.Context(), storedToken.FamilyID); err != nil {
-			s.logger.Error("failed to revoke token family", "error", err)
+		switch {
+		case errors.Is(err, ErrTokenRevoked):
+			// Replay: this token was already consumed once. Revoke the whole
+			// family, since a stolen refresh token is now in play.
+			s.logger.Warn("refresh token replay detected, revoking family",
+				"family_id", storedToken.FamilyID, "client_id", clientID)
+			if err := s.store.RevokeFamily(r.Context(), storedToken.FamilyID); err != nil {
+				s.logger.Error("failed to revoke token family", "error", err)
+			}
+			tokenError(w, http.StatusBadRequest, "invalid_grant", "refresh token already used")
+		case errors.Is(err, ErrTokenNotFound):
+			s.logger.Warn("refresh with unknown token")
+			tokenError(w, http.StatusBadRequest, "invalid_grant", "invalid refresh token")
+		default:
+			s.logger.Error("failed to consume refresh token", "error", err)
+			tokenError(w, http.StatusInternalServerError, "server_error", "internal error")
 		}
-		tokenError(w, http.StatusBadRequest, "invalid_grant", "refresh token already used")
 		return
 	}
 
-	// Check expiration
 	if time.Now().After(storedToken.ExpiresAt) {
 		tokenError(w, http.StatusBadRequest, "invalid_grant", "refresh token expired")
 		return
-	}
-
-	// Revoke old refresh token (rotation)
-	if err := s.store.RevokeToken(r.Context(), tokenHash); err != nil {
-		s.logger.Error("failed to revoke old refresh token", "error", err)
 	}
 
 	s.logger.Info("refresh token rotated", "client_id", clientID, "family_id", storedToken.FamilyID)
