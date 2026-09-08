@@ -73,6 +73,10 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		a.statusSvc.HandleAlertEvent(ctx, evt)
 	}
 
+	if a.downDetector != nil {
+		a.downDetector.SetEmitter(sendAlert)
+	}
+
 	// Container events
 	a.containerSvc.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})

@@ -114,6 +114,15 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		"create_trigger",
 		"update_trigger",
 		"delete_trigger",
+		// Channel tools (6)
+		"list_channels",
+		"get_channel",
+		"create_channel",
+		"update_channel",
+		"delete_channel",
+		"test_channel",
+		// Edition tool (1)
+		"get_edition",
 		// Security tools (4)
 		"get_security_insights",
 		"list_cve",
@@ -136,7 +145,7 @@ func TestNewServer_RegistersAllTools(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 
-	assert.Len(t, result.Tools, 44, "expected exactly 44 tools registered")
+	assert.Len(t, result.Tools, 51, "expected exactly 51 tools registered")
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "expected tool %q to be registered", name)
 	}
@@ -177,6 +186,9 @@ func TestNewServer_ReadToolsAreReadOnly(t *testing.T) {
 		"list_certificates":    true,
 		"get_updates":          true,
 		"get_health":           true,
+		"list_channels":        true,
+		"get_channel":          true,
+		"get_edition":          true,
 	}
 
 	for _, tool := range result.Tools {

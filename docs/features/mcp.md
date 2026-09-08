@@ -167,6 +167,7 @@ only in the web UI.
 | `get_updates` | Available image updates for monitored containers | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
 | `list_agents` | Registered remote agents with connection state and runtime | Personal |
+| `get_edition` | Running edition, which capability each edition opens, quota usage and history windows | Community |
 
 ### Security & supply chain (read)
 
@@ -199,6 +200,9 @@ only in the web UI.
 
 | Tool | Description | Edition |
 |------|-------------|---------|
+| `list_channels` / `get_channel` | List or fetch notification channels; secrets are never returned | Community |
+| `create_channel` / `update_channel` / `delete_channel` | Manage notification channels (webhook is Community; email and Telegram need Personal, Slack and Teams need Pro) | Community |
+| `test_channel` | Send a test notification through a channel | Community |
 | `list_triggers` / `get_trigger` | List or fetch alert triggers (entity → channel routing) | Community |
 | `create_trigger` / `update_trigger` / `delete_trigger` | Manage alert triggers (scope/tag filters require Personal) | Community |
 | `list_escalation_policies` / `get_escalation_policy` | List or fetch escalation policies | Pro |
@@ -228,6 +232,7 @@ Once connected, you can ask your AI assistant questions like:
 - "What's consuming the most CPU?"
 - "Are there any active alerts? Acknowledge the one for the API."
 - "Which certificates expire within 30 days?"
+- "Create a Slack channel for the ops webhook and route critical container alerts to it."
 - "Are there image updates available for my containers?"
 - "Pause the backup-check heartbeat monitor."
 - "Any critical CVEs in my images? What's my security posture?"

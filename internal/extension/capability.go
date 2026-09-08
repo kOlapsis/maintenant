@@ -82,6 +82,22 @@ var minEdition = map[Capability]Edition{
 
 // MinEdition returns the lowest edition that opens c. An unknown capability
 // resolves to Pro: a capability nobody declared is not one we hand out.
+// channelCapabilities maps a notification channel type to the capability that
+// opens it. A type absent from the map is open in every edition.
+var channelCapabilities = map[string]Capability{
+	"slack":    CapSlack,
+	"teams":    CapTeams,
+	"email":    CapSMTP,
+	"telegram": CapTelegram,
+}
+
+// ChannelCapability returns the capability gating a channel type, and whether
+// that type is gated at all.
+func ChannelCapability(channelType string) (Capability, bool) {
+	c, ok := channelCapabilities[channelType]
+	return c, ok
+}
+
 func MinEdition(c Capability) Edition {
 	if e, ok := minEdition[c]; ok {
 		return e

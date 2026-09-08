@@ -85,6 +85,7 @@ type App struct {
 	// Alert pipeline
 	alertEngine     *alert.Engine
 	notifier        *alert.Notifier
+	downDetector    *alert.DownDetector
 	escalationStore *store.EscalationStore
 	escalationSvc   *escalation.Service
 
@@ -440,6 +441,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		}),
 	})
 
+	// Sustained container downtime. Off unless the operator sets a threshold:
+	// enabling it retroactively alerts on every container already stopped.
+	if cfg.ContainerDownAfter > 0 {
+		a.downDetector = alert.NewDownDetector(containerStore, alertStore, cfg.ContainerDownAfter,
+			logger.With("component", "container-down"))
+	}
+
 	// --- Public Status Page ---
 	a.subscriberSvc = status.NewSubscriberService(subscriberStore, nil, cfg.BaseURL, logger)
 	a.statusSvc = status.NewService(status.Deps{
@@ -639,6 +647,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Channels:      channelStore,
 		Triggers:      triggerStore,
 		Escalator:     a.alertEngine.Escalator(),
+		ChannelTester: a.notifier,
 		Updates:       a.updateSvc,
 		Incidents:     incidentStore,
 		Maintenance:   maintenanceStore,
@@ -653,13 +662,17 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Scorer:      a.scorer,
 		UpdateStore: updateStore,
 		// Orchestrators (read-only)
-		Kubernetes:     a.k8sStore,
-		SwarmCluster:   func() *swarm.SwarmCluster { return a.swarmCluster },
-		SwarmDiscovery: func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
-		SwarmTopology:  a.swarmTopologyStore,
-		SwarmNodes:     a.swarmNodeStore,
-		Version:        cfg.Version,
-		Logger:         logger.With("component", "mcp"),
+		Kubernetes:           a.k8sStore,
+		SwarmCluster:         func() *swarm.SwarmCluster { return a.swarmCluster },
+		SwarmDiscovery:       func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
+		SwarmTopology:        a.swarmTopologyStore,
+		SwarmNodes:           a.swarmNodeStore,
+		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
+		Broadcast: func(eventType string, data any) {
+			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		},
+		Version: cfg.Version,
+		Logger:  logger.With("component", "mcp"),
 	}
 	a.mcpServer = mcp.NewServer(mcpSvc)
 
@@ -842,6 +855,11 @@ func (a *App) Start(ctx context.Context) error {
 	// no-op unless the matching runtime is active.
 	go a.startKubernetesReconcile(ctx)
 	go a.startSwarmTopologyReconcile(ctx)
+
+	// Sustained container downtime (opt-in via MAINTENANT_CONTAINER_DOWN_AFTER).
+	if a.downDetector != nil {
+		go a.startContainerDownCheck(ctx)
+	}
 
 	// Swarm context recheck (60s) — detects swarm activation/deactivation.
 	if a.swarmDetector != nil {
