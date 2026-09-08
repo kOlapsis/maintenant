@@ -74,7 +74,7 @@ func TestService_Start_ReprobesStandaloneAfterRestart(t *testing.T) {
 	firstEngine, firstChecks := probedEngine(t)
 	first := NewService(Deps{Store: store, Engine: firstEngine, Logger: noopLogger()})
 	firstCtx, cancelFirst := context.WithCancel(context.Background())
-	first.Start(firstCtx)
+	require.NoError(t, first.Start(firstCtx))
 
 	ep, err := first.CreateStandalone(context.Background(), "std", target, TypeTCP, DefaultConfig())
 	require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestService_Start_ReprobesStandaloneAfterRestart(t *testing.T) {
 	second := NewService(Deps{Store: store, Engine: secondEngine, Logger: noopLogger()})
 	secondCtx, cancelSecond := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancelSecond(); second.Stop() })
-	second.Start(secondCtx)
+	require.NoError(t, second.Start(secondCtx))
 
 	awaitCheck(t, secondChecks, ep.ID)
 	assert.Equal(t, 1, secondEngine.ActiveCount())
