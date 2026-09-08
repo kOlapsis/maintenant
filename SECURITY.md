@@ -77,8 +77,8 @@ The threat model of a monitoring agent is dominated by what you grant it. Two
 points matter more than the rest:
 
 - **Do not mount `/var/run/docker.sock` directly.** Use a read-only
-  docker-socket-proxy; see `docs/` for the recommended configuration. A mounted
-  socket is equivalent to root on the host.
+  docker-socket-proxy; see [Recommended: Docker Socket Proxy](https://docs.maintenant.dev/security/#recommended-docker-socket-proxy)
+  for the configuration. A mounted socket is equivalent to root on the host.
 - **Do not bind the listener to `0.0.0.0`** on a machine reachable from an
-  untrusted network. Bind to a private interface and put a TLS terminator in
-  front.
+  untrusted network. Bind to a private interface, or put an authenticating
+  reverse proxy in front; see [Reverse Proxy Setup](https://docs.maintenant.dev/security/#reverse-proxy-setup).

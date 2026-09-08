@@ -36,7 +36,10 @@ const EscalationPage = () => import('../pages/EscalationPage.vue')
 const ChannelsPage = () => import('../pages/ChannelsPage.vue')
 const AgentsPage = () => import('../pages/AgentsPage.vue')
 
-const isStatusSubdomain = (window as unknown as { __MAINTENANT_STATUS?: boolean }).__MAINTENANT_STATUS === true
+const isStatusSubdomain =
+  document.querySelector('meta[name="maintenant-status"]')?.getAttribute('content') === 'true' ||
+  // Fallback for an index.html cached by the service worker before the meta tag shipped.
+  (window as unknown as { __MAINTENANT_STATUS?: boolean }).__MAINTENANT_STATUS === true
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),

@@ -751,6 +751,12 @@ func (a *App) Start(ctx context.Context) error {
 		return err
 	}
 
+	// Derived so an early return (e.g. a failed bind below) cancels every
+	// background goroutine started with ctx, instead of leaking them until
+	// the caller's own context is cancelled.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	a.db.StartWriter(ctx)
 
 	// Registered after the writer starts: on SQLite every write goes through it.
@@ -892,9 +898,13 @@ func (a *App) Start(ctx context.Context) error {
 	if a.cfg.Mode == "agent" {
 		a.logger.Warn("agent mode: HTTP server disabled")
 	} else {
+		ln, err := net.Listen("tcp", a.srv.Addr)
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", a.srv.Addr, err)
+		}
+		a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
 		go func() {
-			a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
-			if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := a.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				a.logger.Error("HTTP server error", "error", err)
 			}
 		}()
@@ -1046,12 +1056,10 @@ func (a *App) startAgentGRPC(ctx context.Context) error {
 	}
 
 	a.agentSrv.StartTokenGC(ctx)
-	go func() {
-		if err := a.agentSrv.Start(ctx, listen, tlsCfg); err != nil && !errors.Is(err, context.Canceled) {
-			a.logger.Error("agentserver: stopped", "err", err)
-		}
-	}()
-	a.logger.Info("agent gRPC server scheduled", "listen", listen)
+	if err := a.agentSrv.Start(ctx, listen, tlsCfg); err != nil {
+		return err
+	}
+	a.logger.Info("agent gRPC server listening", "listen", listen)
 	return nil
 }
 

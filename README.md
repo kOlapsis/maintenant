@@ -33,6 +33,8 @@ services:
   maintenant:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
+      # ⚠️  SECURITY: publishes the UI/API (no authentication of their own) on
+      # every interface; put an auth reverse proxy in front, or bind "127.0.0.1:8080:8080". See https://docs.maintenant.dev/security/#reverse-proxy-setup.
       - "8080:8080"
     read_only: true
     security_opt:
@@ -299,6 +301,8 @@ services:
   maintenant:
     image: ghcr.io/kolapsis/maintenant:latest
     ports:
+      # ⚠️  SECURITY: publishes the UI/API (no authentication of their own) on
+      # every interface; put an auth reverse proxy in front, or bind "127.0.0.1:8080:8080". See https://docs.maintenant.dev/security/#reverse-proxy-setup.
       - "8080:8080"
     read_only: true
     security_opt:

@@ -80,11 +80,13 @@ func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
 	}
 }
 
-const urlFixScript = `<script>window.__MAINTENANT_STATUS=true</script>`
+const statusMetaTag = `<meta name="maintenant-status" content="true">`
 
 // HandleStatusPage serves the Vue SPA index.html for the /status/ path.
-// A small inline script is injected so that Vue Router initialises at /status when
-// the page is accessed from the dedicated status subdomain (browser path is "/").
+// A meta tag is injected so that Vue Router initialises at /status when the
+// page is accessed from the dedicated status subdomain (browser path is "/").
+// It must not be an inline <script>: the CSP hashes only the scripts already
+// present in the embedded index.html, so an injected script gets blocked.
 func (h *Handler) HandleStatusPage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/status/" && r.URL.Path != "/status" {
 		http.NotFound(w, r)
@@ -94,7 +96,7 @@ func (h *Handler) HandleStatusPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Status page not available", http.StatusServiceUnavailable)
 		return
 	}
-	html := bytes.Replace(h.indexHTML, []byte("</head>"), []byte(urlFixScript+"</head>"), 1)
+	html := bytes.Replace(h.indexHTML, []byte("</head>"), []byte(statusMetaTag+"</head>"), 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	_, _ = w.Write(html)

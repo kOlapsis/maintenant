@@ -1,4 +1,4 @@
-.PHONY: test test-cover lint build proto-gen test-pg \
+.PHONY: test test-cover lint build check frontend proto-gen test-pg \
 	e2e-sqlite e2e-postgres e2e-both e2e-up-sqlite e2e-up-postgres e2e-logs e2e-down e2e-migrate
 
 test:
@@ -10,8 +10,26 @@ test-cover:
 lint:
 	golangci-lint run
 
-build:
+# Rebuilds the embedded SPA before every binary build: cmd/maintenant/web/web.go
+# embeds all:dist, and go build silently reuses whatever is already there
+# otherwise.
+build: frontend
 	go build -o ./bin/maintenant ./cmd/maintenant
+
+# Builds the SPA and drops it where cmd/maintenant/web/web.go embeds it from.
+# Clears the target's contents first (leaving .gitkeep, which frontend/dist
+# never produces) so a second run doesn't accumulate stale hashed assets.
+frontend:
+	cd frontend && npm ci --ignore-scripts && npm run type-check && npm run build-only
+	rm -rf cmd/maintenant/web/dist/*
+	cp -r frontend/dist/. cmd/maintenant/web/dist/
+
+# Mirrors what CI gates on, for the same result before it costs a push.
+check:
+	go vet ./...
+	golangci-lint run ./...
+	go test -race ./...
+	cd frontend && npm ci --ignore-scripts && npm run type-check
 
 proto-gen:
 	mkdir -p internal/agentpb

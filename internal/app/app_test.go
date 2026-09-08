@@ -89,3 +89,23 @@ func TestStart_DegradedMode(t *testing.T) {
 		t.Fatal("Start() did not return after context cancellation")
 	}
 }
+
+// TestStart_FailsOnBusyPort: Start() must fail fast, not silently run without
+// an HTTP surface, when its configured address is already bound.
+func TestStart_FailsOnBusyPort(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = ln.Close() }()
+
+	cfg, logger := degradedEnv(t, t.TempDir())
+	cfg.Addr = ln.Addr().String()
+
+	a, err := app.New(cfg, logger)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = a.Start(ctx)
+	assert.Error(t, err, "Start() must return an error when its address is already in use")
+}

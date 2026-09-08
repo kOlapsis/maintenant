@@ -61,8 +61,10 @@ func New(deps Deps) *Server {
 	}
 }
 
-// Start binds to listen, registers the Ingest service, and begins serving.
-// It blocks until the context is cancelled or an error occurs.
+// Start binds to listen and registers the Ingest service, then serves in the
+// background. It returns as soon as the bind succeeds or fails, so call it
+// synchronously and check the error; the server then runs and stops on its
+// own as ctx allows.
 // If tlsCfg is nil the server listens in h2c (plaintext) — only safe behind a
 // trusted reverse proxy (MAINTENANT_GRPC_TLS_INSECURE=true).
 func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) error {
@@ -91,13 +93,18 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 		errCh <- s.grpc.Serve(lis)
 	}()
 
-	select {
-	case <-ctx.Done():
-		s.grpc.GracefulStop()
-		return nil
-	case err := <-errCh:
-		return fmt.Errorf("agentserver: serve: %w", err)
-	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.grpc.GracefulStop()
+		case err := <-errCh:
+			if err != nil {
+				s.deps.Logger.Error("agentserver: serve", "err", err)
+			}
+		}
+	}()
+
+	return nil
 }
 
 // Stop performs a graceful shutdown of the gRPC server.

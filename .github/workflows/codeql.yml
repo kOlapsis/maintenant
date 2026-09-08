@@ -94,12 +94,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # cmd/maintenant/web/web.go embeds `all:dist`: without that directory the
-      # Go autobuild fails.
-      - name: Prepare embedded assets
-        if: matrix.language == 'go'
-        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
