@@ -500,12 +500,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- Security posture scoring ---
 	ackStore := store.NewAcknowledgmentStore(db)
 	a.scorer = security.NewScorer(security.ScorerDeps{
-		Certs:     &CertPostureAdapter{CertSvc: a.certSvc},
-		CVEs:      &CVEPostureAdapter{Store: updateStore},
-		Updates:   &UpdatePostureAdapter{Store: updateStore},
-		Security:  a.securitySvc,
-		Acks:      ackStore,
-		Threshold: cfg.SecurityScoreThreshold,
+		Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
+		CVEs:           &CVEPostureAdapter{Store: updateStore},
+		CVEEvaluations: &CVEEvaluationPostureAdapter{Store: updateStore},
+		Updates:        &UpdatePostureAdapter{Store: updateStore},
+		Security:       a.securitySvc,
+		Acks:           ackStore,
+		Threshold:      cfg.SecurityScoreThreshold,
 	})
 
 	if cfg.SecurityScoreThreshold > 0 {
