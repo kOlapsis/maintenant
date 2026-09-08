@@ -30,6 +30,7 @@ type RuntimeDiscoverer interface {
 // This mirrors runtime.RuntimeEvent but lives in the container package to avoid import cycles.
 type ContainerEvent struct {
 	Action       string
+	AgentID      string
 	ExternalID   string
 	Name         string
 	ExitCode     string
@@ -127,7 +128,7 @@ func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 	case "stop":
 		// Docker sends "die" before "stop". If the container exited cleanly (exit 0),
 		// the die handler already set StateCompleted — don't overwrite it with StateExited.
-		c, _ := s.store.GetContainerByExternalID(ctx, evt.ExternalID)
+		c, _ := s.lookup(ctx, evt)
 		if c != nil && c.State == StateCompleted {
 			return
 		}
@@ -151,14 +152,18 @@ func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 	}
 }
 
+func (s *Service) lookup(ctx context.Context, evt ContainerEvent) (*Container, error) {
+	return s.store.GetContainerByExternalID(ctx, uid.Agent(evt.AgentID), evt.ExternalID)
+}
+
 func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, newState ContainerState) {
-	c, err := s.store.GetContainerByExternalID(ctx, evt.ExternalID)
+	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for state change", "external_id", evt.ExternalID[:12], "error", err)
 		return
 	}
 	if c == nil {
-		if newState != StateRunning || s.discoverer == nil {
+		if newState != StateRunning || s.discoverer == nil || uid.Agent(evt.AgentID) != uid.LocalAgent {
 			s.logger.Debug("unknown container event, skipping", "external_id", evt.ExternalID[:12], "action", evt.Action)
 			return
 		}
@@ -250,7 +255,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 }
 
 func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
-	c, err := s.store.GetContainerByExternalID(ctx, evt.ExternalID)
+	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for destroy", "external_id", evt.ExternalID[:12], "error", err)
 		return
@@ -261,7 +266,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 	}
 
 	now := evt.Timestamp
-	if err := s.store.ArchiveContainer(ctx, evt.ExternalID, now); err != nil {
+	if err := s.store.ArchiveContainer(ctx, c.ID, now); err != nil {
 		s.logger.Error("archive container", "external_id", evt.ExternalID[:12], "error", err)
 		return
 	}
@@ -275,7 +280,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 }
 
 func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
-	c, err := s.store.GetContainerByExternalID(ctx, evt.ExternalID)
+	c, err := s.lookup(ctx, evt)
 	if err != nil {
 		s.logger.Error("get container for health change", "external_id", evt.ExternalID[:12], "error", err)
 		return
@@ -327,9 +332,9 @@ func (s *Service) GetContainer(ctx context.Context, id string) (*Container, erro
 	return s.store.GetContainerByID(ctx, id)
 }
 
-// GetContainerByExternalID retrieves a container by its runtime-assigned external ID.
-func (s *Service) GetContainerByExternalID(ctx context.Context, externalID string) (*Container, error) {
-	return s.store.GetContainerByExternalID(ctx, externalID)
+// GetContainerByExternalID retrieves an agent's container by its runtime-assigned external ID.
+func (s *Service) GetContainerByExternalID(ctx context.Context, agentID, externalID string) (*Container, error) {
+	return s.store.GetContainerByExternalID(ctx, uid.Agent(agentID), externalID)
 }
 
 // DeleteContainer removes a container and its transitions from the database.
@@ -379,7 +384,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 		dc, exists := currentByExternalID[sc.ExternalID]
 		if !exists {
 			// Container was removed while maintenant was offline — archive it
-			if err := s.store.ArchiveContainer(ctx, sc.ExternalID, now); err != nil {
+			if err := s.store.ArchiveContainer(ctx, sc.ID, now); err != nil {
 				s.logger.Error("reconcile archive", "external_id", sc.ExternalID, "error", err)
 			}
 			s.emitEvent(event.ContainerArchived, map[string]interface{}{

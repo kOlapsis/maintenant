@@ -416,7 +416,7 @@ func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string)
 }
 
 func (s *Service) deleteLabelMonitors(ctx context.Context, externalID string, keep map[string]bool) {
-	monitors, err := s.store.ListMonitorsByExternalID(ctx, externalID)
+	monitors, err := s.store.ListMonitorsByExternalID(ctx, uid.LocalAgent, externalID)
 	if err != nil {
 		s.logger.Error("list label monitors for container", "error", err, "external_id", externalID)
 		return
@@ -497,15 +497,12 @@ func (s *Service) SyncAgentCerts(ctx context.Context, agentID, containerExternal
 // deleteAgentLabelMonitors removes this agent's label monitors for a container
 // that are no longer in `keep` (nil keep = remove all of them).
 func (s *Service) deleteAgentLabelMonitors(ctx context.Context, agentID, externalID string, keep map[string]bool) {
-	monitors, err := s.store.ListMonitorsByExternalID(ctx, externalID)
+	monitors, err := s.store.ListMonitorsByExternalID(ctx, agentID, externalID)
 	if err != nil {
 		s.logger.Error("list agent label monitors", "error", err, "external_id", externalID)
 		return
 	}
 	for _, m := range monitors {
-		if m.AgentID != agentID {
-			continue // only this agent's monitors
-		}
 		if keep != nil && keep[m.Hostname+":"+strconv.Itoa(m.Port)] {
 			continue
 		}

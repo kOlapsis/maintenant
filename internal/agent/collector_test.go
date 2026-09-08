@@ -38,7 +38,43 @@ func TestRuntimeEventToProto_MapsImageAndState(t *testing.T) {
 }
 
 func TestRuntimeEventToProto_NilForUnmappedAction(t *testing.T) {
-	assert.Nil(t, runtimeEventToProto(runtime.RuntimeEvent{Action: "health_status"}))
+	assert.Nil(t, runtimeEventToProto(runtime.RuntimeEvent{Action: "exec_start"}))
+}
+
+func TestRuntimeEventToProto_HealthStatus(t *testing.T) {
+	out := runtimeEventToProto(runtime.RuntimeEvent{
+		Action:       "health_status",
+		ExternalID:   "c1",
+		Name:         "demo",
+		HealthStatus: "unhealthy",
+	})
+	require.NotNil(t, out)
+	assert.Equal(t, agentpb.ContainerState_CONTAINER_STATE_UNSPECIFIED, out.State)
+	assert.Equal(t, "unhealthy", out.HealthStatus)
+	assert.True(t, out.HasHealthCheck)
+	assert.False(t, out.Destroyed)
+}
+
+func TestRuntimeEventToProto_Destroy(t *testing.T) {
+	out := runtimeEventToProto(runtime.RuntimeEvent{
+		Action:     "destroy",
+		ExternalID: "c1",
+		Name:       "demo",
+		Image:      "adminer:latest",
+	})
+	require.NotNil(t, out)
+	assert.True(t, out.Destroyed)
+	assert.Equal(t, agentpb.ContainerState_CONTAINER_STATE_EXITED, out.State,
+		"a server without the destroyed field must read this as a stop, not a start")
+	assert.Equal(t, "c1", out.ContainerId)
+}
+
+func TestSyncInventory_EmptySnapshotIsSentComplete(t *testing.T) {
+	ev := inventoryEvent("agent-1", nil)
+	inv := ev.GetInventory()
+	require.NotNil(t, inv)
+	assert.Empty(t, inv.GetContainers())
+	assert.True(t, inv.GetComplete(), "a successful discovery that found nothing is still complete")
 }
 
 func TestContainerStateToProto(t *testing.T) {

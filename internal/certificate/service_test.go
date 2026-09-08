@@ -287,6 +287,7 @@ func TestParseCertificateLabels_StripsSchemeAndPath(t *testing.T) {
 type mockCertStore struct {
 	monitors               map[string]*CertMonitor
 	standaloneCount        int
+	deleted                []string
 	getMonitorByHostPortFn func(ctx context.Context, hostname string, port int, serverName string) (*CertMonitor, error)
 }
 
@@ -336,7 +337,9 @@ func (m *mockCertStore) ListMonitors(_ context.Context, _ ListCertificatesOpts) 
 func (m *mockCertStore) UpdateMonitor(_ context.Context, _ *CertMonitor) error {
 	return nil
 }
-func (m *mockCertStore) DeleteMonitor(_ context.Context, _ string) error {
+func (m *mockCertStore) DeleteMonitor(_ context.Context, id string) error {
+	delete(m.monitors, id)
+	m.deleted = append(m.deleted, id)
 	return nil
 }
 func (m *mockCertStore) InsertCheckResult(_ context.Context, _ *CertCheckResult) (string, error) {
@@ -354,8 +357,14 @@ func (m *mockCertStore) InsertChainEntries(_ context.Context, _ []*CertChainEntr
 func (m *mockCertStore) GetChainEntries(_ context.Context, _ string) ([]*CertChainEntry, error) {
 	return nil, nil
 }
-func (m *mockCertStore) ListMonitorsByExternalID(_ context.Context, _ string) ([]*CertMonitor, error) {
-	return nil, nil
+func (m *mockCertStore) ListMonitorsByExternalID(_ context.Context, agentID, externalID string) ([]*CertMonitor, error) {
+	var out []*CertMonitor
+	for _, mon := range m.monitors {
+		if uid.Agent(mon.AgentID) == uid.Agent(agentID) && mon.ExternalID == externalID {
+			out = append(out, mon)
+		}
+	}
+	return out, nil
 }
 func (m *mockCertStore) ListDueScheduledMonitors(_ context.Context, _ time.Time) ([]*CertMonitor, error) {
 	return nil, nil
@@ -645,4 +654,27 @@ func TestProcessCheckResult_NoEventWhenStatusHolds(t *testing.T) {
 		}
 	}
 	assert.Zero(t, changed, "an unchanged status must not be announced again")
+}
+
+func TestDeleteLabelMonitors_LocalOnlyTouchesLocalAgent(t *testing.T) {
+	store := newMockCertStore()
+	svc := NewService(Deps{Store: store, Logger: noopLogger()})
+	ctx := context.Background()
+
+	const ext = "c-shared"
+	remote := &CertMonitor{
+		ID: uid.New(), Hostname: "remote.example", Port: 443,
+		ExternalID: ext, AgentID: "agent-b", Source: SourceLabel,
+	}
+	local := &CertMonitor{
+		ID: uid.New(), Hostname: "local.example", Port: 443,
+		ExternalID: ext, AgentID: uid.LocalAgent, Source: SourceLabel,
+	}
+	store.monitors[remote.ID] = remote
+	store.monitors[local.ID] = local
+
+	svc.HandleContainerDestroy(ctx, ext)
+
+	assert.Equal(t, []string{local.ID}, store.deleted,
+		"a local container destroy must not delete a remote agent's monitors")
 }

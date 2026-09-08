@@ -39,7 +39,7 @@ type CertificateStore interface {
 	GetChainEntries(ctx context.Context, checkResultID string) ([]*CertChainEntry, error)
 
 	// Label-discovered monitors
-	ListMonitorsByExternalID(ctx context.Context, externalID string) ([]*CertMonitor, error)
+	ListMonitorsByExternalID(ctx context.Context, agentID, externalID string) ([]*CertMonitor, error)
 
 	// Scheduler
 	ListDueScheduledMonitors(ctx context.Context, now time.Time) ([]*CertMonitor, error)

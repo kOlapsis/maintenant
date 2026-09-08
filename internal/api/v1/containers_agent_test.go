@@ -37,7 +37,7 @@ func (s *agentEnrichStore) InsertContainer(context.Context, *container.Container
 	return "", nil
 }
 func (s *agentEnrichStore) UpdateContainer(context.Context, *container.Container) error { return nil }
-func (s *agentEnrichStore) GetContainerByExternalID(context.Context, string) (*container.Container, error) {
+func (s *agentEnrichStore) GetContainerByExternalID(context.Context, string, string) (*container.Container, error) {
 	return nil, nil
 }
 func (s *agentEnrichStore) GetContainerByID(_ context.Context, id string) (*container.Container, error) {

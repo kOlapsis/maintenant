@@ -306,3 +306,89 @@ func TestSessions_ReplacedStreamIsNotARevocation(t *testing.T) {
 	assert.NotErrorIs(t, cause, agentserver.ErrSessionRevoked,
 		"a reconnect that replaces the old stream must not look like a revocation")
 }
+
+// --- Per-session close token: a replaced handler must not close its replacement ---
+
+func TestSessions_CloseStream_StaleTokenKeepsReplacement(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	tok1 := sessions.Open("agent-A", func(error) {}, "addr1", nil, nil)
+	var secondCancelled bool
+	sessions.Open("agent-A", func(error) { secondCancelled = true }, "addr2", nil, nil)
+	before := rec.snapshot()
+
+	sessions.CloseStream("agent-A", tok1, "stream_ended")
+
+	assert.True(t, sessions.IsConnected("agent-A"), "the replacement session must stay open")
+	assert.False(t, secondCancelled, "a stale token must not cancel the replacement stream")
+	assert.Equal(t, before, rec.snapshot(), "a stale token must fire no lifecycle event")
+}
+
+func TestSessions_CloseStream_LiveTokenCloses(t *testing.T) {
+	broadcaster := &testBroadcaster{}
+	sessions := agentserver.NewSessions(discardLogger(), broadcaster)
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	var cancelled bool
+	tok := sessions.Open("agent-A", func(error) { cancelled = true }, "addr", nil, nil)
+
+	sessions.CloseStream("agent-A", tok, "stream_ended")
+
+	assert.False(t, sessions.IsConnected("agent-A"))
+	assert.True(t, cancelled, "the owning token must cancel its own stream")
+	assert.True(t, broadcaster.hasEvent("agent.disconnected"))
+	assert.Equal(t, []string{"agent-A//true", "agent-A/stream_ended/false"}, rec.snapshot())
+}
+
+func TestSessions_Close_IgnoresToken(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+
+	sessions.Open("agent-A", func(error) {}, "addr1", nil, nil)
+	var secondCancelled bool
+	sessions.Open("agent-A", func(error) { secondCancelled = true }, "addr2", nil, nil)
+
+	sessions.Close("agent-A", "revoked")
+
+	assert.False(t, sessions.IsConnected("agent-A"), "Close tears down whichever session is current")
+	assert.True(t, secondCancelled, "Close is not tied to a token; it closes the live session")
+}
+
+func TestSessions_CloseStream_ZeroTokenIsNoop(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	sessions.Open("agent-A", func(error) {}, "addr", nil, nil)
+	before := rec.snapshot()
+
+	sessions.CloseStream("agent-A", agentserver.Token{}, "stream_ended")
+
+	assert.True(t, sessions.IsConnected("agent-A"))
+	assert.Equal(t, before, rec.snapshot())
+}
+
+// A session that reconnects while a stale sweep's DB query is already in
+// flight must not be reaped for a last_seen that predates it: the sweep's
+// staleAgents call here opens the replacement itself, simulating the race.
+func TestSessions_StaleWatcher_SkipsStreamOpenedDuringSweep(t *testing.T) {
+	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	rec := &hookRecorder{}
+	sessions.SetLifecycleAlertHook(rec.record)
+
+	staleAgents := func(context.Context, time.Duration) ([]string, error) {
+		sessions.Open("agent-A", func(error) {}, "addr", nil, nil)
+		return []string{"agent-A"}, nil
+	}
+
+	sessions.StartStaleWatcher(t.Context(), 5*time.Millisecond, time.Minute, 0, staleAgents)
+
+	require.Eventually(t, func() bool { return sessions.IsConnected("agent-A") }, time.Second, 5*time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // several more sweeps
+	assert.True(t, sessions.IsConnected("agent-A"), "a session opened during the sweep must not be reaped")
+	for _, call := range rec.snapshot() {
+		assert.NotContains(t, call, "/stale/false", "a session opened during the sweep must not be reaped as stale")
+	}
+}

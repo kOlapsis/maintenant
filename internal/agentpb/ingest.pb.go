@@ -1438,6 +1438,11 @@ type ContainerEvent struct {
 	StatusMessage string                 `protobuf:"bytes,6,opt,name=status_message,json=statusMessage,proto3" json:"status_message,omitempty"`
 	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	Labels        map[string]string      `protobuf:"bytes,8,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Docker healthcheck state ("healthy", "unhealthy", "starting"); empty when the container has no healthcheck.
+	HealthStatus   string `protobuf:"bytes,9,opt,name=health_status,json=healthStatus,proto3" json:"health_status,omitempty"`
+	HasHealthCheck bool   `protobuf:"varint,10,opt,name=has_health_check,json=hasHealthCheck,proto3" json:"has_health_check,omitempty"`
+	// Set when the container was removed from the host; state is then EXITED so an older server treats it as a stop.
+	Destroyed     bool `protobuf:"varint,11,opt,name=destroyed,proto3" json:"destroyed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1528,6 +1533,27 @@ func (x *ContainerEvent) GetLabels() map[string]string {
 	return nil
 }
 
+func (x *ContainerEvent) GetHealthStatus() string {
+	if x != nil {
+		return x.HealthStatus
+	}
+	return ""
+}
+
+func (x *ContainerEvent) GetHasHealthCheck() bool {
+	if x != nil {
+		return x.HasHealthCheck
+	}
+	return false
+}
+
+func (x *ContainerEvent) GetDestroyed() bool {
+	if x != nil {
+		return x.Destroyed
+	}
+	return false
+}
+
 // A full snapshot of every container the agent's runtime knows about, sent on
 // connect and periodically thereafter. The server reconciles it against the
 // rows it holds for this agent: containers present are un-archived, containers
@@ -1535,12 +1561,14 @@ func (x *ContainerEvent) GetLabels() map[string]string {
 // archived rather than deleted — containers carry history (transitions,
 // uptime, CVEs) that must outlive their removal.
 //
-// An inventory with no entries is never sent and never acted upon: the agent
-// skips it when discovery fails, so an empty snapshot could only mean "I could
-// not look", which the protocol cannot distinguish from "this host is empty".
+// `complete` disambiguates an empty snapshot: true means discovery succeeded
+// and the host genuinely has no containers, false means discovery failed and
+// the inventory must not be acted upon.
 type ContainerInventory struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Containers    []*ContainerEvent      `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Containers []*ContainerEvent      `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
+	// True when discovery succeeded; an empty complete snapshot is authoritative and retires every container of the agent.
+	Complete      bool `protobuf:"varint,2,opt,name=complete,proto3" json:"complete,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1580,6 +1608,13 @@ func (x *ContainerInventory) GetContainers() []*ContainerEvent {
 		return x.Containers
 	}
 	return nil
+}
+
+func (x *ContainerInventory) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
 }
 
 type EndpointEvent struct {
@@ -3086,7 +3121,7 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"kubernetes\x18\x10 \x01(\v2'.maintenant.agent.v1.KubernetesTopologyH\x00R\n" +
 	"kubernetes\x12G\n" +
 	"\tinventory\x18\x11 \x01(\v2'.maintenant.agent.v1.ContainerInventoryH\x00R\tinventoryB\x06\n" +
-	"\x04body\"\xa1\x03\n" +
+	"\x04body\"\x8e\x04\n" +
 	"\x0eContainerEvent\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -3096,14 +3131,19 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\x0estatus_message\x18\x06 \x01(\tR\rstatusMessage\x129\n" +
 	"\n" +
 	"started_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12G\n" +
-	"\x06labels\x18\b \x03(\v2/.maintenant.agent.v1.ContainerEvent.LabelsEntryR\x06labels\x1a9\n" +
+	"\x06labels\x18\b \x03(\v2/.maintenant.agent.v1.ContainerEvent.LabelsEntryR\x06labels\x12#\n" +
+	"\rhealth_status\x18\t \x01(\tR\fhealthStatus\x12(\n" +
+	"\x10has_health_check\x18\n" +
+	" \x01(\bR\x0ehasHealthCheck\x12\x1c\n" +
+	"\tdestroyed\x18\v \x01(\bR\tdestroyed\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"Y\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"u\n" +
 	"\x12ContainerInventory\x12C\n" +
 	"\n" +
 	"containers\x18\x01 \x03(\v2#.maintenant.agent.v1.ContainerEventR\n" +
-	"containers\"\xe4\x01\n" +
+	"containers\x12\x1a\n" +
+	"\bcomplete\x18\x02 \x01(\bR\bcomplete\"\xe4\x01\n" +
 	"\rEndpointEvent\x12\x1f\n" +
 	"\vendpoint_id\x18\x01 \x01(\tR\n" +
 	"endpointId\x12\x10\n" +
