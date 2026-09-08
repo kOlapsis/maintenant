@@ -65,6 +65,7 @@ type Deps struct {
 	EventCallback  EventCallback  // optional — nil-safe
 	AlertCallback  AlertCallback  // optional — nil-safe
 	BaseURL        string         // optional
+	StartedAt      time.Time      // optional — zero means now
 }
 
 // Service orchestrates heartbeat monitoring logic.
@@ -75,6 +76,7 @@ type Service struct {
 	alertCallback  AlertCallback
 	licenseChecker LicenseChecker
 	baseURL        string
+	startedAt      time.Time
 }
 
 // NewService creates a new heartbeat service with all dependencies.
@@ -89,6 +91,10 @@ func NewService(d Deps) *Service {
 	if lc == nil {
 		lc = &DefaultLicenseChecker{MaxHeartbeats: 5}
 	}
+	startedAt := d.StartedAt
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
 	return &Service{
 		store:          d.Store,
 		logger:         d.Logger,
@@ -96,6 +102,7 @@ func NewService(d Deps) *Service {
 		onEvent:        d.EventCallback,
 		alertCallback:  d.AlertCallback,
 		baseURL:        d.BaseURL,
+		startedAt:      startedAt,
 	}
 }
 
@@ -577,6 +584,17 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 
 // --- Deadline Checker ---
 
+// StartupGrace is how long after startup a missed deadline is attributed to the restart rather than alerted on.
+const StartupGrace = 2 * time.Minute
+
+func (s *Service) withinStartupGrace(now time.Time, deadline *time.Time) bool {
+	if deadline == nil {
+		return false
+	}
+	graceEnd := s.startedAt.Add(StartupGrace)
+	return now.Before(graceEnd) && deadline.After(s.startedAt.Add(-StartupGrace))
+}
+
 func (s *Service) StartDeadlineChecker(ctx context.Context) {
 	go func() {
 		s.logger.Info("heartbeat: deadline checker started")
@@ -604,6 +622,12 @@ func (s *Service) checkDeadlines(ctx context.Context) {
 	}
 
 	for _, h := range overdue {
+		if s.withinStartupGrace(now, h.NextDeadlineAt) {
+			s.logger.Info("heartbeat: deadline missed within startup grace, not alerting",
+				"heartbeat_id", h.ID, "name", h.Name, "deadline", h.NextDeadlineAt)
+			continue
+		}
+
 		previousStatus := h.Status
 
 		alertMsg := "Heartbeat missed deadline"

@@ -38,6 +38,11 @@ type Config struct {
 	DatabaseURL string
 	Retention   RetentionConfig
 
+	StateDir            string // empty keeps the historical per-file paths
+	SQLiteSynchronous   string
+	RequireStateDir     bool
+	RequireExistingData bool
+
 	// License
 	LicenseKey string
 
@@ -161,6 +166,9 @@ var ErrDatabaseURLInAgentMode = errors.New(
 // The agent stores its state in SQLite, always (FR-003, FR-030); server and
 // embedded both run the same server plane and accept an external database.
 func (c Config) ValidateStorage() error {
+	if _, err := store.NormalizeSynchronous(c.SQLiteSynchronous); err != nil {
+		return fmt.Errorf("MAINTENANT_SQLITE_SYNCHRONOUS: %w", err)
+	}
 	if c.DatabaseURL == "" {
 		return nil
 	}
@@ -192,6 +200,11 @@ func ConfigFromEnv() Config {
 		BaseURL:     envOr("MAINTENANT_BASE_URL", "http://"+addr),
 		DBPath:      envOr("MAINTENANT_DB", "./maintenant.db"),
 		DatabaseURL: os.Getenv("MAINTENANT_DATABASE_URL"),
+
+		StateDir:            os.Getenv("MAINTENANT_STATE_DIR"),
+		SQLiteSynchronous:   os.Getenv("MAINTENANT_SQLITE_SYNCHRONOUS"),
+		RequireStateDir:     parseTruthy(os.Getenv("MAINTENANT_REQUIRE_STATE_DIR")),
+		RequireExistingData: parseTruthy(os.Getenv("MAINTENANT_REQUIRE_EXISTING_DATA")),
 
 		LicenseKey: os.Getenv("MAINTENANT_LICENSE_KEY"),
 

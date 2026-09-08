@@ -1,0 +1,76 @@
+---
+# Bench topology: four machines, three networks, one service address.
+# Consumed by the libvirt provisioning (deploy/ha/lab/provision.yml) and by the
+# lab inventory. Two sites plus an arbitrator, so that a partition can be told
+# apart from a node loss.
+
+host:
+  # Single host VM, nested virtualisation required (KVM). Verify with kvm-ok
+  # before anything else: without nested virt nothing below can be built.
+  os: "Debian 13 or Ubuntu 24.04"
+  nested_virtualisation: required
+  vcpu: 8
+  memory_gb: 16
+  disk_gb: 80
+
+networks:
+  - name: net-a
+    cidr: 10.10.1.0/24
+    role: site A LAN
+  - name: net-b
+    cidr: 10.10.2.0/24
+    role: site B LAN
+  - name: net-wan
+    cidr: 10.10.9.0/24
+    role: >-
+      inter-site interconnect and administration; this is where tc netem is
+      applied for the degraded network scenarios
+
+machines:
+  - name: site-a
+    role: opensvc_node
+    initial_state: active
+    networks: [net-a, net-wan]
+    addresses:
+      net-a: 10.10.1.11
+      net-wan: 10.10.9.11
+    vcpu: 2
+    memory_gb: 4
+
+  - name: site-b
+    role: opensvc_node
+    initial_state: passive
+    networks: [net-b, net-wan]
+    addresses:
+      net-b: 10.10.2.12
+      net-wan: 10.10.9.12
+    vcpu: 2
+    memory_gb: 4
+
+  - name: arb
+    # Quorum arbitrator, and the diskless DRBD quorum node in sqlite/drbd mode.
+    role: arbitrator
+    networks: [net-wan]
+    addresses:
+      net-wan: 10.10.9.13
+    vcpu: 1
+    memory_mb: 512
+
+  - name: probe
+    # The measurement machine. It carries the two probes (availability, writes)
+    # and sits outside both sites, so it measures what a user sees rather than
+    # what the cluster believes.
+    role: measurement
+    networks: [net-wan]
+    addresses:
+      net-wan: 10.10.9.14
+    vcpu: 1
+    memory_mb: 512
+
+service:
+  # Service address, carried by the ip#0 resource of the OpenSVC service and
+  # therefore moved by the failover. Everything (probes, agents, operators)
+  # talks to this address and never to a node address.
+  address: 10.10.9.100
+  network: net-wan
+  name: maintenant.lab

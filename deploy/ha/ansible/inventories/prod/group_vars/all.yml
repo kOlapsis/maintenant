@@ -1,0 +1,9 @@
+---
+# The only variable that separates the production deployment from the bench.
+# Everything else is shared (FR-052).
+#
+# Pick the mechanism the machines actually offer: ipmi, pdu, or the provider's
+# API. A failed fencing blocks the start on the survivor and alerts the
+# operator: it never lets through (FR-024).
+ha_fencing_method: "" # ipmi | pdu | provider_api
+ha_fencing_command: ""

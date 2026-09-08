@@ -20,7 +20,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,8 +55,9 @@ import (
 
 // App holds all application services and manages their lifecycle.
 type App struct {
-	cfg    Config
-	logger *slog.Logger
+	stateRoot StateRoot
+	cfg       Config
+	logger    *slog.Logger
 
 	// Infrastructure
 	db *store.DB
@@ -180,11 +180,30 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// A configured but unusable external database refuses to start: there is
 	// no silent fallback to the local file (FR-004).
 	ctx := context.Background()
+	if err := checkRequireStateDir(cfg); err != nil {
+		return nil, err
+	}
+	root, err := ResolveStateRoot(cfg)
+	if err != nil {
+		return nil, err
+	}
+	cfg.DBPath = root.DBPath
+	a.cfg = cfg
+	a.stateRoot = root
+	if err := prepareStateRoot(root); err != nil {
+		return nil, err
+	}
+
 	db, err := openStorage(ctx, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
 	a.db = db
+
+	if err := checkRequireExistingData(ctx, cfg, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	if err := store.Migrate(ctx, db, logger); err != nil {
 		_ = db.Close()
@@ -232,8 +251,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- License manager ---
 	license.InitPublicKey(cfg.PublicKeyB64)
 	if cfg.LicenseKey != "" {
-		dataDir := filepath.Dir(cfg.DBPath)
-		lm, err := license.NewManager(cfg.LicenseKey, dataDir, cfg.Version, cfg.BuildDate, logger)
+		lm, err := license.NewManager(cfg.LicenseKey, root.LicenseDir, cfg.Version, cfg.BuildDate, logger)
 		if err != nil {
 			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
 		} else {
@@ -367,6 +385,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Logger:         logger,
 		LicenseChecker: heartbeatLicenseChecker,
 		BaseURL:        cfg.BaseURL,
+		StartedAt:      a.instanceRecord.StartedAt,
 	})
 
 	// --- SMTP ---
@@ -666,6 +685,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- Telemetry (SHM SDK, opt-out via MAINTENANT_DISABLE_TELEMETRY) ---
 	a.telemetrySvc = telemetry.New(telemetry.Config{
 		Disabled:   cfg.DisableTelemetry,
+		DataDir:    root.TelemetryDir,
 		AppVersion: cfg.Version,
 	}, telemetry.Deps{
 		Containers:       containerStore,
@@ -770,7 +790,9 @@ func (a *App) Start(ctx context.Context) error {
 		a.logger.Info("escalation retention loop started")
 	}
 	a.notifier.Start(ctx)
-	a.endpointSvc.Start(ctx)
+	if err := a.endpointSvc.Start(ctx); err != nil {
+		return err
+	}
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
 
 	// Telemetry: best-effort. Self-exits on ctx cancellation; panics are
@@ -941,8 +963,7 @@ func (a *App) Shutdown() error {
 // If the agent is not yet enrolled, a short-lived enrollment token is auto-created.
 // Called only when mode=server, --embedded-agent, and Pro license are all active.
 func (a *App) startEmbeddedAgent(ctx context.Context) {
-	dataDir := filepath.Dir(a.cfg.DBPath)
-	agentDataDir := filepath.Join(dataDir, "embedded-agent")
+	agentDataDir := a.stateRoot.EmbeddedAgentDir
 	if err := os.MkdirAll(agentDataDir, 0o700); err != nil {
 		a.logger.Error("embedded agent: failed to create data directory", "err", err)
 		return

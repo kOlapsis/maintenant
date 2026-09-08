@@ -124,7 +124,12 @@ func main() {
 				"fix", "an agent has no server data set to carry")
 			os.Exit(copyExitAgentBad)
 		}
-		os.Exit(runCopy(cfg.DBPath, target, visited["yes"] == "true", os.Stdout, os.Stdin, logger))
+		root, err := app.ResolveStateRoot(cfg)
+		if err != nil {
+			logger.Error("invalid state directory", "error", err)
+			os.Exit(1)
+		}
+		os.Exit(runCopy(root.DBPath, target, visited["yes"] == "true", os.Stdout, os.Stdin, logger))
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

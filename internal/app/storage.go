@@ -13,6 +13,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -37,6 +38,39 @@ const (
 	instancePurgeInterval = 5 * time.Minute
 )
 
+// ErrStateDirRequired is returned when the operator demanded an explicit state root and none is set.
+var ErrStateDirRequired = errors.New(
+	"MAINTENANT_REQUIRE_STATE_DIR is on but MAINTENANT_STATE_DIR is not set")
+
+// ErrDataSetIsNew is returned when the operator demanded an existing data set and no migration is applied to this one.
+var ErrDataSetIsNew = errors.New(
+	"MAINTENANT_REQUIRE_EXISTING_DATA is on but no migration is applied to this data set")
+
+func checkRequireStateDir(cfg Config) error {
+	if cfg.RequireStateDir && cfg.StateDir == "" {
+		return ErrStateDirRequired
+	}
+	return nil
+}
+
+func checkRequireExistingData(ctx context.Context, cfg Config, db *store.DB) error {
+	if !cfg.RequireExistingData {
+		return nil
+	}
+	target := cfg.DBPath
+	if cfg.DatabaseURL != "" {
+		target = store.RedactDSN(cfg.DatabaseURL)
+	}
+	version, err := db.SchemaVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrDataSetIsNew, target, err)
+	}
+	if version == 0 {
+		return fmt.Errorf("%w: %s", ErrDataSetIsNew, target)
+	}
+	return nil
+}
+
 // openStorage opens the configured storage. Absent a connection string it is
 // SQLite on cfg.DBPath, exactly as before; with one it is the operator's
 // PostgreSQL, and a failure stops the process rather than falling back
@@ -44,7 +78,11 @@ const (
 // cause, and never carry the connection string (FR-021).
 func openStorage(ctx context.Context, cfg Config, logger *slog.Logger) (*store.DB, error) {
 	if cfg.DatabaseURL == "" {
-		db, err := store.Open(cfg.DBPath, logger)
+		synchronous, err := store.NormalizeSynchronous(cfg.SQLiteSynchronous)
+		if err != nil {
+			return nil, fmt.Errorf("open database: MAINTENANT_SQLITE_SYNCHRONOUS: %w", err)
+		}
+		db, err := store.OpenWithOptions(cfg.DBPath, store.Options{Synchronous: synchronous}, logger)
 		if err != nil {
 			return nil, fmt.Errorf("open database: %w", err)
 		}

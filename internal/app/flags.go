@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // FlagType is the value type of a configuration flag.
@@ -86,6 +88,51 @@ func init() {
 			Type: FlagTypeString, Default: "./maintenant.db",
 			Description: "SQLite database path",
 			ApplyTo:     func(c *Config, v string) error { c.DBPath = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_TELEMETRY_DATADIR", FlagName: "telemetryDatadir",
+			Type: FlagTypeString, Default: "/data/shm",
+			Description: "Directory holding the anonymous telemetry identity (overridden by --state-dir)",
+			// telemetry.DefaultDataDir reads the environment, so the flag has to land there.
+			ApplyTo: func(_ *Config, v string) error {
+				return os.Setenv("MAINTENANT_TELEMETRY_DATADIR", v)
+			},
+		},
+		{
+			EnvName: "MAINTENANT_STATE_DIR", FlagName: "state-dir",
+			Type: FlagTypeString, Default: "",
+			Description: "Absolute directory holding every mutable server file (empty = historical paths)",
+			ApplyTo:     func(c *Config, v string) error { c.StateDir = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_SQLITE_SYNCHRONOUS", FlagName: "sqlite-synchronous",
+			Type: FlagTypeString, Default: "NORMAL",
+			Description: "SQLite journal synchronisation (NORMAL|FULL)",
+			ApplyTo: func(c *Config, v string) error {
+				if _, err := store.NormalizeSynchronous(v); err != nil {
+					return err
+				}
+				c.SQLiteSynchronous = v
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_REQUIRE_STATE_DIR", FlagName: "require-state-dir",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Refuse to start unless the state directory is set",
+			ApplyTo: func(c *Config, v string) error {
+				c.RequireStateDir = parseTruthy(v)
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_REQUIRE_EXISTING_DATA", FlagName: "require-existing-data",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Refuse to start on a data set with no migration applied",
+			ApplyTo: func(c *Config, v string) error {
+				c.RequireExistingData = parseTruthy(v)
+				return nil
+			},
 		},
 		// Branding
 		{
@@ -471,14 +518,17 @@ func init() {
 
 	Categories = []FlagCategory{
 		{Name: "Server", Specs: specsFor("addr", "baseUrl", "corsOrigins")},
-		{Name: "Storage", Specs: specsFor("db")},
+		{Name: "Storage", Specs: specsFor(
+			"db", "state-dir", "sqlite-synchronous",
+			"require-state-dir", "require-existing-data",
+		)},
 		{Name: "Retention", Specs: specsFor("retentionSnapshots", "retentionInterval", "retentionBatchSize")},
 		{Name: "Branding", Specs: specsFor("organisationName", "statusUrl")},
 		{Name: "Runtime", Specs: specsFor("runtime")},
 		{Name: "Logging", Specs: specsFor("logLevel")},
 		{Name: "HTTP", Specs: specsFor("maxBodySize")},
 		{Name: "Updates", Specs: specsFor("updateInterval")},
-		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "allowPrivateWebhooks")},
+		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "telemetryDatadir", "allowPrivateWebhooks")},
 		{Name: "Pro", Specs: specsFor("licenseKey")},
 		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom")},
 		{Name: "MCP", Specs: specsFor(

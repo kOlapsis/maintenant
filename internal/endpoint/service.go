@@ -133,9 +133,33 @@ func (s *Service) SetEndpointRemovedCallback(cb EndpointRemovedCallback) {
 	s.onEndpointRemoved = cb
 }
 
-// Start begins the check engine and stores the context for adding endpoints later.
-func (s *Service) Start(ctx context.Context) {
+// Start stores the context for adding endpoints later and enrols every endpoint already active in the store.
+func (s *Service) Start(ctx context.Context) error {
 	s.ctx = ctx
+	if err := s.ReloadActiveEndpoints(ctx); err != nil {
+		return fmt.Errorf("endpoint: reload on start: %w", err)
+	}
+	return nil
+}
+
+// ReloadActiveEndpoints enrols every active endpoint the server probes itself, leaving those owned by a remote agent alone.
+func (s *Service) ReloadActiveEndpoints(ctx context.Context) error {
+	endpoints, err := s.store.ListEndpoints(ctx, ListEndpointsOpts{})
+	if err != nil {
+		return fmt.Errorf("list active endpoints: %w", err)
+	}
+
+	enrolled := 0
+	for _, ep := range endpoints {
+		if ep.AgentID != "" && ep.AgentID != uid.LocalAgent {
+			continue
+		}
+		s.engine.AddEndpoint(ctx, ep)
+		enrolled++
+	}
+
+	s.logger.Info("endpoint: active endpoints enrolled", "count", enrolled, "total", len(endpoints))
+	return nil
 }
 
 // Stop shuts down the check engine.

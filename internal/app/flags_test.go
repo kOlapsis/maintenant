@@ -133,6 +133,8 @@ var kebabFlags = map[string]bool{
 	"grpc-tls-key": true, "grpc-insecure-skip-tls-verify": true,
 	"embedded-agent": true, "ca-cert": true, "database-url": true,
 	"copy-store-to": true, "yes": true,
+	"state-dir": true, "sqlite-synchronous": true,
+	"require-state-dir": true, "require-existing-data": true,
 }
 
 func TestFlagNameDerivedFromEnvName(t *testing.T) {

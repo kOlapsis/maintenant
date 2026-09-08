@@ -110,20 +110,28 @@ the telemetry. Where a target has to be named, it appears redacted:
 
 ## What must follow the instance
 
-Two states live in the data directory rather than in the database:
+A few states live on the filesystem rather than in the database:
 
 | State | File | If the directory does not follow |
 |---|---|---|
 | Signed licence cache | `<dataDir>/.maintenant-license` | Re-verified online at startup. Offline: Community until the network returns. |
 | Update window record | `<dataDir>/.maintenant-update-window` | A fresh grace window opens, which plays in your favour. |
+| Embedded agent identity | `<dataDir>/embedded-agent/identity.json` | The embedded agent enrols again under a new key, and the old one lingers in the fleet until you remove it. |
 
-Anonymous telemetry keeps its own state under `MAINTENANT_TELEMETRY_DATADIR`
-(`/data/shm` by default). Losing it only breaks the continuity of anonymous
+Anonymous telemetry keeps its own identity, `shm/shm_identity.json`, under
+`MAINTENANT_TELEMETRY_DATADIR` (`/data/shm` by default). Losing it only breaks the continuity of anonymous
 counters; nothing about the fleet depends on it.
 
 So keep the `/data` volume with the instance when it moves. It is the only case
 where a move is not fully transparent, and it is settled by carrying the volume,
 which any cluster manager can do.
+
+`MAINTENANT_STATE_DIR` gathers all of it under one root (database, licence
+cache, update window, embedded agent identity, telemetry identity, gRPC
+certificate pair and SQLite temporary files), so that one volume is the whole
+answer. It is opt-in: unset, every path stays where it is today. Note that with
+PostgreSQL `MAINTENANT_DB` is usually unset, so without a state root these files
+land next to the working directory of the process.
 
 ## Migrating an existing install
 

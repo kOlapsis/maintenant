@@ -10,7 +10,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// DataDirEnv is the environment variable that moves the telemetry identity off the default path.
+const DataDirEnv = "MAINTENANT_TELEMETRY_DATADIR"
+
+// DefaultDataDir reports where the telemetry identity lives when the caller gives no explicit directory.
+func DefaultDataDir() string {
+	if dir := strings.TrimSpace(os.Getenv(DataDirEnv)); dir != "" {
+		return dir
+	}
+	return defaultDataDir
+}
 
 // ensureDataDirWritable creates the data directory if missing and verifies
 // it is actually writable by performing a probe write/remove cycle. Per

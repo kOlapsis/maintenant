@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/mattn/go-sqlite3"
 )
@@ -73,10 +74,50 @@ type DB struct {
 // placeholders, no AUTOINCREMENT), and the few genuine differences go through
 // Dialect.
 func Open(dbPath string, logger *slog.Logger) (*DB, error) {
+	return OpenWithOptions(dbPath, Options{}, logger)
+}
+
+// Synchronous levels accepted for the SQLite journal.
+const (
+	SynchronousNormal = "NORMAL"
+	SynchronousFull   = "FULL"
+)
+
+// Options carries the SQLite settings an operator may tune; the zero value is the historical configuration.
+type Options struct {
+	Synchronous string // NORMAL (empty means NORMAL) or FULL
+}
+
+// NormalizeSynchronous validates a synchronous level and returns it uppercased, empty meaning NORMAL.
+func NormalizeSynchronous(raw string) (string, error) {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case "":
+		return SynchronousNormal, nil
+	case SynchronousNormal:
+		return SynchronousNormal, nil
+	case SynchronousFull:
+		return SynchronousFull, nil
+	default:
+		return "", fmt.Errorf("invalid sqlite synchronous level %q: accepted values are %s and %s",
+			raw, SynchronousNormal, SynchronousFull)
+	}
+}
+
+func sqliteDSN(dbPath, synchronous string) string {
 	// auto_vacuum has to be part of the DSN, not a later Exec: switching to WAL
 	// writes the file header, and once that is done the pragma is silently
 	// ignored. The driver applies the DSN pragmas in the working order.
-	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_auto_vacuum=incremental&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=-8000&_foreign_keys=ON", dbPath)
+	return fmt.Sprintf("file:%s?_journal_mode=WAL&_auto_vacuum=incremental&_busy_timeout=5000&_synchronous=%s&_cache_size=-8000&_foreign_keys=ON",
+		dbPath, synchronous)
+}
+
+// OpenWithOptions is Open with the operator-tunable SQLite settings made explicit.
+func OpenWithOptions(dbPath string, opts Options, logger *slog.Logger) (*DB, error) {
+	synchronous, err := NormalizeSynchronous(opts.Synchronous)
+	if err != nil {
+		return nil, err
+	}
+	dsn := sqliteDSN(dbPath, synchronous)
 
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {

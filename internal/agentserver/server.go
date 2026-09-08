@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
@@ -53,6 +54,17 @@ type Server struct {
 	deps Deps
 }
 
+var (
+	serverKeepalive = keepalive.ServerParameters{
+		Time:    20 * time.Second,
+		Timeout: 10 * time.Second,
+	}
+	serverKeepalivePolicy = keepalive.EnforcementPolicy{
+		MinTime:             10 * time.Second,
+		PermitWithoutStream: true,
+	}
+)
+
 // New creates a Server. Call Start to begin accepting connections.
 func New(deps Deps) *Server {
 	return &Server{
@@ -75,6 +87,8 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 	// instead of crashing the process. gRPC does not recover panics by default,
 	// so without this a single malformed request in any handler is a full DoS.
 	opts := []grpc.ServerOption{
+		grpc.KeepaliveParams(serverKeepalive),
+		grpc.KeepaliveEnforcementPolicy(serverKeepalivePolicy),
 		grpc.ChainUnaryInterceptor(recoveryUnaryInterceptor(s.deps.Logger)),
 		grpc.ChainStreamInterceptor(recoveryStreamInterceptor(s.deps.Logger)),
 	}

@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/kolapsis/maintenant/internal/agentauth"
@@ -57,6 +58,12 @@ func (c *Client) EnableCommands(rt runtime.Runtime, agentVersion string, logger 
 	c.agentVersion = agentVersion
 }
 
+var clientKeepalive = keepalive.ClientParameters{
+	Time:                20 * time.Second,
+	Timeout:             10 * time.Second,
+	PermitWithoutStream: true,
+}
+
 // NewClient dials the server at serverURL and returns a ready-to-use Client.
 // serverURL should start with "grpcs://" (TLS) or "grpc://" (plaintext, not recommended).
 // If insecureSkipVerify is true, TLS certificate validation is skipped (debug only).
@@ -83,6 +90,7 @@ func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, l
 
 	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(creds),
+		grpc.WithKeepaliveParams(clientKeepalive),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial agent server %s: %w", target, err)

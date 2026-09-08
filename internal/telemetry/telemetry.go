@@ -40,7 +40,7 @@ const (
 type Config struct {
 	Disabled    bool   // true if MAINTENANT_DISABLE_TELEMETRY is truthy
 	Endpoint    string // default: defaultEndpoint
-	DataDir     string // default: defaultDataDir
+	DataDir     string // default: DefaultDataDir()
 	AppVersion  string // injected via ldflags at build time
 	Environment string // default: defaultEnvironment
 }
@@ -161,7 +161,7 @@ func applyDefaults(cfg Config) Config {
 		cfg.Endpoint = defaultEndpoint
 	}
 	if cfg.DataDir == "" {
-		cfg.DataDir = defaultDataDir
+		cfg.DataDir = DefaultDataDir()
 	}
 	if cfg.Environment == "" {
 		cfg.Environment = defaultEnvironment
