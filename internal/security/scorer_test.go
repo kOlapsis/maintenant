@@ -39,6 +39,18 @@ func (m *mockCVEReader) ListCVEsForContainer(_ context.Context, containerExterna
 	return m.cves[containerExternalID], nil
 }
 
+type mockCVEEvalReader struct {
+	states map[string]string
+}
+
+func (m *mockCVEEvalReader) GetCVEEvaluation(_ context.Context, containerExternalID string) (*CVEEvaluationInfo, error) {
+	state, ok := m.states[containerExternalID]
+	if !ok {
+		return nil, nil
+	}
+	return &CVEEvaluationInfo{Status: state}, nil
+}
+
 type mockUpdateReader struct {
 	updates map[string][]UpdateInfo
 }
@@ -321,8 +333,9 @@ func TestScorerScoreContainer(t *testing.T) {
 		Updates: &mockUpdateReader{updates: map[string][]UpdateInfo{
 			"ext-1": {{UpdateType: "minor", PublishedAt: timePtr(time.Now().Add(-15 * 24 * time.Hour))}},
 		}},
-		Security: secSvc,
-		Acks:     &mockAckStore{},
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationEvaluated}},
+		Security:       secSvc,
+		Acks:           &mockAckStore{},
 	})
 
 	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test-container")
@@ -467,4 +480,122 @@ func TestScorerWithSecurityServiceNoInsights(t *testing.T) {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func cveCategory(t *testing.T, score *SecurityScore) *CategoryScore {
+	t.Helper()
+	for i := range score.Categories {
+		if score.Categories[i].Name == CategoryCVEs {
+			return &score.Categories[i]
+		}
+	}
+	t.Fatal("cve category missing")
+	return nil
+}
+
+func TestScorerCVENeverEvaluated(t *testing.T) {
+	ctx := context.Background()
+	secSvc := newTestService()
+
+	scorer := NewScorer(ScorerDeps{
+		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
+		CVEEvaluations: &mockCVEEvalReader{},
+		Security:       secSvc,
+		Acks:           &mockAckStore{},
+	})
+
+	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	require.NoError(t, err)
+	require.NotNil(t, score)
+
+	cat := cveCategory(t, score)
+	assert.False(t, cat.Applicable)
+	assert.Equal(t, EvaluationNotEvaluated, cat.Evaluation)
+	assert.Equal(t, "not evaluated", cat.Summary)
+	assert.True(t, score.IsPartial)
+}
+
+func TestScorerCVEEvaluatedWithNoFindings(t *testing.T) {
+	ctx := context.Background()
+	secSvc := newTestService()
+
+	scorer := NewScorer(ScorerDeps{
+		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationEvaluated}},
+		Security:       secSvc,
+		Acks:           &mockAckStore{},
+	})
+
+	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	require.NoError(t, err)
+	require.NotNil(t, score)
+
+	cat := cveCategory(t, score)
+	assert.True(t, cat.Applicable)
+	assert.Equal(t, 100, cat.SubScore)
+	assert.Equal(t, "no known CVEs", cat.Summary)
+	assert.False(t, score.IsPartial)
+}
+
+func TestScorerCVEUnsupportedImage(t *testing.T) {
+	ctx := context.Background()
+	secSvc := newTestService()
+
+	scorer := NewScorer(ScorerDeps{
+		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationUnsupported}},
+		Security:       secSvc,
+		Acks:           &mockAckStore{},
+	})
+
+	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	require.NoError(t, err)
+	require.NotNil(t, score)
+
+	cat := cveCategory(t, score)
+	assert.False(t, cat.Applicable)
+	assert.Equal(t, EvaluationUnsupported, cat.Evaluation)
+	assert.NotEqual(t, "not applicable", cat.Summary)
+	assert.False(t, score.IsPartial)
+}
+
+func TestScorerCVEEvaluatedWithFindings(t *testing.T) {
+	ctx := context.Background()
+	secSvc := newTestService()
+
+	scorer := NewScorer(ScorerDeps{
+		CVEs: &mockCVEReader{cves: map[string][]CVEInfo{
+			"ext-1": {{CVEID: "CVE-2025-001", Severity: "critical"}},
+		}},
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationEvaluated}},
+		Security:       secSvc,
+		Acks:           &mockAckStore{},
+	})
+
+	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
+	require.NoError(t, err)
+	require.NotNil(t, score)
+
+	cat := cveCategory(t, score)
+	assert.True(t, cat.Applicable)
+	assert.Equal(t, 1, cat.IssueCount)
+	assert.Less(t, cat.SubScore, 100)
+	assert.False(t, score.IsPartial)
+}
+
+func TestScoreInfrastructurePartialWhenCVENotEvaluated(t *testing.T) {
+	ctx := context.Background()
+	secSvc := newTestService()
+
+	scorer := NewScorer(ScorerDeps{
+		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
+		CVEEvaluations: &mockCVEEvalReader{},
+		Security:       secSvc,
+		Acks:           &mockAckStore{},
+	})
+
+	posture, err := scorer.ScoreInfrastructure(ctx, []ContainerInfo{{ID: "c1", ExternalID: "ext-1", Name: "a"}})
+	require.NoError(t, err)
+	require.NotNil(t, posture)
+	assert.True(t, posture.IsPartial)
 }

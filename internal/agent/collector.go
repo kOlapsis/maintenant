@@ -93,25 +93,26 @@ type labeledDiscoverer interface {
 }
 
 // syncInventory pushes a full snapshot of every container the runtime currently
-// knows about. The live event stream only carries state transitions, so without
-// this containers already running at connect time would never reach the server;
-// resent periodically, it also lets the server retire containers whose removal
-// we missed (destroy events are not streamed).
-//
-// Discovery failure yields no message at all: an empty snapshot would tell the
-// server this host has no containers and archive the lot.
+// knows about, marked complete so the server can reconcile away what it no
+// longer sees. Discovery failure yields no message at all.
 func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
 	entry := func(c *cmodel.Container, labels map[string]string) *agentpb.ContainerEvent {
 		state, ok := containerStateToProto(c.State)
 		if !ok {
 			return nil
 		}
+		health := ""
+		if c.HealthStatus != nil {
+			health = string(*c.HealthStatus)
+		}
 		return &agentpb.ContainerEvent{
-			ContainerId: c.ExternalID,
-			Name:        c.Name,
-			Image:       c.Image,
-			State:       state,
-			Labels:      labels,
+			ContainerId:    c.ExternalID,
+			Name:           c.Name,
+			Image:          c.Image,
+			State:          state,
+			Labels:         labels,
+			HealthStatus:   health,
+			HasHealthCheck: c.HasHealthCheck,
 		}
 	}
 
@@ -140,19 +141,22 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream
 		}
 	}
 
-	if len(entries) == 0 {
-		return nil
-	}
-
-	if err := stream.Send(&agentpb.AgentEvent{
-		AgentId:    id.AgentID,
-		EventId:    uuid.NewString(),
-		ObservedAt: timestamppb.Now(),
-		Body:       &agentpb.AgentEvent_Inventory{Inventory: &agentpb.ContainerInventory{Containers: entries}},
-	}); err != nil {
+	if err := stream.Send(inventoryEvent(id.AgentID, entries)); err != nil {
 		return fmt.Errorf("send inventory: %w", err)
 	}
 	return nil
+}
+
+func inventoryEvent(agentID string, entries []*agentpb.ContainerEvent) *agentpb.AgentEvent {
+	return &agentpb.AgentEvent{
+		AgentId:    agentID,
+		EventId:    uuid.NewString(),
+		ObservedAt: timestamppb.Now(),
+		Body: &agentpb.AgentEvent_Inventory{Inventory: &agentpb.ContainerInventory{
+			Containers: entries,
+			Complete:   true,
+		}},
+	}
 }
 
 // streamInventory resends the full container inventory on a fixed cadence so the
@@ -331,9 +335,33 @@ func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runt
 	return nil
 }
 
-// runtimeEventToProto converts a runtime.RuntimeEvent to a ContainerEvent proto.
-// Returns nil for event types that should not be pushed (e.g. destroy, health_status).
+// runtimeEventToProto converts a runtime.RuntimeEvent to a ContainerEvent proto,
+// or nil for an action the server has no use for.
 func runtimeEventToProto(ev runtime.RuntimeEvent) *agentpb.ContainerEvent {
+	switch ev.Action {
+	case "destroy":
+		// EXITED, not UNSPECIFIED: a server that predates Destroyed maps every
+		// event to a state action, and UNSPECIFIED would read as a restart.
+		return &agentpb.ContainerEvent{
+			ContainerId: ev.ExternalID,
+			Name:        ev.Name,
+			Image:       ev.Image,
+			State:       agentpb.ContainerState_CONTAINER_STATE_EXITED,
+			Labels:      ev.Labels,
+			Destroyed:   true,
+		}
+	case "health_status":
+		return &agentpb.ContainerEvent{
+			ContainerId:    ev.ExternalID,
+			Name:           ev.Name,
+			Image:          ev.Image,
+			State:          agentpb.ContainerState_CONTAINER_STATE_UNSPECIFIED,
+			Labels:         ev.Labels,
+			HealthStatus:   ev.HealthStatus,
+			HasHealthCheck: true,
+		}
+	}
+
 	state, ok := actionToContainerState(ev.Action)
 	if !ok {
 		return nil

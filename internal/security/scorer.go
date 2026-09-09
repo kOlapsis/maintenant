@@ -48,6 +48,16 @@ type CVEReader interface {
 	ListCVEsForContainer(ctx context.Context, containerExternalID string) ([]CVEInfo, error)
 }
 
+// CVEEvaluationInfo reports whether a container went through CVE analysis.
+type CVEEvaluationInfo struct {
+	Status string // "evaluated", "unsupported", "error"
+}
+
+// CVEEvaluationReader reports the CVE analysis state of a container.
+type CVEEvaluationReader interface {
+	GetCVEEvaluation(ctx context.Context, containerExternalID string) (*CVEEvaluationInfo, error)
+}
+
 // UpdateReader provides update and image age data for a container.
 type UpdateReader interface {
 	ListUpdatesForContainer(ctx context.Context, containerExternalID string) ([]UpdateInfo, error)
@@ -71,6 +81,14 @@ const (
 	CategoryImageAge        = "image_age"
 )
 
+// Category evaluation states, reported by CategoryScore.Evaluation.
+const (
+	EvaluationEvaluated    = "evaluated"
+	EvaluationUnsupported  = "unsupported"
+	EvaluationNotEvaluated = "not_evaluated"
+	EvaluationError        = "error"
+)
+
 // Category weights (must sum to 100).
 const (
 	WeightCVEs            = 30
@@ -89,6 +107,7 @@ type cachedScore struct {
 type ScorerDeps struct {
 	Certs                CertificateReader    // optional — nil skips TLS scoring
 	CVEs                 CVEReader            // optional — nil skips CVE scoring
+	CVEEvaluations       CVEEvaluationReader  // optional — nil makes every CVE category "not evaluated"
 	Updates              UpdateReader         // optional — nil skips update scoring
 	Security             *Service             // optional — nil skips network exposure scoring
 	Acks                 AcknowledgmentStore  // required
@@ -101,6 +120,7 @@ type ScorerDeps struct {
 type Scorer struct {
 	certs   CertificateReader
 	cves    CVEReader
+	cveEval CVEEvaluationReader
 	updates UpdateReader
 	sec     *Service
 	acks    AcknowledgmentStore
@@ -122,6 +142,7 @@ func NewScorer(d ScorerDeps) *Scorer {
 	return &Scorer{
 		certs:          d.Certs,
 		cves:           d.CVEs,
+		cveEval:        d.CVEEvaluations,
 		updates:        d.Updates,
 		sec:            d.Security,
 		acks:           d.Acks,
@@ -163,6 +184,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 		applicable bool
 		issueCount int
 		summary    string
+		evaluation string
 	}
 
 	categories := make([]categoryResult, 0, 5)
@@ -185,20 +207,31 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 	// --- CVEs ---
 	cveResult := categoryResult{name: CategoryCVEs, weight: WeightCVEs}
 	if s.cves != nil {
-		cves, err := s.cves.ListCVEsForContainer(ctx, containerExternalID)
+		state, err := s.cveEvaluationState(ctx, containerExternalID)
 		if err != nil {
-			return nil, fmt.Errorf("scoring cves for container %s: %w", containerID, err)
+			return nil, fmt.Errorf("reading cve evaluation for container %s: %w", containerID, err)
 		}
-		if len(cves) > 0 {
-			// Filter out acknowledged CVEs
-			filtered := filterAcknowledgedCVEs(ctx, cves, containerExternalID, s.acks)
+		cveResult.evaluation = state
+
+		switch state {
+		case EvaluationEvaluated:
+			cves, err := s.cves.ListCVEsForContainer(ctx, containerExternalID)
+			if err != nil {
+				return nil, fmt.Errorf("scoring cves for container %s: %w", containerID, err)
+			}
 			cveResult.applicable = true
-			cveResult.subScore, cveResult.issueCount, cveResult.summary = scoreCVEs(filtered, len(cves)-len(filtered))
-		} else {
-			// No CVEs means this category applies and scores perfectly
-			cveResult.applicable = true
-			cveResult.subScore = 100
-			cveResult.summary = "no known CVEs"
+			if len(cves) > 0 {
+				filtered := filterAcknowledgedCVEs(ctx, cves, containerExternalID, s.acks)
+				cveResult.subScore, cveResult.issueCount, cveResult.summary = scoreCVEs(filtered, len(cves)-len(filtered))
+			} else {
+				cveResult.subScore = 100
+				cveResult.summary = "no known CVEs"
+			}
+		case EvaluationUnsupported:
+			cveResult.summary = "image not covered by the vulnerability data source"
+		default:
+			cveResult.summary = "not evaluated"
+			isPartial = true
 		}
 	}
 	categories = append(categories, cveResult)
@@ -290,8 +323,9 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 			Applicable: c.applicable,
 			IssueCount: c.issueCount,
 			Summary:    c.summary,
+			Evaluation: c.evaluation,
 		}
-		if !c.applicable {
+		if !c.applicable && c.summary == "" {
 			categoryScores[i].Summary = "not applicable"
 		}
 	}
@@ -306,6 +340,27 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 		ComputedAt:      time.Now(),
 		IsPartial:       isPartial,
 	}, nil
+}
+
+// cveEvaluationState reports how the container's last CVE analysis went; a
+// missing reader or a missing row both mean it was never analysed.
+func (s *Scorer) cveEvaluationState(ctx context.Context, containerExternalID string) (string, error) {
+	if s.cveEval == nil {
+		return EvaluationNotEvaluated, nil
+	}
+	eval, err := s.cveEval.GetCVEEvaluation(ctx, containerExternalID)
+	if err != nil {
+		return "", err
+	}
+	if eval == nil {
+		return EvaluationNotEvaluated, nil
+	}
+	switch eval.Status {
+	case EvaluationEvaluated, EvaluationUnsupported, EvaluationError:
+		return eval.Status, nil
+	default:
+		return EvaluationNotEvaluated, nil
+	}
 }
 
 // ContainerInfo holds minimal container data for infrastructure scoring.

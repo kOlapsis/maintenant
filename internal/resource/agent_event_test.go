@@ -61,3 +61,34 @@ func TestHandleAgentEvent_SkipsWhenContainerUnknown(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, rstore.snapshots, "no snapshot when container not yet known")
 }
+
+func TestHandleAgentEvent_UsesRowIDNotDerivedID(t *testing.T) {
+	extID := "abc123def4567890"
+	// An inherited row: its primary key does not derive from its current agent.
+	c := &container.Container{ID: uid.New(), ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	require.NotEqual(t, uid.Container(uid.Agent("agent-9"), extID), c.ID)
+
+	rstore := newMockResourceStore()
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore(c)), nil)
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 3,
+	}))
+	require.Len(t, rstore.snapshots, 1)
+	assert.Equal(t, c.ID, rstore.snapshots[0].ContainerID)
+}
+
+func TestHandleAgentEvent_IgnoresOtherAgentsContainer(t *testing.T) {
+	extID := "abc123def4567890"
+	c := &container.Container{
+		ID:         uid.Container(uid.Agent("agent-a"), extID),
+		ExternalID: extID, AgentID: "agent-a", Name: "demo",
+	}
+	rstore := newMockResourceStore()
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore(c)), nil)
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-b", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 3,
+	}))
+	assert.Empty(t, rstore.snapshots, "a sample must never land on another agent's container")
+}

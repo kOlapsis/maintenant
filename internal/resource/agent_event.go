@@ -21,9 +21,6 @@ import (
 )
 
 // HandleAgentEvent records a resource sample pushed by a remote agent.
-// The container must already exist (verified via external_id lookup, so an
-// orphan FK is never written); its id is the deterministic uid.Container of the
-// reporting agent and the Docker external_id, identical to what the agent mints.
 func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample) error {
 	containerExternalID := ev.GetContainerId()
 	if containerExternalID == "" {
@@ -41,13 +38,13 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return nil
 	}
 
-	c, err := s.containerSvc.GetContainerByExternalID(ctx, containerExternalID)
+	c, err := s.containerSvc.GetContainerByExternalID(ctx, agentID, containerExternalID)
 	if err != nil || c == nil {
 		return err
 	}
 
 	snap := &ResourceSnapshot{
-		ContainerID:     uid.Container(uid.Agent(agentID), containerExternalID),
+		ContainerID:     c.ID,
 		CPUPercent:      ev.GetCpuPercent(),
 		MemUsed:         clampInt64(ev.GetMemoryBytes()),
 		MemLimit:        clampInt64(ev.GetMemoryLimitBytes()),

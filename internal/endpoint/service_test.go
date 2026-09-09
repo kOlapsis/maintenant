@@ -130,12 +130,12 @@ func (m *memStore) ListEndpoints(_ context.Context, opts ListEndpointsOpts) ([]*
 	return out, nil
 }
 
-func (m *memStore) ListEndpointsByExternalID(_ context.Context, externalID string) ([]*Endpoint, error) {
+func (m *memStore) ListEndpointsByExternalID(_ context.Context, agentID, externalID string) ([]*Endpoint, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*Endpoint
 	for _, ep := range m.endpoints {
-		if ep.ExternalID == externalID && ep.Active {
+		if uid.Agent(ep.AgentID) == uid.Agent(agentID) && ep.ExternalID == externalID && ep.Active {
 			c := m.cloneEp(ep)
 			out = append(out, c)
 		}
@@ -995,4 +995,25 @@ func TestService_Delete_AllowsStandalone(t *testing.T) {
 	ep, err := store.GetEndpointByID(ctx, id)
 	require.NoError(t, err)
 	require.Nil(t, ep)
+}
+
+func TestSyncAgentEndpoints_DoesNotTouchOtherAgentsEndpoints(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	const ext = "c-shared"
+	theirs := seedEndpoint(t, store, &Endpoint{
+		AgentID: "agent-b", ContainerName: "app", LabelKey: "web",
+		ExternalID: ext, EndpointType: TypeHTTP, Target: "http://b/health",
+		Source: SourceLabel, Config: DefaultConfig(), Active: true,
+	})
+
+	// agent-a reports the same container with no endpoint labels at all.
+	svc.SyncAgentEndpoints(ctx, "agent-a", "app", ext, nil)
+
+	store.mu.Lock()
+	still := store.endpoints[theirs].Active
+	store.mu.Unlock()
+	assert.True(t, still, "another agent's endpoint must survive a label sync")
 }

@@ -355,3 +355,28 @@ func TestDispatcher_AllNilHandlersNoError(t *testing.T) {
 		assert.NoError(t, err)
 	}
 }
+
+func TestDispatcher_DestroyedEventSyncsLabelsWithNilLabels(t *testing.T) {
+	var gotLabels map[string]string
+	var called bool
+	d := NewDispatcher(DispatchDeps{
+		LabelSync: func(_ context.Context, _, _, _ string, labels map[string]string) {
+			called = true
+			gotLabels = labels
+		},
+	})
+
+	err := d.Dispatch(context.Background(), dispatchAgentID, &agentpb.AgentEvent{
+		AgentId: dispatchAgentID,
+		Body: &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{
+			ContainerId: "ctr-1",
+			Name:        "demo",
+			Labels:      map[string]string{"maintenant.endpoint.web": "http://x/health"},
+			Destroyed:   true,
+		}},
+	})
+
+	require.NoError(t, err)
+	require.True(t, called)
+	assert.Nil(t, gotLabels, "a destroyed container must retract its label-discovered monitors")
+}

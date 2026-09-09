@@ -80,7 +80,11 @@ func TestEngine_DedupKeyCollision_LogsAndRefreshes(t *testing.T) {
 			Message:    "Update available for " + name,
 			Timestamp:  time.Now(),
 		}
-		time.Sleep(150 * time.Millisecond)
+		wantMessage := "Update available for " + name
+		require.Eventually(t, func() bool {
+			active, err := alertStore.ListActiveAlerts(ctx)
+			return err == nil && len(active) == 1 && active[0].Message == wantMessage && active[0].Severity == severity
+		}, 5*time.Second, 10*time.Millisecond, "the alert engine must have processed the event for "+name)
 	}
 
 	send("bitwarden-postgres", alert.SeverityWarning) // creates the alert

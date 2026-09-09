@@ -32,22 +32,19 @@ import (
 
 type svcStore struct {
 	mu          sync.Mutex
-	containers  map[string]*Container // keyed by ExternalID
 	byID        map[string]*Container
 	transitions []*StateTransition
 
 	// injection points for error simulation
 	errGetByExternalID  error
+	errInsert           error
 	errUpdate           error
 	errInsertTransition error
 	errArchive          error
 }
 
 func newSvcStore() *svcStore {
-	return &svcStore{
-		containers: make(map[string]*Container),
-		byID:       make(map[string]*Container),
-	}
+	return &svcStore{byID: make(map[string]*Container)}
 }
 
 func (m *svcStore) seed(c *Container) {
@@ -58,17 +55,18 @@ func (m *svcStore) seed(c *Container) {
 		c.ID = uid.Container(c.AgentID, c.ExternalID)
 	}
 	clone := *c
-	m.containers[c.ExternalID] = &clone
 	m.byID[clone.ID] = &clone
 }
 
 func (m *svcStore) InsertContainer(_ context.Context, c *Container) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.errInsert != nil {
+		return "", m.errInsert
+	}
 	c.AgentID = uid.Agent(c.AgentID)
 	c.ID = uid.Container(c.AgentID, c.ExternalID)
 	clone := *c
-	m.containers[c.ExternalID] = &clone
 	m.byID[clone.ID] = &clone
 	return c.ID, nil
 }
@@ -80,23 +78,24 @@ func (m *svcStore) UpdateContainer(_ context.Context, c *Container) error {
 		return m.errUpdate
 	}
 	clone := *c
-	m.containers[c.ExternalID] = &clone
 	m.byID[c.ID] = &clone
 	return nil
 }
 
-func (m *svcStore) GetContainerByExternalID(_ context.Context, externalID string) (*Container, error) {
+func (m *svcStore) GetContainerByExternalID(_ context.Context, agentID, externalID string) (*Container, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.errGetByExternalID != nil {
 		return nil, m.errGetByExternalID
 	}
-	c, ok := m.containers[externalID]
-	if !ok {
-		return nil, nil
+	agentID = uid.Agent(agentID)
+	for _, c := range m.byID {
+		if c.AgentID == agentID && c.ExternalID == externalID {
+			clone := *c
+			return &clone, nil
+		}
 	}
-	clone := *c
-	return &clone, nil
+	return nil, nil
 }
 
 func (m *svcStore) GetContainerByID(_ context.Context, id string) (*Container, error) {
@@ -114,7 +113,7 @@ func (m *svcStore) ListContainers(_ context.Context, opts ListContainersOpts) ([
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []*Container
-	for _, c := range m.containers {
+	for _, c := range m.byID {
 		if !opts.IncludeArchived && c.Archived {
 			continue
 		}
@@ -127,31 +126,27 @@ func (m *svcStore) ListContainers(_ context.Context, opts ListContainersOpts) ([
 	return result, nil
 }
 
-func (m *svcStore) ArchiveContainer(_ context.Context, externalID string, archivedAt time.Time) error {
+func (m *svcStore) ArchiveContainer(_ context.Context, id string, archivedAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.errArchive != nil {
 		return m.errArchive
 	}
-	c, ok := m.containers[externalID]
+	c, ok := m.byID[id]
 	if !ok {
 		return nil
 	}
 	c.Archived = true
 	c.ArchivedAt = &archivedAt
-	m.byID[c.ID].Archived = true
-	m.byID[c.ID].ArchivedAt = &archivedAt
 	return nil
 }
 
 func (m *svcStore) DeleteContainerByID(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	c, ok := m.byID[id]
-	if !ok {
+	if _, ok := m.byID[id]; !ok {
 		return nil
 	}
-	delete(m.containers, c.ExternalID)
 	delete(m.byID, id)
 	return nil
 }
@@ -202,11 +197,12 @@ func (m *svcStore) DeleteArchivedContainersBefore(_ context.Context, _ time.Time
 func (m *svcStore) storedState(externalID string) ContainerState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	c, ok := m.containers[externalID]
-	if !ok {
-		return ""
+	for _, c := range m.byID {
+		if c.ExternalID == externalID {
+			return c.State
+		}
 	}
-	return c.State
+	return ""
 }
 
 // transitionsFor returns all recorded transitions for a given container ID.
@@ -227,19 +223,24 @@ func (m *svcStore) transitionsFor(containerID string) []*StateTransition {
 func (m *svcStore) isArchived(externalID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	c, ok := m.containers[externalID]
-	return ok && c.Archived
+	for _, c := range m.byID {
+		if c.ExternalID == externalID {
+			return c.Archived
+		}
+	}
+	return false
 }
 
 // storedHealthStatus retrieves the current health status pointer from the store.
 func (m *svcStore) storedHealthStatus(externalID string) *HealthStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	c, ok := m.containers[externalID]
-	if !ok {
-		return nil
+	for _, c := range m.byID {
+		if c.ExternalID == externalID {
+			return c.HealthStatus
+		}
 	}
-	return c.HealthStatus
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1033,4 +1034,44 @@ func TestService_ProcessEvent_ExitCodeStoredInTransition(t *testing.T) {
 	require.Len(t, transitions, 1)
 	require.NotNil(t, transitions[0].ExitCode)
 	assert.Equal(t, 42, *transitions[0].ExitCode)
+}
+
+func TestProcessEvent_RemoteEventNeverTriggersLocalReconcile(t *testing.T) {
+	store := newSvcStore()
+	discoverer := &mockDiscoverer{}
+	svc := newTestService(store, func(d *Deps) {
+		d.Discoverer = discoverer
+	})
+
+	evt := makeTestEvent("start", extID("remote"))
+	evt.AgentID = "agent-remote"
+	svc.ProcessEvent(context.Background(), evt)
+
+	assert.Equal(t, 0, discoverer.calls, "the local runtime must not be discovered for a remote agent's event")
+}
+
+func TestHandleDestroy_ArchivesByID(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+
+	ext := extID("bykey")
+	mine := makeTestContainer(ext, StateRunning)
+	mine.AgentID = "agent-a"
+	store.seed(mine)
+
+	theirs := makeTestContainer(ext, StateRunning)
+	theirs.AgentID = "agent-b"
+	store.seed(theirs)
+
+	evt := makeTestEvent("destroy", ext)
+	evt.AgentID = "agent-a"
+	svc.ProcessEvent(context.Background(), evt)
+
+	gotA, _ := store.GetContainerByExternalID(context.Background(), "agent-a", ext)
+	require.NotNil(t, gotA)
+	assert.True(t, gotA.Archived)
+
+	gotB, _ := store.GetContainerByExternalID(context.Background(), "agent-b", ext)
+	require.NotNil(t, gotB)
+	assert.False(t, gotB.Archived, "destroy must archive only the reporting agent's row")
 }

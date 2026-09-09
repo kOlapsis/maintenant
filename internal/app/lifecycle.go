@@ -179,6 +179,7 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 
 			a.containerSvc.ProcessEvent(ctx, container.ContainerEvent{
 				Action:       evt.Action,
+				AgentID:      uid.LocalAgent,
 				ExternalID:   evt.ExternalID,
 				Name:         evt.Name,
 				ExitCode:     evt.ExitCode,

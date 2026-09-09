@@ -69,17 +69,18 @@ func TestStart_DegradedMode(t *testing.T) {
 	}()
 
 	// Wait until the HTTP server is reachable.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://" + addr + "/api/v1/health")
-		if err == nil {
-			_ = resp.Body.Close()
-			assert.Equal(t, http.StatusOK, resp.StatusCode, "health endpoint must return 200 in degraded mode")
-			cancel() // trigger graceful shutdown
-			break
+	var resp *http.Response
+	require.Eventually(t, func() bool {
+		r, err := http.Get("http://" + addr + "/api/v1/health")
+		if err != nil {
+			return false
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		resp = r
+		return true
+	}, 5*time.Second, 50*time.Millisecond, "the HTTP server must become reachable")
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "health endpoint must return 200 in degraded mode")
+	cancel() // trigger graceful shutdown
 
 	// Start() should return (shutdown) within the context.
 	select {

@@ -152,10 +152,10 @@ func (s *EndpointStore) ListEndpoints(ctx context.Context, opts endpoint.ListEnd
 	return endpoints, rows.Err()
 }
 
-func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, externalID string) ([]*endpoint.Endpoint, error) {
+func (s *EndpointStore) ListEndpointsByExternalID(ctx context.Context, agentID, externalID string) ([]*endpoint.Endpoint, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+endpointColumns+` FROM endpoints WHERE external_id=? AND active=1 ORDER BY label_key`,
-		externalID)
+		`SELECT `+endpointColumns+` FROM endpoints WHERE agent_id=? AND external_id=? AND active=1 ORDER BY label_key`,
+		uid.Agent(agentID), externalID)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints by external_id: %w", err)
 	}

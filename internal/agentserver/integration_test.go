@@ -442,7 +442,7 @@ func TestIntegration_PushStream(t *testing.T) {
 
 	// === Step 5: Verify DB — container state changed to Running (< 4s) ===
 	require.Eventually(t, func() bool {
-		c, err := containerSvc.GetContainerByExternalID(ctx, testExternalID)
+		c, err := containerSvc.GetContainerByExternalID(ctx, agentID, testExternalID)
 		if err != nil || c == nil {
 			return false
 		}

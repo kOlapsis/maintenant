@@ -174,14 +174,27 @@ func (s *Sessions) SetLifecycleAlertHook(fn func(agentID, reason string, connect
 	s.alertHook = fn
 }
 
+// Token identifies one stream, so a handler closes only the session it opened.
+type Token struct{ stream *activeStream }
+
 // Open registers an active stream for agentID and cancels any pre-existing one.
 // caps are the command families the agent advertised; send is the queue its Push
 // goroutine drains to write to the stream (both may be nil for a telemetry-only
-// stream, in which case no command can be issued to this agent).
-func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr string, caps []string, send chan *agentpb.ServerMessage) {
+// stream, in which case no command can be issued to this agent). The returned
+// Token identifies this stream for CloseStream.
+func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr string, caps []string, send chan *agentpb.ServerMessage) Token {
 	capSet := make(map[string]struct{}, len(caps))
 	for _, c := range caps {
 		capSet[c] = struct{}{}
+	}
+
+	st := &activeStream{
+		cancel:      cancel,
+		addr:        addr,
+		connectedAt: time.Now(),
+		send:        send,
+		caps:        capSet,
+		pending:     make(map[string]chan *agentpb.CommandResult),
 	}
 
 	s.mu.Lock()
@@ -190,14 +203,7 @@ func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr str
 		existing.closeAll()
 	}
 	delete(s.offlineReported, agentID)
-	s.active[agentID] = &activeStream{
-		cancel:      cancel,
-		addr:        addr,
-		connectedAt: time.Now(),
-		send:        send,
-		caps:        capSet,
-		pending:     make(map[string]chan *agentpb.CommandResult),
-	}
+	s.active[agentID] = st
 	s.mu.Unlock()
 
 	s.logger.Info("agent.connected", "agent_id", agentID, "addr", addr)
@@ -209,12 +215,37 @@ func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr str
 	if s.alertHook != nil {
 		s.alertHook(agentID, "", true)
 	}
+	return Token{stream: st}
 }
 
-// Close removes and cancels the active stream for agentID.
+// Close removes and cancels whatever active stream currently exists for
+// agentID, regardless of which one opened it. For administrative teardown
+// (revoke, delete) where any live session must go.
 func (s *Sessions) Close(agentID, reason string) {
+	s.remove(agentID, nil, reason)
+}
+
+// CloseStream removes and cancels the active stream for agentID only if it is
+// still the one identified by tok. A stale tok (superseded by a reconnect) or
+// a zero Token is a no-op, so a handler unwinding after being replaced can
+// never tear down the session that replaced it.
+func (s *Sessions) CloseStream(agentID string, tok Token, reason string) {
+	if tok.stream == nil {
+		return
+	}
+	s.remove(agentID, tok.stream, reason)
+}
+
+// remove tears down the active stream for agentID. only, when non-nil,
+// restricts the removal to that specific stream; a mismatch is a no-op before
+// any disconnect side effect.
+func (s *Sessions) remove(agentID string, only *activeStream, reason string) {
 	s.mu.Lock()
 	st, had := s.active[agentID]
+	if had && only != nil && st != only {
+		s.mu.Unlock()
+		return
+	}
 	if had {
 		st.cancel(CauseForReason(reason))
 		delete(s.active, agentID)
@@ -526,6 +557,7 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, g
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				sweepStart := time.Now()
 				ids, err := staleAgents(ctx, threshold)
 				if err != nil {
 					s.logger.Error("stale watcher query failed", "err", err)
@@ -535,6 +567,10 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, g
 				for _, agentID := range ids {
 					s.mu.Lock()
 					st, connected := s.active[agentID]
+					if connected && st.connectedAt.After(sweepStart) {
+						s.mu.Unlock()
+						continue
+					}
 					if connected {
 						st.cancel(ErrSessionStale)
 						delete(s.active, agentID)

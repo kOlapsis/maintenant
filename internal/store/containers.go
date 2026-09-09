@@ -57,6 +57,7 @@ func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Conta
 			is_ignored=excluded.is_ignored, alert_severity=excluded.alert_severity,
 			restart_threshold=excluded.restart_threshold, alert_channels=excluded.alert_channels,
 			archived=excluded.archived, last_state_change_at=excluded.last_state_change_at,
+			agent_id=excluded.agent_id,
 			runtime_type=excluded.runtime_type, error_detail=excluded.error_detail,
 			controller_kind=excluded.controller_kind, namespace=excluded.namespace,
 			pod_count=excluded.pod_count, ready_count=excluded.ready_count,
@@ -107,9 +108,9 @@ func (s *ContainerStore) UpdateContainer(ctx context.Context, c *container.Conta
 	return nil
 }
 
-func (s *ContainerStore) GetContainerByExternalID(ctx context.Context, externalID string) (*container.Container, error) {
+func (s *ContainerStore) GetContainerByExternalID(ctx context.Context, agentID, externalID string) (*container.Container, error) {
 	return s.scanContainer(s.db.QueryRowContext(ctx,
-		`SELECT `+containerColumns+` FROM containers WHERE external_id=?`, externalID))
+		`SELECT `+containerColumns+` FROM containers WHERE agent_id=? AND external_id=?`, uid.Agent(agentID), externalID))
 }
 
 func (s *ContainerStore) GetContainerByID(ctx context.Context, id string) (*container.Container, error) {
@@ -161,13 +162,13 @@ func (s *ContainerStore) ListContainers(ctx context.Context, opts container.List
 	return containers, rows.Err()
 }
 
-func (s *ContainerStore) ArchiveContainer(ctx context.Context, externalID string, archivedAt time.Time) error {
+func (s *ContainerStore) ArchiveContainer(ctx context.Context, id string, archivedAt time.Time) error {
 	_, err := s.writer.Exec(ctx,
-		`UPDATE containers SET archived=1, archived_at=? WHERE external_id=? AND archived=0`,
-		archivedAt.Unix(), externalID,
+		`UPDATE containers SET archived=1, archived_at=? WHERE id=? AND archived=0`,
+		archivedAt.Unix(), id,
 	)
 	if err != nil {
-		return fmt.Errorf("archive container %s: %w", externalID, err)
+		return fmt.Errorf("archive container %s: %w", id, err)
 	}
 	return nil
 }

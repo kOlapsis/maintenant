@@ -1,10 +1,9 @@
 package certificate
 
 import (
-	"crypto/tls"
+	"context"
 	"crypto/x509"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -55,23 +54,13 @@ func CheckCertificate(hostname string, port int, serverName string, timeout time
 		validationName = hostname
 	}
 
-	// Connect with InsecureSkipVerify so we can inspect even invalid certs
-	dialer := &net.Dialer{Timeout: timeout}
-	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
-		InsecureSkipVerify: true, // #nosec G402 -- inspection dial: invalid certs must be retrieved to be reported; chain is validated manually below.
-		ServerName:         validationName,
-		MinVersion:         tls.VersionTLS10, // inspection dial: reach legacy hosts down to TLS 1.0
-	})
+	state, err := trust.DialInspect(context.Background(), addr, validationName, timeout)
 	if err != nil {
 		return &CheckCertificateResult{
 			Error: classifyTLSError(err),
 		}
 	}
-	defer func(conn *tls.Conn) {
-		_ = conn.Close()
-	}(conn)
 
-	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		return &CheckCertificateResult{
 			Error: "no TLS certificate presented",

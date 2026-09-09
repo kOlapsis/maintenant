@@ -180,6 +180,7 @@ const (
 	CVESeverityHigh     CVESeverity = "high"
 	CVESeverityMedium   CVESeverity = "medium"
 	CVESeverityLow      CVESeverity = "low"
+	CVESeverityUnknown  CVESeverity = "unknown"
 )
 
 // CVECacheEntry caches CVE lookup results from OSV.dev.
@@ -216,6 +217,27 @@ type ContainerCVE struct {
 type ListCVEsOpts struct {
 	Severity    string
 	ContainerID string
+}
+
+// CVEEvaluationStatus records the outcome of a container's CVE analysis.
+type CVEEvaluationStatus string
+
+const (
+	CVEEvaluated       CVEEvaluationStatus = "evaluated"
+	CVEUnsupported     CVEEvaluationStatus = "unsupported"
+	CVEEvaluationError CVEEvaluationStatus = "error"
+)
+
+// CVEEvaluation records that a container went through CVE analysis, and how
+// it went, so an unevaluated container is never mistaken for a clean one.
+type CVEEvaluation struct {
+	ContainerID    string              `json:"container_id"`
+	Status         CVEEvaluationStatus `json:"status"`
+	EvaluatedAt    time.Time           `json:"evaluated_at"`
+	Ecosystem      string              `json:"ecosystem,omitempty"`
+	PackageName    string              `json:"package_name,omitempty"`
+	PackageVersion string              `json:"package_version,omitempty"`
+	Error          string              `json:"error,omitempty"`
 }
 
 // RiskScoreRecord stores historical risk scores for trend tracking.

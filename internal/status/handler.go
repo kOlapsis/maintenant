@@ -14,12 +14,14 @@ package status
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"html"
 	"log/slog"
 	"net/http"
-	"strings"
-	"sync"
+	"net/mail"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 )
 
 // Handler serves the public status page API and SSE endpoints.
@@ -29,23 +31,17 @@ type Handler struct {
 	logger          *slog.Logger
 	personalization *PersonalizationPublicHandler
 	indexHTML       []byte
-
-	rateMu     sync.Mutex
-	rateMap    map[string][]time.Time
-	rateLimit  int
-	rateWindow time.Duration
+	subscribeRL     *ratelimit.Limiter
 }
 
 // NewHandler creates a new public status page handler.
 // sseHandler should be an SSEBroker that implements http.Handler for /status/events.
-func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger) *Handler {
+func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger, subscribeRL *ratelimit.Limiter) *Handler {
 	return &Handler{
-		service:    service,
-		sseHandler: sseHandler,
-		logger:     logger,
-		rateMap:    make(map[string][]time.Time),
-		rateLimit:  5,
-		rateWindow: time.Hour,
+		service:     service,
+		sseHandler:  sseHandler,
+		logger:      logger,
+		subscribeRL: subscribeRL,
 	}
 }
 
@@ -66,6 +62,12 @@ type Middleware func(http.Handler) http.Handler
 // /status/ serves the Vue SPA index.html — Traefik rewrites the status subdomain root
 // to /status/ so that Vue Router can initialise at the correct route.
 func (h *Handler) Register(mux *http.ServeMux, mw Middleware) {
+	outer := mw
+	if outer == nil {
+		outer = func(next http.Handler) http.Handler { return next }
+	}
+	mw = func(next http.Handler) http.Handler { return outer(limitBody(maxStatusBody, next)) }
+
 	// Page HTML — catch-all for /status/ (more specific patterns below take precedence).
 	mux.Handle("GET /status/", mw(http.HandlerFunc(h.HandleStatusPage)))
 	// API & SSE endpoints.
@@ -215,40 +217,18 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 
 // --- Subscription endpoints ---
 
-func clientIP(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		parts := strings.SplitN(fwd, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-	addr := r.RemoteAddr
-	if idx := strings.LastIndex(addr, ":"); idx > 0 {
-		return addr[:idx]
-	}
-	return addr
-}
+// maxStatusBody bounds every public status-page request body.
+const maxStatusBody = 4 << 10
 
-func (h *Handler) checkRateLimit(ip string) bool {
-	h.rateMu.Lock()
-	defer h.rateMu.Unlock()
+// maxEmailLength is the longest address RFC 5321 lets a mailbox be.
+const maxEmailLength = 254
 
-	now := time.Now()
-	cutoff := now.Add(-h.rateWindow)
-
-	entries := h.rateMap[ip]
-	var valid []time.Time
-	for _, t := range entries {
-		if t.After(cutoff) {
-			valid = append(valid, t)
-		}
-	}
-
-	if len(valid) >= h.rateLimit {
-		h.rateMap[ip] = valid
-		return false
-	}
-
-	h.rateMap[ip] = append(valid, now)
-	return true
+// limitBody caps the request body of a public route.
+func limitBody(maxBytes int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // HandleSubscribe processes a new email subscription request.
@@ -258,7 +238,9 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.checkRateLimit(clientIP(r)) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxStatusBody)
+
+	if !h.subscribeRL.AllowRequest(r) {
 		http.Error(w, "Too many requests", http.StatusTooManyRequests)
 		return
 	}
@@ -270,17 +252,37 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "application/json" {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
 	} else {
-		req.Email = r.FormValue("email")
+		if err := r.ParseForm(); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "Invalid form", http.StatusBadRequest)
+			return
+		}
+		req.Email = r.PostFormValue("email")
 	}
 
-	if req.Email == "" {
-		http.Error(w, "Email is required", http.StatusBadRequest)
+	if len(req.Email) > maxEmailLength {
+		http.Error(w, "Email is too long", http.StatusBadRequest)
 		return
 	}
+	addr, err := mail.ParseAddress(req.Email)
+	if err != nil {
+		http.Error(w, "Email is not a valid address", http.StatusBadRequest)
+		return
+	}
+	req.Email = addr.Address
 
 	if err := h.service.subscribers.Subscribe(r.Context(), req.Email); err != nil {
 		h.logger.Error("subscribe failed", "error", err)
