@@ -238,6 +238,11 @@ message ContainerEvent {
   string status_message = 6;
   google.protobuf.Timestamp started_at = 7;
   map<string, string> labels = 8;
+  // Docker healthcheck state ("healthy", "unhealthy", "starting"); empty when the container has no healthcheck.
+  string health_status = 9;
+  bool has_health_check = 10;
+  // Set when the container was removed from the host; state is then EXITED so an older server treats it as a stop.
+  bool destroyed = 11;
 }
 
 // A full snapshot of every container the agent's runtime knows about, sent on
@@ -247,11 +252,13 @@ message ContainerEvent {
 // archived rather than deleted — containers carry history (transitions,
 // uptime, CVEs) that must outlive their removal.
 //
-// An inventory with no entries is never sent and never acted upon: the agent
-// skips it when discovery fails, so an empty snapshot could only mean "I could
-// not look", which the protocol cannot distinguish from "this host is empty".
+// `complete` disambiguates an empty snapshot: true means discovery succeeded
+// and the host genuinely has no containers, false means discovery failed and
+// the inventory must not be acted upon.
 message ContainerInventory {
   repeated ContainerEvent containers = 1;
+  // True when discovery succeeded; an empty complete snapshot is authoritative and retires every container of the agent.
+  bool complete = 2;
 }
 
 enum ContainerState {

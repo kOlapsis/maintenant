@@ -183,7 +183,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	logger.Debug("agent.auth_ok", "agent_id", ag.AgentID)
 
 	// Phase 3: open session with a cancellable context.
-	// sessions.Close() calls cancel() which unblocks the recv loop below.
+	// sessions.CloseStream() calls cancel() which unblocks the recv loop below.
 	addr := ""
 	if p, ok := peer.FromContext(stream.Context()); ok {
 		addr = p.Addr.String()
@@ -194,8 +194,8 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 	// only, keeping the single-writer invariant on the gRPC stream.
 	sendCh := make(chan *agentpb.ServerMessage, 16)
 	if sessions != nil {
-		sessions.Open(ag.AgentID, cancel, addr, resp.GetCapabilities(), sendCh)
-		defer sessions.Close(ag.AgentID, "stream_ended")
+		tok := sessions.Open(ag.AgentID, cancel, addr, resp.GetCapabilities(), sendCh)
+		defer sessions.CloseStream(ag.AgentID, tok, "stream_ended")
 	}
 
 	// RegisterRequest.agent_version freezes at enrollment; AuthResponse carries

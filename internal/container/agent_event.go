@@ -19,6 +19,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // Docker label keys mirrored from internal/docker/discovery.go. Duplicated here
@@ -47,52 +48,64 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return nil
 	}
 
-	c, err := s.store.GetContainerByExternalID(ctx, externalID)
+	c, err := s.store.GetContainerByExternalID(ctx, uid.Agent(agentID), externalID)
 	if err != nil {
 		return fmt.Errorf("agent event: lookup %s: %w", shortID(externalID), err)
 	}
 
-	// First time we see this container: insert it directly. The local reconcile
-	// path only knows the server's own runtime, so agent containers must be
-	// created here or they never reach the database.
+	base := ContainerEvent{
+		AgentID:    agentID,
+		ExternalID: externalID,
+		Name:       ev.GetName(),
+		Timestamp:  agentEventTime(ev),
+		Labels:     ev.GetLabels(),
+	}
+
+	if ev.GetDestroyed() {
+		if c != nil {
+			base.Action = "destroy"
+			s.ProcessEvent(ctx, base)
+		}
+		return nil
+	}
+
 	if c == nil {
 		return s.insertAgentContainer(ctx, agentID, ev)
 	}
 
-	// Existing container: keep attribution and image fresh, then route the state
-	// change through the normal pipeline (handleStateChange updates existing rows
-	// correctly — the c == nil branch is never reached).
 	dirty := false
-	if c.AgentID != agentID {
-		c.AgentID = agentID
-		dirty = true
-	}
 	if img := ev.GetImage(); img != "" && img != c.Image {
 		c.Image = img
 		dirty = true
 	}
-	// The agent still sees it, so it is alive: resurrect a row archived while we
-	// had lost sight of the container.
+	if ev.GetHasHealthCheck() && !c.HasHealthCheck {
+		c.HasHealthCheck = true
+		dirty = true
+	}
 	if c.Archived {
 		c.Archived = false
 		c.ArchivedAt = nil
 		dirty = true
 	}
 	if dirty {
-		// Persist before ProcessEvent, which reloads the row from the store.
 		if err := s.store.UpdateContainer(ctx, c); err != nil {
 			return fmt.Errorf("agent event: update %s: %w", shortID(externalID), err)
 		}
 	}
 
-	s.ProcessEvent(ctx, ContainerEvent{
-		Action:     containerStateToAction(ev.GetState()),
-		ExternalID: externalID,
-		Name:       ev.GetName(),
-		ExitCode:   ev.GetStatusMessage(),
-		Timestamp:  agentEventTime(ev),
-		Labels:     ev.GetLabels(),
-	})
+	if hs := ev.GetHealthStatus(); hs != "" && (c.HealthStatus == nil || string(*c.HealthStatus) != hs) {
+		h := base
+		h.Action = "health_status"
+		h.HealthStatus = hs
+		s.ProcessEvent(ctx, h)
+	}
+
+	if action := containerStateToAction(ev.GetState()); action != "" {
+		st := base
+		st.Action = action
+		st.ExitCode = ev.GetStatusMessage()
+		s.ProcessEvent(ctx, st)
+	}
 	return nil
 }
 
@@ -100,12 +113,11 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 // every reported container is upserted (and un-archived), then any container we
 // still hold for this agent but which the snapshot omits is archived.
 //
-// This is the only mechanism that retires a remote container — agents do not
-// stream destroy events — and it is why an empty snapshot must be ignored: it
-// would mean "archive this agent's whole fleet" on a transient discovery error.
+// An empty snapshot only archives the agent's fleet when it is marked complete;
+// otherwise it means the agent could not enumerate its runtime.
 func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory) error {
 	reported := ev.GetContainers()
-	if len(reported) == 0 {
+	if len(reported) == 0 && !ev.GetComplete() {
 		return nil
 	}
 
@@ -133,7 +145,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 		if _, ok := live[sc.ExternalID]; ok {
 			continue
 		}
-		if err := s.store.ArchiveContainer(ctx, sc.ExternalID, now); err != nil {
+		if err := s.store.ArchiveContainer(ctx, sc.ID, now); err != nil {
 			s.logger.Error("agent inventory: archive", "external_id", shortID(sc.ExternalID), "error", err)
 			continue
 		}
@@ -161,6 +173,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 
 	c := &Container{
 		ExternalID:         externalID,
+		HasHealthCheck:     ev.GetHasHealthCheck() || ev.GetHealthStatus() != "",
 		AgentID:            agentID,
 		Name:               ev.GetName(),
 		Image:              ev.GetImage(),
@@ -176,17 +189,14 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		FirstSeenAt:        now,
 		LastStateChangeAt:  now,
 	}
+	if hs := ev.GetHealthStatus(); hs != "" {
+		h := HealthStatus(hs)
+		c.HealthStatus = &h
+	}
 	applyAgentLabels(c, labels)
 
 	id, err := s.store.InsertContainer(ctx, c)
 	if err != nil {
-		// Likely a race with another event for the same external_id (UNIQUE
-		// constraint on containers.external_id). If the row now exists, treat
-		// the insert as a no-op; the follow-up event will carry the state.
-		if existing, gerr := s.store.GetContainerByExternalID(ctx, externalID); gerr == nil && existing != nil {
-			s.logger.Debug("agent event: insert raced, container already exists", "external_id", shortID(externalID))
-			return nil
-		}
 		return fmt.Errorf("agent event: insert %s: %w", shortID(externalID), err)
 	}
 	c.ID = id
@@ -288,6 +298,6 @@ func containerStateToAction(state agentpb.ContainerState) string {
 	case agentpb.ContainerState_CONTAINER_STATE_CREATED:
 		return "create"
 	default:
-		return "start"
+		return ""
 	}
 }

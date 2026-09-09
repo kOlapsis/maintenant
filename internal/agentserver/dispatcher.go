@@ -110,7 +110,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 			}
 		}
 		if d.deps.LabelSync != nil {
-			d.deps.LabelSync(ctx, agentID, body.Container.GetName(), body.Container.GetContainerId(), body.Container.GetLabels())
+			labels := body.Container.GetLabels()
+			if body.Container.GetDestroyed() {
+				labels = nil
+			}
+			d.deps.LabelSync(ctx, agentID, body.Container.GetName(), body.Container.GetContainerId(), labels)
 		}
 	case *agentpb.AgentEvent_Inventory:
 		if d.deps.Inventory != nil {
