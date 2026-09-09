@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 )
 
 // FlagType is the value type of a configuration flag.
@@ -79,6 +81,18 @@ func init() {
 			Type: FlagTypeString, Default: "",
 			Description: "Comma-separated CORS origins (empty = same-origin)",
 			ApplyTo:     func(c *Config, v string) error { c.CORSOrigins = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_TRUSTED_PROXIES", FlagName: "trustedProxies",
+			Type: FlagTypeString, Default: "",
+			Description: "Comma-separated CIDRs/IPs whose forwarded headers are believed (empty = none)",
+			ApplyTo: func(c *Config, v string) error {
+				if _, err := ratelimit.ParsePrefixes(v); err != nil {
+					return err
+				}
+				c.TrustedProxies = v
+				return nil
+			},
 		},
 		// Storage
 		{
@@ -495,7 +509,7 @@ func init() {
 		{Name: "Branding", Specs: specsFor("organisationName", "statusUrl")},
 		{Name: "Runtime", Specs: specsFor("runtime")},
 		{Name: "Logging", Specs: specsFor("logLevel")},
-		{Name: "HTTP", Specs: specsFor("maxBodySize")},
+		{Name: "HTTP", Specs: specsFor("maxBodySize", "trustedProxies")},
 		{Name: "Updates", Specs: specsFor("updateInterval")},
 		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "allowPrivateWebhooks")},
 		{Name: "Pro", Specs: specsFor("licenseKey")},

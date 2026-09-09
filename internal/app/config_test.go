@@ -12,6 +12,7 @@
 package app
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -137,5 +138,44 @@ func TestConfigFromEnv_ContainerDownAfterInvalidIsRefused(t *testing.T) {
 			assert.ErrorIs(t, err, ErrContainerDownAfter)
 			assert.Contains(t, err.Error(), raw)
 		})
+	}
+}
+
+func TestParseTrustedProxies(t *testing.T) {
+	cfg := Config{TrustedProxies: "10.0.0.0/8, 192.168.1.4 , 2001:db8::/32"}
+
+	prefixes, err := cfg.ParseTrustedProxies()
+	if err != nil {
+		t.Fatalf("ParseTrustedProxies: %v", err)
+	}
+	if err := cfg.ValidateProxies(); err != nil {
+		t.Fatalf("ValidateProxies: %v", err)
+	}
+
+	want := []string{"10.0.0.0/8", "192.168.1.4/32", "2001:db8::/32"}
+	if len(prefixes) != len(want) {
+		t.Fatalf("got %v, want %v", prefixes, want)
+	}
+	for i, p := range prefixes {
+		if p.String() != want[i] {
+			t.Fatalf("prefix %d: got %s, want %s", i, p, want[i])
+		}
+	}
+}
+
+func TestParseTrustedProxiesEmptyTrustsNothing(t *testing.T) {
+	prefixes, err := Config{}.ParseTrustedProxies()
+	if err != nil {
+		t.Fatalf("ParseTrustedProxies: %v", err)
+	}
+	if len(prefixes) != 0 {
+		t.Fatalf("got %v, want no prefix", prefixes)
+	}
+}
+
+func TestValidateProxiesRefusesGarbage(t *testing.T) {
+	err := Config{TrustedProxies: "10.0.0.0/8,nonsense"}.ValidateProxies()
+	if !errors.Is(err, ErrTrustedProxies) {
+		t.Fatalf("got %v, want ErrTrustedProxies", err)
 	}
 }

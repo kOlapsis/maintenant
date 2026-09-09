@@ -16,6 +16,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -33,6 +34,7 @@ type AgentHandler struct {
 	logger         *slog.Logger
 	grpcPublicURL  string
 	grpcListen     string
+	trustedProxies []netip.Prefix
 	staleThreshold time.Duration
 }
 
@@ -44,6 +46,7 @@ func NewAgentHandler(
 	grpcPublicURL string,
 	grpcListen string,
 	staleThreshold time.Duration,
+	trustedProxies []netip.Prefix,
 ) *AgentHandler {
 	return &AgentHandler{
 		store:          store,
@@ -53,6 +56,7 @@ func NewAgentHandler(
 		grpcPublicURL:  grpcPublicURL,
 		grpcListen:     grpcListen,
 		staleThreshold: staleThreshold,
+		trustedProxies: trustedProxies,
 	}
 }
 
@@ -112,8 +116,9 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 	}
 
 	publicURL, warnings := agentserver.ResolvePublicURL(r, agentserver.PublicURLConfig{
-		Explicit:   h.grpcPublicURL,
-		ListenAddr: h.grpcListen,
+		Explicit:       h.grpcPublicURL,
+		ListenAddr:     h.grpcListen,
+		TrustedProxies: h.trustedProxies,
 	})
 
 	WriteJSON(w, http.StatusCreated, map[string]any{

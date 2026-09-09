@@ -116,6 +116,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// A trusted-proxy list that does not parse must stop startup: falling back
+	// to "trust nothing" would count every quota against the proxy.
+	if err := cfg.ValidateProxies(); err != nil {
+		logger.Error("invalid proxy configuration", "error", err)
+		os.Exit(1)
+	}
+
 	// A threshold that does not parse must stop startup: falling back to "off"
 	// would leave the operator believing the check runs.
 	if err := cfg.ValidateAlerting(); err != nil {

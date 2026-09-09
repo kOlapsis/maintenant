@@ -214,8 +214,8 @@ func (a *App) buildHTTPServer() *http.Server {
 			}, mcpOAuthStore, a.logger.With("component", "mcp-oauth"))
 
 			topMux.HandleFunc("/.well-known/oauth-authorization-server", oauthSrv.HandleAuthServerMetadata)
-			topMux.HandleFunc("/oauth/authorize", oauthSrv.HandleAuthorize)
-			topMux.HandleFunc("/oauth/token", oauthSrv.HandleToken)
+			topMux.Handle("/oauth/authorize", a.rl.Middleware(http.HandlerFunc(oauthSrv.HandleAuthorize)))
+			topMux.Handle("/oauth/token", a.rl.Middleware(http.HandlerFunc(oauthSrv.HandleToken)))
 
 			topMux.Handle("/.well-known/oauth-protected-resource",
 				mcpauth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
