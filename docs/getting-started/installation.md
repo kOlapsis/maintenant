@@ -151,7 +151,7 @@ For detailed Kubernetes configuration and all Helm values, see the [Kubernetes G
 
 | Tool | Minimum Version |
 |------|----------------|
-| Go | >= 1.25 |
+| Go | >= 1.26.6 |
 | Node.js | >= 20 |
 | CGO | Enabled |
 | Docker | For testing |
@@ -165,12 +165,13 @@ cd maintenant
 
 # Build the frontend
 cd frontend
-npm install
+npm ci
 npm run build-only
 cd ..
 
 # Copy frontend assets into the embed directory
-cp -r frontend/dist cmd/maintenant/web/dist/
+rm -rf cmd/maintenant/web/dist/*
+cp -r frontend/dist/. cmd/maintenant/web/dist/
 
 # Build the Go binary
 CGO_ENABLED=1 go build -o maintenant ./cmd/maintenant

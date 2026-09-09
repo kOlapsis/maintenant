@@ -18,6 +18,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kolapsis/maintenant/internal/status"
 )
 
 // The digest a browser computes for the body of `<script>alert(1)</script>`,
@@ -172,4 +174,36 @@ func TestSecurityHeaders_HandlerCanTightenPolicy(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/status/assets/logo", nil))
 
 	assert.Equal(t, strict, rec.Header().Get("Content-Security-Policy"))
+}
+
+// The status page injects a marker into the embedded index.html so the SPA
+// router can detect the status subdomain. That marker must never be an inline
+// script: contentSecurityPolicy only hashes what ships in the embedded
+// frontend, so anything injected afterward is unhashed and a browser blocks it.
+func TestStatusPageHTML_NoUnhashedInlineScript(t *testing.T) {
+	index := []byte(`<!DOCTYPE html><html><head></head><body>
+	<script>
+	  (function() { document.documentElement.setAttribute('data-theme', 'dark'); })();
+	</script>
+	<div id="app"></div>
+	<script type="module" src="/assets/index.js"></script>
+	</body></html>`)
+
+	policy := contentSecurityPolicy(index)
+
+	h := status.NewHandler(nil, nil, nil, nil)
+	h.SetIndexHTML(index)
+
+	rec := httptest.NewRecorder()
+	SecurityHeaders(policy)(http.HandlerFunc(h.HandleStatusPage)).
+		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/status/", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	served := rec.Body.Bytes()
+	sentCSP := rec.Header().Get("Content-Security-Policy")
+
+	for _, h := range inlineScriptHashes(served) {
+		assert.Contains(t, sentCSP, h,
+			"served HTML has an inline script whose digest is not in the CSP the server sends")
+	}
 }

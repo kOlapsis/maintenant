@@ -8,6 +8,9 @@ tmp/
 # Node.js / Frontend
 node_modules/
 dist/
+# dist/ above ignores this directory too; git won't descend into it to reinclude .gitkeep, so un-ignore the directory first.
+!cmd/maintenant/web/dist/
+cmd/maintenant/web/dist/*
 !cmd/maintenant/web/dist/.gitkeep
 frontend/dist/
 *.log
