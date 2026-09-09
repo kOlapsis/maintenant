@@ -91,6 +91,8 @@ A host that answers normally but presents a certificate maintenant cannot valida
 
 The certificate is still collected in this state, so expiry monitoring keeps working on internal-PKI hosts even before you configure the CA.
 
+To tell "degraded" from "down" after a certificate is rejected, the endpoint probe only completes a TLS handshake to capture the chain — it never resends the HTTP request, so headers and URL secrets never reach a peer whose identity was not verified. A degraded result therefore carries no HTTP status: the application behind the certificate is never actually reached.
+
 A host that is genuinely unreachable — timeout, DNS failure, connection refused — remains **down**.
 
 ---
