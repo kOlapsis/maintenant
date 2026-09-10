@@ -38,6 +38,17 @@ import (
 // The caller should exit without retrying.
 var ErrAgentRevokedServer = errors.New("agent revoked by server")
 
+// streamErrorRateLimited is the code the server sends when an agent pushes
+// events faster than its per-agent allowance.
+const streamErrorRateLimited = "rate_limited"
+
+// StreamHooks lets the spool react to what the server says about the stream.
+// A nil field ignores that signal.
+type StreamHooks struct {
+	Acked       func(uint64)
+	RateLimited func(time.Duration)
+}
+
 // Client wraps the gRPC IngestClient with connection lifecycle management.
 type Client struct {
 	conn   *grpc.ClientConn
@@ -118,8 +129,7 @@ type PushStream struct {
 
 	// commands executes server-issued commands; nil disables the command channel.
 	commands *CommandRunner
-	// onAck reports the server's last acknowledged sequence; nil ignores acks.
-	onAck func(uint64)
+	hooks    StreamHooks
 	// ctx bounds command work to the stream's lifetime.
 	ctx context.Context
 }
@@ -135,6 +145,16 @@ func (ps *PushStream) Send(evt *agentpb.AgentEvent) error {
 	defer ps.mu.Unlock()
 	return ps.stream.Send(&agentpb.ClientMessage{
 		Payload: &agentpb.ClientMessage_Event{Event: evt},
+	})
+}
+
+// SendStatus reports the spool's state. It is not telemetry: the server neither
+// rate-limits it nor dispatches it.
+func (ps *PushStream) SendStatus(st *agentpb.SpoolStatus) error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.stream.Send(&agentpb.ClientMessage{
+		Payload: &agentpb.ClientMessage_Status{Status: st},
 	})
 }
 
@@ -174,15 +194,20 @@ func (ps *PushStream) recvLoop(logger *slog.Logger) {
 			retErr = err
 			break
 		}
-		if errMsg := msg.GetError(); errMsg != nil && logger != nil {
-			logger.Warn("agent: server error",
-				"code", errMsg.GetCode(),
-				"message", errMsg.GetMessage(),
-				"retry_after_ms", errMsg.GetRetryAfterMs(),
-			)
+		if errMsg := msg.GetError(); errMsg != nil {
+			if logger != nil {
+				logger.Warn("agent: server error",
+					"code", errMsg.GetCode(),
+					"message", errMsg.GetMessage(),
+					"retry_after_ms", errMsg.GetRetryAfterMs(),
+				)
+			}
+			if errMsg.GetCode() == streamErrorRateLimited && ps.hooks.RateLimited != nil {
+				ps.hooks.RateLimited(time.Duration(errMsg.GetRetryAfterMs()) * time.Millisecond)
+			}
 		}
-		if ack := msg.GetAck(); ack != nil && ps.onAck != nil {
-			ps.onAck(ack.GetLastEventSeq())
+		if ack := msg.GetAck(); ack != nil && ps.hooks.Acked != nil {
+			ps.hooks.Acked(ack.GetLastEventSeq())
 		}
 		if cmd := msg.GetCommand(); cmd != nil && ps.commands != nil {
 			ps.commands.Handle(ps.ctx, ps, cmd)
@@ -197,7 +222,7 @@ func (ps *PushStream) recvLoop(logger *slog.Logger) {
 
 // DialPush opens the bidirectional Push stream, performs the Ed25519 auth handshake,
 // and returns a PushStream ready to send events.
-func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger, onAck func(uint64)) (*PushStream, error) {
+func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger, hooks StreamHooks) (*PushStream, error) {
 	stream, err := c.client.Push(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open Push stream: %w", err)
@@ -242,7 +267,7 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 		stream:   stream,
 		recvCh:   make(chan error, 1),
 		commands: c.commands,
-		onAck:    onAck,
+		hooks:    hooks,
 		ctx:      ctx,
 	}
 	go ps.recvLoop(logger)
@@ -258,7 +283,7 @@ func RunWithReconnect(
 	c *Client,
 	id *Identity,
 	logger *slog.Logger,
-	onAck func(uint64),
+	hooks StreamHooks,
 	onStream func(ctx context.Context, stream *PushStream) error,
 ) error {
 	const stable = 30 * time.Second
@@ -270,7 +295,7 @@ func RunWithReconnect(
 		}
 
 		start := time.Now()
-		stream, dialErr := c.DialPush(ctx, id, logger, onAck)
+		stream, dialErr := c.DialPush(ctx, id, logger, hooks)
 		if dialErr != nil {
 			if ctx.Err() != nil {
 				return nil

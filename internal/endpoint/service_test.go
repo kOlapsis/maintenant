@@ -1047,13 +1047,53 @@ func TestService_ProcessCheckResult_ReplayedFeedsHistoryWithoutAlerting(t *testi
 		Replayed:   true,
 	})
 
-	require.Len(t, store.results, 1, "a replayed probe must still be written to the check history")
+	require.Len(t, store.results, 1, "a replayed probe must still be written to the check history, which is what uptime reads")
 	assert.True(t, observed.Equal(store.results[0].Timestamp))
 
 	ep, err := store.GetEndpointByID(ctx, id)
 	require.NoError(t, err)
 	require.NotNil(t, ep)
-	assert.Equal(t, 1, ep.ConsecutiveFailures, "uptime counters must still move on a replayed probe")
+	assert.Zero(t, ep.ConsecutiveFailures,
+		"the consecutive counter drives the alert threshold and belongs to live probes only")
+	assert.Equal(t, StatusUp, ep.Status, "a stale probe must not rewrite the current status")
 	assert.Equal(t, AlertNormal, ep.AlertState, "a replayed probe must not open an alert")
 	assert.False(t, callbackInvoked, "a replayed probe must not reach the alert callback")
+}
+
+// At-least-once delivery is by design: a stream that breaks mid-drain resends
+// everything past the last ack. A duplicated probe result must not inflate the
+// consecutive-failure counter, which is what decides when an alert fires.
+func TestService_ProcessCheckResult_DuplicateReplayDoesNotInflateCounters(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+
+	id := seedEndpoint(t, store, &Endpoint{
+		ExternalID: "dup", LabelKey: "k1",
+		Status:     StatusUp,
+		AlertState: AlertNormal,
+		Config:     DefaultConfig(),
+	})
+
+	observed := time.Now().Add(-time.Hour)
+	result := CheckResult{
+		EndpointID:   id,
+		Success:      false,
+		ErrorMessage: "connection refused",
+		Timestamp:    observed,
+		Replayed:     true,
+	}
+
+	svc.ProcessCheckResult(ctx, id, result)
+	first, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	svc.ProcessCheckResult(ctx, id, result)
+	second, err := store.GetEndpointByID(ctx, id)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+
+	assert.Equal(t, first.ConsecutiveFailures, second.ConsecutiveFailures,
+		"the same probe delivered twice must count once")
 }

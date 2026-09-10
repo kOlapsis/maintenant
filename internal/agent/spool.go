@@ -16,10 +16,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
@@ -32,14 +34,16 @@ const (
 	spoolDrainBatch    = 200
 	spoolPurgeInterval = time.Minute
 	spoolDropLogEvery  = 30 * time.Second
+
+	// Half the server's default per-agent allowance, leaving room for live events.
+	spoolDrainRatePerSecond = 500
+	spoolStatusInterval     = 10 * time.Second
 )
 
-// ErrNoStream is returned by a disabled spool when no stream is attached, which
-// is what a collector used to see when the connection was down.
+// ErrNoStream is returned by a disabled spool with no stream attached.
 var ErrNoStream = errors.New("no agent stream available")
 
-// SpoolConfig bounds what the spool may hold. Both budgets at zero disable it
-// and restore the pre-spool behaviour, where a failed send stops the collector.
+// SpoolConfig bounds what the spool may hold; both budgets at zero disable it.
 type SpoolConfig struct {
 	MaxMemoryBytes int64
 	MaxDiskBytes   int64
@@ -54,6 +58,40 @@ func (c SpoolConfig) Enabled() bool {
 // eventSink sends one event on a live stream.
 type eventSink interface {
 	Send(*agentpb.AgentEvent) error
+	SendStatus(*agentpb.SpoolStatus) error
+}
+
+// snapshotKind names the event families that restate current state. They are
+// never queued: replaying a stale one would overwrite a live value.
+type snapshotKind string
+
+const (
+	snapshotInventory  snapshotKind = "inventory"
+	snapshotSwarm      snapshotKind = "swarm"
+	snapshotKubernetes snapshotKind = "kubernetes"
+	snapshotCertScan   snapshotKind = "certificate"
+	snapshotHostSample snapshotKind = "host"
+)
+
+// snapshotOf classifies evt, returning false for anything worth queueing.
+func snapshotOf(evt *agentpb.AgentEvent) (snapshotKind, bool) {
+	switch body := evt.GetBody().(type) {
+	case *agentpb.AgentEvent_Inventory:
+		return snapshotInventory, true
+	case *agentpb.AgentEvent_Swarm:
+		return snapshotSwarm, true
+	case *agentpb.AgentEvent_Kubernetes:
+		return snapshotKubernetes, true
+	case *agentpb.AgentEvent_Certificate:
+		return snapshotCertScan, true
+	case *agentpb.AgentEvent_Resource:
+		// An empty container id is the host's own sample, which the server keeps
+		// only as a latest value.
+		if body.Resource.GetContainerId() == "" {
+			return snapshotHostSample, true
+		}
+	}
+	return "", false
 }
 
 // pendingEvent is a serialized event waiting for its batch write.
@@ -63,9 +101,7 @@ type pendingEvent struct {
 	Payload    []byte
 }
 
-// Spool is the agent's bounded outbound queue. Collectors write to it with the
-// same Send signature they used on the stream, so a broken connection stops
-// being their problem.
+// Spool is the agent's bounded outbound queue.
 type Spool struct {
 	cfg    SpoolConfig
 	logger *slog.Logger
@@ -75,27 +111,33 @@ type Spool struct {
 	buf         []pendingEvent
 	bufBytes    int64
 	sink        eventSink
+	snapshots   map[snapshotKind]*agentpb.AgentEvent
 	sendSeq     int64
 	ackSeq      int64
 	dropped     int64
 	dropLogged  int64
 	lastDropLog time.Time
+	pausedUntil time.Time
+	reported    bool
+	wasDraining bool
 
+	limiter  *rate.Limiter
 	flushNow chan struct{}
 	drainNow chan struct{}
 	done     chan struct{}
 	stopOnce sync.Once
 }
 
-// NewSpool opens the spool for dataDir. A store that cannot be opened degrades
-// to memory only rather than stopping the agent.
+// NewSpool opens the spool for dataDir, degrading to memory only if it cannot.
 func NewSpool(dataDir string, cfg SpoolConfig, logger *slog.Logger) *Spool {
 	s := &Spool{
-		cfg:      cfg,
-		logger:   logger,
-		flushNow: make(chan struct{}, 1),
-		drainNow: make(chan struct{}, 1),
-		done:     make(chan struct{}),
+		cfg:       cfg,
+		logger:    logger,
+		snapshots: make(map[snapshotKind]*agentpb.AgentEvent),
+		limiter:   rate.NewLimiter(spoolDrainRatePerSecond, spoolDrainRatePerSecond),
+		flushNow:  make(chan struct{}, 1),
+		drainNow:  make(chan struct{}, 1),
+		done:      make(chan struct{}),
 	}
 	if !cfg.Enabled() {
 		return s
@@ -112,13 +154,14 @@ func NewSpool(dataDir string, cfg SpoolConfig, logger *slog.Logger) *Spool {
 	return s
 }
 
-// Attach binds the spool to a live stream and resends anything the previous one
-// could not prove it delivered.
+// Attach binds the spool to a live stream, rewinding to the last ack.
 func (s *Spool) Attach(sink eventSink) {
 	s.mu.Lock()
 	s.sink = sink
-	s.sendSeq = s.ackSeq
+	s.pausedUntil = time.Time{}
+	s.reported = false
 	s.mu.Unlock()
+	s.Rewind()
 }
 
 // Detach unbinds the current stream. Queued events wait for the next one.
@@ -126,10 +169,13 @@ func (s *Spool) Detach() {
 	s.mu.Lock()
 	s.sink = nil
 	s.mu.Unlock()
+
+	if s.cfg.Enabled() {
+		s.logger.Info("agent: stream lost, collecting into the spool")
+	}
 }
 
-// Send queues an event for delivery. A disabled spool passes it straight to the
-// stream and reports the failure, as the collectors used to see it.
+// Send queues an event; a disabled spool passes it straight to the stream.
 func (s *Spool) Send(evt *agentpb.AgentEvent) error {
 	if !s.cfg.Enabled() {
 		s.mu.Lock()
@@ -139,6 +185,10 @@ func (s *Spool) Send(evt *agentpb.AgentEvent) error {
 			return ErrNoStream
 		}
 		return sink.Send(evt)
+	}
+
+	if kind, ok := snapshotOf(evt); ok {
+		return s.sendSnapshot(kind, evt)
 	}
 
 	payload, err := proto.Marshal(evt)
@@ -167,6 +217,43 @@ func (s *Spool) Send(evt *agentpb.AgentEvent) error {
 	}
 	s.requestDrain()
 	return nil
+}
+
+// sendSnapshot delivers a state snapshot and keeps the latest of its kind.
+func (s *Spool) sendSnapshot(kind snapshotKind, evt *agentpb.AgentEvent) error {
+	s.mu.Lock()
+	s.snapshots[kind] = evt
+	sink := s.sink
+	s.mu.Unlock()
+
+	if sink == nil {
+		return nil
+	}
+	if err := sink.Send(evt); err != nil {
+		s.logger.Debug("agent: snapshot not sent", "kind", string(kind), "error", err)
+	}
+	return nil
+}
+
+// resendSnapshots re-states current state on a fresh stream, before the backlog.
+func (s *Spool) resendSnapshots() {
+	s.mu.Lock()
+	sink := s.sink
+	pending := make([]*agentpb.AgentEvent, 0, len(s.snapshots))
+	for _, evt := range s.snapshots {
+		pending = append(pending, evt)
+	}
+	s.mu.Unlock()
+
+	if sink == nil {
+		return
+	}
+	for _, evt := range pending {
+		if err := sink.Send(evt); err != nil {
+			s.logger.Debug("agent: snapshot not resent", "error", err)
+			return
+		}
+	}
 }
 
 func (s *Spool) requestDrain() {
@@ -207,8 +294,7 @@ func (s *Spool) flushLoop() {
 	}
 }
 
-// flush moves the memory buffer into the store. With no store it enforces the
-// memory budget in place, dropping the oldest events.
+// flush moves the memory buffer into the store, or trims it when there is none.
 func (s *Spool) flush() error {
 	s.mu.Lock()
 	if len(s.buf) == 0 {
@@ -240,8 +326,7 @@ func (s *Spool) flush() error {
 	return s.enforceDiskBudget()
 }
 
-// enforceDiskBudget drops the oldest events once the database is past its
-// budget, and returns the freed pages to the filesystem.
+// enforceDiskBudget drops the oldest events once the database is past budget.
 func (s *Spool) enforceDiskBudget() error {
 	if s.cfg.MaxDiskBytes <= 0 {
 		return nil
@@ -277,9 +362,7 @@ func (s *Spool) enforceDiskBudget() error {
 	return nil
 }
 
-// recordDropped accumulates abandoned events and reports them at intervals. A
-// line per dropped event would bury the rest of the agent's log during a long
-// outage.
+// recordDropped accumulates abandoned events and reports them at intervals.
 func (s *Spool) recordDropped(n int64) {
 	s.mu.Lock()
 	s.dropLogged += n
@@ -295,8 +378,7 @@ func (s *Spool) recordDropped(n int64) {
 	s.logger.Warn("agent: spool is full, oldest events dropped", "dropped", total)
 }
 
-// trimMemoryLocked drops the oldest buffered events until the memory budget is
-// met. Caller holds the lock.
+// trimMemoryLocked drops the oldest buffered events past budget; caller holds mu.
 func (s *Spool) trimMemoryLocked() int64 {
 	var dropped int64
 	for s.bufBytes > s.cfg.MaxMemoryBytes && len(s.buf) > 0 {
@@ -325,8 +407,7 @@ func (s *Spool) Depth() (int64, error) {
 	return buffered + stored, nil
 }
 
-// Dropped reports how many events were abandoned for lack of room since the
-// last successful connection.
+// Dropped reports how many events were abandoned since the last connection.
 func (s *Spool) Dropped() (int64, error) {
 	s.mu.Lock()
 	inMemory := s.dropped
@@ -405,29 +486,78 @@ func (s *Spool) Close() error {
 	return err
 }
 
-// Drain sends everything queued on the attached stream, oldest first, and keeps
-// sending what the collectors produce, until the stream breaks or ctx ends.
+// Drain sends everything queued on the attached stream, oldest first.
 func (s *Spool) Drain(ctx context.Context) error {
 	if !s.cfg.Enabled() {
 		<-ctx.Done()
 		return nil
 	}
 
+	s.resendSnapshots()
+	s.reportStatus(true)
+
 	ticker := time.NewTicker(spoolDrainInterval)
 	defer ticker.Stop()
+	status := time.NewTicker(spoolStatusInterval)
+	defer status.Stop()
 
 	for {
 		if err := s.drainOnce(ctx); err != nil {
 			return err
 		}
+		s.reportStatus(false)
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-s.done:
 			return nil
+		case <-status.C:
+			s.reportStatus(true)
 		case <-ticker.C:
 		case <-s.drainNow:
 		}
+	}
+}
+
+// reportStatus tells the server how far behind the agent is; without force an
+// idle agent stays quiet.
+func (s *Spool) reportStatus(force bool) {
+	depth, err := s.Depth()
+	if err != nil {
+		s.logger.Debug("agent: cannot read spool depth", "error", err)
+		return
+	}
+	dropped, err := s.Dropped()
+	if err != nil {
+		s.logger.Debug("agent: cannot read spool drop count", "error", err)
+		return
+	}
+	draining := depth > 0
+
+	s.mu.Lock()
+	sink := s.sink
+	changed := draining != s.wasDraining || !s.reported
+	s.wasDraining = draining
+	s.reported = true
+	s.mu.Unlock()
+
+	if changed {
+		if draining {
+			s.logger.Info("agent: replaying spooled events", "queued", depth, "dropped", dropped)
+		} else {
+			s.logger.Info("agent: spool drained, back in step with the server")
+		}
+	}
+	if sink == nil || (!force && !changed && !draining) {
+		return
+	}
+	st := &agentpb.SpoolStatus{
+		Queued:              uint64(depth), // #nosec G115 -- depth is a row count, never negative
+		Draining:            draining,
+		DroppedSinceConnect: uint64(dropped), // #nosec G115 -- a counter, never negative
+	}
+	if err := sink.SendStatus(st); err != nil {
+		s.logger.Debug("agent: spool status not sent", "error", err)
 	}
 }
 
@@ -439,8 +569,9 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 	for {
 		s.mu.Lock()
 		sink, store, after := s.sink, s.store, s.sendSeq
+		paused := time.Now().Before(s.pausedUntil)
 		s.mu.Unlock()
-		if sink == nil || store == nil {
+		if sink == nil || store == nil || paused {
 			return nil
 		}
 
@@ -464,8 +595,11 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 				s.mu.Unlock()
 				continue
 			}
+			if err := s.limiter.Wait(ctx); err != nil {
+				return nil
+			}
 			evt.Replayed = true
-			evt.Seq = uint64(row.Seq)
+			evt.Seq = uint64(row.Seq) // #nosec G115 -- an AUTOINCREMENT row id, positive by construction
 			if err := sink.Send(evt); err != nil {
 				return fmt.Errorf("drain spooled event: %w", err)
 			}
@@ -476,16 +610,21 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 	}
 }
 
-// Acked records the row the server has taken everything up to, which is what
-// finally lets those rows go. A Send that returned nil only proves the event
-// reached the transport buffer.
+// Acked records the row the server has taken everything up to.
 func (s *Spool) Acked(seq uint64) {
+	if seq > math.MaxInt64 {
+		return
+	}
 	purgeTo := int64(seq)
 
 	s.mu.Lock()
 	store := s.store
-	// An event sent outside the spool carries a lower number, and its ack must
-	// not walk the purge cursor backwards.
+	// Snapshots go out on the same stream and consume sequence numbers of their
+	// own, so an ack can name a row the drain has not reached. Never purge past
+	// what was actually sent from the spool.
+	if purgeTo > s.sendSeq {
+		purgeTo = s.sendSeq
+	}
 	if purgeTo <= s.ackSeq {
 		s.mu.Unlock()
 		return
@@ -501,15 +640,28 @@ func (s *Spool) Acked(seq uint64) {
 	}
 }
 
-// Rewind moves the send cursor back to the last acknowledged event, so a stream
-// that broke mid-drain resends what it cannot prove arrived.
+// Rewind moves the send cursor back to the last acknowledged event.
 func (s *Spool) Rewind() {
 	s.mu.Lock()
 	s.sendSeq = s.ackSeq
 	s.mu.Unlock()
 }
 
-// Discard drops the whole spool. Used when the server revokes the agent.
+// RateLimited holds the drain for the delay the server asked for and rewinds to
+// the last ack: the server drops a refused event without failing the stream.
+func (s *Spool) RateLimited(retryAfter time.Duration) {
+	if retryAfter <= 0 {
+		retryAfter = time.Second
+	}
+	s.mu.Lock()
+	s.sendSeq = s.ackSeq
+	s.pausedUntil = time.Now().Add(retryAfter)
+	s.mu.Unlock()
+
+	s.logger.Warn("agent: server refused the drain rate, backing off", "retry_after", retryAfter)
+}
+
+// Discard drops the whole spool, for a revoked agent.
 func (s *Spool) Discard() error {
 	s.mu.Lock()
 	store := s.store

@@ -686,3 +686,41 @@ func TestHandleAgentEvent_ReplayedRecordsStateWithoutEmitting(t *testing.T) {
 		assert.NotEqual(t, event.ContainerStateChanged, e.typ, "a replayed event must emit nothing")
 	}
 }
+
+// At-least-once delivery is by design: a stream that breaks mid-drain resends
+// everything past the last ack. Processing the same event twice must leave the
+// same state as processing it once.
+func TestHandleAgentEvent_DuplicateReplayIsIdempotent(t *testing.T) {
+	store := newSvcStore()
+	var events []capturedEvent
+	svc := newTestService(store, captureEvents(&events), func(d *Deps) {
+		d.AgentRuntime = &mockAgentRuntime{runtime: "docker"}
+	})
+
+	id := extID("flappy")
+	observed := time.Now().Add(-time.Hour)
+	meta := agentevent.Meta{ObservedAt: observed, Replayed: true}
+	ev := &agentpb.ContainerEvent{
+		ContainerId: id,
+		Name:        "flappy",
+		Image:       "nginx:latest",
+		State:       agentpb.ContainerState_CONTAINER_STATE_RUNNING,
+	}
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-dup", ev, meta))
+	c, err := store.GetContainerByExternalID(context.Background(), "agent-dup", id)
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	firstState, firstChange := c.State, c.LastStateChangeAt
+	firstTransitions := len(store.transitionsFor(c.ID))
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-dup", ev, meta))
+
+	c, err = store.GetContainerByExternalID(context.Background(), "agent-dup", id)
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	assert.Equal(t, firstState, c.State)
+	assert.Equal(t, firstChange, c.LastStateChangeAt, "a duplicate must not look like a new state change")
+	assert.Len(t, store.transitionsFor(c.ID), firstTransitions,
+		"a duplicate must not add a second transition for the same state")
+}

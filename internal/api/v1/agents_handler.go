@@ -357,7 +357,7 @@ func (h *AgentHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) 
 		if connFilter != "" && connFilter != connState {
 			continue
 		}
-		out = append(out, agentToMap(a, connState))
+		out = append(out, agentToMap(a, connState, h.spoolForAgent(a.AgentID)))
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"agents": out})
@@ -374,7 +374,7 @@ func (h *AgentHandler) HandleGetAgent(w http.ResponseWriter, r *http.Request) {
 		WriteStoreError(w, err, "Failed to get agent")
 		return
 	}
-	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a)))
+	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID)))
 }
 
 func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request) {
@@ -420,7 +420,7 @@ func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request)
 		"label":    *body.Label,
 	}})
 
-	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a)))
+	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID)))
 }
 
 func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request) {
@@ -448,7 +448,7 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 		WriteStoreError(w, err, "Failed to retrieve revoked agent")
 		return
 	}
-	WriteJSON(w, http.StatusOK, agentToMap(a, "disconnected"))
+	WriteJSON(w, http.StatusOK, agentToMap(a, "disconnected", nil))
 }
 
 func (h *AgentHandler) HandleDeleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -528,7 +528,32 @@ func (h *AgentHandler) resolveConnectionState(a *agent.Agent) string {
 	return "disconnected"
 }
 
-func agentToMap(a *agent.Agent, connectionState string) map[string]any {
+// spoolReporter is the optional part of the session registry that knows what an
+// agent last said about its outbound queue.
+type spoolReporter interface {
+	SpoolStatus(agentID string) *agentserver.SpoolState
+}
+
+// spoolForAgent renders what agentID declared, or nil when it is disconnected
+// or runs a build that never reports.
+func (h *AgentHandler) spoolForAgent(agentID string) map[string]any {
+	reporter, ok := h.sessions.(spoolReporter)
+	if !ok {
+		return nil
+	}
+	st := reporter.SpoolStatus(agentID)
+	if st == nil {
+		return nil
+	}
+	return map[string]any{
+		"queued":                st.Queued,
+		"draining":              st.Draining,
+		"dropped_since_connect": st.DroppedSinceConnect,
+		"reported_at":           st.ReportedAt,
+	}
+}
+
+func agentToMap(a *agent.Agent, connectionState string, spool map[string]any) map[string]any {
 	return map[string]any{
 		"agent_id":         a.AgentID,
 		"hostname":         a.Hostname,
@@ -542,6 +567,7 @@ func agentToMap(a *agent.Agent, connectionState string) map[string]any {
 		"created_at":       a.CreatedAt,
 		"revoked_at":       a.RevokedAt,
 		"revoked_by":       a.RevokedBy,
+		"spool":            spool,
 	}
 }
 

@@ -110,7 +110,8 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 		}
 	}()
 
-	err = RunWithReconnect(ctx, grpcClient, id, logger, spool.Acked, func(ctx context.Context, stream *PushStream) error {
+	hooks := StreamHooks{Acked: spool.Acked, RateLimited: spool.RateLimited}
+	err = RunWithReconnect(ctx, grpcClient, id, logger, hooks, func(ctx context.Context, stream *PushStream) error {
 		logger.Info("agent: stream authenticated, draining spool", "agent_id", id.AgentID)
 		spool.ResetDropped()
 		spool.Attach(stream)

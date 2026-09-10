@@ -34,15 +34,13 @@ const (
 	spoolDropScanLimit     = 50000
 )
 
-// spoolStore is the SQLite side of the spool: durable storage, ordered reads
-// and bounded purges.
+// spoolStore is the SQLite side of the spool.
 type spoolStore struct {
 	db   *sql.DB
 	path string
 }
 
-// openSpoolStore opens (creating it if needed) the agent spool database and
-// brings it to the embedded schema head.
+// openSpoolStore opens the agent spool database and migrates it to the head.
 func openSpoolStore(dataDir string) (*spoolStore, error) {
 	path := filepath.Join(dataDir, spoolFile)
 
@@ -101,8 +99,7 @@ type spooledEvent struct {
 	Payload []byte
 }
 
-// Append writes a batch of events in one transaction and returns the sequence
-// assigned to the last one.
+// Append writes a batch in one transaction and returns the last sequence.
 func (s *spoolStore) Append(events []pendingEvent) (int64, error) {
 	if len(events) == 0 {
 		return 0, nil
@@ -197,9 +194,8 @@ func (s *spoolStore) DeleteOlderThan(cutoff int64) (int64, error) {
 	return n, nil
 }
 
-// DeleteOldestBytes removes the oldest events until at least target bytes of
-// payload have been dropped, and returns how many rows went. The scan is capped
-// so one call stays cheap on a large spool; the caller comes back if needed.
+// DeleteOldestBytes drops the oldest events until target bytes are freed. The
+// scan is capped, so a large spool takes several calls.
 func (s *spoolStore) DeleteOldestBytes(target int64) (int64, error) {
 	res, err := s.db.Exec(`
 		DELETE FROM spool_events WHERE seq <= (
@@ -223,8 +219,7 @@ func (s *spoolStore) DeleteOldestBytes(target int64) (int64, error) {
 	return n, nil
 }
 
-// reclaim returns pages freed by a delete to the filesystem. Without it a
-// drained spool keeps the size of its worst outage.
+// reclaim returns pages freed by a delete to the filesystem.
 //
 // It has to run through Query and drain the result: incremental_vacuum frees
 // one page per step, and Exec only ever takes one.

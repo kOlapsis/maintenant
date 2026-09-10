@@ -54,6 +54,13 @@ type activeStream struct {
 	connectedAt time.Time
 	eventsSeen  atomic.Int64
 
+	// Spool state as the agent last declared it, so an operator can see a
+	// reconnected agent catching up instead of guessing from its logs.
+	spoolQueued     atomic.Int64
+	spoolDraining   atomic.Bool
+	spoolDropped    atomic.Int64
+	spoolReportedAt atomic.Int64
+
 	// send is drained by the stream's own Push goroutine, which is the only
 	// writer to the gRPC stream. Callers outside that goroutine (HTTP handlers
 	// issuing commands) enqueue here instead of touching the stream.
@@ -490,6 +497,49 @@ func (s *Sessions) IncrEvents(agentID string) {
 	}
 	s.mu.RUnlock()
 	s.ring.add()
+}
+
+// SpoolState is what an agent last said about its outbound queue.
+type SpoolState struct {
+	Queued              int64
+	Draining            bool
+	DroppedSinceConnect int64
+	ReportedAt          time.Time
+}
+
+// RecordSpoolStatus stores what agentID declared about its spool.
+func (s *Sessions) RecordSpoolStatus(agentID string, st *agentpb.SpoolStatus) {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return
+	}
+	stream.spoolQueued.Store(int64(st.GetQueued()))               // #nosec G115 -- a queue depth reported by the agent
+	stream.spoolDropped.Store(int64(st.GetDroppedSinceConnect())) // #nosec G115 -- a counter reported by the agent
+	stream.spoolDraining.Store(st.GetDraining())
+	stream.spoolReportedAt.Store(time.Now().Unix())
+}
+
+// SpoolStatus returns what agentID last declared, or nil when it is not
+// connected or has never reported (an agent older than the spool).
+func (s *Sessions) SpoolStatus(agentID string) *SpoolState {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	at := stream.spoolReportedAt.Load()
+	if at == 0 {
+		return nil
+	}
+	return &SpoolState{
+		Queued:              stream.spoolQueued.Load(),
+		Draining:            stream.spoolDraining.Load(),
+		DroppedSinceConnect: stream.spoolDropped.Load(),
+		ReportedAt:          time.Unix(at, 0),
+	}
 }
 
 // EventsSeen returns the events_seen counter for agentID (0 if not connected).
