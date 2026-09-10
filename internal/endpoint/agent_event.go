@@ -13,8 +13,8 @@ package endpoint
 
 import (
 	"context"
-	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 )
 
@@ -25,7 +25,7 @@ import (
 // — the agent reports its probe target in EndpointEvent.url. If no matching
 // endpoint exists yet (a result that raced ahead of the container label sync),
 // the event is dropped; the next probe lands once the endpoint is provisioned.
-func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.EndpointEvent) error {
+func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.EndpointEvent, meta agentevent.Meta) error {
 	target := ev.GetUrl()
 	if target == "" {
 		return nil
@@ -47,7 +47,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		ResponseTimeMs: int64(ev.GetLatencyMs()), // #nosec G115 -- probe latency in ms, never approaches int64
 		HTTPStatus:     &statusCode,
 		ErrorMessage:   ev.GetErrorMessage(),
-		Timestamp:      time.Now(),
+		Timestamp:      meta.ObservedAt,
+		Replayed:       meta.Replayed,
 		AgentID:        agentID,
 	}
 	s.ProcessCheckResult(ctx, ep.ID, result)

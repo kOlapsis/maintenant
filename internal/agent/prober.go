@@ -43,7 +43,7 @@ type eventSender func(*agentpb.AgentEvent) error
 // containers and pushes the results. The AGENT owns this probing because the
 // targets live on its own host/network; the server provisions the monitors from
 // the same labels but never dials them itself (FR-018a). Blocks until ctx done.
-func runLabelProbers(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+func runLabelProbers(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	ld, ok := rt.(labeledDiscoverer)
 	if !ok {
 		logger.Debug("collector: runtime exposes no labelled discovery; endpoint/cert label probing disabled")
@@ -54,12 +54,12 @@ func runLabelProbers(ctx context.Context, id *Identity, rt runtime.Runtime, stre
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return probeLoop(gCtx, endpointProbeInterval, func() error {
-			return probeEndpointsOnce(gCtx, id.AgentID, ld, stream.Send, logger)
+			return probeEndpointsOnce(gCtx, id.AgentID, ld, spool.Send, logger)
 		})
 	})
 	g.Go(func() error {
 		return probeLoop(gCtx, certScanInterval, func() error {
-			return scanCertsOnce(gCtx, id.AgentID, ld, stream.Send, logger)
+			return scanCertsOnce(gCtx, id.AgentID, ld, spool.Send, logger)
 		})
 	})
 	return g.Wait()

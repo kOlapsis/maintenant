@@ -125,6 +125,7 @@ type CheckResult struct {
 	TLSPeerCertificates []*x509.Certificate `json:"-"`
 	TLSOCSPResponse     []byte              `json:"-"`
 	AgentID             string              `json:"agent_id"`
+	Replayed            bool                `json:"-"`
 }
 
 // EndpointConfig holds the configuration parameters for endpoint checks.

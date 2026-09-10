@@ -22,6 +22,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/app"
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/trust"
 )
 
@@ -130,6 +131,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// A spool budget that does not parse must stop startup: falling back to the
+	// default would leave the operator believing their value is applied.
+	if err := cfg.ValidateAgentSpool(); err != nil {
+		logger.Error("invalid agent spool configuration", "error", err)
+		os.Exit(1)
+	}
+
 	// --copy-store-to runs the copy and exits, like --mcp-stdio: the binary has
 	// no subcommands and this feature does not introduce any.
 	if target := visited["copy-store-to"]; target != "" {
@@ -150,13 +158,20 @@ func main() {
 			dataDir = defaultAgentDataDir
 		}
 		agentCfg := agent.AgentConfig{
-			DataDir:            dataDir,
-			ServerURL:          cfg.MultiHost.ServerURL,
-			EnrollmentToken:    cfg.MultiHost.EnrollmentToken,
-			RuntimeOverride:    cfg.MultiHost.RuntimeOverride,
-			Label:              cfg.MultiHost.Label,
-			AgentVersion:       version,
-			InsecureSkipVerify: cfg.MultiHost.InsecureSkipVerify,
+			DataDir:             dataDir,
+			ServerURL:           cfg.MultiHost.ServerURL,
+			EnrollmentToken:     cfg.MultiHost.EnrollmentToken,
+			RuntimeOverride:     cfg.MultiHost.RuntimeOverride,
+			Label:               cfg.MultiHost.Label,
+			AgentVersion:        version,
+			InsecureSkipVerify:  cfg.MultiHost.InsecureSkipVerify,
+			SpoolMaxMemoryBytes: cfg.MultiHost.AgentSpoolMaxMemoryBytes,
+			SpoolMaxDiskBytes:   cfg.MultiHost.AgentSpoolMaxDiskBytes,
+			SpoolMaxAgeSeconds:  cfg.MultiHost.AgentSpoolMaxAgeSeconds,
+		}
+		if window := int64(resource.DefaultSnapshotRetention.Seconds()); agentCfg.SpoolMaxAgeSeconds > window {
+			logger.Warn("agent spool max age is past the server raw-sample window, older events are replayed after their purge",
+				"maxAgeSeconds", agentCfg.SpoolMaxAgeSeconds, "windowSeconds", window)
 		}
 		if err := agent.Run(ctx, agentCfg, logger); err != nil {
 			logger.Error("agent run failed", "error", err)

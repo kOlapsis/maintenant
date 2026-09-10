@@ -263,7 +263,7 @@ func (s *Service) processSnapshot(snap *ResourceSnapshot) {
 		return
 	}
 
-	if s.eventCallback != nil {
+	if s.eventCallback != nil && !snap.Replayed {
 		memPercent := 0.0
 		if snap.MemLimit > 0 {
 			memPercent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0

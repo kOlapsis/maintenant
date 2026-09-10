@@ -74,6 +74,9 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 
 	fake := &recordingPushClient{}
 	stream := &PushStream{stream: fake, recvCh: make(chan error, 1)}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, slog.Default())
+	spool.Attach(stream)
+	t.Cleanup(func() { _ = spool.Close() })
 	id := &Identity{AgentID: "kube-A"}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,7 +84,7 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- collectKubernetesRuntime(ctx, id, &fakeSnapshotSource{}, stream, slog.Default())
+		done <- collectKubernetesRuntime(ctx, id, &fakeSnapshotSource{}, spool, slog.Default())
 	}()
 
 	var sawTopology, sawHostSample bool

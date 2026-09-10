@@ -30,14 +30,17 @@ const swarmTopologyInterval = 30 * time.Second
 // snapshot against the rows it holds for this agent, hard-deleting whatever is
 // gone. Sends one snapshot immediately so the server has state before the first
 // tick. Blocks until ctx is cancelled or a push fails.
-func streamSwarmTopology(ctx context.Context, id *Identity, disc *swarm.ServiceDiscovery, client swarm.ServiceClient, stream *PushStream, logger *slog.Logger) error {
+func streamSwarmTopology(ctx context.Context, id *Identity, disc *swarm.ServiceDiscovery, client swarm.ServiceClient, spool *Spool, logger *slog.Logger) error {
 	send := func() error {
 		snap, err := swarm.SnapshotFromClient(ctx, disc, client)
 		if err != nil {
 			logger.Warn("collector: swarm topology snapshot failed", "err", err)
 			return nil
 		}
-		return stream.Send(swarmTopologyEvent(id.AgentID, snap))
+		if err := spool.Send(swarmTopologyEvent(id.AgentID, snap)); err != nil {
+			logger.Debug("collector: topology snapshot not sent", "error", err)
+		}
+		return nil
 	}
 
 	if err := send(); err != nil {

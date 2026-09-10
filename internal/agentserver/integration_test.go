@@ -75,6 +75,12 @@ func (b *captureBroadcaster) BroadcastEvent(eventType string, data any) {
 	b.events = append(b.events, capturedEvent{eventType, data})
 }
 
+func (b *captureBroadcaster) snapshot() []capturedEvent {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]capturedEvent(nil), b.events...)
+}
+
 func (b *captureBroadcaster) hasEventType(t string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -471,6 +477,31 @@ func TestIntegration_PushStream(t *testing.T) {
 	require.NotNil(t, ssePayload, "state_changed payload should be a map")
 	_, hasAgentID := ssePayload["agent_id"]
 	assert.True(t, hasAgentID, "SSE payload should contain agent_id key")
+
+	// === Step 7: A spool status reaches the session registry, not the dispatcher ===
+	// It rides the same stream as telemetry but is not telemetry: the receive
+	// loop takes it before the rate limiter and before any dispatch.
+	require.NoError(t, stream.Send(&agentpb.ClientMessage{
+		Payload: &agentpb.ClientMessage_Status{Status: &agentpb.SpoolStatus{
+			Queued:              1234,
+			Draining:            true,
+			DroppedSinceConnect: 7,
+		}},
+	}), "send spool status")
+
+	require.Eventually(t, func() bool {
+		st := sessions.SpoolStatus(agentID)
+		return st != nil && st.Queued == 1234
+	}, 4*time.Second, 30*time.Millisecond, "the server should record what the agent said about its spool")
+
+	st := sessions.SpoolStatus(agentID)
+	require.NotNil(t, st)
+	assert.True(t, st.Draining)
+	assert.Equal(t, int64(7), st.DroppedSinceConnect)
+
+	before := len(broadcaster.snapshot())
+	time.Sleep(100 * time.Millisecond)
+	assert.Len(t, broadcaster.snapshot(), before, "a spool status must not produce a domain event")
 }
 
 // TestIntegration_LogsCommandRoundTrip drives the server→agent command channel over

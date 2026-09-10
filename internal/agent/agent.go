@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/runtime"
@@ -33,13 +34,16 @@ const (
 
 // AgentConfig holds runtime configuration for an agent process.
 type AgentConfig struct {
-	DataDir            string
-	ServerURL          string
-	EnrollmentToken    string
-	RuntimeOverride    string
-	Label              string
-	AgentVersion       string
-	InsecureSkipVerify bool
+	DataDir             string
+	ServerURL           string
+	EnrollmentToken     string
+	RuntimeOverride     string
+	Label               string
+	AgentVersion        string
+	InsecureSkipVerify  bool
+	SpoolMaxMemoryBytes int64
+	SpoolMaxDiskBytes   int64
+	SpoolMaxAgeSeconds  int64
 }
 
 // Run is the main agent entry point (mode=agent).
@@ -86,14 +90,51 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 	healthStopped := StartHealthReporter(ctx, cfg.DataDir, HealthInterval, logger)
 	defer func() { <-healthStopped }()
 
-	err = RunWithReconnect(ctx, grpcClient, id, logger, func(ctx context.Context, stream *PushStream) error {
-		logger.Info("agent: stream authenticated, starting collector", "agent_id", id.AgentID)
-		return RunCollector(ctx, id, rt, rtLabel, stream, logger)
+	spool := NewSpool(cfg.DataDir, spoolConfig(cfg), logger)
+	defer func() {
+		if cerr := spool.Close(); cerr != nil {
+			logger.Warn("agent: spool did not close cleanly", "error", cerr)
+		}
+	}()
+	if perr := spool.PurgeExpired(ctx); perr != nil {
+		logger.Warn("agent: cannot purge expired spooled events", "error", perr)
+	}
+
+	// The collector outlives any single stream: an agent that stops measuring
+	// while the server is unreachable has nothing to replay afterwards.
+	collectorDone := make(chan struct{})
+	go func() {
+		defer close(collectorDone)
+		if cerr := RunCollector(ctx, id, rt, rtLabel, spool, logger); cerr != nil && ctx.Err() == nil {
+			logger.Error("agent: collector stopped", "error", cerr)
+		}
+	}()
+
+	hooks := StreamHooks{Acked: spool.Acked, RateLimited: spool.RateLimited}
+	err = RunWithReconnect(ctx, grpcClient, id, logger, hooks, func(ctx context.Context, stream *PushStream) error {
+		logger.Info("agent: stream authenticated, draining spool", "agent_id", id.AgentID)
+		spool.ResetDropped()
+		spool.Attach(stream)
+		defer spool.Detach()
+		return spool.Drain(ctx)
 	})
+	<-collectorDone
+
 	if errors.Is(err, ErrAgentRevokedServer) {
+		if derr := spool.Discard(); derr != nil {
+			logger.Warn("agent: cannot discard spool after revocation", "error", derr)
+		}
 		return fmt.Errorf("agent has been revoked by the server — re-enroll to reconnect")
 	}
 	return err
+}
+
+func spoolConfig(cfg AgentConfig) SpoolConfig {
+	return SpoolConfig{
+		MaxMemoryBytes: cfg.SpoolMaxMemoryBytes,
+		MaxDiskBytes:   cfg.SpoolMaxDiskBytes,
+		MaxAge:         time.Duration(cfg.SpoolMaxAgeSeconds) * time.Second,
+	}
 }
 
 // resolveRuntime detects (or uses the override for) the local container runtime,

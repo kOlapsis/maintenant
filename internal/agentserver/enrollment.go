@@ -301,6 +301,15 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 				}
 				continue
 			}
+			// The spool status is not telemetry: it must not be rate-limited,
+			// and there is nothing for the dispatcher to route.
+			if stMsg, ok := res.msg.GetPayload().(*agentpb.ClientMessage_Status); ok {
+				if sessions != nil {
+					sessions.RecordSpoolStatus(ag.AgentID, stMsg.Status)
+				}
+				continue
+			}
+
 			evMsg, ok := res.msg.GetPayload().(*agentpb.ClientMessage_Event)
 			if !ok {
 				continue

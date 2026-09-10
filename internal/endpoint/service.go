@@ -385,6 +385,18 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 		return
 	}
 
+	// A replayed probe is history: it feeds uptime, but the live status, the
+	// consecutive counters and the status-change event describe what the
+	// endpoint is doing now, which only a live probe can say. Letting a replay
+	// write them would also double-count the delivery the drain repeats after a
+	// broken stream.
+	if result.Replayed {
+		if _, err := s.store.InsertCheckResult(ctx, &result); err != nil {
+			s.logger.Error("insert replayed check result", "endpoint_id", endpointID, "error", err)
+		}
+		return
+	}
+
 	previousStatus := ep.Status
 
 	newStatus := statusForResult(result)

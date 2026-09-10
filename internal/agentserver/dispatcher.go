@@ -14,23 +14,34 @@ package agentserver
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
+)
+
+// EventMeta is the observation time and the replay flag of an agent event.
+type EventMeta = agentevent.Meta
+
+const (
+	maxClockSkew      = 60 * time.Second
+	maxObservationAge = 24 * time.Hour
 )
 
 // ContainerHandler processes a container event from a remote agent.
 type ContainerHandler interface {
-	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent) error
+	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta EventMeta) error
 }
 
 // ContainerInventoryHandler reconciles a full container snapshot from an agent.
 type ContainerInventoryHandler interface {
-	HandleAgentInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory) error
+	HandleAgentInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory, meta EventMeta) error
 }
 
 // EndpointHandler processes an endpoint probe result from a remote agent.
 type EndpointHandler interface {
-	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.EndpointEvent) error
+	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.EndpointEvent, meta EventMeta) error
 }
 
 // HeartbeatHandler processes a heartbeat ping from a remote agent.
@@ -40,7 +51,7 @@ type HeartbeatHandler interface {
 
 // ResourceHandler processes a resource sample from a remote agent.
 type ResourceHandler interface {
-	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample) error
+	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample, meta EventMeta) error
 }
 
 // CertificateHandler processes a certificate scan result from a remote agent.
@@ -83,11 +94,53 @@ type DispatchDeps struct {
 // Dispatcher routes AgentEvents to the appropriate domain handler.
 type Dispatcher struct {
 	deps DispatchDeps
+
+	mu       sync.Mutex
+	rejected map[string]uint64
 }
 
 // NewDispatcher creates a Dispatcher with the given handler set.
 func NewDispatcher(deps DispatchDeps) *Dispatcher {
-	return &Dispatcher{deps: deps}
+	return &Dispatcher{deps: deps, rejected: make(map[string]uint64)}
+}
+
+// RejectedEvents returns how many events the dispatcher refused for an out of
+// range observation time since startup, for agentID.
+func (d *Dispatcher) RejectedEvents(agentID string) uint64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.rejected[agentID]
+}
+
+func (d *Dispatcher) countRejection(agentID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.rejected[agentID]++
+}
+
+// eventMeta reads the observation time carried by evt. An event without one
+// comes from an agent predating the field: it falls back to the receive time.
+// An out of range time is refused outright, never clamped onto a bound.
+func eventMeta(evt *agentpb.AgentEvent, now time.Time) (EventMeta, error) {
+	meta := EventMeta{ObservedAt: now, Replayed: evt.GetReplayed()}
+
+	ts := evt.GetObservedAt()
+	if ts == nil || (ts.GetSeconds() == 0 && ts.GetNanos() == 0) {
+		return meta, nil
+	}
+
+	observed := ts.AsTime()
+	if observed.After(now.Add(maxClockSkew)) {
+		return meta, fmt.Errorf("observed_at %s is more than %s ahead of the server clock",
+			observed.Format(time.RFC3339Nano), maxClockSkew)
+	}
+	if observed.Before(now.Add(-maxObservationAge)) {
+		return meta, fmt.Errorf("observed_at %s is older than the %s retention window",
+			observed.Format(time.RFC3339Nano), maxObservationAge)
+	}
+
+	meta.ObservedAt = observed
+	return meta, nil
 }
 
 // Dispatch routes evt to the handler matching its body type, attributing every
@@ -102,10 +155,16 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 		return fmt.Errorf("dispatch: event agent_id %q does not match authenticated agent %q", claimed, agentID)
 	}
 
+	meta, err := eventMeta(evt, time.Now())
+	if err != nil {
+		d.countRejection(agentID)
+		return fmt.Errorf("dispatch: reject event from agent %q: %w", agentID, err)
+	}
+
 	switch body := evt.GetBody().(type) {
 	case *agentpb.AgentEvent_Container:
 		if d.deps.Container != nil {
-			if err := d.deps.Container.HandleAgentEvent(ctx, agentID, body.Container); err != nil {
+			if err := d.deps.Container.HandleAgentEvent(ctx, agentID, body.Container, meta); err != nil {
 				return fmt.Errorf("dispatch container event: %w", err)
 			}
 		}
@@ -118,7 +177,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 		}
 	case *agentpb.AgentEvent_Inventory:
 		if d.deps.Inventory != nil {
-			if err := d.deps.Inventory.HandleAgentInventory(ctx, agentID, body.Inventory); err != nil {
+			if err := d.deps.Inventory.HandleAgentInventory(ctx, agentID, body.Inventory, meta); err != nil {
 				return fmt.Errorf("dispatch container inventory: %w", err)
 			}
 		}
@@ -129,7 +188,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 		}
 	case *agentpb.AgentEvent_Endpoint:
 		if d.deps.Endpoint != nil {
-			if err := d.deps.Endpoint.HandleAgentEvent(ctx, agentID, body.Endpoint); err != nil {
+			if err := d.deps.Endpoint.HandleAgentEvent(ctx, agentID, body.Endpoint, meta); err != nil {
 				return fmt.Errorf("dispatch endpoint event: %w", err)
 			}
 		}
@@ -141,7 +200,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 		}
 	case *agentpb.AgentEvent_Resource:
 		if d.deps.Resource != nil {
-			if err := d.deps.Resource.HandleAgentEvent(ctx, agentID, body.Resource); err != nil {
+			if err := d.deps.Resource.HandleAgentEvent(ctx, agentID, body.Resource, meta); err != nil {
 				return fmt.Errorf("dispatch resource event: %w", err)
 			}
 		}

@@ -26,12 +26,12 @@ const (
 	retentionBudgetPerTable   = 2 * time.Minute
 	defaultRetention          = 90 * 24 * time.Hour // 90 days
 	retentionBatchSize        = defaultBatchSize
-	archivedRetention         = 30 * 24 * time.Hour  // 30 days
-	checkResultRetention      = 30 * 24 * time.Hour  // 30 days
-	inactiveEndpointRetention = 30 * 24 * time.Hour  // 30 days
-	heartbeatPingRetention    = 30 * 24 * time.Hour  // 30 days
-	heartbeatExecRetention    = 30 * 24 * time.Hour  // 30 days
-	certCheckResultRetention  = 30 * 24 * time.Hour  // 30 days
+	archivedRetention         = 30 * 24 * time.Hour // 30 days
+	checkResultRetention      = 30 * 24 * time.Hour // 30 days
+	inactiveEndpointRetention = 30 * 24 * time.Hour // 30 days
+	heartbeatPingRetention    = 30 * 24 * time.Hour // 30 days
+	heartbeatExecRetention    = 30 * 24 * time.Hour // 30 days
+	certCheckResultRetention  = 30 * 24 * time.Hour // 30 days
 	// Raw samples only feed the ranges up to 24h; 7d reads the hourly rollup.
 	resourceSnapshotRetention = resource.DefaultSnapshotRetention
 	resourceHourlyRetention   = 90 * 24 * time.Hour  // 90 days
@@ -370,8 +370,10 @@ func incrementalVacuum(ctx context.Context, db *DB, logger *slog.Logger, budget 
 	deadline := time.Now().Add(budget)
 	for remaining > 0 && time.Now().Before(deadline) && ctx.Err() == nil {
 		// incremental_vacuum is a write: it must go through the serialized
-		// writer, or it races the writer goroutine for the write lock.
-		if _, err := db.Writer().Exec(ctx, "PRAGMA incremental_vacuum(2000)"); err != nil {
+		// writer, or it races the writer goroutine for the write lock. It also
+		// frees one page per step, so the statement has to be driven to
+		// completion; an Exec takes a single step and returns one page.
+		if err := vacuumSlice(ctx, db); err != nil {
 			logger.Error("retention cleanup: incremental vacuum", "error", err)
 			return
 		}
@@ -393,6 +395,23 @@ func incrementalVacuum(ctx context.Context, db *DB, logger *slog.Logger, budget 
 	if before > remaining {
 		logger.Info("retention cleanup: reclaimed pages", "freed", before-remaining, "remaining", remaining)
 	}
+}
+
+// vacuumSlice reclaims up to one slice of free pages on the serialized writer.
+func vacuumSlice(ctx context.Context, db *DB) error {
+	return db.Writer().Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		rows, err := tx.QueryContext(ctx, "PRAGMA incremental_vacuum(2000)")
+		if err != nil {
+			return fmt.Errorf("incremental vacuum: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() { //nolint:revive // stepping is the work; the pragma yields no rows
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("incremental vacuum: %w", err)
+		}
+		return nil
+	})
 }
 
 func freelistCount(ctx context.Context, db *DB) (int, error) {

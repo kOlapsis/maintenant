@@ -179,3 +179,60 @@ func TestValidateProxiesRefusesGarbage(t *testing.T) {
 		t.Fatalf("got %v, want ErrTrustedProxies", err)
 	}
 }
+
+func TestConfigFromEnv_AgentSpoolDefaults(t *testing.T) {
+	cfg := ConfigFromEnv()
+
+	assert.Equal(t, DefaultAgentSpoolMaxMemoryBytes, cfg.MultiHost.AgentSpoolMaxMemoryBytes)
+	assert.Equal(t, DefaultAgentSpoolMaxDiskBytes, cfg.MultiHost.AgentSpoolMaxDiskBytes)
+	assert.Equal(t, DefaultAgentSpoolMaxAgeSeconds, cfg.MultiHost.AgentSpoolMaxAgeSeconds)
+	assert.NoError(t, cfg.ValidateAgentSpool())
+}
+
+func TestConfigFromEnv_AgentSpoolZeroDisables(t *testing.T) {
+	t.Setenv("MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES", "0")
+	t.Setenv("MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", "0")
+	cfg := ConfigFromEnv()
+
+	assert.Zero(t, cfg.MultiHost.AgentSpoolMaxMemoryBytes)
+	assert.Zero(t, cfg.MultiHost.AgentSpoolMaxDiskBytes)
+	assert.NoError(t, cfg.ValidateAgentSpool())
+}
+
+// A budget that does not parse must stop startup rather than fall back to its
+// default: an operator who set a value believes it is applied.
+func TestConfigFromEnv_AgentSpoolInvalidIsRefused(t *testing.T) {
+	for _, raw := range []string{"16MB", "-1", "half"} {
+		t.Run(raw, func(t *testing.T) {
+			t.Setenv("MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", raw)
+			cfg := ConfigFromEnv()
+
+			err := cfg.ValidateAgentSpool()
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrAgentSpoolSetting)
+			assert.Contains(t, err.Error(), raw)
+			assert.Contains(t, err.Error(), "MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES")
+		})
+	}
+}
+
+// The flag wins over the environment, so a valid flag clears the rejected env
+// value it replaces.
+func TestAgentSpoolFlagOverridesInvalidEnv(t *testing.T) {
+	t.Setenv("MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", "nonsense")
+	cfg := ConfigFromEnv()
+	require.Error(t, cfg.ValidateAgentSpool())
+
+	require.NoError(t, MergeArgsIntoConfig(&cfg, map[string]string{"agentSpoolMaxDiskBytes": "1024"}))
+
+	assert.Equal(t, int64(1024), cfg.MultiHost.AgentSpoolMaxDiskBytes)
+	assert.NoError(t, cfg.ValidateAgentSpool())
+}
+
+func TestAgentSpoolFlagRefusesNegative(t *testing.T) {
+	cfg := ConfigFromEnv()
+	err := MergeArgsIntoConfig(&cfg, map[string]string{"agentSpoolMaxAgeSeconds": "-1"})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrAgentSpoolSetting)
+}

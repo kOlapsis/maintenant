@@ -37,6 +37,7 @@ type ContainerEvent struct {
 	HealthStatus string
 	ErrorDetail  string
 	Timestamp    time.Time
+	Replayed     bool
 	Labels       map[string]string
 }
 
@@ -229,18 +230,25 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		result, err := s.restartChecker.Check(ctx, c)
 		if err != nil {
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
-		} else if result != nil {
-			s.emitEvent(event.ContainerRestartAlert, result)
-		} else {
-			// Count is below threshold — emit recovery so the alert engine
-			// can resolve any previously active restart_loop alert.
-			s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
-				"container_id":   c.ID,
-				"container_name": c.Name,
-				"timestamp":      evt.Timestamp,
-				"agent_id":       c.AgentID,
-			})
+		} else if !evt.Replayed {
+			if result != nil {
+				s.emitEvent(event.ContainerRestartAlert, result)
+			} else {
+				// Count is below threshold — emit recovery so the alert engine
+				// can resolve any previously active restart_loop alert.
+				s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
+					"container_id":   c.ID,
+					"container_name": c.Name,
+					"timestamp":      evt.Timestamp,
+					"agent_id":       c.AgentID,
+				})
+			}
 		}
+	}
+
+	// Replay stays silent, but the state and the transition above are already written.
+	if evt.Replayed {
+		return
 	}
 
 	s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
