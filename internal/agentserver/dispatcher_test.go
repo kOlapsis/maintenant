@@ -15,9 +15,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 )
@@ -27,36 +30,42 @@ import (
 type mockContainerHandler struct {
 	calledWithAgentID string
 	calledWithEvent   *agentpb.ContainerEvent
+	calledWithMeta    EventMeta
 	returnErr         error
 }
 
-func (m *mockContainerHandler) HandleAgentEvent(_ context.Context, agentID string, ev *agentpb.ContainerEvent) error {
+func (m *mockContainerHandler) HandleAgentEvent(_ context.Context, agentID string, ev *agentpb.ContainerEvent, meta EventMeta) error {
 	m.calledWithAgentID = agentID
 	m.calledWithEvent = ev
+	m.calledWithMeta = meta
 	return m.returnErr
 }
 
 type mockInventoryHandler struct {
 	calledWithAgentID string
 	calledWithEvent   *agentpb.ContainerInventory
+	calledWithMeta    EventMeta
 	returnErr         error
 }
 
-func (m *mockInventoryHandler) HandleAgentInventory(_ context.Context, agentID string, ev *agentpb.ContainerInventory) error {
+func (m *mockInventoryHandler) HandleAgentInventory(_ context.Context, agentID string, ev *agentpb.ContainerInventory, meta EventMeta) error {
 	m.calledWithAgentID = agentID
 	m.calledWithEvent = ev
+	m.calledWithMeta = meta
 	return m.returnErr
 }
 
 type mockEndpointHandler struct {
 	calledWithAgentID string
 	calledWithEvent   *agentpb.EndpointEvent
+	calledWithMeta    EventMeta
 	returnErr         error
 }
 
-func (m *mockEndpointHandler) HandleAgentEvent(_ context.Context, agentID string, ev *agentpb.EndpointEvent) error {
+func (m *mockEndpointHandler) HandleAgentEvent(_ context.Context, agentID string, ev *agentpb.EndpointEvent, meta EventMeta) error {
 	m.calledWithAgentID = agentID
 	m.calledWithEvent = ev
+	m.calledWithMeta = meta
 	return m.returnErr
 }
 
@@ -75,12 +84,14 @@ func (m *mockHeartbeatHandler) HandleAgentEvent(_ context.Context, agentID strin
 type mockResourceHandler struct {
 	calledWithAgentID string
 	calledWithEvent   *agentpb.ResourceSample
+	calledWithMeta    EventMeta
 	returnErr         error
 }
 
-func (m *mockResourceHandler) HandleAgentEvent(_ context.Context, agentID string, ev *agentpb.ResourceSample) error {
+func (m *mockResourceHandler) HandleAgentEvent(_ context.Context, agentID string, ev *agentpb.ResourceSample, meta EventMeta) error {
 	m.calledWithAgentID = agentID
 	m.calledWithEvent = ev
+	m.calledWithMeta = meta
 	return m.returnErr
 }
 
@@ -379,4 +390,88 @@ func TestDispatcher_DestroyedEventSyncsLabelsWithNilLabels(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, called)
 	assert.Nil(t, gotLabels, "a destroyed container must retract its label-discovered monitors")
+}
+
+// --- observation time validation (FR-016) ---
+
+func TestDispatcher_FutureObservedAtBeyondSkewIsRejected(t *testing.T) {
+	h := &mockContainerHandler{}
+	d := NewDispatcher(DispatchDeps{Container: h})
+
+	err := d.Dispatch(context.Background(), dispatchAgentID, &agentpb.AgentEvent{
+		AgentId:    dispatchAgentID,
+		ObservedAt: timestamppb.New(time.Now().Add(5 * time.Minute)),
+		Body:       &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{ContainerId: "ctr-future"}},
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, h.calledWithEvent, "a rejected event must never reach its handler")
+	assert.Equal(t, uint64(1), d.RejectedEvents(dispatchAgentID))
+}
+
+func TestDispatcher_ObservedAtOlderThanRetentionIsRejected(t *testing.T) {
+	h := &mockResourceHandler{}
+	d := NewDispatcher(DispatchDeps{Resource: h})
+
+	err := d.Dispatch(context.Background(), dispatchAgentID, &agentpb.AgentEvent{
+		AgentId:    dispatchAgentID,
+		ObservedAt: timestamppb.New(time.Now().Add(-25 * time.Hour)),
+		Body:       &agentpb.AgentEvent_Resource{Resource: &agentpb.ResourceSample{ContainerId: "ctr-old"}},
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, h.calledWithEvent, "a rejected event must never reach its handler")
+	assert.Equal(t, uint64(1), d.RejectedEvents(dispatchAgentID))
+}
+
+func TestDispatcher_RejectionsAreCountedPerAgent(t *testing.T) {
+	d := NewDispatcher(DispatchDeps{Container: &mockContainerHandler{}})
+
+	evt := func() *agentpb.AgentEvent {
+		return &agentpb.AgentEvent{
+			ObservedAt: timestamppb.New(time.Now().Add(-48 * time.Hour)),
+			Body:       &agentpb.AgentEvent_Container{Container: &agentpb.ContainerEvent{ContainerId: "ctr"}},
+		}
+	}
+	require.Error(t, d.Dispatch(context.Background(), "agent-a", evt()))
+	require.Error(t, d.Dispatch(context.Background(), "agent-a", evt()))
+	require.Error(t, d.Dispatch(context.Background(), "agent-b", evt()))
+
+	assert.Equal(t, uint64(2), d.RejectedEvents("agent-a"))
+	assert.Equal(t, uint64(1), d.RejectedEvents("agent-b"))
+	assert.Equal(t, uint64(0), d.RejectedEvents("agent-c"))
+}
+
+func TestDispatcher_ObservedAtWithinToleranceIsPassedThroughUnclamped(t *testing.T) {
+	h := &mockResourceHandler{}
+	d := NewDispatcher(DispatchDeps{Resource: h})
+
+	observed := time.Now().Add(-3 * time.Hour).Truncate(time.Millisecond)
+	err := d.Dispatch(context.Background(), dispatchAgentID, &agentpb.AgentEvent{
+		AgentId:    dispatchAgentID,
+		Replayed:   true,
+		ObservedAt: timestamppb.New(observed),
+		Body:       &agentpb.AgentEvent_Resource{Resource: &agentpb.ResourceSample{ContainerId: "ctr"}},
+	})
+
+	require.NoError(t, err)
+	assert.True(t, observed.Equal(h.calledWithMeta.ObservedAt), "the observation time must reach the handler untouched")
+	assert.True(t, h.calledWithMeta.Replayed)
+	assert.Equal(t, uint64(0), d.RejectedEvents(dispatchAgentID))
+}
+
+func TestDispatcher_MissingObservedAtFallsBackToReceiveTime(t *testing.T) {
+	h := &mockEndpointHandler{}
+	d := NewDispatcher(DispatchDeps{Endpoint: h})
+
+	before := time.Now()
+	err := d.Dispatch(context.Background(), dispatchAgentID, &agentpb.AgentEvent{
+		AgentId: dispatchAgentID,
+		Body:    &agentpb.AgentEvent_Endpoint{Endpoint: &agentpb.EndpointEvent{Url: "https://example.test"}},
+	})
+
+	require.NoError(t, err)
+	assert.False(t, h.calledWithMeta.ObservedAt.Before(before), "an agent without observed_at must be dated on reception")
+	assert.False(t, h.calledWithMeta.Replayed)
+	assert.Equal(t, uint64(0), d.RejectedEvents(dispatchAgentID))
 }

@@ -111,12 +111,33 @@ type MultiHostConfig struct {
 	TLSKeyFile   string
 	InsecureGRPC bool // h2c mode — use only behind a trusted reverse proxy
 	// Agent flags (for mode=agent)
-	ServerURL          string
-	EnrollmentToken    string
-	RuntimeOverride    string
-	Label              string
-	InsecureSkipVerify bool
-	EmbeddedAgent      bool
+	ServerURL                string
+	EnrollmentToken          string
+	RuntimeOverride          string
+	Label                    string
+	InsecureSkipVerify       bool
+	EmbeddedAgent            bool
+	AgentSpoolMaxMemoryBytes int64
+	AgentSpoolMaxDiskBytes   int64
+	AgentSpoolMaxAgeSeconds  int64
+	InvalidSpoolSettings     []InvalidSetting
+}
+
+// InvalidSetting is a configuration value that was rejected rather than
+// replaced by its default.
+type InvalidSetting struct {
+	Name string
+	Raw  string
+}
+
+func (m *MultiHostConfig) acceptSpoolSetting(env string) {
+	kept := m.InvalidSpoolSettings[:0]
+	for _, s := range m.InvalidSpoolSettings {
+		if s.Name != env {
+			kept = append(kept, s)
+		}
+	}
+	m.InvalidSpoolSettings = kept
 }
 
 // RetentionConfig holds the tunable part of the retention cleanup. Zero values
@@ -217,6 +238,47 @@ func (c Config) ValidateAlerting() error {
 	return nil
 }
 
+const (
+	DefaultAgentSpoolMaxMemoryBytes int64 = 16777216
+	DefaultAgentSpoolMaxDiskBytes   int64 = 134217728
+	DefaultAgentSpoolMaxAgeSeconds  int64 = 86400
+)
+
+// ErrAgentSpoolSetting refuses a spool budget that does not parse.
+var ErrAgentSpoolSetting = errors.New(
+	"agent spool setting is not a valid whole number of bytes or seconds: use a non-negative integer, or 0 to disable the spool")
+
+func parseAgentSpoolSetting(raw string) (int64, error) {
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%w (got %q)", ErrAgentSpoolSetting, raw)
+	}
+	return n, nil
+}
+
+func envAgentSpoolSetting(key string, fallback int64, invalid *[]InvalidSetting) int64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	n, err := parseAgentSpoolSetting(raw)
+	if err != nil {
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: raw})
+		return fallback
+	}
+	return n
+}
+
+// ValidateAgentSpool refuses a spool budget that would silently be replaced by
+// its default.
+func (c Config) ValidateAgentSpool() error {
+	var errs []error
+	for _, s := range c.MultiHost.InvalidSpoolSettings {
+		errs = append(errs, fmt.Errorf("%w (%s=%q)", ErrAgentSpoolSetting, s.Name, s.Raw))
+	}
+	return errors.Join(errs...)
+}
+
 func (c Config) ValidateHTTP() error {
 	if c.MCP.Enabled && !c.MCP.AllowUnauthenticated &&
 		(c.MCP.ClientID == "" || c.MCP.ClientSecret == "") {
@@ -303,6 +365,15 @@ func ConfigFromEnv() Config {
 		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
 		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
 	}
+
+	var invalidSpool []InvalidSetting
+	cfg.MultiHost.AgentSpoolMaxMemoryBytes = envAgentSpoolSetting(
+		"MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES", DefaultAgentSpoolMaxMemoryBytes, &invalidSpool)
+	cfg.MultiHost.AgentSpoolMaxDiskBytes = envAgentSpoolSetting(
+		"MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", DefaultAgentSpoolMaxDiskBytes, &invalidSpool)
+	cfg.MultiHost.AgentSpoolMaxAgeSeconds = envAgentSpoolSetting(
+		"MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS", DefaultAgentSpoolMaxAgeSeconds, &invalidSpool)
+	cfg.MultiHost.InvalidSpoolSettings = invalidSpool
 
 	return cfg
 }

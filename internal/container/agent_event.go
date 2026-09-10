@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -42,7 +43,7 @@ const (
 // method owns their lifecycle: it INSERTs the container the first time the agent
 // reports it (attributed via agent_id), then routes subsequent state changes
 // through the normal pipeline for updates.
-func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent) error {
+func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta) error {
 	externalID := ev.GetContainerId()
 	if externalID == "" {
 		return nil
@@ -57,7 +58,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		AgentID:    agentID,
 		ExternalID: externalID,
 		Name:       ev.GetName(),
-		Timestamp:  agentEventTime(ev),
+		Timestamp:  agentEventTime(ev, meta),
+		Replayed:   meta.Replayed,
 		Labels:     ev.GetLabels(),
 	}
 
@@ -70,7 +72,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	if c == nil {
-		return s.insertAgentContainer(ctx, agentID, ev)
+		return s.insertAgentContainer(ctx, agentID, ev, meta)
 	}
 
 	dirty := false
@@ -115,7 +117,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 //
 // An empty snapshot only archives the agent's fleet when it is marked complete;
 // otherwise it means the agent could not enumerate its runtime.
-func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory) error {
+func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *agentpb.ContainerInventory, meta agentevent.Meta) error {
 	reported := ev.GetContainers()
 	if len(reported) == 0 && !ev.GetComplete() {
 		return nil
@@ -128,7 +130,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 			continue
 		}
 		live[externalID] = struct{}{}
-		if err := s.HandleAgentEvent(ctx, agentID, c); err != nil {
+		if err := s.HandleAgentEvent(ctx, agentID, c, meta); err != nil {
 			return err
 		}
 	}
@@ -160,11 +162,11 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 
 // insertAgentContainer creates a new container row reported by a remote agent,
 // mirroring the field defaults of local discovery (docker.mapFromList).
-func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *agentpb.ContainerEvent) error {
+func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta) error {
 	externalID := ev.GetContainerId()
 	labels := ev.GetLabels()
 	state := containerStateToState(ev.GetState())
-	now := agentEventTime(ev)
+	now := agentEventTime(ev, meta)
 
 	readyCount := 0
 	if state == StateRunning {
@@ -246,11 +248,11 @@ func applyAgentLabels(c *Container, labels map[string]string) {
 }
 
 // agentEventTime returns the event's started_at when present, else now.
-func agentEventTime(ev *agentpb.ContainerEvent) time.Time {
+func agentEventTime(ev *agentpb.ContainerEvent, meta agentevent.Meta) time.Time {
 	if ts := ev.GetStartedAt(); ts != nil {
 		return ts.AsTime()
 	}
-	return time.Now()
+	return meta.ObservedAt
 }
 
 func shortID(id string) string {

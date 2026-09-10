@@ -425,7 +425,7 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 	}
 
 	// Evaluate alert thresholds
-	if s.alertCallback != nil {
+	if s.alertCallback != nil && !result.Replayed {
 		// Reload endpoint with updated counters
 		updated, err := s.store.GetEndpointByID(ctx, endpointID)
 		if err == nil && updated != nil {

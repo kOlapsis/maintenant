@@ -43,10 +43,10 @@ var containerInventoryInterval = 30 * time.Second
 // rt is the already-connected runtime resolved by agent.Run; label is the reported
 // runtime kind ("docker", "swarm" or "kubernetes").
 // Blocks until ctx is cancelled or a fatal push error occurs.
-func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label string, stream *PushStream, logger *slog.Logger) error {
+func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label string, spool *Spool, logger *slog.Logger) error {
 	switch label {
 	case RuntimeDocker, RuntimeSwarm:
-		return collectContainerRuntime(ctx, id, rt, label, stream, logger)
+		return collectContainerRuntime(ctx, id, rt, label, spool, logger)
 	case RuntimeKubernetes:
 		src, ok := rt.(kubernetes.SnapshotSource)
 		if !ok {
@@ -54,22 +54,22 @@ func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label s
 			<-ctx.Done()
 			return nil
 		}
-		return collectKubernetesRuntime(ctx, id, src, stream, logger)
+		return collectKubernetesRuntime(ctx, id, src, spool, logger)
 	default:
 		return fmt.Errorf("collector: unsupported runtime %q", label)
 	}
 }
 
-func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, stream *PushStream, logger *slog.Logger) error {
-	if err := syncInventory(ctx, id, rt, stream, logger); err != nil {
+func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, spool *Spool, logger *slog.Logger) error {
+	if err := syncInventory(ctx, id, rt, spool, logger); err != nil {
 		return err
 	}
 	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, stream, logger) })
-	g.Go(func() error { return streamInventory(gCtx, id, rt, stream, logger) })
-	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, stream, logger) })
-	g.Go(func() error { return sampleHostResources(gCtx, id, stream, logger) })
-	g.Go(func() error { return runLabelProbers(gCtx, id, rt, stream, logger) })
+	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, spool, logger) })
+	g.Go(func() error { return streamInventory(gCtx, id, rt, spool, logger) })
+	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, spool, logger) })
+	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
+	g.Go(func() error { return runLabelProbers(gCtx, id, rt, spool, logger) })
 
 	// Swarm: also push a periodic full topology snapshot (services/tasks/nodes)
 	// so the server can serve the Services/Tasks/Nodes views for this agent.
@@ -77,7 +77,7 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 		if dr, ok := rt.(*docker.Runtime); ok {
 			disc := swarm.NewServiceDiscovery(dr.Client(), logger)
 			client := dr.Client()
-			g.Go(func() error { return streamSwarmTopology(gCtx, id, disc, client, stream, logger) })
+			g.Go(func() error { return streamSwarmTopology(gCtx, id, disc, client, spool, logger) })
 		} else {
 			logger.Warn("collector: swarm runtime is not a docker runtime; topology snapshots disabled")
 		}
@@ -95,7 +95,7 @@ type labeledDiscoverer interface {
 // syncInventory pushes a full snapshot of every container the runtime currently
 // knows about, marked complete so the server can reconcile away what it no
 // longer sees. Discovery failure yields no message at all.
-func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	entry := func(c *cmodel.Container, labels map[string]string) *agentpb.ContainerEvent {
 		state, ok := containerStateToProto(c.State)
 		if !ok {
@@ -141,8 +141,8 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream
 		}
 	}
 
-	if err := stream.Send(inventoryEvent(id.AgentID, entries)); err != nil {
-		return fmt.Errorf("send inventory: %w", err)
+	if err := spool.Send(inventoryEvent(id.AgentID, entries)); err != nil {
+		logger.Debug("collector: inventory not sent", "error", err)
 	}
 	return nil
 }
@@ -161,7 +161,7 @@ func inventoryEvent(agentID string, entries []*agentpb.ContainerEvent) *agentpb.
 
 // streamInventory resends the full container inventory on a fixed cadence so the
 // server can reconcile away containers removed on this host.
-func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	ticker := time.NewTicker(containerInventoryInterval)
 	defer ticker.Stop()
 
@@ -170,7 +170,7 @@ func streamInventory(ctx context.Context, id *Identity, rt runtime.Runtime, stre
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := syncInventory(ctx, id, rt, stream, logger); err != nil {
+			if err := syncInventory(ctx, id, rt, spool, logger); err != nil {
 				return err
 			}
 		}
@@ -196,7 +196,7 @@ func containerStateToProto(s cmodel.ContainerState) (agentpb.ContainerState, boo
 	}
 }
 
-func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	evCh := rt.StreamEvents(ctx)
 	for {
 		select {
@@ -216,15 +216,14 @@ func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, s
 				ObservedAt: timestamppb.New(ev.Timestamp),
 				Body:       &agentpb.AgentEvent_Container{Container: proto},
 			}
-			if err := stream.Send(evt); err != nil {
-				logger.Debug("collector: send container event failed", "err", err)
-				return fmt.Errorf("send container event: %w", err)
+			if err := spool.Send(evt); err != nil {
+				logger.Debug("collector: container event not sent", "error", err)
 			}
 		}
 	}
 }
 
-func sampleRuntimeResources(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+func sampleRuntimeResources(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	ticker := time.NewTicker(resourceSampleInterval)
 	defer ticker.Stop()
 
@@ -233,7 +232,7 @@ func sampleRuntimeResources(ctx context.Context, id *Identity, rt runtime.Runtim
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := collectResourceSnapshots(ctx, id, rt, stream, logger); err != nil {
+			if err := collectResourceSnapshots(ctx, id, rt, spool, logger); err != nil {
 				return err
 			}
 		}
@@ -244,7 +243,7 @@ func sampleRuntimeResources(ctx context.Context, id *Identity, rt runtime.Runtim
 // the machine the agent runs on. These samples carry an empty container_id so
 // the server routes them to the per-agent host registry. Requires host /proc
 // access inside a container (mount -v /proc:/host/proc:ro).
-func sampleHostResources(ctx context.Context, id *Identity, stream *PushStream, logger *slog.Logger) error {
+func sampleHostResources(ctx context.Context, id *Identity, spool *Spool, logger *slog.Logger) error {
 	reader := hoststat.NewReader()
 	// The reader maintains its own 1s sampling loop for accurate CPU deltas.
 	go reader.Start(ctx)
@@ -258,9 +257,8 @@ func sampleHostResources(ctx context.Context, id *Identity, stream *PushStream, 
 			return nil
 		case <-ticker.C:
 			evt := hostResourceEvent(id.AgentID, reader)
-			if err := stream.Send(evt); err != nil {
-				logger.Debug("collector: send host sample failed", "err", err)
-				return fmt.Errorf("send host sample: %w", err)
+			if err := spool.Send(evt); err != nil {
+				logger.Debug("collector: host sample not sent", "error", err)
 			}
 		}
 	}
@@ -285,7 +283,7 @@ func hostResourceEvent(agentID string, reader *hoststat.Reader) *agentpb.AgentEv
 	}
 }
 
-func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runtime, stream *PushStream, logger *slog.Logger) error {
+func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	containers, err := rt.DiscoverAll(ctx)
 	if err != nil {
 		logger.Warn("collector: list containers for stats", "err", err)
@@ -327,9 +325,8 @@ func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runt
 				DiskWriteBytes:   diskW,
 			}},
 		}
-		if err := stream.Send(evt); err != nil {
-			logger.Debug("collector: send resource sample failed", "err", err)
-			return fmt.Errorf("send resource sample: %w", err)
+		if err := spool.Send(evt); err != nil {
+			logger.Debug("collector: resource sample not sent", "error", err)
 		}
 	}
 	return nil

@@ -118,13 +118,19 @@ type PushStream struct {
 
 	// commands executes server-issued commands; nil disables the command channel.
 	commands *CommandRunner
+	// onAck reports the server's last acknowledged sequence; nil ignores acks.
+	onAck func(uint64)
 	// ctx bounds command work to the stream's lifetime.
 	ctx context.Context
 }
 
 // Send wraps evt in a ClientMessage and delivers it, assigning a monotonic seq.
 func (ps *PushStream) Send(evt *agentpb.AgentEvent) error {
-	evt.Seq = ps.seq.Add(1)
+	// A caller that numbered the event owns that number: the spool puts its own
+	// row id here so the server's ack names the row to purge.
+	if evt.Seq == 0 {
+		evt.Seq = ps.seq.Add(1)
+	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	return ps.stream.Send(&agentpb.ClientMessage{
@@ -175,6 +181,9 @@ func (ps *PushStream) recvLoop(logger *slog.Logger) {
 				"retry_after_ms", errMsg.GetRetryAfterMs(),
 			)
 		}
+		if ack := msg.GetAck(); ack != nil && ps.onAck != nil {
+			ps.onAck(ack.GetLastEventSeq())
+		}
 		if cmd := msg.GetCommand(); cmd != nil && ps.commands != nil {
 			ps.commands.Handle(ps.ctx, ps, cmd)
 		}
@@ -188,7 +197,7 @@ func (ps *PushStream) recvLoop(logger *slog.Logger) {
 
 // DialPush opens the bidirectional Push stream, performs the Ed25519 auth handshake,
 // and returns a PushStream ready to send events.
-func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger) (*PushStream, error) {
+func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger, onAck func(uint64)) (*PushStream, error) {
 	stream, err := c.client.Push(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open Push stream: %w", err)
@@ -233,6 +242,7 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 		stream:   stream,
 		recvCh:   make(chan error, 1),
 		commands: c.commands,
+		onAck:    onAck,
 		ctx:      ctx,
 	}
 	go ps.recvLoop(logger)
@@ -248,6 +258,7 @@ func RunWithReconnect(
 	c *Client,
 	id *Identity,
 	logger *slog.Logger,
+	onAck func(uint64),
 	onStream func(ctx context.Context, stream *PushStream) error,
 ) error {
 	const stable = 30 * time.Second
@@ -259,7 +270,7 @@ func RunWithReconnect(
 		}
 
 		start := time.Now()
-		stream, dialErr := c.DialPush(ctx, id, logger)
+		stream, dialErr := c.DialPush(ctx, id, logger, onAck)
 		if dialErr != nil {
 			if ctx.Err() != nil {
 				return nil

@@ -14,14 +14,14 @@ package resource
 import (
 	"context"
 	"math"
-	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // HandleAgentEvent records a resource sample pushed by a remote agent.
-func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample) error {
+func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample, meta agentevent.Meta) error {
 	containerExternalID := ev.GetContainerId()
 	if containerExternalID == "" {
 		// Host-level sample: record the agent machine's CPU/mem/disk so the
@@ -33,7 +33,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 			MemTotal:   clampInt64(ev.GetMemoryLimitBytes()),
 			DiskTotal:  ev.GetHostDiskTotalBytes(),
 			DiskUsed:   ev.GetHostDiskUsedBytes(),
-			Timestamp:  time.Now(),
+			Timestamp:  meta.ObservedAt,
+			Replayed:   meta.Replayed,
 		})
 		return nil
 	}
@@ -52,7 +53,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		NetTxBytes:      clampInt64(ev.GetNetworkTxBytes()),
 		BlockReadBytes:  clampInt64(ev.GetDiskReadBytes()),
 		BlockWriteBytes: clampInt64(ev.GetDiskWriteBytes()),
-		Timestamp:       time.Now(),
+		Timestamp:       meta.ObservedAt,
+		Replayed:        meta.Replayed,
 		AgentID:         uid.Agent(agentID),
 	}
 

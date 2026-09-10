@@ -42,6 +42,42 @@ func TestOpenEnablesIncrementalAutoVacuum(t *testing.T) {
 	assert.True(t, db.incrementalVacuum, "Open must record the mode for the retention cleanup")
 }
 
+// The mode alone is not enough: incremental_vacuum frees one page per step, so
+// a plain Exec returns a single page and leaves the rest inside the file. This
+// pins the statement being driven to completion.
+func TestVacuumSliceReclaimsMoreThanOnePage(t *testing.T) {
+	requireSQLite(t)
+	db := openTestDB(t)
+	ctx := t.Context()
+
+	db.Writer().Start(ctx)
+
+	_, err := db.Writer().Exec(ctx, `CREATE TABLE vacuum_probe (id INTEGER PRIMARY KEY, blob BLOB)`)
+	require.NoError(t, err)
+
+	payload := make([]byte, 4096)
+	require.NoError(t, db.Writer().Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		for i := range 400 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO vacuum_probe(id, blob) VALUES (?, ?)`, i, payload); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	_, err = db.Writer().Exec(ctx, `DELETE FROM vacuum_probe`)
+	require.NoError(t, err)
+
+	before, err := freelistCount(ctx, db)
+	require.NoError(t, err)
+	require.Greater(t, before, 1, "the probe must leave several free pages to reclaim")
+
+	require.NoError(t, vacuumSlice(ctx, db))
+
+	after, err := freelistCount(ctx, db)
+	require.NoError(t, err)
+	assert.Less(t, after, before-1, "one slice must reclaim more than a single page")
+}
+
 // journal_size_limit and wal_autocheckpoint are per-connection settings, so
 // running them once through *sql.DB only configures whichever connection the
 // pool happened to hand out. An unbounded WAL on the other connections is what

@@ -36,6 +36,7 @@ type ResourceSnapshot struct {
 	BlockWriteBytes int64     `json:"block_write_bytes"`
 	Timestamp       time.Time `json:"timestamp"`
 	AgentID         string    `json:"agent_id"`
+	Replayed        bool      `json:"-"`
 }
 
 // HostSample is the latest host-level resource measurement for a single host:
@@ -49,6 +50,7 @@ type HostSample struct {
 	DiskTotal  uint64    `json:"disk_total"`
 	DiskUsed   uint64    `json:"disk_used"`
 	Timestamp  time.Time `json:"timestamp"`
+	Replayed   bool      `json:"-"`
 }
 
 // ResourceAlertConfig holds per-container resource alert thresholds.

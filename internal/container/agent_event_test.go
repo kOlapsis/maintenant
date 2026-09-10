@@ -20,8 +20,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // mockAgentRuntime implements AgentRuntimeResolver for tests.
@@ -76,7 +78,7 @@ func TestHandleAgentEvent_InsertsNewContainer(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-123", ev))
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-123", ev, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, err := store.GetContainerByExternalID(context.Background(), "agent-123", id)
 	require.NoError(t, err)
@@ -108,7 +110,7 @@ func TestHandleAgentEvent_InsertsNonRunningState(t *testing.T) {
 		Name:        "stopped",
 		State:       agentpb.ContainerState_CONTAINER_STATE_EXITED,
 	}
-	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-1", ev))
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-1", ev, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, err := store.GetContainerByExternalID(context.Background(), "agent-1", id)
 	require.NoError(t, err)
@@ -129,7 +131,7 @@ func TestHandleAgentEvent_CreatedStateNoInitialTransition(t *testing.T) {
 		Name:        "created",
 		State:       agentpb.ContainerState_CONTAINER_STATE_CREATED,
 	}
-	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-1", ev))
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-1", ev, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, _ := store.GetContainerByExternalID(context.Background(), "agent-1", id)
 	require.NotNil(t, c)
@@ -152,7 +154,7 @@ func TestHandleAgentEvent_UpdatesExistingState(t *testing.T) {
 		Name:        "svc",
 		State:       agentpb.ContainerState_CONTAINER_STATE_EXITED,
 	}
-	require.NoError(t, svc.HandleAgentEvent(context.Background(), agentID, ev))
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), agentID, ev, agentevent.Meta{ObservedAt: time.Now()}))
 
 	assert.Equal(t, StateExited, store.storedState(id))
 	c, _ := store.GetContainerByExternalID(context.Background(), agentID, id)
@@ -172,7 +174,7 @@ func TestHandleAgentEvent_SameExternalIDTwoAgents_NoTakeover(t *testing.T) {
 
 	require.NoError(t, svc.HandleAgentEvent(ctx, "agent-b", &agentpb.ContainerEvent{
 		ContainerId: id, Name: "shared", State: agentpb.ContainerState_CONTAINER_STATE_EXITED,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	a, _ := store.GetContainerByExternalID(ctx, "agent-a", id)
 	require.NotNil(t, a)
@@ -202,7 +204,7 @@ func TestHandleAgentEvent_UpdatesImageOnRedeploy(t *testing.T) {
 		Image:       "app:v2",
 		State:       agentpb.ContainerState_CONTAINER_STATE_RUNNING,
 	}
-	require.NoError(t, svc.HandleAgentEvent(context.Background(), agentID, ev))
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), agentID, ev, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, _ := store.GetContainerByExternalID(context.Background(), agentID, id)
 	require.NotNil(t, c)
@@ -218,7 +220,7 @@ func TestHandleAgentEvent_RuntimeResolver(t *testing.T) {
 		id := extID("swarmsvc")
 		require.NoError(t, svc.HandleAgentEvent(context.Background(), "a", &agentpb.ContainerEvent{
 			ContainerId: id, Name: "swarmsvc", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
-		}))
+		}, agentevent.Meta{ObservedAt: time.Now()}))
 		c, _ := store.GetContainerByExternalID(context.Background(), "a", id)
 		require.NotNil(t, c)
 		assert.Equal(t, "swarm", c.RuntimeType)
@@ -232,7 +234,7 @@ func TestHandleAgentEvent_RuntimeResolver(t *testing.T) {
 		id := extID("errsvc")
 		require.NoError(t, svc.HandleAgentEvent(context.Background(), "a", &agentpb.ContainerEvent{
 			ContainerId: id, Name: "errsvc", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
-		}))
+		}, agentevent.Meta{ObservedAt: time.Now()}))
 		c, _ := store.GetContainerByExternalID(context.Background(), "a", id)
 		require.NotNil(t, c)
 		assert.Equal(t, "docker", c.RuntimeType)
@@ -256,7 +258,7 @@ func TestHandleAgentEvent_AppliesMaintenantLabels(t *testing.T) {
 			labelPBChannels:  "ops",
 		},
 	}
-	require.NoError(t, svc.HandleAgentEvent(context.Background(), "a", ev))
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "a", ev, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, _ := store.GetContainerByExternalID(context.Background(), "a", id)
 	require.NotNil(t, c)
@@ -272,7 +274,7 @@ func TestHandleAgentEvent_EmptyContainerIDIsNoOp(t *testing.T) {
 	svc := newTestService(store)
 	require.NoError(t, svc.HandleAgentEvent(context.Background(), "a", &agentpb.ContainerEvent{
 		ContainerId: "", Name: "x", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 	got, err := store.ListContainers(context.Background(), ListContainersOpts{IncludeArchived: true})
 	require.NoError(t, err)
 	assert.Empty(t, got, "events without a container id must be ignored")
@@ -287,7 +289,7 @@ func TestHandleAgentEvent_LiveLifecycleRunningThenCompleted(t *testing.T) {
 	// 1) inventory: running → insert
 	require.NoError(t, svc.HandleAgentEvent(ctx, "agent-1", &agentpb.ContainerEvent{
 		ContainerId: id, Name: "lifecycle", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 	assert.Equal(t, StateRunning, store.storedState(id))
 
 	// 2) live: exited with graceful exit code carried in StatusMessage → completed
@@ -295,7 +297,7 @@ func TestHandleAgentEvent_LiveLifecycleRunningThenCompleted(t *testing.T) {
 		ContainerId: id, Name: "lifecycle",
 		State:         agentpb.ContainerState_CONTAINER_STATE_EXITED,
 		StatusMessage: "0",
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 	assert.Equal(t, StateCompleted, store.storedState(id))
 }
 
@@ -315,7 +317,7 @@ func TestHandleAgentEvent_DieNonZeroExitBecomesExited(t *testing.T) {
 		ContainerId: id, Name: "crash",
 		State:         agentpb.ContainerState_CONTAINER_STATE_EXITED,
 		StatusMessage: "1",
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 	assert.Equal(t, StateExited, store.storedState(id))
 }
 
@@ -334,7 +336,7 @@ func TestHandleAgentEvent_PreservesImageWhenEventImageEmpty(t *testing.T) {
 	// Live event without an image must not blank the stored image.
 	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
 		ContainerId: id, Name: "noimg", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 	c, _ := store.GetContainerByExternalID(ctx, agentID, id)
 	require.NotNil(t, c)
 	assert.Equal(t, "keep:me", c.Image)
@@ -354,7 +356,7 @@ func TestHandleAgentEvent_EmitsStateChangedWithAgentID(t *testing.T) {
 
 	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
 		ContainerId: id, Name: "emits", State: agentpb.ContainerState_CONTAINER_STATE_EXITED,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	var found bool
 	for _, e := range events {
@@ -412,7 +414,7 @@ func TestHandleAgentEvent_ResurrectsArchivedContainer(t *testing.T) {
 		Name:        "zombie",
 		State:       agentpb.ContainerState_CONTAINER_STATE_RUNNING,
 	}
-	require.NoError(t, svc.HandleAgentEvent(context.Background(), agentID, ev))
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), agentID, ev, agentevent.Meta{ObservedAt: time.Now()}))
 
 	assert.False(t, store.isArchived(id), "a re-reported container must be un-archived")
 	c, _ := store.GetContainerByExternalID(context.Background(), agentID, id)
@@ -436,7 +438,7 @@ func TestHandleAgentInventory_ArchivesContainersAbsentFromSnapshot(t *testing.T)
 	inv := &agentpb.ContainerInventory{Containers: []*agentpb.ContainerEvent{
 		{ContainerId: kept, Name: "kept", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING},
 	}}
-	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, inv))
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, inv, agentevent.Meta{ObservedAt: time.Now()}))
 
 	assert.False(t, store.isArchived(kept), "a container present in the snapshot stays live")
 	assert.True(t, store.isArchived(gone), "a container absent from the snapshot must be archived")
@@ -459,7 +461,7 @@ func TestHandleAgentInventory_LeavesOtherAgentsAlone(t *testing.T) {
 	inv := &agentpb.ContainerInventory{Containers: []*agentpb.ContainerEvent{
 		{ContainerId: mine, Name: "mine", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING},
 	}}
-	require.NoError(t, svc.HandleAgentInventory(context.Background(), "agent-a", inv))
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), "agent-a", inv, agentevent.Meta{ObservedAt: time.Now()}))
 
 	assert.False(t, store.isArchived(theirs), "another agent's containers must be untouched")
 }
@@ -476,7 +478,7 @@ func TestHandleAgentInventory_EmptyIncompleteSnapshotArchivesNothing(t *testing.
 	seed.AgentID = agentID
 	store.seed(seed)
 
-	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, &agentpb.ContainerInventory{}))
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, &agentpb.ContainerInventory{}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	assert.False(t, store.isArchived(id), "an incomplete empty snapshot must never archive anything")
 }
@@ -490,7 +492,7 @@ func TestHandleAgentInventory_InsertsUnknownContainers(t *testing.T) {
 	inv := &agentpb.ContainerInventory{Containers: []*agentpb.ContainerEvent{
 		{ContainerId: id, Name: "fresh", Image: "app:v1", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING},
 	}}
-	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, inv))
+	require.NoError(t, svc.HandleAgentInventory(context.Background(), agentID, inv, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, _ := store.GetContainerByExternalID(context.Background(), agentID, id)
 	require.NotNil(t, c, "an inventory entry we have never seen must be inserted")
@@ -516,7 +518,7 @@ func TestHandleAgentEvent_HealthStatus_RecordsTransitionAndEvent(t *testing.T) {
 		State:          agentpb.ContainerState_CONTAINER_STATE_UNSPECIFIED,
 		HealthStatus:   "unhealthy",
 		HasHealthCheck: true,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	got := store.storedHealthStatus(id)
 	require.NotNil(t, got)
@@ -547,7 +549,7 @@ func TestHandleAgentEvent_InventoryEntrySeedsHealthAndHasHealthCheck(t *testing.
 			HealthStatus:   "starting",
 			HasHealthCheck: true,
 		}},
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, _ := store.GetContainerByExternalID(ctx, agentID, id)
 	require.NotNil(t, c)
@@ -574,7 +576,7 @@ func TestHandleAgentEvent_Destroyed_ArchivesOnlyThisAgentRow(t *testing.T) {
 		Name:        "doomed",
 		State:       agentpb.ContainerState_CONTAINER_STATE_EXITED,
 		Destroyed:   true,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	a, _ := store.GetContainerByExternalID(ctx, "agent-a", id)
 	require.NotNil(t, a)
@@ -594,7 +596,7 @@ func TestHandleAgentEvent_DestroyedUnknown_NoInsert(t *testing.T) {
 		Name:        "ghost",
 		State:       agentpb.ContainerState_CONTAINER_STATE_EXITED,
 		Destroyed:   true,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	got, err := store.ListContainers(ctx, ListContainersOpts{IncludeArchived: true, IncludeIgnored: true})
 	require.NoError(t, err)
@@ -613,7 +615,7 @@ func TestHandleAgentEvent_UnknownHealthOnly_InsertsRunningWithHealth(t *testing.
 		Name:         "newhealth",
 		State:        agentpb.ContainerState_CONTAINER_STATE_UNSPECIFIED,
 		HealthStatus: "healthy",
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	c, _ := store.GetContainerByExternalID(ctx, agentID, id)
 	require.NotNil(t, c)
@@ -634,7 +636,7 @@ func TestHandleAgentInventory_EmptyComplete_ArchivesFleet(t *testing.T) {
 	seed.AgentID = agentID
 	store.seed(seed)
 
-	require.NoError(t, svc.HandleAgentInventory(ctx, agentID, &agentpb.ContainerInventory{Complete: true}))
+	require.NoError(t, svc.HandleAgentInventory(ctx, agentID, &agentpb.ContainerInventory{Complete: true}, agentevent.Meta{ObservedAt: time.Now()}))
 
 	assert.True(t, store.isArchived(id), "a complete empty snapshot means the host has no containers left")
 }
@@ -648,6 +650,39 @@ func TestHandleAgentEvent_InsertErrorIsReturned(t *testing.T) {
 		ContainerId: extID("failing"),
 		Name:        "failing",
 		State:       agentpb.ContainerState_CONTAINER_STATE_RUNNING,
-	})
+	}, agentevent.Meta{ObservedAt: time.Now()})
 	require.Error(t, err)
+}
+
+// FR-017: a replayed container event writes the state and the timeline, and
+// emits nothing.
+func TestHandleAgentEvent_ReplayedRecordsStateWithoutEmitting(t *testing.T) {
+	store := newSvcStore()
+	var events []capturedEvent
+	svc := newTestService(store, captureEvents(&events))
+	ctx := context.Background()
+	id := extID("replay")
+
+	agentID := "agent-replay"
+	seed := makeTestContainer(id, StateRunning)
+	seed.AgentID = agentID
+	store.seed(seed)
+
+	observed := time.Now().Add(-3 * time.Hour).Truncate(time.Second)
+	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+		ContainerId: id, Name: "replay", State: agentpb.ContainerState_CONTAINER_STATE_EXITED,
+	}, agentevent.Meta{ObservedAt: observed, Replayed: true}))
+
+	c, err := store.GetContainerByExternalID(ctx, uid.Agent(agentID), id)
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	assert.Equal(t, StateExited, c.State, "a replayed event must still move the container state")
+
+	transitions := store.transitionsFor(c.ID)
+	require.Len(t, transitions, 1, "a replayed event must still be written to the timeline")
+	assert.True(t, observed.Equal(transitions[0].Timestamp))
+
+	for _, e := range events {
+		assert.NotEqual(t, event.ContainerStateChanged, e.typ, "a replayed event must emit nothing")
+	}
 }

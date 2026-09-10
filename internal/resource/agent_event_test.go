@@ -14,10 +14,12 @@ package resource
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -40,7 +42,7 @@ func TestHandleAgentEvent_PersistsSnapshotForAgentContainer(t *testing.T) {
 		CpuPercent:       12.5,
 		MemoryBytes:      1000,
 		MemoryLimitBytes: 2000,
-	})
+	}, agentevent.Meta{ObservedAt: time.Now()})
 	require.NoError(t, err)
 
 	require.Len(t, rstore.snapshots, 1, "snapshot must be persisted once the container exists")
@@ -57,7 +59,7 @@ func TestHandleAgentEvent_SkipsWhenContainerUnknown(t *testing.T) {
 
 	err := svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
 		ContainerId: "unknown", CpuPercent: 5,
-	})
+	}, agentevent.Meta{ObservedAt: time.Now()})
 	require.NoError(t, err)
 	assert.Empty(t, rstore.snapshots, "no snapshot when container not yet known")
 }
@@ -73,7 +75,7 @@ func TestHandleAgentEvent_UsesRowIDNotDerivedID(t *testing.T) {
 
 	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
 		ContainerId: extID, CpuPercent: 3,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 	require.Len(t, rstore.snapshots, 1)
 	assert.Equal(t, c.ID, rstore.snapshots[0].ContainerID)
 }
@@ -89,6 +91,32 @@ func TestHandleAgentEvent_IgnoresOtherAgentsContainer(t *testing.T) {
 
 	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-b", &agentpb.ResourceSample{
 		ContainerId: extID, CpuPercent: 3,
-	}))
+	}, agentevent.Meta{ObservedAt: time.Now()}))
 	assert.Empty(t, rstore.snapshots, "a sample must never land on another agent's container")
+}
+
+// FR-026: a replayed sample is stored at the time the agent observed it, and it
+// must not wake the threshold pipeline.
+func TestHandleAgentEvent_ReplayedSampleKeepsObservationTime(t *testing.T) {
+	extID := "replay0123456789"
+	wantID := uid.Container(uid.Agent("agent-r"), extID)
+	c := &container.Container{ID: wantID, ExternalID: extID, AgentID: "agent-r", Name: "demo"}
+	csvc := buildContainerSvc(newMockContainerStore(c))
+
+	rstore := newMockResourceStore()
+	callbackInvoked := false
+	svc := newTestService(rstore, csvc, func(string, interface{}) { callbackInvoked = true })
+
+	observed := time.Now().Add(-90 * time.Minute).Truncate(time.Second)
+	err := svc.HandleAgentEvent(context.Background(), "agent-r", &agentpb.ResourceSample{
+		ContainerId: extID,
+		CpuPercent:  42,
+	}, agentevent.Meta{ObservedAt: observed, Replayed: true})
+	require.NoError(t, err)
+
+	require.Len(t, rstore.snapshots, 1, "a replayed sample must still be persisted")
+	assert.True(t, observed.Equal(rstore.snapshots[0].Timestamp),
+		"the snapshot must carry the observation time, not the receive time")
+	assert.True(t, rstore.snapshots[0].Replayed)
+	assert.False(t, callbackInvoked, "a replayed sample must not feed the threshold pipeline")
 }
