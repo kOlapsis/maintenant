@@ -15,38 +15,48 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
-const osvBatchURL = "https://api.osv.dev/v1/querybatch"
+const (
+	osvBaseURL    = "https://api.osv.dev"
+	maxOSVPages   = 10
+	cveCacheTTL   = 24 * time.Hour
+	cveSummaryMax = 512
+)
 
 // CVEClient queries OSV.dev for known vulnerabilities.
 type CVEClient struct {
-	store  UpdateStore
-	client *http.Client
-	logger *slog.Logger
-	delay  time.Duration
+	store   UpdateStore
+	client  *http.Client
+	logger  *slog.Logger
+	delay   time.Duration
+	baseURL string
 }
 
 // NewCVEClient creates a CVE lookup client.
 func NewCVEClient(store UpdateStore, logger *slog.Logger) *CVEClient {
 	return &CVEClient{
-		store:  store,
-		client: &http.Client{Timeout: 30 * time.Second},
-		logger: logger,
-		delay:  500 * time.Millisecond,
+		store:   store,
+		client:  &http.Client{Timeout: 30 * time.Second},
+		logger:  logger,
+		delay:   500 * time.Millisecond,
+		baseURL: osvBaseURL,
 	}
 }
 
 // osvQuery is a single query in the OSV batch request.
 type osvQuery struct {
-	Package osvPackage `json:"package"`
-	Version string     `json:"version,omitempty"`
+	Package   osvPackage `json:"package"`
+	Version   string     `json:"version,omitempty"`
+	PageToken string     `json:"page_token,omitempty"`
 }
 
 type osvPackage struct {
@@ -59,20 +69,30 @@ type osvBatchRequest struct {
 	Queries []osvQuery `json:"queries"`
 }
 
-// osvBatchResponse is the batch response.
+// osvBatchResponse is the batch response: ids only, no vulnerability detail.
 type osvBatchResponse struct {
-	Results []osvResult `json:"results"`
+	Results []osvBatchResult `json:"results"`
 }
 
-type osvResult struct {
-	Vulns []osvVuln `json:"vulns"`
+type osvBatchResult struct {
+	Vulns         []osvBatchVuln `json:"vulns"`
+	NextPageToken string         `json:"next_page_token"`
 }
 
-type osvVuln struct {
-	ID       string        `json:"id"`
-	Summary  string        `json:"summary"`
-	Severity []osvSeverity `json:"severity"`
-	Affected []osvAffected `json:"affected"`
+type osvBatchVuln struct {
+	ID       string `json:"id"`
+	Modified string `json:"modified"`
+}
+
+// osvVulnRecord is the full vulnerability record from GET /v1/vulns/{id}.
+type osvVulnRecord struct {
+	ID         string         `json:"id"`
+	Summary    string         `json:"summary"`
+	Details    string         `json:"details"`
+	Severity   []osvSeverity  `json:"severity"`
+	Affected   []osvAffected  `json:"affected"`
+	References []osvReference `json:"references"`
+	Aliases    []string       `json:"aliases"`
 }
 
 type osvSeverity struct {
@@ -96,6 +116,11 @@ type osvEvent struct {
 	Fixed      string `json:"fixed,omitempty"`
 }
 
+type osvReference struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
 // ImageCVEQuery holds parameters for querying CVEs for an image.
 type ImageCVEQuery struct {
 	ContainerID string
@@ -104,7 +129,8 @@ type ImageCVEQuery struct {
 	Version     string
 }
 
-// QueryCVEs queries OSV.dev for a batch of images and returns CVEs.
+// QueryCVEs queries OSV.dev for a batch of images and returns CVEs, hydrating
+// each vulnerability id returned by the batch endpoint with its full record.
 func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map[string][]*CVECacheEntry, error) {
 	results := make(map[string][]*CVECacheEntry)
 
@@ -130,7 +156,6 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		return results, nil
 	}
 
-	// Build OSV batch request
 	osvQueries := make([]osvQuery, len(uncached))
 	for i, q := range uncached {
 		osvQueries[i] = osvQuery{
@@ -139,135 +164,228 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 		}
 	}
 
-	body, err := json.Marshal(osvBatchRequest{Queries: osvQueries})
+	batchResp, err := c.postBatch(ctx, osvQueries)
 	if err != nil {
-		return results, fmt.Errorf("marshal osv request: %w", err)
+		return results, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, osvBatchURL, bytes.NewReader(body))
-	if err != nil {
-		return results, fmt.Errorf("create osv request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return results, fmt.Errorf("osv request: %w", err)
-	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return results, fmt.Errorf("osv returned status %d", resp.StatusCode)
-	}
-
-	var batchResp osvBatchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
-		return results, fmt.Errorf("decode osv response: %w", err)
-	}
-
-	// Process results
-	now := time.Now()
-	expires := now.Add(24 * time.Hour)
-
-	for i, result := range batchResp.Results {
-		if i >= len(uncached) {
+	vulnIDs := make([][]string, len(uncached))
+	for i := range uncached {
+		if i >= len(batchResp.Results) {
 			break
 		}
-		q := uncached[i]
-		var entries []*CVECacheEntry
-
-		for _, vuln := range result.Vulns {
-			severity, score := parseSeverity(vuln)
-			fixedIn := extractFixedIn(vuln)
-
-			entry := CVECacheEntry{
-				Ecosystem:      q.Ecosystem,
-				PackageName:    q.PackageName,
-				PackageVersion: q.Version,
-				CVEID:          vuln.ID,
-				CVSSScore:      score,
-				Severity:       severity,
-				Summary:        truncate(vuln.Summary, 512),
-				FixedIn:        fixedIn,
-				FetchedAt:      now,
-				ExpiresAt:      expires,
-			}
-
-			if _, err := c.store.InsertCVECacheEntry(ctx, &entry); err != nil {
-				c.logger.Warn("cve: failed to cache entry", "cve", vuln.ID, "error", err)
-			}
-
-			entries = append(entries, &entry)
+		ids, err := c.paginateResult(ctx, osvQueries[i], batchResp.Results[i])
+		if err != nil {
+			return results, err
 		}
+		vulnIDs[i] = ids
+	}
 
+	records := c.hydrateVulns(ctx, vulnIDs)
+
+	now := time.Now()
+	expires := now.Add(cveCacheTTL)
+
+	for i, q := range uncached {
+		var entries []*CVECacheEntry
+		for _, id := range vulnIDs[i] {
+			rec, ok := records[id]
+			if !ok {
+				continue
+			}
+			entry := c.buildCVECacheEntry(q, rec, now, expires)
+			if _, err := c.store.InsertCVECacheEntry(ctx, entry); err != nil {
+				c.logger.Warn("cve: failed to cache entry", "cve", entry.CVEID, "error", err)
+			}
+			entries = append(entries, entry)
+		}
 		results[q.ContainerID] = entries
 	}
 
 	return results, nil
 }
 
-func parseSeverity(vuln osvVuln) (CVESeverity, float64) {
-	for _, s := range vuln.Severity {
-		if s.Type == "CVSS_V3" {
-			score := parseCVSSScore(s.Score)
-			if score >= 9.0 {
-				return CVESeverityCritical, score
+// paginateResult follows next_page_token for a single query's batch result,
+// re-issuing the batch with only that query until the token is exhausted.
+func (c *CVEClient) paginateResult(ctx context.Context, q osvQuery, first osvBatchResult) ([]string, error) {
+	ids := idsFromVulns(first.Vulns)
+	token := first.NextPageToken
+	page := 1
+
+	for token != "" {
+		if page >= maxOSVPages {
+			c.logger.Warn("cve: osv pagination cap reached", "package", q.Package.Name, "ecosystem", q.Package.Ecosystem)
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return ids, ctx.Err()
+		case <-time.After(c.delay):
+		}
+
+		pageQuery := q
+		pageQuery.PageToken = token
+		resp, err := c.postBatch(ctx, []osvQuery{pageQuery})
+		if err != nil {
+			return ids, err
+		}
+		page++
+		if len(resp.Results) == 0 {
+			break
+		}
+		ids = append(ids, idsFromVulns(resp.Results[0].Vulns)...)
+		token = resp.Results[0].NextPageToken
+	}
+
+	return ids, nil
+}
+
+func (c *CVEClient) postBatch(ctx context.Context, queries []osvQuery) (osvBatchResponse, error) {
+	body, err := json.Marshal(osvBatchRequest{Queries: queries})
+	if err != nil {
+		return osvBatchResponse{}, fmt.Errorf("marshal osv request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/querybatch", bytes.NewReader(body))
+	if err != nil {
+		return osvBatchResponse{}, fmt.Errorf("create osv request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return osvBatchResponse{}, fmt.Errorf("osv request: %w", err)
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return osvBatchResponse{}, fmt.Errorf("osv returned status %d", resp.StatusCode)
+	}
+
+	var batchResp osvBatchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&batchResp); err != nil {
+		return osvBatchResponse{}, fmt.Errorf("decode osv response: %w", err)
+	}
+	return batchResp, nil
+}
+
+// hydrateVulns fetches each distinct vuln id once, memoising across queries.
+// A fetch failure for one id is logged and skipped, never fails the run.
+func (c *CVEClient) hydrateVulns(ctx context.Context, perQueryIDs [][]string) map[string]*osvVulnRecord {
+	records := make(map[string]*osvVulnRecord)
+	seen := make(map[string]bool)
+	fetched := false
+
+	for _, ids := range perQueryIDs {
+		for _, id := range ids {
+			if seen[id] {
+				continue
 			}
-			if score >= 7.0 {
-				return CVESeverityHigh, score
+			seen[id] = true
+
+			if fetched {
+				select {
+				case <-ctx.Done():
+					return records
+				case <-time.After(c.delay):
+				}
 			}
-			if score >= 4.0 {
-				return CVESeverityMedium, score
+			fetched = true
+
+			rec, err := c.fetchVuln(ctx, id)
+			if err != nil {
+				c.logger.Warn("cve: failed to fetch vuln", "id", id, "error", err)
+				continue
 			}
-			return CVESeverityLow, score
+			records[id] = rec
 		}
 	}
-	// Default based on OSV ID prefix
-	if strings.HasPrefix(vuln.ID, "CVE-") {
-		return CVESeverityMedium, 5.0
-	}
-	return CVESeverityLow, 0
+
+	return records
 }
 
-// parseCVSSScore extracts the base score from a CVSS v3 vector string.
-func parseCVSSScore(vector string) float64 {
-	// CVSS vectors look like: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
-	// We use a simplified scoring based on the attack vector components.
-	if vector == "" {
-		return 0
+func (c *CVEClient) fetchVuln(ctx context.Context, id string) (*osvVulnRecord, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/vulns/"+url.PathEscape(id), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create osv vuln request: %w", err)
 	}
 
-	score := 5.0 // base
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("osv vuln request: %w", err)
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
-	if strings.Contains(vector, "AV:N") {
-		score += 1.5
-	}
-	if strings.Contains(vector, "AC:L") {
-		score += 0.5
-	}
-	if strings.Contains(vector, "PR:N") {
-		score += 0.5
-	}
-	if strings.Contains(vector, "C:H") {
-		score += 1.0
-	}
-	if strings.Contains(vector, "I:H") {
-		score += 0.5
-	}
-	if strings.Contains(vector, "A:H") {
-		score += 0.5
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("osv vuln %s returned status %d", id, resp.StatusCode)
 	}
 
-	if score > 10.0 {
-		score = 10.0
+	var rec osvVulnRecord
+	if err := json.NewDecoder(resp.Body).Decode(&rec); err != nil {
+		return nil, fmt.Errorf("decode osv vuln %s: %w", id, err)
 	}
-	return score
+	return &rec, nil
 }
 
-func extractFixedIn(vuln osvVuln) string {
-	for _, a := range vuln.Affected {
+func (c *CVEClient) buildCVECacheEntry(q ImageCVEQuery, rec *osvVulnRecord, now, expires time.Time) *CVECacheEntry {
+	entry := &CVECacheEntry{
+		Ecosystem:      q.Ecosystem,
+		PackageName:    q.PackageName,
+		PackageVersion: q.Version,
+		CVEID:          rec.ID,
+		Summary:        summaryFor(rec),
+		FixedIn:        fixedInFor(q, rec),
+		Severity:       CVESeverityUnknown,
+		FetchedAt:      now,
+		ExpiresAt:      expires,
+	}
+
+	if vector, ok := cvssV3Vector(rec); ok {
+		entry.CVSSVector = vector
+		if metrics, err := ParseCVSSv3(vector); err == nil {
+			entry.CVSSScore = metrics.BaseScore()
+			entry.Severity = SeverityForScore(entry.CVSSScore)
+		} else if !errors.Is(err, ErrInvalidCVSS) {
+			c.logger.Warn("cve: unexpected cvss parse error", "cve", rec.ID, "error", err)
+		}
+	}
+
+	if len(rec.References) > 0 {
+		if b, err := json.Marshal(rec.References); err == nil {
+			entry.ReferencesJSON = string(b)
+		}
+	}
+
+	return entry
+}
+
+func idsFromVulns(vulns []osvBatchVuln) []string {
+	ids := make([]string, len(vulns))
+	for i, v := range vulns {
+		ids[i] = v.ID
+	}
+	return ids
+}
+
+func cvssV3Vector(rec *osvVulnRecord) (string, bool) {
+	for _, s := range rec.Severity {
+		if s.Type == "CVSS_V3" {
+			return s.Score, true
+		}
+	}
+	return "", false
+}
+
+func fixedInFor(q ImageCVEQuery, rec *osvVulnRecord) string {
+	for _, a := range rec.Affected {
+		if a.Package.Ecosystem != q.Ecosystem || !strings.EqualFold(a.Package.Name, q.PackageName) {
+			continue
+		}
 		for _, r := range a.Ranges {
 			for _, e := range r.Events {
 				if e.Fixed != "" {
@@ -277,6 +395,13 @@ func extractFixedIn(vuln osvVuln) string {
 		}
 	}
 	return ""
+}
+
+func summaryFor(rec *osvVulnRecord) string {
+	if rec.Summary != "" {
+		return rec.Summary
+	}
+	return truncate(rec.Details, cveSummaryMax)
 }
 
 func truncate(s string, maxLen int) string {

@@ -122,6 +122,7 @@ type App struct {
 	scorer         *security.Scorer
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
+	subscribeRL    *ratelimit.Limiter
 	licenseMgr     *license.Manager
 	mcpServer      *gomcp.Server
 	// degradedPlanLogged keeps the multi-host degradation to one line: the
@@ -168,6 +169,22 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		cfg:    cfg,
 		logger: logger,
 	}
+
+	trustedProxies, err := cfg.ParseTrustedProxies()
+	if err != nil {
+		return nil, err
+	}
+	clientIP := ratelimit.NewClientIPResolver(trustedProxies)
+
+	// --- Rate limiters ---
+	// Public surfaces (/ping/, /status/, /mcp, /oauth/) take the tight bucket.
+	a.rl = ratelimit.New(10, 20, clientIP)
+	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
+	// parallel calls, so the tight bucket would 429 ordinary use. This is a
+	// flood ceiling, not a quota — it must never be reachable by the UI.
+	a.apiRL = ratelimit.New(50, 200, clientIP)
+	// Status-page subscriptions: five per hour and per address.
+	a.subscribeRL = ratelimit.New(5.0/3600.0, 5, clientIP)
 
 	if cfg.K8sNamespaces != "" {
 		logger.Info("K8s namespace allowlist configured", "namespaces", cfg.K8sNamespaces)
@@ -483,7 +500,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	a.maintScheduler = status.NewMaintenanceScheduler(maintenanceStore, statusCompStore, incidentStore, a.statusSvc, logger)
 	a.personalizationSvc = status.NewPersonalizationService(personalizationStore, logger.With("component", "personalization"))
 	personalizationPublicHandler := status.NewPersonalizationPublicHandler(a.personalizationSvc, logger)
-	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger)
+	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL)
 	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
 	// --- Webhook dispatcher ---
@@ -519,12 +536,13 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- Security posture scoring ---
 	ackStore := store.NewAcknowledgmentStore(db)
 	a.scorer = security.NewScorer(security.ScorerDeps{
-		Certs:     &CertPostureAdapter{CertSvc: a.certSvc},
-		CVEs:      &CVEPostureAdapter{Store: updateStore},
-		Updates:   &UpdatePostureAdapter{Store: updateStore},
-		Security:  a.securitySvc,
-		Acks:      ackStore,
-		Threshold: cfg.SecurityScoreThreshold,
+		Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
+		CVEs:           &CVEPostureAdapter{Store: updateStore},
+		CVEEvaluations: &CVEEvaluationPostureAdapter{Store: updateStore},
+		Updates:        &UpdatePostureAdapter{Store: updateStore},
+		Security:       a.securitySvc,
+		Acks:           ackStore,
+		Threshold:      cfg.SecurityScoreThreshold,
 	})
 
 	if cfg.SecurityScoreThreshold > 0 {
@@ -645,15 +663,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		BuildVersion:         cfg.Version,
 		OrganisationName:     cfg.OrgName,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
+		TrustedProxies:       trustedProxies,
 	})
-
-	// --- Rate limiters ---
-	// Public surfaces (/ping/, /status/, /mcp) take the tight bucket.
-	a.rl = ratelimit.New(10, 20)
-	// /api/ gets its own, far looser one: a dashboard load fans out dozens of
-	// parallel calls, so the tight bucket would 429 ordinary use. This is a
-	// flood ceiling, not a quota — it must never be reachable by the UI.
-	a.apiRL = ratelimit.New(50, 200)
 
 	// --- MCP Server ---
 	mcpSvc := &mcp.Services{
@@ -771,6 +782,12 @@ func (a *App) Start(ctx context.Context) error {
 		return err
 	}
 
+	// Derived so an early return (e.g. a failed bind below) cancels every
+	// background goroutine started with ctx, instead of leaking them until
+	// the caller's own context is cancelled.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	a.db.StartWriter(ctx)
 
 	// Registered after the writer starts: on SQLite every write goes through it.
@@ -832,6 +849,7 @@ func (a *App) Start(ctx context.Context) error {
 	// Background services (always run, regardless of runtime availability)
 	go a.rl.Start(ctx)
 	go a.apiRL.Start(ctx)
+	go a.subscribeRL.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
 	go a.maintScheduler.Start(ctx)
@@ -914,9 +932,13 @@ func (a *App) Start(ctx context.Context) error {
 	if a.cfg.Mode == "agent" {
 		a.logger.Warn("agent mode: HTTP server disabled")
 	} else {
+		ln, err := net.Listen("tcp", a.srv.Addr)
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", a.srv.Addr, err)
+		}
+		a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
 		go func() {
-			a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
-			if err := a.srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := a.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				a.logger.Error("HTTP server error", "error", err)
 			}
 		}()
@@ -1017,12 +1039,15 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 
 	grpcURL := "grpcs://" + a.cfg.MultiHost.GRPCListen
 	agentCfg := agent.AgentConfig{
-		DataDir:            agentDataDir,
-		ServerURL:          grpcURL,
-		EnrollmentToken:    enrollToken,
-		Label:              "embedded",
-		AgentVersion:       a.cfg.Version,
-		InsecureSkipVerify: true, // loopback TLS
+		DataDir:             agentDataDir,
+		ServerURL:           grpcURL,
+		EnrollmentToken:     enrollToken,
+		Label:               "embedded",
+		AgentVersion:        a.cfg.Version,
+		InsecureSkipVerify:  true, // loopback TLS
+		SpoolMaxMemoryBytes: a.cfg.MultiHost.AgentSpoolMaxMemoryBytes,
+		SpoolMaxDiskBytes:   a.cfg.MultiHost.AgentSpoolMaxDiskBytes,
+		SpoolMaxAgeSeconds:  a.cfg.MultiHost.AgentSpoolMaxAgeSeconds,
 	}
 
 	go func() {
@@ -1067,12 +1092,10 @@ func (a *App) startAgentGRPC(ctx context.Context) error {
 	}
 
 	a.agentSrv.StartTokenGC(ctx)
-	go func() {
-		if err := a.agentSrv.Start(ctx, listen, tlsCfg); err != nil && !errors.Is(err, context.Canceled) {
-			a.logger.Error("agentserver: stopped", "err", err)
-		}
-	}()
-	a.logger.Info("agent gRPC server scheduled", "listen", listen)
+	if err := a.agentSrv.Start(ctx, listen, tlsCfg); err != nil {
+		return err
+	}
+	a.logger.Info("agent gRPC server listening", "listen", listen)
 	return nil
 }
 

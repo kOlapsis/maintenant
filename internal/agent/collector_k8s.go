@@ -31,10 +31,10 @@ const kubernetesTopologyInterval = 30 * time.Second
 // samples. The host samples report CPU/mem/disk of the node the agent pod runs
 // on, so the dashboard and cluster overview can show its gauges like any other
 // host. Blocks until ctx is cancelled or a push fails.
-func collectKubernetesRuntime(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, stream *PushStream, logger *slog.Logger) error {
+func collectKubernetesRuntime(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, spool *Spool, logger *slog.Logger) error {
 	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error { return streamKubernetesTopology(gCtx, id, src, stream, logger) })
-	g.Go(func() error { return sampleHostResources(gCtx, id, stream, logger) })
+	g.Go(func() error { return streamKubernetesTopology(gCtx, id, src, spool, logger) })
+	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
 	return g.Wait()
 }
 
@@ -42,14 +42,17 @@ func collectKubernetesRuntime(ctx context.Context, id *Identity, src kubernetes.
 // (namespaces, workloads, pods, nodes) so the server can serve the
 // Workloads/Pods/Namespaces/Nodes views for this agent. Sends one snapshot
 // immediately, then on each tick. (Per-pod metrics remain a server-side concern.)
-func streamKubernetesTopology(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, stream *PushStream, logger *slog.Logger) error {
+func streamKubernetesTopology(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, spool *Spool, logger *slog.Logger) error {
 	send := func() error {
 		snap, err := kubernetes.SnapshotFromRuntime(ctx, src)
 		if err != nil {
 			logger.Warn("collector: kubernetes topology snapshot failed", "err", err)
 			return nil
 		}
-		return stream.Send(kubernetesTopologyEvent(id.AgentID, snap))
+		if err := spool.Send(kubernetesTopologyEvent(id.AgentID, snap)); err != nil {
+			logger.Debug("collector: topology snapshot not sent", "error", err)
+		}
+		return nil
 	}
 
 	if err := send(); err != nil {

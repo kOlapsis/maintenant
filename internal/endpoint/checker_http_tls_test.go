@@ -17,10 +17,13 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,7 +43,8 @@ func httpEndpoint(target string) *Endpoint {
 
 // Issue #36: a host answering over a certificate signed by an unknown authority
 // is not down. It must report as degraded, keep counting as a success, and still
-// surrender its certificate chain so expiry monitoring keeps working.
+// surrender its certificate chain so expiry monitoring keeps working. The probe
+// never gets far enough to learn an HTTP status: it stops at the handshake.
 func TestCheckHTTP_UntrustedCertificateIsDegradedNotDown(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -56,8 +60,7 @@ func TestCheckHTTP_UntrustedCertificateIsDegradedNotDown(t *testing.T) {
 	assert.Contains(t, result.DegradedReason, "unknown authority")
 	assert.Contains(t, result.ErrorMessage, "unknown authority",
 		"the reason must reach the UI through last_error")
-	require.NotNil(t, result.HTTPStatus)
-	assert.Equal(t, http.StatusOK, *result.HTTPStatus)
+	assert.Nil(t, result.HTTPStatus, "a handshake-only probe never learns an HTTP status")
 	assert.NotEmpty(t, result.TLSPeerCertificates,
 		"the chain must still be captured, or expiry monitoring silently stops for these hosts")
 }
@@ -97,9 +100,10 @@ func TestCheckHTTP_UnreachableHostStaysDown(t *testing.T) {
 	assert.Contains(t, result.ErrorMessage, "request failed")
 }
 
-// An untrusted certificate on a host that also answers badly is still down: the
-// status check governs, and the trust problem is reported alongside it.
-func TestCheckHTTP_UntrustedAndBadStatusIsDown(t *testing.T) {
+// An untrusted certificate is reported as degraded regardless of what the
+// application behind it would have answered: the request is never sent, so a
+// 500 the handler is ready to return is never observed.
+func TestCheckHTTP_UntrustedCertificate_AppStatusNeverObserved(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -107,10 +111,10 @@ func TestCheckHTTP_UntrustedAndBadStatusIsDown(t *testing.T) {
 
 	result := CheckHTTP(context.Background(), httpEndpoint(srv.URL), nil)
 
-	assert.False(t, result.Success, "a 500 is a failure regardless of the certificate")
-	assert.Contains(t, result.ErrorMessage, "unexpected status 500")
-	assert.Contains(t, result.ErrorMessage, "unknown authority",
-		"both problems must be visible, not just the first")
+	assert.True(t, result.Success, "the handshake succeeded; the never-sent request cannot fail it")
+	assert.True(t, result.Degraded)
+	assert.Nil(t, result.HTTPStatus)
+	assert.Contains(t, result.ErrorMessage, "unknown authority")
 }
 
 // With verification switched off per endpoint, nothing is degraded.
@@ -153,6 +157,122 @@ func TestTrustFailureReason(t *testing.T) {
 
 	_, ok = trustFailureReason(nil)
 	assert.False(t, ok)
+}
+
+// recordingServer starts a TLS test server that records every call it
+// receives, along with the headers it saw.
+func recordingServer(t *testing.T) (*httptest.Server, func() int, func() []http.Header) {
+	t.Helper()
+
+	var mu sync.Mutex
+	var calls int
+	var headers []http.Header
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		headers = append(headers, r.Header.Clone())
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	callCount := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return calls
+	}
+	seenHeaders := func() []http.Header {
+		mu.Lock()
+		defer mu.Unlock()
+		return headers
+	}
+	return srv, callCount, seenHeaders
+}
+
+// A rejected certificate must never be followed by the actual request: the
+// secrets it carries (Authorization, API keys, the URL itself) must not reach
+// a peer whose identity was never verified.
+func TestCheckHTTP_TrustFailure_NeverSendsTheRequest(t *testing.T) {
+	srv, callCount, _ := recordingServer(t)
+
+	ep := httpEndpoint(srv.URL + "/probe?token=s")
+	ep.Config.TLSVerify = true
+	ep.Config.Headers = map[string]string{
+		"Authorization": "Bearer audit-fixture",
+		"X-Api-Key":     "k",
+	}
+
+	result := CheckHTTP(context.Background(), ep, nil)
+
+	assert.Equal(t, 0, callCount(), "the request must never be sent to an unverified peer")
+	assert.True(t, result.Degraded)
+	assert.True(t, result.Success)
+	assert.Nil(t, result.HTTPStatus, "a handshake-only probe carries no HTTP status")
+	assert.NotEmpty(t, result.TLSPeerCertificates)
+	assert.NotEmpty(t, result.DegradedReason)
+}
+
+// Same guarantee for a method with a body-bearing semantics: it must not be
+// replayed either.
+func TestCheckHTTP_TrustFailure_POSTIsNotReplayedEither(t *testing.T) {
+	srv, callCount, _ := recordingServer(t)
+
+	ep := httpEndpoint(srv.URL + "/probe?token=s")
+	ep.Config.TLSVerify = true
+	ep.Config.Method = "POST"
+	ep.Config.Headers = map[string]string{
+		"Authorization": "Bearer audit-fixture",
+	}
+
+	CheckHTTP(context.Background(), ep, nil)
+
+	assert.Equal(t, 0, callCount())
+}
+
+// With verification switched off per endpoint, the request is sent as before
+// (once), headers included.
+func TestCheckHTTP_TLSVerifyOff_SendsHeadersOnce(t *testing.T) {
+	srv, callCount, seenHeaders := recordingServer(t)
+
+	ep := httpEndpoint(srv.URL)
+	ep.Config.TLSVerify = false
+	ep.Config.Headers = map[string]string{
+		"Authorization": "Bearer audit-fixture",
+	}
+
+	result := CheckHTTP(context.Background(), ep, nil)
+
+	require.True(t, result.Success)
+	assert.Equal(t, 1, callCount())
+	require.Len(t, seenHeaders(), 1)
+	assert.Equal(t, "Bearer audit-fixture", seenHeaders()[0].Get("Authorization"))
+}
+
+// A host whose handshake fails outright (no certificate to report at all) is
+// down, not degraded: the no-retry path must not paper over it.
+func TestCheckHTTP_TrustFailureThenNoTLS_IsDown(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = ln.Close() }()
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	ep := httpEndpoint(fmt.Sprintf("https://%s/", ln.Addr().String()))
+
+	result := CheckHTTP(context.Background(), ep, nil)
+
+	assert.False(t, result.Success)
+	assert.False(t, result.Degraded)
+	assert.NotEmpty(t, result.ErrorMessage)
 }
 
 func TestCheckHTTP_DegradedResolvesToDegradedStatus(t *testing.T) {

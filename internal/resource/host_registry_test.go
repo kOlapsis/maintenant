@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 )
 
@@ -86,7 +87,7 @@ func TestHandleAgentEvent_HostLevelSampleRecorded(t *testing.T) {
 		MemoryLimitBytes:   8_000_000,
 		HostDiskTotalBytes: 100_000,
 		HostDiskUsedBytes:  40_000,
-	})
+	}, agentevent.Meta{ObservedAt: time.Now()})
 	require.NoError(t, err)
 
 	assert.Empty(t, rstore.snapshots, "host-level samples must not become container snapshots")
@@ -97,4 +98,40 @@ func TestHandleAgentEvent_HostLevelSampleRecorded(t *testing.T) {
 	assert.Equal(t, int64(8_000_000), got.MemTotal)
 	assert.Equal(t, uint64(100_000), got.DiskTotal)
 	assert.Equal(t, uint64(40_000), got.DiskUsed)
+}
+
+// FR-029: the registry holds a single live sample per agent with no history
+// behind it, so a replayed or out of order sample must not evict a fresher one.
+func TestRecordHostSample_ReplayedOrStaleDoesNotEvictCurrent(t *testing.T) {
+	s := &Service{hosts: newHostRegistry()}
+	now := time.Now()
+
+	s.RecordHostSample(&HostSample{AgentID: "agent-1", CPUPercent: 50, Timestamp: now})
+
+	s.RecordHostSample(&HostSample{AgentID: "agent-1", CPUPercent: 5, Timestamp: now.Add(time.Minute), Replayed: true})
+	require.NotNil(t, s.hosts.get("agent-1"))
+	assert.Equal(t, 50.0, s.hosts.get("agent-1").CPUPercent, "a replayed sample must never land in the registry")
+
+	s.RecordHostSample(&HostSample{AgentID: "agent-1", CPUPercent: 9, Timestamp: now.Add(-time.Hour)})
+	assert.Equal(t, 50.0, s.hosts.get("agent-1").CPUPercent, "a sample older than the current one must be dropped")
+
+	s.RecordHostSample(&HostSample{AgentID: "agent-1", CPUPercent: 77, Timestamp: now.Add(time.Second)})
+	assert.Equal(t, 77.0, s.hosts.get("agent-1").CPUPercent, "a fresher sample must still replace the current one")
+}
+
+// A replayed host sample reaching the resource handler must be dropped by the
+// registry rather than dated on reception.
+func TestHandleAgentEvent_ReplayedHostSampleIsIgnored(t *testing.T) {
+	svc := newTestService(newMockResourceStore(), nil, nil)
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-h", &agentpb.ResourceSample{
+		CpuPercent: 11,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+	require.NotNil(t, svc.hosts.get("agent-h"))
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-h", &agentpb.ResourceSample{
+		CpuPercent: 99,
+	}, agentevent.Meta{ObservedAt: time.Now().Add(time.Minute), Replayed: true}))
+
+	assert.Equal(t, 11.0, svc.hosts.get("agent-h").CPUPercent)
 }

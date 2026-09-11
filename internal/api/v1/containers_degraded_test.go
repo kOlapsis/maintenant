@@ -14,7 +14,6 @@ type stubRuntimeChecker struct{ connected bool }
 
 func (s *stubRuntimeChecker) IsConnected() bool { return s.connected }
 
-
 // TestLogStream_503WhenDegraded verifies that log stream returns 503 when runtime is disconnected.
 func TestLogStream_503WhenDegraded(t *testing.T) {
 	h := NewLogStreamHandler(&mockLogStreamer{lines: []string{"log"}}, nil)

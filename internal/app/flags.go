@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/store"
 )
 
@@ -81,6 +82,18 @@ func init() {
 			Type: FlagTypeString, Default: "",
 			Description: "Comma-separated CORS origins (empty = same-origin)",
 			ApplyTo:     func(c *Config, v string) error { c.CORSOrigins = v; return nil },
+		},
+		{
+			EnvName: "MAINTENANT_TRUSTED_PROXIES", FlagName: "trustedProxies",
+			Type: FlagTypeString, Default: "",
+			Description: "Comma-separated CIDRs/IPs whose forwarded headers are believed (empty = none)",
+			ApplyTo: func(c *Config, v string) error {
+				if _, err := ratelimit.ParsePrefixes(v); err != nil {
+					return err
+				}
+				c.TrustedProxies = v
+				return nil
+			},
 		},
 		// Storage
 		{
@@ -474,6 +487,48 @@ func init() {
 			},
 		},
 		{
+			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES", FlagName: "agentSpoolMaxMemoryBytes",
+			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxMemoryBytes, 10),
+			Description: "Bytes buffered in memory before the spool writes to disk (agent mode; 0 disables the spool)",
+			ApplyTo: func(c *Config, v string) error {
+				n, err := parseAgentSpoolSetting(v)
+				if err != nil {
+					return err
+				}
+				c.MultiHost.AgentSpoolMaxMemoryBytes = n
+				c.MultiHost.acceptSpoolSetting("MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES")
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", FlagName: "agentSpoolMaxDiskBytes",
+			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxDiskBytes, 10),
+			Description: "Maximum size of the spool database, oldest events dropped first (agent mode; 0 disables the spool)",
+			ApplyTo: func(c *Config, v string) error {
+				n, err := parseAgentSpoolSetting(v)
+				if err != nil {
+					return err
+				}
+				c.MultiHost.AgentSpoolMaxDiskBytes = n
+				c.MultiHost.acceptSpoolSetting("MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES")
+				return nil
+			},
+		},
+		{
+			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS", FlagName: "agentSpoolMaxAgeSeconds",
+			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxAgeSeconds, 10),
+			Description: "Age past which a spooled event is neither kept nor replayed (agent mode)",
+			ApplyTo: func(c *Config, v string) error {
+				n, err := parseAgentSpoolSetting(v)
+				if err != nil {
+					return err
+				}
+				c.MultiHost.AgentSpoolMaxAgeSeconds = n
+				c.MultiHost.acceptSpoolSetting("MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS")
+				return nil
+			},
+		},
+		{
 			EnvName: "MAINTENANT_DATA_DIR", FlagName: "data-dir",
 			Type: FlagTypeString, Default: "/var/lib/maintenant",
 			Description: "Directory holding the agent identity and liveness files (agent mode)",
@@ -545,7 +600,7 @@ func init() {
 		{Name: "Branding", Specs: specsFor("organisationName", "statusUrl")},
 		{Name: "Runtime", Specs: specsFor("runtime")},
 		{Name: "Logging", Specs: specsFor("logLevel")},
-		{Name: "HTTP", Specs: specsFor("maxBodySize")},
+		{Name: "HTTP", Specs: specsFor("maxBodySize", "trustedProxies")},
 		{Name: "Updates", Specs: specsFor("updateInterval")},
 		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "telemetryDatadir", "allowPrivateWebhooks")},
 		{Name: "Pro", Specs: specsFor("licenseKey")},
@@ -560,6 +615,7 @@ func init() {
 			"grpc-listen", "grpc-url", "grpc-tls-cert", "grpc-tls-key",
 			"grpc-tls-insecure", "grpc-insecure-skip-tls-verify",
 			"agentRateLimitPerSecond", "agentStaleThresholdSeconds",
+			"agentSpoolMaxMemoryBytes", "agentSpoolMaxDiskBytes", "agentSpoolMaxAgeSeconds",
 			"embedded-agent", "ca-cert", "data-dir",
 		)},
 		{Name: "Storage (PostgreSQL)", Specs: specsFor("database-url", "copy-store-to", "yes")},

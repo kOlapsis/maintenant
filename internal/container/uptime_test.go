@@ -221,7 +221,7 @@ func (m *uptimeStore) InsertContainer(_ context.Context, _ *Container) (string, 
 	return "", nil
 }
 func (m *uptimeStore) UpdateContainer(_ context.Context, _ *Container) error { return nil }
-func (m *uptimeStore) GetContainerByExternalID(_ context.Context, _ string) (*Container, error) {
+func (m *uptimeStore) GetContainerByExternalID(_ context.Context, _, _ string) (*Container, error) {
 	return nil, nil
 }
 func (m *uptimeStore) GetContainerByID(_ context.Context, _ string) (*Container, error) {

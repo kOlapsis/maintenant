@@ -13,9 +13,6 @@ package ratelimit
 
 import (
 	"context"
-	"net"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
@@ -30,14 +27,19 @@ type visitor struct {
 type Limiter struct {
 	rate     float64
 	burst    int
+	resolver *ClientIPResolver
 	visitors sync.Map // IP string → *visitor
 }
 
 // New creates a rate limiter allowing rate tokens per second with the given burst capacity.
-func New(rate float64, burst int) *Limiter {
+func New(rate float64, burst int, resolver *ClientIPResolver) *Limiter {
+	if resolver == nil {
+		resolver = NewClientIPResolver(nil)
+	}
 	return &Limiter{
-		rate:  rate,
-		burst: burst,
+		rate:     rate,
+		burst:    burst,
+		resolver: resolver,
 	}
 }
 
@@ -71,18 +73,29 @@ func (l *Limiter) Allow(ip string) bool {
 	return true
 }
 
+// Len reports how many addresses currently hold a bucket.
+func (l *Limiter) Len() int {
+	n := 0
+	l.visitors.Range(func(_, _ any) bool {
+		n++
+		return true
+	})
+	return n
+}
+
 // Start launches a background goroutine that evicts inactive visitors every 60 seconds.
 // It stops when ctx is cancelled.
 func (l *Limiter) Start(ctx context.Context) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
+	idle := l.idleBeforeEviction()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			cutoff := now.Add(-3 * time.Minute)
+			cutoff := now.Add(-idle)
 			l.visitors.Range(func(key, val any) bool {
 				v := val.(*visitor)
 				v.mu.Lock()
@@ -97,17 +110,17 @@ func (l *Limiter) Start(ctx context.Context) {
 	}
 }
 
-// ClientIP extracts the client IP from the request, respecting reverse proxy headers.
-func ClientIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return strings.TrimSpace(ip)
+// idleBeforeEviction is how long a visitor must go untouched before its bucket is
+// dropped. A bucket may only be forgotten once it has refilled to its burst: on a
+// long window (a few tokens per hour) an earlier eviction would hand the quota back.
+func (l *Limiter) idleBeforeEviction() time.Duration {
+	const floor = 3 * time.Minute
+	if l.rate <= 0 {
+		return floor
 	}
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		return strings.TrimSpace(strings.SplitN(fwd, ",", 2)[0])
+	refill := time.Duration(float64(l.burst) / l.rate * float64(time.Second))
+	if refill < floor {
+		return floor
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return refill
 }

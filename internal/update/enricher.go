@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const maxEvaluationErrorLen = 200
+
 // ProEnricher enriches scan results with CVE data, changelog info, and risk scores.
 type ProEnricher struct {
 	store     UpdateStore
@@ -39,25 +41,21 @@ func NewProEnricher(store UpdateStore, cve *CVEClient, changelog *ChangelogResol
 	}
 }
 
-// Enrich runs CVE lookup, changelog resolution, and risk scoring for each update result.
+// Enrich runs a CVE pass for every scanned container, then resolves the
+// changelog and risk score of those that actually have an update pending.
 func (e *ProEnricher) Enrich(ctx context.Context, results []UpdateResult) error {
 	for i := range results {
-		if !results[i].HasUpdate {
-			continue
-		}
-
 		r := &results[i]
-		e.logger.Debug("enriching update",
+		e.logger.Debug("enriching container",
 			"container", r.ContainerName, "image", r.Image,
-			"current", r.CurrentTag, "latest", r.LatestTag)
+			"current", r.CurrentTag, "latest", r.LatestTag, "has_update", r.HasUpdate)
 
-		// 1. Changelog resolution
-		e.enrichChangelog(ctx, r)
-
-		// 2. CVE lookup
 		cves := e.enrichCVEs(ctx, r)
 
-		// 3. Risk scoring
+		if !r.HasUpdate {
+			continue
+		}
+		e.enrichChangelog(ctx, r)
 		e.enrichRisk(ctx, r, cves)
 	}
 
@@ -102,28 +100,32 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 		return nil
 	}
 
-	var query *ImageCVEQuery
-	if e.ecosystem != nil {
-		result := e.ecosystem.Resolve(ctx, r.Image, r.CurrentTag, r.CurrentDigest, nil)
-		if result != nil {
-			query = &ImageCVEQuery{
-				PackageName: result.PackageName,
-				Ecosystem:   result.Ecosystem,
-				Version:     r.CurrentTag,
-			}
-		}
-	}
+	query := e.resolveCVEQuery(ctx, r)
 	if query == nil {
 		e.logger.Debug("cve: no ecosystem mapping", "container", r.ContainerName, "image", r.Image)
+		e.recordEvaluation(ctx, r, &CVEEvaluation{Status: CVEUnsupported})
 		return nil
 	}
-	query.ContainerID = r.ContainerID
 
 	cveResults, err := e.cve.QueryCVEs(ctx, []ImageCVEQuery{*query})
 	if err != nil {
 		e.logger.Warn("cve: query failed", "container", r.ContainerName, "error", err)
+		e.recordEvaluation(ctx, r, &CVEEvaluation{
+			Status:         CVEEvaluationError,
+			Ecosystem:      query.Ecosystem,
+			PackageName:    query.PackageName,
+			PackageVersion: query.Version,
+			Error:          shortError(err),
+		})
 		return nil
 	}
+
+	e.recordEvaluation(ctx, r, &CVEEvaluation{
+		Status:         CVEEvaluated,
+		Ecosystem:      query.Ecosystem,
+		PackageName:    query.PackageName,
+		PackageVersion: query.Version,
+	})
 
 	entries := cveResults[r.ContainerID]
 	if len(entries) == 0 {
@@ -134,7 +136,6 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 	e.logger.Info("cve: vulnerabilities found",
 		"container", r.ContainerName, "count", len(entries))
 
-	// Persist as ContainerCVE records
 	var cves []*ContainerCVE
 	now := time.Now()
 	for _, entry := range entries {
@@ -155,6 +156,38 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 	}
 
 	return cves
+}
+
+func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *UpdateResult) *ImageCVEQuery {
+	if e.ecosystem == nil {
+		return nil
+	}
+	resolved := e.ecosystem.Resolve(ctx, r.Image, r.CurrentTag, r.CurrentDigest, nil)
+	if resolved == nil {
+		return nil
+	}
+	return &ImageCVEQuery{
+		ContainerID: r.ContainerID,
+		PackageName: resolved.PackageName,
+		Ecosystem:   resolved.Ecosystem,
+		Version:     r.CurrentTag,
+	}
+}
+
+func (e *ProEnricher) recordEvaluation(ctx context.Context, r *UpdateResult, eval *CVEEvaluation) {
+	eval.ContainerID = r.ContainerID
+	eval.EvaluatedAt = time.Now()
+	if err := e.store.UpsertCVEEvaluation(ctx, eval); err != nil {
+		e.logger.Warn("cve: failed to persist evaluation", "container", r.ContainerName, "error", err)
+	}
+}
+
+func shortError(err error) string {
+	msg := err.Error()
+	if len(msg) > maxEvaluationErrorLen {
+		return msg[:maxEvaluationErrorLen]
+	}
+	return msg
 }
 
 func (e *ProEnricher) enrichRisk(ctx context.Context, r *UpdateResult, cves []*ContainerCVE) {

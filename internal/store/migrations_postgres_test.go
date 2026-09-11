@@ -116,6 +116,7 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 	for _, undo := range []string{
 		"DROP TABLE instances", // 29
 		"ALTER TABLE notification_channels DROP COLUMN secret, DROP COLUMN config", // 30
+		"DROP TABLE cve_evaluations", // 31
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

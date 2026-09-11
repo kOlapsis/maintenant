@@ -422,9 +422,10 @@ func (s *Service) runScan(ctx context.Context) {
 		s.emitEvent(event.UpdateDetected, eventData)
 	}
 
-	// Enrichment pipeline (no-op in CE, runs CVE/changelog/risk in Pro)
-	if updatesFound > 0 {
-		s.logger.Info("starting enrichment pipeline", "updates", updatesFound)
+	// Enrichment pipeline (no-op in CE, runs CVE/changelog/risk in Pro).
+	// Gated on results, not updates: a container on its latest tag still needs a CVE pass.
+	if len(results) > 0 {
+		s.logger.Info("starting enrichment pipeline", "containers", len(results), "updates", updatesFound)
 		if err := s.enricher.Enrich(ctx, results); err != nil {
 			s.logger.Warn("update enrichment failed", "error", err)
 		}

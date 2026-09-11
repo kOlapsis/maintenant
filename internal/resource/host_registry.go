@@ -60,8 +60,15 @@ func (r *hostRegistry) list() []*HostSample {
 // RecordHostSample stores the latest host-level sample for a remote agent.
 // A non-empty AgentID is required; samples with an empty AgentID are ignored
 // (the local server host is read live, never stored).
+// RecordHostSample stores sample as the live host measurement for its agent.
+// The registry keeps only the latest sample per agent and has no history table,
+// so a replayed or out of order sample is dropped rather than overwriting a
+// fresher one.
 func (s *Service) RecordHostSample(sample *HostSample) {
-	if sample == nil || sample.AgentID == "" {
+	if sample == nil || sample.AgentID == "" || sample.Replayed {
+		return
+	}
+	if current := s.hosts.get(sample.AgentID); current != nil && sample.Timestamp.Before(current.Timestamp) {
 		return
 	}
 	s.hosts.put(sample)

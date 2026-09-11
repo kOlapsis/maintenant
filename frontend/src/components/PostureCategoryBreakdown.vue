@@ -36,6 +36,12 @@ function categoryLabel(name: string): string {
   }
   return labels[name] || name
 }
+
+function unavailableLabel(cat: CategoryScore): string {
+  if (cat.evaluation === 'unsupported') return 'Not covered'
+  if (cat.evaluation === 'not_evaluated' || cat.evaluation === 'error') return 'Not evaluated'
+  return 'Not applicable'
+}
 </script>
 
 <template>
@@ -77,8 +83,13 @@ function categoryLabel(name: string): string {
       </template>
 
       <template v-else>
-        <div class="py-2 text-xs text-mnt-muted italic">
-          Not applicable
+        <div class="py-2">
+          <span
+            class="inline-flex items-center rounded-full border border-mnt-default px-2 py-0.5 text-[10px] font-bold text-mnt-muted"
+          >
+            {{ unavailableLabel(cat) }}
+          </span>
+          <p v-if="cat.summary" class="mt-1.5 text-[10px] text-mnt-muted">{{ cat.summary }}</p>
         </div>
       </template>
     </div>

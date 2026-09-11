@@ -33,6 +33,7 @@ type CategoryScore struct {
 	Applicable bool   `json:"applicable"`
 	IssueCount int    `json:"issue_count"`
 	Summary    string `json:"summary"`
+	Evaluation string `json:"evaluation,omitempty"`
 }
 
 // InfrastructurePosture is the top-level aggregation across all containers.

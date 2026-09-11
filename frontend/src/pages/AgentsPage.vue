@@ -231,6 +231,18 @@ function runtimeLabel(rt: string): string {
                       color: agent.connection_state === 'connected' ? 'var(--mnt-status-ok-text)' : 'var(--mnt-text-muted)',
                     }"
                   >{{ agent.connection_state ?? 'disconnected' }}</span>
+                  <span
+                    v-if="agent.spool?.draining"
+                    class="ml-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                    :style="{ backgroundColor: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn-text)' }"
+                    :title="`${agent.spool.queued} événements en attente de rejeu`"
+                  >rattrapage · {{ agent.spool.queued }}</span>
+                  <span
+                    v-if="agent.spool && agent.spool.dropped_since_connect > 0"
+                    class="ml-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                    :style="{ backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down-text)' }"
+                    :title="'Événements abandonnés faute de place dans le spool de l’agent'"
+                  >{{ agent.spool.dropped_since_connect }} perdus</span>
                 </td>
                 <td class="px-4 py-3 text-xs text-mnt-muted hidden md:table-cell">
                   {{ formatDate(agent.last_seen_at) }}

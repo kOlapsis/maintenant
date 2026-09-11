@@ -2,7 +2,17 @@ package oauth
 
 import (
 	"context"
+	"errors"
 	"time"
+)
+
+var (
+	ErrCodeNotFound = errors.New("authorization code not found")
+	ErrCodeUsed     = errors.New("authorization code already used")
+	ErrCodeExpired  = errors.New("authorization code expired")
+
+	ErrTokenNotFound = errors.New("token not found")
+	ErrTokenRevoked  = errors.New("token revoked")
 )
 
 // MCPAuthCode represents an OAuth authorization code stored in the database.
@@ -39,6 +49,7 @@ type MCPOAuthStore interface {
 	// Tokens
 	StoreToken(ctx context.Context, token *MCPOAuthToken) error
 	GetToken(ctx context.Context, tokenHash string) (*MCPOAuthToken, error)
+	ConsumeRefreshToken(ctx context.Context, tokenHash string) (*MCPOAuthToken, error)
 	RevokeToken(ctx context.Context, tokenHash string) error
 	RevokeFamily(ctx context.Context, familyID string) error
 

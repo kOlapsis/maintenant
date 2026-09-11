@@ -682,6 +682,17 @@ CREATE INDEX idx_container_cves_container_id ON container_cves(container_id);
 CREATE INDEX idx_container_cves_severity ON container_cves(severity);
 CREATE UNIQUE INDEX uq_container_cves ON container_cves(container_id, cve_id);
 
+CREATE TABLE cve_evaluations (
+    container_id    TEXT PRIMARY KEY NOT NULL,
+    status           TEXT NOT NULL,
+    evaluated_at     BIGINT NOT NULL,
+    ecosystem        TEXT,
+    package_name     TEXT,
+    package_version  TEXT,
+    error            TEXT
+);
+CREATE INDEX idx_cve_evaluations_status ON cve_evaluations(status);
+
 CREATE TABLE version_pins (
     id            TEXT PRIMARY KEY NOT NULL,
     container_id  TEXT NOT NULL,

@@ -68,6 +68,22 @@ func (a *CVEPostureAdapter) ListCVEsForContainer(ctx context.Context, containerE
 	return result, nil
 }
 
+// CVEEvaluationPostureAdapter adapts the update store for CVE evaluation state.
+type CVEEvaluationPostureAdapter struct {
+	Store update.UpdateStore
+}
+
+func (a *CVEEvaluationPostureAdapter) GetCVEEvaluation(ctx context.Context, containerExternalID string) (*security.CVEEvaluationInfo, error) {
+	eval, err := a.Store.GetCVEEvaluation(ctx, containerExternalID)
+	if err != nil {
+		return nil, fmt.Errorf("get cve evaluation: %w", err)
+	}
+	if eval == nil {
+		return nil, nil
+	}
+	return &security.CVEEvaluationInfo{Status: string(eval.Status)}, nil
+}
+
 // UpdatePostureAdapter adapts the update store for update/image-age scoring.
 type UpdatePostureAdapter struct {
 	Store update.UpdateStore

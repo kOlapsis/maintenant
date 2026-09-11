@@ -20,6 +20,7 @@ export interface CategoryScore {
   applicable: boolean
   issue_count: number
   summary: string
+  evaluation?: string
 }
 
 export interface ContainerRisk {

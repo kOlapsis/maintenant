@@ -74,6 +74,9 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 
 	fake := &recordingPushClient{}
 	stream := &PushStream{stream: fake, recvCh: make(chan error, 1)}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, slog.Default())
+	spool.Attach(stream)
+	t.Cleanup(func() { _ = spool.Close() })
 	id := &Identity{AgentID: "kube-A"}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,12 +84,11 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- collectKubernetesRuntime(ctx, id, &fakeSnapshotSource{}, stream, slog.Default())
+		done <- collectKubernetesRuntime(ctx, id, &fakeSnapshotSource{}, spool, slog.Default())
 	}()
 
-	deadline := time.Now().Add(3 * time.Second)
 	var sawTopology, sawHostSample bool
-	for time.Now().Before(deadline) && (!sawTopology || !sawHostSample) {
+	require.Eventually(t, func() bool {
 		for _, ev := range fake.events() {
 			if ev.GetKubernetes() != nil {
 				sawTopology = true
@@ -95,8 +97,8 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 				sawHostSample = true
 			}
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return sawTopology && sawHostSample
+	}, 3*time.Second, 5*time.Millisecond, "kubernetes agent must push both a topology event and a host-level resource sample")
 	cancel()
 	<-done
 

@@ -184,7 +184,7 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 	}
 
 	// Get currently stored endpoints for this container
-	existing, err := s.store.ListEndpointsByExternalID(ctx, externalID)
+	existing, err := s.store.ListEndpointsByExternalID(ctx, uid.LocalAgent, externalID)
 	if err != nil {
 		s.logger.Error("list endpoints by external ID", "external_id", externalID, "error", err)
 		return
@@ -283,8 +283,7 @@ func (s *Service) SyncAgentEndpoints(ctx context.Context, agentID, containerName
 		})
 	}
 
-	// external_id is unique per container, so this scopes to this agent's container.
-	existing, err := s.store.ListEndpointsByExternalID(ctx, externalID)
+	existing, err := s.store.ListEndpointsByExternalID(ctx, agentID, externalID)
 	if err != nil {
 		s.logger.Error("list agent endpoints by external ID", "external_id", externalID, "error", err)
 		return
@@ -410,6 +409,18 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 		return
 	}
 
+	// A replayed probe is history: it feeds uptime, but the live status, the
+	// consecutive counters and the status-change event describe what the
+	// endpoint is doing now, which only a live probe can say. Letting a replay
+	// write them would also double-count the delivery the drain repeats after a
+	// broken stream.
+	if result.Replayed {
+		if _, err := s.store.InsertCheckResult(ctx, &result); err != nil {
+			s.logger.Error("insert replayed check result", "endpoint_id", endpointID, "error", err)
+		}
+		return
+	}
+
 	previousStatus := ep.Status
 
 	newStatus := statusForResult(result)
@@ -477,7 +488,7 @@ func (s *Service) ProcessCheckResult(ctx context.Context, endpointID string, res
 
 // HandleContainerStop pauses checks and sets endpoints to unknown for a stopped container.
 func (s *Service) HandleContainerStop(ctx context.Context, externalID string) {
-	endpoints, err := s.store.ListEndpointsByExternalID(ctx, externalID)
+	endpoints, err := s.store.ListEndpointsByExternalID(ctx, uid.LocalAgent, externalID)
 	if err != nil {
 		s.logger.Error("list endpoints for container stop", "external_id", externalID, "error", err)
 		return
@@ -510,7 +521,7 @@ func (s *Service) HandleContainerStart(ctx context.Context, containerName, exter
 
 // HandleContainerDestroy deactivates all endpoints for a destroyed container.
 func (s *Service) HandleContainerDestroy(ctx context.Context, externalID string) {
-	endpoints, err := s.store.ListEndpointsByExternalID(ctx, externalID)
+	endpoints, err := s.store.ListEndpointsByExternalID(ctx, uid.LocalAgent, externalID)
 	if err != nil {
 		s.logger.Error("list endpoints for container destroy", "external_id", externalID, "error", err)
 		return

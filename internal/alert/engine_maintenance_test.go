@@ -91,7 +91,22 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 		Source: "container", AlertType: "restart", Severity: "warning",
 		EntityType: "container", EntityID: "42", EntityName: "c42", Timestamp: now,
 	}
-	time.Sleep(100 * time.Millisecond)
+
+	// At least one silenced alert must be persisted for container:42 (audit trail)
+	var silenced []*alert.Alert
+	require.Eventually(t, func() bool {
+		var err error
+		silenced, err = alertStore.ListAlerts(ctx, alert.ListAlertsOpts{Status: "silenced", Limit: 20})
+		if err != nil {
+			return false
+		}
+		for _, a := range silenced {
+			if a.EntityType == "container" && a.EntityID == "42" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "silenced audit record must exist for container:42")
 
 	// container:42 must NOT appear in active alerts
 	activeAlerts, err := alertStore.ListActiveAlerts(ctx)
@@ -102,9 +117,6 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 		}
 	}
 
-	// At least one silenced alert must be persisted for container:42 (audit trail)
-	silenced, err := alertStore.ListAlerts(ctx, alert.ListAlertsOpts{Status: "silenced", Limit: 20})
-	require.NoError(t, err)
 	found := false
 	for _, a := range silenced {
 		if a.EntityType == "container" && a.EntityID == "42" {
@@ -119,10 +131,20 @@ func TestEngineSuppressesAlertDuringMaintenanceWindow(t *testing.T) {
 		Source: "container", AlertType: "restart", Severity: "warning",
 		EntityType: "container", EntityID: "99", EntityName: "c99", Timestamp: now,
 	}
-	time.Sleep(100 * time.Millisecond)
 
-	activeAlerts, err = alertStore.ListActiveAlerts(ctx)
-	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		activeAlerts, err = alertStore.ListActiveAlerts(ctx)
+		if err != nil {
+			return false
+		}
+		for _, a := range activeAlerts {
+			if a.EntityType == "container" && a.EntityID == "99" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "container:99 must have an active alert")
+
 	found99 := false
 	for _, a := range activeAlerts {
 		if a.EntityType == "container" && a.EntityID == "99" {

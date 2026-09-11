@@ -519,14 +519,9 @@ func (h *harness) advance(d time.Duration) {
 // timeout expires (the runner dispatches via goroutines).
 func (h *harness) waitForDeliveries(t *testing.T, n int) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if int(h.sender.delivers.Load()) >= n {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("expected %d deliveries, got %d", n, h.sender.delivers.Load())
+	require.Eventually(t, func() bool {
+		return int(h.sender.delivers.Load()) >= n
+	}, 2*time.Second, 5*time.Millisecond, "expected %d deliveries within timeout", n)
 }
 
 // --- shared fixtures ---
@@ -774,9 +769,12 @@ func TestRunner_DeliveryDuplicateIdempotence(t *testing.T) {
 
 	h.advance(61 * time.Second)
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
-	// No new delivery dispatched — duplicate caught silently.
-	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, int32(0), h.sender.delivers.Load())
+	// Negative check: the duplicate insert is caught synchronously before any
+	// goroutine is spawned (see dispatchToChannel), so no delivery is ever
+	// dispatched — held over a window rather than sampled once.
+	assert.Never(t, func() bool {
+		return h.sender.delivers.Load() != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "duplicate delivery must not be dispatched")
 	// Run still advances (level is considered done).
 	runs := h.store.listRuns()
 	require.Len(t, runs, 1)
@@ -803,26 +801,18 @@ func TestRunner_OneChannelFailureDoesNotBlockOthers(t *testing.T) {
 
 	deliveries := h.store.listDeliveries()
 	require.Len(t, deliveries, 2)
-	statuses := map[string]string{}
-	for _, d := range deliveries {
-		require.NotNil(t, d.ChannelID)
-		statuses[*d.ChannelID] = d.Status
-	}
+
 	// Wait for async UpdateDelivery to land.
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		ok := true
+	require.Eventually(t, func() bool {
 		for _, d := range h.store.listDeliveries() {
 			if d.Status == DeliveryStatusPending {
-				ok = false
-				break
+				return false
 			}
 		}
-		if ok {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return true
+	}, time.Second, 5*time.Millisecond, "both deliveries must leave pending status")
+
+	statuses := map[string]string{}
 	for _, d := range h.store.listDeliveries() {
 		require.NotNil(t, d.ChannelID)
 		statuses[*d.ChannelID] = d.Status
@@ -842,9 +832,12 @@ func TestRunner_DisabledChannelMarksDeliveryFailed(t *testing.T) {
 	h.advance(61 * time.Second)
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
 
-	// No network call (channel disabled).
-	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, int32(0), h.sender.delivers.Load())
+	// Negative check: a disabled channel is marked failed synchronously and
+	// never reaches the sender (see dispatchToChannel) — held over a window
+	// rather than sampled once.
+	assert.Never(t, func() bool {
+		return h.sender.delivers.Load() != 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "disabled channel must not receive a network call")
 
 	deliveries := h.store.listDeliveries()
 	require.Len(t, deliveries, 1)
@@ -877,11 +870,11 @@ func TestRunner_OrphanRecoveryRetries(t *testing.T) {
 
 	deliveries := h.store.listDeliveries()
 	require.Len(t, deliveries, 1)
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) && deliveries[0].Status == DeliveryStatusPending {
-		time.Sleep(5 * time.Millisecond)
+
+	require.Eventually(t, func() bool {
 		deliveries = h.store.listDeliveries()
-	}
+		return len(deliveries) == 1 && deliveries[0].Status != DeliveryStatusPending
+	}, 500*time.Millisecond, 5*time.Millisecond, "orphan delivery must leave pending status")
 	assert.Equal(t, DeliveryStatusSent, deliveries[0].Status)
 }
 

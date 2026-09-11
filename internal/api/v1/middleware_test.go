@@ -221,6 +221,25 @@ func TestBodyLimit_GetRequestNotLimited(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestBodyLimit_MethodsWithABodyAreAllLimited(t *testing.T) {
+	handler := bodyLimit(10, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.ReadAll(r.Body); err != nil {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE"} {
+		body := strings.NewReader(strings.Repeat("x", 20))
+		req := httptest.NewRequest(method, "/", body)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, "%s body must be capped", method)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // requestID middleware
 // ---------------------------------------------------------------------------

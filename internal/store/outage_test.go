@@ -135,16 +135,9 @@ func TestStorageSurvivesOutage(t *testing.T) {
 	relay.Restore()
 
 	// No restart, no re-open: the pool renews its connections by itself.
-	var recovered bool
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		if err := db.PingContext(ctx); err == nil {
-			recovered = true
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	require.True(t, recovered, "FR-019: the instance recovers on its own, without a restart")
+	require.Eventually(t, func() bool {
+		return db.PingContext(ctx) == nil
+	}, 20*time.Second, 200*time.Millisecond, "FR-019: the instance recovers on its own, without a restart")
 
 	peers, err := s.Peers(ctx, "someone-else", time.Now().Add(-time.Hour))
 	require.NoError(t, err, "queries work again with the same handle")

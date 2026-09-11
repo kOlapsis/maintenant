@@ -148,9 +148,10 @@ func runConversion(ctx context.Context, conn *sql.Conn) error {
 	// Drop any pre-existing agents/enrollment_tokens from the never-deployed
 	// agent migrations (22-23) so the new schema can recreate them cleanly. No-op
 	// on production databases (migrations 1-21 never created these tables).
-	// instances was created empty by migration 29 moments ago (it is not a
-	// legacy table), and uuid_schema recreates it below.
-	for _, t := range []string{"agents", "enrollment_tokens", "instances"} {
+	// instances and cve_evaluations were created empty by later migrations
+	// moments ago (neither is a legacy table), and uuid_schema recreates
+	// them below.
+	for _, t := range []string{"agents", "enrollment_tokens", "instances", "cve_evaluations"} {
 		if err := exec("drop unreleased "+t, fmt.Sprintf("DROP TABLE IF EXISTS %q", t)); err != nil {
 			return err
 		}

@@ -44,7 +44,7 @@ func seedScannedContainer(t *testing.T, cs *ContainerStore, externalID, name str
 	require.NoError(t, err)
 
 	if archivedAt != nil {
-		require.NoError(t, cs.ArchiveContainer(ctx, externalID, *archivedAt))
+		require.NoError(t, cs.ArchiveContainer(ctx, id, *archivedAt))
 	}
 	return id
 }

@@ -14,17 +14,14 @@ package resource
 import (
 	"context"
 	"math"
-	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // HandleAgentEvent records a resource sample pushed by a remote agent.
-// The container must already exist (verified via external_id lookup, so an
-// orphan FK is never written); its id is the deterministic uid.Container of the
-// reporting agent and the Docker external_id, identical to what the agent mints.
-func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample) error {
+func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.ResourceSample, meta agentevent.Meta) error {
 	containerExternalID := ev.GetContainerId()
 	if containerExternalID == "" {
 		// Host-level sample: record the agent machine's CPU/mem/disk so the
@@ -36,18 +33,19 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 			MemTotal:   clampInt64(ev.GetMemoryLimitBytes()),
 			DiskTotal:  ev.GetHostDiskTotalBytes(),
 			DiskUsed:   ev.GetHostDiskUsedBytes(),
-			Timestamp:  time.Now(),
+			Timestamp:  meta.ObservedAt,
+			Replayed:   meta.Replayed,
 		})
 		return nil
 	}
 
-	c, err := s.containerSvc.GetContainerByExternalID(ctx, containerExternalID)
+	c, err := s.containerSvc.GetContainerByExternalID(ctx, agentID, containerExternalID)
 	if err != nil || c == nil {
 		return err
 	}
 
 	snap := &ResourceSnapshot{
-		ContainerID:     uid.Container(uid.Agent(agentID), containerExternalID),
+		ContainerID:     c.ID,
 		CPUPercent:      ev.GetCpuPercent(),
 		MemUsed:         clampInt64(ev.GetMemoryBytes()),
 		MemLimit:        clampInt64(ev.GetMemoryLimitBytes()),
@@ -55,7 +53,8 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		NetTxBytes:      clampInt64(ev.GetNetworkTxBytes()),
 		BlockReadBytes:  clampInt64(ev.GetDiskReadBytes()),
 		BlockWriteBytes: clampInt64(ev.GetDiskWriteBytes()),
-		Timestamp:       time.Now(),
+		Timestamp:       meta.ObservedAt,
+		Replayed:        meta.Replayed,
 		AgentID:         uid.Agent(agentID),
 	}
 

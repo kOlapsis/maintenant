@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -148,6 +149,7 @@ type HandlerDeps struct {
 	OrganisationName     string
 	AllowPrivateWebhooks bool // dev only: skip HTTPS + SSRF check on webhook URLs
 	StatusURL            string
+	TrustedProxies       []netip.Prefix
 }
 
 // agentStoreDirectory adapts the sqlite agent store to AgentDirectory so the
@@ -930,7 +932,7 @@ func (r *Router) registerAgentRoutes(d HandlerDeps) {
 	if staleThreshold == 0 {
 		staleThreshold = 60 * time.Second
 	}
-	ah := NewAgentHandler(d.AgentStore, d.AgentSessions, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen, staleThreshold)
+	ah := NewAgentHandler(d.AgentStore, d.AgentSessions, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen, staleThreshold, d.TrustedProxies)
 
 	// Enrollment token endpoints (order matters: specific paths before wildcards)
 	r.mux.HandleFunc("GET /api/v1/agents/metrics", requireCapability(extension.CapMultihost, ah.HandleGetAgentMetrics))

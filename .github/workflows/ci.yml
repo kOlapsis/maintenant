@@ -211,12 +211,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # cmd/maintenant/web/web.go embeds `all:dist`. That directory is built by
-      # the frontend and never committed, so without this placeholder the Go
-      # build fails before lint or tests even start.
-      - name: Prepare embedded assets
-        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
-
       # go.sum carries the hash of every module: `go mod verify` is what turns
       # the lockfile into an integrity check rather than a version list.
       - name: Verify module hashes (go.sum)
@@ -264,9 +258,6 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-
-      - name: Prepare embedded assets
-        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
 
       # The default pass: SQLite, which is what an unconfigured install uses.
       # PostgreSQL cases skip when MAINTENANT_TEST_DATABASE_URL is unset.
@@ -408,9 +399,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Prepare embedded assets
-        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
-
       # Complements CodeQL rather than replacing it: CodeQL carries the deep
       # data-flow analysis, gosec adds the Go-specific rule set.
       #
@@ -451,9 +439,6 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-
-      - name: Prepare embedded assets
-        run: mkdir -p cmd/maintenant/web/dist && touch cmd/maintenant/web/dist/.gitkeep
 
       # govulncheck is call-graph aware: it only reports advisories on code the
       # binary actually reaches, so a finding here is genuinely exploitable.

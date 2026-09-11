@@ -14,11 +14,13 @@ package app
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/store"
 )
@@ -55,6 +57,9 @@ type Config struct {
 	// HTTP
 	CORSOrigins string
 	MaxBodySize int64
+	// TrustedProxies lists the CIDRs and addresses whose forwarded headers are
+	// believed, comma-separated. Empty means no header is ever read.
+	TrustedProxies string
 
 	// CACertFile is a PEM bundle appended to the system roots, so endpoints and
 	// certificates signed by an internal PKI validate without disabling checks.
@@ -111,12 +116,33 @@ type MultiHostConfig struct {
 	TLSKeyFile   string
 	InsecureGRPC bool // h2c mode — use only behind a trusted reverse proxy
 	// Agent flags (for mode=agent)
-	ServerURL          string
-	EnrollmentToken    string
-	RuntimeOverride    string
-	Label              string
-	InsecureSkipVerify bool
-	EmbeddedAgent      bool
+	ServerURL                string
+	EnrollmentToken          string
+	RuntimeOverride          string
+	Label                    string
+	InsecureSkipVerify       bool
+	EmbeddedAgent            bool
+	AgentSpoolMaxMemoryBytes int64
+	AgentSpoolMaxDiskBytes   int64
+	AgentSpoolMaxAgeSeconds  int64
+	InvalidSpoolSettings     []InvalidSetting
+}
+
+// InvalidSetting is a configuration value that was rejected rather than
+// replaced by its default.
+type InvalidSetting struct {
+	Name string
+	Raw  string
+}
+
+func (m *MultiHostConfig) acceptSpoolSetting(env string) {
+	kept := m.InvalidSpoolSettings[:0]
+	for _, s := range m.InvalidSpoolSettings {
+		if s.Name != env {
+			kept = append(kept, s)
+		}
+	}
+	m.InvalidSpoolSettings = kept
 }
 
 // RetentionConfig holds the tunable part of the retention cleanup. Zero values
@@ -188,6 +214,25 @@ func (c Config) ValidateStorage() error {
 	return nil
 }
 
+// ErrTrustedProxies refuses a proxy list that does not parse.
+var ErrTrustedProxies = errors.New(
+	"MAINTENANT_TRUSTED_PROXIES is not a valid list: use comma-separated CIDRs or IP addresses such as 10.0.0.0/8,192.168.1.4")
+
+// ParseTrustedProxies returns the prefixes whose forwarded headers are believed.
+func (c Config) ParseTrustedProxies() ([]netip.Prefix, error) {
+	prefixes, err := ratelimit.ParsePrefixes(c.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("%w (%v)", ErrTrustedProxies, err)
+	}
+	return prefixes, nil
+}
+
+// ValidateProxies refuses a trusted-proxy list that would silently be ignored.
+func (c Config) ValidateProxies() error {
+	_, err := c.ParseTrustedProxies()
+	return err
+}
+
 // ErrContainerDownAfter refuses a container-down threshold that does not parse.
 var ErrContainerDownAfter = errors.New(
 	"MAINTENANT_CONTAINER_DOWN_AFTER is not a valid duration: use a Go duration such as 5m, 30s or 1h30m")
@@ -199,6 +244,47 @@ func (c Config) ValidateAlerting() error {
 		return fmt.Errorf("%w (got %q)", ErrContainerDownAfter, c.ContainerDownAfterInvalid)
 	}
 	return nil
+}
+
+const (
+	DefaultAgentSpoolMaxMemoryBytes int64 = 16777216
+	DefaultAgentSpoolMaxDiskBytes   int64 = 134217728
+	DefaultAgentSpoolMaxAgeSeconds  int64 = 86400
+)
+
+// ErrAgentSpoolSetting refuses a spool budget that does not parse.
+var ErrAgentSpoolSetting = errors.New(
+	"agent spool setting is not a valid whole number of bytes or seconds: use a non-negative integer, or 0 to disable the spool")
+
+func parseAgentSpoolSetting(raw string) (int64, error) {
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%w (got %q)", ErrAgentSpoolSetting, raw)
+	}
+	return n, nil
+}
+
+func envAgentSpoolSetting(key string, fallback int64, invalid *[]InvalidSetting) int64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	n, err := parseAgentSpoolSetting(raw)
+	if err != nil {
+		*invalid = append(*invalid, InvalidSetting{Name: key, Raw: raw})
+		return fallback
+	}
+	return n
+}
+
+// ValidateAgentSpool refuses a spool budget that would silently be replaced by
+// its default.
+func (c Config) ValidateAgentSpool() error {
+	var errs []error
+	for _, s := range c.MultiHost.InvalidSpoolSettings {
+		errs = append(errs, fmt.Errorf("%w (%s=%q)", ErrAgentSpoolSetting, s.Name, s.Raw))
+	}
+	return errors.Join(errs...)
 }
 
 func (c Config) ValidateHTTP() error {
@@ -244,9 +330,10 @@ func ConfigFromEnv() Config {
 			AllowUnauthenticated: parseTruthy(os.Getenv("MAINTENANT_MCP_ALLOW_UNAUTHENTICATED")),
 		},
 
-		CORSOrigins: os.Getenv("MAINTENANT_CORS_ORIGINS"),
-		MaxBodySize: int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
-		CACertFile:  os.Getenv("MAINTENANT_CA_CERT"),
+		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),
+		TrustedProxies: os.Getenv("MAINTENANT_TRUSTED_PROXIES"),
+		MaxBodySize:    int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
+		CACertFile:     os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
 		StatusURL: os.Getenv("MAINTENANT_STATUS_URL"),
@@ -291,6 +378,15 @@ func ConfigFromEnv() Config {
 		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
 		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
 	}
+
+	var invalidSpool []InvalidSetting
+	cfg.MultiHost.AgentSpoolMaxMemoryBytes = envAgentSpoolSetting(
+		"MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES", DefaultAgentSpoolMaxMemoryBytes, &invalidSpool)
+	cfg.MultiHost.AgentSpoolMaxDiskBytes = envAgentSpoolSetting(
+		"MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", DefaultAgentSpoolMaxDiskBytes, &invalidSpool)
+	cfg.MultiHost.AgentSpoolMaxAgeSeconds = envAgentSpoolSetting(
+		"MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS", DefaultAgentSpoolMaxAgeSeconds, &invalidSpool)
+	cfg.MultiHost.InvalidSpoolSettings = invalidSpool
 
 	return cfg
 }

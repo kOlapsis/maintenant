@@ -44,7 +44,7 @@ func newTokenTestHandler(t *testing.T) (*AgentHandler, *store.AgentStore) {
 	db := storetest.Open(t, logger)
 
 	store := store.NewAgentStore(db)
-	return NewAgentHandler(store, nil, nil, logger, "grpcs://example.test:8443", "127.0.0.1:8443", time.Minute), store
+	return NewAgentHandler(store, nil, nil, logger, "grpcs://example.test:8443", "127.0.0.1:8443", time.Minute, nil), store
 }
 
 func createToken(t *testing.T, h *AgentHandler) map[string]any {

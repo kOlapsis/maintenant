@@ -20,6 +20,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -121,20 +122,13 @@ func (m *mockResourceStore) DeleteDailyBefore(_ context.Context, _ time.Time, _ 
 // ---------------------------------------------------------------------------
 
 type mockContainerStore struct {
-	containers   map[string]*container.Container
-	byExternalID map[string]*container.Container
+	containers map[string]*container.Container
 }
 
 func newMockContainerStore(containers ...*container.Container) *mockContainerStore {
-	s := &mockContainerStore{
-		containers:   make(map[string]*container.Container),
-		byExternalID: make(map[string]*container.Container),
-	}
+	s := &mockContainerStore{containers: make(map[string]*container.Container)}
 	for _, c := range containers {
 		s.containers[c.ID] = c
-		if c.ExternalID != "" {
-			s.byExternalID[c.ExternalID] = c
-		}
 	}
 	return s
 }
@@ -155,9 +149,11 @@ func (m *mockContainerStore) InsertContainer(_ context.Context, _ *container.Con
 func (m *mockContainerStore) UpdateContainer(_ context.Context, _ *container.Container) error {
 	return nil
 }
-func (m *mockContainerStore) GetContainerByExternalID(_ context.Context, externalID string) (*container.Container, error) {
-	if c, ok := m.byExternalID[externalID]; ok {
-		return c, nil
+func (m *mockContainerStore) GetContainerByExternalID(_ context.Context, agentID, externalID string) (*container.Container, error) {
+	for _, c := range m.containers {
+		if uid.Agent(c.AgentID) == uid.Agent(agentID) && c.ExternalID == externalID {
+			return c, nil
+		}
 	}
 	return nil, nil
 }

@@ -25,6 +25,15 @@ export interface Agent {
   created_at: string
   revoked_at: string | null
   revoked_by: string | null
+  spool: AgentSpool | null
+}
+
+/** What an agent last said about the queue it fills while the server is unreachable. */
+export interface AgentSpool {
+  queued: number
+  draining: boolean
+  dropped_since_connect: number
+  reported_at: string
 }
 
 export interface EnrollmentTokenMasked {

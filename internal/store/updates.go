@@ -536,6 +536,66 @@ func (s *UpdateStore) GetCVESummaryCounts(ctx context.Context) (map[string]int, 
 	return counts, rows.Err()
 }
 
+// --- CVE evaluations ---
+
+func (s *UpdateStore) UpsertCVEEvaluation(ctx context.Context, e *update.CVEEvaluation) error {
+	_, err := s.writer.Exec(ctx,
+		`INSERT INTO cve_evaluations (container_id, status, evaluated_at, ecosystem, package_name, package_version, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(container_id) DO UPDATE SET
+			status = excluded.status, evaluated_at = excluded.evaluated_at,
+			ecosystem = excluded.ecosystem, package_name = excluded.package_name,
+			package_version = excluded.package_version, error = excluded.error`,
+		e.ContainerID, string(e.Status), e.EvaluatedAt.Unix(), e.Ecosystem, e.PackageName, e.PackageVersion, e.Error,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert cve evaluation: %w", err)
+	}
+	return nil
+}
+
+func (s *UpdateStore) GetCVEEvaluation(ctx context.Context, containerID string) (*update.CVEEvaluation, error) {
+	var e update.CVEEvaluation
+	var status string
+	var evaluatedAt int64
+	var ecosystem, packageName, packageVersion, evalErr sql.NullString
+
+	err := s.db.QueryRowContext(ctx,
+		`SELECT container_id, status, evaluated_at, ecosystem, package_name, package_version, error
+		FROM cve_evaluations WHERE container_id = ?`, containerID).
+		Scan(&e.ContainerID, &status, &evaluatedAt, &ecosystem, &packageName, &packageVersion, &evalErr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get cve evaluation: %w", err)
+	}
+
+	e.Status = update.CVEEvaluationStatus(status)
+	e.EvaluatedAt = time.Unix(evaluatedAt, 0)
+	if ecosystem.Valid {
+		e.Ecosystem = ecosystem.String
+	}
+	if packageName.Valid {
+		e.PackageName = packageName.String
+	}
+	if packageVersion.Valid {
+		e.PackageVersion = packageVersion.String
+	}
+	if evalErr.Valid {
+		e.Error = evalErr.String
+	}
+	return &e, nil
+}
+
+func (s *UpdateStore) DeleteCVEEvaluation(ctx context.Context, containerID string) error {
+	_, err := s.writer.Exec(ctx, `DELETE FROM cve_evaluations WHERE container_id = ?`, containerID)
+	if err != nil {
+		return fmt.Errorf("delete cve evaluation: %w", err)
+	}
+	return nil
+}
+
 // --- Version pins ---
 
 func (s *UpdateStore) InsertVersionPin(ctx context.Context, p *update.VersionPin) (string, error) {

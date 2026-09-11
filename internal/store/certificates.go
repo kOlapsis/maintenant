@@ -393,10 +393,10 @@ func (s *CertificateStore) ListDueScheduledMonitors(ctx context.Context, now tim
 
 // --- Label-discovered monitors ---
 
-func (s *CertificateStore) ListMonitorsByExternalID(ctx context.Context, externalID string) ([]*certificate.CertMonitor, error) {
+func (s *CertificateStore) ListMonitorsByExternalID(ctx context.Context, agentID, externalID string) ([]*certificate.CertMonitor, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE external_id=? AND source='label'`,
-		externalID)
+		`SELECT `+certMonitorColumns+` FROM cert_monitors WHERE agent_id=? AND external_id=? AND source='label'`,
+		uid.Agent(agentID), externalID)
 	if err != nil {
 		return nil, fmt.Errorf("list monitors by external_id: %w", err)
 	}

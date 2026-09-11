@@ -21,10 +21,10 @@ type ContainerStore interface {
 	// Container CRUD
 	InsertContainer(ctx context.Context, c *Container) (string, error)
 	UpdateContainer(ctx context.Context, c *Container) error
-	GetContainerByExternalID(ctx context.Context, externalID string) (*Container, error)
+	GetContainerByExternalID(ctx context.Context, agentID, externalID string) (*Container, error)
 	GetContainerByID(ctx context.Context, id string) (*Container, error)
 	ListContainers(ctx context.Context, opts ListContainersOpts) ([]*Container, error)
-	ArchiveContainer(ctx context.Context, externalID string, archivedAt time.Time) error
+	ArchiveContainer(ctx context.Context, id string, archivedAt time.Time) error
 	DeleteContainerByID(ctx context.Context, id string) error
 
 	// State transitions

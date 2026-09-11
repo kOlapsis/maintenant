@@ -189,6 +189,58 @@ The server enforces a per-agent limit of **1 000 events/second** (token bucket).
 
 ---
 
+## Outage Spool
+
+When the stream drops, the agent keeps collecting. Events queue in a local
+SQLite database (`<data-dir>/spool.db`) and replay once the connection is back,
+so a server restart, a network cut or an HA failover leaves a backlog rather
+than a hole in your history.
+
+### What is replayed
+
+| Family | Spooled? | Why |
+|--------|----------|-----|
+| Container lifecycle events | Yes | The timeline of what happened during the outage |
+| Container resource samples | Yes | The series the graphs are drawn from |
+| Endpoint probe results | Yes | Uptime history |
+| Container inventory | No | A full snapshot; replaying a stale one would archive live containers |
+| Swarm / Kubernetes topology | No | Same, a snapshot of current state |
+| Host resource samples | No | The server keeps only the latest value per host |
+| Certificate scans | No | Current state; the agent rescans within 60 s of reconnecting |
+
+On every reconnect the agent sends a **fresh** inventory and topology before it
+starts replaying, so the current view is right immediately.
+
+### Replay is history, not alerting
+
+A replayed event feeds the graphs, the uptime and the container timeline, but it
+never opens an alert or sends a notification: you are not paged for an incident
+that is already over. It also never overwrites current state: a replayed probe
+does not change an endpoint's status or its consecutive-failure counter, which
+belong to live checks.
+
+Delivery is at-least-once. A stream that breaks mid-replay resends everything
+past the last acknowledgement, so the server may see an event twice.
+
+### Limits
+
+The spool is bounded so it cannot threaten the host it monitors. Past the memory
+budget it spills to disk; past the disk budget the **oldest** events are dropped
+in favour of the recent ones, and the count is reported to the server. Anything
+older than the retention window is never replayed.
+
+The defaults absorb roughly an hour of outage on an ordinary host. Raise them if
+your agents sit behind a link that fails for longer, and set both budgets to `0`
+to disable the spool entirely.
+
+### Watching a catch-up
+
+An agent replaying its backlog shows a **catch-up** badge on the Agents page
+with its queue depth, and a separate marker if it had to drop events. The badge
+clears once the agent is back in step.
+
+---
+
 ## Per-Host Resource Metrics
 
 In addition to per-container stats, each agent reports the **machine-level** CPU, memory and disk usage of the host it runs on. The central server keeps the latest sample for every host in memory (local server + each agent) and exposes it to the UI.
@@ -279,3 +331,6 @@ Available for development and testing against self-signed certificates. A boot-t
 | `--runtime` | _(auto-detected)_ | Override runtime detection: `docker`, `swarm`, `kubernetes` |
 | `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` | `1000` | Max events/s per agent (server mode) |
 | `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` | `60` | Seconds before an agent is considered disconnected |
+| `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES` / `--agentSpoolMaxMemoryBytes` | `16777216` (16 MB) | Buffer held in memory before spilling to disk (agent mode) |
+| `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` / `--agentSpoolMaxDiskBytes` | `134217728` (128 MB) | Spool ceiling; past it the oldest events are dropped. `0` on both budgets disables the spool |
+| `MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS` / `--agentSpoolMaxAgeSeconds` | `86400` (24 h) | Age past which a queued event is neither kept nor replayed |

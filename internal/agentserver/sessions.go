@@ -54,6 +54,13 @@ type activeStream struct {
 	connectedAt time.Time
 	eventsSeen  atomic.Int64
 
+	// Spool state as the agent last declared it, so an operator can see a
+	// reconnected agent catching up instead of guessing from its logs.
+	spoolQueued     atomic.Int64
+	spoolDraining   atomic.Bool
+	spoolDropped    atomic.Int64
+	spoolReportedAt atomic.Int64
+
 	// send is drained by the stream's own Push goroutine, which is the only
 	// writer to the gRPC stream. Callers outside that goroutine (HTTP handlers
 	// issuing commands) enqueue here instead of touching the stream.
@@ -174,14 +181,27 @@ func (s *Sessions) SetLifecycleAlertHook(fn func(agentID, reason string, connect
 	s.alertHook = fn
 }
 
+// Token identifies one stream, so a handler closes only the session it opened.
+type Token struct{ stream *activeStream }
+
 // Open registers an active stream for agentID and cancels any pre-existing one.
 // caps are the command families the agent advertised; send is the queue its Push
 // goroutine drains to write to the stream (both may be nil for a telemetry-only
-// stream, in which case no command can be issued to this agent).
-func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr string, caps []string, send chan *agentpb.ServerMessage) {
+// stream, in which case no command can be issued to this agent). The returned
+// Token identifies this stream for CloseStream.
+func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr string, caps []string, send chan *agentpb.ServerMessage) Token {
 	capSet := make(map[string]struct{}, len(caps))
 	for _, c := range caps {
 		capSet[c] = struct{}{}
+	}
+
+	st := &activeStream{
+		cancel:      cancel,
+		addr:        addr,
+		connectedAt: time.Now(),
+		send:        send,
+		caps:        capSet,
+		pending:     make(map[string]chan *agentpb.CommandResult),
 	}
 
 	s.mu.Lock()
@@ -190,14 +210,7 @@ func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr str
 		existing.closeAll()
 	}
 	delete(s.offlineReported, agentID)
-	s.active[agentID] = &activeStream{
-		cancel:      cancel,
-		addr:        addr,
-		connectedAt: time.Now(),
-		send:        send,
-		caps:        capSet,
-		pending:     make(map[string]chan *agentpb.CommandResult),
-	}
+	s.active[agentID] = st
 	s.mu.Unlock()
 
 	s.logger.Info("agent.connected", "agent_id", agentID, "addr", addr)
@@ -209,12 +222,37 @@ func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr str
 	if s.alertHook != nil {
 		s.alertHook(agentID, "", true)
 	}
+	return Token{stream: st}
 }
 
-// Close removes and cancels the active stream for agentID.
+// Close removes and cancels whatever active stream currently exists for
+// agentID, regardless of which one opened it. For administrative teardown
+// (revoke, delete) where any live session must go.
 func (s *Sessions) Close(agentID, reason string) {
+	s.remove(agentID, nil, reason)
+}
+
+// CloseStream removes and cancels the active stream for agentID only if it is
+// still the one identified by tok. A stale tok (superseded by a reconnect) or
+// a zero Token is a no-op, so a handler unwinding after being replaced can
+// never tear down the session that replaced it.
+func (s *Sessions) CloseStream(agentID string, tok Token, reason string) {
+	if tok.stream == nil {
+		return
+	}
+	s.remove(agentID, tok.stream, reason)
+}
+
+// remove tears down the active stream for agentID. only, when non-nil,
+// restricts the removal to that specific stream; a mismatch is a no-op before
+// any disconnect side effect.
+func (s *Sessions) remove(agentID string, only *activeStream, reason string) {
 	s.mu.Lock()
 	st, had := s.active[agentID]
+	if had && only != nil && st != only {
+		s.mu.Unlock()
+		return
+	}
 	if had {
 		st.cancel(CauseForReason(reason))
 		delete(s.active, agentID)
@@ -461,6 +499,49 @@ func (s *Sessions) IncrEvents(agentID string) {
 	s.ring.add()
 }
 
+// SpoolState is what an agent last said about its outbound queue.
+type SpoolState struct {
+	Queued              int64
+	Draining            bool
+	DroppedSinceConnect int64
+	ReportedAt          time.Time
+}
+
+// RecordSpoolStatus stores what agentID declared about its spool.
+func (s *Sessions) RecordSpoolStatus(agentID string, st *agentpb.SpoolStatus) {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return
+	}
+	stream.spoolQueued.Store(int64(st.GetQueued()))               // #nosec G115 -- a queue depth reported by the agent
+	stream.spoolDropped.Store(int64(st.GetDroppedSinceConnect())) // #nosec G115 -- a counter reported by the agent
+	stream.spoolDraining.Store(st.GetDraining())
+	stream.spoolReportedAt.Store(time.Now().Unix())
+}
+
+// SpoolStatus returns what agentID last declared, or nil when it is not
+// connected or has never reported (an agent older than the spool).
+func (s *Sessions) SpoolStatus(agentID string) *SpoolState {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	at := stream.spoolReportedAt.Load()
+	if at == 0 {
+		return nil
+	}
+	return &SpoolState{
+		Queued:              stream.spoolQueued.Load(),
+		Draining:            stream.spoolDraining.Load(),
+		DroppedSinceConnect: stream.spoolDropped.Load(),
+		ReportedAt:          time.Unix(at, 0),
+	}
+}
+
 // EventsSeen returns the events_seen counter for agentID (0 if not connected).
 func (s *Sessions) EventsSeen(agentID string) int64 {
 	s.mu.RLock()
@@ -526,6 +607,7 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, g
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				sweepStart := time.Now()
 				ids, err := staleAgents(ctx, threshold)
 				if err != nil {
 					s.logger.Error("stale watcher query failed", "err", err)
@@ -535,6 +617,10 @@ func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, g
 				for _, agentID := range ids {
 					s.mu.Lock()
 					st, connected := s.active[agentID]
+					if connected && st.connectedAt.After(sweepStart) {
+						s.mu.Unlock()
+						continue
+					}
 					if connected {
 						st.cancel(ErrSessionStale)
 						delete(s.active, agentID)

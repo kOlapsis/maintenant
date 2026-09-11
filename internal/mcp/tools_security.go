@@ -31,7 +31,7 @@ func registerSecurityTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "list_cve",
-		Description: "List active CVE vulnerabilities detected in container images, optionally filtered by container or minimum severity." + requires(extension.CapCVEEnrichment),
+		Description: "List active CVE vulnerabilities detected in container images, optionally filtered by container or minimum severity. For a single container the response carries the CVE evaluation state: an empty list only means \"no known CVEs\" when the state is \"evaluated\"." + requires(extension.CapCVEEnrichment),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listCVEHandler(svc))
 
@@ -65,6 +65,30 @@ type listRiskScoresInput struct {
 
 type getSecurityPostureInput struct {
 	ContainerID string `json:"container_id,omitempty" jsonschema:"Internal container ID; omit for the global infrastructure posture"`
+}
+
+// containerCVEList carries a container's CVEs alongside the state of its last
+// analysis, so an empty list is never mistaken for a clean bill of health.
+type containerCVEList struct {
+	ContainerID string                 `json:"container_id"`
+	Evaluation  string                 `json:"evaluation"`
+	CVEs        []*update.ContainerCVE `json:"cves"`
+}
+
+func evaluationState(e *update.CVEEvaluation) string {
+	if e == nil {
+		return security.EvaluationNotEvaluated
+	}
+	switch e.Status {
+	case update.CVEEvaluated:
+		return security.EvaluationEvaluated
+	case update.CVEUnsupported:
+		return security.EvaluationUnsupported
+	case update.CVEEvaluationError:
+		return security.EvaluationError
+	default:
+		return security.EvaluationNotEvaluated
+	}
 }
 
 // --- Handlers ---
@@ -107,7 +131,15 @@ func listCVEHandler(svc *Services) gomcp.ToolHandlerFor[listCVEInput, any] {
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to list container CVEs: %w", err)
 			}
-			return jsonResult(cves)
+			eval, err := svc.UpdateStore.GetCVEEvaluation(ctx, input.ContainerID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get CVE evaluation: %w", err)
+			}
+			return jsonResult(containerCVEList{
+				ContainerID: input.ContainerID,
+				Evaluation:  evaluationState(eval),
+				CVEs:        cves,
+			})
 		}
 		cves, err := svc.UpdateStore.ListAllActiveCVEs(ctx, update.ListCVEsOpts{Severity: input.Severity})
 		if err != nil {

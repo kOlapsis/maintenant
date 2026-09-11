@@ -109,6 +109,11 @@ func (s *stubStore) DeleteContainerCVEs(_ context.Context, _ string) error    { 
 func (s *stubStore) GetCVESummaryCounts(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }
+func (s *stubStore) UpsertCVEEvaluation(_ context.Context, _ *CVEEvaluation) error { return nil }
+func (s *stubStore) GetCVEEvaluation(_ context.Context, _ string) (*CVEEvaluation, error) {
+	return nil, nil
+}
+func (s *stubStore) DeleteCVEEvaluation(_ context.Context, _ string) error           { return nil }
 func (s *stubStore) UpsertDigestBaseline(_ context.Context, _ *DigestBaseline) error { return nil }
 func (s *stubStore) GetDigestBaseline(_ context.Context, _ string) (*DigestBaseline, error) {
 	return s.baseline, nil

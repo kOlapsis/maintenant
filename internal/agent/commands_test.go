@@ -111,14 +111,7 @@ func logsCmd(requestID string, follow bool) *agentpb.AgentCommand {
 // waitFor polls until cond holds or the deadline passes.
 func waitFor(t *testing.T, cond func() bool, msg string) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatal(msg)
+	require.Eventually(t, cond, 2*time.Second, 5*time.Millisecond, msg)
 }
 
 func TestCommandRunner_SnapshotReturnsLinesAndTerminates(t *testing.T) {
@@ -266,8 +259,11 @@ func TestCommandRunner_EmptyRequestIDIgnored(t *testing.T) {
 
 	r.Handle(context.Background(), out, logsCmd("", false))
 
-	time.Sleep(100 * time.Millisecond)
-	assert.Empty(t, out.snapshot(), "a command with no request id cannot be answered")
+	// Negative check: a command with no request id must never be answered,
+	// held over a window rather than sampled once.
+	assert.Never(t, func() bool {
+		return len(out.snapshot()) > 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "a command with no request id cannot be answered")
 }
 
 func TestClampLogLines(t *testing.T) {

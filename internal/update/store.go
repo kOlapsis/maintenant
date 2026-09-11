@@ -60,6 +60,11 @@ type UpdateStore interface {
 	DeleteContainerCVEs(ctx context.Context, containerID string) error
 	GetCVESummaryCounts(ctx context.Context) (map[string]int, error)
 
+	// CVE evaluations
+	UpsertCVEEvaluation(ctx context.Context, e *CVEEvaluation) error
+	GetCVEEvaluation(ctx context.Context, containerID string) (*CVEEvaluation, error)
+	DeleteCVEEvaluation(ctx context.Context, containerID string) error
+
 	// Digest baselines (non-semver tags)
 	UpsertDigestBaseline(ctx context.Context, b *DigestBaseline) error
 	GetDigestBaseline(ctx context.Context, containerID string) (*DigestBaseline, error)

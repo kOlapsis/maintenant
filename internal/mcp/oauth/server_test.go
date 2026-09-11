@@ -15,12 +15,18 @@ type fakeStore struct {
 	stored *MCPAuthCode
 }
 
-func (f *fakeStore) StoreCode(_ context.Context, code *MCPAuthCode) error { f.stored = code; return nil }
+func (f *fakeStore) StoreCode(_ context.Context, code *MCPAuthCode) error {
+	f.stored = code
+	return nil
+}
 func (f *fakeStore) ConsumeCode(context.Context, string) (*MCPAuthCode, error) {
 	return nil, nil
 }
-func (f *fakeStore) StoreToken(context.Context, *MCPOAuthToken) error      { return nil }
+func (f *fakeStore) StoreToken(context.Context, *MCPOAuthToken) error { return nil }
 func (f *fakeStore) GetToken(context.Context, string) (*MCPOAuthToken, error) {
+	return nil, nil
+}
+func (f *fakeStore) ConsumeRefreshToken(context.Context, string) (*MCPOAuthToken, error) {
 	return nil, nil
 }
 func (f *fakeStore) RevokeToken(context.Context, string) error    { return nil }

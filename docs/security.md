@@ -176,6 +176,36 @@ server {
 
 ---
 
+### Running behind a proxy
+
+`MAINTENANT_TRUSTED_PROXIES` takes a comma-separated list of CIDRs and bare
+addresses:
+
+```bash
+MAINTENANT_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.4,2001:db8::/32
+```
+
+It is empty by default, and an empty list means **no forwarded header is
+believed**: `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Host` are not read
+at all, and every rate-limit quota is counted against the address that opened
+the connection. Anyone able to reach the instance directly can otherwise send a
+different header on every request and get a fresh quota each time.
+
+When the list is set, a request is only credited to a forwarded address if its
+immediate peer is inside one of the prefixes. `X-Forwarded-For` is then walked
+right to left and the first hop that is not itself a listed proxy is the client;
+`X-Real-IP` is read only when `X-Forwarded-For` is absent. Anything that does
+not parse falls back to the peer address.
+
+The same list decides whether `X-Forwarded-Host` may name the gRPC URL handed to
+a new agent at enrolment. `X-Forwarded-Proto: grpc` never downgrades that URL to
+plaintext: the answer stays `grpcs://` and carries a
+`public_url_plaintext_refused` warning.
+
+A value that does not parse refuses to start rather than being ignored.
+
+---
+
 ## External database credentials
 
 When the server is pointed at a PostgreSQL with `MAINTENANT_DATABASE_URL`, the
@@ -205,14 +235,18 @@ Two per-IP token bucket rate limiters, one tight for the public surfaces and one
 
 | Setting | Public routes | Admin API |
 |---------|---------------|-----------|
-| Applied to | `/ping/`, `/status/*`, `/mcp` | `/api/v1/*` |
+| Applied to | `/ping/`, `/status/*`, `/mcp`, `/oauth/*` | `/api/v1/*` |
 | Rate | 10 requests/second per IP | 50 requests/second per IP |
 | Burst | 20 requests | 200 requests |
 | 429 response | `{"error":{"code":"rate_limited","message":"Too many requests"}}` with `Retry-After: 1` | Same |
 
 The admin API limit is a flood ceiling, not a quota. A dashboard page load fans out dozens of parallel calls, so the public bucket would reject ordinary use; at 50/s with a burst of 200 the interface never reaches it. It exists so an unauthenticated surface, or a stolen session, cannot hammer expensive routes for free.
 
-IP detection priority: `X-Real-IP` header → first entry in `X-Forwarded-For` → `RemoteAddr`.
+The public status page carries a third, much slower bucket of its own: `POST
+/status/subscribe` accepts five subscriptions per hour and per address.
+
+Which address a quota is counted against is decided by
+`MAINTENANT_TRUSTED_PROXIES` — see [Running behind a proxy](#running-behind-a-proxy).
 
 The `/status/subscribe` endpoint has an additional rate limit of 5 requests per IP per hour to prevent subscription abuse.
 
