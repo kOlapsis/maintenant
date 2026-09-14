@@ -60,6 +60,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		Name:       ev.GetName(),
 		Timestamp:  agentEventTime(ev, meta),
 		Replayed:   meta.Replayed,
+		EventID:    meta.EventID,
 		Labels:     ev.GetLabels(),
 	}
 

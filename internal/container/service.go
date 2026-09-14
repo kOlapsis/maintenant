@@ -38,7 +38,16 @@ type ContainerEvent struct {
 	ErrorDetail  string
 	Timestamp    time.Time
 	Replayed     bool
+	EventID      string
 	Labels       map[string]string
+}
+
+// recordID derives the id of a row written for evt, or "" for an event without an id.
+func (evt ContainerEvent) recordID(record string) string {
+	if evt.EventID == "" {
+		return ""
+	}
+	return uid.EventRecord(uid.Agent(evt.AgentID), evt.EventID, record, evt.ExternalID)
 }
 
 // LogFetcher abstracts log retrieval.
@@ -195,6 +204,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 
 	// Record transition
 	transition := &StateTransition{
+		ID:            evt.recordID("state_transition"),
 		ContainerID:   c.ID,
 		PreviousState: previousState,
 		NewState:      newState,
@@ -309,6 +319,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 	}
 
 	transition := &StateTransition{
+		ID:             evt.recordID("health_transition"),
 		ContainerID:    c.ID,
 		PreviousState:  c.State,
 		NewState:       c.State,

@@ -114,6 +114,8 @@ type Spool struct {
 	snapshots   map[snapshotKind]*agentpb.AgentEvent
 	sendSeq     int64
 	ackSeq      int64
+	generation  uint64
+	attachedAt  time.Time
 	dropped     int64
 	dropLogged  int64
 	lastDropLog time.Time
@@ -158,6 +160,7 @@ func NewSpool(dataDir string, cfg SpoolConfig, logger *slog.Logger) *Spool {
 func (s *Spool) Attach(sink eventSink) {
 	s.mu.Lock()
 	s.sink = sink
+	s.attachedAt = time.Now()
 	s.pausedUntil = time.Time{}
 	s.reported = false
 	s.mu.Unlock()
@@ -568,7 +571,7 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 
 	for {
 		s.mu.Lock()
-		sink, store, after := s.sink, s.store, s.sendSeq
+		sink, store, after, gen, attachedAt := s.sink, s.store, s.sendSeq, s.generation, s.attachedAt
 		paused := time.Now().Before(s.pausedUntil)
 		s.mu.Unlock()
 		if sink == nil || store == nil || paused {
@@ -590,24 +593,44 @@ func (s *Spool) drainOnce(ctx context.Context) error {
 			evt := &agentpb.AgentEvent{}
 			if err := proto.Unmarshal(row.Payload, evt); err != nil {
 				s.logger.Warn("agent: dropping unreadable spooled event", "seq", row.Seq, "error", err)
-				s.mu.Lock()
-				s.sendSeq = row.Seq
-				s.mu.Unlock()
+				if !s.advance(gen, row.Seq) {
+					break
+				}
 				continue
 			}
 			if err := s.limiter.Wait(ctx); err != nil {
 				return nil
 			}
-			evt.Replayed = true
+			if !s.sameGeneration(gen) {
+				break
+			}
+			evt.Replayed = evt.GetObservedAt() != nil && evt.GetObservedAt().AsTime().Before(attachedAt)
 			evt.Seq = uint64(row.Seq) // #nosec G115 -- an AUTOINCREMENT row id, positive by construction
 			if err := sink.Send(evt); err != nil {
 				return fmt.Errorf("drain spooled event: %w", err)
 			}
-			s.mu.Lock()
-			s.sendSeq = row.Seq
-			s.mu.Unlock()
+			if !s.advance(gen, row.Seq) {
+				break
+			}
 		}
 	}
+}
+
+func (s *Spool) sameGeneration(gen uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.generation == gen
+}
+
+// advance moves the send cursor to seq unless a rewind happened since gen was read.
+func (s *Spool) advance(gen uint64, seq int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.generation != gen {
+		return false
+	}
+	s.sendSeq = seq
+	return true
 }
 
 // Acked records the row the server has taken everything up to.
@@ -619,12 +642,6 @@ func (s *Spool) Acked(seq uint64) {
 
 	s.mu.Lock()
 	store := s.store
-	// Snapshots go out on the same stream and consume sequence numbers of their
-	// own, so an ack can name a row the drain has not reached. Never purge past
-	// what was actually sent from the spool.
-	if purgeTo > s.sendSeq {
-		purgeTo = s.sendSeq
-	}
 	if purgeTo <= s.ackSeq {
 		s.mu.Unlock()
 		return
@@ -644,6 +661,7 @@ func (s *Spool) Acked(seq uint64) {
 func (s *Spool) Rewind() {
 	s.mu.Lock()
 	s.sendSeq = s.ackSeq
+	s.generation++
 	s.mu.Unlock()
 }
 
@@ -655,6 +673,7 @@ func (s *Spool) RateLimited(retryAfter time.Duration) {
 	}
 	s.mu.Lock()
 	s.sendSeq = s.ackSeq
+	s.generation++
 	s.pausedUntil = time.Now().Add(retryAfter)
 	s.mu.Unlock()
 

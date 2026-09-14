@@ -122,7 +122,7 @@ func (d *Dispatcher) countRejection(agentID string) {
 // comes from an agent predating the field: it falls back to the receive time.
 // An out of range time is refused outright, never clamped onto a bound.
 func eventMeta(evt *agentpb.AgentEvent, now time.Time) (EventMeta, error) {
-	meta := EventMeta{ObservedAt: now, Replayed: evt.GetReplayed()}
+	meta := EventMeta{ObservedAt: now, Replayed: evt.GetReplayed(), EventID: evt.GetEventId()}
 
 	ts := evt.GetObservedAt()
 	if ts == nil || (ts.GetSeconds() == 0 && ts.GetNanos() == 0) {

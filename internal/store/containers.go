@@ -205,10 +205,17 @@ func (s *ContainerStore) DeleteContainerByID(ctx context.Context, id string) err
 
 // InsertTransition records a state transition.
 func (s *ContainerStore) InsertTransition(ctx context.Context, t *container.StateTransition) (string, error) {
-	t.ID = uid.New()
+	if t.ID == "" {
+		t.ID = uid.New()
+	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO state_transitions (id, container_id, previous_state, new_state, previous_health, new_health, exit_code, log_snippet, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			container_id=excluded.container_id, previous_state=excluded.previous_state,
+			new_state=excluded.new_state, previous_health=excluded.previous_health,
+			new_health=excluded.new_health, exit_code=excluded.exit_code,
+			log_snippet=excluded.log_snippet, timestamp=excluded.timestamp`,
 		t.ID, t.ContainerID, string(t.PreviousState), string(t.NewState),
 		nullableHealth(t.PreviousHealth), nullableHealth(t.NewHealth),
 		t.ExitCode, NullableString(t.LogSnippet), t.Timestamp.Unix(),

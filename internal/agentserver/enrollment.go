@@ -230,13 +230,10 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		}
 	}()
 
-	const ackEvery = 100
-	var (
-		eventCount  uint64
-		lastSeenSeq uint64
-		lastAck     = time.Now()
-		lastSeenUpd = connectedAt
-	)
+	lastSeenUpd := connectedAt
+	acks := newAckTracker(time.Now())
+	ackTicker := time.NewTicker(ackTick)
+	defer ackTicker.Stop()
 
 	// touchLiveness records that the agent is alive. Any message proves it —
 	// telemetry, a command reply, even an event we are about to rate-limit — so
@@ -252,21 +249,18 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		lastSeenUpd = time.Now()
 	}
 
-	maybeAck := func(force bool) error {
-		if !force && eventCount%ackEvery != 0 && time.Since(lastAck) < 5*time.Second {
-			return nil
-		}
+	sendAck := func(seq uint64) error {
 		if err := stream.Send(&agentpb.ServerMessage{
 			Payload: &agentpb.ServerMessage_Ack{
 				Ack: &agentpb.EventAck{
-					LastEventSeq: lastSeenSeq,
+					LastEventSeq: seq,
 					ReceivedAt:   timestamppb.Now(),
 				},
 			},
 		}); err != nil {
 			return err
 		}
-		lastAck = time.Now()
+		acks.sent(seq, time.Now())
 		return nil
 	}
 
@@ -284,6 +278,13 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 		case out := <-sendCh:
 			if err := stream.Send(out); err != nil {
 				return err
+			}
+
+		case <-ackTicker.C:
+			if seq, ok := acks.pending(); ok {
+				if err := sendAck(seq); err != nil {
+					return err
+				}
 			}
 
 		case res := <-recvCh:
@@ -323,6 +324,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 						"agent_id", ag.AgentID,
 						"retry_after_ms", retryMs,
 					)
+					acks.refuse(evt.GetSeq())
 					_ = stream.Send(&agentpb.ServerMessage{
 						Payload: &agentpb.ServerMessage_Error{
 							Error: &agentpb.StreamError{
@@ -336,8 +338,7 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 				}
 			}
 
-			eventCount++
-			lastSeenSeq = evt.GetSeq()
+			acks.accept(evt.GetSeq())
 
 			if sessions != nil {
 				sessions.IncrEvents(ag.AgentID)
@@ -349,8 +350,10 @@ func (impl *ingestImpl) Push(stream grpc.BidiStreamingServer[agentpb.ClientMessa
 				}
 			}
 
-			if err := maybeAck(false); err != nil {
-				return err
+			if seq, ok := acks.afterEvent(time.Now()); ok {
+				if err := sendAck(seq); err != nil {
+					return err
+				}
 			}
 		}
 	}
