@@ -1,0 +1,185 @@
+---
+- name: Refuse to build without nested virtualisation
+  ansible.builtin.stat:
+    path: /dev/kvm
+  register: lab_kvm
+
+- name: Report a host that cannot run the bench
+  ansible.builtin.assert:
+    that: lab_kvm.stat.exists
+    fail_msg: >-
+      /dev/kvm is absent: the bench needs nested virtualisation on this host.
+      Check it with kvm-ok before anything else.
+
+- name: Look for the host tools
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: lab_tools
+  loop: "{{ lab_required_tools + lab_iso_candidates }}"
+
+- name: Report a host missing a tool the bench needs
+  ansible.builtin.assert:
+    that: lab_tools.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first
+    fail_msg: "{{ item }} is missing on this host"
+  loop: "{{ lab_required_tools }}"
+
+- name: Report a host with no ISO builder for the cloud-init seeds
+  ansible.builtin.assert:
+    that: lab_tools.results | selectattr('stat.exists') | map(attribute='item') | select('in', lab_iso_candidates) | list | length > 0
+    fail_msg: "none of {{ lab_iso_candidates | join(', ') }} is installed"
+
+- name: Read the operator public key
+  ansible.builtin.slurp:
+    src: "{{ lab_ssh_public_key_file }}"
+  register: lab_pubkey
+
+- name: Keep the tool paths and the key at hand
+  ansible.builtin.set_fact:
+    lab_emulator: "{{ lab_emulator_path }}"
+    lab_iso_command: "{{ lab_tools.results | selectattr('stat.exists') | map(attribute='item') | select('in', lab_iso_candidates) | first }}"
+    lab_ssh_public_key: "{{ lab_pubkey.content | b64decode | trim }}"
+
+- name: Create the bench directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0711"
+  loop:
+    - "{{ lab_work_dir }}"
+    - "{{ lab_image_cache }}"
+
+- name: Fetch the base cloud image
+  ansible.builtin.get_url:
+    url: "{{ topology.image.url }}"
+    dest: "{{ lab_image_cache }}/{{ topology.image.url | basename }}"
+    checksum: "sha512:{{ topology.image.checksum_url }}"
+    mode: "0644"
+
+- name: Create the system disks
+  ansible.builtin.command:
+    argv:
+      - qemu-img
+      - create
+      - -f
+      - qcow2
+      - -F
+      - qcow2
+      - -b
+      - "{{ lab_image_cache }}/{{ topology.image.url | basename }}"
+      - "{{ lab_work_dir }}/{{ item.name }}-system.qcow2"
+      - "{{ topology.image.system_disk_gb }}G"
+    creates: "{{ lab_work_dir }}/{{ item.name }}-system.qcow2"
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create the replicated-state disks
+  ansible.builtin.command:
+    argv:
+      - qemu-img
+      - create
+      - -f
+      - qcow2
+      - "{{ lab_work_dir }}/{{ item.name }}-data.qcow2"
+      - "{{ item.data_disk_gb }}G"
+    creates: "{{ lab_work_dir }}/{{ item.name }}-data.qcow2"
+  when: item.data_disk_gb is defined
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create the cloud-init seed directories
+  ansible.builtin.file:
+    path: "{{ lab_work_dir }}/seed-{{ item.name }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Render the cloud-init seeds
+  ansible.builtin.template:
+    src: "templates/cloud-init/{{ item.1 }}.j2"
+    dest: "{{ lab_work_dir }}/seed-{{ item.0.name }}/{{ item.1 }}"
+    mode: "0644"
+  vars:
+    machine: "{{ item.0 }}"
+  loop: "{{ topology.machines | product(['meta-data', 'user-data', 'network-config']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1 }}"
+  register: lab_seeds
+
+- name: Look for the cloud-init seed images
+  ansible.builtin.stat:
+    path: "{{ lab_work_dir }}/{{ item.name }}-seed.iso"
+  register: lab_seed_images
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Build the cloud-init seed images
+  ansible.builtin.command:
+    argv:
+      - "{{ lab_iso_command }}"
+      - -output
+      - "{{ lab_work_dir }}/{{ item.0.name }}-seed.iso"
+      - -volid
+      - cidata
+      - -joliet
+      - -rock
+      - "{{ lab_work_dir }}/seed-{{ item.0.name }}/meta-data"
+      - "{{ lab_work_dir }}/seed-{{ item.0.name }}/user-data"
+      - "{{ lab_work_dir }}/seed-{{ item.0.name }}/network-config"
+  when: >-
+    not item.1.stat.exists
+    or (lab_seeds.results
+        | selectattr('item.0.name', 'equalto', item.0.name)
+        | selectattr('changed') | list | length > 0)
+  changed_when: true
+  loop: "{{ topology.machines | zip(lab_seed_images.results) | list }}"
+  loop_control:
+    label: "{{ item.0.name }}"
+
+- name: Define the networks
+  community.libvirt.virt_net:
+    uri: "{{ libvirt_uri }}"
+    name: "{{ lab_prefix }}-{{ item.name }}"
+    command: define
+    xml: "{{ lookup('template', 'templates/network.xml.j2') }}"
+  vars:
+    net: "{{ item }}"
+  loop: "{{ topology.networks }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Start the networks
+  community.libvirt.virt_net:
+    uri: "{{ libvirt_uri }}"
+    name: "{{ lab_prefix }}-{{ item.name }}"
+    state: active
+    autostart: true
+  loop: "{{ topology.networks }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Define the machines
+  community.libvirt.virt:
+    uri: "{{ libvirt_uri }}"
+    name: "{{ lab_prefix }}-{{ item.name }}"
+    command: define
+    xml: "{{ lookup('template', 'templates/domain.xml.j2') }}"
+  vars:
+    machine: "{{ item }}"
+    machine_memory_mb: "{{ item.memory_mb | default((item.memory_gb | default(1) | int) * 1024) }}"
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Start the machines
+  community.libvirt.virt:
+    uri: "{{ libvirt_uri }}"
+    name: "{{ lab_prefix }}-{{ item.name }}"
+    state: running
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"

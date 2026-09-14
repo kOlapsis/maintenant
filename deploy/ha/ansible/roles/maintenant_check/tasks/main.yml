@@ -1,0 +1,15 @@
+---
+- name: Install curl and jq, the test reads the health body with them
+  ansible.builtin.apt:
+    name: [curl, jq]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install the application test
+  ansible.builtin.template:
+    src: maintenant-check.sh.j2
+    dest: "{{ maintenant_check_script }}"
+    owner: root
+    group: root
+    mode: "0755"

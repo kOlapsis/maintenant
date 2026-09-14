@@ -1,9 +1,13 @@
 ---
-# The only variable that separates the bench from the production deployment.
+# The only variables that separate the bench from the production deployment.
 # Everything else is shared (FR-052).
 #
 # On the bench, fencing is the host destroying the VM through libvirt. The
-# command is run from the host, and a failed fencing blocks the start on the
-# survivor: it never lets through (FR-024).
+# command runs on the host and is reached by a restricted key; a failed fencing
+# blocks the start on the survivor, it never lets through (FR-024).
+#
+# $ha_fencing_target is set by the callout to the machine being shot. It is a
+# shell variable, not a template: the target is only known when the fence runs.
 ha_fencing_method: libvirt
-ha_fencing_command: "virsh destroy {{ ha_fencing_target }}"
+ha_fencing_command: 'virsh destroy "$ha_fencing_target"'
+ha_fencing_check_command: 'virsh domstate "$ha_fencing_target"'

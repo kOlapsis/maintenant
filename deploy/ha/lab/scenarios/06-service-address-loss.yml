@@ -1,0 +1,40 @@
+---
+# Scenario 6 of the bench plan, Loss of the service address.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 6
+slug: service-address-loss
+name: Loss of the service address
+source: bench plan
+repetitions: 1
+injection:
+  'on': active
+  command: ip addr del "$LAB_SERVICE_ADDRESS/$LAB_SERVICE_NETMASK" dev "$LAB_INTERCONNECT"
+repair:
+  'on': host
+  command: 'echo "no repair: the resource monitor is what is under test"'
+verify:
+  'on': active
+  command: ip -o addr show | grep -q " inet $LAB_SERVICE_ADDRESS/"
+measures:
+- rto_ms
+- alerts_induced
+modes:
+  ip-only:
+    applicable: true
+    expected: The resource monitor brings the address back on the same node. No failover.
+  postgres/streaming:
+    applicable: true
+    expected: The resource monitor brings the address back on the same node. No failover.
+      The outage lasts as long as one monitoring period, and no more.
+  sqlite/drbd:
+    applicable: true
+    expected: The resource monitor brings the address back on the same node. No failover.
+      The outage lasts as long as one monitoring period, and no more.
+  postgres/drbd:
+    applicable: true
+    expected: The resource monitor brings the address back on the same node. No failover.
+      The outage lasts as long as one monitoring period, and no more.

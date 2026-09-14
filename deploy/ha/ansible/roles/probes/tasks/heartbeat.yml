@@ -1,0 +1,49 @@
+---
+- name: Wait for the service to answer
+  ansible.builtin.uri:
+    url: "{{ probes_base_url }}/api/v1/health"
+    status_code: 200
+  retries: 30
+  delay: 2
+  register: probes_service
+  until: probes_service is succeeded
+  delegate_to: localhost
+
+- name: Read the heartbeats that already exist
+  ansible.builtin.uri:
+    url: "{{ probes_base_url }}/api/v1/heartbeats"
+    status_code: 200
+  register: probes_existing
+  delegate_to: localhost
+
+- name: Create the heartbeat the records are written to
+  ansible.builtin.uri:
+    url: "{{ probes_base_url }}/api/v1/heartbeats"
+    method: POST
+    body_format: json
+    body:
+      name: "{{ probes_heartbeat_name }}"
+      interval_seconds: "{{ probes_heartbeat_interval_seconds }}"
+      grace_seconds: "{{ probes_heartbeat_grace_seconds }}"
+    status_code: 201
+  register: probes_created
+  when: >-
+    probes_existing.json.heartbeats
+    | selectattr('name', 'equalto', probes_heartbeat_name)
+    | list | length == 0
+  delegate_to: localhost
+
+# The ping token is the heartbeat id itself, so one value addresses both the
+# write path and the read-back.
+- name: Keep the heartbeat id at hand
+  ansible.builtin.set_fact:
+    probes_heartbeat_id: >-
+      {{ (probes_created.json.id | default(''))
+         or (probes_existing.json.heartbeats
+             | selectattr('name', 'equalto', probes_heartbeat_name)
+             | map(attribute='id') | first) }}
+
+- name: Refuse a deployment with nowhere to write
+  ansible.builtin.assert:
+    that: probes_heartbeat_id | trim | length > 0
+    fail_msg: "no heartbeat named {{ probes_heartbeat_name }} and none could be created"

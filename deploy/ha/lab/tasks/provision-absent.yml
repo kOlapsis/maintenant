@@ -1,0 +1,51 @@
+---
+- name: List the domains libvirt knows
+  ansible.builtin.command: "virsh --connect {{ libvirt_uri }} list --all --name"
+  register: lab_domains
+  changed_when: false
+
+- name: List the networks libvirt knows
+  ansible.builtin.command: "virsh --connect {{ libvirt_uri }} net-list --all --name"
+  register: lab_nets
+  changed_when: false
+
+- name: Stop the machines
+  ansible.builtin.command: "virsh --connect {{ libvirt_uri }} destroy {{ lab_prefix }}-{{ item.name }}"
+  register: lab_destroy
+  failed_when: lab_destroy.rc != 0 and 'is not running' not in lab_destroy.stderr
+  changed_when: lab_destroy.rc == 0
+  when: (lab_prefix ~ '-' ~ item.name) in lab_domains.stdout_lines
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Remove the machines from libvirt
+  ansible.builtin.command: "virsh --connect {{ libvirt_uri }} undefine {{ lab_prefix }}-{{ item.name }}"
+  when: (lab_prefix ~ '-' ~ item.name) in lab_domains.stdout_lines
+  changed_when: true
+  loop: "{{ topology.machines }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Stop the networks
+  ansible.builtin.command: "virsh --connect {{ libvirt_uri }} net-destroy {{ lab_prefix }}-{{ item.name }}"
+  register: lab_net_destroy
+  failed_when: lab_net_destroy.rc != 0 and 'is not active' not in lab_net_destroy.stderr
+  changed_when: lab_net_destroy.rc == 0
+  when: (lab_prefix ~ '-' ~ item.name) in lab_nets.stdout_lines
+  loop: "{{ topology.networks }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Remove the networks from libvirt
+  ansible.builtin.command: "virsh --connect {{ libvirt_uri }} net-undefine {{ lab_prefix }}-{{ item.name }}"
+  when: (lab_prefix ~ '-' ~ item.name) in lab_nets.stdout_lines
+  changed_when: true
+  loop: "{{ topology.networks }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Remove the volumes and the seeds
+  ansible.builtin.file:
+    path: "{{ lab_work_dir }}"
+    state: absent

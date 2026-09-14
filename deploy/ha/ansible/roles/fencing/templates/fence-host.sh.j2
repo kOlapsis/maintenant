@@ -1,0 +1,57 @@
+#!/bin/sh
+# Runs on the libvirt host, as the forced command of the fencing key. The
+# caller chooses nothing but the verb and the node name; the domain it maps to
+# and the command run on it are fixed here.
+
+set -eu
+
+set -f
+# shellcheck disable=SC2086 # the split is the point; -f stops the globbing
+set -- ${SSH_ORIGINAL_COMMAND:-}
+mode="${1:-}"
+target="${2:-}"
+
+case "$mode" in
+fence | check) ;;
+*)
+	echo "refused: unknown verb" >&2
+	exit 2
+	;;
+esac
+
+case "$target" in
+{% for node in groups['opensvc_cluster'] %}
+{{ node }}) ;;
+{% endfor %}
+*)
+	echo "refused: $target is not a cluster node" >&2
+	exit 2
+	;;
+esac
+
+domain="{{ fencing_domain_prefix }}$target"
+
+if ! virsh domstate "$domain" >/dev/null 2>&1; then
+	echo "refused: no domain $domain" >&2
+	exit 2
+fi
+
+ha_fencing_target="$domain"
+export ha_fencing_target
+
+if [ "$mode" = check ]; then
+	/bin/sh -c {{ fencing_check_command | quote }} >/dev/null
+	echo "reachable $domain"
+	exit 0
+fi
+
+/bin/sh -c {{ fencing_command | quote }}
+
+state=$(virsh domstate "$domain" 2>/dev/null || echo unknown)
+case "$state" in
+"shut off" | "crashed") echo "fenced $domain" ;;
+*)
+	echo "fence failed: $domain is $state" >&2
+	exit 1
+	;;
+esac

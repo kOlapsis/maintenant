@@ -1,0 +1,28 @@
+---
+# Overridden by group_vars/all/versions.yml, which is where the freeze lives.
+opensvc_version: "v3.0.0-rc30"
+opensvc_package_version: "3.0.0~rc30.0.g0e9175401+deb12"
+opensvc_apt_branch: prod
+
+# versions.yml carries the node image, and the package is built per codename.
+opensvc_codename: "{{ node_codename | default('bookworm') }}"
+
+opensvc_repo_url: https://packages.opensvc.com/apt/debian
+opensvc_repo_key_url: https://packages.opensvc.com/gpg.public.key.asc
+opensvc_keyring: /etc/apt/keyrings/opensvc.asc
+
+opensvc_cluster_name: maintenant
+opensvc_service_unit: opensvc-server.service
+
+# The node the others join. The preferred node of the inventory, or the first
+# cluster host when none is marked.
+opensvc_former: >-
+  {{ ((groups['opensvc_cluster'] | map('extract', hostvars)
+       | selectattr('ha_preferred', 'defined') | selectattr('ha_preferred')
+       | map(attribute='inventory_hostname') | list)
+      + groups['opensvc_cluster']) | first }}
+
+# A join token is short-lived; ask for one long enough to cover the join of
+# every peer in one play.
+opensvc_join_token_duration: 10m
+opensvc_join_timeout: 60s

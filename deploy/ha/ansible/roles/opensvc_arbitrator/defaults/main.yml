@@ -1,0 +1,30 @@
+---
+# The arbitrator is an HTTP endpoint: om3 votes by issuing a GET on it. It runs
+# on the third machine and shares nothing with the cluster software, so a node
+# and its witness cannot fail for the same reason.
+opensvc_arbitrator_port: 1216
+opensvc_arbitrator_path: /arbitrator
+opensvc_arbitrator_weight: 1
+
+opensvc_arbitrator_host: >-
+  {{ hostvars[groups['arbitrator'] | first].ansible_host
+     | default(groups['arbitrator'] | first) }}
+
+# The port is explicit and always will be. om3 implies 1214 on a portless TCP
+# uri while its own listener is on 1215, and the CHANGELOG and the keyword
+# reference disagree about which: an implicit port here would point the vote at
+# something nobody chose (FR-021).
+opensvc_arbitrator_uri: >-
+  http://{{ opensvc_arbitrator_host }}:{{ opensvc_arbitrator_port }}{{ opensvc_arbitrator_path }}
+
+# om3 ships quorum off, and with it off a split cluster logs "cluster is split,
+# ignore" and both sides start the service.
+opensvc_arbitrator_quorum: true
+opensvc_arbitrator_split_action: crash
+
+# What each node must hold. Read back and asserted after being set.
+opensvc_arbitrator_settings:
+  cluster.quorum: "{{ opensvc_arbitrator_quorum | bool | ternary('true', 'false') }}"
+  node.split_action: "{{ opensvc_arbitrator_split_action }}"
+  "arbitrator#0.uri": "{{ opensvc_arbitrator_uri | trim }}"
+  "arbitrator#0.weight": "{{ opensvc_arbitrator_weight }}"

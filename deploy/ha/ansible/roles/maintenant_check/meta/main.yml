@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Kolapsis
+  role_name: maintenant_check
+  description: The application test the OpenSVC service runs against the binary
+  license: AGPL-3.0-or-later
+  min_ansible_version: "2.15"
+dependencies: []

@@ -1,0 +1,44 @@
+---
+# Scenario 8 of the bench plan, Application freeze.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 8
+slug: application-freeze
+name: Application freeze
+source: bench plan
+repetitions: 1
+injection:
+  'on': active
+  command: pkill -STOP -x maintenant
+repair:
+  'on': host
+  command: virsh domstate "$LAB_ACTIVE_DOMAIN" | grep -q "shut off" && virsh start "$LAB_ACTIVE_DOMAIN"
+    || $LAB_SSH_ACTIVE "pkill -CONT -x maintenant"
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- rto_ms
+- detection_delay_s
+- alerts_induced
+modes:
+  postgres/streaming:
+    applicable: true
+    expected: 'The process is alive and the service is dead. A PID check passes here and is
+      therefore worthless: the application check must be an HTTP one, reading the body of
+      /api/v1/health. Detection, then recovery, in under 120 s (SC-005).'
+  sqlite/drbd:
+    applicable: true
+    expected: 'The process is alive and the service is dead. A PID check passes here and is
+      therefore worthless: the application check must be an HTTP one, reading the body of
+      /api/v1/health. Detection, then recovery, in under 120 s (SC-005).'
+  postgres/drbd:
+    applicable: true
+    expected: 'The process is alive and the service is dead. A PID check passes here and is
+      therefore worthless: the application check must be an HTTP one, reading the body of
+      /api/v1/health. Detection, then recovery, in under 120 s (SC-005).'
+note: This is the failure mode most HA setups miss. It is one of the three that decide whether
+  the design is sound.

@@ -1,0 +1,57 @@
+---
+- name: Install the fencing callout
+  ansible.builtin.template:
+    src: fence.sh.j2
+    dest: "{{ fencing_agent }}"
+    mode: "0750"
+    owner: root
+    group: root
+
+- name: Read the stonith commands this node holds
+  ansible.builtin.command: "om node config get --kw stonith#{{ item }}.command"
+  register: fencing_current
+  changed_when: false
+  failed_when: false
+  loop: "{{ groups['opensvc_cluster'] }}"
+
+- name: List the nodes whose callout needs declaring
+  ansible.builtin.set_fact:
+    fencing_mismatch: >-
+      {{ fencing_mismatch | default([])
+         + ([item.item] if (item.stdout | default('') | trim) != (fencing_agent ~ ' ' ~ item.item) else []) }}
+  loop: "{{ fencing_current.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Declare the callout for every cluster node
+  ansible.builtin.command: >-
+    om node config update
+    {% for node in groups['opensvc_cluster'] %} --set '{{ "stonith#" ~ node }}.command={{ fencing_agent }} {{ node }}'{% endfor %}
+  when: fencing_mismatch | length > 0
+  changed_when: true
+
+- name: Read the stonith commands back
+  ansible.builtin.command: "om node config get --kw stonith#{{ item }}.command"
+  register: fencing_after
+  changed_when: false
+  loop: "{{ groups['opensvc_cluster'] }}"
+
+# A node with no callout declared starts the service without shooting its peer,
+# which is the double-start the bench exists to rule out.
+- name: Refuse a node whose callout did not take
+  ansible.builtin.assert:
+    that: (item.stdout | trim) == (fencing_agent ~ ' ' ~ item.item)
+    fail_msg: >-
+      stonith#{{ item.item }}.command is "{{ item.stdout | trim }}" on
+      {{ inventory_hostname }}, expected "{{ fencing_agent }} {{ item.item }}".
+  loop: "{{ fencing_after.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+# Deploying a fence nobody has ever exercised is how a cluster discovers,
+# during an incident, that it cannot fence at all.
+- name: Check the mechanism answers, without shooting anything
+  ansible.builtin.command: "{{ fencing_agent }} --check {{ item }}"
+  register: fencing_check
+  changed_when: false
+  loop: "{{ groups['opensvc_cluster'] | reject('equalto', inventory_hostname) | list }}"

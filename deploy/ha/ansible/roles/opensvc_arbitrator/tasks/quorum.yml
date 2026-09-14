@@ -1,0 +1,54 @@
+---
+- name: Check this node reaches the arbitrator
+  ansible.builtin.uri:
+    url: "{{ opensvc_arbitrator_uri | trim }}"
+    status_code: 200
+  retries: 6
+  delay: 5
+  register: opensvc_arbitrator_reachable
+  until: opensvc_arbitrator_reachable is succeeded
+
+- name: Read the quorum settings this node holds
+  ansible.builtin.command: "om node config get --kw {{ item.key }}"
+  register: opensvc_arbitrator_current
+  changed_when: false
+  failed_when: false
+  loop: "{{ opensvc_arbitrator_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: List the settings that need changing
+  ansible.builtin.set_fact:
+    opensvc_arbitrator_mismatch: >-
+      {{ opensvc_arbitrator_mismatch | default([])
+         + ([item.item.key] if (item.stdout | default('') | trim) != (item.item.value | string) else []) }}
+  loop: "{{ opensvc_arbitrator_current.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+
+- name: Set the quorum settings
+  ansible.builtin.command: >-
+    om node config update
+    {% for k, v in opensvc_arbitrator_settings.items() %} --set {{ k }}={{ v }}{% endfor %}
+  when: opensvc_arbitrator_mismatch | length > 0
+  changed_when: true
+
+- name: Read the quorum settings back
+  ansible.builtin.command: "om node config get --kw {{ item.key }}"
+  register: opensvc_arbitrator_after
+  changed_when: false
+  loop: "{{ opensvc_arbitrator_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# A node that silently kept quorum off would start the service while its peer
+# still runs it, and no later measure would catch it.
+- name: Refuse a node whose quorum settings did not take
+  ansible.builtin.assert:
+    that: (item.stdout | trim) == (item.item.value | string)
+    fail_msg: >-
+      {{ item.item.key }} is "{{ item.stdout | trim }}" on {{ inventory_hostname }},
+      expected "{{ item.item.value }}".
+  loop: "{{ opensvc_arbitrator_after.results }}"
+  loop_control:
+    label: "{{ item.item.key }}"

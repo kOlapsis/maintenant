@@ -1,0 +1,147 @@
+---
+# A wrong mount must fail the start, not quietly create a second, empty
+# database beside the real one (FR-036).
+- name: Refuse a deployment with the state root guard off
+  ansible.builtin.assert:
+    that: maintenant_require_state_dir | bool
+    fail_msg: maintenant_require_state_dir must stay true in a highly available deployment.
+
+- name: Refuse a gRPC URL that names a node instead of the service
+  ansible.builtin.include_tasks: grpc_url.yml
+
+- name: Refuse nodes whose clocks have drifted apart
+  ansible.builtin.include_tasks: clock.yml
+
+- name: Build the embedded web interface
+  ansible.builtin.command:
+    argv: [make, frontend]
+    chdir: "{{ maintenant_source_dir }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  changed_when: true
+
+- name: Read the source revision
+  ansible.builtin.command:
+    argv: [git, describe, --tags, --always, --dirty]
+    chdir: "{{ maintenant_source_dir }}"
+  register: maintenant_revision
+  delegate_to: localhost
+  run_once: true
+  become: false
+  changed_when: false
+
+- name: Create the build directory
+  ansible.builtin.file:
+    path: "{{ maintenant_build_dir }}/gocache"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+# The nodes do not run the controller's libc: the binary is linked statically,
+# exactly as the release builds it.
+- name: Build the product binary
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - -v
+      - "{{ maintenant_source_dir | realpath }}:/src"
+      - -w
+      - /src
+      - -v
+      - "{{ maintenant_build_dir }}:/out"
+      - -e
+      - CGO_ENABLED=1
+      - -e
+      - GOFLAGS=-trimpath
+      - -e
+      - GOCACHE=/out/gocache/build
+      - -e
+      - GOMODCACHE=/out/gocache/mod
+      - -e
+      - "VERSION={{ maintenant_revision.stdout }}"
+      - -e
+      - LICENSE_PUBLIC_KEY
+      - -e
+      - "HOST_UID={{ lookup('ansible.builtin.pipe', 'id -u') }}"
+      - -e
+      - "HOST_GID={{ lookup('ansible.builtin.pipe', 'id -g') }}"
+      - "{{ maintenant_build_image }}"
+      - sh
+      - -euc
+      - |
+        apk add --no-cache gcc musl-dev
+        go build \
+          -tags "netgo osusergo sqlite_omit_load_extension" \
+          -ldflags "-s -w -linkmode external -extldflags -static -X main.version=${VERSION} -X main.publicKeyB64=${LICENSE_PUBLIC_KEY:-}" \
+          -o /out/maintenant ./cmd/maintenant
+        chown -R "${HOST_UID}:${HOST_GID}" /out/maintenant /out/gocache
+  environment:
+    LICENSE_PUBLIC_KEY: "{{ lookup('ansible.builtin.env', 'LICENSE_PUBLIC_KEY') }}"
+  delegate_to: localhost
+  run_once: true
+  become: false
+  changed_when: true
+
+- name: Read how the binary is linked
+  ansible.builtin.command:
+    argv: [file, "{{ maintenant_build_dir }}/maintenant"]
+  register: maintenant_link
+  delegate_to: localhost
+  run_once: true
+  become: false
+  changed_when: false
+  failed_when: "'statically linked' not in maintenant_link.stdout"
+
+- name: Create the product account
+  ansible.builtin.user:
+    name: "{{ maintenant_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ maintenant_state_dir }}"
+    create_home: false
+
+- name: Install the product binary
+  ansible.builtin.copy:
+    src: "{{ maintenant_build_dir }}/maintenant"
+    dest: "{{ maintenant_bin }}"
+    mode: "0755"
+    owner: root
+    group: root
+
+# The binary binds the service address, which is not on this node while the
+# service runs elsewhere. Without this, the start fails on the passive node the
+# moment the address moves away.
+- name: Allow binding an address this node does not hold
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_nonlocal_bind
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Create the state root
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ maintenant_user }}"
+    group: "{{ maintenant_user }}"
+    mode: "0750"
+  loop:
+    - "{{ maintenant_state_dir }}"
+    - "{{ maintenant_tls_dir }}"
+
+- name: Install the gRPC certificate and key
+  ansible.builtin.include_tasks: tls.yml
+
+- name: Write the settings
+  ansible.builtin.template:
+    src: maintenant.env.j2
+    dest: "{{ maintenant_env_file }}"
+    owner: root
+    group: "{{ maintenant_user }}"
+    mode: "0640"

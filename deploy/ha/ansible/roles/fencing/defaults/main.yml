@@ -1,0 +1,17 @@
+---
+# How a node is shot. The bench destroys the peer's VM from the libvirt host;
+# elsewhere the same role drives IPMI, a PDU or a provider API. Only these two
+# variables change, and they live in the inventory (FR-053).
+fencing_method: "{{ ha_fencing_method | default('libvirt') }}"
+fencing_command: "{{ ha_fencing_command | default('') }}"
+fencing_check_command: "{{ ha_fencing_check_command | default('') }}"
+
+fencing_agent: /usr/local/sbin/maintenant-fence
+fencing_host_agent: /usr/local/sbin/maintenant-fence-host
+
+# libvirt only: where the domains live, and under which name.
+fencing_host: "{{ ha_fencing_host | default('10.10.9.1') }}"
+fencing_host_user: maintenant-fence
+fencing_domain_prefix: "{{ ha_fencing_domain_prefix | default('mnt-lab-') }}"
+fencing_key: /etc/opensvc/fencing_ed25519
+fencing_key_dir: "{{ lab_work_dir | default('/var/lib/libvirt/images/mnt-lab') }}"

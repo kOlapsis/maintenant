@@ -1,0 +1,60 @@
+---
+# Scenario 2 of the bench plan, Abrupt loss of the active node.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 2
+slug: abrupt-node-loss
+name: Abrupt loss of the active node
+source: bench plan
+repetitions: 20
+injection:
+  'on': host
+  command: virsh destroy "$LAB_ACTIVE_DOMAIN"
+repair:
+  'on': host
+  command: virsh start "$LAB_ACTIVE_DOMAIN"
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- rto_ms
+- writes
+- telemetry_gap_s
+- telemetry_samples_lost
+- alerts_induced
+- agents
+- nodes_written
+- inventory
+modes:
+  ip-only:
+    applicable: true
+    expected: 'Automatic failover with no human action: the survivor fences the destroyed node, takes the service address and starts the application. The availability probe measures the outage. Data is local to each node in this mode, so writes are not compared.'
+  postgres/streaming:
+    applicable: true
+    expected: Automatic failover with no human action. The service answers again on the same
+      address in under 60 s, never more than 90 s across all runs (SC-001). writes.lost ==
+      0 over at least 20 repetitions (SC-002). Every enrolled agent reconnects within 90 s
+      with the same identity, with no re-enrolment and no alert caused by the failover alone
+      (SC-007). The standby is promoted, exactly one primary is established before
+      the application starts, and the returning node is rebuilt as a standby, never restarted
+      as a primary (SC-011).
+  sqlite/drbd:
+    applicable: true
+    expected: Automatic failover with no human action. The service answers again on the same
+      address in under 60 s, never more than 90 s across all runs (SC-001). writes.lost ==
+      0 over at least 20 repetitions (SC-002). Every enrolled agent reconnects within 90 s
+      with the same identity, with no re-enrolment and no alert caused by the failover alone
+      (SC-007). The volume is promoted on the survivor, the file system is mounted,
+      the SQLite journal is recovered, then the application starts.
+  postgres/drbd:
+    applicable: true
+    expected: Automatic failover with no human action. The service answers again on the same
+      address in under 60 s, never more than 90 s across all runs (SC-001). writes.lost ==
+      0 over at least 20 repetitions (SC-002). Every enrolled agent reconnects within 90 s
+      with the same identity, with no re-enrolment and no alert caused by the failover alone
+      (SC-007).
+note: This is the scenario the whole bench exists for. It is played with repetitions, not
+  once.

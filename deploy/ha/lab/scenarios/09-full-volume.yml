@@ -1,0 +1,42 @@
+---
+# Scenario 9 of the bench plan, Full volume.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 9
+slug: full-volume
+name: Full volume
+source: bench plan
+repetitions: 1
+injection:
+  'on': active
+  command: fallocate -l "$(df --output=avail -B1 "$LAB_STATE_DIR" | tail -1)" "$LAB_STATE_DIR/lab-filler"
+repair:
+  'on': active
+  command: rm -f "$LAB_STATE_DIR/lab-filler"
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- writes
+- inventory
+- failover_count
+modes:
+  postgres/streaming:
+    applicable: true
+    expected: 'Controlled degradation, no corruption. The journal, SQLite''s or PostgreSQL''s,
+      can no longer grow, and the product must degrade rather than corrupt. No failover loop
+      toward a node whose volume is just as full: moving the service does not create space.'
+  sqlite/drbd:
+    applicable: true
+    expected: 'Controlled degradation, no corruption. The journal, SQLite''s or PostgreSQL''s,
+      can no longer grow, and the product must degrade rather than corrupt. No failover loop
+      toward a node whose volume is just as full: moving the service does not create space.'
+  postgres/drbd:
+    applicable: true
+    expected: 'Controlled degradation, no corruption. The journal, SQLite''s or PostgreSQL''s,
+      can no longer grow, and the product must degrade rather than corrupt. No failover loop
+      toward a node whose volume is just as full: moving the service does not create space.'
+note: Refusals are expected here and are not losses.

@@ -1,0 +1,84 @@
+---
+- name: Refuse a node image the frozen release has no package for
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Debian'
+      - ansible_facts.distribution_release == opensvc_codename
+    fail_msg: >-
+      opensvc-server {{ opensvc_package_version }} is built for
+      {{ opensvc_codename }}; this node runs
+      {{ ansible_facts.distribution_release }}.
+
+- name: Install what is needed to trust the repository
+  ansible.builtin.apt:
+    name: [ca-certificates, gnupg]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the keyring directory
+  ansible.builtin.file:
+    path: "{{ opensvc_keyring | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Install the OpenSVC signing key
+  ansible.builtin.get_url:
+    url: "{{ opensvc_repo_key_url }}"
+    dest: "{{ opensvc_keyring }}"
+    mode: "0644"
+
+- name: Declare the OpenSVC repository
+  ansible.builtin.deb822_repository:
+    name: opensvc
+    types: [deb]
+    uris: "{{ opensvc_repo_url }}"
+    suites: "{{ opensvc_apt_branch }}-opensvc-v3-{{ opensvc_codename }}"
+    components: [main]
+    signed_by: "{{ opensvc_keyring }}"
+    state: present
+  notify: Refresh the apt cache
+
+- name: Refresh the apt cache now, the install depends on it
+  ansible.builtin.meta: flush_handlers
+
+# Without this, an unattended apt upgrade would silently move the bench off the
+# release every measurement is attached to (FR-059).
+- name: Hold opensvc-server at the frozen release
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/opensvc
+    mode: "0644"
+    content: |
+      Package: opensvc-server opensvc-client
+      Pin: version {{ opensvc_package_version }}
+      Pin-Priority: 1001
+
+- name: Install opensvc-server
+  ansible.builtin.apt:
+    name: "opensvc-server={{ opensvc_package_version }}"
+    state: present
+    allow_downgrade: true
+
+- name: Read the installed release
+  ansible.builtin.command: om --version
+  register: opensvc_installed
+  changed_when: false
+
+- name: Refuse to go on with a release the campaign is not pinned to
+  ansible.builtin.assert:
+    that: opensvc_version in opensvc_installed.stdout
+    fail_msg: >-
+      the campaign is pinned to {{ opensvc_version }} but this node runs
+      "{{ opensvc_installed.stdout }}"; every measure taken here would be
+      attached to the wrong release.
+
+- name: Start the OpenSVC daemon
+  ansible.builtin.systemd_service:
+    name: "{{ opensvc_service_unit }}"
+    enabled: true
+    state: started
+
+- name: Wait for the daemon to answer
+  ansible.builtin.wait_for:
+    path: /var/lib/opensvc/lsnr/http.sock
+    timeout: 60

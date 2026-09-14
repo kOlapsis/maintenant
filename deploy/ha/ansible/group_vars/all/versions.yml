@@ -15,10 +15,18 @@
 # published before the freeze, it replaces this tag and the campaign is
 # replayed.
 #
-# v3.0.0-rc31 is the tag recorded by the state of the art on 2026-08-24. It is
-# re-confirmed against the upstream releases at the start of lot 2 and, if a
-# newer RC is chosen there, this is the single place that changes.
-opensvc_version: "v3.0.0-rc31"
+# The state of the art recorded v3.0.0-rc31 on 2026-08-24. That tag is not
+# installable: packages.opensvc.com carries no rc31 on any branch. The bench
+# therefore runs the newest release the prod branch actually ships with a
+# server package, rc30, and stays on the prod branch: uat has rc32 to rc35, but
+# evidence built on a pre-validation channel is worth less than evidence built
+# on the channel OpenSVC promotes.
+#
+# apt is pinned to opensvc_package_version, so an upgrade cannot move the bench
+# off this release without someone editing this file (FR-059).
+opensvc_version: "v3.0.0-rc30"
+opensvc_package_version: "3.0.0~rc30.0.g0e9175401+deb12"
+opensvc_apt_branch: "prod"
 
 # DRBD 9, from the vendor packages. Protocol C, after-sb-* set to disconnect,
 # no automatic resolution that throws writes away (FR-018, FR-023).
@@ -31,4 +39,8 @@ postgres_version: "16"
 # The kernel is a version too: it decides whether fanotify (fatrace) is
 # available for the on-disk state inventory, and it is reported in
 # run.json.versions. Pinned to the distribution kernel of the node image.
-node_os: "debian-13"
+#
+# Debian 12 and not 13: the prod branch publishes opensvc-server for bookworm
+# and, as of 2026-09-12, only opensvc-client for trixie.
+node_os: "debian-12"
+node_codename: "bookworm"

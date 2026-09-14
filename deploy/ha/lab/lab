@@ -1,0 +1,615 @@
+#!/bin/sh
+# The HA bench, driven by one command.
+#
+#   lab up [--mode <mode>]   build the topology and deploy the mode
+#   lab down                 destroy everything, leaving no residue
+#   lab status [--json]      cluster, mode, probes and OpenSVC agent state
+#
+# Contract: specs/030-ha-opensvc/contracts/lab-cli.md. No command ever asks a
+# question: the bench is built, played and torn down unattended (FR-046).
+#
+# The topology is reached through the Ansible inventory and nothing else, so
+# replaying the campaign on other machines changes LAB_INVENTORY and no line of
+# this script (FR-053).
+#
+# POSIX sh. Needs ansible-core, jq and ssh; up and down also need virsh.
+#
+# Exit codes: 0 success, 1 the bench is not green, 2 usage, 3 command not
+# implemented yet, 4 missing prerequisite.
+
+set -eu
+
+LAB_DIR=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
+HA_DIR=$(dirname "$LAB_DIR")
+ANSIBLE_DIR="$HA_DIR/ansible"
+STATE_DIR="$LAB_DIR/.state"
+INVENTORY="${LAB_INVENTORY:-$ANSIBLE_DIR/inventories/lab/hosts.yml}"
+
+ANSIBLE_CONFIG="$ANSIBLE_DIR/ansible.cfg"
+export ANSIBLE_CONFIG
+
+DEFAULT_MODE="ip-only"
+KNOWN_MODES="ip-only postgres/streaming sqlite/drbd postgres/drbd"
+
+SSH_WAIT_TIMEOUT=300
+SSH_BATCH_OPTS="-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+# Domains are named after the machines, with the prefix the provisioning uses.
+LAB_DOMAIN_PREFIX="${LAB_DOMAIN_PREFIX:-mnt-lab-}"
+
+# The agents' authentication tolerance is 300 s; the bench refuses far earlier.
+CLOCK_DRIFT_MAX=30
+
+PROBE_AVAILABILITY_UNIT="lab-probe-availability.service"
+PROBE_WRITES_UNIT="lab-probe-writes.service"
+PROBE_OBSERVER_UNIT="lab-probe-observer.service"
+
+# Verified against om v3.0.0-rc30: the output flag is -o, not --format. This is
+# the only place the bench touches om's command line.
+OM_DAEMON_STATUS="om daemon status -o json --sections daemon,nodes,arbitrators"
+
+if [ -t 1 ]; then
+	C_RESET=$(printf '\033[0m')
+	C_BLUE=$(printf '\033[34m')
+	C_GREEN=$(printf '\033[32m')
+	C_YELLOW=$(printf '\033[33m')
+	C_RED=$(printf '\033[31m')
+else
+	C_RESET=""
+	C_BLUE=""
+	C_GREEN=""
+	C_YELLOW=""
+	C_RED=""
+fi
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT INT TERM
+INV_JSON="$TMP/inventory.json"
+
+die() {
+	printf 'lab: %s\n' "$1" >&2
+	exit "${2:-1}"
+}
+
+info() {
+	printf '%s==>%s %s\n' "$C_BLUE" "$C_RESET" "$1"
+}
+
+need() {
+	if ! command -v "$1" >/dev/null 2>&1; then
+		die "$1 is required but not installed" 4
+	fi
+}
+
+usage() {
+	cat <<'USAGE'
+usage: lab <command> [options]
+
+  up [--mode <mode>]     build the topology and deploy the mode, then check it
+  down                   destroy everything, leaving no residue
+  status [--json]        cluster, mode, probes and OpenSVC agent of each node
+  chaos <n>              inject scenario n
+  heal <n>               repair scenario n
+  run-all [--mode <mode>] [--repeat <k>]
+  report [--run <id>]
+  inventory              on-disk state inventory of the active node
+
+modes: ip-only (default), postgres/streaming, sqlite/drbd, postgres/drbd
+       ip-only is the bare bench: service address failover, no replicated
+       backend. The replication modes arrive with their own roles.
+
+environment:
+  LAB_INVENTORY   Ansible inventory to target
+                  (default: ansible/inventories/lab/hosts.yml)
+USAGE
+}
+
+load_inventory() {
+	if [ -f "$INV_JSON" ]; then
+		return 0
+	fi
+	if [ ! -f "$INVENTORY" ]; then
+		die "inventory not found: $INVENTORY" 4
+	fi
+	if ! ansible-inventory -i "$INVENTORY" --list >"$INV_JSON" 2>"$TMP/inv.err"; then
+		die "ansible-inventory failed on $INVENTORY: $(head -n 3 "$TMP/inv.err" | tr '\n' ' ')" 4
+	fi
+}
+
+group_hosts() {
+	load_inventory
+	jq -r --arg g "$1" '.[$g].hosts[]? // empty' "$INV_JSON"
+}
+
+hostvar() {
+	load_inventory
+	jq -r --arg h "$1" --arg v "$2" --arg d "$3" \
+		'._meta.hostvars[$h][$v] // $d' "$INV_JSON"
+}
+
+first_cluster_host() {
+	group_hosts opensvc_cluster | head -n 1
+}
+
+service_address() {
+	host=$(first_cluster_host)
+	if [ -z "$host" ]; then
+		die "the inventory declares no opensvc_cluster host" 4
+	fi
+	addr=$(hostvar "$host" ha_service_address "")
+	if [ -z "$addr" ]; then
+		die "ha_service_address is not set in $INVENTORY" 4
+	fi
+	printf '%s\n' "$addr"
+}
+
+ssh_target() {
+	addr=$(hostvar "$1" ansible_host "$1")
+	user=$(hostvar "$1" ansible_user "")
+	if [ -n "$user" ]; then
+		printf '%s@%s\n' "$user" "$addr"
+	else
+		printf '%s\n' "$addr"
+	fi
+}
+
+ssh_to() {
+	host=$1
+	shift
+	# shellcheck disable=SC2086,SC2029 # options list; the command runs remotely on purpose
+	ssh $SSH_BATCH_OPTS "$(ssh_target "$host")" "$@"
+}
+
+valid_mode() {
+	for m in $KNOWN_MODES; do
+		if [ "$m" = "$1" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+current_mode() {
+	if [ -f "$STATE_DIR/mode" ]; then
+		cat "$STATE_DIR/mode"
+	else
+		printf 'unknown\n'
+	fi
+}
+
+wait_for_ssh() {
+	deadline=$(($(date +%s) + SSH_WAIT_TIMEOUT))
+	for host in $(all_hosts); do
+		info "waiting for ssh on $host"
+		while ! ssh_to "$host" true >/dev/null 2>&1; do
+			if [ "$(date +%s)" -ge "$deadline" ]; then
+				die "$host did not accept ssh within ${SSH_WAIT_TIMEOUT}s" 1
+			fi
+			sleep 5
+		done
+	done
+}
+
+all_hosts() {
+	load_inventory
+	jq -r '[.. | objects | .hosts? // empty | .[]] | unique | .[]' "$INV_JSON"
+}
+
+node_status() {
+	name=$1
+	address=$2
+	if ! ssh_to "$name" true >/dev/null 2>&1; then
+		jq -n --arg n "$name" \
+			'{name: $n, reachable: false, opensvc: "unreachable", holds_address: false}'
+		return 0
+	fi
+	if ssh_to "$name" "$OM_DAEMON_STATUS" >/dev/null 2>&1; then
+		om="up"
+	elif ssh_to "$name" "command -v om" >/dev/null 2>&1; then
+		om="down"
+	else
+		om="absent"
+	fi
+	if ssh_to "$name" "ip -o addr show" 2>/dev/null | grep -q " inet $address/"; then
+		holds="true"
+	else
+		holds="false"
+	fi
+	jq -n --arg n "$name" --arg om "$om" --argjson holds "$holds" \
+		'{name: $n, reachable: true, opensvc: $om, holds_address: $holds}'
+}
+
+unit_status() {
+	host=$1
+	unit=$2
+	if ssh_to "$host" "systemctl is-active --quiet $unit" >/dev/null 2>&1; then
+		printf 'running\n'
+	elif ssh_to "$host" "systemctl cat $unit" >/dev/null 2>&1; then
+		printf 'stopped\n'
+	else
+		printf 'absent\n'
+	fi
+}
+
+collect_status() {
+	address=$(service_address)
+	nodes="[]"
+	for name in $(group_hosts opensvc_cluster); do
+		one=$(node_status "$name" "$address")
+		nodes=$(printf '%s\n' "$nodes" | jq --argjson n "$one" '. + [$n]')
+	done
+
+	# The arbitrator runs no om: it is up when every node reaches the uri it votes on.
+	arb_state="absent"
+	if [ -n "$(group_hosts arbitrator)" ]; then
+		reached=0
+		total=0
+		for name in $(group_hosts opensvc_cluster); do
+			total=$((total + 1))
+			uri=$(ssh_to "$name" "om node config get --kw 'arbitrator#0.uri'" 2>/dev/null) || continue
+			if [ -n "$uri" ] && ssh_to "$name" "curl -fsS -m 3 -o /dev/null '$uri'" >/dev/null 2>&1; then
+				reached=$((reached + 1))
+			fi
+		done
+		if [ "$reached" -eq "$total" ]; then
+			arb_state="up"
+		elif [ "$reached" -gt 0 ]; then
+			arb_state="partial"
+		else
+			arb_state="unreachable"
+		fi
+	fi
+
+	probe_host=$(group_hosts measurement | head -n 1)
+	if [ -z "$probe_host" ]; then
+		availability="absent"
+		writes="absent"
+		observer="absent"
+	elif ! ssh_to "$probe_host" true >/dev/null 2>&1; then
+		availability="unreachable"
+		writes="unreachable"
+		observer="unreachable"
+	else
+		availability=$(unit_status "$probe_host" "$PROBE_AVAILABILITY_UNIT")
+		writes=$(unit_status "$probe_host" "$PROBE_WRITES_UNIT")
+		observer=$(unit_status "$probe_host" "$PROBE_OBSERVER_UNIT")
+	fi
+
+	jq -n \
+		--arg mode "$(current_mode)" \
+		--arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		--arg address "$address" \
+		--arg arb "$arb_state" \
+		--arg availability "$availability" \
+		--arg writes "$writes" \
+		--arg observer "$observer" \
+		--argjson nodes "$nodes" \
+		'
+		def holders: [$nodes[] | select(.holds_address)] | length;
+		{
+			mode: $mode,
+			generated_at: $at,
+			service: {address: $address, holders: [$nodes[] | select(.holds_address) | .name]},
+			nodes: $nodes,
+			arbitrator: $arb,
+			probes: {availability: $availability, writes: $writes, observer: $observer},
+			verdict: (
+				if holders > 1 then "split"
+				elif holders == 0 then "down"
+				elif ([$nodes[] | select(.reachable | not)] | length) > 0 then "degraded"
+				elif ([$nodes[] | select(.opensvc != "up")] | length) > 0 then "degraded"
+				elif $arb != "up" then "degraded"
+				elif $availability != "running" or $writes != "running" or $observer != "running" then "degraded"
+				else "green"
+				end
+			)
+		}'
+}
+
+render_status() {
+	jq -r --arg reset "$C_RESET" --arg green "$C_GREEN" --arg yellow "$C_YELLOW" --arg red "$C_RED" '
+		def pad(s; n): (s + "                ")[0:n];
+		def colour(v):
+			if v == "green" then $green
+			elif v == "degraded" then $yellow
+			else $red end;
+		"mode       \(.mode)",
+		"service    \(.service.address) on \(if (.service.holders | length) == 0 then "nobody" else (.service.holders | join(" and ")) end)",
+		"arbitrator \(.arbitrator)",
+		"probes     availability=\(.probes.availability) writes=\(.probes.writes) observer=\(.probes.observer)",
+		"",
+		"NODE         REACHABLE  OPENSVC      ADDRESS",
+		(.nodes[] | [pad(.name; 12), pad(if .reachable then "yes" else "no" end; 10), pad(.opensvc; 12), (if .holds_address then "held" else "-" end)] | join(" ")),
+		"",
+		"verdict    \(colour(.verdict))\(.verdict)\($reset)"
+	'
+}
+
+# Each node is read against the controller's clock taken just before, so the
+# time the SSH round trips take does not count as drift.
+check_clocks() {
+	min=""
+	max=""
+	for host in $(group_hosts opensvc_cluster); do
+		before=$(date -u +%s)
+		remote=$(ssh_to "$host" "date -u +%s") || die "cannot read the clock of $host" 1
+		offset=$((remote - before))
+		if [ -z "$min" ] || [ "$offset" -lt "$min" ]; then
+			min=$offset
+		fi
+		if [ -z "$max" ] || [ "$offset" -gt "$max" ]; then
+			max=$offset
+		fi
+	done
+	[ -n "$min" ] || die "the inventory declares no opensvc_cluster host" 4
+	drift=$((max - min))
+	if [ "$drift" -gt "$CLOCK_DRIFT_MAX" ]; then
+		die "the node clocks differ by ${drift}s, more than the ${CLOCK_DRIFT_MAX}s the bench allows" 1
+	fi
+}
+
+cmd_run_all() {
+	need ansible-inventory
+	need jq
+	need ssh
+	check_clocks
+	not_yet "run-all" "T096"
+}
+
+scenario_file() {
+	n=$(printf '%02d' "$1" 2>/dev/null) || die "scenario must be a number: $1" 2
+	for match in "$LAB_DIR/scenarios/$n-"*.yml; do
+		if [ -f "$match" ]; then
+			printf '%s\n' "$match"
+			return 0
+		fi
+	done
+	die "no scenario $1 in $LAB_DIR/scenarios" 2
+}
+
+scenario_json() {
+	python3 -c 'import json,sys,yaml; json.dump(yaml.safe_load(open(sys.argv[1])), sys.stdout)' "$1" ||
+		die "cannot read $1: is PyYAML installed?" 4
+}
+
+# Every scenario command is run through sh with the bench exported around it,
+# so a scenario file names what it acts on and never where that thing is.
+scenario_env() {
+	address=$(service_address)
+	load_inventory
+
+	active=""
+	passive=""
+	for name in $(group_hosts opensvc_cluster); do
+		if ssh_to "$name" "ip -o addr show" 2>/dev/null | grep -q " inet $address/"; then
+			active="$name"
+		else
+			passive="$name"
+		fi
+	done
+	if [ -z "$active" ]; then
+		die "no node holds $address: nothing to inject into" 1
+	fi
+
+	arbitrator=$(group_hosts arbitrator | head -n 1)
+	probe=$(group_hosts measurement | head -n 1)
+
+	LAB_MODE=$(current_mode)
+	LAB_SERVICE="${LAB_SERVICE_NAME:-maintenant}"
+	LAB_SERVICE_ADDRESS="$address"
+	LAB_SERVICE_NETMASK="${LAB_SERVICE_NETMASK:-24}"
+	LAB_ACTIVE="$active"
+	LAB_PASSIVE="$passive"
+	LAB_ACTIVE_ADDRESS=$(hostvar "$active" ansible_host "$active")
+	LAB_PASSIVE_ADDRESS=$(hostvar "$passive" ansible_host "$passive")
+	LAB_ARBITRATOR_ADDRESS=$(hostvar "$arbitrator" ansible_host "$arbitrator")
+	LAB_MEASUREMENT_ADDRESS=$(hostvar "$probe" ansible_host "$probe")
+	LAB_ACTIVE_DOMAIN="$LAB_DOMAIN_PREFIX$active"
+	LAB_PASSIVE_DOMAIN="$LAB_DOMAIN_PREFIX$passive"
+	LAB_STATE_DIR="${LAB_STATE_DIR:-/var/lib/maintenant}"
+	LAB_INTERCONNECT=$(ssh_to "$active" "ip -o -4 addr show" 2>/dev/null |
+		awk -v a="$LAB_ACTIVE_ADDRESS/" '$0 ~ " inet "a {print $2; exit}')
+	LAB_SSH_ACTIVE="ssh $SSH_BATCH_OPTS $(ssh_target "$active")"
+	LAB_SSH_PASSIVE="ssh $SSH_BATCH_OPTS $(ssh_target "$passive")"
+
+	export LAB_MODE LAB_SERVICE LAB_SERVICE_ADDRESS LAB_SERVICE_NETMASK \
+		LAB_ACTIVE LAB_PASSIVE LAB_ACTIVE_ADDRESS LAB_PASSIVE_ADDRESS \
+		LAB_ARBITRATOR_ADDRESS LAB_MEASUREMENT_ADDRESS \
+		LAB_ACTIVE_DOMAIN LAB_PASSIVE_DOMAIN LAB_STATE_DIR LAB_INTERCONNECT \
+		LAB_SSH_ACTIVE LAB_SSH_PASSIVE
+}
+
+scenario_run() {
+	where=$1
+	command=$2
+	case "$where" in
+	host) sh -c "$command" ;;
+	active) ssh_to "$LAB_ACTIVE" "$command" ;;
+	passive) ssh_to "$LAB_PASSIVE" "$command" ;;
+	arbitrator) ssh_to "$(group_hosts arbitrator | head -n 1)" "$command" ;;
+	measurement) ssh_to "$(group_hosts measurement | head -n 1)" "$command" ;;
+	*) die "scenario targets an unknown place: $where" 2 ;;
+	esac
+}
+
+scenario_act() {
+	action=$1
+	number=$2
+
+	need ansible-inventory
+	need jq
+	need ssh
+	need python3
+
+	file=$(scenario_file "$number")
+	scenario_env
+	scenario_json "$file" >"$TMP/scenario.json"
+
+	name=$(jq -r '.name' "$TMP/scenario.json")
+	applicable=$(jq -r --arg m "$LAB_MODE" '.modes[$m].applicable // "unset"' "$TMP/scenario.json")
+
+	if [ "$applicable" = "unset" ]; then
+		die "scenario $number says nothing about mode $LAB_MODE" 2
+	fi
+	if [ "$applicable" != "true" ]; then
+		reason=$(jq -r --arg m "$LAB_MODE" '.modes[$m].reason // "no reason given"' "$TMP/scenario.json")
+		die "scenario $number ($name) has no object in mode $LAB_MODE: $reason" 3
+	fi
+
+	where=$(jq -r --arg a "$action" '.[$a].on' "$TMP/scenario.json")
+	command=$(jq -r --arg a "$action" '.[$a].command' "$TMP/scenario.json")
+
+	stamp=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+	printf '%s %s scenario %s (%s) on %s, active=%s passive=%s\n' \
+		"$stamp" "$action" "$number" "$name" "$where" "$LAB_ACTIVE" "$LAB_PASSIVE"
+
+	if scenario_run "$where" "$command"; then
+		rc=0
+	else
+		rc=$?
+	fi
+
+	printf '%s %s done rc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" "$action" "$rc"
+	return "$rc"
+}
+
+cmd_chaos() {
+	[ $# -eq 1 ] || die "usage: lab chaos <n>" 2
+	scenario_act injection "$1"
+}
+
+cmd_heal() {
+	[ $# -eq 1 ] || die "usage: lab heal <n>" 2
+	scenario_act repair "$1"
+	info "checking the bench came back"
+	scenario_act verify "$1"
+}
+
+cmd_up() {
+	mode="$DEFAULT_MODE"
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--mode)
+			[ $# -ge 2 ] || die "--mode takes a value" 2
+			mode=$2
+			shift 2
+			;;
+		*) die "unknown option for up: $1" 2 ;;
+		esac
+	done
+	valid_mode "$mode" || die "unknown mode: $mode (known: $KNOWN_MODES)" 2
+
+	need ansible-playbook
+	need ansible-inventory
+	need ansible-galaxy
+	need go
+	need docker
+	need make
+	need npm
+	need git
+	need file
+	need jq
+	need ssh
+	need virsh
+	need python3
+
+	if ! python3 -c 'import libvirt' >/dev/null 2>&1; then
+		die "the python libvirt binding is missing: apt install python3-libvirt" 4
+	fi
+	if ! ansible-galaxy collection list community.libvirt 2>/dev/null | grep -q community.libvirt; then
+		die "the community.libvirt collection is missing: ansible-galaxy collection install -r $ANSIBLE_DIR/requirements.yml" 4
+	fi
+
+	provision="$LAB_DIR/provision.yml"
+	site="$ANSIBLE_DIR/site-lab.yml"
+	[ -f "$provision" ] || die "deploy/ha/lab/provision.yml is missing (T027)" 4
+	[ -f "$site" ] || die "deploy/ha/ansible/site-lab.yml is missing (T085)" 4
+
+	info "provisioning the topology"
+	ansible-playbook -i "$INVENTORY" "$provision" -e lab_state=present
+	wait_for_ssh
+	info "deploying mode $mode"
+	ansible-playbook -i "$INVENTORY" "$site" -e "ha_mode=$mode"
+
+	mkdir -p "$STATE_DIR"
+	printf '%s\n' "$mode" >"$STATE_DIR/mode"
+
+	info "checking the node clocks"
+	check_clocks
+	info "checking the bench"
+	cmd_status
+}
+
+cmd_down() {
+	[ $# -eq 0 ] || die "down takes no option" 2
+	need ansible-playbook
+	need jq
+
+	provision="$LAB_DIR/provision.yml"
+	[ -f "$provision" ] || die "deploy/ha/lab/provision.yml is missing (T027)" 4
+
+	info "destroying the topology"
+	ansible-playbook -i "$INVENTORY" "$provision" -e lab_state=absent
+	rm -rf "$STATE_DIR"
+	info "bench destroyed"
+}
+
+cmd_status() {
+	as_json="no"
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--json)
+			as_json="yes"
+			shift
+			;;
+		*) die "unknown option for status: $1" 2 ;;
+		esac
+	done
+
+	need ansible-inventory
+	need jq
+	need ssh
+
+	collect_status >"$TMP/status.json"
+	if [ "$as_json" = "yes" ]; then
+		cat "$TMP/status.json"
+	else
+		render_status <"$TMP/status.json"
+	fi
+
+	verdict=$(jq -r '.verdict' "$TMP/status.json")
+	[ "$verdict" = "green" ] || exit 1
+}
+
+not_yet() {
+	die "$1 is not implemented yet ($2)" 3
+}
+
+main() {
+	[ $# -ge 1 ] || {
+		usage
+		exit 2
+	}
+	command=$1
+	shift
+	case "$command" in
+	up) cmd_up "$@" ;;
+	down) cmd_down "$@" ;;
+	status) cmd_status "$@" ;;
+	chaos) cmd_chaos "$@" ;;
+	heal) cmd_heal "$@" ;;
+	run-all) cmd_run_all "$@" ;;
+	report) not_yet "report" "T097" ;;
+	inventory) not_yet "inventory" "T080" ;;
+	help | --help | -h)
+		usage
+		;;
+	*)
+		printf 'lab: unknown command: %s\n\n' "$command" >&2
+		usage >&2
+		exit 2
+		;;
+	esac
+}
+
+main "$@"

@@ -1,0 +1,84 @@
+---
+- name: Build the probes
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -o
+      - "{{ probes_build_dir }}/lab-probe-{{ item }}"
+      - "./{{ item }}"
+    chdir: "{{ probes_source_dir }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  loop: [availability, writes, observer]
+  delegate_to: localhost
+  run_once: true
+  become: false
+  changed_when: true
+
+- name: Provision the heartbeat the records are written to
+  ansible.builtin.include_tasks: heartbeat.yml
+  run_once: true
+
+- name: Create the probe account
+  ansible.builtin.user:
+    name: "{{ probes_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ probes_state_dir }}"
+    create_home: false
+
+- name: Create the journal directory
+  ansible.builtin.file:
+    path: "{{ probes_state_dir }}"
+    state: directory
+    owner: "{{ probes_user }}"
+    group: "{{ probes_user }}"
+    mode: "0755"
+
+- name: Install the probes
+  ansible.builtin.copy:
+    src: "{{ probes_build_dir }}/lab-probe-{{ item }}"
+    dest: "{{ probes_bin_dir }}/lab-probe-{{ item }}"
+    mode: "0755"
+    owner: root
+    group: root
+  loop: [availability, writes, observer]
+  notify: Reload systemd
+
+- name: Write the probe settings
+  ansible.builtin.template:
+    src: lab-probes.env.j2
+    dest: "{{ probes_env_file }}"
+    mode: "0644"
+
+- name: Install the probe units
+  ansible.builtin.template:
+    src: "lab-probe-{{ item }}.service.j2"
+    dest: "/etc/systemd/system/lab-probe-{{ item }}.service"
+    mode: "0644"
+  loop: [availability, writes, observer]
+  notify: Reload systemd
+
+- name: Apply the units before starting them
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the probes
+  ansible.builtin.systemd_service:
+    name: "lab-probe-{{ item }}.service"
+    enabled: true
+    state: started
+  loop: [availability, writes, observer]
+
+# A probe that starts and writes nothing measures nothing, and the run would
+# only find out at the report.
+- name: Check both probes are recording
+  ansible.builtin.command: "wc -l {{ probes_state_dir }}/{{ item }}.ndjson"
+  register: probes_recording
+  changed_when: false
+  retries: 10
+  delay: 2
+  until: probes_recording.stdout.split()[0] | int > 0
+  loop: [availability, writes, observer]

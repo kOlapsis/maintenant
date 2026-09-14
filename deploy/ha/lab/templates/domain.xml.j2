@@ -1,0 +1,60 @@
+<domain type="kvm">
+  <name>{{ lab_prefix }}-{{ machine.name }}</name>
+  <memory unit="MiB">{{ machine_memory_mb }}</memory>
+  <vcpu>{{ machine.vcpu }}</vcpu>
+  <os>
+    <type arch="x86_64">hvm</type>
+    <boot dev="hd"/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode="host-passthrough"/>
+  <clock offset="utc"/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <!-- A kernel panic must leave the domain down, so that the bench sees a node
+       loss instead of a machine that quietly came back (scenario 3). -->
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>{{ lab_emulator }}</emulator>
+    <disk type="file" device="disk">
+      <driver name="qemu" type="qcow2" cache="none" io="native" discard="unmap"/>
+      <source file="{{ lab_work_dir }}/{{ machine.name }}-system.qcow2"/>
+      <target dev="vda" bus="virtio"/>
+    </disk>
+{% if machine.data_disk_gb is defined %}
+    <disk type="file" device="disk">
+      <driver name="qemu" type="qcow2" cache="none" io="native" discard="unmap"/>
+      <source file="{{ lab_work_dir }}/{{ machine.name }}-data.qcow2"/>
+      <target dev="vdb" bus="virtio"/>
+    </disk>
+{% endif %}
+    <disk type="file" device="cdrom">
+      <driver name="qemu" type="raw"/>
+      <source file="{{ lab_work_dir }}/{{ machine.name }}-seed.iso"/>
+      <target dev="sda" bus="sata"/>
+      <readonly/>
+    </disk>
+{% for net_name in machine.networks %}
+    <interface type="network">
+      <source network="{{ lab_prefix }}-{{ net_name }}"/>
+      <mac address="{{ lab_macs[machine.name][net_name] }}"/>
+      <model type="virtio"/>
+    </interface>
+{% endfor %}
+    <serial type="pty">
+      <target port="0"/>
+    </serial>
+    <console type="pty">
+      <target type="serial" port="0"/>
+    </console>
+    <channel type="unix">
+      <target type="virtio" name="org.qemu.guest_agent.0"/>
+    </channel>
+    <rng model="virtio">
+      <backend model="random">/dev/urandom</backend>
+    </rng>
+  </devices>
+</domain>

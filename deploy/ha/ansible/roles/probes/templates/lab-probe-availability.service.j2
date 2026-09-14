@@ -1,0 +1,16 @@
+[Unit]
+Description=Bench availability probe
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ probes_user }}
+EnvironmentFile={{ probes_env_file }}
+ExecStart={{ probes_bin_dir }}/lab-probe-availability -url ${PROBE_AVAILABILITY_URL} -interval ${PROBE_INTERVAL} -timeout ${PROBE_TIMEOUT} -out ${PROBE_STATE_DIR}/availability.ndjson
+Restart=always
+RestartSec=1
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

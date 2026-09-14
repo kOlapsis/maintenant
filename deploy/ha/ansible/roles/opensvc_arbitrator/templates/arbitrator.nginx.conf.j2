@@ -1,0 +1,14 @@
+server {
+    listen {{ opensvc_arbitrator_port }} default_server;
+    server_name _;
+    access_log off;
+    default_type text/plain;
+
+    location {{ opensvc_arbitrator_path }} {
+        return 200 "arbitrator\n";
+    }
+
+    location / {
+        return 404;
+    }
+}
