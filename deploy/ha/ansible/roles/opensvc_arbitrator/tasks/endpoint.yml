@@ -1,0 +1,45 @@
+---
+- name: Install the HTTP server that carries the vote
+  ansible.builtin.apt:
+    name: nginx-light
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Drop the distribution default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Write the arbitrator site
+  ansible.builtin.template:
+    src: arbitrator.nginx.conf.j2
+    dest: /etc/nginx/sites-available/arbitrator
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable the arbitrator site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/arbitrator
+    dest: /etc/nginx/sites-enabled/arbitrator
+    state: link
+  notify: Reload nginx
+
+- name: Start nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Apply the site before checking it
+  ansible.builtin.meta: flush_handlers
+
+- name: Check the arbitrator answers on its own machine
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ opensvc_arbitrator_port }}{{ opensvc_arbitrator_path }}"
+    status_code: 200
+  retries: 6
+  delay: 2
+  register: opensvc_arbitrator_local
+  until: opensvc_arbitrator_local is succeeded

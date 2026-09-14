@@ -1,0 +1,36 @@
+---
+- name: Install time synchronisation, the Debian cloud image ships without it
+  ansible.builtin.apt:
+    name: systemd-timesyncd
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable time synchronisation
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    enabled: true
+    state: started
+
+- name: Read this node's clock
+  ansible.builtin.command: date -u +%s
+  register: maintenant_clock
+  changed_when: false
+
+# The agents' authentication tolerance is 300 s: past 30 s of drift, every
+# duration the run measures is already doubtful.
+- name: Measure how far the node clocks drift apart
+  ansible.builtin.set_fact:
+    maintenant_clock_drift: "{{ (stamps | max | int) - (stamps | min | int) }}"
+  vars:
+    stamps: "{{ groups['opensvc_cluster'] | map('extract', hostvars, ['maintenant_clock', 'stdout']) | select('defined') | map('int') | list }}"
+  run_once: true
+
+- name: Refuse a cluster whose clocks have drifted apart
+  ansible.builtin.assert:
+    that: maintenant_clock_drift | int <= maintenant_clock_drift_max_seconds | int
+    fail_msg: >-
+      the clocks of {{ groups['opensvc_cluster'] | join(' and ') }} differ by
+      {{ maintenant_clock_drift }} s, more than the {{ maintenant_clock_drift_max_seconds }} s
+      the bench allows.
+  run_once: true

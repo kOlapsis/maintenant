@@ -1,0 +1,24 @@
+---
+probes_user: labprobe
+probes_bin_dir: /usr/local/bin
+probes_state_dir: /var/lib/lab-probes
+probes_env_file: /etc/default/lab-probes
+
+probes_base_url: "http://{{ ha_service_address }}"
+probes_availability_url: "{{ probes_base_url }}/api/v1/health"
+probes_interval: 100ms
+probes_timeout: 2s
+
+# The observer watches telemetry and alerts, which move on the scale of seconds,
+# not of a request.
+probes_observer_interval: 1s
+
+# One heartbeat, pinged with numbered payloads. Its period is a day, so it can
+# never fall overdue inside a scenario and can never show up among the alerts
+# the failover caused.
+probes_heartbeat_name: lab-writes
+probes_heartbeat_interval_seconds: 86400
+probes_heartbeat_grace_seconds: 86400
+
+probes_source_dir: "{{ playbook_dir }}/../lab/probes"
+probes_build_dir: /tmp/lab-probes-build

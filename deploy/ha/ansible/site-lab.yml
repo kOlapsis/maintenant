@@ -1,0 +1,28 @@
+---
+# The bench deployment. site-prod.yml plays the same roles against another
+# inventory (FR-052).
+
+- name: Serve the arbitrator
+  hosts: arbitrator
+  roles:
+    - opensvc_arbitrator
+
+- name: Form the cluster
+  hosts: opensvc_cluster
+  roles:
+    - opensvc
+    - opensvc_arbitrator
+    - fencing
+
+# One play: the service template reads the defaults of the two product roles.
+- name: Install the product and declare the service
+  hosts: opensvc_cluster
+  roles:
+    - maintenant
+    - maintenant_check
+    - opensvc_service
+
+- name: Start the probes
+  hosts: measurement
+  roles:
+    - probes

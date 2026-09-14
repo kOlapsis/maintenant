@@ -1,0 +1,47 @@
+---
+# Scenario 3 of the bench plan, Kernel panic.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 3
+slug: kernel-panic
+name: Kernel panic
+source: bench plan
+repetitions: 20
+injection:
+  'on': active
+  command: echo c > /proc/sysrq-trigger
+repair:
+  'on': host
+  command: virsh start "$LAB_ACTIVE_DOMAIN"
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- rto_ms
+- writes
+- telemetry_gap_s
+- agents
+- nodes_written
+- inventory
+modes:
+  ip-only:
+    applicable: true
+    expected: Same outcome as scenario 2, reached without any orderly shutdown. Data is local to each node in this mode, so writes are not compared.
+  postgres/streaming:
+    applicable: true
+    expected: 'Same outcome as scenario 2, reached without any orderly shutdown: nothing is
+      flushed, nothing is unmounted. Together with scenario 2 this is the RPO campaign, at
+      least 20 repetitions per mode, zero missing acknowledged write (SC-002).'
+  sqlite/drbd:
+    applicable: true
+    expected: 'Same outcome as scenario 2, reached without any orderly shutdown: nothing is
+      flushed, nothing is unmounted. Together with scenario 2 this is the RPO campaign, at
+      least 20 repetitions per mode, zero missing acknowledged write (SC-002).'
+  postgres/drbd:
+    applicable: true
+    expected: 'Same outcome as scenario 2, reached without any orderly shutdown: nothing is
+      flushed, nothing is unmounted. Together with scenario 2 this is the RPO campaign, at
+      least 20 repetitions per mode, zero missing acknowledged write (SC-002).'

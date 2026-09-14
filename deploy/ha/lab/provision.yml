@@ -1,0 +1,64 @@
+---
+# The four machines and three networks of the bench, on libvirt.
+#
+#   lab up    -> ansible-playbook provision.yml -e lab_state=present
+#   lab down  -> ansible-playbook provision.yml -e lab_state=absent
+#
+# Both states are idempotent, and `absent` leaves nothing behind: no domain, no
+# network, no volume, no entry in libvirt's registry (FR-047). The base cloud
+# image is cached outside the bench directory and survives, being an immutable
+# upstream artefact rather than bench state.
+#
+# The host needs KVM with nested virtualisation, libvirt, qemu-img and an ISO
+# builder, and the invoking user needs passwordless sudo: no command of the
+# bench ever asks a question.
+
+- name: Provision the HA bench on libvirt
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    lab_state: present
+    lab_prefix: mnt-lab
+    lab_domain: lab
+    lab_bridge_prefix: mntlab-
+    libvirt_uri: qemu:///system
+    lab_work_dir: /var/lib/libvirt/images/{{ lab_prefix }}
+    lab_image_cache: /var/lib/libvirt/images/{{ lab_prefix }}-base
+    lab_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
+    lab_emulator_path: /usr/bin/qemu-system-x86_64
+    lab_required_tools: [/usr/bin/virsh, /usr/bin/qemu-img, "{{ lab_emulator_path }}"]
+    lab_iso_candidates: [/usr/bin/genisoimage, /usr/bin/xorrisofs, /usr/bin/mkisofs]
+
+  tasks:
+    - name: Check the requested state
+      ansible.builtin.assert:
+        that: lab_state in ['present', 'absent']
+        fail_msg: "lab_state must be present or absent, got {{ lab_state }}"
+
+    - name: Load the bench topology
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/topology.yml"
+        name: topology
+
+    - name: Derive a stable MAC address for every interface
+      ansible.builtin.set_fact:
+        lab_macs: >-
+          {{ lab_macs | default({})
+             | combine({item.0.name: (lab_macs | default({})).get(item.0.name, {})
+                                     | combine({item.1: mac})}) }}
+      vars:
+        digest: "{{ (lab_prefix ~ '/' ~ item.0.name ~ '/' ~ item.1) | hash('md5') }}"
+        mac: "52:54:00:{{ digest[0:2] }}:{{ digest[2:4] }}:{{ digest[4:6] }}"
+      loop: "{{ topology.machines | subelements('networks') }}"
+      loop_control:
+        label: "{{ item.0.name }} {{ item.1 }}"
+
+    - name: Build the bench
+      ansible.builtin.include_tasks: tasks/provision-present.yml
+      when: lab_state == 'present'
+
+    - name: Destroy the bench
+      ansible.builtin.include_tasks: tasks/provision-absent.yml
+      when: lab_state == 'absent'

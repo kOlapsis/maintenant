@@ -1,0 +1,27 @@
+#cloud-config
+hostname: {{ machine.name }}
+fqdn: {{ machine.name }}.{{ lab_domain }}
+manage_etc_hosts: true
+preserve_hostname: false
+
+users:
+  - name: {{ topology.image.user }}
+    groups: [sudo]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "{{ lab_ssh_public_key }}"
+
+ssh_pwauth: false
+disable_root: true
+
+write_files:
+  - path: /etc/sysctl.d/90-lab.conf
+    content: |
+      kernel.panic = 0
+      kernel.panic_on_oops = 1
+
+runcmd:
+  - [systemctl, enable, --now, systemd-timesyncd]
+  - [sysctl, --system]

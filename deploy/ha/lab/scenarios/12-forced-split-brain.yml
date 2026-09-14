@@ -1,0 +1,56 @@
+---
+# Scenario 12 of the bench plan, Forced split-brain.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 12
+slug: forced-split-brain
+name: Forced split-brain
+source: bench plan
+repetitions: 1
+injection:
+  'on': active
+  command: iptables -A INPUT -s "$LAB_PASSIVE_ADDRESS" -j DROP && iptables -A OUTPUT -d "$LAB_PASSIVE_ADDRESS"
+    -j DROP && iptables -A OUTPUT -d "$LAB_ARBITRATOR_ADDRESS" -j DROP
+repair:
+  'on': host
+  command: virsh start "$LAB_ACTIVE_DOMAIN" 2>/dev/null; virsh start "$LAB_PASSIVE_DOMAIN"
+    2>/dev/null; true
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- nodes_written
+- writes
+- divergence
+- crash_confirmed
+modes:
+  postgres/streaming:
+    applicable: true
+    expected: 'With the arbitrator reachable from one side only: that side keeps or takes
+      the service, and the isolated side crashes without having started anything (split_action).
+      With the arbitrator unreachable from both sides: both crash. That is a total outage,
+      and it is the correct outcome, because an outage is recoverable and a divergence is
+      not.'
+  sqlite/drbd:
+    applicable: true
+    expected: 'With the arbitrator reachable from one side only: that side keeps or takes
+      the service, and the isolated side crashes without having started anything (split_action).
+      With the arbitrator unreachable from both sides: both crash. That is a total outage,
+      and it is the correct outcome, because an outage is recoverable and a divergence is
+      not.'
+  postgres/drbd:
+    applicable: true
+    expected: 'With the arbitrator reachable from one side only: that side keeps or takes
+      the service, and the isolated side crashes without having started anything (split_action).
+      With the arbitrator unreachable from both sides: both crash. That is a total outage,
+      and it is the correct outcome, because an outage is recoverable and a divergence is
+      not.'
+variants:
+- arbitrator unreachable from one side
+- arbitrator unreachable from both sides
+post_mortem: Verify the crashed node wrote nothing, by comparing the state of both volumes
+  after repair. nodes_written == 2 fails the run outright, whatever else happened (SC-004).
+note: This is the scenario that proves the design is safe, not merely that it works.

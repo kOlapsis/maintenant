@@ -1,0 +1,22 @@
+---
+- name: Read the gRPC URL the agents will be handed
+  ansible.builtin.set_fact:
+    maintenant_grpc_host: >-
+      {{ maintenant_grpc_url | regex_replace('^[a-z]+://', '') | regex_replace(':[0-9]+$', '') }}
+
+# An agent handed a node's own address reconnects to the node that just died,
+# and the failover buys nothing (FR-015).
+- name: Refuse a gRPC URL that names a node
+  ansible.builtin.assert:
+    that:
+      - maintenant_grpc_host | trim not in node_addresses
+      - maintenant_grpc_host | trim not in groups['opensvc_cluster']
+    fail_msg: >-
+      MAINTENANT_GRPC_URL is {{ maintenant_grpc_url }}, which names
+      {{ maintenant_grpc_host | trim }}. That is a node, not the service: the
+      agents would reconnect to the node that just died. Use the service name
+      or the service address.
+  vars:
+    node_addresses: >-
+      {{ groups['opensvc_cluster']
+         | map('extract', hostvars, 'ansible_host') | select('defined') | list }}

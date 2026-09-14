@@ -1,0 +1,6 @@
+---
+- name: Install om3 on the frozen release
+  ansible.builtin.include_tasks: install.yml
+
+- name: Form the cluster
+  ansible.builtin.include_tasks: cluster.yml

@@ -1,0 +1,16 @@
+[Unit]
+Description=Bench telemetry and alert observer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ probes_user }}
+EnvironmentFile={{ probes_env_file }}
+ExecStart={{ probes_bin_dir }}/lab-probe-observer -mode collect -base ${PROBE_BASE_URL} -interval ${PROBE_OBSERVER_INTERVAL} -timeout ${PROBE_TIMEOUT} -journal ${PROBE_STATE_DIR}/observer.ndjson
+Restart=always
+RestartSec=1
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

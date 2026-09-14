@@ -1,0 +1,38 @@
+---
+# Scenario 11 of the bench plan, Degraded WAN.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 11
+slug: degraded-wan
+name: Degraded WAN
+source: bench plan
+repetitions: 1
+injection:
+  'on': active
+  command: tc qdisc add dev "$LAB_INTERCONNECT" root netem delay 80ms loss 3%
+repair:
+  'on': active
+  command: tc qdisc del dev "$LAB_INTERCONNECT" root
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- failover_count
+- rto_ms
+- alerts_induced
+modes:
+  postgres/streaming:
+    applicable: true
+    expected: No failover, and above all no repeated failover. A degraded link is not a dead
+      node; the timeouts must be wide enough to ride it out and the service must not flap.
+  sqlite/drbd:
+    applicable: true
+    expected: No failover, and above all no repeated failover. A degraded link is not a dead
+      node; the timeouts must be wide enough to ride it out and the service must not flap.
+  postgres/drbd:
+    applicable: true
+    expected: No failover, and above all no repeated failover. A degraded link is not a dead
+      node; the timeouts must be wide enough to ride it out and the service must not flap.

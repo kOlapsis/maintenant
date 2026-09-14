@@ -1,0 +1,8 @@
+---
+- name: Serve the arbitrator endpoint
+  ansible.builtin.include_tasks: endpoint.yml
+  when: inventory_hostname in groups['arbitrator']
+
+- name: Make the nodes vote against the arbitrator
+  ansible.builtin.include_tasks: quorum.yml
+  when: inventory_hostname in groups['opensvc_cluster']

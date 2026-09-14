@@ -1,0 +1,18 @@
+---
+opensvc_service_name: maintenant
+opensvc_service_template: "{{ playbook_dir }}/../opensvc/maintenant-{{ ha_mode | default('ip-only') | replace('/', '-') }}.conf"
+opensvc_service_rendered: /etc/maintenant-ha/service.conf
+
+# The node address on the network the service address lives on. The bench
+# carries both on one network; a deployment that separates them overrides this.
+opensvc_service_node_address: "{{ ansible_host | default(inventory_hostname) }}"
+
+# Starting values, recorded with every run; the bench is what fixes them.
+opensvc_service_monitor_action: switch
+opensvc_service_ip_restart: 2
+opensvc_service_ip_restart_delay: 2s
+opensvc_service_app_restart: 2
+opensvc_service_app_restart_delay: 5s
+
+opensvc_service_wait_retries: 36
+opensvc_service_wait_delay: 5

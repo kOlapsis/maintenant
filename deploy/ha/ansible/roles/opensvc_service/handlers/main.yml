@@ -1,0 +1,8 @@
+---
+# create leaves an orchestrate=ha service frozen, and the daemon never starts a
+# frozen service.
+- name: Hand the service to the orchestrator
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name }}", unfreeze]
+  changed_when: true
+  run_once: true

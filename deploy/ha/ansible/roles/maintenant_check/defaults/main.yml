@@ -1,0 +1,9 @@
+---
+maintenant_check_script: /usr/local/sbin/maintenant-check
+maintenant_check_url: "http://{{ ha_service_address }}:{{ maintenant_http_port | default(8080) }}/api/v1/health"
+
+# Five seconds is the starting value, not a conclusion. The bench is what says
+# what it should be: too short and a slow but healthy node is shot, too long
+# and a dead one keeps the service. It is written into run.json.settings so a
+# measured recovery time can never be read without it.
+maintenant_check_timeout_seconds: 5

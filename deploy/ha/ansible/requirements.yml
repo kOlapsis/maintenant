@@ -1,0 +1,8 @@
+---
+# Collections the bench and the reference deployment need. Install them with:
+#   ansible-galaxy collection install -r deploy/ha/ansible/requirements.yml
+collections:
+  - name: community.libvirt
+    version: ">=1.3.0"
+  - name: ansible.posix
+    version: ">=1.5.0"

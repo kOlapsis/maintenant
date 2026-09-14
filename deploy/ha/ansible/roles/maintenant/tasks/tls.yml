@@ -1,0 +1,63 @@
+---
+- name: Create the directory the certificate is built in
+  ansible.builtin.file:
+    path: "{{ maintenant_build_dir }}/tls"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+# One pair for the deployment, not one per node: the agents pin what the
+# service presents, and the service is the same whichever node carries it.
+- name: Build the gRPC certificate and key
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -newkey
+      - rsa:4096
+      - -sha256
+      - -days
+      - "825"
+      - -nodes
+      - -keyout
+      - "{{ maintenant_build_dir }}/tls/server.key"
+      - -out
+      - "{{ maintenant_build_dir }}/tls/server.crt"
+      - -subj
+      - "/CN={{ maintenant_service_name }}"
+      - -addext
+      - "subjectAltName=DNS:{{ maintenant_service_name }},IP:{{ maintenant_service_address }}"
+    creates: "{{ maintenant_build_dir }}/tls/server.crt"
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+- name: Read the certificate and key
+  ansible.builtin.slurp:
+    src: "{{ maintenant_build_dir }}/tls/{{ item }}"
+  register: maintenant_tls_material
+  delegate_to: localhost
+  run_once: true
+  become: false
+  loop: [server.crt, server.key]
+  no_log: true
+
+- name: Install the certificate
+  ansible.builtin.copy:
+    content: "{{ maintenant_tls_material.results[0].content | b64decode }}"
+    dest: "{{ maintenant_tls_dir }}/server.crt"
+    owner: "{{ maintenant_user }}"
+    group: "{{ maintenant_user }}"
+    mode: "0644"
+
+- name: Install the key
+  ansible.builtin.copy:
+    content: "{{ maintenant_tls_material.results[1].content | b64decode }}"
+    dest: "{{ maintenant_tls_dir }}/server.key"
+    owner: "{{ maintenant_user }}"
+    group: "{{ maintenant_user }}"
+    mode: "0600"
+  no_log: true

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Shoot a peer node, or check that we could.
+#
+#   maintenant-fence <node>
+#   maintenant-fence --check <node>
+#
+# Exit 0 only when the peer is down for certain. Any other outcome exits
+# non-zero, and om3 then refuses to start the service here: a fence that cannot
+# be proven must block the start, never let it through (FR-024).
+
+set -eu
+
+mode=fence
+if [ "${1:-}" = "--check" ]; then
+	mode=check
+	shift
+fi
+
+target="${1:-}"
+if [ -z "$target" ]; then
+	echo "usage: $0 [--check] <node>" >&2
+	exit 2
+fi
+
+{% if fencing_method == 'libvirt' %}
+exec ssh -i {{ fencing_key }} \
+	-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+	-o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+	{{ fencing_host_user }}@{{ fencing_host }} "$mode $target"
+{% else %}
+ha_fencing_target="$target"
+export ha_fencing_target
+
+if [ "$mode" = check ]; then
+	exec /bin/sh -c {{ fencing_check_command | quote }}
+fi
+exec /bin/sh -c {{ fencing_command | quote }}
+{% endif %}

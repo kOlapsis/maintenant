@@ -1,0 +1,49 @@
+---
+# Scenario 1 of the bench plan, Clean switchover.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 1
+slug: clean-switchover
+name: Clean switchover
+source: bench plan
+repetitions: 1
+injection:
+  'on': active
+  command: om "$LAB_SERVICE" switch --wait
+repair:
+  'on': host
+  command: 'echo "giveback is an operator decision: lab giveback"'
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- rto_ms
+- writes
+- telemetry_gap_s
+- alerts_induced
+- agents
+modes:
+  ip-only:
+    applicable: true
+    expected: The service moves to the other node on request and answers again on the service address. Exactly one node holds the address throughout. Data is local to each node in this mode, so writes are not compared.
+  postgres/streaming:
+    applicable: true
+    expected: 'The reference case, and the floor RTO every other scenario is compared against.
+      Resources stop in reverse order and leave the data clean: journal flushed, volume demoted
+      or database stopped properly. No acknowledged write is lost. Exactly one node holds
+      the service throughout.'
+  sqlite/drbd:
+    applicable: true
+    expected: 'The reference case, and the floor RTO every other scenario is compared against.
+      Resources stop in reverse order and leave the data clean: journal flushed, volume demoted
+      or database stopped properly. No acknowledged write is lost. Exactly one node holds
+      the service throughout.'
+  postgres/drbd:
+    applicable: true
+    expected: 'The reference case, and the floor RTO every other scenario is compared against.
+      Resources stop in reverse order and leave the data clean: journal flushed, volume demoted
+      or database stopped properly. No acknowledged write is lost. Exactly one node holds
+      the service throughout.'

@@ -1,0 +1,41 @@
+---
+# Scenario 10 of the bench plan, Loss of the PostgreSQL primary.
+#
+# The numbers 1 to 12 belong to the plan permanently and are never reused, not
+# even in a mode where the scenario has no object (FR-047). `expected` is filled
+# in by the phase that implements the mode; a scenario whose expectation is
+# still empty is reported as such, never as passed.
+id: 10
+slug: postgres-primary-loss
+name: Loss of the PostgreSQL primary
+source: bench plan
+repetitions: 1
+injection:
+  'on': active
+  command: pkill -9 -x postgres
+repair:
+  'on': host
+  command: echo "let the bounded local restart happen; the variant rebuilds the former primary
+    as a standby"
+verify:
+  'on': measurement
+  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+measures:
+- rto_ms
+- writes
+- local_restarts
+- primary_count
+modes:
+  postgres/streaming:
+    applicable: true
+    expected: 'Bounded local restart of the primary: crash recovery, standby still attached.
+      The standby is promoted only if the restart fails, because promoting on a mere process
+      death would contradict local restart before failover and would force a rebuild for nothing.
+      In the variant, promotion happens, exactly one primary is established, and the former
+      primary is locked out of write service until it is rebuilt.'
+  sqlite/drbd:
+    applicable: false
+    reason: there is no external database in this mode
+  postgres/drbd:
+    applicable: true
+    expected: Local restart, if this mode is played.

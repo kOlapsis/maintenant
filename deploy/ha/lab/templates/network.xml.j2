@@ -1,0 +1,10 @@
+{% set prefix_len = net.cidr.split('/')[1] | int %}
+{% set mask = 4294967296 - 2 ** (32 - prefix_len) %}
+<network>
+  <name>{{ lab_prefix }}-{{ net.name }}</name>
+  <bridge name="{{ lab_bridge_prefix }}{{ net.name | replace('net-', '') }}" stp="on" delay="0"/>
+{% if net.forward == 'nat' %}
+  <forward mode="nat"/>
+  <ip address="{{ net.host_address }}" netmask="{{ mask // 16777216 }}.{{ (mask // 65536) % 256 }}.{{ (mask // 256) % 256 }}.{{ mask % 256 }}"/>
+{% endif %}
+</network>

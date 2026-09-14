@@ -1,0 +1,19 @@
+version: 2
+ethernets:
+{% for net_name in machine.networks %}
+{% set net = topology.networks | selectattr('name', 'equalto', net_name) | first %}
+  {{ net_name | replace('-', '_') }}:
+    match:
+      macaddress: "{{ lab_macs[machine.name][net_name] }}"
+    dhcp4: false
+    dhcp6: false
+    addresses:
+      - {{ machine.addresses[net_name] }}/{{ net.cidr.split('/')[1] }}
+{% if net.forward == 'nat' %}
+    routes:
+      - to: default
+        via: {{ net.host_address }}
+    nameservers:
+      addresses: [{{ net.host_address }}]
+{% endif %}
+{% endfor %}

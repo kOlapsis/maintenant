@@ -53,6 +53,11 @@ if [ -z "$reason" ]; then
 		deploy/kubernetes/* | deploy/helm/*)
 			backend=true
 			;;
+		# The bench probes are Go, and every figure of the campaign comes
+		# out of them: they compile and lint with the rest of the backend.
+		deploy/ha/lab/probes/*)
+			backend=true
+			;;
 		# Nothing in CI reads these. The docs have their own workflow.
 		docs/* | mkdocs.yml | deploy/* | *.md | LICENSE | .env.example | .gitignore) ;;
 		frontend/*)

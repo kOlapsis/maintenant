@@ -1,0 +1,63 @@
+---
+- name: Read the cluster members this node knows
+  ansible.builtin.command: om node list
+  register: opensvc_members
+  changed_when: false
+  failed_when: false
+
+- name: Read the cluster name
+  ansible.builtin.command: om cluster config get --kw cluster.name
+  register: opensvc_current_name
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == opensvc_former
+
+- name: Name the cluster, on the node the others join
+  ansible.builtin.command: >-
+    om cluster config update --set cluster.name={{ opensvc_cluster_name }}
+  when:
+    - inventory_hostname == opensvc_former
+    - opensvc_current_name.stdout | default('') | trim != opensvc_cluster_name
+  changed_when: true
+
+- name: Ask the forming node for a join token
+  ansible.builtin.command: >-
+    om daemon auth --role join --duration {{ opensvc_join_token_duration }} -o json
+  delegate_to: "{{ opensvc_former }}"
+  run_once: true
+  register: opensvc_auth
+  changed_when: false
+  no_log: true
+
+- name: Join the cluster
+  ansible.builtin.command: >-
+    om cluster join
+    --node {{ hostvars[opensvc_former].ansible_host | default(opensvc_former) }}
+    --token {{ (opensvc_auth.stdout | from_json).token
+               | default((opensvc_auth.stdout | from_json).access_token) }}
+    --timeout {{ opensvc_join_timeout }}
+  when:
+    - inventory_hostname != opensvc_former
+    - opensvc_former not in opensvc_members.stdout
+  throttle: 1
+  no_log: true
+  changed_when: true
+
+- name: Wait for every node to see the whole cluster
+  ansible.builtin.command: om node list
+  register: opensvc_members_after
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: >-
+    groups['opensvc_cluster']
+    | reject('in', opensvc_members_after.stdout) | list | length == 0
+
+- name: Refuse a cluster that is not whole
+  ansible.builtin.assert:
+    that: >-
+      groups['opensvc_cluster']
+      | reject('in', opensvc_members_after.stdout) | list | length == 0
+    fail_msg: >-
+      {{ inventory_hostname }} sees "{{ opensvc_members_after.stdout }}" while
+      the inventory declares {{ groups['opensvc_cluster'] | join(', ') }}.

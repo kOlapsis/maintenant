@@ -1,0 +1,43 @@
+---
+maintenant_user: maintenant
+maintenant_bin: /usr/local/bin/maintenant
+maintenant_env_file: /etc/maintenant.env
+maintenant_source_dir: "{{ playbook_dir }}/.."
+maintenant_build_dir: /tmp/maintenant-build
+maintenant_build_image: golang:1.26-alpine
+
+# Everything mutable lives under one root, and that root is what the service
+# moves between the nodes. Nothing of the deployment's identity is allowed to
+# sit outside it (FR-035).
+maintenant_state_dir: /var/lib/maintenant
+maintenant_tls_dir: "{{ maintenant_state_dir }}/tls"
+
+maintenant_http_port: 8080
+maintenant_grpc_port: 8443
+
+# The address the service carries, and the name that resolves to it. Agents are
+# handed the name: handed a node's own address they would reconnect to the node
+# that just died.
+maintenant_service_address: "{{ ha_service_address }}"
+maintenant_service_name: "{{ ha_service_name }}"
+maintenant_grpc_url: "grpcs://{{ maintenant_service_name }}:{{ maintenant_grpc_port }}"
+
+maintenant_sqlite_synchronous: NORMAL
+maintenant_require_state_dir: true
+maintenant_require_existing_data: false
+
+# The agents' authentication tolerance is 300 s. Refusing at 30 s leaves room
+# to notice the drift long before it starts rejecting agents.
+maintenant_clock_drift_max_seconds: 30
+
+maintenant_settings:
+  MAINTENANT_MODE: server
+  MAINTENANT_ADDR: "{{ maintenant_service_address }}:{{ maintenant_http_port }}"
+  MAINTENANT_GRPC_LISTEN: "{{ maintenant_service_address }}:{{ maintenant_grpc_port }}"
+  MAINTENANT_GRPC_URL: "{{ maintenant_grpc_url }}"
+  MAINTENANT_STATE_DIR: "{{ maintenant_state_dir }}"
+  MAINTENANT_SQLITE_SYNCHRONOUS: "{{ maintenant_sqlite_synchronous }}"
+  MAINTENANT_REQUIRE_STATE_DIR: "{{ maintenant_require_state_dir | bool | ternary('1', '0') }}"
+  MAINTENANT_REQUIRE_EXISTING_DATA: "{{ maintenant_require_existing_data | bool | ternary('1', '0') }}"
+  MAINTENANT_GRPC_TLS_CERT: "{{ maintenant_tls_dir }}/server.crt"
+  MAINTENANT_GRPC_TLS_KEY: "{{ maintenant_tls_dir }}/server.key"

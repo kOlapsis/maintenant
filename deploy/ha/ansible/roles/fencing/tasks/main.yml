@@ -1,0 +1,19 @@
+---
+- name: Refuse a deployment with no fencing mechanism
+  ansible.builtin.assert:
+    that:
+      - fencing_method | length > 0
+      - fencing_command | length > 0
+      - fencing_check_command | length > 0
+    fail_msg: >-
+      ha_fencing_method, ha_fencing_command and ha_fencing_check_command must
+      all be set in the inventory. Fencing is a prerequisite of the supported
+      deployment, not an option (FR-024).
+
+- name: Prepare the libvirt host to answer the callout
+  ansible.builtin.include_tasks: libvirt_host.yml
+  when: fencing_method == 'libvirt'
+
+- name: Set up the callout on the cluster nodes
+  ansible.builtin.include_tasks: nodes.yml
+  when: inventory_hostname in groups['opensvc_cluster']

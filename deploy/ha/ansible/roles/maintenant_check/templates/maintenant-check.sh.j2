@@ -1,0 +1,26 @@
+#!/bin/sh
+# The application test the OpenSVC service runs against the binary.
+#
+#   0  alive     HTTP 200 within the deadline and storage.connected true
+#   1  degraded  HTTP 200 within the deadline and storage.connected false
+#   2  dead      no answer within the deadline, or any other status
+#
+# /api/v1/health answers 200 whatever the state of the storage, so the body is
+# what decides. It also carries runtime.connected: only storage.connected counts.
+
+set -u
+
+url="{{ maintenant_check_url }}"
+deadline={{ maintenant_check_timeout_seconds }}
+
+body=$(curl -fsS -m "$deadline" "$url" 2>/dev/null) || exit 2
+connected=$(printf '%s' "$body" | jq -r '.storage.connected // "absent"' 2>/dev/null) || exit 2
+
+case "$connected" in
+true) exit 0 ;;
+false) exit 1 ;;
+*)
+	echo "health body carries no storage.connected" >&2
+	exit 2
+	;;
+esac

@@ -1,9 +1,22 @@
 ---
-# The only variable that separates the production deployment from the bench.
+# The only variables that separate the production deployment from the bench.
 # Everything else is shared (FR-052).
 #
 # Pick the mechanism the machines actually offer: ipmi, pdu, or the provider's
 # API. A failed fencing blocks the start on the survivor and alerts the
 # operator: it never lets through (FR-024).
+#
+# Both commands are required. The check command must prove the mechanism is
+# reachable without shooting anything: deploying with a fence nobody has ever
+# exercised is how a cluster discovers, during an incident, that it cannot
+# fence at all.
+#
+# $ha_fencing_target is set by the callout to the node being shot. It is a
+# shell variable, not a template: the target is only known when the fence runs.
+#
+#   ha_fencing_method: ipmi
+#   ha_fencing_command: 'ipmitool -H "$ha_fencing_target-bmc" -U "$IPMI_USER" -P "$IPMI_PASSWORD" chassis power off'
+#   ha_fencing_check_command: 'ipmitool -H "$ha_fencing_target-bmc" -U "$IPMI_USER" -P "$IPMI_PASSWORD" chassis power status'
 ha_fencing_method: "" # ipmi | pdu | provider_api
 ha_fencing_command: ""
+ha_fencing_check_command: ""

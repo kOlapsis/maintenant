@@ -1,0 +1,79 @@
+---
+- name: Find the interface that carries the service network
+  ansible.builtin.set_fact:
+    opensvc_service_interface: "{{ carrier.device | default('') }}"
+    opensvc_service_prefix: "{{ carrier.ipv4.prefix | default('') }}"
+  vars:
+    carrier: >-
+      {{ ansible_facts.interfaces | map('regex_replace', '[-.]', '_')
+         | map('extract', ansible_facts) | selectattr('ipv4', 'defined')
+         | selectattr('ipv4.address', 'equalto', opensvc_service_node_address)
+         | first | default({}) }}
+
+- name: Refuse a node with no interface on the service network
+  ansible.builtin.assert:
+    that: opensvc_service_interface | length > 0
+    fail_msg: >-
+      no interface of {{ inventory_hostname }} holds {{ opensvc_service_node_address }}:
+      the service address would have nowhere to live on this node.
+
+- name: Look for the template of the mode
+  ansible.builtin.stat:
+    path: "{{ opensvc_service_template }}"
+  register: opensvc_service_template_file
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Refuse a mode that has no service template
+  ansible.builtin.assert:
+    that: opensvc_service_template_file.stat.exists
+    fail_msg: "mode {{ ha_mode | default('ip-only') }} has no service template: {{ opensvc_service_template }}"
+  run_once: true
+
+- name: Create the directory the rendered service is kept in
+  ansible.builtin.file:
+    path: "{{ opensvc_service_rendered | dirname }}"
+    state: directory
+    mode: "0750"
+  run_once: true
+
+- name: Render the service
+  ansible.builtin.template:
+    src: "{{ opensvc_service_template }}"
+    dest: "{{ opensvc_service_rendered }}"
+    mode: "0640"
+  register: opensvc_service_render
+  run_once: true
+
+- name: Look for the service in the cluster
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name }}", config, show]
+  register: opensvc_service_existing
+  changed_when: false
+  failed_when: false
+  run_once: true
+
+- name: Declare the service
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name }}", create, --config, "{{ opensvc_service_rendered }}", --force]
+  when: opensvc_service_render is changed or opensvc_service_existing.rc != 0
+  changed_when: true
+  run_once: true
+  notify: Hand the service to the orchestrator
+
+- name: Unfreeze the service before waiting on it
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the service to be up on exactly one node
+  ansible.builtin.command:
+    argv: [om, cluster, status, -o, json]
+  register: opensvc_service_status
+  changed_when: false
+  retries: "{{ opensvc_service_wait_retries }}"
+  delay: "{{ opensvc_service_wait_delay }}"
+  until: >-
+    (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name] is defined
+    and (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name].avail == 'up'
+    and (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name].up_instances_count | int == 1
+  run_once: true

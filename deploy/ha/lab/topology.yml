@@ -13,15 +13,31 @@ host:
   memory_gb: 16
   disk_gb: 80
 
+image:
+  # Base cloud image the four machines are cloned from. Each machine gets a
+  # qcow2 overlay on top of it, so a rebuild costs no download.
+  url: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
+  checksum_url: "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS"
+  user: debian
+  system_disk_gb: 20
+
 networks:
+  # `isolated` networks have no host address and no route out: nothing but the
+  # machines attached to them can talk on them. Only net-wan is routed, because
+  # it is also the administration path and the one the operator reaches the
+  # service address on.
   - name: net-a
     cidr: 10.10.1.0/24
+    forward: isolated
     role: site A LAN
   - name: net-b
     cidr: 10.10.2.0/24
+    forward: isolated
     role: site B LAN
   - name: net-wan
     cidr: 10.10.9.0/24
+    forward: nat
+    host_address: 10.10.9.1
     role: >-
       inter-site interconnect and administration; this is where tc netem is
       applied for the degraded network scenarios
@@ -36,6 +52,10 @@ machines:
       net-wan: 10.10.9.11
     vcpu: 2
     memory_gb: 4
+    # Second disk, /dev/vdb in the guest. Backing device for DRBD in
+    # sqlite/drbd mode, and the PostgreSQL data directory in the streaming
+    # modes: the replicated state never lives on the system disk.
+    data_disk_gb: 8
 
   - name: site-b
     role: opensvc_node
@@ -46,6 +66,10 @@ machines:
       net-wan: 10.10.9.12
     vcpu: 2
     memory_gb: 4
+    # Second disk, /dev/vdb in the guest. Backing device for DRBD in
+    # sqlite/drbd mode, and the PostgreSQL data directory in the streaming
+    # modes: the replicated state never lives on the system disk.
+    data_disk_gb: 8
 
   - name: arb
     # Quorum arbitrator, and the diskless DRBD quorum node in sqlite/drbd mode.
