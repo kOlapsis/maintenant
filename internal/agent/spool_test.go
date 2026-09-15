@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
@@ -529,25 +531,210 @@ func TestSpoolReplaysContainerLifecycleWithoutInventory(t *testing.T) {
 	assert.Equal(t, 2, lifecycle, "a container born and gone during the outage still has its timeline")
 }
 
-func TestSpoolAckNeverPurgesPastWhatWasSent(t *testing.T) {
-	spool := NewSpool(t.TempDir(), testSpoolConfig(), testLogger())
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// serverStub acks the latest numbered event whenever a host sample arrives.
+type serverStub struct {
+	grpc.ClientStream
+	spool *Spool
+
+	mu       sync.Mutex
+	numbered uint64
+	statuses []*agentpb.SpoolStatus
+}
+
+func (s *serverStub) Send(msg *agentpb.ClientMessage) error {
+	s.mu.Lock()
+	var ack uint64
+	switch body := msg.GetPayload().(type) {
+	case *agentpb.ClientMessage_Status:
+		s.statuses = append(s.statuses, body.Status)
+	case *agentpb.ClientMessage_Event:
+		if seq := body.Event.GetSeq(); seq > 0 {
+			s.numbered = seq
+		}
+		if _, host := snapshotOf(body.Event); host {
+			ack = s.numbered
+		}
+	}
+	s.mu.Unlock()
+
+	if ack > 0 {
+		s.spool.Acked(ack)
+	}
+	return nil
+}
+
+func (s *serverStub) Recv() (*agentpb.ServerMessage, error) {
+	return nil, io.EOF
+}
+
+func (s *serverStub) lastStatus() *agentpb.SpoolStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.statuses) == 0 {
+		return nil
+	}
+	return s.statuses[len(s.statuses)-1]
+}
+
+func TestSpoolDrainsWithSnapshotsInterleavedOnTheStream(t *testing.T) {
+	logs := &lockedBuffer{}
+	logger := slog.New(slog.NewTextHandler(logs, nil))
+	spool := unthrottle(NewSpool(t.TempDir(), testSpoolConfig(), logger))
+	defer func() { _ = spool.Close() }()
+
+	for range 50 {
+		require.NoError(t, spool.Send(testEvent(time.Now())))
+	}
+	require.NoError(t, spool.flush())
+
+	server := &serverStub{spool: spool}
+	spool.Attach(&PushStream{stream: server, recvCh: make(chan error, 1)})
+	spool.reportStatus(true)
+
+	for range 6 {
+		require.NoError(t, spool.Send(hostSampleTestEvent()))
+		for range 5 {
+			require.NoError(t, spool.Send(testEvent(time.Now())))
+		}
+		require.NoError(t, spool.drainOnce(t.Context()))
+		spool.reportStatus(false)
+	}
+	require.NoError(t, spool.Send(hostSampleTestEvent()))
+	spool.reportStatus(false)
+
+	depth, err := spool.Depth()
+	require.NoError(t, err)
+	assert.Zero(t, depth)
+
+	last := server.lastStatus()
+	require.NotNil(t, last)
+	assert.False(t, last.GetDraining())
+	assert.Zero(t, last.GetQueued())
+	assert.Contains(t, logs.String(), "spool drained")
+}
+
+// refusingSink refuses one numbered event, takes the rest of the batch and asks for a back-off.
+type refusingSink struct {
+	captureSink
+	spool   *Spool
+	refuse  uint64
+	refused bool
+}
+
+func (r *refusingSink) Send(evt *agentpb.AgentEvent) error {
+	if err := r.captureSink.Send(evt); err != nil {
+		return err
+	}
+	if evt.GetSeq() == r.refuse && !r.refused {
+		r.refused = true
+		r.spool.RateLimited(10 * time.Millisecond)
+	}
+	return nil
+}
+
+func replayedFlags(events []*agentpb.AgentEvent) []bool {
+	out := make([]bool, 0, len(events))
+	for _, evt := range events {
+		out = append(out, evt.GetReplayed())
+	}
+	return out
+}
+
+func TestSpoolMarksEventsObservedBeforeAttachAsReplayed(t *testing.T) {
+	spool := unthrottle(NewSpool(t.TempDir(), testSpoolConfig(), testLogger()))
 	defer func() { _ = spool.Close() }()
 
 	for range 3 {
-		require.NoError(t, spool.Send(testEvent(time.Now())))
+		require.NoError(t, spool.Send(testEvent(time.Now().Add(-time.Minute))))
 	}
 	require.NoError(t, spool.flush())
 
 	sink := &captureSink{}
 	spool.Attach(sink)
+	require.NoError(t, spool.drainOnce(t.Context()))
 
-	// Snapshots consume stream sequence numbers of their own, so the server can
-	// acknowledge a number the drain has not reached.
-	spool.Acked(3)
+	assert.Equal(t, []bool{true, true, true}, replayedFlags(sink.events()))
+}
 
-	depth, err := spool.Depth()
-	require.NoError(t, err)
-	assert.Equal(t, int64(3), depth, "an ack must never drop what was never sent")
+func TestSpoolSendsLiveEventsAsNotReplayed(t *testing.T) {
+	spool := unthrottle(NewSpool(t.TempDir(), testSpoolConfig(), testLogger()))
+	defer func() { _ = spool.Close() }()
+
+	sink := &captureSink{}
+	spool.Attach(sink)
+
+	require.NoError(t, spool.Send(testEvent(time.Now())))
+	noTime := testEvent(time.Now())
+	noTime.ObservedAt = nil
+	require.NoError(t, spool.Send(noTime))
+	require.NoError(t, spool.drainOnce(t.Context()))
+
+	assert.Equal(t, []bool{false, false}, replayedFlags(sink.events()))
+}
+
+func TestSpoolMarksRewoundRowsAsReplayedOnTheNextStream(t *testing.T) {
+	spool := unthrottle(NewSpool(t.TempDir(), testSpoolConfig(), testLogger()))
+	defer func() { _ = spool.Close() }()
+
+	first := &captureSink{}
+	spool.Attach(first)
+	for range 2 {
+		require.NoError(t, spool.Send(testEvent(time.Now())))
+	}
+	require.NoError(t, spool.drainOnce(t.Context()))
+	require.Equal(t, []bool{false, false}, replayedFlags(first.events()))
+	spool.Detach()
+
+	second := &captureSink{}
+	spool.Attach(second)
+	require.NoError(t, spool.drainOnce(t.Context()))
+
+	assert.Equal(t, []bool{true, true}, replayedFlags(second.events()))
+}
+
+func TestSpoolResendsRowsRefusedInTheMiddleOfABatch(t *testing.T) {
+	spool := unthrottle(NewSpool(t.TempDir(), testSpoolConfig(), testLogger()))
+	defer func() { _ = spool.Close() }()
+
+	for range 4 {
+		require.NoError(t, spool.Send(testEvent(time.Now())))
+	}
+	require.NoError(t, spool.flush())
+
+	sink := &refusingSink{spool: spool, refuse: 2}
+	spool.Attach(sink)
+	require.NoError(t, spool.drainOnce(t.Context()))
+
+	seqs := func() []uint64 {
+		var out []uint64
+		for _, evt := range sink.events() {
+			out = append(out, evt.GetSeq())
+		}
+		return out
+	}
+
+	require.Eventually(t, func() bool {
+		require.NoError(t, spool.drainOnce(t.Context()))
+		return len(sink.events()) >= 6
+	}, time.Second, 5*time.Millisecond, "the refused row and those after it must go again")
+	assert.Equal(t, []uint64{1, 2, 1, 2, 3, 4}, seqs())
 }
 
 func TestSpoolKeepsOrderWhileProducingDuringDrain(t *testing.T) {

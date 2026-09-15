@@ -15,8 +15,9 @@ package agentevent
 
 import "time"
 
-// Meta is the observation time and the replay flag of an event pushed by an agent.
+// Meta is the observation time, the replay flag and the id of an event pushed by an agent.
 type Meta struct {
 	ObservedAt time.Time
 	Replayed   bool
+	EventID    string
 }

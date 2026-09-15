@@ -16,6 +16,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // HandleAgentEvent records an endpoint probe result pushed by a remote agent.
@@ -50,6 +51,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		Timestamp:      meta.ObservedAt,
 		Replayed:       meta.Replayed,
 		AgentID:        agentID,
+	}
+	if meta.EventID != "" {
+		result.ID = uid.EventRecord(agentID, meta.EventID, "check_result")
 	}
 	s.ProcessCheckResult(ctx, ep.ID, result)
 	return nil

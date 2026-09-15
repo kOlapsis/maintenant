@@ -215,10 +215,16 @@ func (s *EndpointStore) UpdateCheckResult(ctx context.Context, id string, status
 }
 
 func (s *EndpointStore) InsertCheckResult(ctx context.Context, result *endpoint.CheckResult) (string, error) {
-	result.ID = uid.New()
+	if result.ID == "" {
+		result.ID = uid.New()
+	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO check_results (id, endpoint_id, success, response_time_ms, http_status, error_message, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			endpoint_id=excluded.endpoint_id, success=excluded.success,
+			response_time_ms=excluded.response_time_ms, http_status=excluded.http_status,
+			error_message=excluded.error_message, timestamp=excluded.timestamp`,
 		result.ID, result.EndpointID, boolToInt(result.Success), result.ResponseTimeMs,
 		result.HTTPStatus, NullableString(result.ErrorMessage), result.Timestamp.Unix(),
 	)

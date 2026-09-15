@@ -52,6 +52,24 @@ func TestHandleAgentEvent_PersistsSnapshotForAgentContainer(t *testing.T) {
 	assert.Equal(t, "agent-9", snap.AgentID)
 }
 
+func TestHandleAgentEvent_SameEventMapsToSameSnapshotID(t *testing.T) {
+	extID := "abc123def4567890"
+	c := &container.Container{ID: uid.Container(uid.Agent("agent-9"), extID), ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	rstore := newMockResourceStore()
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore(c)), nil)
+
+	for _, eventID := range []string{"evt-1", "evt-1", "evt-2"} {
+		require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+			ContainerId: extID, CpuPercent: 3,
+		}, agentevent.Meta{ObservedAt: time.Now(), Replayed: true, EventID: eventID}))
+	}
+
+	require.Len(t, rstore.snapshots, 3)
+	assert.NotEmpty(t, rstore.snapshots[0].ID)
+	assert.Equal(t, rstore.snapshots[0].ID, rstore.snapshots[1].ID, "a replayed event writes the same row")
+	assert.NotEqual(t, rstore.snapshots[0].ID, rstore.snapshots[2].ID)
+}
+
 func TestHandleAgentEvent_SkipsWhenContainerUnknown(t *testing.T) {
 	csvc := buildContainerSvc(newMockContainerStore())
 	rstore := newMockResourceStore()

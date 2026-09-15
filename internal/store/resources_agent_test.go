@@ -22,6 +22,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/resource"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // seedHostContainer inserts a container owned by agentID ("" => local server).
@@ -72,6 +73,54 @@ func TestInsertSnapshot_PersistsAgentID(t *testing.T) {
 	require.NoError(t, db.Reader().QueryRowContext(ctx,
 		`SELECT agent_id FROM resource_snapshots WHERE id = ?`, id).Scan(&got))
 	assert.Equal(t, agentID, got)
+}
+
+func TestInsertSnapshot_SameEventTwiceKeepsOneRow(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cstore := NewContainerStore(db)
+	rstore := NewResourceStore(db)
+
+	cid := seedHostContainer(t, cstore, "ext-replay", "")
+	id := uid.EventRecord(uid.LocalAgent, "evt-replayed", "resource_snapshot")
+	ts := time.Now()
+
+	for _, cpu := range []float64{10, 20} {
+		got, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
+			ID: id, ContainerID: cid, CPUPercent: cpu, MemUsed: 1, MemLimit: 2, Timestamp: ts,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, id, got)
+	}
+
+	var count int
+	var cpu float64
+	require.NoError(t, db.Reader().QueryRowContext(ctx,
+		`SELECT COUNT(*), MAX(cpu_percent) FROM resource_snapshots WHERE container_id = ?`, cid).Scan(&count, &cpu))
+	assert.Equal(t, 1, count)
+	assert.EqualValues(t, 20, cpu)
+}
+
+func TestInsertTransition_SameEventTwiceKeepsOneRow(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cstore := NewContainerStore(db)
+
+	cid := seedHostContainer(t, cstore, "ext-replay-transition", "")
+	id := uid.EventRecord(uid.LocalAgent, "evt-replayed", "state_transition", "ext-replay-transition")
+
+	for range 2 {
+		_, err := cstore.InsertTransition(ctx, &container.StateTransition{
+			ID: id, ContainerID: cid, PreviousState: container.StateExited,
+			NewState: container.StateRunning, Timestamp: time.Now(),
+		})
+		require.NoError(t, err)
+	}
+
+	var count int
+	require.NoError(t, db.Reader().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM state_transitions WHERE container_id = ?`, cid).Scan(&count))
+	assert.Equal(t, 1, count)
 }
 
 // GetTopConsumersByPeriod must scope by host via the owning container's agent.

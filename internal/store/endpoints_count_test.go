@@ -15,10 +15,36 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/require"
 )
+
+func TestInsertCheckResult_SameEventTwiceKeepsOneRow(t *testing.T) {
+	db := openTestDB(t)
+	s := NewEndpointStore(db)
+	ctx := context.Background()
+
+	epID, err := s.InsertStandaloneEndpoint(ctx, &endpoint.Endpoint{
+		Name: "replayed", EndpointType: endpoint.TypeHTTP, Target: "https://example.com/replay",
+	})
+	require.NoError(t, err)
+
+	id := uid.EventRecord(uid.LocalAgent, "evt-replayed", "check_result")
+	for range 2 {
+		_, err := s.InsertCheckResult(ctx, &endpoint.CheckResult{
+			ID: id, EndpointID: epID, Success: true, ResponseTimeMs: 12, Timestamp: time.Now(),
+		})
+		require.NoError(t, err)
+	}
+
+	var count int
+	require.NoError(t, db.Reader().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM check_results WHERE endpoint_id = ?`, epID).Scan(&count))
+	require.Equal(t, 1, count)
+}
 
 // The Community cap applies to what an operator adds by hand, so the count
 // behind it ignores label-discovered endpoints, however many a host declares.

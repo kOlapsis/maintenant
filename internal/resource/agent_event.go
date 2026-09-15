@@ -57,6 +57,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		Replayed:        meta.Replayed,
 		AgentID:         uid.Agent(agentID),
 	}
+	if meta.EventID != "" {
+		snap.ID = uid.EventRecord(snap.AgentID, meta.EventID, "resource_snapshot")
+	}
 
 	s.processSnapshot(snap)
 	return nil
