@@ -120,6 +120,15 @@ func init() {
 				return os.Setenv("MAINTENANT_RUNTIME", v)
 			},
 		},
+		{
+			EnvName: "MAINTENANT_PROXY_LABELS", FlagName: "proxyLabels",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Derive endpoint monitors from Traefik and Caddy container labels (Docker only)",
+			ApplyTo: func(c *Config, v string) error {
+				c.ProxyLabels = parseTruthy(v)
+				return nil
+			},
+		},
 		// Logging
 		{
 			EnvName: "MAINTENANT_LOG_LEVEL", FlagName: "logLevel",
@@ -549,7 +558,7 @@ func init() {
 		{Name: "Alerting", Specs: specsFor("containerDownAfter")},
 		{Name: "Retention", Specs: specsFor("retentionSnapshots", "retentionInterval", "retentionBatchSize")},
 		{Name: "Branding", Specs: specsFor("organisationName", "statusUrl")},
-		{Name: "Runtime", Specs: specsFor("runtime")},
+		{Name: "Runtime", Specs: specsFor("runtime", "proxyLabels")},
 		{Name: "Logging", Specs: specsFor("logLevel")},
 		{Name: "HTTP", Specs: specsFor("maxBodySize", "trustedProxies")},
 		{Name: "Updates", Specs: specsFor("updateInterval")},

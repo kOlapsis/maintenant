@@ -203,6 +203,8 @@ labels:
 
 Domains are comma-separated. Port defaults to `443` if omitted. See the [Docker Labels Reference](../guides/docker-labels.md) for details.
 
+With `MAINTENANT_PROXY_LABELS=true`, the HTTPS hostnames found in Traefik and Caddy labels are added to `maintenant.tls.certificates` for you, merged with any value you already set. Sites served with `tls internal` are left out, since their certificate comes from Caddy's local CA. See [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy).
+
 ---
 
 ## Related

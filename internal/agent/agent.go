@@ -41,6 +41,7 @@ type AgentConfig struct {
 	Label               string
 	AgentVersion        string
 	InsecureSkipVerify  bool
+	ProxyLabels         bool
 	SpoolMaxMemoryBytes int64
 	SpoolMaxDiskBytes   int64
 	SpoolMaxAgeSeconds  int64
@@ -50,7 +51,7 @@ type AgentConfig struct {
 // It detects the local runtime, loads or creates the agent identity, enrolls if needed,
 // then enters the long-lived Push streaming loop (US2).
 func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
-	rt, rtLabel, err := resolveRuntime(ctx, cfg.RuntimeOverride, logger)
+	rt, rtLabel, err := resolveRuntime(ctx, cfg.RuntimeOverride, cfg.ProxyLabels, logger)
 	if err != nil {
 		return fmt.Errorf("runtime detection: %w", err)
 	}
@@ -141,7 +142,7 @@ func spoolConfig(cfg AgentConfig) SpoolConfig {
 // connects to it, and returns it along with a label ("docker"/"swarm"/"kubernetes")
 // suitable for the gRPC enrollment payload. Swarm is derived from the swarm.Detector
 // applied to the docker runtime — there is no separate "swarm" factory.
-func resolveRuntime(ctx context.Context, override string, logger *slog.Logger) (runtime.Runtime, string, error) {
+func resolveRuntime(ctx context.Context, override string, proxyLabels bool, logger *slog.Logger) (runtime.Runtime, string, error) {
 	forceLabel := ""
 	rtOverride := override
 	switch override {
@@ -159,6 +160,9 @@ func resolveRuntime(ctx context.Context, override string, logger *slog.Logger) (
 	rt, err := runtime.DetectWithOverride(ctx, logger, rtOverride)
 	if err != nil {
 		return nil, "", err
+	}
+	if dr, ok := rt.(*docker.Runtime); ok {
+		dr.SetProxyLabels(proxyLabels)
 	}
 	if err := rt.Connect(ctx); err != nil {
 		_ = rt.Close()

@@ -80,6 +80,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		c.Image = img
 		dirty = true
 	}
+	if labels := ev.GetLabels(); len(labels) > 0 && c.ApplyImageLabels(labels) {
+		dirty = true
+	}
 	if ev.GetHasHealthCheck() && !c.HasHealthCheck {
 		c.HasHealthCheck = true
 		dirty = true
@@ -196,6 +199,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		c.HealthStatus = &h
 	}
 	applyAgentLabels(c, labels)
+	c.ApplyImageLabels(labels)
 
 	id, err := s.store.InsertContainer(ctx, c)
 	if err != nil {

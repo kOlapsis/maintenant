@@ -1,0 +1,4 @@
+ALTER TABLE containers ADD COLUMN image_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE containers ADD COLUMN image_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE containers ADD COLUMN image_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE containers ADD COLUMN image_description TEXT NOT NULL DEFAULT '';

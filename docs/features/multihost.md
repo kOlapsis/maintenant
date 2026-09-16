@@ -329,6 +329,7 @@ Available for development and testing against self-signed certificates. A boot-t
 | `--enrollment-token` | — | One-time enrollment token (agent mode, first boot only) |
 | `--label` | _(hostname)_ | Display label for this agent |
 | `--runtime` | _(auto-detected)_ | Override runtime detection: `docker`, `swarm`, `kubernetes` |
+| `MAINTENANT_PROXY_LABELS` / `--proxyLabels` | `false` | Create endpoints from Traefik and Caddy labels. Read by each agent from its own environment, see [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy) |
 | `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` | `1000` | Max events/s per agent (server mode) |
 | `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` | `60` | Seconds before an agent is considered disconnected |
 | `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES` / `--agentSpoolMaxMemoryBytes` | `16777216` (16 MB) | Buffer held in memory before spilling to disk (agent mode) |

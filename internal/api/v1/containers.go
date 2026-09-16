@@ -278,6 +278,10 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		"namespace":            c.Namespace,
 		"pod_count":            c.PodCount,
 		"ready_count":          c.ReadyCount,
+		"image_version":        c.ImageVersion,
+		"image_source":         c.ImageSource,
+		"image_url":            c.ImageURL,
+		"image_description":    c.ImageDescription,
 	}
 
 	// Add uptime if calculator is available

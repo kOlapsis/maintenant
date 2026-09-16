@@ -72,6 +72,10 @@ type Container struct {
 	PodCount             int            `json:"pod_count"`
 	ReadyCount           int            `json:"ready_count"`
 	ComposeWorkingDir    string         `json:"compose_working_dir,omitempty"`
+	ImageVersion         string         `json:"image_version,omitempty"`
+	ImageSource          string         `json:"image_source,omitempty"`
+	ImageURL             string         `json:"image_url,omitempty"`
+	ImageDescription     string         `json:"image_description,omitempty"`
 	SwarmServiceID       string         `json:"swarm_service_id,omitempty"`
 	SwarmServiceName     string         `json:"swarm_service_name,omitempty"`
 	SwarmServiceMode     string         `json:"swarm_service_mode,omitempty"`

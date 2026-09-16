@@ -12,6 +12,7 @@ import (
 	dtypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 
+	"github.com/kolapsis/maintenant/internal/proxylabels"
 	"github.com/kolapsis/maintenant/internal/retry"
 )
 
@@ -27,6 +28,8 @@ type Client struct {
 	host      string
 	logger    *slog.Logger
 	connected bool
+
+	proxyLabels bool
 }
 
 // NewClient creates a new Docker client wrapper.
@@ -52,6 +55,18 @@ func NewClient(host string, logger *slog.Logger) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+// SetProxyLabels enables deriving maintenant endpoint labels from reverse proxy labels; call it before discovery starts.
+func (c *Client) SetProxyLabels(enabled bool) {
+	c.proxyLabels = enabled
+}
+
+func (c *Client) containerLabels(labels map[string]string) map[string]string {
+	if !c.proxyLabels {
+		return labels
+	}
+	return proxylabels.Expand(labels)
 }
 
 // Connect pings the Docker daemon to verify connectivity.

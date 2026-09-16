@@ -116,6 +116,238 @@ labels:
 
 ---
 
+## Reverse proxy labels (Traefik, Caddy)
+
+Most containers behind a reverse proxy already describe their public address in labels. With this setting on, maintenant reads those labels and creates the matching HTTP endpoints, so you do not have to repeat every hostname in `maintenant.endpoint.*` labels.
+
+The feature is **off by default**. Turn it on with the environment variable or the flag:
+
+| CLI flag | Environment variable | Default |
+|----------|----------------------|---------|
+| `--proxyLabels` | `MAINTENANT_PROXY_LABELS` | `false` |
+
+It applies to the Docker runtime, in standalone and server mode and on every agent. An agent reads its own `MAINTENANT_PROXY_LABELS`: the server's value does not propagate to it.
+
+### Which labels are read
+
+**Traefik** (HTTP routers only):
+
+| Label | Used for |
+|-------|----------|
+| `traefik.enable` | `false` disables discovery for the container |
+| `traefik.http.routers.<name>.rule` | Hostnames from `Host(...)`, plus an optional single `Path(...)` or `PathPrefix(...)` |
+| `traefik.http.routers.<name>.tls` and `traefik.http.routers.<name>.tls.*` | Any value other than `false` makes the URL `https` |
+| `traefik.http.routers.<name>.entrypoints` | `websecure`, `https` or `443` in the list makes the URL `https` |
+
+`Host(...)` accepts backticks or quotes, several hostnames (`` Host(`a.example.com`, `b.example.com`) ``) and `||` combinations. When the rule also has exactly one `Path` or `PathPrefix`, that path is appended to the URL. `HostRegexp`, `HostSNI`, and TCP or UDP routers are ignored: there is no single URL to check behind them. A router with neither TLS nor a secure entrypoint gives an `http://` URL.
+
+**Caddy docker-proxy**:
+
+| Label | Used for |
+|-------|----------|
+| `caddy`, `caddy_0`, `caddy_1`, ... | Site addresses, separated by spaces or commas |
+| `caddy.tls`, `caddy_<n>.tls` | `internal` turns off TLS verification for the sites of that key |
+
+Wildcards (`*.example.com`), placeholders (`{$DOMAIN}`) and bare ports (`:80`) are skipped. An address written `http://host` or on port `80` gives an `http://` URL; every other address gives `https://`, because Caddy serves HTTPS by default. A port other than `443` is kept in the URL. Subkeys such as `caddy.reverse_proxy` are not site addresses and are never read as such.
+
+### What gets created
+
+The URLs found on a container are deduplicated, sorted, and turned into indexed endpoints: `maintenant.endpoint.0.http`, `maintenant.endpoint.1.http`, and so on. They behave exactly like endpoints you declare yourself, on the server and on agents alike.
+
+- **Expected status**: each discovered endpoint accepts `2xx,3xx`, since a proxied site often answers with a redirect. Set `maintenant.endpoint.http.expected-status` on the container to use your own value for all of them.
+- **Other settings**: global endpoint labels without an index, like `maintenant.endpoint.interval`, `maintenant.endpoint.timeout` or `maintenant.endpoint.failure-threshold`, apply to the discovered endpoints.
+- **Certificates**: the hostnames of the HTTPS endpoints are added to `maintenant.tls.certificates`, merged with any value already there, so their certificates are monitored as well. Sites with `tls internal` are left out of that label, because a certificate signed by the proxy itself has nothing useful to track. On the server's own Docker runtime they still get a monitor: every HTTPS endpoint checked locally is picked up by the automatic detection, which predates this setting.
+
+### When discovery is skipped
+
+Explicit labels always win. Nothing is discovered on a container that:
+
+- declares its own endpoint target: `maintenant.endpoint.http`, `maintenant.endpoint.tcp`, or an indexed `maintenant.endpoint.<n>.http` / `maintenant.endpoint.<n>.tcp`. Global settings such as `maintenant.endpoint.interval` do **not** count as a target;
+- has `maintenant.ignore: "true"`;
+- opts out with `maintenant.proxy-labels: "false"`.
+
+!!! warning "Docker containers only"
+    Discovery reads container labels. Swarm services (`deploy.labels`) and Kubernetes Ingress resources are not read: declare those endpoints with `maintenant.endpoint.*` labels.
+
+### Example: Traefik
+
+```yaml
+services:
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - maintenant-data:/data
+    environment:
+      MAINTENANT_ADDR: "0.0.0.0:8080"
+      MAINTENANT_DB: "/data/maintenant.db"
+      MAINTENANT_PROXY_LABELS: "true"
+
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.email=ops@example.com
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # https://app.example.com (TLS through a certificate resolver)
+  app:
+    image: myapp:latest
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.app.rule: "Host(`app.example.com`)"
+      traefik.http.routers.app.tls.certresolver: "le"
+      maintenant.endpoint.interval: "1m"
+
+  # https://www.example.com and https://example.com (secure entrypoint)
+  site:
+    image: mysite:latest
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.site.rule: "Host(`example.com`) || Host(`www.example.com`)"
+      traefik.http.routers.site.entrypoints: "websecure"
+
+  # https://example.com/api, expecting 200 only
+  api:
+    image: myapi:latest
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.api.rule: "Host(`example.com`) && PathPrefix(`/api`)"
+      traefik.http.routers.api.tls: "true"
+      maintenant.endpoint.http.expected-status: "200"
+
+  # Not discovered: Traefik is disabled for this container
+  admin:
+    image: myadmin:latest
+    labels:
+      traefik.enable: "false"
+      traefik.http.routers.admin.rule: "Host(`admin.example.com`)"
+
+volumes:
+  maintenant-data:
+```
+
+### Example: Caddy docker-proxy
+
+```yaml
+services:
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - maintenant-data:/data
+    environment:
+      MAINTENANT_ADDR: "0.0.0.0:8080"
+      MAINTENANT_DB: "/data/maintenant.db"
+      MAINTENANT_PROXY_LABELS: "true"
+
+  caddy:
+    image: lucaslorentz/caddy-docker-proxy:2.9
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - caddy-data:/data
+
+  # https://app.example.com
+  app:
+    image: myapp:latest
+    labels:
+      caddy: "app.example.com"
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+
+  # https://example.com, https://www.example.com and https://status.example.com:8443
+  site:
+    image: mysite:latest
+    labels:
+      caddy: "example.com, www.example.com"
+      caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy_1: "status.example.com:8443"
+      caddy_1.reverse_proxy: "{{upstreams 3000}}"
+
+  # https://grafana.lan, checked without TLS verification (Caddy's local CA)
+  grafana:
+    image: grafana/grafana:latest
+    labels:
+      caddy: "grafana.lan"
+      caddy.tls: "internal"
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+
+  # Not discovered: the container opts out
+  staging:
+    image: myapp:staging
+    labels:
+      caddy: "staging.example.com"
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      maintenant.proxy-labels: "false"
+
+volumes:
+  maintenant-data:
+  caddy-data:
+```
+
+### Example: agent
+
+An agent probes the endpoints it discovers from its own host, so set the variable on the agent:
+
+```yaml
+services:
+  maintenant-agent:
+    image: ghcr.io/kolapsis/maintenant:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - maintenant-agent-data:/var/lib/maintenant
+    environment:
+      MAINTENANT_PROXY_LABELS: "true"
+    command:
+      - --mode=agent
+      - --server=grpcs://agents.example.com
+      - --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
+
+volumes:
+  maintenant-agent-data:
+```
+
+---
+
+## Image metadata (OCI labels)
+
+Docker copies the labels of an image onto every container created from it. maintenant reads the standard [OCI image annotations](https://github.com/opencontainers/image-spec/blob/main/annotations.md) from there and shows them in the container detail panel. No setting is needed.
+
+| Shown as | Label read | Fallback |
+|----------|------------|----------|
+| Version | `org.opencontainers.image.version` | `org.label-schema.version` |
+| Description | `org.opencontainers.image.description` | `org.label-schema.description` |
+| Source (link) | `org.opencontainers.image.source` | `org.label-schema.vcs-url` |
+| Documentation (link) | `org.opencontainers.image.url` | `org.label-schema.url`, then `org.opencontainers.image.documentation` |
+
+Source and documentation are only shown when they are `http://` or `https://` URLs. Each field is hidden when its label is absent. Many public images already carry these labels; for your own, set them in the Dockerfile:
+
+```dockerfile
+FROM node:20-alpine
+LABEL org.opencontainers.image.version="1.4.2" \
+      org.opencontainers.image.description="Acme customer API" \
+      org.opencontainers.image.source="https://github.com/acme/api" \
+      org.opencontainers.image.url="https://docs.acme.dev/api"
+```
+
+The metadata is also reported by agents and exposed on the containers API as `image_version`, `image_description`, `image_source` and `image_url`.
+
+---
+
 ## Update Settings
 
 Control how maintenant tracks image updates for each container.
@@ -237,6 +469,7 @@ volumes:
 - [Endpoint Monitoring](../features/endpoints.md) — HTTP/TCP check details
 - [Certificate Monitoring](../features/certificates.md) — TLS monitoring details
 - [Container Monitoring](../features/containers.md) — Container labels (ignore, group)
+- [Multi-Host Monitoring](../features/multihost.md): agents read their own `MAINTENANT_PROXY_LABELS`
 - [Alert Engine](../features/alerts.md) — Alert routing labels
 - [Docker Swarm Monitoring](../features/swarm.md) — Swarm service labels and grouping
 - [Update Intelligence — Tag Filtering](../features/updates.md#tag-filtering) — Tag filter labels, priority rules, and examples
