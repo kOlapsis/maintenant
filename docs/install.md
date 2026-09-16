@@ -89,6 +89,7 @@ Every `MAINTENANT_*` environment variable has a `--flagName` CLI equivalent. Pre
 | `--db` | `MAINTENANT_DB` | string | `./maintenant.db` |
 | `--organisationName` | `MAINTENANT_ORGANISATION_NAME` | string | `Maintenant` |
 | `--runtime` | `MAINTENANT_RUNTIME` | string | _(autodetect)_ |
+| `--proxyLabels` | `MAINTENANT_PROXY_LABELS` | bool | `false` |
 | `--logLevel` | `MAINTENANT_LOG_LEVEL` | string | `info` |
 | `--maxBodySize` | `MAINTENANT_MAX_BODY_SIZE` | int | `1048576` |
 | `--updateInterval` | `MAINTENANT_UPDATE_INTERVAL` | duration | `24h` |

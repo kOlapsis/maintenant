@@ -267,6 +267,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("detect container runtime: %w", err)
 	}
 	a.rt = rt
+	if dr, ok := rt.(*docker.Runtime); ok {
+		dr.SetProxyLabels(cfg.ProxyLabels)
+	}
 
 	if err := rt.TryConnect(ctx); err != nil {
 		logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name())
@@ -1024,6 +1027,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		Label:               "embedded",
 		AgentVersion:        a.cfg.Version,
 		InsecureSkipVerify:  true, // loopback TLS
+		ProxyLabels:         a.cfg.ProxyLabels,
 		SpoolMaxMemoryBytes: a.cfg.MultiHost.AgentSpoolMaxMemoryBytes,
 		SpoolMaxDiskBytes:   a.cfg.MultiHost.AgentSpoolMaxDiskBytes,
 		SpoolMaxAgeSeconds:  a.cfg.MultiHost.AgentSpoolMaxAgeSeconds,

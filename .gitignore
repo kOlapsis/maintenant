@@ -59,3 +59,5 @@ specs/
 /codeql_1-results/
 /codeql-extensions/
 /compose.agent.yml
+/compose.proxylabels.yml
+/compose.agent-remote.yml

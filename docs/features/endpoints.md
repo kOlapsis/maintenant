@@ -131,6 +131,12 @@ maintenant records every check result and computes:
 
 ---
 
+## Endpoints from reverse proxy labels
+
+If your containers already carry Traefik or Caddy docker-proxy labels, set `MAINTENANT_PROXY_LABELS=true` and maintenant creates an HTTP endpoint for every public hostname they route, with no `maintenant.endpoint.*` label to write. The URL, scheme and expected status are derived from the proxy labels, and a container that declares its own endpoint target keeps full control. See [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy).
+
+---
+
 ## Related
 
 - [Docker Labels Reference](../guides/docker-labels.md) — Complete label reference

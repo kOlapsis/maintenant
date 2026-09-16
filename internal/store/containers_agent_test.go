@@ -196,3 +196,54 @@ func TestContainerStore_Upsert_ReclaimsAgentID(t *testing.T) {
 	require.NotNil(t, gotB)
 	assert.Equal(t, idB, gotB.ID)
 }
+
+func TestContainer_ImageMetadataRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cstore := NewContainerStore(db)
+
+	now := time.Now()
+	c := &container.Container{
+		ExternalID:        "ext-image-meta",
+		Name:              "web",
+		Image:             "acme/web:1.0",
+		State:             container.StateRunning,
+		AlertSeverity:     container.SeverityWarning,
+		RestartThreshold:  3,
+		RuntimeType:       "docker",
+		FirstSeenAt:       now,
+		LastStateChangeAt: now,
+		ImageVersion:      "1.0",
+		ImageSource:       "https://github.com/acme/web",
+		ImageURL:          "https://acme.dev",
+		ImageDescription:  "Acme web",
+	}
+	id, err := cstore.InsertContainer(ctx, c)
+	require.NoError(t, err)
+
+	got, err := cstore.GetContainerByID(ctx, id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "1.0", got.ImageVersion)
+	assert.Equal(t, "https://github.com/acme/web", got.ImageSource)
+	assert.Equal(t, "https://acme.dev", got.ImageURL)
+	assert.Equal(t, "Acme web", got.ImageDescription)
+
+	got.ImageVersion = "1.1"
+	got.ImageDescription = ""
+	require.NoError(t, cstore.UpdateContainer(ctx, got))
+
+	c.ImageURL = "https://acme.dev/docs"
+	c.ImageVersion = "1.1"
+	c.ImageDescription = ""
+	_, err = cstore.InsertContainer(ctx, c)
+	require.NoError(t, err)
+
+	list, err := cstore.ListContainers(ctx, container.ListContainersOpts{})
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "1.1", list[0].ImageVersion)
+	assert.Equal(t, "https://github.com/acme/web", list[0].ImageSource)
+	assert.Equal(t, "https://acme.dev/docs", list[0].ImageURL)
+	assert.Empty(t, list[0].ImageDescription)
+}

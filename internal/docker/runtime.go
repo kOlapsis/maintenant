@@ -59,6 +59,11 @@ func NewRuntime(host string, logger *slog.Logger) (*Runtime, error) {
 	}, nil
 }
 
+// SetProxyLabels enables deriving maintenant endpoint labels from reverse proxy labels on this runtime.
+func (r *Runtime) SetProxyLabels(enabled bool) {
+	r.client.SetProxyLabels(enabled)
+}
+
 func (r *Runtime) Connect(ctx context.Context) error {
 	return r.client.ConnectWithRetry(ctx)
 }

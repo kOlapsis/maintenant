@@ -43,6 +43,10 @@ export interface Container {
   namespace?: string
   pod_count?: number
   ready_count?: number
+  image_version?: string
+  image_source?: string
+  image_url?: string
+  image_description?: string
   security_insight_count?: number
   security_highest_severity?: string | null
   swarm_service_id?: string

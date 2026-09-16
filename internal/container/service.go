@@ -412,6 +412,19 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			continue
 		}
 
+		metadataChanged := sc.ImageVersion != dc.ImageVersion || sc.ImageSource != dc.ImageSource ||
+			sc.ImageURL != dc.ImageURL || sc.ImageDescription != dc.ImageDescription
+		if metadataChanged {
+			sc.ImageVersion, sc.ImageSource, sc.ImageURL, sc.ImageDescription =
+				dc.ImageVersion, dc.ImageSource, dc.ImageURL, dc.ImageDescription
+		}
+
+		if sc.State == dc.State && metadataChanged {
+			if err := s.store.UpdateContainer(ctx, sc); err != nil {
+				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
+			}
+		}
+
 		// Check for state changes
 		if sc.State != dc.State {
 			previousState := sc.State

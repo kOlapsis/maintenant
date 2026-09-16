@@ -234,6 +234,7 @@ The check answers "is this agent working", not "does it reach the server". An ag
 | `--enrollment-token` | One-time token, first boot only. Ignored once enrolled. |
 | `--label` | Display name (max 64 chars). Defaults to the hostname. |
 | `--runtime` | Override auto-detection: `docker`, `swarm`, or `kubernetes`. |
+| `--proxyLabels` | Create endpoints from Traefik and Caddy labels (`MAINTENANT_PROXY_LABELS`). Each agent reads its own setting, independently of the server. |
 | `--grpc-insecure-skip-tls-verify` | Skip TLS verification — **development only**, for self-signed servers. |
 
 The full reference (server-side variables, rate limits, stale thresholds) is in [Multi-Host Monitoring → Configuration Reference](../features/multihost.md#configuration-reference).
