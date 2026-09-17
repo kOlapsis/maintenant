@@ -59,6 +59,8 @@ specs/
 /codeql_1-results/
 /codeql-extensions/
 /compose.agent.yml
+/compose.proxylabels.yml
+/compose.agent-remote.yml
 
 # Local state of the HA bench, written by deploy/ha/lab/lab
 deploy/ha/lab/.state/

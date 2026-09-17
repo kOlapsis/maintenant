@@ -37,10 +37,18 @@ func NewResourceStore(d *DB) *ResourceStore {
 }
 
 func (s *ResourceStore) InsertSnapshot(ctx context.Context, snap *resource.ResourceSnapshot) (string, error) {
-	snap.ID = uid.New()
+	if snap.ID == "" {
+		snap.ID = uid.New()
+	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO resource_snapshots (id, container_id, agent_id, cpu_percent, mem_used, mem_limit, net_rx_bytes, net_tx_bytes, block_read_bytes, block_write_bytes, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET
+			container_id=excluded.container_id, agent_id=excluded.agent_id,
+			cpu_percent=excluded.cpu_percent, mem_used=excluded.mem_used, mem_limit=excluded.mem_limit,
+			net_rx_bytes=excluded.net_rx_bytes, net_tx_bytes=excluded.net_tx_bytes,
+			block_read_bytes=excluded.block_read_bytes, block_write_bytes=excluded.block_write_bytes,
+			timestamp=excluded.timestamp`,
 		snap.ID, snap.ContainerID, uid.Agent(snap.AgentID), snap.CPUPercent, snap.MemUsed, snap.MemLimit,
 		snap.NetRxBytes, snap.NetTxBytes, snap.BlockReadBytes, snap.BlockWriteBytes,
 		snap.Timestamp.Unix(),

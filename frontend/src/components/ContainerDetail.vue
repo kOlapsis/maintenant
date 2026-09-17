@@ -47,6 +47,7 @@ import {
   Activity,
   ChartLine,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-vue-next'
 import { fetchSwarmServiceDetail, type SwarmServiceDetailResponse } from '@/services/swarmApi'
 
@@ -467,6 +468,40 @@ watch(() => props.containerId, () => {
             <div v-if="container.orchestration_unit">
               <span class="text-xs font-medium" :style="{ color: 'var(--mnt-text-muted)' }">Unit</span>
               <p class="mt-0.5" :style="{ color: 'var(--mnt-text-primary)' }">{{ container.orchestration_unit }}</p>
+            </div>
+            <div v-if="container.image_version">
+              <span class="text-xs font-medium" :style="{ color: 'var(--mnt-text-muted)' }">Version</span>
+              <p class="mt-0.5 font-mono text-xs" :style="{ color: 'var(--mnt-text-primary)' }">{{ container.image_version }}</p>
+            </div>
+            <div v-if="container.image_description" class="sm:col-span-2">
+              <span class="text-xs font-medium" :style="{ color: 'var(--mnt-text-muted)' }">Description</span>
+              <p class="mt-0.5 text-xs" :style="{ color: 'var(--mnt-text-primary)' }">{{ container.image_description }}</p>
+            </div>
+            <div v-if="container.image_source">
+              <span class="text-xs font-medium" :style="{ color: 'var(--mnt-text-muted)' }">Source</span>
+              <a
+                :href="container.image_source"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mt-0.5 flex items-center gap-1 text-xs break-all hover:underline"
+                :style="{ color: 'var(--mnt-text-primary)' }"
+              >
+                {{ container.image_source }}
+                <ExternalLink :size="12" class="shrink-0" :style="{ color: 'var(--mnt-text-muted)' }" />
+              </a>
+            </div>
+            <div v-if="container.image_url">
+              <span class="text-xs font-medium" :style="{ color: 'var(--mnt-text-muted)' }">Documentation</span>
+              <a
+                :href="container.image_url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="mt-0.5 flex items-center gap-1 text-xs break-all hover:underline"
+                :style="{ color: 'var(--mnt-text-primary)' }"
+              >
+                {{ container.image_url }}
+                <ExternalLink :size="12" class="shrink-0" :style="{ color: 'var(--mnt-text-muted)' }" />
+              </a>
             </div>
             <div v-if="container.error_detail">
               <span class="text-xs font-medium" :style="{ color: 'var(--mnt-text-muted)' }">Error</span>

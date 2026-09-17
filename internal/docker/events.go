@@ -81,6 +81,9 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 					if evt == nil {
 						continue
 					}
+					if evt.ResourceType == "container" {
+						evt.Labels = c.containerLabels(evt.Labels)
+					}
 
 					select {
 					case out <- *evt:

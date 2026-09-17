@@ -724,3 +724,37 @@ func TestHandleAgentEvent_DuplicateReplayIsIdempotent(t *testing.T) {
 	assert.Len(t, store.transitionsFor(c.ID), firstTransitions,
 		"a duplicate must not add a second transition for the same state")
 }
+
+func TestHandleAgentEvent_ImageMetadataFromLabels(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store, func(d *Deps) {
+		d.AgentRuntime = &mockAgentRuntime{runtime: "docker"}
+	})
+
+	id := extID("oci-app")
+	ev := &agentpb.ContainerEvent{
+		ContainerId: id,
+		Name:        "oci-app",
+		Image:       "acme/app:1.0",
+		State:       agentpb.ContainerState_CONTAINER_STATE_RUNNING,
+		Labels: map[string]string{
+			"org.opencontainers.image.version": "1.0",
+			"org.opencontainers.image.source":  "https://github.com/acme/app",
+		},
+	}
+	ctx := context.Background()
+	meta := agentevent.Meta{ObservedAt: time.Now()}
+	require.NoError(t, svc.HandleAgentEvent(ctx, "agent-oci", ev, meta))
+
+	c, err := store.GetContainerByExternalID(ctx, "agent-oci", id)
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	assert.Equal(t, "1.0", c.ImageVersion)
+	assert.Equal(t, "https://github.com/acme/app", c.ImageSource)
+
+	ev.Labels["org.opencontainers.image.version"] = "1.1"
+	require.NoError(t, svc.HandleAgentEvent(ctx, "agent-oci", ev, meta))
+	c, err = store.GetContainerByExternalID(ctx, "agent-oci", id)
+	require.NoError(t, err)
+	assert.Equal(t, "1.1", c.ImageVersion)
+}

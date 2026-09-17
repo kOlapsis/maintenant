@@ -120,13 +120,13 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
 			results = append(results, &DiscoveryResult{
 				Container: mapFromList(dc, now),
-				Labels:    dc.Labels,
+				Labels:    c.containerLabels(dc.Labels),
 			})
 			continue
 		}
 		results = append(results, &DiscoveryResult{
 			Container:      result.Container,
-			Labels:         dc.Labels,
+			Labels:         c.containerLabels(dc.Labels),
 			SecurityConfig: result.SecurityConfig,
 		})
 	}
@@ -228,8 +228,8 @@ func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
 		LastStateChangeAt:  now,
 	}
 
-	// maintenant labels
 	applyLabels(cm, dc.Labels)
+	cm.ApplyImageLabels(dc.Labels)
 
 	return cm
 }

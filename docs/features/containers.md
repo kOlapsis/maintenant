@@ -37,6 +37,8 @@ All state transitions are persisted in the database and pushed to the browser vi
 
     Every running container is discovered automatically. New containers are picked up the moment they start. maintenant never modifies your containers — it is strictly read-only.
 
+    When the image carries OCI labels (`org.opencontainers.image.version`, `source`, `url`, `description`), the container detail panel shows its version, description, and links to the source repository and documentation. See [Image metadata](../guides/docker-labels.md#image-metadata-oci-labels).
+
 === "Kubernetes"
 
     maintenant uses the in-cluster Kubernetes API with a read-only ServiceAccount. It watches:

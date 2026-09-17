@@ -88,6 +88,8 @@ type Config struct {
 	// Telemetry
 	DisableTelemetry bool
 
+	ProxyLabels bool
+
 	// Multi-host agent mode (Pro only)
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
@@ -359,6 +361,7 @@ func ConfigFromEnv() Config {
 	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
 
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
+	cfg.ProxyLabels = parseTruthy(os.Getenv("MAINTENANT_PROXY_LABELS"))
 	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
 	cfg.Mode = envOr("MAINTENANT_MODE", "embedded")

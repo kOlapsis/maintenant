@@ -60,6 +60,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		Name:       ev.GetName(),
 		Timestamp:  agentEventTime(ev, meta),
 		Replayed:   meta.Replayed,
+		EventID:    meta.EventID,
 		Labels:     ev.GetLabels(),
 	}
 
@@ -78,6 +79,9 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	dirty := false
 	if img := ev.GetImage(); img != "" && img != c.Image {
 		c.Image = img
+		dirty = true
+	}
+	if labels := ev.GetLabels(); len(labels) > 0 && c.ApplyImageLabels(labels) {
 		dirty = true
 	}
 	if ev.GetHasHealthCheck() && !c.HasHealthCheck {
@@ -196,6 +200,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		c.HealthStatus = &h
 	}
 	applyAgentLabels(c, labels)
+	c.ApplyImageLabels(labels)
 
 	id, err := s.store.InsertContainer(ctx, c)
 	if err != nil {

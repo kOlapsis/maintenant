@@ -55,6 +55,7 @@ var (
 	nsK8sNode      = uuid.NewSHA1(nsRoot, []byte("k8s_node"))
 	nsK8sWorkload  = uuid.NewSHA1(nsRoot, []byte("k8s_workload"))
 	nsNamespace    = uuid.NewSHA1(nsRoot, []byte("k8s_namespace"))
+	nsEventRecord  = uuid.NewSHA1(nsRoot, []byte("agent_event_record"))
 )
 
 // New returns a fresh time-ordered UUIDv7 string.
@@ -131,6 +132,11 @@ func K8sWorkload(agentID, workloadID string) string {
 // Namespace derives a Kubernetes namespace id from the agent and the namespace name.
 func Namespace(agentID, name string) string {
 	return Derive(nsNamespace, agentID, name)
+}
+
+// EventRecord derives the id of a row written for an agent event, so a replayed event lands on the same row.
+func EventRecord(agentID, eventID string, parts ...string) string {
+	return Derive(nsEventRecord, append([]string{agentID, eventID}, parts...)...)
 }
 
 // Agent returns agentID, or LocalAgent when it is empty. Eases the transition

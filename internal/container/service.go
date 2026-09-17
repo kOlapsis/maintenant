@@ -38,7 +38,16 @@ type ContainerEvent struct {
 	ErrorDetail  string
 	Timestamp    time.Time
 	Replayed     bool
+	EventID      string
 	Labels       map[string]string
+}
+
+// recordID derives the id of a row written for evt, or "" for an event without an id.
+func (evt ContainerEvent) recordID(record string) string {
+	if evt.EventID == "" {
+		return ""
+	}
+	return uid.EventRecord(uid.Agent(evt.AgentID), evt.EventID, record, evt.ExternalID)
 }
 
 // LogFetcher abstracts log retrieval.
@@ -195,6 +204,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 
 	// Record transition
 	transition := &StateTransition{
+		ID:            evt.recordID("state_transition"),
 		ContainerID:   c.ID,
 		PreviousState: previousState,
 		NewState:      newState,
@@ -309,6 +319,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 	}
 
 	transition := &StateTransition{
+		ID:             evt.recordID("health_transition"),
 		ContainerID:    c.ID,
 		PreviousState:  c.State,
 		NewState:       c.State,
@@ -399,6 +410,19 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				"id": sc.ID, "archived_at": now, "agent_id": sc.AgentID,
 			})
 			continue
+		}
+
+		metadataChanged := sc.ImageVersion != dc.ImageVersion || sc.ImageSource != dc.ImageSource ||
+			sc.ImageURL != dc.ImageURL || sc.ImageDescription != dc.ImageDescription
+		if metadataChanged {
+			sc.ImageVersion, sc.ImageSource, sc.ImageURL, sc.ImageDescription =
+				dc.ImageVersion, dc.ImageSource, dc.ImageURL, dc.ImageDescription
+		}
+
+		if sc.State == dc.State && metadataChanged {
+			if err := s.store.UpdateContainer(ctx, sc); err != nil {
+				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
+			}
 		}
 
 		// Check for state changes

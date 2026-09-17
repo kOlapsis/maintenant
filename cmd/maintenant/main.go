@@ -170,6 +170,7 @@ func main() {
 			Label:               cfg.MultiHost.Label,
 			AgentVersion:        version,
 			InsecureSkipVerify:  cfg.MultiHost.InsecureSkipVerify,
+			ProxyLabels:         cfg.ProxyLabels,
 			SpoolMaxMemoryBytes: cfg.MultiHost.AgentSpoolMaxMemoryBytes,
 			SpoolMaxDiskBytes:   cfg.MultiHost.AgentSpoolMaxDiskBytes,
 			SpoolMaxAgeSeconds:  cfg.MultiHost.AgentSpoolMaxAgeSeconds,

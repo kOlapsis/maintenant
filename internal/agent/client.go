@@ -19,7 +19,6 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -132,7 +131,6 @@ func (c *Client) Close() error {
 type PushStream struct {
 	mu     sync.Mutex
 	stream agentpb.Ingest_PushClient
-	seq    atomic.Uint64
 	recvCh chan error
 
 	// commands executes server-issued commands; nil disables the command channel.
@@ -142,13 +140,8 @@ type PushStream struct {
 	ctx context.Context
 }
 
-// Send wraps evt in a ClientMessage and delivers it, assigning a monotonic seq.
+// Send wraps evt in a ClientMessage and delivers it unchanged.
 func (ps *PushStream) Send(evt *agentpb.AgentEvent) error {
-	// A caller that numbered the event owns that number: the spool puts its own
-	// row id here so the server's ack names the row to purge.
-	if evt.Seq == 0 {
-		evt.Seq = ps.seq.Add(1)
-	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	return ps.stream.Send(&agentpb.ClientMessage{

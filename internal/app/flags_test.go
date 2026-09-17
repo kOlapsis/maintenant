@@ -235,6 +235,12 @@ func TestPrecedenceCliOverEnvOverDefault(t *testing.T) {
 			envVal: "false", cliVal: "true",
 			want: func(c Config) any { return c.DisableTelemetry },
 		},
+		{
+			name:     "proxyLabels: CLI true overrides env false",
+			flagName: "proxyLabels", envName: "MAINTENANT_PROXY_LABELS",
+			envVal: "false", cliVal: "true",
+			want: func(c Config) any { return c.ProxyLabels },
+		},
 	}
 
 	for _, tc := range tests {

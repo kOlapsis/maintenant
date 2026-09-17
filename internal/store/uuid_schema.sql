@@ -85,6 +85,10 @@ CREATE TABLE containers (
     swarm_node_id        TEXT NOT NULL DEFAULT '',
     swarm_task_slot      INTEGER NOT NULL DEFAULT 0,
     swarm_desired_replicas INTEGER NOT NULL DEFAULT 0,
+    image_version        TEXT NOT NULL DEFAULT '',
+    image_source         TEXT NOT NULL DEFAULT '',
+    image_url            TEXT NOT NULL DEFAULT '',
+    image_description    TEXT NOT NULL DEFAULT '',
     UNIQUE(agent_id, external_id)
 );
 CREATE INDEX idx_containers_agent_id ON containers(agent_id);
