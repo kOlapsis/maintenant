@@ -100,17 +100,104 @@ func TestExpand(t *testing.T) {
 			},
 		},
 		{
-			name: "traefik multiple hosts and || combination",
+			name: "traefik multiple hosts keep the first in order",
 			labels: map[string]string{
 				"traefik.http.routers.app.rule": "Host(`b.example.com`, `a.example.com`) || Host('c.example.com')",
 			},
 			want: map[string]string{
 				"maintenant.endpoint.0.http":                 "http://a.example.com",
 				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
-				"maintenant.endpoint.1.http":                 "http://b.example.com",
-				"maintenant.endpoint.1.http.expected-status": "2xx,3xx",
-				"maintenant.endpoint.2.http":                 "http://c.example.com",
-				"maintenant.endpoint.2.http.expected-status": "2xx,3xx",
+			},
+		},
+		{
+			name: "traefik root route wins over a path route",
+			labels: map[string]string{
+				"traefik.http.routers.app.rule":                       "Host(`app.example.com`)",
+				"traefik.http.routers.app.tls":                        "true",
+				"traefik.http.routers.app-ws.rule":                    "Host(`app.example.com`) && PathPrefix(`/ws`)",
+				"traefik.http.routers.app-ws.tls":                     "true",
+				"traefik.http.middlewares.strip.stripprefix.prefixes": "/ws",
+				"traefik.http.routers.app-ws.middlewares":             "strip",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "https://app.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+				"maintenant.tls.certificates":                "app.example.com",
+			},
+		},
+		{
+			name: "traefik shortest path wins",
+			labels: map[string]string{
+				"traefik.http.routers.api.rule": "Host(`example.com`) && PathPrefix(`/api/v1/deep`)",
+				"traefik.http.routers.app.rule": "Host(`example.com`) && PathPrefix(`/api`)",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "http://example.com/api",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+			},
+		},
+		{
+			name: "traefik https wins over http",
+			labels: map[string]string{
+				"traefik.http.routers.plain.rule":  "Host(`z.example.com`)",
+				"traefik.http.routers.secure.rule": "Host(`a.example.com`)",
+				"traefik.http.routers.secure.tls":  "true",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "https://a.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+				"maintenant.tls.certificates":                "a.example.com",
+			},
+		},
+		{
+			name: "traefik basicauth middleware declared on the container is skipped",
+			labels: map[string]string{
+				"traefik.http.routers.private.rule":              "Host(`app.example.com`)",
+				"traefik.http.routers.private.middlewares":       "guard@docker",
+				"traefik.http.middlewares.guard.basicauth.users": "admin:$2y$05$abc",
+				"traefik.http.routers.public.rule":               "Host(`app.example.com`) && PathPrefix(`/status`)",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "http://app.example.com/status",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+			},
+		},
+		{
+			name: "traefik middleware named auth is skipped",
+			labels: map[string]string{
+				"traefik.http.routers.private.rule":        "Host(`app.example.com`)",
+				"traefik.http.routers.private.middlewares": "authelia@file, compress",
+				"traefik.http.routers.public.rule":         "Host(`app.example.com`) && PathPrefix(`/health`)",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "http://app.example.com/health",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+			},
+		},
+		{
+			name: "traefik forwardauth on every route keeps the best one anyway",
+			labels: map[string]string{
+				"traefik.http.routers.app.rule":                    "Host(`app.example.com`)",
+				"traefik.http.routers.app.middlewares":             "sso",
+				"traefik.http.middlewares.sso.forwardauth.address": "http://authelia:9091/api/verify",
+				"traefik.http.routers.app-api.rule":                "Host(`app.example.com`) && PathPrefix(`/api`)",
+				"traefik.http.routers.app-api.middlewares":         "sso",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "http://app.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+			},
+		},
+		{
+			name: "traefik non auth middleware does not disqualify a route",
+			labels: map[string]string{
+				"traefik.http.routers.app.rule":        "Host(`app.example.com`)",
+				"traefik.http.routers.app.middlewares": "compress,secure-headers@file",
+				"traefik.http.routers.api.rule":        "Host(`app.example.com`) && PathPrefix(`/api`)",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "http://app.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
 			},
 		},
 		{
@@ -182,36 +269,64 @@ func TestExpand(t *testing.T) {
 		{
 			name: "caddy multiple sites, spaces and commas, numbered key",
 			labels: map[string]string{
-				"caddy":   "a.example.com, b.example.com",
+				"caddy":   "b.example.com, a.example.com",
 				"caddy_1": "c.example.com d.example.com:8443",
 			},
 			want: map[string]string{
 				"maintenant.endpoint.0.http":                 "https://a.example.com",
 				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
-				"maintenant.endpoint.1.http":                 "https://b.example.com",
-				"maintenant.endpoint.1.http.expected-status": "2xx,3xx",
-				"maintenant.endpoint.2.http":                 "https://c.example.com",
-				"maintenant.endpoint.2.http.expected-status": "2xx,3xx",
-				"maintenant.endpoint.3.http":                 "https://d.example.com:8443",
-				"maintenant.endpoint.3.http.expected-status": "2xx,3xx",
-				"maintenant.tls.certificates":                "a.example.com,b.example.com,c.example.com,d.example.com:8443",
+				"maintenant.tls.certificates":                "a.example.com",
 			},
 		},
 		{
-			name: "caddy http scheme, port 80, explicit 443",
+			name: "caddy basicauth site is skipped",
+			labels: map[string]string{
+				"caddy":               "a.example.com",
+				"caddy.basicauth.bob": "$2a$14$hash",
+				"caddy_1":             "z.example.com",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "https://z.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+				"maintenant.tls.certificates":                "z.example.com",
+			},
+		},
+		{
+			name: "caddy forward_auth site is skipped",
+			labels: map[string]string{
+				"caddy":                  "a.example.com",
+				"caddy.forward_auth":     "authelia:9091",
+				"caddy.forward_auth.uri": "/api/verify?rd=https://auth.example.com",
+				"caddy_1":                "z.example.com",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "https://z.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
+				"maintenant.tls.certificates":                "z.example.com",
+			},
+		},
+		{
+			name: "caddy http scheme, port 80, explicit 443: https wins",
 			labels: map[string]string{
 				"caddy":   "http://plain.example.com",
 				"caddy_0": "eighty.example.com:80",
 				"caddy_1": "secure.example.com:443",
 			},
 			want: map[string]string{
-				"maintenant.endpoint.0.http":                 "http://eighty.example.com",
+				"maintenant.endpoint.0.http":                 "https://secure.example.com",
 				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
-				"maintenant.endpoint.1.http":                 "http://plain.example.com",
-				"maintenant.endpoint.1.http.expected-status": "2xx,3xx",
-				"maintenant.endpoint.2.http":                 "https://secure.example.com",
-				"maintenant.endpoint.2.http.expected-status": "2xx,3xx",
 				"maintenant.tls.certificates":                "secure.example.com",
+			},
+		},
+		{
+			name: "caddy http only keeps the first in order",
+			labels: map[string]string{
+				"caddy":   "http://z.example.com",
+				"caddy_1": "http://a.example.com",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "http://a.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
 			},
 		},
 		{
@@ -235,14 +350,23 @@ func TestExpand(t *testing.T) {
 			labels: map[string]string{
 				"caddy":     "internal.lan",
 				"caddy.tls": "internal",
-				"caddy_1":   "public.example.com",
 			},
 			want: map[string]string{
 				"maintenant.endpoint.0.http":                 "https://internal.lan",
 				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
 				"maintenant.endpoint.0.http.tls-verify":      "false",
-				"maintenant.endpoint.1.http":                 "https://public.example.com",
-				"maintenant.endpoint.1.http.expected-status": "2xx,3xx",
+			},
+		},
+		{
+			name: "caddy tls internal not selected leaves the public site alone",
+			labels: map[string]string{
+				"caddy":     "z-internal.lan",
+				"caddy.tls": "internal",
+				"caddy_1":   "public.example.com",
+			},
+			want: map[string]string{
+				"maintenant.endpoint.0.http":                 "https://public.example.com",
+				"maintenant.endpoint.0.http.expected-status": "2xx,3xx",
 				"maintenant.tls.certificates":                "public.example.com",
 			},
 		},
