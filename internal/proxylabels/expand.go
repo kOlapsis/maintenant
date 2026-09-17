@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -26,6 +25,7 @@ const (
 	labelOptOut         = "maintenant.proxy-labels"
 	labelEndpointHTTP   = "maintenant.endpoint.http"
 	labelEndpointTCP    = "maintenant.endpoint.tcp"
+	labelEndpointTarget = "maintenant.endpoint.0.http"
 	labelExpectedStatus = "maintenant.endpoint.http.expected-status"
 	labelCertificates   = "maintenant.tls.certificates"
 	labelTraefikEnable  = "traefik.enable"
@@ -44,8 +44,10 @@ var (
 type target struct {
 	url         string
 	host        string
+	path        string
 	https       bool
 	internalTLS bool
+	auth        bool
 }
 
 // Expand returns a copy of labels with maintenant endpoint labels synthesized from Traefik and Caddy labels.
@@ -62,6 +64,7 @@ func Expand(labels map[string]string) map[string]string {
 	for _, t := range append(traefikTargets(labels), caddyTargets(labels)...) {
 		if existing, ok := byURL[t.url]; ok {
 			existing.internalTLS = existing.internalTLS || t.internalTLS
+			existing.auth = existing.auth && t.auth
 			continue
 		}
 		byURL[t.url] = &t
@@ -70,32 +73,50 @@ func Expand(labels map[string]string) map[string]string {
 		return out
 	}
 
-	urls := make([]string, 0, len(byURL))
-	for u := range byURL {
-		urls = append(urls, u)
+	best := selectTarget(byURL)
+	out[labelEndpointTarget] = best.url
+	if _, globalStatus := labels[labelExpectedStatus]; !globalStatus {
+		out[labelEndpointTarget+".expected-status"] = defaultExpectedStatus
 	}
-	sort.Strings(urls)
-
-	_, globalStatus := labels[labelExpectedStatus]
+	if best.internalTLS {
+		out[labelEndpointTarget+".tls-verify"] = "false"
+	}
 	var certHosts []string
-	for i, u := range urls {
-		t := byURL[u]
-		prefix := "maintenant.endpoint." + strconv.Itoa(i) + ".http"
-		out[prefix] = u
-		if !globalStatus {
-			out[prefix+".expected-status"] = defaultExpectedStatus
-		}
-		if t.internalTLS {
-			out[prefix+".tls-verify"] = "false"
-		}
-		if t.https && !t.internalTLS {
-			certHosts = append(certHosts, t.host)
-		}
+	if best.https && !best.internalTLS {
+		certHosts = append(certHosts, best.host)
 	}
 	if merged := mergeCertificates(labels[labelCertificates], certHosts); merged != "" {
 		out[labelCertificates] = merged
 	}
 	return out
+}
+
+func selectTarget(byURL map[string]*target) target {
+	urls := make([]string, 0, len(byURL))
+	for u := range byURL {
+		urls = append(urls, u)
+	}
+	sort.Strings(urls)
+	best := byURL[urls[0]]
+	for _, u := range urls[1:] {
+		if better(byURL[u], best) {
+			best = byURL[u]
+		}
+	}
+	return *best
+}
+
+func better(a, b *target) bool {
+	switch {
+	case a.auth != b.auth:
+		return !a.auth
+	case len(a.path) != len(b.path):
+		return len(a.path) < len(b.path)
+	case a.https != b.https:
+		return a.https
+	default:
+		return a.url < b.url
+	}
 }
 
 func eligible(labels map[string]string) bool {
@@ -137,6 +158,7 @@ func traefikTargets(labels map[string]string) []target {
 			scheme = "https"
 		}
 		path := traefikPath(rule)
+		auth := traefikRouterAuth(labels, router)
 		for _, hm := range hostMatcherRe.FindAllStringSubmatch(rule, -1) {
 			for _, host := range matcherArgs(hm[1]) {
 				if !validHost(host) {
@@ -145,12 +167,47 @@ func traefikTargets(labels map[string]string) []target {
 				targets = append(targets, target{
 					url:   scheme + "://" + host + path,
 					host:  host,
+					path:  path,
 					https: scheme == "https",
+					auth:  auth,
 				})
 			}
 		}
 	}
 	return targets
+}
+
+func traefikRouterAuth(labels map[string]string, router string) bool {
+	for _, name := range strings.Split(labels[router+".middlewares"], ",") {
+		name = strings.TrimSpace(name)
+		if at := strings.Index(name, "@"); at >= 0 {
+			name = name[:at]
+		}
+		if name == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(name), "auth") || definesAuthMiddleware(labels, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func definesAuthMiddleware(labels map[string]string, name string) bool {
+	prefix := strings.ToLower("traefik.http.middlewares." + name + ".")
+	for k := range labels {
+		lk := strings.ToLower(k)
+		if !strings.HasPrefix(lk, prefix) {
+			continue
+		}
+		switch kind := lk[len(prefix):]; {
+		case strings.HasPrefix(kind, "basicauth."),
+			strings.HasPrefix(kind, "digestauth."),
+			strings.HasPrefix(kind, "forwardauth."):
+			return true
+		}
+	}
+	return false
 }
 
 func traefikRouterTLS(labels map[string]string, router string) bool {
@@ -199,6 +256,7 @@ func caddyTargets(labels map[string]string) []target {
 			continue
 		}
 		internal := strings.EqualFold(strings.TrimSpace(labels[k+".tls"]), "internal")
+		auth := caddySiteAuth(labels, k)
 		fields := strings.FieldsFunc(v, func(r rune) bool { return r == ' ' || r == ',' || r == '\t' })
 		for _, addr := range fields {
 			t, ok := caddyTarget(addr)
@@ -206,10 +264,23 @@ func caddyTargets(labels map[string]string) []target {
 				continue
 			}
 			t.internalTLS = internal && t.https
+			t.auth = auth
 			targets = append(targets, t)
 		}
 	}
 	return targets
+}
+
+func caddySiteAuth(labels map[string]string, site string) bool {
+	basic := strings.ToLower(site + ".basicauth")
+	forward := strings.ToLower(site + ".forward_auth")
+	for k := range labels {
+		lk := strings.ToLower(k)
+		if strings.HasPrefix(lk, basic) || strings.HasPrefix(lk, forward) {
+			return true
+		}
+	}
+	return false
 }
 
 func caddyTarget(addr string) (target, bool) {

@@ -118,7 +118,7 @@ labels:
 
 ## Reverse proxy labels (Traefik, Caddy)
 
-Most containers behind a reverse proxy already describe their public address in labels. With this setting on, maintenant reads those labels and creates the matching HTTP endpoints, so you do not have to repeat every hostname in `maintenant.endpoint.*` labels.
+Most containers behind a reverse proxy already describe their public address in labels. With this setting on, maintenant reads those labels and creates one HTTP endpoint per container, so you do not have to repeat its address in `maintenant.endpoint.*` labels.
 
 The feature is **off by default**. Turn it on with the environment variable or the flag:
 
@@ -138,8 +138,12 @@ It applies to the Docker runtime, in standalone and server mode and on every age
 | `traefik.http.routers.<name>.rule` | Hostnames from `Host(...)`, plus an optional single `Path(...)` or `PathPrefix(...)` |
 | `traefik.http.routers.<name>.tls` and `traefik.http.routers.<name>.tls.*` | Any value other than `false` makes the URL `https` |
 | `traefik.http.routers.<name>.entrypoints` | `websecure`, `https` or `443` in the list makes the URL `https` |
+| `traefik.http.routers.<name>.middlewares` | A middleware that authenticates puts the route behind authentication |
+| `traefik.http.middlewares.<name>.basicauth.*`, `.digestauth.*`, `.forwardauth.*` | Declares that middleware as an authenticating one |
 
 `Host(...)` accepts backticks or quotes, several hostnames (`` Host(`a.example.com`, `b.example.com`) ``) and `||` combinations. When the rule also has exactly one `Path` or `PathPrefix`, that path is appended to the URL. `HostRegexp`, `HostSNI`, and TCP or UDP routers are ignored: there is no single URL to check behind them. A router with neither TLS nor a secure entrypoint gives an `http://` URL.
+
+A middleware counts as authentication when the container declares it with `basicauth`, `digestauth` or `forwardauth`, or when its name contains `auth` in any case. Middlewares like Authelia or Authentik are usually declared on the proxy rather than on the container, so their name is all there is to go on. The `@provider` suffix (`authelia@file`) is ignored when reading the name.
 
 **Caddy docker-proxy**:
 
@@ -147,16 +151,26 @@ It applies to the Docker runtime, in standalone and server mode and on every age
 |-------|----------|
 | `caddy`, `caddy_0`, `caddy_1`, ... | Site addresses, separated by spaces or commas |
 | `caddy.tls`, `caddy_<n>.tls` | `internal` turns off TLS verification for the sites of that key |
+| `caddy.basicauth*`, `caddy.forward_auth*`, and their `caddy_<n>.` forms | Puts the sites of that key behind authentication |
 
 Wildcards (`*.example.com`), placeholders (`{$DOMAIN}`) and bare ports (`:80`) are skipped. An address written `http://host` or on port `80` gives an `http://` URL; every other address gives `https://`, because Caddy serves HTTPS by default. A port other than `443` is kept in the URL. Subkeys such as `caddy.reverse_proxy` are not site addresses and are never read as such.
 
 ### What gets created
 
-The URLs found on a container are deduplicated, sorted, and turned into indexed endpoints: `maintenant.endpoint.0.http`, `maintenant.endpoint.1.http`, and so on. They behave exactly like endpoints you declare yourself, on the server and on agents alike.
+**One container gives one endpoint**, `maintenant.endpoint.0.http`. A container usually declares several routes for the same service, a main route plus a websocket route on a path and an API route, and monitoring them all would only fill the endpoint list with near duplicates. So every URL found on the container is collected, and a single one is kept, chosen in this order:
 
-- **Expected status**: each discovered endpoint accepts `2xx,3xx`, since a proxied site often answers with a redirect. Set `maintenant.endpoint.http.expected-status` on the container to use your own value for all of them.
-- **Other settings**: global endpoint labels without an index, like `maintenant.endpoint.interval`, `maintenant.endpoint.timeout` or `maintenant.endpoint.failure-threshold`, apply to the discovered endpoints.
-- **Certificates**: the hostnames of the HTTPS endpoints are added to `maintenant.tls.certificates`, merged with any value already there, so their certificates are monitored as well. Sites with `tls internal` are left out of that label, because a certificate signed by the proxy itself has nothing useful to track. On the server's own Docker runtime they still get a monitor: every HTTPS endpoint checked locally is picked up by the automatic detection, which predates this setting.
+1. **No authentication in front of it.** A route behind basic auth or a forward auth answers `401` to a checker, which is not what you want to watch.
+2. **No path.** A URL at the root wins over one with a path; between two paths, the shorter one.
+3. **`https` over `http`.**
+4. **Lowest URL in alphabetical order**, so the same container always gives the same endpoint across restarts.
+
+Take a container with `` Host(`app.example.com`) `` on one router and `` Host(`app.example.com`) && PathPrefix(`/ws`) `` on another: only `https://app.example.com` is monitored. If the root route is the one behind a basic auth middleware, `https://app.example.com/ws` is taken instead.
+
+The endpoint behaves exactly like one you declare yourself, on the server and on agents alike.
+
+- **Expected status**: the discovered endpoint accepts `2xx,3xx`, since a proxied site often answers with a redirect. Set `maintenant.endpoint.http.expected-status` on the container to use your own value.
+- **Other settings**: global endpoint labels without an index, like `maintenant.endpoint.interval`, `maintenant.endpoint.timeout` or `maintenant.endpoint.failure-threshold`, apply to the discovered endpoint.
+- **Certificates**: when the selected URL is `https`, its hostname is added to `maintenant.tls.certificates`, merged with any value already there, so its certificate is monitored as well. A site with `tls internal` is left out of that label, because a certificate signed by the proxy itself has nothing useful to track. On the server's own Docker runtime it still gets a monitor: every HTTPS endpoint checked locally is picked up by the automatic detection, which predates this setting.
 
 ### When discovery is skipped
 
@@ -208,7 +222,8 @@ services:
       traefik.http.routers.app.tls.certresolver: "le"
       maintenant.endpoint.interval: "1m"
 
-  # https://www.example.com and https://example.com (secure entrypoint)
+  # https://example.com: two hostnames in the rule, the first in alphabetical
+  # order is kept
   site:
     image: mysite:latest
     labels:
@@ -216,14 +231,29 @@ services:
       traefik.http.routers.site.rule: "Host(`example.com`) || Host(`www.example.com`)"
       traefik.http.routers.site.entrypoints: "websecure"
 
-  # https://example.com/api, expecting 200 only
+  # https://api.example.com: the websocket route on /ws loses to the root one
   api:
     image: myapi:latest
     labels:
       traefik.enable: "true"
-      traefik.http.routers.api.rule: "Host(`example.com`) && PathPrefix(`/api`)"
+      traefik.http.routers.api.rule: "Host(`api.example.com`)"
       traefik.http.routers.api.tls: "true"
+      traefik.http.routers.api-ws.rule: "Host(`api.example.com`) && PathPrefix(`/ws`)"
+      traefik.http.routers.api-ws.tls: "true"
       maintenant.endpoint.http.expected-status: "200"
+
+  # https://grafana.example.com/public: the root route is behind a basic auth,
+  # so the auth free route is monitored instead
+  grafana:
+    image: grafana/grafana:latest
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.grafana.rule: "Host(`grafana.example.com`)"
+      traefik.http.routers.grafana.tls: "true"
+      traefik.http.routers.grafana.middlewares: "grafana-auth"
+      traefik.http.middlewares.grafana-auth.basicauth.users: "ops:$$2y$$05$$..."
+      traefik.http.routers.grafana-public.rule: "Host(`grafana.example.com`) && PathPrefix(`/public`)"
+      traefik.http.routers.grafana-public.tls: "true"
 
   # Not discovered: Traefik is disabled for this container
   admin:
@@ -267,7 +297,8 @@ services:
       caddy: "app.example.com"
       caddy.reverse_proxy: "{{upstreams 8080}}"
 
-  # https://example.com, https://www.example.com and https://status.example.com:8443
+  # https://example.com: three addresses on the container, the first in
+  # alphabetical order is kept
   site:
     image: mysite:latest
     labels:
@@ -275,6 +306,17 @@ services:
       caddy.reverse_proxy: "{{upstreams 80}}"
       caddy_1: "status.example.com:8443"
       caddy_1.reverse_proxy: "{{upstreams 3000}}"
+
+  # https://metrics.example.com: the admin site is behind a basic auth, so it is
+  # not the one monitored
+  metrics:
+    image: mymetrics:latest
+    labels:
+      caddy: "admin.example.com"
+      caddy.basicauth.ops: "$$2a$$14$$..."
+      caddy.reverse_proxy: "{{upstreams 9090}}"
+      caddy_1: "metrics.example.com"
+      caddy_1.reverse_proxy: "{{upstreams 9090}}"
 
   # https://grafana.lan, checked without TLS verification (Caddy's local CA)
   grafana:
