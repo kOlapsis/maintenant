@@ -26,6 +26,7 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 - **[TLS Certificate Monitoring](features/certificates.md)** — Auto-detection from HTTPS endpoints. Alerts at 30, 14, 7, 3, and 1 day before expiry. Full chain validation.
 - **[Resource Metrics](features/resources.md)** — CPU, memory, network I/O, disk I/O per container. Historical charts, alert thresholds, top consumers view.
 - **[Update Intelligence](features/updates.md)** — OCI registry scanning, digest comparison. Compose-aware update commands. Know when your images have updates available.
+- **[Host OS End-of-Support](features/host-os.md)** — Tracks Debian, Ubuntu, RHEL, Rocky, Alma, Alpine and SLES support cycles. Warns 30 days before a host's security support ends, critical once it has.
 - **[Network Security Insights](features/security.md)** — Automatic detection of exposed ports, dangerous network configurations, and privileged containers. CVE ecosystem mapping via OCI manifest inspection.
 - **[Alert Engine](features/alerts.md)** — Unified alerts across all sources. Channels silent by default, routed via Alert Triggers. Webhook and Discord channels. Silence rules, exponential backoff. Slack, Teams, Email and multi-level escalation policies with Pro.
 - **[Public Status Page](features/status-page.md)** — Component groups, live SSE updates. Incident management, maintenance windows, and subscriber notifications with Pro.
@@ -73,6 +74,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"

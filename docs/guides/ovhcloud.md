@@ -200,6 +200,7 @@ docker run -d \
   --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v /proc:/host/proc:ro \
+  -v /etc/os-release:/host/etc/os-release:ro \
   -v maintenant-agent-data:/var/lib/maintenant \
   ghcr.io/kolapsis/maintenant:latest \
   --mode=agent \

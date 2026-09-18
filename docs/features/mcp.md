@@ -164,7 +164,7 @@ only in the web UI.
 | `list_alerts` | Active alerts (or recent resolved/silenced ones with `active_only: false`) | Community |
 | `get_resources` | Host resource summary: CPU, memory, network, disk | Community |
 | `get_top_consumers` | Containers ranked by CPU or memory usage, live or over a history window | Community (see below) |
-| `get_updates` | Available image updates for monitored containers | Community |
+| `get_updates` | Available image updates for monitored containers, plus each host's OS and end-of-support status | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
 | `list_agents` | Registered remote agents with connection state and runtime | Personal |
 | `get_edition` | Running edition, which capability each edition opens, quota usage and history windows | Community |
@@ -281,3 +281,4 @@ No special configuration needed — Caddy handles SSE and redirects natively.
 - [Alert Escalation](alert-escalation.md) — Escalation policies via `list_escalation_policies` and related tools
 - [Network Security Insights](security.md) — Insights, CVEs and posture via `get_security_insights`, `list_cve`, `get_security_posture`
 - [Update Intelligence](updates.md) — Image updates via `get_updates`, CVEs via `list_cve`, risk via `list_risk_scores`
+- [Host OS End-of-Support](host-os.md) — Host OS and support state via `get_updates`

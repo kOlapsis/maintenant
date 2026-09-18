@@ -209,6 +209,12 @@ GET /api/v1/risk
 
 ---
 
+## Operating Systems
+
+The Updates page also lists the hosts whose operating system has reached, or is about to reach, the end of its free security support, with a summary card counting them. The dates come from a support table embedded in the binary and refreshed daily from endoflife.date. See [Host OS End-of-Support](host-os.md) for what is read on each host, the mount a container needs, and the alert.
+
+---
+
 ## Alert Events
 
 | Event | Description | Default Severity |
@@ -222,7 +228,8 @@ GET /api/v1/risk
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/updates` | List all available updates |
-| `GET` | `/api/v1/updates/summary` | Update summary with counts |
+| `GET` | `/api/v1/updates/summary` | Update summary with counts (`os_counts` for host operating systems) |
+| `GET` | `/api/v1/updates/hosts` | Every host with its OS identity and end-of-support status |
 | `POST` | `/api/v1/updates/scan` | Trigger a manual scan |
 | `GET` | `/api/v1/updates/scan/{scan_id}` | Get scan status |
 | `GET` | `/api/v1/updates/container/{container_id}` | Get update info for a container |
@@ -238,5 +245,6 @@ GET /api/v1/risk
 ## Related
 
 - [Container Monitoring](containers.md) — Container states and image info
+- [Host OS End-of-Support](host-os.md) — The "Operating systems" section of this page
 - [Alert Engine](alerts.md) — Update alerts
 - [Docker Labels Reference](../guides/docker-labels.md#update-settings) — Full reference for `maintenant.update.*` labels

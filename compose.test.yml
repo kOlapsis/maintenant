@@ -39,6 +39,7 @@ services:
       # enough to exercise containers, resources and update intelligence.
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
     environment:
       MAINTENANT_LOG_LEVEL: "${MAINTENANT_LOG_LEVEL:-info}"
       MAINTENANT_ADDR: "0.0.0.0:8080"

@@ -6,6 +6,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useKubernetesStore } from '@/stores/kubernetes'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import { osSupportLabel, osSupportSeverity } from '@/utils/osSupport'
 import { timeAgo } from '@/utils/time'
 
 const emit = defineEmits<{
@@ -168,6 +170,17 @@ function formatCPU(millicores: number): string {
             <!-- K8s version -->
             <span v-if="node.kubernetes_version" class="text-mnt-muted hidden md:inline">
               {{ node.kubernetes_version }}
+            </span>
+
+            <!-- OS -->
+            <span v-if="node.os_image" class="hidden md:flex items-center gap-1.5" :title="node.os_image">
+              <span class="text-mnt-muted truncate max-w-[140px]">{{ node.os_image }}</span>
+              <StatusBadge
+                v-if="node.os_support && (node.os_support.state === 'ended' || node.os_support.state === 'ending_soon')"
+                :severity="osSupportSeverity(node.os_support.state)"
+                :label="osSupportLabel(node.os_support.state)"
+                size="sm"
+              />
             </span>
 
             <!-- Created -->

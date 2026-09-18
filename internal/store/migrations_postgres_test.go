@@ -117,7 +117,8 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"DROP TABLE instances", // 29
 		"ALTER TABLE notification_channels DROP COLUMN secret, DROP COLUMN config", // 30
 		"DROP TABLE cve_evaluations", // 31
-		"ALTER TABLE containers DROP COLUMN image_version, DROP COLUMN image_source, DROP COLUMN image_url, DROP COLUMN image_description", // 32
+		"ALTER TABLE containers DROP COLUMN image_version, DROP COLUMN image_source, DROP COLUMN image_url, DROP COLUMN image_description",                                                  // 32
+		"ALTER TABLE agents DROP COLUMN os_id, DROP COLUMN os_version_id, DROP COLUMN os_pretty_name, DROP COLUMN os_source, DROP COLUMN os_unavailable_reason, DROP COLUMN os_reported_at", // 33
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

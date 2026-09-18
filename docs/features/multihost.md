@@ -265,9 +265,10 @@ Host CPU and memory are read from `/proc`. When the agent runs inside a containe
 
 ```bash
 -v /proc:/host/proc:ro
+-v /etc/os-release:/host/etc/os-release:ro
 ```
 
-The generated `docker run`, Compose and Kubernetes install snippets already include this mount, so no extra configuration is needed when you use them. Bare-metal/systemd agents read `/proc` natively.
+The `/etc/os-release` mount identifies the host's distribution for end-of-support alerts; without it, the host shows as "unknown". The generated `docker run` and Compose snippets already include it, so no extra configuration is needed when you use them. On Kubernetes there is nothing to mount: the agent derives the node's identity from its `osImage` instead. Bare-metal/systemd agents read `/proc` and `/etc/os-release` natively. See [Host OS End-of-Support](host-os.md) for the full picture, including states and alert thresholds.
 
 ---
 

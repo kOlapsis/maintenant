@@ -233,6 +233,7 @@ message AgentEvent {
     SwarmTopology    swarm       = 15;
     KubernetesTopology kubernetes = 16;
     ContainerInventory inventory = 17;
+    HostOSMsg          host_os   = 18;
   }
 }
 
@@ -297,6 +298,24 @@ enum EndpointStatus {
   ENDPOINT_STATUS_UP          = 1;
   ENDPOINT_STATUS_DOWN        = 2;
   ENDPOINT_STATUS_DEGRADED    = 3;
+}
+
+// ----- Host operating system ------------------------------------------------
+
+// The host's operating system identity, as current state rather than an event:
+// the spool keeps the last one and resends it on every new stream.
+message HostOSMsg {
+  string id                 = 1;  // os-release ID=, or the family derived from a Kubernetes osImage
+  string version_id         = 2;  // os-release VERSION_ID=, raw
+  string pretty_name        = 3;  // os-release PRETTY_NAME=, or the raw osImage
+  HostOSSource source       = 4;
+  string unavailable_reason = 5;  // "mount_missing" | "file_unreadable" | "node_not_found"; empty when the identity is present
+}
+
+enum HostOSSource {
+  HOST_OS_SOURCE_UNSPECIFIED     = 0;
+  HOST_OS_SOURCE_HOST_FILE       = 1;
+  HOST_OS_SOURCE_KUBERNETES_NODE = 2;
 }
 
 // ----- Heartbeat ------------------------------------------------------------

@@ -163,6 +163,15 @@ func init() {
 				return os.Setenv("MAINTENANT_UPDATE_INTERVAL", v)
 			},
 		},
+		{
+			EnvName: "MAINTENANT_DISABLE_OS_EOL_REFRESH", FlagName: "disableOsEolRefresh",
+			Type: FlagTypeBool, Default: "false",
+			Description: "Keep the embedded OS end-of-support dates instead of refreshing them daily from endoflife.date",
+			ApplyTo: func(c *Config, v string) error {
+				c.DisableOSEOLRefresh = parseTruthy(v)
+				return nil
+			},
+		},
 		// Security
 		{
 			EnvName: "MAINTENANT_SECURITY_SCORE_THRESHOLD", FlagName: "securityScoreThreshold",
@@ -373,6 +382,12 @@ func init() {
 			ApplyTo:     func(c *Config, v string) error { c.MultiHost.Label = v; return nil },
 		},
 		{
+			EnvName: "MAINTENANT_NODE_NAME", FlagName: "nodeName",
+			Type: FlagTypeString, Default: "",
+			Description: "Kubernetes node this agent runs on (agent mode); discovered from the pod when empty",
+			ApplyTo:     func(c *Config, v string) error { c.MultiHost.NodeName = v; return nil },
+		},
+		{
 			EnvName: "MAINTENANT_GRPC_LISTEN", FlagName: "grpc-listen",
 			Type: FlagTypeString, Default: "127.0.0.1:8443",
 			Description: "gRPC listen address (server mode)",
@@ -561,7 +576,7 @@ func init() {
 		{Name: "Runtime", Specs: specsFor("runtime", "proxyLabels")},
 		{Name: "Logging", Specs: specsFor("logLevel")},
 		{Name: "HTTP", Specs: specsFor("maxBodySize", "trustedProxies")},
-		{Name: "Updates", Specs: specsFor("updateInterval")},
+		{Name: "Updates", Specs: specsFor("updateInterval", "disableOsEolRefresh")},
 		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "allowPrivateWebhooks")},
 		{Name: "Pro", Specs: specsFor("licenseKey")},
 		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom")},
@@ -571,7 +586,7 @@ func init() {
 		)},
 		{Name: "Kubernetes", Specs: specsFor("k8sNamespaces", "k8sExcludeNamespaces")},
 		{Name: "Multi-host", Specs: specsFor(
-			"mode", "server", "enrollment-token", "label",
+			"mode", "server", "enrollment-token", "label", "nodeName",
 			"grpc-listen", "grpc-url", "grpc-tls-cert", "grpc-tls-key",
 			"grpc-tls-insecure", "grpc-insecure-skip-tls-verify",
 			"agentRateLimitPerSecond", "agentStaleThresholdSeconds",

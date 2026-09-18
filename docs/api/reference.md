@@ -129,7 +129,7 @@ Multi-host agent management (`--mode=server`). All endpoints require **Personal*
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/agents` | List enrolled agents and their connection state |
+| `GET` | `/api/v1/agents` | List enrolled agents, their connection state and their host OS (`os`) |
 | `GET` | `/api/v1/agents/{id}` | Get an agent |
 | `PATCH` | `/api/v1/agents/{id}` | Update an agent's display label |
 | `POST` | `/api/v1/agents/{id}/revoke` | Revoke an agent (closes its stream, stops retries) |
@@ -311,7 +311,8 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/updates` | List available updates (`?status=&update_type=`) |
-| `GET` | `/api/v1/updates/summary` | Update summary with counts |
+| `GET` | `/api/v1/updates/summary` | Update summary with counts (`os_counts` for host operating systems) |
+| `GET` | `/api/v1/updates/hosts` | Every monitored host with its OS identity and end-of-support status, plus the support table in use |
 | `POST` | `/api/v1/updates/scan` | Trigger a manual scan |
 | `GET` | `/api/v1/updates/scan/{scan_id}` | Get scan status |
 | `GET` | `/api/v1/updates/dry-run` | Preview what a scan would check |

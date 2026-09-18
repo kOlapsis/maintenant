@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/eol"
+	"github.com/kolapsis/maintenant/internal/hoststat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -49,10 +51,11 @@ type K8sMetricsProvider interface {
 // per-agent store (fed by the local runtime under LocalAgent and by remote
 // agents), so the views work regardless of the server's own runtime.
 type KubernetesHandler struct {
-	store    kubernetesStore
-	metrics  K8sMetricsProvider
-	agents   AgentDirectory
-	sessions agentLiveness
+	store     kubernetesStore
+	metrics   K8sMetricsProvider
+	agents    AgentDirectory
+	sessions  agentLiveness
+	eolTables EOLTableProvider
 }
 
 // agentLiveness is the narrow slice of AgentSessions the handler needs to flag
@@ -77,6 +80,19 @@ func (h *KubernetesHandler) SetAgentDirectory(ad AgentDirectory) {
 // reporting agent is offline (their last-known status is no longer live).
 func (h *KubernetesHandler) SetAgentSessions(s agentLiveness) {
 	h.sessions = s
+}
+
+// SetEOLTables wires the support table each node's os_image is evaluated against.
+func (h *KubernetesHandler) SetEOLTables(p EOLTableProvider) { h.eolTables = p }
+
+func (h *KubernetesHandler) nodeOSSupport(osImage string) eol.Support {
+	table := eol.Table{}
+	if h.eolTables != nil {
+		table = h.eolTables.Current()
+	}
+	rel := hoststat.ParseOSImage(osImage)
+	identity := eol.Identity{ID: rel.ID, VersionID: rel.VersionID, PrettyName: rel.PrettyName, Source: rel.Source, UnavailableReason: rel.UnavailableReason}
+	return eol.Evaluate(identity, table, time.Now())
 }
 
 // markLiveness flags an entity as stale when its reporting agent has no live
@@ -317,6 +333,7 @@ func (h *KubernetesHandler) HandleListNodes(w http.ResponseWriter, r *http.Reque
 	result := make([]map[string]interface{}, 0, len(nodes))
 	for _, n := range nodes {
 		nm := nodeDetailToJSON(n)
+		nm["os_support"] = h.nodeOSSupport(n.OSImage)
 		h.markLiveness(nm, n.AgentID)
 		result = append(result, nm)
 	}

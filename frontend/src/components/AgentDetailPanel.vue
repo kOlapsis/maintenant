@@ -14,7 +14,9 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import SlideOverPanel from '@/components/ui/SlideOverPanel.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { useAgentsStore } from '@/stores/agents'
+import { osDaysText, osSupportHint, osSupportLabel, osSupportSeverity } from '@/utils/osSupport'
 import type { Agent } from '@/services/agentApi'
 
 const props = defineProps<{
@@ -50,6 +52,8 @@ watch(
     showDeleteConfirm.value = false
   },
 )
+
+const osDays = computed(() => (props.agent?.os ? osDaysText(props.agent.os.support) : ''))
 
 const labelConflict = computed(() => {
   if (!props.agent || !labelDraft.value) return false
@@ -144,6 +148,47 @@ function runtimeLabel(rt: string): string {
             <span class="text-mnt-muted">Runtime</span>
             <span class="text-mnt-primary">{{ runtimeLabel(agent.detected_runtime) }}</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Operating system -->
+      <div v-if="agent.os">
+        <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-3">Operating system</p>
+        <div class="space-y-2 text-sm">
+          <div class="flex justify-between gap-3">
+            <span class="text-mnt-muted">Distribution</span>
+            <span class="text-mnt-primary text-right">{{ agent.os.pretty_name || 'Unknown' }}</span>
+          </div>
+          <div class="flex justify-between items-center gap-3">
+            <span class="text-mnt-muted">Support</span>
+            <StatusBadge
+              :severity="osSupportSeverity(agent.os.support.state)"
+              :label="osSupportLabel(agent.os.support.state)"
+              size="sm"
+              show-label
+            />
+          </div>
+          <div v-if="agent.os.support.active_until" class="flex justify-between gap-3">
+            <span class="text-mnt-muted">Active support until</span>
+            <span class="text-mnt-secondary text-xs">{{ agent.os.support.active_until }}</span>
+          </div>
+          <div v-if="agent.os.support.security_until" class="flex justify-between gap-3">
+            <span class="text-mnt-muted">Free security support until</span>
+            <span class="text-mnt-secondary text-xs">{{ agent.os.support.security_until }}</span>
+          </div>
+          <div v-if="agent.os.support.extended_until" class="flex justify-between gap-3">
+            <span class="text-mnt-muted">Paid extended support until</span>
+            <span class="text-mnt-secondary text-xs">{{ agent.os.support.extended_until }}</span>
+          </div>
+          <div v-if="osDays" class="flex justify-between gap-3">
+            <span class="text-mnt-muted">Remaining</span>
+            <span class="text-mnt-secondary text-xs">{{ osDays }}</span>
+          </div>
+          <div v-if="agent.os.support.table_source" class="flex justify-between gap-3">
+            <span class="text-mnt-muted">Source</span>
+            <span class="text-mnt-secondary text-xs">{{ agent.os.support.table_source }}</span>
+          </div>
+          <p class="text-xs text-mnt-muted">{{ osSupportHint(agent.os) }}</p>
         </div>
       </div>
 

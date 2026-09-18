@@ -11,6 +11,7 @@
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch, apiFetchVoid } from './apiFetch'
+import type { AgentOS } from './agentApi'
 
 export interface ImageUpdate {
   id: string
@@ -50,7 +51,31 @@ export interface UpdateSummary {
     medium: number
     low: number
   }
+  os_counts: {
+    ended: number
+    ending_soon: number
+    unknown: number
+    untracked: number
+    supported: number
+  }
   host_risk_score: number
+}
+
+export interface HostOS {
+  agent_id: string
+  hostname: string
+  label: string
+  is_local: boolean
+  runtime: string
+  connection_state: string
+  os: AgentOS
+}
+
+export interface EolTable {
+  source: string
+  fetched_at: string
+  refresh_enabled: boolean
+  last_refresh_error: string
 }
 
 export interface ContainerUpdateDetail {
@@ -156,6 +181,10 @@ export function fetchUpdates(filters?: { status?: string; update_type?: string; 
 
 export function fetchUpdateSummary(): Promise<UpdateSummary> {
   return apiFetch(`${API_BASE}/updates/summary`)
+}
+
+export function fetchHostOS(): Promise<{ hosts: HostOS[]; eol_table: EolTable }> {
+  return apiFetch(`${API_BASE}/updates/hosts`)
 }
 
 export function fetchContainerUpdate(containerId: string): Promise<ContainerUpdateDetail> {

@@ -26,6 +26,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"
@@ -270,3 +271,21 @@ If the log says another instance is working on the same database, and `peers`
 is non-zero in `/api/v1/health`, two instances are running against it. The
 product does not arbitrate — exclusion is your cluster manager's job. Data is
 not corrupted, but purges and alert evaluation run twice. Stop one of them.
+
+---
+
+## Host OS shows "unknown"
+
+**Cause:** the container is missing the `/etc/os-release:/host/etc/os-release:ro` mount, or is
+running an agent too old to read it.
+
+**Fix:** add the mount alongside the existing `/proc` one and restart the container:
+
+```yaml
+volumes:
+  - /proc:/host/proc:ro
+  - /etc/os-release:/host/etc/os-release:ro
+```
+
+Mounting a single file binds the container to the inode present at startup. After an OS
+upgrade on the host, restart the container to pick up the new `/etc/os-release`.

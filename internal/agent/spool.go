@@ -71,6 +71,7 @@ const (
 	snapshotKubernetes snapshotKind = "kubernetes"
 	snapshotCertScan   snapshotKind = "certificate"
 	snapshotHostSample snapshotKind = "host"
+	snapshotHostOS     snapshotKind = "host_os"
 )
 
 // snapshotOf classifies evt, returning false for anything worth queueing.
@@ -84,6 +85,8 @@ func snapshotOf(evt *agentpb.AgentEvent) (snapshotKind, bool) {
 		return snapshotKubernetes, true
 	case *agentpb.AgentEvent_Certificate:
 		return snapshotCertScan, true
+	case *agentpb.AgentEvent_HostOs:
+		return snapshotHostOS, true
 	case *agentpb.AgentEvent_Resource:
 		// An empty container id is the host's own sample, which the server keeps
 		// only as a latest value.
