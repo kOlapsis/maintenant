@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
+import { onMounted, onUnmounted, computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUpdatesStore } from '@/stores/updates'
 import { useEdition } from '@/composables/useEdition'
@@ -24,8 +24,18 @@ import type { ImageUpdate } from '@/services/updateApi'
 import FeatureGate from '@/components/FeatureGate.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import SectionHeader from '@/components/ui/SectionHeader.vue'
-import StatusBadge from '@/components/ui/StatusBadge.vue'
-import { osDaysText, osSupportLabel, osSupportSeverity } from '@/utils/osSupport'
+import StatusDot from '@/components/ui/StatusDot.vue'
+import OsSupportTimeline from '@/components/OsSupportTimeline.vue'
+import {
+  groupHostsByOS,
+  osAtRisk,
+  osAtRiskTone,
+  osStateTextClass,
+  osSupportLabel,
+  osSupportSeverity,
+  osTimeLeft,
+  osTotal,
+} from '@/utils/osSupport'
 import { docUrl } from '@/utils/docs'
 import {
   RefreshCw,
@@ -70,28 +80,13 @@ const enabledCVE = computed(() => edition.value?.features['cve_enrichment'] === 
 
 const osCounts = computed(() => updates.summary?.os_counts)
 
-const osAttentionCount = computed(() => (osCounts.value?.ended ?? 0) + (osCounts.value?.ending_soon ?? 0))
+const osGroups = computed(() => groupHostsByOS(updates.hosts))
 
-const osCardClass = computed(() => {
-  if ((osCounts.value?.ended ?? 0) > 0) return 'text-mnt-status-down'
-  if ((osCounts.value?.ending_soon ?? 0) > 0) return 'text-mnt-status-warn'
-  return 'text-mnt-muted'
-})
+const MAX_HOST_CHIPS = 6
 
-const osAttentionHosts = computed(() =>
-  updates.hosts.filter(h => h.os.support.state === 'ended' || h.os.support.state === 'ending_soon'),
-)
-
-const osQuietTally = computed(() => {
-  const parts: string[] = []
-  const supported = updates.hosts.filter(h => h.os.support.state === 'supported' || h.os.support.state === 'security_only').length
-  const unknown = updates.hosts.filter(h => h.os.support.state === 'unknown').length
-  const untracked = updates.hosts.filter(h => h.os.support.state === 'untracked').length
-  if (supported > 0) parts.push(`${supported} hosts supported`)
-  if (unknown > 0) parts.push(`${unknown} unknown`)
-  if (untracked > 0) parts.push(`${untracked} not tracked`)
-  return parts.join(' · ')
-})
+function scrollToOS() {
+  document.getElementById('os')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const eolTableNote = computed(() => {
   const table = updates.eolTable
@@ -105,6 +100,16 @@ const eolTableNote = computed(() => {
 function hostName(host: { label: string; hostname: string }): string {
   return host.label || host.hostname
 }
+
+watch(
+  () => route.hash === '#os' && updates.hosts.length > 0,
+  async (ready) => {
+    if (!ready) return
+    await nextTick()
+    scrollToOS()
+  },
+  { immediate: true },
+)
 
 function updateTypeColor(type_: string): string {
   switch (type_) {
@@ -223,16 +228,79 @@ onUnmounted(() => {
             {{ updates.summary.counts.up_to_date }}
           </p>
         </div>
-        <div v-if="osCounts" class="bg-mnt-surface rounded-xl p-4 border border-mnt-default">
+        <a
+          v-if="osCounts"
+          href="#os"
+          class="bg-mnt-surface rounded-xl p-4 border border-mnt-default hover:bg-mnt-elevated transition-colors"
+          @click.prevent="scrollToOS"
+        >
           <div class="flex items-center gap-1.5 mb-1">
-            <Server :size="11" :class="osCardClass" />
-            <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">OS support</span>
+            <Server :size="11" :class="osAtRiskTone(osCounts)" />
+            <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">OS at risk</span>
           </div>
-          <p class="text-2xl font-black" :class="osCardClass">
-            {{ osAttentionCount }}
+          <p class="text-2xl font-black" :class="osAtRiskTone(osCounts)">
+            {{ osAtRisk(osCounts) }}<span class="ml-1 text-xs font-bold text-mnt-muted">/ {{ osTotal(osCounts) }} {{ osTotal(osCounts) === 1 ? 'host' : 'hosts' }}</span>
           </p>
-        </div>
+        </a>
       </div>
+
+      <!-- Operating systems -->
+      <section v-if="osGroups.length > 0" id="os" class="scroll-mt-4 bg-mnt-surface rounded-2xl border border-mnt-default overflow-hidden">
+        <div class="px-4 sm:px-5 py-3 border-b border-mnt-default">
+          <SectionHeader title="Operating systems" :icon="Server" :count="updates.hosts.length" />
+        </div>
+
+        <ul>
+          <li
+            v-for="group in osGroups"
+            :key="group.key"
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 sm:px-5 py-2.5 border-t border-mnt-subtle first:border-t-0 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_12rem_9rem]"
+          >
+            <div class="flex min-w-0 items-center gap-2.5">
+              <StatusDot :severity="osSupportSeverity(group.state)" :label="osSupportLabel(group.state)" />
+              <p
+                class="truncate text-sm font-bold text-mnt-primary"
+                :title="group.prettyName || group.name"
+              >
+                <template v-if="group.state === 'unknown'">
+                  {{ group.hosts.length }} {{ group.hosts.length === 1 ? 'host' : 'hosts' }} without OS
+                </template>
+                <template v-else>{{ group.name }}</template>
+              </p>
+            </div>
+
+            <p
+              v-if="group.state !== 'unknown' && group.state !== 'untracked'"
+              class="text-right text-sm font-black sm:order-last"
+              :class="osStateTextClass(group.state)"
+            >{{ osTimeLeft(group.support) }}</p>
+
+            <ul class="col-span-2 flex min-w-0 flex-wrap gap-1 sm:col-span-1">
+              <li
+                v-for="host in group.hosts.slice(0, MAX_HOST_CHIPS)"
+                :key="host.agent_id"
+                class="max-w-[12rem] truncate rounded-md bg-mnt-elevated px-1.5 py-0.5 text-[10px] font-semibold text-mnt-secondary"
+                :title="host.hostname"
+              >{{ hostName(host) }}</li>
+              <li
+                v-if="group.hosts.length > MAX_HOST_CHIPS"
+                class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-mnt-muted"
+                :title="group.hosts.slice(MAX_HOST_CHIPS).map(hostName).join(', ')"
+              >+{{ group.hosts.length - MAX_HOST_CHIPS }}</li>
+            </ul>
+
+            <p v-if="group.state === 'unknown'" class="col-span-2 truncate text-xs text-mnt-secondary" :title="group.hints.join(' · ')">
+              {{ group.hints.join(' · ') }}
+            </p>
+            <p v-else-if="group.state === 'untracked'" class="col-span-2 text-xs text-mnt-muted sm:text-right">
+              No published end-of-life dates
+            </p>
+            <OsSupportTimeline v-else class="col-span-2 sm:col-span-1" :support="group.support" compact />
+          </li>
+        </ul>
+
+        <p v-if="eolTableNote" class="px-4 sm:px-5 py-3 border-t border-mnt-subtle text-[10px] text-mnt-muted">{{ eolTableNote }}</p>
+      </section>
 
       <!-- CVE summary (Pro) -->
       <div v-if="enabledCVE && updates.summary?.cve_counts && (updates.summary.cve_counts.critical > 0 || updates.summary.cve_counts.high > 0)" class="flex items-center gap-2 text-xs bg-mnt-surface rounded-xl px-4 py-3 border border-mnt-default">
@@ -240,41 +308,6 @@ onUnmounted(() => {
         <span class="text-mnt-muted font-bold">Active CVEs:</span>
         <span v-if="updates.summary.cve_counts.critical > 0" class="text-mnt-status-down font-bold">{{ updates.summary.cve_counts.critical }} critical</span>
         <span v-if="updates.summary.cve_counts.high > 0" class="text-mnt-status-warn font-bold">{{ updates.summary.cve_counts.high }} high</span>
-      </div>
-
-      <!-- Operating systems -->
-      <div v-if="updates.hosts.length > 0" class="bg-mnt-surface rounded-2xl border border-mnt-default overflow-hidden">
-        <div class="px-5 py-3 border-b border-mnt-default">
-          <SectionHeader title="Operating systems" :icon="Server" :count="updates.hosts.length" />
-        </div>
-
-        <div class="divide-y divide-mnt-subtle">
-          <div
-            v-for="host in osAttentionHosts"
-            :key="host.agent_id"
-            class="flex items-center gap-4 px-5 py-3"
-          >
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-mnt-primary truncate">{{ hostName(host) }}</p>
-              <p class="text-[10px] text-mnt-muted mt-0.5 truncate">{{ host.os.pretty_name || 'OS unknown' }}</p>
-            </div>
-            <StatusBadge
-              :severity="osSupportSeverity(host.os.support.state)"
-              :label="osSupportLabel(host.os.support.state)"
-              size="sm"
-              show-label
-            />
-            <div class="text-right shrink-0">
-              <p class="text-xs font-bold text-mnt-secondary">{{ osDaysText(host.os.support) }}</p>
-              <p v-if="host.os.support.security_until" class="text-[10px] text-mnt-muted mt-0.5">{{ host.os.support.security_until }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="px-5 py-3 space-y-1 border-t border-mnt-subtle">
-          <p v-if="osQuietTally" class="text-[10px] text-mnt-muted">{{ osQuietTally }}</p>
-          <p v-if="eolTableNote" class="text-[10px] text-mnt-muted">{{ eolTableNote }}</p>
-        </div>
       </div>
 
       <!-- Update Groups -->
