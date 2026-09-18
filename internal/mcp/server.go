@@ -119,8 +119,9 @@ type Services struct {
 	// on the page sees an MCP write without reloading.
 	Broadcast func(eventType string, data any)
 
-	Version string
-	Logger  *slog.Logger
+	Version  string
+	Logger   *slog.Logger
+	DemoMode bool
 }
 
 func (s *Services) logger() *slog.Logger {
@@ -128,6 +129,13 @@ func (s *Services) logger() *slog.Logger {
 		return s.Logger
 	}
 	return slog.Default()
+}
+
+func addTool[In, Out any](server *gomcp.Server, svc *Services, t *gomcp.Tool, h gomcp.ToolHandlerFor[In, Out]) {
+	if svc.DemoMode && (t.Annotations == nil || !t.Annotations.ReadOnlyHint) {
+		return
+	}
+	gomcp.AddTool(server, t, h)
 }
 
 // NewServer creates and configures an MCP server with all maintenant tools registered.

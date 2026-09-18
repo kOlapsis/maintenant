@@ -15,6 +15,7 @@
 
 import { AuthChallengeError, isAuthChallenge, probeAuth, reportAuthChallenge } from './authGuard'
 import type { ApiErrorDetail } from './editionApi'
+import { showToast } from '@/composables/useToast'
 
 /**
  * An API error that keeps the structured body instead of flattening it to a
@@ -42,6 +43,11 @@ export class ApiError extends Error {
     return this.code === 'EDITION_REQUIRED'
   }
 
+  /** True for the refusal a demo instance sends back to every mutation. */
+  get isDemoRefusal(): boolean {
+    return this.code === 'DEMO_MODE'
+  }
+
   /** True for the refusals that mean "you have reached a cap". */
   get isQuotaRefusal(): boolean {
     return this.code === 'QUOTA_EXCEEDED' || this.code === 'HOST_LIMIT_REACHED'
@@ -58,10 +64,17 @@ export class ApiError extends Error {
   }
 }
 
-async function toApiError(res: Response): Promise<ApiError> {
+export async function toApiError(res: Response): Promise<ApiError> {
   const body = await res.json().catch(() => ({}))
   const detail = (body?.error ?? null) as ApiErrorDetail | null
-  return new ApiError(res.status, detail, detail?.message || `HTTP ${res.status}`)
+  const err = new ApiError(res.status, detail, detail?.message || `HTTP ${res.status}`)
+  if (err.isDemoRefusal) {
+    showToast('This instance is read-only. Changes are disabled.', 'warning', 5000, {
+      title: 'Demo mode',
+      dedupeKey: 'demo-mode',
+    })
+  }
+  return err
 }
 
 // Sentinel agent id the backend sends for server-local entities. Treat it as

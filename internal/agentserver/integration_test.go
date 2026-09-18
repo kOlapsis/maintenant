@@ -620,3 +620,30 @@ func TestIntegration_LogsCommandRoundTrip(t *testing.T) {
 	_, err = sessions.FetchLogs(ctx, "11111111-0000-0000-0000-000000000000", "ctr", 100, false)
 	assert.ErrorIs(t, err, agentserver.ErrAgentNotConnected)
 }
+
+func TestIntegration_DemoMode_RefusesEveryRPC(t *testing.T) {
+	withMultiHostEdition(t)
+
+	addr, clientTLS := startTestServer(t, agentserver.Deps{
+		AgentStore:  store.NewAgentStore(openIntegrationDB(t)),
+		Broadcaster: noopBroadcaster{},
+		Sessions:    agentserver.NewSessions(slog.Default(), noopBroadcaster{}),
+		Logger:      slog.Default(),
+		DemoMode:    true,
+	})
+	client := dialGRPC(t, addr, clientTLS)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := client.RegisterAgent(ctx, &agentpb.RegisterRequest{})
+	require.Error(t, err)
+	assert.Equal(t, codes.PermissionDenied, grpcstatus.Code(err))
+	assert.Contains(t, grpcstatus.Convert(err).Message(), "demo mode")
+
+	stream, err := client.Push(ctx)
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	require.Error(t, err)
+	assert.Equal(t, codes.PermissionDenied, grpcstatus.Code(err))
+}

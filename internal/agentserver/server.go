@@ -44,6 +44,7 @@ type Deps struct {
 	Limiter     *Limiter
 	Dispatcher  *Dispatcher
 	Logger      *slog.Logger
+	DemoMode    bool
 }
 
 // Server wraps the gRPC server lifecycle for the Ingest service.
@@ -80,6 +81,12 @@ func (s *Server) Start(ctx context.Context, listen string, tlsCfg *tls.Config) e
 		grpc.ChainUnaryInterceptor(recoveryUnaryInterceptor(s.deps.Logger)),
 		grpc.ChainStreamInterceptor(recoveryStreamInterceptor(s.deps.Logger)),
 	}
+	if s.deps.DemoMode {
+		opts = append(opts,
+			grpc.ChainUnaryInterceptor(demoModeUnaryInterceptor),
+			grpc.ChainStreamInterceptor(demoModeStreamInterceptor),
+		)
+	}
 	if tlsCfg != nil {
 		opts = append(opts, grpc.Creds(credentials.NewTLS(tlsCfg)))
 	}
@@ -112,6 +119,16 @@ func (s *Server) Stop() {
 	if s.grpc != nil {
 		s.grpc.GracefulStop()
 	}
+}
+
+var errDemoMode = grpcstatus.Error(codes.PermissionDenied, "demo mode: this server does not accept agents")
+
+func demoModeUnaryInterceptor(context.Context, any, *grpc.UnaryServerInfo, grpc.UnaryHandler) (any, error) {
+	return nil, errDemoMode
+}
+
+func demoModeStreamInterceptor(any, grpc.ServerStream, *grpc.StreamServerInfo, grpc.StreamHandler) error {
+	return errDemoMode
 }
 
 // recoveryUnaryInterceptor recovers any panic raised by a unary handler,

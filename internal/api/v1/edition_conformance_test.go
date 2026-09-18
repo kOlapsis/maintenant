@@ -2,6 +2,8 @@ package v1
 
 import (
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -185,6 +187,36 @@ func TestConformance_HistoryWindowsMatchWhatTheEndpointsAccept(t *testing.T) {
 // TestConformance_QuotasReportRealUsage: `used` used to be pinned to 0 on Pro,
 // so an instance running fifty endpoints reported none. Every edition now
 // counts, and the limit always comes from extension.Limit.
+func TestNewRouter_WiresDemoModeIntoTheEditionEndpoint(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	r := NewRouter(HandlerDeps{Logger: logger, DemoMode: true})
+
+	rec := httptest.NewRecorder()
+	r.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/edition", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, true, body["demo"])
+}
+
+func TestEdition_ExposesDemoMode(t *testing.T) {
+	withEdition(t, extension.Community)
+
+	for _, demo := range []bool{true, false} {
+		t.Run(map[bool]string{true: "demo_on", false: "demo_off"}[demo], func(t *testing.T) {
+			r := &Router{demoMode: demo}
+			rec := httptest.NewRecorder()
+			r.handleGetEdition(true, HandlerDeps{})(rec, httptest.NewRequest("GET", "/api/v1/edition", nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			assert.Equal(t, demo, body["demo"])
+		})
+	}
+}
+
 func TestConformance_QuotasReportRealUsage(t *testing.T) {
 	for _, edition := range []extension.Edition{extension.Community, extension.Personal, extension.Pro} {
 		t.Run(string(edition), func(t *testing.T) {

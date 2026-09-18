@@ -23,25 +23,25 @@ import (
 )
 
 func registerSecurityTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_security_insights",
 		Description: "List security insights (dangerous runtime configurations) across containers, or for a single container. Includes a severity summary.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getSecurityInsightsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_cve",
 		Description: "List active CVE vulnerabilities detected in container images, optionally filtered by container or minimum severity. For a single container the response carries the CVE evaluation state: an empty list only means \"no known CVEs\" when the state is \"evaluated\"." + requires(extension.CapCVEEnrichment),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listCVEHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_risk_scores",
 		Description: "List image update risk scores per container (0-100) with their risk level." + requires(extension.CapRiskScoring),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listRiskScoresHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_security_posture",
 		Description: "Get the infrastructure security posture score, or the posture of a single container." + requires(extension.CapSecurityPosture),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},

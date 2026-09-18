@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -392,4 +393,111 @@ func TestMiddlewareChain_Integration(t *testing.T) {
 	assert.NotEmpty(t, capturedRequestID)
 	assert.Equal(t, capturedRequestID, rec.Header().Get("X-Request-ID"))
 	assert.Equal(t, "https://test.com", rec.Header().Get("Access-Control-Allow-Origin"))
+}
+
+// ---------------------------------------------------------------------------
+// DemoModeGuard middleware
+// ---------------------------------------------------------------------------
+
+func TestDemoModeGuard_Matrix(t *testing.T) {
+	tests := []struct {
+		name       string
+		demoMode   bool
+		method     string
+		path       string
+		wantPassed bool
+		wantMsg    string
+	}{
+		{"get passes in demo", true, http.MethodGet, "/api/v1/containers", true, ""},
+		{"head passes in demo", true, http.MethodHead, "/api/v1/containers", true, ""},
+		{"options passes in demo", true, http.MethodOptions, "/api/v1/containers", true, ""},
+		{"post refused in demo", true, http.MethodPost, "/api/v1/containers", false, demoModeMessage},
+		{"put refused in demo", true, http.MethodPut, "/api/v1/endpoints/1", false, demoModeMessage},
+		{"patch refused in demo", true, http.MethodPatch, "/api/v1/agents/1", false, demoModeMessage},
+		{"delete refused in demo", true, http.MethodDelete, "/api/v1/endpoints/1", false, demoModeMessage},
+		{"ping post closed in demo", true, http.MethodPost, "/ping/x", false, demoModeClosedMessage},
+		{"ping get closed in demo", true, http.MethodGet, "/ping/x", false, demoModeClosedMessage},
+		{"mcp post closed in demo", true, http.MethodPost, "/mcp", false, demoModeClosedMessage},
+		{"mcp get closed in demo", true, http.MethodGet, "/mcp/x", false, demoModeClosedMessage},
+		{"oauth post closed in demo", true, http.MethodPost, "/oauth/token", false, demoModeClosedMessage},
+		{"oauth get closed in demo", true, http.MethodGet, "/oauth/authorize", false, demoModeClosedMessage},
+		{"oauth metadata closed in demo", true, http.MethodGet, "/.well-known/oauth-authorization-server", false, demoModeClosedMessage},
+		{"overlap probe post passes in demo", true, http.MethodPost, "/api/v1/escalation-policies/overlap-probe", true, ""},
+		{"post passes when demo off", false, http.MethodPost, "/api/v1/containers", true, ""},
+		{"ping passes when demo off", false, http.MethodPost, "/ping/x", true, ""},
+		{"mcp passes when demo off", false, http.MethodPost, "/mcp", true, ""},
+		{"delete passes when demo off", false, http.MethodDelete, "/api/v1/endpoints/1", true, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			})
+
+			handler := DemoModeGuard(tt.demoMode, "")(inner)
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
+
+			if tt.wantPassed {
+				assert.True(t, called, "the handler must run")
+				assert.Equal(t, http.StatusOK, rec.Code)
+				return
+			}
+
+			require.False(t, called, "the handler must not run")
+			assert.Equal(t, http.StatusForbidden, rec.Code)
+
+			var body ErrorResponse
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			assert.Equal(t, "DEMO_MODE", body.Error.Code)
+			assert.Equal(t, tt.wantMsg, body.Error.Message)
+		})
+	}
+}
+
+func TestDemoModeGuard_Disabled_ReturnsNextUnchanged(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := DemoModeGuard(false, "")(inner)
+
+	assert.Equal(t, reflect.ValueOf(inner).Pointer(), reflect.ValueOf(handler).Pointer(),
+		"a disabled guard must not wrap the handler")
+}
+
+func TestDemoModeGuard_Token(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured string
+		sent       string
+		path       string
+		wantPassed bool
+	}{
+		{"matching token writes", "s3cret", "s3cret", "/api/v1/heartbeats", true},
+		{"matching token pings", "s3cret", "s3cret", "/ping/x", true},
+		{"wrong token refused", "s3cret", "nope", "/api/v1/heartbeats", false},
+		{"missing token refused", "s3cret", "", "/ping/x", false},
+		{"empty configured token never matches", "", "", "/api/v1/heartbeats", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { called = true })
+			req := httptest.NewRequest(http.MethodPost, tt.path, nil)
+			if tt.sent != "" {
+				req.Header.Set(DemoTokenHeader, tt.sent)
+			}
+			rec := httptest.NewRecorder()
+			DemoModeGuard(true, tt.configured)(inner).ServeHTTP(rec, req)
+			assert.Equal(t, tt.wantPassed, called)
+			if !tt.wantPassed {
+				assert.Equal(t, http.StatusForbidden, rec.Code)
+			}
+		})
+	}
 }

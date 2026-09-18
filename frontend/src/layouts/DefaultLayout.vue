@@ -8,6 +8,7 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, provide, ref, watch } from 'vue'
 import AppHeader from '@/components/AppHeader.vue'
 import EditionBadge from '@/components/EditionBadge.vue'
+import DemoModeBanner from '@/components/DemoModeBanner.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -341,6 +342,8 @@ watch(
 
     <!-- Main content -->
     <main class="flex-1 flex flex-col overflow-hidden">
+      <!-- Demo mode banner: persistent, non-dismissible -->
+      <DemoModeBanner />
       <!-- License warning banner -->
       <AlertBanner
         v-if="licenseMessageParts"

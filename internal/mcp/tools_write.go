@@ -25,32 +25,32 @@ import (
 )
 
 func registerWriteTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "acknowledge_alert",
 		Description: "Acknowledge an active alert so it stops escalating.",
 	}, acknowledgeAlertHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_incident",
 		Description: "Create a new incident on the status page." + requires(extension.CapIncidents),
 	}, createIncidentHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_incident",
 		Description: "Post a status update to an existing status page incident." + requires(extension.CapIncidents),
 	}, updateIncidentHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_maintenance",
 		Description: "Schedule a maintenance window on the status page." + requires(extension.CapMaintenanceWindows),
 	}, createMaintenanceHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "pause_monitor",
 		Description: "Pause a heartbeat monitor to temporarily stop alerting. Only heartbeat monitors are supported.",
 	}, pauseMonitorHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "resume_monitor",
 		Description: "Resume a paused heartbeat monitor. Only heartbeat monitors are supported.",
 	}, resumeMonitorHandler(svc))

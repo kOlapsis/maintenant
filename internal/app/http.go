@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/cmd/maintenant/web"
+	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	mcpoauth "github.com/kolapsis/maintenant/internal/mcp/oauth"
 	"github.com/kolapsis/maintenant/internal/store"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -198,7 +199,7 @@ func SecurityHeaders(csp string) func(http.Handler) http.Handler {
 func (a *App) buildHTTPServer() *http.Server {
 	topMux := http.NewServeMux()
 
-	if a.cfg.MCP.Enabled {
+	if a.cfg.MCP.Enabled && !a.cfg.DemoMode {
 		mcpHTTPHandler := gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
 			return a.mcpServer
 		}, nil)
@@ -262,7 +263,7 @@ func (a *App) buildHTTPServer() *http.Server {
 	topMux.Handle("/", SPAHandler(a.router.Handler(), a.logger))
 
 	handler := SecurityHeaders(contentSecurityPolicy(indexHTML))(
-		WithRequestTimeout(topMux, 10*time.Second))
+		WithRequestTimeout(v1.DemoModeGuard(a.cfg.DemoMode, a.cfg.DemoToken)(topMux), 10*time.Second))
 
 	return &http.Server{
 		Addr:         a.cfg.Addr,

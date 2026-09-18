@@ -63,6 +63,7 @@ export interface EditionResponse {
   quotas?: Partial<Record<QuotaResource, QuotaEntry>>
   /** Absent on an engine older than the tiered history: no catalogue, no cap. */
   resource_history?: ResourceHistoryContract
+  demo?: boolean
 }
 
 /**

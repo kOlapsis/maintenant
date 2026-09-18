@@ -26,6 +26,7 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
 ARG LICENSE_PUBLIC_KEY
+ARG DEMO_MODE=false
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
@@ -34,7 +35,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
           -X main.version=${VERSION} \
           -X main.commit=${COMMIT} \
           -X main.buildDate=${BUILD_DATE} \
-          -X main.publicKeyB64=${LICENSE_PUBLIC_KEY}" \
+          -X main.publicKeyB64=${LICENSE_PUBLIC_KEY} \
+          -X main.demoMode=${DEMO_MODE}" \
         -o /out/maintenant \
         ./cmd/maintenant
 

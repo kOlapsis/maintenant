@@ -156,6 +156,7 @@ type HandlerDeps struct {
 	AllowPrivateWebhooks bool // dev only: skip HTTPS + SSRF check on webhook URLs
 	StatusURL            string
 	TrustedProxies       []netip.Prefix
+	DemoMode             bool
 }
 
 // agentStoreDirectory adapts the sqlite agent store to AgentDirectory so the
@@ -189,6 +190,7 @@ type Router struct {
 	buildVersion     string
 	organisationName string
 	statusURL        string
+	demoMode         bool
 }
 
 // NewRouter creates a new API v1 router from the unified HandlerDeps.
@@ -209,6 +211,7 @@ func NewRouter(d HandlerDeps) *Router {
 		buildVersion:     d.BuildVersion,
 		organisationName: d.OrganisationName,
 		statusURL:        d.StatusURL,
+		demoMode:         d.DemoMode,
 	}
 
 	// Webhook management
@@ -857,6 +860,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 			"edition":           string(extension.CurrentEdition()),
 			"organisation_name": r.organisationName,
 			"status_url":        r.statusURL,
+			"demo":              r.demoMode,
 			"features":          features,
 			"feature_editions":  featureEditions,
 			"quotas":            r.computeQuotas(ctx, d),

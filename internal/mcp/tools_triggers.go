@@ -32,27 +32,29 @@ import (
 )
 
 func registerTriggerTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_triggers",
 		Description: "List all alert triggers (filter rules + channel destinations).",
+		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listTriggersHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_trigger",
 		Description: "Get a single alert trigger by ID.",
+		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getTriggerHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_trigger",
 		Description: "Create a new alert trigger, notifying recoveries by default. Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
 	}, createTriggerHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_trigger",
 		Description: "Update an existing alert trigger (last-write-wins). Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
 	}, updateTriggerHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_trigger",
 		Description: "Delete an alert trigger. The linked channels are not deleted.",
 	}, deleteTriggerHandler(svc))

@@ -102,6 +102,8 @@ type Config struct {
 	Commit       string
 	BuildDate    string
 	PublicKeyB64 string
+	DemoMode     bool
+	DemoToken    string
 }
 
 // MultiHostConfig holds multi-server agent configuration (Pro only).
@@ -292,6 +294,21 @@ func (c Config) ValidateHTTP() error {
 	return nil
 }
 
+// ErrDemoRuntime is returned when a demo build is pointed at anything but a remote Docker endpoint.
+var ErrDemoRuntime = errors.New("demo mode only monitors a remote Docker endpoint: set DOCKER_HOST=tcp://host:port, and leave KUBERNETES_SERVICE_HOST and KUBECONFIG unset")
+
+// ValidateDemo refuses a demo build that could reach a local Docker socket or a Kubernetes cluster.
+func (c Config) ValidateDemo(getenv func(string) string) error {
+	if !c.DemoMode {
+		return nil
+	}
+	if !strings.HasPrefix(getenv("DOCKER_HOST"), "tcp://") ||
+		getenv("KUBERNETES_SERVICE_HOST") != "" || getenv("KUBECONFIG") != "" {
+		return ErrDemoRuntime
+	}
+	return nil
+}
+
 // DefaultAddr is the HTTP listen address used when MAINTENANT_ADDR is unset.
 const DefaultAddr = "127.0.0.1:8080"
 
@@ -328,6 +345,7 @@ func ConfigFromEnv() Config {
 		CACertFile:     os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
+		DemoToken: os.Getenv("MAINTENANT_DEMO_TOKEN"),
 		StatusURL: os.Getenv("MAINTENANT_STATUS_URL"),
 
 		K8sNamespaces: os.Getenv("MAINTENANT_K8S_NAMESPACES"),

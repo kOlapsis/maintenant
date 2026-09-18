@@ -31,79 +31,79 @@ import (
 )
 
 func registerReadTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_containers",
 		Description: "List all monitored containers with their current state (running, stopped, restarting), health status, and basic metadata.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listContainersHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_container",
 		Description: "Get detailed information about a specific container including state, health, image, labels, and recent state transitions.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getContainerHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_container_logs",
 		Description: "Get recent log lines from a container's stdout/stderr output.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getContainerLogsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_alerts",
 		Description: "List alerts. By default returns only active (unresolved) alerts. Set active_only to false to also return recent resolved and silenced alerts (last 100).",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAlertsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_resources",
 		Description: "Get current host resource metrics summary including CPU usage, memory usage, network I/O, and disk usage.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getResourcesHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_top_consumers",
 		Description: "Get containers ranked by resource consumption (CPU or memory), useful for identifying resource-heavy containers.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getTopConsumersHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_endpoints",
 		Description: "List all monitored HTTP/TCP endpoints with their current status (up/down), response time, and uptime percentage.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listEndpointsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_endpoint_history",
 		Description: "Get detailed check history for a specific endpoint, including response times, status codes, and error messages.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getEndpointHistoryHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_heartbeats",
 		Description: "List all heartbeat/cron monitors with their current status, last ping time, expected period, and grace period.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listHeartbeatsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_certificates",
 		Description: "List all monitored TLS certificates with expiration dates, issuer, chain validity, and days until expiry.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listCertificatesHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_updates",
 		Description: "List available image updates for monitored containers, and the operating system of every monitored host with its end-of-support status (supported, ending_soon, ended, unknown, untracked) and dates.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getUpdatesHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_health",
 		Description: "Check maintenant's own health status, version, and runtime information.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getHealthHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_agents",
 		Description: "List all registered remote agents with their connection state, runtime type, hostname, and label." + requires(extension.CapMultihost),
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},

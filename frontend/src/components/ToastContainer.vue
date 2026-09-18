@@ -42,7 +42,10 @@ const iconMap = {
           :class="`toast--${toast.type}`"
         >
           <component :is="iconMap[toast.type]" :size="16" class="toast__icon shrink-0" />
-          <span class="toast__msg text-sm font-medium">{{ toast.message }}</span>
+          <div class="toast__msg flex flex-col gap-0.5 text-sm">
+            <span v-if="toast.title" class="font-semibold">{{ toast.title }}</span>
+            <span :class="toast.title ? '' : 'font-medium'">{{ toast.message }}</span>
+          </div>
         </div>
       </TransitionGroup>
     </div>
