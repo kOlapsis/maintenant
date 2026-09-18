@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -72,13 +73,14 @@ type EventCallback func(eventType string, data interface{})
 
 // Deps holds all dependencies for the container Service.
 type Deps struct {
-	Store          ContainerStore       // required
-	Logger         *slog.Logger         // required
-	EventCallback  EventCallback        // optional — nil-safe
-	LogFetcher     LogFetcher           // optional — nil-safe
-	RestartChecker RestartChecker       // optional — nil-safe
-	Discoverer     RuntimeDiscoverer    // optional — nil-safe
-	AgentRuntime   AgentRuntimeResolver // optional — nil-safe, fallback "docker"
+	Store                   ContainerStore       // required
+	Logger                  *slog.Logger         // required
+	EventCallback           EventCallback        // optional — nil-safe
+	LogFetcher              LogFetcher           // optional — nil-safe
+	RestartChecker          RestartChecker       // optional — nil-safe
+	Discoverer              RuntimeDiscoverer    // optional — nil-safe
+	AgentRuntime            AgentRuntimeResolver // optional — nil-safe, fallback "docker"
+	RestartRecoveryInterval time.Duration        // optional, defaults to defaultRestartRecoveryInterval
 }
 
 // Service orchestrates container discovery, event processing, and persistence.
@@ -90,6 +92,10 @@ type Service struct {
 	restartChecker RestartChecker
 	discoverer     RuntimeDiscoverer
 	agentRuntime   AgentRuntimeResolver
+
+	restartRecoveryInterval time.Duration
+	restartMu               sync.Mutex
+	trackedRestartAlerts    map[string]struct{}
 }
 
 // NewService creates a new container service with all dependencies.
@@ -100,14 +106,20 @@ func NewService(d Deps) *Service {
 	if d.Logger == nil {
 		panic("container.NewService: Logger is required")
 	}
+	interval := d.RestartRecoveryInterval
+	if interval <= 0 {
+		interval = defaultRestartRecoveryInterval
+	}
 	return &Service{
-		store:          d.Store,
-		logger:         d.Logger,
-		onEvent:        d.EventCallback,
-		logFetcher:     d.LogFetcher,
-		restartChecker: d.RestartChecker,
-		discoverer:     d.Discoverer,
-		agentRuntime:   d.AgentRuntime,
+		store:                   d.Store,
+		logger:                  d.Logger,
+		onEvent:                 d.EventCallback,
+		logFetcher:              d.LogFetcher,
+		restartChecker:          d.RestartChecker,
+		discoverer:              d.Discoverer,
+		agentRuntime:            d.AgentRuntime,
+		restartRecoveryInterval: interval,
+		trackedRestartAlerts:    make(map[string]struct{}),
 	}
 }
 
@@ -242,10 +254,12 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
 		} else if !evt.Replayed {
 			if result != nil {
+				s.trackRestartAlert(c.ID)
 				s.emitEvent(event.ContainerRestartAlert, result)
 			} else {
 				// Count is below threshold — emit recovery so the alert engine
 				// can resolve any previously active restart_loop alert.
+				s.untrackRestartAlert(c.ID)
 				s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
 					"container_id":   c.ID,
 					"container_name": c.Name,
@@ -288,6 +302,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 		s.logger.Error("archive container", "external_id", evt.ExternalID[:12], "error", err)
 		return
 	}
+	s.untrackRestartAlert(c.ID)
 
 	s.logger.Info("archived container", "id", c.ID, "name", c.Name)
 	s.emitEvent(event.ContainerArchived, map[string]interface{}{
@@ -361,6 +376,7 @@ func (s *Service) DeleteContainer(ctx context.Context, id string) error {
 	if err := s.store.DeleteContainerByID(ctx, id); err != nil {
 		return err
 	}
+	s.untrackRestartAlert(id)
 	s.emitEvent(event.ContainerArchived, map[string]interface{}{
 		"id": id,
 	})
@@ -406,6 +422,7 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 			if err := s.store.ArchiveContainer(ctx, sc.ID, now); err != nil {
 				s.logger.Error("reconcile archive", "external_id", sc.ExternalID, "error", err)
 			}
+			s.untrackRestartAlert(sc.ID)
 			s.emitEvent(event.ContainerArchived, map[string]interface{}{
 				"id": sc.ID, "archived_at": now, "agent_id": sc.AgentID,
 			})

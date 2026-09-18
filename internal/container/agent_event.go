@@ -155,6 +155,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 			s.logger.Error("agent inventory: archive", "external_id", shortID(sc.ExternalID), "error", err)
 			continue
 		}
+		s.untrackRestartAlert(sc.ID)
 		s.logger.Info("agent inventory: container gone, archived",
 			"external_id", shortID(sc.ExternalID), "name", sc.Name, "agent_id", agentID)
 		s.emitEvent(event.ContainerArchived, map[string]interface{}{

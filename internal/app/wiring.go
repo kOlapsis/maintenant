@@ -26,6 +26,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/security"
 )
 
+const restartLoopAlertType = "restart_loop"
+
 // heartbeatAlertEvents builds the alert events for a heartbeat callback. A recovery
 // clears both failure keys (the engine ignores the one not active). Caller sets Timestamp.
 func heartbeatAlertEvents(h *heartbeat.Heartbeat, alertType string, details map[string]any) []alert.Event {
@@ -96,7 +98,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				}
 				sendAlert(alert.Event{
 					Source:     alert.SourceContainer,
-					AlertType:  "restart_loop",
+					AlertType:  restartLoopAlertType,
 					Severity:   severity,
 					Message:    fmt.Sprintf("Container %s exceeded restart threshold (%d/%d)", ra.ContainerName, ra.RestartCount, ra.Threshold),
 					EntityType: "container",
@@ -113,7 +115,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			if m, ok := data.(map[string]any); ok {
 				sendAlert(alert.Event{
 					Source:     alert.SourceContainer,
-					AlertType:  "restart_loop",
+					AlertType:  restartLoopAlertType,
 					Severity:   alert.SeverityInfo,
 					IsRecover:  true,
 					Message:    fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"])),
