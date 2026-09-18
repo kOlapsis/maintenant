@@ -96,6 +96,20 @@ jobs:
           cp -r frontend/dist cmd/maintenant/web/dist
           test -f cmd/maintenant/web/dist/index.html
 
+      # The OS end-of-support table embedded in the binary is refreshed from
+      # endoflife.date at release time, so a release never ships dates older
+      # than its own build. A refresh that fails keeps the committed table:
+      # the server refreshes it daily at runtime anyway.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Refresh the OS end-of-support table
+        continue-on-error: true
+        run: make eol-table
+
       # The public key is a build-time constant, not a secret to protect at
       # runtime, but it goes through env so it never lands in a command line
       # (and so the workflow stays free of template injection).
