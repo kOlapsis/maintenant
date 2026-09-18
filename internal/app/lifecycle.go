@@ -68,6 +68,22 @@ func (a *App) pruneOrphanAlerts(ctx context.Context) {
 	}
 }
 
+// seedRestartAlertTracking hands the containers with an open restart_loop alert to the recovery loop.
+func (a *App) seedRestartAlertTracking(ctx context.Context) {
+	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
+	if err != nil {
+		a.logger.Error("seed restart alert tracking", "error", err)
+		return
+	}
+	var ids []string
+	for _, al := range activeAlerts {
+		if al.EntityType == "container" && al.AlertType == restartLoopAlertType {
+			ids = append(ids, al.EntityID)
+		}
+	}
+	a.containerSvc.TrackRestartAlerts(ids)
+}
+
 // reconcile performs startup reconciliation and endpoint/security discovery.
 // Must only be called when the runtime is connected.
 func (a *App) reconcile(ctx context.Context) {

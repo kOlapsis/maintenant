@@ -882,6 +882,9 @@ func (a *App) Start(ctx context.Context) error {
 		go a.startContainerDownCheck(ctx)
 	}
 
+	a.seedRestartAlertTracking(ctx)
+	go a.containerSvc.RunRestartRecoveryLoop(ctx)
+
 	// Swarm context recheck (60s) — detects swarm activation/deactivation.
 	if a.swarmDetector != nil {
 		go a.startSwarmRecheck(ctx)
