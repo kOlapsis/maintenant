@@ -16,7 +16,8 @@ import { onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useUpdatesStore } from '@/stores/updates'
 import { timeAgo } from '@/utils/time'
-import { RefreshCw, AlertTriangle, ArrowUpCircle, CheckCircle } from 'lucide-vue-next'
+import { osAtRisk, osAtRiskTone, osTotal } from '@/utils/osSupport'
+import { RefreshCw, AlertTriangle, ArrowUpCircle, CheckCircle, Server } from 'lucide-vue-next'
 
 const updates = useUpdatesStore()
 
@@ -54,7 +55,7 @@ const formatTime = timeAgo
       </div>
     </div>
 
-    <div v-if="updates.summary?.counts" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div v-if="updates.summary?.counts" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
       <!-- Critical -->
       <RouterLink :to="{ name: 'updates' }" class="bg-mnt-primary rounded-xl p-3 border border-mnt-default hover:border-mnt-default transition-colors">
         <div class="flex items-center gap-1.5 mb-1">
@@ -96,6 +97,21 @@ const formatTime = timeAgo
         </div>
         <p class="text-xl font-black text-mnt-status-ok">
           {{ updates.summary.counts.up_to_date }}
+        </p>
+      </RouterLink>
+
+      <!-- OS at risk -->
+      <RouterLink
+        v-if="updates.summary.os_counts"
+        :to="{ name: 'updates', hash: '#os' }"
+        class="bg-mnt-primary rounded-xl p-3 border border-mnt-default hover:border-mnt-default transition-colors"
+      >
+        <div class="flex items-center gap-1.5 mb-1">
+          <Server :size="11" :class="osAtRiskTone(updates.summary.os_counts)" />
+          <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">OS at risk</span>
+        </div>
+        <p class="text-xl font-black" :class="osAtRiskTone(updates.summary.os_counts)">
+          {{ osAtRisk(updates.summary.os_counts) }}<span class="ml-1 text-xs font-bold text-mnt-muted">/ {{ osTotal(updates.summary.os_counts) }} {{ osTotal(updates.summary.os_counts) === 1 ? 'host' : 'hosts' }}</span>
         </p>
       </RouterLink>
     </div>
