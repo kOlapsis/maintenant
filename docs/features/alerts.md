@@ -17,6 +17,7 @@ maintenant generates alerts from every monitoring subsystem:
 | **Resource** | `cpu_threshold`, `memory_threshold` | Warning |
 | **Update** | `available` | Info |
 | **Agent** | `disconnected` | Warning |
+| **Host** | `os_eol` | Warning, then Critical once the date has passed |
 
 ### Container down
 
@@ -25,6 +26,8 @@ A container that stops and stays stopped raises no alert on its own: `restart_lo
 The threshold is unset by default, because switching it on alerts retroactively on every container already stopped. A container that exited with code 0 is recorded as `completed` and never counts as down, so a finished job stays quiet. The sweep runs every 30 seconds, which is the alert's resolution, not its threshold.
 
 An agent alert fires when a remote agent stops reporting, whether its stream dropped or it never came back after a restart, and resolves on reconnection. Revoking or deleting an agent clears it instead of raising one.
+
+A host alert fires when the operating system of a monitored host reaches the end of its free security support: warning 30 days before, escalated in place to critical the day after the date, and resolved once the host reports a newer version. See [Host OS End-of-Support](host-os.md).
 
 Deleting a monitored entity (container, agent, heartbeat, endpoint, certificate) resolves its active alerts. On every startup, maintenant also resolves any active alert whose entity no longer exists, so alerts left behind by an earlier version cannot linger.
 
@@ -303,3 +306,4 @@ GET /api/v1/alerts/{id}
 - [Heartbeat Monitoring](heartbeats.md) — Deadline missed alerts
 - [Certificate Monitoring](certificates.md) — Expiry alerts
 - [Resource Metrics](resources.md) — Threshold alerts
+- [Host OS End-of-Support](host-os.md) — `host` / `os_eol` alerts

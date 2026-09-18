@@ -36,6 +36,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
@@ -107,6 +108,7 @@ type App struct {
 	agentStore     *store.AgentStore
 	agentSessions  *agentserver.Sessions
 	agentSrv       *agentserver.Server
+	eolSvc         *eol.Service
 	// shuttingDown suppresses agent-disconnect alerts during graceful shutdown,
 	// where every stream ends at once and would otherwise page for the whole fleet.
 	shuttingDown    atomic.Bool
@@ -424,6 +426,25 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// Agent session registry (depends on broker)
 	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
 
+	// --- Host operating system end of support ---
+	var eolFetcher *eol.Fetcher
+	if !cfg.DisableOSEOLRefresh {
+		eolFetcher = &eol.Fetcher{
+			Client:    &http.Client{Timeout: 15 * time.Second},
+			UserAgent: "maintenant/" + cfg.Version + " (+https://maintenant.dev)",
+		}
+	}
+	a.eolSvc, err = eol.New(eol.Deps{
+		Store:     a.agentStore,
+		Fetcher:   eolFetcher,
+		Emit:      a.emitAlert,
+		OnChanged: a.broadcastAgentUpdated,
+		Logger:    logger.With("component", "os-eol"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("os end-of-support service: %w", err)
+	}
+
 	// Agent gRPC server (Pro-gated at Start time).
 	a.agentSrv = agentserver.New(agentserver.Deps{
 		AgentStore:  a.agentStore,
@@ -439,6 +460,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 			Heartbeat:   a.heartbeatSvc,
 			Swarm:       a.swarmIngest,
 			Kubernetes:  a.k8sIngest,
+			HostOS:      a.eolSvc,
 			// Provision endpoint/cert monitors from a remote container's labels
 			// (the agent probes them itself; the server never dials them).
 			LabelSync: func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
@@ -641,6 +663,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		GRPCPublicURL:       cfg.MultiHost.GRPCPublicURL,
 		GRPCListen:          cfg.MultiHost.GRPCListen,
 		AgentStaleThreshold: time.Duration(cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second,
+		// Host operating system end of support
+		EOL: a.eolSvc,
 		// HTTP config
 		CORSOrigins:          cfg.CORSOrigins,
 		MaxBodySize:          cfg.MaxBodySize,
@@ -671,6 +695,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Agents:        a.agentStore,
 		Sessions:      a.agentSessions,
 		AgentLogs:     a.agentSessions,
+		EOL:           a.eolSvc,
 		// Security & supply-chain (read-only)
 		SecuritySvc: a.securitySvc,
 		Scorer:      a.scorer,
@@ -881,6 +906,8 @@ func (a *App) Start(ctx context.Context) error {
 	if a.downDetector != nil {
 		go a.startContainerDownCheck(ctx)
 	}
+
+	a.startOSEOL(ctx)
 
 	a.seedRestartAlertTracking(ctx)
 	go a.containerSvc.RunRestartRecoveryLoop(ctx)

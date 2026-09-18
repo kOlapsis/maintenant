@@ -108,6 +108,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"
@@ -350,6 +351,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
 ```
 
@@ -416,6 +418,7 @@ services:
       # ... your other settings
     volumes:
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
       # no docker.sock mount
     networks: [dockerapi, web]
@@ -441,6 +444,7 @@ The simpler setup mounts the socket directly:
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock:ro
   - /proc:/host/proc:ro
+  - /etc/os-release:/host/etc/os-release:ro
 ```
 
 This relies on maintenant *behaving* read-only (which it does) rather than *enforcing* it. The non-root user, `read_only: true` filesystem and `no-new-privileges` remain worthwhile defense-in-depth, but be clear about the trade-off: whoever holds the socket holds the host.

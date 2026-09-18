@@ -156,6 +156,7 @@ Pick the tab matching the host environment. Replace `grpcs://agents.example.com`
       --restart unless-stopped \
       -v /var/run/docker.sock:/var/run/docker.sock:ro \
       -v /proc:/host/proc:ro \
+      -v /etc/os-release:/host/etc/os-release:ro \
       -v maintenant-agent-data:/var/lib/maintenant \
       ghcr.io/kolapsis/maintenant:latest \
       --mode=agent \
@@ -173,6 +174,7 @@ Pick the tab matching the host environment. Replace `grpcs://agents.example.com`
         volumes:
           - /var/run/docker.sock:/var/run/docker.sock:ro
           - /proc:/host/proc:ro
+          - /etc/os-release:/host/etc/os-release:ro
           - maintenant-agent-data:/var/lib/maintenant
         command:
           - --mode=agent

@@ -348,3 +348,97 @@ func TestAgentStore_InsertGet(t *testing.T) {
 	assert.Equal(t, a.Hostname, got.Hostname)
 	assert.Equal(t, a.Status, got.Status)
 }
+
+func TestAgentStore_UpdateAgentOS(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+	ctx := context.Background()
+
+	require.NoError(t, store.Insert(ctx, enrollAgentRecord("os-agent-1")))
+
+	identity := agent.OSIdentity{
+		ID:         "debian",
+		VersionID:  "11",
+		PrettyName: "Debian GNU/Linux 11 (bullseye)",
+		Source:     "host_file",
+	}
+	reportedAt := time.Now().UTC().Truncate(time.Second)
+
+	changed, err := store.UpdateAgentOS(ctx, "os-agent-1", identity, reportedAt)
+	require.NoError(t, err)
+	assert.True(t, changed, "first identity is a change")
+
+	got, err := store.Get(ctx, "os-agent-1")
+	require.NoError(t, err)
+	assert.Equal(t, "debian", got.OSID)
+	assert.Equal(t, "11", got.OSVersionID)
+	assert.Equal(t, "Debian GNU/Linux 11 (bullseye)", got.OSPrettyName)
+	assert.Equal(t, "host_file", got.OSSource)
+	assert.Empty(t, got.OSUnavailableReason)
+	require.NotNil(t, got.OSReportedAt)
+	assert.Equal(t, reportedAt.Unix(), got.OSReportedAt.Unix())
+
+	changed, err = store.UpdateAgentOS(ctx, "os-agent-1", identity, reportedAt.Add(time.Hour))
+	require.NoError(t, err)
+	assert.False(t, changed, "the same identity is not a change")
+
+	changed, err = store.UpdateAgentOS(ctx, "os-agent-1", agent.OSIdentity{
+		UnavailableReason: "mount_missing",
+	}, reportedAt.Add(2*time.Hour))
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	got, err = store.Get(ctx, "os-agent-1")
+	require.NoError(t, err)
+	assert.Empty(t, got.OSID)
+	assert.Empty(t, got.OSSource)
+	assert.Equal(t, "mount_missing", got.OSUnavailableReason)
+}
+
+func TestAgentStore_UpdateAgentOS_Sentinel(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+	ctx := context.Background()
+
+	changed, err := store.UpdateAgentOS(ctx, uid.LocalAgent, agent.OSIdentity{
+		ID:         "ubuntu",
+		VersionID:  "22.04",
+		PrettyName: "Ubuntu 22.04.4 LTS",
+		Source:     "host_file",
+	}, time.Now().UTC())
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	got, err := store.Get(ctx, uid.LocalAgent)
+	require.NoError(t, err)
+	assert.Equal(t, "ubuntu", got.OSID)
+}
+
+func TestAgentStore_UpdateAgentOS_UnknownAgent(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+
+	_, err := store.UpdateAgentOS(context.Background(), "nobody", agent.OSIdentity{}, time.Now().UTC())
+	assert.ErrorIs(t, err, agent.ErrAgentNotFound)
+}
+
+func TestAgentStore_ListAgentsForEOL(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+	ctx := context.Background()
+
+	require.NoError(t, store.Insert(ctx, enrollAgentRecord("eol-active")))
+	require.NoError(t, store.Insert(ctx, enrollAgentRecord("eol-revoked")))
+	require.NoError(t, store.Revoke(ctx, "eol-revoked", "admin"))
+
+	agents, err := store.ListAgentsForEOL(ctx)
+	require.NoError(t, err)
+
+	ids := make([]string, 0, len(agents))
+	for _, a := range agents {
+		ids = append(ids, a.AgentID)
+	}
+	assert.Contains(t, ids, uid.LocalAgent, "the sentinel has a host like any other")
+	assert.Contains(t, ids, "eol-active")
+	assert.NotContains(t, ids, "eol-revoked")
+}

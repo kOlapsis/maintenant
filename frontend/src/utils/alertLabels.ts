@@ -17,9 +17,17 @@ const CERTIFICATE_LABELS: Record<string, string> = {
   hostname_mismatch: 'Hostname mismatch',
 }
 
+const HOST_LABELS: Record<string, string> = {
+  os_eol: 'OS end of support',
+}
+
 export function humanizeAlertType(source: string, alertType: string): string {
   if (source === 'certificate') {
     const label = CERTIFICATE_LABELS[alertType]
+    if (label) return label
+  }
+  if (source === 'host') {
+    const label = HOST_LABELS[alertType]
     if (label) return label
   }
   return alertType

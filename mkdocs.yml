@@ -79,6 +79,7 @@ nav:
       - TLS Certificate Monitoring: features/certificates.md
       - Resource Metrics: features/resources.md
       - Update Intelligence: features/updates.md
+      - Host OS End-of-Support: features/host-os.md
       - Network Security Insights: features/security.md
       - Alert Engine: features/alerts.md
       - Alert Escalation: features/alert-escalation.md

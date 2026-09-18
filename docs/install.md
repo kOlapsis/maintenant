@@ -95,6 +95,7 @@ Every `MAINTENANT_*` environment variable has a `--flagName` CLI equivalent. Pre
 | `--updateInterval` | `MAINTENANT_UPDATE_INTERVAL` | duration | `24h` |
 | `--securityScoreThreshold` | `MAINTENANT_SECURITY_SCORE_THRESHOLD` | int | _(unset)_ |
 | `--disableTelemetry` | `MAINTENANT_DISABLE_TELEMETRY` | bool | `false` |
+| `--disableOsEolRefresh` | `MAINTENANT_DISABLE_OS_EOL_REFRESH` | bool | `false` |
 | `--allowPrivateWebhooks` | `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` | bool | `false` |
 | `--licenseKey` | `MAINTENANT_LICENSE_KEY` | string | _(unset)_ |
 | `--smtpHost` | `MAINTENANT_SMTP_HOST` | string | _(unset)_ |
@@ -117,6 +118,7 @@ Every `MAINTENANT_*` environment variable has a `--flagName` CLI equivalent. Pre
 | `--server` | `MAINTENANT_SERVER` | string | _(unset)_ |
 | `--enrollment-token` | `MAINTENANT_ENROLLMENT_TOKEN` | string | _(unset)_ |
 | `--label` | `MAINTENANT_LABEL` | string | _(unset)_ |
+| `--nodeName` | `MAINTENANT_NODE_NAME` | string | _(unset)_ |
 | `--grpc-listen` | `MAINTENANT_GRPC_LISTEN` | string | `127.0.0.1:8443` |
 | `--grpc-url` | `MAINTENANT_GRPC_URL` | string | _(unset)_ |
 | `--grpc-tls-cert` | `MAINTENANT_GRPC_TLS_CERT` | string | _(unset)_ |

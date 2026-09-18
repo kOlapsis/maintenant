@@ -24,6 +24,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/license"
@@ -141,6 +142,9 @@ type HandlerDeps struct {
 	GRPCPublicURL       string
 	GRPCListen          string
 	AgentStaleThreshold time.Duration
+
+	// Host operating system end of support
+	EOL *eol.Service
 
 	// HTTP config
 	CORSOrigins          string // comma-separated origins or "*"
@@ -596,8 +600,10 @@ func (r *Router) registerUpdateRoutes(d HandlerDeps) {
 	}
 
 	uh := NewUpdateHandler(d.UpdateSvc, d.UpdateStore, d.ContainerAdapter)
+	uh.SetHostOS(d.EOL, d.AgentSessions, agentStaleThreshold(d))
 	r.mux.HandleFunc("GET /api/v1/updates", uh.HandleListUpdates)
 	r.mux.HandleFunc("GET /api/v1/updates/summary", uh.HandleGetUpdateSummary)
+	r.mux.HandleFunc("GET /api/v1/updates/hosts", uh.HandleListHostOS)
 	r.mux.HandleFunc("GET /api/v1/updates/dry-run", uh.HandleGetDryRun)
 	r.mux.HandleFunc("GET /api/v1/updates/exclusions", uh.HandleListExclusions)
 	r.mux.HandleFunc("POST /api/v1/updates/exclusions", uh.HandleCreateExclusion)
@@ -675,6 +681,9 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 	}
 	if d.AgentSessions != nil {
 		kh.SetAgentSessions(d.AgentSessions)
+	}
+	if d.EOL != nil {
+		kh.SetEOLTables(d.EOL)
 	}
 
 	// CE endpoints
@@ -924,15 +933,21 @@ func (r *Router) computeQuotas(ctx context.Context, d HandlerDeps) map[string]in
 	return quotas
 }
 
+func agentStaleThreshold(d HandlerDeps) time.Duration {
+	if d.AgentStaleThreshold == 0 {
+		return 60 * time.Second
+	}
+	return d.AgentStaleThreshold
+}
+
 func (r *Router) registerAgentRoutes(d HandlerDeps) {
 	if d.AgentStore == nil {
 		return
 	}
-	staleThreshold := d.AgentStaleThreshold
-	if staleThreshold == 0 {
-		staleThreshold = 60 * time.Second
+	ah := NewAgentHandler(d.AgentStore, d.AgentSessions, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen, agentStaleThreshold(d), d.TrustedProxies)
+	if d.EOL != nil {
+		ah.SetEOLTables(d.EOL)
 	}
-	ah := NewAgentHandler(d.AgentStore, d.AgentSessions, d.Broker, d.Logger, d.GRPCPublicURL, d.GRPCListen, staleThreshold, d.TrustedProxies)
 
 	// Enrollment token endpoints (order matters: specific paths before wildcards)
 	r.mux.HandleFunc("GET /api/v1/agents/metrics", requireCapability(extension.CapMultihost, ah.HandleGetAgentMetrics))

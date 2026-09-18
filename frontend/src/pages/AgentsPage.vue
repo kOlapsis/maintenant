@@ -21,6 +21,9 @@ import FeatureHint from '@/components/ui/FeatureHint.vue'
 import EnrollmentTokenModal from '@/components/EnrollmentTokenModal.vue'
 import HostLimitDialog from '@/components/HostLimitDialog.vue'
 import AgentDetailPanel from '@/components/AgentDetailPanel.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import UiTooltip from '@/components/ui/UiTooltip.vue'
+import { osNeedsAttention, osSupportHint, osSupportLabel, osSupportSeverity } from '@/utils/osSupport'
 import { docUrl } from '@/utils/docs'
 import { MonitorDot, Server, Boxes, ShieldCheck } from 'lucide-vue-next'
 import type { Agent, EnrollmentTokenCreated } from '@/services/agentApi'
@@ -206,7 +209,15 @@ function runtimeLabel(rt: string): string {
                 <td class="px-4 py-3">
                   <p class="font-medium text-mnt-primary">{{ agent.label || agent.hostname }}</p>
                   <p v-if="agent.label && agent.label !== agent.hostname" class="text-xs text-mnt-muted">{{ agent.hostname }}</p>
-                  <p class="text-xs text-mnt-muted font-mono">{{ agent.os_arch }} · v{{ agent.agent_version }}</p>
+                  <p class="text-xs text-mnt-muted font-mono">{{ agent.os?.pretty_name || 'OS unknown' }} · {{ agent.os_arch }} · v{{ agent.agent_version }}</p>
+                  <UiTooltip v-if="agent.os && osNeedsAttention(agent.os.support.state)" :text="osSupportHint(agent.os)">
+                    <StatusBadge
+                      :severity="osSupportSeverity(agent.os.support.state)"
+                      :label="osSupportLabel(agent.os.support.state)"
+                      size="sm"
+                      show-label
+                    />
+                  </UiTooltip>
                 </td>
                 <td class="px-4 py-3">
                   <span

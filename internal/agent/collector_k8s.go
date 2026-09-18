@@ -14,6 +14,7 @@ package agent
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/hoststat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 )
 
@@ -31,11 +33,50 @@ const kubernetesTopologyInterval = 30 * time.Second
 // samples. The host samples report CPU/mem/disk of the node the agent pod runs
 // on, so the dashboard and cluster overview can show its gauges like any other
 // host. Blocks until ctx is cancelled or a push fails.
-func collectKubernetesRuntime(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, spool *Spool, logger *slog.Logger) error {
+func collectKubernetesRuntime(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, nodeName string, spool *Spool, logger *slog.Logger) error {
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return streamKubernetesTopology(gCtx, id, src, spool, logger) })
 	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
+	g.Go(func() error {
+		read := func() hoststat.OSRelease { return nodeOSRelease(gCtx, src, nodeName) }
+		return streamHostOS(gCtx, id, read, spool, logger)
+	})
 	return g.Wait()
+}
+
+// nodeOSRelease derives the operating system identity of the node the agent runs
+// on from the system image of that node. Without an explicit node name, the node
+// is the one hosting the pod whose name is this host's name.
+func nodeOSRelease(ctx context.Context, src kubernetes.SnapshotSource, nodeName string) hoststat.OSRelease {
+	unknown := hoststat.OSRelease{Source: hoststat.OSSourceKubernetesNode, UnavailableReason: hoststat.OSReasonNodeNotFound}
+
+	snap, err := kubernetes.SnapshotFromRuntime(ctx, src)
+	if err != nil {
+		return unknown
+	}
+
+	if nodeName == "" {
+		host, err := os.Hostname()
+		if err != nil {
+			return unknown
+		}
+		for i := range snap.Pods {
+			if snap.Pods[i].Name == host {
+				nodeName = snap.Pods[i].NodeName
+				break
+			}
+		}
+	}
+	if nodeName == "" {
+		return unknown
+	}
+
+	for i := range snap.Nodes {
+		if snap.Nodes[i].Name == nodeName {
+			return hoststat.ParseOSImage(snap.Nodes[i].OSImage)
+		}
+	}
+	return unknown
 }
 
 // streamKubernetesTopology pushes a periodic full Kubernetes topology snapshot

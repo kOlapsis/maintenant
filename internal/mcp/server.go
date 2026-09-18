@@ -21,6 +21,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/resource"
@@ -97,6 +98,7 @@ type Services struct {
 	Agents        AgentLister
 	Sessions      SessionChecker
 	AgentLogs     AgentLogFetcher
+	EOL           *eol.Service
 
 	// Security & supply-chain (read-only MCP surface).
 	SecuritySvc *security.Service

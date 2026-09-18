@@ -210,6 +210,55 @@ func (EndpointStatus) EnumDescriptor() ([]byte, []int) {
 	return file_proto_ingest_proto_rawDescGZIP(), []int{2}
 }
 
+type HostOSSource int32
+
+const (
+	HostOSSource_HOST_OS_SOURCE_UNSPECIFIED     HostOSSource = 0
+	HostOSSource_HOST_OS_SOURCE_HOST_FILE       HostOSSource = 1
+	HostOSSource_HOST_OS_SOURCE_KUBERNETES_NODE HostOSSource = 2
+)
+
+// Enum value maps for HostOSSource.
+var (
+	HostOSSource_name = map[int32]string{
+		0: "HOST_OS_SOURCE_UNSPECIFIED",
+		1: "HOST_OS_SOURCE_HOST_FILE",
+		2: "HOST_OS_SOURCE_KUBERNETES_NODE",
+	}
+	HostOSSource_value = map[string]int32{
+		"HOST_OS_SOURCE_UNSPECIFIED":     0,
+		"HOST_OS_SOURCE_HOST_FILE":       1,
+		"HOST_OS_SOURCE_KUBERNETES_NODE": 2,
+	}
+)
+
+func (x HostOSSource) Enum() *HostOSSource {
+	p := new(HostOSSource)
+	*p = x
+	return p
+}
+
+func (x HostOSSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (HostOSSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_ingest_proto_enumTypes[3].Descriptor()
+}
+
+func (HostOSSource) Type() protoreflect.EnumType {
+	return &file_proto_ingest_proto_enumTypes[3]
+}
+
+func (x HostOSSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use HostOSSource.Descriptor instead.
+func (HostOSSource) EnumDescriptor() ([]byte, []int) {
+	return file_proto_ingest_proto_rawDescGZIP(), []int{3}
+}
+
 type RegisterRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	AgentId         string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                         // UUID v4 (lowercase, no braces) — canonical key
@@ -1312,6 +1361,7 @@ type AgentEvent struct {
 	//	*AgentEvent_Swarm
 	//	*AgentEvent_Kubernetes
 	//	*AgentEvent_Inventory
+	//	*AgentEvent_HostOs
 	Body          isAgentEvent_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1461,6 +1511,15 @@ func (x *AgentEvent) GetInventory() *ContainerInventory {
 	return nil
 }
 
+func (x *AgentEvent) GetHostOs() *HostOSMsg {
+	if x != nil {
+		if x, ok := x.Body.(*AgentEvent_HostOs); ok {
+			return x.HostOs
+		}
+	}
+	return nil
+}
+
 type isAgentEvent_Body interface {
 	isAgentEvent_Body()
 }
@@ -1497,6 +1556,10 @@ type AgentEvent_Inventory struct {
 	Inventory *ContainerInventory `protobuf:"bytes,17,opt,name=inventory,proto3,oneof"`
 }
 
+type AgentEvent_HostOs struct {
+	HostOs *HostOSMsg `protobuf:"bytes,18,opt,name=host_os,json=hostOs,proto3,oneof"`
+}
+
 func (*AgentEvent_Container) isAgentEvent_Body() {}
 
 func (*AgentEvent_Endpoint) isAgentEvent_Body() {}
@@ -1512,6 +1575,8 @@ func (*AgentEvent_Swarm) isAgentEvent_Body() {}
 func (*AgentEvent_Kubernetes) isAgentEvent_Body() {}
 
 func (*AgentEvent_Inventory) isAgentEvent_Body() {}
+
+func (*AgentEvent_HostOs) isAgentEvent_Body() {}
 
 type ContainerEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1786,6 +1851,84 @@ func (x *EndpointEvent) GetErrorMessage() string {
 	return ""
 }
 
+// The host's operating system identity, as current state rather than an event:
+// the spool keeps the last one and resends it on every new stream.
+type HostOSMsg struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Id                string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                   // os-release ID=, or the family derived from a Kubernetes osImage
+	VersionId         string                 `protobuf:"bytes,2,opt,name=version_id,json=versionId,proto3" json:"version_id,omitempty"`    // os-release VERSION_ID=, raw
+	PrettyName        string                 `protobuf:"bytes,3,opt,name=pretty_name,json=prettyName,proto3" json:"pretty_name,omitempty"` // os-release PRETTY_NAME=, or the raw osImage
+	Source            HostOSSource           `protobuf:"varint,4,opt,name=source,proto3,enum=maintenant.agent.v1.HostOSSource" json:"source,omitempty"`
+	UnavailableReason string                 `protobuf:"bytes,5,opt,name=unavailable_reason,json=unavailableReason,proto3" json:"unavailable_reason,omitempty"` // "mount_missing" | "file_unreadable" | "node_not_found"; empty when the identity is present
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *HostOSMsg) Reset() {
+	*x = HostOSMsg{}
+	mi := &file_proto_ingest_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostOSMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostOSMsg) ProtoMessage() {}
+
+func (x *HostOSMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ingest_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostOSMsg.ProtoReflect.Descriptor instead.
+func (*HostOSMsg) Descriptor() ([]byte, []int) {
+	return file_proto_ingest_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *HostOSMsg) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *HostOSMsg) GetVersionId() string {
+	if x != nil {
+		return x.VersionId
+	}
+	return ""
+}
+
+func (x *HostOSMsg) GetPrettyName() string {
+	if x != nil {
+		return x.PrettyName
+	}
+	return ""
+}
+
+func (x *HostOSMsg) GetSource() HostOSSource {
+	if x != nil {
+		return x.Source
+	}
+	return HostOSSource_HOST_OS_SOURCE_UNSPECIFIED
+}
+
+func (x *HostOSMsg) GetUnavailableReason() string {
+	if x != nil {
+		return x.UnavailableReason
+	}
+	return ""
+}
+
 type HeartbeatEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	HeartbeatToken string                 `protobuf:"bytes,1,opt,name=heartbeat_token,json=heartbeatToken,proto3" json:"heartbeat_token,omitempty"` // matches existing heartbeat token in DB
@@ -1796,7 +1939,7 @@ type HeartbeatEvent struct {
 
 func (x *HeartbeatEvent) Reset() {
 	*x = HeartbeatEvent{}
-	mi := &file_proto_ingest_proto_msgTypes[19]
+	mi := &file_proto_ingest_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1808,7 +1951,7 @@ func (x *HeartbeatEvent) String() string {
 func (*HeartbeatEvent) ProtoMessage() {}
 
 func (x *HeartbeatEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[19]
+	mi := &file_proto_ingest_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1821,7 +1964,7 @@ func (x *HeartbeatEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatEvent.ProtoReflect.Descriptor instead.
 func (*HeartbeatEvent) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{19}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *HeartbeatEvent) GetHeartbeatToken() string {
@@ -1857,7 +2000,7 @@ type ResourceSample struct {
 
 func (x *ResourceSample) Reset() {
 	*x = ResourceSample{}
-	mi := &file_proto_ingest_proto_msgTypes[20]
+	mi := &file_proto_ingest_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1869,7 +2012,7 @@ func (x *ResourceSample) String() string {
 func (*ResourceSample) ProtoMessage() {}
 
 func (x *ResourceSample) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[20]
+	mi := &file_proto_ingest_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1882,7 +2025,7 @@ func (x *ResourceSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceSample.ProtoReflect.Descriptor instead.
 func (*ResourceSample) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{20}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ResourceSample) GetContainerId() string {
@@ -1971,7 +2114,7 @@ type CertificateInfo struct {
 
 func (x *CertificateInfo) Reset() {
 	*x = CertificateInfo{}
-	mi := &file_proto_ingest_proto_msgTypes[21]
+	mi := &file_proto_ingest_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1983,7 +2126,7 @@ func (x *CertificateInfo) String() string {
 func (*CertificateInfo) ProtoMessage() {}
 
 func (x *CertificateInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[21]
+	mi := &file_proto_ingest_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1996,7 +2139,7 @@ func (x *CertificateInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertificateInfo.ProtoReflect.Descriptor instead.
 func (*CertificateInfo) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{21}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *CertificateInfo) GetHost() string {
@@ -2066,7 +2209,7 @@ type SwarmTopology struct {
 
 func (x *SwarmTopology) Reset() {
 	*x = SwarmTopology{}
-	mi := &file_proto_ingest_proto_msgTypes[22]
+	mi := &file_proto_ingest_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2078,7 +2221,7 @@ func (x *SwarmTopology) String() string {
 func (*SwarmTopology) ProtoMessage() {}
 
 func (x *SwarmTopology) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[22]
+	mi := &file_proto_ingest_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2091,7 +2234,7 @@ func (x *SwarmTopology) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwarmTopology.ProtoReflect.Descriptor instead.
 func (*SwarmTopology) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{22}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SwarmTopology) GetServices() []*SwarmServiceMsg {
@@ -2132,7 +2275,7 @@ type SwarmServiceMsg struct {
 
 func (x *SwarmServiceMsg) Reset() {
 	*x = SwarmServiceMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[23]
+	mi := &file_proto_ingest_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2144,7 +2287,7 @@ func (x *SwarmServiceMsg) String() string {
 func (*SwarmServiceMsg) ProtoMessage() {}
 
 func (x *SwarmServiceMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[23]
+	mi := &file_proto_ingest_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2157,7 +2300,7 @@ func (x *SwarmServiceMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwarmServiceMsg.ProtoReflect.Descriptor instead.
 func (*SwarmServiceMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{23}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SwarmServiceMsg) GetServiceId() string {
@@ -2243,7 +2386,7 @@ type SwarmTaskMsg struct {
 
 func (x *SwarmTaskMsg) Reset() {
 	*x = SwarmTaskMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[24]
+	mi := &file_proto_ingest_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2255,7 +2398,7 @@ func (x *SwarmTaskMsg) String() string {
 func (*SwarmTaskMsg) ProtoMessage() {}
 
 func (x *SwarmTaskMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[24]
+	mi := &file_proto_ingest_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2268,7 +2411,7 @@ func (x *SwarmTaskMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwarmTaskMsg.ProtoReflect.Descriptor instead.
 func (*SwarmTaskMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{24}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SwarmTaskMsg) GetTaskId() string {
@@ -2371,7 +2514,7 @@ type SwarmNodeMsg struct {
 
 func (x *SwarmNodeMsg) Reset() {
 	*x = SwarmNodeMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[25]
+	mi := &file_proto_ingest_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2383,7 +2526,7 @@ func (x *SwarmNodeMsg) String() string {
 func (*SwarmNodeMsg) ProtoMessage() {}
 
 func (x *SwarmNodeMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[25]
+	mi := &file_proto_ingest_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2396,7 +2539,7 @@ func (x *SwarmNodeMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwarmNodeMsg.ProtoReflect.Descriptor instead.
 func (*SwarmNodeMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{25}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SwarmNodeMsg) GetNodeId() string {
@@ -2468,7 +2611,7 @@ type KubernetesTopology struct {
 
 func (x *KubernetesTopology) Reset() {
 	*x = KubernetesTopology{}
-	mi := &file_proto_ingest_proto_msgTypes[26]
+	mi := &file_proto_ingest_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2480,7 +2623,7 @@ func (x *KubernetesTopology) String() string {
 func (*KubernetesTopology) ProtoMessage() {}
 
 func (x *KubernetesTopology) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[26]
+	mi := &file_proto_ingest_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2493,7 +2636,7 @@ func (x *KubernetesTopology) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KubernetesTopology.ProtoReflect.Descriptor instead.
 func (*KubernetesTopology) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{26}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *KubernetesTopology) GetNamespaces() []string {
@@ -2549,7 +2692,7 @@ type K8SEventMsg struct {
 
 func (x *K8SEventMsg) Reset() {
 	*x = K8SEventMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[27]
+	mi := &file_proto_ingest_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2561,7 +2704,7 @@ func (x *K8SEventMsg) String() string {
 func (*K8SEventMsg) ProtoMessage() {}
 
 func (x *K8SEventMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[27]
+	mi := &file_proto_ingest_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2574,7 +2717,7 @@ func (x *K8SEventMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use K8SEventMsg.ProtoReflect.Descriptor instead.
 func (*K8SEventMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{27}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *K8SEventMsg) GetType() string {
@@ -2664,7 +2807,7 @@ type K8SWorkloadMsg struct {
 
 func (x *K8SWorkloadMsg) Reset() {
 	*x = K8SWorkloadMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[28]
+	mi := &file_proto_ingest_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2676,7 +2819,7 @@ func (x *K8SWorkloadMsg) String() string {
 func (*K8SWorkloadMsg) ProtoMessage() {}
 
 func (x *K8SWorkloadMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[28]
+	mi := &file_proto_ingest_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2689,7 +2832,7 @@ func (x *K8SWorkloadMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use K8SWorkloadMsg.ProtoReflect.Descriptor instead.
 func (*K8SWorkloadMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{28}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *K8SWorkloadMsg) GetId() string {
@@ -2774,7 +2917,7 @@ type K8SPodMsg struct {
 
 func (x *K8SPodMsg) Reset() {
 	*x = K8SPodMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[29]
+	mi := &file_proto_ingest_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2786,7 +2929,7 @@ func (x *K8SPodMsg) String() string {
 func (*K8SPodMsg) ProtoMessage() {}
 
 func (x *K8SPodMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[29]
+	mi := &file_proto_ingest_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2799,7 +2942,7 @@ func (x *K8SPodMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use K8SPodMsg.ProtoReflect.Descriptor instead.
 func (*K8SPodMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{29}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *K8SPodMsg) GetName() string {
@@ -2893,7 +3036,7 @@ type K8SContainerStatusMsg struct {
 
 func (x *K8SContainerStatusMsg) Reset() {
 	*x = K8SContainerStatusMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[30]
+	mi := &file_proto_ingest_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2905,7 +3048,7 @@ func (x *K8SContainerStatusMsg) String() string {
 func (*K8SContainerStatusMsg) ProtoMessage() {}
 
 func (x *K8SContainerStatusMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[30]
+	mi := &file_proto_ingest_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2918,7 +3061,7 @@ func (x *K8SContainerStatusMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use K8SContainerStatusMsg.ProtoReflect.Descriptor instead.
 func (*K8SContainerStatusMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{30}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *K8SContainerStatusMsg) GetName() string {
@@ -2985,7 +3128,7 @@ type K8SNodeMsg struct {
 
 func (x *K8SNodeMsg) Reset() {
 	*x = K8SNodeMsg{}
-	mi := &file_proto_ingest_proto_msgTypes[31]
+	mi := &file_proto_ingest_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2997,7 +3140,7 @@ func (x *K8SNodeMsg) String() string {
 func (*K8SNodeMsg) ProtoMessage() {}
 
 func (x *K8SNodeMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ingest_proto_msgTypes[31]
+	mi := &file_proto_ingest_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3010,7 +3153,7 @@ func (x *K8SNodeMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use K8SNodeMsg.ProtoReflect.Descriptor instead.
 func (*K8SNodeMsg) Descriptor() ([]byte, []int) {
-	return file_proto_ingest_proto_rawDescGZIP(), []int{31}
+	return file_proto_ingest_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *K8SNodeMsg) GetName() string {
@@ -3192,7 +3335,7 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\vSpoolStatus\x12\x16\n" +
 	"\x06queued\x18\x01 \x01(\x04R\x06queued\x12\x1a\n" +
 	"\bdraining\x18\x02 \x01(\bR\bdraining\x122\n" +
-	"\x15dropped_since_connect\x18\x03 \x01(\x04R\x13droppedSinceConnect\"\xde\x05\n" +
+	"\x15dropped_since_connect\x18\x03 \x01(\x04R\x13droppedSinceConnect\"\x99\x06\n" +
 	"\n" +
 	"AgentEvent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x19\n" +
@@ -3211,7 +3354,8 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\n" +
 	"kubernetes\x18\x10 \x01(\v2'.maintenant.agent.v1.KubernetesTopologyH\x00R\n" +
 	"kubernetes\x12G\n" +
-	"\tinventory\x18\x11 \x01(\v2'.maintenant.agent.v1.ContainerInventoryH\x00R\tinventoryB\x06\n" +
+	"\tinventory\x18\x11 \x01(\v2'.maintenant.agent.v1.ContainerInventoryH\x00R\tinventory\x129\n" +
+	"\ahost_os\x18\x12 \x01(\v2\x1e.maintenant.agent.v1.HostOSMsgH\x00R\x06hostOsB\x06\n" +
 	"\x04body\"\x8e\x04\n" +
 	"\x0eContainerEvent\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
@@ -3244,7 +3388,15 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"statusCode\x12\x1d\n" +
 	"\n" +
 	"latency_ms\x18\x05 \x01(\x04R\tlatencyMs\x12#\n" +
-	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"V\n" +
+	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"\xc5\x01\n" +
+	"\tHostOSMsg\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"version_id\x18\x02 \x01(\tR\tversionId\x12\x1f\n" +
+	"\vpretty_name\x18\x03 \x01(\tR\n" +
+	"prettyName\x129\n" +
+	"\x06source\x18\x04 \x01(\x0e2!.maintenant.agent.v1.HostOSSourceR\x06source\x12-\n" +
+	"\x12unavailable_reason\x18\x05 \x01(\tR\x11unavailableReason\"V\n" +
 	"\x0eHeartbeatEvent\x12'\n" +
 	"\x0fheartbeat_token\x18\x01 \x01(\tR\x0eheartbeatToken\x12\x1b\n" +
 	"\tsource_ip\x18\x02 \x01(\tR\bsourceIp\"\xaf\x03\n" +
@@ -3408,7 +3560,11 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\x1bENDPOINT_STATUS_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12ENDPOINT_STATUS_UP\x10\x01\x12\x18\n" +
 	"\x14ENDPOINT_STATUS_DOWN\x10\x02\x12\x1c\n" +
-	"\x18ENDPOINT_STATUS_DEGRADED\x10\x032\xba\x01\n" +
+	"\x18ENDPOINT_STATUS_DEGRADED\x10\x03*p\n" +
+	"\fHostOSSource\x12\x1e\n" +
+	"\x1aHOST_OS_SOURCE_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18HOST_OS_SOURCE_HOST_FILE\x10\x01\x12\"\n" +
+	"\x1eHOST_OS_SOURCE_KUBERNETES_NODE\x10\x022\xba\x01\n" +
 	"\x06Ingest\x12\\\n" +
 	"\rRegisterAgent\x12$.maintenant.agent.v1.RegisterRequest\x1a%.maintenant.agent.v1.RegisterResponse\x12R\n" +
 	"\x04Push\x12\".maintenant.agent.v1.ClientMessage\x1a\".maintenant.agent.v1.ServerMessage(\x010\x01B9Z7github.com/kolapsis/maintenant/internal/agentpb;agentpbb\x06proto3"
@@ -3425,105 +3581,109 @@ func file_proto_ingest_proto_rawDescGZIP() []byte {
 	return file_proto_ingest_proto_rawDescData
 }
 
-var file_proto_ingest_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_ingest_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_proto_ingest_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_proto_ingest_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_proto_ingest_proto_goTypes = []any{
 	(Runtime)(0),                  // 0: maintenant.agent.v1.Runtime
 	(ContainerState)(0),           // 1: maintenant.agent.v1.ContainerState
 	(EndpointStatus)(0),           // 2: maintenant.agent.v1.EndpointStatus
-	(*RegisterRequest)(nil),       // 3: maintenant.agent.v1.RegisterRequest
-	(*RegisterResponse)(nil),      // 4: maintenant.agent.v1.RegisterResponse
-	(*AgentConfig)(nil),           // 5: maintenant.agent.v1.AgentConfig
-	(*ClientMessage)(nil),         // 6: maintenant.agent.v1.ClientMessage
-	(*ServerMessage)(nil),         // 7: maintenant.agent.v1.ServerMessage
-	(*AgentCommand)(nil),          // 8: maintenant.agent.v1.AgentCommand
-	(*LogsRequest)(nil),           // 9: maintenant.agent.v1.LogsRequest
-	(*CancelRequest)(nil),         // 10: maintenant.agent.v1.CancelRequest
-	(*CommandResult)(nil),         // 11: maintenant.agent.v1.CommandResult
-	(*LogsChunk)(nil),             // 12: maintenant.agent.v1.LogsChunk
-	(*AuthChallenge)(nil),         // 13: maintenant.agent.v1.AuthChallenge
-	(*AuthResponse)(nil),          // 14: maintenant.agent.v1.AuthResponse
-	(*EventAck)(nil),              // 15: maintenant.agent.v1.EventAck
-	(*StreamError)(nil),           // 16: maintenant.agent.v1.StreamError
-	(*SpoolStatus)(nil),           // 17: maintenant.agent.v1.SpoolStatus
-	(*AgentEvent)(nil),            // 18: maintenant.agent.v1.AgentEvent
-	(*ContainerEvent)(nil),        // 19: maintenant.agent.v1.ContainerEvent
-	(*ContainerInventory)(nil),    // 20: maintenant.agent.v1.ContainerInventory
-	(*EndpointEvent)(nil),         // 21: maintenant.agent.v1.EndpointEvent
-	(*HeartbeatEvent)(nil),        // 22: maintenant.agent.v1.HeartbeatEvent
-	(*ResourceSample)(nil),        // 23: maintenant.agent.v1.ResourceSample
-	(*CertificateInfo)(nil),       // 24: maintenant.agent.v1.CertificateInfo
-	(*SwarmTopology)(nil),         // 25: maintenant.agent.v1.SwarmTopology
-	(*SwarmServiceMsg)(nil),       // 26: maintenant.agent.v1.SwarmServiceMsg
-	(*SwarmTaskMsg)(nil),          // 27: maintenant.agent.v1.SwarmTaskMsg
-	(*SwarmNodeMsg)(nil),          // 28: maintenant.agent.v1.SwarmNodeMsg
-	(*KubernetesTopology)(nil),    // 29: maintenant.agent.v1.KubernetesTopology
-	(*K8SEventMsg)(nil),           // 30: maintenant.agent.v1.K8sEventMsg
-	(*K8SWorkloadMsg)(nil),        // 31: maintenant.agent.v1.K8sWorkloadMsg
-	(*K8SPodMsg)(nil),             // 32: maintenant.agent.v1.K8sPodMsg
-	(*K8SContainerStatusMsg)(nil), // 33: maintenant.agent.v1.K8sContainerStatusMsg
-	(*K8SNodeMsg)(nil),            // 34: maintenant.agent.v1.K8sNodeMsg
-	nil,                           // 35: maintenant.agent.v1.ContainerEvent.LabelsEntry
-	nil,                           // 36: maintenant.agent.v1.SwarmServiceMsg.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 37: google.protobuf.Timestamp
+	(HostOSSource)(0),             // 3: maintenant.agent.v1.HostOSSource
+	(*RegisterRequest)(nil),       // 4: maintenant.agent.v1.RegisterRequest
+	(*RegisterResponse)(nil),      // 5: maintenant.agent.v1.RegisterResponse
+	(*AgentConfig)(nil),           // 6: maintenant.agent.v1.AgentConfig
+	(*ClientMessage)(nil),         // 7: maintenant.agent.v1.ClientMessage
+	(*ServerMessage)(nil),         // 8: maintenant.agent.v1.ServerMessage
+	(*AgentCommand)(nil),          // 9: maintenant.agent.v1.AgentCommand
+	(*LogsRequest)(nil),           // 10: maintenant.agent.v1.LogsRequest
+	(*CancelRequest)(nil),         // 11: maintenant.agent.v1.CancelRequest
+	(*CommandResult)(nil),         // 12: maintenant.agent.v1.CommandResult
+	(*LogsChunk)(nil),             // 13: maintenant.agent.v1.LogsChunk
+	(*AuthChallenge)(nil),         // 14: maintenant.agent.v1.AuthChallenge
+	(*AuthResponse)(nil),          // 15: maintenant.agent.v1.AuthResponse
+	(*EventAck)(nil),              // 16: maintenant.agent.v1.EventAck
+	(*StreamError)(nil),           // 17: maintenant.agent.v1.StreamError
+	(*SpoolStatus)(nil),           // 18: maintenant.agent.v1.SpoolStatus
+	(*AgentEvent)(nil),            // 19: maintenant.agent.v1.AgentEvent
+	(*ContainerEvent)(nil),        // 20: maintenant.agent.v1.ContainerEvent
+	(*ContainerInventory)(nil),    // 21: maintenant.agent.v1.ContainerInventory
+	(*EndpointEvent)(nil),         // 22: maintenant.agent.v1.EndpointEvent
+	(*HostOSMsg)(nil),             // 23: maintenant.agent.v1.HostOSMsg
+	(*HeartbeatEvent)(nil),        // 24: maintenant.agent.v1.HeartbeatEvent
+	(*ResourceSample)(nil),        // 25: maintenant.agent.v1.ResourceSample
+	(*CertificateInfo)(nil),       // 26: maintenant.agent.v1.CertificateInfo
+	(*SwarmTopology)(nil),         // 27: maintenant.agent.v1.SwarmTopology
+	(*SwarmServiceMsg)(nil),       // 28: maintenant.agent.v1.SwarmServiceMsg
+	(*SwarmTaskMsg)(nil),          // 29: maintenant.agent.v1.SwarmTaskMsg
+	(*SwarmNodeMsg)(nil),          // 30: maintenant.agent.v1.SwarmNodeMsg
+	(*KubernetesTopology)(nil),    // 31: maintenant.agent.v1.KubernetesTopology
+	(*K8SEventMsg)(nil),           // 32: maintenant.agent.v1.K8sEventMsg
+	(*K8SWorkloadMsg)(nil),        // 33: maintenant.agent.v1.K8sWorkloadMsg
+	(*K8SPodMsg)(nil),             // 34: maintenant.agent.v1.K8sPodMsg
+	(*K8SContainerStatusMsg)(nil), // 35: maintenant.agent.v1.K8sContainerStatusMsg
+	(*K8SNodeMsg)(nil),            // 36: maintenant.agent.v1.K8sNodeMsg
+	nil,                           // 37: maintenant.agent.v1.ContainerEvent.LabelsEntry
+	nil,                           // 38: maintenant.agent.v1.SwarmServiceMsg.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 39: google.protobuf.Timestamp
 }
 var file_proto_ingest_proto_depIdxs = []int32{
 	0,  // 0: maintenant.agent.v1.RegisterRequest.detected_runtime:type_name -> maintenant.agent.v1.Runtime
-	37, // 1: maintenant.agent.v1.RegisterResponse.server_time:type_name -> google.protobuf.Timestamp
-	5,  // 2: maintenant.agent.v1.RegisterResponse.agent_config:type_name -> maintenant.agent.v1.AgentConfig
-	14, // 3: maintenant.agent.v1.ClientMessage.auth:type_name -> maintenant.agent.v1.AuthResponse
-	18, // 4: maintenant.agent.v1.ClientMessage.event:type_name -> maintenant.agent.v1.AgentEvent
-	11, // 5: maintenant.agent.v1.ClientMessage.result:type_name -> maintenant.agent.v1.CommandResult
-	17, // 6: maintenant.agent.v1.ClientMessage.status:type_name -> maintenant.agent.v1.SpoolStatus
-	13, // 7: maintenant.agent.v1.ServerMessage.challenge:type_name -> maintenant.agent.v1.AuthChallenge
-	15, // 8: maintenant.agent.v1.ServerMessage.ack:type_name -> maintenant.agent.v1.EventAck
-	16, // 9: maintenant.agent.v1.ServerMessage.error:type_name -> maintenant.agent.v1.StreamError
-	8,  // 10: maintenant.agent.v1.ServerMessage.command:type_name -> maintenant.agent.v1.AgentCommand
-	9,  // 11: maintenant.agent.v1.AgentCommand.logs:type_name -> maintenant.agent.v1.LogsRequest
-	10, // 12: maintenant.agent.v1.AgentCommand.cancel:type_name -> maintenant.agent.v1.CancelRequest
-	12, // 13: maintenant.agent.v1.CommandResult.logs:type_name -> maintenant.agent.v1.LogsChunk
-	37, // 14: maintenant.agent.v1.EventAck.received_at:type_name -> google.protobuf.Timestamp
-	37, // 15: maintenant.agent.v1.AgentEvent.observed_at:type_name -> google.protobuf.Timestamp
-	19, // 16: maintenant.agent.v1.AgentEvent.container:type_name -> maintenant.agent.v1.ContainerEvent
-	21, // 17: maintenant.agent.v1.AgentEvent.endpoint:type_name -> maintenant.agent.v1.EndpointEvent
-	22, // 18: maintenant.agent.v1.AgentEvent.heartbeat:type_name -> maintenant.agent.v1.HeartbeatEvent
-	23, // 19: maintenant.agent.v1.AgentEvent.resource:type_name -> maintenant.agent.v1.ResourceSample
-	24, // 20: maintenant.agent.v1.AgentEvent.certificate:type_name -> maintenant.agent.v1.CertificateInfo
-	25, // 21: maintenant.agent.v1.AgentEvent.swarm:type_name -> maintenant.agent.v1.SwarmTopology
-	29, // 22: maintenant.agent.v1.AgentEvent.kubernetes:type_name -> maintenant.agent.v1.KubernetesTopology
-	20, // 23: maintenant.agent.v1.AgentEvent.inventory:type_name -> maintenant.agent.v1.ContainerInventory
-	1,  // 24: maintenant.agent.v1.ContainerEvent.state:type_name -> maintenant.agent.v1.ContainerState
-	37, // 25: maintenant.agent.v1.ContainerEvent.started_at:type_name -> google.protobuf.Timestamp
-	35, // 26: maintenant.agent.v1.ContainerEvent.labels:type_name -> maintenant.agent.v1.ContainerEvent.LabelsEntry
-	19, // 27: maintenant.agent.v1.ContainerInventory.containers:type_name -> maintenant.agent.v1.ContainerEvent
-	2,  // 28: maintenant.agent.v1.EndpointEvent.status:type_name -> maintenant.agent.v1.EndpointStatus
-	37, // 29: maintenant.agent.v1.CertificateInfo.not_before:type_name -> google.protobuf.Timestamp
-	37, // 30: maintenant.agent.v1.CertificateInfo.not_after:type_name -> google.protobuf.Timestamp
-	26, // 31: maintenant.agent.v1.SwarmTopology.services:type_name -> maintenant.agent.v1.SwarmServiceMsg
-	27, // 32: maintenant.agent.v1.SwarmTopology.tasks:type_name -> maintenant.agent.v1.SwarmTaskMsg
-	28, // 33: maintenant.agent.v1.SwarmTopology.nodes:type_name -> maintenant.agent.v1.SwarmNodeMsg
-	36, // 34: maintenant.agent.v1.SwarmServiceMsg.labels:type_name -> maintenant.agent.v1.SwarmServiceMsg.LabelsEntry
-	37, // 35: maintenant.agent.v1.SwarmServiceMsg.created_at:type_name -> google.protobuf.Timestamp
-	37, // 36: maintenant.agent.v1.SwarmTaskMsg.timestamp:type_name -> google.protobuf.Timestamp
-	31, // 37: maintenant.agent.v1.KubernetesTopology.workloads:type_name -> maintenant.agent.v1.K8sWorkloadMsg
-	32, // 38: maintenant.agent.v1.KubernetesTopology.pods:type_name -> maintenant.agent.v1.K8sPodMsg
-	34, // 39: maintenant.agent.v1.KubernetesTopology.nodes:type_name -> maintenant.agent.v1.K8sNodeMsg
-	30, // 40: maintenant.agent.v1.KubernetesTopology.events:type_name -> maintenant.agent.v1.K8sEventMsg
-	37, // 41: maintenant.agent.v1.K8sEventMsg.first_seen:type_name -> google.protobuf.Timestamp
-	37, // 42: maintenant.agent.v1.K8sEventMsg.last_seen:type_name -> google.protobuf.Timestamp
-	37, // 43: maintenant.agent.v1.K8sWorkloadMsg.created_at:type_name -> google.protobuf.Timestamp
-	33, // 44: maintenant.agent.v1.K8sPodMsg.containers:type_name -> maintenant.agent.v1.K8sContainerStatusMsg
-	37, // 45: maintenant.agent.v1.K8sPodMsg.created_at:type_name -> google.protobuf.Timestamp
-	37, // 46: maintenant.agent.v1.K8sNodeMsg.created_at:type_name -> google.protobuf.Timestamp
-	3,  // 47: maintenant.agent.v1.Ingest.RegisterAgent:input_type -> maintenant.agent.v1.RegisterRequest
-	6,  // 48: maintenant.agent.v1.Ingest.Push:input_type -> maintenant.agent.v1.ClientMessage
-	4,  // 49: maintenant.agent.v1.Ingest.RegisterAgent:output_type -> maintenant.agent.v1.RegisterResponse
-	7,  // 50: maintenant.agent.v1.Ingest.Push:output_type -> maintenant.agent.v1.ServerMessage
-	49, // [49:51] is the sub-list for method output_type
-	47, // [47:49] is the sub-list for method input_type
-	47, // [47:47] is the sub-list for extension type_name
-	47, // [47:47] is the sub-list for extension extendee
-	0,  // [0:47] is the sub-list for field type_name
+	39, // 1: maintenant.agent.v1.RegisterResponse.server_time:type_name -> google.protobuf.Timestamp
+	6,  // 2: maintenant.agent.v1.RegisterResponse.agent_config:type_name -> maintenant.agent.v1.AgentConfig
+	15, // 3: maintenant.agent.v1.ClientMessage.auth:type_name -> maintenant.agent.v1.AuthResponse
+	19, // 4: maintenant.agent.v1.ClientMessage.event:type_name -> maintenant.agent.v1.AgentEvent
+	12, // 5: maintenant.agent.v1.ClientMessage.result:type_name -> maintenant.agent.v1.CommandResult
+	18, // 6: maintenant.agent.v1.ClientMessage.status:type_name -> maintenant.agent.v1.SpoolStatus
+	14, // 7: maintenant.agent.v1.ServerMessage.challenge:type_name -> maintenant.agent.v1.AuthChallenge
+	16, // 8: maintenant.agent.v1.ServerMessage.ack:type_name -> maintenant.agent.v1.EventAck
+	17, // 9: maintenant.agent.v1.ServerMessage.error:type_name -> maintenant.agent.v1.StreamError
+	9,  // 10: maintenant.agent.v1.ServerMessage.command:type_name -> maintenant.agent.v1.AgentCommand
+	10, // 11: maintenant.agent.v1.AgentCommand.logs:type_name -> maintenant.agent.v1.LogsRequest
+	11, // 12: maintenant.agent.v1.AgentCommand.cancel:type_name -> maintenant.agent.v1.CancelRequest
+	13, // 13: maintenant.agent.v1.CommandResult.logs:type_name -> maintenant.agent.v1.LogsChunk
+	39, // 14: maintenant.agent.v1.EventAck.received_at:type_name -> google.protobuf.Timestamp
+	39, // 15: maintenant.agent.v1.AgentEvent.observed_at:type_name -> google.protobuf.Timestamp
+	20, // 16: maintenant.agent.v1.AgentEvent.container:type_name -> maintenant.agent.v1.ContainerEvent
+	22, // 17: maintenant.agent.v1.AgentEvent.endpoint:type_name -> maintenant.agent.v1.EndpointEvent
+	24, // 18: maintenant.agent.v1.AgentEvent.heartbeat:type_name -> maintenant.agent.v1.HeartbeatEvent
+	25, // 19: maintenant.agent.v1.AgentEvent.resource:type_name -> maintenant.agent.v1.ResourceSample
+	26, // 20: maintenant.agent.v1.AgentEvent.certificate:type_name -> maintenant.agent.v1.CertificateInfo
+	27, // 21: maintenant.agent.v1.AgentEvent.swarm:type_name -> maintenant.agent.v1.SwarmTopology
+	31, // 22: maintenant.agent.v1.AgentEvent.kubernetes:type_name -> maintenant.agent.v1.KubernetesTopology
+	21, // 23: maintenant.agent.v1.AgentEvent.inventory:type_name -> maintenant.agent.v1.ContainerInventory
+	23, // 24: maintenant.agent.v1.AgentEvent.host_os:type_name -> maintenant.agent.v1.HostOSMsg
+	1,  // 25: maintenant.agent.v1.ContainerEvent.state:type_name -> maintenant.agent.v1.ContainerState
+	39, // 26: maintenant.agent.v1.ContainerEvent.started_at:type_name -> google.protobuf.Timestamp
+	37, // 27: maintenant.agent.v1.ContainerEvent.labels:type_name -> maintenant.agent.v1.ContainerEvent.LabelsEntry
+	20, // 28: maintenant.agent.v1.ContainerInventory.containers:type_name -> maintenant.agent.v1.ContainerEvent
+	2,  // 29: maintenant.agent.v1.EndpointEvent.status:type_name -> maintenant.agent.v1.EndpointStatus
+	3,  // 30: maintenant.agent.v1.HostOSMsg.source:type_name -> maintenant.agent.v1.HostOSSource
+	39, // 31: maintenant.agent.v1.CertificateInfo.not_before:type_name -> google.protobuf.Timestamp
+	39, // 32: maintenant.agent.v1.CertificateInfo.not_after:type_name -> google.protobuf.Timestamp
+	28, // 33: maintenant.agent.v1.SwarmTopology.services:type_name -> maintenant.agent.v1.SwarmServiceMsg
+	29, // 34: maintenant.agent.v1.SwarmTopology.tasks:type_name -> maintenant.agent.v1.SwarmTaskMsg
+	30, // 35: maintenant.agent.v1.SwarmTopology.nodes:type_name -> maintenant.agent.v1.SwarmNodeMsg
+	38, // 36: maintenant.agent.v1.SwarmServiceMsg.labels:type_name -> maintenant.agent.v1.SwarmServiceMsg.LabelsEntry
+	39, // 37: maintenant.agent.v1.SwarmServiceMsg.created_at:type_name -> google.protobuf.Timestamp
+	39, // 38: maintenant.agent.v1.SwarmTaskMsg.timestamp:type_name -> google.protobuf.Timestamp
+	33, // 39: maintenant.agent.v1.KubernetesTopology.workloads:type_name -> maintenant.agent.v1.K8sWorkloadMsg
+	34, // 40: maintenant.agent.v1.KubernetesTopology.pods:type_name -> maintenant.agent.v1.K8sPodMsg
+	36, // 41: maintenant.agent.v1.KubernetesTopology.nodes:type_name -> maintenant.agent.v1.K8sNodeMsg
+	32, // 42: maintenant.agent.v1.KubernetesTopology.events:type_name -> maintenant.agent.v1.K8sEventMsg
+	39, // 43: maintenant.agent.v1.K8sEventMsg.first_seen:type_name -> google.protobuf.Timestamp
+	39, // 44: maintenant.agent.v1.K8sEventMsg.last_seen:type_name -> google.protobuf.Timestamp
+	39, // 45: maintenant.agent.v1.K8sWorkloadMsg.created_at:type_name -> google.protobuf.Timestamp
+	35, // 46: maintenant.agent.v1.K8sPodMsg.containers:type_name -> maintenant.agent.v1.K8sContainerStatusMsg
+	39, // 47: maintenant.agent.v1.K8sPodMsg.created_at:type_name -> google.protobuf.Timestamp
+	39, // 48: maintenant.agent.v1.K8sNodeMsg.created_at:type_name -> google.protobuf.Timestamp
+	4,  // 49: maintenant.agent.v1.Ingest.RegisterAgent:input_type -> maintenant.agent.v1.RegisterRequest
+	7,  // 50: maintenant.agent.v1.Ingest.Push:input_type -> maintenant.agent.v1.ClientMessage
+	5,  // 51: maintenant.agent.v1.Ingest.RegisterAgent:output_type -> maintenant.agent.v1.RegisterResponse
+	8,  // 52: maintenant.agent.v1.Ingest.Push:output_type -> maintenant.agent.v1.ServerMessage
+	51, // [51:53] is the sub-list for method output_type
+	49, // [49:51] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_proto_ingest_proto_init() }
@@ -3559,14 +3719,15 @@ func file_proto_ingest_proto_init() {
 		(*AgentEvent_Swarm)(nil),
 		(*AgentEvent_Kubernetes)(nil),
 		(*AgentEvent_Inventory)(nil),
+		(*AgentEvent_HostOs)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ingest_proto_rawDesc), len(file_proto_ingest_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   34,
+			NumEnums:      4,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

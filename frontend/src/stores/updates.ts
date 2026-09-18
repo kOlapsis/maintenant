@@ -14,6 +14,7 @@ import { ref, computed } from 'vue'
 import {
   fetchUpdates,
   fetchUpdateSummary,
+  fetchHostOS as apiFetchHostOS,
   triggerScan,
   fetchContainerUpdate,
   fetchCves,
@@ -27,6 +28,8 @@ import {
   removeExclusion as apiRemoveExclusion,
   type ImageUpdate,
   type UpdateSummary,
+  type HostOS,
+  type EolTable,
   type CVEInfo,
   type RiskListResponse,
   type Exclusion,
@@ -45,6 +48,8 @@ export const useUpdatesStore = defineStore('updates', () => {
   const exclusions = ref<Exclusion[]>([])
   const lastScan = ref<string>('')
   const nextScan = ref<string>('')
+  const hosts = ref<HostOS[]>([])
+  const eolTable = ref<EolTable | null>(null)
 
   const criticalCount = computed(() => summary.value?.counts?.critical ?? 0)
   const recommendedCount = computed(() => summary.value?.counts?.recommended ?? 0)
@@ -60,6 +65,11 @@ export const useUpdatesStore = defineStore('updates', () => {
     scanning.value = false
     fetchSummary()
     fetchAllUpdates()
+    fetchHostOSAction()
+  }
+
+  function onAgentUpdated() {
+    fetchHostOSAction()
   }
 
   function onDetected(e: MessageEvent) {
@@ -121,6 +131,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     sseBus.on('update.unpinned', onUnpinned)
     sseBus.on('cve.detected', onCveDetected)
     sseBus.on('risk.updated', onRiskUpdated)
+    sseBus.on('agent.updated', onAgentUpdated)
     sseBus.connect()
   }
 
@@ -132,6 +143,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     sseBus.off('update.unpinned', onUnpinned)
     sseBus.off('cve.detected', onCveDetected)
     sseBus.off('risk.updated', onRiskUpdated)
+    sseBus.off('agent.updated', onAgentUpdated)
     sseBus.disconnect()
   }
 
@@ -152,6 +164,16 @@ export const useUpdatesStore = defineStore('updates', () => {
   async function fetchSummary() {
     try {
       summary.value = await fetchUpdateSummary()
+    } catch {
+      // ignore
+    }
+  }
+
+  async function fetchHostOSAction() {
+    try {
+      const data = await apiFetchHostOS()
+      hosts.value = data.hosts || []
+      eolTable.value = data.eol_table ?? null
     } catch {
       // ignore
     }
@@ -271,6 +293,8 @@ export const useUpdatesStore = defineStore('updates', () => {
     exclusions,
     lastScan,
     nextScan,
+    hosts,
+    eolTable,
     criticalCount,
     recommendedCount,
     availableCount,
@@ -279,6 +303,7 @@ export const useUpdatesStore = defineStore('updates', () => {
     disconnectSSE,
     fetchAllUpdates,
     fetchSummary,
+    fetchHostOS: fetchHostOSAction,
     startScan,
     fetchContainerCves: fetchContainerCvesAction,
     fetchRiskScores: fetchRiskScoresAction,

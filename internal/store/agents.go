@@ -54,7 +54,8 @@ func (s *AgentStore) Insert(ctx context.Context, a *agent.Agent) error {
 }
 
 const agentColumns = `id, public_key, hostname, label, os_arch, agent_version,
-	detected_runtime, status, last_seen_at, created_at, revoked_at, revoked_by`
+	detected_runtime, status, last_seen_at, created_at, revoked_at, revoked_by,
+	os_id, os_version_id, os_pretty_name, os_source, os_unavailable_reason, os_reported_at`
 
 // Get retrieves an agent by ID.
 func (s *AgentStore) Get(ctx context.Context, agentID string) (*agent.Agent, error) {
@@ -132,6 +133,62 @@ func (s *AgentStore) UpdateAgentVersion(ctx context.Context, agentID, version st
 		return fmt.Errorf("update agent version: %w", err)
 	}
 	return nil
+}
+
+// UpdateAgentOS records the operating system identity of an agent's host and
+// reports whether it differs from the one already stored.
+func (s *AgentStore) UpdateAgentOS(ctx context.Context, agentID string, os agent.OSIdentity, reportedAt time.Time) (bool, error) {
+	changed := false
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		var prev agent.OSIdentity
+		err := tx.QueryRowContext(ctx,
+			`SELECT os_id, os_version_id, os_pretty_name, os_source, os_unavailable_reason
+			FROM agents WHERE id = ?`, agentID,
+		).Scan(&prev.ID, &prev.VersionID, &prev.PrettyName, &prev.Source, &prev.UnavailableReason)
+		if errors.Is(err, sql.ErrNoRows) {
+			return agent.ErrAgentNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("read agent os: %w", err)
+		}
+		changed = prev != os
+
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE agents SET os_id = ?, os_version_id = ?, os_pretty_name = ?,
+				os_source = ?, os_unavailable_reason = ?, os_reported_at = ?
+			WHERE id = ?`,
+			os.ID, os.VersionID, os.PrettyName, os.Source, os.UnavailableReason,
+			reportedAt.Unix(), agentID,
+		); err != nil {
+			return fmt.Errorf("update agent os: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+// ListAgentsForEOL returns every active agent, the local sentinel included: the
+// server's own host has an operating system to follow like any other.
+func (s *AgentStore) ListAgentsForEOL(ctx context.Context) ([]agent.Agent, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+agentColumns+` FROM agents WHERE status = 'active' ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list agents for eol: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var agents []agent.Agent
+	for rows.Next() {
+		a, err := scanAgent(rows)
+		if err != nil {
+			return nil, err
+		}
+		agents = append(agents, *a)
+	}
+	return agents, rows.Err()
 }
 
 // Revoke marks an agent as revoked.
@@ -420,17 +477,22 @@ type scanner interface {
 
 func scanAgent(s scanner) (*agent.Agent, error) {
 	a := &agent.Agent{}
-	var lastSeen, revokedAt sql.NullInt64
+	var lastSeen, revokedAt, osReportedAt sql.NullInt64
 	var revokedBy sql.NullString
 	var createdAt int64
 	err := s.Scan(
 		&a.AgentID, &a.PublicKey, &a.Hostname, &a.Label, &a.OSArch, &a.AgentVersion,
 		&a.DetectedRuntime, &a.Status, &lastSeen, &createdAt, &revokedAt, &revokedBy,
+		&a.OSID, &a.OSVersionID, &a.OSPrettyName, &a.OSSource, &a.OSUnavailableReason, &osReportedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	a.CreatedAt = time.Unix(createdAt, 0)
+	if osReportedAt.Valid {
+		t := time.Unix(osReportedAt.Int64, 0)
+		a.OSReportedAt = &t
+	}
 	if lastSeen.Valid {
 		t := time.Unix(lastSeen.Int64, 0)
 		a.LastSeenAt = &t

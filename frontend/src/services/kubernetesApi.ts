@@ -10,6 +10,7 @@
 // Source: https://github.com/kolapsis/maintenant
 
 import { apiFetch } from './apiFetch'
+import type { AgentOSSupport } from './agentApi'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
@@ -262,6 +263,7 @@ export interface K8sNodeResponse {
   running_pods: number
   kubernetes_version: string
   os_image: string
+  os_support: AgentOSSupport
   architecture: string
   created_at: string
   stale?: boolean

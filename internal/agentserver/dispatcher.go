@@ -64,6 +64,11 @@ type SwarmTopologyHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.SwarmTopology) error
 }
 
+// HostOSHandler records the operating system identity an agent reports for its host.
+type HostOSHandler interface {
+	HandleAgentHostOS(ctx context.Context, agentID string, ev *agentpb.HostOSMsg) error
+}
+
 // KubernetesTopologyHandler processes a full Kubernetes topology snapshot from an agent.
 type KubernetesTopologyHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.KubernetesTopology) error
@@ -86,6 +91,7 @@ type DispatchDeps struct {
 	Certificate CertificateHandler
 	Swarm       SwarmTopologyHandler
 	Kubernetes  KubernetesTopologyHandler
+	HostOS      HostOSHandler
 	// LabelSync, if set, provisions endpoint/cert monitors from a container's
 	// labels after each container event. Optional (nil = no label discovery).
 	LabelSync LabelSyncFunc
@@ -220,6 +226,12 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 		if d.deps.Kubernetes != nil {
 			if err := d.deps.Kubernetes.HandleAgentEvent(ctx, agentID, body.Kubernetes); err != nil {
 				return fmt.Errorf("dispatch kubernetes topology: %w", err)
+			}
+		}
+	case *agentpb.AgentEvent_HostOs:
+		if d.deps.HostOS != nil {
+			if err := d.deps.HostOS.HandleAgentHostOS(ctx, agentID, body.HostOs); err != nil {
+				return fmt.Errorf("dispatch host os identity: %w", err)
 			}
 		}
 	}

@@ -50,6 +50,7 @@ docker service create \
   --publish published=8080,target=8080 \
   --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock,readonly \
   --mount type=bind,source=/proc,target=/host/proc,readonly \
+  --mount type=bind,source=/etc/os-release,target=/host/etc/os-release,readonly \
   --mount type=volume,source=maintenant-data,target=/data \
   --env MAINTENANT_ADDR=0.0.0.0:8080 \
   --env MAINTENANT_DB=/data/maintenant.db \
@@ -74,6 +75,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"

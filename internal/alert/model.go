@@ -25,6 +25,7 @@ const (
 	SourceResource    = "resource"
 	SourceSecurity    = "security"
 	SourceAgent       = "agent"
+	SourceHost        = "host"
 )
 
 // Security alert types.

@@ -22,6 +22,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
@@ -36,6 +37,22 @@ type AgentHandler struct {
 	grpcListen     string
 	trustedProxies []netip.Prefix
 	staleThreshold time.Duration
+	eolTables      EOLTableProvider
+}
+
+// EOLTableProvider serves the operating system support table currently in force.
+type EOLTableProvider interface {
+	Current() eol.Table
+}
+
+// SetEOLTables wires the support table the os block of each agent is evaluated against.
+func (h *AgentHandler) SetEOLTables(p EOLTableProvider) { h.eolTables = p }
+
+func (h *AgentHandler) eolTable() eol.Table {
+	if h.eolTables == nil {
+		return eol.Table{}
+	}
+	return h.eolTables.Current()
 }
 
 func NewAgentHandler(
@@ -158,6 +175,7 @@ func buildInstallDockerRun(serverURL, token string) string {
 		"  --restart unless-stopped \\\n" +
 		"  -v /var/run/docker.sock:/var/run/docker.sock:ro \\\n" +
 		"  -v /proc:/host/proc:ro \\\n" +
+		"  -v /etc/os-release:/host/etc/os-release:ro \\\n" +
 		"  -v maintenant-agent-data:/var/lib/maintenant \\\n" +
 		"  ghcr.io/kolapsis/maintenant:latest \\\n" +
 		"  --mode=agent \\\n" +
@@ -173,6 +191,7 @@ func buildInstallDockerCompose(serverURL, token string) string {
 		"    volumes:\n" +
 		"      - /var/run/docker.sock:/var/run/docker.sock:ro\n" +
 		"      - /proc:/host/proc:ro\n" +
+		"      - /etc/os-release:/host/etc/os-release:ro\n" +
 		"      - maintenant-agent-data:/var/lib/maintenant\n" +
 		"    command:\n" +
 		"      - --mode=agent\n" +
@@ -253,6 +272,9 @@ func buildInstallKubernetes(serverURL, token string) string {
 		"                  name: maintenant-agent-enrollment\n" +
 		"                  key: token\n" +
 		"            - name: MAINTENANT_LABEL\n" +
+		"              valueFrom:\n" +
+		"                fieldRef: { fieldPath: spec.nodeName }\n" +
+		"            - name: MAINTENANT_NODE_NAME\n" +
 		"              valueFrom:\n" +
 		"                fieldRef: { fieldPath: spec.nodeName }\n" +
 		"          volumeMounts:\n" +
@@ -351,13 +373,14 @@ func (h *AgentHandler) HandleListAgents(w http.ResponseWriter, r *http.Request) 
 		agents = []*agent.Agent{}
 	}
 
+	table := h.eolTable()
 	out := make([]map[string]any, 0, len(agents))
 	for _, a := range agents {
 		connState := h.resolveConnectionState(a)
 		if connFilter != "" && connFilter != connState {
 			continue
 		}
-		out = append(out, agentToMap(a, connState, h.spoolForAgent(a.AgentID)))
+		out = append(out, AgentPayload(a, connState, h.spoolForAgent(a.AgentID), table))
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"agents": out})
@@ -374,7 +397,7 @@ func (h *AgentHandler) HandleGetAgent(w http.ResponseWriter, r *http.Request) {
 		WriteStoreError(w, err, "Failed to get agent")
 		return
 	}
-	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID)))
+	WriteJSON(w, http.StatusOK, AgentPayload(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID), h.eolTable()))
 }
 
 func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request) {
@@ -420,7 +443,7 @@ func (h *AgentHandler) HandleUpdateAgent(w http.ResponseWriter, r *http.Request)
 		"label":    *body.Label,
 	}})
 
-	WriteJSON(w, http.StatusOK, agentToMap(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID)))
+	WriteJSON(w, http.StatusOK, AgentPayload(a, h.resolveConnectionState(a), h.spoolForAgent(a.AgentID), h.eolTable()))
 }
 
 func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request) {
@@ -448,7 +471,7 @@ func (h *AgentHandler) HandleRevokeAgent(w http.ResponseWriter, r *http.Request)
 		WriteStoreError(w, err, "Failed to retrieve revoked agent")
 		return
 	}
-	WriteJSON(w, http.StatusOK, agentToMap(a, "disconnected", nil))
+	WriteJSON(w, http.StatusOK, AgentPayload(a, "disconnected", nil, h.eolTable()))
 }
 
 func (h *AgentHandler) HandleDeleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -519,10 +542,16 @@ func (h *AgentHandler) HandleGetAgentMetrics(w http.ResponseWriter, r *http.Requ
 // resolveConnectionState returns "connected" if the agent has an active stream
 // or was last seen within staleThreshold, otherwise "disconnected".
 func (h *AgentHandler) resolveConnectionState(a *agent.Agent) string {
-	if h.sessions != nil && h.sessions.IsConnected(a.AgentID) {
+	return ConnectionState(h.sessions, h.staleThreshold, a.AgentID, a.LastSeenAt)
+}
+
+// ConnectionState reports "connected" when the agent holds a live stream or was
+// last seen within staleThreshold, "disconnected" otherwise.
+func ConnectionState(sessions AgentSessions, staleThreshold time.Duration, agentID string, lastSeen *time.Time) string {
+	if sessions != nil && sessions.IsConnected(agentID) {
 		return "connected"
 	}
-	if a.LastSeenAt != nil && time.Since(*a.LastSeenAt) < h.staleThreshold {
+	if lastSeen != nil && time.Since(*lastSeen) < staleThreshold {
 		return "connected"
 	}
 	return "disconnected"
@@ -553,7 +582,9 @@ func (h *AgentHandler) spoolForAgent(agentID string) map[string]any {
 	}
 }
 
-func agentToMap(a *agent.Agent, connectionState string, spool map[string]any) map[string]any {
+// AgentPayload renders an agent for the API and for the agent.updated SSE event.
+func AgentPayload(a *agent.Agent, connectionState string, spool map[string]any, table eol.Table) map[string]any {
+	identity := eol.IdentityOf(*a)
 	return map[string]any{
 		"agent_id":         a.AgentID,
 		"hostname":         a.Hostname,
@@ -568,6 +599,7 @@ func agentToMap(a *agent.Agent, connectionState string, spool map[string]any) ma
 		"revoked_at":       a.RevokedAt,
 		"revoked_by":       a.RevokedBy,
 		"spool":            spool,
+		"os":               eol.OSJSON(identity, a.OSReportedAt, eol.Evaluate(identity, table, time.Now())),
 	}
 }
 
