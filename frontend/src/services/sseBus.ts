@@ -15,6 +15,8 @@ import { probeAuth } from './authGuard'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 
+const HIDDEN_GRACE_MS = 60_000
+
 type EventHandler = (event: MessageEvent) => void
 
 const listeners = new Map<string, Set<EventHandler>>()
@@ -23,10 +25,13 @@ let eventSource: EventSource | null = null
 let refCount = 0
 let retryCount = 0
 let retryTimer: ReturnType<typeof setTimeout> | null = null
+let hiddenTimer: ReturnType<typeof setTimeout> | null = null
+let lifecycleBound = false
 /** true once the first successful connection has been established */
 let hasConnectedOnce = false
 
 export const connected = ref(false)
+export const suspended = ref(false)
 
 function dispatch(eventName: string, e: MessageEvent) {
   const handlers = listeners.get(eventName)
@@ -51,7 +56,7 @@ function scheduleRetry() {
   retryCount++
   retryTimer = setTimeout(() => {
     retryTimer = null
-    if (refCount > 0) openConnection()
+    if (refCount > 0 && !suspended.value) openConnection()
   }, delay)
 }
 
@@ -115,14 +120,90 @@ function closeConnection() {
   retryCount = 0
 }
 
+function clearHiddenTimer() {
+  if (hiddenTimer) {
+    clearTimeout(hiddenTimer)
+    hiddenTimer = null
+  }
+}
+
+function suspendStream() {
+  clearHiddenTimer()
+  if (suspended.value) return
+  suspended.value = true
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+  registeredEvents.clear()
+  connected.value = false
+}
+
+function resumeStream() {
+  clearHiddenTimer()
+  if (!suspended.value) return
+  suspended.value = false
+  retryCount = 0
+  if (refCount > 0) openConnection()
+}
+
+function scheduleSuspend() {
+  if (hiddenTimer || suspended.value) return
+  hiddenTimer = setTimeout(() => {
+    hiddenTimer = null
+    suspendStream()
+  }, HIDDEN_GRACE_MS)
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    resumeStream()
+  } else {
+    scheduleSuspend()
+  }
+}
+
+function onFreeze() {
+  suspendStream()
+}
+
+function bindLifecycle() {
+  if (lifecycleBound) return
+  lifecycleBound = true
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  document.addEventListener('freeze', onFreeze)
+  document.addEventListener('resume', resumeStream)
+  if (document.hidden) scheduleSuspend()
+}
+
+function unbindLifecycle() {
+  if (!lifecycleBound) return
+  lifecycleBound = false
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  document.removeEventListener('freeze', onFreeze)
+  document.removeEventListener('resume', resumeStream)
+  clearHiddenTimer()
+  suspended.value = false
+}
+
 export function connect() {
   refCount++
-  if (refCount === 1) openConnection()
+  if (refCount === 1) {
+    bindLifecycle()
+    if (!suspended.value) openConnection()
+  }
 }
 
 export function disconnect() {
   refCount = Math.max(0, refCount - 1)
-  if (refCount === 0) closeConnection()
+  if (refCount === 0) {
+    unbindLifecycle()
+    closeConnection()
+  }
 }
 
 export function on(eventName: string, handler: EventHandler) {
@@ -148,4 +229,4 @@ export function off(eventName: string, handler: EventHandler) {
   }
 }
 
-export const sseBus = { on, off, connect, disconnect, connected }
+export const sseBus = { on, off, connect, disconnect, connected, suspended }

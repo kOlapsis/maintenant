@@ -31,6 +31,7 @@ export const useContainersStore = defineStore('containers', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const sseConnected = sseBus.connected
+  const sseSuspended = sseBus.suspended
   const runtimeConnected = ref(true)
   const runtimeName = ref('docker')
   const runtimeLabel = ref('Docker')
@@ -217,6 +218,7 @@ export const useContainersStore = defineStore('containers', () => {
     loading,
     error,
     sseConnected,
+    sseSuspended,
     runtimeConnected,
     runtimeName,
     runtimeLabel,

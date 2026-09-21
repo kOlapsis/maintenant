@@ -20,6 +20,7 @@ import { useResourcesStore } from '@/stores/resources'
 import { useContainersStore } from '@/stores/containers'
 import { useStorageStore } from '@/stores/storage'
 import { useAgentsStore } from '@/stores/agents'
+import { useVisibleInterval } from '@/composables/useVisibleInterval'
 import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor, MessageSquare } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
 import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
@@ -54,23 +55,21 @@ watch(
   },
 )
 
-let summaryInterval: ReturnType<typeof setInterval> | null = null
-
 // Global SSE connections + initial data fetch — always active while the app shell is mounted
 onMounted(() => {
   dashboard.fetchAll()
   dashboard.connectAllSSE()
   agentsStore.fetchAgents()
   resources.fetchSummary()
-  summaryInterval = setInterval(() => {
-    agentsStore.fetchAgents()
-    resources.fetchSummary()
-  }, 30_000)
 })
+
+useVisibleInterval(() => {
+  agentsStore.fetchAgents()
+  resources.fetchSummary()
+}, 30_000)
 
 onUnmounted(() => {
   dashboard.disconnectAllSSE()
-  if (summaryInterval) clearInterval(summaryInterval)
 })
 
 const sourceRouteMap: Record<string, { route: string; label: string; icon: typeof Box }> = {
