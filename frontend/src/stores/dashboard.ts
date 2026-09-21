@@ -144,6 +144,21 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   const sparklines = ref<Record<string, number[]>>({})
   let sparklineInterval: ReturnType<typeof setInterval> | null = null
+  let sparklinesMissed = false
+
+  function tickSparklines() {
+    if (document.hidden) {
+      sparklinesMissed = true
+      return
+    }
+    void fetchSparklines()
+  }
+
+  function onSparklineVisibility() {
+    if (document.hidden || !sparklinesMissed) return
+    sparklinesMissed = false
+    void fetchSparklines()
+  }
 
   async function fetchSparklines() {
     try {
@@ -375,7 +390,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
     // Refresh sparklines every 60s
     if (!sparklineInterval) {
-      sparklineInterval = setInterval(fetchSparklines, 60_000)
+      sparklineInterval = setInterval(tickSparklines, 60_000)
+      document.addEventListener('visibilitychange', onSparklineVisibility)
     }
   }
 
@@ -392,6 +408,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     if (sparklineInterval) {
       clearInterval(sparklineInterval)
       sparklineInterval = null
+      document.removeEventListener('visibilitychange', onSparklineVisibility)
+      sparklinesMissed = false
     }
   }
 

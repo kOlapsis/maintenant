@@ -25,6 +25,7 @@ import { usePreferencesStore } from '@/stores/preferences'
 import { useEdition } from '@/composables/useEdition'
 import { useAttentionItems, UPDATES_KIND, type AttentionItem } from '@/composables/useAttentionItems'
 import { useMonitorGroups } from '@/composables/useMonitorGroups'
+import { useVisibleInterval } from '@/composables/useVisibleInterval'
 import type { Severity } from '@/composables/useSeverity'
 import type { GridItem } from '@/components/ui/statusGrid'
 import type { KpiStripItem } from '@/components/ui/KpiStrip.vue'
@@ -64,7 +65,6 @@ const loading = ref(true)
 const loadError = ref<string | null>(null)
 const lastRefresh = ref(0)
 const now = ref(Date.now())
-let ticker: ReturnType<typeof setInterval> | null = null
 
 // Persisted view preferences drive the StatusGrid + group-by toggle.
 const view = computed<'grid' | 'list'>({
@@ -218,14 +218,14 @@ onMounted(() => {
   updatesStore.fetchSummary()
   agentsStore.fetchAgents()
   if (hasFeature('security_posture')) postureStore.fetchPosture()
-  ticker = setInterval(() => {
-    now.value = Date.now()
-  }, 15_000)
 })
+
+useVisibleInterval(() => {
+  now.value = Date.now()
+}, 15_000)
 
 onUnmounted(() => {
   dashboard.disconnectAllSSE()
-  if (ticker) clearInterval(ticker)
 })
 </script>
 
