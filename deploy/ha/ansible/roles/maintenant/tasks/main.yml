@@ -6,8 +6,14 @@
     that: maintenant_require_state_dir | bool
     fail_msg: maintenant_require_state_dir must stay true in a highly available deployment.
 
+- name: Refuse a mode the highly available deployment does not run
+  ansible.builtin.assert:
+    that: maintenant_mode in ['embedded', 'server']
+    fail_msg: "maintenant_mode must be embedded or server, got {{ maintenant_mode }}"
+
 - name: Refuse a gRPC URL that names a node instead of the service
   ansible.builtin.include_tasks: grpc_url.yml
+  when: maintenant_mode == 'server'
 
 - name: Refuse nodes whose clocks have drifted apart
   ansible.builtin.include_tasks: clock.yml
@@ -131,12 +137,11 @@
     owner: "{{ maintenant_user }}"
     group: "{{ maintenant_user }}"
     mode: "0750"
-  loop:
-    - "{{ maintenant_state_dir }}"
-    - "{{ maintenant_tls_dir }}"
+  loop: "{{ [maintenant_state_dir] + ([maintenant_tls_dir] if maintenant_mode == 'server' else []) }}"
 
 - name: Install the gRPC certificate and key
   ansible.builtin.include_tasks: tls.yml
+  when: maintenant_mode == 'server'
 
 - name: Write the settings
   ansible.builtin.template:
