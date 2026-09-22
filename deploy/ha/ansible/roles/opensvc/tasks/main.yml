@@ -1,4 +1,13 @@
 ---
+# om3 reaches its peers by node name, and sends its heartbeats from the address
+# its own name resolves to: a loopback entry for it silences the node.
+- name: Resolve every node, this one included, to its interconnect address
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\S+\s+(\S+\s+)*{{ hostvars[item].ansible_facts.hostname }}(\s|$)'
+    line: "{{ hostvars[item].ansible_host }} {{ hostvars[item].ansible_facts.hostname }}"
+  loop: "{{ groups['opensvc_cluster'] }}"
+
 - name: Install om3 on the frozen release
   ansible.builtin.include_tasks: install.yml
 
