@@ -1,7 +1,7 @@
 #cloud-config
 hostname: {{ machine.name }}
 fqdn: {{ machine.name }}.{{ lab_domain }}
-manage_etc_hosts: true
+manage_etc_hosts: localhost
 preserve_hostname: false
 
 users:
