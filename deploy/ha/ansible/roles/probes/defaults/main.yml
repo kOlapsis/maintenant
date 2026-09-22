@@ -4,7 +4,7 @@ probes_bin_dir: /usr/local/bin
 probes_state_dir: /var/lib/lab-probes
 probes_env_file: /etc/default/lab-probes
 
-probes_base_url: "http://{{ ha_service_address }}"
+probes_base_url: "http://{{ ha_service_address }}:{{ ha_service_http_port | default(8080) }}"
 probes_availability_url: "{{ probes_base_url }}/api/v1/health"
 probes_interval: 100ms
 probes_timeout: 2s
