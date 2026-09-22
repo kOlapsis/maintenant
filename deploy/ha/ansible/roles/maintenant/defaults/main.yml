@@ -12,7 +12,7 @@ maintenant_build_image: golang:1.26-alpine
 maintenant_state_dir: /var/lib/maintenant
 maintenant_tls_dir: "{{ maintenant_state_dir }}/tls"
 
-maintenant_http_port: 8080
+maintenant_http_port: "{{ ha_service_http_port | default(8080) }}"
 maintenant_grpc_port: 8443
 
 # The address the service carries, and the name that resolves to it. Agents are
