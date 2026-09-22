@@ -25,6 +25,13 @@ measures:
 - detection_delay_s
 - alerts_induced
 modes:
+  ip-only:
+    applicable: true
+    expected: 'The process is alive and the service is dead. A PID check passes here and is
+      therefore worthless: the application check must be an HTTP one, reading the body of
+      /api/v1/health. Detection, then recovery, in under 120 s (SC-005). Data is local to
+      each node in this mode, so writes are not compared.'
+    max_rto_s: 120
   postgres/streaming:
     applicable: true
     expected: 'The process is alive and the service is dead. A PID check passes here and is

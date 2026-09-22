@@ -44,6 +44,14 @@ PROBE_AVAILABILITY_UNIT="lab-probe-availability.service"
 PROBE_WRITES_UNIT="lab-probe-writes.service"
 PROBE_OBSERVER_UNIT="lab-probe-observer.service"
 
+PROBE_BIN_DIR="/usr/local/bin"
+PROBE_ENV_FILE="/etc/default/lab-probes"
+
+RUN_ALL_GREEN_TIMEOUT=300
+RUN_ALL_GREEN_INTERVAL=5
+RUN_ALL_VERIFY_TIMEOUT=180
+RUN_ALL_VERIFY_INTERVAL=2
+
 # The bench logs in as an ordinary account: every om command, and every
 # scenario command, is run through sudo on the machine it acts on.
 OM="sudo -n om"
@@ -356,12 +364,445 @@ check_clocks() {
 	fi
 }
 
+mode_json() {
+	case "$1" in
+	ip-only)
+		jq -n '{backend: null, replication: "ip-only"}'
+		;;
+	*/*)
+		backend=${1%%/*}
+		replication=${1#*/}
+		jq -n --arg b "$backend" --arg r "$replication" '{backend: $b, replication: $r}'
+		;;
+	*)
+		die "unknown mode: $1" 2
+		;;
+	esac
+}
+
+# Polls collect_status until it is green or the timeout elapses, leaving the last status in outfile either way.
+wait_for_status_green() {
+	timeout=$1
+	interval=$2
+	outfile=$3
+	deadline=$(($(date +%s) + timeout))
+	while :; do
+		collect_status >"$outfile" 2>"$TMP/wait-status.err" || true
+		if [ -s "$outfile" ] && [ "$(jq -r '.verdict // empty' "$outfile" 2>/dev/null)" = "green" ]; then
+			return 0
+		fi
+		[ "$(date +%s)" -ge "$deadline" ] && return 1
+		sleep "$interval"
+	done
+}
+
+probe_env_value() {
+	ssh_to "$1" "sudo -n grep -m1 '^$2=' $PROBE_ENV_FILE" | cut -d= -f2-
+}
+
+run_all_versions() {
+	repo_root=$(cd "$LAB_DIR" && git rev-parse --show-toplevel)
+	maintenant_version=$(git -C "$repo_root" describe --tags --always --dirty 2>/dev/null) || maintenant_version=""
+	lab_commit=$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null) || lab_commit=""
+
+	node=$(first_cluster_host)
+	opensvc_version=""
+	kernel_version=""
+	if [ -n "$node" ]; then
+		opensvc_version=$(ssh_to "$node" "$OM --version" 2>/dev/null | head -n 1) || opensvc_version=""
+		kernel_version=$(ssh_to "$node" "uname -r" 2>/dev/null) || kernel_version=""
+	fi
+
+	jq -n \
+		--arg maintenant "$maintenant_version" \
+		--arg opensvc "$opensvc_version" \
+		--arg kernel "$kernel_version" \
+		--arg lab_commit "$lab_commit" \
+		'{
+			maintenant: (if $maintenant == "" then null else $maintenant end),
+			opensvc: (if $opensvc == "" then null else $opensvc end),
+			drbd: null,
+			postgres: null,
+			kernel: (if $kernel == "" then null else $kernel end),
+			lab_commit: (if $lab_commit == "" then null else $lab_commit end)
+		}'
+}
+
+run_all_settings() {
+	node=$(first_cluster_host)
+	quorum_raw=""
+	stonith_raw=""
+	sqlite_sync=""
+	if [ -n "$node" ]; then
+		quorum_raw=$(ssh_to "$node" "sudo -n om node config get --kw cluster.quorum" 2>/dev/null | tr -d '[:space:]') || quorum_raw=""
+		stonith_raw=$(ssh_to "$node" "sudo -n om maintenant config get --kw DEFAULT.stonith" 2>/dev/null | tr -d '[:space:]') || stonith_raw=""
+		sqlite_sync=$(ssh_to "$node" "sudo -n grep -m1 '^MAINTENANT_SQLITE_SYNCHRONOUS=' /etc/maintenant.env" 2>/dev/null | cut -d= -f2-) || sqlite_sync=""
+	fi
+
+	jq -n \
+		--arg quorum "$quorum_raw" \
+		--arg stonith "$stonith_raw" \
+		--arg sqlite_sync "$sqlite_sync" \
+		'
+		def boolish(s): if s == "" then null elif s == "true" then true elif s == "false" then false else s end;
+		{
+			sqlite_synchronous: (if $sqlite_sync == "" then null else $sqlite_sync end),
+			hb_timeout_s: null,
+			ready_period_s: null,
+			quorum: boolish($quorum),
+			stonith: boolish($stonith),
+			sync_standby: null
+		}'
+}
+
+# Aggregates one scenario's repetitions into its measures and verdict.
+build_scenario_summary() {
+	id=$1
+	scenario_name=$2
+	repetitions=$3
+	runs_json=$4
+
+	printf '%s' "$runs_json" | jq \
+		--argjson id "$id" --arg name "$scenario_name" --argjson repetitions "$repetitions" '
+		def med: sort as $s | ($s | length) as $n |
+			if $n == 0 then null
+			elif ($n % 2) == 1 then $s[($n - 1) / 2]
+			else ($s[$n / 2 - 1] + $s[$n / 2]) / 2
+			end;
+		(map(select(.rto_ms != null) | .rto_ms)) as $rtos |
+		(map(.observer.telemetry_gap_s? // empty)) as $gaps |
+		(map(.observer.telemetry_samples_lost? // empty)) as $lost |
+		(map(.observer.alerts_induced? // empty)) as $alerts |
+		{
+			id: $id,
+			name: $name,
+			verdict: (if (length > 0) and (length == $repetitions) and (all(.[]; .verdict == "pass"))
+				then "pass" else "fail" end),
+			repetitions: length,
+			measures: {
+				rto_ms: (if ($rtos | length) > 0 then {min: ($rtos | min), p50: ($rtos | med), max: ($rtos | max)} else null end),
+				writes: null,
+				telemetry_gap_s: (if ($gaps | length) > 0 then ($gaps | max) else null end),
+				telemetry_samples_lost: (if ($lost | length) > 0 then ($lost | max) else null end),
+				alerts_induced: (if ($alerts | length) > 0 then {
+					agent_offline: ([$alerts[].agent_offline] | max),
+					heartbeat_overdue: ([$alerts[].heartbeat_overdue] | max),
+					endpoint_down: ([$alerts[].endpoint_down] | max),
+					other: ([$alerts[].other] | max)
+				} else null end),
+				agents: null,
+				nodes_written: null,
+				inventory: null
+			},
+			runs: .
+		}'
+}
+
+# Plays one scenario, every repetition, for the mode under test.
+run_all_scenario() {
+	number=$1
+	file=$2
+	mode=$3
+	repeat_override=$4
+	run_log=$5
+	scenarios_ndjson=$6
+	padded=$(printf '%02d' "$number")
+
+	scenario_json "$file" >"$TMP/scenario-def-$number.json"
+	id=$(jq -r '.id' "$TMP/scenario-def-$number.json")
+	slug=$(jq -r '.slug' "$TMP/scenario-def-$number.json")
+	# Not "name": scenario_act and collect_status both clobber that global.
+	scenario_name=$(jq -r '.name' "$TMP/scenario-def-$number.json")
+
+	mode_entry=$(jq -c --arg m "$mode" '.modes[$m] // empty' "$TMP/scenario-def-$number.json")
+
+	if [ -z "$mode_entry" ]; then
+		printf '%s %-30s fail (no expectation for mode %s)\n' "$padded" "$slug" "$mode"
+		scenario=$(jq -nc --argjson id "$id" --arg name "$scenario_name" --arg mode "$mode" \
+			'{id: $id, name: $name, verdict: "fail", reason: ("no expectation for mode " + $mode), repetitions: 0, measures: null, runs: []}')
+		printf '%s\n' "$scenario" >>"$scenarios_ndjson"
+		return 0
+	fi
+
+	applicable=$(printf '%s' "$mode_entry" | jq -r '.applicable')
+	if [ "$applicable" != "true" ]; then
+		reason=$(printf '%s' "$mode_entry" | jq -r '.reason // "no reason given"')
+		printf '%s %-30s not_applicable (%s)\n' "$padded" "$slug" "$reason"
+		scenario=$(jq -nc --argjson id "$id" --arg name "$scenario_name" --arg reason "$reason" \
+			'{id: $id, name: $name, verdict: "not_applicable", reason: $reason, repetitions: 0, measures: null, runs: []}')
+		printf '%s\n' "$scenario" >>"$scenarios_ndjson"
+		return 0
+	fi
+
+	repetitions=$(jq -r '.repetitions' "$TMP/scenario-def-$number.json")
+	if [ -n "$repeat_override" ]; then
+		repetitions=$repeat_override
+	fi
+	max_rto_s=$(printf '%s' "$mode_entry" | jq -r '.max_rto_s // empty')
+
+	reps_ndjson="$TMP/reps-$number.ndjson"
+	: >"$reps_ndjson"
+
+	rep=1
+	while [ "$rep" -le "$repetitions" ]; do
+		if ! wait_for_status_green "$RUN_ALL_GREEN_TIMEOUT" "$RUN_ALL_GREEN_INTERVAL" "$TMP/status-pre-$number.json"; then
+			pre_verdict=$(jq -r '.verdict // "unknown"' "$TMP/status-pre-$number.json" 2>/dev/null)
+			printf '%s %-30s rep %s/%s fail (bench not green before start: %s)\n' "$padded" "$slug" "$rep" "$repetitions" "$pre_verdict"
+			one=$(jq -nc --argjson rep "$rep" --arg reason "bench not green before repetition ($pre_verdict)" \
+				'{repetition: $rep, verdict: "fail", reasons: [$reason]}')
+			printf '%s\n' "$one" >>"$reps_ndjson"
+			break
+		fi
+
+		t0=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+
+		if inj_out=$(scenario_act injection "$number" 2>&1); then
+			injection_rc=0
+		else
+			injection_rc=$?
+		fi
+		printf '%s\n' "$inj_out" >>"$run_log"
+
+		verify_ok=0
+		deadline=$(($(date +%s) + RUN_ALL_VERIFY_TIMEOUT))
+		while :; do
+			if ver_out=$(scenario_act verify "$number" 2>&1); then
+				verify_ok=1
+				printf '%s\n' "$ver_out" >>"$run_log"
+				break
+			fi
+			printf '%s\n' "$ver_out" >>"$run_log"
+			[ "$(date +%s)" -ge "$deadline" ] && break
+			sleep "$RUN_ALL_VERIFY_INTERVAL"
+		done
+		t1=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
+
+		if heal_out=$( { scenario_act repair "$number" && scenario_act verify "$number"; } 2>&1); then
+			repair_rc=0
+		else
+			repair_rc=$?
+		fi
+		printf '%s\n' "$heal_out" >>"$run_log"
+		rm -f "$(injection_record "$number")"
+
+		green_after=1
+		wait_for_status_green "$RUN_ALL_GREEN_TIMEOUT" "$RUN_ALL_GREEN_INTERVAL" "$TMP/status-post-$number.json" || green_after=0
+		holders=$(jq -r '.service.holders | length' "$TMP/status-post-$number.json" 2>/dev/null)
+		case "$holders" in '' | *[!0-9]*) holders=-1 ;; esac
+
+		t1_window=$(date -u -d "$t1 +10 seconds" +%Y-%m-%dT%H:%M:%S.%NZ)
+
+		availability_json=null
+		availability_error=null
+		observer_json=null
+		observer_error=null
+
+		probe_host=$(group_hosts measurement | head -n 1)
+		if [ -z "$probe_host" ]; then
+			availability_error='"the inventory declares no measurement host"'
+			observer_error='"the inventory declares no measurement host"'
+		else
+			state_dir=$(probe_env_value "$probe_host" PROBE_STATE_DIR) || state_dir=""
+			base_url=$(probe_env_value "$probe_host" PROBE_BASE_URL) || base_url=""
+			if [ -z "$state_dir" ]; then
+				availability_error='"PROBE_STATE_DIR could not be read on the measurement host"'
+				observer_error='"PROBE_STATE_DIR could not be read on the measurement host"'
+			else
+				avail_journal="$state_dir/availability.ndjson"
+				observer_journal="$state_dir/observer.ndjson"
+
+				avail_cmd="sudo -n $PROBE_BIN_DIR/lab-probe-availability -mode summarise -out $(shell_quote "$avail_journal") -from $(shell_quote "$t0") -to $(shell_quote "$t1_window")"
+				if avail_out=$(ssh_to "$probe_host" "$avail_cmd" 2>"$TMP/avail-$number.err"); then
+					availability_json=$avail_out
+				else
+					availability_error=$(jq -Rs '.' "$TMP/avail-$number.err")
+				fi
+
+				if [ -z "$base_url" ]; then
+					observer_error='"PROBE_BASE_URL could not be read on the measurement host"'
+				else
+					obs_cmd="sudo -n $PROBE_BIN_DIR/lab-probe-observer -mode summarise -journal $(shell_quote "$observer_journal") -from $(shell_quote "$t0") -to $(shell_quote "$t1_window") -base $(shell_quote "$base_url")"
+					if obs_out=$(ssh_to "$probe_host" "$obs_cmd" 2>"$TMP/obs-$number.err"); then
+						observer_json=$obs_out
+					else
+						observer_error=$(jq -Rs '.' "$TMP/obs-$number.err")
+					fi
+				fi
+			fi
+		fi
+
+		rto_ms=$(printf '%s' "$availability_json" | jq -r 'if . == null then "" else (.rto_ms | tostring) end' 2>/dev/null)
+
+		reasons_file="$TMP/reasons-$number-$rep.json"
+		printf '[]' >"$reasons_file"
+		add_reason() {
+			printf '%s' "$(jq --arg r "$1" '. + [$r]' "$reasons_file")" >"$reasons_file"
+		}
+
+		[ "$injection_rc" -eq 0 ] || add_reason "injection failed (rc=$injection_rc)"
+		[ "$verify_ok" -eq 1 ] || add_reason "verify did not succeed within ${RUN_ALL_VERIFY_TIMEOUT}s"
+		[ "$repair_rc" -eq 0 ] || add_reason "repair failed (rc=$repair_rc)"
+		[ "$green_after" -eq 1 ] || add_reason "bench did not return to green after repair"
+		[ "$holders" -eq 1 ] || add_reason "holders after recovery = $holders, expected 1"
+		if [ -n "$max_rto_s" ]; then
+			if [ -z "$rto_ms" ]; then
+				add_reason "max_rto_s is set but the availability rto_ms is unavailable"
+			else
+				max_rto_ms=$((max_rto_s * 1000))
+				if [ "$rto_ms" -gt "$max_rto_ms" ]; then
+					add_reason "rto_ms=$rto_ms exceeds max_rto_s=${max_rto_s}s"
+				fi
+			fi
+		fi
+
+		if [ "$(jq 'length' "$reasons_file")" -eq 0 ]; then
+			rep_verdict=pass
+		else
+			rep_verdict=fail
+		fi
+
+		if [ -n "$rto_ms" ]; then
+			rto_display="rto=$(awk -v ms="$rto_ms" 'BEGIN { printf "%.1f", ms / 1000 }')s"
+		else
+			rto_display="rto=n/a"
+		fi
+		printf '%s %-30s rep %s/%s %s %s\n' "$padded" "$slug" "$rep" "$repetitions" "$rep_verdict" "$rto_display"
+
+		one=$(jq -nc \
+			--argjson rep "$rep" --arg t0 "$t0" --arg t1 "$t1" \
+			--argjson injection_rc "$injection_rc" \
+			--argjson verify_ok "$([ "$verify_ok" -eq 1 ] && echo true || echo false)" \
+			--argjson repair_rc "$repair_rc" \
+			--argjson holders "$holders" \
+			--arg rto_ms_raw "$rto_ms" \
+			--argjson availability "$availability_json" \
+			--argjson availability_error "$availability_error" \
+			--argjson observer "$observer_json" \
+			--argjson observer_error "$observer_error" \
+			--argjson reasons "$(cat "$reasons_file")" \
+			--arg verdict "$rep_verdict" \
+			'{
+				repetition: $rep, t0: $t0, t1: $t1,
+				injection_rc: $injection_rc, verify_ok: $verify_ok, repair_rc: $repair_rc,
+				holders: $holders,
+				rto_ms: (if $rto_ms_raw == "" then null else ($rto_ms_raw | tonumber) end),
+				availability: $availability, availability_error: $availability_error,
+				observer: $observer, observer_error: $observer_error,
+				verdict: $verdict, reasons: $reasons
+			}')
+		printf '%s\n' "$one" >>"$reps_ndjson"
+
+		rep=$((rep + 1))
+	done
+
+	runs_json=$(jq -s '.' "$reps_ndjson")
+	scenario=$(build_scenario_summary "$id" "$scenario_name" "$repetitions" "$runs_json")
+	printf '%s\n' "$scenario" >>"$scenarios_ndjson"
+}
+
 cmd_run_all() {
+	mode=""
+	repeat=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--mode)
+			[ $# -ge 2 ] || die "--mode takes a value" 2
+			mode=$2
+			shift 2
+			;;
+		--repeat)
+			[ $# -ge 2 ] || die "--repeat takes a value" 2
+			repeat=$2
+			shift 2
+			;;
+		*) die "unknown option for run-all: $1" 2 ;;
+		esac
+	done
+
 	need ansible-inventory
 	need jq
 	need ssh
+	need python3
+	need git
+
+	deployed=$(current_mode)
+	[ "$deployed" != "unknown" ] || die "no mode is deployed: run 'lab up' first" 2
+	if [ -z "$mode" ]; then
+		mode=$deployed
+	fi
+	valid_mode "$mode" || die "unknown mode: $mode (known: $KNOWN_MODES)" 2
+	[ "$mode" = "$deployed" ] || die "mode $mode is not the deployed mode ($deployed): run-all never redeploys" 2
+
+	if [ -n "$repeat" ]; then
+		case "$repeat" in
+		'' | *[!0-9]*) die "--repeat must be a positive integer: $repeat" 2 ;;
+		esac
+		[ "$repeat" -gt 0 ] || die "--repeat must be a positive integer: $repeat" 2
+	fi
+
+	info "checking the node clocks"
 	check_clocks
-	not_yet "run-all" "T096"
+
+	collect_status >"$TMP/status-initial.json"
+	verdict=$(jq -r '.verdict' "$TMP/status-initial.json")
+	[ "$verdict" = "green" ] || die "the bench is not green (verdict: $verdict): run-all refuses to start" 1
+
+	run_id="$(date -u +%Y%m%d-%H%M%S)-$(printf '%s' "$mode" | tr '/' '-')"
+	report_dir="$HA_DIR/reports/$run_id"
+	mkdir -p "$report_dir"
+	run_log="$report_dir/run.log"
+	: >"$run_log"
+	printf 'lab run-all %s mode=%s\n' "$run_id" "$mode" >>"$run_log"
+
+	info "run-all $run_id starting, mode=$mode"
+
+	scenarios_ndjson="$TMP/scenarios.ndjson"
+	: >"$scenarios_ndjson"
+
+	for file in "$LAB_DIR"/scenarios/[0-9][0-9]-*.yml; do
+		[ -f "$file" ] || continue
+		# Plain decimal, not zero-padded: dash's printf %d misreads "08"/"09" as
+		# invalid octal, and scenario_act re-pads on its own.
+		number=$(basename "$file" | cut -c1-2)
+		number=${number#0}
+		run_all_scenario "$number" "$file" "$mode" "$repeat" "$run_log" "$scenarios_ndjson"
+	done
+
+	scenarios_json=$(jq -s '.' "$scenarios_ndjson")
+	versions_json=$(run_all_versions)
+	settings_json=$(run_all_settings)
+	mode_json_val=$(mode_json "$mode")
+
+	run_json=$(jq -n \
+		--arg run_id "$run_id" \
+		--argjson mode "$mode_json_val" \
+		--argjson versions "$versions_json" \
+		--argjson settings "$settings_json" \
+		--argjson scenarios "$scenarios_json" \
+		'{
+			run_id: $run_id,
+			mode: $mode,
+			versions: $versions,
+			settings: $settings,
+			scenarios: $scenarios,
+			totals: {
+				scenarios: ($scenarios | length),
+				pass: ([$scenarios[] | select(.verdict == "pass")] | length),
+				fail: ([$scenarios[] | select(.verdict == "fail")] | length),
+				not_applicable: ([$scenarios[] | select(.verdict == "not_applicable")] | length)
+			}
+		}')
+
+	printf '%s\n' "$run_json" >"$report_dir/run.json"
+	render_report "$report_dir/run.json" >"$report_dir/run.md"
+
+	pass=$(printf '%s' "$run_json" | jq -r '.totals.pass')
+	fail=$(printf '%s' "$run_json" | jq -r '.totals.fail')
+	na=$(printf '%s' "$run_json" | jq -r '.totals.not_applicable')
+	info "run-all $run_id complete: $pass pass, $fail fail, $na not applicable"
+	info "report: $report_dir/run.md"
+
+	[ "$fail" -eq 0 ] || exit 1
 }
 
 scenario_file() {
@@ -489,7 +930,7 @@ scenario_act() {
 	scenario_json "$file" >"$TMP/scenario.json"
 
 	name=$(jq -r '.name' "$TMP/scenario.json")
-	applicable=$(jq -r --arg m "$LAB_MODE" '.modes[$m].applicable // "unset"' "$TMP/scenario.json")
+	applicable=$(jq -r --arg m "$LAB_MODE" '.modes[$m] | if . == null then "unset" else (.applicable | tostring) end' "$TMP/scenario.json")
 
 	if [ "$applicable" = "unset" ]; then
 		die "scenario $number says nothing about mode $LAB_MODE" 2
@@ -516,6 +957,10 @@ scenario_act() {
 	return "$rc"
 }
 
+injection_record() {
+	printf '%s/injection-%02d\n' "$STATE_DIR" "$1"
+}
+
 cmd_chaos() {
 	[ $# -eq 1 ] || die "usage: lab chaos <n>" 2
 	scenario_act injection "$1"
@@ -526,7 +971,7 @@ cmd_heal() {
 	scenario_act repair "$1"
 	info "checking the bench came back"
 	scenario_act verify "$1"
-	rm -f "$STATE_DIR/injection-$(printf '%02d' "$1")"
+	rm -f "$(injection_record "$1")"
 }
 
 cmd_up() {
@@ -625,6 +1070,111 @@ cmd_status() {
 	[ "$verdict" = "green" ] || exit 1
 }
 
+# Renders run.json as the Markdown report of contracts/run-report.md.
+render_report() {
+	run_json_file=$1
+	cat >"$TMP/render.jq" <<'JQEOF'
+def or_na(v): if v == null then "n/a" else (v | tostring) end;
+def sec_s(v): if v == null then "n/a" else (((v / 1000) | tostring) + "s") end;
+def bool_s(v): if v == null then "n/a" elif v == true then "yes" elif v == false then "no" else (v | tostring) end;
+
+. as $r
+| (if $r.mode.backend == null then $r.mode.replication else ($r.mode.backend + "/" + $r.mode.replication) end) as $mode_label
+| (
+    ["# HA bench run \($r.run_id)",
+     "",
+     "Mode: \($mode_label)",
+     "",
+     "## Versions",
+     "",
+     "- maintenant: \(or_na($r.versions.maintenant))",
+     "- opensvc: \(or_na($r.versions.opensvc))",
+     "- drbd: \(or_na($r.versions.drbd))",
+     "- postgres: \(or_na($r.versions.postgres))",
+     "- kernel: \(or_na($r.versions.kernel))",
+     "- lab_commit: \(or_na($r.versions.lab_commit))",
+     "",
+     "## Settings",
+     "",
+     "- sqlite_synchronous: \(or_na($r.settings.sqlite_synchronous))",
+     "- hb_timeout_s: \(or_na($r.settings.hb_timeout_s))",
+     "- ready_period_s: \(or_na($r.settings.ready_period_s))",
+     "- quorum: \(bool_s($r.settings.quorum))",
+     "- stonith: \(bool_s($r.settings.stonith))",
+     "- sync_standby: \(or_na($r.settings.sync_standby))",
+     "",
+     "## Scenarios",
+     "",
+     "| # | Scenario | Verdict | Repetitions | RTO min/p50/max | Telemetry gap | Alerts induced |",
+     "|---|---|---|---|---|---|---|"]
+    + [ $r.scenarios[] |
+        "| \(.id) | \(.name) | \(.verdict) | \(.repetitions) | "
+        + (if .measures == null or .measures.rto_ms == null then "n/a"
+           else "\(sec_s(.measures.rto_ms.min)) / \(sec_s(.measures.rto_ms.p50)) / \(sec_s(.measures.rto_ms.max))"
+           end)
+        + " | "
+        + (if .measures == null or .measures.telemetry_gap_s == null then "n/a" else "\(.measures.telemetry_gap_s)s" end)
+        + " | "
+        + (if .measures == null or .measures.alerts_induced == null then "n/a"
+           else "agent=\(.measures.alerts_induced.agent_offline) hb=\(.measures.alerts_induced.heartbeat_overdue) endpoint=\(.measures.alerts_induced.endpoint_down) other=\(.measures.alerts_induced.other)"
+           end)
+        + " |"
+      ]
+    + ( [$r.scenarios[] | select(.verdict == "not_applicable")] as $na
+        | if ($na | length) > 0 then
+            ["", "## Not applicable", ""] + [$na[] | "- \(.id) \(.name): \(.reason // "no reason given")"]
+          else [] end )
+    + ( [$r.scenarios[] | select(.verdict == "fail")] as $fails
+        | if ($fails | length) > 0 then
+            ["", "## Failures", ""]
+            + ( [ $fails[] | (
+                    ["### \(.id) \(.name)", ""]
+                    + (if .reason then ["- " + .reason] else [] end)
+                    + [ (.runs // [])[] | select(.verdict == "fail")
+                        | "- repetition \(.repetition): \(.reasons | join("; "))" ]
+                    + [""]
+                  ) ] | add // [] )
+          else [] end )
+    + ["", "## Totals",
+       "",
+       "- scenarios: \($r.totals.scenarios)",
+       "- pass: \($r.totals.pass)",
+       "- fail: \($r.totals.fail)",
+       "- not_applicable: \($r.totals.not_applicable)"]
+  )
+| .[]
+JQEOF
+	jq -r -f "$TMP/render.jq" "$run_json_file"
+}
+
+cmd_report() {
+	run_id=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--run)
+			[ $# -ge 2 ] || die "--run takes a value" 2
+			run_id=$2
+			shift 2
+			;;
+		*) die "unknown option for report: $1" 2 ;;
+		esac
+	done
+
+	need jq
+
+	reports_dir="$HA_DIR/reports"
+	if [ -z "$run_id" ]; then
+		run_id=$(find "$reports_dir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort | tail -n 1)
+		[ -n "$run_id" ] || die "no run found under $reports_dir" 2
+	fi
+
+	run_dir="$reports_dir/$run_id"
+	run_json_file="$run_dir/run.json"
+	[ -f "$run_json_file" ] || die "no run.json in $run_dir" 2
+
+	render_report "$run_json_file" | tee "$run_dir/run.md"
+}
+
 not_yet() {
 	die "$1 is not implemented yet ($2)" 3
 }
@@ -643,7 +1193,7 @@ main() {
 	chaos) cmd_chaos "$@" ;;
 	heal) cmd_heal "$@" ;;
 	run-all) cmd_run_all "$@" ;;
-	report) not_yet "report" "T097" ;;
+	report) cmd_report "$@" ;;
 	inventory) not_yet "inventory" "T080" ;;
 	help | --help | -h)
 		usage

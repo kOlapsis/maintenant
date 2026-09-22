@@ -26,6 +26,9 @@ measures:
 - local_restarts
 - primary_count
 modes:
+  ip-only:
+    applicable: false
+    reason: no PostgreSQL in this mode
   postgres/streaming:
     applicable: true
     expected: 'Bounded local restart of the primary: crash recovery, standby still attached.

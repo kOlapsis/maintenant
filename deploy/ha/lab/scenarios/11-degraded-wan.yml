@@ -24,6 +24,11 @@ measures:
 - rto_ms
 - alerts_induced
 modes:
+  ip-only:
+    applicable: true
+    expected: No failover, and above all no repeated failover. A degraded link is not a dead
+      node; the timeouts must be wide enough to ride it out and the service must not flap.
+      Data is local to each node in this mode, so writes are not compared.
   postgres/streaming:
     applicable: true
     expected: No failover, and above all no repeated failover. A degraded link is not a dead

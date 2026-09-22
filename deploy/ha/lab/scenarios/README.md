@@ -16,10 +16,10 @@ authoritative for intent.
 - **Repair** is what `lab heal <n>` does, and it must bring the bench back to nominal state
   before the next scenario runs. `lab run-all` repairs after every scenario and verifies the
   repair before moving on.
-- **Expected** is defined per mode. The three modes are `postgres/streaming`, `sqlite/drbd`
-  and `postgres/drbd` (the last one only if it is played). A scenario with no object in a
-  mode is reported *not applicable*, with its reason. It is never reported as passed, and its
-  number is never reused.
+- **Expected** is defined per mode. The four modes are `ip-only`, `postgres/streaming`,
+  `sqlite/drbd` and `postgres/drbd` (the last one only if it is played). A scenario with no
+  object in a mode is reported *not applicable*, with its reason. It is never reported as
+  passed, and its number is never reused.
 - **Measures** lists the figures that decide the verdict. Every run collects the full
   measurement set anyway (see `contracts/run-report.md`); the column names what matters here.
 
@@ -104,7 +104,8 @@ This is the scenario the whole bench exists for. It is played with repetitions, 
 |---|---|
 | **Injection** | `iptables -A` on the interconnect network, cutting the two sites from each other while both still reach the arbitrator. |
 | **Repair** | Flush the rule; the cluster reconverges. |
-| **Expected, all modes** | The arbitrator decides. Exactly one side keeps or takes the service; the other stands down. After repair, verification shows a single side wrote: `nodes_written` is never 2, and no data diverged (SC-004). |
+| **Expected, `postgres/streaming`, `sqlite/drbd`, `postgres/drbd`** | The arbitrator decides. Exactly one side keeps or takes the service; the other stands down. After repair, verification shows a single side wrote: `nodes_written` is never 2, and no data diverged (SC-004). |
+| **Expected, `ip-only`** | The arbitrator decides. Exactly one side keeps or takes the service; the other stands down. `nodes_written` is never 2. Data is local to each node in this mode, so writes are not compared. |
 | **Measures** | `nodes_written`, `writes`, `rto_ms`, post-repair divergence check. |
 
 ### 6. Loss of the service address
@@ -142,7 +143,8 @@ This is the failure mode most HA setups miss. It is one of the three that decide
 |---|---|
 | **Injection** | `fallocate` on the service volume until it is full. |
 | **Repair** | Remove the allocated file and verify the database and the journal recovered. |
-| **Expected, all modes** | Controlled degradation, no corruption. The journal — SQLite's or PostgreSQL's — can no longer grow, and the product must degrade rather than corrupt. No failover loop toward a node whose volume is just as full: moving the service does not create space. |
+| **Expected, `postgres/streaming`, `sqlite/drbd`, `postgres/drbd`** | Controlled degradation, no corruption. The journal — SQLite's or PostgreSQL's — can no longer grow, and the product must degrade rather than corrupt. No failover loop toward a node whose volume is just as full: moving the service does not create space. |
+| **Expected, `ip-only`** | *Not applicable* — no service volume in this mode. |
 | **Measures** | `writes` (refusals are expected here and are not losses), `inventory`, absence of a failover loop. |
 
 ### 10. Loss of the PostgreSQL primary
@@ -151,6 +153,7 @@ This is the failure mode most HA setups miss. It is one of the three that decide
 |---|---|
 | **Injection** | `kill -9` on the PostgreSQL primary. A variant makes the local restart impossible, to force the promotion path. |
 | **Repair** | Let the local restart happen; in the variant, rebuild the former primary as a standby. |
+| **Expected, `ip-only`** | *Not applicable* — no PostgreSQL in this mode. |
 | **Expected, `postgres/streaming`** | Bounded local restart of the primary — crash recovery, standby still attached. The standby is promoted **only if** the restart fails: promoting on a mere process death would contradict "local restart before failover" and would force a rebuild for nothing. In the variant, promotion happens, exactly one primary is established, and the former primary is locked out of write service until it is rebuilt. |
 | **Expected, `sqlite/drbd`** | *Not applicable* — there is no external database in this mode. |
 | **Expected, `postgres/drbd`** | Local restart, if this mode is played. |

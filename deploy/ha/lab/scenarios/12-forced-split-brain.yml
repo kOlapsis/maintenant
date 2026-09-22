@@ -27,6 +27,13 @@ measures:
 - divergence
 - crash_confirmed
 modes:
+  ip-only:
+    applicable: true
+    expected: 'With the arbitrator reachable from one side only: that side keeps or takes
+      the service, and the isolated side crashes without having started anything (split_action).
+      With the arbitrator unreachable from both sides: both crash. That is a total outage,
+      and it is the correct outcome, because an outage is recoverable and a divergence is
+      not. Data is local to each node in this mode, so writes are not compared.'
   postgres/streaming:
     applicable: true
     expected: 'With the arbitrator reachable from one side only: that side keeps or takes

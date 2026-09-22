@@ -29,6 +29,7 @@ measures:
 modes:
   ip-only:
     applicable: true
+    max_rto_s: 60
     expected: Same outcome as scenario 2, reached without any orderly shutdown. Data is local to each node in this mode, so writes are not compared.
   postgres/streaming:
     applicable: true

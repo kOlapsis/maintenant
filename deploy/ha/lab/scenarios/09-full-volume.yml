@@ -24,6 +24,9 @@ measures:
 - inventory
 - failover_count
 modes:
+  ip-only:
+    applicable: false
+    reason: no service volume in this mode
   postgres/streaming:
     applicable: true
     expected: 'Controlled degradation, no corruption. The journal, SQLite''s or PostgreSQL''s,
