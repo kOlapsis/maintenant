@@ -31,10 +31,11 @@
       <target dev="vdb" bus="virtio"/>
     </disk>
 {% endif %}
-    <disk type="file" device="cdrom">
+    <!-- The cloud kernel of the Debian image has no AHCI driver: a SATA seed is never seen. -->
+    <disk type="file" device="disk">
       <driver name="qemu" type="raw"/>
       <source file="{{ lab_work_dir }}/{{ machine.name }}-seed.iso"/>
-      <target dev="sda" bus="sata"/>
+      <target dev="vdc" bus="virtio"/>
       <readonly/>
     </disk>
 {% for net_name in machine.networks %}
