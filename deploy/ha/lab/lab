@@ -44,9 +44,17 @@ PROBE_AVAILABILITY_UNIT="lab-probe-availability.service"
 PROBE_WRITES_UNIT="lab-probe-writes.service"
 PROBE_OBSERVER_UNIT="lab-probe-observer.service"
 
+# The bench logs in as an ordinary account: every om command, and every
+# scenario command, is run through sudo on the machine it acts on.
+OM="sudo -n om"
+
 # Verified against om v3.0.0-rc30: the output flag is -o, not --format. This is
 # the only place the bench touches om's command line.
-OM_DAEMON_STATUS="om daemon status -o json --sections daemon,nodes,arbitrators"
+OM_DAEMON_STATUS="$OM daemon status -o json --sections daemon,nodes,arbitrators"
+
+# virsh reads qemu:///session for a non-root user, where the bench has nothing.
+LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
+export LIBVIRT_DEFAULT_URI
 
 if [ -t 1 ]; then
 	C_RESET=$(printf '\033[0m')
@@ -246,7 +254,7 @@ collect_status() {
 		total=0
 		for name in $(group_hosts opensvc_cluster); do
 			total=$((total + 1))
-			uri=$(ssh_to "$name" "om node config get --kw 'arbitrator#0.uri'" 2>/dev/null) || continue
+			uri=$(ssh_to "$name" "$OM node config get --kw 'arbitrator#0.uri'" 2>/dev/null) || continue
 			if [ -n "$uri" ] && ssh_to "$name" "curl -fsS -m 3 -o /dev/null '$uri'" >/dev/null 2>&1; then
 				reached=$((reached + 1))
 			fi
@@ -419,15 +427,34 @@ scenario_env() {
 		LAB_SSH_ACTIVE LAB_SSH_PASSIVE
 }
 
+shell_quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# A scenario names what it acts on with the LAB_ variables, which live on the
+# controller: they are carried over and the command is run as root there.
+scenario_remote() {
+	prelude=""
+	for name in LAB_MODE LAB_SERVICE LAB_SERVICE_ADDRESS LAB_SERVICE_NETMASK \
+		LAB_ACTIVE LAB_PASSIVE LAB_ACTIVE_ADDRESS LAB_PASSIVE_ADDRESS \
+		LAB_ARBITRATOR_ADDRESS LAB_MEASUREMENT_ADDRESS \
+		LAB_ACTIVE_DOMAIN LAB_PASSIVE_DOMAIN LAB_STATE_DIR LAB_INTERCONNECT; do
+		value=""
+		eval "value=\${$name-}"
+		prelude="$prelude$name=$(shell_quote "$value"); export $name; "
+	done
+	ssh_to "$1" "sudo -n sh -c $(shell_quote "$prelude$2")"
+}
+
 scenario_run() {
 	where=$1
 	command=$2
 	case "$where" in
 	host) sh -c "$command" ;;
-	active) ssh_to "$LAB_ACTIVE" "$command" ;;
-	passive) ssh_to "$LAB_PASSIVE" "$command" ;;
-	arbitrator) ssh_to "$(group_hosts arbitrator | head -n 1)" "$command" ;;
-	measurement) ssh_to "$(group_hosts measurement | head -n 1)" "$command" ;;
+	active) scenario_remote "$LAB_ACTIVE" "$command" ;;
+	passive) scenario_remote "$LAB_PASSIVE" "$command" ;;
+	arbitrator) scenario_remote "$(group_hosts arbitrator | head -n 1)" "$command" ;;
+	measurement) scenario_remote "$(group_hosts measurement | head -n 1)" "$command" ;;
 	*) die "scenario targets an unknown place: $where" 2 ;;
 	esac
 }
