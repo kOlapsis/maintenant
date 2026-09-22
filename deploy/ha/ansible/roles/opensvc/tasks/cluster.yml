@@ -1,10 +1,10 @@
 ---
-# om3 reaches its peers by node name, and nothing else resolves them.
+# om3 reaches its peers by node name, and its certificate names no address.
 - name: Resolve every peer by its node name
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    regexp: '^\S+\s+{{ item }}(\s|$)'
-    line: "{{ hostvars[item].ansible_host }} {{ item }}"
+    regexp: '^\S+\s+{{ hostvars[item].ansible_facts.hostname }}(\s|$)'
+    line: "{{ hostvars[item].ansible_host }} {{ hostvars[item].ansible_facts.hostname }}"
   loop: "{{ groups['opensvc_cluster'] | reject('equalto', inventory_hostname) | list }}"
 
 - name: Read the cluster members this node knows
@@ -40,7 +40,7 @@
 - name: Join the cluster
   ansible.builtin.command: >-
     om cluster join
-    --node {{ hostvars[opensvc_former].ansible_host | default(opensvc_former) }}
+    --node {{ hostvars[opensvc_former].ansible_facts.hostname }}
     --token {{ (opensvc_auth.stdout | from_json).token
                | default((opensvc_auth.stdout | from_json).access_token) }}
     --timeout {{ opensvc_join_timeout }}
