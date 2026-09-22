@@ -12,6 +12,7 @@ fencing_host_agent: /usr/local/sbin/maintenant-fence-host
 # libvirt only: where the domains live, and under which name.
 fencing_host: "{{ ha_fencing_host | default('10.10.9.1') }}"
 fencing_host_user: maintenant-fence
+fencing_libvirt_uri: "{{ ha_fencing_libvirt_uri | default('qemu:///system') }}"
 fencing_domain_prefix: "{{ ha_fencing_domain_prefix | default('mnt-lab-') }}"
 fencing_key: /etc/opensvc/fencing_ed25519
 fencing_key_dir: "{{ lab_work_dir | default('/var/lib/libvirt/images/mnt-lab') }}"
