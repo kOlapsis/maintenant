@@ -16,7 +16,7 @@ injection:
 repair:
   'on': host
   command: virsh domstate "$LAB_ACTIVE_DOMAIN" | grep -q "shut off" && virsh start "$LAB_ACTIVE_DOMAIN"
-    || $LAB_SSH_ACTIVE "pkill -CONT -x om"
+    || $LAB_SSH_ACTIVE "sudo -n pkill -CONT -x om"
 verify:
   'on': measurement
   command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
