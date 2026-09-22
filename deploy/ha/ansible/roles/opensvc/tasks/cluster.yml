@@ -1,4 +1,12 @@
 ---
+# om3 reaches its peers by node name, and nothing else resolves them.
+- name: Resolve every peer by its node name
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\S+\s+{{ item }}(\s|$)'
+    line: "{{ hostvars[item].ansible_host }} {{ item }}"
+  loop: "{{ groups['opensvc_cluster'] | reject('equalto', inventory_hostname) | list }}"
+
 - name: Read the cluster members this node knows
   ansible.builtin.command: om node list
   register: opensvc_members
