@@ -382,21 +382,37 @@ scenario_json() {
 
 # Every scenario command is run through sh with the bench exported around it,
 # so a scenario file names what it acts on and never where that thing is.
+#
+# A repair undoes what the injection did, to the node the injection hit: the
+# pair is recorded when the failure is injected and read back afterwards, since
+# the failover has moved the service in between.
 scenario_env() {
+	number=$1
+	action=$2
 	address=$(service_address)
 	load_inventory
+	record="$STATE_DIR/injection-$(printf '%02d' "$number")"
 
 	active=""
 	passive=""
-	for name in $(group_hosts opensvc_cluster); do
-		if ssh_to "$name" "ip -o addr show" 2>/dev/null | grep -q " inet $address/"; then
-			active="$name"
-		else
-			passive="$name"
+	if [ "$action" != "injection" ] && [ -f "$record" ]; then
+		active=$(sed -n 1p "$record")
+		passive=$(sed -n 2p "$record")
+	else
+		for name in $(group_hosts opensvc_cluster); do
+			if ssh_to "$name" "ip -o addr show" 2>/dev/null | grep -q " inet $address/"; then
+				active="$name"
+			else
+				passive="$name"
+			fi
+		done
+		if [ -z "$active" ]; then
+			die "no node holds $address: nothing to inject into" 1
 		fi
-	done
-	if [ -z "$active" ]; then
-		die "no node holds $address: nothing to inject into" 1
+		if [ "$action" = "injection" ]; then
+			mkdir -p "$STATE_DIR"
+			printf '%s\n%s\n' "$active" "$passive" >"$record"
+		fi
 	fi
 
 	arbitrator=$(group_hosts arbitrator | head -n 1)
@@ -469,7 +485,7 @@ scenario_act() {
 	need python3
 
 	file=$(scenario_file "$number")
-	scenario_env
+	scenario_env "$number" "$action"
 	scenario_json "$file" >"$TMP/scenario.json"
 
 	name=$(jq -r '.name' "$TMP/scenario.json")
@@ -510,6 +526,7 @@ cmd_heal() {
 	scenario_act repair "$1"
 	info "checking the bench came back"
 	scenario_act verify "$1"
+	rm -f "$STATE_DIR/injection-$(printf '%02d' "$1")"
 }
 
 cmd_up() {
