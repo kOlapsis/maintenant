@@ -5,6 +5,10 @@
 
 set -eu
 
+# Without it virsh reads the account's own, empty, qemu:///session.
+LIBVIRT_DEFAULT_URI={{ fencing_libvirt_uri | quote }}
+export LIBVIRT_DEFAULT_URI
+
 set -f
 # shellcheck disable=SC2086 # the split is the point; -f stops the globbing
 set -- ${SSH_ORIGINAL_COMMAND:-}
