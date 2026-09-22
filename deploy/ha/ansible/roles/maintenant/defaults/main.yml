@@ -2,7 +2,7 @@
 maintenant_user: maintenant
 maintenant_bin: /usr/local/bin/maintenant
 maintenant_env_file: /etc/maintenant.env
-maintenant_source_dir: "{{ playbook_dir }}/.."
+maintenant_source_dir: "{{ playbook_dir }}/../../.."
 maintenant_build_dir: /tmp/maintenant-build
 maintenant_build_image: golang:1.26-alpine
 
