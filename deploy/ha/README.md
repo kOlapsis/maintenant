@@ -16,7 +16,7 @@ No throwaway script is ever required to deploy.
 | `ansible/roles/opensvc/` | om3 on the frozen release, and the cluster the nodes form |
 | `ansible/roles/opensvc_arbitrator/` | the third-site witness, and the quorum settings the nodes hold |
 | `ansible/roles/fencing/` | the callout a survivor runs to shoot its unreachable peer |
-| `ansible/roles/maintenant/` | the static binary, the state root, the gRPC pair and the settings, one table for both the env file and the service |
+| `ansible/roles/maintenant/` | the static binary, the state root, the settings and, in server mode, the gRPC pair, one table for both the env file and the service |
 | `ansible/roles/maintenant_check/` | the application test the service runs: 0 alive, 1 degraded, 2 dead |
 | `ansible/roles/opensvc_service/` | renders the mode's template, declares the service and waits for it to be up on one node |
 | `ansible/roles/probes/` | the two probes, built, shipped and kept running on the measurement machine |

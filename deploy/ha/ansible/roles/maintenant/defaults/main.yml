@@ -30,14 +30,22 @@ maintenant_require_existing_data: false
 # to notice the drift long before it starts rejecting agents.
 maintenant_clock_drift_max_seconds: 30
 
-maintenant_settings:
-  MAINTENANT_MODE: server
+maintenant_mode: embedded
+
+maintenant_base_settings:
+  MAINTENANT_MODE: "{{ maintenant_mode }}"
   MAINTENANT_ADDR: "{{ maintenant_service_address }}:{{ maintenant_http_port }}"
-  MAINTENANT_GRPC_LISTEN: "{{ maintenant_service_address }}:{{ maintenant_grpc_port }}"
-  MAINTENANT_GRPC_URL: "{{ maintenant_grpc_url }}"
   MAINTENANT_STATE_DIR: "{{ maintenant_state_dir }}"
   MAINTENANT_SQLITE_SYNCHRONOUS: "{{ maintenant_sqlite_synchronous }}"
   MAINTENANT_REQUIRE_STATE_DIR: "{{ maintenant_require_state_dir | bool | ternary('1', '0') }}"
   MAINTENANT_REQUIRE_EXISTING_DATA: "{{ maintenant_require_existing_data | bool | ternary('1', '0') }}"
+
+maintenant_server_settings:
+  MAINTENANT_GRPC_LISTEN: "{{ maintenant_service_address }}:{{ maintenant_grpc_port }}"
+  MAINTENANT_GRPC_URL: "{{ maintenant_grpc_url }}"
   MAINTENANT_GRPC_TLS_CERT: "{{ maintenant_tls_dir }}/server.crt"
   MAINTENANT_GRPC_TLS_KEY: "{{ maintenant_tls_dir }}/server.key"
+
+maintenant_settings: >-
+  {{ maintenant_base_settings
+     | combine(maintenant_server_settings if maintenant_mode == 'server' else {}) }}
