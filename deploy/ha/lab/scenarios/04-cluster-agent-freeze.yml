@@ -26,6 +26,14 @@ measures:
 - alerts_induced
 - fencing_outcome
 modes:
+  ip-only:
+    applicable: true
+    expected: 'Heartbeat expiry detects the freeze. Detection alone is not recovery: a frozen
+      daemon does not kill itself, and the survivor cannot take the service while the peer
+      still holds it. The frozen node is fenced before anything starts anywhere else. If the
+      fencing fails, nothing starts elsewhere and the operator is alerted: a failed fencing
+      blocks, it never lets through (FR-024). Data is local to each node in this mode, so
+      writes are not compared.'
   postgres/streaming:
     applicable: true
     expected: 'Heartbeat expiry detects the freeze. Detection alone is not recovery: a frozen

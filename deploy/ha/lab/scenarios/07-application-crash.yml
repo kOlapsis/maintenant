@@ -26,6 +26,7 @@ measures:
 modes:
   ip-only:
     applicable: true
+    max_rto_s: 30
     expected: Bounded local restart of the application on the same node, before any failover, in under 30 s (SC-005).
   postgres/streaming:
     applicable: true
