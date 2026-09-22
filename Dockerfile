@@ -49,6 +49,10 @@ RUN apk add --no-cache ca-certificates tzdata setpriv \
 # /tmp as a tiny tmpfs, which SQLITE_FULL-fails the conversion; /data has real space.
 ENV SQLITE_TMPDIR=/data
 
+# Tells the OS identity reader it must not fall back to the image's own
+# /etc/os-release, which describes the container rather than the host.
+ENV MAINTENANT_CONTAINER=1
+
 COPY --from=builder --chmod=555 /out/maintenant /app/maintenant
 COPY --chmod=555 docker-entrypoint.sh /docker-entrypoint.sh
 

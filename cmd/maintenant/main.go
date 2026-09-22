@@ -168,6 +168,7 @@ func main() {
 			EnrollmentToken:     cfg.MultiHost.EnrollmentToken,
 			RuntimeOverride:     cfg.MultiHost.RuntimeOverride,
 			Label:               cfg.MultiHost.Label,
+			NodeName:            cfg.MultiHost.NodeName,
 			AgentVersion:        version,
 			InsecureSkipVerify:  cfg.MultiHost.InsecureSkipVerify,
 			ProxyLabels:         cfg.ProxyLabels,

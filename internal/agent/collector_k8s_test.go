@@ -84,7 +84,7 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- collectKubernetesRuntime(ctx, id, &fakeSnapshotSource{}, spool, slog.Default())
+		done <- collectKubernetesRuntime(ctx, id, &fakeSnapshotSource{}, "", spool, slog.Default())
 	}()
 
 	var sawTopology, sawHostSample bool

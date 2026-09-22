@@ -1,4 +1,4 @@
-.PHONY: test test-cover lint build check frontend proto-gen test-pg \
+.PHONY: test test-cover lint build check frontend proto-gen test-pg eol-table \
 	e2e-sqlite e2e-postgres e2e-both e2e-up-sqlite e2e-up-postgres e2e-logs e2e-down e2e-migrate
 
 test:
@@ -48,6 +48,10 @@ test-pg:
 	until docker exec maintenant-test-pg pg_isready -U postgres -q; do sleep 0.5; done
 	MAINTENANT_TEST_DATABASE_URL="postgres://postgres:test@127.0.0.1:54329/postgres?sslmode=disable" go test -race ./internal/store/...
 	docker rm -f maintenant-test-pg
+
+# Rewrites internal/eol/table.json from endoflife.date. Run before a release.
+eol-table:
+	MAINTENANT_EOL_WRITE_TABLE=1 go test -run TestWriteEmbeddedTable -count=1 ./internal/eol
 
 # ---------------------------------------------------------------------------
 # End-to-end: the whole product, on either engine.

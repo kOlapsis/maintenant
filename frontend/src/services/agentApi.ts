@@ -12,6 +12,44 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch, apiFetchVoid } from './apiFetch'
 
+export type OSSupportState =
+  | 'unknown'
+  | 'untracked'
+  | 'supported'
+  | 'security_only'
+  | 'ending_soon'
+  | 'ended'
+
+export type OSSource = '' | 'host_file' | 'kubernetes_node'
+
+export type OSUnavailableReason =
+  | ''
+  | 'mount_missing'
+  | 'file_unreadable'
+  | 'node_not_found'
+  | 'agent_too_old'
+
+export interface AgentOSSupport {
+  state: OSSupportState
+  product: string | null
+  cycle: string | null
+  active_until: string | null
+  security_until: string | null
+  extended_until: string | null
+  days_remaining: number | null
+  table_source: string
+}
+
+export interface AgentOS {
+  id: string
+  version_id: string
+  pretty_name: string
+  source: OSSource
+  unavailable_reason: OSUnavailableReason
+  reported_at: string | null
+  support: AgentOSSupport
+}
+
 export interface Agent {
   agent_id: string
   hostname: string
@@ -26,6 +64,7 @@ export interface Agent {
   revoked_at: string | null
   revoked_by: string | null
   spool: AgentSpool | null
+  os: AgentOS
 }
 
 /** What an agent last said about the queue it fills while the server is unreachable. */

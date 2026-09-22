@@ -140,6 +140,12 @@ const isFiltered = computed(
 
 const filteredIds = computed(() => new Set(filter.filtered.value.map((c) => c.id)))
 
+const liveIndicator = computed(() => {
+  if (store.sseConnected) return { label: 'Live', color: 'var(--mnt-status-ok)' }
+  if (store.sseSuspended) return { label: 'Paused (tab in background)', color: 'var(--mnt-text-muted)' }
+  return { label: 'Disconnected', color: 'var(--mnt-status-down)' }
+})
+
 const visibleGroups = computed(() =>
   store.groups
     .map((g) => ({ ...g, containers: g.containers.filter((c) => filteredIds.value.has(c.id)) }))
@@ -486,9 +492,9 @@ onMounted(() => {
     <div v-if="!store.loading" class="mt-4 flex items-center gap-2 text-xs text-mnt-muted">
       <span
         class="inline-block h-2 w-2 rounded-full"
-        :style="{ backgroundColor: store.sseConnected ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)' }"
+        :style="{ backgroundColor: liveIndicator.color }"
       />
-      {{ store.sseConnected ? 'Live' : 'Disconnected' }}
+      {{ liveIndicator.label }}
       <span class="ml-auto">
         <template v-if="isFiltered">
           {{ filter.filtered.value.length }} of {{ store.containerCount }} containers

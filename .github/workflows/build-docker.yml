@@ -125,6 +125,20 @@ jobs:
         with:
           persist-credentials: false
 
+      # Release images embed OS end-of-support dates refreshed at build time,
+      # like the release binaries; a failed refresh keeps the committed table.
+      - name: Set up Go
+        if: github.event_name == 'release'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Refresh the OS end-of-support table
+        if: github.event_name == 'release'
+        continue-on-error: true
+        run: make eol-table
+
       - name: Compute build metadata
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then

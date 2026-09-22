@@ -22,6 +22,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -92,7 +93,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "get_updates",
-		Description: "List available image updates for monitored containers, showing current and latest versions.",
+		Description: "List available image updates for monitored containers, and the operating system of every monitored host with its end-of-support status (supported, ending_soon, ended, unknown, untracked) and dates.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getUpdatesHandler(svc))
 
@@ -410,7 +411,20 @@ func getUpdatesHandler(svc *Services) gomcp.ToolHandlerFor[getUpdatesInput, any]
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list updates: %w", err)
 		}
-		return jsonResult(updates)
+		out := map[string]any{"updates": updates, "hosts": []map[string]any{}, "eol_table": eol.TableStatus{}}
+		if svc.EOL != nil {
+			hosts, err := svc.EOL.HostSupports(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to list host operating systems: %w", err)
+			}
+			rendered := make([]map[string]any, 0, len(hosts))
+			for _, host := range hosts {
+				rendered = append(rendered, eol.HostJSON(host))
+			}
+			out["hosts"] = rendered
+			out["eol_table"] = svc.EOL.Status()
+		}
+		return jsonResult(out)
 	}
 }
 

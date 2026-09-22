@@ -44,6 +44,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"
@@ -226,6 +227,7 @@ One central **server**, lightweight read-only **agents** on your other hosts, a 
 docker run -d --name maintenant-agent --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v /proc:/host/proc:ro \
+  -v /etc/os-release:/host/etc/os-release:ro \
   -v maintenant-agent-data:/var/lib/maintenant \
   ghcr.io/kolapsis/maintenant:latest \
   --mode=agent --server=grpcs://monitoring.example.com \
@@ -237,6 +239,10 @@ Agents detect their local runtime (Docker, Swarm or Kubernetes), stream containe
 ### [Update intelligence](https://docs.maintenant.dev/features/updates/)
 
 Scans OCI registries and compares digests, so you know which images have an update before you `docker pull` blindly. Compose-aware update and rollback commands, with the right `--project-directory`. No Diun, no Watchtower, no extra container: it is part of the monitor.
+
+### [Host OS end-of-support](https://docs.maintenant.dev/features/host-os/)
+
+Every monitored host reports its distribution and version; maintenant checks it against the support cycles of Debian, Ubuntu, RHEL, Rocky, Alma, Alpine and SLES and alerts 30 days before the free security support ends, then again once it has. Dates ship with the binary and refresh daily from endoflife.date when the network allows.
 
 ### [Endpoint monitoring](https://docs.maintenant.dev/features/endpoints/)
 
@@ -312,6 +318,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"

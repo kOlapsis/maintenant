@@ -192,6 +192,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"
@@ -275,6 +276,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"
@@ -351,6 +353,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-agent-data:/var/lib/maintenant
     environment:
       MAINTENANT_PROXY_LABELS: "true"
@@ -457,6 +460,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - maintenant-data:/data
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"

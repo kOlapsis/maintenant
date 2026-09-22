@@ -39,6 +39,7 @@ type AgentConfig struct {
 	EnrollmentToken     string
 	RuntimeOverride     string
 	Label               string
+	NodeName            string
 	AgentVersion        string
 	InsecureSkipVerify  bool
 	ProxyLabels         bool
@@ -106,7 +107,7 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 	collectorDone := make(chan struct{})
 	go func() {
 		defer close(collectorDone)
-		if cerr := RunCollector(ctx, id, rt, rtLabel, spool, logger); cerr != nil && ctx.Err() == nil {
+		if cerr := RunCollector(ctx, id, rt, rtLabel, cfg.NodeName, spool, logger); cerr != nil && ctx.Err() == nil {
 			logger.Error("agent: collector stopped", "error", cerr)
 		}
 	}()

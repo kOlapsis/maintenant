@@ -12,9 +12,10 @@
 -->
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useResourcesStore } from '@/stores/resources'
 import { useDashboardStore } from '@/stores/dashboard'
+import { useVisibleInterval } from '@/composables/useVisibleInterval'
 import { Server } from 'lucide-vue-next'
 
 // showMonitorStats: the Monitors/Availability rows read the dashboard store,
@@ -40,16 +41,11 @@ function gaugeBarColor(val: number, thresholds = { warn: 60, crit: 80 }): string
   return 'bg-mnt-green-500'
 }
 
-let summaryTimer: ReturnType<typeof setInterval> | null = null
-
 onMounted(() => {
   resources.fetchSummary()
-  summaryTimer = setInterval(() => resources.fetchSummary(), 3_000)
 })
 
-onUnmounted(() => {
-  if (summaryTimer) clearInterval(summaryTimer)
-})
+useVisibleInterval(() => resources.fetchSummary(), 3_000)
 </script>
 
 <template>

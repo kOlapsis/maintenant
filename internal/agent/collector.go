@@ -41,9 +41,10 @@ var containerInventoryInterval = 30 * time.Second
 
 // RunCollector starts collecting events from the local runtime and pushing them to stream.
 // rt is the already-connected runtime resolved by agent.Run; label is the reported
-// runtime kind ("docker", "swarm" or "kubernetes").
+// runtime kind ("docker", "swarm" or "kubernetes"); nodeName is the Kubernetes node
+// the agent runs on, empty unless the operator set it.
 // Blocks until ctx is cancelled or a fatal push error occurs.
-func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label string, spool *Spool, logger *slog.Logger) error {
+func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label, nodeName string, spool *Spool, logger *slog.Logger) error {
 	switch label {
 	case RuntimeDocker, RuntimeSwarm:
 		return collectContainerRuntime(ctx, id, rt, label, spool, logger)
@@ -54,7 +55,7 @@ func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label s
 			<-ctx.Done()
 			return nil
 		}
-		return collectKubernetesRuntime(ctx, id, src, spool, logger)
+		return collectKubernetesRuntime(ctx, id, src, nodeName, spool, logger)
 	default:
 		return fmt.Errorf("collector: unsupported runtime %q", label)
 	}
@@ -70,6 +71,7 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
 	g.Go(func() error { return runLabelProbers(gCtx, id, rt, spool, logger) })
+	g.Go(func() error { return streamHostOS(gCtx, id, hoststat.ReadOSRelease, spool, logger) })
 
 	// Swarm: also push a periodic full topology snapshot (services/tasks/nodes)
 	// so the server can serve the Services/Tasks/Nodes views for this agent.

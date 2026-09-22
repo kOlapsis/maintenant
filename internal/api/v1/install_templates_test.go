@@ -75,6 +75,9 @@ func TestBuildInstallDockerRun_ContainsDockerSocketMount(t *testing.T) {
 	if !strings.Contains(out, "ghcr.io/kolapsis/maintenant:latest") {
 		t.Errorf("docker_run template missing image reference")
 	}
+	if !strings.Contains(out, "/etc/os-release:/host/etc/os-release:ro") {
+		t.Errorf("docker_run template missing host os-release mount")
+	}
 }
 
 func TestBuildInstallDockerCompose_HasServicesBlock(t *testing.T) {
@@ -87,6 +90,9 @@ func TestBuildInstallDockerCompose_HasServicesBlock(t *testing.T) {
 	}
 	if !strings.Contains(out, "volumes:") {
 		t.Errorf("docker_compose template missing volumes block")
+	}
+	if !strings.Contains(out, "- /etc/os-release:/host/etc/os-release:ro") {
+		t.Errorf("docker_compose template missing host os-release mount")
 	}
 }
 
@@ -106,5 +112,8 @@ func TestBuildInstallKubernetes_HasDaemonSetAndSecret(t *testing.T) {
 	}
 	if !strings.Contains(out, "--runtime=kubernetes") {
 		t.Errorf("kubernetes template should pin runtime to kubernetes")
+	}
+	if !strings.Contains(out, "name: MAINTENANT_NODE_NAME") {
+		t.Errorf("kubernetes template missing MAINTENANT_NODE_NAME env entry")
 	}
 }

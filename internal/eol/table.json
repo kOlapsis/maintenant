@@ -1,0 +1,802 @@
+{
+  "source": "embedded",
+  "fetched_at": "2026-09-18T00:00:00Z",
+  "products": {
+    "almalinux": [
+      {
+        "name": "10",
+        "lts": false,
+        "active_until": "2030-05-31",
+        "security_until": "2035-05-31"
+      },
+      {
+        "name": "9",
+        "lts": false,
+        "active_until": "2027-05-31",
+        "security_until": "2032-05-31"
+      },
+      {
+        "name": "8",
+        "lts": false,
+        "active_until": "2024-05-31",
+        "security_until": "2029-05-31"
+      }
+    ],
+    "alpine-linux": [
+      {
+        "name": "3.24",
+        "lts": false,
+        "security_until": "2028-06-01"
+      },
+      {
+        "name": "3.23",
+        "lts": false,
+        "security_until": "2027-11-01"
+      },
+      {
+        "name": "3.22",
+        "lts": false,
+        "security_until": "2027-05-01"
+      },
+      {
+        "name": "3.21",
+        "lts": false,
+        "security_until": "2026-11-01"
+      },
+      {
+        "name": "3.20",
+        "lts": false,
+        "security_until": "2026-04-01"
+      },
+      {
+        "name": "3.19",
+        "lts": false,
+        "security_until": "2025-11-01"
+      },
+      {
+        "name": "3.18",
+        "lts": false,
+        "security_until": "2025-05-09"
+      },
+      {
+        "name": "3.17",
+        "lts": false,
+        "security_until": "2024-11-22"
+      },
+      {
+        "name": "3.16",
+        "lts": false,
+        "security_until": "2024-05-23"
+      },
+      {
+        "name": "3.15",
+        "lts": false,
+        "security_until": "2023-11-01"
+      },
+      {
+        "name": "3.14",
+        "lts": false,
+        "security_until": "2023-05-01"
+      },
+      {
+        "name": "3.13",
+        "lts": false,
+        "security_until": "2022-11-01"
+      },
+      {
+        "name": "3.12",
+        "lts": false,
+        "security_until": "2022-05-01"
+      },
+      {
+        "name": "3.11",
+        "lts": false,
+        "security_until": "2021-11-01"
+      },
+      {
+        "name": "3.10",
+        "lts": false,
+        "security_until": "2021-05-01"
+      },
+      {
+        "name": "3.9",
+        "lts": false,
+        "security_until": "2020-11-01"
+      },
+      {
+        "name": "3.8",
+        "lts": false,
+        "security_until": "2020-05-01"
+      },
+      {
+        "name": "3.7",
+        "lts": false,
+        "security_until": "2019-11-01"
+      },
+      {
+        "name": "3.6",
+        "lts": false,
+        "security_until": "2019-05-01"
+      },
+      {
+        "name": "3.5",
+        "lts": false,
+        "security_until": "2018-11-01"
+      },
+      {
+        "name": "3.4",
+        "lts": false,
+        "security_until": "2018-05-01"
+      },
+      {
+        "name": "3.3",
+        "lts": false,
+        "security_until": "2017-11-01"
+      },
+      {
+        "name": "3.2",
+        "lts": false,
+        "security_until": "2017-05-01"
+      },
+      {
+        "name": "3.1",
+        "lts": false,
+        "security_until": "2016-11-01"
+      },
+      {
+        "name": "3.0",
+        "lts": false,
+        "security_until": "2016-05-01"
+      },
+      {
+        "name": "2.7",
+        "lts": false,
+        "security_until": "2015-11-01"
+      },
+      {
+        "name": "2.6",
+        "lts": false,
+        "security_until": "2015-05-01"
+      },
+      {
+        "name": "2.5",
+        "lts": false,
+        "security_until": "2014-11-01"
+      },
+      {
+        "name": "2.4",
+        "lts": false,
+        "security_until": "2014-05-01"
+      },
+      {
+        "name": "2.3",
+        "lts": false,
+        "security_until": "2013-11-01"
+      },
+      {
+        "name": "2.2",
+        "lts": false,
+        "security_until": "2013-05-01"
+      },
+      {
+        "name": "2.1",
+        "lts": false,
+        "security_until": "2012-11-01"
+      }
+    ],
+    "debian": [
+      {
+        "name": "13",
+        "lts": false,
+        "active_until": "2028-08-09",
+        "security_until": "2030-06-30",
+        "extended_until": "2035-06-30"
+      },
+      {
+        "name": "12",
+        "lts": false,
+        "active_until": "2026-07-11",
+        "security_until": "2028-06-30",
+        "extended_until": "2033-06-30"
+      },
+      {
+        "name": "11",
+        "lts": false,
+        "active_until": "2024-08-14",
+        "security_until": "2026-08-31",
+        "extended_until": "2031-06-30"
+      },
+      {
+        "name": "10",
+        "lts": false,
+        "active_until": "2022-09-10",
+        "security_until": "2024-06-30",
+        "extended_until": "2029-06-30"
+      },
+      {
+        "name": "9",
+        "lts": false,
+        "active_until": "2020-07-18",
+        "security_until": "2022-07-01",
+        "extended_until": "2027-06-30"
+      },
+      {
+        "name": "8",
+        "lts": false,
+        "active_until": "2018-06-17",
+        "security_until": "2020-06-30",
+        "extended_until": "2025-06-30"
+      },
+      {
+        "name": "7",
+        "lts": false,
+        "active_until": "2016-04-25",
+        "security_until": "2018-05-31",
+        "extended_until": "2020-06-30"
+      },
+      {
+        "name": "6",
+        "lts": false,
+        "active_until": "2014-05-31",
+        "security_until": "2016-02-29"
+      },
+      {
+        "name": "5",
+        "lts": false,
+        "active_until": "2012-02-06",
+        "security_until": "2012-02-06"
+      },
+      {
+        "name": "4",
+        "lts": false,
+        "active_until": "2010-02-15",
+        "security_until": "2010-02-15"
+      },
+      {
+        "name": "3.1",
+        "lts": false,
+        "active_until": "2008-03-31",
+        "security_until": "2008-03-31"
+      },
+      {
+        "name": "3.0",
+        "lts": false,
+        "active_until": "2006-06-30",
+        "security_until": "2006-06-30"
+      },
+      {
+        "name": "2.2",
+        "lts": false,
+        "active_until": "2003-06-30",
+        "security_until": "2003-06-30"
+      },
+      {
+        "name": "2.1",
+        "lts": false,
+        "active_until": "2000-09-30",
+        "security_until": "2000-10-30"
+      },
+      {
+        "name": "2.0",
+        "lts": false,
+        "active_until": "1999-02-15",
+        "security_until": "1999-02-15"
+      },
+      {
+        "name": "1.3",
+        "lts": false,
+        "active_until": "1998-12-08",
+        "security_until": "1998-12-08"
+      },
+      {
+        "name": "1.2",
+        "lts": false,
+        "active_until": "1997-10-23",
+        "security_until": "1997-10-23"
+      },
+      {
+        "name": "1.1",
+        "lts": false,
+        "active_until": "1996-12-12",
+        "security_until": "1996-12-12"
+      }
+    ],
+    "rhel": [
+      {
+        "name": "10",
+        "lts": false,
+        "active_until": "2030-05-31",
+        "security_until": "2035-05-31",
+        "extended_until": "2039-05-31"
+      },
+      {
+        "name": "9",
+        "lts": false,
+        "active_until": "2027-05-31",
+        "security_until": "2032-05-31",
+        "extended_until": "2036-05-31"
+      },
+      {
+        "name": "8",
+        "lts": false,
+        "active_until": "2024-05-31",
+        "security_until": "2029-05-31",
+        "extended_until": "2033-05-31"
+      },
+      {
+        "name": "7",
+        "lts": true,
+        "active_until": "2019-08-06",
+        "security_until": "2024-06-30",
+        "extended_until": "2029-05-31"
+      },
+      {
+        "name": "6",
+        "lts": true,
+        "active_until": "2016-05-10",
+        "security_until": "2020-11-30",
+        "extended_until": "2024-06-30"
+      },
+      {
+        "name": "5",
+        "lts": true,
+        "active_until": "2013-01-08",
+        "security_until": "2017-03-31",
+        "extended_until": "2020-11-30"
+      },
+      {
+        "name": "4",
+        "lts": false,
+        "active_until": "2009-03-31",
+        "security_until": "2012-02-29",
+        "extended_until": "2017-03-31"
+      }
+    ],
+    "rocky-linux": [
+      {
+        "name": "10",
+        "lts": false,
+        "active_until": "2030-05-31",
+        "security_until": "2035-05-31"
+      },
+      {
+        "name": "9",
+        "lts": false,
+        "active_until": "2027-05-31",
+        "security_until": "2032-05-31"
+      },
+      {
+        "name": "8",
+        "lts": false,
+        "active_until": "2024-05-31",
+        "security_until": "2029-05-31"
+      }
+    ],
+    "sles": [
+      {
+        "name": "16.0",
+        "lts": false,
+        "security_until": "2027-11-30",
+        "extended_until": "2030-11-30"
+      },
+      {
+        "name": "15.7",
+        "lts": false,
+        "security_until": "2031-07-31",
+        "extended_until": "2034-07-31"
+      },
+      {
+        "name": "15.6",
+        "lts": false,
+        "security_until": "2025-12-31",
+        "extended_until": "2028-12-31"
+      },
+      {
+        "name": "15.5",
+        "lts": false,
+        "security_until": "2024-12-31",
+        "extended_until": "2027-12-31"
+      },
+      {
+        "name": "15.4",
+        "lts": false,
+        "security_until": "2023-12-31",
+        "extended_until": "2026-12-31"
+      },
+      {
+        "name": "15.3",
+        "lts": false,
+        "security_until": "2022-12-31",
+        "extended_until": "2025-12-31"
+      },
+      {
+        "name": "15.2",
+        "lts": false,
+        "security_until": "2021-12-31",
+        "extended_until": "2024-12-31"
+      },
+      {
+        "name": "12.5",
+        "lts": false,
+        "security_until": "2024-10-31",
+        "extended_until": "2027-10-31"
+      },
+      {
+        "name": "15.1",
+        "lts": false,
+        "security_until": "2021-01-31",
+        "extended_until": "2024-01-31"
+      },
+      {
+        "name": "12.4",
+        "lts": false,
+        "security_until": "2020-06-30",
+        "extended_until": "2023-06-30"
+      },
+      {
+        "name": "15.0",
+        "lts": false,
+        "security_until": "2019-12-31",
+        "extended_until": "2022-12-31"
+      },
+      {
+        "name": "12.3",
+        "lts": false,
+        "security_until": "2019-06-30",
+        "extended_until": "2022-06-30"
+      },
+      {
+        "name": "12.2",
+        "lts": false,
+        "security_until": "2018-03-31",
+        "extended_until": "2021-03-31"
+      },
+      {
+        "name": "12.1",
+        "lts": false,
+        "security_until": "2017-05-31",
+        "extended_until": "2020-05-31"
+      },
+      {
+        "name": "11.4",
+        "lts": false,
+        "security_until": "2019-03-31",
+        "extended_until": "2022-03-31"
+      },
+      {
+        "name": "12.0",
+        "lts": false,
+        "security_until": "2016-06-30",
+        "extended_until": "2019-07-01"
+      },
+      {
+        "name": "11.3",
+        "lts": false,
+        "security_until": "2016-01-31",
+        "extended_until": "2019-01-30"
+      },
+      {
+        "name": "11.2",
+        "lts": false,
+        "security_until": "2014-01-31",
+        "extended_until": "2017-01-30"
+      },
+      {
+        "name": "10.4",
+        "lts": false,
+        "security_until": "2013-07-31",
+        "extended_until": "2016-07-30"
+      },
+      {
+        "name": "11.1",
+        "lts": false,
+        "security_until": "2012-08-31",
+        "extended_until": "2015-08-30"
+      },
+      {
+        "name": "10.3",
+        "lts": false,
+        "security_until": "2011-10-11",
+        "extended_until": "2014-10-31"
+      },
+      {
+        "name": "11.0",
+        "lts": false,
+        "security_until": "2010-12-31",
+        "extended_until": "2010-12-31"
+      },
+      {
+        "name": "10.2",
+        "lts": false,
+        "security_until": "2010-04-11",
+        "extended_until": "2013-04-10"
+      },
+      {
+        "name": "10.1",
+        "lts": false,
+        "security_until": "2008-11-30",
+        "extended_until": "2010-12-31"
+      },
+      {
+        "name": "10.0",
+        "lts": false,
+        "security_until": "2007-12-31",
+        "extended_until": "2007-12-31"
+      }
+    ],
+    "ubuntu": [
+      {
+        "name": "26.04",
+        "lts": true,
+        "active_until": "2031-05-29",
+        "security_until": "2031-05-29",
+        "extended_until": "2036-04-23"
+      },
+      {
+        "name": "25.10",
+        "lts": false,
+        "active_until": "2026-07-01",
+        "security_until": "2026-07-01"
+      },
+      {
+        "name": "25.04",
+        "lts": false,
+        "active_until": "2026-01-17",
+        "security_until": "2026-01-17"
+      },
+      {
+        "name": "24.10",
+        "lts": false,
+        "active_until": "2025-07-10",
+        "security_until": "2025-07-10"
+      },
+      {
+        "name": "24.04",
+        "lts": true,
+        "active_until": "2029-05-31",
+        "security_until": "2029-05-31",
+        "extended_until": "2034-04-25"
+      },
+      {
+        "name": "23.10",
+        "lts": false,
+        "active_until": "2024-07-12",
+        "security_until": "2024-07-12"
+      },
+      {
+        "name": "23.04",
+        "lts": false,
+        "active_until": "2024-01-20",
+        "security_until": "2024-01-20"
+      },
+      {
+        "name": "22.10",
+        "lts": false,
+        "active_until": "2023-07-20",
+        "security_until": "2023-07-20"
+      },
+      {
+        "name": "22.04",
+        "lts": true,
+        "active_until": "2024-09-30",
+        "security_until": "2027-06-01",
+        "extended_until": "2032-04-21"
+      },
+      {
+        "name": "21.10",
+        "lts": false,
+        "active_until": "2022-07-14",
+        "security_until": "2022-07-14"
+      },
+      {
+        "name": "21.04",
+        "lts": false,
+        "active_until": "2022-01-20",
+        "security_until": "2022-01-20"
+      },
+      {
+        "name": "20.10",
+        "lts": false,
+        "active_until": "2021-07-22",
+        "security_until": "2021-07-22"
+      },
+      {
+        "name": "20.04",
+        "lts": true,
+        "active_until": "2022-10-01",
+        "security_until": "2025-05-31",
+        "extended_until": "2030-04-23"
+      },
+      {
+        "name": "19.10",
+        "lts": false,
+        "active_until": "2020-07-06",
+        "security_until": "2020-07-06"
+      },
+      {
+        "name": "19.04",
+        "lts": false,
+        "active_until": "2020-01-23",
+        "security_until": "2020-01-23"
+      },
+      {
+        "name": "18.10",
+        "lts": false,
+        "active_until": "2019-07-18",
+        "security_until": "2019-07-18"
+      },
+      {
+        "name": "18.04",
+        "lts": true,
+        "active_until": "2023-05-31",
+        "security_until": "2023-05-31",
+        "extended_until": "2028-04-26"
+      },
+      {
+        "name": "17.10",
+        "lts": false,
+        "active_until": "2018-07-19",
+        "security_until": "2018-07-19"
+      },
+      {
+        "name": "17.04",
+        "lts": false,
+        "active_until": "2018-01-13",
+        "security_until": "2018-01-13"
+      },
+      {
+        "name": "16.10",
+        "lts": false,
+        "active_until": "2017-07-20",
+        "security_until": "2017-07-20"
+      },
+      {
+        "name": "16.04",
+        "lts": true,
+        "active_until": "2021-04-02",
+        "security_until": "2021-04-02",
+        "extended_until": "2026-04-02"
+      },
+      {
+        "name": "15.10",
+        "lts": false,
+        "active_until": "2016-07-28",
+        "security_until": "2016-07-28"
+      },
+      {
+        "name": "15.04",
+        "lts": false,
+        "active_until": "2016-02-04",
+        "security_until": "2016-02-04"
+      },
+      {
+        "name": "14.10",
+        "lts": false,
+        "active_until": "2015-07-23",
+        "security_until": "2015-07-23"
+      },
+      {
+        "name": "14.04",
+        "lts": true,
+        "active_until": "2019-04-02",
+        "security_until": "2019-04-02",
+        "extended_until": "2024-04-02"
+      },
+      {
+        "name": "13.10",
+        "lts": false,
+        "active_until": "2014-07-17",
+        "security_until": "2014-07-17"
+      },
+      {
+        "name": "13.04",
+        "lts": false,
+        "active_until": "2014-01-27",
+        "security_until": "2014-01-27"
+      },
+      {
+        "name": "12.10",
+        "lts": false,
+        "active_until": "2014-05-16",
+        "security_until": "2014-05-16"
+      },
+      {
+        "name": "12.04",
+        "lts": true,
+        "active_until": "2017-04-28",
+        "security_until": "2017-04-28",
+        "extended_until": "2019-04-26"
+      },
+      {
+        "name": "11.10",
+        "lts": false,
+        "active_until": "2013-05-09",
+        "security_until": "2013-05-09"
+      },
+      {
+        "name": "11.04",
+        "lts": false,
+        "active_until": "2012-10-28",
+        "security_until": "2012-10-28"
+      },
+      {
+        "name": "10.10",
+        "lts": false,
+        "active_until": "2012-04-10",
+        "security_until": "2012-04-10"
+      },
+      {
+        "name": "10.04",
+        "lts": true,
+        "active_until": "2013-05-09",
+        "security_until": "2013-05-09"
+      },
+      {
+        "name": "9.10",
+        "lts": false,
+        "active_until": "2011-04-30",
+        "security_until": "2011-04-30"
+      },
+      {
+        "name": "9.04",
+        "lts": false,
+        "active_until": "2010-10-23",
+        "security_until": "2010-10-23"
+      },
+      {
+        "name": "8.10",
+        "lts": false,
+        "active_until": "2010-04-30",
+        "security_until": "2010-04-30"
+      },
+      {
+        "name": "8.04",
+        "lts": true,
+        "active_until": "2013-05-09",
+        "security_until": "2013-05-09"
+      },
+      {
+        "name": "7.10",
+        "lts": false,
+        "active_until": "2009-04-18",
+        "security_until": "2009-04-18"
+      },
+      {
+        "name": "7.04",
+        "lts": false,
+        "active_until": "2008-10-19",
+        "security_until": "2008-10-19"
+      },
+      {
+        "name": "6.10",
+        "lts": false,
+        "active_until": "2006-10-26",
+        "security_until": "2008-04-26"
+      },
+      {
+        "name": "6.06",
+        "lts": true,
+        "active_until": "2011-06-01",
+        "security_until": "2011-06-01"
+      },
+      {
+        "name": "5.10",
+        "lts": false,
+        "active_until": "2007-04-13",
+        "security_until": "2007-04-13"
+      },
+      {
+        "name": "5.04",
+        "lts": false,
+        "active_until": "2006-10-31",
+        "security_until": "2006-10-31"
+      },
+      {
+        "name": "4.10",
+        "lts": false,
+        "active_until": "2004-10-26",
+        "security_until": "2006-04-30"
+      }
+    ]
+  }
+}

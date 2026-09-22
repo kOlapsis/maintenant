@@ -459,6 +459,10 @@ func TestSpoolNeverQueuesStateSnapshots(t *testing.T) {
 		EventId: uuid.NewString(), ObservedAt: timestamppb.Now(),
 		Body: &agentpb.AgentEvent_Certificate{Certificate: &agentpb.CertificateInfo{Host: "example.test", Port: 443}},
 	}))
+	require.NoError(t, spool.Send(&agentpb.AgentEvent{
+		EventId: uuid.NewString(), ObservedAt: timestamppb.Now(),
+		Body: &agentpb.AgentEvent_HostOs{HostOs: &agentpb.HostOSMsg{Id: "debian", VersionId: "12"}},
+	}))
 	require.NoError(t, spool.flush())
 
 	// A stale inventory replayed after an outage would archive live containers.

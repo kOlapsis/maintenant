@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -235,4 +236,39 @@ func TestKubernetesHandler_ListWorkloads_FlagsOfflineAgentStale(t *testing.T) {
 
 	_, locStale := byName["loc"]["stale"]
 	assert.False(t, locStale, "local runtime is not governed by agent sessions")
+}
+
+type embeddedEOLTables struct{}
+
+func (embeddedEOLTables) Current() eol.Table {
+	t, _ := eol.LoadEmbedded()
+	return t
+}
+
+func TestKubernetesHandler_ListNodes_OSSupportFromOSImage(t *testing.T) {
+	store := &fakeK8sStore{nodes: []kubernetes.K8sNode{
+		{Name: "old", AgentID: uid.LocalAgent, OSImage: "Debian GNU/Linux 11 (bullseye)"},
+		{Name: "exotic", AgentID: uid.LocalAgent, OSImage: "Talos (v1.7.0)"},
+	}}
+	h := NewKubernetesHandler(store, nil)
+	h.SetEOLTables(embeddedEOLTables{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/kubernetes/nodes", h.HandleListNodes)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/kubernetes/nodes?agent_id=local", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Nodes []struct {
+			Name      string      `json:"name"`
+			OSSupport eol.Support `json:"os_support"`
+		} `json:"nodes"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Nodes, 2)
+	assert.Equal(t, eol.StateEnded, body.Nodes[0].OSSupport.State)
+	assert.Equal(t, "11", body.Nodes[0].OSSupport.Cycle)
+	assert.Equal(t, eol.StateUntracked, body.Nodes[1].OSSupport.State)
 }

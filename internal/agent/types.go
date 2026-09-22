@@ -30,6 +30,22 @@ type Agent struct {
 	CreatedAt       time.Time
 	RevokedAt       *time.Time
 	RevokedBy       *string
+
+	OSID                string
+	OSVersionID         string
+	OSPrettyName        string
+	OSSource            string // ""|"host_file"|"kubernetes_node"
+	OSUnavailableReason string // ""|"mount_missing"|"file_unreadable"|"node_not_found"
+	OSReportedAt        *time.Time
+}
+
+// OSIdentity is the operating system identity an agent reports for its host.
+type OSIdentity struct {
+	ID                string
+	VersionID         string
+	PrettyName        string
+	Source            string
+	UnavailableReason string
 }
 
 // EnrollmentToken represents a one-time token for enrolling an agent. The

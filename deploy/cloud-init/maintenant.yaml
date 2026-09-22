@@ -42,6 +42,7 @@ write_files:
           volumes:
             - /var/run/docker.sock:/var/run/docker.sock:ro
             - /proc:/host/proc:ro
+            - /etc/os-release:/host/etc/os-release:ro
             # Swap for a path on an attached block volume to keep the database
             # on storage that survives a server rebuild. Your provider's guide
             # gives the mount path.

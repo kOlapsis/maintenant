@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/update"
@@ -33,11 +34,46 @@ type UpdateHandler struct {
 	service    *update.Service
 	store      update.UpdateStore
 	containers ContainerInfoProvider
+
+	eolSvc         *eol.Service
+	sessions       AgentSessions
+	staleThreshold time.Duration
 }
 
 // NewUpdateHandler creates a new update handler.
 func NewUpdateHandler(service *update.Service, store update.UpdateStore, containers ContainerInfoProvider) *UpdateHandler {
 	return &UpdateHandler{service: service, store: store, containers: containers}
+}
+
+// SetHostOS wires the host operating system support the updates surface serves.
+func (h *UpdateHandler) SetHostOS(svc *eol.Service, sessions AgentSessions, staleThreshold time.Duration) {
+	h.eolSvc = svc
+	h.sessions = sessions
+	h.staleThreshold = staleThreshold
+}
+
+// HandleListHostOS handles GET /api/v1/updates/hosts.
+func (h *UpdateHandler) HandleListHostOS(w http.ResponseWriter, r *http.Request) {
+	out := []map[string]any{}
+	table := eol.TableStatus{}
+	if h.eolSvc != nil {
+		hosts, err := h.eolSvc.HostSupports(r.Context())
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list host operating systems")
+			return
+		}
+		for _, host := range hosts {
+			m := eol.HostJSON(host)
+			m["connection_state"] = "connected"
+			if !host.IsLocal {
+				m["connection_state"] = ConnectionState(h.sessions, h.staleThreshold, host.AgentID, host.LastSeenAt)
+			}
+			out = append(out, m)
+		}
+		table = h.eolSvc.Status()
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{"hosts": out, "eol_table": table})
 }
 
 // HandleListUpdates handles GET /api/v1/updates.
@@ -102,6 +138,15 @@ func (h *UpdateHandler) HandleGetUpdateSummary(w http.ResponseWriter, r *http.Re
 		if cveCounts, err := h.store.GetCVESummaryCounts(r.Context()); err == nil {
 			resp["cve_counts"] = cveCounts
 		}
+	}
+
+	if h.eolSvc != nil {
+		hosts, err := h.eolSvc.HostSupports(r.Context())
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to summarise host operating systems")
+			return
+		}
+		resp["os_counts"] = eol.CountStates(hosts)
 	}
 
 	WriteJSON(w, http.StatusOK, resp)

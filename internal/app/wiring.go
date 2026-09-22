@@ -26,6 +26,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/security"
 )
 
+const restartLoopAlertType = "restart_loop"
+
 // heartbeatAlertEvents builds the alert events for a heartbeat callback. A recovery
 // clears both failure keys (the engine ignores the one not active). Caller sets Timestamp.
 func heartbeatAlertEvents(h *heartbeat.Heartbeat, alertType string, details map[string]any) []alert.Event {
@@ -96,7 +98,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				}
 				sendAlert(alert.Event{
 					Source:     alert.SourceContainer,
-					AlertType:  "restart_loop",
+					AlertType:  restartLoopAlertType,
 					Severity:   severity,
 					Message:    fmt.Sprintf("Container %s exceeded restart threshold (%d/%d)", ra.ContainerName, ra.RestartCount, ra.Threshold),
 					EntityType: "container",
@@ -113,7 +115,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			if m, ok := data.(map[string]any); ok {
 				sendAlert(alert.Event{
 					Source:     alert.SourceContainer,
-					AlertType:  "restart_loop",
+					AlertType:  restartLoopAlertType,
 					Severity:   alert.SeverityInfo,
 					IsRecover:  true,
 					Message:    fmt.Sprintf("Container %s restart rate returned to normal", toString(m["container_name"])),
@@ -722,6 +724,50 @@ func (a *App) wireAgentLifecycleAlerts() {
 		alertCh <- evt
 		a.statusSvc.HandleAlertEvent(ctx, evt)
 	})
+}
+
+// emitAlert pushes an event into the alert engine and the status page.
+func (a *App) emitAlert(evt alert.Event) {
+	a.alertEngine.EventChannel() <- evt
+	a.statusSvc.HandleAlertEvent(context.Background(), evt)
+}
+
+// broadcastAgentUpdated republishes an agent over SSE after its identity changed.
+func (a *App) broadcastAgentUpdated(ctx context.Context, agentID string) {
+	ag, err := a.agentStore.Get(ctx, agentID)
+	if err != nil {
+		a.logger.Warn("agent.updated not broadcast", "agent_id", agentID, "error", err)
+		return
+	}
+	stale := time.Duration(a.cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second
+	state := v1.ConnectionState(a.agentSessions, stale, agentID, ag.LastSeenAt)
+	a.broker.Broadcast(v1.SSEEvent{
+		Type: event.AgentUpdated,
+		Data: v1.AgentPayload(ag, state, nil, a.eolSvc.Current()),
+	})
+}
+
+// startOSEOL seeds the per-host severities, records the server's own OS and starts the daily pass.
+func (a *App) startOSEOL(ctx context.Context) {
+	if active, err := a.alertStore.ListActiveAlerts(ctx); err != nil {
+		a.logger.Error("seed os end-of-support severities", "error", err)
+	} else {
+		alerts := make([]alert.Alert, 0, len(active))
+		for _, al := range active {
+			alerts = append(alerts, *al)
+		}
+		a.eolSvc.SeedSeverities(alerts)
+	}
+
+	if err := a.eolSvc.RefreshLocalOS(ctx); err != nil {
+		a.logger.Warn("local os identity not stored", "error", err)
+	}
+
+	go func() {
+		if err := a.eolSvc.Start(ctx); err != nil {
+			a.logger.Error("os end-of-support service stopped", "error", err)
+		}
+	}()
 }
 
 func toString(v any) string {

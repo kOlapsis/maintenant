@@ -107,6 +107,20 @@ func (m *mockCertificateHandler) HandleAgentEvent(_ context.Context, agentID str
 	return m.returnErr
 }
 
+type mockHostOSHandler struct {
+	calledWithAgentID string
+	calledWithEvent   *agentpb.HostOSMsg
+	calls             int
+	returnErr         error
+}
+
+func (m *mockHostOSHandler) HandleAgentHostOS(_ context.Context, agentID string, ev *agentpb.HostOSMsg) error {
+	m.calledWithAgentID = agentID
+	m.calledWithEvent = ev
+	m.calls++
+	return m.returnErr
+}
+
 // --- tests ---
 
 const dispatchAgentID = "agt-dispatch-001"
@@ -474,4 +488,47 @@ func TestDispatcher_MissingObservedAtFallsBackToReceiveTime(t *testing.T) {
 	assert.False(t, h.calledWithMeta.ObservedAt.Before(before), "an agent without observed_at must be dated on reception")
 	assert.False(t, h.calledWithMeta.Replayed)
 	assert.Equal(t, uint64(0), d.RejectedEvents(dispatchAgentID))
+}
+
+func TestDispatcher_HostOSRoutedToHostOSHandler(t *testing.T) {
+	h := &mockHostOSHandler{}
+	d := NewDispatcher(DispatchDeps{HostOS: h})
+
+	ev := &agentpb.HostOSMsg{
+		Id:         "debian",
+		VersionId:  "11",
+		PrettyName: "Debian GNU/Linux 11 (bullseye)",
+		Source:     agentpb.HostOSSource_HOST_OS_SOURCE_HOST_FILE,
+	}
+	evt := &agentpb.AgentEvent{
+		AgentId: dispatchAgentID,
+		Body:    &agentpb.AgentEvent_HostOs{HostOs: ev},
+	}
+
+	err := d.Dispatch(context.Background(), dispatchAgentID, evt)
+
+	require.NoError(t, err)
+	assert.Equal(t, dispatchAgentID, h.calledWithAgentID)
+	assert.Same(t, ev, h.calledWithEvent)
+}
+
+func TestDispatcher_EventWithoutBodyLeavesHostOSHandlerUntouched(t *testing.T) {
+	h := &mockHostOSHandler{}
+	d := NewDispatcher(DispatchDeps{HostOS: h})
+
+	err := d.Dispatch(context.Background(), dispatchAgentID, &agentpb.AgentEvent{AgentId: dispatchAgentID})
+
+	require.NoError(t, err)
+	assert.Zero(t, h.calls)
+}
+
+func TestDispatcher_NilHostOSHandlerSilentlyIgnoresEvent(t *testing.T) {
+	d := NewDispatcher(DispatchDeps{HostOS: nil})
+
+	evt := &agentpb.AgentEvent{
+		AgentId: dispatchAgentID,
+		Body:    &agentpb.AgentEvent_HostOs{HostOs: &agentpb.HostOSMsg{}},
+	}
+
+	assert.NoError(t, d.Dispatch(context.Background(), dispatchAgentID, evt))
 }

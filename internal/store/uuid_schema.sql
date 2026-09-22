@@ -30,6 +30,12 @@ CREATE TABLE agents (
     created_at        BIGINT NOT NULL DEFAULT 0,
     revoked_at        BIGINT,
     revoked_by        TEXT,
+    os_id                 TEXT NOT NULL DEFAULT '',
+    os_version_id         TEXT NOT NULL DEFAULT '',
+    os_pretty_name        TEXT NOT NULL DEFAULT '',
+    os_source             TEXT NOT NULL DEFAULT '',
+    os_unavailable_reason TEXT NOT NULL DEFAULT '',
+    os_reported_at        BIGINT,
     CHECK (length(label) <= 64)
 );
 CREATE INDEX idx_agents_status       ON agents(status);

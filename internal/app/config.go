@@ -88,6 +88,8 @@ type Config struct {
 	// Telemetry
 	DisableTelemetry bool
 
+	DisableOSEOLRefresh bool
+
 	ProxyLabels bool
 
 	// Multi-host agent mode (Pro only)
@@ -122,6 +124,7 @@ type MultiHostConfig struct {
 	EnrollmentToken          string
 	RuntimeOverride          string
 	Label                    string
+	NodeName                 string
 	InsecureSkipVerify       bool
 	EmbeddedAgent            bool
 	AgentSpoolMaxMemoryBytes int64
@@ -361,6 +364,7 @@ func ConfigFromEnv() Config {
 	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
 
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
+	cfg.DisableOSEOLRefresh = parseTruthy(os.Getenv("MAINTENANT_DISABLE_OS_EOL_REFRESH"))
 	cfg.ProxyLabels = parseTruthy(os.Getenv("MAINTENANT_PROXY_LABELS"))
 	cfg.AllowPrivateWebhooks = parseTruthy(os.Getenv("MAINTENANT_ALLOW_PRIVATE_WEBHOOKS"))
 
