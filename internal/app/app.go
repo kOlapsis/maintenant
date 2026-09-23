@@ -402,23 +402,23 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Version: cfg.Version,
 	})
 
-	// --- SMTP ---
-	var smtpSender *alert.SMTPSender
-	if cfg.SMTP.Host != "" {
-		smtpSender = alert.NewSMTPSender(alert.SMTPConfig{
-			Host:     cfg.SMTP.Host,
-			Port:     cfg.SMTP.Port,
-			Username: cfg.SMTP.Username,
-			Password: cfg.SMTP.Password,
-			From:     cfg.SMTP.From,
-		})
-		logger.Info("SMTP sender configured", "host", cfg.SMTP.Host)
-	}
-
 	// --- Alert engine ---
 	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks)
-	if smtpSender != nil {
-		a.notifier.SetSMTPSender(smtpSender)
+	if a.ext.Channels != nil {
+		channels := a.ext.Channels(extpoint.ChannelDeps{
+			HTTPClient: a.notifier.HTTPClient(),
+			SMTP: extpoint.SMTPConfig{
+				Host:     cfg.SMTP.Host,
+				Port:     cfg.SMTP.Port,
+				Username: cfg.SMTP.Username,
+				Password: cfg.SMTP.Password,
+				From:     cfg.SMTP.From,
+			},
+			Logger: logger,
+		})
+		for chType, sender := range channels {
+			a.notifier.RegisterChannel(chType, sender)
+		}
 	}
 
 	// --- SSE brokers ---
@@ -688,26 +688,27 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 
 	// --- MCP Server ---
 	mcpSvc := &mcp.Services{
-		Containers:    a.containerSvc,
-		Endpoints:     a.endpointSvc,
-		Heartbeats:    a.heartbeatSvc,
-		Certificates:  a.certSvc,
-		Resources:     a.resourceSvc,
-		Alerts:        alertStore,
-		Channels:      channelStore,
-		Triggers:      triggerStore,
-		Escalator:     a.alertEngine.Escalator(),
-		ChannelTester: a.notifier,
-		Updates:       a.updateSvc,
-		Incidents:     incidentStore,
-		Maintenance:   maintenanceStore,
-		Runtime:       rt,
-		LogFetcher:    rt,
-		EscalationSvc: a.escalationSvc,
-		Agents:        a.agentStore,
-		Sessions:      a.agentSessions,
-		AgentLogs:     a.agentSessions,
-		EOL:           a.eolSvc,
+		Containers:        a.containerSvc,
+		Endpoints:         a.endpointSvc,
+		Heartbeats:        a.heartbeatSvc,
+		Certificates:      a.certSvc,
+		Resources:         a.resourceSvc,
+		Alerts:            alertStore,
+		Channels:          channelStore,
+		Triggers:          triggerStore,
+		Escalator:         a.alertEngine.Escalator(),
+		ChannelTester:     a.notifier,
+		ChannelValidators: a.notifier,
+		Updates:           a.updateSvc,
+		Incidents:         incidentStore,
+		Maintenance:       maintenanceStore,
+		Runtime:           rt,
+		LogFetcher:        rt,
+		EscalationSvc:     a.escalationSvc,
+		Agents:            a.agentStore,
+		Sessions:          a.agentSessions,
+		AgentLogs:         a.agentSessions,
+		EOL:               a.eolSvc,
 		// Security & supply-chain (read-only)
 		SecuritySvc: a.securitySvc,
 		Scorer:      a.scorer,

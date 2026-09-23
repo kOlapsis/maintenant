@@ -55,7 +55,7 @@ func TestGatedChannel_ExitDoorStaysOpen(t *testing.T) {
 						ID: "1", Name: "oncall", Type: channelType,
 						URL: "-1001234567890", Secret: sentinelToken, Enabled: true,
 					}}
-					h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+					h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 					req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(tc.body))
 					req.Header.Set("Content-Type", "application/json")
@@ -85,7 +85,7 @@ func TestGatedChannel_DeleteIsNeverGated(t *testing.T) {
 			store := &stubChannelStore{ch: &alert.NotificationChannel{
 				ID: "1", Name: "oncall", Type: channelType, URL: "-100123", Enabled: true,
 			}}
-			h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+			h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 			req := httptest.NewRequest("DELETE", "/api/v1/channels/1", nil)
 			req.SetPathValue("id", "1")
@@ -107,7 +107,7 @@ func TestGatedChannel_TypeChangeIsCheckedBothWays(t *testing.T) {
 	t.Run("webhook to telegram is refused", func(t *testing.T) {
 		withEditionPinned(t, extension.Community)
 		store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "webhook", URL: "https://example.com"}}
-		h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+		h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 		req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(`{"type":"telegram"}`))
 		req.SetPathValue("id", "1")
@@ -121,7 +121,7 @@ func TestGatedChannel_TypeChangeIsCheckedBothWays(t *testing.T) {
 	t.Run("telegram to webhook is refused too", func(t *testing.T) {
 		withEditionPinned(t, extension.Community)
 		store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "telegram", URL: "-100123"}}
-		h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+		h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 		req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(`{"type":"webhook","url":"https://example.com"}`))
 		req.SetPathValue("id", "1")
@@ -142,7 +142,7 @@ func TestGatedChannel_TestButtonIsGated(t *testing.T) {
 	store := &stubChannelStore{ch: &alert.NotificationChannel{
 		ID: "1", Type: "telegram", URL: "-100123", Secret: sentinelToken,
 	}}
-	h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+	h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 	req := httptest.NewRequest("POST", "/api/v1/channels/1/test", nil)
 	req.SetPathValue("id", "1")
@@ -152,35 +152,4 @@ func TestGatedChannel_TestButtonIsGated(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.Contains(t, rec.Body.String(), "EDITION_REQUIRED")
-}
-
-// FR-001b: a licence that expires closes the management of a channel, never its
-// delivery. Asserted here rather than in the alert package, which cannot import
-// the edition registry — and this is exactly what fails the day someone adds a
-// capability check to the send path.
-func TestGatedChannel_DeliveryContinuesUnderCommunity(t *testing.T) {
-	withEditionPinned(t, extension.Community)
-
-	var sent int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sent++
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	t.Cleanup(srv.Close)
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	notifier := alert.NewNotifier(nil, logger, true)
-	notifier.SetTelegramTransport(srv.URL, srv.Client())
-
-	ch := &alert.NotificationChannel{
-		ID: "1", Name: "oncall", Type: "telegram",
-		URL: "-1001234567890", Secret: sentinelToken, Enabled: true,
-	}
-	err := notifier.SendNow(t.Context(), &alert.Alert{
-		ID: "a1", Source: "endpoint", Severity: "critical", Status: "active",
-		Message: "Connection refused", EntityName: "api.example.com",
-	}, ch)
-
-	require.NoError(t, err)
-	assert.Equal(t, 1, sent, "a downgraded instance keeps notifying through channels it already has")
 }

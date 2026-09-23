@@ -14,10 +14,8 @@ package v1
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
-	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -224,16 +222,8 @@ func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request
 // type is an HTTP webhook subject to the HTTPS + SSRF rules (fast-feedback;
 // skipped in dev, where the notifier's dial-time guard remains the boundary).
 func (h *AlertHandler) validateChannelURL(ctx context.Context, chType, rawURL string) error {
-	// Telegram's "url" column holds a chat id and the destination is fixed, so
-	// there is no user-supplied URL to guard against (FR-016).
-	if chType == "telegram" {
-		return alert.ValidateChatID(rawURL)
-	}
-	if chType == "email" {
-		if _, err := mail.ParseAddress(rawURL); err != nil {
-			return errors.New("invalid email address")
-		}
-		return nil
+	if v, ok := h.channelValidator(chType); ok {
+		return v.ValidateDestination(rawURL)
 	}
 	if h.allowPrivateWebhooks {
 		return nil
@@ -283,8 +273,8 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 	if config == "null" {
 		config = ""
 	}
-	if input.Type == "telegram" {
-		if err := validateTelegramCredentials(input.Secret, config); err != nil {
+	if v, ok := h.channelValidator(input.Type); ok {
+		if err := v.ValidateCredentials(input.Secret, config); err != nil {
 			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 			return
 		}
@@ -401,8 +391,8 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 		ch.Enabled = *input.Enabled
 	}
 
-	if ch.Type == "telegram" && (input.Secret != nil || input.Config != nil) {
-		if err := validateTelegramCredentials(ch.Secret, ch.Config); err != nil {
+	if v, ok := h.channelValidator(ch.Type); ok && (input.Secret != nil || input.Config != nil) {
+		if err := v.ValidateCredentials(ch.Secret, ch.Config); err != nil {
 			WriteError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 			return
 		}
@@ -572,17 +562,12 @@ func (h *AlertHandler) HandleCancelSilenceRule(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// validateTelegramCredentials checks the two values the operator types and the
-// optional topic id, before anything reaches the network (FR-004).
-func validateTelegramCredentials(secret, config string) error {
-	if err := alert.ValidateBotToken(secret); err != nil {
-		return err
+// channelValidator returns the validator the notifier holds for chType, if any.
+func (h *AlertHandler) channelValidator(chType string) (alert.ChannelValidator, bool) {
+	if h.notifier == nil {
+		return nil, false
 	}
-	cfg, err := alert.ParseTelegramConfig(config)
-	if err != nil {
-		return errors.New("config must be a JSON object")
-	}
-	return alert.ValidateThreadID(cfg.ThreadID)
+	return h.notifier.Validator(chType)
 }
 
 // refuseChannelCapability writes the refusal when the running edition does not

@@ -48,6 +48,11 @@ type ChannelTester interface {
 	SendTestWebhook(ctx context.Context, ch *alert.NotificationChannel) (int, error)
 }
 
+// ChannelValidators returns the validator of a channel type, if it has one.
+type ChannelValidators interface {
+	Validator(chType string) (alert.ChannelValidator, bool)
+}
+
 type SessionChecker interface {
 	IsConnected(agentID string) bool
 }
@@ -79,26 +84,27 @@ type SwarmNodeReader interface {
 
 // Services holds all dependencies required by MCP tool handlers.
 type Services struct {
-	Containers    *container.Service
-	Endpoints     *endpoint.Service
-	Heartbeats    *heartbeat.Service
-	Certificates  *certificate.Service
-	Resources     *resource.Service
-	Alerts        alert.AlertStore
-	Channels      alert.ChannelStore
-	Triggers      alert.TriggerStore
-	Escalator     alert.Escalator
-	ChannelTester ChannelTester
-	Updates       *update.Service
-	Incidents     status.IncidentStore
-	Maintenance   status.MaintenanceStore
-	Runtime       runtime.Runtime
-	LogFetcher    LogFetcher
-	EscalationSvc *escalation.Service
-	Agents        AgentLister
-	Sessions      SessionChecker
-	AgentLogs     AgentLogFetcher
-	EOL           *eol.Service
+	Containers        *container.Service
+	Endpoints         *endpoint.Service
+	Heartbeats        *heartbeat.Service
+	Certificates      *certificate.Service
+	Resources         *resource.Service
+	Alerts            alert.AlertStore
+	Channels          alert.ChannelStore
+	Triggers          alert.TriggerStore
+	Escalator         alert.Escalator
+	ChannelTester     ChannelTester
+	ChannelValidators ChannelValidators
+	Updates           *update.Service
+	Incidents         status.IncidentStore
+	Maintenance       status.MaintenanceStore
+	Runtime           runtime.Runtime
+	LogFetcher        LogFetcher
+	EscalationSvc     *escalation.Service
+	Agents            AgentLister
+	Sessions          SessionChecker
+	AgentLogs         AgentLogFetcher
+	EOL               *eol.Service
 
 	// Security & supply-chain (read-only MCP surface).
 	SecuritySvc *security.Service

@@ -9,25 +9,26 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package alert
+package channels
 
 import (
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func firedAlert() *Alert {
-	return &Alert{
+func firedAlert() *alert.Alert {
+	return &alert.Alert{
 		ID:         "a1",
 		Source:     "endpoint",
 		AlertType:  "endpoint_down",
-		Severity:   SeverityCritical,
-		Status:     StatusActive,
+		Severity:   alert.SeverityCritical,
+		Status:     alert.StatusActive,
 		Message:    "Connection refused after 3 attempts",
 		EntityType: "endpoint",
 		EntityName: "api.example.com",
@@ -61,7 +62,7 @@ func TestBuildTelegramMessage_Fired(t *testing.T) {
 // reading the text.
 func TestBuildTelegramMessage_Resolved(t *testing.T) {
 	a := firedAlert()
-	a.Status = StatusResolved
+	a.Status = alert.StatusResolved
 	resolvedAt := time.Date(2026, 8, 27, 14, 41, 52, 0, time.UTC)
 	a.ResolvedAt = &resolvedAt
 	a.Message = "Back to 200 OK"

@@ -8,20 +8,23 @@
 // Commercial: See COMMERCIAL-LICENSE.md
 //
 // Source: https://github.com/kolapsis/maintenant
-package commercial
+package mcp
 
 import (
+	"io"
+	"log/slog"
+
+	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/commercial/channels"
-	"github.com/kolapsis/maintenant/internal/commercial/posture"
-	"github.com/kolapsis/maintenant/internal/commercial/updates"
 	"github.com/kolapsis/maintenant/internal/extpoint"
 )
 
-// Extensions returns the commercial implementation of every extension point.
-func Extensions() extpoint.Set {
-	return extpoint.Set{
-		Enricher:      updates.NewEnricher,
-		PostureScorer: posture.NewPostureScorer,
-		Channels:      channels.NewChannels,
+// channelNotifier returns a notifier holding the production channel senders, validators included.
+func channelNotifier() *alert.Notifier {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	n := alert.NewNotifier(nil, logger, true)
+	for chType, s := range channels.NewChannels(extpoint.ChannelDeps{HTTPClient: n.HTTPClient(), Logger: logger}) {
+		n.RegisterChannel(chType, s)
 	}
+	return n
 }

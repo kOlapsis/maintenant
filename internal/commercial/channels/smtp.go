@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package alert
+package channels
 
 import (
 	"context"

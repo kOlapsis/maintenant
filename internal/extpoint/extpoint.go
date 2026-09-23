@@ -13,6 +13,9 @@ package extpoint
 
 import (
 	"log/slog"
+	"net/http"
+
+	"github.com/kolapsis/maintenant/internal/alert"
 
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/update"
@@ -22,6 +25,7 @@ import (
 type Set struct {
 	Enricher      func(EnricherDeps) update.Enricher
 	PostureScorer func(PostureDeps) security.PostureScorer
+	Channels      func(ChannelDeps) map[string]alert.ChannelSender
 }
 
 // EnricherDeps is what an update enricher is built from.
@@ -40,4 +44,20 @@ type PostureDeps struct {
 	Insights       security.InsightsReader
 	Acks           security.AcknowledgmentStore
 	Threshold      int
+}
+
+// ChannelDeps is what the notification channel senders are built from.
+type ChannelDeps struct {
+	HTTPClient *http.Client
+	SMTP       SMTPConfig
+	Logger     *slog.Logger
+}
+
+// SMTPConfig holds the SMTP connection parameters.
+type SMTPConfig struct {
+	Host     string
+	Port     string
+	Username string
+	Password string
+	From     string
 }

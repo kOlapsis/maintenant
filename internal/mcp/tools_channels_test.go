@@ -106,6 +106,7 @@ func buildChannelServices() (*Services, *mcpLiveChannelStore, *[]string) {
 		// The SSRF guard resolves DNS; the destination rules have their own
 		// tests in internal/ssrf, so keep these off the network.
 		AllowPrivateWebhooks: true,
+		ChannelValidators:    channelNotifier(),
 		Broadcast: func(eventType string, _ any) {
 			events = append(events, eventType)
 		},

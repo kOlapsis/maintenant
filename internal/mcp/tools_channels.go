@@ -2,9 +2,7 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/mail"
 	"strings"
 
 	"github.com/kolapsis/maintenant/internal/alert"
@@ -117,14 +115,8 @@ func refuseChannelType(chType string) (*gomcp.CallToolResult, any, error) {
 }
 
 func validateChannelDestination(ctx context.Context, svc *Services, chType, rawURL string) error {
-	switch chType {
-	case "telegram":
-		return alert.ValidateChatID(rawURL)
-	case "email":
-		if _, err := mail.ParseAddress(rawURL); err != nil {
-			return errors.New("invalid email address")
-		}
-		return nil
+	if v, ok := channelValidator(svc, chType); ok {
+		return v.ValidateDestination(rawURL)
 	}
 	if svc.AllowPrivateWebhooks {
 		return nil
@@ -132,18 +124,18 @@ func validateChannelDestination(ctx context.Context, svc *Services, chType, rawU
 	return ssrf.ValidateURL(ctx, rawURL)
 }
 
-func validateChannelCredentials(chType, secret, config string) error {
-	if chType != "telegram" {
-		return nil
+func validateChannelCredentials(svc *Services, chType, secret, config string) error {
+	if v, ok := channelValidator(svc, chType); ok {
+		return v.ValidateCredentials(secret, config)
 	}
-	if err := alert.ValidateBotToken(secret); err != nil {
-		return err
+	return nil
+}
+
+func channelValidator(svc *Services, chType string) (alert.ChannelValidator, bool) {
+	if svc.ChannelValidators == nil {
+		return nil, false
 	}
-	cfg, err := alert.ParseTelegramConfig(config)
-	if err != nil {
-		return errors.New("config must be a JSON object")
-	}
-	return alert.ValidateThreadID(cfg.ThreadID)
+	return svc.ChannelValidators.Validator(chType)
 }
 
 func normalizeConfig(config string) string {
@@ -228,7 +220,7 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 			return errResult("field=url: " + err.Error())
 		}
 		config := normalizeConfig(input.Config)
-		if err := validateChannelCredentials(input.Type, input.Secret, config); err != nil {
+		if err := validateChannelCredentials(svc, input.Type, input.Secret, config); err != nil {
 			return errResult(err.Error())
 		}
 
@@ -316,7 +308,7 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 		}
 
 		if input.Secret != nil || input.Config != nil {
-			if err := validateChannelCredentials(ch.Type, ch.Secret, ch.Config); err != nil {
+			if err := validateChannelCredentials(svc, ch.Type, ch.Secret, ch.Config); err != nil {
 				return errResult(err.Error())
 			}
 		}

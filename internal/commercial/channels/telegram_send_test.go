@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package alert
+package channels
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,8 +47,8 @@ func telegramStub(t *testing.T, status int, body string) (*httptest.Server, *[]*
 	return srv, &requests, &bodies
 }
 
-func telegramChannel() *NotificationChannel {
-	return &NotificationChannel{
+func telegramChannel() *alert.NotificationChannel {
+	return &alert.NotificationChannel{
 		ID: "c1", Name: "oncall", Type: "telegram",
 		URL: "-1001234567890", Secret: sentinelToken, Enabled: true,
 	}
@@ -142,15 +143,15 @@ func TestSendTelegram_RateLimitCarriesTheDelay(t *testing.T) {
 // FR-013 and FR-014 together: the product's backoff is the floor, Telegram's
 // delay raises it, and neither replaces the other.
 func TestTelegramBackoff(t *testing.T) {
-	assert.Equal(t, retryBackoffs[0], telegramBackoff(1, nil))
-	assert.Equal(t, retryBackoffs[1], telegramBackoff(2, nil))
+	assert.Equal(t, time.Second, telegramBackoff(time.Second, nil))
+	assert.Equal(t, 5*time.Second, telegramBackoff(5*time.Second, nil))
 
 	short := &TelegramRateLimitError{RetryAfter: 100 * time.Millisecond}
-	assert.Equal(t, retryBackoffs[0], telegramBackoff(1, short),
+	assert.Equal(t, time.Second, telegramBackoff(time.Second, short),
 		"a delay shorter than our own backoff must not shorten it")
 
 	long := &TelegramRateLimitError{RetryAfter: 30 * time.Second}
-	assert.Equal(t, 30*time.Second, telegramBackoff(1, long))
+	assert.Equal(t, 30*time.Second, telegramBackoff(time.Second, long))
 }
 
 // A transport failure must not leak the URL: the error the http client returns

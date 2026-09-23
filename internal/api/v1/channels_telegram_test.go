@@ -60,7 +60,7 @@ func TestTelegramChannel_CreateGating(t *testing.T) {
 		t.Run(string(tc.edition), func(t *testing.T) {
 			withEditionPinned(t, tc.edition)
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			h := &AlertHandler{channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
+			h := &AlertHandler{notifier: channelNotifier(), channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
 
 			req := httptest.NewRequest("POST", "/api/v1/channels", strings.NewReader(telegramBody("oncall")))
 			req.Header.Set("Content-Type", "application/json")
@@ -88,7 +88,7 @@ func TestTelegramChannel_TokenNeverLeaves(t *testing.T) {
 	logs := &bytes.Buffer{}
 	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	store := &stubChannelStore{}
-	h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+	h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 	req := httptest.NewRequest("POST", "/api/v1/channels", strings.NewReader(telegramBody("oncall")))
 	req.Header.Set("Content-Type", "application/json")
@@ -130,7 +130,7 @@ func TestTelegramChannel_RefusesMalformedInputWithoutCallingTelegram(t *testing.
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			h := &AlertHandler{channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
+			h := &AlertHandler{notifier: channelNotifier(), channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
 
 			req := httptest.NewRequest("POST", "/api/v1/channels", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -158,7 +158,7 @@ func TestTelegramChannel_UpdateKeepsTheStoredToken(t *testing.T) {
 
 	t.Run("absent secret is kept", func(t *testing.T) {
 		store := &stubChannelStore{ch: stored()}
-		h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+		h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 		req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(`{"name":"renamed"}`))
 		req.SetPathValue("id", "1")
@@ -173,7 +173,7 @@ func TestTelegramChannel_UpdateKeepsTheStoredToken(t *testing.T) {
 
 	t.Run("empty secret is refused", func(t *testing.T) {
 		store := &stubChannelStore{ch: stored()}
-		h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+		h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 		req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(`{"secret":""}`))
 		req.SetPathValue("id", "1")
@@ -186,7 +186,7 @@ func TestTelegramChannel_UpdateKeepsTheStoredToken(t *testing.T) {
 
 	t.Run("new secret replaces the old one", func(t *testing.T) {
 		store := &stubChannelStore{ch: stored()}
-		h := &AlertHandler{channelStore: store, broker: NewSSEBroker(logger)}
+		h := &AlertHandler{notifier: channelNotifier(), channelStore: store, broker: NewSSEBroker(logger)}
 
 		fresh := "9876543210:AAFyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
 		req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(`{"secret":"`+fresh+`"}`))

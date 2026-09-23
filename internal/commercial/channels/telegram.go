@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package alert
+package channels
 
 import (
 	"bytes"
@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/kolapsis/maintenant/internal/alert"
 )
 
 // TelegramAPIBase is the destination the product calls. The operator never
@@ -44,7 +46,7 @@ var (
 )
 
 // TelegramConfig is the non-secret part of a Telegram channel, serialized into
-// NotificationChannel.Config.
+// alert.NotificationChannel.Config.
 type TelegramConfig struct {
 	ThreadID string `json:"thread_id,omitempty"`
 }
@@ -119,10 +121,10 @@ func escapeTelegramHTML(s string) string {
 // BuildTelegramMessage renders the fired or resolved message. The severity and
 // the entity sit on the first line so a phone notification, which shows little,
 // still says what happened and to what (SC-006).
-func BuildTelegramMessage(eventType string, a *Alert) string {
+func BuildTelegramMessage(eventType string, a *alert.Alert) string {
 	resolved := strings.Contains(eventType, "resolved")
 
-	emoji := severityEmoji(a.Severity)
+	emoji := alert.SeverityEmoji(a.Severity)
 	stamp := a.FiredAt
 	stampLabel := "Fired"
 	if resolved {
@@ -134,7 +136,7 @@ func BuildTelegramMessage(eventType string, a *Alert) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s <b>%s</b>\n\n", emoji, escapeTelegramHTML(eventTitle(eventType, a)))
+	fmt.Fprintf(&b, "%s <b>%s</b>\n\n", emoji, escapeTelegramHTML(alert.EventTitle(eventType, a)))
 	if !resolved {
 		fmt.Fprintf(&b, "<b>Severity</b> · %s\n", escapeTelegramHTML(a.Severity))
 	}
@@ -203,7 +205,7 @@ type telegramResponse struct {
 //
 // The URL is never logged and never wrapped into an error: it carries the bot
 // token (FR-005).
-func SendTelegram(ctx context.Context, client *http.Client, apiBase string, ch *NotificationChannel, text string) error {
+func SendTelegram(ctx context.Context, client *http.Client, apiBase string, ch *alert.NotificationChannel, text string) error {
 	cfg, err := ParseTelegramConfig(ch.Config)
 	if err != nil {
 		return err

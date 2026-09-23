@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/app"
 	"github.com/kolapsis/maintenant/internal/extpoint"
 	"github.com/kolapsis/maintenant/internal/security"
@@ -28,6 +29,7 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 	var got extpoint.EnricherDeps
 	calls := 0
 	var postureDeps extpoint.PostureDeps
+	var channelDeps extpoint.ChannelDeps
 	a, err := app.New(cfg, logger, app.WithExtensions(extpoint.Set{
 		Enricher: func(d extpoint.EnricherDeps) update.Enricher {
 			calls++
@@ -36,6 +38,10 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 		},
 		PostureScorer: func(d extpoint.PostureDeps) security.PostureScorer {
 			postureDeps = d
+			return nil
+		},
+		Channels: func(d extpoint.ChannelDeps) map[string]alert.ChannelSender {
+			channelDeps = d
 			return nil
 		},
 	}))
@@ -48,6 +54,8 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 	assert.NotNil(t, got.Logger)
 	assert.NotNil(t, postureDeps.Acks)
 	assert.NotNil(t, postureDeps.Insights)
+	assert.NotNil(t, channelDeps.HTTPClient)
+	assert.NotNil(t, channelDeps.Logger)
 }
 
 func TestNew_WithoutExtensionsStillBuilds(t *testing.T) {
