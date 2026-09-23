@@ -50,3 +50,14 @@ func Tiers() map[Edition]map[Resource]int {
 	}
 	return out
 }
+
+// LiftingEdition returns the lowest edition whose cap on r exceeds the running edition's cap.
+func LiftingEdition(r Resource) Edition {
+	current := Limit(r)
+	for _, e := range editionOrder {
+		if l := policy.Limit(e, r); l == Unlimited || (current != Unlimited && l > current) {
+			return e
+		}
+	}
+	return Pro
+}

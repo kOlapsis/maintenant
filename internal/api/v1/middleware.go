@@ -293,20 +293,13 @@ func writeQuotaRefusal(w http.ResponseWriter, status int, code string, resource 
 		label = string(resource)
 	}
 
-	// The next edition up is the one that lifts the cap. Personal lifts every
-	// cap except agent hosts, which only Pro makes unlimited.
-	required := extension.Personal
-	if resource == extension.ResourceAgentHosts && extension.CurrentEdition().AtLeast(extension.Personal) {
-		required = extension.Pro
-	}
-
 	WriteErrorDetail(w, status, ErrorDetail{
 		Code: code,
 		Message: fmt.Sprintf("The %s edition is limited to %d %s.",
 			titleEdition(extension.CurrentEdition()), limit, label),
 		Resource:        string(resource),
 		Limit:           &limit,
-		RequiredEdition: string(required),
+		RequiredEdition: string(extension.LiftingEdition(resource)),
 	})
 }
 

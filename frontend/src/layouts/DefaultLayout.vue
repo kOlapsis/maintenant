@@ -68,7 +68,9 @@ const {
   licenseSeverity,
   licenseLabel,
   loadLicenseStatus,
+  tierLimit,
 } = useEdition()
+const personalHostLimit = computed(() => tierLimit('personal', 'agent_hosts'))
 const swarmStore = useSwarmStore()
 const runtimeStore = useRuntimeStore()
 const storageStore = useStorageStore()
@@ -369,8 +371,8 @@ watch(
         <!-- Tier 1 leads with Personal: at this size it is most likely a homelab,
              and Personal is what removes the friction they just hit. -->
         <template v-if="editionBanner.tier.value === 1">
-          Hitting the Community limits? Personal lifts them all and monitors up to 20 machines,
-          for €149 once, for life.
+          Hitting the Community limits? Personal lifts them all<template v-if="personalHostLimit !== null">
+            and monitors up to {{ personalHostLimit }} machines</template>, for €149 once, for life.
         </template>
         <!-- Tier 2 names both: the size no longer tells you which one fits. -->
         <template v-else-if="editionBanner.tier.value === 2">

@@ -207,3 +207,26 @@ func TestNewEditionSource_UnusablePublicKeyReturnsAnError(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, src == nil, "a failed source must be an untyped nil")
 }
+
+func TestLiftingEdition_EveryEditionEveryResource(t *testing.T) {
+	capped := []extension.Resource{
+		extension.ResourceEndpoints, extension.ResourceHeartbeats,
+		extension.ResourceCertificates, extension.ResourceStatusComponents,
+	}
+	for _, edition := range []extension.Edition{extension.Community, extension.Personal, extension.Pro, "enterprise-2030"} {
+		withEdition(t, edition)
+		for _, r := range capped {
+			assert.Equal(t, extension.Personal, extension.LiftingEdition(r), "%s under %q", r, edition)
+		}
+	}
+
+	for edition, want := range map[extension.Edition]extension.Edition{
+		extension.Community: extension.Personal,
+		extension.Personal:  extension.Pro,
+		extension.Pro:       extension.Pro,
+		"enterprise-2030":   extension.Personal,
+	} {
+		withEdition(t, edition)
+		assert.Equal(t, want, extension.LiftingEdition(extension.ResourceAgentHosts), "agent_hosts under %q", edition)
+	}
+}

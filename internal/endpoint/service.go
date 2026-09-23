@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -71,7 +72,7 @@ type Deps struct {
 	Store                   EndpointStore           // required
 	Engine                  *CheckEngine            // required
 	Logger                  *slog.Logger            // required
-	LicenseChecker          LicenseChecker          // optional — defaults to community limits
+	LicenseChecker          LicenseChecker          // optional, defaults to extension.Limit
 	EventCallback           EventCallback           // optional — nil-safe
 	AlertCallback           AlertCallback           // optional — nil-safe
 	EndpointRemovedCallback EndpointRemovedCallback // optional — nil-safe
@@ -105,7 +106,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxEndpoints: 10}
+		lc = &DefaultLicenseChecker{MaxEndpoints: extension.Limit(extension.ResourceEndpoints)}
 	}
 	return &Service{
 		store:             d.Store,

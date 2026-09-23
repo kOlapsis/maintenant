@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // EventCallback is called when a heartbeat event occurs (for SSE broadcasting).
@@ -61,7 +62,7 @@ var (
 type Deps struct {
 	Store          HeartbeatStore // required
 	Logger         *slog.Logger   // required
-	LicenseChecker LicenseChecker // optional — defaults to community limits
+	LicenseChecker LicenseChecker // optional, defaults to extension.Limit
 	EventCallback  EventCallback  // optional — nil-safe
 	AlertCallback  AlertCallback  // optional — nil-safe
 	BaseURL        string         // optional
@@ -87,7 +88,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxHeartbeats: 5}
+		lc = &DefaultLicenseChecker{MaxHeartbeats: extension.Limit(extension.ResourceHeartbeats)}
 	}
 	return &Service{
 		store:          d.Store,

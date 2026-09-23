@@ -67,3 +67,9 @@ func TestTiers_ProjectsEveryResourceForEveryEdition(t *testing.T) {
 		t.Errorf("Tiers() = %v, want %v", got, want)
 	}
 }
+
+func TestLiftingEdition_DefaultPolicyLiftsNothing(t *testing.T) {
+	if got := LiftingEdition(ResourceEndpoints); got != Pro {
+		t.Errorf("LiftingEdition(endpoints) under the default policy = %q, want %q", got, Pro)
+	}
+}

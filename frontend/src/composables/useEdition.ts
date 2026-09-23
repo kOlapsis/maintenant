@@ -236,6 +236,11 @@ export function useEdition() {
     })
   }
 
+  /** The cap on a resource in a given edition (-1 unlimited), or null when the engine reports none. */
+  function tierLimit(tier: Edition, resource: QuotaResource): number | null {
+    return edition.value?.tiers?.[tier]?.[resource] ?? null
+  }
+
   /**
    * The resource-history catalogue, exactly as the engine declares it. An
    * engine that does not report one gives an empty catalogue: the interface
@@ -300,6 +305,7 @@ export function useEdition() {
     load,
     reload,
     getQuota,
+    tierLimit,
     licenseStatus,
     licenseMessage,
     licenseStatusValue,

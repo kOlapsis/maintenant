@@ -32,7 +32,9 @@ import type { Edition } from '@/services/editionApi'
 import { ApiError } from '@/services/apiFetch'
 import UnlockCta from '@/components/UnlockCta.vue'
 
-const { hasFeature, getQuota } = useEdition()
+const { hasFeature, getQuota, tierLimit } = useEdition()
+const personalHostLimit = computed(() => tierLimit('personal', 'agent_hosts'))
+const proHostLimit = computed(() => tierLimit('pro', 'agent_hosts'))
 const store = useAgentsStore()
 
 const isAvailable = computed(() => hasFeature('multihost'))
@@ -310,11 +312,11 @@ function runtimeLabel(rt: string): string {
               </p>
 
               <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
-                <li class="flex items-start gap-3">
+                <li v-if="personalHostLimit !== null" class="flex items-start gap-3">
                   <Server :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
                   <span class="text-sm text-mnt-secondary">
-                    Monitor up to 20 remote hosts from one server with token-based enrollment,
-                    or an unlimited number on Pro
+                    Monitor up to {{ personalHostLimit }} remote hosts from one server with token-based enrollment,
+                    or {{ proHostLimit === -1 ? 'an unlimited number' : `up to ${proHostLimit}` }} on Pro
                   </span>
                 </li>
                 <li class="flex items-start gap-3">

@@ -73,7 +73,7 @@ type EventCallback func(eventType string, data interface{})
 type Deps struct {
 	Store          CertificateStore // required
 	Logger         *slog.Logger     // required
-	LicenseChecker LicenseChecker   // optional — defaults to community limits
+	LicenseChecker LicenseChecker   // optional, defaults to extension.Limit
 	EventCallback  EventCallback    // optional — nil-safe
 }
 
@@ -99,7 +99,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxCertificates: 5}
+		lc = &DefaultLicenseChecker{MaxCertificates: extension.Limit(extension.ResourceCertificates)}
 	}
 	return &Service{
 		store:          d.Store,
