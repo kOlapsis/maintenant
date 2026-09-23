@@ -8,17 +8,16 @@
 // Commercial: See COMMERCIAL-LICENSE.md
 //
 // Source: https://github.com/kolapsis/maintenant
-package v1
+package commercial
 
 import (
-	"os"
-	"testing"
-
-	"github.com/kolapsis/maintenant/internal/commercial/tiers"
-	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/commercial/updates"
+	"github.com/kolapsis/maintenant/internal/extpoint"
 )
 
-func TestMain(m *testing.M) {
-	extension.Register(tiers.Policy{}, nil)
-	os.Exit(m.Run())
+// Extensions returns the commercial implementation of every extension point.
+func Extensions() extpoint.Set {
+	return extpoint.Set{
+		Enricher: updates.NewEnricher,
+	}
 }

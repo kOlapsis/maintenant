@@ -9,12 +9,14 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"errors"
 	"math"
 	"testing"
+
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 func TestParseCVSSv3BaseScore(t *testing.T) {
@@ -92,14 +94,14 @@ func TestParseCVSSv3Invalid(t *testing.T) {
 func TestSeverityForScore(t *testing.T) {
 	tests := []struct {
 		score float64
-		want  CVESeverity
+		want  update.CVESeverity
 	}{
-		{8.9, CVESeverityHigh},
-		{9.0, CVESeverityCritical},
-		{6.9, CVESeverityMedium},
-		{7.0, CVESeverityHigh},
-		{3.9, CVESeverityLow},
-		{4.0, CVESeverityMedium},
+		{8.9, update.CVESeverityHigh},
+		{9.0, update.CVESeverityCritical},
+		{6.9, update.CVESeverityMedium},
+		{7.0, update.CVESeverityHigh},
+		{3.9, update.CVESeverityLow},
+		{4.0, update.CVESeverityMedium},
 	}
 
 	for _, tt := range tests {

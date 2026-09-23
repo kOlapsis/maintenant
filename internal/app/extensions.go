@@ -8,17 +8,14 @@
 // Commercial: See COMMERCIAL-LICENSE.md
 //
 // Source: https://github.com/kolapsis/maintenant
-package v1
+package app
 
-import (
-	"os"
-	"testing"
+import "github.com/kolapsis/maintenant/internal/extpoint"
 
-	"github.com/kolapsis/maintenant/internal/commercial/tiers"
-	"github.com/kolapsis/maintenant/internal/extension"
-)
+// Option configures New.
+type Option func(*App)
 
-func TestMain(m *testing.M) {
-	extension.Register(tiers.Policy{}, nil)
-	os.Exit(m.Run())
+// WithExtensions plugs licensed implementations into the application.
+func WithExtensions(s extpoint.Set) Option {
+	return func(a *App) { a.ext = s }
 }

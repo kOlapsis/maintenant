@@ -9,13 +9,15 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"errors"
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 // ErrInvalidCVSS reports a malformed or incomplete CVSS v3.x base vector.
@@ -214,15 +216,15 @@ func (m CVSSMetrics) BaseScore() float64 {
 }
 
 // SeverityForScore maps a CVSS base score to its qualitative severity rating.
-func SeverityForScore(score float64) CVESeverity {
+func SeverityForScore(score float64) update.CVESeverity {
 	if score >= 9.0 {
-		return CVESeverityCritical
+		return update.CVESeverityCritical
 	}
 	if score >= 7.0 {
-		return CVESeverityHigh
+		return update.CVESeverityHigh
 	}
 	if score >= 4.0 {
-		return CVESeverityMedium
+		return update.CVESeverityMedium
 	}
-	return CVESeverityLow
+	return update.CVESeverityLow
 }

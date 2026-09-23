@@ -194,7 +194,7 @@ func main() {
 	}
 
 	commercial.Register()
-	application, err := app.New(cfg, logger)
+	application, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
 	if err != nil {
 		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
 			logger.Error("failed to initialize application", "error", err)

@@ -9,19 +9,21 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 const maxEvaluationErrorLen = 200
 
 // ProEnricher enriches scan results with CVE data, changelog info, and risk scores.
 type ProEnricher struct {
-	store     UpdateStore
+	store     update.UpdateStore
 	cve       *CVEClient
 	changelog *ChangelogResolver
 	risk      *RiskEngine
@@ -30,7 +32,7 @@ type ProEnricher struct {
 }
 
 // NewProEnricher creates the full enrichment pipeline.
-func NewProEnricher(store UpdateStore, cve *CVEClient, changelog *ChangelogResolver, risk *RiskEngine, ecosystem *EcosystemResolver, logger *slog.Logger) *ProEnricher {
+func NewProEnricher(store update.UpdateStore, cve *CVEClient, changelog *ChangelogResolver, risk *RiskEngine, ecosystem *EcosystemResolver, logger *slog.Logger) *ProEnricher {
 	return &ProEnricher{
 		store:     store,
 		cve:       cve,
@@ -43,7 +45,7 @@ func NewProEnricher(store UpdateStore, cve *CVEClient, changelog *ChangelogResol
 
 // Enrich runs a CVE pass for every scanned container, then resolves the
 // changelog and risk score of those that actually have an update pending.
-func (e *ProEnricher) Enrich(ctx context.Context, results []UpdateResult) error {
+func (e *ProEnricher) Enrich(ctx context.Context, results []update.UpdateResult) error {
 	for i := range results {
 		r := &results[i]
 		e.logger.Debug("enriching container",
@@ -62,12 +64,12 @@ func (e *ProEnricher) Enrich(ctx context.Context, results []UpdateResult) error 
 	return nil
 }
 
-func (e *ProEnricher) enrichChangelog(ctx context.Context, r *UpdateResult) {
+func (e *ProEnricher) enrichChangelog(ctx context.Context, r *update.UpdateResult) {
 	if e.changelog == nil {
 		return
 	}
 
-	imageRef, _, _ := parseImageRef(r.Image)
+	imageRef, _, _ := update.ParseImageRef(r.Image)
 	changelogURL, summary, hasBreaking, sourceURL := e.changelog.ResolveChangelog(ctx, imageRef+":"+r.LatestTag, r.LatestTag)
 
 	r.ChangelogURL = changelogURL
@@ -95,7 +97,7 @@ func (e *ProEnricher) enrichChangelog(ctx context.Context, r *UpdateResult) {
 	}
 }
 
-func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*ContainerCVE {
+func (e *ProEnricher) enrichCVEs(ctx context.Context, r *update.UpdateResult) []*update.ContainerCVE {
 	if e.cve == nil {
 		return nil
 	}
@@ -103,15 +105,15 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 	query := e.resolveCVEQuery(ctx, r)
 	if query == nil {
 		e.logger.Debug("cve: no ecosystem mapping", "container", r.ContainerName, "image", r.Image)
-		e.recordEvaluation(ctx, r, &CVEEvaluation{Status: CVEUnsupported})
+		e.recordEvaluation(ctx, r, &update.CVEEvaluation{Status: update.CVEUnsupported})
 		return nil
 	}
 
 	cveResults, err := e.cve.QueryCVEs(ctx, []ImageCVEQuery{*query})
 	if err != nil {
 		e.logger.Warn("cve: query failed", "container", r.ContainerName, "error", err)
-		e.recordEvaluation(ctx, r, &CVEEvaluation{
-			Status:         CVEEvaluationError,
+		e.recordEvaluation(ctx, r, &update.CVEEvaluation{
+			Status:         update.CVEEvaluationError,
 			Ecosystem:      query.Ecosystem,
 			PackageName:    query.PackageName,
 			PackageVersion: query.Version,
@@ -120,8 +122,8 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 		return nil
 	}
 
-	e.recordEvaluation(ctx, r, &CVEEvaluation{
-		Status:         CVEEvaluated,
+	e.recordEvaluation(ctx, r, &update.CVEEvaluation{
+		Status:         update.CVEEvaluated,
 		Ecosystem:      query.Ecosystem,
 		PackageName:    query.PackageName,
 		PackageVersion: query.Version,
@@ -136,10 +138,10 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 	e.logger.Info("cve: vulnerabilities found",
 		"container", r.ContainerName, "count", len(entries))
 
-	var cves []*ContainerCVE
+	var cves []*update.ContainerCVE
 	now := time.Now()
 	for _, entry := range entries {
-		cve := &ContainerCVE{
+		cve := &update.ContainerCVE{
 			ContainerID:     r.ContainerID,
 			CVEID:           entry.CVEID,
 			Severity:        entry.Severity,
@@ -158,7 +160,7 @@ func (e *ProEnricher) enrichCVEs(ctx context.Context, r *UpdateResult) []*Contai
 	return cves
 }
 
-func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *UpdateResult) *ImageCVEQuery {
+func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *update.UpdateResult) *ImageCVEQuery {
 	if e.ecosystem == nil {
 		return nil
 	}
@@ -174,7 +176,7 @@ func (e *ProEnricher) resolveCVEQuery(ctx context.Context, r *UpdateResult) *Ima
 	}
 }
 
-func (e *ProEnricher) recordEvaluation(ctx context.Context, r *UpdateResult, eval *CVEEvaluation) {
+func (e *ProEnricher) recordEvaluation(ctx context.Context, r *update.UpdateResult, eval *update.CVEEvaluation) {
 	eval.ContainerID = r.ContainerID
 	eval.EvaluatedAt = time.Now()
 	if err := e.store.UpsertCVEEvaluation(ctx, eval); err != nil {
@@ -190,7 +192,7 @@ func shortError(err error) string {
 	return msg
 }
 
-func (e *ProEnricher) enrichRisk(ctx context.Context, r *UpdateResult, cves []*ContainerCVE) {
+func (e *ProEnricher) enrichRisk(ctx context.Context, r *update.UpdateResult, cves []*update.ContainerCVE) {
 	if e.risk == nil {
 		return
 	}
@@ -208,14 +210,14 @@ func (e *ProEnricher) enrichRisk(ctx context.Context, r *UpdateResult, cves []*C
 
 	// The Pro score must never downgrade below the CE baseline (semver-based).
 	// CE users see BaseRiskScore; Pro enrichment can only raise it with CVE/context data.
-	baseScore := BaseRiskScore(u.UpdateType)
+	baseScore := update.BaseRiskScore(u.UpdateType)
 	if score.Score < baseScore {
 		e.logger.Debug("risk score floored to CE baseline",
 			"container", r.ContainerName,
 			"pro_score", score.Score, "base_score", baseScore)
 		score.Score = baseScore
-		score.Level = RiskLevelFromScore(baseScore)
-		score.Factors["baseline"] = RiskFactor{Label: string(u.UpdateType) + "_floor", Score: baseScore}
+		score.Level = update.RiskLevelFromScore(baseScore)
+		score.Factors["baseline"] = update.RiskFactor{Label: string(u.UpdateType) + "_floor", Score: baseScore}
 	}
 
 	e.logger.Debug("risk score calculated",
@@ -228,7 +230,7 @@ func (e *ProEnricher) enrichRisk(ctx context.Context, r *UpdateResult, cves []*C
 	}
 
 	// Record history
-	record := &RiskScoreRecord{
+	record := &update.RiskScoreRecord{
 		ContainerID: r.ContainerID,
 		Score:       score.Score,
 		FactorsJSON: FactorsToJSON(score.Factors),

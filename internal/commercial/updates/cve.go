@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"bytes"
@@ -23,6 +23,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 const (
@@ -34,7 +36,7 @@ const (
 
 // CVEClient queries OSV.dev for known vulnerabilities.
 type CVEClient struct {
-	store   UpdateStore
+	store   update.UpdateStore
 	client  *http.Client
 	logger  *slog.Logger
 	delay   time.Duration
@@ -42,7 +44,7 @@ type CVEClient struct {
 }
 
 // NewCVEClient creates a CVE lookup client.
-func NewCVEClient(store UpdateStore, logger *slog.Logger) *CVEClient {
+func NewCVEClient(store update.UpdateStore, logger *slog.Logger) *CVEClient {
 	return &CVEClient{
 		store:   store,
 		client:  &http.Client{Timeout: 30 * time.Second},
@@ -131,8 +133,8 @@ type ImageCVEQuery struct {
 
 // QueryCVEs queries OSV.dev for a batch of images and returns CVEs, hydrating
 // each vulnerability id returned by the batch endpoint with its full record.
-func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map[string][]*CVECacheEntry, error) {
-	results := make(map[string][]*CVECacheEntry)
+func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map[string][]*update.CVECacheEntry, error) {
+	results := make(map[string][]*update.CVECacheEntry)
 
 	// Check cache first, build list of uncached queries
 	var uncached []ImageCVEQuery
@@ -187,7 +189,7 @@ func (c *CVEClient) QueryCVEs(ctx context.Context, queries []ImageCVEQuery) (map
 	expires := now.Add(cveCacheTTL)
 
 	for i, q := range uncached {
-		var entries []*CVECacheEntry
+		var entries []*update.CVECacheEntry
 		for _, id := range vulnIDs[i] {
 			rec, ok := records[id]
 			if !ok {
@@ -332,15 +334,15 @@ func (c *CVEClient) fetchVuln(ctx context.Context, id string) (*osvVulnRecord, e
 	return &rec, nil
 }
 
-func (c *CVEClient) buildCVECacheEntry(q ImageCVEQuery, rec *osvVulnRecord, now, expires time.Time) *CVECacheEntry {
-	entry := &CVECacheEntry{
+func (c *CVEClient) buildCVECacheEntry(q ImageCVEQuery, rec *osvVulnRecord, now, expires time.Time) *update.CVECacheEntry {
+	entry := &update.CVECacheEntry{
 		Ecosystem:      q.Ecosystem,
 		PackageName:    q.PackageName,
 		PackageVersion: q.Version,
 		CVEID:          rec.ID,
 		Summary:        summaryFor(rec),
 		FixedIn:        fixedInFor(q, rec),
-		Severity:       CVESeverityUnknown,
+		Severity:       update.CVESeverityUnknown,
 		FetchedAt:      now,
 		ExpiresAt:      expires,
 	}

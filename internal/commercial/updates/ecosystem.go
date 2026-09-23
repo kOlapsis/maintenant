@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"context"
@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 // ecosystemStaticMap maps well-known image short names to their CVE ecosystem.
@@ -107,25 +109,25 @@ var baseImageVersions = map[string]string{
 // using a fallback chain: cache → static → local OCI labels →
 // remote registry labels → tag heuristics → image name fallback.
 type EcosystemResolver struct {
-	registry *RegistryClient
+	registry *update.RegistryClient
 	logger   *slog.Logger
 
 	mu    sync.RWMutex
-	cache map[string]*EcosystemResult
+	cache map[string]*update.EcosystemResult
 }
 
 // NewEcosystemResolver creates an ecosystem resolver.
-func NewEcosystemResolver(registry *RegistryClient, logger *slog.Logger) *EcosystemResolver {
+func NewEcosystemResolver(registry *update.RegistryClient, logger *slog.Logger) *EcosystemResolver {
 	return &EcosystemResolver{
 		registry: registry,
 		logger:   logger,
-		cache:    make(map[string]*EcosystemResult),
+		cache:    make(map[string]*update.EcosystemResult),
 	}
 }
 
 // Resolve determines the CVE ecosystem for a container image using a fallback chain.
 // Returns nil if no ecosystem can be determined.
-func (r *EcosystemResolver) Resolve(ctx context.Context, image, tag, digest string, localLabels map[string]string) *EcosystemResult {
+func (r *EcosystemResolver) Resolve(ctx context.Context, image, tag, digest string, localLabels map[string]string) *update.EcosystemResult {
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -177,8 +179,8 @@ func (r *EcosystemResolver) Resolve(ctx context.Context, image, tag, digest stri
 	}
 
 	// 5. Tag heuristics
-	if eco, ok := ParseTagOSVariant(tag); ok {
-		result := &EcosystemResult{
+	if eco, ok := update.ParseTagOSVariant(tag); ok {
+		result := &update.EcosystemResult{
 			PackageName:     shortName,
 			Ecosystem:       eco,
 			DetectionMethod: "tag-heuristic",
@@ -204,9 +206,9 @@ func (r *EcosystemResolver) Resolve(ctx context.Context, image, tag, digest stri
 }
 
 // resolveStatic checks the static mapping for known images.
-func (r *EcosystemResolver) resolveStatic(shortName string) *EcosystemResult {
+func (r *EcosystemResolver) resolveStatic(shortName string) *update.EcosystemResult {
 	if mapping, ok := ecosystemStaticMap[shortName]; ok {
-		return &EcosystemResult{
+		return &update.EcosystemResult{
 			PackageName:     mapping.pkg,
 			Ecosystem:       mapping.eco,
 			DetectionMethod: "static",
@@ -216,7 +218,7 @@ func (r *EcosystemResolver) resolveStatic(shortName string) *EcosystemResult {
 }
 
 // resolveRemoteLabels fetches OCI labels from a public registry.
-func (r *EcosystemResolver) resolveRemoteLabels(ctx context.Context, image, tag, shortName string) *EcosystemResult {
+func (r *EcosystemResolver) resolveRemoteLabels(ctx context.Context, image, tag, shortName string) *update.EcosystemResult {
 	imageRef := image + ":" + tag
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -240,7 +242,7 @@ func (r *EcosystemResolver) resolveRemoteLabels(ctx context.Context, image, tag,
 
 // resolveImageNameFallback uses the image short name as package name with
 // Debian:12 as default ecosystem. Returns nil for scratch/distroless/unrecognizable images.
-func (r *EcosystemResolver) resolveImageNameFallback(shortName string) *EcosystemResult {
+func (r *EcosystemResolver) resolveImageNameFallback(shortName string) *update.EcosystemResult {
 	// Skip scratch-based and distroless images
 	if knownScratchImages[shortName] {
 		return nil
@@ -253,14 +255,14 @@ func (r *EcosystemResolver) resolveImageNameFallback(shortName string) *Ecosyste
 
 	// Check if it's a language ecosystem image
 	if eco, ok := languageEcosystemImages[shortName]; ok {
-		return &EcosystemResult{
+		return &update.EcosystemResult{
 			PackageName:     shortName,
 			Ecosystem:       eco,
 			DetectionMethod: "image-name-fallback",
 		}
 	}
 
-	return &EcosystemResult{
+	return &update.EcosystemResult{
 		PackageName:     shortName,
 		Ecosystem:       "Debian:12",
 		DetectionMethod: "image-name-fallback",
@@ -268,14 +270,14 @@ func (r *EcosystemResolver) resolveImageNameFallback(shortName string) *Ecosyste
 }
 
 // cacheResult stores a resolved ecosystem in the cache.
-func (r *EcosystemResolver) cacheResult(key string, result *EcosystemResult) {
+func (r *EcosystemResolver) cacheResult(key string, result *update.EcosystemResult) {
 	r.mu.Lock()
 	r.cache[key] = result
 	r.mu.Unlock()
 }
 
 // parseBaseImageLabel extracts ecosystem info from OCI base image labels.
-func parseBaseImageLabel(labels map[string]string, shortName string) (*EcosystemResult, bool) {
+func parseBaseImageLabel(labels map[string]string, shortName string) (*update.EcosystemResult, bool) {
 	baseName, ok := labels[ociBaseNameLabel]
 	if !ok || baseName == "" {
 		return nil, false
@@ -338,7 +340,7 @@ func parseBaseImageLabel(labels map[string]string, shortName string) (*Ecosystem
 
 	ecosystem := ecoPrefix + ":" + version
 
-	return &EcosystemResult{
+	return &update.EcosystemResult{
 		PackageName:     shortName,
 		Ecosystem:       ecosystem,
 		DetectionMethod: "oci-labels",
@@ -348,7 +350,7 @@ func parseBaseImageLabel(labels map[string]string, shortName string) (*Ecosystem
 // imageShortName extracts the short name from a full image reference.
 // "docker.io/library/nginx" → "nginx", "ghcr.io/org/app" → "app"
 func imageShortName(image string) string {
-	repo, _, _ := parseImageRef(image)
+	repo, _, _ := update.ParseImageRef(image)
 	if idx := strings.LastIndex(repo, "/"); idx >= 0 {
 		return repo[idx+1:]
 	}

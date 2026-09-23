@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"context"
@@ -20,20 +20,20 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // --- stubs ---
 
-// cveStubStore is a stubStore that gives controllable CVE cache behavior;
-// every other UpdateStore method is the stubStore no-op default.
+// cveStubStore gives controllable CVE cache behavior.
 type cveStubStore struct {
 	stubStore
 	mu            sync.Mutex
 	fresh         map[string]bool
-	cachedEntries map[string][]*CVECacheEntry
-	inserted      []*CVECacheEntry
+	cachedEntries map[string][]*update.CVECacheEntry
+	inserted      []*update.CVECacheEntry
 }
 
 func cveCacheKey(ecosystem, packageName, packageVersion string) string {
@@ -46,13 +46,13 @@ func (s *cveStubStore) IsCVECacheFresh(_ context.Context, ecosystem, packageName
 	return s.fresh[cveCacheKey(ecosystem, packageName, packageVersion)], nil
 }
 
-func (s *cveStubStore) GetCVECacheEntries(_ context.Context, ecosystem, packageName, packageVersion string) ([]*CVECacheEntry, error) {
+func (s *cveStubStore) GetCVECacheEntries(_ context.Context, ecosystem, packageName, packageVersion string) ([]*update.CVECacheEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.cachedEntries[cveCacheKey(ecosystem, packageName, packageVersion)], nil
 }
 
-func (s *cveStubStore) InsertCVECacheEntry(_ context.Context, e *CVECacheEntry) (string, error) {
+func (s *cveStubStore) InsertCVECacheEntry(_ context.Context, e *update.CVECacheEntry) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.inserted = append(s.inserted, e)
@@ -109,7 +109,7 @@ func (l *requestLog) totalVulnRequests() int {
 	return len(l.vulns)
 }
 
-func newTestCVEClient(store UpdateStore, serverURL string) *CVEClient {
+func newTestCVEClient(store update.UpdateStore, serverURL string) *CVEClient {
 	c := NewCVEClient(store, testLogger())
 	c.baseURL = serverURL
 	c.delay = 0
@@ -179,7 +179,7 @@ func TestQueryCVEs_HydratesFromVulnsEndpoint(t *testing.T) {
 	entries := result["c1"]
 	require.Len(t, entries, 2)
 
-	byID := make(map[string]*CVECacheEntry, len(entries))
+	byID := make(map[string]*update.CVECacheEntry, len(entries))
 	for _, e := range entries {
 		byID[e.CVEID] = e
 	}
@@ -187,13 +187,13 @@ func TestQueryCVEs_HydratesFromVulnsEndpoint(t *testing.T) {
 	critical := byID["CVE-2024-0001"]
 	require.NotNil(t, critical)
 	assert.Equal(t, "OpenSSL vulnerable to buffer overflow", critical.Summary)
-	assert.Equal(t, CVESeverityCritical, critical.Severity)
+	assert.Equal(t, update.CVESeverityCritical, critical.Severity)
 	assert.InDelta(t, 9.8, critical.CVSSScore, 0.001)
 	assert.Equal(t, "1.2.3", critical.FixedIn)
 
 	unscored := byID["GHSA-xxxx"]
 	require.NotNil(t, unscored)
-	assert.Equal(t, CVESeverityUnknown, unscored.Severity)
+	assert.Equal(t, update.CVESeverityUnknown, unscored.Severity)
 	assert.Equal(t, float64(0), unscored.CVSSScore)
 }
 
@@ -223,7 +223,7 @@ func TestQueryCVEs_BatchResponseCarriesNoDetails(t *testing.T) {
 	entries := result["c1"]
 	require.Len(t, entries, 1)
 	assert.Equal(t, "Real summary from the vulns endpoint", entries[0].Summary)
-	assert.Equal(t, CVESeverityUnknown, entries[0].Severity)
+	assert.Equal(t, update.CVESeverityUnknown, entries[0].Severity)
 }
 
 func TestQueryCVEs_Paginates(t *testing.T) {
@@ -352,10 +352,10 @@ func TestQueryCVEs_UsesFreshCacheWithoutNetwork(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	cached := []*CVECacheEntry{{CVEID: "CVE-CACHED", Severity: CVESeverityHigh}}
+	cached := []*update.CVECacheEntry{{CVEID: "CVE-CACHED", Severity: update.CVESeverityHigh}}
 	store := &cveStubStore{
 		fresh:         map[string]bool{cveCacheKey("Debian", "openssl", "1.1.1"): true},
-		cachedEntries: map[string][]*CVECacheEntry{cveCacheKey("Debian", "openssl", "1.1.1"): cached},
+		cachedEntries: map[string][]*update.CVECacheEntry{cveCacheKey("Debian", "openssl", "1.1.1"): cached},
 	}
 	client := newTestCVEClient(store, server.URL)
 

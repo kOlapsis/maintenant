@@ -38,6 +38,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/extpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/mcp"
@@ -127,6 +128,7 @@ type App struct {
 	apiRL          *ratelimit.Limiter
 	subscribeRL    *ratelimit.Limiter
 	licenseMgr     extension.EditionSource
+	ext            extpoint.Set
 	mcpServer      *gomcp.Server
 	// degradedPlanLogged keeps the multi-host degradation to one line: the
 	// helper is consulted at three call sites during a single startup.
@@ -167,10 +169,13 @@ func (b *sseBroadcaster) BroadcastEvent(eventType string, data any) {
 }
 
 // New creates and wires all application services.
-func New(cfg Config, logger *slog.Logger) (*App, error) {
+func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a := &App{
 		cfg:    cfg,
 		logger: logger,
+	}
+	for _, opt := range opts {
+		opt(a)
 	}
 
 	trustedProxies, err := cfg.ParseTrustedProxies()
@@ -529,13 +534,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	var updateEnricher update.Enricher
-	if extension.Allows(extension.CapCVEEnrichment) {
-		cveClient := update.NewCVEClient(updateStore, logger.With("component", "cve"))
-		changelogResolver := update.NewChangelogResolver(registryClient, logger.With("component", "changelog"))
-		riskEngine := update.NewRiskEngine()
-		ecosystemResolver := update.NewEcosystemResolver(registryClient, logger.With("component", "ecosystem"))
-		updateEnricher = update.NewProEnricher(updateStore, cveClient, changelogResolver, riskEngine, ecosystemResolver, logger.With("component", "enricher"))
-		logger.Info("update enrichment pipeline enabled (Pro)")
+	if a.ext.Enricher != nil {
+		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{Store: updateStore, Registry: registryClient, Logger: logger})
 	}
 	a.updateSvc = update.NewService(update.Deps{
 		Store:      updateStore,

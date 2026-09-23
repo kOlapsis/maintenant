@@ -8,7 +8,7 @@
 // Commercial: See COMMERCIAL-LICENSE.md
 //
 // Source: https://github.com/kolapsis/maintenant
-package commercial
+package tiers
 
 import (
 	"time"
@@ -59,11 +59,11 @@ var historyCaps = map[extension.Edition]time.Duration{
 	extension.Pro:      90 * 24 * time.Hour,
 }
 
-// Tiers is the commercial tier table: Community as the core declares it, plus what Personal and Pro add.
-type Tiers struct{}
+// Policy is the commercial tier table: Community as the core declares it, plus what Personal and Pro add.
+type Policy struct{}
 
 // Capabilities lists every declared capability.
-func (Tiers) Capabilities() []extension.Capability {
+func (Policy) Capabilities() []extension.Capability {
 	out := extension.CommunityPolicy{}.Capabilities()
 	for c := range minEdition {
 		out = append(out, c)
@@ -72,7 +72,7 @@ func (Tiers) Capabilities() []extension.Capability {
 }
 
 // MinEdition returns the lowest edition that opens c, Pro for an undeclared capability.
-func (Tiers) MinEdition(c extension.Capability) extension.Edition {
+func (Policy) MinEdition(c extension.Capability) extension.Edition {
 	if e, ok := minEdition[c]; ok {
 		return e
 	}
@@ -80,7 +80,7 @@ func (Tiers) MinEdition(c extension.Capability) extension.Edition {
 }
 
 // Limit returns the cap on r under e, 0 for an undeclared resource.
-func (Tiers) Limit(e extension.Edition, r extension.Resource) int {
+func (Policy) Limit(e extension.Edition, r extension.Resource) int {
 	if l, ok := limits[e]; ok {
 		return l[r]
 	}
@@ -88,7 +88,7 @@ func (Tiers) Limit(e extension.Edition, r extension.Resource) int {
 }
 
 // HistoryCap returns how far back e may look, the Community cap for an unknown edition.
-func (Tiers) HistoryCap(e extension.Edition) time.Duration {
+func (Policy) HistoryCap(e extension.Edition) time.Duration {
 	if d, ok := historyCaps[e]; ok {
 		return d
 	}

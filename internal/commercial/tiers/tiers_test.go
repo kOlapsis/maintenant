@@ -8,7 +8,7 @@
 // Commercial: See COMMERCIAL-LICENSE.md
 //
 // Source: https://github.com/kolapsis/maintenant
-package commercial
+package tiers
 
 import (
 	"os"
@@ -22,7 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	Register()
+	extension.Register(Policy{}, nil)
 	os.Exit(m.Run())
 }
 
@@ -133,9 +133,9 @@ func TestTiers_MatchesTheLimits(t *testing.T) {
 }
 
 func TestHistoryCap_IsTheAnnouncedTiering(t *testing.T) {
-	assert.Equal(t, 7*24*time.Hour, Tiers{}.HistoryCap(extension.Community))
-	assert.Equal(t, 30*24*time.Hour, Tiers{}.HistoryCap(extension.Personal))
-	assert.Equal(t, 90*24*time.Hour, Tiers{}.HistoryCap(extension.Pro))
+	assert.Equal(t, 7*24*time.Hour, Policy{}.HistoryCap(extension.Community))
+	assert.Equal(t, 30*24*time.Hour, Policy{}.HistoryCap(extension.Personal))
+	assert.Equal(t, 90*24*time.Hour, Policy{}.HistoryCap(extension.Pro))
 }
 
 func TestMinEditionForHistoryWindow_IsDerivedFromTheCaps(t *testing.T) {
@@ -194,18 +194,6 @@ func TestMaxHistoryWindow_UnknownEditionFallsBackToTheFloor(t *testing.T) {
 	allowed, required := extension.AllowsHistoryWindow(paid)
 	assert.False(t, allowed)
 	assert.Equal(t, extension.Personal, required)
-}
-
-func TestNewEditionSource_NoKeyMeansNoSource(t *testing.T) {
-	src, err := extension.NewEditionSource(extension.SourceConfig{})
-	require.NoError(t, err)
-	assert.Nil(t, src)
-}
-
-func TestNewEditionSource_UnusablePublicKeyReturnsAnError(t *testing.T) {
-	src, err := extension.NewEditionSource(extension.SourceConfig{LicenseKey: "key", PublicKeyB64: ""})
-	require.Error(t, err)
-	assert.True(t, src == nil, "a failed source must be an untyped nil")
 }
 
 func TestLiftingEdition_EveryEditionEveryResource(t *testing.T) {

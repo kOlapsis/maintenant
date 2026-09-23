@@ -12,12 +12,13 @@ package commercial
 
 import (
 	"github.com/kolapsis/maintenant/internal/commercial/license"
+	"github.com/kolapsis/maintenant/internal/commercial/tiers"
 	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // Register installs the commercial tier table and the licence-backed edition source into the core.
 func Register() {
-	extension.Register(Tiers{}, newEditionSource)
+	extension.Register(tiers.Policy{}, newEditionSource)
 }
 
 func newEditionSource(cfg extension.SourceConfig) (extension.EditionSource, error) {

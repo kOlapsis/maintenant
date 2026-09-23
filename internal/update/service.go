@@ -208,7 +208,7 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 
 // GenerateUpdateCommand produces a shell command to update a container.
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) string {
-	repo, _, _ := parseImageRef(c.Image)
+	repo, _, _ := ParseImageRef(c.Image)
 
 	// Kubernetes workloads
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
@@ -238,7 +238,7 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, previousDigest string
 		return ""
 	}
 
-	repo, _, _ := parseImageRef(c.Image)
+	repo, _, _ := ParseImageRef(c.Image)
 
 	// Kubernetes workloads — use rollout undo
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {

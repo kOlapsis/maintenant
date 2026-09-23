@@ -14,10 +14,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kolapsis/maintenant/internal/commercial"
+	"github.com/kolapsis/maintenant/internal/commercial/tiers"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 func TestMain(m *testing.M) {
-	commercial.Register()
+	extension.Register(tiers.Policy{}, nil)
 	os.Exit(m.Run())
 }

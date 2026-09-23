@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"context"
@@ -21,18 +21,20 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 // ChangelogResolver fetches release notes from GitHub.
 type ChangelogResolver struct {
-	registry *RegistryClient
+	registry *update.RegistryClient
 	client   *http.Client
 	logger   *slog.Logger
 	token    string
 }
 
 // NewChangelogResolver creates a changelog resolver.
-func NewChangelogResolver(registry *RegistryClient, logger *slog.Logger) *ChangelogResolver {
+func NewChangelogResolver(registry *update.RegistryClient, logger *slog.Logger) *ChangelogResolver {
 	return &ChangelogResolver{
 		registry: registry,
 		client:   &http.Client{Timeout: 15 * time.Second},
@@ -71,7 +73,7 @@ func (cr *ChangelogResolver) ResolveSourceURL(ctx context.Context, imageRef stri
 }
 
 // FetchLatestReleases fetches the latest releases from a GitHub repository.
-func (cr *ChangelogResolver) FetchLatestReleases(ctx context.Context, owner, repo string, count int) ([]ReleaseInfo, error) {
+func (cr *ChangelogResolver) FetchLatestReleases(ctx context.Context, owner, repo string, count int) ([]update.ReleaseInfo, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=%d", owner, repo, count)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -105,10 +107,10 @@ func (cr *ChangelogResolver) FetchLatestReleases(ctx context.Context, owner, rep
 		return nil, fmt.Errorf("decode github releases: %w", err)
 	}
 
-	result := make([]ReleaseInfo, 0, len(releases))
+	result := make([]update.ReleaseInfo, 0, len(releases))
 	for _, r := range releases {
 		publishedAt, _ := time.Parse(time.RFC3339, r.PublishedAt)
-		result = append(result, ReleaseInfo{
+		result = append(result, update.ReleaseInfo{
 			TagName:            r.TagName,
 			Name:               r.Name,
 			Body:               truncate(r.Body, 2000),

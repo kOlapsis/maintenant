@@ -121,7 +121,7 @@ func (sc *Scanner) Scan(ctx context.Context, containers []ContainerInfo) ([]Upda
 
 func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusions []*UpdateExclusion) (*UpdateResult, error) {
 	// Parse image reference
-	imageRef, currentTag, registry := parseImageRef(c.Image)
+	imageRef, currentTag, registry := ParseImageRef(c.Image)
 	if imageRef == "" {
 		return nil, fmt.Errorf("cannot parse image reference: %s", c.Image)
 	}
@@ -294,12 +294,12 @@ func (sc *Scanner) isExcluded(image, tag string, exclusions []*UpdateExclusion) 
 	return false
 }
 
-// parseImageRef splits an image string into (repository, tag, registry).
+// ParseImageRef splits an image string into (repository, tag, registry).
 // Examples:
 //   - "nginx:1.25" -> ("nginx", "1.25", "registry-1.docker.io")
 //   - "ghcr.io/org/repo:v1.0" -> ("ghcr.io/org/repo", "v1.0", "ghcr.io")
 //   - "myapp:latest" -> ("myapp", "latest", "registry-1.docker.io")
-func parseImageRef(image string) (repo, tag, registry string) {
+func ParseImageRef(image string) (repo, tag, registry string) {
 	// Strip digest (@sha256:...) — we only need the repository and tag
 	if idx := strings.Index(image, "@sha256:"); idx > 0 {
 		image = image[:idx]

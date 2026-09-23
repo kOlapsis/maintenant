@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package update
+package updates
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,20 +29,20 @@ import (
 type enricherStubStore struct {
 	stubStore
 	mu          sync.Mutex
-	imageUpdate *ImageUpdate
-	evaluations map[string]*CVEEvaluation
-	cves        []*ContainerCVE
-	riskRecords []*RiskScoreRecord
+	imageUpdate *update.ImageUpdate
+	evaluations map[string]*update.CVEEvaluation
+	cves        []*update.ContainerCVE
+	riskRecords []*update.RiskScoreRecord
 }
 
 func newEnricherStubStore() *enricherStubStore {
 	return &enricherStubStore{
-		imageUpdate: &ImageUpdate{ID: "u1", ContainerID: "c1", UpdateType: UpdateTypeMinor},
-		evaluations: make(map[string]*CVEEvaluation),
+		imageUpdate: &update.ImageUpdate{ID: "u1", ContainerID: "c1", UpdateType: update.UpdateTypeMinor},
+		evaluations: make(map[string]*update.CVEEvaluation),
 	}
 }
 
-func (s *enricherStubStore) GetImageUpdateByContainer(_ context.Context, containerID string) (*ImageUpdate, error) {
+func (s *enricherStubStore) GetImageUpdateByContainer(_ context.Context, containerID string) (*update.ImageUpdate, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.imageUpdate == nil || s.imageUpdate.ContainerID != containerID {
@@ -50,43 +51,43 @@ func (s *enricherStubStore) GetImageUpdateByContainer(_ context.Context, contain
 	return s.imageUpdate, nil
 }
 
-func (s *enricherStubStore) UpsertCVEEvaluation(_ context.Context, e *CVEEvaluation) error {
+func (s *enricherStubStore) UpsertCVEEvaluation(_ context.Context, e *update.CVEEvaluation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.evaluations[e.ContainerID] = e
 	return nil
 }
 
-func (s *enricherStubStore) UpsertContainerCVE(_ context.Context, c *ContainerCVE) error {
+func (s *enricherStubStore) UpsertContainerCVE(_ context.Context, c *update.ContainerCVE) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cves = append(s.cves, c)
 	return nil
 }
 
-func (s *enricherStubStore) InsertRiskScoreRecord(_ context.Context, r *RiskScoreRecord) (string, error) {
+func (s *enricherStubStore) InsertRiskScoreRecord(_ context.Context, r *update.RiskScoreRecord) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.riskRecords = append(s.riskRecords, r)
 	return "risk-1", nil
 }
 
-func (s *enricherStubStore) evaluation(containerID string) *CVEEvaluation {
+func (s *enricherStubStore) evaluation(containerID string) *update.CVEEvaluation {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.evaluations[containerID]
 }
 
-func (s *enricherStubStore) storedCVEs() []*ContainerCVE {
+func (s *enricherStubStore) storedCVEs() []*update.ContainerCVE {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]*ContainerCVE(nil), s.cves...)
+	return append([]*update.ContainerCVE(nil), s.cves...)
 }
 
-func (s *enricherStubStore) storedRiskRecords() []*RiskScoreRecord {
+func (s *enricherStubStore) storedRiskRecords() []*update.RiskScoreRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]*RiskScoreRecord(nil), s.riskRecords...)
+	return append([]*update.RiskScoreRecord(nil), s.riskRecords...)
 }
 
 // osvTestServer serves one vulnerability for every batch query.
@@ -110,7 +111,7 @@ func osvTestServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-func newTestEnricher(store UpdateStore, cve *CVEClient) *ProEnricher {
+func newTestEnricher(store update.UpdateStore, cve *CVEClient) *ProEnricher {
 	return NewProEnricher(store, cve, nil, NewRiskEngine(), NewEcosystemResolver(nil, testLogger()), testLogger())
 }
 
@@ -121,7 +122,7 @@ func TestEnrichScansContainerWithoutUpdate(t *testing.T) {
 	store := newEnricherStubStore()
 	enricher := newTestEnricher(store, newTestCVEClient(store, server.URL))
 
-	results := []UpdateResult{{
+	results := []update.UpdateResult{{
 		ContainerID:   "c1",
 		ContainerName: "web",
 		Image:         "nginx",
@@ -132,7 +133,7 @@ func TestEnrichScansContainerWithoutUpdate(t *testing.T) {
 
 	eval := store.evaluation("c1")
 	require.NotNil(t, eval, "an up-to-date container must still be evaluated")
-	assert.Equal(t, CVEEvaluated, eval.Status)
+	assert.Equal(t, update.CVEEvaluated, eval.Status)
 	assert.Equal(t, "Debian:12", eval.Ecosystem)
 	assert.Equal(t, "nginx", eval.PackageName)
 	assert.Equal(t, "1.27.0", eval.PackageVersion)
@@ -149,13 +150,13 @@ func TestEnrichRunsChangelogAndRiskOnlyWithUpdate(t *testing.T) {
 	store := newEnricherStubStore()
 	enricher := newTestEnricher(store, newTestCVEClient(store, server.URL))
 
-	results := []UpdateResult{{
+	results := []update.UpdateResult{{
 		ContainerID:   "c1",
 		ContainerName: "web",
 		Image:         "nginx",
 		CurrentTag:    "1.27.0",
 		LatestTag:     "1.28.0",
-		UpdateType:    UpdateTypeMinor,
+		UpdateType:    update.UpdateTypeMinor,
 		HasUpdate:     true,
 	}}
 	require.NoError(t, enricher.Enrich(context.Background(), results))
@@ -171,7 +172,7 @@ func TestEnrichRecordsUnsupportedWithoutEcosystem(t *testing.T) {
 	store := newEnricherStubStore()
 	enricher := newTestEnricher(store, newTestCVEClient(store, server.URL))
 
-	results := []UpdateResult{{
+	results := []update.UpdateResult{{
 		ContainerID:   "c1",
 		ContainerName: "tiny",
 		Image:         "scratch",
@@ -181,7 +182,7 @@ func TestEnrichRecordsUnsupportedWithoutEcosystem(t *testing.T) {
 
 	eval := store.evaluation("c1")
 	require.NotNil(t, eval)
-	assert.Equal(t, CVEUnsupported, eval.Status)
+	assert.Equal(t, update.CVEUnsupported, eval.Status)
 	assert.Empty(t, eval.Ecosystem)
 	assert.Empty(t, store.storedCVEs())
 }
@@ -195,7 +196,7 @@ func TestEnrichRecordsErrorOnQueryFailure(t *testing.T) {
 	store := newEnricherStubStore()
 	enricher := newTestEnricher(store, newTestCVEClient(store, server.URL))
 
-	results := []UpdateResult{{
+	results := []update.UpdateResult{{
 		ContainerID:   "c1",
 		ContainerName: "web",
 		Image:         "nginx",
@@ -205,7 +206,7 @@ func TestEnrichRecordsErrorOnQueryFailure(t *testing.T) {
 
 	eval := store.evaluation("c1")
 	require.NotNil(t, eval)
-	assert.Equal(t, CVEEvaluationError, eval.Status)
+	assert.Equal(t, update.CVEEvaluationError, eval.Status)
 	assert.NotEmpty(t, eval.Error)
 	assert.Empty(t, store.storedCVEs(), "a failed query must not invent a clean bill of health")
 }
