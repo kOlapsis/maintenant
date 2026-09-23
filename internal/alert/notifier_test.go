@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -216,7 +217,15 @@ func TestProcessJob_UsesTheSendersRetryPolicy(t *testing.T) {
 	require.EqualError(t, n.SendNow(context.Background(), job.Alert, job.Channel), "refused")
 }
 
+func withEdition(t *testing.T, e extension.Edition) {
+	t.Helper()
+	prev := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return e }
+	t.Cleanup(func() { extension.CurrentEdition = prev })
+}
+
 func TestProcessJob_UnreadySenderFailsWithoutAnAttempt(t *testing.T) {
+	withEdition(t, extension.Pro)
 	rec := &deliveryRecorder{}
 	n := NewNotifier(rec, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
 	s := &fakeSender{ready: errors.New("SMTP not configured")}
@@ -235,6 +244,7 @@ func TestProcessJob_UnreadySenderFailsWithoutAnAttempt(t *testing.T) {
 }
 
 func TestSendTestWebhook_UnregisteredTypeIsAGenericWebhook(t *testing.T) {
+	withEdition(t, extension.Pro)
 	srv, body, _ := captureServer(t, http.StatusOK)
 	n := newTestNotifier()
 

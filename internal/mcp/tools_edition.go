@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,11 +32,12 @@ func getEditionHandler(svc *Services) gomcp.ToolHandlerFor[getEditionInput, any]
 		maxWindow := extension.MaxHistoryWindow()
 
 		return jsonResult(map[string]any{
-			"edition":          string(extension.CurrentEdition()),
-			"features":         features,
-			"feature_editions": featureEditions,
-			"quotas":           editionQuotas(ctx, svc),
-			"tiers":            extension.Tiers(),
+			"edition":            string(extension.CurrentEdition()),
+			"features":           features,
+			"feature_editions":   featureEditions,
+			"quotas":             editionQuotas(ctx, svc),
+			"tiers":              extension.Tiers(),
+			"suspended_channels": editionSuspendedChannels(ctx, svc),
 			"resource_history": map[string]any{
 				"max_window":         maxWindow.Name,
 				"max_window_seconds": int64(maxWindow.Duration / time.Second),
@@ -43,6 +45,20 @@ func getEditionHandler(svc *Services) gomcp.ToolHandlerFor[getEditionInput, any]
 			},
 		})
 	}
+}
+
+// editionSuspendedChannels lists the enabled channels the running edition no longer opens.
+func editionSuspendedChannels(ctx context.Context, svc *Services) map[string]any {
+	list := []alert.SuspendedChannel{}
+	if svc.Channels != nil {
+		channels, err := svc.Channels.ListChannels(ctx)
+		if err != nil {
+			svc.logger().Error("failed to list channels for suspension", "error", err)
+		} else {
+			list = alert.SuspendedChannels(channels)
+		}
+	}
+	return map[string]any{"count": len(list), "channels": list}
 }
 
 // editionQuotas reports usage and limit for every capped resource this server

@@ -856,14 +856,15 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 		maxWindow := extension.MaxHistoryWindow()
 
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"edition":           string(extension.CurrentEdition()),
-			"organisation_name": r.organisationName,
-			"status_url":        r.statusURL,
-			"demo":              r.demoMode,
-			"features":          features,
-			"feature_editions":  featureEditions,
-			"quotas":            r.computeQuotas(ctx, d),
-			"tiers":             extension.Tiers(),
+			"edition":            string(extension.CurrentEdition()),
+			"organisation_name":  r.organisationName,
+			"status_url":         r.statusURL,
+			"demo":               r.demoMode,
+			"features":           features,
+			"feature_editions":   featureEditions,
+			"quotas":             r.computeQuotas(ctx, d),
+			"tiers":              extension.Tiers(),
+			"suspended_channels": r.suspendedChannels(ctx, d),
 			"resource_history": map[string]interface{}{
 				"max_window":         maxWindow.Name,
 				"max_window_seconds": int64(maxWindow.Duration / time.Second),
@@ -871,6 +872,20 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 			},
 		})
 	}
+}
+
+// suspendedChannels lists the enabled channels the running edition no longer opens.
+func (r *Router) suspendedChannels(ctx context.Context, d HandlerDeps) map[string]interface{} {
+	list := []alert.SuspendedChannel{}
+	if d.ChannelStore != nil {
+		channels, err := d.ChannelStore.ListChannels(ctx)
+		if err != nil {
+			r.logger.Error("failed to list channels for suspension", "error", err)
+		} else {
+			list = alert.SuspendedChannels(channels)
+		}
+	}
+	return map[string]interface{}{"count": len(list), "channels": list}
 }
 
 // computeQuotas returns real usage and the applicable limit for every capped

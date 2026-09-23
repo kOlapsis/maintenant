@@ -53,6 +53,7 @@ const (
 	DeliveryPending   = "pending"
 	DeliveryDelivered = "delivered"
 	DeliveryFailed    = "failed"
+	DeliverySuspended = "suspended"
 )
 
 // Event represents a unified alert event sent via Go channel from any monitoring service.
@@ -107,11 +108,13 @@ type NotificationChannel struct {
 	Config string `json:"config,omitempty"`
 	// HasSecret is derived at scan time, never stored. It lets the interface show
 	// "token on file" without receiving the token.
-	HasSecret bool      `json:"has_secret"`
-	Enabled   bool      `json:"enabled"`
-	Health    string    `json:"health,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	HasSecret       bool      `json:"has_secret"`
+	Enabled         bool      `json:"enabled"`
+	Health          string    `json:"health,omitempty"`
+	Suspended       bool      `json:"suspended"`
+	RequiredEdition string    `json:"required_edition,omitempty"` // derived from the running edition, never stored
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // AlertTrigger is a routing rule that maps an alert filter to one or more channels.

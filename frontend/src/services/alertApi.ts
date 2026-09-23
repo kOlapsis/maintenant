@@ -11,6 +11,7 @@
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 import { apiFetch, apiFetchVoid } from './apiFetch'
+import type { Edition } from './editionApi'
 
 // --- Types ---
 
@@ -72,6 +73,9 @@ export interface NotificationChannel {
   has_secret?: boolean
   enabled: boolean
   health: string
+  /** True when the running edition no longer opens this channel's type: it is kept but not delivered. */
+  suspended?: boolean
+  required_edition?: Edition
   created_at: string
   updated_at: string
 }

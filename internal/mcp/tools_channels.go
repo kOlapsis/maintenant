@@ -164,6 +164,9 @@ func listChannelsHandler(svc *Services) gomcp.ToolHandlerFor[listChannelsInput, 
 		if channels == nil {
 			channels = []*alert.NotificationChannel{}
 		}
+		for _, ch := range channels {
+			ch.MarkSuspension()
+		}
 		return jsonResult(map[string]any{"channels": channels})
 	}
 }
@@ -181,6 +184,7 @@ func getChannelHandler(svc *Services) gomcp.ToolHandlerFor[getChannelInput, any]
 			return errResult("channel not found")
 		}
 
+		ch.MarkSuspension()
 		out := map[string]any{"channel": ch}
 		if health, err := svc.Channels.GetChannelHealth(ctx, ch.ID); err == nil {
 			out["health"] = health
@@ -248,6 +252,7 @@ func createChannelHandler(svc *Services) gomcp.ToolHandlerFor[createChannelInput
 		ch.ID = id
 		ch.HasSecret = ch.Secret != ""
 
+		ch.MarkSuspension()
 		svc.broadcast(event.ChannelCreated, ch)
 		return jsonResult(ch)
 	}
@@ -323,6 +328,7 @@ func updateChannelHandler(svc *Services) gomcp.ToolHandlerFor[updateChannelInput
 		}
 		ch.HasSecret = ch.Secret != ""
 
+		ch.MarkSuspension()
 		svc.broadcast(event.ChannelUpdated, ch)
 		return jsonResult(ch)
 	}

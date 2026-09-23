@@ -28,7 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/alert"
-	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 type deliveryRecorder struct {
@@ -166,17 +165,6 @@ func TestSendNow_TelegramTakesItsOwnPath(t *testing.T) {
 
 	require.Len(t, *bodies, 1)
 	assert.Contains(t, (*bodies)[0], `"parse_mode":"HTML"`)
-}
-
-// A licence that expires closes the management of a channel, never its delivery.
-func TestSendNow_TelegramDeliversUnderCommunity(t *testing.T) {
-	prev := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Community }
-	t.Cleanup(func() { extension.CurrentEdition = prev })
-
-	n, bodies, _ := telegramNotifier(t, &deliveryRecorder{}, http.StatusOK, `{"ok":true}`)
-	require.NoError(t, n.SendNow(context.Background(), firedAlert(), telegramChannel()))
-	assert.Len(t, *bodies, 1, "a downgraded instance keeps notifying through channels it already has")
 }
 
 // The test button must reach Telegram too, and report its reason.

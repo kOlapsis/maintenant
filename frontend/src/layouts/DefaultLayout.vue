@@ -10,6 +10,7 @@ import AppHeader from '@/components/AppHeader.vue'
 import EditionBadge from '@/components/EditionBadge.vue'
 import DemoModeBanner from '@/components/DemoModeBanner.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
+import SuspendedChannelsBanner from '@/components/SuspendedChannelsBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
@@ -340,6 +341,7 @@ watch(
     <main class="flex-1 flex flex-col overflow-hidden">
       <!-- Demo mode banner: persistent, non-dismissible -->
       <DemoModeBanner />
+      <SuspendedChannelsBanner class="shrink-0" />
       <!-- License warning banner -->
       <AlertBanner
         v-if="licenseMessageParts"

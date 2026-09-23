@@ -18,6 +18,7 @@ import {
   type LicenseStatus,
   type QuotaResource,
   type HistoryWindowSpec,
+  type SuspendedChannel,
 } from '@/services/editionApi'
 import { sseBus } from '@/services/sseBus'
 import { onProbePayload } from '@/services/authGuard'
@@ -52,7 +53,7 @@ async function loadLicenseStatus() {
   }
 }
 
-// SSE events that change the quota counters — auto-reload on any of them.
+// SSE events that change what /edition reports (quota counters, suspended channels): reload on any of them.
 // Covers user-initiated actions AND label/annotation-driven auto-discovery.
 const QUOTA_EVENTS = [
   'endpoint.discovered',
@@ -65,6 +66,9 @@ const QUOTA_EVENTS = [
   'agent.created',
   'agent.revoked',
   'agent.deleted',
+  'channel.created',
+  'channel.updated',
+  'channel.deleted',
 ] as const
 
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
@@ -281,6 +285,10 @@ export function useEdition() {
 
   const personalization = computed(() => hasFeature('personalization'))
 
+  const suspendedChannels = computed<SuspendedChannel[]>(
+    () => edition.value?.suspended_channels?.channels ?? [],
+  )
+
   return {
     edition,
     editionName,
@@ -306,6 +314,7 @@ export function useEdition() {
     reload,
     getQuota,
     tierLimit,
+    suspendedChannels,
     licenseStatus,
     licenseMessage,
     licenseStatusValue,

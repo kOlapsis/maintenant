@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -74,6 +75,9 @@ type Notifier struct {
 	logger       *slog.Logger
 	webhook      *webhookSender
 	senders      map[string]ChannelSender
+
+	suspendedMu     sync.Mutex
+	suspendedLogged map[string]bool
 }
 
 // NewNotifier creates a new webhook notifier. Its HTTP client blocks delivery
@@ -92,6 +96,7 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 			"webhook": webhook,
 			"discord": NewWebhookSender(client, formatDiscordPayload, logger),
 		},
+		suspendedLogged: make(map[string]bool),
 	}
 }
 
@@ -165,6 +170,17 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 		return
 	}
 
+	if err := n.suspension(job.Channel); err != nil {
+		job.Delivery.Status = DeliverySuspended
+		job.Delivery.LastError = err.Error()
+		if job.Delivery.ID != "" {
+			if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
+				n.logger.Error("notifier: update suspended delivery", "error", updateErr)
+			}
+		}
+		return
+	}
+
 	eventType := alertEventType(job.Alert)
 	sender := n.senderFor(job.Channel.Type)
 	if err := sender.Ready(); err != nil {
@@ -221,6 +237,24 @@ func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, er
 	}
 }
 
+// suspension returns a *SuspendedError when the running edition no longer opens ch's type, warning once per channel and transition.
+func (n *Notifier) suspension(ch *NotificationChannel) error {
+	required, suspended := ChannelSuspension(ch.Type)
+
+	n.suspendedMu.Lock()
+	defer n.suspendedMu.Unlock()
+	if !suspended {
+		delete(n.suspendedLogged, ch.ID)
+		return nil
+	}
+	if !n.suspendedLogged[ch.ID] {
+		n.suspendedLogged[ch.ID] = true
+		n.logger.Warn("notifier: channel suspended, the running edition no longer opens its type",
+			"channel_id", ch.ID, "channel_type", ch.Type, "required_edition", required)
+	}
+	return &SuspendedError{Required: required}
+}
+
 func alertEventType(a *Alert) string {
 	if a.Status == StatusResolved {
 		return event.AlertResolved
@@ -233,6 +267,9 @@ func alertEventType(a *Alert) string {
 // caller (e.g. the escalation Runner) manages its own delivery row state.
 // Returns nil on success, or the last error after maxRetries attempts.
 func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChannel) error {
+	if err := n.suspension(ch); err != nil {
+		return err
+	}
 	eventType := alertEventType(a)
 	sender := n.senderFor(ch.Type)
 	if err := sender.Ready(); err != nil {
@@ -272,6 +309,9 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 		CreatedAt:  time.Now().UTC(),
 	}
 
+	if err := n.suspension(ch); err != nil {
+		return 0, err
+	}
 	sender := n.senderFor(ch.Type)
 	if err := sender.Ready(); err != nil {
 		return 0, err

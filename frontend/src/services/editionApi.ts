@@ -53,6 +53,19 @@ export interface ResourceHistoryContract {
   windows: HistoryWindowSpec[]
 }
 
+/** A channel kept but no longer delivered, because the running edition does not open its type. */
+export interface SuspendedChannel {
+  id: string
+  name: string
+  type: string
+  required_edition: Edition
+}
+
+export interface SuspendedChannels {
+  count: number
+  channels: SuspendedChannel[]
+}
+
 export interface EditionResponse {
   edition: Edition
   organisation_name: string
@@ -63,6 +76,8 @@ export interface EditionResponse {
   quotas?: Partial<Record<QuotaResource, QuotaEntry>>
   /** edition -> resource -> cap (-1 unlimited), for every edition. */
   tiers?: Record<string, Partial<Record<QuotaResource, number>>>
+  /** Enabled channels the running edition no longer delivers through. */
+  suspended_channels?: SuspendedChannels
   /** Absent on an engine older than the tiered history: no catalogue, no cap. */
   resource_history?: ResourceHistoryContract
   demo?: boolean

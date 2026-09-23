@@ -212,6 +212,10 @@ func (h *AlertHandler) HandleListChannels(w http.ResponseWriter, r *http.Request
 		channels = []*alert.NotificationChannel{}
 	}
 
+	for _, ch := range channels {
+		ch.MarkSuspension()
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"channels": channels,
 	})
@@ -303,6 +307,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 	ch.ID = id
 	ch.HasSecret = ch.Secret != ""
 
+	ch.MarkSuspension()
 	h.broker.Broadcast(SSEEvent{Type: event.ChannelCreated, Data: ch})
 	WriteJSON(w, http.StatusCreated, ch)
 }
@@ -413,6 +418,7 @@ func (h *AlertHandler) HandleUpdateChannel(w http.ResponseWriter, r *http.Reques
 	}
 	ch.HasSecret = ch.Secret != ""
 
+	ch.MarkSuspension()
 	h.broker.Broadcast(SSEEvent{Type: event.ChannelUpdated, Data: ch})
 	WriteJSON(w, http.StatusOK, ch)
 }
