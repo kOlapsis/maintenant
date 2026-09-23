@@ -12,10 +12,13 @@
 package extpoint
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/alert/escalation"
 
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
@@ -28,6 +31,8 @@ type Set struct {
 	PostureScorer func(PostureDeps) security.PostureScorer
 	Channels      func(ChannelDeps) map[string]alert.ChannelSender
 	StatusPage    func(StatusPageDeps) StatusPage
+	Suppressor    func(SuppressorDeps) alert.MaintenanceSuppressor
+	Escalation    func(EscalationDeps) Escalation
 }
 
 // EnricherDeps is what an update enricher is built from.
@@ -83,4 +88,31 @@ type StatusPage struct {
 	Maintenance     status.MaintenanceRunner
 	Personalization status.PersonalizationManager
 	Mailer          func(status.SmtpConfig) status.Mailer
+}
+
+// MaintenanceWindows tells whether a monitor sits inside an active maintenance window.
+type MaintenanceWindows interface {
+	IsEntitySuppressed(ctx context.Context, monitorType string, monitorID string, now time.Time) (matched bool, windowID string, endsAt time.Time, err error)
+}
+
+// SuppressorDeps is what the maintenance suppressor is built from.
+type SuppressorDeps struct {
+	Windows MaintenanceWindows
+	Logger  *slog.Logger
+}
+
+// EscalationDeps is what escalation is built from.
+type EscalationDeps struct {
+	Store      escalation.Store
+	Alerts     alert.AlertStore
+	Channels   alert.ChannelStore
+	Notifier   *alert.Notifier
+	Suppressor alert.MaintenanceSuppressor
+	Logger     *slog.Logger
+}
+
+// Escalation holds the escalation service and, when the running edition opens it, the escalator.
+type Escalation struct {
+	Service   escalation.Service
+	Escalator alert.Escalator
 }

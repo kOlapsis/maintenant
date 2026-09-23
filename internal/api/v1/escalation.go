@@ -23,11 +23,11 @@ import (
 
 // EscalationHandler handles HTTP endpoints for escalation policies.
 type EscalationHandler struct {
-	svc *escalation.Service
+	svc escalation.Service
 }
 
 // NewEscalationHandler creates a new EscalationHandler.
-func NewEscalationHandler(svc *escalation.Service) *EscalationHandler {
+func NewEscalationHandler(svc escalation.Service) *EscalationHandler {
 	return &EscalationHandler{svc: svc}
 }
 
@@ -255,7 +255,7 @@ func (h *EscalationHandler) HandleOverlapProbe(w http.ResponseWriter, r *http.Re
 		Levels:  levels,
 	}
 
-	warnings := escalation.DetectOverlap(candidate, existing)
+	warnings := h.svc.DetectOverlap(candidate, existing)
 	if warnings == nil {
 		warnings = []escalation.OverlapWarning{}
 	}

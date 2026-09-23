@@ -120,7 +120,7 @@ type HandlerDeps struct {
 	AckStore    security.AcknowledgmentStore
 
 	// Escalation policies
-	EscalationSvc *escalation.Service
+	EscalationSvc escalation.Service
 
 	// License
 	LicenseMgr extension.EditionSource

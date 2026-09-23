@@ -787,7 +787,7 @@ func toString(v any) string {
 // itself) and only crossing the Pro boundary flips it. Reasoning in capability
 // terms means the matrix never has to be enumerated here.
 func (a *App) wireLicenseSubscriber(_ context.Context) {
-	if a.licenseMgr == nil {
+	if a.licenseMgr == nil || a.escalationSvc == nil {
 		return
 	}
 	required := extension.MinEdition(extension.CapAlertEscalation)

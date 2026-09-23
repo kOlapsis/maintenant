@@ -13,78 +13,17 @@ package escalation
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
+
+	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
 )
 
-// Sentinel errors returned by Service methods.
-var (
-	ErrValidationFailed = errors.New("validation_failed")
-	ErrPolicyNotFound   = errors.New("policy_not_found")
-	ErrRunNotFound      = errors.New("run_not_found")
-
-	// ErrDeliveryDuplicate is returned by Store.InsertDelivery when a row
-	// for (run_id, level_index, channel_id) already exists. This signals the
-	// runner that another worker has already reserved this delivery slot
-	// (idempotence guarantee R4 — reserve-then-deliver).
-	ErrDeliveryDuplicate = errors.New("delivery_duplicate")
-)
-
-// PolicyRequest is the input for creating or updating a policy.
-type PolicyRequest struct {
-	Name    string     `json:"name"`
-	Active  bool       `json:"active"`
-	Filters Filters    `json:"filters"`
-	Levels  []LevelReq `json:"levels"`
-}
-
-// LevelReq is one escalation step in a request (order is assigned by service).
-type LevelReq struct {
-	DelaySeconds int      `json:"delay_seconds"`
-	ChannelIDs   []string `json:"channel_ids"`
-}
-
-// Store defines the persistence interface for escalation data.
-type Store interface {
-	InsertPolicy(ctx context.Context, p *Policy) (string, error)
-	UpdatePolicy(ctx context.Context, p *Policy) error
-	SelectPolicy(ctx context.Context, id string) (*Policy, error)
-	SelectPolicies(ctx context.Context, activeOnly bool) ([]*Policy, error)
-	DeletePolicy(ctx context.Context, id string) error
-	CountActivePolicies(ctx context.Context) (int, error)
-	SelectRun(ctx context.Context, id string) (*Run, error)
-	SelectRunsByAlert(ctx context.Context, alertID string) ([]*Run, error)
-	SelectRunsByPolicy(ctx context.Context, policyID string, limit int, cursor string) ([]*Run, error)
-	SelectRunDeliveries(ctx context.Context, runID string) ([]*Delivery, error)
-	BulkDeactivateAllPolicies(ctx context.Context) error
-	BulkRestorePoliciesFromDowngrade(ctx context.Context) error
-	BulkStopActiveRuns(ctx context.Context, stopStatus string, endedAt time.Time) error
-	PurgeRunsAndDeliveriesOlderThan(ctx context.Context, before time.Time) error
-
-	// Run lifecycle (used by the concrete Pro Runner).
-	InsertRun(ctx context.Context, r *Run) (string, error)
-	UpdateRunProgress(ctx context.Context, runID string, lastExecutedLevelIndex int, nextActionAt *time.Time, status string) error
-	TerminateRun(ctx context.Context, runID string, status string, endedAt time.Time) error
-	SelectActiveRunsByAlert(ctx context.Context, alertID string) ([]*Run, error)
-	// SelectDueRuns returns runs in status 'active' OR 'paused_by_maintenance'
-	// whose next_action_at <= now. The runner re-evaluates the suppressor on
-	// every tick, so paused runs need to surface alongside active ones.
-	SelectDueRuns(ctx context.Context, now time.Time) ([]*Run, error)
-	PauseRunForMaintenance(ctx context.Context, runID string, recheckAt time.Time) error
-	ResumeRunFromMaintenance(ctx context.Context, runID string, nextActionAt time.Time) error
-
-	// Delivery lifecycle (used by the concrete Pro Runner).
-	// InsertDelivery returns ErrDeliveryDuplicate when the UNIQUE
-	// (run_id, level_index, channel_id) constraint is violated.
-	InsertDelivery(ctx context.Context, d *Delivery) (string, error)
-	UpdateDelivery(ctx context.Context, d *Delivery) error
-	SelectOrphanPendingDeliveries(ctx context.Context, before time.Time) ([]*Delivery, error)
-}
+var _ esc.Service = (*Service)(nil)
 
 // Service is the CE-side escalation CRUD service.
 // It is the single write point for escalation data in CE; all reads/writes go through here.
@@ -99,7 +38,7 @@ type Store interface {
 // Edition downgrade contract: when Pro→CE transition is detected, OnEditionDowngraded deactivates
 // all active policies (preserving active_before_downgrade for restore) and stops active runs.
 type Service struct {
-	store        Store
+	store        esc.Store
 	channelStore alert.ChannelStore
 	edition      func() extension.Edition
 	suppressor   alert.MaintenanceSuppressor
@@ -109,12 +48,15 @@ type Service struct {
 
 // NewService constructs a new escalation Service.
 func NewService(
-	store Store,
+	store esc.Store,
 	channelStore alert.ChannelStore,
 	edition func() extension.Edition,
 	suppressor alert.MaintenanceSuppressor,
 	logger *slog.Logger,
 ) *Service {
+	if suppressor == nil {
+		suppressor = noopRunnerSuppressor{}
+	}
 	return &Service{
 		store:        store,
 		channelStore: channelStore,
@@ -160,12 +102,12 @@ func (s *Service) OnEditionUpgraded(ctx context.Context) error {
 // GetPlanLimits returns escalation usage stats. Pro is unlimited; CE has no
 // access to escalation (routes are gated by requireCapability upstream), so
 // the only signal exposed here is the current active count.
-func (s *Service) GetPlanLimits(ctx context.Context) (Limits, error) {
+func (s *Service) GetPlanLimits(ctx context.Context) (esc.Limits, error) {
 	current, err := s.store.CountActivePolicies(ctx)
 	if err != nil {
-		return Limits{}, fmt.Errorf("get plan limits: %w", err)
+		return esc.Limits{}, fmt.Errorf("get plan limits: %w", err)
 	}
-	return Limits{
+	return esc.Limits{
 		MaxActive:     -1,
 		MaxLevels:     -1,
 		CurrentActive: current,
@@ -173,38 +115,38 @@ func (s *Service) GetPlanLimits(ctx context.Context) (Limits, error) {
 }
 
 // CreatePolicy validates and persists a new escalation policy.
-func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy, error) {
+func (s *Service) CreatePolicy(ctx context.Context, req esc.PolicyRequest) (*esc.Policy, error) {
 	// Validate name
 	if req.Name == "" {
-		return nil, fmt.Errorf("field=name: %w", ErrValidationFailed)
+		return nil, fmt.Errorf("field=name: %w", esc.ErrValidationFailed)
 	}
 	if len(req.Name) > 120 {
-		return nil, fmt.Errorf("field=name: name must be 120 characters or fewer: %w", ErrValidationFailed)
+		return nil, fmt.Errorf("field=name: name must be 120 characters or fewer: %w", esc.ErrValidationFailed)
 	}
 
 	// Validate levels count
 	if len(req.Levels) < 1 {
-		return nil, fmt.Errorf("field=levels: at least one level is required: %w", ErrValidationFailed)
+		return nil, fmt.Errorf("field=levels: at least one level is required: %w", esc.ErrValidationFailed)
 	}
 
 	// Validate each level
 	for i, lvl := range req.Levels {
 		if lvl.DelaySeconds < 60 || lvl.DelaySeconds > 86400 {
-			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be between 60 and 86400: %w", i, ErrValidationFailed)
+			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be between 60 and 86400: %w", i, esc.ErrValidationFailed)
 		}
 		if len(lvl.ChannelIDs) == 0 {
-			return nil, fmt.Errorf("field=levels[%d].channel_ids: at least one channel is required: %w", i, ErrValidationFailed)
+			return nil, fmt.Errorf("field=levels[%d].channel_ids: at least one channel is required: %w", i, esc.ErrValidationFailed)
 		}
 		// Consecutive levels must be at least 60s apart
 		if i > 0 && req.Levels[i].DelaySeconds-req.Levels[i-1].DelaySeconds < 60 {
-			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be at least 60 seconds after the previous level: %w", i, ErrValidationFailed)
+			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be at least 60 seconds after the previous level: %w", i, esc.ErrValidationFailed)
 		}
 	}
 
 	// Build levels with assigned order
-	levels := make([]Level, len(req.Levels))
+	levels := make([]esc.Level, len(req.Levels))
 	for i, lvl := range req.Levels {
-		levels[i] = Level{
+		levels[i] = esc.Level{
 			Order:        i,
 			DelaySeconds: lvl.DelaySeconds,
 			ChannelIDs:   lvl.ChannelIDs,
@@ -212,7 +154,7 @@ func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy,
 	}
 
 	now := time.Now().UTC()
-	p := &Policy{
+	p := &esc.Policy{
 		Name:      req.Name,
 		Active:    req.Active,
 		Filters:   req.Filters,
@@ -232,25 +174,25 @@ func (s *Service) CreatePolicy(ctx context.Context, req PolicyRequest) (*Policy,
 }
 
 // GetPolicy retrieves a policy by ID. Returns (nil, ErrPolicyNotFound) if not found.
-func (s *Service) GetPolicy(ctx context.Context, id string) (*Policy, error) {
+func (s *Service) GetPolicy(ctx context.Context, id string) (*esc.Policy, error) {
 	p, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get policy %s: %w", id, err)
 	}
 	if p == nil {
-		return nil, ErrPolicyNotFound
+		return nil, esc.ErrPolicyNotFound
 	}
 	return p, nil
 }
 
 // ListPolicies returns all policies, optionally filtered by active status.
-func (s *Service) ListPolicies(ctx context.Context, activeOnly bool) ([]*Policy, error) {
+func (s *Service) ListPolicies(ctx context.Context, activeOnly bool) ([]*esc.Policy, error) {
 	policies, err := s.store.SelectPolicies(ctx, activeOnly)
 	if err != nil {
 		return nil, fmt.Errorf("list policies: %w", err)
 	}
 	if policies == nil {
-		policies = []*Policy{}
+		policies = []*esc.Policy{}
 	}
 	return policies, nil
 }
@@ -262,7 +204,7 @@ func (s *Service) DeletePolicy(ctx context.Context, id string) error {
 		return fmt.Errorf("delete policy: lookup: %w", err)
 	}
 	if p == nil {
-		return ErrPolicyNotFound
+		return esc.ErrPolicyNotFound
 	}
 	if err := s.store.DeletePolicy(ctx, id); err != nil {
 		return fmt.Errorf("delete policy %s: %w", id, err)
@@ -272,39 +214,39 @@ func (s *Service) DeletePolicy(ctx context.Context, id string) error {
 }
 
 // UpdatePolicy validates and updates an existing escalation policy (last-write-wins).
-func (s *Service) UpdatePolicy(ctx context.Context, id string, req PolicyRequest) (*Policy, error) {
+func (s *Service) UpdatePolicy(ctx context.Context, id string, req esc.PolicyRequest) (*esc.Policy, error) {
 	existing, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("update policy: lookup: %w", err)
 	}
 	if existing == nil {
-		return nil, ErrPolicyNotFound
+		return nil, esc.ErrPolicyNotFound
 	}
 
 	if req.Name == "" {
-		return nil, fmt.Errorf("field=name: %w", ErrValidationFailed)
+		return nil, fmt.Errorf("field=name: %w", esc.ErrValidationFailed)
 	}
 	if len(req.Name) > 120 {
-		return nil, fmt.Errorf("field=name: name must be 120 characters or fewer: %w", ErrValidationFailed)
+		return nil, fmt.Errorf("field=name: name must be 120 characters or fewer: %w", esc.ErrValidationFailed)
 	}
 	if len(req.Levels) < 1 {
-		return nil, fmt.Errorf("field=levels: at least one level is required: %w", ErrValidationFailed)
+		return nil, fmt.Errorf("field=levels: at least one level is required: %w", esc.ErrValidationFailed)
 	}
 	for i, lvl := range req.Levels {
 		if lvl.DelaySeconds < 60 || lvl.DelaySeconds > 86400 {
-			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be between 60 and 86400: %w", i, ErrValidationFailed)
+			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be between 60 and 86400: %w", i, esc.ErrValidationFailed)
 		}
 		if len(lvl.ChannelIDs) == 0 {
-			return nil, fmt.Errorf("field=levels[%d].channel_ids: at least one channel is required: %w", i, ErrValidationFailed)
+			return nil, fmt.Errorf("field=levels[%d].channel_ids: at least one channel is required: %w", i, esc.ErrValidationFailed)
 		}
 		if i > 0 && req.Levels[i].DelaySeconds-req.Levels[i-1].DelaySeconds < 60 {
-			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be at least 60 seconds after the previous level: %w", i, ErrValidationFailed)
+			return nil, fmt.Errorf("field=levels[%d].delay_seconds: must be at least 60 seconds after the previous level: %w", i, esc.ErrValidationFailed)
 		}
 	}
 
-	levels := make([]Level, len(req.Levels))
+	levels := make([]esc.Level, len(req.Levels))
 	for i, lvl := range req.Levels {
-		levels[i] = Level{Order: i, DelaySeconds: lvl.DelaySeconds, ChannelIDs: lvl.ChannelIDs}
+		levels[i] = esc.Level{Order: i, DelaySeconds: lvl.DelaySeconds, ChannelIDs: lvl.ChannelIDs}
 	}
 
 	existing.Name = req.Name
@@ -322,13 +264,13 @@ func (s *Service) UpdatePolicy(ctx context.Context, id string, req PolicyRequest
 }
 
 // SetPolicyActive activates or deactivates a policy.
-func (s *Service) SetPolicyActive(ctx context.Context, id string, active bool) (*Policy, error) {
+func (s *Service) SetPolicyActive(ctx context.Context, id string, active bool) (*esc.Policy, error) {
 	existing, err := s.store.SelectPolicy(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("set policy active: lookup: %w", err)
 	}
 	if existing == nil {
-		return nil, ErrPolicyNotFound
+		return nil, esc.ErrPolicyNotFound
 	}
 
 	existing.Active = active
@@ -343,25 +285,25 @@ func (s *Service) SetPolicyActive(ctx context.Context, id string, active bool) (
 }
 
 // ListRunsForAlert returns runs attached to an alert.
-func (s *Service) ListRunsForAlert(ctx context.Context, alertID string) ([]*Run, error) {
+func (s *Service) ListRunsForAlert(ctx context.Context, alertID string) ([]*esc.Run, error) {
 	runs, err := s.store.SelectRunsByAlert(ctx, alertID)
 	if err != nil {
 		return nil, fmt.Errorf("list runs for alert %s: %w", alertID, err)
 	}
 	if runs == nil {
-		runs = []*Run{}
+		runs = []*esc.Run{}
 	}
 	return runs, nil
 }
 
 // GetRun returns a run with its deliveries. Returns (nil, ErrRunNotFound) if not found.
-func (s *Service) GetRun(ctx context.Context, id string) (*Run, error) {
+func (s *Service) GetRun(ctx context.Context, id string) (*esc.Run, error) {
 	r, err := s.store.SelectRun(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get run %s: %w", id, err)
 	}
 	if r == nil {
-		return nil, ErrRunNotFound
+		return nil, esc.ErrRunNotFound
 	}
 	deliveries, err := s.store.SelectRunDeliveries(ctx, id)
 	if err != nil {
@@ -372,7 +314,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (*Run, error) {
 }
 
 // ListPolicyRuns returns paginated runs for a policy.
-func (s *Service) ListPolicyRuns(ctx context.Context, policyID string, limit int, cursor string) ([]*Run, error) {
+func (s *Service) ListPolicyRuns(ctx context.Context, policyID string, limit int, cursor string) ([]*esc.Run, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -384,7 +326,7 @@ func (s *Service) ListPolicyRuns(ctx context.Context, policyID string, limit int
 		return nil, fmt.Errorf("list policy runs %s: %w", policyID, err)
 	}
 	if runs == nil {
-		runs = []*Run{}
+		runs = []*esc.Run{}
 	}
 	return runs, nil
 }

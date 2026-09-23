@@ -9,5 +9,5 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-// Package escalation manages user-defined escalation policies (Pro).
+// Package escalation declares escalation policies, their runs, and the store and service contracts.
 package escalation

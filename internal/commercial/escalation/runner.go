@@ -21,28 +21,9 @@ import (
 	"strings"
 	"time"
 
+	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
+
 	"github.com/kolapsis/maintenant/internal/alert"
-)
-
-// Run statuses (mirror the SQL CHECK constraint on escalation_runs).
-const (
-	RunStatusActive                = "active"
-	RunStatusPausedByMaintenance   = "paused_by_maintenance"
-	RunStatusStoppedByAck          = "stopped_by_ack"
-	RunStatusStoppedByResolution   = "stopped_by_resolution"
-	RunStatusStoppedByPolicyDelete = "stopped_by_policy_deletion"
-	RunStatusStoppedByPolicyDisabl = "stopped_by_policy_disabled"
-	RunStatusStoppedByDowngrade    = "stopped_by_edition_downgrade"
-	RunStatusExhausted             = "exhausted"
-)
-
-// Delivery statuses (mirror the SQL CHECK constraint on escalation_deliveries).
-const (
-	DeliveryStatusPending            = "pending"
-	DeliveryStatusSent               = "sent"
-	DeliveryStatusFailed             = "failed"
-	DeliveryStatusAbandoned          = "abandoned"
-	DeliveryStatusSkippedMaintenance = "skipped_maintenance"
 )
 
 // Reserved level indices for non-step deliveries (negative values are intentional —
@@ -68,7 +49,7 @@ type Sender interface {
 
 // RunnerDeps bundles the dependencies of the concrete Pro escalator.
 type RunnerDeps struct {
-	Store         Store
+	Store         esc.Store
 	AlertStore    alert.AlertStore
 	ChannelStore  alert.ChannelStore
 	Notifier      Sender
@@ -88,7 +69,7 @@ type RunnerDeps struct {
 // channel_id) constraint, so a crash between InsertDelivery and the network
 // send is recovered at the next cycle without duplicate notifications.
 type Runner struct {
-	store         Store
+	store         esc.Store
 	alertStore    alert.AlertStore
 	channelStore  alert.ChannelStore
 	notifier      Sender
@@ -184,11 +165,11 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 
 		nextAt := now.Add(time.Duration(p.Levels[0].DelaySeconds) * time.Second)
 		policyID := p.ID
-		run := &Run{
+		run := &esc.Run{
 			PolicyID:               &policyID,
 			PolicySnapshotJSON:     string(snapshot),
 			AlertID:                a.ID,
-			Status:                 RunStatusActive,
+			Status:                 esc.RunStatusActive,
 			LastExecutedLevelIndex: -1,
 			StartedAt:              now,
 			NextActionAt:           &nextAt,
@@ -222,7 +203,7 @@ func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack al
 
 	now := r.clock()
 	for _, run := range runs {
-		if termErr := r.store.TerminateRun(ctx, run.ID, RunStatusStoppedByAck, now); termErr != nil {
+		if termErr := r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByAck, now); termErr != nil {
 			r.logger.ErrorContext(ctx, "escalation: terminate on ack", "error", termErr, "run_id", run.ID)
 			continue
 		}
@@ -256,7 +237,7 @@ func (r *Runner) OnAlertResolved(ctx context.Context, alertID string, resolvedAt
 		return fmt.Errorf("escalation: list runs for resolve: %w", err)
 	}
 	for _, run := range runs {
-		if err := r.store.TerminateRun(ctx, run.ID, RunStatusStoppedByResolution, resolvedAt); err != nil {
+		if err := r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByResolution, resolvedAt); err != nil {
 			r.logger.ErrorContext(ctx, "escalation: terminate on resolve", "error", err, "run_id", run.ID)
 			continue
 		}
@@ -294,19 +275,19 @@ func (r *Runner) EvaluateCycle(ctx context.Context) error {
 
 // --- internals ---
 
-func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error {
+func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) error {
 	a, err := r.alertStore.GetAlert(ctx, run.AlertID)
 	if err != nil {
 		return fmt.Errorf("load alert: %w", err)
 	}
 	if a == nil {
 		// Alert was deleted; close the run silently.
-		return r.store.TerminateRun(ctx, run.ID, RunStatusStoppedByResolution, now)
+		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByResolution, now)
 	}
 	// Defensive: alert may have transitioned to resolved/silenced via a path
 	// that bypassed our hooks (e.g. retention purge in flight). Stop the run.
 	if a.Status != alert.StatusActive {
-		return r.store.TerminateRun(ctx, run.ID, RunStatusStoppedByResolution, now)
+		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByResolution, now)
 	}
 
 	suppressed, sErr := r.suppressor.IsSuppressed(ctx, a.Source, a.EntityType, a.EntityID)
@@ -323,7 +304,7 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 		return nil
 	}
 
-	if run.Status == RunStatusPausedByMaintenance {
+	if run.Status == esc.RunStatusPausedByMaintenance {
 		// Maintenance window cleared — back to active. Don't consume a level
 		// this tick; the next call to EvaluateCycle will pick it up via the
 		// standard active path.
@@ -334,7 +315,7 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 	if err != nil {
 		r.logger.ErrorContext(ctx, "escalation: bad snapshot — terminating run",
 			"run_id", run.ID, "error", err)
-		return r.store.TerminateRun(ctx, run.ID, RunStatusStoppedByPolicyDelete, now)
+		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByPolicyDelete, now)
 	}
 
 	nextLevel := run.LastExecutedLevelIndex + 1
@@ -344,7 +325,7 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 			r.dispatchSpecial(ctx, run.ID, specialLevelExhausted,
 				policy.Levels[run.LastExecutedLevelIndex].ChannelIDs, exhAlert)
 		}
-		return r.store.TerminateRun(ctx, run.ID, RunStatusExhausted, now)
+		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusExhausted, now)
 	}
 
 	level := policy.Levels[nextLevel]
@@ -359,13 +340,13 @@ func (r *Runner) processRun(ctx context.Context, run *Run, now time.Time) error 
 	} else {
 		nextAt = now
 	}
-	if err := r.store.UpdateRunProgress(ctx, run.ID, nextLevel, &nextAt, RunStatusActive); err != nil {
+	if err := r.store.UpdateRunProgress(ctx, run.ID, nextLevel, &nextAt, esc.RunStatusActive); err != nil {
 		return fmt.Errorf("update run progress: %w", err)
 	}
 	return nil
 }
 
-func (r *Runner) executeLevel(ctx context.Context, run *Run, levelIndex int, channelIDs []string, a *alert.Alert) {
+func (r *Runner) executeLevel(ctx context.Context, run *esc.Run, levelIndex int, channelIDs []string, a *alert.Alert) {
 	now := r.clock()
 	for _, chID := range channelIDs {
 		r.dispatchToChannel(ctx, run.ID, levelIndex, chID, a, now)
@@ -393,22 +374,22 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 		return
 	}
 	chIDCopy := chID
-	delivery := &Delivery{
+	delivery := &esc.Delivery{
 		RunID:            runID,
 		LevelIndex:       levelIndex,
 		ChannelID:        &chIDCopy,
-		Status:           DeliveryStatusPending,
+		Status:           esc.DeliveryStatusPending,
 		AttemptStartedAt: now,
 	}
 	if _, err := r.store.InsertDelivery(ctx, delivery); err != nil {
-		if !errors.Is(err, ErrDeliveryDuplicate) {
+		if !errors.Is(err, esc.ErrDeliveryDuplicate) {
 			r.logger.ErrorContext(ctx, "escalation: insert delivery", "error", err,
 				"run_id", runID, "level_index", levelIndex, "channel_id", chID)
 		}
 		return
 	}
 	if !ch.Enabled {
-		delivery.Status = DeliveryStatusFailed
+		delivery.Status = esc.DeliveryStatusFailed
 		delivery.Error = "channel disabled"
 		if uErr := r.store.UpdateDelivery(ctx, delivery); uErr != nil {
 			r.logger.ErrorContext(ctx, "escalation: update disabled delivery", "error", uErr, "delivery_id", delivery.ID)
@@ -419,13 +400,13 @@ func (r *Runner) dispatchToChannel(ctx context.Context, runID string, levelIndex
 }
 
 // deliverAndUpdate performs the actual network send and persists the outcome.
-func (r *Runner) deliverAndUpdate(ctx context.Context, delivery *Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
+func (r *Runner) deliverAndUpdate(ctx context.Context, delivery *esc.Delivery, a *alert.Alert, ch *alert.NotificationChannel) {
 	err := r.notifier.SendNow(ctx, a, ch)
 	if err != nil {
-		delivery.Status = DeliveryStatusFailed
+		delivery.Status = esc.DeliveryStatusFailed
 		delivery.Error = truncateErr(err.Error())
 	} else {
-		delivery.Status = DeliveryStatusSent
+		delivery.Status = esc.DeliveryStatusSent
 		t := r.clock()
 		delivery.SentAt = &t
 	}
@@ -449,7 +430,7 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 			continue
 		}
 		// Run already terminal → abandon the orphan.
-		if run.Status != RunStatusActive && run.Status != RunStatusPausedByMaintenance {
+		if run.Status != esc.RunStatusActive && run.Status != esc.RunStatusPausedByMaintenance {
 			r.abandonDelivery(ctx, d, "run terminated")
 			continue
 		}
@@ -472,8 +453,8 @@ func (r *Runner) recoverOrphans(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-func (r *Runner) abandonDelivery(ctx context.Context, d *Delivery, reason string) {
-	d.Status = DeliveryStatusAbandoned
+func (r *Runner) abandonDelivery(ctx context.Context, d *esc.Delivery, reason string) {
+	d.Status = esc.DeliveryStatusAbandoned
 	d.Error = reason
 	_ = r.store.UpdateDelivery(ctx, d)
 }
@@ -483,7 +464,7 @@ func (r *Runner) abandonDelivery(ctx context.Context, d *Delivery, reason string
 // matchPolicyFilters reports whether an alert satisfies a policy's filters.
 // Empty filter buckets match everything (universe). Tags are not yet exposed
 // on the Alert entity — treated as no-op (consistent with engine.matchesTrigger).
-func matchPolicyFilters(a *alert.Alert, p *Policy) bool {
+func matchPolicyFilters(a *alert.Alert, p *esc.Policy) bool {
 	if len(p.Filters.Severities) > 0 && !slices.Contains(p.Filters.Severities, a.Severity) {
 		return false
 	}
@@ -502,11 +483,11 @@ func matchPolicyFilters(a *alert.Alert, p *Policy) bool {
 	return true
 }
 
-func unmarshalPolicySnapshot(s string) (*Policy, error) {
+func unmarshalPolicySnapshot(s string) (*esc.Policy, error) {
 	if s == "" {
 		return nil, errors.New("empty snapshot")
 	}
-	var p Policy
+	var p esc.Policy
 	if err := json.Unmarshal([]byte(s), &p); err != nil {
 		return nil, fmt.Errorf("unmarshal snapshot: %w", err)
 	}

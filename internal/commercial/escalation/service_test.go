@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
+
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -29,17 +31,17 @@ import (
 // --- store mock ---
 
 type mockStore struct {
-	policies    map[string]*Policy
+	policies    map[string]*esc.Policy
 	activeCount int
 	insertErr   error
 	selectErr   error
 }
 
 func newMockStore() *mockStore {
-	return &mockStore{policies: map[string]*Policy{}}
+	return &mockStore{policies: map[string]*esc.Policy{}}
 }
 
-func (m *mockStore) InsertPolicy(_ context.Context, p *Policy) (string, error) {
+func (m *mockStore) InsertPolicy(_ context.Context, p *esc.Policy) (string, error) {
 	if m.insertErr != nil {
 		return "", m.insertErr
 	}
@@ -50,18 +52,18 @@ func (m *mockStore) InsertPolicy(_ context.Context, p *Policy) (string, error) {
 	}
 	return p.ID, nil
 }
-func (m *mockStore) UpdatePolicy(_ context.Context, p *Policy) error {
+func (m *mockStore) UpdatePolicy(_ context.Context, p *esc.Policy) error {
 	m.policies[p.ID] = p
 	return nil
 }
-func (m *mockStore) SelectPolicy(_ context.Context, id string) (*Policy, error) {
+func (m *mockStore) SelectPolicy(_ context.Context, id string) (*esc.Policy, error) {
 	if m.selectErr != nil {
 		return nil, m.selectErr
 	}
 	return m.policies[id], nil
 }
-func (m *mockStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*Policy, error) {
-	var out []*Policy
+func (m *mockStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*esc.Policy, error) {
+	var out []*esc.Policy
 	for _, p := range m.policies {
 		if !activeOnly || p.Active {
 			out = append(out, p)
@@ -77,16 +79,16 @@ func (m *mockStore) DeletePolicy(_ context.Context, id string) error {
 	delete(m.policies, id)
 	return nil
 }
-func (m *mockStore) CountActivePolicies(_ context.Context) (int, error)  { return m.activeCount, nil }
-func (m *mockStore) SelectRun(_ context.Context, _ string) (*Run, error) { return nil, nil }
-func (m *mockStore) SelectRunsByAlert(_ context.Context, _ string) ([]*Run, error) {
-	return []*Run{}, nil
+func (m *mockStore) CountActivePolicies(_ context.Context) (int, error)      { return m.activeCount, nil }
+func (m *mockStore) SelectRun(_ context.Context, _ string) (*esc.Run, error) { return nil, nil }
+func (m *mockStore) SelectRunsByAlert(_ context.Context, _ string) ([]*esc.Run, error) {
+	return []*esc.Run{}, nil
 }
-func (m *mockStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*Run, error) {
-	return []*Run{}, nil
+func (m *mockStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*esc.Run, error) {
+	return []*esc.Run{}, nil
 }
-func (m *mockStore) SelectRunDeliveries(_ context.Context, _ string) ([]*Delivery, error) {
-	return []*Delivery{}, nil
+func (m *mockStore) SelectRunDeliveries(_ context.Context, _ string) ([]*esc.Delivery, error) {
+	return []*esc.Delivery{}, nil
 }
 func (m *mockStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
 func (m *mockStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
@@ -96,17 +98,17 @@ func (m *mockStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time)
 func (m *mockStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
 	return nil
 }
-func (m *mockStore) InsertRun(_ context.Context, _ *Run) (string, error) { return "", nil }
+func (m *mockStore) InsertRun(_ context.Context, _ *esc.Run) (string, error) { return "", nil }
 func (m *mockStore) UpdateRunProgress(_ context.Context, _ string, _ int, _ *time.Time, _ string) error {
 	return nil
 }
 func (m *mockStore) TerminateRun(_ context.Context, _ string, _ string, _ time.Time) error {
 	return nil
 }
-func (m *mockStore) SelectActiveRunsByAlert(_ context.Context, _ string) ([]*Run, error) {
+func (m *mockStore) SelectActiveRunsByAlert(_ context.Context, _ string) ([]*esc.Run, error) {
 	return nil, nil
 }
-func (m *mockStore) SelectDueRuns(_ context.Context, _ time.Time) ([]*Run, error) {
+func (m *mockStore) SelectDueRuns(_ context.Context, _ time.Time) ([]*esc.Run, error) {
 	return nil, nil
 }
 func (m *mockStore) PauseRunForMaintenance(_ context.Context, _ string, _ time.Time) error {
@@ -115,9 +117,11 @@ func (m *mockStore) PauseRunForMaintenance(_ context.Context, _ string, _ time.T
 func (m *mockStore) ResumeRunFromMaintenance(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
-func (m *mockStore) InsertDelivery(_ context.Context, _ *Delivery) (string, error) { return "", nil }
-func (m *mockStore) UpdateDelivery(_ context.Context, _ *Delivery) error           { return nil }
-func (m *mockStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*Delivery, error) {
+func (m *mockStore) InsertDelivery(_ context.Context, _ *esc.Delivery) (string, error) {
+	return "", nil
+}
+func (m *mockStore) UpdateDelivery(_ context.Context, _ *esc.Delivery) error { return nil }
+func (m *mockStore) SelectOrphanPendingDeliveries(_ context.Context, _ time.Time) ([]*esc.Delivery, error) {
 	return nil, nil
 }
 
@@ -171,16 +175,16 @@ func newTestService(store *mockStore) *Service {
 	)
 }
 
-func validRequest() PolicyRequest {
-	return PolicyRequest{
+func validRequest() esc.PolicyRequest {
+	return esc.PolicyRequest{
 		Name:   "test policy",
 		Active: false,
-		Filters: Filters{
+		Filters: esc.Filters{
 			Severities: []string{"critical"},
-			Scopes:     []Scope{},
+			Scopes:     []esc.Scope{},
 			Tags:       []string{},
 		},
-		Levels: []LevelReq{
+		Levels: []esc.LevelReq{
 			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
 		},
 	}
@@ -194,7 +198,7 @@ func TestCreatePolicy_EmptyName(t *testing.T) {
 	req.Name = ""
 	_, err := svc.CreatePolicy(context.Background(), req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
+	assert.True(t, errors.Is(err, esc.ErrValidationFailed))
 }
 
 func TestCreatePolicy_NameTooLong(t *testing.T) {
@@ -203,61 +207,61 @@ func TestCreatePolicy_NameTooLong(t *testing.T) {
 	req.Name = string(make([]byte, 121))
 	_, err := svc.CreatePolicy(context.Background(), req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
+	assert.True(t, errors.Is(err, esc.ErrValidationFailed))
 }
 
 func TestCreatePolicy_NoLevels(t *testing.T) {
 	svc := newTestService(newMockStore())
 	req := validRequest()
-	req.Levels = []LevelReq{}
+	req.Levels = []esc.LevelReq{}
 	_, err := svc.CreatePolicy(context.Background(), req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
+	assert.True(t, errors.Is(err, esc.ErrValidationFailed))
 }
 
 func TestCreatePolicy_DelayTooShort(t *testing.T) {
 	svc := newTestService(newMockStore())
 	req := validRequest()
-	req.Levels = []LevelReq{{DelaySeconds: 30, ChannelIDs: []string{"1"}}}
+	req.Levels = []esc.LevelReq{{DelaySeconds: 30, ChannelIDs: []string{"1"}}}
 	_, err := svc.CreatePolicy(context.Background(), req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
+	assert.True(t, errors.Is(err, esc.ErrValidationFailed))
 }
 
 func TestCreatePolicy_DelayTooLong(t *testing.T) {
 	svc := newTestService(newMockStore())
 	req := validRequest()
-	req.Levels = []LevelReq{{DelaySeconds: 90000, ChannelIDs: []string{"1"}}}
+	req.Levels = []esc.LevelReq{{DelaySeconds: 90000, ChannelIDs: []string{"1"}}}
 	_, err := svc.CreatePolicy(context.Background(), req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
+	assert.True(t, errors.Is(err, esc.ErrValidationFailed))
 }
 
 func TestCreatePolicy_EmptyChannelIDs(t *testing.T) {
 	svc := newTestService(newMockStore())
 	req := validRequest()
-	req.Levels = []LevelReq{{DelaySeconds: 300, ChannelIDs: []string{}}}
+	req.Levels = []esc.LevelReq{{DelaySeconds: 300, ChannelIDs: []string{}}}
 	_, err := svc.CreatePolicy(context.Background(), req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
+	assert.True(t, errors.Is(err, esc.ErrValidationFailed))
 }
 
 func TestCreatePolicy_IntervalTooShort(t *testing.T) {
 	svc := newTestService(newMockStore())
 	req := validRequest()
-	req.Levels = []LevelReq{
+	req.Levels = []esc.LevelReq{
 		{DelaySeconds: 300, ChannelIDs: []string{"1"}},
 		{DelaySeconds: 330, ChannelIDs: []string{"1"}}, // only 30s gap < 60s
 	}
 	_, err := svc.CreatePolicy(context.Background(), req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrValidationFailed))
+	assert.True(t, errors.Is(err, esc.ErrValidationFailed))
 }
 
 func TestCreatePolicy_TwoToFiveLevels_OK(t *testing.T) {
 	svc := newTestService(newMockStore())
 	req := validRequest()
-	req.Levels = []LevelReq{
+	req.Levels = []esc.LevelReq{
 		{DelaySeconds: 300, ChannelIDs: []string{"1"}},
 		{DelaySeconds: 600, ChannelIDs: []string{"1"}},
 		{DelaySeconds: 900, ChannelIDs: []string{"1"}},
@@ -282,7 +286,7 @@ func TestCreatePolicy_HappyPath(t *testing.T) {
 func TestGetPolicy_NotFound(t *testing.T) {
 	svc := newTestService(newMockStore())
 	_, err := svc.GetPolicy(context.Background(), "999")
-	assert.True(t, errors.Is(err, ErrPolicyNotFound))
+	assert.True(t, errors.Is(err, esc.ErrPolicyNotFound))
 }
 
 func TestGetPolicy_Found(t *testing.T) {
@@ -300,7 +304,7 @@ func TestGetPolicy_Found(t *testing.T) {
 func TestDeletePolicy_NotFound(t *testing.T) {
 	svc := newTestService(newMockStore())
 	err := svc.DeletePolicy(context.Background(), "999")
-	assert.True(t, errors.Is(err, ErrPolicyNotFound))
+	assert.True(t, errors.Is(err, esc.ErrPolicyNotFound))
 }
 
 func TestDeletePolicy_HappyPath(t *testing.T) {
@@ -314,7 +318,7 @@ func TestDeletePolicy_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = svc.GetPolicy(context.Background(), created.ID)
-	assert.True(t, errors.Is(err, ErrPolicyNotFound))
+	assert.True(t, errors.Is(err, esc.ErrPolicyNotFound))
 }
 
 func TestIsAlertSuppressed(t *testing.T) {
@@ -350,15 +354,15 @@ func TestUpdatePolicy_HappyPath(t *testing.T) {
 	created, err := svc.CreatePolicy(context.Background(), validRequest())
 	require.NoError(t, err)
 
-	req := PolicyRequest{
+	req := esc.PolicyRequest{
 		Name:   "updated name",
 		Active: false,
-		Filters: Filters{
+		Filters: esc.Filters{
 			Severities: []string{"warning"},
-			Scopes:     []Scope{},
+			Scopes:     []esc.Scope{},
 			Tags:       []string{},
 		},
-		Levels: []LevelReq{
+		Levels: []esc.LevelReq{
 			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
 			{DelaySeconds: 600, ChannelIDs: []string{"1"}},
 		},
@@ -372,7 +376,7 @@ func TestUpdatePolicy_HappyPath(t *testing.T) {
 func TestUpdatePolicy_NotFound(t *testing.T) {
 	svc := newTestService(newMockStore())
 	_, err := svc.UpdatePolicy(context.Background(), "999", validRequest())
-	assert.True(t, errors.Is(err, ErrPolicyNotFound))
+	assert.True(t, errors.Is(err, esc.ErrPolicyNotFound))
 }
 
 func TestSetPolicyActive_HappyPath(t *testing.T) {
@@ -393,5 +397,5 @@ func TestSetPolicyActive_HappyPath(t *testing.T) {
 func TestSetPolicyActive_NotFound(t *testing.T) {
 	svc := newTestService(newMockStore())
 	_, err := svc.SetPolicyActive(context.Background(), "999", true)
-	assert.True(t, errors.Is(err, ErrPolicyNotFound))
+	assert.True(t, errors.Is(err, esc.ErrPolicyNotFound))
 }

@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/alert"
-	"github.com/kolapsis/maintenant/internal/alert/maintenance"
+	"github.com/kolapsis/maintenant/internal/commercial/maintenance"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"

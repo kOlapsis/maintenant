@@ -21,6 +21,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	commesc "github.com/kolapsis/maintenant/internal/commercial/escalation"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -167,7 +168,7 @@ func (mcpNoopSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (bool, 
 // --- helpers ---
 
 func buildProEscalationServices() *Services {
-	svc := escalation.NewService(
+	svc := commesc.NewService(
 		newMCPEscalationStore(),
 		&mcpChannelStore{},
 		func() extension.Edition { return extension.Pro },

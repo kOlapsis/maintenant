@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
+
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
@@ -33,21 +35,21 @@ import (
 // exercise the runtime state machine.
 type runStore struct {
 	mu             sync.Mutex
-	policies       map[string]*Policy
-	runs           map[string]*Run
-	deliveries     map[string]*Delivery
+	policies       map[string]*esc.Policy
+	runs           map[string]*esc.Run
+	deliveries     map[string]*esc.Delivery
 	insertDelivErr error // injectable to simulate UNIQUE violation
 }
 
 func newRunStore() *runStore {
 	return &runStore{
-		policies:   map[string]*Policy{},
-		runs:       map[string]*Run{},
-		deliveries: map[string]*Delivery{},
+		policies:   map[string]*esc.Policy{},
+		runs:       map[string]*esc.Run{},
+		deliveries: map[string]*esc.Delivery{},
 	}
 }
 
-func (s *runStore) addPolicy(p *Policy) *Policy {
+func (s *runStore) addPolicy(p *esc.Policy) *esc.Policy {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p.ID = uid.New()
@@ -59,20 +61,20 @@ func (s *runStore) addPolicy(p *Policy) *Policy {
 	return p
 }
 
-func (s *runStore) listRuns() []*Run {
+func (s *runStore) listRuns() []*esc.Run {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]*Run, 0, len(s.runs))
+	out := make([]*esc.Run, 0, len(s.runs))
 	for _, r := range s.runs {
 		out = append(out, r)
 	}
 	return out
 }
 
-func (s *runStore) listDeliveries() []*Delivery {
+func (s *runStore) listDeliveries() []*esc.Delivery {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]*Delivery, 0, len(s.deliveries))
+	out := make([]*esc.Delivery, 0, len(s.deliveries))
 	for _, d := range s.deliveries {
 		out = append(out, d)
 	}
@@ -92,19 +94,19 @@ func (s *runStore) onlyRunID() string {
 // Policy methods (subset needed by Runner; the rest panic to surface
 // unexpected calls during tests).
 
-func (s *runStore) InsertPolicy(_ context.Context, _ *Policy) (string, error) {
+func (s *runStore) InsertPolicy(_ context.Context, _ *esc.Policy) (string, error) {
 	panic("not used in runner tests")
 }
-func (s *runStore) UpdatePolicy(_ context.Context, _ *Policy) error { return nil }
-func (s *runStore) SelectPolicy(_ context.Context, id string) (*Policy, error) {
+func (s *runStore) UpdatePolicy(_ context.Context, _ *esc.Policy) error { return nil }
+func (s *runStore) SelectPolicy(_ context.Context, id string) (*esc.Policy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.policies[id], nil
 }
-func (s *runStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*Policy, error) {
+func (s *runStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*esc.Policy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []*Policy
+	var out []*esc.Policy
 	for _, p := range s.policies {
 		if !activeOnly || p.Active {
 			out = append(out, p)
@@ -114,10 +116,10 @@ func (s *runStore) SelectPolicies(_ context.Context, activeOnly bool) ([]*Policy
 }
 func (s *runStore) DeletePolicy(_ context.Context, _ string) error     { return nil }
 func (s *runStore) CountActivePolicies(_ context.Context) (int, error) { return 0, nil }
-func (s *runStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*Run, error) {
+func (s *runStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*esc.Run, error) {
 	return nil, nil
 }
-func (s *runStore) SelectRunDeliveries(_ context.Context, _ string) ([]*Delivery, error) {
+func (s *runStore) SelectRunDeliveries(_ context.Context, _ string) ([]*esc.Delivery, error) {
 	return nil, nil
 }
 func (s *runStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
@@ -131,7 +133,7 @@ func (s *runStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Tim
 
 // Run lifecycle.
 
-func (s *runStore) InsertRun(_ context.Context, r *Run) (string, error) {
+func (s *runStore) InsertRun(_ context.Context, r *esc.Run) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.ID = uid.New()
@@ -140,7 +142,7 @@ func (s *runStore) InsertRun(_ context.Context, r *Run) (string, error) {
 	return r.ID, nil
 }
 
-func (s *runStore) SelectRun(_ context.Context, id string) (*Run, error) {
+func (s *runStore) SelectRun(_ context.Context, id string) (*esc.Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r, ok := s.runs[id]; ok {
@@ -150,10 +152,10 @@ func (s *runStore) SelectRun(_ context.Context, id string) (*Run, error) {
 	return nil, nil
 }
 
-func (s *runStore) SelectRunsByAlert(_ context.Context, alertID string) ([]*Run, error) {
+func (s *runStore) SelectRunsByAlert(_ context.Context, alertID string) ([]*esc.Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []*Run
+	var out []*esc.Run
 	for _, r := range s.runs {
 		if r.AlertID == alertID {
 			cp := *r
@@ -163,15 +165,15 @@ func (s *runStore) SelectRunsByAlert(_ context.Context, alertID string) ([]*Run,
 	return out, nil
 }
 
-func (s *runStore) SelectActiveRunsByAlert(_ context.Context, alertID string) ([]*Run, error) {
+func (s *runStore) SelectActiveRunsByAlert(_ context.Context, alertID string) ([]*esc.Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []*Run
+	var out []*esc.Run
 	for _, r := range s.runs {
 		if r.AlertID != alertID {
 			continue
 		}
-		if r.Status == RunStatusActive || r.Status == RunStatusPausedByMaintenance {
+		if r.Status == esc.RunStatusActive || r.Status == esc.RunStatusPausedByMaintenance {
 			cp := *r
 			out = append(out, &cp)
 		}
@@ -179,12 +181,12 @@ func (s *runStore) SelectActiveRunsByAlert(_ context.Context, alertID string) ([
 	return out, nil
 }
 
-func (s *runStore) SelectDueRuns(_ context.Context, now time.Time) ([]*Run, error) {
+func (s *runStore) SelectDueRuns(_ context.Context, now time.Time) ([]*esc.Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []*Run
+	var out []*esc.Run
 	for _, r := range s.runs {
-		if r.Status != RunStatusActive && r.Status != RunStatusPausedByMaintenance {
+		if r.Status != esc.RunStatusActive && r.Status != esc.RunStatusPausedByMaintenance {
 			continue
 		}
 		if r.NextActionAt == nil || r.NextActionAt.After(now) {
@@ -229,7 +231,7 @@ func (s *runStore) PauseRunForMaintenance(_ context.Context, runID string, reche
 	if !ok {
 		return errors.New("run not found")
 	}
-	r.Status = RunStatusPausedByMaintenance
+	r.Status = esc.RunStatusPausedByMaintenance
 	r.NextActionAt = &recheckAt
 	return nil
 }
@@ -241,14 +243,14 @@ func (s *runStore) ResumeRunFromMaintenance(_ context.Context, runID string, nex
 	if !ok {
 		return errors.New("run not found")
 	}
-	r.Status = RunStatusActive
+	r.Status = esc.RunStatusActive
 	r.NextActionAt = &nextActionAt
 	return nil
 }
 
 // Delivery lifecycle.
 
-func (s *runStore) InsertDelivery(_ context.Context, d *Delivery) (string, error) {
+func (s *runStore) InsertDelivery(_ context.Context, d *esc.Delivery) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.insertDelivErr != nil {
@@ -261,7 +263,7 @@ func (s *runStore) InsertDelivery(_ context.Context, d *Delivery) (string, error
 		if existing.RunID == d.RunID && existing.LevelIndex == d.LevelIndex {
 			if (existing.ChannelID == nil && d.ChannelID == nil) ||
 				(existing.ChannelID != nil && d.ChannelID != nil && *existing.ChannelID == *d.ChannelID) {
-				return "", ErrDeliveryDuplicate
+				return "", esc.ErrDeliveryDuplicate
 			}
 		}
 	}
@@ -271,7 +273,7 @@ func (s *runStore) InsertDelivery(_ context.Context, d *Delivery) (string, error
 	return d.ID, nil
 }
 
-func (s *runStore) UpdateDelivery(_ context.Context, d *Delivery) error {
+func (s *runStore) UpdateDelivery(_ context.Context, d *esc.Delivery) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existing, ok := s.deliveries[d.ID]; ok {
@@ -282,12 +284,12 @@ func (s *runStore) UpdateDelivery(_ context.Context, d *Delivery) error {
 	return nil
 }
 
-func (s *runStore) SelectOrphanPendingDeliveries(_ context.Context, before time.Time) ([]*Delivery, error) {
+func (s *runStore) SelectOrphanPendingDeliveries(_ context.Context, before time.Time) ([]*esc.Delivery, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []*Delivery
+	var out []*esc.Delivery
 	for _, d := range s.deliveries {
-		if d.Status == DeliveryStatusPending && d.AttemptStartedAt.Before(before) {
+		if d.Status == esc.DeliveryStatusPending && d.AttemptStartedAt.Before(before) {
 			cp := *d
 			out = append(out, &cp)
 		}
@@ -541,14 +543,14 @@ func criticalAlert(id string) *alert.Alert {
 	}
 }
 
-func policyTwoLevels() *Policy {
-	return &Policy{
+func policyTwoLevels() *esc.Policy {
+	return &esc.Policy{
 		Name:   "p1",
 		Active: true,
-		Filters: Filters{
+		Filters: esc.Filters{
 			Severities: []string{alert.SeverityCritical},
 		},
-		Levels: []Level{
+		Levels: []esc.Level{
 			{Order: 0, DelaySeconds: 60, ChannelIDs: []string{"1"}},
 			{Order: 1, DelaySeconds: 180, ChannelIDs: []string{"1"}},
 		},
@@ -583,7 +585,7 @@ func TestRunner_OnAlertCreated_StartsRun(t *testing.T) {
 	runs := h.store.listRuns()
 	require.Len(t, runs, 1)
 	r := runs[0]
-	assert.Equal(t, RunStatusActive, r.Status)
+	assert.Equal(t, esc.RunStatusActive, r.Status)
 	assert.Equal(t, -1, r.LastExecutedLevelIndex)
 	require.NotNil(t, r.PolicyID)
 	assert.Equal(t, p.ID, *r.PolicyID)
@@ -618,7 +620,7 @@ func TestRunner_EvaluateCycle_FiresLevelAndAdvances(t *testing.T) {
 	require.Len(t, runs, 1)
 	r := runs[0]
 	assert.Equal(t, 0, r.LastExecutedLevelIndex)
-	assert.Equal(t, RunStatusActive, r.Status)
+	assert.Equal(t, esc.RunStatusActive, r.Status)
 	require.NotNil(t, r.NextActionAt)
 	// next_action_at = current now + level[1].DelaySeconds (180s)
 	assert.Equal(t, h.now.Add(180*time.Second), *r.NextActionAt)
@@ -654,7 +656,7 @@ func TestRunner_EvaluateCycle_ExhaustedAfterLastLevel(t *testing.T) {
 
 	runs := h.store.listRuns()
 	require.Len(t, runs, 1)
-	assert.Equal(t, RunStatusExhausted, runs[0].Status)
+	assert.Equal(t, esc.RunStatusExhausted, runs[0].Status)
 	require.NotNil(t, runs[0].EndedAt)
 
 	// Last delivery uses the special exhausted level index.
@@ -686,7 +688,7 @@ func TestRunner_OnAlertAcknowledged_StopsRunsAndDispatchesAck(t *testing.T) {
 
 	runs := h.store.listRuns()
 	require.Len(t, runs, 1)
-	assert.Equal(t, RunStatusStoppedByAck, runs[0].Status)
+	assert.Equal(t, esc.RunStatusStoppedByAck, runs[0].Status)
 	require.NotNil(t, runs[0].EndedAt)
 
 	deliveries := h.store.listDeliveries()
@@ -711,7 +713,7 @@ func TestRunner_OnAlertResolved_StopsRunsNoNotif(t *testing.T) {
 
 	runs := h.store.listRuns()
 	require.Len(t, runs, 1)
-	assert.Equal(t, RunStatusStoppedByResolution, runs[0].Status)
+	assert.Equal(t, esc.RunStatusStoppedByResolution, runs[0].Status)
 	// No deliveries at all (run never reached a level, no resolve notif).
 	assert.Empty(t, h.store.listDeliveries())
 	assert.Empty(t, h.sender.snapshot())
@@ -732,7 +734,7 @@ func TestRunner_MaintenancePauseAndResume(t *testing.T) {
 
 	runs := h.store.listRuns()
 	require.Len(t, runs, 1)
-	assert.Equal(t, RunStatusPausedByMaintenance, runs[0].Status)
+	assert.Equal(t, esc.RunStatusPausedByMaintenance, runs[0].Status)
 	assert.Empty(t, h.sender.snapshot())
 
 	// Maintenance window cleared. First post-pause cycle resumes; the run
@@ -741,7 +743,7 @@ func TestRunner_MaintenancePauseAndResume(t *testing.T) {
 	h.advance(61 * time.Second)
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
 	runs = h.store.listRuns()
-	assert.Equal(t, RunStatusActive, runs[0].Status)
+	assert.Equal(t, esc.RunStatusActive, runs[0].Status)
 
 	// Second tick: still active and now due → fire.
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
@@ -758,11 +760,11 @@ func TestRunner_DeliveryDuplicateIdempotence(t *testing.T) {
 
 	// Pre-insert a delivery row to simulate a pre-crash reservation.
 	chID := "1"
-	_, err := h.store.InsertDelivery(context.Background(), &Delivery{
+	_, err := h.store.InsertDelivery(context.Background(), &esc.Delivery{
 		RunID:            h.store.onlyRunID(),
 		LevelIndex:       0,
 		ChannelID:        &chID,
-		Status:           DeliveryStatusSent, // already done before crash
+		Status:           esc.DeliveryStatusSent, // already done before crash
 		AttemptStartedAt: h.now,
 	})
 	require.NoError(t, err)
@@ -787,10 +789,10 @@ func TestRunner_OneChannelFailureDoesNotBlockOthers(t *testing.T) {
 	h.channels.put(&alert.NotificationChannel{ID: "2", Name: "bad", Type: "slack", URL: "u2", Enabled: true})
 	a := criticalAlert("1")
 	h.alerts.put(a)
-	h.store.addPolicy(&Policy{
+	h.store.addPolicy(&esc.Policy{
 		Name: "p", Active: true,
-		Filters: Filters{Severities: []string{alert.SeverityCritical}},
-		Levels:  []Level{{Order: 0, DelaySeconds: 60, ChannelIDs: []string{"1", "2"}}},
+		Filters: esc.Filters{Severities: []string{alert.SeverityCritical}},
+		Levels:  []esc.Level{{Order: 0, DelaySeconds: 60, ChannelIDs: []string{"1", "2"}}},
 	})
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
@@ -805,7 +807,7 @@ func TestRunner_OneChannelFailureDoesNotBlockOthers(t *testing.T) {
 	// Wait for async UpdateDelivery to land.
 	require.Eventually(t, func() bool {
 		for _, d := range h.store.listDeliveries() {
-			if d.Status == DeliveryStatusPending {
+			if d.Status == esc.DeliveryStatusPending {
 				return false
 			}
 		}
@@ -817,8 +819,8 @@ func TestRunner_OneChannelFailureDoesNotBlockOthers(t *testing.T) {
 		require.NotNil(t, d.ChannelID)
 		statuses[*d.ChannelID] = d.Status
 	}
-	assert.Equal(t, DeliveryStatusSent, statuses["1"])
-	assert.Equal(t, DeliveryStatusFailed, statuses["2"])
+	assert.Equal(t, esc.DeliveryStatusSent, statuses["1"])
+	assert.Equal(t, esc.DeliveryStatusFailed, statuses["2"])
 }
 
 func TestRunner_DisabledChannelMarksDeliveryFailed(t *testing.T) {
@@ -841,7 +843,7 @@ func TestRunner_DisabledChannelMarksDeliveryFailed(t *testing.T) {
 
 	deliveries := h.store.listDeliveries()
 	require.Len(t, deliveries, 1)
-	assert.Equal(t, DeliveryStatusFailed, deliveries[0].Status)
+	assert.Equal(t, esc.DeliveryStatusFailed, deliveries[0].Status)
 	assert.Contains(t, deliveries[0].Error, "disabled")
 }
 
@@ -856,11 +858,11 @@ func TestRunner_OrphanRecoveryRetries(t *testing.T) {
 	// Manually insert a stale pending delivery (simulating a crash mid-send).
 	stale := h.now.Add(-5 * time.Minute)
 	chID := "1"
-	_, err := h.store.InsertDelivery(context.Background(), &Delivery{
+	_, err := h.store.InsertDelivery(context.Background(), &esc.Delivery{
 		RunID:            h.store.onlyRunID(),
 		LevelIndex:       0,
 		ChannelID:        &chID,
-		Status:           DeliveryStatusPending,
+		Status:           esc.DeliveryStatusPending,
 		AttemptStartedAt: stale,
 	})
 	require.NoError(t, err)
@@ -873,9 +875,9 @@ func TestRunner_OrphanRecoveryRetries(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		deliveries = h.store.listDeliveries()
-		return len(deliveries) == 1 && deliveries[0].Status != DeliveryStatusPending
+		return len(deliveries) == 1 && deliveries[0].Status != esc.DeliveryStatusPending
 	}, 500*time.Millisecond, 5*time.Millisecond, "orphan delivery must leave pending status")
-	assert.Equal(t, DeliveryStatusSent, deliveries[0].Status)
+	assert.Equal(t, esc.DeliveryStatusSent, deliveries[0].Status)
 }
 
 func TestRunner_OrphanAbandonedWhenAlertResolved(t *testing.T) {
@@ -888,11 +890,11 @@ func TestRunner_OrphanAbandonedWhenAlertResolved(t *testing.T) {
 
 	// Stale pending row.
 	chID := "1"
-	_, err := h.store.InsertDelivery(context.Background(), &Delivery{
+	_, err := h.store.InsertDelivery(context.Background(), &esc.Delivery{
 		RunID:            h.store.onlyRunID(),
 		LevelIndex:       0,
 		ChannelID:        &chID,
-		Status:           DeliveryStatusPending,
+		Status:           esc.DeliveryStatusPending,
 		AttemptStartedAt: h.now.Add(-5 * time.Minute),
 	})
 	require.NoError(t, err)
@@ -904,7 +906,7 @@ func TestRunner_OrphanAbandonedWhenAlertResolved(t *testing.T) {
 	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
 	deliveries := h.store.listDeliveries()
 	require.Len(t, deliveries, 1)
-	assert.Equal(t, DeliveryStatusAbandoned, deliveries[0].Status)
+	assert.Equal(t, esc.DeliveryStatusAbandoned, deliveries[0].Status)
 	assert.Equal(t, int32(0), h.sender.delivers.Load())
 }
 

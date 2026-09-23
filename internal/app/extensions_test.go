@@ -31,6 +31,8 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 	var postureDeps extpoint.PostureDeps
 	var channelDeps extpoint.ChannelDeps
 	var statusDeps extpoint.StatusPageDeps
+	var suppressorDeps extpoint.SuppressorDeps
+	var escalationDeps extpoint.EscalationDeps
 	a, err := app.New(cfg, logger, app.WithExtensions(extpoint.Set{
 		Enricher: func(d extpoint.EnricherDeps) update.Enricher {
 			calls++
@@ -49,6 +51,14 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 			statusDeps = d
 			return extpoint.StatusPage{}
 		},
+		Suppressor: func(d extpoint.SuppressorDeps) alert.MaintenanceSuppressor {
+			suppressorDeps = d
+			return nil
+		},
+		Escalation: func(d extpoint.EscalationDeps) extpoint.Escalation {
+			escalationDeps = d
+			return extpoint.Escalation{}
+		},
 	}))
 	require.NoError(t, err)
 	require.NotNil(t, a)
@@ -64,6 +74,10 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 	assert.NotNil(t, statusDeps.Service)
 	assert.NotNil(t, statusDeps.Incidents)
 	assert.NotNil(t, statusDeps.Personalization)
+	assert.NotNil(t, suppressorDeps.Windows)
+	assert.NotNil(t, escalationDeps.Store)
+	assert.NotNil(t, escalationDeps.Notifier)
+	assert.Nil(t, escalationDeps.Suppressor, "a nil suppressor is passed through as is")
 }
 
 func TestNew_WithoutExtensionsStillBuilds(t *testing.T) {

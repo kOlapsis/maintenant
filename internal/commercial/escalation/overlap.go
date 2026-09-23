@@ -13,6 +13,8 @@ package escalation
 import (
 	"slices"
 	"strings"
+
+	esc "github.com/kolapsis/maintenant/internal/alert/escalation"
 )
 
 // DetectOverlap checks which policies in existing plausibly overlap with candidate.
@@ -20,8 +22,8 @@ import (
 // Empty filter field = matches all (universe); non-empty = explicit set.
 // The candidate is compared against all policies in existing; policies with the same ID
 // as candidate are skipped (for update flows).
-func DetectOverlap(candidate *Policy, existing []*Policy) []OverlapWarning {
-	var warnings []OverlapWarning
+func DetectOverlap(candidate *esc.Policy, existing []*esc.Policy) []esc.OverlapWarning {
+	var warnings []esc.OverlapWarning
 	for _, p := range existing {
 		if candidate.ID != "" && p.ID == candidate.ID {
 			continue
@@ -34,7 +36,7 @@ func DetectOverlap(candidate *Policy, existing []*Policy) []OverlapWarning {
 			continue
 		}
 		desc := filterIntersectionDescription(candidate.Filters, p.Filters)
-		warnings = append(warnings, OverlapWarning{
+		warnings = append(warnings, esc.OverlapWarning{
 			PolicyID:           p.ID,
 			PolicyName:         p.Name,
 			SharedChannels:     shared,
@@ -46,7 +48,7 @@ func DetectOverlap(candidate *Policy, existing []*Policy) []OverlapWarning {
 
 // filtersIntersect returns true if the two filter sets can match the same alert.
 // Empty list = universe (matches all). Non-empty list = explicit set.
-func filtersIntersect(a, b Filters) bool {
+func filtersIntersect(a, b esc.Filters) bool {
 	return setsIntersect(a.Severities, b.Severities) &&
 		scopeSetsIntersect(a.Scopes, b.Scopes) &&
 		setsIntersect(a.Tags, b.Tags)
@@ -68,7 +70,7 @@ func setsIntersect(a, b []string) bool {
 
 // scopeSetsIntersect returns true if scope slices share at least one element,
 // treating empty slice as "all".
-func scopeSetsIntersect(a, b []Scope) bool {
+func scopeSetsIntersect(a, b []esc.Scope) bool {
 	if len(a) == 0 || len(b) == 0 {
 		return true
 	}
@@ -83,7 +85,7 @@ func scopeSetsIntersect(a, b []Scope) bool {
 }
 
 // sharedChannels returns the channel IDs present in any level of both policies.
-func sharedChannels(a, b *Policy) []string {
+func sharedChannels(a, b *esc.Policy) []string {
 	aChans := make(map[string]struct{})
 	for _, lvl := range a.Levels {
 		for _, id := range lvl.ChannelIDs {
@@ -106,7 +108,7 @@ func sharedChannels(a, b *Policy) []string {
 }
 
 // filterIntersectionDescription returns a human-readable description of which filters intersect.
-func filterIntersectionDescription(a, b Filters) string {
+func filterIntersectionDescription(a, b esc.Filters) string {
 	var parts []string
 	if len(a.Severities) > 0 && len(b.Severities) > 0 {
 		parts = append(parts, "severities")
@@ -123,4 +125,9 @@ func filterIntersectionDescription(a, b Filters) string {
 		return "all"
 	}
 	return strings.Join(parts, " + ")
+}
+
+// DetectOverlap reports the existing policies a candidate would overlap with.
+func (s *Service) DetectOverlap(candidate *esc.Policy, existing []*esc.Policy) []esc.OverlapWarning {
+	return DetectOverlap(candidate, existing)
 }

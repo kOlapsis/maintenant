@@ -24,6 +24,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	commesc "github.com/kolapsis/maintenant/internal/commercial/escalation"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -172,7 +173,7 @@ func (n noopSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (bool, e
 // --- helpers ---
 
 func buildEscalationHandler() *EscalationHandler {
-	svc := escalation.NewService(
+	svc := commesc.NewService(
 		newEscalationTestStore(),
 		&escalationTestChannelStore{},
 		func() extension.Edition { return extension.Pro },
@@ -238,6 +239,22 @@ func TestEscalation_AllEndpoints_Return403_CE(t *testing.T) {
 			req := httptest.NewRequest(ep.method, ep.path, nil)
 			mux.ServeHTTP(rec, req)
 			assert.Equal(t, http.StatusForbidden, rec.Code)
+		})
+	}
+}
+
+func TestEscalation_ListPolicies_PerEdition(t *testing.T) {
+	mux := escalationMux(t)
+	for edition, want := range map[extension.Edition]int{
+		extension.Community: http.StatusForbidden,
+		extension.Personal:  http.StatusForbidden,
+		extension.Pro:       http.StatusOK,
+	} {
+		t.Run(string(edition), func(t *testing.T) {
+			withEdition(t, edition)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/escalation-policies", nil))
+			assert.Equal(t, want, rec.Code, rec.Body.String())
 		})
 	}
 }

@@ -30,7 +30,6 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
-	"github.com/kolapsis/maintenant/internal/alert/maintenance"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -91,7 +90,7 @@ type App struct {
 	notifier        *alert.Notifier
 	downDetector    *alert.DownDetector
 	escalationStore *store.EscalationStore
-	escalationSvc   *escalation.Service
+	escalationSvc   escalation.Service
 
 	// HTTP
 	broker        *v1.SSEBroker
@@ -582,38 +581,29 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// --- Escalation policies ---
 	a.escalationStore = store.NewEscalationStore(db)
 
-	// Maintenance suppressor: real implementation in Pro, noop in CE.
-	var suppressor alert.MaintenanceSuppressor = extension.NoopMaintenanceSuppressor{}
-	if extension.Allows(extension.CapMaintenanceWindows) {
-		suppressor = maintenance.NewSuppressor(maintenanceStore, logger.With("component", "maintenance-suppressor"))
+	var suppressor alert.MaintenanceSuppressor
+	if a.ext.Suppressor != nil {
+		suppressor = a.ext.Suppressor(extpoint.SuppressorDeps{Windows: maintenanceStore, Logger: logger})
 	}
 	// Must be called before alertEngine.Start (invoked in App.Start).
-	a.alertEngine.SetMaintenanceSuppressor(suppressor)
+	if suppressor != nil {
+		a.alertEngine.SetMaintenanceSuppressor(suppressor)
+	}
 
-	a.escalationSvc = escalation.NewService(
-		a.escalationStore,
-		channelStore,
-		extension.CurrentEdition,
-		suppressor,
-		logger.With("component", "escalation"),
-	)
-
-	// Concrete escalator runner: only wired in Pro. In CE the engine
-	// keeps its built-in noopEscalator, which means the 60s evaluation ticker
-	// (alert.Engine.Start) does not start either. SetEscalator must run before
-	// alertEngine.Start (called later in App.Start).
-	if extension.Allows(extension.CapAlertEscalation) {
-		runner := escalation.NewRunner(escalation.RunnerDeps{
-			Store:        a.escalationStore,
-			AlertStore:   alertStore,
-			ChannelStore: channelStore,
-			Notifier:     a.notifier,
-			Suppressor:   suppressor,
-			Service:      a.escalationSvc,
-			Logger:       logger.With("component", "escalation-runner"),
+	// SetEscalator must run before alertEngine.Start (called later in App.Start).
+	if a.ext.Escalation != nil {
+		esc := a.ext.Escalation(extpoint.EscalationDeps{
+			Store:      a.escalationStore,
+			Alerts:     alertStore,
+			Channels:   channelStore,
+			Notifier:   a.notifier,
+			Suppressor: suppressor,
+			Logger:     logger,
 		})
-		a.alertEngine.SetEscalator(runner)
-		logger.Info("escalation runner enabled (Pro)")
+		a.escalationSvc = esc.Service
+		if esc.Escalator != nil {
+			a.alertEngine.SetEscalator(esc.Escalator)
+		}
 	}
 
 	// --- Wire alert callbacks ---
@@ -854,7 +844,7 @@ func (a *App) Start(ctx context.Context) error {
 	// Runs here too so DB-backed monitors are swept even without a container runtime.
 	a.pruneOrphanAlerts(ctx)
 
-	if extension.Allows(extension.CapAlertEscalation) {
+	if a.escalationSvc != nil && extension.Allows(extension.CapAlertEscalation) {
 		go a.escalationSvc.RunRetentionLoop(ctx)
 		a.logger.Info("escalation retention loop started")
 	}

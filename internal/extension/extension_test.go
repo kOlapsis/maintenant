@@ -12,7 +12,6 @@
 package extension
 
 import (
-	"context"
 	"testing"
 )
 
@@ -84,15 +83,5 @@ func TestParseEdition(t *testing.T) {
 		if got != Community {
 			t.Errorf("ParseEdition(%q) = %q, want %q", s, got, Community)
 		}
-	}
-}
-
-func TestNoopMaintenanceSuppressor(t *testing.T) {
-	suppressed, err := NoopMaintenanceSuppressor{}.IsSuppressed(context.Background(), "update", "container", "c-1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if suppressed {
-		t.Fatal("expected not suppressed")
 	}
 }

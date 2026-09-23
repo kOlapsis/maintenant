@@ -100,7 +100,7 @@ type Services struct {
 	Maintenance       status.MaintenanceStore
 	Runtime           runtime.Runtime
 	LogFetcher        LogFetcher
-	EscalationSvc     *escalation.Service
+	EscalationSvc     escalation.Service
 	Agents            AgentLister
 	Sessions          SessionChecker
 	AgentLogs         AgentLogFetcher

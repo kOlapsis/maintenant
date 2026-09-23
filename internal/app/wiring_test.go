@@ -27,6 +27,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	commesc "github.com/kolapsis/maintenant/internal/commercial/escalation"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -103,7 +104,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	db.StartWriter(ctx)
 
 	store := store.NewEscalationStore(db)
-	svc := escalation.NewService(
+	svc := commesc.NewService(
 		store,
 		&noopChannelStore{},
 		func() extension.Edition { return extension.Pro },
@@ -195,7 +196,7 @@ func TestRetentionLoopStartsInProOnly(t *testing.T) {
 
 	t.Run("pro_mode_calls_purge", func(t *testing.T) {
 		pstore := &purgeCountStore{}
-		svc := escalation.NewService(
+		svc := commesc.NewService(
 			pstore,
 			&noopChannelStore{},
 			func() extension.Edition { return extension.Pro },
@@ -230,7 +231,7 @@ func TestRetentionLoopStartsInProOnly(t *testing.T) {
 
 	t.Run("ce_mode_no_purge", func(t *testing.T) {
 		pstore := &purgeCountStore{}
-		svc := escalation.NewService(
+		svc := commesc.NewService(
 			pstore,
 			&noopChannelStore{},
 			func() extension.Edition { return extension.Community },
