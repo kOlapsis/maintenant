@@ -1,23 +1,26 @@
 # Maintenant Commercial License
 
-**Version 2.0 -- August 2026**
+**Version 3.0 -- September 2026**
 
 This Commercial License Agreement ("Agreement") is between Benjamin Touchard,
 operating as Kolapsis ("Licensor"), and the individual or entity that purchased
 a Maintenant Personal license or subscribes to a Maintenant Pro plan
 ("Licensee").
 
-## 1. Dual Licensing
+## 1. What this Agreement covers
 
-Maintenant is available under two licenses:
+Maintenant is made of two parts:
 
-- **AGPL-3.0** -- free for everyone, with the obligation to share modifications
-  under the same terms (see `LICENSE`).
-- **Commercial License** -- available to Personal and Pro customers, granting
-  the rights described below.
+- **The core**, licensed under the Apache License, Version 2.0 (see `LICENSE`).
+  It is free for any use, commercial or not, and needs no key. It is the
+  Community edition.
+- **The commercial code**, under `internal/commercial/` and
+  `frontend/src/commercial/`, licensed under the Maintenant Commercial Source
+  License (see `internal/commercial/LICENSE`). It implements the features a
+  Personal or Pro licence key opens.
 
-If you hold neither a Personal license nor an active Pro subscription, the
-AGPL-3.0 applies.
+Both parts ship in the same binary. This Agreement sets the terms under which
+a Personal or Pro key may be used to run the commercial code in production.
 
 ## 2. Personal
 
@@ -26,24 +29,23 @@ AGPL-3.0 applies.
 The Licensor grants a **non-exclusive, non-transferable, perpetual** license to
 one named individual to:
 
-1. Use Maintenant, including the features the Personal edition unlocks, on
-   infrastructure that individual owns or operates **for their own account**.
-   This includes a freelancer or sole trader monitoring their own stack.
-2. Modify the source code for their own use **without** the AGPL-3.0 obligation
-   to publish those modifications.
+1. Use the features the Personal edition unlocks, on infrastructure that
+   individual owns or operates **for their own account**. This includes a
+   freelancer or sole trader monitoring their own stack.
 
 ### 2.2 What Personal does not cover
 
-The Personal license does **not** grant the right to:
+The Personal license does **not** grant the right to use the Personal
+features to:
 
 - Monitor infrastructure belonging to a third party, whether a client, an
   employer, or any other organisation;
 - Provide monitoring, reporting, or operations as a service to others, paid or
   unpaid, using Maintenant;
-- Use Maintenant on behalf of a company or team beyond the named individual;
-- Redistribute, sublicense, or resell the software.
+- Serve a company or team beyond the named individual.
 
-Any of those uses requires a Pro subscription.
+Any of those uses requires a Pro subscription. The commercial code may not be
+redistributed, sublicensed, or resold under any edition.
 
 There is no technical enforcement of this clause. It is a legal term and rests
 on trust.
@@ -76,26 +78,25 @@ The Personal license carries **no support commitment**.
 The Licensor grants a **non-exclusive, non-transferable, worldwide** license,
 for the duration of the subscription, to:
 
-1. Use Maintenant, including the features the Pro edition unlocks, in
-   production, **commercially**, including on behalf of an employer, a team, or
-   third parties.
-2. Modify the source code for internal use **without** the AGPL-3.0 obligation
-   to publish those modifications.
-3. Receive email support at license@maintenant.dev.
+1. Use the features the Pro edition unlocks, in production,
+   **commercially**, including on behalf of an employer, a team, or third
+   parties.
+2. Receive email support at license@maintenant.dev.
 
 ### 3.2 Scope
 
 - Each Pro subscription covers **one deployment instance** of Maintenant.
 - Additional instances require additional subscriptions.
 - The license does **not** grant the right to redistribute, sublicense, or
-  resell the software.
+  resell the commercial code.
 
 ### 3.3 Term
 
 - This license is valid **for the duration of the active subscription**, and
   product updates are included throughout it.
-- If the subscription lapses, the Licensee must either renew, remove Pro
-  features, or comply with the AGPL-3.0 for any continued use.
+- If the subscription lapses, the instance falls back to the Community edition
+  and the Pro features stop. The core remains usable under the Apache License,
+  Version 2.0.
 
 ## 4. Pricing
 

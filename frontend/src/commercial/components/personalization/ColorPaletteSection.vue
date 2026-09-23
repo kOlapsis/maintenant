@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+  SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+  See internal/commercial/LICENSE.
+-->
 <script setup lang="ts">
 import type { ContrastWarning, PalettePayload } from '@/commercial/services/personalizationApi'
 import UiButton from '@/components/ui/UiButton.vue'

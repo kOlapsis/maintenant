@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+  SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+  See internal/commercial/LICENSE.
+-->
 <script setup lang="ts">
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'

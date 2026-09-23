@@ -1,0 +1,42 @@
+Maintenant Commercial Source License, version 1.0
+
+Copyright 2025-2026 Benjamin Touchard (Kolapsis). All rights reserved.
+
+This license covers every file under internal/commercial/ and
+frontend/src/commercial/ in the Maintenant repository (the "Software"). The
+rest of the repository is licensed under the Apache License, Version 2.0.
+
+1. Reading and contributing
+
+   You may read and study the Software, modify it, and run it outside
+   production to develop, test or review changes. You may submit
+   contributions to the Licensor. By submitting a contribution, you grant the
+   Licensor a perpetual, worldwide, royalty-free, irrevocable license to use,
+   modify, relicense and distribute it under any terms.
+
+2. Production use
+
+   Using the Software in production requires a valid Maintenant licence key
+   for the edition that opens the feature concerned (Personal or Pro), used
+   within the terms under which that key was sold (COMMERCIAL-LICENSE.md).
+   Without such a key, Maintenant runs as the Community edition and the
+   Software stays inactive. You may not remove, disable or work around the
+   licence key check, nor enable a feature beyond the edition of your key.
+
+3. No redistribution
+
+   You may not distribute, sublicense, sell or rent the Software, modified or
+   not, nor offer it to third parties as a hosted service. A fork of the
+   repository made only to prepare a contribution is not a distribution.
+
+4. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED. THE LICENSOR SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+5. Termination
+
+   Any use outside this license ends your rights under it immediately.
+
+Contact: license@maintenant.dev

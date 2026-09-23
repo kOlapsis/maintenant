@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+  SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+  See internal/commercial/LICENSE.
+-->
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Trash2 } from 'lucide-vue-next'

@@ -1,7 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. See COMMERCIAL-LICENSE.md.
+// SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'

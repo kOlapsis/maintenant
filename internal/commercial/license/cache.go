@@ -1,3 +1,7 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+// SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+// See internal/commercial/LICENSE.
+
 package license
 
 import (

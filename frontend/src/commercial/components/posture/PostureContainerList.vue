@@ -1,3 +1,8 @@
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+  SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+  See internal/commercial/LICENSE.
+-->
 <script setup lang="ts">
 import type { ContainerRisk } from '@/commercial/services/postureApi'
 import PostureScoreBadge from './PostureScoreBadge.vue'

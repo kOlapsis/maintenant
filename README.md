@@ -379,7 +379,7 @@ Community is free forever and runs production infrastructure every day: it is th
 
 |                           | **Community**            | **Personal**                       | **Pro**                              |
 | ------------------------- | ------------------------ | ---------------------------------- | ------------------------------------ |
-| Price                     | Free, AGPL-3.0           | **€149** once, for life            | **€29**/mo or €290/yr, 14-day trial  |
+| Price                     | Free, Apache-2.0         | **€149** once, for life            | **€29**/mo or €290/yr, 14-day trial  |
 | Hosts                     | 1                        | up to 20 remote machines           | unlimited                            |
 | Endpoints                 | 10                       | unlimited                          | unlimited                            |
 | Heartbeats                | 5                        | unlimited                          | unlimited                            |
@@ -434,7 +434,7 @@ Code contributions are welcome. Open an issue first for bigger changes; small fi
 
 Copyright 2025-2026 Benjamin Touchard / kOlapsis, Bordeaux, France.
 
-Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) or a commercial license.
+The core is licensed under the [Apache License 2.0](LICENSE). The code that Personal and Pro keys unlock, under `internal/commercial/` and `frontend/src/commercial/`, is source-available under the [Maintenant Commercial Source License](internal/commercial/LICENSE): free to read and contribute to, production use requires a matching licence key. See [NOTICE](NOTICE) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ---
 
