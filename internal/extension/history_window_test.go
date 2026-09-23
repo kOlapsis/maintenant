@@ -23,21 +23,6 @@ func TestHistoryWindowCatalog_IsOrderedByDuration(t *testing.T) {
 
 // The minimum edition of every window is derived from the three caps. This is
 // the table the specification states, and nothing writes it by hand.
-func TestMinEditionForHistoryWindow_IsDerivedFromTheCaps(t *testing.T) {
-	want := map[string]Edition{
-		"1h": Community, "6h": Community, "24h": Community, "7d": Community,
-		"30d": Personal,
-		"90d": Pro,
-	}
-	for name, expected := range want {
-		w, ok := ResolveHistoryWindow(name)
-		require.True(t, ok, "window %q is not in the catalogue", name)
-		assert.Equal(t, expected, MinEditionForHistoryWindow(w), "window %q", name)
-	}
-}
-
-// The catalogue projection carries the same derivation, and it is identical in
-// every edition: it describes the product, not the running tier.
 func TestHistoryWindowCatalog_IsTheSameInEveryEdition(t *testing.T) {
 	var first []HistoryWindowSpec
 	for _, e := range []Edition{Community, Personal, Pro} {
@@ -51,56 +36,6 @@ func TestHistoryWindowCatalog_IsTheSameInEveryEdition(t *testing.T) {
 	}
 }
 
-func TestMaxHistoryWindow_PerEdition(t *testing.T) {
-	for edition, want := range map[Edition]string{
-		Community: "7d",
-		Personal:  "30d",
-		Pro:       "90d",
-	} {
-		withEdition(t, edition)
-		assert.Equal(t, want, MaxHistoryWindow().Name, "edition %q", edition)
-	}
-}
-
-func TestAllowsHistoryWindow_MatchesTheCaps(t *testing.T) {
-	type want struct {
-		allowed  bool
-		required Edition
-	}
-	matrix := map[Edition]map[string]want{
-		Community: {
-			"1h": {true, Community}, "6h": {true, Community},
-			"24h": {true, Community}, "7d": {true, Community},
-			"30d": {false, Personal},
-			"90d": {false, Pro},
-		},
-		Personal: {
-			"1h": {true, Community}, "6h": {true, Community},
-			"24h": {true, Community}, "7d": {true, Community},
-			"30d": {true, Personal},
-			"90d": {false, Pro},
-		},
-		Pro: {
-			"1h": {true, Community}, "6h": {true, Community},
-			"24h": {true, Community}, "7d": {true, Community},
-			"30d": {true, Personal},
-			"90d": {true, Pro},
-		},
-	}
-	for edition, windows := range matrix {
-		withEdition(t, edition)
-		for name, expected := range windows {
-			w, ok := ResolveHistoryWindow(name)
-			require.True(t, ok)
-			allowed, required := AllowsHistoryWindow(w)
-			assert.Equal(t, expected.allowed, allowed, "%s / %s", edition, name)
-			assert.Equal(t, expected.required, required, "%s / %s required edition", edition, name)
-		}
-	}
-}
-
-// A window nobody declared is not resolved at all. The caller turns that into a
-// bad request, which is a different refusal from one the edition does not open.
 func TestResolveHistoryWindow_RejectsWhatTheProductDoesNotServe(t *testing.T) {
 	for _, name := range []string{"12h", "2d", "", "1H", "365d"} {
 		_, ok := ResolveHistoryWindow(name)
@@ -111,26 +46,43 @@ func TestResolveHistoryWindow_RejectsWhatTheProductDoesNotServe(t *testing.T) {
 // An edition absent from the cap table falls back to the Community floor, never
 // to zero. Unreachable from the server, which reports its own edition, but it
 // is what keeps max_window from being empty in the /api/v1/edition contract.
-func TestMaxHistoryWindow_UnknownEditionFallsBackToTheFloor(t *testing.T) {
-	withEdition(t, Edition("enterprise-2030"))
-
-	assert.Equal(t, "7d", MaxHistoryWindow().Name)
-
-	paid, ok := ResolveHistoryWindow("30d")
-	require.True(t, ok)
-	allowed, required := AllowsHistoryWindow(paid)
-	assert.False(t, allowed, "an unreadable edition opens nothing that is paid for")
-	assert.Equal(t, Personal, required)
-}
-
 func TestHistoryWindowNames_ListsTheWholeCatalogue(t *testing.T) {
 	assert.Equal(t, "1h, 6h, 24h, 7d, 30d, 90d", HistoryWindowNames())
 }
 
 // The caps themselves, asserted once so a change of tiering is a deliberate act
 // and not a silent edit.
-func TestEditionHistoryCap_IsTheAnnouncedTiering(t *testing.T) {
-	assert.Equal(t, 7*24*time.Hour, editionHistoryCap[Community])
-	assert.Equal(t, 30*24*time.Hour, editionHistoryCap[Personal])
-	assert.Equal(t, 90*24*time.Hour, editionHistoryCap[Pro])
+
+func TestHistoryWindows_DefaultPolicyOpensSevenDays(t *testing.T) {
+	for _, e := range []Edition{Community, Personal, Pro} {
+		withEdition(t, e)
+		assert.Equal(t, "7d", MaxHistoryWindow().Name, "edition %q", e)
+	}
+
+	for name, want := range map[string]Edition{"7d": Community, "30d": Pro, "90d": Pro} {
+		w, ok := ResolveHistoryWindow(name)
+		require.True(t, ok)
+		assert.Equal(t, want, MinEditionForHistoryWindow(w), "window %q", name)
+	}
+}
+
+func TestHistoryWindows_DelegateToThePolicy(t *testing.T) {
+	withPolicy(t, fakePolicy{history: map[Edition]time.Duration{
+		Community: 24 * time.Hour,
+		Personal:  7 * 24 * time.Hour,
+		Pro:       90 * 24 * time.Hour,
+	}})
+
+	withEdition(t, Personal)
+	assert.Equal(t, "7d", MaxHistoryWindow().Name)
+
+	w, ok := ResolveHistoryWindow("30d")
+	require.True(t, ok)
+	allowed, required := AllowsHistoryWindow(w)
+	assert.False(t, allowed)
+	assert.Equal(t, Pro, required)
+
+	w, ok = ResolveHistoryWindow("7d")
+	require.True(t, ok)
+	assert.Equal(t, Personal, MinEditionForHistoryWindow(w))
 }

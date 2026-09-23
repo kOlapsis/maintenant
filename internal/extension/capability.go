@@ -11,8 +11,6 @@
 
 package extension
 
-import "maps"
-
 // Capability names a unit of functionality that an edition may or may not
 // open. The identifiers are the ones already exposed by GET /api/v1/edition,
 // and the MCP tools use the same vocabulary, so a capability resolves the same
@@ -51,37 +49,6 @@ const (
 	CapPersonalization    Capability = "personalization"
 )
 
-// minEdition is the single source of truth for authorization. The REST
-// middleware, the MCP tools and the /api/v1/edition response all read it, which
-// is what keeps the three surfaces from drifting apart.
-var minEdition = map[Capability]Edition{
-	CapAlertRouting:    Community,
-	CapSwarmDashboard:  Community,
-	CapK8sCluster:      Community,
-	CapResourceHistory: Community,
-
-	CapMultihost:            Personal,
-	CapCVEEnrichment:        Personal,
-	CapRiskScoring:          Personal,
-	CapChangelog:            Personal,
-	CapIncidents:            Personal,
-	CapSMTP:                 Personal,
-	CapAlertAdvancedFilters: Personal,
-	CapSecurityPosture:      Personal,
-	CapOCSPStapling:         Personal,
-	CapTelegram:             Personal,
-
-	CapSlack:              Pro,
-	CapTeams:              Pro,
-	CapAlertEscalation:    Pro,
-	CapAlertEntityRouting: Pro,
-	CapMaintenanceWindows: Pro,
-	CapSubscribers:        Pro,
-	CapPersonalization:    Pro,
-}
-
-// MinEdition returns the lowest edition that opens c. An unknown capability
-// resolves to Pro: a capability nobody declared is not one we hand out.
 // channelCapabilities maps a notification channel type to the capability that
 // opens it. A type absent from the map is open in every edition.
 var channelCapabilities = map[string]Capability{
@@ -98,11 +65,9 @@ func ChannelCapability(channelType string) (Capability, bool) {
 	return c, ok
 }
 
+// MinEdition returns the lowest edition that opens c.
 func MinEdition(c Capability) Edition {
-	if e, ok := minEdition[c]; ok {
-		return e
-	}
-	return Pro
+	return policy.MinEdition(c)
 }
 
 // Allows reports whether the running edition opens c.
@@ -113,7 +78,10 @@ func Allows(c Capability) bool {
 // Catalog returns a copy of the capability table, for callers that project it
 // (the edition endpoint) rather than query it.
 func Catalog() map[Capability]Edition {
-	out := make(map[Capability]Edition, len(minEdition))
-	maps.Copy(out, minEdition)
+	caps := policy.Capabilities()
+	out := make(map[Capability]Edition, len(caps))
+	for _, c := range caps {
+		out[c] = policy.MinEdition(c)
+	}
 	return out
 }

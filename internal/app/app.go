@@ -40,7 +40,6 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
-	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/mcp"
 	"github.com/kolapsis/maintenant/internal/outbound"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
@@ -127,7 +126,7 @@ type App struct {
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
 	subscribeRL    *ratelimit.Limiter
-	licenseMgr     *license.Manager
+	licenseMgr     extension.EditionSource
 	mcpServer      *gomcp.Server
 	// degradedPlanLogged keeps the multi-host degradation to one line: the
 	// helper is consulted at three call sites during a single startup.
@@ -252,16 +251,19 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// edition, Pro included.
 
 	// --- License manager ---
-	license.InitPublicKey(cfg.PublicKeyB64)
-	if cfg.LicenseKey != "" {
-		dataDir := filepath.Dir(cfg.DBPath)
-		lm, err := license.NewManager(cfg.LicenseKey, dataDir, cfg.Version, cfg.BuildDate, logger)
-		if err != nil {
-			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
-		} else {
-			a.licenseMgr = lm
-			extension.CurrentEdition = lm.Edition
-		}
+	lm, err := extension.NewEditionSource(extension.SourceConfig{
+		LicenseKey:   cfg.LicenseKey,
+		PublicKeyB64: cfg.PublicKeyB64,
+		DataDir:      filepath.Dir(cfg.DBPath),
+		Version:      cfg.Version,
+		BuildDate:    cfg.BuildDate,
+		Logger:       logger,
+	})
+	if err != nil {
+		logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
+	} else if lm != nil {
+		a.licenseMgr = lm
+		extension.CurrentEdition = lm.Edition
 	}
 
 	// --- Runtime detection ---
@@ -317,15 +319,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 				})
 				a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
 
-				// Node health, crash-loop detection and update tracking follow the
-				// swarm dashboard capability.
-				if extension.Allows(extension.CapSwarmDashboard) {
-					a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
-					a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
-					a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
-					a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
-					a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
-				}
+				a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
+				a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
+				a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
+				a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
+				a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
 			}
 		}
 	}
@@ -789,7 +787,7 @@ func (a *App) multihostPlanAllowed() bool {
 // multihostPlanPermitted is the decision itself, kept apart from the manager so
 // it can be exercised directly.
 func multihostPlanPermitted(capabilityGranted bool, licenseStatus string) bool {
-	return capabilityGranted || licenseStatus == license.StatusUpdateWindowEnded
+	return capabilityGranted || licenseStatus == extension.LicenseStatusUpdateWindowEnded
 }
 
 // Start begins all background services and the HTTP server.

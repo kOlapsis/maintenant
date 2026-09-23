@@ -25,52 +25,28 @@ const (
 // Unlimited is the limit value meaning "no cap". It is reported to the UI as-is.
 const Unlimited = -1
 
-// Limit returns the cap for r under the running edition. This is the only
-// declaration of the caps: the value that refuses a creation and the value the
-// interface displays both come from here, so they cannot drift apart.
-//
-// endpoints and certificates count only what an operator created by hand;
-// entries discovered from container labels are never capped nor counted.
-//
-// agent_hosts is 0 on Community by design — the multihost capability itself is
-// Personal, so the REST routes refuse before any count happens. The 0 still
-// matters: it is what the gRPC enrollment barrier reads, and it has no
-// middleware in front of it.
-func Limit(r Resource) int {
-	edition := CurrentEdition()
+var resources = []Resource{
+	ResourceEndpoints,
+	ResourceHeartbeats,
+	ResourceCertificates,
+	ResourceStatusComponents,
+	ResourceAgentHosts,
+}
 
-	switch r {
-	case ResourceEndpoints:
-		if edition.AtLeast(Personal) {
-			return Unlimited
+// Limit returns the cap for r under the running edition.
+func Limit(r Resource) int {
+	return policy.Limit(CurrentEdition(), r)
+}
+
+// Tiers returns the cap of every resource for every edition.
+func Tiers() map[Edition]map[Resource]int {
+	out := make(map[Edition]map[Resource]int, len(editionOrder))
+	for _, e := range editionOrder {
+		limits := make(map[Resource]int, len(resources))
+		for _, r := range resources {
+			limits[r] = policy.Limit(e, r)
 		}
-		return 10
-	case ResourceHeartbeats:
-		if edition.AtLeast(Personal) {
-			return Unlimited
-		}
-		return 5
-	case ResourceCertificates:
-		if edition.AtLeast(Personal) {
-			return Unlimited
-		}
-		return 5
-	case ResourceStatusComponents:
-		if edition.AtLeast(Personal) {
-			return Unlimited
-		}
-		return 3
-	case ResourceAgentHosts:
-		switch {
-		case edition.AtLeast(Pro):
-			return Unlimited
-		case edition.AtLeast(Personal):
-			return 20
-		default:
-			return 0
-		}
-	default:
-		// An undeclared resource is not one we hand out capacity for.
-		return 0
+		out[e] = limits
 	}
+	return out
 }

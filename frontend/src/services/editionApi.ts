@@ -61,6 +61,8 @@ export interface EditionResponse {
   /** capability -> minimum edition that opens it, projected from the backend registry */
   feature_editions?: Record<string, Edition>
   quotas?: Partial<Record<QuotaResource, QuotaEntry>>
+  /** edition -> resource -> cap (-1 unlimited), for every edition. */
+  tiers?: Record<string, Partial<Record<QuotaResource, number>>>
   /** Absent on an engine older than the tiered history: no catalogue, no cap. */
   resource_history?: ResourceHistoryContract
   demo?: boolean

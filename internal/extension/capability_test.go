@@ -1,9 +1,20 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+//
+// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
+// or a commercial license. You may not use this file except in compliance
+// with one of these licenses.
+//
+// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
+// Commercial: See COMMERCIAL-LICENSE.md
+//
+// Source: https://github.com/kolapsis/maintenant
 package extension
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
-// withEdition swaps the global edition for the duration of a test. Tests using
-// it cannot run in parallel with each other.
 func withEdition(t *testing.T, e Edition) {
 	t.Helper()
 	prev := CurrentEdition
@@ -11,88 +22,119 @@ func withEdition(t *testing.T, e Edition) {
 	t.Cleanup(func() { CurrentEdition = prev })
 }
 
-// TestAllows_EveryEditionEveryCapability walks the whole matrix — 3 editions ×
-// 21 capabilities — and asserts Allows agrees with the declared order. This is
-// SC-003 on the extension side.
-func TestAllows_EveryEditionEveryCapability(t *testing.T) {
-	catalog := Catalog()
-	if len(catalog) != 21 {
-		t.Fatalf("catalog holds %d capabilities, expected 21", len(catalog))
-	}
+func withPolicy(t *testing.T, p Policy) {
+	t.Helper()
+	prev := policy
+	policy = p
+	t.Cleanup(func() { policy = prev })
+}
 
-	for _, edition := range []Edition{Community, Personal, Pro} {
-		for cap, min := range catalog {
-			t.Run(string(edition)+"/"+string(cap), func(t *testing.T) {
-				withEdition(t, edition)
-				want := edition.AtLeast(min)
-				if got := Allows(cap); got != want {
-					t.Errorf("Allows(%q) under %q = %v, want %v (min edition %q)",
-						cap, edition, got, want, min)
-				}
-			})
+type fakePolicy struct {
+	min     map[Capability]Edition
+	limits  map[Edition]map[Resource]int
+	history map[Edition]time.Duration
+}
+
+func (f fakePolicy) Capabilities() []Capability {
+	out := make([]Capability, 0, len(f.min))
+	for c := range f.min {
+		out = append(out, c)
+	}
+	return out
+}
+
+func (f fakePolicy) MinEdition(c Capability) Edition {
+	if e, ok := f.min[c]; ok {
+		return e
+	}
+	return Pro
+}
+
+func (f fakePolicy) Limit(e Edition, r Resource) int { return f.limits[e][r] }
+
+func (f fakePolicy) HistoryCap(e Edition) time.Duration { return f.history[e] }
+
+func TestDefaultPolicy_OpensOnlyCommunityCapabilities(t *testing.T) {
+	catalog := Catalog()
+	if len(catalog) != 4 {
+		t.Fatalf("default catalog holds %d capabilities, expected 4", len(catalog))
+	}
+	for _, c := range []Capability{CapAlertRouting, CapSwarmDashboard, CapK8sCluster, CapResourceHistory} {
+		if got := catalog[c]; got != Community {
+			t.Errorf("default catalog[%q] = %q, want %q", c, got, Community)
+		}
+		if !Allows(c) {
+			t.Errorf("Allows(%q) under the default policy = false, want true", c)
+		}
+	}
+	for _, c := range []Capability{CapMultihost, CapTelegram, CapSlack, CapAlertEscalation, "no_such_capability"} {
+		if Allows(c) {
+			t.Errorf("Allows(%q) under the default policy = true, want false", c)
 		}
 	}
 }
 
-// TestCatalog_ReturnsACopy: the registry must not be mutable through Catalog.
+func TestAllows_DelegatesToThePolicy(t *testing.T) {
+	withPolicy(t, fakePolicy{min: map[Capability]Edition{CapSlack: Personal, CapMultihost: Community}})
+
+	cases := []struct {
+		edition Edition
+		cap     Capability
+		want    bool
+	}{
+		{Community, CapMultihost, true},
+		{Community, CapSlack, false},
+		{Personal, CapSlack, true},
+		{Personal, "no_such_capability", false},
+		{Pro, "no_such_capability", true},
+	}
+	for _, c := range cases {
+		withEdition(t, c.edition)
+		if got := Allows(c.cap); got != c.want {
+			t.Errorf("Allows(%q) under %q = %v, want %v", c.cap, c.edition, got, c.want)
+		}
+	}
+
+	catalog := Catalog()
+	if len(catalog) != 2 || catalog[CapSlack] != Personal || catalog[CapMultihost] != Community {
+		t.Errorf("Catalog() = %v, want the policy table", catalog)
+	}
+}
+
 func TestCatalog_ReturnsACopy(t *testing.T) {
 	c := Catalog()
-	c[CapAlertEscalation] = Community
+	c[CapAlertRouting] = Pro
 	c["invented"] = Community
 
-	if got := MinEdition(CapAlertEscalation); got != Pro {
-		t.Errorf("mutating the Catalog copy changed the registry: alert_escalation = %q, want %q", got, Pro)
+	if got := MinEdition(CapAlertRouting); got != Community {
+		t.Errorf("mutating the Catalog copy changed the policy: alert_routing = %q, want %q", got, Community)
 	}
-	if len(Catalog()) != 21 {
-		t.Errorf("mutating the Catalog copy changed the registry size: %d", len(Catalog()))
+	if len(Catalog()) != 4 {
+		t.Errorf("mutating the Catalog copy changed the catalog size: %d", len(Catalog()))
 	}
 }
 
-// TestMinEdition_TierMembership pins the three tiers, so a capability cannot
-// silently change price.
-func TestMinEdition_TierMembership(t *testing.T) {
-	tiers := map[Edition][]Capability{
-		// resource_history is the right to see a history at all, which every
-		// edition has. What the paid editions buy is how far back: a duration,
-		// held in history_window.go, not a flag.
-		Community: {CapAlertRouting, CapSwarmDashboard, CapK8sCluster, CapResourceHistory},
-		Personal: {
-			CapMultihost, CapCVEEnrichment, CapRiskScoring, CapChangelog,
-			CapIncidents, CapSMTP, CapAlertAdvancedFilters,
-			CapSecurityPosture, CapOCSPStapling, CapTelegram,
-		},
-		Pro: {
-			CapSlack, CapTeams, CapAlertEscalation, CapAlertEntityRouting,
-			CapMaintenanceWindows, CapSubscribers, CapPersonalization,
-		},
-	}
-
-	total := 0
-	for want, caps := range tiers {
-		total += len(caps)
-		for _, c := range caps {
-			if got := MinEdition(c); got != want {
-				t.Errorf("MinEdition(%q) = %q, want %q", c, got, want)
-			}
+func TestChannelCapability(t *testing.T) {
+	for channel, want := range map[string]Capability{
+		"slack": CapSlack, "teams": CapTeams, "email": CapSMTP, "telegram": CapTelegram,
+	} {
+		got, ok := ChannelCapability(channel)
+		if !ok || got != want {
+			t.Errorf("ChannelCapability(%q) = (%q, %v), want (%q, true)", channel, got, ok, want)
 		}
 	}
-	if total != 21 {
-		t.Errorf("the three tiers list %d capabilities, expected 21", total)
+	if _, ok := ChannelCapability("webhook"); ok {
+		t.Error("webhook must not be gated")
 	}
 }
 
-// TestMinEdition_UnknownCapability: an undeclared capability grants nothing.
-func TestMinEdition_UnknownCapability(t *testing.T) {
-	if got := MinEdition("no_such_capability"); got != Pro {
-		t.Errorf("MinEdition of an unknown capability = %q, want %q", got, Pro)
-	}
+func TestNewEditionSource_NoneRegistered(t *testing.T) {
+	prev := newSource
+	newSource = nil
+	t.Cleanup(func() { newSource = prev })
 
-	withEdition(t, Personal)
-	if Allows("no_such_capability") {
-		t.Error("an unknown capability must not be allowed on Personal")
-	}
-	withEdition(t, Pro)
-	if !Allows("no_such_capability") {
-		t.Error("an unknown capability resolves to Pro, so Pro must allow it")
+	src, err := NewEditionSource(SourceConfig{LicenseKey: "key"})
+	if err != nil || src != nil {
+		t.Errorf("NewEditionSource without a registered factory = (%v, %v), want (nil, nil)", src, err)
 	}
 }

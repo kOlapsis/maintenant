@@ -20,7 +20,9 @@ import (
 // gateErrFragment is the part of the mode-gate error these tests key on. The
 // gate follows the multihost capability, so the edition it names is whatever
 // the registry declares — not a hardcoded tier.
-var gateErrFragment = "requires the " + string(extension.MinEdition(extension.CapMultihost)) + " edition"
+func gateErrFragment() string {
+	return "requires the " + string(extension.MinEdition(extension.CapMultihost)) + " edition"
+}
 
 func withEdition(t *testing.T, e extension.Edition) {
 	t.Helper()
@@ -113,7 +115,7 @@ func TestStart_ServerMode_RejectedWithoutMultihost(t *testing.T) {
 
 	err = startAndCollect(t, a, 5*time.Second)
 	require.Error(t, err, "server mode must be refused where multi-host is closed")
-	assert.Contains(t, err.Error(), gateErrFragment)
+	assert.Contains(t, err.Error(), gateErrFragment())
 	assert.Contains(t, err.Error(), string(extension.Community),
 		"the refusal must name the edition actually in force")
 }
@@ -133,7 +135,7 @@ func TestStart_ServerMode_AllowedWhereMultihostIsOpen(t *testing.T) {
 
 			err = startAndCollect(t, a, 2*time.Second)
 			if err != nil {
-				assert.NotContains(t, err.Error(), gateErrFragment,
+				assert.NotContains(t, err.Error(), gateErrFragment(),
 					"server mode must not be refused when multi-host is open")
 			}
 		})
@@ -152,7 +154,7 @@ func TestStart_EmbeddedMode_NotGated(t *testing.T) {
 
 			err = startAndCollect(t, a, 2*time.Second)
 			if err != nil {
-				assert.False(t, strings.Contains(err.Error(), gateErrFragment),
+				assert.False(t, strings.Contains(err.Error(), gateErrFragment()),
 					"embedded mode must never hit the mode gate")
 			}
 		})

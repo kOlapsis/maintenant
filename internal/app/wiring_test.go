@@ -28,7 +28,6 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	"github.com/kolapsis/maintenant/internal/extension"
-	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -147,9 +146,9 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	// and trigger a Pro→CE transition.
 	var (
 		cbMu      sync.Mutex
-		callbacks []license.EditionChangeCallback
+		callbacks []extension.EditionChangeCallback
 	)
-	register := func(cb license.EditionChangeCallback) {
+	register := func(cb extension.EditionChangeCallback) {
 		cbMu.Lock()
 		defer cbMu.Unlock()
 		callbacks = append(callbacks, cb)
@@ -168,7 +167,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 
 	// Fire: Pro → Community.
 	cbMu.Lock()
-	cbs := make([]license.EditionChangeCallback, len(callbacks))
+	cbs := make([]extension.EditionChangeCallback, len(callbacks))
 	copy(cbs, callbacks)
 	cbMu.Unlock()
 	for _, cb := range cbs {

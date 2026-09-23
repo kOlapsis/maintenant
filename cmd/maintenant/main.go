@@ -21,6 +21,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/app"
+	"github.com/kolapsis/maintenant/internal/commercial"
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/trust"
@@ -192,6 +193,7 @@ func main() {
 		return
 	}
 
+	commercial.Register()
 	application, err := app.New(cfg, logger)
 	if err != nil {
 		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {

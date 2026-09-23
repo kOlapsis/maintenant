@@ -27,7 +27,6 @@ import (
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
-	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/outbound"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
@@ -123,7 +122,7 @@ type HandlerDeps struct {
 	EscalationSvc *escalation.Service
 
 	// License
-	LicenseMgr *license.Manager
+	LicenseMgr extension.EditionSource
 
 	// Swarm
 	SwarmCluster        func() *swarm.SwarmCluster
@@ -581,7 +580,7 @@ func rfc3339OrEmpty(t time.Time) string {
 
 // licenseStatusPayload is the wire shape of GET /api/v1/license/status. Every
 // branch goes through it so the response always carries the same keys.
-func licenseStatusPayload(state *license.State, edition extension.Edition) map[string]interface{} {
+func licenseStatusPayload(state *extension.LicenseState, edition extension.Edition) map[string]interface{} {
 	return map[string]interface{}{
 		"status":             state.Status,
 		"edition":            string(edition),
@@ -594,13 +593,13 @@ func licenseStatusPayload(state *license.State, edition extension.Edition) map[s
 	}
 }
 
-func (r *Router) registerLicenseRoutes(mgr *license.Manager) {
+func (r *Router) registerLicenseRoutes(mgr extension.EditionSource) {
 	r.mux.HandleFunc("GET /api/v1/license/status", func(w http.ResponseWriter, req *http.Request) {
 		// No license configured (Community): report an inactive state rather than
 		// leaving the documented route unregistered (404).
 		if mgr == nil {
 			WriteJSON(w, http.StatusOK,
-				licenseStatusPayload(&license.State{Status: "inactive"}, extension.Community))
+				licenseStatusPayload(&extension.LicenseState{Status: "inactive"}, extension.Community))
 			return
 		}
 
@@ -864,6 +863,7 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 			"features":          features,
 			"feature_editions":  featureEditions,
 			"quotas":            r.computeQuotas(ctx, d),
+			"tiers":             extension.Tiers(),
 			"resource_history": map[string]interface{}{
 				"max_window":         maxWindow.Name,
 				"max_window_seconds": int64(maxWindow.Duration / time.Second),

@@ -17,6 +17,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // The two statuses a closed update window produces. A Personal license is
@@ -26,7 +28,7 @@ import (
 // would be a lie.
 const (
 	StatusUpdateWindowGrace = "update_window_grace"
-	StatusUpdateWindowEnded = "update_window_ended"
+	StatusUpdateWindowEnded = extension.LicenseStatusUpdateWindowEnded
 )
 
 const (

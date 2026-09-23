@@ -35,29 +35,11 @@ const (
 	graceDegradationDisabled = 60 * 24 * time.Hour // 60 days
 )
 
-// State represents the current license status, safe to read concurrently.
-// A zero Edition means Community: no usable license.
-type State struct {
-	Edition    extension.Edition `json:"edition"`
-	Plan       string            `json:"plan,omitempty"`
-	Features   []string          `json:"features,omitempty"`
-	Status     string            `json:"status"`
-	VerifiedAt time.Time         `json:"verified_at,omitempty"`
-	ExpiresAt  time.Time         `json:"expires_at,omitempty"`
-	Message    string            `json:"message,omitempty"`
-	// UpdatesUntil is the last day the license covers a newly released version.
-	// UpdateGraceUntil is when a build released past that day loses the edition;
-	// it is named apart from GraceUntil, which already means the server-side
-	// grace of a past_due subscription.
-	UpdatesUntil     time.Time `json:"updates_until,omitempty"`
-	UpdateGraceUntil time.Time `json:"update_grace_until,omitempty"`
-}
+// State is the licence status the manager maintains.
+type State = extension.LicenseState
 
-// EditionChangeCallback is invoked after the manager observes a transition
-// between two distinct editions. prev and next are the old and new editions.
-// The callback is invoked from a dedicated goroutine with a 30-second timeout;
-// it must not block. RegisterEditionChangeCallback must be called before Start.
-type EditionChangeCallback func(ctx context.Context, prev, next extension.Edition)
+// EditionChangeCallback is invoked from a dedicated goroutine with a 30-second timeout and must not block.
+type EditionChangeCallback = extension.EditionChangeCallback
 
 // Manager handles license verification, caching, and state management.
 type Manager struct {

@@ -8,14 +8,16 @@
 // Commercial: See COMMERCIAL-LICENSE.md
 //
 // Source: https://github.com/kolapsis/maintenant
+package agentserver
 
-package extension
+import (
+	"os"
+	"testing"
 
-import "context"
+	"github.com/kolapsis/maintenant/internal/commercial"
+)
 
-// NoopMaintenanceSuppressor is the CE default. Implements alert.MaintenanceSuppressor.
-type NoopMaintenanceSuppressor struct{}
-
-func (NoopMaintenanceSuppressor) IsSuppressed(_ context.Context, _ string, _ string, _ string) (bool, error) {
-	return false, nil
+func TestMain(m *testing.M) {
+	commercial.Register()
+	os.Exit(m.Run())
 }

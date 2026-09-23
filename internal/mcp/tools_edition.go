@@ -35,6 +35,7 @@ func getEditionHandler(svc *Services) gomcp.ToolHandlerFor[getEditionInput, any]
 			"features":         features,
 			"feature_editions": featureEditions,
 			"quotas":           editionQuotas(ctx, svc),
+			"tiers":            extension.Tiers(),
 			"resource_history": map[string]any{
 				"max_window":         maxWindow.Name,
 				"max_window_seconds": int64(maxWindow.Duration / time.Second),
