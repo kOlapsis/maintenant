@@ -13,7 +13,7 @@
 
 <script setup lang="ts">
 import type { SecurityInsight } from '@/services/securityApi'
-import type { RiskAcknowledgment } from '@/services/postureApi'
+import type { RiskAcknowledgment } from '@/commercial/services/postureApi'
 import { ShieldAlert, ShieldCheck, Network, Lock, Server, CheckCircle } from 'lucide-vue-next'
 import UiButton from './ui/UiButton.vue'
 

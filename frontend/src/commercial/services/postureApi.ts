@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-import { apiFetch, apiFetchVoid } from './apiFetch'
+import { apiFetch, apiFetchVoid } from '@/services/apiFetch'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1'
 

@@ -17,7 +17,7 @@ import type {
   EscalationDelivery,
   PolicyRequest,
   OverlapWarning,
-} from '@/types/escalation'
+} from '@/commercial/types/escalation'
 
 const API_BASE = '/api/v1'
 

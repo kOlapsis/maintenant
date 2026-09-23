@@ -11,8 +11,8 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { useEscalationApi } from '@/composables/useEscalationApi'
-import type { EscalationPolicy, EscalationLimits, PolicyRequest } from '@/types/escalation'
+import { useEscalationApi } from '@/commercial/composables/useEscalationApi'
+import type { EscalationPolicy, EscalationLimits, PolicyRequest } from '@/commercial/types/escalation'
 
 export const useEscalationStore = defineStore('escalation', () => {
   const policies = ref<EscalationPolicy[]>([])

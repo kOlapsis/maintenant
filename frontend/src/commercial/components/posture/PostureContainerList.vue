@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ContainerRisk } from '@/services/postureApi'
+import type { ContainerRisk } from '@/commercial/services/postureApi'
 import PostureScoreBadge from './PostureScoreBadge.vue'
 import { ChevronRight } from 'lucide-vue-next'
 

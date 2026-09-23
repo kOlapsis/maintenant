@@ -15,7 +15,7 @@
 import type { CVEInfo } from '@/services/updateApi'
 import { ref } from 'vue'
 import { Shield, Copy, Check, CheckCircle } from 'lucide-vue-next'
-import UiButton from './ui/UiButton.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 defineProps<{
   cves: CVEInfo[]

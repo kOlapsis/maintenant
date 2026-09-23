@@ -14,21 +14,22 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useStatusAdminStore } from '@/stores/statusAdmin'
-import { usePersonalizationStore } from '@/stores/personalization'
+import { usePersonalizationStore } from '@/commercial/stores/personalization'
 import { useEdition } from '@/composables/useEdition'
 import StatusComponentManager from '@/components/StatusComponentManager.vue'
-import StatusIncidentManager from '@/components/StatusIncidentManager.vue'
-import StatusSmtpConfig from '@/components/StatusSmtpConfig.vue'
-import StatusMaintenanceManager from '@/components/StatusMaintenanceManager.vue'
+import StatusIncidentManager from '@/commercial/components/status/StatusIncidentManager.vue'
+import StatusSmtpConfig from '@/commercial/components/status/StatusSmtpConfig.vue'
+import StatusMaintenanceManager from '@/commercial/components/status/StatusMaintenanceManager.vue'
+import SubscribersPanel from '@/commercial/components/status/SubscribersPanel.vue'
 import FeatureGate from '@/components/FeatureGate.vue'
 import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
-import BrandingSection from '@/components/personalization/BrandingSection.vue'
-import ColorPaletteSection from '@/components/personalization/ColorPaletteSection.vue'
-import HeaderAnnouncementSection from '@/components/personalization/HeaderAnnouncementSection.vue'
-import FooterSection from '@/components/personalization/FooterSection.vue'
-import FaqSection from '@/components/personalization/FaqSection.vue'
-import LocalizationSection from '@/components/personalization/LocalizationSection.vue'
-import type { PalettePayload } from '@/services/personalizationApi'
+import BrandingSection from '@/commercial/components/personalization/BrandingSection.vue'
+import ColorPaletteSection from '@/commercial/components/personalization/ColorPaletteSection.vue'
+import HeaderAnnouncementSection from '@/commercial/components/personalization/HeaderAnnouncementSection.vue'
+import FooterSection from '@/commercial/components/personalization/FooterSection.vue'
+import FaqSection from '@/commercial/components/personalization/FaqSection.vue'
+import LocalizationSection from '@/commercial/components/personalization/LocalizationSection.vue'
+import type { PalettePayload } from '@/commercial/services/personalizationApi'
 import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
@@ -191,46 +192,7 @@ const tabItems = computed<TabNavItem<Tab>[]>(() => [
       <StatusMaintenanceManager />
     </FeatureGate>
     <FeatureGate v-else-if="activeTab === 'subscribers'" feature="subscribers" title="Subscriber Notifications" description="Let your users subscribe to status updates by email. They get notified instantly when an incident starts or a maintenance is planned.">
-      <div
-        class="rounded-lg border p-6"
-        style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
-      >
-        <h2 class="mb-3 text-lg font-semibold" style="color: var(--mnt-text-primary)">Subscribers</h2>
-        <div class="mb-3 flex gap-4">
-          <div class="rounded-lg border px-4 py-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
-            <p class="text-2xl font-bold" style="color: var(--mnt-text-primary)">{{ store.subscriberTotal }}</p>
-            <p class="text-xs" style="color: var(--mnt-text-muted)">Total</p>
-          </div>
-          <div class="rounded-lg border px-4 py-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
-            <p class="text-2xl font-bold" style="color: var(--mnt-status-ok)">{{ store.subscriberConfirmed }}</p>
-            <p class="text-xs" style="color: var(--mnt-text-muted)">Confirmed</p>
-          </div>
-        </div>
-        <div v-if="(store.subscribers?.length ?? 0) === 0" class="text-center">
-          <p class="text-sm" style="color: var(--mnt-text-muted)">No subscribers yet</p>
-        </div>
-        <div v-else class="space-y-1">
-          <div
-            v-for="sub in store.subscribers"
-            :key="sub.id"
-            class="flex items-center justify-between rounded px-3 py-1.5 text-sm transition-colors"
-            style="color: var(--mnt-text-secondary)"
-            @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
-            @mouseleave="($event.currentTarget as HTMLElement).style.background = 'transparent'"
-          >
-            <span>{{ sub.email }}</span>
-            <span
-              class="rounded px-1.5 py-0.5 text-xs"
-              :style="{
-                background: sub.confirmed ? 'var(--mnt-status-ok-bg)' : 'var(--mnt-status-warn-bg)',
-                color: sub.confirmed ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
-              }"
-            >
-              {{ sub.confirmed ? 'confirmed' : 'pending' }}
-            </span>
-          </div>
-        </div>
-      </div>
+      <SubscribersPanel />
     </FeatureGate>
     <FeatureGate v-else-if="activeTab === 'smtp'" feature="smtp" title="SMTP Configuration" description="Use your own mail server to send notifications. Full control over sender address, branding, and deliverability.">
       <StatusSmtpConfig />

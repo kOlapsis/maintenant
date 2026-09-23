@@ -6,7 +6,7 @@ import {
   type FooterLink,
   type FAQItem,
   type ContrastWarning,
-} from '@/services/personalizationApi'
+} from '@/commercial/services/personalizationApi'
 
 export const usePersonalizationStore = defineStore('personalization', () => {
   const settings = ref<SettingsResponse | null>(null)

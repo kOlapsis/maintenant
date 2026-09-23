@@ -1,4 +1,4 @@
-import { guardedFetch, toApiError } from './apiFetch'
+import { guardedFetch, toApiError } from '@/services/apiFetch'
 
 const BASE = '/api/v1/status-page'
 

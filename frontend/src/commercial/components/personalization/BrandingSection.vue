@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Trash2 } from 'lucide-vue-next'
-import { personalizationApi } from '@/services/personalizationApi'
-import { usePersonalizationStore } from '@/stores/personalization'
+import { personalizationApi } from '@/commercial/services/personalizationApi'
+import { usePersonalizationStore } from '@/commercial/stores/personalization'
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'

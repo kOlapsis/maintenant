@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ArrowUp, ArrowDown, X } from 'lucide-vue-next'
-import { usePersonalizationStore } from '@/stores/personalization'
+import { usePersonalizationStore } from '@/commercial/stores/personalization'
 import FormField from '@/components/ui/FormField.vue'
 import TextareaInput from '@/components/ui/TextareaInput.vue'
 import TextInput from '@/components/ui/TextInput.vue'

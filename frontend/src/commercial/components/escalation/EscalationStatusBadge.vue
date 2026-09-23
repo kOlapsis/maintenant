@@ -13,7 +13,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { EscalationRun } from '@/types/escalation'
+import type { EscalationRun } from '@/commercial/types/escalation'
 import { BellRing, BellOff, CheckCircle2 } from 'lucide-vue-next'
 
 const props = defineProps<{

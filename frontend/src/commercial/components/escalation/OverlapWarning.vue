@@ -13,7 +13,7 @@
 
 <script setup lang="ts">
 import { AlertTriangle } from 'lucide-vue-next'
-import type { OverlapWarning } from '@/types/escalation'
+import type { OverlapWarning } from '@/commercial/types/escalation'
 
 defineProps<{
   warnings: OverlapWarning[]

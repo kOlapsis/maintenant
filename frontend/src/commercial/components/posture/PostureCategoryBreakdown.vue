@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CategoryScore } from '@/services/postureApi'
+import type { CategoryScore } from '@/commercial/services/postureApi'
 
 defineProps<{
   categories: CategoryScore[]

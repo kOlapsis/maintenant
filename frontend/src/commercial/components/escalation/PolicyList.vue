@@ -13,7 +13,7 @@
 
 <script setup lang="ts">
 import { useConfirm } from '@/composables/useConfirm'
-import type { EscalationPolicy } from '@/types/escalation'
+import type { EscalationPolicy } from '@/commercial/types/escalation'
 import { timeAgo } from '@/utils/time'
 import { Pencil, Trash2, Layers, CheckCircle2, CircleDashed } from 'lucide-vue-next'
 import UiButton from '@/components/ui/UiButton.vue'

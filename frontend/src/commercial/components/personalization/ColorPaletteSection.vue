@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ContrastWarning, PalettePayload } from '@/services/personalizationApi'
+import type { ContrastWarning, PalettePayload } from '@/commercial/services/personalizationApi'
 import UiButton from '@/components/ui/UiButton.vue'
 import ColorInput from '@/components/ui/ColorInput.vue'
 

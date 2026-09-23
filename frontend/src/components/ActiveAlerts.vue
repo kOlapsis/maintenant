@@ -18,10 +18,10 @@ import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlid
 import { timeAgo } from '@/utils/time'
 import type { Alert } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
-import EscalationStatusBadge from '@/components/escalation/EscalationStatusBadge.vue'
+import EscalationStatusBadge from '@/commercial/components/escalation/EscalationStatusBadge.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
-import { useEscalationApi } from '@/composables/useEscalationApi'
-import type { EscalationRun } from '@/types/escalation'
+import { useEscalationApi } from '@/commercial/composables/useEscalationApi'
+import type { EscalationRun } from '@/commercial/types/escalation'
 
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()

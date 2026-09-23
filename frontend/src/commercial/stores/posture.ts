@@ -20,7 +20,7 @@ import {
   type InfrastructurePosture,
   type SecurityScore,
   type RiskAcknowledgment,
-} from '@/services/postureApi'
+} from '@/commercial/services/postureApi'
 import { sseBus } from '@/services/sseBus'
 
 export const usePostureStore = defineStore('posture', () => {

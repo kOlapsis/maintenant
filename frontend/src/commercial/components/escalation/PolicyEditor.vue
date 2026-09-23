@@ -14,10 +14,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useEscalationStore } from '@/stores/escalation'
+import { useEscalationStore } from '@/commercial/stores/escalation'
 import { useTriggersStore } from '@/stores/triggers'
 import { apiFetch } from '@/services/apiFetch'
-import type { EscalationPolicy, OverlapWarning as OverlapWarningType } from '@/types/escalation'
+import type { EscalationPolicy, OverlapWarning as OverlapWarningType } from '@/commercial/types/escalation'
 import { X, Plus, Loader2, ArrowRight, Shield } from 'lucide-vue-next'
 import LevelEditor from './LevelEditor.vue'
 import OverlapWarningComponent from './OverlapWarning.vue'
@@ -27,7 +27,7 @@ import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
-import { useEscalationApi } from '@/composables/useEscalationApi'
+import { useEscalationApi } from '@/commercial/composables/useEscalationApi'
 
 interface Channel {
   id: string
