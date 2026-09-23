@@ -115,7 +115,7 @@ type HandlerDeps struct {
 
 	// Security
 	SecuritySvc *security.Service
-	Scorer      *security.Scorer
+	Scorer      security.PostureScorer
 	AckStore    security.AcknowledgmentStore
 
 	// Escalation policies

@@ -14,12 +14,14 @@ package extpoint
 import (
 	"log/slog"
 
+	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
 // Set holds one factory per extension point; a nil factory keeps the Community behaviour.
 type Set struct {
-	Enricher func(EnricherDeps) update.Enricher
+	Enricher      func(EnricherDeps) update.Enricher
+	PostureScorer func(PostureDeps) security.PostureScorer
 }
 
 // EnricherDeps is what an update enricher is built from.
@@ -27,4 +29,15 @@ type EnricherDeps struct {
 	Store    update.UpdateStore
 	Registry *update.RegistryClient
 	Logger   *slog.Logger
+}
+
+// PostureDeps is what a security posture scorer is built from.
+type PostureDeps struct {
+	Certs          security.CertificateReader
+	CVEs           security.CVEReader
+	CVEEvaluations security.CVEEvaluationReader
+	Updates        security.UpdateReader
+	Insights       security.InsightsReader
+	Acks           security.AcknowledgmentStore
+	Threshold      int
 }

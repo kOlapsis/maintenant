@@ -28,7 +28,7 @@ import (
 
 // PostureHandler handles security posture HTTP endpoints.
 type PostureHandler struct {
-	scorer       *security.Scorer
+	scorer       security.PostureScorer
 	containerSvc *container.Service
 	ackStore     security.AcknowledgmentStore
 	alertStore   alert.AlertStore
@@ -37,7 +37,7 @@ type PostureHandler struct {
 }
 
 // NewPostureHandler creates a new posture handler.
-func NewPostureHandler(scorer *security.Scorer, containerSvc *container.Service, ackStore security.AcknowledgmentStore, alertStore alert.AlertStore, securitySvc *security.Service, broker *SSEBroker) *PostureHandler {
+func NewPostureHandler(scorer security.PostureScorer, containerSvc *container.Service, ackStore security.AcknowledgmentStore, alertStore alert.AlertStore, securitySvc *security.Service, broker *SSEBroker) *PostureHandler {
 	return &PostureHandler{
 		scorer:       scorer,
 		containerSvc: containerSvc,

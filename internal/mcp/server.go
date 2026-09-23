@@ -102,7 +102,7 @@ type Services struct {
 
 	// Security & supply-chain (read-only MCP surface).
 	SecuritySvc *security.Service
-	Scorer      *security.Scorer
+	Scorer      security.PostureScorer
 	UpdateStore update.UpdateStore
 
 	// Orchestrators (read-only MCP surface).

@@ -74,17 +74,3 @@ type RiskAcknowledgment struct {
 	Reason              string    `json:"reason"`
 	AcknowledgedAt      time.Time `json:"acknowledged_at"`
 }
-
-// ColorLevel returns the color indicator for a given score.
-func ColorLevel(score int) string {
-	switch {
-	case score >= 80:
-		return "green"
-	case score >= 60:
-		return "yellow"
-	case score >= 40:
-		return "orange"
-	default:
-		return "red"
-	}
-}

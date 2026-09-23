@@ -11,6 +11,7 @@
 package commercial
 
 import (
+	"github.com/kolapsis/maintenant/internal/commercial/posture"
 	"github.com/kolapsis/maintenant/internal/commercial/updates"
 	"github.com/kolapsis/maintenant/internal/extpoint"
 )
@@ -18,6 +19,7 @@ import (
 // Extensions returns the commercial implementation of every extension point.
 func Extensions() extpoint.Set {
 	return extpoint.Set{
-		Enricher: updates.NewEnricher,
+		Enricher:      updates.NewEnricher,
+		PostureScorer: posture.NewPostureScorer,
 	}
 }

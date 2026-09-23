@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package security
+package posture
 
 import (
 	"context"
@@ -18,59 +18,9 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/security"
 )
-
-// CertificateInfo holds certificate monitor status for scoring.
-type CertificateInfo struct {
-	Status        string // "valid", "expiring", "expired", "error"
-	DaysRemaining int
-}
-
-// CVEInfo holds a single CVE for scoring.
-type CVEInfo struct {
-	CVEID    string
-	Severity string // "critical", "high", "medium", "low"
-}
-
-// UpdateInfo holds update availability for scoring.
-type UpdateInfo struct {
-	UpdateType  string // "major", "minor", "patch", "digest_only"
-	PublishedAt *time.Time
-}
-
-// CertificateReader provides certificate data for a container.
-type CertificateReader interface {
-	ListCertificatesForContainer(ctx context.Context, containerExternalID string) ([]CertificateInfo, error)
-}
-
-// CVEReader provides CVE data for a container.
-type CVEReader interface {
-	ListCVEsForContainer(ctx context.Context, containerExternalID string) ([]CVEInfo, error)
-}
-
-// CVEEvaluationInfo reports whether a container went through CVE analysis.
-type CVEEvaluationInfo struct {
-	Status string // "evaluated", "unsupported", "error"
-}
-
-// CVEEvaluationReader reports the CVE analysis state of a container.
-type CVEEvaluationReader interface {
-	GetCVEEvaluation(ctx context.Context, containerExternalID string) (*CVEEvaluationInfo, error)
-}
-
-// UpdateReader provides update and image age data for a container.
-type UpdateReader interface {
-	ListUpdatesForContainer(ctx context.Context, containerExternalID string) ([]UpdateInfo, error)
-}
-
-// AcknowledgmentStore persists risk acknowledgments.
-type AcknowledgmentStore interface {
-	InsertAcknowledgment(ctx context.Context, ack *RiskAcknowledgment) (string, error)
-	DeleteAcknowledgment(ctx context.Context, id string) error
-	ListAcknowledgments(ctx context.Context, containerExternalID string) ([]*RiskAcknowledgment, error)
-	GetAcknowledgment(ctx context.Context, id string) (*RiskAcknowledgment, error)
-	IsAcknowledged(ctx context.Context, containerExternalID, findingType, findingKey string) (bool, error)
-}
 
 // Category names.
 const (
@@ -79,14 +29,6 @@ const (
 	CategoryUpdates         = "updates"
 	CategoryNetworkExposure = "network_exposure"
 	CategoryImageAge        = "image_age"
-)
-
-// Category evaluation states, reported by CategoryScore.Evaluation.
-const (
-	EvaluationEvaluated    = "evaluated"
-	EvaluationUnsupported  = "unsupported"
-	EvaluationNotEvaluated = "not_evaluated"
-	EvaluationError        = "error"
 )
 
 // Category weights (must sum to 100).
@@ -99,52 +41,52 @@ const (
 )
 
 type cachedScore struct {
-	score     *SecurityScore
+	score     *security.SecurityScore
 	expiresAt time.Time
 }
 
 // ScorerDeps holds all dependencies for the security Scorer.
 type ScorerDeps struct {
-	Certs                CertificateReader    // optional — nil skips TLS scoring
-	CVEs                 CVEReader            // optional — nil skips CVE scoring
-	CVEEvaluations       CVEEvaluationReader  // optional — nil makes every CVE category "not evaluated"
-	Updates              UpdateReader         // optional — nil skips update scoring
-	Security             *Service             // optional — nil skips network exposure scoring
-	Acks                 AcknowledgmentStore  // required
-	Threshold            int                  // optional — 0 disables alerts
-	PostureAlertCallback PostureAlertCallback // optional — nil-safe
-	PostureEventCallback PostureEventCallback // optional — nil-safe
+	Certs                security.CertificateReader    // optional — nil skips TLS scoring
+	CVEs                 security.CVEReader            // optional — nil skips CVE scoring
+	CVEEvaluations       security.CVEEvaluationReader  // optional — nil makes every CVE category "not evaluated"
+	Updates              security.UpdateReader         // optional — nil skips update scoring
+	Insights             security.InsightsReader       // optional, nil skips network exposure scoring
+	Acks                 security.AcknowledgmentStore  // required
+	Threshold            int                           // optional — 0 disables alerts
+	PostureAlertCallback security.PostureAlertCallback // optional — nil-safe
+	PostureEventCallback security.PostureEventCallback // optional — nil-safe
 }
 
 // Scorer computes security posture scores for containers and infrastructure.
 type Scorer struct {
-	certs   CertificateReader
-	cves    CVEReader
-	cveEval CVEEvaluationReader
-	updates UpdateReader
-	sec     *Service
-	acks    AcknowledgmentStore
+	certs   security.CertificateReader
+	cves    security.CVEReader
+	cveEval security.CVEEvaluationReader
+	updates security.UpdateReader
+	sec     security.InsightsReader
+	acks    security.AcknowledgmentStore
 
 	mu             sync.RWMutex
 	cache          map[string]cachedScore
 	threshold      int
 	lastInfraScore int
-	onPostureAlert PostureAlertCallback
-	onPostureEvent PostureEventCallback
+	onPostureAlert security.PostureAlertCallback
+	onPostureEvent security.PostureEventCallback
 }
 
 // NewScorer creates a new Scorer with the given data source readers.
 // All readers are optional — categories with nil readers are skipped during scoring.
 func NewScorer(d ScorerDeps) *Scorer {
 	if d.Acks == nil {
-		panic("security.NewScorer: Acks is required")
+		panic("posture.NewScorer: Acks is required")
 	}
 	return &Scorer{
 		certs:          d.Certs,
 		cves:           d.CVEs,
 		cveEval:        d.CVEEvaluations,
 		updates:        d.Updates,
-		sec:            d.Security,
+		sec:            d.Insights,
 		acks:           d.Acks,
 		cache:          make(map[string]cachedScore),
 		threshold:      d.Threshold,
@@ -154,7 +96,7 @@ func NewScorer(d ScorerDeps) *Scorer {
 }
 
 // ScoreContainer computes the security score for a single container.
-func (s *Scorer) ScoreContainer(ctx context.Context, containerID string, containerExternalID string, containerName string) (*SecurityScore, error) {
+func (s *Scorer) ScoreContainer(ctx context.Context, containerID string, containerExternalID string, containerName string) (*security.SecurityScore, error) {
 	s.mu.RLock()
 	if cached, ok := s.cache[containerID]; ok && time.Now().Before(cached.expiresAt) {
 		s.mu.RUnlock()
@@ -176,7 +118,7 @@ func (s *Scorer) ScoreContainer(ctx context.Context, containerID string, contain
 	return score, nil
 }
 
-func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, containerExternalID string, containerName string) (*SecurityScore, error) {
+func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, containerExternalID string, containerName string) (*security.SecurityScore, error) {
 	type categoryResult struct {
 		name       string
 		weight     int
@@ -214,7 +156,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 		cveResult.evaluation = state
 
 		switch state {
-		case EvaluationEvaluated:
+		case security.EvaluationEvaluated:
 			cves, err := s.cves.ListCVEsForContainer(ctx, containerExternalID)
 			if err != nil {
 				return nil, fmt.Errorf("scoring cves for container %s: %w", containerID, err)
@@ -227,7 +169,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 				cveResult.subScore = 100
 				cveResult.summary = "no known CVEs"
 			}
-		case EvaluationUnsupported:
+		case security.EvaluationUnsupported:
 			cveResult.summary = "image not covered by the vulnerability data source"
 		default:
 			cveResult.summary = "not evaluated"
@@ -314,9 +256,9 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 		weightedSum = 0
 	}
 
-	categoryScores := make([]CategoryScore, len(categories))
+	categoryScores := make([]security.CategoryScore, len(categories))
 	for i, c := range categories {
-		categoryScores[i] = CategoryScore{
+		categoryScores[i] = security.CategoryScore{
 			Name:       c.name,
 			Weight:     c.weight,
 			SubScore:   c.subScore,
@@ -330,7 +272,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 		}
 	}
 
-	return &SecurityScore{
+	return &security.SecurityScore{
 		ContainerID:     containerID,
 		ContainerName:   containerName,
 		TotalScore:      weightedSum,
@@ -346,33 +288,26 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 // missing reader or a missing row both mean it was never analysed.
 func (s *Scorer) cveEvaluationState(ctx context.Context, containerExternalID string) (string, error) {
 	if s.cveEval == nil {
-		return EvaluationNotEvaluated, nil
+		return security.EvaluationNotEvaluated, nil
 	}
 	eval, err := s.cveEval.GetCVEEvaluation(ctx, containerExternalID)
 	if err != nil {
 		return "", err
 	}
 	if eval == nil {
-		return EvaluationNotEvaluated, nil
+		return security.EvaluationNotEvaluated, nil
 	}
 	switch eval.Status {
-	case EvaluationEvaluated, EvaluationUnsupported, EvaluationError:
+	case security.EvaluationEvaluated, security.EvaluationUnsupported, security.EvaluationError:
 		return eval.Status, nil
 	default:
-		return EvaluationNotEvaluated, nil
+		return security.EvaluationNotEvaluated, nil
 	}
-}
-
-// ContainerInfo holds minimal container data for infrastructure scoring.
-type ContainerInfo struct {
-	ID         string
-	ExternalID string
-	Name       string
 }
 
 // ScoreInfrastructure computes the infrastructure-wide security posture.
-func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []ContainerInfo) (*InfrastructurePosture, error) {
-	var scores []*SecurityScore
+func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []security.ContainerInfo) (*security.InfrastructurePosture, error) {
+	var scores []*security.SecurityScore
 	partialCount := 0
 
 	for _, c := range containers {
@@ -390,14 +325,14 @@ func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []Container
 	}
 
 	if len(scores) == 0 {
-		return &InfrastructurePosture{
+		return &security.InfrastructurePosture{
 			Score:          0,
 			ColorLevel:     "red",
 			ContainerCount: len(containers),
 			ScoredCount:    0,
 			ComputedAt:     time.Now(),
-			Categories:     []CategorySummary{},
-			TopRisks:       []ContainerRisk{},
+			Categories:     []security.CategorySummary{},
+			TopRisks:       []security.ContainerRisk{},
 		}, nil
 	}
 
@@ -417,9 +352,9 @@ func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []Container
 			}
 		}
 	}
-	catSummaries := make([]CategorySummary, 0, len(catIssues))
+	catSummaries := make([]security.CategorySummary, 0, len(catIssues))
 	for name, issues := range catIssues {
-		catSummaries = append(catSummaries, CategorySummary{
+		catSummaries = append(catSummaries, security.CategorySummary{
 			Name:        name,
 			TotalIssues: issues,
 			Summary:     fmt.Sprintf("%d issues", issues),
@@ -437,10 +372,10 @@ func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []Container
 	if len(scores) < topN {
 		topN = len(scores)
 	}
-	topRisks := make([]ContainerRisk, topN)
+	topRisks := make([]security.ContainerRisk, topN)
 	for i := 0; i < topN; i++ {
 		sc := scores[i]
-		topRisks[i] = ContainerRisk{
+		topRisks[i] = security.ContainerRisk{
 			ContainerID:   sc.ContainerID,
 			ContainerName: sc.ContainerName,
 			Score:         sc.TotalScore,
@@ -449,7 +384,7 @@ func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []Container
 		}
 	}
 
-	return &InfrastructurePosture{
+	return &security.InfrastructurePosture{
 		Score:          avgScore,
 		ColorLevel:     ColorLevel(avgScore),
 		ContainerCount: len(containers),
@@ -468,21 +403,15 @@ func (s *Scorer) InvalidateCache(containerID string) {
 	s.mu.Unlock()
 }
 
-// PostureAlertCallback is called when the infrastructure score crosses a threshold.
-type PostureAlertCallback func(score int, previousScore int, color string, isBreach bool)
-
-// PostureEventCallback is called to emit SSE events for posture changes.
-type PostureEventCallback func(eventType string, data any)
-
 // SetPostureAlertCallback sets the callback for posture threshold alerts.
-func (s *Scorer) SetPostureAlertCallback(cb PostureAlertCallback) {
+func (s *Scorer) SetPostureAlertCallback(cb security.PostureAlertCallback) {
 	s.mu.Lock()
 	s.onPostureAlert = cb
 	s.mu.Unlock()
 }
 
 // SetPostureEventCallback sets the callback for posture SSE events.
-func (s *Scorer) SetPostureEventCallback(cb PostureEventCallback) {
+func (s *Scorer) SetPostureEventCallback(cb security.PostureEventCallback) {
 	s.mu.Lock()
 	s.onPostureEvent = cb
 	s.mu.Unlock()
@@ -553,7 +482,7 @@ func (s *Scorer) CheckPostureThreshold(score int, color string) {
 
 // --- Category scoring functions ---
 
-func scoreTLS(certs []CertificateInfo) (subScore int, issueCount int, summary string) {
+func scoreTLS(certs []security.CertificateInfo) (subScore int, issueCount int, summary string) {
 	score := 100
 	expiring := 0
 	expired := 0
@@ -600,7 +529,7 @@ func scoreTLS(certs []CertificateInfo) (subScore int, issueCount int, summary st
 	return score, issues, summary
 }
 
-func scoreCVEs(cves []CVEInfo, acknowledgedCount int) (subScore int, issueCount int, summary string) {
+func scoreCVEs(cves []security.CVEInfo, acknowledgedCount int) (subScore int, issueCount int, summary string) {
 	score := 100
 	critical := 0
 	high := 0
@@ -657,7 +586,7 @@ func scoreCVEs(cves []CVEInfo, acknowledgedCount int) (subScore int, issueCount 
 	return score, len(cves), summary
 }
 
-func scoreUpdates(updates []UpdateInfo) (subScore int, issueCount int, summary string) {
+func scoreUpdates(updates []security.UpdateInfo) (subScore int, issueCount int, summary string) {
 	score := 100
 	major := 0
 	minor := 0
@@ -701,16 +630,16 @@ func scoreUpdates(updates []UpdateInfo) (subScore int, issueCount int, summary s
 	return score, len(updates), summary
 }
 
-func scoreNetworkExposure(insights []Insight, acknowledgedCount int) (subScore int, issueCount int, summary string) {
+func scoreNetworkExposure(insights []security.Insight, acknowledgedCount int) (subScore int, issueCount int, summary string) {
 	score := 100
 
 	for _, i := range insights {
 		switch i.Severity {
-		case SeverityCritical:
+		case security.SeverityCritical:
 			score -= 35
-		case SeverityHigh:
+		case security.SeverityHigh:
 			score -= 20
-		case SeverityMedium:
+		case security.SeverityMedium:
 			score -= 10
 		}
 	}
@@ -734,7 +663,7 @@ func scoreNetworkExposure(insights []Insight, acknowledgedCount int) (subScore i
 	return score, len(insights), summary
 }
 
-func scoreImageAge(updates []UpdateInfo) (subScore int, issueCount int, summary string) {
+func scoreImageAge(updates []security.UpdateInfo) (subScore int, issueCount int, summary string) {
 	// Find the most recent PublishedAt from available updates
 	var oldest *time.Time
 	for _, u := range updates {
@@ -771,11 +700,11 @@ func scoreImageAge(updates []UpdateInfo) (subScore int, issueCount int, summary 
 
 // --- Helper functions ---
 
-func filterAcknowledgedCVEs(ctx context.Context, cves []CVEInfo, containerExternalID string, acks AcknowledgmentStore) []CVEInfo {
+func filterAcknowledgedCVEs(ctx context.Context, cves []security.CVEInfo, containerExternalID string, acks security.AcknowledgmentStore) []security.CVEInfo {
 	if acks == nil {
 		return cves
 	}
-	filtered := make([]CVEInfo, 0, len(cves))
+	filtered := make([]security.CVEInfo, 0, len(cves))
 	for _, c := range cves {
 		acked, err := acks.IsAcknowledged(ctx, containerExternalID, "cve", c.CVEID)
 		if err != nil || !acked {
@@ -785,13 +714,13 @@ func filterAcknowledgedCVEs(ctx context.Context, cves []CVEInfo, containerExtern
 	return filtered
 }
 
-func filterAcknowledgedInsights(ctx context.Context, insights []Insight, containerExternalID string, acks AcknowledgmentStore) []Insight {
+func filterAcknowledgedInsights(ctx context.Context, insights []security.Insight, containerExternalID string, acks security.AcknowledgmentStore) []security.Insight {
 	if acks == nil {
 		return insights
 	}
-	filtered := make([]Insight, 0, len(insights))
+	filtered := make([]security.Insight, 0, len(insights))
 	for _, i := range insights {
-		key := InsightFindingKey(i)
+		key := security.InsightFindingKey(i)
 		acked, err := acks.IsAcknowledged(ctx, containerExternalID, string(i.Type), key)
 		if err != nil || !acked {
 			filtered = append(filtered, i)
@@ -800,21 +729,9 @@ func filterAcknowledgedInsights(ctx context.Context, insights []Insight, contain
 	return filtered
 }
 
-// InsightFindingKey returns the dedup key for an insight's finding.
-func InsightFindingKey(i Insight) string {
-	if port, ok := i.Details["port"]; ok {
-		proto := "tcp"
-		if p, ok := i.Details["protocol"]; ok {
-			proto = fmt.Sprintf("%v", p)
-		}
-		return fmt.Sprintf("%v/%s", port, proto)
-	}
-	return ""
-}
-
-func topIssueFromScore(sc *SecurityScore) string {
+func topIssueFromScore(sc *security.SecurityScore) string {
 	// Find the worst-scoring applicable category
-	worst := CategoryScore{SubScore: 101}
+	worst := security.CategoryScore{SubScore: 101}
 	for _, c := range sc.Categories {
 		if c.Applicable && c.SubScore < worst.SubScore {
 			worst = c
@@ -835,4 +752,18 @@ func joinParts(parts []string) string {
 		result += ", " + parts[i]
 	}
 	return result
+}
+
+// ColorLevel returns the color indicator for a given score.
+func ColorLevel(score int) string {
+	switch {
+	case score >= 80:
+		return "green"
+	case score >= 60:
+		return "yellow"
+	case score >= 40:
+		return "orange"
+	default:
+		return "red"
+	}
 }

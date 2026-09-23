@@ -18,6 +18,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/app"
 	"github.com/kolapsis/maintenant/internal/extpoint"
+	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -26,10 +27,15 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 
 	var got extpoint.EnricherDeps
 	calls := 0
+	var postureDeps extpoint.PostureDeps
 	a, err := app.New(cfg, logger, app.WithExtensions(extpoint.Set{
 		Enricher: func(d extpoint.EnricherDeps) update.Enricher {
 			calls++
 			got = d
+			return nil
+		},
+		PostureScorer: func(d extpoint.PostureDeps) security.PostureScorer {
+			postureDeps = d
 			return nil
 		},
 	}))
@@ -40,4 +46,13 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 	assert.NotNil(t, got.Store)
 	assert.NotNil(t, got.Registry)
 	assert.NotNil(t, got.Logger)
+	assert.NotNil(t, postureDeps.Acks)
+	assert.NotNil(t, postureDeps.Insights)
+}
+
+func TestNew_WithoutExtensionsStillBuilds(t *testing.T) {
+	cfg, logger := modeGateCfg(t, "")
+	a, err := app.New(cfg, logger)
+	require.NoError(t, err)
+	require.NotNil(t, a)
 }

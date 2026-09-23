@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package security
+package posture
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,18 +25,18 @@ import (
 // --- Mock implementations ---
 
 type mockCertReader struct {
-	certs map[string][]CertificateInfo
+	certs map[string][]security.CertificateInfo
 }
 
-func (m *mockCertReader) ListCertificatesForContainer(_ context.Context, containerExternalID string) ([]CertificateInfo, error) {
+func (m *mockCertReader) ListCertificatesForContainer(_ context.Context, containerExternalID string) ([]security.CertificateInfo, error) {
 	return m.certs[containerExternalID], nil
 }
 
 type mockCVEReader struct {
-	cves map[string][]CVEInfo
+	cves map[string][]security.CVEInfo
 }
 
-func (m *mockCVEReader) ListCVEsForContainer(_ context.Context, containerExternalID string) ([]CVEInfo, error) {
+func (m *mockCVEReader) ListCVEsForContainer(_ context.Context, containerExternalID string) ([]security.CVEInfo, error) {
 	return m.cves[containerExternalID], nil
 }
 
@@ -43,19 +44,19 @@ type mockCVEEvalReader struct {
 	states map[string]string
 }
 
-func (m *mockCVEEvalReader) GetCVEEvaluation(_ context.Context, containerExternalID string) (*CVEEvaluationInfo, error) {
+func (m *mockCVEEvalReader) GetCVEEvaluation(_ context.Context, containerExternalID string) (*security.CVEEvaluationInfo, error) {
 	state, ok := m.states[containerExternalID]
 	if !ok {
 		return nil, nil
 	}
-	return &CVEEvaluationInfo{Status: state}, nil
+	return &security.CVEEvaluationInfo{Status: state}, nil
 }
 
 type mockUpdateReader struct {
-	updates map[string][]UpdateInfo
+	updates map[string][]security.UpdateInfo
 }
 
-func (m *mockUpdateReader) ListUpdatesForContainer(_ context.Context, containerExternalID string) ([]UpdateInfo, error) {
+func (m *mockUpdateReader) ListUpdatesForContainer(_ context.Context, containerExternalID string) ([]security.UpdateInfo, error) {
 	return m.updates[containerExternalID], nil
 }
 
@@ -63,7 +64,7 @@ type mockAckStore struct {
 	acks map[string]map[string]map[string]bool // externalID -> findingType -> findingKey -> acknowledged
 }
 
-func (m *mockAckStore) InsertAcknowledgment(_ context.Context, ack *RiskAcknowledgment) (string, error) {
+func (m *mockAckStore) InsertAcknowledgment(_ context.Context, ack *security.RiskAcknowledgment) (string, error) {
 	return "ack1", nil
 }
 
@@ -71,11 +72,11 @@ func (m *mockAckStore) DeleteAcknowledgment(_ context.Context, _ string) error {
 	return nil
 }
 
-func (m *mockAckStore) ListAcknowledgments(_ context.Context, _ string) ([]*RiskAcknowledgment, error) {
+func (m *mockAckStore) ListAcknowledgments(_ context.Context, _ string) ([]*security.RiskAcknowledgment, error) {
 	return nil, nil
 }
 
-func (m *mockAckStore) GetAcknowledgment(_ context.Context, _ string) (*RiskAcknowledgment, error) {
+func (m *mockAckStore) GetAcknowledgment(_ context.Context, _ string) (*security.RiskAcknowledgment, error) {
 	return nil, nil
 }
 
@@ -91,38 +92,38 @@ func (m *mockAckStore) IsAcknowledged(_ context.Context, containerExternalID, fi
 	return false, nil
 }
 
-func newTestService() *Service {
-	return NewService(Deps{Logger: slog.Default()})
+func newTestService() *security.Service {
+	return security.NewService(security.Deps{Logger: slog.Default()})
 }
 
 func TestScoreTLS(t *testing.T) {
 	tests := []struct {
 		name           string
-		certs          []CertificateInfo
+		certs          []security.CertificateInfo
 		expectedScore  int
 		expectedIssues int
 	}{
 		{
 			name:           "all valid",
-			certs:          []CertificateInfo{{Status: "valid", DaysRemaining: 90}},
+			certs:          []security.CertificateInfo{{Status: "valid", DaysRemaining: 90}},
 			expectedScore:  100,
 			expectedIssues: 0,
 		},
 		{
 			name:           "one expiring soon",
-			certs:          []CertificateInfo{{Status: "expiring", DaysRemaining: 5}},
+			certs:          []security.CertificateInfo{{Status: "expiring", DaysRemaining: 5}},
 			expectedScore:  70,
 			expectedIssues: 1,
 		},
 		{
 			name:           "one expired",
-			certs:          []CertificateInfo{{Status: "expired", DaysRemaining: -1}},
+			certs:          []security.CertificateInfo{{Status: "expired", DaysRemaining: -1}},
 			expectedScore:  50,
 			expectedIssues: 1,
 		},
 		{
 			name: "mixed",
-			certs: []CertificateInfo{
+			certs: []security.CertificateInfo{
 				{Status: "valid", DaysRemaining: 60},
 				{Status: "expiring", DaysRemaining: 20},
 				{Status: "expired", DaysRemaining: -5},
@@ -144,7 +145,7 @@ func TestScoreTLS(t *testing.T) {
 func TestScoreCVEs(t *testing.T) {
 	tests := []struct {
 		name          string
-		cves          []CVEInfo
+		cves          []security.CVEInfo
 		expectedScore int
 	}{
 		{
@@ -154,17 +155,17 @@ func TestScoreCVEs(t *testing.T) {
 		},
 		{
 			name:          "one critical",
-			cves:          []CVEInfo{{Severity: "critical"}},
+			cves:          []security.CVEInfo{{Severity: "critical"}},
 			expectedScore: 70,
 		},
 		{
 			name:          "one high",
-			cves:          []CVEInfo{{Severity: "high"}},
+			cves:          []security.CVEInfo{{Severity: "high"}},
 			expectedScore: 85,
 		},
 		{
 			name: "multiple severities",
-			cves: []CVEInfo{
+			cves: []security.CVEInfo{
 				{Severity: "critical"},
 				{Severity: "high"},
 				{Severity: "medium"},
@@ -173,7 +174,7 @@ func TestScoreCVEs(t *testing.T) {
 		},
 		{
 			name: "floor at zero",
-			cves: []CVEInfo{
+			cves: []security.CVEInfo{
 				{Severity: "critical"},
 				{Severity: "critical"},
 				{Severity: "critical"},
@@ -194,7 +195,7 @@ func TestScoreCVEs(t *testing.T) {
 func TestScoreUpdates(t *testing.T) {
 	tests := []struct {
 		name          string
-		updates       []UpdateInfo
+		updates       []security.UpdateInfo
 		expectedScore int
 	}{
 		{
@@ -204,17 +205,17 @@ func TestScoreUpdates(t *testing.T) {
 		},
 		{
 			name:          "one major",
-			updates:       []UpdateInfo{{UpdateType: "major"}},
+			updates:       []security.UpdateInfo{{UpdateType: "major"}},
 			expectedScore: 75,
 		},
 		{
 			name:          "one minor",
-			updates:       []UpdateInfo{{UpdateType: "minor"}},
+			updates:       []security.UpdateInfo{{UpdateType: "minor"}},
 			expectedScore: 90,
 		},
 		{
 			name: "mixed",
-			updates: []UpdateInfo{
+			updates: []security.UpdateInfo{
 				{UpdateType: "major"},
 				{UpdateType: "minor"},
 				{UpdateType: "patch"},
@@ -234,7 +235,7 @@ func TestScoreUpdates(t *testing.T) {
 func TestScoreNetworkExposure(t *testing.T) {
 	tests := []struct {
 		name          string
-		insights      []Insight
+		insights      []security.Insight
 		expectedScore int
 	}{
 		{
@@ -244,14 +245,14 @@ func TestScoreNetworkExposure(t *testing.T) {
 		},
 		{
 			name:          "one critical",
-			insights:      []Insight{{Severity: SeverityCritical}},
+			insights:      []security.Insight{{Severity: security.SeverityCritical}},
 			expectedScore: 65,
 		},
 		{
 			name: "multiple",
-			insights: []Insight{
-				{Severity: SeverityCritical},
-				{Severity: SeverityHigh},
+			insights: []security.Insight{
+				{Severity: security.SeverityCritical},
+				{Severity: security.SeverityHigh},
 			},
 			expectedScore: 45,
 		},
@@ -268,24 +269,24 @@ func TestScoreNetworkExposure(t *testing.T) {
 func TestScoreImageAge(t *testing.T) {
 	tests := []struct {
 		name          string
-		updates       []UpdateInfo
+		updates       []security.UpdateInfo
 		expectedScore int
 	}{
 		{
 			name:          "no published_at",
-			updates:       []UpdateInfo{{UpdateType: "minor"}},
+			updates:       []security.UpdateInfo{{UpdateType: "minor"}},
 			expectedScore: 50,
 		},
 		{
 			name: "recent image",
-			updates: []UpdateInfo{
+			updates: []security.UpdateInfo{
 				{PublishedAt: timePtr(time.Now().Add(-10 * 24 * time.Hour))},
 			},
 			expectedScore: 100,
 		},
 		{
 			name: "old image",
-			updates: []UpdateInfo{
+			updates: []security.UpdateInfo{
 				{PublishedAt: timePtr(time.Now().Add(-200 * 24 * time.Hour))},
 			},
 		},
@@ -319,22 +320,22 @@ func TestColorLevel(t *testing.T) {
 func TestScorerScoreContainer(t *testing.T) {
 	ctx := context.Background()
 	secSvc := newTestService()
-	secSvc.UpdateContainer("c1", "test-container", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityHigh, ContainerID: "c1", ContainerName: "test-container"},
+	secSvc.UpdateContainer("c1", "test-container", []security.Insight{
+		{Type: security.PortExposedAllInterfaces, Severity: security.SeverityHigh, ContainerID: "c1", ContainerName: "test-container"},
 	})
 
 	scorer := NewScorer(ScorerDeps{
-		Certs: &mockCertReader{certs: map[string][]CertificateInfo{
+		Certs: &mockCertReader{certs: map[string][]security.CertificateInfo{
 			"ext-1": {{Status: "valid", DaysRemaining: 90}},
 		}},
-		CVEs: &mockCVEReader{cves: map[string][]CVEInfo{
+		CVEs: &mockCVEReader{cves: map[string][]security.CVEInfo{
 			"ext-1": {{CVEID: "CVE-2025-001", Severity: "high"}},
 		}},
-		Updates: &mockUpdateReader{updates: map[string][]UpdateInfo{
+		Updates: &mockUpdateReader{updates: map[string][]security.UpdateInfo{
 			"ext-1": {{UpdateType: "minor", PublishedAt: timePtr(time.Now().Add(-15 * 24 * time.Hour))}},
 		}},
-		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationEvaluated}},
-		Security:       secSvc,
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": security.EvaluationEvaluated}},
+		Insights:       secSvc,
 		Acks:           &mockAckStore{},
 	})
 
@@ -354,17 +355,17 @@ func TestScorerWeightRedistribution(t *testing.T) {
 	secSvc := newTestService()
 
 	// Only network exposure applicable (no certs, no CVEs, no updates)
-	secSvc.UpdateContainer("c1", "test", []Insight{
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1"},
+	secSvc.UpdateContainer("c1", "test", []security.Insight{
+		{Type: security.PrivilegedContainer, Severity: security.SeverityCritical, ContainerID: "c1"},
 	})
 
-	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: &mockAckStore{}})
+	scorer := NewScorer(ScorerDeps{Insights: secSvc, Acks: &mockAckStore{}})
 	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
 	// Only network_exposure is applicable, so score should equal its sub-score
-	var netCat *CategoryScore
+	var netCat *security.CategoryScore
 	for i := range score.Categories {
 		if score.Categories[i].Name == CategoryNetworkExposure {
 			netCat = &score.Categories[i]
@@ -381,8 +382,8 @@ func TestScorerCache(t *testing.T) {
 	secSvc := newTestService()
 
 	callCount := 0
-	cveReader := &mockCVEReader{cves: map[string][]CVEInfo{}}
-	scorer := NewScorer(ScorerDeps{CVEs: cveReader, Security: secSvc, Acks: &mockAckStore{}})
+	cveReader := &mockCVEReader{cves: map[string][]security.CVEInfo{}}
+	scorer := NewScorer(ScorerDeps{CVEs: cveReader, Insights: secSvc, Acks: &mockAckStore{}})
 
 	// Wrap to count calls (we test via timing)
 	_, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
@@ -400,27 +401,27 @@ func TestScorerCache(t *testing.T) {
 func TestScorerAcknowledgedFindingsExcluded(t *testing.T) {
 	ctx := context.Background()
 	secSvc := newTestService()
-	secSvc.UpdateContainer("c1", "test", []Insight{
-		{Type: PortExposedAllInterfaces, Severity: SeverityCritical, ContainerID: "c1", Details: map[string]any{"port": 8080, "protocol": "tcp"}},
-		{Type: DatabasePortExposed, Severity: SeverityCritical, ContainerID: "c1", Details: map[string]any{"port": 5432, "protocol": "tcp"}},
+	secSvc.UpdateContainer("c1", "test", []security.Insight{
+		{Type: security.PortExposedAllInterfaces, Severity: security.SeverityCritical, ContainerID: "c1", Details: map[string]any{"port": 8080, "protocol": "tcp"}},
+		{Type: security.DatabasePortExposed, Severity: security.SeverityCritical, ContainerID: "c1", Details: map[string]any{"port": 5432, "protocol": "tcp"}},
 	})
 
 	ackStore := &mockAckStore{
 		acks: map[string]map[string]map[string]bool{
 			"ext-1": {
-				string(PortExposedAllInterfaces): {"8080/tcp": true},
+				string(security.PortExposedAllInterfaces): {"8080/tcp": true},
 			},
 		},
 	}
 
-	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: ackStore})
+	scorer := NewScorer(ScorerDeps{Insights: secSvc, Acks: ackStore})
 
 	score, err := scorer.ScoreContainer(ctx, "c1", "ext-1", "test")
 	require.NoError(t, err)
 	require.NotNil(t, score)
 
 	// Find network exposure category
-	var netCat *CategoryScore
+	var netCat *security.CategoryScore
 	for i := range score.Categories {
 		if score.Categories[i].Name == CategoryNetworkExposure {
 			netCat = &score.Categories[i]
@@ -435,13 +436,13 @@ func TestScorerAcknowledgedFindingsExcluded(t *testing.T) {
 func TestScoreInfrastructure(t *testing.T) {
 	ctx := context.Background()
 	secSvc := newTestService()
-	secSvc.UpdateContainer("c1", "container-a", []Insight{
-		{Type: PrivilegedContainer, Severity: SeverityCritical, ContainerID: "c1"},
+	secSvc.UpdateContainer("c1", "container-a", []security.Insight{
+		{Type: security.PrivilegedContainer, Severity: security.SeverityCritical, ContainerID: "c1"},
 	})
 
-	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: &mockAckStore{}})
+	scorer := NewScorer(ScorerDeps{Insights: secSvc, Acks: &mockAckStore{}})
 
-	containers := []ContainerInfo{
+	containers := []security.ContainerInfo{
 		{ID: "c1", ExternalID: "ext-1", Name: "container-a"},
 		{ID: "c2", ExternalID: "ext-2", Name: "container-b"},
 	}
@@ -470,7 +471,7 @@ func TestScorerWithSecurityServiceNoInsights(t *testing.T) {
 	secSvc := newTestService()
 
 	// Security service exists but no insights for this container → network_exposure applicable with score 100
-	scorer := NewScorer(ScorerDeps{Security: secSvc, Acks: &mockAckStore{}})
+	scorer := NewScorer(ScorerDeps{Insights: secSvc, Acks: &mockAckStore{}})
 	score, err := scorer.ScoreContainer(ctx, "c99", "nonexistent", "ghost")
 	require.NoError(t, err)
 	require.NotNil(t, score)
@@ -482,7 +483,7 @@ func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
-func cveCategory(t *testing.T, score *SecurityScore) *CategoryScore {
+func cveCategory(t *testing.T, score *security.SecurityScore) *security.CategoryScore {
 	t.Helper()
 	for i := range score.Categories {
 		if score.Categories[i].Name == CategoryCVEs {
@@ -498,9 +499,9 @@ func TestScorerCVENeverEvaluated(t *testing.T) {
 	secSvc := newTestService()
 
 	scorer := NewScorer(ScorerDeps{
-		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
+		CVEs:           &mockCVEReader{cves: map[string][]security.CVEInfo{}},
 		CVEEvaluations: &mockCVEEvalReader{},
-		Security:       secSvc,
+		Insights:       secSvc,
 		Acks:           &mockAckStore{},
 	})
 
@@ -510,7 +511,7 @@ func TestScorerCVENeverEvaluated(t *testing.T) {
 
 	cat := cveCategory(t, score)
 	assert.False(t, cat.Applicable)
-	assert.Equal(t, EvaluationNotEvaluated, cat.Evaluation)
+	assert.Equal(t, security.EvaluationNotEvaluated, cat.Evaluation)
 	assert.Equal(t, "not evaluated", cat.Summary)
 	assert.True(t, score.IsPartial)
 }
@@ -520,9 +521,9 @@ func TestScorerCVEEvaluatedWithNoFindings(t *testing.T) {
 	secSvc := newTestService()
 
 	scorer := NewScorer(ScorerDeps{
-		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
-		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationEvaluated}},
-		Security:       secSvc,
+		CVEs:           &mockCVEReader{cves: map[string][]security.CVEInfo{}},
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": security.EvaluationEvaluated}},
+		Insights:       secSvc,
 		Acks:           &mockAckStore{},
 	})
 
@@ -542,9 +543,9 @@ func TestScorerCVEUnsupportedImage(t *testing.T) {
 	secSvc := newTestService()
 
 	scorer := NewScorer(ScorerDeps{
-		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
-		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationUnsupported}},
-		Security:       secSvc,
+		CVEs:           &mockCVEReader{cves: map[string][]security.CVEInfo{}},
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": security.EvaluationUnsupported}},
+		Insights:       secSvc,
 		Acks:           &mockAckStore{},
 	})
 
@@ -554,7 +555,7 @@ func TestScorerCVEUnsupportedImage(t *testing.T) {
 
 	cat := cveCategory(t, score)
 	assert.False(t, cat.Applicable)
-	assert.Equal(t, EvaluationUnsupported, cat.Evaluation)
+	assert.Equal(t, security.EvaluationUnsupported, cat.Evaluation)
 	assert.NotEqual(t, "not applicable", cat.Summary)
 	assert.False(t, score.IsPartial)
 }
@@ -564,11 +565,11 @@ func TestScorerCVEEvaluatedWithFindings(t *testing.T) {
 	secSvc := newTestService()
 
 	scorer := NewScorer(ScorerDeps{
-		CVEs: &mockCVEReader{cves: map[string][]CVEInfo{
+		CVEs: &mockCVEReader{cves: map[string][]security.CVEInfo{
 			"ext-1": {{CVEID: "CVE-2025-001", Severity: "critical"}},
 		}},
-		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": EvaluationEvaluated}},
-		Security:       secSvc,
+		CVEEvaluations: &mockCVEEvalReader{states: map[string]string{"ext-1": security.EvaluationEvaluated}},
+		Insights:       secSvc,
 		Acks:           &mockAckStore{},
 	})
 
@@ -588,13 +589,13 @@ func TestScoreInfrastructurePartialWhenCVENotEvaluated(t *testing.T) {
 	secSvc := newTestService()
 
 	scorer := NewScorer(ScorerDeps{
-		CVEs:           &mockCVEReader{cves: map[string][]CVEInfo{}},
+		CVEs:           &mockCVEReader{cves: map[string][]security.CVEInfo{}},
 		CVEEvaluations: &mockCVEEvalReader{},
-		Security:       secSvc,
+		Insights:       secSvc,
 		Acks:           &mockAckStore{},
 	})
 
-	posture, err := scorer.ScoreInfrastructure(ctx, []ContainerInfo{{ID: "c1", ExternalID: "ext-1", Name: "a"}})
+	posture, err := scorer.ScoreInfrastructure(ctx, []security.ContainerInfo{{ID: "c1", ExternalID: "ext-1", Name: "a"}})
 	require.NoError(t, err)
 	require.NotNil(t, posture)
 	assert.True(t, posture.IsPartial)

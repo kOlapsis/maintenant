@@ -123,7 +123,7 @@ type App struct {
 	// Background services
 	checkEngine    *endpoint.CheckEngine
 	maintScheduler *status.MaintenanceScheduler
-	scorer         *security.Scorer
+	scorer         security.PostureScorer
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
 	subscribeRL    *ratelimit.Limiter
@@ -547,15 +547,17 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 
 	// --- Security posture scoring ---
 	ackStore := store.NewAcknowledgmentStore(db)
-	a.scorer = security.NewScorer(security.ScorerDeps{
-		Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
-		CVEs:           &CVEPostureAdapter{Store: updateStore},
-		CVEEvaluations: &CVEEvaluationPostureAdapter{Store: updateStore},
-		Updates:        &UpdatePostureAdapter{Store: updateStore},
-		Security:       a.securitySvc,
-		Acks:           ackStore,
-		Threshold:      cfg.SecurityScoreThreshold,
-	})
+	if a.ext.PostureScorer != nil {
+		a.scorer = a.ext.PostureScorer(extpoint.PostureDeps{
+			Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
+			CVEs:           &CVEPostureAdapter{Store: updateStore},
+			CVEEvaluations: &CVEEvaluationPostureAdapter{Store: updateStore},
+			Updates:        &UpdatePostureAdapter{Store: updateStore},
+			Insights:       a.securitySvc,
+			Acks:           ackStore,
+			Threshold:      cfg.SecurityScoreThreshold,
+		})
+	}
 
 	if cfg.SecurityScoreThreshold > 0 {
 		logger.Info("security posture threshold configured", "threshold", cfg.SecurityScoreThreshold)
@@ -601,7 +603,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// --- Wire alert callbacks ---
 	a.wireAlertCallbacks(alertDetector)
 	a.wireUpdateCallback()
-	a.wirePostureCallbacks()
+	if a.scorer != nil {
+		a.wirePostureCallbacks()
+	}
 	a.wireSwarmCallbacks()
 	a.wireAgentLifecycleAlerts()
 
