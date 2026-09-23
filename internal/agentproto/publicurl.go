@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package agentserver
+package agentproto
 
 import (
 	"net"

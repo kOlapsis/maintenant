@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package agentserver_test
+package multihost_test
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/commercial/multihost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,7 +56,7 @@ func (b *testBroadcaster) hasEvent(eventType string) bool {
 func TestSessions_OpenClose_CancelAndSSE(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
 	broadcaster := &testBroadcaster{}
-	sessions := agentserver.NewSessions(logger, broadcaster)
+	sessions := multihost.NewSessions(logger, broadcaster)
 
 	cancelled := false
 	var cause error
@@ -68,7 +68,7 @@ func TestSessions_OpenClose_CancelAndSSE(t *testing.T) {
 
 	sessions.Close("agent-A", "revoked")
 	assert.True(t, cancelled, "cancel should be called on Close")
-	assert.ErrorIs(t, cause, agentserver.ErrSessionRevoked,
+	assert.ErrorIs(t, cause, multihost.ErrSessionRevoked,
 		"a revocation must reach the agent as permanent, unlike a stale reap")
 	assert.False(t, sessions.IsConnected("agent-A"))
 	assert.True(t, broadcaster.hasEvent("agent.disconnected"), "should emit agent.disconnected on Close")
@@ -77,7 +77,7 @@ func TestSessions_OpenClose_CancelAndSSE(t *testing.T) {
 func TestSessions_Close_NotConnected_NoSSE(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
 	broadcaster := &testBroadcaster{}
-	sessions := agentserver.NewSessions(logger, broadcaster)
+	sessions := multihost.NewSessions(logger, broadcaster)
 
 	// Closing an agent that was never opened should be a no-op.
 	sessions.Close("ghost-agent", "deleted")
@@ -86,7 +86,7 @@ func TestSessions_Close_NotConnected_NoSSE(t *testing.T) {
 
 func TestSessions_Open_ReplacesExistingStream(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
-	sessions := agentserver.NewSessions(logger, nil)
+	sessions := multihost.NewSessions(logger, nil)
 
 	firstCancelled := false
 	sessions.Open("agent-A", func(error) { firstCancelled = true }, "addr1", nil, nil)
@@ -100,7 +100,7 @@ func TestSessions_Open_ReplacesExistingStream(t *testing.T) {
 
 func TestSessions_ReOpenAfterClose(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
-	sessions := agentserver.NewSessions(logger, nil)
+	sessions := multihost.NewSessions(logger, nil)
 
 	sessions.Open("agent-A", func(error) {}, "addr1", nil, nil)
 	sessions.Close("agent-A", "revoked")
@@ -113,7 +113,7 @@ func TestSessions_ReOpenAfterClose(t *testing.T) {
 
 func TestSessions_LifecycleAlertHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
-	sessions := agentserver.NewSessions(logger, nil)
+	sessions := multihost.NewSessions(logger, nil)
 
 	type call struct {
 		agentID   string
@@ -180,7 +180,7 @@ func staleFn(ids ...string) func(context.Context, time.Duration) ([]string, erro
 // connect/disconnect transitions — the state left behind by a server restart or
 // by the suppressed shutdown storm. The watcher must report it, exactly once.
 func TestSessions_StaleWatcher_ReportsAgentAbsentWithNoSession(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
@@ -197,7 +197,7 @@ func TestSessions_StaleWatcher_ReportsAgentAbsentWithNoSession(t *testing.T) {
 // The grace period covers the restart window: agents are still reconnecting with
 // their backoff, and must not page for merely being late.
 func TestSessions_StaleWatcher_GraceHoldsBackOfflineReports(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
@@ -211,7 +211,7 @@ func TestSessions_StaleWatcher_GraceHoldsBackOfflineReports(t *testing.T) {
 // a dead stream, and reaping it stays immediate.
 func TestSessions_StaleWatcher_ReapsDeadStreamDuringGrace(t *testing.T) {
 	broadcaster := &testBroadcaster{}
-	sessions := agentserver.NewSessions(discardLogger(), broadcaster)
+	sessions := multihost.NewSessions(discardLogger(), broadcaster)
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
@@ -231,7 +231,7 @@ func TestSessions_StaleWatcher_ReapsDeadStreamDuringGrace(t *testing.T) {
 
 // A drop already announced by Close must not be announced again by the watcher.
 func TestSessions_StaleWatcher_DoesNotRepeatAnAnnouncedDrop(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
@@ -247,7 +247,7 @@ func TestSessions_StaleWatcher_DoesNotRepeatAnAnnouncedDrop(t *testing.T) {
 
 // Coming back re-arms the reporting: a second outage is a second announcement.
 func TestSessions_StaleWatcher_ReconnectReArmsReporting(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
@@ -266,7 +266,7 @@ func TestSessions_StaleWatcher_ReconnectReArmsReporting(t *testing.T) {
 
 func TestSessions_EventsPerSecond5m(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
-	sessions := agentserver.NewSessions(logger, nil)
+	sessions := multihost.NewSessions(logger, nil)
 
 	// Without any events the rate should be zero.
 	assert.Equal(t, 0.0, sessions.EventsPerSecond5m())
@@ -283,34 +283,34 @@ func TestSessions_EventsPerSecond5m(t *testing.T) {
 // agent as retryable. Reporting a stale reap or a replaced stream as
 // "agent_revoked" made the agent exit for good over a transient hiccup.
 func TestSessions_CauseForReason_OnlyRevocationIsPermanent(t *testing.T) {
-	assert.ErrorIs(t, agentserver.CauseForReason("revoked"), agentserver.ErrSessionRevoked)
-	assert.ErrorIs(t, agentserver.CauseForReason("deleted"), agentserver.ErrSessionRevoked)
+	assert.ErrorIs(t, multihost.CauseForReason("revoked"), multihost.ErrSessionRevoked)
+	assert.ErrorIs(t, multihost.CauseForReason("deleted"), multihost.ErrSessionRevoked)
 
 	for _, reason := range []string{"stale", "stream_ended", ""} {
-		cause := agentserver.CauseForReason(reason)
-		assert.NotErrorIs(t, cause, agentserver.ErrSessionRevoked,
+		cause := multihost.CauseForReason(reason)
+		assert.NotErrorIs(t, cause, multihost.ErrSessionRevoked,
 			"reason %q must not read as a revocation", reason)
 	}
-	assert.ErrorIs(t, agentserver.CauseForReason("stale"), agentserver.ErrSessionStale)
+	assert.ErrorIs(t, multihost.CauseForReason("stale"), multihost.ErrSessionStale)
 }
 
 func TestSessions_ReplacedStreamIsNotARevocation(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: slog.LevelError}))
-	sessions := agentserver.NewSessions(logger, &testBroadcaster{})
+	sessions := multihost.NewSessions(logger, &testBroadcaster{})
 
 	var cause error
 	sessions.Open("agent-A", func(err error) { cause = err }, "addr1", nil, nil)
 	sessions.Open("agent-A", func(error) {}, "addr2", nil, nil)
 
-	assert.ErrorIs(t, cause, agentserver.ErrSessionReplaced)
-	assert.NotErrorIs(t, cause, agentserver.ErrSessionRevoked,
+	assert.ErrorIs(t, cause, multihost.ErrSessionReplaced)
+	assert.NotErrorIs(t, cause, multihost.ErrSessionRevoked,
 		"a reconnect that replaces the old stream must not look like a revocation")
 }
 
 // --- Per-session close token: a replaced handler must not close its replacement ---
 
 func TestSessions_CloseStream_StaleTokenKeepsReplacement(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
@@ -328,7 +328,7 @@ func TestSessions_CloseStream_StaleTokenKeepsReplacement(t *testing.T) {
 
 func TestSessions_CloseStream_LiveTokenCloses(t *testing.T) {
 	broadcaster := &testBroadcaster{}
-	sessions := agentserver.NewSessions(discardLogger(), broadcaster)
+	sessions := multihost.NewSessions(discardLogger(), broadcaster)
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
@@ -344,7 +344,7 @@ func TestSessions_CloseStream_LiveTokenCloses(t *testing.T) {
 }
 
 func TestSessions_Close_IgnoresToken(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 
 	sessions.Open("agent-A", func(error) {}, "addr1", nil, nil)
 	var secondCancelled bool
@@ -357,14 +357,14 @@ func TestSessions_Close_IgnoresToken(t *testing.T) {
 }
 
 func TestSessions_CloseStream_ZeroTokenIsNoop(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 
 	sessions.Open("agent-A", func(error) {}, "addr", nil, nil)
 	before := rec.snapshot()
 
-	sessions.CloseStream("agent-A", agentserver.Token{}, "stream_ended")
+	sessions.CloseStream("agent-A", multihost.Token{}, "stream_ended")
 
 	assert.True(t, sessions.IsConnected("agent-A"))
 	assert.Equal(t, before, rec.snapshot())
@@ -374,7 +374,7 @@ func TestSessions_CloseStream_ZeroTokenIsNoop(t *testing.T) {
 // flight must not be reaped for a last_seen that predates it: the sweep's
 // staleAgents call here opens the replacement itself, simulating the race.
 func TestSessions_StaleWatcher_SkipsStreamOpenedDuringSweep(t *testing.T) {
-	sessions := agentserver.NewSessions(discardLogger(), &testBroadcaster{})
+	sessions := multihost.NewSessions(discardLogger(), &testBroadcaster{})
 	rec := &hookRecorder{}
 	sessions.SetLifecycleAlertHook(rec.record)
 

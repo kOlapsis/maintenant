@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
-	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -27,7 +27,7 @@ import (
 const remoteLogsTimeout = 15 * time.Second
 
 // AgentLogRequester issues log commands to a connected agent and reports whether
-// it can serve them. Satisfied by *agentserver.Sessions.
+// it can serve them. Satisfied by the multi-host session registry.
 type AgentLogRequester interface {
 	IsConnected(agentID string) bool
 	HasCapability(agentID, capability string) bool
@@ -70,13 +70,13 @@ func resolveAgentLabel(ctx context.Context, dir AgentDirectory, agentID string) 
 // Docker" was actively misleading for remote containers.
 func writeRemoteLogsError(w http.ResponseWriter, agentLabel string, err error) {
 	switch {
-	case errors.Is(err, agentserver.ErrAgentNotConnected):
+	case errors.Is(err, agentproto.ErrAgentNotConnected):
 		WriteError(w, http.StatusServiceUnavailable, "AGENT_OFFLINE",
 			"Agent "+agentLabel+" is offline — its container logs are unavailable until it reconnects.")
-	case errors.Is(err, agentserver.ErrAgentCannotServe):
+	case errors.Is(err, agentproto.ErrAgentCannotServe):
 		WriteError(w, http.StatusNotImplemented, "AGENT_TOO_OLD",
 			"Agent "+agentLabel+" runs a version that cannot serve logs remotely. Upgrade the agent to enable this.")
-	case errors.Is(err, agentserver.ErrTooManyRequests):
+	case errors.Is(err, agentproto.ErrTooManyRequests):
 		WriteError(w, http.StatusTooManyRequests, "LOGS_BUSY",
 			"Agent "+agentLabel+" is already serving its maximum number of log requests. Close a log view and retry.")
 	case errors.Is(err, context.DeadlineExceeded):

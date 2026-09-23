@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package agentserver
+package multihost
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 )
 
 const cmdAgentID = "agent-cmd"
@@ -54,7 +55,7 @@ func respond(t *testing.T, s *Sessions, send chan *agentpb.ServerMessage, result
 }
 
 func TestSessions_FetchLogs_CollectsChunksUntilLast(t *testing.T) {
-	s, send := newCommandSessions(t, []string{CapabilityLogs})
+	s, send := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
 	done := make(chan []string, 1)
 	go func() {
@@ -77,7 +78,7 @@ func TestSessions_FetchLogs_CollectsChunksUntilLast(t *testing.T) {
 }
 
 func TestSessions_FetchLogs_PropagatesAgentError(t *testing.T) {
-	s, send := newCommandSessions(t, []string{CapabilityLogs})
+	s, send := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
 	done := make(chan error, 1)
 	go func() {
@@ -99,10 +100,10 @@ func TestSessions_FetchLogs_PropagatesAgentError(t *testing.T) {
 }
 
 func TestSessions_FetchLogs_UnknownAgentFailsFast(t *testing.T) {
-	s, _ := newCommandSessions(t, []string{CapabilityLogs})
+	s, _ := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
 	_, err := s.FetchLogs(context.Background(), "nobody", "ctr", 100, false)
-	assert.ErrorIs(t, err, ErrAgentNotConnected)
+	assert.ErrorIs(t, err, agentproto.ErrAgentNotConnected)
 }
 
 func TestSessions_FetchLogs_AgentWithoutCapabilityFailsFast(t *testing.T) {
@@ -113,12 +114,12 @@ func TestSessions_FetchLogs_AgentWithoutCapabilityFailsFast(t *testing.T) {
 	start := time.Now()
 	_, err := s.FetchLogs(context.Background(), cmdAgentID, "ctr", 100, false)
 
-	assert.ErrorIs(t, err, ErrAgentCannotServe)
+	assert.ErrorIs(t, err, agentproto.ErrAgentCannotServe)
 	assert.Less(t, time.Since(start), time.Second, "must not wait for a timeout")
 }
 
 func TestSessions_FetchLogs_DisconnectUnblocksWaiter(t *testing.T) {
-	s, send := newCommandSessions(t, []string{CapabilityLogs})
+	s, send := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
 	done := make(chan error, 1)
 	go func() {
@@ -131,14 +132,14 @@ func TestSessions_FetchLogs_DisconnectUnblocksWaiter(t *testing.T) {
 
 	select {
 	case err := <-done:
-		assert.ErrorIs(t, err, ErrAgentNotConnected)
+		assert.ErrorIs(t, err, agentproto.ErrAgentNotConnected)
 	case <-time.After(2 * time.Second):
 		t.Fatal("a disconnect must release the waiter instead of hanging it")
 	}
 }
 
 func TestSessions_FetchLogs_HonoursContextDeadline(t *testing.T) {
-	s, send := newCommandSessions(t, []string{CapabilityLogs})
+	s, send := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
@@ -160,26 +161,26 @@ func TestSessions_FetchLogs_HonoursContextDeadline(t *testing.T) {
 }
 
 func TestSessions_SendCommand_RejectsBeyondInFlightCap(t *testing.T) {
-	s, _ := newCommandSessions(t, []string{CapabilityLogs})
+	s, _ := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
 	for i := 0; i < maxInFlightPerAgent; i++ {
-		_, _, err := s.SendCommand(context.Background(), cmdAgentID, CapabilityLogs,
-			LogsCommand("ctr", 100, false, true))
+		_, _, err := s.SendCommand(context.Background(), cmdAgentID, agentproto.CapabilityLogs,
+			agentproto.LogsCommand("ctr", 100, false, true))
 		require.NoError(t, err, "request %d should be accepted", i)
 	}
 
-	_, _, err := s.SendCommand(context.Background(), cmdAgentID, CapabilityLogs,
-		LogsCommand("ctr", 100, false, true))
-	assert.ErrorIs(t, err, ErrTooManyRequests)
+	_, _, err := s.SendCommand(context.Background(), cmdAgentID, agentproto.CapabilityLogs,
+		agentproto.LogsCommand("ctr", 100, false, true))
+	assert.ErrorIs(t, err, agentproto.ErrTooManyRequests)
 }
 
 func TestSessions_Release_CancelsStillRunningRequest(t *testing.T) {
 	// Closing a log view must tell the agent to stop tailing, or the follow leaks
 	// on its side for as long as the container lives.
-	s, send := newCommandSessions(t, []string{CapabilityLogs})
+	s, send := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
-	_, release, err := s.SendCommand(context.Background(), cmdAgentID, CapabilityLogs,
-		LogsCommand("ctr", 100, false, true))
+	_, release, err := s.SendCommand(context.Background(), cmdAgentID, agentproto.CapabilityLogs,
+		agentproto.LogsCommand("ctr", 100, false, true))
 	require.NoError(t, err)
 
 	logsMsg := <-send
@@ -201,10 +202,10 @@ func TestSessions_Release_CancelsStillRunningRequest(t *testing.T) {
 func TestSessions_Release_NoCancelAfterCompletion(t *testing.T) {
 	// A finished request owes the agent nothing; sending a stray cancel would be
 	// pure noise on the stream.
-	s, send := newCommandSessions(t, []string{CapabilityLogs})
+	s, send := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
-	results, release, err := s.SendCommand(context.Background(), cmdAgentID, CapabilityLogs,
-		LogsCommand("ctr", 100, false, false))
+	results, release, err := s.SendCommand(context.Background(), cmdAgentID, agentproto.CapabilityLogs,
+		agentproto.LogsCommand("ctr", 100, false, false))
 	require.NoError(t, err)
 
 	msg := <-send
@@ -223,16 +224,16 @@ func TestSessions_Release_NoCancelAfterCompletion(t *testing.T) {
 }
 
 func TestSessions_HasCapability(t *testing.T) {
-	s, _ := newCommandSessions(t, []string{CapabilityLogs})
+	s, _ := newCommandSessions(t, []string{agentproto.CapabilityLogs})
 
-	assert.True(t, s.HasCapability(cmdAgentID, CapabilityLogs))
+	assert.True(t, s.HasCapability(cmdAgentID, agentproto.CapabilityLogs))
 	assert.False(t, s.HasCapability(cmdAgentID, "exec"))
-	assert.False(t, s.HasCapability("nobody", CapabilityLogs))
+	assert.False(t, s.HasCapability("nobody", agentproto.CapabilityLogs))
 }
 
 func TestLogsCommand_ClampsTail(t *testing.T) {
-	assert.Equal(t, uint32(100), LogsCommand("c", 0, false, false).GetLogs().GetLines())
-	assert.Equal(t, uint32(100), LogsCommand("c", -5, false, false).GetLogs().GetLines())
-	assert.Equal(t, uint32(500), LogsCommand("c", 10_000, false, false).GetLogs().GetLines())
-	assert.Equal(t, uint32(42), LogsCommand("c", 42, false, false).GetLogs().GetLines())
+	assert.Equal(t, uint32(100), agentproto.LogsCommand("c", 0, false, false).GetLogs().GetLines())
+	assert.Equal(t, uint32(100), agentproto.LogsCommand("c", -5, false, false).GetLogs().GetLines())
+	assert.Equal(t, uint32(500), agentproto.LogsCommand("c", 10_000, false, false).GetLogs().GetLines())
+	assert.Equal(t, uint32(42), agentproto.LogsCommand("c", 42, false, false).GetLogs().GetLines())
 }

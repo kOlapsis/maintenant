@@ -56,7 +56,7 @@ func TestStatusPageWriteRoutes_PerEdition(t *testing.T) {
 		{extension.CapSMTP, http.MethodPut, "/api/v1/status/smtp", `{"host":"smtp.example.com","port":587,"from_address":"a@example.com"}`, http.StatusOK},
 		{extension.CapMaintenanceWindows, http.MethodPost, "/api/v1/status/maintenance", `{"title":"upgrade","starts_at":"2030-01-01T00:00:00Z","ends_at":"2030-01-01T01:00:00Z"}`, http.StatusCreated},
 		{extension.CapSubscribers, http.MethodGet, "/api/v1/status/subscribers", "", http.StatusOK},
-		{extension.CapPersonalization, http.MethodGet, "/api/v1/status-page/settings", "", http.StatusOK},
+		{extension.CapPersonalization, http.MethodGet, "/api/v1/status-page/footer-links", "", http.StatusOK},
 	}
 	opens := map[extension.Edition]map[extension.Capability]bool{
 		extension.Community: {},

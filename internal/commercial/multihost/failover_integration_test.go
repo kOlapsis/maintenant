@@ -11,7 +11,7 @@
 
 //go:build integration
 
-package agentserver_test
+package multihost_test
 
 import (
 	"context"
@@ -33,7 +33,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
-	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/commercial/multihost"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/store/storetest"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -90,7 +90,7 @@ func startInstance(t *testing.T, dsn string) *instance {
 	db.StartWriter(writerCtx)
 
 	agentStore := store.NewAgentStore(db)
-	addr, clientTLS := startTestServer(t, agentserver.Deps{
+	addr, clientTLS := startTestServer(t, multihost.Deps{
 		AgentStore:  agentStore,
 		Broadcaster: noopBroadcaster{},
 		Logger:      logger,

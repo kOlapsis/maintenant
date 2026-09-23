@@ -277,7 +277,7 @@ jobs:
           MAINTENANT_REQUIRE_POSTGRES: "1"
         run: |
           go test -race ./internal/store/... ./internal/app/... ./internal/api/v1/... \
-            ./internal/agentserver/... ./internal/alert/... ./cmd/maintenant/...
+            ./internal/commercial/... ./internal/alert/... ./cmd/maintenant/...
 
       # Behind the `integration` build tag, so `go test ./...` skips it entirely.
       # Without this step the suite rots unnoticed — it had stopped compiling and

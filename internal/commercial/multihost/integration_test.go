@@ -11,7 +11,7 @@
 
 //go:build integration
 
-package agentserver_test
+package multihost_test
 
 import (
 	"context"
@@ -45,7 +45,8 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
-	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/agentproto"
+	"github.com/kolapsis/maintenant/internal/commercial/multihost"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
@@ -53,7 +54,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/store/storetest"
 )
 
-// noopBroadcaster satisfies agentserver.EventBroadcaster without side-effects.
+// noopBroadcaster satisfies multihost.EventBroadcaster without side-effects.
 type noopBroadcaster struct{}
 
 func (noopBroadcaster) BroadcastEvent(string, any) {}
@@ -154,10 +155,10 @@ func buildSignPayload(nonce []byte, agentID string, ts int64) ([]byte, error) {
 // startTestServer starts a gRPC server on a random loopback port and returns its
 // address plus the client TLS config that trusts its self-signed certificate.
 // Pass the config straight to dialGRPC.
-func startTestServer(t *testing.T, deps agentserver.Deps) (listenAddr string, clientTLS *tls.Config) {
+func startTestServer(t *testing.T, deps multihost.Deps) (listenAddr string, clientTLS *tls.Config) {
 	t.Helper()
 	tlsCfg := selfSignedTLS(t)
-	srv := agentserver.New(deps)
+	srv := multihost.New(deps)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -195,7 +196,7 @@ func TestIntegration_Enrollment(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	// Start the gRPC server on a random loopback port.
-	srv := agentserver.New(agentserver.Deps{
+	srv := multihost.New(multihost.Deps{
 		AgentStore:  store,
 		Broadcaster: noopBroadcaster{},
 		Logger:      logger,
@@ -323,12 +324,12 @@ func TestIntegration_PushStream(t *testing.T) {
 		},
 	})
 
-	sessions := agentserver.NewSessions(logger, broadcaster)
-	limiter := agentserver.NewLimiter(1000)
-	dispatcher := agentserver.NewDispatcher(agentserver.DispatchDeps{Container: containerSvc})
+	sessions := multihost.NewSessions(logger, broadcaster)
+	limiter := multihost.NewLimiter(1000)
+	dispatcher := multihost.NewDispatcher(multihost.DispatchDeps{Container: containerSvc})
 
 	tlsCfg := selfSignedTLS(t)
-	srv := agentserver.New(agentserver.Deps{
+	srv := multihost.New(multihost.Deps{
 		AgentStore:  agentStore,
 		Broadcaster: broadcaster,
 		Sessions:    sessions,
@@ -520,12 +521,12 @@ func TestIntegration_LogsCommandRoundTrip(t *testing.T) {
 	agentStore := store.NewAgentStore(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	sessions := agentserver.NewSessions(logger, noopBroadcaster{})
-	listenAddr, clientTLS := startTestServer(t, agentserver.Deps{
+	sessions := multihost.NewSessions(logger, noopBroadcaster{})
+	listenAddr, clientTLS := startTestServer(t, multihost.Deps{
 		AgentStore:  agentStore,
 		Broadcaster: noopBroadcaster{},
 		Sessions:    sessions,
-		Limiter:     agentserver.NewLimiter(1000),
+		Limiter:     multihost.NewLimiter(1000),
 		Logger:      logger,
 	})
 	grpcClient := dialGRPC(t, listenAddr, clientTLS)
@@ -574,12 +575,12 @@ func TestIntegration_LogsCommandRoundTrip(t *testing.T) {
 			Timestamp:    now,
 			Signature:    ed25519.Sign(priv, payload),
 			AgentVersion: "1.4.0",
-			Capabilities: []string{agentserver.CapabilityLogs},
+			Capabilities: []string{agentproto.CapabilityLogs},
 		}},
 	}))
 
 	require.Eventually(t, func() bool {
-		return sessions.HasCapability(agentID, agentserver.CapabilityLogs)
+		return sessions.HasCapability(agentID, agentproto.CapabilityLogs)
 	}, 4*time.Second, 20*time.Millisecond, "the server must record the advertised capability")
 
 	// The running build must replace the version frozen at enrollment.
@@ -618,16 +619,16 @@ func TestIntegration_LogsCommandRoundTrip(t *testing.T) {
 
 	// An agent that never advertised the capability is refused, not timed out.
 	_, err = sessions.FetchLogs(ctx, "11111111-0000-0000-0000-000000000000", "ctr", 100, false)
-	assert.ErrorIs(t, err, agentserver.ErrAgentNotConnected)
+	assert.ErrorIs(t, err, agentproto.ErrAgentNotConnected)
 }
 
 func TestIntegration_DemoMode_RefusesEveryRPC(t *testing.T) {
 	withMultiHostEdition(t)
 
-	addr, clientTLS := startTestServer(t, agentserver.Deps{
+	addr, clientTLS := startTestServer(t, multihost.Deps{
 		AgentStore:  store.NewAgentStore(openIntegrationDB(t)),
 		Broadcaster: noopBroadcaster{},
-		Sessions:    agentserver.NewSessions(slog.Default(), noopBroadcaster{}),
+		Sessions:    multihost.NewSessions(slog.Default(), noopBroadcaster{}),
 		Logger:      slog.Default(),
 		DemoMode:    true,
 	})

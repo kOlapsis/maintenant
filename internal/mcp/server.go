@@ -58,7 +58,7 @@ type SessionChecker interface {
 }
 
 // AgentLogFetcher reads logs of a container living on a remote agent's host,
-// which the server's own runtime cannot see. Satisfied by *agentserver.Sessions.
+// which the server's own runtime cannot see. Satisfied by the multi-host session registry.
 type AgentLogFetcher interface {
 	FetchLogs(ctx context.Context, agentID, externalID string, lines int, timestamps bool) ([]string, error)
 }

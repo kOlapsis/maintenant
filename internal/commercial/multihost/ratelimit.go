@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package agentserver
+package multihost
 
 import (
 	"sync"

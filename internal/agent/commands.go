@@ -19,12 +19,12 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
-// CapabilityLogs mirrors agentserver.CapabilityLogs. Declared here rather than
-// imported: the agent must not depend on the server package.
-const CapabilityLogs = "logs"
+// CapabilityLogs is advertised to the server by an agent able to serve container logs.
+const CapabilityLogs = agentproto.CapabilityLogs
 
 const (
 	// maxLogLines bounds a tail request, matching the runtime's own ceiling.

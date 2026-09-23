@@ -33,7 +33,7 @@ type NodeReconciler interface {
 
 // IngestService reconciles a swarm topology snapshot reported by an agent (or by
 // the server's own local runtime under the LocalAgent id) into the store. It
-// implements agentserver.SwarmTopologyHandler.
+// implements the multi-host SwarmTopologyHandler.
 type IngestService struct {
 	store     ServiceTaskStore
 	nodes     NodeReconciler

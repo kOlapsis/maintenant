@@ -30,7 +30,7 @@ type TopologyStore interface {
 
 // IngestService reconciles a Kubernetes topology snapshot reported by an agent
 // (or by the server's own local runtime under the LocalAgent id) into the store.
-// It implements agentserver.KubernetesTopologyHandler.
+// It implements the multi-host KubernetesTopologyHandler.
 type IngestService struct {
 	store     TopologyStore
 	broadcast func(eventType string, data any)

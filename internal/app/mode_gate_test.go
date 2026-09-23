@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/app"
+	"github.com/kolapsis/maintenant/internal/commercial"
 	"github.com/kolapsis/maintenant/internal/extension"
 )
 
@@ -99,7 +100,7 @@ func TestNew_ServerMode_DoesNotGateOnEdition(t *testing.T) {
 
 	cfg, logger := modeGateCfg(t, "server")
 
-	a, err := app.New(cfg, logger)
+	a, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
 	require.NoError(t, err, "New() must not gate on edition — the license is not loaded yet")
 	require.NotNil(t, a)
 }
@@ -110,7 +111,7 @@ func TestStart_ServerMode_RejectedWithoutMultihost(t *testing.T) {
 	withEdition(t, extension.Community)
 	cfg, logger := modeGateCfg(t, "server")
 
-	a, err := app.New(cfg, logger)
+	a, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
 	require.NoError(t, err)
 
 	err = startAndCollect(t, a, 5*time.Second)
@@ -130,7 +131,7 @@ func TestStart_ServerMode_AllowedWhereMultihostIsOpen(t *testing.T) {
 			require.True(t, extension.Allows(extension.CapMultihost))
 
 			cfg, logger := modeGateCfg(t, "server")
-			a, err := app.New(cfg, logger)
+			a, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
 			require.NoError(t, err)
 
 			err = startAndCollect(t, a, 2*time.Second)
@@ -149,7 +150,7 @@ func TestStart_EmbeddedMode_NotGated(t *testing.T) {
 			withEdition(t, extension.Community)
 			cfg, logger := modeGateCfg(t, mode)
 
-			a, err := app.New(cfg, logger)
+			a, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
 			require.NoError(t, err)
 
 			err = startAndCollect(t, a, 2*time.Second)

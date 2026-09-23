@@ -8,7 +8,7 @@
 // Commercial: See COMMERCIAL-LICENSE.md
 //
 // Source: https://github.com/kolapsis/maintenant
-package agentserver
+package multihost
 
 import (
 	"os"

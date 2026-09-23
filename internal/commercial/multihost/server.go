@@ -11,7 +11,7 @@
 
 // Package agentserver implements the gRPC Ingest service that remote agents
 // connect to for enrollment and event streaming (Pro only).
-package agentserver
+package multihost
 
 import (
 	"context"

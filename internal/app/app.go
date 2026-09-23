@@ -13,7 +13,6 @@ package app
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,13 +20,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
-	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
@@ -108,8 +105,8 @@ type App struct {
 	certStore      *store.CertificateStore
 	resStore       *store.ResourceStore
 	agentStore     *store.AgentStore
-	agentSessions  *agentserver.Sessions
-	agentSrv       *agentserver.Server
+	agentSessions  extpoint.AgentSessions
+	serveAgents    func(ctx context.Context, cfg extpoint.GRPCConfig) error
 	eolSvc         *eol.Service
 	// shuttingDown suppresses agent-disconnect alerts during graceful shutdown,
 	// where every stream ends at once and would otherwise page for the whole fleet.
@@ -159,7 +156,7 @@ type App struct {
 	k8sIngest *kubernetes.IngestService
 }
 
-// sseBroadcaster adapts the SSEBroker to the agentserver.EventBroadcaster interface.
+// sseBroadcaster adapts the SSEBroker to the extpoint.EventBroadcaster interface.
 type sseBroadcaster struct {
 	broker *v1.SSEBroker
 }
@@ -433,9 +430,6 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.swarmIngest.SetBroadcaster(topologyBroadcast)
 	a.k8sIngest.SetBroadcaster(topologyBroadcast)
 
-	// Agent session registry (depends on broker)
-	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
-
 	// --- Host operating system end of support ---
 	var eolFetcher *eol.Fetcher
 	if !cfg.DisableOSEOLRefresh {
@@ -455,32 +449,32 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		return nil, fmt.Errorf("os end-of-support service: %w", err)
 	}
 
-	// Agent gRPC server (Pro-gated at Start time).
-	a.agentSrv = agentserver.New(agentserver.Deps{
-		AgentStore:  a.agentStore,
-		Sessions:    a.agentSessions,
-		Broadcaster: &sseBroadcaster{broker: a.broker},
-		Limiter:     agentserver.NewLimiter(cfg.MultiHost.AgentRateLimitPerSecond),
-		DemoMode:    cfg.DemoMode,
-		Dispatcher: agentserver.NewDispatcher(agentserver.DispatchDeps{
-			Container:   a.containerSvc,
-			Inventory:   a.containerSvc,
-			Resource:    a.resourceSvc,
-			Endpoint:    a.endpointSvc,
-			Certificate: a.certSvc,
-			Heartbeat:   a.heartbeatSvc,
-			Swarm:       a.swarmIngest,
-			Kubernetes:  a.k8sIngest,
-			HostOS:      a.eolSvc,
+	// Agent session registry and gRPC server (served at Start time where multi-host is open).
+	if a.ext.MultiHost != nil {
+		mh := a.ext.MultiHost(extpoint.MultiHostDeps{
+			AgentStore:         a.agentStore,
+			Broadcaster:        &sseBroadcaster{broker: a.broker},
+			RateLimitPerSecond: cfg.MultiHost.AgentRateLimitPerSecond,
+			DemoMode:           cfg.DemoMode,
+			Container:          a.containerSvc,
+			Resource:           a.resourceSvc,
+			Endpoint:           a.endpointSvc,
+			Certificate:        a.certSvc,
+			Heartbeat:          a.heartbeatSvc,
+			Swarm:              a.swarmIngest,
+			Kubernetes:         a.k8sIngest,
+			HostOS:             a.eolSvc,
 			// Provision endpoint/cert monitors from a remote container's labels
 			// (the agent probes them itself; the server never dials them).
 			LabelSync: func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
 				a.endpointSvc.SyncAgentEndpoints(ctx, agentID, containerName, externalID, labels)
 				a.certSvc.SyncAgentCerts(ctx, agentID, externalID, labels)
 			},
-		}),
-		Logger: logger.With("component", "agentserver"),
-	})
+			Logger: logger,
+		})
+		a.agentSessions = mh.Sessions
+		a.serveAgents = mh.Serve
+	}
 
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
@@ -890,13 +884,11 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Agent session ring-buffer tick + stale watcher.
 	if a.agentSessions != nil {
-		a.agentSessions.StartRingAdvancer(ctx)
 		threshold := time.Duration(a.cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second
 		if threshold == 0 {
 			threshold = 60 * time.Second
 		}
-		a.agentSessions.StartStaleWatcher(ctx, 10*time.Second, threshold,
-			agentserver.OfflineReportGrace, a.agentStore.StaleAgents)
+		a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents)
 	}
 
 	// Enrollment token GC: purge unconsumed tokens older than 7 days, every hour.
@@ -951,15 +943,21 @@ func (a *App) Start(ctx context.Context) error {
 	a.startRuntimeSupervisor(ctx)
 
 	// Agent gRPC server — server/embedded modes only, where multi-host is open.
-	if a.multihostPlanAllowed() && a.cfg.Mode != "agent" {
-		if err := a.startAgentGRPC(ctx); err != nil {
+	if a.serveAgents != nil && a.multihostPlanAllowed() && a.cfg.Mode != "agent" {
+		if err := a.serveAgents(ctx, extpoint.GRPCConfig{
+			Listen:      a.cfg.MultiHost.GRPCListen,
+			PublicURL:   a.cfg.MultiHost.GRPCPublicURL,
+			TLSCertFile: a.cfg.MultiHost.TLSCertFile,
+			TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
+			Insecure:    a.cfg.MultiHost.InsecureGRPC,
+		}); err != nil {
 			return fmt.Errorf("start agent gRPC server: %w", err)
 		}
 	}
 
 	// Embedded agent (mode=server + --embedded-agent + Pro).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
-	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
+	if a.serveAgents != nil && a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
 	}
 
@@ -1102,78 +1100,6 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}()
 
 	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
-}
-
-// startAgentGRPC binds and serves the agent-facing gRPC server in a background
-// goroutine. TLS is required (FR-031); if no keypair is configured a
-// self-signed dev cert is generated in-memory and a warning is logged.
-func (a *App) startAgentGRPC(ctx context.Context) error {
-	listen := a.cfg.MultiHost.GRPCListen
-	if listen == "" {
-		listen = "127.0.0.1:8443"
-	}
-
-	var tlsCfg *tls.Config
-	if a.cfg.MultiHost.InsecureGRPC {
-		a.logger.Warn("agentserver: TLS disabled — only use behind a trusted reverse proxy (MAINTENANT_GRPC_TLS_INSECURE)")
-	} else {
-		hosts := collectGRPCTLSHosts(a.cfg.MultiHost.GRPCPublicURL, listen)
-		var err error
-		tlsCfg, err = agentserver.LoadOrGenerateTLS(
-			a.cfg.MultiHost.TLSCertFile,
-			a.cfg.MultiHost.TLSKeyFile,
-			hosts,
-			a.logger.With("component", "agentserver"),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	a.agentSrv.StartTokenGC(ctx)
-	if err := a.agentSrv.Start(ctx, listen, tlsCfg); err != nil {
-		return err
-	}
-	a.logger.Info("agent gRPC server listening", "listen", listen)
-	return nil
-}
-
-// collectGRPCTLSHosts returns the SAN list used for the self-signed dev TLS
-// cert. It pulls the host out of the public URL (when set) and the listen
-// address; wildcards like 0.0.0.0/:: are filtered. Empty result is handled
-// downstream by falling back to 127.0.0.1 + localhost.
-func collectGRPCTLSHosts(publicURL, listen string) []string {
-	var hosts []string
-	add := func(raw string) {
-		if raw == "" {
-			return
-		}
-		h := raw
-		if hh, _, err := net.SplitHostPort(raw); err == nil {
-			h = hh
-		}
-		if h == "" || h == "0.0.0.0" || h == "::" || h == "[::]" {
-			return
-		}
-		hosts = append(hosts, h)
-	}
-
-	if publicURL != "" {
-		stripped := publicURL
-		for _, scheme := range []string{"grpcs://", "grpc://", "https://", "http://"} {
-			if rest, ok := strings.CutPrefix(stripped, scheme); ok {
-				stripped = rest
-				break
-			}
-		}
-		// stripped may carry a trailing path/query — keep only the authority.
-		if i := strings.IndexAny(stripped, "/?#"); i >= 0 {
-			stripped = stripped[:i]
-		}
-		add(stripped)
-	}
-	add(listen)
-	return hosts
 }
 
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.

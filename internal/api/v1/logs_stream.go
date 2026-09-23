@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/container"
 )
 
@@ -230,8 +230,8 @@ func (h *LogStreamHandler) streamRemote(
 		return
 	}
 
-	results, release, err := h.logRequester.SendCommand(r.Context(), agentID, agentserver.CapabilityLogs,
-		agentserver.LogsCommand(externalID, lines, true, true))
+	results, release, err := h.logRequester.SendCommand(r.Context(), agentID, agentproto.CapabilityLogs,
+		agentproto.LogsCommand(externalID, lines, true, true))
 	if err != nil {
 		writeRemoteLogsError(w, resolveAgentLabel(r.Context(), h.agentDirectory, agentID), err)
 		return

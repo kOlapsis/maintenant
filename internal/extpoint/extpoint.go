@@ -17,8 +17,19 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/kolapsis/maintenant/internal/certificate"
+	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/eol"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/resource"
+	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/swarm"
 
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/status"
@@ -33,6 +44,7 @@ type Set struct {
 	StatusPage    func(StatusPageDeps) StatusPage
 	Suppressor    func(SuppressorDeps) alert.MaintenanceSuppressor
 	Escalation    func(EscalationDeps) Escalation
+	MultiHost     func(MultiHostDeps) MultiHost
 }
 
 // EnricherDeps is what an update enricher is built from.
@@ -115,4 +127,54 @@ type EscalationDeps struct {
 type Escalation struct {
 	Service   escalation.Service
 	Escalator alert.Escalator
+}
+
+// EventBroadcaster pushes a server-sent event to connected browsers.
+type EventBroadcaster interface {
+	BroadcastEvent(eventType string, data any)
+}
+
+// MultiHostDeps is what the agent gRPC server is built from.
+type MultiHostDeps struct {
+	AgentStore         *store.AgentStore
+	Broadcaster        EventBroadcaster
+	RateLimitPerSecond int
+	DemoMode           bool
+	Container          *container.Service
+	Resource           *resource.Service
+	Endpoint           *endpoint.Service
+	Certificate        *certificate.Service
+	Heartbeat          *heartbeat.Service
+	Swarm              *swarm.IngestService
+	Kubernetes         *kubernetes.IngestService
+	HostOS             *eol.Service
+	LabelSync          func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string)
+	Logger             *slog.Logger
+}
+
+// AgentSessions is the live registry of agents streaming to this server.
+type AgentSessions interface {
+	IsConnected(agentID string) bool
+	Close(agentID, reason string)
+	HasCapability(agentID, capability string) bool
+	FetchLogs(ctx context.Context, agentID, externalID string, lines int, timestamps bool) ([]string, error)
+	SendCommand(ctx context.Context, agentID, capability string, cmd *agentpb.AgentCommand) (<-chan *agentpb.CommandResult, func(), error)
+	SpoolStatus(agentID string) *agentproto.SpoolState
+	SetLifecycleAlertHook(fn func(agentID, reason string, connected bool))
+	StartWatchers(ctx context.Context, staleThreshold time.Duration, staleAgents func(ctx context.Context, threshold time.Duration) ([]string, error))
+}
+
+// GRPCConfig is where and how the agent gRPC server listens.
+type GRPCConfig struct {
+	Listen      string
+	PublicURL   string
+	TLSCertFile string
+	TLSKeyFile  string
+	Insecure    bool
+}
+
+// MultiHost holds the agent session registry and the function that serves agents over gRPC.
+type MultiHost struct {
+	Sessions AgentSessions
+	Serve    func(ctx context.Context, cfg GRPCConfig) error
 }

@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package agentserver
+package multihost
 
 import (
 	"context"
@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/event"
-	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // Reasons a session is torn down. They travel to the Push handler as the stream
@@ -307,9 +307,6 @@ func (s *Sessions) ListConnected() []string {
 	return ids
 }
 
-// CapabilityLogs is advertised by agents able to serve container logs on demand.
-const CapabilityLogs = "logs"
-
 // maxInFlightPerAgent caps concurrent commands per agent, so a burst of log
 // viewers cannot exhaust the agent's worker budget or our own memory.
 const maxInFlightPerAgent = 8
@@ -317,13 +314,6 @@ const maxInFlightPerAgent = 8
 // commandSendTimeout bounds how long we wait for room in the stream's send queue.
 // Exceeding it means the agent's writer is wedged, not that it is merely busy.
 const commandSendTimeout = 5 * time.Second
-
-// Errors returned by the command path, mapped to HTTP status by the API layer.
-var (
-	ErrAgentNotConnected = errors.New("agent not connected")
-	ErrAgentCannotServe  = errors.New("agent does not support this command")
-	ErrTooManyRequests   = errors.New("too many in-flight commands for this agent")
-)
 
 // HasCapability reports whether the agent's live stream advertised capability.
 func (s *Sessions) HasCapability(agentID, capability string) bool {
@@ -346,10 +336,10 @@ func (s *Sessions) SendCommand(ctx context.Context, agentID, capability string, 
 	st, ok := s.active[agentID]
 	s.mu.RUnlock()
 	if !ok || st.send == nil {
-		return nil, nil, ErrAgentNotConnected
+		return nil, nil, agentproto.ErrAgentNotConnected
 	}
 	if _, has := st.caps[capability]; !has {
-		return nil, nil, ErrAgentCannotServe
+		return nil, nil, agentproto.ErrAgentCannotServe
 	}
 
 	requestID := cmd.GetRequestId()
@@ -358,11 +348,11 @@ func (s *Sessions) SendCommand(ctx context.Context, agentID, capability string, 
 	st.mu.Lock()
 	if st.closed {
 		st.mu.Unlock()
-		return nil, nil, ErrAgentNotConnected
+		return nil, nil, agentproto.ErrAgentNotConnected
 	}
 	if len(st.pending) >= maxInFlightPerAgent {
 		st.mu.Unlock()
-		return nil, nil, ErrTooManyRequests
+		return nil, nil, agentproto.ErrTooManyRequests
 	}
 	st.pending[requestID] = ch
 	st.mu.Unlock()
@@ -406,50 +396,15 @@ func (s *Sessions) enqueue(ctx context.Context, st *activeStream, msg *agentpb.S
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-timer.C:
-		return ErrAgentNotConnected
+		return agentproto.ErrAgentNotConnected
 	}
-}
-
-// logsTailDefault and logsTailMax bound a tail request; the agent clamps too, but
-// bounding here keeps the uint32 conversion provably safe.
-const (
-	logsTailDefault = 100
-	logsTailMax     = 500
-)
-
-// LogsCommand builds a logs command with a fresh request id. Exported because the
-// SSE follow path drives SendCommand directly to stream chunks as they arrive.
-func LogsCommand(externalID string, lines int, timestamps, follow bool) *agentpb.AgentCommand {
-	return &agentpb.AgentCommand{
-		RequestId: uid.New(),
-		Command: &agentpb.AgentCommand_Logs{Logs: &agentpb.LogsRequest{
-			ContainerId: externalID,
-			Lines:       clampTail(lines),
-			Timestamps:  timestamps,
-			Follow:      follow,
-		}},
-	}
-}
-
-// clampTail narrows a caller-supplied tail length to the wire's uint32. Written
-// as early returns so both constant bounds directly guard the conversion: with
-// the checks written as reassignments instead, static analysis cannot see that
-// the converted value is already in range.
-func clampTail(lines int) uint32 {
-	if lines <= 0 {
-		return logsTailDefault
-	}
-	if lines >= logsTailMax {
-		return logsTailMax
-	}
-	return uint32(lines)
 }
 
 // FetchLogs performs a one-shot log tail on agentID, collecting the agent's chunks
 // into a single slice. Shared by the REST and MCP read paths.
 func (s *Sessions) FetchLogs(ctx context.Context, agentID, externalID string, lines int, timestamps bool) ([]string, error) {
-	results, release, err := s.SendCommand(ctx, agentID, CapabilityLogs,
-		LogsCommand(externalID, lines, timestamps, false))
+	results, release, err := s.SendCommand(ctx, agentID, agentproto.CapabilityLogs,
+		agentproto.LogsCommand(externalID, lines, timestamps, false))
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +421,7 @@ func (s *Sessions) FetchLogs(ctx context.Context, agentID, externalID string, li
 				if len(collected) > 0 {
 					return collected, nil
 				}
-				return nil, ErrAgentNotConnected
+				return nil, agentproto.ErrAgentNotConnected
 			}
 			if res.GetErrorCode() != "" {
 				return nil, errors.New(res.GetErrorMessage())
@@ -499,14 +454,6 @@ func (s *Sessions) IncrEvents(agentID string) {
 	s.ring.add()
 }
 
-// SpoolState is what an agent last said about its outbound queue.
-type SpoolState struct {
-	Queued              int64
-	Draining            bool
-	DroppedSinceConnect int64
-	ReportedAt          time.Time
-}
-
 // RecordSpoolStatus stores what agentID declared about its spool.
 func (s *Sessions) RecordSpoolStatus(agentID string, st *agentpb.SpoolStatus) {
 	s.mu.RLock()
@@ -523,7 +470,7 @@ func (s *Sessions) RecordSpoolStatus(agentID string, st *agentpb.SpoolStatus) {
 
 // SpoolStatus returns what agentID last declared, or nil when it is not
 // connected or has never reported (an agent older than the spool).
-func (s *Sessions) SpoolStatus(agentID string) *SpoolState {
+func (s *Sessions) SpoolStatus(agentID string) *agentproto.SpoolState {
 	s.mu.RLock()
 	stream, ok := s.active[agentID]
 	s.mu.RUnlock()
@@ -534,7 +481,7 @@ func (s *Sessions) SpoolStatus(agentID string) *SpoolState {
 	if at == 0 {
 		return nil
 	}
-	return &SpoolState{
+	return &agentproto.SpoolState{
 		Queued:              stream.spoolQueued.Load(),
 		Draining:            stream.spoolDraining.Load(),
 		DroppedSinceConnect: stream.spoolDropped.Load(),
