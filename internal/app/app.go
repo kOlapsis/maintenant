@@ -83,7 +83,8 @@ type App struct {
 	updateSvc          *update.Service
 	statusSvc          *status.Service
 	subscriberSvc      *status.SubscriberService
-	personalizationSvc *status.PersonalizationService
+	personalizationSvc status.PersonalizationManager
+	statusMailer       func(status.SmtpConfig) status.Mailer
 
 	// Alert pipeline
 	alertEngine     *alert.Engine
@@ -122,7 +123,7 @@ type App struct {
 
 	// Background services
 	checkEngine    *endpoint.CheckEngine
-	maintScheduler *status.MaintenanceScheduler
+	maintScheduler status.MaintenanceRunner
 	scorer         security.PostureScorer
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
@@ -514,9 +515,24 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		},
 	})
 	a.wireStatusProvider()
-	a.maintScheduler = status.NewMaintenanceScheduler(maintenanceStore, statusCompStore, incidentStore, a.statusSvc, logger)
-	a.personalizationSvc = status.NewPersonalizationService(personalizationStore, logger.With("component", "personalization"))
-	personalizationPublicHandler := status.NewPersonalizationPublicHandler(a.personalizationSvc, logger)
+	if a.ext.StatusPage != nil {
+		sp := a.ext.StatusPage(extpoint.StatusPageDeps{
+			Service:         a.statusSvc,
+			Components:      statusCompStore,
+			Incidents:       incidentStore,
+			Maintenance:     maintenanceStore,
+			Subscribers:     subscriberStore,
+			Personalization: personalizationStore,
+			BaseURL:         cfg.BaseURL,
+			Logger:          logger,
+		})
+		a.statusSvc.SetIncidentHandler(sp.Incidents)
+		a.statusSvc.SetSubscriberNotifier(sp.Notifier)
+		a.maintScheduler = sp.Maintenance
+		a.personalizationSvc = sp.Personalization
+		a.statusMailer = sp.Mailer
+	}
+	personalizationPublicHandler := status.NewPersonalizationPublicHandler(personalizationStore, logger)
 	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL)
 	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
@@ -640,6 +656,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		StatusSvc:          a.statusSvc,
 		StatusBroker:       a.statusBroker,
 		PersonalizationSvc: a.personalizationSvc,
+		StatusMailer:       a.statusMailer,
 		// Webhooks
 		WebhookStore: webhookStore,
 		// UI extras
@@ -875,7 +892,9 @@ func (a *App) Start(ctx context.Context) error {
 	go a.subscribeRL.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
-	go a.maintScheduler.Start(ctx)
+	if a.maintScheduler != nil {
+		go a.maintScheduler.Start(ctx)
+	}
 	go a.subscriberSvc.Start(ctx)
 	go a.updateSvc.Start(ctx)
 

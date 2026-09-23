@@ -11,11 +11,11 @@ import (
 )
 
 type PersonalizationPublicHandler struct {
-	svc    *PersonalizationService
+	svc    PersonalizationReader
 	logger *slog.Logger
 }
 
-func NewPersonalizationPublicHandler(svc *PersonalizationService, logger *slog.Logger) *PersonalizationPublicHandler {
+func NewPersonalizationPublicHandler(svc PersonalizationReader, logger *slog.Logger) *PersonalizationPublicHandler {
 	return &PersonalizationPublicHandler{svc: svc, logger: logger}
 }
 

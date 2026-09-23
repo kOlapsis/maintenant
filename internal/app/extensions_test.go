@@ -30,6 +30,7 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 	calls := 0
 	var postureDeps extpoint.PostureDeps
 	var channelDeps extpoint.ChannelDeps
+	var statusDeps extpoint.StatusPageDeps
 	a, err := app.New(cfg, logger, app.WithExtensions(extpoint.Set{
 		Enricher: func(d extpoint.EnricherDeps) update.Enricher {
 			calls++
@@ -44,6 +45,10 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 			channelDeps = d
 			return nil
 		},
+		StatusPage: func(d extpoint.StatusPageDeps) extpoint.StatusPage {
+			statusDeps = d
+			return extpoint.StatusPage{}
+		},
 	}))
 	require.NoError(t, err)
 	require.NotNil(t, a)
@@ -56,6 +61,9 @@ func TestNew_BuildsTheEnricherFromTheExtensionPoint(t *testing.T) {
 	assert.NotNil(t, postureDeps.Insights)
 	assert.NotNil(t, channelDeps.HTTPClient)
 	assert.NotNil(t, channelDeps.Logger)
+	assert.NotNil(t, statusDeps.Service)
+	assert.NotNil(t, statusDeps.Incidents)
+	assert.NotNil(t, statusDeps.Personalization)
 }
 
 func TestNew_WithoutExtensionsStillBuilds(t *testing.T) {

@@ -1,4 +1,4 @@
-package status
+package statuspage
 
 import (
 	"context"
@@ -8,28 +8,30 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/status"
 )
 
 var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$`)
 
 type cachedPayload struct {
-	data    Settings
+	data    status.Settings
 	builtAt time.Time
 }
 
 type PersonalizationService struct {
-	store  PersonalizationStore
+	store  status.PersonalizationStore
 	logger *slog.Logger
 
 	mu    sync.RWMutex
 	cache *cachedPayload
 }
 
-func NewPersonalizationService(store PersonalizationStore, logger *slog.Logger) *PersonalizationService {
+func NewPersonalizationService(store status.PersonalizationStore, logger *slog.Logger) *PersonalizationService {
 	return &PersonalizationService{store: store, logger: logger}
 }
 
-func (svc *PersonalizationService) GetSettings(ctx context.Context) (Settings, error) {
+func (svc *PersonalizationService) GetSettings(ctx context.Context) (status.Settings, error) {
 	svc.mu.RLock()
 	c := svc.cache
 	svc.mu.RUnlock()
@@ -39,26 +41,26 @@ func (svc *PersonalizationService) GetSettings(ctx context.Context) (Settings, e
 	return svc.store.GetSettings(ctx)
 }
 
-func (svc *PersonalizationService) UpdateSettings(ctx context.Context, in Settings) (Settings, []ContrastWarning, error) {
+func (svc *PersonalizationService) UpdateSettings(ctx context.Context, in status.Settings) (status.Settings, []status.ContrastWarning, error) {
 	if err := svc.validateSettings(in); err != nil {
-		return Settings{}, nil, err
+		return status.Settings{}, nil, err
 	}
 
 	var err error
 	in.Announcement.MessageHTML, err = RenderAnnouncement(in.Announcement.MessageMD)
 	if err != nil {
-		return Settings{}, nil, fmt.Errorf("render announcement: %w", err)
+		return status.Settings{}, nil, fmt.Errorf("render announcement: %w", err)
 	}
 	in.FooterTextHTML, err = RenderFooter(in.FooterTextMD)
 	if err != nil {
-		return Settings{}, nil, fmt.Errorf("render footer: %w", err)
+		return status.Settings{}, nil, fmt.Errorf("render footer: %w", err)
 	}
 
 	warnings := EvaluatePalette(in.Colors)
 
 	out, err := svc.store.UpdateSettings(ctx, in)
 	if err != nil {
-		return Settings{}, nil, err
+		return status.Settings{}, nil, err
 	}
 
 	// UpdateSettings already bumps the version inside its SQL — only clear the
@@ -67,12 +69,12 @@ func (svc *PersonalizationService) UpdateSettings(ctx context.Context, in Settin
 	return out, warnings, nil
 }
 
-func (svc *PersonalizationService) GetAsset(ctx context.Context, role AssetRole) (*Asset, error) {
+func (svc *PersonalizationService) GetAsset(ctx context.Context, role status.AssetRole) (*status.Asset, error) {
 	return svc.store.GetAsset(ctx, role)
 }
 
-func (svc *PersonalizationService) PutAsset(ctx context.Context, role AssetRole, mime string, data []byte, altText string) error {
-	a := Asset{
+func (svc *PersonalizationService) PutAsset(ctx context.Context, role status.AssetRole, mime string, data []byte, altText string) error {
+	a := status.Asset{
 		Role:    role,
 		MIME:    mime,
 		Bytes:   data,
@@ -85,7 +87,7 @@ func (svc *PersonalizationService) PutAsset(ctx context.Context, role AssetRole,
 	return nil
 }
 
-func (svc *PersonalizationService) DeleteAsset(ctx context.Context, role AssetRole) error {
+func (svc *PersonalizationService) DeleteAsset(ctx context.Context, role status.AssetRole) error {
 	if err := svc.store.DeleteAsset(ctx, role); err != nil {
 		return err
 	}
@@ -93,29 +95,29 @@ func (svc *PersonalizationService) DeleteAsset(ctx context.Context, role AssetRo
 	return nil
 }
 
-func (svc *PersonalizationService) ListFooterLinks(ctx context.Context) ([]FooterLink, error) {
+func (svc *PersonalizationService) ListFooterLinks(ctx context.Context) ([]status.FooterLink, error) {
 	return svc.store.ListFooterLinks(ctx)
 }
 
-func (svc *PersonalizationService) CreateFooterLink(ctx context.Context, label, url string) (FooterLink, error) {
+func (svc *PersonalizationService) CreateFooterLink(ctx context.Context, label, url string) (status.FooterLink, error) {
 	if err := validateFooterLink(label, url); err != nil {
-		return FooterLink{}, err
+		return status.FooterLink{}, err
 	}
 	link, err := svc.store.CreateFooterLink(ctx, label, url)
 	if err != nil {
-		return FooterLink{}, err
+		return status.FooterLink{}, err
 	}
 	svc.invalidateCache(ctx)
 	return link, nil
 }
 
-func (svc *PersonalizationService) UpdateFooterLink(ctx context.Context, id string, label, url string) (FooterLink, error) {
+func (svc *PersonalizationService) UpdateFooterLink(ctx context.Context, id string, label, url string) (status.FooterLink, error) {
 	if err := validateFooterLink(label, url); err != nil {
-		return FooterLink{}, err
+		return status.FooterLink{}, err
 	}
 	link, err := svc.store.UpdateFooterLink(ctx, id, label, url)
 	if err != nil {
-		return FooterLink{}, err
+		return status.FooterLink{}, err
 	}
 	svc.invalidateCache(ctx)
 	return link, nil
@@ -129,7 +131,7 @@ func (svc *PersonalizationService) DeleteFooterLink(ctx context.Context, id stri
 	return nil
 }
 
-func (svc *PersonalizationService) ReorderFooterLinks(ctx context.Context, ids []string) ([]FooterLink, error) {
+func (svc *PersonalizationService) ReorderFooterLinks(ctx context.Context, ids []string) ([]status.FooterLink, error) {
 	links, err := svc.store.ReorderFooterLinks(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -138,37 +140,37 @@ func (svc *PersonalizationService) ReorderFooterLinks(ctx context.Context, ids [
 	return links, nil
 }
 
-func (svc *PersonalizationService) ListFAQItems(ctx context.Context) ([]FAQItem, error) {
+func (svc *PersonalizationService) ListFAQItems(ctx context.Context) ([]status.FAQItem, error) {
 	return svc.store.ListFAQItems(ctx)
 }
 
-func (svc *PersonalizationService) CreateFAQItem(ctx context.Context, question, answerMD string) (FAQItem, error) {
+func (svc *PersonalizationService) CreateFAQItem(ctx context.Context, question, answerMD string) (status.FAQItem, error) {
 	if err := validateFAQItem(question, answerMD); err != nil {
-		return FAQItem{}, err
+		return status.FAQItem{}, err
 	}
 	answerHTML, err := RenderFAQAnswer(answerMD)
 	if err != nil {
-		return FAQItem{}, fmt.Errorf("render answer: %w", err)
+		return status.FAQItem{}, fmt.Errorf("render answer: %w", err)
 	}
 	item, err := svc.store.CreateFAQItem(ctx, question, answerMD, answerHTML)
 	if err != nil {
-		return FAQItem{}, err
+		return status.FAQItem{}, err
 	}
 	svc.invalidateCache(ctx)
 	return item, nil
 }
 
-func (svc *PersonalizationService) UpdateFAQItem(ctx context.Context, id string, question, answerMD string) (FAQItem, error) {
+func (svc *PersonalizationService) UpdateFAQItem(ctx context.Context, id string, question, answerMD string) (status.FAQItem, error) {
 	if err := validateFAQItem(question, answerMD); err != nil {
-		return FAQItem{}, err
+		return status.FAQItem{}, err
 	}
 	answerHTML, err := RenderFAQAnswer(answerMD)
 	if err != nil {
-		return FAQItem{}, fmt.Errorf("render answer: %w", err)
+		return status.FAQItem{}, fmt.Errorf("render answer: %w", err)
 	}
 	item, err := svc.store.UpdateFAQItem(ctx, id, question, answerMD, answerHTML)
 	if err != nil {
-		return FAQItem{}, err
+		return status.FAQItem{}, err
 	}
 	svc.invalidateCache(ctx)
 	return item, nil
@@ -182,7 +184,7 @@ func (svc *PersonalizationService) DeleteFAQItem(ctx context.Context, id string)
 	return nil
 }
 
-func (svc *PersonalizationService) ReorderFAQItems(ctx context.Context, ids []string) ([]FAQItem, error) {
+func (svc *PersonalizationService) ReorderFAQItems(ctx context.Context, ids []string) ([]status.FAQItem, error) {
 	items, err := svc.store.ReorderFAQItems(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -206,18 +208,18 @@ func (svc *PersonalizationService) invalidateCache(ctx context.Context) {
 	_ = svc.store.BumpVersion(ctx)
 }
 
-func (svc *PersonalizationService) validateSettings(s Settings) error {
+func (svc *PersonalizationService) validateSettings(s status.Settings) error {
 	if len(s.Title) < 1 || len(s.Title) > 100 {
-		return fmt.Errorf("%w: title must be 1-100 chars", ErrFieldTooLong)
+		return fmt.Errorf("%w: title must be 1-100 chars", status.ErrFieldTooLong)
 	}
 	if len(s.Subtitle) > 200 {
-		return fmt.Errorf("%w: subtitle max 200 chars", ErrFieldTooLong)
+		return fmt.Errorf("%w: subtitle max 200 chars", status.ErrFieldTooLong)
 	}
 	if len(s.Announcement.MessageMD) > 1000 {
-		return fmt.Errorf("%w: announcement message max 1000 chars", ErrFieldTooLong)
+		return fmt.Errorf("%w: announcement message max 1000 chars", status.ErrFieldTooLong)
 	}
 	if len(s.FooterTextMD) > 500 {
-		return fmt.Errorf("%w: footer text max 500 chars", ErrFieldTooLong)
+		return fmt.Errorf("%w: footer text max 500 chars", status.ErrFieldTooLong)
 	}
 
 	for _, hex := range []string{
@@ -225,23 +227,23 @@ func (svc *PersonalizationService) validateSettings(s Settings) error {
 		s.Colors.StatusOperational, s.Colors.StatusDegraded, s.Colors.StatusPartialOutage, s.Colors.StatusMajorOutage,
 	} {
 		if !hexColorRegex.MatchString(hex) {
-			return fmt.Errorf("%w: %q", ErrInvalidHex, hex)
+			return fmt.Errorf("%w: %q", status.ErrInvalidHex, hex)
 		}
 	}
 
 	if s.Announcement.URL != "" && !isValidURL(s.Announcement.URL) {
-		return ErrInvalidScheme
+		return status.ErrInvalidScheme
 	}
 
 	if s.Locale != "en" && s.Locale != "fr" {
-		return ErrInvalidLocale
+		return status.ErrInvalidLocale
 	}
 	if s.DateFormat != "relative" && s.DateFormat != "absolute" {
-		return ErrInvalidDateFormat
+		return status.ErrInvalidDateFormat
 	}
 	if s.Timezone != "" {
 		if _, err := time.LoadLocation(s.Timezone); err != nil {
-			return ErrInvalidTimezone
+			return status.ErrInvalidTimezone
 		}
 	}
 	return nil
@@ -249,20 +251,20 @@ func (svc *PersonalizationService) validateSettings(s Settings) error {
 
 func validateFooterLink(label, url string) error {
 	if len(label) < 1 || len(label) > 60 {
-		return fmt.Errorf("%w: label must be 1-60 chars", ErrFieldTooLong)
+		return fmt.Errorf("%w: label must be 1-60 chars", status.ErrFieldTooLong)
 	}
 	if !isValidURL(url) {
-		return ErrInvalidScheme
+		return status.ErrInvalidScheme
 	}
 	return nil
 }
 
 func validateFAQItem(question, answerMD string) error {
 	if len(question) < 1 || len(question) > 200 {
-		return fmt.Errorf("%w: question must be 1-200 chars", ErrFieldTooLong)
+		return fmt.Errorf("%w: question must be 1-200 chars", status.ErrFieldTooLong)
 	}
 	if len(answerMD) > 4000 {
-		return fmt.Errorf("%w: answer max 4000 chars", ErrFieldTooLong)
+		return fmt.Errorf("%w: answer max 4000 chars", status.ErrFieldTooLong)
 	}
 	return nil
 }
@@ -270,4 +272,14 @@ func validateFAQItem(question, answerMD string) error {
 func isValidURL(u string) bool {
 	lower := strings.ToLower(u)
 	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+// AssetSizeCap returns the largest upload accepted for role.
+func (svc *PersonalizationService) AssetSizeCap(role status.AssetRole) int64 {
+	return AssetSizeCap(role)
+}
+
+// DetectAssetMIME sniffs the upload's MIME type and refuses one role does not allow.
+func (svc *PersonalizationService) DetectAssetMIME(role status.AssetRole, head []byte) (string, error) {
+	return DetectAssetMIME(role, head)
 }

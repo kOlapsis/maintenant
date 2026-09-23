@@ -31,6 +31,7 @@ type StatusAdminHandler struct {
 	maintenance status.MaintenanceStore
 	statusSvc   *status.Service
 	broker      *SSEBroker
+	mailer      func(status.SmtpConfig) status.Mailer
 }
 
 // NewStatusAdminHandler creates a new status admin handler.
@@ -41,6 +42,7 @@ func NewStatusAdminHandler(
 	maintenance status.MaintenanceStore,
 	statusSvc *status.Service,
 	broker *SSEBroker,
+	mailer func(status.SmtpConfig) status.Mailer,
 ) *StatusAdminHandler {
 	return &StatusAdminHandler{
 		components:  components,
@@ -49,6 +51,7 @@ func NewStatusAdminHandler(
 		maintenance: maintenance,
 		statusSvc:   statusSvc,
 		broker:      broker,
+		mailer:      mailer,
 	}
 }
 
@@ -676,7 +679,11 @@ func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Reque
 		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
 		return
 	}
-	client := status.NewSmtpClient(*cfg)
+	if h.mailer == nil {
+		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
+		return
+	}
+	client := h.mailer(*cfg)
 	if err := client.Send(cfg.FromAddress, "Maintenant SMTP Test", "<p>This is a test email from Maintenant.</p>"); err != nil {
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "error", "error": err.Error()})
 		return

@@ -1,18 +1,20 @@
-package status
+package statuspage
 
 import (
 	"bytes"
 	"net/http"
+
+	"github.com/kolapsis/maintenant/internal/status"
 )
 
-var assetMIMEAllowlist = map[AssetRole][]string{
-	AssetRoleLogo:    {"image/png", "image/jpeg", "image/webp", "image/svg+xml"},
-	AssetRoleFavicon: {"image/png", "image/x-icon", "image/vnd.microsoft.icon", "image/svg+xml"},
-	AssetRoleHero:    {"image/png", "image/jpeg", "image/webp"},
+var assetMIMEAllowlist = map[status.AssetRole][]string{
+	status.AssetRoleLogo:    {"image/png", "image/jpeg", "image/webp", "image/svg+xml"},
+	status.AssetRoleFavicon: {"image/png", "image/x-icon", "image/vnd.microsoft.icon", "image/svg+xml"},
+	status.AssetRoleHero:    {"image/png", "image/jpeg", "image/webp"},
 }
 
 // DetectAssetMIME sniffs the MIME type from the first 512 bytes and validates it for the given role.
-func DetectAssetMIME(role AssetRole, head []byte) (string, error) {
+func DetectAssetMIME(role status.AssetRole, head []byte) (string, error) {
 	sniffed := http.DetectContentType(head)
 	// Normalize: strip parameters (e.g., "text/xml; charset=utf-8")
 	for i, c := range sniffed {
@@ -29,7 +31,7 @@ func DetectAssetMIME(role AssetRole, head []byte) (string, error) {
 
 	allowed, ok := assetMIMEAllowlist[role]
 	if !ok {
-		return "", ErrAssetUnsupportedMIME
+		return "", status.ErrAssetUnsupportedMIME
 	}
 
 	for _, m := range allowed {
@@ -37,7 +39,7 @@ func DetectAssetMIME(role AssetRole, head []byte) (string, error) {
 			return sniffed, nil
 		}
 	}
-	return "", ErrAssetUnsupportedMIME
+	return "", status.ErrAssetUnsupportedMIME
 }
 
 func isSVG(data []byte) bool {
@@ -57,13 +59,13 @@ func isSVG(data []byte) bool {
 	return !bytes.Contains(lower, []byte("<script"))
 }
 
-var assetSizeCaps = map[AssetRole]int64{
-	AssetRoleLogo:    200 * 1024,
-	AssetRoleFavicon: 50 * 1024,
-	AssetRoleHero:    500 * 1024,
+var assetSizeCaps = map[status.AssetRole]int64{
+	status.AssetRoleLogo:    200 * 1024,
+	status.AssetRoleFavicon: 50 * 1024,
+	status.AssetRoleHero:    500 * 1024,
 }
 
 // AssetSizeCap returns the max allowed bytes for the given role.
-func AssetSizeCap(role AssetRole) int64 {
+func AssetSizeCap(role status.AssetRole) int64 {
 	return assetSizeCaps[role]
 }

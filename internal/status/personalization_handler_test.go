@@ -1,6 +1,7 @@
 package status
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,11 +13,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type stubPersonalizationReader struct {
+	settings Settings
+}
+
+func (r *stubPersonalizationReader) GetSettings(context.Context) (Settings, error) {
+	return r.settings, nil
+}
+
+func (r *stubPersonalizationReader) GetAsset(context.Context, AssetRole) (*Asset, error) {
+	return nil, nil
+}
+
+func (r *stubPersonalizationReader) ListFooterLinks(context.Context) ([]FooterLink, error) {
+	return nil, nil
+}
+
+func (r *stubPersonalizationReader) ListFAQItems(context.Context) ([]FAQItem, error) {
+	return nil, nil
+}
+
 func newTestPublicHandler(t *testing.T) *PersonalizationPublicHandler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := NewPersonalizationService(newMockPersonalizationStore(), logger)
-	return NewPersonalizationPublicHandler(svc, logger)
+	return NewPersonalizationPublicHandler(&stubPersonalizationReader{settings: DefaultSettings()}, logger)
 }
 
 func withPro(t *testing.T) func() {
@@ -77,18 +97,16 @@ func TestPersonalizationPublicHandler_304OnMatchingETag(t *testing.T) {
 func TestPersonalizationPublicHandler_ETagChangesAfterUpdate(t *testing.T) {
 	defer withPro(t)()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := NewPersonalizationService(newMockPersonalizationStore(), logger)
-	h := NewPersonalizationPublicHandler(svc, logger)
+	reader := &stubPersonalizationReader{settings: DefaultSettings()}
+	h := NewPersonalizationPublicHandler(reader, logger)
 
 	req1 := httptest.NewRequest(http.MethodGet, "/status/settings.json", nil)
 	rec1 := httptest.NewRecorder()
 	h.HandleSettingsJSON(rec1, req1)
 	etag1 := rec1.Header().Get("ETag")
 
-	in := DefaultSettings()
-	in.Title = "Updated"
-	_, _, err := svc.UpdateSettings(req1.Context(), in)
-	require.NoError(t, err)
+	reader.settings.Title = "Updated"
+	reader.settings.Version++
 
 	req2 := httptest.NewRequest(http.MethodGet, "/status/settings.json", nil)
 	rec2 := httptest.NewRecorder()
@@ -104,11 +122,9 @@ func TestPersonalizationPublicHandler_DefaultsUnderCommunityEdition(t *testing.T
 	defer func() { extension.CurrentEdition = original }()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	store := newMockPersonalizationStore()
-	// Simulate pro customization already in DB
-	store.settings.Title = "Pro Custom Title"
-	svc := NewPersonalizationService(store, logger)
-	h := NewPersonalizationPublicHandler(svc, logger)
+	reader := &stubPersonalizationReader{settings: DefaultSettings()}
+	reader.settings.Title = "Pro Custom Title"
+	h := NewPersonalizationPublicHandler(reader, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/status/settings.json", nil)
 	rec := httptest.NewRecorder()

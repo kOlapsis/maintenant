@@ -13,6 +13,7 @@ package commercial
 import (
 	"github.com/kolapsis/maintenant/internal/commercial/channels"
 	"github.com/kolapsis/maintenant/internal/commercial/posture"
+	"github.com/kolapsis/maintenant/internal/commercial/statuspage"
 	"github.com/kolapsis/maintenant/internal/commercial/updates"
 	"github.com/kolapsis/maintenant/internal/extpoint"
 )
@@ -23,5 +24,6 @@ func Extensions() extpoint.Set {
 		Enricher:      updates.NewEnricher,
 		PostureScorer: posture.NewPostureScorer,
 		Channels:      channels.NewChannels,
+		StatusPage:    statuspage.NewStatusPage,
 	}
 }

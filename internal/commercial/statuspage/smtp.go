@@ -9,22 +9,23 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package status
+package statuspage
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/wneessen/go-mail"
 )
 
 // SmtpClient wraps go-mail to send emails.
 type SmtpClient struct {
-	config SmtpConfig
+	config status.SmtpConfig
 }
 
 // NewSmtpClient creates a new SMTP client from the given config.
-func NewSmtpClient(config SmtpConfig) *SmtpClient {
+func NewSmtpClient(config status.SmtpConfig) *SmtpClient {
 	return &SmtpClient{config: config}
 }
 
@@ -53,9 +54,9 @@ func (c *SmtpClient) Send(to, subject, htmlBody string) error {
 	}
 
 	switch c.config.TLSPolicy {
-	case TLSMandatory:
+	case status.TLSMandatory:
 		opts = append(opts, mail.WithTLSPolicy(mail.TLSMandatory))
-	case TLSNone:
+	case status.TLSNone:
 		opts = append(opts, mail.WithTLSPolicy(mail.NoTLS))
 	default:
 		opts = append(opts, mail.WithTLSPolicy(mail.TLSOpportunistic))
@@ -88,9 +89,9 @@ func (c *SmtpClient) TestConnection() error {
 	}
 
 	switch c.config.TLSPolicy {
-	case TLSMandatory:
+	case status.TLSMandatory:
 		opts = append(opts, mail.WithTLSPolicy(mail.TLSMandatory))
-	case TLSNone:
+	case status.TLSNone:
 		opts = append(opts, mail.WithTLSPolicy(mail.NoTLS))
 	default:
 		opts = append(opts, mail.WithTLSPolicy(mail.TLSOpportunistic))

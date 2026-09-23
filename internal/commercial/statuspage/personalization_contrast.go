@@ -1,10 +1,12 @@
-package status
+package statuspage
 
 import (
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/kolapsis/maintenant/internal/status"
 )
 
 func parseHexColor(hex string) ([3]float64, error) {
@@ -54,7 +56,7 @@ func ContrastRatio(fgHex, bgHex string) (float64, error) {
 }
 
 // EvaluatePalette returns warnings for pairs that fail WCAG AA contrast ratios.
-func EvaluatePalette(p Palette) []ContrastWarning {
+func EvaluatePalette(p status.Palette) []status.ContrastWarning {
 	type pair struct {
 		name      string
 		fg        string
@@ -76,7 +78,7 @@ func EvaluatePalette(p Palette) []ContrastWarning {
 		{"status_major_on_surface", p.StatusMajorOutage, p.Surface, 3.0},
 	}
 
-	var warnings []ContrastWarning
+	var warnings []status.ContrastWarning
 	for _, pair := range pairs {
 		ratio, err := ContrastRatio(pair.fg, pair.bg)
 		if err != nil {
@@ -84,7 +86,7 @@ func EvaluatePalette(p Palette) []ContrastWarning {
 		}
 		ratio = math.Round(ratio*100) / 100
 		if ratio < pair.threshold {
-			warnings = append(warnings, ContrastWarning{
+			warnings = append(warnings, status.ContrastWarning{
 				Pair:            pair.name,
 				Ratio:           ratio,
 				WCAGAAThreshold: pair.threshold,

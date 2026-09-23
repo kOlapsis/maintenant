@@ -1,4 +1,4 @@
-package status
+package statuspage
 
 import (
 	"bytes"

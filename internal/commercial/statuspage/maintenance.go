@@ -9,7 +9,7 @@
 //
 // Source: https://github.com/kolapsis/maintenant
 
-package status
+package statuspage
 
 import (
 	"context"
@@ -19,23 +19,24 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/status"
 )
 
 // MaintenanceScheduler polls for maintenance windows that need activation or deactivation.
 type MaintenanceScheduler struct {
-	maintenance MaintenanceStore
-	components  ComponentStore
-	incidents   IncidentStore
-	service     *Service
+	maintenance status.MaintenanceStore
+	components  status.ComponentStore
+	incidents   status.IncidentStore
+	service     *status.Service
 	logger      *slog.Logger
 }
 
 // NewMaintenanceScheduler creates a new scheduler.
 func NewMaintenanceScheduler(
-	maintenance MaintenanceStore,
-	components ComponentStore,
-	incidents IncidentStore,
-	service *Service,
+	maintenance status.MaintenanceStore,
+	components status.ComponentStore,
+	incidents status.IncidentStore,
+	service *status.Service,
 	logger *slog.Logger,
 ) *MaintenanceScheduler {
 	return &MaintenanceScheduler{
@@ -88,7 +89,7 @@ func (s *MaintenanceScheduler) applyTransitions(ctx context.Context) {
 	s.logger.Debug("status: maintenance transitions", "activations", len(pending), "deactivations", len(expired))
 }
 
-func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *MaintenanceWindow) {
+func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *status.MaintenanceWindow) {
 	s.logger.Info("activating maintenance window", "id", mw.ID, "title", mw.Title)
 
 	// Create maintenance incident
@@ -99,10 +100,10 @@ func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *Maintenan
 		compNames = append(compNames, c.Name)
 	}
 
-	inc := &Incident{
+	inc := &status.Incident{
 		Title:               "Scheduled Maintenance: " + mw.Title,
-		Severity:            SeverityMinor,
-		Status:              IncidentInvestigating,
+		Severity:            status.SeverityMinor,
+		Status:              status.IncidentInvestigating,
 		IsMaintenance:       true,
 		MaintenanceWindowID: &mw.ID,
 	}
@@ -120,7 +121,7 @@ func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *Maintenan
 	}
 
 	// Set affected components to under_maintenance
-	override := StatusUnderMaint
+	override := status.StatusUnderMaint
 	for _, c := range mw.Components {
 		comp, err := s.components.GetComponent(ctx, c.ID)
 		if err != nil || comp == nil {
@@ -133,27 +134,27 @@ func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *Maintenan
 	}
 
 	// Broadcast
-	s.service.broadcast(event.StatusMaintenanceStart, map[string]interface{}{
+	s.service.Broadcast(event.StatusMaintenanceStart, map[string]interface{}{
 		"id":         mw.ID,
 		"title":      mw.Title,
 		"components": compNames,
 	})
 
 	// Notify subscribers
-	s.service.notifySubscribers(ctx,
+	s.service.NotifySubscribers(ctx,
 		"Maintenance Started: "+mw.Title,
 		fmt.Sprintf("Scheduled maintenance has started: %s\nAffected components: %s\n%s",
 			mw.Title, strings.Join(compNames, ", "), mw.Description))
 }
 
-func (s *MaintenanceScheduler) deactivateWindow(ctx context.Context, mw *MaintenanceWindow) {
+func (s *MaintenanceScheduler) deactivateWindow(ctx context.Context, mw *status.MaintenanceWindow) {
 	s.logger.Info("deactivating maintenance window", "id", mw.ID, "title", mw.Title)
 
 	// Resolve the maintenance incident
 	if mw.IncidentID != nil {
-		update := &IncidentUpdate{
+		update := &status.IncidentUpdate{
 			IncidentID: *mw.IncidentID,
-			Status:     IncidentResolved,
+			Status:     status.IncidentResolved,
 			Message:    "Scheduled maintenance completed",
 			IsAuto:     true,
 		}
@@ -176,7 +177,7 @@ func (s *MaintenanceScheduler) deactivateWindow(ctx context.Context, mw *Mainten
 		if err != nil || comp == nil {
 			continue
 		}
-		if comp.StatusOverride != nil && *comp.StatusOverride == StatusUnderMaint {
+		if comp.StatusOverride != nil && *comp.StatusOverride == status.StatusUnderMaint {
 			comp.StatusOverride = nil
 			if err := s.components.UpdateComponent(ctx, comp); err != nil {
 				s.logger.Error("failed to clear component maintenance override", "error", err, "component_id", c.ID)
@@ -185,14 +186,14 @@ func (s *MaintenanceScheduler) deactivateWindow(ctx context.Context, mw *Mainten
 	}
 
 	// Broadcast
-	s.service.broadcast(event.StatusMaintenanceEnd, map[string]interface{}{
+	s.service.Broadcast(event.StatusMaintenanceEnd, map[string]interface{}{
 		"id":         mw.ID,
 		"title":      mw.Title,
 		"components": compNames,
 	})
 
 	// Notify subscribers
-	s.service.notifySubscribers(ctx,
+	s.service.NotifySubscribers(ctx,
 		"Maintenance Completed: "+mw.Title,
 		"Scheduled maintenance has been completed: "+mw.Title)
 }

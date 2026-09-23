@@ -1,4 +1,4 @@
-package status
+package statuspage
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,10 +16,10 @@ import (
 // --- In-memory store for service tests ---
 
 type mockPersonalizationStore struct {
-	settings    Settings
-	assets      map[AssetRole]*Asset
-	footerLinks []FooterLink
-	faqItems    []FAQItem
+	settings    status.Settings
+	assets      map[status.AssetRole]*status.Asset
+	footerLinks []status.FooterLink
+	faqItems    []status.FAQItem
 	nextID      int64
 }
 
@@ -29,16 +30,16 @@ func (m *mockPersonalizationStore) mintID() string {
 
 func newMockPersonalizationStore() *mockPersonalizationStore {
 	return &mockPersonalizationStore{
-		settings: DefaultSettings(),
-		assets:   make(map[AssetRole]*Asset),
+		settings: status.DefaultSettings(),
+		assets:   make(map[status.AssetRole]*status.Asset),
 	}
 }
 
-func (m *mockPersonalizationStore) GetSettings(_ context.Context) (Settings, error) {
+func (m *mockPersonalizationStore) GetSettings(_ context.Context) (status.Settings, error) {
 	return m.settings, nil
 }
 
-func (m *mockPersonalizationStore) UpdateSettings(_ context.Context, s Settings) (Settings, error) {
+func (m *mockPersonalizationStore) UpdateSettings(_ context.Context, s status.Settings) (status.Settings, error) {
 	s.Version = m.settings.Version + 1
 	s.UpdatedAt = time.Now().UTC()
 	m.settings = s
@@ -51,31 +52,31 @@ func (m *mockPersonalizationStore) BumpVersion(_ context.Context) error {
 	return nil
 }
 
-func (m *mockPersonalizationStore) GetAsset(_ context.Context, role AssetRole) (*Asset, error) {
+func (m *mockPersonalizationStore) GetAsset(_ context.Context, role status.AssetRole) (*status.Asset, error) {
 	return m.assets[role], nil
 }
 
-func (m *mockPersonalizationStore) PutAsset(_ context.Context, a Asset) error {
+func (m *mockPersonalizationStore) PutAsset(_ context.Context, a status.Asset) error {
 	m.assets[a.Role] = &a
 	return nil
 }
 
-func (m *mockPersonalizationStore) DeleteAsset(_ context.Context, role AssetRole) error {
+func (m *mockPersonalizationStore) DeleteAsset(_ context.Context, role status.AssetRole) error {
 	delete(m.assets, role)
 	return nil
 }
 
-func (m *mockPersonalizationStore) ListFooterLinks(_ context.Context) ([]FooterLink, error) {
+func (m *mockPersonalizationStore) ListFooterLinks(_ context.Context) ([]status.FooterLink, error) {
 	return m.footerLinks, nil
 }
 
-func (m *mockPersonalizationStore) CreateFooterLink(_ context.Context, label, url string) (FooterLink, error) {
-	l := FooterLink{ID: m.mintID(), Label: label, URL: url, Position: len(m.footerLinks) + 1}
+func (m *mockPersonalizationStore) CreateFooterLink(_ context.Context, label, url string) (status.FooterLink, error) {
+	l := status.FooterLink{ID: m.mintID(), Label: label, URL: url, Position: len(m.footerLinks) + 1}
 	m.footerLinks = append(m.footerLinks, l)
 	return l, nil
 }
 
-func (m *mockPersonalizationStore) UpdateFooterLink(_ context.Context, id string, label, url string) (FooterLink, error) {
+func (m *mockPersonalizationStore) UpdateFooterLink(_ context.Context, id string, label, url string) (status.FooterLink, error) {
 	for i, l := range m.footerLinks {
 		if l.ID == id {
 			m.footerLinks[i].Label = label
@@ -83,7 +84,7 @@ func (m *mockPersonalizationStore) UpdateFooterLink(_ context.Context, id string
 			return m.footerLinks[i], nil
 		}
 	}
-	return FooterLink{}, ErrNotFound
+	return status.FooterLink{}, status.ErrNotFound
 }
 
 func (m *mockPersonalizationStore) DeleteFooterLink(_ context.Context, id string) error {
@@ -93,24 +94,24 @@ func (m *mockPersonalizationStore) DeleteFooterLink(_ context.Context, id string
 			return nil
 		}
 	}
-	return ErrNotFound
+	return status.ErrNotFound
 }
 
-func (m *mockPersonalizationStore) ReorderFooterLinks(_ context.Context, _ []string) ([]FooterLink, error) {
+func (m *mockPersonalizationStore) ReorderFooterLinks(_ context.Context, _ []string) ([]status.FooterLink, error) {
 	return m.footerLinks, nil
 }
 
-func (m *mockPersonalizationStore) ListFAQItems(_ context.Context) ([]FAQItem, error) {
+func (m *mockPersonalizationStore) ListFAQItems(_ context.Context) ([]status.FAQItem, error) {
 	return m.faqItems, nil
 }
 
-func (m *mockPersonalizationStore) CreateFAQItem(_ context.Context, question, answerMD, answerHTML string) (FAQItem, error) {
-	item := FAQItem{ID: m.mintID(), Question: question, AnswerMD: answerMD, AnswerHTML: answerHTML, Position: len(m.faqItems) + 1}
+func (m *mockPersonalizationStore) CreateFAQItem(_ context.Context, question, answerMD, answerHTML string) (status.FAQItem, error) {
+	item := status.FAQItem{ID: m.mintID(), Question: question, AnswerMD: answerMD, AnswerHTML: answerHTML, Position: len(m.faqItems) + 1}
 	m.faqItems = append(m.faqItems, item)
 	return item, nil
 }
 
-func (m *mockPersonalizationStore) UpdateFAQItem(_ context.Context, id string, question, answerMD, answerHTML string) (FAQItem, error) {
+func (m *mockPersonalizationStore) UpdateFAQItem(_ context.Context, id string, question, answerMD, answerHTML string) (status.FAQItem, error) {
 	for i, item := range m.faqItems {
 		if item.ID == id {
 			m.faqItems[i].Question = question
@@ -119,7 +120,7 @@ func (m *mockPersonalizationStore) UpdateFAQItem(_ context.Context, id string, q
 			return m.faqItems[i], nil
 		}
 	}
-	return FAQItem{}, ErrNotFound
+	return status.FAQItem{}, status.ErrNotFound
 }
 
 func (m *mockPersonalizationStore) DeleteFAQItem(_ context.Context, id string) error {
@@ -129,10 +130,10 @@ func (m *mockPersonalizationStore) DeleteFAQItem(_ context.Context, id string) e
 			return nil
 		}
 	}
-	return ErrNotFound
+	return status.ErrNotFound
 }
 
-func (m *mockPersonalizationStore) ReorderFAQItems(_ context.Context, _ []string) ([]FAQItem, error) {
+func (m *mockPersonalizationStore) ReorderFAQItems(_ context.Context, _ []string) ([]status.FAQItem, error) {
 	return m.faqItems, nil
 }
 
@@ -158,7 +159,7 @@ func TestPersonalizationService_UpdateSettings_VersionBumps(t *testing.T) {
 	original, err := svc.GetSettings(context.Background())
 	require.NoError(t, err)
 
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Title = "Updated Title"
 	out, _, err := svc.UpdateSettings(context.Background(), in)
 	require.NoError(t, err)
@@ -171,7 +172,7 @@ func TestPersonalizationService_UpdateSettings_CacheInvalidated(t *testing.T) {
 
 	_, _ = svc.GetSettings(context.Background()) // prime cache
 
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Title = "After Update"
 	out, _, err := svc.UpdateSettings(context.Background(), in)
 	require.NoError(t, err)
@@ -183,7 +184,7 @@ func TestPersonalizationService_UpdateSettings_CacheInvalidated(t *testing.T) {
 
 func TestPersonalizationService_UpdateSettings_RendersAnnouncementHTML(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Announcement.MessageMD = "**Hello** world"
 	out, _, err := svc.UpdateSettings(context.Background(), in)
 	require.NoError(t, err)
@@ -192,24 +193,24 @@ func TestPersonalizationService_UpdateSettings_RendersAnnouncementHTML(t *testin
 
 func TestPersonalizationService_UpdateSettings_InvalidHex(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Colors.Background = "not-a-hex"
 	_, _, err := svc.UpdateSettings(context.Background(), in)
-	require.ErrorIs(t, err, ErrInvalidHex)
+	require.ErrorIs(t, err, status.ErrInvalidHex)
 }
 
 func TestPersonalizationService_UpdateSettings_InvalidLocale(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Locale = "de"
 	_, _, err := svc.UpdateSettings(context.Background(), in)
-	require.ErrorIs(t, err, ErrInvalidLocale)
+	require.ErrorIs(t, err, status.ErrInvalidLocale)
 }
 
 func TestPersonalizationService_UpdateSettings_ValidLocales(t *testing.T) {
 	svc := newTestPersonalizationService(t)
 	for _, locale := range []string{"en", "fr"} {
-		in := DefaultSettings()
+		in := status.DefaultSettings()
 		in.Locale = locale
 		_, _, err := svc.UpdateSettings(context.Background(), in)
 		assert.NoError(t, err, "locale %q should be valid", locale)
@@ -218,16 +219,16 @@ func TestPersonalizationService_UpdateSettings_ValidLocales(t *testing.T) {
 
 func TestPersonalizationService_UpdateSettings_InvalidDateFormat(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.DateFormat = "unknown"
 	_, _, err := svc.UpdateSettings(context.Background(), in)
-	require.ErrorIs(t, err, ErrInvalidDateFormat)
+	require.ErrorIs(t, err, status.ErrInvalidDateFormat)
 }
 
 func TestPersonalizationService_UpdateSettings_ValidDateFormats(t *testing.T) {
 	svc := newTestPersonalizationService(t)
 	for _, fmt := range []string{"relative", "absolute"} {
-		in := DefaultSettings()
+		in := status.DefaultSettings()
 		in.DateFormat = fmt
 		_, _, err := svc.UpdateSettings(context.Background(), in)
 		assert.NoError(t, err, "date_format %q should be valid", fmt)
@@ -236,15 +237,15 @@ func TestPersonalizationService_UpdateSettings_ValidDateFormats(t *testing.T) {
 
 func TestPersonalizationService_UpdateSettings_InvalidTimezone(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Timezone = "Not/A/Real/Timezone"
 	_, _, err := svc.UpdateSettings(context.Background(), in)
-	require.ErrorIs(t, err, ErrInvalidTimezone)
+	require.ErrorIs(t, err, status.ErrInvalidTimezone)
 }
 
 func TestPersonalizationService_UpdateSettings_ValidTimezone(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Timezone = "Europe/Paris"
 	_, _, err := svc.UpdateSettings(context.Background(), in)
 	require.NoError(t, err)
@@ -252,7 +253,7 @@ func TestPersonalizationService_UpdateSettings_ValidTimezone(t *testing.T) {
 
 func TestPersonalizationService_UpdateSettings_EmptyTimezoneOk(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Timezone = ""
 	_, _, err := svc.UpdateSettings(context.Background(), in)
 	require.NoError(t, err)
@@ -260,15 +261,15 @@ func TestPersonalizationService_UpdateSettings_EmptyTimezoneOk(t *testing.T) {
 
 func TestPersonalizationService_UpdateSettings_InvalidAnnouncementURL(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	in.Announcement.URL = "javascript:alert(1)"
 	_, _, err := svc.UpdateSettings(context.Background(), in)
-	require.ErrorIs(t, err, ErrInvalidScheme)
+	require.ErrorIs(t, err, status.ErrInvalidScheme)
 }
 
 func TestPersonalizationService_UpdateSettings_ContrastWarnings(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings()
+	in := status.DefaultSettings()
 	// black text on black background — contrast ratio 1:1
 	in.Colors.Background = "#000000"
 	in.Colors.Text = "#000000"
@@ -279,7 +280,7 @@ func TestPersonalizationService_UpdateSettings_ContrastWarnings(t *testing.T) {
 
 func TestPersonalizationService_UpdateSettings_GoodPaletteNoWarnings(t *testing.T) {
 	svc := newTestPersonalizationService(t)
-	in := DefaultSettings() // default palette passes WCAG AA
+	in := status.DefaultSettings() // default palette passes WCAG AA
 	_, warnings, err := svc.UpdateSettings(context.Background(), in)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
@@ -312,7 +313,7 @@ func TestPersonalizationService_FooterLink_CRUD(t *testing.T) {
 func TestPersonalizationService_FooterLink_InvalidURL(t *testing.T) {
 	svc := newTestPersonalizationService(t)
 	_, err := svc.CreateFooterLink(context.Background(), "Bad", "ftp://bad.com")
-	require.ErrorIs(t, err, ErrInvalidScheme)
+	require.ErrorIs(t, err, status.ErrInvalidScheme)
 }
 
 func TestPersonalizationService_FAQ_CRUD(t *testing.T) {

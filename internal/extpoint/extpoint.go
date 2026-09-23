@@ -18,6 +18,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -26,6 +27,7 @@ type Set struct {
 	Enricher      func(EnricherDeps) update.Enricher
 	PostureScorer func(PostureDeps) security.PostureScorer
 	Channels      func(ChannelDeps) map[string]alert.ChannelSender
+	StatusPage    func(StatusPageDeps) StatusPage
 }
 
 // EnricherDeps is what an update enricher is built from.
@@ -60,4 +62,25 @@ type SMTPConfig struct {
 	Username string
 	Password string
 	From     string
+}
+
+// StatusPageDeps is what the status page extensions are built from.
+type StatusPageDeps struct {
+	Service         *status.Service
+	Components      status.ComponentStore
+	Incidents       status.IncidentStore
+	Maintenance     status.MaintenanceStore
+	Subscribers     status.SubscriberStore
+	Personalization status.PersonalizationStore
+	BaseURL         string
+	Logger          *slog.Logger
+}
+
+// StatusPage holds the status page features a licensed build adds.
+type StatusPage struct {
+	Incidents       status.AlertIncidentHandler
+	Notifier        status.SubscriberNotifier
+	Maintenance     status.MaintenanceRunner
+	Personalization status.PersonalizationManager
+	Mailer          func(status.SmtpConfig) status.Mailer
 }
