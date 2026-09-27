@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	dtypes "github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	dtypes "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 
 	"github.com/kolapsis/maintenant/internal/proxylabels"
 	"github.com/kolapsis/maintenant/internal/retry"
@@ -35,15 +35,12 @@ type Client struct {
 // NewClient creates a new Docker client wrapper.
 // If host is empty, it uses the default Docker socket.
 func NewClient(host string, logger *slog.Logger) (*Client, error) {
-	opts := []client.Opt{
-		client.FromEnv,
-		client.WithAPIVersionNegotiation(),
-	}
+	opts := []client.Opt{client.FromEnv}
 	if host != "" {
 		opts = append(opts, client.WithHost(host))
 	}
 
-	cli, err := client.NewClientWithOpts(opts...)
+	cli, err := client.New(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create docker client: %w", err)
 	}
@@ -71,7 +68,7 @@ func (c *Client) containerLabels(labels map[string]string) map[string]string {
 
 // Connect pings the Docker daemon to verify connectivity.
 func (c *Client) Connect(ctx context.Context) error {
-	_, err := c.cli.Ping(ctx)
+	_, err := c.cli.Ping(ctx, client.PingOptions{})
 	if err != nil {
 		c.mu.Lock()
 		c.connected = false
@@ -89,7 +86,7 @@ func (c *Client) Connect(ctx context.Context) error {
 func (c *Client) TryConnect(ctx context.Context) error {
 	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	_, err := c.cli.Ping(tctx)
+	_, err := c.cli.Ping(tctx, client.PingOptions{})
 	if err != nil {
 		c.mu.Lock()
 		c.connected = false
@@ -153,7 +150,7 @@ type ContainerStats = dtypes.StatsResponse
 // StatsOneShot retrieves a single stats snapshot for a container.
 // It uses the one-shot API which returns immediately without a priming read.
 func (c *Client) StatsOneShot(ctx context.Context, containerID string) (*ContainerStats, error) {
-	resp, err := c.cli.ContainerStatsOneShot(ctx, containerID)
+	resp, err := c.cli.ContainerStats(ctx, containerID, client.ContainerStatsOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("stats one-shot %s: %w", containerID, err)
 	}

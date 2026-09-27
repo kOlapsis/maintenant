@@ -15,6 +15,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/moby/moby/client"
+
 	cmodel "github.com/kolapsis/maintenant/internal/container"
 )
 
@@ -26,10 +28,11 @@ type HealthInfo struct {
 
 // GetHealthInfo inspects a container and returns its health check configuration and status.
 func (c *Client) GetHealthInfo(ctx context.Context, containerID string) (*HealthInfo, error) {
-	info, err := c.cli.ContainerInspect(ctx, containerID)
+	res, err := c.cli.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspect container %s: %w", containerID[:12], err)
 	}
+	info := res.Container
 
 	hi := &HealthInfo{}
 
@@ -40,7 +43,7 @@ func (c *Client) GetHealthInfo(ctx context.Context, containerID string) (*Health
 
 	// Get current health status
 	if info.State != nil && info.State.Health != nil {
-		hs := mapHealthStatus(info.State.Health.Status)
+		hs := mapHealthStatus(string(info.State.Health.Status))
 		hi.Status = &hs
 	}
 

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/api/types/filters"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 
 	"github.com/kolapsis/maintenant/internal/retry"
 )
@@ -52,18 +52,19 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 				return
 			}
 
-			opts := events.ListOptions{
-				Filters: filters.NewArgs(
-					filters.Arg("type", string(events.ContainerEventType)),
-					filters.Arg("type", string(events.ServiceEventType)),
-					filters.Arg("type", string(events.NodeEventType)),
+			opts := client.EventsListOptions{
+				Filters: make(client.Filters).Add("type",
+					string(events.ContainerEventType),
+					string(events.ServiceEventType),
+					string(events.NodeEventType),
 				),
 			}
 			if since != "" {
 				opts.Since = since
 			}
 
-			msgCh, errCh := c.cli.Events(ctx, opts)
+			stream := c.cli.Events(ctx, opts)
+			msgCh, errCh := stream.Messages, stream.Err
 
 			for {
 				select {

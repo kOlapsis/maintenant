@@ -21,7 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+
 	cmodel "github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )

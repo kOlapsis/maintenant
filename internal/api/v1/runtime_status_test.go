@@ -20,8 +20,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	dockerswarm "github.com/docker/docker/api/types/swarm"
-	dockersystem "github.com/docker/docker/api/types/system"
+	dockerswarm "github.com/moby/moby/api/types/swarm"
+	dockersystem "github.com/moby/moby/api/types/system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

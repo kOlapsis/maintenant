@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+
 	cmodel "github.com/kolapsis/maintenant/internal/container"
 )
 
@@ -76,15 +78,15 @@ func IsOneOff(labels map[string]string) bool {
 
 // DiscoverAll performs a full container list + inspect pass, returning all discovered containers.
 func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
-	list, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
+	res, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("container list: %w", err)
 	}
 
 	now := time.Now()
-	containers := make([]*cmodel.Container, 0, len(list))
+	containers := make([]*cmodel.Container, 0, len(res.Items))
 
-	for _, dc := range list {
+	for _, dc := range res.Items {
 		if IsOneOff(dc.Labels) {
 			continue
 		}
@@ -103,15 +105,15 @@ func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 // DiscoverAllWithLabels is like DiscoverAll but also returns raw Docker labels
 // and security configuration for each container.
 func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult, error) {
-	list, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})
+	res, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("container list: %w", err)
 	}
 
 	now := time.Now()
-	results := make([]*DiscoveryResult, 0, len(list))
+	results := make([]*DiscoveryResult, 0, len(res.Items))
 
-	for _, dc := range list {
+	for _, dc := range res.Items {
 		if IsOneOff(dc.Labels) {
 			continue
 		}
@@ -142,10 +144,11 @@ type inspectResult struct {
 
 // inspectAndMap calls ContainerInspect and maps the result to our domain model.
 func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, now time.Time) (*inspectResult, error) {
-	info, err := c.cli.ContainerInspect(ctx, dc.ID)
+	res, err := c.cli.ContainerInspect(ctx, dc.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s: %w", dc.ID[:12], err)
 	}
+	info := res.Container
 
 	cm := mapFromList(dc, now)
 
@@ -154,7 +157,7 @@ func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, now ti
 		cm.HasHealthCheck = true
 	}
 	if info.State != nil && info.State.Health != nil {
-		hs := mapHealthStatus(info.State.Health.Status)
+		hs := mapHealthStatus(string(info.State.Health.Status))
 		cm.HealthStatus = &hs
 	}
 
@@ -183,11 +186,15 @@ func extractSecurityConfig(hc *container.HostConfig) *SecurityConfig {
 
 	for port, bindings := range hc.PortBindings {
 		for _, b := range bindings {
+			var hostIP string
+			if b.HostIP.IsValid() {
+				hostIP = b.HostIP.String()
+			}
 			cfg.PortBindings = append(cfg.PortBindings, PortBindingInfo{
-				HostIP:        b.HostIP,
+				HostIP:        hostIP,
 				HostPort:      b.HostPort,
-				ContainerPort: port.Int(),
-				Protocol:      port.Proto(),
+				ContainerPort: int(port.Num()),
+				Protocol:      string(port.Proto()),
 			})
 		}
 	}
@@ -205,7 +212,7 @@ func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
 		}
 	}
 
-	state := mapContainerState(dc.State)
+	state := mapContainerState(string(dc.State))
 	readyCount := 0
 	if state == cmodel.StateRunning {
 		readyCount = 1
