@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/events"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,16 +32,16 @@ type fakeAPI struct {
 	events chan events.Message
 }
 
-func (f *fakeAPI) ContainerList(context.Context, container.ListOptions) ([]container.Summary, error) {
-	return f.list, nil
+func (f *fakeAPI) ContainerList(context.Context, client.ContainerListOptions) (client.ContainerListResult, error) {
+	return client.ContainerListResult{Items: f.list}, nil
 }
 
-func (f *fakeAPI) ContainerInspect(context.Context, string) (container.InspectResponse, error) {
-	return container.InspectResponse{}, errors.New("inspect unavailable")
+func (f *fakeAPI) ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	return client.ContainerInspectResult{}, errors.New("inspect unavailable")
 }
 
-func (f *fakeAPI) Events(context.Context, events.ListOptions) (<-chan events.Message, <-chan error) {
-	return f.events, make(chan error)
+func (f *fakeAPI) Events(context.Context, client.EventsListOptions) client.EventsResult {
+	return client.EventsResult{Messages: f.events, Err: make(chan error)}
 }
 
 const caddyLabel = "caddy"

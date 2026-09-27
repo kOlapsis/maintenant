@@ -17,7 +17,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/docker/docker/api/types/system"
+	"github.com/moby/moby/api/types/system"
 )
 
 // InfoProvider abstracts docker info retrieval for the Swarm detector.

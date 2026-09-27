@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/moby/moby/api/types/swarm"
 
 	cmodel "github.com/kolapsis/maintenant/internal/container"
 )

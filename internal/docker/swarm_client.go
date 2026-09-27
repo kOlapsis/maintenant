@@ -15,70 +15,71 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/swarm"
-	"github.com/docker/docker/api/types/system"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/api/types/system"
+	"github.com/moby/moby/client"
 )
 
 // SwarmInspect returns the Swarm cluster metadata.
 func (c *Client) SwarmInspect(ctx context.Context) (swarm.Swarm, error) {
-	sw, err := c.cli.SwarmInspect(ctx)
+	res, err := c.cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
 	if err != nil {
 		return swarm.Swarm{}, fmt.Errorf("swarm inspect: %w", err)
 	}
-	return sw, nil
+	return res.Swarm, nil
 }
 
 // Info returns the Docker system info (includes Swarm state).
 func (c *Client) Info(ctx context.Context) (system.Info, error) {
-	info, err := c.cli.Info(ctx)
+	res, err := c.cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return system.Info{}, fmt.Errorf("docker info: %w", err)
 	}
-	return info, nil
+	return res.Info, nil
 }
 
 // ServiceList returns all Swarm services.
 func (c *Client) ServiceList(ctx context.Context) ([]swarm.Service, error) {
-	services, err := c.cli.ServiceList(ctx, swarm.ServiceListOptions{})
+	res, err := c.cli.ServiceList(ctx, client.ServiceListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("service list: %w", err)
 	}
-	return services, nil
+	return res.Items, nil
 }
 
 // ServiceInspect returns a single Swarm service with raw data.
 func (c *Client) ServiceInspect(ctx context.Context, serviceID string) (swarm.Service, error) {
-	svc, _, err := c.cli.ServiceInspectWithRaw(ctx, serviceID, swarm.ServiceInspectOptions{})
+	res, err := c.cli.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
 	if err != nil {
 		return swarm.Service{}, fmt.Errorf("service inspect %s: %w", serviceID, err)
 	}
-	return svc, nil
+	return res.Service, nil
 }
 
 // NodeList returns all Swarm nodes.
 func (c *Client) NodeList(ctx context.Context) ([]swarm.Node, error) {
-	nodes, err := c.cli.NodeList(ctx, swarm.NodeListOptions{})
+	res, err := c.cli.NodeList(ctx, client.NodeListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("node list: %w", err)
 	}
-	return nodes, nil
+	return res.Items, nil
 }
 
 // TaskList returns all Swarm tasks.
 func (c *Client) TaskList(ctx context.Context) ([]swarm.Task, error) {
-	tasks, err := c.cli.TaskList(ctx, swarm.TaskListOptions{})
+	res, err := c.cli.TaskList(ctx, client.TaskListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("task list: %w", err)
 	}
-	return tasks, nil
+	return res.Items, nil
 }
 
 // NetworkInspect returns details for a network by ID.
 func (c *Client) NetworkInspect(ctx context.Context, networkID string) (network.Inspect, error) {
-	net, err := c.cli.NetworkInspect(ctx, networkID, network.InspectOptions{})
+	res, err := c.cli.NetworkInspect(ctx, networkID, client.NetworkInspectOptions{})
 	if err != nil {
 		return network.Inspect{}, fmt.Errorf("network inspect %s: %w", networkID, err)
 	}
-	return net, nil
+	return res.Network, nil
 }

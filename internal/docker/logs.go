@@ -18,8 +18,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 )
 
 const (
@@ -39,7 +39,7 @@ func (c *Client) FetchLogs(ctx context.Context, containerID string, lines int, t
 		tail = maxLogTail
 	}
 
-	opts := container.LogsOptions{
+	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       tail,
@@ -57,7 +57,7 @@ func (c *Client) FetchLogs(ctx context.Context, containerID string, lines int, t
 
 // FetchLogSnippet retrieves the last 50 lines of logs for storing as a snippet on exit events.
 func (c *Client) FetchLogSnippet(ctx context.Context, containerID string) (string, error) {
-	opts := container.LogsOptions{
+	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       snippetTail,
@@ -94,13 +94,13 @@ func (c *Client) StreamLogs(ctx context.Context, dockerID string, lines int, tim
 	}
 
 	// Determine TTY status from container inspect.
-	info, err := c.cli.ContainerInspect(ctx, dockerID)
+	res, err := c.cli.ContainerInspect(ctx, dockerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, false, fmt.Errorf("container inspect for logs: %w", err)
 	}
-	isTTY := info.Config != nil && info.Config.Tty
+	isTTY := res.Container.Config != nil && res.Container.Config.Tty
 
-	opts := container.LogsOptions{
+	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       tail,

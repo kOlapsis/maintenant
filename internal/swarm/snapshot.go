@@ -15,7 +15,7 @@ import (
 	"context"
 	"time"
 
-	dockerswarm "github.com/docker/docker/api/types/swarm"
+	dockerswarm "github.com/moby/moby/api/types/swarm"
 )
 
 // SnapshotFromClient builds a full topology snapshot from the live swarm API.
