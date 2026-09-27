@@ -69,6 +69,7 @@ var carriedTables = []carriedTable{
 	{"endpoints", "declared endpoint monitors"},
 	{"heartbeats", "declared heartbeat monitors"},
 	{"cert_monitors", "declared certificate monitors"},
+	{"outbound_heartbeats", "outbound heartbeat targets"},
 
 	// Alerting configuration, channel secrets included.
 	{"notification_channels", "notification channels and their secrets"},

@@ -309,6 +309,19 @@ CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_a
 CREATE INDEX idx_heartbeat_active ON heartbeats(active);
 CREATE INDEX idx_heartbeats_agent_id ON heartbeats(agent_id);
 
+CREATE TABLE outbound_heartbeats (
+    id               TEXT PRIMARY KEY NOT NULL,
+    name             TEXT NOT NULL,
+    url              TEXT NOT NULL,
+    interval_seconds INTEGER NOT NULL,
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    last_sent_at     BIGINT,
+    last_status_code INTEGER,
+    last_error       TEXT,
+    created_at       BIGINT NOT NULL,
+    updated_at       BIGINT NOT NULL
+);
+
 CREATE TABLE heartbeat_pings (
     id            TEXT PRIMARY KEY NOT NULL,
     heartbeat_id  TEXT NOT NULL REFERENCES heartbeats(id) ON DELETE CASCADE,

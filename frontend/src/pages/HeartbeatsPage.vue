@@ -12,7 +12,8 @@
 -->
 
 <script setup lang="ts">
-import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
+import { inject, ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useHeartbeatsStore } from '@/stores/heartbeats'
 import { usePreferencesStore } from '@/stores/preferences'
 import { useEdition } from '@/composables/useEdition'
@@ -21,6 +22,7 @@ import { createHeartbeat, type Heartbeat } from '@/services/heartbeatApi'
 import HeartbeatCard from '@/components/HeartbeatCard.vue'
 import HeartbeatRow from '@/components/HeartbeatRow.vue'
 import HeartbeatStatusBadge from '@/components/HeartbeatStatusBadge.vue'
+import OutboundHeartbeatsPanel from '@/components/heartbeats/OutboundHeartbeatsPanel.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
 import LoadingSkeleton from '@/components/ui/LoadingSkeleton.vue'
@@ -28,12 +30,26 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import ListToolbar from '@/components/ui/ListToolbar.vue'
 import DataTable, { type Column } from '@/components/ui/DataTable.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 import type { StatusChip } from '@/components/ui/listFilters'
 import { formatDeadline, formatInterval, heartbeatTone } from '@/utils/heartbeatFormat'
 import { timeAgo } from '@/utils/time'
 import { Heart } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
+
+const route = useRoute()
+const router = useRouter()
+
+const activeTab = computed<string>({
+  get: () => (route.query.tab === 'outgoing' ? 'outgoing' : 'incoming'),
+  set: (tab) => router.replace({ query: { ...route.query, tab: tab === 'outgoing' ? 'outgoing' : undefined } }),
+})
+
+const tabOptions = [
+  { value: 'incoming', label: 'Incoming' },
+  { value: 'outgoing', label: 'Outgoing' },
+]
 
 const store = useHeartbeatsStore()
 const prefs = usePreferencesStore()
@@ -43,7 +59,13 @@ const quota = getQuota('heartbeats')
 
 const showCreateForm = ref(false)
 const createError = ref<unknown>(null)
+const showOutgoingCreateForm = ref(false)
 
+watch(activeTab, () => {
+  showCreateForm.value = false
+  createError.value = null
+  showOutgoingCreateForm.value = false
+})
 
 const form = ref({
   name: '',
@@ -181,10 +203,10 @@ async function handleCreate() {
       <div>
         <h1 class="text-2xl font-black text-mnt-primary">Heartbeats</h1>
         <p class="mt-1 text-sm" :style="{ color: 'var(--mnt-text-muted)' }">
-          Passive cron &amp; scheduled task monitoring
+          {{ activeTab === 'incoming' ? "Passive cron & scheduled task monitoring" : "Ping other Maintenant instances so they alert if this one goes down" }}
         </p>
       </div>
-      <div class="flex items-center gap-2">
+      <div v-if="activeTab === 'incoming'" class="flex items-center gap-2">
         <span
           v-if="!quota.isUnlimited"
           class="rounded-full px-2.5 py-1 text-xs font-medium"
@@ -222,9 +244,30 @@ async function handleCreate() {
           {{ showCreateForm ? 'Cancel' : 'New Heartbeat' }}
         </button>
       </div>
+      <div v-else class="flex items-center gap-2">
+        <button
+          class="min-h-[44px]"
+          :style="{
+            borderRadius: 'var(--mnt-radius-lg)',
+            backgroundColor: 'var(--mnt-accent)',
+            color: 'var(--mnt-text-inverted)',
+            padding: '0.5rem 1rem',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+          }"
+          @click="showOutgoingCreateForm = !showOutgoingCreateForm"
+        >
+          {{ showOutgoingCreateForm ? 'Cancel' : 'New target' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="mb-6">
+      <SegmentedToggle v-model="activeTab" :options="tabOptions" ariaLabel="Heartbeat direction" />
     </div>
 
     <FeatureHint
+      v-if="activeTab === 'incoming'"
       storage-key="heartbeats"
       title="Monitor cron jobs with a single curl"
       :doc-href="docUrl('features/heartbeats/#ping-url-format')"
@@ -238,6 +281,20 @@ async function handleCreate() {
       + exit code to track duration. If no ping arrives before the deadline (interval + grace), a <em>deadline missed</em> alert fires.
     </FeatureHint>
 
+    <FeatureHint
+      v-else
+      storage-key="outbound-heartbeats"
+      title="Let another instance watch this one"
+      :doc-href="docUrl('features/heartbeats/#outbound-heartbeats')"
+    >
+      Create a heartbeat monitor on another Maintenant instance, then paste its ping URL
+      (<code class="rounded-md px-1.5 py-0.5 text-xs font-mono" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)">/ping/{uuid}</code>)
+      as a target here. This instance pings it on the interval you choose &mdash; if this instance goes down, the other one raises the alert.
+    </FeatureHint>
+
+    <OutboundHeartbeatsPanel v-if="activeTab === 'outgoing'" v-model:show-create-form="showOutgoingCreateForm" />
+
+    <template v-else>
     <!-- Create form -->
     <div
       v-if="showCreateForm"
@@ -457,6 +514,7 @@ async function handleCreate() {
         {{ row.status === 'paused' ? '-' : formatDeadline(row.next_deadline_at) }}
       </template>
     </DataTable>
+    </template>
   </div>
   </div>
 </template>
