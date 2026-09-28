@@ -26,6 +26,21 @@ export default defineConfigWithVueTs(
     files: ['src/**/__tests__/*'],
   },
 
+  {
+    name: 'app/shared-ui-components',
+    files: ['src/**/*.vue'],
+    ignores: ['src/components/ui/**', 'src/**/__tests__/**'],
+    rules: {
+      'vue/no-restricted-html-elements': [
+        'warn',
+        { element: 'input', message: 'Use the shared TextInput, CheckboxInput, or RadioGroup component instead of a raw <input>.' },
+        { element: 'select', message: 'Use the shared SelectInput component instead of a raw <select>.' },
+        { element: 'textarea', message: 'Use the shared TextareaInput component instead of a raw <textarea>.' },
+        { element: 'button', message: 'Use the shared UiButton, ToggleSwitch, or TabNav component instead of a raw <button>.' },
+      ],
+    },
+  },
+
   ...pluginOxlint.buildFromOxlintConfigFile('.oxlintrc.json'),
 
   skipFormatting,

@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Box, Globe, Shield, Heart, Sun, Moon, ServerOff } from 'lucide-vue-next'
+import { Box, Globe, Shield, Heart, Sun, Moon, ServerOff, Plus, Trash2 } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
 import { severityVar, type Severity } from '@/composables/useSeverity'
 import StatusDot from '@/components/ui/StatusDot.vue'
@@ -30,6 +30,17 @@ import DataTable, { type Column } from '@/components/ui/DataTable.vue'
 import CollapsiblePanel from '@/components/ui/CollapsiblePanel.vue'
 import type { ChipTone, StatusChip } from '@/components/ui/listFilters'
 import { usePreferencesStore } from '@/stores/preferences'
+import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
+import CountBadge from '@/components/ui/CountBadge.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import TextareaInput from '@/components/ui/TextareaInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import RadioGroup from '@/components/ui/RadioGroup.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import EndpointStatusBadge from '@/components/EndpointStatusBadge.vue'
 import HeartbeatStatusBadge from '@/components/HeartbeatStatusBadge.vue'
 import CertificateStatusBadge from '@/components/CertificateStatusBadge.vue'
@@ -147,6 +158,34 @@ const sampleKpis = [
 ]
 
 const lastSelected = ref('')
+
+// Form controls demo state
+const demoTab = ref('history')
+const tabItems: TabNavItem[] = [
+  { value: 'history', label: 'History' },
+  { value: 'triggers', label: 'Triggers', count: 4 },
+  { value: 'silence', label: 'Silence', count: 2, countTone: 'warn' },
+]
+
+const demoName = ref('')
+const demoAge = ref<number | null>(null)
+const demoEmail = ref('')
+const demoEmailError = ref('This field is required')
+const demoRuntime = ref('docker')
+const demoNotes = ref('')
+const demoAccept = ref(false)
+const demoTags = ref<string[]>(['alerts'])
+const demoPlan = ref('pro')
+const demoNotifications = ref(true)
+const demoNotificationsSm = ref(false)
+
+const demoButtonLoading = ref(false)
+function triggerButtonLoading() {
+  demoButtonLoading.value = true
+  setTimeout(() => (demoButtonLoading.value = false), 1200)
+}
+
+const demoModalOpen = ref(false)
 </script>
 
 <template>
@@ -373,6 +412,139 @@ const lastSelected = ref('')
       </div>
       <div class="rounded-xl border border-mnt-default bg-mnt-surface p-3">
         <LoadingSkeleton variant="grid" :count="12" />
+      </div>
+    </section>
+
+    <!-- TabNav + CountBadge -->
+    <section class="space-y-3">
+      <SectionHeader title="TabNav + CountBadge" />
+      <div class="rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <TabNav v-model="demoTab" :items="tabItems" ariaLabel="Demo section tabs" />
+        <p class="mt-3 text-xs text-mnt-muted">Active tab: {{ demoTab }}</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <CountBadge :value="3" />
+          <CountBadge :value="5" tone="warn" />
+          <CountBadge :value="2" tone="danger" />
+          <CountBadge :value="9" tone="ok" />
+        </div>
+      </div>
+    </section>
+
+    <!-- UiButton -->
+    <section class="space-y-3">
+      <SectionHeader title="UiButton" />
+      <div class="flex flex-wrap items-center gap-3 rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <UiButton variant="primary" :icon="Plus">Primary</UiButton>
+        <UiButton variant="secondary">Secondary</UiButton>
+        <UiButton variant="danger" :icon="Trash2">Danger</UiButton>
+        <UiButton variant="ghost">Ghost</UiButton>
+        <UiButton variant="primary" size="sm">Small</UiButton>
+        <UiButton variant="secondary" disabled>Disabled</UiButton>
+        <UiButton variant="primary" :loading="demoButtonLoading" @click="triggerButtonLoading">
+          {{ demoButtonLoading ? 'Saving…' : 'Click to load' }}
+        </UiButton>
+      </div>
+    </section>
+
+    <!-- Form fields -->
+    <section class="space-y-3">
+      <SectionHeader title="FormField + inputs" />
+      <div class="grid gap-4 rounded-xl border border-mnt-default bg-mnt-surface p-4 sm:grid-cols-2">
+        <FormField label="Name" hint="As shown on the dashboard" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="demoName" :aria-describedby="describedBy" :invalid="invalid" placeholder="matrix-coturn" />
+          </template>
+        </FormField>
+
+        <FormField label="Age" hint="Numeric field — empty clears to null">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="demoAge" type="number" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
+
+        <FormField label="Email" :error="demoEmailError">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="demoEmail"
+              type="email"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="you@example.com"
+              @input="demoEmailError = demoEmail ? '' : 'This field is required'"
+            />
+          </template>
+        </FormField>
+
+        <FormField label="Runtime" hint="Select input">
+          <template #default="{ id, describedBy, invalid }">
+            <SelectInput
+              :id="id"
+              v-model="demoRuntime"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :options="[
+                { value: 'docker', label: 'Docker' },
+                { value: 'k8s', label: 'Kubernetes' },
+                { value: 'swarm', label: 'Swarm', disabled: true },
+              ]"
+            />
+          </template>
+        </FormField>
+
+        <FormField label="Notes" hint="Textarea, mono" class="sm:col-span-2">
+          <template #default="{ id, describedBy, invalid }">
+            <TextareaInput :id="id" v-model="demoNotes" mono :aria-describedby="describedBy" :invalid="invalid" :rows="3" />
+          </template>
+        </FormField>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 rounded-xl border border-mnt-default bg-mnt-surface p-4 text-xs text-mnt-muted">
+        <span>md ·</span>
+        <TextInput model-value="" size="md" placeholder="md" class="max-w-[140px]" />
+        <span>sm ·</span>
+        <TextInput model-value="" size="sm" placeholder="sm" class="max-w-[140px]" />
+      </div>
+    </section>
+
+    <!-- Checkbox / radio / toggle -->
+    <section class="space-y-3">
+      <SectionHeader title="CheckboxInput + RadioGroup + ToggleSwitch" />
+      <div class="grid gap-4 rounded-xl border border-mnt-default bg-mnt-surface p-4 sm:grid-cols-3">
+        <div class="space-y-2">
+          <CheckboxInput v-model="demoAccept" label="I accept the terms" />
+          <CheckboxInput value="alerts" :model-value="demoTags" label="Alerts channel" @update:model-value="(v) => (demoTags = v as string[])" />
+          <CheckboxInput value="updates" :model-value="demoTags" label="Updates channel" @update:model-value="(v) => (demoTags = v as string[])" />
+          <p class="text-xs text-mnt-muted">Selected: {{ demoTags.join(', ') || 'none' }}</p>
+        </div>
+        <RadioGroup
+          v-model="demoPlan"
+          ariaLabel="Plan"
+          :options="[
+            { value: 'community', label: 'Community', hint: 'Free forever' },
+            { value: 'pro', label: 'Pro', hint: '29€/month' },
+          ]"
+        />
+        <div class="flex flex-col gap-3">
+          <ToggleSwitch v-model="demoNotifications" label="Email notifications" show-label />
+          <ToggleSwitch v-model="demoNotificationsSm" label="Compact toggle" show-label size="sm" />
+          <ToggleSwitch :model-value="true" label="Disabled toggle" show-label disabled />
+        </div>
+      </div>
+    </section>
+
+    <!-- UiModal -->
+    <section class="space-y-3">
+      <SectionHeader title="UiModal (rebuilt ConfirmDialog uses this)" />
+      <div class="rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <UiButton variant="secondary" @click="demoModalOpen = true">Open modal</UiButton>
+        <UiModal v-model:open="demoModalOpen" title="Delete monitor" size="sm">
+          <p class="text-sm text-mnt-secondary">This removes the monitor and its history. This cannot be undone.</p>
+          <template #footer>
+            <UiButton variant="secondary" @click="demoModalOpen = false">Cancel</UiButton>
+            <UiButton variant="danger" @click="demoModalOpen = false">Delete</UiButton>
+          </template>
+        </UiModal>
       </div>
     </section>
 
