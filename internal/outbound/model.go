@@ -83,8 +83,8 @@ func (in *Input) Validate() error {
 		return fmt.Errorf("%w: name must be at most %d characters", ErrInvalidInput, MaxNameLength)
 	}
 	u, err := url.Parse(in.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("%w: url must be an absolute http or https URL", ErrInvalidInput)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("%w: url must be an absolute https URL", ErrInvalidInput)
 	}
 	if in.IntervalSeconds < MinIntervalSeconds || in.IntervalSeconds > MaxIntervalSeconds {
 		return fmt.Errorf("%w: interval_seconds must be between %d and %d",

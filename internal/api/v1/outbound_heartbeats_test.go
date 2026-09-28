@@ -89,7 +89,8 @@ func (m *memOutboundStore) RecordSend(_ context.Context, id string, r outbound.S
 
 func newOutboundTestMux() *http.ServeMux {
 	oh := NewOutboundHeartbeatHandler(outbound.NewService(outbound.Deps{
-		Store: &memOutboundStore{items: map[string]outbound.OutboundHeartbeat{}},
+		Store:       &memOutboundStore{items: map[string]outbound.OutboundHeartbeat{}},
+		ValidateURL: func(context.Context, string) error { return nil },
 	}))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/outbound-heartbeats", oh.HandleList)
@@ -116,6 +117,7 @@ func TestOutboundHeartbeatHandler_Validation(t *testing.T) {
 		{"malformed json", `{`, "INVALID_JSON"},
 		{"missing name", `{"url":"https://h/ping/x","interval_seconds":60}`, "INVALID_INPUT"},
 		{"bad scheme", `{"name":"a","url":"ftp://h/x","interval_seconds":60}`, "INVALID_INPUT"},
+		{"plain http", `{"name":"a","url":"http://h/ping/x","interval_seconds":60}`, "INVALID_INPUT"},
 		{"relative url", `{"name":"a","url":"/ping/x","interval_seconds":60}`, "INVALID_INPUT"},
 		{"interval below 30", `{"name":"a","url":"https://h","interval_seconds":10}`, "INVALID_INPUT"},
 		{"interval above 86400", `{"name":"a","url":"https://h","interval_seconds":90000}`, "INVALID_INPUT"},

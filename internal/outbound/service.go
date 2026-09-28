@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/ssrf"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -32,10 +33,11 @@ const (
 
 // Deps holds the service dependencies.
 type Deps struct {
-	Store   Store
-	Logger  *slog.Logger
-	Version string
-	Client  *http.Client
+	Store       Store
+	Logger      *slog.Logger
+	Version     string
+	Client      *http.Client
+	ValidateURL func(ctx context.Context, rawURL string) error
 }
 
 // Service manages outbound heartbeats and sends them when due.
@@ -44,6 +46,7 @@ type Service struct {
 	logger    *slog.Logger
 	userAgent string
 	client    *http.Client
+	validate  func(ctx context.Context, rawURL string) error
 	now       func() time.Time
 
 	mu       sync.Mutex
@@ -59,13 +62,18 @@ func NewService(d Deps) *Service {
 	}
 	client := d.Client
 	if client == nil {
-		client = &http.Client{Timeout: sendTimeout}
+		client = ssrf.NewHTTPClient(sendTimeout, false)
+	}
+	validate := d.ValidateURL
+	if validate == nil {
+		validate = ssrf.ValidateURL
 	}
 	return &Service{
 		store:     d.Store,
 		logger:    logger,
 		userAgent: "maintenant/" + d.Version + " outbound-heartbeat",
 		client:    client,
+		validate:  validate,
 		now:       time.Now,
 		inFlight:  make(map[string]struct{}),
 	}
@@ -95,9 +103,19 @@ func (s *Service) Get(ctx context.Context, id string) (*OutboundHeartbeat, error
 	return o, nil
 }
 
+func (s *Service) validateInput(ctx context.Context, in *Input) error {
+	if err := in.Validate(); err != nil {
+		return err
+	}
+	if err := s.validate(ctx, in.URL); err != nil {
+		return fmt.Errorf("%w: url: %v", ErrInvalidInput, err)
+	}
+	return nil
+}
+
 // Create validates and stores a new outbound heartbeat.
 func (s *Service) Create(ctx context.Context, in Input) (*OutboundHeartbeat, error) {
-	if err := in.Validate(); err != nil {
+	if err := s.validateInput(ctx, &in); err != nil {
 		return nil, err
 	}
 	now := s.now().Truncate(time.Second)
@@ -118,7 +136,7 @@ func (s *Service) Create(ctx context.Context, in Input) (*OutboundHeartbeat, err
 
 // Update replaces the editable fields of an outbound heartbeat.
 func (s *Service) Update(ctx context.Context, id string, in Input) (*OutboundHeartbeat, error) {
-	if err := in.Validate(); err != nil {
+	if err := s.validateInput(ctx, &in); err != nil {
 		return nil, err
 	}
 	o, err := s.Get(ctx, id)

@@ -227,8 +227,10 @@ onMounted(() => {
               fontSize: '0.8125rem',
               minHeight: '44px',
             }"
+            pattern="https://.+"
             required
           />
+          <p class="mt-1 text-xs" :style="{ color: 'var(--mnt-text-muted)' }">HTTPS only, on a public address.</p>
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Ping every</label>

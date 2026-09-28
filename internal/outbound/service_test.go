@@ -135,14 +135,14 @@ func TestValidate(t *testing.T) {
 		ok   bool
 	}{
 		{"valid https", Input{Name: "a", URL: "https://mnt.example/ping/x", IntervalSeconds: 60}, true},
-		{"valid http private", Input{Name: "a", URL: "http://10.0.0.5:8080/ping/x", IntervalSeconds: 30}, true},
-		{"max interval", Input{Name: "a", URL: "http://h", IntervalSeconds: 86400}, true},
-		{"blank name", Input{Name: "  ", URL: "http://h", IntervalSeconds: 60}, false},
+		{"http rejected", Input{Name: "a", URL: "http://mnt.example/ping/x", IntervalSeconds: 30}, false},
+		{"max interval", Input{Name: "a", URL: "https://h", IntervalSeconds: 86400}, true},
+		{"blank name", Input{Name: "  ", URL: "https://h", IntervalSeconds: 60}, false},
 		{"no scheme", Input{Name: "a", URL: "mnt.example/ping", IntervalSeconds: 60}, false},
 		{"ftp scheme", Input{Name: "a", URL: "ftp://h/x", IntervalSeconds: 60}, false},
-		{"no host", Input{Name: "a", URL: "http:///x", IntervalSeconds: 60}, false},
-		{"interval too short", Input{Name: "a", URL: "http://h", IntervalSeconds: 29}, false},
-		{"interval too long", Input{Name: "a", URL: "http://h", IntervalSeconds: 86401}, false},
+		{"no host", Input{Name: "a", URL: "https:///x", IntervalSeconds: 60}, false},
+		{"interval too short", Input{Name: "a", URL: "https://h", IntervalSeconds: 29}, false},
+		{"interval too long", Input{Name: "a", URL: "https://h", IntervalSeconds: 86401}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -180,7 +180,7 @@ func TestSendDue_RecordsResults(t *testing.T) {
 		&OutboundHeartbeat{ID: "notdue", URL: okSrv.URL, IntervalSeconds: 60, Enabled: true, LastSentAt: &recent},
 		&OutboundHeartbeat{ID: "off", URL: okSrv.URL, IntervalSeconds: 60, Enabled: false},
 	)
-	s := NewService(Deps{Store: st, Version: "1.2.3"})
+	s := NewService(Deps{Store: st, Version: "1.2.3", Client: &http.Client{Timeout: time.Second}})
 	s.now = func() time.Time { return now }
 
 	s.sendDue(context.Background())
@@ -225,7 +225,7 @@ func TestSendDue_SkipsTargetInFlight(t *testing.T) {
 	defer srv.Close()
 
 	st := newFakeStore(&OutboundHeartbeat{ID: "slow", URL: srv.URL, IntervalSeconds: 30, Enabled: true})
-	s := NewService(Deps{Store: st})
+	s := NewService(Deps{Store: st, Client: &http.Client{Timeout: 5 * time.Second}})
 
 	s.sendDue(context.Background())
 	require.Eventually(t, func() bool { return hits.Load() == 1 }, 2*time.Second, 10*time.Millisecond)
@@ -240,12 +240,12 @@ func TestSendDue_SkipsTargetInFlight(t *testing.T) {
 }
 
 func TestSendNow(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	s := NewService(Deps{Store: newFakeStore()})
+	s := NewService(Deps{Store: newFakeStore(), Client: srv.Client(), ValidateURL: acceptURL})
 	ctx := context.Background()
 	o, err := s.Create(ctx, Input{Name: "up", URL: srv.URL, IntervalSeconds: 60})
 	require.NoError(t, err)
@@ -261,9 +261,40 @@ func TestSendNow(t *testing.T) {
 }
 
 func TestUpdateDelete_NotFound(t *testing.T) {
-	s := NewService(Deps{Store: newFakeStore()})
+	s := NewService(Deps{Store: newFakeStore(), ValidateURL: acceptURL})
 	ctx := context.Background()
-	_, err := s.Update(ctx, "missing", Input{Name: "a", URL: "http://h", IntervalSeconds: 60})
+	_, err := s.Update(ctx, "missing", Input{Name: "a", URL: "https://h", IntervalSeconds: 60})
 	assert.ErrorIs(t, err, ErrNotFound)
 	assert.ErrorIs(t, s.Delete(ctx, "missing"), ErrNotFound)
+}
+
+func acceptURL(context.Context, string) error { return nil }
+
+func TestCreate_RejectsInternalTargets(t *testing.T) {
+	s := NewService(Deps{Store: newFakeStore()})
+	ctx := context.Background()
+	for _, u := range []string{"https://127.0.0.1/ping/x", "https://10.0.0.5/ping/x", "https://169.254.169.254/latest", "https://localhost/ping/x"} {
+		_, err := s.Create(ctx, Input{Name: "a", URL: u, IntervalSeconds: 60})
+		assert.ErrorIs(t, err, ErrInvalidInput, u)
+	}
+}
+
+func TestSendDue_DefaultClientRefusesLoopback(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	st := newFakeStore(&OutboundHeartbeat{ID: "loop", URL: srv.URL, IntervalSeconds: 60, Enabled: true})
+	s := NewService(Deps{Store: st})
+
+	s.sendDue(context.Background())
+	s.wg.Wait()
+
+	assert.Equal(t, int32(0), hits.Load())
+	got, _ := st.Get(context.Background(), "loop")
+	assert.Nil(t, got.LastStatusCode)
+	require.NotNil(t, got.LastError)
 }
