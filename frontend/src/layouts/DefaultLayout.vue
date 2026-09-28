@@ -39,6 +39,7 @@ import {
   Menu,
   MonitorDot,
   Network,
+  RadioTower,
   Send,
   Server,
   Shield,
@@ -52,12 +53,14 @@ import { useRuntimeStore } from '@/stores/runtime'
 import { useResourcesStore } from '@/stores/resources'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
 import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
+import { isNavItemVisible, type NavItem } from '@/utils/navVisibility'
 
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
 const {
   isCommunity,
+  isDemo,
   editionName,
   hasFeature,
   licenseMessage,
@@ -113,15 +116,6 @@ function closeMobileMenu() {
   mobileMenuOpen.value = false
 }
 
-interface NavItem {
-  type: string
-  to?: string
-  label?: string
-  icon?: typeof LayoutGrid
-  feature?: string
-  runtime?: string[]
-}
-
 const allNav: NavItem[] = [
   { type: 'item', to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
   // Pro: Cluster (Swarm & K8s)
@@ -166,19 +160,17 @@ const allNav: NavItem[] = [
   { type: 'separator' },
   { type: 'item', to: '/status-admin', label: 'Status Pages', icon: Activity },
   { type: 'item', to: '/agents', label: 'Agents', icon: MonitorDot },
+  { type: 'item', to: '/outbound-heartbeats', label: 'Outbound heartbeats', icon: RadioTower, hideInDemo: true },
 ]
 
 const mainNav = computed(() =>
-  allNav.filter((item) => {
-    if (item.feature && !hasFeature(item.feature)) return false
-    // Runtime-specific items show when the selected host scope offers that
-    // runtime: in "all" the union of every agent + local runtime, otherwise the
-    // single selected scope's runtime.
-    if (item.runtime && !item.runtime.some((rt) => availableRuntimes.value.includes(rt))) {
-      return false
-    }
-    return true
-  }),
+  allNav.filter((item) =>
+    isNavItemVisible(item, {
+      hasFeature,
+      availableRuntimes: availableRuntimes.value,
+      isDemo: isDemo.value,
+    }),
+  ),
 )
 
 // When the user switches host scope, a runtime-specific page they are on may no

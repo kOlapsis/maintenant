@@ -151,7 +151,7 @@ A monitoring tool cannot report its own outage. Outbound heartbeats solve this b
 ### Setting It Up
 
 1. On the **other** instance, create a heartbeat monitor with an interval that matches the one you will use below, plus some grace time. Copy its ping URL.
-2. On **this** instance, open **Heartbeats → Outgoing** and click **New target**.
+2. On **this** instance, open **Outbound heartbeats** in the Administration section of the menu and click **New target**.
 3. Paste the ping URL, give the target a name and choose an interval.
 4. Click **Send now** to check the target right away. The row shows the HTTP status it received, or the error.
 
