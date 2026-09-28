@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Upload, Trash2, X } from 'lucide-vue-next'
+import { ref, computed, watch } from 'vue'
+import { Trash2 } from 'lucide-vue-next'
 import { personalizationApi } from '@/services/personalizationApi'
 import { usePersonalizationStore } from '@/stores/personalization'
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import FileInput from '@/components/ui/FileInput.vue'
 
 type AssetRole = 'logo' | 'favicon' | 'hero'
 
@@ -13,10 +14,6 @@ const store = usePersonalizationStore()
 
 const title = defineModel<string>('title', { required: true })
 const subtitle = defineModel<string>('subtitle', { required: true })
-
-const logoInputRef = ref<HTMLInputElement | null>(null)
-const faviconInputRef = ref<HTMLInputElement | null>(null)
-const heroInputRef = ref<HTMLInputElement | null>(null)
 
 const logoFile = ref<File | null>(null)
 const faviconFile = ref<File | null>(null)
@@ -29,6 +26,10 @@ const removeLogo = ref(false)
 const removeFavicon = ref(false)
 const removeHero = ref(false)
 
+watch(logoFile, (f) => { if (f) removeLogo.value = false })
+watch(faviconFile, (f) => { if (f) removeFavicon.value = false })
+watch(heroFile, (f) => { if (f) removeHero.value = false })
+
 const hasLogo = computed(() => !!store.settings)
 const hasFavicon = computed(() => !!store.settings)
 const hasHero = computed(() => !!store.settings)
@@ -37,32 +38,10 @@ const logoPreviewUrl = computed(() => personalizationApi.getAssetURL('logo'))
 const faviconPreviewUrl = computed(() => personalizationApi.getAssetURL('favicon'))
 const heroPreviewUrl = computed(() => personalizationApi.getAssetURL('hero'))
 
-function inputRefFor(role: AssetRole): HTMLInputElement | null {
-  if (role === 'logo') return logoInputRef.value
-  if (role === 'favicon') return faviconInputRef.value
-  return heroInputRef.value
-}
-
-function onFileSelected(role: AssetRole, e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0] ?? null
-  if (role === 'logo') {
-    logoFile.value = file
-    if (file) removeLogo.value = false
-  } else if (role === 'favicon') {
-    faviconFile.value = file
-    if (file) removeFavicon.value = false
-  } else {
-    heroFile.value = file
-    if (file) removeHero.value = false
-  }
-}
-
 function clearSelection(role: AssetRole) {
   if (role === 'logo') logoFile.value = null
   else if (role === 'favicon') faviconFile.value = null
   else heroFile.value = null
-  const input = inputRefFor(role)
-  if (input) input.value = ''
 }
 
 function markForRemoval(role: AssetRole) {
@@ -145,27 +124,7 @@ defineExpose({ flushPendingAssets })
         PNG, JPEG, WebP or SVG — max 200 KB. Recommended: 200×80px
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <input
-          ref="logoInputRef"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
-          class="sr-only"
-          @change="(e) => onFileSelected('logo', e)"
-        />
-        <UiButton type="button" variant="secondary" size="sm" :icon="Upload" @click="logoInputRef?.click()">
-          Choose file…
-        </UiButton>
-        <span
-          v-if="logoFile"
-          class="truncate max-w-[200px] text-xs"
-          style="color: var(--mnt-text-muted)"
-          :title="logoFile.name"
-        >
-          {{ logoFile.name }}
-        </span>
-        <UiButton v-if="logoFile" type="button" variant="ghost" size="sm" :icon="X" @click="clearSelection('logo')">
-          Clear
-        </UiButton>
+        <FileInput v-model:file="logoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
         <UiButton
           v-if="hasLogo && !logoFile && !removeLogo"
           type="button"
@@ -195,27 +154,7 @@ defineExpose({ flushPendingAssets })
         PNG, ICO or SVG — max 50 KB. Recommended: 32×32px
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <input
-          ref="faviconInputRef"
-          type="file"
-          accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml"
-          class="sr-only"
-          @change="(e) => onFileSelected('favicon', e)"
-        />
-        <UiButton type="button" variant="secondary" size="sm" :icon="Upload" @click="faviconInputRef?.click()">
-          Choose file…
-        </UiButton>
-        <span
-          v-if="faviconFile"
-          class="truncate max-w-[200px] text-xs"
-          style="color: var(--mnt-text-muted)"
-          :title="faviconFile.name"
-        >
-          {{ faviconFile.name }}
-        </span>
-        <UiButton v-if="faviconFile" type="button" variant="ghost" size="sm" :icon="X" @click="clearSelection('favicon')">
-          Clear
-        </UiButton>
+        <FileInput v-model:file="faviconFile" accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml" />
         <UiButton
           v-if="hasFavicon && !faviconFile && !removeFavicon"
           type="button"
@@ -244,27 +183,7 @@ defineExpose({ flushPendingAssets })
         PNG, JPEG or WebP — max 500 KB. Recommended: 1200×400px
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <input
-          ref="heroInputRef"
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          class="sr-only"
-          @change="(e) => onFileSelected('hero', e)"
-        />
-        <UiButton type="button" variant="secondary" size="sm" :icon="Upload" @click="heroInputRef?.click()">
-          Choose file…
-        </UiButton>
-        <span
-          v-if="heroFile"
-          class="truncate max-w-[200px] text-xs"
-          style="color: var(--mnt-text-muted)"
-          :title="heroFile.name"
-        >
-          {{ heroFile.name }}
-        </span>
-        <UiButton v-if="heroFile" type="button" variant="ghost" size="sm" :icon="X" @click="clearSelection('hero')">
-          Clear
-        </UiButton>
+        <FileInput v-model:file="heroFile" accept="image/png,image/jpeg,image/webp" />
         <UiButton
           v-if="hasHero && !heroFile && !removeHero"
           type="button"

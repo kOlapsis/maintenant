@@ -133,6 +133,7 @@ function onPasswordInput() {
               :id="id"
               v-model="form.password"
               type="password"
+              autocomplete="new-password"
               :aria-describedby="describedBy"
               :invalid="invalid"
               :placeholder="form.password_set ? 'Password configured' : ''"

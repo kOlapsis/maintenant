@@ -182,7 +182,7 @@ async function handleDelete() {
       :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       @click.stop
     >
-      <UiButton variant="danger" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
+      <UiButton variant="danger-ghost" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
         Delete
       </UiButton>
     </div>

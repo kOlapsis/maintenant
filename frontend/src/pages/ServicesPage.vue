@@ -19,7 +19,8 @@ import { useTopologyRefetch } from '@/composables/useTopologyRefetch'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 import HostBadge from '@/components/HostBadge.vue'
 import { timeAgo } from '@/utils/time'
-import { Layers, ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { Layers } from 'lucide-vue-next'
+import DisclosureButton from '@/components/ui/DisclosureButton.vue'
 
 interface ServiceGroup {
   stack: string
@@ -144,44 +145,44 @@ function handleSelect(svc: SwarmServiceResponse) {
           class="bg-mnt-surface rounded-xl border border-mnt-default overflow-hidden"
         >
           <!-- Group header -->
-          <button
-            class="w-full flex items-center justify-between px-4 py-3 hover:bg-mnt-elevated transition-all"
-            @click="toggleGroup(group.stack)"
+          <DisclosureButton
+            :expanded="expandedGroups.has(group.stack)"
+            :controls-id="`services-group-${group.stack}`"
+            class="px-4 py-3 hover:bg-mnt-elevated transition-all"
+            @toggle="toggleGroup(group.stack)"
           >
-            <div class="flex items-center gap-3">
-              <component
-                :is="expandedGroups.has(group.stack) ? ChevronDown : ChevronRight"
-                :size="14"
-                class="text-mnt-muted flex-shrink-0"
-              />
-              <span class="text-sm font-semibold text-mnt-primary">{{ group.stack }}</span>
-              <span
-                class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded"
-              >
-                {{ group.services.length }} service{{ group.services.length === 1 ? '' : 's' }}
-              </span>
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <span class="text-sm font-semibold text-mnt-primary">{{ group.stack }}</span>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded"
+                >
+                  {{ group.services.length }} service{{ group.services.length === 1 ? '' : 's' }}
+                </span>
+              </div>
+              <div class="flex items-center gap-2 text-xs text-mnt-muted">
+                <span
+                  :class="[
+                    'font-semibold tabular-nums',
+                    group.services.every((s) => s.running_replicas >= s.desired_replicas)
+                      ? 'text-mnt-status-ok'
+                      : group.services.some((s) => s.running_replicas > 0)
+                        ? 'text-mnt-status-warn'
+                        : 'text-mnt-status-down',
+                  ]"
+                >
+                  {{ group.services.reduce((sum, s) => sum + s.running_replicas, 0) }}/{{
+                    group.services.reduce((sum, s) => sum + s.desired_replicas, 0)
+                  }}
+                </span>
+              </div>
             </div>
-            <div class="flex items-center gap-2 text-xs text-mnt-muted">
-              <span
-                :class="[
-                  'font-semibold tabular-nums',
-                  group.services.every((s) => s.running_replicas >= s.desired_replicas)
-                    ? 'text-mnt-status-ok'
-                    : group.services.some((s) => s.running_replicas > 0)
-                      ? 'text-mnt-status-warn'
-                      : 'text-mnt-status-down',
-                ]"
-              >
-                {{ group.services.reduce((sum, s) => sum + s.running_replicas, 0) }}/{{
-                  group.services.reduce((sum, s) => sum + s.desired_replicas, 0)
-                }}
-              </span>
-            </div>
-          </button>
+          </DisclosureButton>
 
           <!-- Service rows -->
           <div
             v-if="expandedGroups.has(group.stack)"
+            :id="`services-group-${group.stack}`"
             class="border-t border-mnt-default divide-y divide-slate-800/60"
           >
             <div

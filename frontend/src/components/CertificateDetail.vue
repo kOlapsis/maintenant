@@ -35,7 +35,7 @@ const detail = ref<CertificateDetailResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const activeTab = ref<'details' | 'history'>('details')
-const tabItems: TabNavItem[] = [
+const tabItems: TabNavItem<'details' | 'history'>[] = [
   { value: 'details', label: 'Details' },
   { value: 'history', label: 'History' },
 ]
@@ -195,11 +195,10 @@ function countdownBgColor(days: number | undefined): string {
 
       <!-- Tabs -->
       <TabNav
+        v-model="activeTab"
         class="mb-4"
-        :model-value="activeTab"
         :items="tabItems"
         ariaLabel="Certificate detail tabs"
-        @update:model-value="(v) => (activeTab = v as 'details' | 'history')"
       />
 
       <CertificateChecksHistory v-if="activeTab === 'history'" :certificate-id="certificateId" />

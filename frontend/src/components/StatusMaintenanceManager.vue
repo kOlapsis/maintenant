@@ -186,7 +186,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
             >
               Edit
             </UiButton>
-            <UiButton variant="danger" size="sm" @click="handleDelete(mw.id)">Delete</UiButton>
+            <UiButton variant="danger-ghost" size="sm" @click="handleDelete(mw.id)">Delete</UiButton>
           </div>
         </div>
         <p v-if="mw.description" class="mt-1 text-xs" style="color: var(--mnt-text-muted)">{{ mw.description }}</p>

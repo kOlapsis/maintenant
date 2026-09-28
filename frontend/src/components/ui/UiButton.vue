@@ -15,7 +15,7 @@
 import type { Component } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 
-type Variant = 'primary' | 'secondary' | 'danger' | 'ghost'
+type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'danger-ghost'
 
 withDefaults(
   defineProps<{
@@ -25,6 +25,8 @@ withDefaults(
     loading?: boolean
     disabled?: boolean
     icon?: Component
+    block?: boolean
+    align?: 'center' | 'start' | 'between'
   }>(),
   {
     variant: 'secondary',
@@ -33,14 +35,23 @@ withDefaults(
     loading: false,
     disabled: false,
     icon: undefined,
+    block: false,
+    align: 'center',
   },
 )
+
+const justifyClasses: Record<'center' | 'start' | 'between', string> = {
+  center: 'justify-center',
+  start: 'justify-start',
+  between: 'justify-between',
+}
 
 const variantClasses: Record<Variant, string> = {
   primary: 'bg-[var(--mnt-accent)] text-mnt-inverted hover:bg-[var(--mnt-accent-hover)]',
   secondary: 'border border-mnt-default text-mnt-secondary hover:bg-mnt-elevated',
   danger: 'bg-[var(--mnt-status-down)] text-mnt-inverted hover:opacity-90',
   ghost: 'text-mnt-muted hover:bg-mnt-elevated hover:text-mnt-primary',
+  'danger-ghost': 'text-mnt-status-down hover:bg-[var(--mnt-status-down-bg)]',
 }
 </script>
 
@@ -48,10 +59,12 @@ const variantClasses: Record<Variant, string> = {
   <button
     :type="type"
     :disabled="disabled || loading"
-    class="focus-ring inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+    class="focus-ring inline-flex items-center gap-1.5 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
     :class="[
       variantClasses[variant],
       size === 'md' ? 'min-h-[44px] px-4 text-sm' : 'min-h-[32px] px-2.5 py-1 text-xs',
+      justifyClasses[align],
+      block ? 'flex w-full' : '',
     ]"
   >
     <Loader2 v-if="loading" :size="size === 'md' ? 16 : 14" class="animate-spin" aria-hidden="true" />

@@ -21,6 +21,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import OptionCards from '@/components/ui/OptionCards.vue'
 
 const { hasFeature, editionPermits, requiredEditionFor } = useEdition()
 
@@ -102,6 +103,19 @@ const allChannelTypes = [...openChannelTypes, ...gatedChannelTypes]
 
 const selectedTypeConfig = computed(() =>
   allChannelTypes.find(t => t.key === selectedType.value)
+)
+
+const openTypeOptions = computed(() =>
+  openChannelTypes.map((t) => ({ value: t.key, label: t.label, description: t.description })),
+)
+
+const gatedTypeOptions = computed(() =>
+  gatedChannelTypes.map((t) => ({
+    value: t.key,
+    label: t.label,
+    description: t.description,
+    disabled: !hasFeature(t.feature),
+  })),
 )
 
 // What the single destination field means depends on the type: an address, a
@@ -216,22 +230,17 @@ function goBack() {
       <p class="mb-4 text-xs" style="color: var(--mnt-text-muted)">Choose how you want to receive notifications</p>
 
       <!-- CE channels -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button
-          v-for="type in openChannelTypes"
-          :key="type.key"
-          @click="selectType(type.key)"
-          class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all"
-          :style="{
-            background: 'var(--mnt-bg-elevated)',
-            borderColor: selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)',
-          }"
-          @mouseenter="($event.currentTarget as HTMLElement).style.borderColor = 'var(--mnt-accent)'"
-          @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)'"
-        >
+      <OptionCards
+        :model-value="selectedType"
+        :options="openTypeOptions"
+        ariaLabel="Channel type"
+        :columns="2"
+        @update:model-value="(v) => v && selectType(v)"
+      >
+        <template #default="{ option }">
           <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--mnt-bg-hover)">
             <!-- Discord -->
-            <svg v-if="type.icon === 'discord'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #5865f2">
+            <svg v-if="option.value === 'discord'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #5865f2">
               <path d="M4 4c2-1.5 4-2 6-2s4 .5 6 2" />
               <path d="M4 16c2 1.5 4 2 6 2s4-.5 6-2" />
               <circle cx="7.5" cy="10" r="1.5" />
@@ -244,68 +253,61 @@ function goBack() {
               <path d="M6 18l4-3 4 3" />
             </svg>
           </div>
-          <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ type.label }}</span>
-          <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ type.description }}</span>
-        </button>
-      </div>
+          <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ option.label }}</span>
+          <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ option.description }}</span>
+        </template>
+      </OptionCards>
 
       <!-- Channels gated by an edition -->
-      <div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div
-          v-for="type in gatedChannelTypes"
-          :key="type.key"
-          class="relative"
-        >
+      <OptionCards
+        class="mt-3"
+        :model-value="selectedType"
+        :options="gatedTypeOptions"
+        ariaLabel="Channel type (requires an edition)"
+        :columns="3"
+        @update:model-value="(v) => v && selectType(v)"
+      >
+        <template #default="{ option }">
           <!-- SMTP not configured special case -->
-          <SmtpNotConfigured v-if="type.feature === 'smtp' && editionPermits('smtp') && !hasFeature('smtp')" :title="type.label" />
-
-          <!-- Normal gated channel button -->
-          <button
-            v-else
-            @click="hasFeature(type.feature) && selectType(type.key)"
-            class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all w-full"
-            :class="{ 'opacity-50 cursor-not-allowed': !hasFeature(type.feature) }"
-            :style="{
-              background: 'var(--mnt-bg-elevated)',
-              borderColor: selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)',
-            }"
-            @mouseenter="hasFeature(type.feature) && (($event.currentTarget as HTMLElement).style.borderColor = 'var(--mnt-accent)')"
-            @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)'"
-          >
+          <SmtpNotConfigured
+            v-if="option.value === 'email' && editionPermits('smtp') && !hasFeature('smtp')"
+            :title="option.label"
+          />
+          <template v-else>
             <!-- The edition this channel actually needs. It read "Pro" for all
                  three, but email is Personal — a Community user was told to buy
                  the top tier for the middle tier's channel. -->
             <EditionBadge
-              v-if="!hasFeature(type.feature) && requiredEditionFor(type.feature)"
-              :edition="requiredEditionFor(type.feature)!"
+              v-if="option.disabled && requiredEditionFor(gatedChannelTypes.find((t) => t.key === option.value)!.feature)"
+              :edition="requiredEditionFor(gatedChannelTypes.find((t) => t.key === option.value)!.feature)!"
               class="absolute top-2 right-2"
             />
 
             <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--mnt-bg-hover)">
               <!-- Email -->
-              <svg v-if="type.icon === 'email'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-status-ok)">
+              <svg v-if="option.value === 'email'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-status-ok)">
                 <rect x="2" y="4" width="16" height="12" rx="2" />
                 <path d="M2 6l8 5 8-5" />
               </svg>
               <!-- Telegram -->
-              <svg v-else-if="type.icon === 'telegram'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #229ED9">
+              <svg v-else-if="option.value === 'telegram'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #229ED9">
                 <path d="M18 3L2 9.5l4.5 1.7L16 5.5l-7.5 7.2L8 17l2.7-3 3.6 2.7z" />
               </svg>
               <!-- Slack -->
-              <svg v-else-if="type.icon === 'slack'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-accent)">
+              <svg v-else-if="option.value === 'slack'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-accent)">
                 <path d="M6 2v4M14 14v4M2 6h4M14 6h4M6 10h8M10 6v8" />
               </svg>
               <!-- Teams -->
-              <svg v-else-if="type.icon === 'teams'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #6264A7">
+              <svg v-else-if="option.value === 'teams'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #6264A7">
                 <rect x="3" y="4" width="14" height="12" rx="2" />
                 <path d="M7 10h6M10 7v6" />
               </svg>
             </div>
-            <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ type.label }}</span>
-            <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ type.description }}</span>
-          </button>
-        </div>
-      </div>
+            <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ option.label }}</span>
+            <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ option.description }}</span>
+          </template>
+        </template>
+      </OptionCards>
 
       <div class="mt-4 flex justify-end">
         <UiButton variant="secondary" @click="emit('cancel')">Cancel</UiButton>

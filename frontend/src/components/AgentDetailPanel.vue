@@ -277,7 +277,7 @@ function runtimeLabel(rt: string): string {
         <UiButton variant="secondary" class="w-full" :loading="revoking" :disabled="revoking" @click="handleRevoke">
           {{ revoking ? 'Revoking…' : 'Revoke agent' }}
         </UiButton>
-        <UiButton variant="danger" class="w-full" :loading="deleting" :disabled="deleting" @click="handleDelete">
+        <UiButton variant="danger-ghost" class="w-full" :loading="deleting" :disabled="deleting" @click="handleDelete">
           {{ deleting ? 'Deleting…' : 'Delete agent' }}
         </UiButton>
       </div>
@@ -285,7 +285,7 @@ function runtimeLabel(rt: string): string {
       <div v-if="agent.status === 'revoked'" class="space-y-2">
         <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-2">Actions</p>
         <p v-if="actionError" class="text-xs text-mnt-status-down">{{ actionError }}</p>
-        <UiButton variant="danger" class="w-full" :loading="deleting" :disabled="deleting" @click="handleDelete">
+        <UiButton variant="danger-ghost" class="w-full" :loading="deleting" :disabled="deleting" @click="handleDelete">
           {{ deleting ? 'Deleting…' : 'Delete agent' }}
         </UiButton>
       </div>

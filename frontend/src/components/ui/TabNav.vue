@@ -11,23 +11,23 @@
   Source: https://github.com/kolapsis/maintenant
 -->
 
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends string | number">
 import { ref } from 'vue'
 import CountBadge, { type CountTone } from './CountBadge.vue'
 
-export interface TabNavItem {
-  value: string
+export interface TabNavItem<V extends string | number = string> {
+  value: V
   label: string
-  count?: number
+  count?: number | string
   countTone?: Exclude<CountTone, 'ok'>
 }
 
 const props = defineProps<{
-  items: TabNavItem[]
+  items: TabNavItem<T>[]
   ariaLabel: string
 }>()
 
-const model = defineModel<string>({ required: true })
+const model = defineModel<T>({ required: true })
 
 const tabRefs = ref<(HTMLButtonElement | null)[]>([])
 
@@ -51,7 +51,7 @@ function onKeydown(event: KeyboardEvent, index: number) {
 
 <template>
   <div class="border-b border-mnt-default">
-    <div role="tablist" :aria-label="ariaLabel" class="-mb-px flex gap-6 overflow-x-auto">
+    <div role="tablist" :aria-label="ariaLabel" class="-mb-px flex gap-6 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <button
         v-for="(item, index) in items"
         :key="item.value"

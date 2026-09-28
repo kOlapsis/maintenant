@@ -17,6 +17,7 @@ import type { EscalationPolicy } from '@/types/escalation'
 import { timeAgo } from '@/utils/time'
 import { Pencil, Trash2, Layers, CheckCircle2, CircleDashed } from 'lucide-vue-next'
 import UiButton from '@/components/ui/UiButton.vue'
+import ChipToggle from '@/components/ui/ChipToggle.vue'
 
 defineProps<{
   policies: EscalationPolicy[]
@@ -102,18 +103,18 @@ function severityLabel(severities: string[]): string {
 
         <!-- Status badge — clickable to toggle -->
         <div class="w-20 flex justify-center">
-          <button
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all"
-            :class="policy.active
-              ? 'bg-mnt-green-500/10 text-mnt-green-400 border-mnt-green-500/20 hover:bg-mnt-green-500/20'
-              : 'bg-mnt-elevated text-mnt-muted border-mnt-default hover:bg-mnt-elevated'"
+          <ChipToggle
+            :pressed="policy.active"
+            tone="accent"
+            size="sm"
             :title="policy.active ? 'Click to deactivate' : 'Click to activate'"
-            @click.stop="emit('toggleActive', policy.id, !policy.active)"
+            @click.stop
+            @toggle="emit('toggleActive', policy.id, !policy.active)"
           >
             <CheckCircle2 v-if="policy.active" :size="10" />
             <CircleDashed v-else :size="10" />
             {{ policy.active ? 'Active' : 'Inactive' }}
-          </button>
+          </ChipToggle>
         </div>
 
         <!-- Severities -->
@@ -139,7 +140,7 @@ function severityLabel(severities: string[]): string {
             @click.stop="emit('edit', policy)"
           />
           <UiButton
-            variant="ghost"
+            variant="danger-ghost"
             size="sm"
             :icon="Trash2"
             title="Delete"

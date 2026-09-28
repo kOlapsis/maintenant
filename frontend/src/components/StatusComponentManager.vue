@@ -36,6 +36,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
 import SearchInput from '@/components/ui/SearchInput.vue'
+import ChipToggle from '@/components/ui/ChipToggle.vue'
 
 const store = useStatusAdminStore()
 const { getQuota, reload } = useEdition()
@@ -367,13 +368,12 @@ function componentSummary(c: StatusComponent): string {
             </div>
             <div :class="editingCompId ? 'pointer-events-none opacity-50' : ''">
               <SegmentedToggle
-                :model-value="compositionMode"
+                v-model="compositionMode"
                 ariaLabel="Composition mode"
                 :options="[
                   { value: 'explicit', label: 'Specific monitors' },
                   { value: 'match-all', label: 'All monitors of one type' },
                 ]"
-                @update:model-value="(v) => (compositionMode = v as 'explicit' | 'match-all')"
               />
             </div>
           </div>
@@ -382,23 +382,16 @@ function componentSummary(c: StatusComponent): string {
           <div v-if="compositionMode === 'explicit'" class="space-y-3">
             <!-- Selected monitors chips -->
             <div v-if="selectedMonitors.length > 0" class="flex flex-wrap gap-1.5">
-              <span
+              <ChipToggle
                 v-for="m in selectedMonitors"
                 :key="`${m.type}-${m.id}`"
-                class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-                style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
+                removable
+                :remove-label="`Remove ${m.name}`"
+                @remove="removeSelectedMonitor(m)"
               >
-                <span class="text-[10px] uppercase tracking-wider" style="color: var(--mnt-text-muted)">{{ m.type[0] }}</span>
+                <span class="text-[10px] uppercase tracking-wider text-mnt-muted">{{ m.type[0] }}</span>
                 {{ m.name }}
-                <button
-                  type="button"
-                  @click="removeSelectedMonitor(m)"
-                  class="ml-0.5 opacity-60 hover:opacity-100"
-                  style="color: var(--mnt-text-muted)"
-                >
-                  ×
-                </button>
-              </span>
+              </ChipToggle>
             </div>
             <p v-else class="text-xs text-mnt-muted">No monitors selected. Pick at least one below.</p>
 
@@ -517,7 +510,7 @@ function componentSummary(c: StatusComponent): string {
                 @change="handleOverride(c, ($event.target as HTMLSelectElement).value)"
               />
               <UiButton variant="secondary" size="sm" @click="startEditComp(c)">Edit</UiButton>
-              <UiButton variant="danger" size="sm" @click="handleDeleteComp(c.id)">Delete</UiButton>
+              <UiButton variant="danger-ghost" size="sm" @click="handleDeleteComp(c.id)">Delete</UiButton>
             </div>
           </div>
 

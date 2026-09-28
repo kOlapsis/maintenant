@@ -17,6 +17,7 @@ import StatusComponentBreakdown from '@/components/StatusComponentBreakdown.vue'
 import { useStatusPageI18n } from '@/composables/useStatusPageI18n'
 import { guardedFetch } from '@/services/apiFetch'
 import type { MonitorRef } from '@/services/statusApi'
+import DisclosureButton from '@/components/ui/DisclosureButton.vue'
 
 // --- Personalization settings ---
 interface PublicSettings {
@@ -309,27 +310,34 @@ function formatDate(iso: string) {
             }"
           >
             <div v-for="comp in data.components" :key="comp.id">
-              <button
-                type="button"
-                class="flex w-full items-center justify-between px-5 py-3.5 text-left transition-colors hover:bg-slate-800/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
-                :aria-expanded="expandedComponents.has(comp.id)"
-                :aria-controls="`breakdown-${comp.id}`"
-                @click="toggleExpanded(comp.id)"
+              <DisclosureButton
+                v-if="comp.monitors?.length"
+                :expanded="expandedComponents.has(comp.id)"
+                chevron-position="end"
+                :controls-id="`breakdown-${comp.id}`"
+                class="px-5 py-3.5 text-left transition-colors hover:bg-slate-800/20"
+                @toggle="toggleExpanded(comp.id)"
                 @keydown="handleRowKeydown($event, comp.id)"
               >
+                <div class="flex w-full items-center justify-between">
+                  <span class="text-sm font-medium">{{ comp.name }}</span>
+                  <div class="flex items-center gap-2">
+                    <span :class="['text-xs font-medium', componentStatusStyle(comp.status).text]">
+                      {{ componentStatusStyle(comp.status).label }}
+                    </span>
+                    <span :class="['h-2 w-2 rounded-full', componentStatusStyle(comp.status).dot]" />
+                  </div>
+                </div>
+              </DisclosureButton>
+              <div v-else class="flex w-full items-center justify-between px-5 py-3.5 text-left">
                 <span class="text-sm font-medium">{{ comp.name }}</span>
                 <div class="flex items-center gap-2">
                   <span :class="['text-xs font-medium', componentStatusStyle(comp.status).text]">
                     {{ componentStatusStyle(comp.status).label }}
                   </span>
                   <span :class="['h-2 w-2 rounded-full', componentStatusStyle(comp.status).dot]" />
-                  <span
-                    v-if="comp.monitors?.length"
-                    class="text-slate-600 transition-transform"
-                    :style="{ transform: expandedComponents.has(comp.id) ? 'rotate(180deg)' : 'rotate(0deg)' }"
-                  >&#8964;</span>
                 </div>
-              </button>
+              </div>
               <div v-if="expandedComponents.has(comp.id) && comp.monitors?.length" :id="`breakdown-${comp.id}`" class="px-5 pb-3">
                 <StatusComponentBreakdown :monitors="comp.monitors" />
               </div>

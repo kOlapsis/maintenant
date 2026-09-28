@@ -24,6 +24,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import FormField from '@/components/ui/FormField.vue'
 import TextInput from '@/components/ui/TextInput.vue'
 import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import ChipToggle from '@/components/ui/ChipToggle.vue'
 
 const props = defineProps<{
   trigger?: AlertTrigger | null
@@ -220,20 +221,16 @@ async function handleSave() {
           <span class="text-mnt-status-down/70 normal-case font-normal">*</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <button
+          <ChipToggle
             v-for="ch in channelsStore.channels"
             :key="ch.id"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
-            :class="
-              selectedChannelIds.includes(ch.id)
-                ? 'bg-mnt-green-500/10 border-mnt-green-500/30 text-mnt-green-400'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-secondary'
-            "
-            @click="toggleChannel(ch.id)"
+            :pressed="selectedChannelIds.includes(ch.id)"
+            tone="accent"
+            @toggle="toggleChannel(ch.id)"
           >
             <Plus v-if="!selectedChannelIds.includes(ch.id)" :size="11" />
             {{ ch.name }}
-          </button>
+          </ChipToggle>
         </div>
       </div>
 
@@ -243,21 +240,15 @@ async function handleSave() {
           Severities <span class="text-mnt-muted normal-case font-normal">(empty = match all)</span>
         </label>
         <div class="flex gap-2">
-          <button
+          <ChipToggle
             v-for="sev in SEVERITY_OPTIONS"
             :key="sev"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
-            :class="
-              severities.includes(sev)
-                ? sev === 'critical'
-                  ? 'bg-mnt-status-down/15 border-mnt-status-down/40 text-mnt-status-down'
-                  : 'bg-mnt-status-warn border-amber-500/40 text-mnt-status-warn'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
-            "
-            @click="toggleSeverity(sev)"
+            :pressed="severities.includes(sev)"
+            :tone="sev === 'critical' ? 'critical' : 'warning'"
+            @toggle="toggleSeverity(sev)"
           >
             {{ sev.charAt(0).toUpperCase() + sev.slice(1) }}
-          </button>
+          </ChipToggle>
         </div>
       </div>
 
@@ -267,19 +258,15 @@ async function handleSave() {
           Sources <span class="text-mnt-muted normal-case font-normal">(empty = match all)</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <button
+          <ChipToggle
             v-for="src in SOURCE_OPTIONS"
             :key="src"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize"
-            :class="
-              sources.includes(src)
-                ? 'bg-mnt-elevated border-mnt-default text-mnt-secondary'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
-            "
-            @click="toggleSource(src)"
+            :pressed="sources.includes(src)"
+            class="capitalize"
+            @toggle="toggleSource(src)"
           >
             {{ src }}
-          </button>
+          </ChipToggle>
         </div>
       </div>
 

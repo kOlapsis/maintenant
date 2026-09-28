@@ -202,7 +202,7 @@ function formatResponseTime(ms: number | undefined): string {
       @click.stop
     >
       <span v-if="isRetired" class="text-xs text-mnt-muted">Container gone</span>
-      <UiButton variant="danger" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
+      <UiButton variant="danger-ghost" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
         Delete
       </UiButton>
     </div>

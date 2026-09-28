@@ -193,7 +193,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
             <UiButton v-if="inc.status !== 'resolved'" variant="secondary" size="sm" @click="startPostUpdate(inc)">
               Post Update
             </UiButton>
-            <UiButton variant="danger" size="sm" @click="handleDelete(inc.id)">Delete</UiButton>
+            <UiButton variant="danger-ghost" size="sm" @click="handleDelete(inc.id)">Delete</UiButton>
           </div>
         </div>
 

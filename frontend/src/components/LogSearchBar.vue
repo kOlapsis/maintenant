@@ -16,22 +16,19 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { ChevronUp, ChevronDown, X } from 'lucide-vue-next'
 import type { UseLogSearchReturn } from '@/composables/useLogSearch'
 import UiButton from '@/components/ui/UiButton.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 
 const props = defineProps<{
   search: UseLogSearchReturn
 }>()
 
-const inputRef = ref<HTMLInputElement | null>(null)
+const inputRef = ref<InstanceType<typeof TextInput> | null>(null)
 
 watch(() => props.search.isOpen.value, (open) => {
   if (open) {
     nextTick(() => inputRef.value?.focus())
   }
 })
-
-function onInput(e: Event) {
-  props.search.setQuery((e.target as HTMLInputElement).value)
-}
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && e.shiftKey) {
@@ -61,13 +58,13 @@ const matchDisplay = computed(() => {
     class="flex items-center gap-1.5 rounded-lg border bg-mnt-primary px-2 py-1"
     :class="search.isValid.value ? 'border-mnt-default' : 'border-red-500'"
   >
-    <input
+    <TextInput
       ref="inputRef"
-      type="text"
-      :value="search.query.value"
+      variant="bare"
+      :model-value="search.query.value"
       placeholder="Search logs..."
-      class="w-32 bg-transparent text-xs text-mnt-primary placeholder:text-mnt-muted outline-none sm:w-48"
-      @input="onInput"
+      class="w-32 sm:w-48"
+      @update:model-value="(v) => search.setQuery(String(v ?? ''))"
       @keydown="onKeydown"
     />
 

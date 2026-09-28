@@ -16,6 +16,8 @@ import { ref } from 'vue'
 import { Box, Layers, Cloud } from 'lucide-vue-next'
 import { useRuntime } from '@/composables/useRuntime'
 import { useRuntimeStore } from '@/stores/runtime'
+import PopoverMenu from '@/components/ui/PopoverMenu.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const { runtimeContext, connected, isSwarm, isKubernetes } = useRuntime()
 const store = useRuntimeStore()
@@ -61,108 +63,101 @@ function formatDetectedAt(iso: string | null): string {
 </script>
 
 <template>
-  <div class="relative" @mouseenter="onEnter" @mouseleave="onLeave">
-    <button
-      class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-mnt-elevated border border-transparent hover:border-mnt-default/50 cursor-pointer"
-      @click="onClick"
-    >
-      <!-- Status dot -->
-      <span
-        class="inline-block h-2 w-2 rounded-full shrink-0"
-        :style="{ backgroundColor: connected ? '#10b981' : '#f43f5e' }"
-      />
-
-      <!-- Runtime icon -->
-      <Layers v-if="isSwarm" :size="16" class="text-mnt-muted shrink-0" />
-      <Cloud v-else-if="isKubernetes" :size="16" class="text-mnt-muted shrink-0" />
-      <Box v-else :size="16" class="text-mnt-muted shrink-0" />
-
-      <!-- Label -->
-      <span class="text-mnt-secondary">{{ capitalize(runtimeContext) }}</span>
-    </button>
-
-    <!-- Popover -->
-    <Transition
-      enter-active-class="transition duration-100 ease-out"
-      enter-from-class="opacity-0 scale-95 -translate-y-1"
-      enter-to-class="opacity-100 scale-100 translate-y-0"
-      leave-active-class="transition duration-75 ease-in"
-      leave-from-class="opacity-100 scale-100 translate-y-0"
-      leave-to-class="opacity-0 scale-95 -translate-y-1"
-    >
-      <div
-        v-if="open"
-        class="absolute right-0 top-full mt-2 w-64 rounded-xl border border-mnt-default bg-mnt-surface shadow-2xl shadow-black/40 overflow-hidden z-50"
-        @mouseenter="onEnter"
-        @mouseleave="onLeave"
+  <PopoverMenu
+    v-model:open="open"
+    ariaLabel="Runtime context"
+    panel-role="group"
+    panel-class="w-64"
+    @mouseenter="onEnter"
+    @mouseleave="onLeave"
+  >
+    <template #trigger>
+      <UiButton
+        variant="ghost"
+        class="border border-transparent text-xs hover:border-mnt-default/50"
+        @click="onClick"
       >
-        <!-- Header -->
-        <div class="px-4 py-3 border-b border-mnt-default">
-          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Runtime Context</span>
-        </div>
+        <!-- Status dot -->
+        <span
+          class="inline-block h-2 w-2 rounded-full shrink-0"
+          :style="{ backgroundColor: connected ? 'var(--mnt-status-ok)' : 'var(--mnt-status-down)' }"
+        />
 
-        <!-- Body -->
-        <div class="px-4 py-3 space-y-2">
-          <!-- Runtime -->
-          <div class="flex justify-between items-center">
-            <span class="text-xs text-mnt-muted">Runtime</span>
-            <span class="text-sm text-mnt-primary">{{ capitalize(store.runtime) }}</span>
-          </div>
+        <!-- Runtime icon -->
+        <Layers v-if="isSwarm" :size="16" class="text-mnt-muted shrink-0" />
+        <Cloud v-else-if="isKubernetes" :size="16" class="text-mnt-muted shrink-0" />
+        <Box v-else :size="16" class="text-mnt-muted shrink-0" />
 
-          <!-- Context -->
-          <div class="flex justify-between items-center">
-            <span class="text-xs text-mnt-muted">Context</span>
-            <span class="text-sm text-mnt-primary">{{ capitalize(runtimeContext) }}</span>
-          </div>
+        <!-- Label -->
+        <span class="text-mnt-secondary">{{ capitalize(runtimeContext) }}</span>
+      </UiButton>
+    </template>
 
-          <!-- Status -->
-          <div class="flex justify-between items-center">
-            <span class="text-xs text-mnt-muted">Status</span>
-            <span
-              class="text-sm font-medium"
-              :class="connected ? 'text-mnt-status-ok' : 'text-mnt-status-down'"
-            >{{ connected ? 'Connected' : 'Disconnected' }}</span>
-          </div>
+    <!-- Header -->
+    <div class="px-4 py-3 border-b border-mnt-default">
+      <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Runtime Context</span>
+    </div>
 
-          <!-- Detected at -->
-          <div class="flex justify-between items-center">
-            <span class="text-xs text-mnt-muted">Detected at</span>
-            <span class="text-sm text-mnt-muted">{{ formatDetectedAt(store.detectedAt) }}</span>
-          </div>
-
-          <!-- Swarm metadata -->
-          <template v-if="isSwarm && 'cluster_id' in store.metadata">
-            <div class="pt-1 mt-1 border-t border-mnt-default/60 space-y-2">
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-mnt-muted">Cluster ID</span>
-                <span class="text-sm text-mnt-primary font-mono">{{ (store.metadata as { cluster_id: string }).cluster_id.slice(0, 12) }}</span>
-              </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-mnt-muted">Managers</span>
-                <span class="text-sm text-mnt-primary">{{ (store.metadata as { manager_count: number }).manager_count }}</span>
-              </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-mnt-muted">Workers</span>
-                <span class="text-sm text-mnt-primary">{{ (store.metadata as { worker_count: number }).worker_count }}</span>
-              </div>
-            </div>
-          </template>
-
-          <!-- Kubernetes metadata -->
-          <template v-if="isKubernetes && 'namespace_count' in store.metadata">
-            <div class="pt-1 mt-1 border-t border-mnt-default/60 space-y-2">
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-mnt-muted">Namespaces</span>
-                <span class="text-sm text-mnt-primary">{{ (store.metadata as { namespace_count: number }).namespace_count }}</span>
-              </div>
-              <div class="flex justify-between items-center">
-                <span class="text-xs text-mnt-muted">Nodes</span>
-                <span class="text-sm text-mnt-primary">{{ (store.metadata as { node_count: number }).node_count }}</span>
-              </div>
-            </div>
-          </template>
-        </div>
+    <!-- Body -->
+    <div class="px-4 py-3 space-y-2">
+      <!-- Runtime -->
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-mnt-muted">Runtime</span>
+        <span class="text-sm text-mnt-primary">{{ capitalize(store.runtime) }}</span>
       </div>
-    </Transition>
-  </div>
+
+      <!-- Context -->
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-mnt-muted">Context</span>
+        <span class="text-sm text-mnt-primary">{{ capitalize(runtimeContext) }}</span>
+      </div>
+
+      <!-- Status -->
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-mnt-muted">Status</span>
+        <span
+          class="text-sm font-medium"
+          :class="connected ? 'text-mnt-status-ok' : 'text-mnt-status-down'"
+        >{{ connected ? 'Connected' : 'Disconnected' }}</span>
+      </div>
+
+      <!-- Detected at -->
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-mnt-muted">Detected at</span>
+        <span class="text-sm text-mnt-muted">{{ formatDetectedAt(store.detectedAt) }}</span>
+      </div>
+
+      <!-- Swarm metadata -->
+      <template v-if="isSwarm && 'cluster_id' in store.metadata">
+        <div class="pt-1 mt-1 border-t border-mnt-default/60 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs text-mnt-muted">Cluster ID</span>
+            <span class="text-sm text-mnt-primary font-mono">{{ (store.metadata as { cluster_id: string }).cluster_id.slice(0, 12) }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-xs text-mnt-muted">Managers</span>
+            <span class="text-sm text-mnt-primary">{{ (store.metadata as { manager_count: number }).manager_count }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-xs text-mnt-muted">Workers</span>
+            <span class="text-sm text-mnt-primary">{{ (store.metadata as { worker_count: number }).worker_count }}</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- Kubernetes metadata -->
+      <template v-if="isKubernetes && 'namespace_count' in store.metadata">
+        <div class="pt-1 mt-1 border-t border-mnt-default/60 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs text-mnt-muted">Namespaces</span>
+            <span class="text-sm text-mnt-primary">{{ (store.metadata as { namespace_count: number }).namespace_count }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-xs text-mnt-muted">Nodes</span>
+            <span class="text-sm text-mnt-primary">{{ (store.metadata as { node_count: number }).node_count }}</span>
+          </div>
+        </div>
+      </template>
+    </div>
+  </PopoverMenu>
 </template>

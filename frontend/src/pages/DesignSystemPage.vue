@@ -41,6 +41,13 @@ import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 import RadioGroup from '@/components/ui/RadioGroup.vue'
 import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import UiModal from '@/components/ui/UiModal.vue'
+import PopoverMenu from '@/components/ui/PopoverMenu.vue'
+import DisclosureButton from '@/components/ui/DisclosureButton.vue'
+import ChipToggle from '@/components/ui/ChipToggle.vue'
+import OptionCards, { type OptionCardItem } from '@/components/ui/OptionCards.vue'
+import RangeInput from '@/components/ui/RangeInput.vue'
+import FileInput from '@/components/ui/FileInput.vue'
+import ColorInput from '@/components/ui/ColorInput.vue'
 import EndpointStatusBadge from '@/components/EndpointStatusBadge.vue'
 import HeartbeatStatusBadge from '@/components/HeartbeatStatusBadge.vue'
 import CertificateStatusBadge from '@/components/CertificateStatusBadge.vue'
@@ -159,7 +166,6 @@ const sampleKpis = [
 
 const lastSelected = ref('')
 
-// Form controls demo state
 const demoTab = ref('history')
 const tabItems: TabNavItem[] = [
   { value: 'history', label: 'History' },
@@ -186,6 +192,39 @@ function triggerButtonLoading() {
 }
 
 const demoModalOpen = ref(false)
+
+const demoPopoverOpen = ref(false)
+const demoPopoverNamespaces = ref<string[]>(['prod'])
+
+const demoDisclosureExpanded = ref(true)
+
+const demoChipSeverities = ref<string[]>(['critical'])
+const demoChipMonitors = ref([
+  { id: 'c-1', name: 'traefik' },
+  { id: 'c-2', name: 'redis' },
+])
+function removeChipMonitor(id: string) {
+  demoChipMonitors.value = demoChipMonitors.value.filter((m) => m.id !== id)
+}
+
+const demoChannelType = ref<string | null>('discord')
+const demoChannelOptions: OptionCardItem[] = [
+  { value: 'discord', label: 'Discord', description: 'Post alerts via webhook' },
+  { value: 'webhook', label: 'Webhook', description: 'HTTP POST with JSON payload' },
+  { value: 'email', label: 'Email', description: 'Requires SMTP', disabled: true },
+]
+
+const demoRangeValue = ref(90)
+
+const demoLogoFile = ref<File | null>(null)
+
+const demoAccentColor = ref('#22C55E')
+
+// UiButton danger-ghost demo
+const demoDangerLoading = ref(false)
+
+// TextInput bare variant demo (embedded in a styled bar)
+const demoBareQuery = ref('')
 </script>
 
 <template>
@@ -432,12 +471,18 @@ const demoModalOpen = ref(false)
         <UiButton variant="primary" :icon="Plus">Primary</UiButton>
         <UiButton variant="secondary">Secondary</UiButton>
         <UiButton variant="danger" :icon="Trash2">Danger</UiButton>
+        <UiButton variant="danger-ghost" :icon="Trash2" :loading="demoDangerLoading" @click="demoDangerLoading = !demoDangerLoading">
+          Danger ghost
+        </UiButton>
         <UiButton variant="ghost">Ghost</UiButton>
         <UiButton variant="primary" size="sm">Small</UiButton>
         <UiButton variant="secondary" disabled>Disabled</UiButton>
         <UiButton variant="primary" :loading="demoButtonLoading" @click="triggerButtonLoading">
           {{ demoButtonLoading ? 'Saving…' : 'Click to load' }}
         </UiButton>
+      </div>
+      <div class="flex flex-col gap-1 rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <UiButton variant="ghost" block align="between">Row action (block + align="between")</UiButton>
       </div>
     </section>
 
@@ -500,6 +545,12 @@ const demoModalOpen = ref(false)
         <span>sm ·</span>
         <TextInput model-value="" size="sm" placeholder="sm" class="max-w-[140px]" />
       </div>
+
+      <!-- variant="bare": no chrome of its own, for inputs embedded in an already-styled bar -->
+      <div class="flex items-center gap-1.5 rounded-lg border border-mnt-default bg-mnt-primary px-2 py-1">
+        <TextInput v-model="demoBareQuery" variant="bare" placeholder="Search logs…" class="w-40 text-xs" />
+        <UiButton variant="ghost" size="sm">Aa</UiButton>
+      </div>
     </section>
 
     <!-- Checkbox / radio / toggle -->
@@ -540,6 +591,131 @@ const demoModalOpen = ref(false)
             <UiButton variant="danger" @click="demoModalOpen = false">Delete</UiButton>
           </template>
         </UiModal>
+      </div>
+    </section>
+
+    <!-- PopoverMenu -->
+    <section class="space-y-3">
+      <SectionHeader title="PopoverMenu (trigger slot · menuitem/menuitemcheckbox · arrow keys)" />
+      <div class="flex flex-wrap items-center gap-6 rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <PopoverMenu v-model:open="demoPopoverOpen" ariaLabel="Demo namespaces" panel-class="min-w-52">
+          <template #trigger="{ toggle }">
+            <UiButton variant="secondary" @click="toggle">
+              {{ demoPopoverNamespaces.length }} namespaces
+            </UiButton>
+          </template>
+          <UiButton
+            v-for="ns in ['prod', 'staging', 'dev']"
+            :key="ns"
+            variant="ghost"
+            block
+            align="between"
+            role="menuitemcheckbox"
+            :aria-checked="demoPopoverNamespaces.includes(ns)"
+            class="rounded-none px-4 py-2.5 text-sm"
+            @click="
+              demoPopoverNamespaces = demoPopoverNamespaces.includes(ns)
+                ? demoPopoverNamespaces.filter((n) => n !== ns)
+                : [...demoPopoverNamespaces, ns]
+            "
+          >
+            <span class="font-mono">{{ ns }}</span>
+            <span v-if="demoPopoverNamespaces.includes(ns)" class="text-mnt-green-400">✓</span>
+          </UiButton>
+        </PopoverMenu>
+      </div>
+    </section>
+
+    <!-- DisclosureButton -->
+    <section class="space-y-3">
+      <SectionHeader title="DisclosureButton (chevron · aria-expanded/controls · start or end chevron)" />
+      <div class="rounded-xl border border-mnt-default bg-mnt-surface p-2">
+        <DisclosureButton
+          :expanded="demoDisclosureExpanded"
+          controls-id="ds-disclosure-demo"
+          class="px-2 py-2 text-mnt-secondary hover:bg-mnt-elevated"
+          @toggle="demoDisclosureExpanded = !demoDisclosureExpanded"
+        >
+          <span class="flex items-center gap-2">
+            <span class="font-semibold text-mnt-primary">production</span>
+            <CountBadge :value="12" />
+          </span>
+        </DisclosureButton>
+        <div v-if="demoDisclosureExpanded" id="ds-disclosure-demo" class="px-4 pb-2 text-sm text-mnt-muted">
+          12 containers, all running.
+        </div>
+      </div>
+    </section>
+
+    <!-- ChipToggle -->
+    <section class="space-y-3">
+      <SectionHeader title="ChipToggle (selectable · removable)" />
+      <div class="flex flex-wrap items-center gap-2 rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <ChipToggle
+          v-for="sev in ['critical', 'warning']"
+          :key="sev"
+          :pressed="demoChipSeverities.includes(sev)"
+          :tone="sev === 'critical' ? 'critical' : 'warning'"
+          @toggle="
+            demoChipSeverities = demoChipSeverities.includes(sev)
+              ? demoChipSeverities.filter((s) => s !== sev)
+              : [...demoChipSeverities, sev]
+          "
+        >
+          {{ sev }}
+        </ChipToggle>
+        <ChipToggle tone="accent" pressed>accent</ChipToggle>
+      </div>
+      <div class="flex flex-wrap items-center gap-1.5 rounded-xl border border-mnt-default bg-mnt-surface p-4">
+        <ChipToggle
+          v-for="m in demoChipMonitors"
+          :key="m.id"
+          removable
+          :remove-label="`Remove ${m.name}`"
+          @remove="removeChipMonitor(m.id)"
+        >
+          {{ m.name }}
+        </ChipToggle>
+        <span v-if="demoChipMonitors.length === 0" class="text-xs text-mnt-muted">All removed</span>
+      </div>
+    </section>
+
+    <!-- OptionCards -->
+    <section class="space-y-3">
+      <SectionHeader title="OptionCards (radio-card group · icon slot · disabled option)" />
+      <OptionCards
+        v-model="demoChannelType"
+        :options="demoChannelOptions"
+        ariaLabel="Demo channel type"
+        :columns="3"
+        class="rounded-xl border border-mnt-default bg-mnt-surface p-4"
+      >
+        <template #default="{ option }">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-mnt-surface">
+            <component :is="option.value === 'email' ? ServerOff : Globe" :size="20" class="text-mnt-muted" />
+          </div>
+          <span class="text-sm font-medium text-mnt-primary">{{ option.label }}</span>
+          <span class="text-[11px] text-mnt-muted">{{ option.description }}</span>
+        </template>
+      </OptionCards>
+    </section>
+
+    <!-- RangeInput / FileInput / ColorInput -->
+    <section class="space-y-3">
+      <SectionHeader title="RangeInput + FileInput + ColorInput" />
+      <div class="grid gap-4 rounded-xl border border-mnt-default bg-mnt-surface p-4 sm:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs text-mnt-muted">CPU threshold ({{ demoRangeValue }}%)</label>
+          <RangeInput v-model="demoRangeValue" label="CPU threshold" :min="1" :max="100" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs text-mnt-muted">Logo</label>
+          <FileInput v-model:file="demoLogoFile" accept="image/png,image/svg+xml" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs text-mnt-muted">Accent color</label>
+          <ColorInput v-model="demoAccentColor" label="Accent" />
+        </div>
       </div>
     </section>
 

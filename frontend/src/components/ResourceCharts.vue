@@ -19,6 +19,7 @@ import { useResourcesStore } from '@/stores/resources'
 import { useEdition } from '@/composables/useEdition'
 import { ApiError } from '@/services/apiFetch'
 import EditionBadge from '@/components/EditionBadge.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 import { Lock } from 'lucide-vue-next'
 import type uPlot from 'uplot'
 
@@ -197,6 +198,17 @@ function selectRange(window: string) {
   selectedRange.value = window
 }
 
+const rangeOptions = computed(() =>
+  historyWindows.value.map((w) => ({
+    value: w.window,
+    label: w.window,
+    icon: isWindowOpen(w.window) ? undefined : Lock,
+    disabled: !isWindowOpen(w.window),
+    locked: !isWindowOpen(w.window),
+    dataTest: `range-${w.window}`,
+  })),
+)
+
 watch(selectedRange, () => fetchHistory())
 onMounted(() => fetchHistory())
 </script>
@@ -206,37 +218,12 @@ onMounted(() => fetchHistory())
     <!-- Range selector -->
     <div class="flex items-center gap-2">
       <span class="text-sm font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Time Range:</span>
-      <div
-        class="flex"
-        :style="{
-          borderRadius: 'var(--mnt-radius-md)',
-          border: '1px solid var(--mnt-border-default)',
-          overflow: 'hidden',
-        }"
-      >
-        <button
-          v-for="w in historyWindows"
-          :key="w.window"
-          :data-test="`range-${w.window}`"
-          :data-locked="isWindowOpen(w.window) ? undefined : 'true'"
-          :disabled="!isWindowOpen(w.window)"
-          class="flex items-center gap-1 px-3 py-1 text-xs font-medium transition"
-          :style="{
-            backgroundColor: selectedRange === w.window ? 'var(--mnt-accent)' : 'var(--mnt-bg-surface)',
-            color: selectedRange === w.window
-              ? 'var(--mnt-text-inverted)'
-              : isWindowOpen(w.window)
-                ? 'var(--mnt-text-secondary)'
-                : 'var(--mnt-text-muted)',
-            cursor: isWindowOpen(w.window) ? 'pointer' : 'not-allowed',
-            opacity: isWindowOpen(w.window) ? '1' : '0.6',
-          }"
-          @click="selectRange(w.window)"
-        >
-          {{ w.window }}
-          <Lock v-if="!isWindowOpen(w.window)" class="h-3 w-3" />
-        </button>
-      </div>
+      <SegmentedToggle
+        :model-value="selectedRange"
+        :options="rangeOptions"
+        ariaLabel="Time range"
+        @update:model-value="selectRange"
+      />
       <div
         v-if="loading"
         class="ml-2 h-4 w-4 animate-spin rounded-full border-2"

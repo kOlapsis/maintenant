@@ -101,7 +101,7 @@
               >
                 {{ testing === wh.id ? 'Testing...' : 'Test' }}
               </UiButton>
-              <UiButton variant="ghost" size="sm" class="text-mnt-status-down" @click="handleDelete(wh)">
+              <UiButton variant="danger-ghost" size="sm" @click="handleDelete(wh)">
                 Delete
               </UiButton>
             </td>

@@ -11,18 +11,18 @@
   Source: https://github.com/kolapsis/maintenant
 -->
 
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends string | number">
 import { computed, useId } from 'vue'
 
-export interface RadioOption {
-  value: string | number
+export interface RadioOption<V extends string | number = string | number> {
+  value: V
   label: string
   hint?: string
 }
 
 const props = withDefaults(
   defineProps<{
-    options: RadioOption[]
+    options: RadioOption<T>[]
     name?: string
     ariaLabel?: string
     inline?: boolean
@@ -30,7 +30,7 @@ const props = withDefaults(
   { inline: false },
 )
 
-const model = defineModel<string | number | null>({ default: null })
+const model = defineModel<T | null>({ default: null })
 
 const autoName = useId()
 const groupName = computed(() => props.name ?? autoName)

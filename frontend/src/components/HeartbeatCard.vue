@@ -183,7 +183,7 @@ async function handleDelete() {
       >
         Resume
       </UiButton>
-      <UiButton variant="danger" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
+      <UiButton variant="danger-ghost" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
         Delete
       </UiButton>
     </div>

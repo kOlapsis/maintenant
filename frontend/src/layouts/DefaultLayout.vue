@@ -274,14 +274,13 @@ watch(
     <div
       class="mobile-bar md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 backdrop-blur-md border-b border-mnt-default"
     >
-      <button
-        @click="mobileMenuOpen = !mobileMenuOpen"
-        class="p-3 rounded-md text-mnt-muted hover:text-mnt-primary transition-colors"
+      <UiButton
+        variant="ghost"
+        :icon="mobileMenuOpen ? X : Menu"
         aria-label="Toggle navigation"
-      >
-        <Menu v-if="!mobileMenuOpen" :size="20" />
-        <X v-else :size="20" />
-      </button>
+        :aria-expanded="mobileMenuOpen"
+        @click="mobileMenuOpen = !mobileMenuOpen"
+      />
       <div class="ml-3 flex items-center gap-2">
         <img src="/icon.svg" alt="maintenant" class="w-6 h-6 rounded-md" />
         <span class="text-sm font-bold text-mnt-primary">maintenant</span>

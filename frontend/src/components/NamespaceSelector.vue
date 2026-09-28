@@ -12,14 +12,15 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useNamespacesStore } from '@/stores/namespaces'
 import { ChevronDown, Check, Layers } from 'lucide-vue-next'
+import PopoverMenu from '@/components/ui/PopoverMenu.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const store = useNamespacesStore()
 
 const open = ref(false)
-const containerRef = ref<HTMLElement | null>(null)
 
 const label = computed(() => {
   const count = store.selectedNamespaces.length
@@ -28,83 +29,75 @@ const label = computed(() => {
   return `${count} namespaces`
 })
 
-function toggle() {
-  open.value = !open.value
-}
-
-function handleClickOutside(e: MouseEvent) {
-  if (containerRef.value && !containerRef.value.contains(e.target as Node)) {
-    open.value = false
-  }
-}
-
 onMounted(() => {
-  document.addEventListener('mousedown', handleClickOutside)
   store.fetchNamespacesList()
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleClickOutside)
 })
 </script>
 
 <template>
-  <div ref="containerRef" class="relative">
-    <button
-      class="flex items-center gap-2 bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-secondary hover:border-mnt-default hover:text-mnt-primary transition-all"
-      @click="toggle"
-    >
-      <Layers :size="14" class="text-mnt-muted flex-shrink-0" />
-      <span class="truncate max-w-40">{{ label }}</span>
-      <ChevronDown
-        :size="14"
-        :class="['text-mnt-muted flex-shrink-0 transition-transform', open ? 'rotate-180' : '']"
-      />
-    </button>
-
-    <!-- Dropdown -->
-    <div
-      v-if="open"
-      class="absolute right-0 top-full mt-1 z-50 min-w-52 bg-mnt-surface border border-mnt-default rounded-xl shadow-xl overflow-hidden"
-    >
-      <!-- All namespaces option -->
-      <button
-        class="w-full flex items-center justify-between px-4 py-2.5 text-sm text-mnt-secondary hover:bg-mnt-elevated hover:text-mnt-primary transition-colors"
-        @click="store.selectAll()"
+  <PopoverMenu v-model:open="open" ariaLabel="Namespaces" panel-class="min-w-52">
+    <template #trigger="{ toggle }">
+      <UiButton
+        variant="secondary"
+        class="bg-mnt-surface text-mnt-secondary hover:text-mnt-primary"
+        @click="toggle"
       >
-        <span>All namespaces</span>
+        <Layers :size="14" class="text-mnt-muted flex-shrink-0" />
+        <span class="truncate max-w-40">{{ label }}</span>
+        <ChevronDown
+          :size="14"
+          :class="['text-mnt-muted flex-shrink-0 transition-transform', open ? 'rotate-180' : '']"
+        />
+      </UiButton>
+    </template>
+
+    <!-- All namespaces option -->
+    <UiButton
+      variant="ghost"
+      block
+      align="between"
+      role="menuitemcheckbox"
+      :aria-checked="store.selectedNamespaces.length === 0"
+      class="rounded-none px-4 py-2.5 text-sm text-mnt-secondary hover:text-mnt-primary"
+      @click="store.selectAll()"
+    >
+      <span>All namespaces</span>
+      <Check
+        v-if="store.selectedNamespaces.length === 0"
+        :size="14"
+        class="text-mnt-green-400 flex-shrink-0"
+      />
+    </UiButton>
+
+    <!-- Divider -->
+    <div v-if="store.namespaces.length > 0" class="border-t border-mnt-default" />
+
+    <!-- Individual namespaces -->
+    <div class="max-h-64 overflow-y-auto">
+      <UiButton
+        v-for="ns in store.namespaces"
+        :key="ns"
+        variant="ghost"
+        block
+        align="between"
+        role="menuitemcheckbox"
+        :aria-checked="store.selectedNamespaces.includes(ns)"
+        class="rounded-none px-4 py-2.5 text-sm"
+        :class="store.selectedNamespaces.includes(ns) ? 'text-mnt-primary' : 'text-mnt-muted'"
+        @click="store.toggleNamespace(ns)"
+      >
+        <span class="font-mono">{{ ns }}</span>
         <Check
-          v-if="store.selectedNamespaces.length === 0"
+          v-if="store.selectedNamespaces.includes(ns)"
           :size="14"
           class="text-mnt-green-400 flex-shrink-0"
         />
-      </button>
-
-      <!-- Divider -->
-      <div v-if="store.namespaces.length > 0" class="border-t border-mnt-default" />
-
-      <!-- Individual namespaces -->
-      <div class="max-h-64 overflow-y-auto">
-        <button
-          v-for="ns in store.namespaces"
-          :key="ns"
-          class="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-mnt-elevated transition-colors"
-          :class="store.selectedNamespaces.includes(ns) ? 'text-mnt-primary' : 'text-mnt-muted'"
-          @click="store.toggleNamespace(ns)"
-        >
-          <span class="font-mono">{{ ns }}</span>
-          <Check
-            v-if="store.selectedNamespaces.includes(ns)"
-            :size="14"
-            class="text-mnt-green-400 flex-shrink-0"
-          />
-        </button>
-      </div>
-
-      <!-- Empty state -->
-      <div v-if="store.namespaces.length === 0" class="px-4 py-3 text-xs text-mnt-muted text-center">
-        No namespaces found
-      </div>
+      </UiButton>
     </div>
-  </div>
+
+    <!-- Empty state -->
+    <div v-if="store.namespaces.length === 0" class="px-4 py-3 text-xs text-mnt-muted text-center">
+      No namespaces found
+    </div>
+  </PopoverMenu>
 </template>

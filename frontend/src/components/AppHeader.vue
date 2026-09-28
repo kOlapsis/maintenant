@@ -27,6 +27,7 @@ import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
 import SearchInput from '@/components/ui/SearchInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import PopoverMenu from '@/components/ui/PopoverMenu.vue'
 import { useTheme } from '@/composables/useTheme'
 import { useFeedbackUrl } from '@/composables/useFeedbackUrl'
 
@@ -280,88 +281,82 @@ const { feedbackUrl } = useFeedbackUrl()
         <MessageSquare :size="18" />
       </a>
 
-      <div
-        class="relative"
+      <PopoverMenu
+        v-model:open="bellOpen"
+        ariaLabel="Active alerts"
+        panel-class="w-56"
         @mouseenter="onBellEnter"
         @mouseleave="onBellLeave"
       >
-        <UiButton
-          variant="ghost"
-          size="sm"
-          :icon="Bell"
-          class="relative"
-          :aria-label="alertsStore.totalActiveCount > 0 ? `View alerts (${alertsStore.totalActiveCount} active)` : 'View alerts'"
-          @click="onBellClick"
-        >
-          <span
-            v-if="alertsStore.totalActiveCount > 0"
-            class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
-            :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--mnt-sev-incident)' : 'var(--mnt-sev-warning)' }"
+        <template #trigger>
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :icon="Bell"
+            class="relative"
+            :aria-label="alertsStore.totalActiveCount > 0 ? `View alerts (${alertsStore.totalActiveCount} active)` : 'View alerts'"
+            @click="onBellClick"
           >
             <span
-              class="mnt-ping absolute inset-0 rounded-full"
+              v-if="alertsStore.totalActiveCount > 0"
+              class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
               :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--mnt-sev-incident)' : 'var(--mnt-sev-warning)' }"
-            />
-          </span>
-        </UiButton>
-
-        <!-- Popover menu -->
-        <Transition
-          enter-active-class="transition duration-100 ease-out"
-          enter-from-class="opacity-0 scale-95 -translate-y-1"
-          enter-to-class="opacity-100 scale-100 translate-y-0"
-          leave-active-class="transition duration-75 ease-in"
-          leave-from-class="opacity-100 scale-100 translate-y-0"
-          leave-to-class="opacity-0 scale-95 -translate-y-1"
-        >
-          <div
-            v-if="bellOpen"
-            class="absolute right-0 top-full mt-2 w-56 rounded-xl border border-mnt-default bg-mnt-surface shadow-2xl shadow-black/40 overflow-hidden z-50"
-            @mouseenter="onBellEnter"
-            @mouseleave="onBellLeave"
-          >
-            <div class="px-3 py-2.5 border-b border-mnt-default flex items-center justify-between">
-              <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Active alerts</span>
+            >
               <span
-                class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
-                :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-mnt-status-down text-mnt-status-down' : 'bg-mnt-status-warn text-mnt-status-warn'"
-              >
-                {{ alertsStore.totalActiveCount }}
-              </span>
-            </div>
-            <div class="py-1">
-              <button
-                v-for="source in sourceKeys"
-                :key="source"
-                @click="navigateToSource(source)"
-                class="w-full flex items-center gap-3 px-3 py-2 text-sm text-mnt-secondary hover:bg-mnt-elevated transition-colors"
-              >
-                <component
-                  :is="sourceRouteMap[source]?.icon ?? AlertTriangle"
-                  :size="14"
-                  class="shrink-0"
-                  :class="alertsBySource[source]?.critical ? 'text-mnt-status-down' : alertsBySource[source]?.warning ? 'text-mnt-status-warn' : 'text-mnt-green-400'"
-                />
-                <span class="flex-1 text-left">{{ sourceRouteMap[source]?.label ?? source }}</span>
-                <span
-                  class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
-                  :class="alertsBySource[source]?.critical ? 'bg-mnt-status-down text-mnt-status-down' : alertsBySource[source]?.warning ? 'bg-mnt-status-warn text-mnt-status-warn' : 'bg-mnt-green-500/15 text-mnt-green-400'"
-                >
-                  {{ alertsBySource[source]?.count }}
-                </span>
-              </button>
-            </div>
-            <div class="border-t border-mnt-default">
-              <button
-                @click="navigateToSource('_all')"
-                class="w-full px-3 py-2 text-[11px] font-medium text-mnt-muted hover:text-mnt-secondary hover:bg-mnt-elevated transition-colors text-center"
-              >
-                View all alerts
-              </button>
-            </div>
-          </div>
-        </Transition>
-      </div>
+                class="mnt-ping absolute inset-0 rounded-full"
+                :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--mnt-sev-incident)' : 'var(--mnt-sev-warning)' }"
+              />
+            </span>
+          </UiButton>
+        </template>
+
+        <div class="px-3 py-2.5 border-b border-mnt-default flex items-center justify-between">
+          <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Active alerts</span>
+          <span
+            class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
+            :class="alertsStore.activeAlerts.critical.length > 0 ? 'bg-mnt-status-down text-mnt-status-down' : 'bg-mnt-status-warn text-mnt-status-warn'"
+          >
+            {{ alertsStore.totalActiveCount }}
+          </span>
+        </div>
+        <div class="py-1">
+          <UiButton
+            v-for="source in sourceKeys"
+            :key="source"
+            variant="ghost"
+            block
+            align="start"
+            role="menuitem"
+            class="gap-3 rounded-none px-3 py-2 text-sm text-mnt-secondary hover:text-mnt-secondary"
+            @click="navigateToSource(source)"
+          >
+            <component
+              :is="sourceRouteMap[source]?.icon ?? AlertTriangle"
+              :size="14"
+              class="shrink-0"
+              :class="alertsBySource[source]?.critical ? 'text-mnt-status-down' : alertsBySource[source]?.warning ? 'text-mnt-status-warn' : 'text-mnt-green-400'"
+            />
+            <span class="flex-1 text-left">{{ sourceRouteMap[source]?.label ?? source }}</span>
+            <span
+              class="min-w-[20px] h-5 flex items-center justify-center rounded-full text-[10px] font-bold px-1.5"
+              :class="alertsBySource[source]?.critical ? 'bg-mnt-status-down text-mnt-status-down' : alertsBySource[source]?.warning ? 'bg-mnt-status-warn text-mnt-status-warn' : 'bg-mnt-green-500/15 text-mnt-green-400'"
+            >
+              {{ alertsBySource[source]?.count }}
+            </span>
+          </UiButton>
+        </div>
+        <div class="border-t border-mnt-default">
+          <UiButton
+            variant="ghost"
+            block
+            role="menuitem"
+            class="rounded-none px-3 py-2 text-[11px] font-medium text-mnt-muted hover:text-mnt-secondary"
+            @click="navigateToSource('_all')"
+          >
+            View all alerts
+          </UiButton>
+        </div>
+      </PopoverMenu>
     </div>
   </header>
 

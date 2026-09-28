@@ -140,11 +140,15 @@ onUnmounted(() => {
   store.disconnectSSE()
 })
 
-const tabItems = computed<TabNavItem[]>(() => [
+const tabItems = computed<TabNavItem<Tab>[]>(() => [
   { value: 'components', label: 'Components', count: store.components?.length || undefined },
   { value: 'incidents', label: 'Incidents', count: store.incidentsTotal || undefined },
   { value: 'maintenance', label: 'Maintenance', count: store.maintenance?.length || undefined },
-  { value: 'subscribers', label: 'Subscribers', count: store.subscriberTotal || undefined },
+  {
+    value: 'subscribers',
+    label: 'Subscribers',
+    count: store.subscriberTotal ? `${store.subscriberConfirmed}/${store.subscriberTotal}` : undefined,
+  },
   { value: 'smtp', label: 'SMTP' },
   { value: 'personalization', label: 'Personalization' },
 ])
@@ -172,11 +176,10 @@ const tabItems = computed<TabNavItem[]>(() => [
 
     <!-- Tab navigation -->
     <TabNav
+      v-model="activeTab"
       class="mb-4"
-      :model-value="activeTab"
       :items="tabItems"
       ariaLabel="Status page sections"
-      @update:model-value="(v) => (activeTab = v as Tab)"
     />
 
     <!-- Tab content -->

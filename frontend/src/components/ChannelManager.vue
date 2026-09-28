@@ -269,7 +269,7 @@ function handleWizardCreated() {
           <div class="flex items-center gap-2">
             <UiButton variant="secondary" size="sm" @click="handleTest(ch.id)">Test</UiButton>
             <UiButton variant="secondary" size="sm" @click="startEdit(ch)">Edit</UiButton>
-            <UiButton variant="danger" size="sm" @click="handleDelete(ch.id)">Delete</UiButton>
+            <UiButton variant="danger-ghost" size="sm" @click="handleDelete(ch.id)">Delete</UiButton>
           </div>
         </div>
 

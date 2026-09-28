@@ -29,9 +29,10 @@ import ListToolbar from '@/components/ui/ListToolbar.vue'
 import DataTable, { type Column } from '@/components/ui/DataTable.vue'
 import SelectInput from '@/components/ui/SelectInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import DisclosureButton from '@/components/ui/DisclosureButton.vue'
 import type { ChipTone, StatusChip } from '@/components/ui/listFilters'
 import { usePreferencesStore } from '@/stores/preferences'
-import { ChevronDown, Box, SearchX } from 'lucide-vue-next'
+import { Box, SearchX } from 'lucide-vue-next'
 
 const store = useContainersStore()
 const resources = useResourcesStore()
@@ -400,53 +401,50 @@ onMounted(() => {
       <!-- Cards keep the groups, and the K8s/Swarm controller hierarchy inside them. -->
       <div v-else class="space-y-6">
         <div v-for="group in visibleGroups" :key="group.name">
-          <button
-            class="flex min-h-[44px] w-full items-center gap-2 text-left"
-            :aria-expanded="!collapsedGroups.has(group.name)"
-            @click="toggleGroup(group.name)"
+          <DisclosureButton
+            :expanded="!collapsedGroups.has(group.name)"
+            :controls-id="`container-group-${group.name}`"
+            class="text-mnt-muted"
+            @toggle="toggleGroup(group.name)"
           >
-            <ChevronDown
-              :size="14"
-              class="shrink-0 text-mnt-muted transition-transform"
-              :class="{ '-rotate-90': collapsedGroups.has(group.name) }"
-              aria-hidden="true"
-            />
-            <h2 class="text-sm font-semibold text-mnt-secondary">{{ group.name }}</h2>
-            <span class="rounded-full bg-mnt-elevated px-2 py-0.5 text-xs text-mnt-muted">
-              {{ group.containers.length }}
+            <span class="flex items-center gap-2">
+              <h2 class="text-sm font-semibold text-mnt-secondary">{{ group.name }}</h2>
+              <span class="rounded-full bg-mnt-elevated px-2 py-0.5 text-xs text-mnt-muted">
+                {{ group.containers.length }}
+              </span>
+              <span class="text-xs text-mnt-muted">{{ group.source }}</span>
             </span>
-            <span class="text-xs text-mnt-muted">{{ group.source }}</span>
-          </button>
+          </DisclosureButton>
 
           <template v-if="!collapsedGroups.has(group.name)">
+            <div :id="`container-group-${group.name}`">
             <div v-if="hasControllerHierarchy" class="mt-2 space-y-3">
               <div
                 v-for="ctrl in getControllerGroups(group.containers)"
                 :key="`${ctrl.kind}/${ctrl.name}`"
               >
-                <button
-                  class="flex w-full items-center gap-2 rounded bg-mnt-elevated px-2 py-1.5 text-left"
-                  @click="store.toggleController(`${group.name}/${ctrl.kind}/${ctrl.name}`)"
+                <DisclosureButton
+                  :expanded="store.isControllerExpanded(`${group.name}/${ctrl.kind}/${ctrl.name}`)"
+                  :controls-id="`container-ctrl-${group.name}-${ctrl.kind}-${ctrl.name}`"
+                  class="rounded bg-mnt-elevated px-2 py-1.5 text-mnt-muted"
+                  @toggle="store.toggleController(`${group.name}/${ctrl.kind}/${ctrl.name}`)"
                 >
-                  <ChevronDown
-                    :size="13"
-                    class="shrink-0 text-mnt-muted transition-transform"
-                    :class="{ '-rotate-90': !store.isControllerExpanded(`${group.name}/${ctrl.kind}/${ctrl.name}`) }"
-                    aria-hidden="true"
-                  />
-                  <span class="rounded bg-mnt-surface px-1.5 py-0.5 text-xs text-mnt-secondary">
-                    {{ ctrl.kind }}
+                  <span class="flex items-center gap-2">
+                    <span class="rounded bg-mnt-surface px-1.5 py-0.5 text-xs text-mnt-secondary">
+                      {{ ctrl.kind }}
+                    </span>
+                    <span class="text-sm font-medium text-mnt-primary">{{ ctrl.name }}</span>
+                    <span
+                      class="text-xs"
+                      :style="{
+                        color: ctrl.readyCount === ctrl.podCount ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
+                      }"
+                    >{{ ctrl.readyCount }}/{{ ctrl.podCount }} ready</span>
                   </span>
-                  <span class="text-sm font-medium text-mnt-primary">{{ ctrl.name }}</span>
-                  <span
-                    class="text-xs"
-                    :style="{
-                      color: ctrl.readyCount === ctrl.podCount ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',
-                    }"
-                  >{{ ctrl.readyCount }}/{{ ctrl.podCount }} ready</span>
-                </button>
+                </DisclosureButton>
                 <div
                   v-if="store.isControllerExpanded(`${group.name}/${ctrl.kind}/${ctrl.name}`)"
+                  :id="`container-ctrl-${group.name}-${ctrl.kind}-${ctrl.name}`"
                   class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 >
                   <ContainerCard
@@ -478,6 +476,7 @@ onMounted(() => {
                 :container="container"
                 @select="emit('select', $event)"
               />
+            </div>
             </div>
           </template>
         </div>

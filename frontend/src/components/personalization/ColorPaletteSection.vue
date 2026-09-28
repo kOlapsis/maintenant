@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ContrastWarning, PalettePayload } from '@/services/personalizationApi'
-import TextInput from '@/components/ui/TextInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import ColorInput from '@/components/ui/ColorInput.vue'
 
 const palette = defineModel<PalettePayload>('palette', { required: true })
 const warnings = defineModel<ContrastWarning[]>('warnings', { default: () => [] })
@@ -50,19 +50,10 @@ function resetField(key: PaletteKey) {
     <div class="space-y-3">
       <p class="text-xs text-mnt-muted">Chrome</p>
       <div v-for="field in chromeFields" :key="field.key" class="flex items-center gap-3">
-        <input
-          type="color"
-          :value="palette?.[field.key]"
-          class="w-8 h-8 rounded cursor-pointer border border-mnt-default bg-transparent"
-          @input="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
-        />
-        <TextInput
+        <ColorInput
           :model-value="palette?.[field.key]"
-          maxlength="9"
-          mono
-          size="sm"
-          class="w-28"
-          @change="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
+          :label="field.label"
+          @update:model-value="(v) => palette && (palette = { ...palette, [field.key]: v })"
         />
         <span class="flex-1 text-xs text-mnt-muted">{{ field.label }}</span>
         <UiButton variant="ghost" size="sm" @click="resetField(field.key)">Reset</UiButton>
@@ -73,19 +64,10 @@ function resetField(key: PaletteKey) {
     <div class="space-y-3">
       <p class="text-xs text-mnt-muted">Status Indicators</p>
       <div v-for="field in statusFields" :key="field.key" class="flex items-center gap-3">
-        <input
-          type="color"
-          :value="palette?.[field.key]"
-          class="w-8 h-8 rounded cursor-pointer border border-mnt-default bg-transparent"
-          @input="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
-        />
-        <TextInput
+        <ColorInput
           :model-value="palette?.[field.key]"
-          maxlength="9"
-          mono
-          size="sm"
-          class="w-28"
-          @change="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
+          :label="field.label"
+          @update:model-value="(v) => palette && (palette = { ...palette, [field.key]: v })"
         />
         <span class="flex-1 text-xs text-mnt-muted">{{ field.label }}</span>
         <UiButton variant="ghost" size="sm" @click="resetField(field.key)">Reset</UiButton>

@@ -3,27 +3,30 @@
   Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
   or a commercial license. See COMMERCIAL-LICENSE.md.
 -->
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends string">
 import type { Component } from 'vue'
 
-interface SegmentOption {
-  value: string
+interface SegmentOption<V extends string = string> {
+  value: V
   label?: string
   icon?: Component
   /** Accessible name when the option is icon-only. */
   title?: string
+  disabled?: boolean
+  locked?: boolean
+  dataTest?: string
 }
 
 withDefaults(
   defineProps<{
-    modelValue: string
-    options: SegmentOption[]
+    modelValue: T
+    options: SegmentOption<T>[]
     ariaLabel: string
   }>(),
   {},
 )
 
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: T] }>()
 </script>
 
 <template>
@@ -36,9 +39,12 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
       v-for="opt in options"
       :key="opt.value"
       type="button"
+      :data-test="opt.dataTest"
+      :data-locked="opt.locked ? 'true' : undefined"
+      :disabled="opt.disabled"
       :aria-pressed="modelValue === opt.value"
       :title="opt.title ?? opt.label"
-      class="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors"
+      class="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
       :class="
         modelValue === opt.value
           ? 'text-mnt-accent'

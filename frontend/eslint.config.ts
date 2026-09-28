@@ -32,7 +32,7 @@ export default defineConfigWithVueTs(
     ignores: ['src/components/ui/**', 'src/**/__tests__/**'],
     rules: {
       'vue/no-restricted-html-elements': [
-        'warn',
+        'error',
         { element: 'input', message: 'Use the shared TextInput, CheckboxInput, or RadioGroup component instead of a raw <input>.' },
         { element: 'select', message: 'Use the shared SelectInput component instead of a raw <select>.' },
         { element: 'textarea', message: 'Use the shared TextareaInput component instead of a raw <textarea>.' },

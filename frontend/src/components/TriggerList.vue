@@ -84,7 +84,7 @@ function summarizeFilter(t: AlertTrigger): string {
           @update:model-value="emit('toggle', t)"
         />
         <UiButton variant="secondary" size="sm" :icon="Edit2" @click="emit('edit', t)">Edit</UiButton>
-        <UiButton variant="danger" size="sm" :icon="Trash2" @click="emit('delete', t)">Delete</UiButton>
+        <UiButton variant="danger-ghost" size="sm" :icon="Trash2" @click="emit('delete', t)">Delete</UiButton>
       </div>
     </div>
   </div>

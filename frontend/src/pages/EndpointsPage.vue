@@ -249,10 +249,9 @@ onUnmounted(() => {
           <div>
             <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Type</label>
             <SegmentedToggle
-              :model-value="form.endpoint_type"
+              v-model="form.endpoint_type"
               :options="[{ value: 'http', label: 'HTTP' }, { value: 'tcp', label: 'TCP' }]"
               ariaLabel="Endpoint type"
-              @update:model-value="(v) => (form.endpoint_type = v as 'http' | 'tcp')"
             />
           </div>
         </div>

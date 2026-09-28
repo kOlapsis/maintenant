@@ -182,7 +182,7 @@ function formatDuration(seconds: number): string {
               {{ formatTime(rule.starts_at) }} - {{ formatTime(rule.expires_at) }}
             </p>
           </div>
-          <UiButton v-if="rule.is_active" variant="danger" size="sm" @click="handleCancel(rule.id)">Cancel</UiButton>
+          <UiButton v-if="rule.is_active" variant="danger-ghost" size="sm" @click="handleCancel(rule.id)">Cancel</UiButton>
           <span v-else class="text-xs" style="color: var(--mnt-text-muted)">
             {{ rule.cancelled_at ? 'Cancelled' : 'Expired' }}
           </span>

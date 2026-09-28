@@ -11,25 +11,25 @@
   Source: https://github.com/kolapsis/maintenant
 -->
 
-<script setup lang="ts">
-defineOptions({ inheritAttrs: false })
-
-export interface SelectOption {
-  value: string | number
+<script setup lang="ts" generic="T extends string | number">
+export interface SelectOption<V extends string | number = string | number> {
+  value: V
   label: string
   disabled?: boolean
 }
 
+defineOptions({ inheritAttrs: false })
+
 withDefaults(
   defineProps<{
-    options?: SelectOption[]
+    options?: SelectOption<T>[]
     invalid?: boolean
     size?: 'md' | 'sm'
   }>(),
   { options: () => [], invalid: false, size: 'md' },
 )
 
-const model = defineModel<string | number | null>({ default: '' })
+const model = defineModel<T | null>({ default: null })
 </script>
 
 <template>
