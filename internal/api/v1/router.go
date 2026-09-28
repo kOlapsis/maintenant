@@ -28,6 +28,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/license"
+	"github.com/kolapsis/maintenant/internal/outbound"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
@@ -78,6 +79,7 @@ type HandlerDeps struct {
 	Endpoints    *endpoint.Service
 	Heartbeats   *heartbeat.Service
 	Certificates *certificate.Service
+	Outbound     *outbound.Service
 	Resources    *resource.Service
 	Logger       *slog.Logger
 
@@ -281,6 +283,15 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("POST /ping/{uuid}/{exit_code}", ph.HandleExitCodePing)
 		r.mux.HandleFunc("GET /ping/{uuid}", ph.HandlePing)
 		r.mux.HandleFunc("POST /ping/{uuid}", ph.HandlePing)
+	}
+
+	if d.Outbound != nil {
+		oh := NewOutboundHeartbeatHandler(d.Outbound)
+		r.mux.HandleFunc("GET /api/v1/outbound-heartbeats", oh.HandleList)
+		r.mux.HandleFunc("POST /api/v1/outbound-heartbeats", oh.HandleCreate)
+		r.mux.HandleFunc("PUT /api/v1/outbound-heartbeats/{id}", oh.HandleUpdate)
+		r.mux.HandleFunc("DELETE /api/v1/outbound-heartbeats/{id}", oh.HandleDelete)
+		r.mux.HandleFunc("POST /api/v1/outbound-heartbeats/{id}/send", oh.HandleSend)
 	}
 
 	// Resource monitoring endpoints

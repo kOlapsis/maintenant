@@ -42,6 +42,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/mcp"
+	"github.com/kolapsis/maintenant/internal/outbound"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
@@ -75,6 +76,7 @@ type App struct {
 	containerSvc       *container.Service
 	endpointSvc        *endpoint.Service
 	heartbeatSvc       *heartbeat.Service
+	outboundSvc        *outbound.Service
 	certSvc            *certificate.Service
 	resourceSvc        *resource.Service
 	securitySvc        *security.Service
@@ -391,6 +393,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		LicenseChecker: heartbeatLicenseChecker,
 		BaseURL:        cfg.BaseURL,
 	})
+	a.outboundSvc = outbound.NewService(outbound.Deps{
+		Store:   store.NewOutboundHeartbeatStore(db),
+		Logger:  logger,
+		Version: cfg.Version,
+	})
 
 	// --- SMTP ---
 	var smtpSender *alert.SMTPSender
@@ -611,6 +618,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Endpoints:    a.endpointSvc,
 		Heartbeats:   a.heartbeatSvc,
 		Certificates: a.certSvc,
+		Outbound:     a.outboundSvc,
 		Resources:    a.resourceSvc,
 		Logger:       logger,
 		// Alert pipeline
@@ -830,6 +838,7 @@ func (a *App) Start(ctx context.Context) error {
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
+	a.outboundSvc.Start(ctx)
 
 	// Telemetry: best-effort. Self-exits on ctx cancellation; panics are
 	// contained inside the package (FR-009/FR-011/FR-012).
