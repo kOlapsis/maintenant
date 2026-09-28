@@ -180,16 +180,19 @@ const { feedbackUrl } = useFeedbackUrl()
 </script>
 
 <template>
-  <header class="header-glass hidden md:flex h-16 shrink-0 border-b border-mnt-default items-center justify-between px-6 backdrop-blur-md z-10">
-    <div class="flex items-center gap-5">
+  <header class="header-glass @container hidden md:flex h-16 shrink-0 border-b border-mnt-default items-center justify-between gap-4 px-6 backdrop-blur-md z-10">
+    <div class="flex min-w-0 flex-1 items-center gap-5 overflow-hidden">
       <!-- Global host/resource scope selector (hidden on single-host installs) -->
       <HostFilterDropdown v-if="activeAgentIds.length > 0" class="w-48 shrink-0" />
 
       <!-- Search -->
-      <SearchInput v-model="dashboard.searchQuery" placeholder="Search services..." class="w-72" />
+      <SearchInput v-model="dashboard.searchQuery" placeholder="Search services..." class="w-72 min-w-40 shrink" />
 
       <!-- Monitor health counters (containers + endpoints + heartbeats + certificates) -->
-      <div class="hidden sm:flex items-center gap-5 border-l border-mnt-default pl-5">
+      <div
+        class="hidden shrink-0 items-center gap-5 border-l border-mnt-default pl-5"
+        :class="activeAgentIds.length > 0 ? '@min-[59rem]:flex' : '@min-[45rem]:flex'"
+      >
         <div class="flex items-center gap-2">
           <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">OK</span>
           <span class="text-sm font-black text-mnt-status-ok">{{ dashboard.globalStats.running }}</span>
@@ -211,7 +214,10 @@ const { feedbackUrl } = useFeedbackUrl()
       </div>
 
       <!-- Resource gauges -->
-      <div class="hidden lg:flex items-center gap-4 border-l border-mnt-default pl-5">
+      <div
+        class="hidden shrink-0 items-center gap-4 border-l border-mnt-default pl-5"
+        :class="activeAgentIds.length > 0 ? '@min-[86rem]:flex' : '@min-[72rem]:flex'"
+      >
         <!-- CPU -->
         <div class="flex items-center gap-2 min-w-[120px]">
           <span class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest w-8">CPU</span>
@@ -255,7 +261,7 @@ const { feedbackUrl } = useFeedbackUrl()
     </div>
 
     <!-- Right: runtime badge + theme toggle + feedback + bell -->
-    <div class="flex items-center gap-4">
+    <div class="flex shrink-0 items-center gap-4">
       <!-- Runtime badge with popover -->
       <RuntimeBadge />
 
