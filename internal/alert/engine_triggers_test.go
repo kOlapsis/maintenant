@@ -14,6 +14,7 @@ package alert_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -552,4 +553,81 @@ func TestEngineDispatch_NotifyOnResolveTrue_RecoveryDelivered(t *testing.T) {
 		return err == nil && n == 2
 	}, 5*time.Second, 10*time.Millisecond, "trigger with notify_on_resolve=true must also deliver the recovery")
 	assert.Equal(t, 2, countDeliveriesForChannel(t, channelStore, alertID, chID), "trigger with notify_on_resolve=true must also deliver the recovery")
+}
+
+func TestEngine_QueuedFireNotificationIgnoresLaterRecovery(t *testing.T) {
+	ctx, cancel, _, alertStore, channelStore, triggerStore, _, eng := engineTestSetup(t)
+	defer cancel()
+
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var bodies []alert.WebhookPayload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var p alert.WebhookPayload
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		mu.Lock()
+		bodies = append(bodies, p)
+		mu.Unlock()
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+
+	chID, err := channelStore.InsertChannel(ctx, &alert.NotificationChannel{
+		Name: "slow", Type: "webhook", URL: srv.URL, Enabled: true,
+	})
+	require.NoError(t, err)
+	seedTriggerForChannel(t, triggerStore, "All", true, "", "", []string{chID})
+
+	send := func(entityID string, recover bool) {
+		eng.EventChannel() <- alert.Event{
+			Source: "endpoint", AlertType: "down", Severity: "critical", IsRecover: recover,
+			EntityType: "endpoint", EntityID: entityID, EntityName: entityID, Timestamp: time.Now(),
+		}
+	}
+
+	// More blockers than notifier workers, so the next job waits in the queue.
+	const blockers = 32
+	for i := range blockers {
+		send(fmt.Sprintf("blocker-%d", i), false)
+	}
+	send("target", false)
+	send("target", true)
+
+	require.Eventually(t, func() bool {
+		active, err := alertStore.ListActiveAlerts(ctx)
+		if err != nil {
+			return false
+		}
+		for _, a := range active {
+			if a.EntityID == "target" {
+				return false
+			}
+		}
+		return len(active) == blockers
+	}, 5*time.Second, 10*time.Millisecond, "the target alert must be resolved while its fire notification is still queued")
+
+	unblock()
+
+	var target []alert.WebhookPayload
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		target = target[:0]
+		for _, b := range bodies {
+			if b.Alert["entity_id"] == "target" {
+				target = append(target, b)
+			}
+		}
+		return len(target) == 2
+	}, 10*time.Second, 10*time.Millisecond, "the target must be notified twice")
+
+	events := map[string]any{}
+	for _, b := range target {
+		events[b.Event] = b.Alert["status"]
+	}
+	assert.Equal(t, map[string]any{"alert.fired": "active", "alert.resolved": "resolved"}, events)
 }
