@@ -144,6 +144,54 @@ POST /api/v1/heartbeats/{id}/resume
 
 ---
 
+## Outbound Heartbeats
+
+A monitoring tool cannot report its own outage. Outbound heartbeats solve this by letting another maintenant instance watch this one: this instance pings a heartbeat monitor on the other instance at a fixed interval, and if the pings stop, the other instance raises a `deadline_missed` alert.
+
+### Setting It Up
+
+1. On the **other** instance, create a heartbeat monitor with an interval that matches the one you will use below, plus some grace time. Copy its ping URL.
+2. On **this** instance, open **Heartbeats → Outgoing** and click **New target**.
+3. Paste the ping URL, give the target a name and choose an interval.
+4. Click **Send now** to check the target right away. The row shows the HTTP status it received, or the error.
+
+Two instances can watch each other this way, each with one incoming and one outgoing heartbeat.
+
+### How Sends Work
+
+- Each target is called with a `GET` request, with a 10-second timeout and the `User-Agent` `maintenant/<version> outbound-heartbeat`.
+- The interval goes from 30 seconds to 24 hours.
+- A 2xx response counts as a success. Any other status, or a network error, is recorded as the target's last error and logged as a warning.
+- A disabled target keeps its settings but is no longer called.
+
+!!! note "HTTPS and public addresses only"
+    Targets must use `https://` and resolve to a public address. Loopback and
+    private ranges are refused when the target is saved and again when it is
+    called, so the feature cannot be used to reach services on your internal
+    network. The other instance therefore has to be reachable over HTTPS from
+    this one.
+
+### API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/outbound-heartbeats` | List all targets |
+| `POST` | `/api/v1/outbound-heartbeats` | Create a target |
+| `PUT` | `/api/v1/outbound-heartbeats/{id}` | Update a target |
+| `DELETE` | `/api/v1/outbound-heartbeats/{id}` | Delete a target |
+| `POST` | `/api/v1/outbound-heartbeats/{id}/send` | Send a ping now |
+
+```json
+{
+  "name": "Watched by monitoring.example.com",
+  "url": "https://monitoring.example.com/ping/4f7c2d9e-1b3a-4c5d-8e6f-0a1b2c3d4e5f",
+  "interval_seconds": 60,
+  "enabled": true
+}
+```
+
+---
+
 ## Public Ping Endpoints
 
 The `/ping/` routes are designed to be publicly accessible. They do not require authentication, since your cron jobs and external services need to reach them directly.

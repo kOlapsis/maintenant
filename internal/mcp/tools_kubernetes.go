@@ -22,25 +22,25 @@ import (
 )
 
 func registerKubernetesTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_kubernetes_namespaces",
 		Description: "List Kubernetes namespaces known to maintenant across monitored clusters.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listKubernetesNamespacesHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_kubernetes_workloads",
 		Description: "List Kubernetes workloads (Deployments, StatefulSets, DaemonSets...) grouped by namespace, with ready/desired replica counts and status.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listKubernetesWorkloadsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_kubernetes_pods",
 		Description: "List Kubernetes pods with their status, restart count and node, optionally filtered by namespace, workload, node or status.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listKubernetesPodsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_kubernetes_nodes",
 		Description: "List Kubernetes nodes with their roles, conditions, capacity and running pod counts.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},

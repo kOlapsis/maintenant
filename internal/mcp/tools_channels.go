@@ -16,34 +16,34 @@ import (
 )
 
 func registerChannelTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_channels",
 		Description: "List notification channels. Channels are silent on their own: an alert reaches one only through an alert trigger or an escalation level. Secrets are never returned.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listChannelsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_channel",
 		Description: "Get a single notification channel by ID, with its delivery health and the triggers routing to it.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getChannelHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_channel",
 		Description: "Create a notification channel. The webhook type is open in every edition; " + gatedChannelTypes() + ".",
 	}, createChannelHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_channel",
 		Description: "Update a notification channel. Omitted fields keep their stored value; a stored secret is never cleared this way.",
 	}, updateChannelHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_channel",
 		Description: "Delete a notification channel. Triggers and escalation levels pointing at it lose that destination.",
 	}, deleteChannelHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "test_channel",
 		Description: "Send a test notification through a channel and report whether it was delivered.",
 	}, testChannelHandler(svc))

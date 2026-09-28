@@ -31,6 +31,7 @@ var (
 	commit       = "unknown"
 	buildDate    = "unknown"
 	publicKeyB64 = ""
+	demoMode     = ""
 )
 
 // defaultAgentDataDir is where an agent keeps its identity and liveness file
@@ -80,6 +81,7 @@ func main() {
 	cfg.Commit = commit
 	cfg.BuildDate = buildDate
 	cfg.PublicKeyB64 = publicKeyB64
+	cfg.DemoMode = demoMode == "true"
 	if err := app.MergeArgsIntoConfig(&cfg, visited); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
@@ -96,6 +98,9 @@ func main() {
 		logger.Warn("insecure TLS verification disabled — do not use in production")
 	}
 	logger.Info("maintenant starting", "version", version, "commit", commit, "build_date", buildDate, "mode", cfg.Mode)
+	if cfg.DemoMode {
+		logger.Info("demo mode enabled: instance is read-only")
+	}
 
 	// Loaded before anything can probe: both server and agent modes run from
 	// here, and a bad path must stop the process rather than turn every TLS
@@ -106,6 +111,11 @@ func main() {
 	}
 	if cfg.CACertFile != "" {
 		logger.Info("extra CA bundle trusted", "path", cfg.CACertFile)
+	}
+
+	if err := cfg.ValidateDemo(os.Getenv); err != nil {
+		logger.Error("invalid demo configuration", "error", err)
+		os.Exit(1)
 	}
 
 	// Checked before the agent branch: an agent handed a connection string

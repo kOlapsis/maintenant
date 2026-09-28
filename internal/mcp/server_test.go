@@ -174,21 +174,27 @@ func TestNewServer_ReadToolsAreReadOnly(t *testing.T) {
 	require.NoError(t, err)
 
 	readOnlyTools := map[string]bool{
-		"list_containers":      true,
-		"get_container":        true,
-		"get_container_logs":   true,
-		"list_alerts":          true,
-		"get_resources":        true,
-		"get_top_consumers":    true,
-		"list_endpoints":       true,
-		"get_endpoint_history": true,
-		"list_heartbeats":      true,
-		"list_certificates":    true,
-		"get_updates":          true,
-		"get_health":           true,
-		"list_channels":        true,
-		"get_channel":          true,
-		"get_edition":          true,
+		"list_containers":            true,
+		"get_container":              true,
+		"get_container_logs":         true,
+		"list_alerts":                true,
+		"get_resources":              true,
+		"get_top_consumers":          true,
+		"list_endpoints":             true,
+		"get_endpoint_history":       true,
+		"list_heartbeats":            true,
+		"list_certificates":          true,
+		"get_updates":                true,
+		"get_health":                 true,
+		"list_channels":              true,
+		"get_channel":                true,
+		"get_edition":                true,
+		"list_escalation_policies":   true,
+		"get_escalation_policy":      true,
+		"list_alert_escalation_runs": true,
+		"get_escalation_run":         true,
+		"list_triggers":              true,
+		"get_trigger":                true,
 	}
 
 	for _, tool := range result.Tools {
@@ -197,4 +203,76 @@ func TestNewServer_ReadToolsAreReadOnly(t *testing.T) {
 			assert.True(t, tool.Annotations.ReadOnlyHint, "tool %q should be marked read-only", tool.Name)
 		}
 	}
+}
+
+func newTestServerWithDemoMode(t *testing.T, demoMode bool) *gomcp.Server {
+	t.Helper()
+
+	svc := &Services{
+		Version:  "1.0.0-test",
+		Logger:   slog.Default(),
+		DemoMode: demoMode,
+	}
+
+	var server *gomcp.Server
+	panicked := true
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Skipf("NewServer panics due to go-sdk v1.4.0 jsonschema tag parsing: %v", r)
+			}
+		}()
+		server = NewServer(svc)
+		panicked = false
+	}()
+	if panicked {
+		t.SkipNow()
+	}
+	return server
+}
+
+func listToolNames(t *testing.T, server *gomcp.Server) map[string]*gomcp.Tool {
+	t.Helper()
+
+	ct, st := gomcp.NewInMemoryTransports()
+	ctx := context.Background()
+
+	ss, err := server.Connect(ctx, st, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ss.Close() })
+
+	client := gomcp.NewClient(&gomcp.Implementation{
+		Name:    "test-client",
+		Version: "0.0.1",
+	}, nil)
+	cs, err := client.Connect(ctx, ct, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cs.Close() })
+
+	result, err := cs.ListTools(ctx, nil)
+	require.NoError(t, err)
+
+	tools := make(map[string]*gomcp.Tool, len(result.Tools))
+	for _, tool := range result.Tools {
+		tools[tool.Name] = tool
+	}
+	return tools
+}
+
+func TestNewServer_DemoMode_OnlyListsReadOnlyTools(t *testing.T) {
+	server := newTestServerWithDemoMode(t, true)
+	require.NotNil(t, server)
+
+	for name, tool := range listToolNames(t, server) {
+		require.NotNil(t, tool.Annotations, "demo mode listed %q without annotations", name)
+		assert.True(t, tool.Annotations.ReadOnlyHint, "demo mode listed a non-read-only tool %q", name)
+	}
+	assert.Len(t, listToolNames(t, server), 34, "demo mode must list exactly the read-only tools")
+}
+
+func TestNewServer_NormalMode_ListsEveryTool(t *testing.T) {
+	server := newTestServerWithDemoMode(t, false)
+	require.NotNil(t, server)
+
+	assert.Len(t, listToolNames(t, server), 51, "normal mode must list every registered tool")
 }

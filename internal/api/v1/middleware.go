@@ -2,6 +2,7 @@ package v1
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -151,6 +152,58 @@ func bodyLimit(maxBytes int64, next http.Handler) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 		next.ServeHTTP(w, r)
 	})
+}
+
+const (
+	demoModeMessage       = "Demo mode: this instance is read-only, changes are disabled."
+	demoModeClosedMessage = "Demo mode: this endpoint is disabled."
+)
+
+func demoModeClosed(path string) bool {
+	switch {
+	case strings.HasPrefix(path, "/ping/"):
+		return true
+	case path == "/mcp" || strings.HasPrefix(path, "/mcp/"):
+		return true
+	case strings.HasPrefix(path, "/oauth/"):
+		return true
+	case strings.HasPrefix(path, "/.well-known/oauth-"):
+		return true
+	default:
+		return false
+	}
+}
+
+// DemoTokenHeader carries the token that lets the demo driver write to a demo instance.
+const DemoTokenHeader = "X-Maintenant-Demo-Token" // #nosec G101 -- a header name, not a credential.
+
+// DemoModeGuard closes the ingestion and MCP surfaces and refuses every mutating request with a 403 DEMO_MODE when demoMode is on, except for requests carrying token.
+func DemoModeGuard(demoMode bool, token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if !demoMode {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get(DemoTokenHeader)), []byte(token)) == 1 {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if demoModeClosed(r.URL.Path) {
+				WriteError(w, http.StatusForbidden, "DEMO_MODE", demoModeClosedMessage)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				next.ServeHTTP(w, r)
+				return
+			}
+			if r.URL.Path == "/api/v1/escalation-policies/overlap-probe" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			WriteError(w, http.StatusForbidden, "DEMO_MODE", demoModeMessage)
+		})
+	}
 }
 
 // requireCapability wraps a handler to reject requests the running edition does

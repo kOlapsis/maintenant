@@ -34,42 +34,46 @@ import (
 )
 
 func registerEscalationTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_escalation_policies",
 		Description: "List all escalation policies with their filters and levels." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listEscalationPoliciesHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_escalation_policy",
 		Description: "Get a single escalation policy by ID." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getEscalationPolicyHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_escalation_policy",
 		Description: "Create a new escalation policy." + requires(extension.CapAlertEscalation),
 	}, createEscalationPolicyHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "delete_escalation_policy",
 		Description: "Delete an escalation policy and stop any active runs." + requires(extension.CapAlertEscalation),
 	}, deleteEscalationPolicyHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_alert_escalation_runs",
 		Description: "List escalation runs attached to a specific alert." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAlertEscalationRunsHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_escalation_run",
 		Description: "Get full detail of an escalation run including all deliveries." + requires(extension.CapAlertEscalation),
+		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getEscalationRunHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_escalation_policy",
 		Description: "Update an existing escalation policy (name, filters, levels, active)." + requires(extension.CapAlertEscalation),
 	}, updateEscalationPolicyHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "set_escalation_policy_active",
 		Description: "Activate or deactivate an escalation policy." + requires(extension.CapAlertEscalation),
 	}, setEscalationPolicyActiveHandler(svc))

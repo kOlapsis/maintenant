@@ -458,6 +458,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Sessions:    a.agentSessions,
 		Broadcaster: &sseBroadcaster{broker: a.broker},
 		Limiter:     agentserver.NewLimiter(cfg.MultiHost.AgentRateLimitPerSecond),
+		DemoMode:    cfg.DemoMode,
 		Dispatcher: agentserver.NewDispatcher(agentserver.DispatchDeps{
 			Container:   a.containerSvc,
 			Inventory:   a.containerSvc,
@@ -680,6 +681,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		OrganisationName:     cfg.OrgName,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 		TrustedProxies:       trustedProxies,
+		DemoMode:             cfg.DemoMode,
 	})
 
 	// --- MCP Server ---
@@ -718,8 +720,9 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Broadcast: func(eventType string, data any) {
 			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		},
-		Version: cfg.Version,
-		Logger:  logger.With("component", "mcp"),
+		Version:  cfg.Version,
+		Logger:   logger.With("component", "mcp"),
+		DemoMode: cfg.DemoMode,
 	}
 	a.mcpServer = mcp.NewServer(mcpSvc)
 
@@ -838,7 +841,9 @@ func (a *App) Start(ctx context.Context) error {
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
-	a.outboundSvc.Start(ctx)
+	if !a.cfg.DemoMode {
+		a.outboundSvc.Start(ctx)
+	}
 
 	// Telemetry: best-effort. Self-exits on ctx cancellation; panics are
 	// contained inside the package (FR-009/FR-011/FR-012).
@@ -942,7 +947,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Embedded agent (mode=server + --embedded-agent + Pro).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
-	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() {
+	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
 	}
 

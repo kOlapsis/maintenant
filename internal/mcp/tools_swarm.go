@@ -19,25 +19,25 @@ import (
 )
 
 func registerSwarmTools(server *gomcp.Server, svc *Services) {
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_swarm_info",
 		Description: "Get Docker Swarm cluster info (manager/worker counts, whether this node is a manager). Reports inactive when Swarm is not detected.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getSwarmInfoHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_swarm_services",
 		Description: "List Docker Swarm services with their image, mode, and desired/running replica counts.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listSwarmServicesHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_swarm_tasks",
 		Description: "List Docker Swarm tasks (the running units of a service), optionally filtered by service, with their state and node.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listSwarmTasksHandler(svc))
 
-	gomcp.AddTool(server, &gomcp.Tool{
+	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_swarm_nodes",
 		Description: "List Docker Swarm nodes with their role, status, availability and task count.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},

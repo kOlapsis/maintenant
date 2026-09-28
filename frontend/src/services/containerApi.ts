@@ -110,7 +110,7 @@ export interface ListTransitionsParams {
   offset?: number
 }
 
-import { apiFetch, guardedFetch } from './apiFetch'
+import { apiFetch, apiFetchVoid } from './apiFetch'
 
 function fetchJSON<T>(url: string): Promise<T> {
   return apiFetch<T>(url)
@@ -129,8 +129,8 @@ export function getContainer(id: string): Promise<ContainerDetailResponse> {
   return fetchJSON<ContainerDetailResponse>(`${API_BASE}/containers/${id}`)
 }
 
-export async function deleteContainer(id: string): Promise<void> {
-  await guardedFetch(`${API_BASE}/containers/${id}`, { method: 'DELETE' })
+export function deleteContainer(id: string): Promise<void> {
+  return apiFetchVoid(`${API_BASE}/containers/${id}`, { method: 'DELETE' })
 }
 
 export function listTransitions(

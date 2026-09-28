@@ -21,6 +21,7 @@ curl -fsSL https://install.maintenant.dev | sudo bash
 - `install` (coreutils) and `useradd`
 - `systemctl`, unless installing with `--no-service`
 - Root access (`sudo`)
+- To monitor containers: Docker Engine 19.03 or later (API 1.40)
 
 ---
 

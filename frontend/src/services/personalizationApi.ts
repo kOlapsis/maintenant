@@ -1,4 +1,4 @@
-import { guardedFetch } from './apiFetch'
+import { guardedFetch, toApiError } from './apiFetch'
 
 const BASE = '/api/v1/status-page'
 
@@ -79,10 +79,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'unknown_error' }))
-    throw new Error(err?.error?.message || err?.message || `HTTP ${res.status}`)
-  }
+  if (!res.ok) throw await toApiError(res)
   if (res.status === 204) return undefined as T
   return res.json()
 }
@@ -98,10 +95,7 @@ export const personalizationApi = {
     form.append('file', file)
     if (altText !== undefined) form.append('alt_text', altText)
     const res = await guardedFetch(`${BASE}/assets/${role}`, { method: 'PUT', body: form })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err?.error?.message || `HTTP ${res.status}`)
-    }
+    if (!res.ok) throw await toApiError(res)
     return res.json()
   },
 

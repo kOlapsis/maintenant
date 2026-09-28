@@ -236,3 +236,32 @@ func TestAgentSpoolFlagRefusesNegative(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrAgentSpoolSetting)
 }
+
+func TestValidateDemo(t *testing.T) {
+	env := func(kv map[string]string) func(string) string {
+		return func(k string) string { return kv[k] }
+	}
+	tests := []struct {
+		name    string
+		demo    bool
+		env     map[string]string
+		wantErr bool
+	}{
+		{"normal build ignores the runtime", false, map[string]string{}, false},
+		{"remote docker accepted", true, map[string]string{"DOCKER_HOST": "tcp://dind:2375"}, false},
+		{"default local socket refused", true, map[string]string{}, true},
+		{"unix socket refused", true, map[string]string{"DOCKER_HOST": "unix:///var/run/docker.sock"}, true},
+		{"in-cluster kubernetes refused", true, map[string]string{"DOCKER_HOST": "tcp://dind:2375", "KUBERNETES_SERVICE_HOST": "10.0.0.1"}, true},
+		{"kubeconfig refused", true, map[string]string{"DOCKER_HOST": "tcp://dind:2375", "KUBECONFIG": "/root/.kube/config"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Config{DemoMode: tt.demo}.ValidateDemo(env(tt.env))
+			if tt.wantErr {
+				require.ErrorIs(t, err, ErrDemoRuntime)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}

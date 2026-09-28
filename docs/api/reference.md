@@ -83,6 +83,18 @@ host or any credential.
 | `GET` | `/api/v1/heartbeats/{id}/pings` | List raw pings |
 | `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime percentages |
 
+### Outbound Heartbeats
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/outbound-heartbeats` | List all targets |
+| `POST` | `/api/v1/outbound-heartbeats` | Create a target |
+| `PUT` | `/api/v1/outbound-heartbeats/{id}` | Update a target |
+| `DELETE` | `/api/v1/outbound-heartbeats/{id}` | Delete a target |
+| `POST` | `/api/v1/outbound-heartbeats/{id}/send` | Send a ping now |
+
+See [Outbound Heartbeats](../features/heartbeats.md#outbound-heartbeats).
+
 ### Ping Endpoints (Public)
 
 These routes do not require authentication:

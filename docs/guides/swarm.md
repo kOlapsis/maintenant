@@ -32,7 +32,7 @@ maintenant uses the Docker SDK Swarm API, which is available in:
 | Docker Engine | >= 19.03 |
 | Docker Desktop | >= 3.0 |
 
-Any Docker Engine version that supports Swarm mode is compatible. The Swarm API has been stable since Docker 1.12, but Docker 19.03+ is recommended for security and feature completeness.
+The daemon must expose Docker API 1.40 or later: older engines are refused.
 
 ---
 

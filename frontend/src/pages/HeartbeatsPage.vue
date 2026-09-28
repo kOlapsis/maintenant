@@ -40,9 +40,10 @@ import QuotaRefusal from '@/components/QuotaRefusal.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { getQuota, reload, isDemo } = useEdition()
 
 const activeTab = computed<string>({
-  get: () => (route.query.tab === 'outgoing' ? 'outgoing' : 'incoming'),
+  get: () => (route.query.tab === 'outgoing' && !isDemo.value ? 'outgoing' : 'incoming'),
   set: (tab) => router.replace({ query: { ...route.query, tab: tab === 'outgoing' ? 'outgoing' : undefined } }),
 })
 
@@ -54,7 +55,6 @@ const tabOptions = [
 const store = useHeartbeatsStore()
 const prefs = usePreferencesStore()
 const { openDetail } = inject(detailSlideOverKey)!
-const { getQuota, reload } = useEdition()
 const quota = getQuota('heartbeats')
 
 const showCreateForm = ref(false)
@@ -262,7 +262,7 @@ async function handleCreate() {
       </div>
     </div>
 
-    <div class="mb-6">
+    <div v-if="!isDemo" class="mb-6">
       <SegmentedToggle v-model="activeTab" :options="tabOptions" ariaLabel="Heartbeat direction" />
     </div>
 

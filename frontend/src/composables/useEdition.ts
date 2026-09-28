@@ -120,6 +120,7 @@ export function useEdition() {
 
   const isPro = computed(() => editionName.value === 'pro')
   const isPersonal = computed(() => editionName.value === 'personal')
+  const isDemo = computed(() => edition.value?.demo === true)
 
   /**
    * Community is now a positive test, not the absence of Pro. An unknown
@@ -281,6 +282,7 @@ export function useEdition() {
     editionRank,
     isPro,
     isPersonal,
+    isDemo,
     isPaid,
     isCommunity,
     requiredEditionFor,
