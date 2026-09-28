@@ -636,10 +636,11 @@ func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a
 		"channel_type", ch.Type,
 		"alert_id", a.ID,
 	)
+	snapshot := *a // the engine keeps mutating a (escalation, recovery) while the job waits in the queue
 	e.notifier.Enqueue(NotificationJob{
 		Delivery: delivery,
 		Channel:  ch,
-		Alert:    a,
+		Alert:    &snapshot,
 	})
 }
 
