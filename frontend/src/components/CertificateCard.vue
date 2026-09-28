@@ -20,6 +20,7 @@ import { timeAgo } from '@/utils/time'
 import CertificateStatusBadge from './CertificateStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
 import OCSPStatusBadge from './OCSPStatusBadge.vue'
+import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
   certificate: CertMonitor
@@ -181,14 +182,9 @@ async function handleDelete() {
       :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       @click.stop
     >
-      <button
-        class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
-        :style="{ color: 'var(--mnt-status-down)' }"
-        :disabled="deleting"
-        @click="handleDelete"
-      >
-        {{ deleting ? 'Deleting...' : 'Delete' }}
-      </button>
+      <UiButton variant="danger-ghost" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
+        Delete
+      </UiButton>
     </div>
   </div>
 </template>

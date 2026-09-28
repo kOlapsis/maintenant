@@ -17,6 +17,11 @@ import { createChannel, testChannel } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
 import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
 import EditionBadge from '@/components/EditionBadge.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import OptionCards from '@/components/ui/OptionCards.vue'
 
 const { hasFeature, editionPermits, requiredEditionFor } = useEdition()
 
@@ -98,6 +103,19 @@ const allChannelTypes = [...openChannelTypes, ...gatedChannelTypes]
 
 const selectedTypeConfig = computed(() =>
   allChannelTypes.find(t => t.key === selectedType.value)
+)
+
+const openTypeOptions = computed(() =>
+  openChannelTypes.map((t) => ({ value: t.key, label: t.label, description: t.description })),
+)
+
+const gatedTypeOptions = computed(() =>
+  gatedChannelTypes.map((t) => ({
+    value: t.key,
+    label: t.label,
+    description: t.description,
+    disabled: !hasFeature(t.feature),
+  })),
 )
 
 // What the single destination field means depends on the type: an address, a
@@ -212,22 +230,17 @@ function goBack() {
       <p class="mb-4 text-xs" style="color: var(--mnt-text-muted)">Choose how you want to receive notifications</p>
 
       <!-- CE channels -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button
-          v-for="type in openChannelTypes"
-          :key="type.key"
-          @click="selectType(type.key)"
-          class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all"
-          :style="{
-            background: 'var(--mnt-bg-elevated)',
-            borderColor: selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)',
-          }"
-          @mouseenter="($event.currentTarget as HTMLElement).style.borderColor = 'var(--mnt-accent)'"
-          @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)'"
-        >
+      <OptionCards
+        :model-value="selectedType"
+        :options="openTypeOptions"
+        ariaLabel="Channel type"
+        :columns="2"
+        @update:model-value="(v) => v && selectType(v)"
+      >
+        <template #default="{ option }">
           <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--mnt-bg-hover)">
             <!-- Discord -->
-            <svg v-if="type.icon === 'discord'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #5865f2">
+            <svg v-if="option.value === 'discord'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #5865f2">
               <path d="M4 4c2-1.5 4-2 6-2s4 .5 6 2" />
               <path d="M4 16c2 1.5 4 2 6 2s4-.5 6-2" />
               <circle cx="7.5" cy="10" r="1.5" />
@@ -240,77 +253,64 @@ function goBack() {
               <path d="M6 18l4-3 4 3" />
             </svg>
           </div>
-          <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ type.label }}</span>
-          <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ type.description }}</span>
-        </button>
-      </div>
+          <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ option.label }}</span>
+          <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ option.description }}</span>
+        </template>
+      </OptionCards>
 
       <!-- Channels gated by an edition -->
-      <div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div
-          v-for="type in gatedChannelTypes"
-          :key="type.key"
-          class="relative"
-        >
+      <OptionCards
+        class="mt-3"
+        :model-value="selectedType"
+        :options="gatedTypeOptions"
+        ariaLabel="Channel type (requires an edition)"
+        :columns="3"
+        @update:model-value="(v) => v && selectType(v)"
+      >
+        <template #default="{ option }">
           <!-- SMTP not configured special case -->
-          <SmtpNotConfigured v-if="type.feature === 'smtp' && editionPermits('smtp') && !hasFeature('smtp')" :title="type.label" />
-
-          <!-- Normal gated channel button -->
-          <button
-            v-else
-            @click="hasFeature(type.feature) && selectType(type.key)"
-            class="flex flex-col items-center gap-2 rounded-lg border p-4 text-center transition-all w-full"
-            :class="{ 'opacity-50 cursor-not-allowed': !hasFeature(type.feature) }"
-            :style="{
-              background: 'var(--mnt-bg-elevated)',
-              borderColor: selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)',
-            }"
-            @mouseenter="hasFeature(type.feature) && (($event.currentTarget as HTMLElement).style.borderColor = 'var(--mnt-accent)')"
-            @mouseleave="($event.currentTarget as HTMLElement).style.borderColor = selectedType === type.key ? 'var(--mnt-accent)' : 'var(--mnt-border-default)'"
-          >
+          <SmtpNotConfigured
+            v-if="option.value === 'email' && editionPermits('smtp') && !hasFeature('smtp')"
+            :title="option.label"
+          />
+          <template v-else>
             <!-- The edition this channel actually needs. It read "Pro" for all
                  three, but email is Personal — a Community user was told to buy
                  the top tier for the middle tier's channel. -->
             <EditionBadge
-              v-if="!hasFeature(type.feature) && requiredEditionFor(type.feature)"
-              :edition="requiredEditionFor(type.feature)!"
+              v-if="option.disabled && requiredEditionFor(gatedChannelTypes.find((t) => t.key === option.value)!.feature)"
+              :edition="requiredEditionFor(gatedChannelTypes.find((t) => t.key === option.value)!.feature)!"
               class="absolute top-2 right-2"
             />
 
             <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--mnt-bg-hover)">
               <!-- Email -->
-              <svg v-if="type.icon === 'email'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-status-ok)">
+              <svg v-if="option.value === 'email'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-status-ok)">
                 <rect x="2" y="4" width="16" height="12" rx="2" />
                 <path d="M2 6l8 5 8-5" />
               </svg>
               <!-- Telegram -->
-              <svg v-else-if="type.icon === 'telegram'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #229ED9">
+              <svg v-else-if="option.value === 'telegram'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #229ED9">
                 <path d="M18 3L2 9.5l4.5 1.7L16 5.5l-7.5 7.2L8 17l2.7-3 3.6 2.7z" />
               </svg>
               <!-- Slack -->
-              <svg v-else-if="type.icon === 'slack'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-accent)">
+              <svg v-else-if="option.value === 'slack'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--mnt-accent)">
                 <path d="M6 2v4M14 14v4M2 6h4M14 6h4M6 10h8M10 6v8" />
               </svg>
               <!-- Teams -->
-              <svg v-else-if="type.icon === 'teams'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #6264A7">
+              <svg v-else-if="option.value === 'teams'" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #6264A7">
                 <rect x="3" y="4" width="14" height="12" rx="2" />
                 <path d="M7 10h6M10 7v6" />
               </svg>
             </div>
-            <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ type.label }}</span>
-            <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ type.description }}</span>
-          </button>
-        </div>
-      </div>
+            <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ option.label }}</span>
+            <span class="text-[11px]" style="color: var(--mnt-text-muted)">{{ option.description }}</span>
+          </template>
+        </template>
+      </OptionCards>
 
       <div class="mt-4 flex justify-end">
-        <button
-          @click="emit('cancel')"
-          class="rounded-md border px-3 py-1.5 text-sm"
-          style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-        >
-          Cancel
-        </button>
+        <UiButton variant="secondary" @click="emit('cancel')">Cancel</UiButton>
       </div>
     </div>
 
@@ -324,53 +324,59 @@ function goBack() {
       </p>
 
       <form @submit.prevent="submitConfig" class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Channel Name</label>
-          <input
-            v-model="form.name"
-            required
-            placeholder="e.g. #ops-alerts"
-            class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">
-            {{ destinationLabel }}
-          </label>
-          <input
-            v-model="form.url"
-            required
-            :type="destinationInputType"
-            :placeholder="selectedTypeConfig?.urlPlaceholder"
-            class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          />
-        </div>
+        <FormField label="Channel Name" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.name"
+              required
+              placeholder="e.g. #ops-alerts"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
+        <FormField :label="destinationLabel" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.url"
+              required
+              :type="destinationInputType"
+              :placeholder="selectedTypeConfig?.urlPlaceholder"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
         <!-- Telegram: a token and an optional topic instead of a URL. The
              destination is fixed by the product, so there is nothing to type. -->
         <template v-if="selectedType === 'telegram'">
-          <div>
-            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Bot Token</label>
-            <input
-              v-model="form.secret"
-              required
-              type="password"
-              autocomplete="off"
-              placeholder="123456789:AA..."
-              class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Topic ID (optional)</label>
-            <input
-              v-model="form.threadId"
-              placeholder="42"
-              class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-            />
-          </div>
+          <FormField label="Bot Token" required>
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput
+                :id="id"
+                v-model="form.secret"
+                required
+                type="password"
+                autocomplete="off"
+                placeholder="123456789:AA..."
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+              />
+            </template>
+          </FormField>
+          <FormField label="Topic ID (optional)">
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput
+                :id="id"
+                v-model="form.threadId"
+                placeholder="42"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+              />
+            </template>
+          </FormField>
           <div class="text-xs space-y-1" style="color: var(--mnt-text-muted)">
             <p>
               Create a bot with @BotFather to get the token. To find the chat id, send the bot a
@@ -389,38 +395,24 @@ function goBack() {
             <p>Leave the topic empty unless the group uses topics.</p>
           </div>
         </template>
-        <div v-if="selectedType === 'webhook'">
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Custom Headers (JSON, optional)</label>
-          <input
-            v-model="form.headers"
-            placeholder='{"Authorization": "Bearer ..."}'
-            class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          />
-        </div>
-        <div class="flex items-center gap-2">
-          <input v-model="form.enabled" type="checkbox" id="wizard-enabled" class="rounded" style="accent-color: var(--mnt-accent)" />
-          <label for="wizard-enabled" class="text-sm" style="color: var(--mnt-text-secondary)">Enable channel immediately</label>
-        </div>
+        <FormField v-if="selectedType === 'webhook'" label="Custom Headers (JSON, optional)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.headers"
+              placeholder='{"Authorization": "Bearer ..."}'
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
+        <CheckboxInput v-model="form.enabled" label="Enable channel immediately" />
         <p v-if="submitError" class="text-xs" style="color: var(--mnt-status-down-text)">
           {{ submitError }}
         </p>
         <div class="flex justify-between pt-2">
-          <button
-            type="button"
-            @click="goBack"
-            class="rounded-md border px-3 py-1.5 text-sm"
-            style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-          >
-            Back
-          </button>
-          <button
-            type="submit"
-            class="rounded-md px-4 py-1.5 text-sm font-medium text-mnt-primary"
-            style="background: var(--mnt-accent)"
-          >
-            Create & Continue
-          </button>
+          <UiButton type="button" variant="secondary" @click="goBack">Back</UiButton>
+          <UiButton type="submit" variant="primary">Create & Continue</UiButton>
         </div>
       </form>
     </div>
@@ -440,14 +432,9 @@ function goBack() {
         <p class="text-xs truncate" style="color: var(--mnt-text-muted)">{{ form.url }}</p>
       </div>
 
-      <button
-        @click="runTest"
-        :disabled="testStatus === 'testing'"
-        class="mb-4 w-full rounded-md px-4 py-2 text-sm font-medium text-mnt-primary disabled:opacity-50 transition-colors"
-        style="background: var(--mnt-accent)"
-      >
+      <UiButton variant="primary" class="mb-4 w-full" :loading="testStatus === 'testing'" @click="runTest">
         {{ testStatus === 'testing' ? 'Sending test...' : 'Send Test Notification' }}
-      </button>
+      </UiButton>
 
       <!-- Test result -->
       <div
@@ -476,20 +463,8 @@ function goBack() {
       </div>
 
       <div class="flex justify-between">
-        <button
-          @click="goBack"
-          class="rounded-md border px-3 py-1.5 text-sm"
-          style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-        >
-          Back
-        </button>
-        <button
-          @click="finish"
-          class="rounded-md px-4 py-1.5 text-sm font-medium text-mnt-primary"
-          style="background: var(--mnt-accent)"
-        >
-          Done
-        </button>
+        <UiButton variant="secondary" @click="goBack">Back</UiButton>
+        <UiButton variant="primary" @click="finish">Done</UiButton>
       </div>
     </div>
   </div>

@@ -13,6 +13,7 @@ import AlertBanner from '@/components/ui/AlertBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import { useStorageStore } from '@/stores/storage'
 import {
@@ -39,6 +40,7 @@ import {
   Menu,
   MonitorDot,
   Network,
+  RadioTower,
   Send,
   Server,
   Shield,
@@ -52,12 +54,14 @@ import { useRuntimeStore } from '@/stores/runtime'
 import { useResourcesStore } from '@/stores/resources'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
 import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
+import { isNavItemVisible, type NavItem } from '@/utils/navVisibility'
 
 const route = useRoute()
 const router = useRouter()
 const { version } = useAppVersion()
 const {
   isCommunity,
+  isDemo,
   editionName,
   hasFeature,
   licenseMessage,
@@ -113,15 +117,6 @@ function closeMobileMenu() {
   mobileMenuOpen.value = false
 }
 
-interface NavItem {
-  type: string
-  to?: string
-  label?: string
-  icon?: typeof LayoutGrid
-  feature?: string
-  runtime?: string[]
-}
-
 const allNav: NavItem[] = [
   { type: 'item', to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
   // Pro: Cluster (Swarm & K8s)
@@ -166,19 +161,17 @@ const allNav: NavItem[] = [
   { type: 'separator' },
   { type: 'item', to: '/status-admin', label: 'Status Pages', icon: Activity },
   { type: 'item', to: '/agents', label: 'Agents', icon: MonitorDot },
+  { type: 'item', to: '/outbound-heartbeats', label: 'Outbound heartbeats', icon: RadioTower, hideInDemo: true },
 ]
 
 const mainNav = computed(() =>
-  allNav.filter((item) => {
-    if (item.feature && !hasFeature(item.feature)) return false
-    // Runtime-specific items show when the selected host scope offers that
-    // runtime: in "all" the union of every agent + local runtime, otherwise the
-    // single selected scope's runtime.
-    if (item.runtime && !item.runtime.some((rt) => availableRuntimes.value.includes(rt))) {
-      return false
-    }
-    return true
-  }),
+  allNav.filter((item) =>
+    isNavItemVisible(item, {
+      hasFeature,
+      availableRuntimes: availableRuntimes.value,
+      isDemo: isDemo.value,
+    }),
+  ),
 )
 
 // When the user switches host scope, a runtime-specific page they are on may no
@@ -262,13 +255,15 @@ watch(
                   >{{ version }}</span
                 >
               </div>
-              <button
+              <UiButton
                 v-if="isCommunity"
-                class="cursor-pointer block w-full py-1.5 rounded-lg text-xs font-semibold text-center transition-colors"
+                variant="secondary"
+                size="sm"
+                class="w-full"
                 style="background: var(--mnt-bg-surface); color: var(--mnt-text-secondary)"
               >
                 Compare editions
-              </button>
+              </UiButton>
             </div>
           </router-link>
         </div>
@@ -279,14 +274,13 @@ watch(
     <div
       class="mobile-bar md:hidden fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 backdrop-blur-md border-b border-mnt-default"
     >
-      <button
-        @click="mobileMenuOpen = !mobileMenuOpen"
-        class="p-3 rounded-md text-mnt-muted hover:text-mnt-primary transition-colors"
+      <UiButton
+        variant="ghost"
+        :icon="mobileMenuOpen ? X : Menu"
         aria-label="Toggle navigation"
-      >
-        <Menu v-if="!mobileMenuOpen" :size="20" />
-        <X v-else :size="20" />
-      </button>
+        :aria-expanded="mobileMenuOpen"
+        @click="mobileMenuOpen = !mobileMenuOpen"
+      />
       <div class="ml-3 flex items-center gap-2">
         <img src="/icon.svg" alt="maintenant" class="w-6 h-6 rounded-md" />
         <span class="text-sm font-bold text-mnt-primary">maintenant</span>

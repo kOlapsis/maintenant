@@ -15,7 +15,10 @@
 import { ref, watch, computed } from 'vue'
 import SlideOverPanel from '@/components/ui/SlideOverPanel.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 import { useAgentsStore } from '@/stores/agents'
+import { useConfirm } from '@/composables/useConfirm'
 import { osDaysText, osSupportHint, osSupportLabel, osSupportSeverity } from '@/utils/osSupport'
 import type { Agent } from '@/services/agentApi'
 
@@ -31,6 +34,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useAgentsStore()
+const confirm = useConfirm()
 
 const labelDraft = ref('')
 const savingLabel = ref(false)
@@ -39,7 +43,6 @@ const labelSuccess = ref(false)
 
 const revoking = ref(false)
 const deleting = ref(false)
-const showDeleteConfirm = ref(false)
 const actionError = ref<string | null>(null)
 
 watch(
@@ -49,7 +52,6 @@ watch(
     labelError.value = null
     labelSuccess.value = false
     actionError.value = null
-    showDeleteConfirm.value = false
   },
 )
 
@@ -98,6 +100,14 @@ async function handleRevoke() {
 
 async function handleDelete() {
   if (!props.agent) return
+  const ok = await confirm({
+    title: 'Delete agent?',
+    message:
+      'This will permanently purge all historical events for this agent (containers, endpoints, heartbeats, resources, certificates) in a single transaction. This action is irreversible.',
+    confirmLabel: 'Delete permanently',
+    destructive: true,
+  })
+  if (!ok) return
   deleting.value = true
   actionError.value = null
   try {
@@ -106,6 +116,7 @@ async function handleDelete() {
     emit('update:open', false)
   } catch (e) {
     actionError.value = e instanceof Error ? e.message : 'Failed to delete agent'
+  } finally {
     deleting.value = false
   }
 }
@@ -196,21 +207,16 @@ function runtimeLabel(rt: string): string {
       <div>
         <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-2">Label</p>
         <div class="flex gap-2">
-          <input
+          <TextInput
             v-model="labelDraft"
             maxlength="64"
             placeholder="Display label…"
-            class="flex-1 rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-green-500"
+            class="flex-1"
             @keydown.enter="saveLabel"
           />
-          <button
-            :disabled="savingLabel || labelDraft === agent.label"
-            class="rounded-lg px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-40"
-            :style="{ backgroundColor: 'var(--mnt-accent)', color: 'var(--mnt-text-inverted)' }"
-            @click="saveLabel"
-          >
+          <UiButton variant="primary" :disabled="savingLabel || labelDraft === agent.label" @click="saveLabel">
             {{ savingLabel ? '…' : 'Save' }}
-          </button>
+          </UiButton>
         </div>
         <p v-if="labelConflict" class="mt-1 text-xs text-yellow-500">
           Another agent already uses this label.
@@ -268,65 +274,21 @@ function runtimeLabel(rt: string): string {
       <div v-if="agent.status === 'active'" class="space-y-2">
         <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-2">Actions</p>
         <p v-if="actionError" class="text-xs text-mnt-status-down">{{ actionError }}</p>
-        <button
-          :disabled="revoking"
-          class="w-full rounded-lg border border-yellow-600/40 px-4 py-2 text-sm font-medium text-yellow-500 hover:bg-yellow-600/10 transition-colors disabled:opacity-40"
-          @click="handleRevoke"
-        >
+        <UiButton variant="secondary" class="w-full" :loading="revoking" :disabled="revoking" @click="handleRevoke">
           {{ revoking ? 'Revoking…' : 'Revoke agent' }}
-        </button>
-        <button
-          class="w-full rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-mnt-status-down hover:bg-mnt-sev-incident-solid/10 transition-colors"
-          @click="showDeleteConfirm = true"
-        >
-          Delete agent
-        </button>
+        </UiButton>
+        <UiButton variant="danger-ghost" class="w-full" :loading="deleting" :disabled="deleting" @click="handleDelete">
+          {{ deleting ? 'Deleting…' : 'Delete agent' }}
+        </UiButton>
       </div>
 
       <div v-if="agent.status === 'revoked'" class="space-y-2">
         <p class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest mb-2">Actions</p>
         <p v-if="actionError" class="text-xs text-mnt-status-down">{{ actionError }}</p>
-        <button
-          class="w-full rounded-lg border border-red-600/40 px-4 py-2 text-sm font-medium text-mnt-status-down hover:bg-mnt-sev-incident-solid/10 transition-colors"
-          @click="showDeleteConfirm = true"
-        >
-          Delete agent
-        </button>
+        <UiButton variant="danger-ghost" class="w-full" :loading="deleting" :disabled="deleting" @click="handleDelete">
+          {{ deleting ? 'Deleting…' : 'Delete agent' }}
+        </UiButton>
       </div>
     </div>
-
-    <!-- Delete confirmation modal -->
-    <Teleport to="body">
-      <div
-        v-if="showDeleteConfirm"
-        class="fixed inset-0 z-[10000] flex items-center justify-center"
-        @click.self="showDeleteConfirm = false"
-      >
-        <div class="absolute inset-0 bg-black/70" @click="showDeleteConfirm = false" />
-        <div class="relative z-10 w-full max-w-md mx-4 rounded-2xl border border-mnt-default bg-mnt-surface p-6 shadow-2xl">
-          <h3 class="text-base font-bold text-mnt-primary mb-2">Delete agent?</h3>
-          <p class="text-sm text-mnt-muted mb-4">
-            This will permanently purge all historical events for this agent
-            (containers, endpoints, heartbeats, resources, certificates) in a single transaction.
-            <strong class="text-mnt-status-down">This action is irreversible.</strong>
-          </p>
-          <div class="flex gap-3 justify-end">
-            <button
-              class="rounded-lg px-4 py-2 text-sm text-mnt-muted hover:text-mnt-primary transition-colors"
-              @click="showDeleteConfirm = false"
-            >
-              Cancel
-            </button>
-            <button
-              :disabled="deleting"
-              class="rounded-lg px-4 py-2 text-sm font-medium text-mnt-primary bg-mnt-sev-incident-solid hover:opacity-90 disabled:opacity-40 transition-colors"
-              @click="handleDelete"
-            >
-              {{ deleting ? 'Deleting…' : 'Delete permanently' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </SlideOverPanel>
 </template>

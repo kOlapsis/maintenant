@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import TextareaInput from '@/components/ui/TextareaInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+
 const enabled = defineModel<boolean>('enabled', { required: true })
 const messageMD = defineModel<string>('messageMD', { required: true })
 const url = defineModel<string>('url', { required: true })
@@ -8,34 +13,20 @@ const url = defineModel<string>('url', { required: true })
   <div class="space-y-4">
     <h3 class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Header Announcement</h3>
 
-    <label class="flex items-center gap-2 cursor-pointer">
-      <input v-model="enabled" type="checkbox" class="w-4 h-4 accent-mnt-green-500" />
-      <span class="text-sm text-mnt-secondary">Show announcement banner</span>
-    </label>
+    <CheckboxInput v-model="enabled" label="Show announcement banner" />
 
     <div v-if="enabled" class="space-y-3">
-      <div>
-        <label class="block text-xs text-mnt-muted mb-1">Message (Markdown)</label>
-        <textarea
-          v-model="messageMD"
-          maxlength="1000"
-          rows="3"
-          class="w-full bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2 text-mnt-primary text-sm font-mono focus:outline-none focus:border-mnt-default resize-none"
-          placeholder="**Scheduled maintenance** on 12 May at 22:00 UTC."
-        />
-        <p class="text-[11px] text-mnt-muted mt-1">{{ messageMD.length }}/1000 — Bold, italic, and links allowed.</p>
-      </div>
+      <FormField label="Message (Markdown)" :hint="`${messageMD.length}/1000 — Bold, italic, and links allowed.`">
+        <template #default="{ id, describedBy, invalid }">
+          <TextareaInput :id="id" v-model="messageMD" maxlength="1000" :rows="3" mono :aria-describedby="describedBy" :invalid="invalid" placeholder="**Scheduled maintenance** on 12 May at 22:00 UTC." />
+        </template>
+      </FormField>
 
-      <div>
-        <label class="block text-xs text-mnt-muted mb-1">Link URL (optional)</label>
-        <input
-          v-model="url"
-          type="url"
-          class="w-full bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2 text-mnt-primary text-sm focus:outline-none focus:border-mnt-default"
-          placeholder="https://acme.example/maintenance"
-        />
-        <p class="text-[11px] text-mnt-muted mt-1">Must start with https:// — clicking the banner opens this URL.</p>
-      </div>
+      <FormField label="Link URL (optional)" hint="Must start with https:// — clicking the banner opens this URL.">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput :id="id" v-model="url" type="url" :aria-describedby="describedBy" :invalid="invalid" placeholder="https://acme.example/maintenance" />
+        </template>
+      </FormField>
     </div>
   </div>
 </template>

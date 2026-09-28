@@ -18,6 +18,7 @@ import DashboardPage from '../pages/DashboardPage.vue'
 const ContainersPage = () => import('../pages/ContainersPage.vue')
 const EndpointsPage = () => import('../pages/EndpointsPage.vue')
 const HeartbeatsPage = () => import('../pages/HeartbeatsPage.vue')
+const OutboundHeartbeatsPage = () => import('../pages/OutboundHeartbeatsPage.vue')
 const CertificatesPage = () => import('../pages/CertificatesPage.vue')
 const AlertsPage = () => import('../pages/AlertsPage.vue')
 const StatusAdminPage = () => import('../pages/StatusAdminPage.vue')
@@ -77,19 +78,10 @@ const router = createRouter({
         { path: 'nodes', name: 'nodes', component: NodesPage },
         { path: 'escalation', name: 'escalation', component: EscalationPage },
         { path: 'agents', name: 'agents', component: AgentsPage },
+        { path: 'outbound-heartbeats', name: 'outbound-heartbeats', component: OutboundHeartbeatsPage },
         { path: 'editions', name: 'editions', component: EditionsPage },
         // The old offer page: keep the address working, send it to the comparison.
         { path: 'pro-edition', redirect: { name: 'editions' } },
-        // Dev-only design system gallery (not linked in nav, excluded from prod build)
-        ...(import.meta.env.DEV
-          ? [
-              {
-                path: '_ds',
-                name: 'design-system',
-                component: () => import('../pages/DesignSystemPage.vue'),
-              },
-            ]
-          : []),
       ],
     },
     {

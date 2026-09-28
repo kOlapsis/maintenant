@@ -12,9 +12,10 @@
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useEdition } from '@/composables/useEdition'
 import { Lock } from 'lucide-vue-next'
+import SegmentedToggle from './ui/SegmentedToggle.vue'
 
 /**
  * A period is whatever the engine's catalogue declares. It used to be a fixed
@@ -60,6 +61,17 @@ function switchPeriod(p: Period) {
   emit('update:period', p)
 }
 
+const periodOptions = computed(() =>
+  historyWindows.value.map((w) => ({
+    value: w.window,
+    label: w.window,
+    icon: isWindowOpen(w.window) ? undefined : Lock,
+    disabled: !isWindowOpen(w.window),
+    locked: !isWindowOpen(w.window),
+    dataTest: `period-${w.window}`,
+  })),
+)
+
 function barColor(percent: number): string {
   if (percent >= 90) return 'var(--mnt-status-down)'
   if (percent >= 70) return 'var(--mnt-status-warn)'
@@ -82,52 +94,24 @@ function formatValue(consumer: TopConsumer): string {
   <div>
     <!-- Metric + period toggles -->
     <div class="mb-3 flex items-center gap-3">
-      <div class="flex gap-1">
-        <button
-          v-for="m in (['cpu', 'memory'] as const)"
-          :key="m"
-          class="rounded-full px-3 py-1 text-xs font-medium transition cursor-pointer"
-          :style="{
-            backgroundColor: activeMetric === m ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
-            color: activeMetric === m ? 'var(--mnt-text-inverted)' : 'var(--mnt-text-secondary)',
-            border: activeMetric === m ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
-          }"
-          @click="switchMetric(m)"
-        >
-          {{ m === 'cpu' ? 'CPU' : 'Memory' }}
-        </button>
-      </div>
+      <SegmentedToggle
+        :model-value="activeMetric"
+        :options="[{ value: 'cpu', label: 'CPU' }, { value: 'memory', label: 'Memory' }]"
+        ariaLabel="Metric"
+        @update:model-value="switchMetric"
+      />
 
       <div
         class="h-4 w-px"
         :style="{ backgroundColor: 'var(--mnt-border-default)' }"
       />
 
-      <div class="flex gap-1">
-        <button
-          v-for="w in historyWindows"
-          :key="w.window"
-          :data-test="`period-${w.window}`"
-          :data-locked="isWindowOpen(w.window) ? undefined : 'true'"
-          :disabled="!isWindowOpen(w.window)"
-          class="rounded-full px-2.5 py-1 text-xs font-medium transition flex items-center gap-1"
-          :style="{
-            backgroundColor: activePeriod === w.window ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
-            color: activePeriod === w.window
-              ? 'var(--mnt-text-inverted)'
-              : isWindowOpen(w.window)
-                ? 'var(--mnt-text-secondary)'
-                : 'var(--mnt-text-muted)',
-            border: activePeriod === w.window ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
-            cursor: isWindowOpen(w.window) ? 'pointer' : 'not-allowed',
-            opacity: isWindowOpen(w.window) ? '1' : '0.5',
-          }"
-          @click="switchPeriod(w.window)"
-        >
-          {{ w.window }}
-          <Lock v-if="!isWindowOpen(w.window)" :size="9" />
-        </button>
-      </div>
+      <SegmentedToggle
+        :model-value="activePeriod"
+        :options="periodOptions"
+        ariaLabel="Period"
+        @update:model-value="switchPeriod"
+      />
     </div>
 
     <!-- Ranked list -->

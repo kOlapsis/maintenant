@@ -13,13 +13,18 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { X, Plus, Loader2, ArrowRight, Lock } from 'lucide-vue-next'
+import { X, Plus, ArrowRight, Lock } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
 import { useTriggersStore } from '@/stores/triggers'
 import { useChannelsStore } from '@/stores/channels'
 import { useEdition } from '@/composables/useEdition'
 import type { AlertTrigger, TriggerRequest } from '@/types/triggers'
 import EditionBadge from '@/components/EditionBadge.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import ChipToggle from '@/components/ui/ChipToggle.vue'
 
 const props = defineProps<{
   trigger?: AlertTrigger | null
@@ -145,12 +150,7 @@ async function handleSave() {
       <h3 class="text-sm font-bold text-mnt-primary">
         {{ trigger ? 'Edit trigger' : 'New alert trigger' }}
       </h3>
-      <button
-        class="p-1 rounded text-mnt-muted hover:text-mnt-secondary hover:bg-mnt-elevated transition-all"
-        @click="emit('cancel')"
-      >
-        <X :size="16" />
-      </button>
+      <UiButton variant="ghost" size="sm" :icon="X" aria-label="Close" @click="emit('cancel')" />
     </div>
 
     <div class="p-5 space-y-6">
@@ -180,17 +180,17 @@ async function handleSave() {
       </div>
 
       <!-- Name -->
-      <div class="space-y-1.5">
-        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
-          Trigger name
-        </label>
-        <input
-          v-model="name"
-          type="text"
-          placeholder="e.g. Critical containers"
-          class="w-full bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors"
-        />
-      </div>
+      <FormField label="Trigger name">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput
+            :id="id"
+            v-model="name"
+            placeholder="e.g. Critical containers"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+          />
+        </template>
+      </FormField>
 
       <!-- Active toggle -->
       <div class="flex items-center justify-between">
@@ -200,16 +200,7 @@ async function handleSave() {
             Disabled triggers stay configured but never dispatch.
           </p>
         </div>
-        <button
-          class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="enabled ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
-          @click="enabled = !enabled"
-        >
-          <span
-            class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-            :class="enabled ? 'translate-x-4' : 'translate-x-0'"
-          />
-        </button>
+        <ToggleSwitch v-model="enabled" label="Enabled" size="sm" />
       </div>
 
       <!-- Notify on recovery toggle -->
@@ -220,16 +211,7 @@ async function handleSave() {
             Also send a notification when the alert resolves.
           </p>
         </div>
-        <button
-          class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="notifyOnResolve ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
-          @click="notifyOnResolve = !notifyOnResolve"
-        >
-          <span
-            class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-            :class="notifyOnResolve ? 'translate-x-4' : 'translate-x-0'"
-          />
-        </button>
+        <ToggleSwitch v-model="notifyOnResolve" label="Notify on recovery" size="sm" />
       </div>
 
       <!-- Channels -->
@@ -239,20 +221,16 @@ async function handleSave() {
           <span class="text-mnt-status-down/70 normal-case font-normal">*</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <button
+          <ChipToggle
             v-for="ch in channelsStore.channels"
             :key="ch.id"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
-            :class="
-              selectedChannelIds.includes(ch.id)
-                ? 'bg-mnt-green-500/10 border-mnt-green-500/30 text-mnt-green-400'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-secondary'
-            "
-            @click="toggleChannel(ch.id)"
+            :pressed="selectedChannelIds.includes(ch.id)"
+            tone="accent"
+            @toggle="toggleChannel(ch.id)"
           >
             <Plus v-if="!selectedChannelIds.includes(ch.id)" :size="11" />
             {{ ch.name }}
-          </button>
+          </ChipToggle>
         </div>
       </div>
 
@@ -262,21 +240,15 @@ async function handleSave() {
           Severities <span class="text-mnt-muted normal-case font-normal">(empty = match all)</span>
         </label>
         <div class="flex gap-2">
-          <button
+          <ChipToggle
             v-for="sev in SEVERITY_OPTIONS"
             :key="sev"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
-            :class="
-              severities.includes(sev)
-                ? sev === 'critical'
-                  ? 'bg-mnt-status-down/15 border-mnt-status-down/40 text-mnt-status-down'
-                  : 'bg-mnt-status-warn border-amber-500/40 text-mnt-status-warn'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
-            "
-            @click="toggleSeverity(sev)"
+            :pressed="severities.includes(sev)"
+            :tone="sev === 'critical' ? 'critical' : 'warning'"
+            @toggle="toggleSeverity(sev)"
           >
             {{ sev.charAt(0).toUpperCase() + sev.slice(1) }}
-          </button>
+          </ChipToggle>
         </div>
       </div>
 
@@ -286,19 +258,15 @@ async function handleSave() {
           Sources <span class="text-mnt-muted normal-case font-normal">(empty = match all)</span>
         </label>
         <div class="flex flex-wrap gap-2">
-          <button
+          <ChipToggle
             v-for="src in SOURCE_OPTIONS"
             :key="src"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize"
-            :class="
-              sources.includes(src)
-                ? 'bg-mnt-elevated border-mnt-default text-mnt-secondary'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
-            "
-            @click="toggleSource(src)"
+            :pressed="sources.includes(src)"
+            class="capitalize"
+            @toggle="toggleSource(src)"
           >
             {{ src }}
-          </button>
+          </ChipToggle>
         </div>
       </div>
 
@@ -320,31 +288,31 @@ async function handleSave() {
           Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">container:42</code>) or by tags.
         </p>
 
-        <div class="space-y-1.5">
-          <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
-            Scopes (CSV)
-          </label>
-          <input
-            v-model="scopesCsv"
-            type="text"
-            :disabled="!canUseAdvancedFilters"
-            placeholder="container:42, endpoint:7"
-            class="w-full bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-        </div>
+        <FormField label="Scopes (CSV)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="scopesCsv"
+              :disabled="!canUseAdvancedFilters"
+              placeholder="container:42, endpoint:7"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
 
-        <div class="space-y-1.5">
-          <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
-            Tags (CSV)
-          </label>
-          <input
-            v-model="tagsCsv"
-            type="text"
-            :disabled="!canUseAdvancedFilters"
-            placeholder="prod, payments"
-            class="w-full bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-        </div>
+        <FormField label="Tags (CSV)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="tagsCsv"
+              :disabled="!canUseAdvancedFilters"
+              placeholder="prod, payments"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
       </div>
 
       <!-- Match-all hint -->
@@ -357,20 +325,10 @@ async function handleSave() {
 
       <!-- Actions -->
       <div class="flex items-center justify-end gap-3 pt-2">
-        <button
-          class="px-4 py-2 text-xs font-medium text-mnt-muted hover:text-mnt-secondary transition-colors"
-          @click="emit('cancel')"
-        >
-          Cancel
-        </button>
-        <button
-          class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 disabled:bg-mnt-elevated disabled:text-mnt-muted text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
-          :disabled="saving"
-          @click="handleSave"
-        >
-          <Loader2 v-if="saving" :size="13" class="animate-spin" />
+        <UiButton variant="ghost" size="sm" @click="emit('cancel')">Cancel</UiButton>
+        <UiButton variant="primary" size="sm" :loading="saving" @click="handleSave">
           {{ saving ? 'Saving...' : trigger ? 'Save changes' : 'Create trigger' }}
-        </button>
+        </UiButton>
       </div>
     </div>
   </div>

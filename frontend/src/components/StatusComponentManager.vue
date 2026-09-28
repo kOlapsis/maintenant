@@ -28,6 +28,15 @@ import { listEndpoints } from '@/services/endpointApi'
 import { listHeartbeats } from '@/services/heartbeatApi'
 import { listCertificates } from '@/services/certificateApi'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
+import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
+import SearchInput from '@/components/ui/SearchInput.vue'
+import ChipToggle from '@/components/ui/ChipToggle.vue'
 
 const store = useStatusAdminStore()
 const { getQuota, reload } = useEdition()
@@ -97,6 +106,17 @@ const monitorTypeLabels: Record<string, string> = {
 watch(matchAllType, (type) => {
   matchAllCount.value = (allMonitorsByType.value[type] ?? []).length
 })
+
+watch(activeTypeTab, () => {
+  searchQuery.value = ''
+})
+
+const typeTabItems = computed<TabNavItem[]>(() =>
+  monitorTypes.map((type) => {
+    const count = selectedCountForType(type)
+    return { value: type, label: monitorTypeLabels[type] ?? type, count: count > 0 ? count : undefined }
+  }),
+)
 
 // Filtered monitors for the active tab
 const filteredMonitors = computed(() => {
@@ -312,21 +332,14 @@ function componentSummary(c: StatusComponent): string {
           >
             Upgrade
           </router-link>
-          <button
-            @click="startAddComp"
+          <UiButton
+            variant="primary"
             :disabled="quota.isAtLimit"
             :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} status components` : ''"
-            class="rounded-md px-3 py-1.5 text-sm font-medium text-mnt-primary transition-colors min-h-[44px]"
-            :style="{
-              background: 'var(--mnt-accent)',
-              opacity: quota.isAtLimit ? '0.5' : '1',
-              cursor: quota.isAtLimit ? 'not-allowed' : 'pointer',
-            }"
-            @mouseenter="!quota.isAtLimit && (($event.target as HTMLElement).style.background = 'var(--mnt-accent-hover)')"
-            @mouseleave="($event.target as HTMLElement).style.background = 'var(--mnt-accent)'"
+            @click="startAddComp"
           >
             Add Component
-          </button>
+          </UiButton>
         </div>
       </div>
 
@@ -353,37 +366,15 @@ function componentSummary(c: StatusComponent): string {
                 Locked
               </span>
             </div>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                :disabled="!!editingCompId"
-                @click="compositionMode = 'explicit'"
-                class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
-                :style="{
-                  background: compositionMode === 'explicit' ? 'rgba(59,130,246,0.12)' : 'var(--mnt-bg-elevated)',
-                  borderColor: compositionMode === 'explicit' ? '#3b82f6' : 'var(--mnt-border-default)',
-                  color: compositionMode === 'explicit' ? '#60a5fa' : 'var(--mnt-text-secondary)',
-                  opacity: editingCompId ? '0.5' : '1',
-                  cursor: editingCompId ? 'not-allowed' : 'pointer',
-                }"
-              >
-                Specific monitors
-              </button>
-              <button
-                type="button"
-                :disabled="!!editingCompId"
-                @click="compositionMode = 'match-all'"
-                class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
-                :style="{
-                  background: compositionMode === 'match-all' ? 'rgba(139,92,246,0.12)' : 'var(--mnt-bg-elevated)',
-                  borderColor: compositionMode === 'match-all' ? '#8b5cf6' : 'var(--mnt-border-default)',
-                  color: compositionMode === 'match-all' ? 'var(--mnt-accent)' : 'var(--mnt-text-secondary)',
-                  opacity: editingCompId ? '0.5' : '1',
-                  cursor: editingCompId ? 'not-allowed' : 'pointer',
-                }"
-              >
-                All monitors of one type
-              </button>
+            <div :class="editingCompId ? 'pointer-events-none opacity-50' : ''">
+              <SegmentedToggle
+                v-model="compositionMode"
+                ariaLabel="Composition mode"
+                :options="[
+                  { value: 'explicit', label: 'Specific monitors' },
+                  { value: 'match-all', label: 'All monitors of one type' },
+                ]"
+              />
             </div>
           </div>
 
@@ -391,59 +382,24 @@ function componentSummary(c: StatusComponent): string {
           <div v-if="compositionMode === 'explicit'" class="space-y-3">
             <!-- Selected monitors chips -->
             <div v-if="selectedMonitors.length > 0" class="flex flex-wrap gap-1.5">
-              <span
+              <ChipToggle
                 v-for="m in selectedMonitors"
                 :key="`${m.type}-${m.id}`"
-                class="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-                style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
+                removable
+                :remove-label="`Remove ${m.name}`"
+                @remove="removeSelectedMonitor(m)"
               >
-                <span class="text-[10px] uppercase tracking-wider" style="color: var(--mnt-text-muted)">{{ m.type[0] }}</span>
+                <span class="text-[10px] uppercase tracking-wider text-mnt-muted">{{ m.type[0] }}</span>
                 {{ m.name }}
-                <button
-                  type="button"
-                  @click="removeSelectedMonitor(m)"
-                  class="ml-0.5 opacity-60 hover:opacity-100"
-                  style="color: var(--mnt-text-muted)"
-                >
-                  ×
-                </button>
-              </span>
+              </ChipToggle>
             </div>
             <p v-else class="text-xs text-mnt-muted">No monitors selected. Pick at least one below.</p>
 
             <!-- Type tabs -->
-            <div class="flex gap-1 border-b" style="border-color: var(--mnt-border-default)">
-              <button
-                v-for="type in monitorTypes"
-                :key="type"
-                type="button"
-                @click="activeTypeTab = type; searchQuery = ''"
-                class="relative px-3 py-1.5 text-xs transition-colors"
-                :style="{
-                  color: activeTypeTab === type ? 'var(--mnt-text-primary)' : 'var(--mnt-text-secondary)',
-                  borderBottom: activeTypeTab === type ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-                  marginBottom: '-1px',
-                }"
-              >
-                {{ monitorTypeLabels[type] }}
-                <span
-                  v-if="selectedCountForType(type) > 0"
-                  class="ml-1 rounded-full px-1.5 text-[10px] font-bold"
-                  style="background: var(--mnt-accent); color: var(--mnt-text-primary)"
-                >
-                  {{ selectedCountForType(type) }}
-                </span>
-              </button>
-            </div>
+            <TabNav v-model="activeTypeTab" :items="typeTabItems" ariaLabel="Monitor type" />
 
             <!-- Search -->
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="Search..."
-              class="w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-            />
+            <SearchInput v-model="searchQuery" placeholder="Search..." />
 
             <!-- Monitor list -->
             <div
@@ -454,37 +410,31 @@ function componentSummary(c: StatusComponent): string {
               <div v-else-if="filteredMonitors.length === 0" class="p-4 text-center text-xs text-mnt-muted">
                 No {{ monitorTypeLabels[activeTypeTab] }}s found
               </div>
-              <label
+              <div
                 v-for="m in filteredMonitors"
                 :key="`${m.type}-${m.id}`"
-                class="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-mnt-elevated"
+                class="border-b px-3 py-2 hover:bg-mnt-elevated"
                 style="border-color: var(--mnt-border-default)"
               >
-                <input
-                  type="checkbox"
-                  :checked="isMonitorSelected(m)"
-                  @change="toggleMonitor(m)"
-                  class="rounded"
-                  style="accent-color: var(--mnt-accent)"
-                />
-                <span class="text-sm" style="color: var(--mnt-text-primary)">{{ m.name }}</span>
-              </label>
+                <CheckboxInput :model-value="isMonitorSelected(m)" :label="m.name" @update:model-value="() => toggleMonitor(m)" />
+              </div>
             </div>
           </div>
 
           <!-- Match-all mode: single type dropdown + count preview -->
           <div v-else class="space-y-2">
-            <div>
-              <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Monitor Type</label>
-              <select
-                v-model="matchAllType"
-                :disabled="!!editingCompId"
-                class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm"
-                style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-              >
-                <option v-for="t in monitorTypes" :key="t" :value="t">{{ monitorTypeLabels[t] }}</option>
-              </select>
-            </div>
+            <FormField label="Monitor Type">
+              <template #default="{ id, describedBy, invalid }">
+                <SelectInput
+                  :id="id"
+                  v-model="matchAllType"
+                  :disabled="!!editingCompId"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  :options="monitorTypes.map((t) => ({ value: t, label: monitorTypeLabels[t] ?? t }))"
+                />
+              </template>
+            </FormField>
             <p v-if="monitorOptionsLoading" class="text-xs text-mnt-muted">Loading count...</p>
             <p v-else-if="matchAllCount !== null" class="text-xs text-mnt-muted">
               <span class="font-medium" style="color: var(--mnt-text-primary)">{{ matchAllCount }}</span>
@@ -493,48 +443,20 @@ function componentSummary(c: StatusComponent): string {
           </div>
 
           <!-- Common fields -->
-          <div>
-            <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Display Name</label>
-            <input
-              v-model="compForm.display_name"
-              required
-              class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-            />
-          </div>
+          <FormField label="Display Name" required>
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput :id="id" v-model="compForm.display_name" required :aria-describedby="describedBy" :invalid="invalid" />
+            </template>
+          </FormField>
 
           <div class="flex items-center gap-4">
-            <label class="flex items-center gap-2 text-sm" style="color: var(--mnt-text-secondary)">
-              <input v-model="compForm.visible" type="checkbox" class="rounded" style="accent-color: var(--mnt-accent)" />
-              Visible on public page
-            </label>
-            <label class="flex items-center gap-2 text-sm" style="color: var(--mnt-text-secondary)">
-              <input v-model="compForm.auto_incident" type="checkbox" class="rounded" style="accent-color: var(--mnt-accent)" />
-              Auto-create incidents
-            </label>
+            <CheckboxInput v-model="compForm.visible" label="Visible on public page" />
+            <CheckboxInput v-model="compForm.auto_incident" label="Auto-create incidents" />
           </div>
 
           <div class="flex gap-2">
-            <button
-              type="submit"
-              :disabled="!isFormValid"
-              class="rounded-md px-3 py-1.5 text-sm text-mnt-primary"
-              :style="{
-                background: 'var(--mnt-accent)',
-                opacity: isFormValid ? '1' : '0.45',
-                cursor: isFormValid ? 'pointer' : 'not-allowed',
-              }"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              @click="resetCompForm"
-              class="rounded-md border px-3 py-1.5 text-sm"
-              style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-            >
-              Cancel
-            </button>
+            <UiButton type="submit" variant="primary" :disabled="!isFormValid">Save</UiButton>
+            <UiButton type="button" variant="secondary" @click="resetCompForm">Cancel</UiButton>
           </div>
         </form>
       </div>
@@ -581,36 +503,22 @@ function componentSummary(c: StatusComponent): string {
               </div>
             </div>
             <div class="flex flex-shrink-0 items-center gap-2">
-              <select
+              <SelectInput
+                :model-value="c.status_override || ''"
+                size="sm"
+                :options="statusOverrideOptions"
                 @change="handleOverride(c, ($event.target as HTMLSelectElement).value)"
-                class="rounded border px-2 py-1 text-xs"
-                style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-              >
-                <option v-for="s in statusOverrideOptions" :key="s.value" :value="s.value" :selected="(c.status_override || '') === s.value">
-                  {{ s.label }}
-                </option>
-              </select>
-              <button @click="startEditComp(c)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)">Edit</button>
-              <button @click="handleDeleteComp(c.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--mnt-status-down); color: var(--mnt-status-down)">Delete</button>
+              />
+              <UiButton variant="secondary" size="sm" @click="startEditComp(c)">Edit</UiButton>
+              <UiButton variant="danger-ghost" size="sm" @click="handleDeleteComp(c.id)">Delete</UiButton>
             </div>
           </div>
 
           <!-- Needs attention indicator -->
-          <div v-if="c.needs_attention" class="mt-2 flex items-center gap-2 rounded border border-yellow-600/30 bg-yellow-900/20 px-3 py-2">
-            <span class="text-xs text-yellow-400">No monitors assigned — hidden from public page</span>
-            <button
-              @click="startEditComp(c)"
-              class="rounded px-2 py-0.5 text-xs font-medium"
-              style="background: var(--mnt-accent); color: var(--mnt-text-primary)"
-            >
-              Fix
-            </button>
-            <button
-              @click="handleDeleteComp(c.id)"
-              class="rounded px-2 py-0.5 text-xs text-mnt-status-down"
-            >
-              Delete
-            </button>
+          <div v-if="c.needs_attention" class="mt-2 flex items-center gap-2 rounded border border-mnt-sev-warning bg-mnt-status-warn px-3 py-2">
+            <span class="text-xs text-mnt-status-warn">No monitors assigned — hidden from public page</span>
+            <UiButton variant="primary" size="sm" @click="startEditComp(c)">Fix</UiButton>
+            <UiButton variant="ghost" size="sm" @click="handleDeleteComp(c.id)">Delete</UiButton>
           </div>
         </div>
       </div>

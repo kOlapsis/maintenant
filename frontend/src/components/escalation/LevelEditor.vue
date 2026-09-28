@@ -12,7 +12,12 @@
 -->
 
 <script setup lang="ts">
-import { Plus, Minus } from 'lucide-vue-next'
+import { Minus } from 'lucide-vue-next'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 
 interface Channel {
   id: string
@@ -50,10 +55,8 @@ function setDelay(v: number) {
   emit('update:modelValue', { ...props.modelValue, delay_seconds: v })
 }
 
-function toggleChannel(id: string) {
-  const ids = props.modelValue.channel_ids
-  const next = ids.includes(id) ? ids.filter((c) => c !== id) : [...ids, id]
-  emit('update:modelValue', { ...props.modelValue, channel_ids: next })
+function setChannelIds(ids: (string | number)[]) {
+  emit('update:modelValue', { ...props.modelValue, channel_ids: ids as string[] })
 }
 </script>
 
@@ -64,48 +67,42 @@ function toggleChannel(id: string) {
       <span class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
         Level {{ index + 1 }}
       </span>
-      <button
+      <UiButton
         v-if="canRemove"
-        class="p-1 rounded text-mnt-muted hover:text-mnt-status-down hover:bg-mnt-status-down/10 transition-all"
+        variant="ghost"
+        size="sm"
+        :icon="Minus"
         title="Remove level"
+        aria-label="Remove level"
         @click="emit('remove')"
-      >
-        <Minus :size="13" />
-      </button>
+      />
     </div>
 
     <!-- Delay -->
-    <div class="space-y-2">
-      <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
-        Trigger after (seconds)
-      </label>
-      <div class="flex items-center gap-3 flex-wrap">
-        <input
-          :value="modelValue.delay_seconds"
-          type="number"
-          min="60"
-          max="86400"
-          step="60"
-          class="w-28 bg-mnt-surface border border-mnt-default rounded-lg px-3 py-1.5 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default transition-colors"
-          @input="setDelay(Number(($event.target as HTMLInputElement).value))"
-        />
-        <div class="flex gap-1.5 flex-wrap">
-          <button
-            v-for="preset in DELAY_PRESETS"
-            :key="preset.value"
-            class="px-2.5 py-1 rounded text-[10px] font-bold border transition-all"
-            :class="
-              modelValue.delay_seconds === preset.value
-                ? 'bg-mnt-elevated border-mnt-default text-mnt-secondary'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
-            "
-            @click="setDelay(preset.value)"
-          >
-            {{ preset.label }}
-          </button>
+    <FormField label="Trigger after (seconds)">
+      <template #default="{ id, describedBy, invalid }">
+        <div class="flex items-center gap-3 flex-wrap">
+          <TextInput
+            :id="id"
+            type="number"
+            :model-value="modelValue.delay_seconds"
+            min="60"
+            max="86400"
+            step="60"
+            class="w-28"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            @update:model-value="(v) => setDelay(Number(v))"
+          />
+          <SegmentedToggle
+            :model-value="String(modelValue.delay_seconds)"
+            :options="DELAY_PRESETS.map((p) => ({ value: String(p.value), label: p.label }))"
+            ariaLabel="Delay presets"
+            @update:model-value="(v) => setDelay(Number(v))"
+          />
         </div>
-      </div>
-    </div>
+      </template>
+    </FormField>
 
     <!-- Channels -->
     <div class="space-y-2">
@@ -113,22 +110,15 @@ function toggleChannel(id: string) {
       <div v-if="channels.length === 0" class="text-xs text-mnt-muted">
         No channels available.
       </div>
-      <div v-else class="flex flex-wrap gap-2">
-        <button
+      <div v-else class="flex flex-wrap gap-4">
+        <CheckboxInput
           v-for="ch in channels"
           :key="ch.id"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
-          :class="
-            modelValue.channel_ids.includes(ch.id)
-              ? 'bg-mnt-green-500/10 border-mnt-green-500/30 text-mnt-green-400'
-              : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-secondary'
-          "
-          @click="toggleChannel(ch.id)"
-        >
-          <Plus v-if="!modelValue.channel_ids.includes(ch.id)" :size="11" />
-          <Minus v-else :size="11" />
-          {{ ch.name }}
-        </button>
+          :value="ch.id"
+          :model-value="modelValue.channel_ids"
+          :label="ch.name"
+          @update:model-value="(v) => setChannelIds(v as (string | number)[])"
+        />
       </div>
     </div>
   </div>

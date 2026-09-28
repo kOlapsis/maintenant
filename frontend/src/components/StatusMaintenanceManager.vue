@@ -21,6 +21,11 @@ import {
   deleteMaintenance,
   type MaintenanceWindow,
 } from '@/services/statusApi'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import TextareaInput from '@/components/ui/TextareaInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const store = useStatusAdminStore()
 
@@ -101,13 +106,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
   <div>
     <div class="mb-4 flex items-center justify-between">
       <h2 class="text-lg font-semibold" style="color: var(--mnt-text-primary)">Maintenance Windows</h2>
-      <button
-        @click="showForm = true"
-        class="rounded-md px-3 py-1.5 text-sm font-medium text-mnt-primary"
-        style="background: var(--mnt-accent)"
-      >
-        Schedule Maintenance
-      </button>
+      <UiButton variant="primary" @click="showForm = true">Schedule Maintenance</UiButton>
     </div>
 
     <div v-if="showForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
@@ -115,39 +114,44 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
         {{ editingId ? 'Edit Maintenance' : 'Schedule Maintenance' }}
       </h3>
       <form @submit.prevent="submitForm" class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Title</label>
-          <input v-model="form.title" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Description</label>
-          <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"></textarea>
-        </div>
+        <FormField label="Title" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.title" required :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
+        <FormField label="Description">
+          <template #default="{ id, describedBy, invalid }">
+            <TextareaInput :id="id" v-model="form.description" :rows="2" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Start Time</label>
-            <input v-model="form.starts_at" type="datetime-local" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">End Time</label>
-            <input v-model="form.ends_at" type="datetime-local" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-          </div>
+          <FormField label="Start Time" required>
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput :id="id" v-model="form.starts_at" type="datetime-local" required :aria-describedby="describedBy" :invalid="invalid" />
+            </template>
+          </FormField>
+          <FormField label="End Time" required>
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput :id="id" v-model="form.ends_at" type="datetime-local" required :aria-describedby="describedBy" :invalid="invalid" />
+            </template>
+          </FormField>
         </div>
         <div>
           <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Affected Components</label>
           <div class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border p-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
-            <label v-for="c in store.components" :key="c.id" class="flex items-center gap-2 text-sm" style="color: var(--mnt-text-secondary)">
-              <input type="checkbox" :value="c.id" v-model="form.component_ids" class="rounded" style="accent-color: var(--mnt-accent)" />
-              {{ c.display_name }}
-            </label>
+            <CheckboxInput
+              v-for="c in store.components"
+              :key="c.id"
+              :value="c.id"
+              v-model="form.component_ids"
+              :label="c.display_name"
+            />
             <p v-if="(store.components?.length ?? 0) === 0" class="text-xs" style="color: var(--mnt-text-muted)">No components configured</p>
           </div>
         </div>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-mnt-primary" style="background: var(--mnt-accent)">
-            {{ editingId ? 'Update' : 'Schedule' }}
-          </button>
-          <button type="button" @click="resetForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)">Cancel</button>
+          <UiButton type="submit" variant="primary">{{ editingId ? 'Update' : 'Schedule' }}</UiButton>
+          <UiButton type="button" variant="secondary" @click="resetForm">Cancel</UiButton>
         </div>
       </form>
     </div>
@@ -174,15 +178,15 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
             <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ mw.title }}</span>
           </div>
           <div class="flex items-center gap-2">
-            <button
+            <UiButton
               v-if="!mw.active && new Date(mw.ends_at) > new Date()"
+              variant="secondary"
+              size="sm"
               @click="startEdit(mw)"
-              class="rounded border px-2 py-1 text-xs"
-              style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
             >
               Edit
-            </button>
-            <button @click="handleDelete(mw.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--mnt-status-down); color: var(--mnt-status-down)">Delete</button>
+            </UiButton>
+            <UiButton variant="danger-ghost" size="sm" @click="handleDelete(mw.id)">Delete</UiButton>
           </div>
         </div>
         <p v-if="mw.description" class="mt-1 text-xs" style="color: var(--mnt-text-muted)">{{ mw.description }}</p>

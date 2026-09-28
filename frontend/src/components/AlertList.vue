@@ -18,6 +18,8 @@ import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlid
 import type { Alert, ListAlertsParams } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
@@ -83,48 +85,38 @@ function openEntityDetail(alert: Alert) {
   detailSlideOver.openDetail(alert.entity_type as EntityType, alert.entity_id)
 }
 
-const selectStyle = 'background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)'
+const sourceOptions = [
+  { value: '', label: 'All sources' },
+  { value: 'container', label: 'Container' },
+  { value: 'endpoint', label: 'Endpoint' },
+  { value: 'heartbeat', label: 'Heartbeat' },
+  { value: 'certificate', label: 'Certificate' },
+  { value: 'resource', label: 'Resource' },
+  { value: 'agent', label: 'Agent' },
+]
+
+const severityOptions = [
+  { value: '', label: 'All severities' },
+  { value: 'critical', label: 'Critical' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'info', label: 'Info' },
+]
+
+const statusOptions = [
+  { value: '', label: 'All statuses' },
+  { value: 'active', label: 'Active' },
+  { value: 'resolved', label: 'Resolved' },
+  { value: 'silenced', label: 'Silenced' },
+]
 </script>
 
 <template>
   <div>
     <!-- Filters -->
     <div class="mb-4 flex flex-wrap gap-3">
-      <select
-        v-model="sourceFilter"
-        class="rounded-md border px-3 py-1.5 text-sm outline-none"
-        :style="selectStyle"
-      >
-        <option value="">All sources</option>
-        <option value="container">Container</option>
-        <option value="endpoint">Endpoint</option>
-        <option value="heartbeat">Heartbeat</option>
-        <option value="certificate">Certificate</option>
-        <option value="resource">Resource</option>
-        <option value="agent">Agent</option>
-      </select>
-
-      <select
-        v-model="severityFilter"
-        class="rounded-md border px-3 py-1.5 text-sm outline-none"
-        :style="selectStyle"
-      >
-        <option value="">All severities</option>
-        <option value="critical">Critical</option>
-        <option value="warning">Warning</option>
-        <option value="info">Info</option>
-      </select>
-
-      <select
-        v-model="statusFilter"
-        class="rounded-md border px-3 py-1.5 text-sm outline-none"
-        :style="selectStyle"
-      >
-        <option value="">All statuses</option>
-        <option value="active">Active</option>
-        <option value="resolved">Resolved</option>
-        <option value="silenced">Silenced</option>
-      </select>
+      <SelectInput v-model="sourceFilter" size="sm" class="w-auto" :options="sourceOptions" />
+      <SelectInput v-model="severityFilter" size="sm" class="w-auto" :options="severityOptions" />
+      <SelectInput v-model="statusFilter" size="sm" class="w-auto" :options="statusOptions" />
     </div>
 
     <!-- Mobile card list -->
@@ -239,14 +231,9 @@ const selectStyle = 'background: var(--mnt-bg-elevated); border-color: var(--mnt
 
     <!-- Load more -->
     <div v-if="store.hasMore" class="mt-4 text-center">
-      <button
-        @click="loadMore"
-        :disabled="store.loading"
-        class="rounded-md border px-4 py-2 text-sm disabled:opacity-50 transition-colors"
-        style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary); background: var(--mnt-bg-surface)"
-      >
+      <UiButton variant="secondary" size="sm" :loading="store.loading" @click="loadMore">
         {{ store.loading ? 'Loading...' : 'Load more' }}
-      </button>
+      </UiButton>
     </div>
   </div>
 </template>

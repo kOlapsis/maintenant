@@ -1,8 +1,3 @@
-// Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. See COMMERCIAL-LICENSE.md.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
 import { ref } from 'vue'
@@ -10,12 +5,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import HeartbeatsPage from '@/pages/HeartbeatsPage.vue'
 import { detailSlideOverKey } from '@/composables/useDetailSlideOver'
 
-const isDemo = ref(false)
-const route = { query: { tab: 'outgoing' } as Record<string, string> }
+const route = { query: {} as Record<string, string> }
 
 vi.mock('@/composables/useEdition', () => ({
   useEdition: () => ({
-    isDemo,
     reload: vi.fn(),
     getQuota: () => ref({ used: 0, limit: 0, isUnlimited: true, isAtLimit: false, nearLimit: false }),
   }),
@@ -46,22 +39,20 @@ function mountPage() {
   })
 }
 
-describe('HeartbeatsPage outgoing tab', () => {
+describe('HeartbeatsPage', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  it('offers the outgoing tab outside demo mode', () => {
-    isDemo.value = false
-    const wrapper = mountPage()
-    expect(wrapper.findComponent({ name: 'SegmentedToggle' }).exists()).toBe(true)
-    expect(wrapper.findComponent({ name: 'OutboundHeartbeatsPanel' }).exists()).toBe(true)
-  })
-
-  it('hides the outgoing tab in demo mode, even when the URL asks for it', () => {
-    isDemo.value = true
+  it('no longer renders the outgoing tab toggle or panel', () => {
     const wrapper = mountPage()
     expect(wrapper.findComponent({ name: 'SegmentedToggle' }).exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'OutboundHeartbeatsPanel' }).exists()).toBe(false)
+  })
+
+  it('shows the incoming heartbeats subtitle only', () => {
+    const wrapper = mountPage()
+    expect(wrapper.text()).toContain('Passive cron & scheduled task monitoring')
+    expect(wrapper.text()).not.toContain('Ping other Maintenant instances so they alert if this one goes down')
   })
 })

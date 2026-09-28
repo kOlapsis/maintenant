@@ -31,6 +31,7 @@ import EndpointStatusBadge from './EndpointStatusBadge.vue'
 import EndpointEventTimeline from './EndpointEventTimeline.vue'
 import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
+import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
   endpointId: string
@@ -194,15 +195,9 @@ watch(() => props.endpointId, () => {
           {{ endpoint.target }}
         </p>
       </div>
-      <button
-        class="shrink-0 rounded px-3 py-1 text-sm transition-colors"
-        style="color: var(--mnt-text-muted)"
-        @click="emit('close')"
-        @mouseenter="($event.target as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
-        @mouseleave="($event.target as HTMLElement).style.background = 'transparent'"
-      >
+      <UiButton variant="ghost" size="sm" class="shrink-0" @click="emit('close')">
         Close
-      </button>
+      </UiButton>
     </div>
 
     <!-- Loading -->
@@ -252,23 +247,18 @@ watch(() => props.endpointId, () => {
         <span v-if="isHttp && endpoint.last_http_status" style="color: var(--mnt-text-muted)">
           HTTP {{ endpoint.last_http_status }}
         </span>
-        <button
+        <UiButton
           v-if="canCheckNow"
-          type="button"
-          class="ml-auto flex cursor-pointer items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all disabled:cursor-default"
-          :style="{
-            backgroundColor: 'var(--mnt-bg-elevated)',
-            color: checking ? 'var(--mnt-text-muted)' : 'var(--mnt-accent)',
-            border: '1px solid var(--mnt-border-default)',
-            borderRadius: 'var(--mnt-radius-sm)',
-          }"
-          :disabled="checking"
+          variant="secondary"
+          size="sm"
+          class="ml-auto font-bold"
+          :icon="RefreshCw"
+          :loading="checking"
           title="Probe this endpoint now instead of waiting for the next scheduled check"
           @click="checkNow"
         >
-          <RefreshCw :size="12" :class="{ 'animate-spin': checking }" />
           {{ checking ? 'Checking…' : 'Check now' }}
-        </button>
+        </UiButton>
       </div>
 
       <div
@@ -415,14 +405,9 @@ watch(() => props.endpointId, () => {
         :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       >
         <span v-if="isRetired" class="text-xs text-mnt-muted">Container gone</span>
-        <button
-          class="ml-auto rounded px-2 py-1 text-xs transition hover:opacity-80"
-          :style="{ color: 'var(--mnt-status-down)' }"
-          :disabled="deleting"
-          @click="handleDelete"
-        >
-          {{ deleting ? 'Deleting…' : 'Delete endpoint' }}
-        </button>
+        <UiButton variant="danger-ghost" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
+          Delete endpoint
+        </UiButton>
       </div>
     </template>
   </div>

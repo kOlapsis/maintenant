@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Upload, Trash2, X } from 'lucide-vue-next'
+import { ref, computed, watch } from 'vue'
+import { Trash2 } from 'lucide-vue-next'
 import { personalizationApi } from '@/services/personalizationApi'
 import { usePersonalizationStore } from '@/stores/personalization'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FileInput from '@/components/ui/FileInput.vue'
 
 type AssetRole = 'logo' | 'favicon' | 'hero'
 
@@ -10,10 +14,6 @@ const store = usePersonalizationStore()
 
 const title = defineModel<string>('title', { required: true })
 const subtitle = defineModel<string>('subtitle', { required: true })
-
-const logoInputRef = ref<HTMLInputElement | null>(null)
-const faviconInputRef = ref<HTMLInputElement | null>(null)
-const heroInputRef = ref<HTMLInputElement | null>(null)
 
 const logoFile = ref<File | null>(null)
 const faviconFile = ref<File | null>(null)
@@ -26,6 +26,10 @@ const removeLogo = ref(false)
 const removeFavicon = ref(false)
 const removeHero = ref(false)
 
+watch(logoFile, (f) => { if (f) removeLogo.value = false })
+watch(faviconFile, (f) => { if (f) removeFavicon.value = false })
+watch(heroFile, (f) => { if (f) removeHero.value = false })
+
 const hasLogo = computed(() => !!store.settings)
 const hasFavicon = computed(() => !!store.settings)
 const hasHero = computed(() => !!store.settings)
@@ -34,32 +38,10 @@ const logoPreviewUrl = computed(() => personalizationApi.getAssetURL('logo'))
 const faviconPreviewUrl = computed(() => personalizationApi.getAssetURL('favicon'))
 const heroPreviewUrl = computed(() => personalizationApi.getAssetURL('hero'))
 
-function inputRefFor(role: AssetRole): HTMLInputElement | null {
-  if (role === 'logo') return logoInputRef.value
-  if (role === 'favicon') return faviconInputRef.value
-  return heroInputRef.value
-}
-
-function onFileSelected(role: AssetRole, e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0] ?? null
-  if (role === 'logo') {
-    logoFile.value = file
-    if (file) removeLogo.value = false
-  } else if (role === 'favicon') {
-    faviconFile.value = file
-    if (file) removeFavicon.value = false
-  } else {
-    heroFile.value = file
-    if (file) removeHero.value = false
-  }
-}
-
 function clearSelection(role: AssetRole) {
   if (role === 'logo') logoFile.value = null
   else if (role === 'favicon') faviconFile.value = null
   else heroFile.value = null
-  const input = inputRefFor(role)
-  if (input) input.value = ''
 }
 
 function markForRemoval(role: AssetRole) {
@@ -122,37 +104,17 @@ defineExpose({ flushPendingAssets })
     </h3>
 
     <div class="grid grid-cols-1 gap-4">
-      <div>
-        <label
-          class="block text-xs mb-1"
-          style="color: var(--mnt-text-muted)"
-        >Page Title</label>
-        <input
-          v-model="title"
-          type="text"
-          maxlength="100"
-          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          placeholder="System Status"
-        />
-        <p class="mt-1 text-[11px]" style="color: var(--mnt-text-muted)">1–100 characters</p>
-      </div>
+      <FormField label="Page Title" hint="1–100 characters">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput :id="id" v-model="title" maxlength="100" :aria-describedby="describedBy" :invalid="invalid" placeholder="System Status" />
+        </template>
+      </FormField>
 
-      <div>
-        <label
-          class="block text-xs mb-1"
-          style="color: var(--mnt-text-muted)"
-        >Subtitle</label>
-        <input
-          v-model="subtitle"
-          type="text"
-          maxlength="200"
-          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          placeholder="Real-time service health"
-        />
-        <p class="mt-1 text-[11px]" style="color: var(--mnt-text-muted)">0–200 characters</p>
-      </div>
+      <FormField label="Subtitle" hint="0–200 characters">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput :id="id" v-model="subtitle" maxlength="200" :aria-describedby="describedBy" :invalid="invalid" placeholder="Real-time service health" />
+        </template>
+      </FormField>
     </div>
 
     <!-- Logo -->
@@ -162,73 +124,27 @@ defineExpose({ flushPendingAssets })
         PNG, JPEG, WebP or SVG — max 200 KB. Recommended: 200×80px
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <input
-          ref="logoInputRef"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
-          class="sr-only"
-          @change="(e) => onFileSelected('logo', e)"
-        />
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          @click="logoInputRef?.click()"
-        >
-          <Upload :size="13" />
-          Choose file…
-        </button>
-        <span
-          v-if="logoFile"
-          class="truncate max-w-[200px] text-xs"
-          style="color: var(--mnt-text-muted)"
-          :title="logoFile.name"
-        >
-          {{ logoFile.name }}
-        </span>
-        <button
-          v-if="logoFile"
-          type="button"
-          class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--mnt-text-muted)"
-          @click="clearSelection('logo')"
-        >
-          <X :size="12" />
-          Clear
-        </button>
-        <button
+        <FileInput v-model:file="logoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
+        <UiButton
           v-if="hasLogo && !logoFile && !removeLogo"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
-          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
+          variant="secondary"
+          size="sm"
+          :icon="Trash2"
           @click="markForRemoval('logo')"
         >
-          <Trash2 :size="12" />
           Remove
-        </button>
+        </UiButton>
         <span
           v-if="removeLogo"
           class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-          style="background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: #f87171"
+          style="background: var(--mnt-status-down-bg); border-color: var(--mnt-status-down); color: var(--mnt-status-down)"
         >
           Will be removed on save
-          <button
-            type="button"
-            class="hover:underline"
-            @click="undoRemoval('logo')"
-          >
-            Undo
-          </button>
+          <UiButton type="button" variant="ghost" size="sm" @click="undoRemoval('logo')">Undo</UiButton>
         </span>
       </div>
-      <input
-        v-model="logoAlt"
-        type="text"
-        maxlength="200"
-        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-        placeholder="Alt text for logo"
-      />
+      <TextInput v-model="logoAlt" maxlength="200" aria-label="Alt text for logo" placeholder="Alt text for logo" />
     </div>
 
     <!-- Favicon -->
@@ -238,63 +154,24 @@ defineExpose({ flushPendingAssets })
         PNG, ICO or SVG — max 50 KB. Recommended: 32×32px
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <input
-          ref="faviconInputRef"
-          type="file"
-          accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml"
-          class="sr-only"
-          @change="(e) => onFileSelected('favicon', e)"
-        />
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          @click="faviconInputRef?.click()"
-        >
-          <Upload :size="13" />
-          Choose file…
-        </button>
-        <span
-          v-if="faviconFile"
-          class="truncate max-w-[200px] text-xs"
-          style="color: var(--mnt-text-muted)"
-          :title="faviconFile.name"
-        >
-          {{ faviconFile.name }}
-        </span>
-        <button
-          v-if="faviconFile"
-          type="button"
-          class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--mnt-text-muted)"
-          @click="clearSelection('favicon')"
-        >
-          <X :size="12" />
-          Clear
-        </button>
-        <button
+        <FileInput v-model:file="faviconFile" accept="image/png,image/x-icon,image/vnd.microsoft.icon,image/svg+xml" />
+        <UiButton
           v-if="hasFavicon && !faviconFile && !removeFavicon"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
-          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
+          variant="secondary"
+          size="sm"
+          :icon="Trash2"
           @click="markForRemoval('favicon')"
         >
-          <Trash2 :size="12" />
           Remove
-        </button>
+        </UiButton>
         <span
           v-if="removeFavicon"
           class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-          style="background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: #f87171"
+          style="background: var(--mnt-status-down-bg); border-color: var(--mnt-status-down); color: var(--mnt-status-down)"
         >
           Will be removed on save
-          <button
-            type="button"
-            class="hover:underline"
-            @click="undoRemoval('favicon')"
-          >
-            Undo
-          </button>
+          <UiButton type="button" variant="ghost" size="sm" @click="undoRemoval('favicon')">Undo</UiButton>
         </span>
       </div>
     </div>
@@ -306,73 +183,27 @@ defineExpose({ flushPendingAssets })
         PNG, JPEG or WebP — max 500 KB. Recommended: 1200×400px
       </p>
       <div class="flex flex-wrap items-center gap-2">
-        <input
-          ref="heroInputRef"
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          class="sr-only"
-          @change="(e) => onFileSelected('hero', e)"
-        />
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          @click="heroInputRef?.click()"
-        >
-          <Upload :size="13" />
-          Choose file…
-        </button>
-        <span
-          v-if="heroFile"
-          class="truncate max-w-[200px] text-xs"
-          style="color: var(--mnt-text-muted)"
-          :title="heroFile.name"
-        >
-          {{ heroFile.name }}
-        </span>
-        <button
-          v-if="heroFile"
-          type="button"
-          class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--mnt-text-muted)"
-          @click="clearSelection('hero')"
-        >
-          <X :size="12" />
-          Clear
-        </button>
-        <button
+        <FileInput v-model:file="heroFile" accept="image/png,image/jpeg,image/webp" />
+        <UiButton
           v-if="hasHero && !heroFile && !removeHero"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
-          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
+          variant="secondary"
+          size="sm"
+          :icon="Trash2"
           @click="markForRemoval('hero')"
         >
-          <Trash2 :size="12" />
           Remove
-        </button>
+        </UiButton>
         <span
           v-if="removeHero"
           class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-          style="background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: #f87171"
+          style="background: var(--mnt-status-down-bg); border-color: var(--mnt-status-down); color: var(--mnt-status-down)"
         >
           Will be removed on save
-          <button
-            type="button"
-            class="hover:underline"
-            @click="undoRemoval('hero')"
-          >
-            Undo
-          </button>
+          <UiButton type="button" variant="ghost" size="sm" @click="undoRemoval('hero')">Undo</UiButton>
         </span>
       </div>
-      <input
-        v-model="heroAlt"
-        type="text"
-        maxlength="200"
-        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-        placeholder="Alt text for hero image"
-      />
+      <TextInput v-model="heroAlt" maxlength="200" aria-label="Alt text for hero image" placeholder="Alt text for hero image" />
     </div>
 
     <div class="hidden">{{ logoPreviewUrl }} {{ faviconPreviewUrl }} {{ heroPreviewUrl }}</div>

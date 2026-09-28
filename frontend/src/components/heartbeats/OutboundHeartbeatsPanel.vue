@@ -25,6 +25,12 @@ import ErrorState from '@/components/ui/ErrorState.vue'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
 import DataTable, { type Column } from '@/components/ui/DataTable.vue'
 import type { ChipTone } from '@/components/ui/listFilters'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 
 const showCreateForm = defineModel<boolean>('showCreateForm', { default: false })
 
@@ -37,14 +43,14 @@ const sendingId = ref<string | null>(null)
 const togglingId = ref<string | null>(null)
 
 const intervalPresets = [
-  { label: '30s', value: 30 },
-  { label: '1m', value: 60 },
-  { label: '5m', value: 300 },
-  { label: '15m', value: 900 },
-  { label: '1h', value: 3600 },
-  { label: '6h', value: 21600 },
-  { label: '12h', value: 43200 },
-  { label: '24h', value: 86400 },
+  { value: '30', label: '30s' },
+  { value: '60', label: '1m' },
+  { value: '300', label: '5m' },
+  { value: '900', label: '15m' },
+  { value: '3600', label: '1h' },
+  { value: '21600', label: '6h' },
+  { value: '43200', label: '12h' },
+  { value: '86400', label: '24h' },
 ]
 
 function blankForm() {
@@ -53,9 +59,17 @@ function blankForm() {
 
 const form = ref(blankForm())
 
+const intervalPreset = ref<string>(String(form.value.interval_seconds))
+
+watch(intervalPreset, (preset) => {
+  const seconds = Number(preset)
+  if (!Number.isNaN(seconds)) form.value.interval_seconds = seconds
+})
+
 watch(showCreateForm, (open) => {
   if (open && !editingId.value) {
     form.value = blankForm()
+    intervalPreset.value = String(form.value.interval_seconds)
     formError.value = null
   }
 })
@@ -68,6 +82,7 @@ function startEdit(hb: OutboundHeartbeat) {
     interval_seconds: hb.interval_seconds,
     enabled: hb.enabled,
   }
+  intervalPreset.value = String(hb.interval_seconds)
   formError.value = null
   showCreateForm.value = true
 }
@@ -191,98 +206,46 @@ onMounted(() => {
       </h3>
       <QuotaRefusal v-if="formError" :error="formError" />
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
-        <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Name</label>
-          <input
-            v-model="form.name"
-            type="text"
-            placeholder="e.g., Watched by DR site"
-            :style="{
-              width: '100%',
-              borderRadius: 'var(--mnt-radius-md)',
-              border: '1px solid var(--mnt-border-default)',
-              backgroundColor: 'var(--mnt-bg-elevated)',
-              color: 'var(--mnt-text-primary)',
-              padding: '0.375rem 0.75rem',
-              fontSize: '0.875rem',
-              minHeight: '44px',
-            }"
-            required
-          />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Ping URL</label>
-          <input
-            v-model="form.url"
-            type="url"
-            placeholder="https://other-instance.example.com/ping/…"
-            class="font-mono"
-            :style="{
-              width: '100%',
-              borderRadius: 'var(--mnt-radius-md)',
-              border: '1px solid var(--mnt-border-default)',
-              backgroundColor: 'var(--mnt-bg-elevated)',
-              color: 'var(--mnt-text-primary)',
-              padding: '0.375rem 0.75rem',
-              fontSize: '0.8125rem',
-              minHeight: '44px',
-            }"
-            pattern="https://.+"
-            required
-          />
-          <p class="mt-1 text-xs" :style="{ color: 'var(--mnt-text-muted)' }">HTTPS only, on a public address.</p>
-        </div>
+        <FormField label="Name" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.name"
+              type="text"
+              placeholder="e.g., Watched by DR site"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              required
+            />
+          </template>
+        </FormField>
+        <FormField label="Ping URL" hint="HTTPS only, on a public address." required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.url"
+              type="url"
+              mono
+              placeholder="https://other-instance.example.com/ping/…"
+              pattern="https://.+"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              required
+            />
+          </template>
+        </FormField>
         <div>
           <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Ping every</label>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="preset in intervalPresets"
-              :key="preset.value"
-              type="button"
-              class="rounded-full px-3 py-1 text-xs font-medium transition"
-              :style="{
-                border: form.interval_seconds === preset.value
-                  ? '1px solid var(--mnt-accent)'
-                  : '1px solid var(--mnt-border-default)',
-                backgroundColor: form.interval_seconds === preset.value
-                  ? 'var(--mnt-accent)'
-                  : 'transparent',
-                color: form.interval_seconds === preset.value
-                  ? 'var(--mnt-text-inverted)'
-                  : 'var(--mnt-text-secondary)',
-              }"
-              @click="form.interval_seconds = preset.value"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
+          <SegmentedToggle v-model="intervalPreset" :options="intervalPresets" ariaLabel="Ping interval" />
         </div>
-        <label class="flex min-h-[44px] items-center gap-2">
-          <input v-model="form.enabled" type="checkbox" class="focus-ring h-4 w-4" />
-          <span class="text-xs font-semibold text-mnt-secondary">Enabled</span>
-        </label>
+        <CheckboxInput v-model="form.enabled" label="Enabled" />
         <div class="flex items-center gap-2">
-          <button
-            type="submit"
-            class="min-h-[44px]"
-            :style="{
-              borderRadius: 'var(--mnt-radius-lg)',
-              backgroundColor: 'var(--mnt-accent)',
-              color: 'var(--mnt-text-inverted)',
-              padding: '0.5rem 1rem',
-              fontSize: '0.875rem',
-              fontWeight: '500',
-            }"
-          >
+          <UiButton type="submit" variant="primary">
             {{ editingId ? 'Save' : 'Create' }}
-          </button>
-          <button
-            type="button"
-            class="focus-ring min-h-[44px] rounded-lg border border-mnt-default px-4 text-sm font-medium text-mnt-secondary hover:text-mnt-primary"
-            @click="closeForm"
-          >
+          </UiButton>
+          <UiButton type="button" variant="secondary" @click="closeForm">
             Cancel
-          </button>
+          </UiButton>
         </div>
       </form>
     </div>
@@ -298,13 +261,9 @@ onMounted(() => {
       description="Add the ping URL of a heartbeat monitor created on another Maintenant instance. This instance will ping it on schedule, so the other one alerts if this one goes quiet."
     >
       <template #action>
-        <button
-          class="min-h-[44px] rounded-lg px-4 text-sm font-medium"
-          style="background-color: var(--mnt-accent); color: var(--mnt-text-inverted); border-radius: var(--mnt-radius-lg)"
-          @click="showCreateForm = true"
-        >
+        <UiButton variant="primary" @click="showCreateForm = true">
           Add your first target
-        </button>
+        </UiButton>
       </template>
     </EmptyState>
 
@@ -328,20 +287,13 @@ onMounted(() => {
         <span class="font-mono tabular-nums">{{ formatInterval(row.interval_seconds) }}</span>
       </template>
       <template #cell-enabled="{ row }">
-        <button
-          type="button"
-          role="switch"
-          :aria-checked="row.enabled"
+        <ToggleSwitch
+          :model-value="row.enabled"
+          label="Enabled"
+          size="sm"
           :disabled="togglingId === row.id"
-          :title="row.enabled ? 'Click to disable' : 'Click to enable'"
-          class="focus-ring inline-flex min-h-[32px] items-center rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50"
-          :style="row.enabled
-            ? { borderColor: 'var(--mnt-status-ok)', backgroundColor: 'var(--mnt-status-ok-bg)', color: 'var(--mnt-status-ok-text)' }
-            : { borderColor: 'var(--mnt-border-default)', backgroundColor: 'var(--mnt-bg-elevated)', color: 'var(--mnt-text-muted)' }"
-          @click.stop="toggleEnabled(row)"
-        >
-          {{ row.enabled ? 'On' : 'Off' }}
-        </button>
+          @update:model-value="toggleEnabled(row)"
+        />
       </template>
       <template #cell-last_send="{ row }">
         <span class="truncate" :style="{ color: lastSendColor(row) }" :title="row.last_error ?? undefined">
@@ -350,31 +302,31 @@ onMounted(() => {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            class="focus-ring rounded p-1 text-mnt-muted transition-all hover:bg-mnt-elevated hover:text-mnt-secondary disabled:opacity-50"
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :icon="Send"
+            aria-label="Send now"
             title="Send now"
             :disabled="sendingId === row.id"
             @click.stop="handleSendNow(row)"
-          >
-            <Send :size="14" />
-          </button>
-          <button
-            type="button"
-            class="focus-ring rounded p-1 text-mnt-muted transition-all hover:bg-mnt-elevated hover:text-mnt-secondary"
+          />
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :icon="Pencil"
+            aria-label="Edit"
             title="Edit"
             @click.stop="startEdit(row)"
-          >
-            <Pencil :size="14" />
-          </button>
-          <button
-            type="button"
-            class="focus-ring rounded p-1 text-mnt-muted transition-all hover:bg-mnt-status-down/10 hover:text-mnt-status-down"
+          />
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :icon="Trash2"
+            aria-label="Delete"
             title="Delete"
             @click.stop="handleDelete(row)"
-          >
-            <Trash2 :size="14" />
-          </button>
+          />
         </div>
       </template>
     </DataTable>

@@ -12,10 +12,15 @@
 -->
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
 import { useConfirm } from '@/composables/useConfirm'
 import { createSilenceRule, cancelSilenceRule, type CreateSilenceRuleInput } from '@/services/alertApi'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 
 const store = useAlertsStore()
 
@@ -33,6 +38,21 @@ const durationPresets = [
   { label: '30 min', value: 1800 },
   { label: '1 hour', value: 3600 },
   { label: '2 hours', value: 7200 },
+]
+
+const durationPresetOptions = durationPresets.map((p) => ({ value: String(p.value), label: p.label }))
+const durationPresetValue = computed({
+  get: () => String(form.value.duration_seconds),
+  set: (v: string) => (form.value.duration_seconds = Number(v)),
+})
+
+const sourceOptions = [
+  { value: '', label: 'All sources (global)' },
+  { value: 'container', label: 'Container' },
+  { value: 'endpoint', label: 'Endpoint' },
+  { value: 'heartbeat', label: 'Heartbeat' },
+  { value: 'certificate', label: 'Certificate' },
+  { value: 'resource', label: 'Resource' },
 ]
 
 function resetForm() {
@@ -79,68 +99,46 @@ function formatDuration(seconds: number): string {
   <div>
     <div class="mb-4 flex items-center justify-between">
       <h2 class="text-lg font-semibold" style="color: var(--mnt-text-primary)">Silence Rules</h2>
-      <button
-        @click="showForm = true"
-        class="rounded-md px-3 py-1.5 text-sm font-medium text-mnt-primary"
-        style="background: var(--mnt-accent)"
-      >
-        Create Silence Rule
-      </button>
+      <UiButton variant="primary" @click="showForm = true">Create Silence Rule</UiButton>
     </div>
 
     <!-- Create form -->
     <div v-if="showForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
       <h3 class="mb-3 text-sm font-medium" style="color: var(--mnt-text-primary)">New Silence Rule</h3>
       <form @submit.prevent="submitForm" class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Source (optional)</label>
-          <select v-model="form.source" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)">
-            <option value="">All sources (global)</option>
-            <option value="container">Container</option>
-            <option value="endpoint">Endpoint</option>
-            <option value="heartbeat">Heartbeat</option>
-            <option value="certificate">Certificate</option>
-            <option value="resource">Resource</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Entity Type (optional)</label>
-          <input v-model="form.entity_type" placeholder="e.g. container, endpoint" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Entity ID (optional)</label>
-          <input v-model.number="form.entity_id" type="number" placeholder="Specific entity ID" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-        </div>
+        <FormField label="Source (optional)">
+          <template #default="{ id, describedBy, invalid }">
+            <SelectInput :id="id" v-model="form.source" :options="sourceOptions" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
+        <FormField label="Entity Type (optional)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.entity_type" placeholder="e.g. container, endpoint" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
+        <FormField label="Entity ID (optional)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.entity_id" placeholder="Specific entity ID" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
         <div>
           <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Duration</label>
-          <div class="mt-1 flex flex-wrap gap-2">
-            <button
-              v-for="preset in durationPresets"
-              :key="preset.value"
-              type="button"
-              @click="form.duration_seconds = preset.value"
-              class="rounded-md border px-3 py-1 text-xs transition-colors"
-              :style="{
-                borderColor: form.duration_seconds === preset.value ? 'var(--mnt-accent)' : 'var(--mnt-border-default)',
-                background: form.duration_seconds === preset.value ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                color: form.duration_seconds === preset.value ? 'var(--mnt-accent)' : 'var(--mnt-text-secondary)',
-              }"
-            >
-              {{ preset.label }}
-            </button>
+          <div class="mt-1">
+            <SegmentedToggle v-model="durationPresetValue" :options="durationPresetOptions" ariaLabel="Duration preset" />
           </div>
           <div class="mt-2 flex items-center gap-2">
-            <input v-model.number="form.duration_seconds" type="number" min="60" class="w-32 rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
+            <TextInput v-model="form.duration_seconds" type="number" min="60" class="w-32" />
             <span class="text-xs" style="color: var(--mnt-text-muted)">seconds</span>
           </div>
         </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Reason (optional)</label>
-          <input v-model="form.reason" placeholder="e.g. Planned maintenance" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-        </div>
+        <FormField label="Reason (optional)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.reason" placeholder="e.g. Planned maintenance" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-mnt-primary" style="background: var(--mnt-accent)">Create</button>
-          <button type="button" @click="resetForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)">Cancel</button>
+          <UiButton type="submit" variant="primary">Create</UiButton>
+          <UiButton type="button" variant="secondary" @click="resetForm">Cancel</UiButton>
         </div>
       </form>
     </div>
@@ -184,14 +182,7 @@ function formatDuration(seconds: number): string {
               {{ formatTime(rule.starts_at) }} - {{ formatTime(rule.expires_at) }}
             </p>
           </div>
-          <button
-            v-if="rule.is_active"
-            @click="handleCancel(rule.id)"
-            class="rounded border px-2 py-1 text-xs"
-            style="border-color: var(--mnt-status-down); color: var(--mnt-status-down)"
-          >
-            Cancel
-          </button>
+          <UiButton v-if="rule.is_active" variant="danger-ghost" size="sm" @click="handleCancel(rule.id)">Cancel</UiButton>
           <span v-else class="text-xs" style="color: var(--mnt-text-muted)">
             {{ rule.cancelled_at ? 'Cancelled' : 'Expired' }}
           </span>

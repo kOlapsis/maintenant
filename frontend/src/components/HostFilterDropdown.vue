@@ -16,6 +16,8 @@ import { ref, computed } from 'vue'
 import { Server, ChevronDown } from 'lucide-vue-next'
 import { useAgentsStore } from '@/stores/agents'
 import { useResourcesStore } from '@/stores/resources'
+import PopoverMenu from '@/components/ui/PopoverMenu.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 // Global host/resource scope selector living at the top of the sidebar nav. It
 // is the single control that scopes every list (containers, endpoints,
@@ -48,72 +50,79 @@ function select(value: string | null) {
 
 <template>
   <!-- Only meaningful once at least one agent is enrolled; single-host installs hide it. -->
-  <div v-if="activeAgents.length > 0" class="relative">
-    <button
-      class="flex w-full items-center justify-between gap-1.5 rounded-lg border border-mnt-default bg-mnt-primary px-3 py-1.5 text-xs text-mnt-secondary transition-colors hover:text-mnt-primary"
-      @click="open = !open"
+  <PopoverMenu
+    v-if="activeAgents.length > 0"
+    v-model:open="open"
+    ariaLabel="Host scope"
+    align="stretch"
+    panel-class="min-w-[200px] py-1"
+  >
+    <template #trigger="{ toggle }">
+      <UiButton
+        variant="secondary"
+        size="sm"
+        block
+        align="between"
+        class="bg-mnt-primary text-mnt-secondary hover:text-mnt-primary"
+        @click="toggle"
+      >
+        <span class="flex items-center gap-1.5 min-w-0">
+          <Server :size="13" class="text-mnt-muted shrink-0" />
+          <span class="truncate">{{ selectedLabel }}</span>
+        </span>
+        <ChevronDown :size="13" class="text-mnt-muted shrink-0" />
+      </UiButton>
+    </template>
+
+    <UiButton
+      variant="ghost"
+      size="sm"
+      block
+      align="start"
+      role="menuitem"
+      class="rounded-none"
+      :class="itemClass(resources.selected === null)"
+      @click="select(null)"
     >
-      <span class="flex items-center gap-1.5 min-w-0">
-        <Server :size="13" class="text-mnt-muted shrink-0" />
-        <span class="truncate">{{ selectedLabel }}</span>
-      </span>
-      <ChevronDown :size="13" class="text-mnt-muted shrink-0" />
-    </button>
-
-    <div
-      v-if="open"
-      class="absolute left-0 right-0 z-50 mt-1 min-w-[200px] rounded-xl border border-mnt-default bg-mnt-surface py-1 shadow-2xl"
+      All resources
+    </UiButton>
+    <UiButton
+      variant="ghost"
+      size="sm"
+      block
+      align="start"
+      role="menuitem"
+      class="rounded-none"
+      :class="itemClass(resources.selected === 'local')"
+      @click="select('local')"
     >
-      <button
-        class="hf-item"
-        :class="itemClass(resources.selected === null)"
-        @click="select(null)"
-      >
-        All resources
-      </button>
-      <button
-        class="hf-item"
-        :class="itemClass(resources.selected === 'local')"
-        @click="select('local')"
-      >
-        Local
-      </button>
+      Local
+    </UiButton>
 
-      <div class="my-1 border-t border-mnt-subtle" />
+    <div class="my-1 border-t border-mnt-subtle" />
 
-      <button
-        v-for="agent in activeAgents"
-        :key="agent.agent_id"
-        class="hf-item flex items-center gap-2"
-        :class="itemClass(resources.selected === agent.agent_id)"
-        @click="select(agent.agent_id)"
-      >
-        <span
-          class="h-1.5 w-1.5 shrink-0 rounded-full"
-          :style="{
-            backgroundColor:
-              agent.connection_state === 'connected'
-                ? 'var(--mnt-status-ok-text)'
-                : 'var(--mnt-text-muted)',
-          }"
-        />
-        {{ agent.label || agent.hostname }}
-      </button>
-    </div>
-
-    <div v-if="open" class="fixed inset-0 z-40" @click="open = false" />
-  </div>
+    <UiButton
+      v-for="agent in activeAgents"
+      :key="agent.agent_id"
+      variant="ghost"
+      size="sm"
+      block
+      align="start"
+      role="menuitem"
+      class="rounded-none"
+      :class="itemClass(resources.selected === agent.agent_id)"
+      @click="select(agent.agent_id)"
+    >
+      <span
+        class="h-1.5 w-1.5 shrink-0 rounded-full"
+        :style="{
+          backgroundColor:
+            agent.connection_state === 'connected'
+              ? 'var(--mnt-status-ok-text)'
+              : 'var(--mnt-text-muted)',
+        }"
+      />
+      {{ agent.label || agent.hostname }}
+    </UiButton>
+  </PopoverMenu>
 </template>
-
-<style scoped>
-.hf-item {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-  font-size: 0.75rem;
-  transition: background-color 0.12s ease;
-}
-.hf-item:hover {
-  background-color: var(--mnt-bg-hover);
-}
-</style>

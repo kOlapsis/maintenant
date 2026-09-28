@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import {
   fetchSwarmServiceDetail,
   fetchSwarmServiceResources,
@@ -21,6 +21,7 @@ import {
 } from '@/services/swarmApi'
 import SwarmTaskList from './SwarmTaskList.vue'
 import FeatureGate from './FeatureGate.vue'
+import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
 import { timeAgo } from '@/utils/time'
 import { useEdition } from '@/composables/useEdition'
 
@@ -37,7 +38,7 @@ type Tab = 'tasks' | 'ports' | 'networks' | 'resources'
 const { hasFeature } = useEdition()
 const detail = ref<SwarmServiceDetailResponse | null>(null)
 const loading = ref(true)
-const activeTab = ref<Tab>('tasks')
+const activeTab = ref<string>('tasks')
 const taskResources = ref<SwarmTaskResourceEntry[]>([])
 const resourcesLoading = ref(false)
 
@@ -62,10 +63,9 @@ async function loadResources() {
   }
 }
 
-function onTabClick(tab: Tab) {
-  activeTab.value = tab
+watch(activeTab, (tab) => {
   if (tab === 'resources') loadResources()
-}
+})
 
 function replicaColor(running: number, desired: number): string {
   if (running >= desired) return 'text-mnt-status-ok'
@@ -115,6 +115,8 @@ const baseTabs: { key: Tab; label: string }[] = [
 const tabs = hasFeature('swarm_dashboard')
   ? [...baseTabs, { key: 'resources' as Tab, label: 'Resources' }]
   : baseTabs
+
+const tabItems: TabNavItem[] = tabs.map((t) => ({ value: t.key, label: t.label }))
 </script>
 
 <template>
@@ -168,20 +170,8 @@ const tabs = hasFeature('swarm_dashboard')
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-mnt-default px-5">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          :class="[
-            'px-4 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
-            activeTab === tab.key
-              ? 'border-mnt-green-400 text-mnt-green-400'
-              : 'border-transparent text-mnt-muted hover:text-mnt-secondary',
-          ]"
-          @click="onTabClick(tab.key)"
-        >
-          {{ tab.label }}
-        </button>
+      <div class="px-5">
+        <TabNav v-model="activeTab" :items="tabItems" ariaLabel="Service detail tabs" />
       </div>
 
       <!-- Tab content -->

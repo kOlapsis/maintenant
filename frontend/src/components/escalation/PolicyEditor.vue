@@ -22,6 +22,11 @@ import { X, Plus, Loader2, ArrowRight, Shield } from 'lucide-vue-next'
 import LevelEditor from './LevelEditor.vue'
 import OverlapWarningComponent from './OverlapWarning.vue'
 import InlineAlert from '@/components/ui/InlineAlert.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import { useEscalationApi } from '@/composables/useEscalationApi'
 
 interface Channel {
@@ -94,14 +99,6 @@ function checkOverlap() {
 watch([name, severities, levels], () => checkOverlap(), { deep: true })
 
 const SEVERITY_OPTIONS = ['warning', 'critical']
-
-function toggleSeverity(sev: string) {
-  if (severities.value.includes(sev)) {
-    severities.value = severities.value.filter((s) => s !== sev)
-  } else {
-    severities.value = [...severities.value, sev]
-  }
-}
 
 function addLevel() {
   if (levels.value.length >= maxLevels.value) return
@@ -189,12 +186,7 @@ onMounted(() => {
       <h3 class="text-sm font-bold text-mnt-primary">
         {{ policy ? 'Edit policy' : 'New escalation policy' }}
       </h3>
-      <button
-        class="p-1 rounded text-mnt-muted hover:text-mnt-secondary hover:bg-mnt-elevated transition-all"
-        @click="emit('cancel')"
-      >
-        <X :size="16" />
-      </button>
+      <UiButton variant="ghost" size="sm" :icon="X" aria-label="Cancel" @click="emit('cancel')" />
     </div>
 
     <div class="p-5 space-y-6">
@@ -207,17 +199,11 @@ onMounted(() => {
       </div>
 
       <!-- Name -->
-      <div class="space-y-1.5">
-        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
-          Policy name
-        </label>
-        <input
-          v-model="name"
-          type="text"
-          placeholder="e.g. Critical alerts on-call"
-          class="w-full bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default transition-colors"
-        />
-      </div>
+      <FormField label="Policy name">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput :id="id" v-model="name" placeholder="e.g. Critical alerts on-call" :aria-describedby="describedBy" :invalid="invalid" />
+        </template>
+      </FormField>
 
       <!-- Active toggle -->
       <div class="flex items-center justify-between">
@@ -227,16 +213,7 @@ onMounted(() => {
             Inactive policies are saved but never triggered.
           </p>
         </div>
-        <button
-          class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="active ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
-          @click="active = !active"
-        >
-          <span
-            class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-            :class="active ? 'translate-x-4' : 'translate-x-0'"
-          />
-        </button>
+        <ToggleSwitch v-model="active" label="Active" />
       </div>
 
       <!-- Severities -->
@@ -244,22 +221,14 @@ onMounted(() => {
         <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
           Severities <span class="text-mnt-muted normal-case font-normal">(empty = all)</span>
         </label>
-        <div class="flex gap-2">
-          <button
+        <div class="flex gap-4">
+          <CheckboxInput
             v-for="sev in SEVERITY_OPTIONS"
             :key="sev"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold border transition-all"
-            :class="
-              severities.includes(sev)
-                ? sev === 'critical'
-                  ? 'bg-mnt-status-down/15 border-mnt-status-down/40 text-mnt-status-down'
-                  : 'bg-mnt-status-warn border-amber-500/40 text-mnt-status-warn'
-                : 'bg-transparent border-mnt-default text-mnt-muted hover:border-mnt-default hover:text-mnt-muted'
-            "
-            @click="toggleSeverity(sev)"
-          >
-            {{ sev.charAt(0).toUpperCase() + sev.slice(1) }}
-          </button>
+            v-model="severities"
+            :value="sev"
+            :label="sev.charAt(0).toUpperCase() + sev.slice(1)"
+          />
         </div>
       </div>
 
@@ -330,14 +299,16 @@ onMounted(() => {
             @remove="removeLevel(i)"
           />
 
-          <button
+          <UiButton
             v-if="levels.length < maxLevels"
-            class="w-full py-2.5 rounded-xl border border-dashed border-mnt-default text-xs text-mnt-muted hover:text-mnt-secondary hover:border-mnt-default transition-all flex items-center justify-center gap-1.5"
+            variant="secondary"
+            size="sm"
+            :icon="Plus"
+            class="w-full border-dashed"
             @click="addLevel"
           >
-            <Plus :size="13" />
             Add level
-          </button>
+          </UiButton>
         </template>
       </div>
 
@@ -346,20 +317,10 @@ onMounted(() => {
 
       <!-- Actions -->
       <div class="flex items-center justify-end gap-3 pt-2">
-        <button
-          class="px-4 py-2 text-xs font-medium text-mnt-muted hover:text-mnt-secondary transition-colors"
-          @click="emit('cancel')"
-        >
-          Cancel
-        </button>
-        <button
-          class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 disabled:bg-mnt-elevated disabled:text-mnt-muted text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
-          :disabled="saving"
-          @click="handleSave"
-        >
-          <Loader2 v-if="saving" :size="13" class="animate-spin" />
+        <UiButton variant="ghost" size="sm" @click="emit('cancel')">Cancel</UiButton>
+        <UiButton variant="primary" size="sm" :loading="saving" @click="handleSave">
           {{ saving ? 'Saving...' : 'Save policy' }}
-        </button>
+        </UiButton>
       </div>
     </div>
   </div>

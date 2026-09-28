@@ -23,6 +23,7 @@ import HostLimitDialog from '@/components/HostLimitDialog.vue'
 import AgentDetailPanel from '@/components/AgentDetailPanel.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import UiTooltip from '@/components/ui/UiTooltip.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { osNeedsAttention, osSupportHint, osSupportLabel, osSupportSeverity } from '@/utils/osSupport'
 import { docUrl } from '@/utils/docs'
 import { MonitorDot, Server, Boxes, ShieldCheck } from 'lucide-vue-next'
@@ -175,14 +176,9 @@ function runtimeLabel(rt: string): string {
                 :style="{ color: hostQuota.isAtLimit ? 'var(--mnt-status-warn-text)' : 'var(--mnt-text-muted)' }"
               >{{ hostQuota.used }}/{{ hostQuota.limit }}</span>
             </p>
-            <button
-              :disabled="generatingToken"
-              class="min-h-[36px] rounded-lg px-4 text-sm font-medium transition-opacity disabled:opacity-50"
-              :style="{ backgroundColor: 'var(--mnt-accent)', color: 'var(--mnt-text-inverted)', borderRadius: 'var(--mnt-radius-md)' }"
-              @click="handleGenerateToken"
-            >
+            <UiButton variant="primary" :loading="generatingToken" :disabled="generatingToken" @click="handleGenerateToken">
               {{ generatingToken ? 'Generating…' : 'Generate enrollment token' }}
-            </button>
+            </UiButton>
           </div>
 
           <div v-if="tokenError" class="px-4 py-2 text-xs" :style="{ color: 'var(--mnt-status-down-text)' }">{{ tokenError }}</div>
@@ -294,13 +290,7 @@ function runtimeLabel(rt: string): string {
                 <td class="px-4 py-3 font-mono text-xs text-mnt-secondary">{{ tok.token_masked }}</td>
                 <td class="px-4 py-3 text-xs text-mnt-muted">{{ formatDate(tok.expires_at) }}</td>
                 <td class="px-4 py-3 text-right">
-                  <button
-                    class="rounded px-2 py-1 text-xs transition-colors revoke-btn"
-                    :style="{ color: 'var(--mnt-status-down-text)' }"
-                    @click="handleDeleteToken(tok.token_id)"
-                  >
-                    Revoke
-                  </button>
+                  <UiButton variant="ghost" size="sm" @click="handleDeleteToken(tok.token_id)">Revoke</UiButton>
                 </td>
               </tr>
             </tbody>
@@ -378,8 +368,5 @@ function runtimeLabel(rt: string): string {
 <style scoped>
 .agent-row:hover {
   background-color: var(--mnt-bg-hover);
-}
-.revoke-btn:hover {
-  background-color: var(--mnt-status-down-bg);
 }
 </style>

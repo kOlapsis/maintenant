@@ -16,6 +16,8 @@ import { useConfirm } from '@/composables/useConfirm'
 import type { EscalationPolicy } from '@/types/escalation'
 import { timeAgo } from '@/utils/time'
 import { Pencil, Trash2, Layers, CheckCircle2, CircleDashed } from 'lucide-vue-next'
+import UiButton from '@/components/ui/UiButton.vue'
+import ChipToggle from '@/components/ui/ChipToggle.vue'
 
 defineProps<{
   policies: EscalationPolicy[]
@@ -80,12 +82,9 @@ function severityLabel(severities: string[]): string {
         <Layers :size="36" class="text-mnt-muted mb-3" />
         <p class="text-sm text-mnt-muted font-medium">No escalation policies yet</p>
         <p class="text-[10px] text-mnt-muted mt-1">Create a policy to start routing alerts through escalation chains.</p>
-        <button
-          class="mt-5 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
-          @click="emit('create')"
-        >
+        <UiButton variant="primary" size="sm" class="mt-5" @click="emit('create')">
           Create first policy
-        </button>
+        </UiButton>
       </div>
     </template>
 
@@ -104,18 +103,18 @@ function severityLabel(severities: string[]): string {
 
         <!-- Status badge — clickable to toggle -->
         <div class="w-20 flex justify-center">
-          <button
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all"
-            :class="policy.active
-              ? 'bg-mnt-green-500/10 text-mnt-green-400 border-mnt-green-500/20 hover:bg-mnt-green-500/20'
-              : 'bg-mnt-elevated text-mnt-muted border-mnt-default hover:bg-mnt-elevated'"
+          <ChipToggle
+            :pressed="policy.active"
+            tone="accent"
+            size="sm"
             :title="policy.active ? 'Click to deactivate' : 'Click to activate'"
-            @click.stop="emit('toggleActive', policy.id, !policy.active)"
+            @click.stop
+            @toggle="emit('toggleActive', policy.id, !policy.active)"
           >
             <CheckCircle2 v-if="policy.active" :size="10" />
             <CircleDashed v-else :size="10" />
             {{ policy.active ? 'Active' : 'Inactive' }}
-          </button>
+          </ChipToggle>
         </div>
 
         <!-- Severities -->
@@ -131,20 +130,24 @@ function severityLabel(severities: string[]): string {
         <!-- Last modified + actions -->
         <div class="w-28 flex items-center justify-end gap-2">
           <span class="text-[10px] text-mnt-muted">{{ timeAgo(policy.updated_at) }}</span>
-          <button
-            class="p-1 rounded text-mnt-muted hover:text-mnt-secondary hover:bg-mnt-elevated transition-all opacity-0 group-hover:opacity-100"
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :icon="Pencil"
             title="Edit"
+            aria-label="Edit"
+            class="opacity-0 group-hover:opacity-100"
             @click.stop="emit('edit', policy)"
-          >
-            <Pencil :size="13" />
-          </button>
-          <button
-            class="p-1 rounded text-mnt-muted hover:text-mnt-status-down hover:bg-mnt-status-down/10 transition-all opacity-0 group-hover:opacity-100"
+          />
+          <UiButton
+            variant="danger-ghost"
+            size="sm"
+            :icon="Trash2"
             title="Delete"
+            aria-label="Delete"
+            class="opacity-0 group-hover:opacity-100"
             @click.stop="handleDelete(policy)"
-          >
-            <Trash2 :size="13" />
-          </button>
+          />
         </div>
       </div>
     </template>

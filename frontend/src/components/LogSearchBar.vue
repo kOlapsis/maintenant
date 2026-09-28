@@ -15,22 +15,20 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { ChevronUp, ChevronDown, X } from 'lucide-vue-next'
 import type { UseLogSearchReturn } from '@/composables/useLogSearch'
+import UiButton from '@/components/ui/UiButton.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 
 const props = defineProps<{
   search: UseLogSearchReturn
 }>()
 
-const inputRef = ref<HTMLInputElement | null>(null)
+const inputRef = ref<InstanceType<typeof TextInput> | null>(null)
 
 watch(() => props.search.isOpen.value, (open) => {
   if (open) {
     nextTick(() => inputRef.value?.focus())
   }
 })
-
-function onInput(e: Event) {
-  props.search.setQuery((e.target as HTMLInputElement).value)
-}
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && e.shiftKey) {
@@ -60,13 +58,13 @@ const matchDisplay = computed(() => {
     class="flex items-center gap-1.5 rounded-lg border bg-mnt-primary px-2 py-1"
     :class="search.isValid.value ? 'border-mnt-default' : 'border-red-500'"
   >
-    <input
+    <TextInput
       ref="inputRef"
-      type="text"
-      :value="search.query.value"
+      variant="bare"
+      :model-value="search.query.value"
       placeholder="Search logs..."
-      class="w-32 bg-transparent text-xs text-mnt-primary placeholder:text-mnt-muted outline-none sm:w-48"
-      @input="onInput"
+      class="w-32 sm:w-48"
+      @update:model-value="(v) => search.setQuery(String(v ?? ''))"
       @keydown="onKeydown"
     />
 
@@ -78,53 +76,60 @@ const matchDisplay = computed(() => {
     >{{ matchDisplay }}</span>
 
     <!-- Case sensitive toggle -->
-    <button
-      class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
-      :class="search.isCaseSensitive.value
-        ? 'bg-mnt-elevated text-mnt-primary'
-        : 'text-mnt-muted hover:text-mnt-secondary'"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :class="search.isCaseSensitive.value ? 'bg-mnt-elevated text-mnt-primary' : ''"
       title="Match Case"
+      aria-label="Match case"
+      :aria-pressed="search.isCaseSensitive.value"
       @click="search.toggleCaseSensitive()"
-    >Aa</button>
+    >Aa</UiButton>
 
     <!-- Regex toggle -->
-    <button
-      class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
-      :class="search.isRegex.value
-        ? 'bg-mnt-elevated text-mnt-primary'
-        : 'text-mnt-muted hover:text-mnt-secondary'"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :class="search.isRegex.value ? 'bg-mnt-elevated text-mnt-primary' : ''"
       title="Use Regular Expression"
+      aria-label="Use regular expression"
+      :aria-pressed="search.isRegex.value"
       @click="search.toggleRegex()"
-    >.*</button>
+    >.*</UiButton>
 
     <!-- Navigation -->
-    <button
-      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :icon="ChevronUp"
       title="Previous Match (Shift+Enter)"
       aria-label="Previous match"
       :disabled="search.matches.value.length === 0"
       @click="search.prevMatch()"
-    >
-      <ChevronUp :size="12" />
-    </button>
-    <button
-      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
+    />
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :icon="ChevronDown"
       title="Next Match (Enter)"
       aria-label="Next match"
       :disabled="search.matches.value.length === 0"
       @click="search.nextMatch()"
-    >
-      <ChevronDown :size="12" />
-    </button>
+    />
 
     <!-- Close -->
-    <button
-      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :icon="X"
       title="Close (Escape)"
       aria-label="Close search"
       @click="search.close()"
-    >
-      <X :size="12" />
-    </button>
+    />
   </div>
 </template>

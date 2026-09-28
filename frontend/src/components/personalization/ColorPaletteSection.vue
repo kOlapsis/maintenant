@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { ContrastWarning, PalettePayload } from '@/services/personalizationApi'
+import UiButton from '@/components/ui/UiButton.vue'
+import ColorInput from '@/components/ui/ColorInput.vue'
 
 const palette = defineModel<PalettePayload>('palette', { required: true })
 const warnings = defineModel<ContrastWarning[]>('warnings', { default: () => [] })
@@ -42,66 +44,40 @@ function resetField(key: PaletteKey) {
 
 <template>
   <div class="space-y-6">
-    <h3 class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Color Palette</h3>
+    <h3 class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Color Palette</h3>
 
     <!-- Chrome colors -->
     <div class="space-y-3">
-      <p class="text-xs text-slate-500">Chrome</p>
+      <p class="text-xs text-mnt-muted">Chrome</p>
       <div v-for="field in chromeFields" :key="field.key" class="flex items-center gap-3">
-        <input
-          type="color"
-          :value="palette?.[field.key]"
-          class="w-8 h-8 rounded cursor-pointer border border-slate-700 bg-transparent"
-          @input="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
+        <ColorInput
+          :model-value="palette?.[field.key]"
+          :label="field.label"
+          @update:model-value="(v) => palette && (palette = { ...palette, [field.key]: v })"
         />
-        <input
-          type="text"
-          :value="palette?.[field.key]"
-          maxlength="9"
-          class="w-28 bg-[#0B0E13] border border-slate-800 rounded px-2 py-1 text-white text-xs font-mono focus:outline-none focus:border-slate-600"
-          @change="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
-        />
-        <span class="flex-1 text-xs text-slate-400">{{ field.label }}</span>
-        <button
-          class="text-[11px] text-slate-600 hover:text-slate-300"
-          @click="resetField(field.key)"
-        >
-          Reset
-        </button>
+        <span class="flex-1 text-xs text-mnt-muted">{{ field.label }}</span>
+        <UiButton variant="ghost" size="sm" @click="resetField(field.key)">Reset</UiButton>
       </div>
     </div>
 
     <!-- Status colors -->
     <div class="space-y-3">
-      <p class="text-xs text-slate-500">Status Indicators</p>
+      <p class="text-xs text-mnt-muted">Status Indicators</p>
       <div v-for="field in statusFields" :key="field.key" class="flex items-center gap-3">
-        <input
-          type="color"
-          :value="palette?.[field.key]"
-          class="w-8 h-8 rounded cursor-pointer border border-slate-700 bg-transparent"
-          @input="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
+        <ColorInput
+          :model-value="palette?.[field.key]"
+          :label="field.label"
+          @update:model-value="(v) => palette && (palette = { ...palette, [field.key]: v })"
         />
-        <input
-          type="text"
-          :value="palette?.[field.key]"
-          maxlength="9"
-          class="w-28 bg-[#0B0E13] border border-slate-800 rounded px-2 py-1 text-white text-xs font-mono focus:outline-none focus:border-slate-600"
-          @change="(e: Event) => palette && (palette = { ...palette, [field.key]: (e.target as HTMLInputElement).value })"
-        />
-        <span class="flex-1 text-xs text-slate-400">{{ field.label }}</span>
-        <button
-          class="text-[11px] text-slate-600 hover:text-slate-300"
-          @click="resetField(field.key)"
-        >
-          Reset
-        </button>
+        <span class="flex-1 text-xs text-mnt-muted">{{ field.label }}</span>
+        <UiButton variant="ghost" size="sm" @click="resetField(field.key)">Reset</UiButton>
       </div>
     </div>
 
     <!-- Contrast warnings -->
-    <div v-if="warnings && warnings.length > 0" class="bg-yellow-950/30 border border-yellow-800/40 rounded-xl p-4 space-y-2">
-      <p class="text-[10px] text-yellow-500 font-bold uppercase tracking-widest">WCAG AA Contrast Warnings</p>
-      <div v-for="w in warnings" :key="w.pair" class="text-xs text-yellow-300">
+    <div v-if="warnings && warnings.length > 0" class="rounded-xl border border-mnt-sev-warning bg-mnt-status-warn p-4 space-y-2">
+      <p class="text-[10px] text-mnt-status-warn font-bold uppercase tracking-widest">WCAG AA Contrast Warnings</p>
+      <div v-for="w in warnings" :key="w.pair" class="text-xs text-mnt-status-warn">
         {{ w.pair.replace(/_/g, ' ') }}: {{ w.ratio }} (need ≥ {{ w.wcag_aa_threshold }})
       </div>
     </div>

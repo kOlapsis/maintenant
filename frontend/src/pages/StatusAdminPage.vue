@@ -29,6 +29,8 @@ import FooterSection from '@/components/personalization/FooterSection.vue'
 import FaqSection from '@/components/personalization/FaqSection.vue'
 import LocalizationSection from '@/components/personalization/LocalizationSection.vue'
 import type { PalettePayload } from '@/services/personalizationApi'
+import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const { hasFeature, editionPermits, statusURL } = useEdition()
 
@@ -137,6 +139,19 @@ onMounted(() => {
 onUnmounted(() => {
   store.disconnectSSE()
 })
+
+const tabItems = computed<TabNavItem<Tab>[]>(() => [
+  { value: 'components', label: 'Components', count: store.components?.length || undefined },
+  { value: 'incidents', label: 'Incidents', count: store.incidentsTotal || undefined },
+  { value: 'maintenance', label: 'Maintenance', count: store.maintenance?.length || undefined },
+  {
+    value: 'subscribers',
+    label: 'Subscribers',
+    count: store.subscriberTotal ? `${store.subscriberConfirmed}/${store.subscriberTotal}` : undefined,
+  },
+  { value: 'smtp', label: 'SMTP' },
+  { value: 'personalization', label: 'Personalization' },
+])
 </script>
 
 <template>
@@ -160,43 +175,12 @@ onUnmounted(() => {
     </div>
 
     <!-- Tab navigation -->
-    <div class="mb-4 border-b" style="border-color: var(--mnt-border-default)">
-      <nav class="-mb-px flex gap-6 overflow-x-auto">
-        <button
-          v-for="tab in [
-            { key: 'components', label: 'Components', count: store.components?.length ?? 0 },
-            { key: 'incidents', label: 'Incidents', count: store.incidentsTotal },
-            { key: 'maintenance', label: 'Maintenance', count: store.maintenance?.length ?? 0 },
-            { key: 'subscribers', label: 'Subscribers', count: store.subscriberTotal },
-            { key: 'smtp', label: 'SMTP', count: 0 },
-            { key: 'personalization', label: 'Personalization', count: 0 },
-          ]"
-          :key="tab.key"
-          @click="activeTab = tab.key as Tab"
-          class="shrink-0 border-b-2 pb-2 text-sm font-medium transition-colors"
-          :style="{
-            borderColor: activeTab === tab.key ? 'var(--mnt-accent)' : 'transparent',
-            color: activeTab === tab.key ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
-          }"
-        >
-          {{ tab.label }}
-          <span
-            v-if="tab.key === 'subscribers' && store.subscriberTotal"
-            class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
-          >
-            {{ store.subscriberConfirmed }}/{{ store.subscriberTotal }}
-          </span>
-          <span
-            v-else-if="tab.count"
-            class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
-          >
-            {{ tab.count }}
-          </span>
-        </button>
-      </nav>
-    </div>
+    <TabNav
+      v-model="activeTab"
+      class="mb-4"
+      :items="tabItems"
+      ariaLabel="Status page sections"
+    />
 
     <!-- Tab content -->
     <StatusComponentManager v-if="activeTab === 'components'" />
@@ -267,14 +251,9 @@ onUnmounted(() => {
         <div class="flex items-center justify-end gap-3">
           <span v-if="persoSaveSuccess" class="text-xs" style="color: var(--mnt-status-ok)">Saved!</span>
           <span v-if="persoSaveError" class="text-xs" style="color: var(--mnt-status-error)">{{ persoSaveError }}</span>
-          <button
-            class="px-4 py-1.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-            style="background: var(--mnt-accent); color: #fff"
-            :disabled="persoSaving"
-            @click="savePersonalization"
-          >
+          <UiButton variant="primary" :loading="persoSaving" @click="savePersonalization">
             {{ persoSaving ? 'Saving…' : 'Save changes' }}
-          </button>
+          </UiButton>
         </div>
 
         <!-- Row 1: Branding (left) + Colors (right) -->

@@ -15,6 +15,8 @@
 import { Edit2, Trash2 } from 'lucide-vue-next'
 import { useChannelsStore } from '@/stores/channels'
 import type { AlertTrigger } from '@/types/triggers'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 defineProps<{
   triggers: AlertTrigger[]
@@ -74,29 +76,15 @@ function summarizeFilter(t: AlertTrigger): string {
         </p>
       </div>
       <div class="flex items-center gap-2 ml-4 shrink-0">
-        <button
-          class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none"
-          :class="t.enabled ? 'bg-mnt-green-600' : 'bg-mnt-elevated'"
+        <ToggleSwitch
+          :model-value="t.enabled"
+          size="sm"
+          :label="t.enabled ? 'Click to disable' : 'Click to enable'"
           :title="t.enabled ? 'Click to disable' : 'Click to enable'"
-          @click="emit('toggle', t)"
-        >
-          <span
-            class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-            :class="t.enabled ? 'translate-x-4' : 'translate-x-0'"
-          />
-        </button>
-        <button
-          class="rounded-lg border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all flex items-center gap-1"
-          @click="emit('edit', t)"
-        >
-          <Edit2 :size="11" /> Edit
-        </button>
-        <button
-          class="rounded-lg border border-mnt-status-down/40 px-2.5 py-1 text-xs text-mnt-status-down hover:bg-mnt-status-down/10 transition-all flex items-center gap-1"
-          @click="emit('delete', t)"
-        >
-          <Trash2 :size="11" /> Delete
-        </button>
+          @update:model-value="emit('toggle', t)"
+        />
+        <UiButton variant="secondary" size="sm" :icon="Edit2" @click="emit('edit', t)">Edit</UiButton>
+        <UiButton variant="danger-ghost" size="sm" :icon="Trash2" @click="emit('delete', t)">Delete</UiButton>
       </div>
     </div>
   </div>

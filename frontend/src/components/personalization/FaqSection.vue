@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ArrowUp, ArrowDown, X } from 'lucide-vue-next'
 import { usePersonalizationStore } from '@/stores/personalization'
+import TextInput from '@/components/ui/TextInput.vue'
+import TextareaInput from '@/components/ui/TextareaInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const store = usePersonalizationStore()
 const faqError = ref('')
@@ -38,47 +42,45 @@ async function moveItem(from: number, to: number) {
       >
         <div class="flex items-center gap-2">
           <span class="text-mnt-muted text-xs w-4">{{ idx + 1 }}</span>
-          <input
-            :value="item.question"
+          <TextInput
+            :model-value="item.question"
             maxlength="200"
-            class="flex-1 bg-transparent text-mnt-primary text-sm focus:outline-none font-medium"
+            class="flex-1 font-medium"
             placeholder="Question"
             @change="(e: Event) => store.updateFAQItem(item.id, (e.target as HTMLInputElement).value, item.answer_md)"
           />
           <div class="flex gap-1">
-            <button
+            <UiButton
               v-if="idx > 0"
-              class="text-mnt-muted hover:text-mnt-secondary text-xs px-1"
+              variant="ghost"
+              size="sm"
+              :icon="ArrowUp"
+              aria-label="Move item up"
               @click="moveItem(idx, idx - 1)"
-            >↑</button>
-            <button
+            />
+            <UiButton
               v-if="idx < store.faqItems.length - 1"
-              class="text-mnt-muted hover:text-mnt-secondary text-xs px-1"
+              variant="ghost"
+              size="sm"
+              :icon="ArrowDown"
+              aria-label="Move item down"
               @click="moveItem(idx, idx + 1)"
-            >↓</button>
-            <button
-              class="text-mnt-muted hover:text-mnt-status-down text-xs px-1"
-              @click="removeItem(item.id)"
-            >✕</button>
+            />
+            <UiButton variant="ghost" size="sm" :icon="X" aria-label="Remove item" @click="removeItem(item.id)" />
           </div>
         </div>
-        <textarea
-          :value="item.answer_md"
+        <TextareaInput
+          :model-value="item.answer_md"
           maxlength="4000"
-          rows="3"
-          class="w-full bg-mnt-surface border border-mnt-default rounded-lg px-3 py-2 text-mnt-secondary text-sm font-mono focus:outline-none focus:border-mnt-default resize-none"
+          :rows="3"
+          mono
           placeholder="Answer in Markdown…"
           @change="(e: Event) => store.updateFAQItem(item.id, item.question, (e.target as HTMLTextAreaElement).value)"
         />
       </div>
     </div>
 
-    <button
-      class="text-xs px-3 py-1.5 border border-mnt-default rounded text-mnt-muted hover:text-mnt-primary hover:border-mnt-default"
-      @click="addItem"
-    >
-      + Add FAQ item
-    </button>
+    <UiButton variant="secondary" size="sm" @click="addItem">+ Add FAQ item</UiButton>
     <p v-if="faqError" class="text-xs text-mnt-status-down">{{ faqError }}</p>
   </div>
 </template>

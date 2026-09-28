@@ -16,6 +16,7 @@ import { ref, computed } from 'vue'
 import { type K8sPod } from '@/services/kubernetesApi'
 import { timeAgo } from '@/utils/time'
 import HostBadge from '@/components/HostBadge.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 
 const props = defineProps<{
   pods: K8sPod[]
@@ -62,29 +63,33 @@ function restartCountStyle(count: number): string {
   <div class="bg-mnt-surface rounded-xl border border-mnt-default overflow-hidden">
     <!-- Filter bar -->
     <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-mnt-default">
-      <input
+      <TextInput
         v-model="filterNamespace"
-        type="text"
+        size="sm"
         placeholder="Namespace…"
-        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-32"
+        aria-label="Filter by namespace"
+        class="w-32"
       />
-      <input
+      <TextInput
         v-model="filterWorkload"
-        type="text"
+        size="sm"
         placeholder="Workload…"
-        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-32"
+        aria-label="Filter by workload"
+        class="w-32"
       />
-      <input
+      <TextInput
         v-model="filterNode"
-        type="text"
+        size="sm"
         placeholder="Node…"
-        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-28"
+        aria-label="Filter by node"
+        class="w-28"
       />
-      <input
+      <TextInput
         v-model="filterStatus"
-        type="text"
+        size="sm"
         placeholder="Status…"
-        class="bg-mnt-primary border border-mnt-default rounded-lg px-3 py-1.5 text-xs text-mnt-secondary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default w-24"
+        aria-label="Filter by status"
+        class="w-24"
       />
       <span class="ml-auto text-xs text-mnt-muted tabular-nums">
         {{ filteredPods.length }}/{{ pods.length }}

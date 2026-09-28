@@ -35,6 +35,12 @@ import { endpointTone } from '@/utils/endpointTone'
 import { timeAgo } from '@/utils/time'
 import { docUrl } from '@/utils/docs'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
+import CountBadge from '@/components/ui/CountBadge.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 
 const store = useEndpointsStore()
 const containers = useContainersStore()
@@ -59,6 +65,14 @@ const hasFilters = computed(
 function onRetiredChange() {
   store.fetchEndpoints()
 }
+
+const retiredFilter = computed<string>({
+  get: () => (store.showRetired ? 'true' : 'false'),
+  set: (v) => {
+    store.showRetired = v === 'true'
+    onRetiredChange()
+  },
+})
 
 const columns: Column[] = [
   { key: 'target', label: 'Target', sortable: true },
@@ -168,16 +182,11 @@ onUnmounted(() => {
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <span
+        <CountBadge
           v-if="!quota.isUnlimited"
-          class="rounded-full px-2.5 py-1 text-xs font-medium"
-          :style="{
-            backgroundColor: quota.isAtLimit ? 'var(--mnt-status-down-bg)' : quota.nearLimit ? 'var(--mnt-status-warn-bg)' : 'var(--mnt-bg-elevated)',
-            color: quota.isAtLimit ? 'var(--mnt-status-down)' : quota.nearLimit ? 'var(--mnt-status-warn)' : 'var(--mnt-text-secondary)',
-          }"
-        >
-          {{ quota.used }}/{{ quota.limit }}
-        </span>
+          :value="`${quota.used}/${quota.limit}`"
+          :tone="quota.isAtLimit ? 'danger' : quota.nearLimit ? 'warn' : 'neutral'"
+        />
         <router-link
           v-if="quota.nearLimit && !quota.isAtLimit"
           :to="{ name: 'editions' }"
@@ -186,24 +195,14 @@ onUnmounted(() => {
         >
           Upgrade
         </router-link>
-        <button
-          class="min-h-[44px]"
+        <UiButton
+          variant="primary"
           :disabled="quota.isAtLimit"
           :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} endpoints` : ''"
-          :style="{
-            borderRadius: 'var(--mnt-radius-lg)',
-            backgroundColor: 'var(--mnt-accent)',
-            color: 'var(--mnt-text-inverted)',
-            padding: '0.5rem 1rem',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            opacity: quota.isAtLimit ? '0.5' : '1',
-            cursor: quota.isAtLimit ? 'not-allowed' : 'pointer',
-          }"
           @click="showCreateForm = !showCreateForm; if (!showCreateForm) resetForm()"
         >
           {{ showCreateForm ? 'Cancel' : 'New Endpoint' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
@@ -235,116 +234,52 @@ onUnmounted(() => {
       <QuotaRefusal v-if="createError" :error="createError" />
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
         <div class="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Name</label>
-            <input
-              v-model="form.name"
-              type="text"
-              placeholder="e.g., Production API"
-              :style="{
-                width: '100%',
-                borderRadius: 'var(--mnt-radius-md)',
-                border: '1px solid var(--mnt-border-default)',
-                backgroundColor: 'var(--mnt-bg-elevated)',
-                color: 'var(--mnt-text-primary)',
-                padding: '0.375rem 0.75rem',
-                fontSize: '0.875rem',
-                minHeight: '44px',
-              }"
-              required
-            />
-          </div>
+          <FormField label="Name">
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput
+                :id="id"
+                v-model="form.name"
+                placeholder="e.g., Production API"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                required
+              />
+            </template>
+          </FormField>
           <div>
             <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Type</label>
-            <div class="flex gap-2">
-              <button
-                v-for="t in (['http', 'tcp'] as const)"
-                :key="t"
-                type="button"
-                class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition min-h-[44px]"
-                :style="{
-                  border: form.endpoint_type === t
-                    ? '1px solid var(--mnt-accent)'
-                    : '1px solid var(--mnt-border-default)',
-                  backgroundColor: form.endpoint_type === t
-                    ? 'var(--mnt-accent)'
-                    : 'var(--mnt-bg-elevated)',
-                  color: form.endpoint_type === t
-                    ? 'var(--mnt-text-inverted)'
-                    : 'var(--mnt-text-secondary)',
-                  textTransform: 'uppercase',
-                }"
-                @click="form.endpoint_type = t"
-              >
-                {{ t }}
-              </button>
-            </div>
+            <SegmentedToggle
+              v-model="form.endpoint_type"
+              :options="[{ value: 'http', label: 'HTTP' }, { value: 'tcp', label: 'TCP' }]"
+              ariaLabel="Endpoint type"
+            />
           </div>
         </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">
-            {{ form.endpoint_type === 'http' ? 'URL' : 'Host:Port' }}
-          </label>
-          <input
-            v-model="form.target"
-            type="text"
-            :placeholder="form.endpoint_type === 'http' ? 'https://example.com/health' : 'db.example.com:5432'"
-            :style="{
-              width: '100%',
-              borderRadius: 'var(--mnt-radius-md)',
-              border: '1px solid var(--mnt-border-default)',
-              backgroundColor: 'var(--mnt-bg-elevated)',
-              color: 'var(--mnt-text-primary)',
-              padding: '0.375rem 0.75rem',
-              fontSize: '0.875rem',
-              fontFamily: 'monospace',
-              minHeight: '44px',
-            }"
-            required
-          />
-        </div>
+        <FormField :label="form.endpoint_type === 'http' ? 'URL' : 'Host:Port'">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.target"
+              mono
+              :placeholder="form.endpoint_type === 'http' ? 'https://example.com/health' : 'db.example.com:5432'"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              required
+            />
+          </template>
+        </FormField>
         <div>
           <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Check Interval</label>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="preset in intervalPresets"
-              :key="preset.value"
-              type="button"
-              class="rounded-full px-3 py-1 text-xs font-medium transition"
-              :style="{
-                border: form.interval === preset.value
-                  ? '1px solid var(--mnt-accent)'
-                  : '1px solid var(--mnt-border-default)',
-                backgroundColor: form.interval === preset.value
-                  ? 'var(--mnt-accent)'
-                  : 'transparent',
-                color: form.interval === preset.value
-                  ? 'var(--mnt-text-inverted)'
-                  : 'var(--mnt-text-secondary)',
-              }"
-              @click="form.interval = preset.value"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
+          <SegmentedToggle
+            v-model="form.interval"
+            :options="intervalPresets"
+            ariaLabel="Check interval"
+          />
         </div>
 
-        <button
-          type="submit"
-          :disabled="creating"
-          :style="{
-            alignSelf: 'flex-start',
-            borderRadius: 'var(--mnt-radius-lg)',
-            backgroundColor: 'var(--mnt-accent)',
-            color: 'var(--mnt-text-inverted)',
-            padding: '0.5rem 1rem',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            opacity: creating ? '0.6' : '1',
-          }"
-        >
+        <UiButton type="submit" variant="primary" class="self-start" :loading="creating">
           {{ creating ? 'Creating...' : 'Create' }}
-        </button>
+        </UiButton>
       </form>
     </div>
 
@@ -383,39 +318,39 @@ onUnmounted(() => {
       <template #filters>
         <label class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-mnt-muted">Type</span>
-          <select
+          <SelectInput
             v-model="store.typeFilter"
-            class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-elevated px-2 text-sm text-mnt-secondary"
-          >
-            <option value="">All types</option>
-            <option value="http">HTTP</option>
-            <option value="tcp">TCP</option>
-          </select>
+            size="sm"
+            :options="[
+              { value: '', label: 'All types' },
+              { value: 'http', label: 'HTTP' },
+              { value: 'tcp', label: 'TCP' },
+            ]"
+          />
         </label>
 
         <label class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-mnt-muted">Container</span>
-          <select
+          <SelectInput
             v-model="store.containerFilter"
-            class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-elevated px-2 text-sm text-mnt-secondary"
-          >
-            <option value="">All containers</option>
-            <option v-for="name in [...store.endpointsByContainer.keys()]" :key="name" :value="name">
-              {{ name }}
-            </option>
-          </select>
+            size="sm"
+            :options="[
+              { value: '', label: 'All containers' },
+              ...[...store.endpointsByContainer.keys()].map((name) => ({ value: name, label: name })),
+            ]"
+          />
         </label>
 
         <label class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-mnt-muted">Retired</span>
-          <select
-            v-model="store.showRetired"
-            class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-elevated px-2 text-sm text-mnt-secondary"
-            @change="onRetiredChange"
-          >
-            <option :value="false">Live only</option>
-            <option :value="true">Include retired</option>
-          </select>
+          <SelectInput
+            v-model="retiredFilter"
+            size="sm"
+            :options="[
+              { value: 'false', label: 'Live only' },
+              { value: 'true', label: 'Include retired' },
+            ]"
+          />
         </label>
       </template>
     </ListToolbar>
@@ -490,13 +425,9 @@ onUnmounted(() => {
       description="Try a different search term, or clear the filters to see every endpoint again."
     >
       <template #action>
-        <button
-          type="button"
-          class="focus-ring min-h-[44px] rounded-lg border border-mnt-default px-4 text-sm font-medium text-mnt-secondary hover:text-mnt-primary"
-          @click="store.resetFilters()"
-        >
+        <UiButton variant="secondary" @click="store.resetFilters()">
           Clear filters
-        </button>
+        </UiButton>
       </template>
     </EmptyState>
 

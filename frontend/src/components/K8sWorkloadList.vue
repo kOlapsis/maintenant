@@ -15,7 +15,7 @@
 import { ref } from 'vue'
 import { type K8sWorkloadGroup, type K8sWorkload } from '@/services/kubernetesApi'
 import { timeAgo } from '@/utils/time'
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import DisclosureButton from '@/components/ui/DisclosureButton.vue'
 import HostBadge from '@/components/HostBadge.vue'
 
 defineProps<{
@@ -101,45 +101,45 @@ function handleGroupsReady(groups: K8sWorkloadGroup[]) {
       class="bg-mnt-surface rounded-xl border border-mnt-default overflow-hidden"
     >
       <!-- Namespace header -->
-      <button
-        class="w-full flex items-center justify-between px-4 py-3 hover:bg-mnt-elevated transition-all"
-        @click="toggleGroup(group.namespace)"
+      <DisclosureButton
+        :expanded="isExpanded(group.namespace)"
+        :controls-id="`k8s-workloads-${group.namespace}`"
+        class="px-4 py-3 hover:bg-mnt-elevated transition-all"
+        @toggle="toggleGroup(group.namespace)"
       >
-        <div class="flex items-center gap-3">
-          <component
-            :is="isExpanded(group.namespace) ? ChevronDown : ChevronRight"
-            :size="14"
-            class="text-mnt-muted flex-shrink-0"
-          />
-          <span class="text-sm font-semibold text-mnt-primary font-mono">{{ group.namespace }}</span>
-          <span
-            class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded"
-          >
-            {{ group.workloads.length }} workload{{ group.workloads.length === 1 ? '' : 's' }}
-          </span>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <span class="text-sm font-semibold text-mnt-primary font-mono">{{ group.namespace }}</span>
+            <span
+              class="text-[10px] font-bold uppercase tracking-wider text-mnt-muted bg-mnt-elevated border border-mnt-default px-1.5 py-0.5 rounded"
+            >
+              {{ group.workloads.length }} workload{{ group.workloads.length === 1 ? '' : 's' }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span
+              :class="[
+                'text-xs font-semibold tabular-nums',
+                group.workloads.every((w) => w.status === 'healthy')
+                  ? 'text-mnt-status-ok'
+                  : group.workloads.some((w) => w.status === 'failed')
+                    ? 'text-mnt-status-down'
+                    : 'text-mnt-status-warn',
+              ]"
+            >
+              {{ group.workloads.filter((w) => w.status === 'healthy').length }}/{{
+                group.workloads.length
+              }}
+              healthy
+            </span>
+          </div>
         </div>
-        <div class="flex items-center gap-2">
-          <span
-            :class="[
-              'text-xs font-semibold tabular-nums',
-              group.workloads.every((w) => w.status === 'healthy')
-                ? 'text-mnt-status-ok'
-                : group.workloads.some((w) => w.status === 'failed')
-                  ? 'text-mnt-status-down'
-                  : 'text-mnt-status-warn',
-            ]"
-          >
-            {{ group.workloads.filter((w) => w.status === 'healthy').length }}/{{
-              group.workloads.length
-            }}
-            healthy
-          </span>
-        </div>
-      </button>
+      </DisclosureButton>
 
       <!-- Workload rows -->
       <div
         v-if="isExpanded(group.namespace)"
+        :id="`k8s-workloads-${group.namespace}`"
         class="border-t border-mnt-default divide-y divide-slate-800/60"
       >
         <div

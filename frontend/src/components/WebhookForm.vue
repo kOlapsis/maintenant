@@ -12,192 +12,91 @@
 -->
 
 <template>
-  <Teleport to="body">
-    <div
-      class="fixed inset-0 z-[10001] flex items-center justify-center"
-      @keydown.esc="emit('close')"
-    >
-      <div
-        class="fixed inset-0 bg-black/70 backdrop-blur-sm"
-        @click="emit('close')"
-      />
+  <UiModal v-model:open="isOpen" title="Add Webhook" size="sm">
+    <form id="webhook-form" @submit.prevent="submit" class="space-y-4">
+      <FormField label="Name" required>
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput
+            :id="id"
+            v-model="name"
+            maxlength="100"
+            required
+            placeholder="e.g., Slack Integration"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+          />
+        </template>
+      </FormField>
 
-      <div
-        class="relative mx-4 w-full max-w-md overflow-hidden"
-        :style="{
-          backgroundColor: 'var(--mnt-bg-surface)',
-          border: '1px solid var(--mnt-border-default)',
-          borderRadius: 'var(--mnt-radius-lg)',
-          boxShadow: 'var(--mnt-shadow-elevated)',
-        }"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="webhook-form-title"
-      >
-        <div class="p-6">
-          <h2
-            id="webhook-form-title"
-            class="text-lg font-semibold mb-4"
-            :style="{ color: 'var(--mnt-text-primary)' }"
-          >
-            Add Webhook
-          </h2>
+      <FormField label="URL (HTTPS)" required>
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput
+            :id="id"
+            v-model="url"
+            type="url"
+            required
+            placeholder="https://hooks.example.com/webhook"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+          />
+        </template>
+      </FormField>
 
-          <form @submit.prevent="submit" class="space-y-4">
-            <div>
-              <label
-                class="block text-sm mb-1"
-                :style="{ color: 'var(--mnt-text-muted)' }"
-              >
-                Name
-              </label>
-              <input
-                v-model="name"
-                type="text"
-                maxlength="100"
-                required
-                placeholder="e.g., Slack Integration"
-                class="w-full rounded px-3 py-2 text-sm focus:outline-none"
-                :style="{
-                  backgroundColor: 'var(--mnt-bg-elevated)',
-                  border: '1px solid var(--mnt-border-default)',
-                  color: 'var(--mnt-text-primary)',
-                  borderRadius: 'var(--mnt-radius-md)',
-                }"
-              />
-            </div>
+      <FormField label="Secret (optional, for HMAC signing)">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput
+            :id="id"
+            v-model="secret"
+            placeholder="Optional signing secret"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+          />
+        </template>
+      </FormField>
 
-            <div>
-              <label
-                class="block text-sm mb-1"
-                :style="{ color: 'var(--mnt-text-muted)' }"
-              >
-                URL (HTTPS)
-              </label>
-              <input
-                v-model="url"
-                type="url"
-                required
-                placeholder="https://hooks.example.com/webhook"
-                class="w-full rounded px-3 py-2 text-sm focus:outline-none"
-                :style="{
-                  backgroundColor: 'var(--mnt-bg-elevated)',
-                  border: '1px solid var(--mnt-border-default)',
-                  color: 'var(--mnt-text-primary)',
-                  borderRadius: 'var(--mnt-radius-md)',
-                }"
-              />
-            </div>
-
-            <div>
-              <label
-                class="block text-sm mb-1"
-                :style="{ color: 'var(--mnt-text-muted)' }"
-              >
-                Secret (optional, for HMAC signing)
-              </label>
-              <input
-                v-model="secret"
-                type="text"
-                placeholder="Optional signing secret"
-                class="w-full rounded px-3 py-2 text-sm focus:outline-none"
-                :style="{
-                  backgroundColor: 'var(--mnt-bg-elevated)',
-                  border: '1px solid var(--mnt-border-default)',
-                  color: 'var(--mnt-text-primary)',
-                  borderRadius: 'var(--mnt-radius-md)',
-                }"
-              />
-            </div>
-
-            <div>
-              <label
-                class="block text-sm mb-2"
-                :style="{ color: 'var(--mnt-text-muted)' }"
-              >
-                Event Types
-              </label>
-              <div class="space-y-2">
-                <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    value="*"
-                    v-model="selectedEvents"
-                    @change="onAllEventsToggle"
-                    class="rounded accent-mnt-green-500"
-                  />
-                  <span
-                    class="text-sm"
-                    :style="{ color: 'var(--mnt-text-secondary)' }"
-                  >
-                    All events
-                  </span>
-                </label>
-                <label
-                  v-for="et in specificEventTypes"
-                  :key="et.value"
-                  class="flex items-center gap-2 ml-4"
-                >
-                  <input
-                    type="checkbox"
-                    :value="et.value"
-                    v-model="selectedEvents"
-                    :disabled="selectedEvents.includes('*')"
-                    class="rounded accent-mnt-green-500"
-                  />
-                  <span
-                    class="text-sm"
-                    :style="{ color: 'var(--mnt-text-secondary)' }"
-                  >
-                    {{ et.label }}
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div
-              v-if="error"
-              class="text-sm"
-              :style="{ color: 'var(--mnt-status-down-text)' }"
-            >
-              {{ error }}
-            </div>
-
-            <div class="flex gap-2 justify-end">
-              <button
-                type="button"
-                @click="emit('close')"
-                class="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-colors min-h-[36px]"
-                :style="{
-                  color: 'var(--mnt-text-secondary)',
-                  backgroundColor: 'transparent',
-                  border: '1px solid var(--mnt-border-default)',
-                }"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="submitting || !name || !url || selectedEvents.length === 0"
-                class="cursor-pointer rounded-lg px-4 py-2 text-sm font-medium transition-colors min-h-[36px] disabled:opacity-50 disabled:cursor-not-allowed"
-                :style="{
-                  backgroundColor: 'var(--mnt-accent)',
-                  color: 'var(--mnt-text-inverted)',
-                }"
-              >
-                {{ submitting ? 'Creating...' : 'Add Webhook' }}
-              </button>
-            </div>
-          </form>
+      <div>
+        <label class="mb-2 block text-sm text-mnt-muted">Event Types</label>
+        <div class="space-y-2">
+          <CheckboxInput v-model="selectedEvents" value="*" label="All events" @change="onAllEventsToggle" />
+          <div v-for="et in specificEventTypes" :key="et.value" class="ml-4">
+            <CheckboxInput
+              v-model="selectedEvents"
+              :value="et.value"
+              :label="et.label"
+              :disabled="selectedEvents.includes('*')"
+            />
+          </div>
         </div>
       </div>
-    </div>
-  </Teleport>
+
+      <div v-if="error" class="text-sm text-mnt-status-down-text">
+        {{ error }}
+      </div>
+    </form>
+
+    <template #footer>
+      <UiButton variant="secondary" @click="emit('close')">Cancel</UiButton>
+      <UiButton
+        variant="primary"
+        type="submit"
+        form="webhook-form"
+        :loading="submitting"
+        :disabled="!name || !url || selectedEvents.length === 0"
+      >
+        {{ submitting ? 'Creating...' : 'Add Webhook' }}
+      </UiButton>
+    </template>
+  </UiModal>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch } from 'vue'
 import { createWebhook } from '@/services/webhookApi'
+import UiModal from '@/components/ui/UiModal.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const emit = defineEmits<{
   close: []
@@ -212,6 +111,11 @@ const specificEventTypes = [
   { value: 'alert.fired', label: 'Alert fired' },
   { value: 'alert.resolved', label: 'Alert resolved' },
 ]
+
+const isOpen = ref(true)
+watch(isOpen, (val) => {
+  if (!val) emit('close')
+})
 
 const name = ref('')
 const url = ref('')
@@ -243,12 +147,4 @@ async function submit() {
     submitting.value = false
   }
 }
-
-onMounted(() => {
-  document.body.style.overflow = 'hidden'
-})
-
-onBeforeUnmount(() => {
-  document.body.style.overflow = ''
-})
 </script>

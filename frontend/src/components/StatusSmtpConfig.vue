@@ -14,6 +14,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { getSmtpConfig, updateSmtpConfig, testSmtp, type SmtpConfig } from '@/services/statusApi'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const form = ref<SmtpConfig>({
   host: '',
@@ -99,68 +103,78 @@ function onPasswordInput() {
 
     <form v-else @submit.prevent="handleSave" class="max-w-lg space-y-3">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">SMTP Host</label>
-          <input v-model="form.host" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" placeholder="smtp.example.com" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Port</label>
-          <input v-model.number="form.port" type="number" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-        </div>
+        <FormField label="SMTP Host">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.host" :aria-describedby="describedBy" :invalid="invalid" placeholder="smtp.example.com" />
+          </template>
+        </FormField>
+        <FormField label="Port">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              :model-value="form.port"
+              type="number"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              @update:model-value="(v) => (form.port = Number(v) || 0)"
+            />
+          </template>
+        </FormField>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Username</label>
-          <input v-model="form.username" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Password</label>
-          <input
-            v-model="form.password"
-            @input="onPasswordInput"
-            type="password"
-            class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-            :placeholder="form.password_set ? 'Password configured' : ''"
+        <FormField label="Username">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.username" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
+        <FormField label="Password">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.password"
+              type="password"
+              autocomplete="new-password"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :placeholder="form.password_set ? 'Password configured' : ''"
+              @input="onPasswordInput"
+            />
+          </template>
+        </FormField>
+      </div>
+      <FormField label="TLS Policy">
+        <template #default="{ id, describedBy, invalid }">
+          <SelectInput
+            :id="id"
+            v-model="form.tls_policy"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            :options="[
+              { value: 'opportunistic', label: 'Opportunistic' },
+              { value: 'mandatory', label: 'Mandatory' },
+              { value: 'none', label: 'None' },
+            ]"
           />
-        </div>
-      </div>
-      <div>
-        <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">TLS Policy</label>
-        <select v-model="form.tls_policy" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)">
-          <option value="opportunistic">Opportunistic</option>
-          <option value="mandatory">Mandatory</option>
-          <option value="none">None</option>
-        </select>
-      </div>
+        </template>
+      </FormField>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">From Address</label>
-          <input v-model="form.from_address" type="email" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" placeholder="status@example.com" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">From Name</label>
-          <input v-model="form.from_name" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" placeholder="maintenant Status" />
-        </div>
+        <FormField label="From Address">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.from_address" type="email" :aria-describedby="describedBy" :invalid="invalid" placeholder="status@example.com" />
+          </template>
+        </FormField>
+        <FormField label="From Name">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.from_name" :aria-describedby="describedBy" :invalid="invalid" placeholder="maintenant Status" />
+          </template>
+        </FormField>
       </div>
 
       <div class="flex items-center gap-3 pt-2">
-        <button
-          type="submit"
-          :disabled="saving"
-          class="rounded-md px-4 py-1.5 text-sm font-medium text-mnt-primary disabled:opacity-50"
-          style="background: var(--mnt-accent)"
-        >
+        <UiButton type="submit" variant="primary" :loading="saving">
           {{ saving ? 'Saving...' : 'Save' }}
-        </button>
-        <button
-          type="button"
-          @click="handleTest"
-          class="rounded-md border px-4 py-1.5 text-sm"
-          style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-        >
-          Send Test Email
-        </button>
+        </UiButton>
+        <UiButton type="button" variant="secondary" @click="handleTest">Send Test Email</UiButton>
       </div>
 
       <div v-if="saveMessage" class="rounded border px-3 py-1.5 text-xs" style="background: var(--mnt-status-ok-bg); border-color: var(--mnt-status-ok); color: var(--mnt-status-ok)">

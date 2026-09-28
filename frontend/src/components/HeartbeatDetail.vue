@@ -24,6 +24,7 @@ import HeartbeatSnippets from './HeartbeatSnippets.vue'
 import HeartbeatGantt from './HeartbeatGantt.vue'
 import type { HeartbeatTimelineEntry } from './HeartbeatGantt.vue'
 import { formatInterval, nextExpectedPing } from '@/utils/scheduleFormat'
+import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
   heartbeatId: string
@@ -105,15 +106,9 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
       <h2 class="text-lg font-bold" style="color: var(--mnt-text-primary)">
         {{ detail?.heartbeat.name || 'Loading...' }}
       </h2>
-      <button
-        class="rounded px-3 py-1 text-sm transition-colors"
-        style="color: var(--mnt-text-muted)"
-        @click="emit('close')"
-        @mouseenter="($event.target as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
-        @mouseleave="($event.target as HTMLElement).style.background = 'transparent'"
-      >
+      <UiButton variant="ghost" size="sm" @click="emit('close')">
         Close
-      </button>
+      </UiButton>
     </div>
 
     <div v-if="loading" class="py-8 text-center" style="color: var(--mnt-text-muted)">Loading...</div>
@@ -215,14 +210,15 @@ const outcomeColors: Record<string, { bg: string; color: string }> = {
                   </span>
                 </td>
                 <td class="py-2">
-                  <button
+                  <UiButton
                     v-if="exec.payload"
-                    class="text-xs transition-colors"
-                    style="color: var(--mnt-accent)"
+                    variant="ghost"
+                    size="sm"
+                    class="!min-h-0 p-0 text-mnt-accent"
                     @click="expandedPayload = expandedPayload === exec.id ? null : exec.id"
                   >
                     {{ expandedPayload === exec.id ? 'Hide' : 'Show' }}
-                  </button>
+                  </UiButton>
                   <span v-else style="color: var(--mnt-text-muted)">-</span>
                 </td>
               </tr>
