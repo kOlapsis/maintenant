@@ -13,6 +13,7 @@ import AlertBanner from '@/components/ui/AlertBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { useAppVersion } from '@/composables/useAppVersion'
 import { useStorageStore } from '@/stores/storage'
 import {
@@ -254,13 +255,15 @@ watch(
                   >{{ version }}</span
                 >
               </div>
-              <button
+              <UiButton
                 v-if="isCommunity"
-                class="cursor-pointer block w-full py-1.5 rounded-lg text-xs font-semibold text-center transition-colors"
+                variant="secondary"
+                size="sm"
+                class="w-full"
                 style="background: var(--mnt-bg-surface); color: var(--mnt-text-secondary)"
               >
                 Compare editions
-              </button>
+              </UiButton>
             </div>
           </router-link>
         </div>

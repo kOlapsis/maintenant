@@ -12,7 +12,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   fetchWorkloadDetail,
   fetchWorkloadResources,
@@ -23,6 +23,7 @@ import FeatureGate from './FeatureGate.vue'
 import { timeAgo } from '@/utils/time'
 import { useEdition } from '@/composables/useEdition'
 import { useResourcesStore } from '@/stores/resources'
+import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
 
 const props = defineProps<{
   workloadId: string
@@ -52,6 +53,26 @@ const baseTabs: { key: Tab; label: string }[] = [
 const tabs = hasFeature('k8s_cluster')
   ? [...baseTabs, { key: 'resources' as Tab, label: 'Resources' }]
   : baseTabs
+
+const tabItems = computed<TabNavItem[]>(() =>
+  tabs.map((tab) => ({
+    value: tab.key,
+    label: tab.label,
+    count:
+      tab.key === 'pods'
+        ? detail.value?.pods.length
+        : tab.key === 'events'
+          ? detail.value?.events.length
+          : tab.key === 'conditions'
+            ? detail.value?.workload.conditions.length
+            : undefined,
+  })),
+)
+
+const activeTabModel = computed<string>({
+  get: () => activeTab.value,
+  set: (value) => onTabClick(value as Tab),
+})
 
 onMounted(async () => {
   try {
@@ -224,29 +245,8 @@ function replicaColor(ready: number, desired: number): string {
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-mnt-default px-5">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          :class="[
-            'px-4 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
-            activeTab === tab.key
-              ? 'border-mnt-green-400 text-mnt-green-400'
-              : 'border-transparent text-mnt-muted hover:text-mnt-secondary',
-          ]"
-          @click="onTabClick(tab.key)"
-        >
-          {{ tab.label }}
-          <span v-if="tab.key === 'pods'" class="ml-1 text-[10px] text-mnt-muted">{{
-            detail.pods.length
-          }}</span>
-          <span v-if="tab.key === 'events'" class="ml-1 text-[10px] text-mnt-muted">{{
-            detail.events.length
-          }}</span>
-          <span v-if="tab.key === 'conditions'" class="ml-1 text-[10px] text-mnt-muted">{{
-            detail.workload.conditions.length
-          }}</span>
-        </button>
+      <div class="px-5">
+        <TabNav v-model="activeTabModel" :items="tabItems" ariaLabel="Workload detail tabs" />
       </div>
 
       <!-- Tab content -->

@@ -23,6 +23,8 @@ import CveList from '@/components/CveList.vue'
 import ChangelogViewer from '@/components/ChangelogViewer.vue'
 import FeatureGate from '@/components/FeatureGate.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import TextareaInput from '@/components/ui/TextareaInput.vue'
 import { AlertTriangle, ArrowRight, Check, Copy, ExternalLink, Pin, PinOff } from 'lucide-vue-next'
 
 const { hasFeature } = useEdition()
@@ -205,14 +207,16 @@ onMounted(loadDetail)
         <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">
           Update Command
         </h4>
-        <button
-          @click="copyCommand"
-          class="text-[10px] text-mnt-green-500 hover:text-mnt-green-400 flex items-center gap-1 transition-colors"
+        <UiButton
+          variant="ghost"
+          size="sm"
+          :icon="copied ? Check : Copy"
+          class="!min-h-0 px-1.5 py-0 text-[10px] text-mnt-green-500 hover:text-mnt-green-400"
           aria-label="Copy update command"
+          @click="copyCommand"
         >
-          <component :is="copied ? Check : Copy" :size="10" />
           {{ copied ? 'Copied!' : 'Copy' }}
-        </button>
+        </UiButton>
       </div>
       <pre
         class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
@@ -300,14 +304,16 @@ onMounted(loadDetail)
         <h4 class="text-[10px] font-bold text-mnt-status-warn/80 uppercase tracking-widest">
           Rollback Command
         </h4>
-        <button
-          @click="copyRollbackCommand"
-          class="text-[10px] text-mnt-status-warn hover:text-mnt-status-warn flex items-center gap-1 transition-colors"
+        <UiButton
+          variant="ghost"
+          size="sm"
+          :icon="copiedRollback ? Check : Copy"
+          class="!min-h-0 px-1.5 py-0 text-[10px] text-mnt-status-warn"
           aria-label="Copy rollback command"
+          @click="copyRollbackCommand"
         >
-          <component :is="copiedRollback ? Check : Copy" :size="10" />
           {{ copiedRollback ? 'Copied!' : 'Copy' }}
-        </button>
+        </UiButton>
       </div>
       <pre
         class="text-[11px] rounded-lg p-3 overflow-x-auto font-mono whitespace-pre" style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
@@ -346,33 +352,20 @@ onMounted(loadDetail)
     <div class="pt-4 border-t border-mnt-default space-y-3">
       <!-- Pin / Unpin -->
       <div>
-        <button
+        <UiButton
           v-if="!showPinInput || detail.pinned"
+          :variant="detail.pinned ? 'secondary' : 'primary'"
+          class="w-full"
+          :icon="detail.pinned ? PinOff : Pin"
           @click="handlePin"
-          class="w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
-          :class="
-            detail.pinned
-              ? 'bg-mnt-elevated hover:opacity-80 text-mnt-secondary'
-              : 'bg-mnt-status-warn hover:opacity-80 text-mnt-status-warn border border-mnt-sev-warning'
-          "
         >
-          <component :is="detail.pinned ? PinOff : Pin" :size="13" />
           {{ detail.pinned ? 'Unpin this version' : 'Pin this version' }}
-        </button>
+        </UiButton>
         <div v-if="showPinInput && !detail.pinned">
-          <textarea
-            v-model="pinReason"
-            rows="2"
-            placeholder="Reason (optional)"
-            class="w-full px-3 py-2 rounded-lg text-xs placeholder:text-mnt-muted focus:outline-none resize-none"
-            style="background: var(--mnt-bg-elevated); border: 1px solid var(--mnt-border-default); color: var(--mnt-text-primary)"
-          />
-          <button
-            @click="handlePin"
-            class="mt-2 w-full py-2 bg-mnt-sev-warning-solid hover:bg-mnt-sev-warning-solid text-mnt-inverted rounded-lg text-xs font-bold transition-all"
-          >
+          <TextareaInput v-model="pinReason" :rows="2" placeholder="Reason (optional)" />
+          <UiButton variant="primary" class="mt-2 w-full" @click="handlePin">
             Confirm pin
-          </button>
+          </UiButton>
         </div>
       </div>
 

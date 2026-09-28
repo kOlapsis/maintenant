@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { X, ChevronDown } from 'lucide-vue-next'
+import UiButton from '@/components/ui/UiButton.vue'
 
 export interface IncidentTimelineEntry {
   id: string
@@ -69,13 +70,7 @@ function formatFullTimestamp(ts: string): string {
       <span class="text-sm font-bold text-mnt-status-down">
         {{ incidents.length }} Active Incident{{ incidents.length > 1 ? 's' : '' }}
       </span>
-      <button
-        @click="dismissed = true"
-        class="p-1.5 rounded-lg text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated transition-colors"
-        aria-label="Dismiss"
-      >
-        <X :size="14" />
-      </button>
+      <UiButton variant="ghost" size="sm" :icon="X" aria-label="Dismiss" @click="dismissed = true" />
     </div>
 
     <div

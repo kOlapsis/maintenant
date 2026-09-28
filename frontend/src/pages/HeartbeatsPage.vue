@@ -34,6 +34,13 @@ import { timeAgo } from '@/utils/time'
 import { Heart } from 'lucide-vue-next'
 import { docUrl } from '@/utils/docs'
 import QuotaRefusal from '@/components/QuotaRefusal.vue'
+import CountBadge from '@/components/ui/CountBadge.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 
 const { getQuota, reload } = useEdition()
 
@@ -185,16 +192,11 @@ async function handleCreate() {
         </p>
       </div>
       <div class="flex items-center gap-2">
-        <span
+        <CountBadge
           v-if="!quota.isUnlimited"
-          class="rounded-full px-2.5 py-1 text-xs font-medium"
-          :style="{
-            backgroundColor: quota.isAtLimit ? 'var(--mnt-status-down-bg)' : quota.nearLimit ? 'var(--mnt-status-warn-bg)' : 'var(--mnt-bg-elevated)',
-            color: quota.isAtLimit ? 'var(--mnt-status-down)' : quota.nearLimit ? 'var(--mnt-status-warn)' : 'var(--mnt-text-secondary)',
-          }"
-        >
-          {{ quota.used }}/{{ quota.limit }}
-        </span>
+          :value="`${quota.used}/${quota.limit}`"
+          :tone="quota.isAtLimit ? 'danger' : quota.nearLimit ? 'warn' : 'neutral'"
+        />
         <router-link
           v-if="quota.nearLimit && !quota.isAtLimit"
           :to="{ name: 'editions' }"
@@ -203,24 +205,14 @@ async function handleCreate() {
         >
           Upgrade
         </router-link>
-        <button
-          class="min-h-[44px]"
+        <UiButton
+          variant="primary"
           :disabled="quota.isAtLimit"
           :title="quota.isAtLimit ? `Your edition is limited to ${quota.limit} heartbeats` : ''"
-          :style="{
-            borderRadius: 'var(--mnt-radius-lg)',
-            backgroundColor: 'var(--mnt-accent)',
-            color: 'var(--mnt-text-inverted)',
-            padding: '0.5rem 1rem',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            opacity: quota.isAtLimit ? '0.5' : '1',
-            cursor: quota.isAtLimit ? 'not-allowed' : 'pointer',
-          }"
           @click="showCreateForm = !showCreateForm"
         >
           {{ showCreateForm ? 'Cancel' : 'New Heartbeat' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
@@ -251,83 +243,44 @@ async function handleCreate() {
       <h3 class="mb-3 text-sm font-semibold" :style="{ color: 'var(--mnt-text-primary)' }">Create Heartbeat Monitor</h3>
       <QuotaRefusal v-if="createError" :error="createError" />
       <form class="flex flex-col gap-3" @submit.prevent="handleCreate">
-        <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Name</label>
-          <input
-            v-model="form.name"
-            type="text"
-            placeholder="e.g., Nightly Backup"
-            :style="{
-              width: '100%',
-              borderRadius: 'var(--mnt-radius-md)',
-              border: '1px solid var(--mnt-border-default)',
-              backgroundColor: 'var(--mnt-bg-elevated)',
-              color: 'var(--mnt-text-primary)',
-              padding: '0.375rem 0.75rem',
-              fontSize: '0.875rem',
-              minHeight: '44px',
-            }"
-            required
-          />
-        </div>
+        <FormField label="Name">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.name"
+              placeholder="e.g., Nightly Backup"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              required
+            />
+          </template>
+        </FormField>
         <div>
           <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Expected Interval</label>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="preset in intervalPresets"
-              :key="preset.value"
-              type="button"
-              class="rounded-full px-3 py-1 text-xs font-medium transition"
-              :style="{
-                border: form.interval_seconds === preset.value
-                  ? '1px solid var(--mnt-accent)'
-                  : '1px solid var(--mnt-border-default)',
-                backgroundColor: form.interval_seconds === preset.value
-                  ? 'var(--mnt-accent)'
-                  : 'transparent',
-                color: form.interval_seconds === preset.value
-                  ? 'var(--mnt-text-inverted)'
-                  : 'var(--mnt-text-secondary)',
-              }"
-              @click="form.interval_seconds = preset.value"
-            >
-              {{ preset.label }}
-            </button>
-          </div>
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium" :style="{ color: 'var(--mnt-text-secondary)' }">Grace Period (seconds)</label>
-          <input
-            v-model.number="form.grace_seconds"
-            type="number"
-            min="0"
-            :max="form.interval_seconds"
-            :style="{
-              width: '100%',
-              borderRadius: 'var(--mnt-radius-md)',
-              border: '1px solid var(--mnt-border-default)',
-              backgroundColor: 'var(--mnt-bg-elevated)',
-              color: 'var(--mnt-text-primary)',
-              padding: '0.375rem 0.75rem',
-              fontSize: '0.875rem',
-              minHeight: '44px',
-            }"
+          <SegmentedToggle
+            :model-value="String(form.interval_seconds)"
+            :options="intervalPresets.map((p) => ({ value: String(p.value), label: p.label }))"
+            ariaLabel="Expected interval"
+            @update:model-value="(v) => (form.interval_seconds = Number(v))"
           />
         </div>
-        <button
-          type="submit"
-          :style="{
-            alignSelf: 'flex-start',
-            borderRadius: 'var(--mnt-radius-lg)',
-            backgroundColor: 'var(--mnt-accent)',
-            color: 'var(--mnt-text-inverted)',
-            padding: '0.5rem 1rem',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-          }"
-        >
+        <FormField label="Grace Period (seconds)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              :model-value="form.grace_seconds"
+              type="number"
+              min="0"
+              :max="form.interval_seconds"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              @update:model-value="(v) => (form.grace_seconds = typeof v === 'number' ? v : 0)"
+            />
+          </template>
+        </FormField>
+        <UiButton type="submit" variant="primary" class="self-start">
           Create
-        </button>
+        </UiButton>
       </form>
     </div>
 
@@ -346,18 +299,21 @@ async function handleCreate() {
       <template #filters>
         <label class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-mnt-secondary">Expected interval</span>
-          <select v-model="intervalFilter" class="filter-select focus-ring">
-            <option value="">Any interval</option>
-            <option value="hour">Under an hour</option>
-            <option value="day">Under a day</option>
-            <option value="beyond">A day or more</option>
-          </select>
+          <SelectInput
+            v-model="intervalFilter"
+            size="sm"
+            :options="[
+              { value: '', label: 'Any interval' },
+              { value: 'hour', label: 'Under an hour' },
+              { value: 'day', label: 'Under a day' },
+              { value: 'beyond', label: 'A day or more' },
+            ]"
+          />
         </label>
 
-        <label class="flex min-h-[44px] items-center gap-2">
-          <input v-model="alertingOnly" type="checkbox" class="focus-ring h-4 w-4" />
-          <span class="text-xs font-semibold text-mnt-secondary">Alerting only</span>
-        </label>
+        <div class="flex min-h-[44px] items-center">
+          <CheckboxInput v-model="alertingOnly" label="Alerting only" />
+        </div>
       </template>
     </ListToolbar>
 
@@ -375,13 +331,9 @@ async function handleCreate() {
       description="Heartbeat monitors track cron jobs and scheduled tasks. Create one and integrate the ping URL into your scripts."
     >
       <template #action>
-        <button
-          class="min-h-[44px] rounded-lg px-4 text-sm font-medium"
-          style="background-color: var(--mnt-accent); color: var(--mnt-text-inverted); border-radius: var(--mnt-radius-lg)"
-          @click="showCreateForm = true"
-        >
+        <UiButton variant="primary" @click="showCreateForm = true">
           Create your first heartbeat
-        </button>
+        </UiButton>
       </template>
     </EmptyState>
 
@@ -393,12 +345,9 @@ async function handleCreate() {
       description="Try a different search term, or clear the filters to see every heartbeat monitor."
     >
       <template #action>
-        <button
-          class="focus-ring min-h-[44px] rounded-lg border border-mnt-default px-4 text-sm font-medium text-mnt-secondary hover:text-mnt-primary"
-          @click="resetFilters"
-        >
+        <UiButton variant="secondary" @click="resetFilters">
           Clear filters
-        </button>
+        </UiButton>
       </template>
     </EmptyState>
 
@@ -460,16 +409,3 @@ async function handleCreate() {
   </div>
   </div>
 </template>
-
-<style scoped>
-.filter-select {
-  min-height: 38px;
-  width: 100%;
-  border: 1px solid var(--mnt-border-default);
-  border-radius: var(--mnt-radius-md);
-  background: var(--mnt-bg-elevated);
-  color: var(--mnt-text-primary);
-  padding: 0 0.5rem;
-  font-size: 0.8125rem;
-}
-</style>

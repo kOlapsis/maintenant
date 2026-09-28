@@ -24,6 +24,7 @@ import { useTopologyRefetch } from '@/composables/useTopologyRefetch'
 import { timeAgo } from '@/utils/time'
 import { ClipboardList } from 'lucide-vue-next'
 import HostBadge from '@/components/HostBadge.vue'
+import SelectInput, { type SelectOption } from '@/components/ui/SelectInput.vue'
 
 type TaskWithService = SwarmTaskResponse & { service_name: string }
 
@@ -68,6 +69,16 @@ const filteredTasks = computed(() => {
     return true
   })
 })
+
+const serviceOptions = computed<SelectOption[]>(() => [
+  { value: '', label: 'All services' },
+  ...services.value.map((svc) => ({ value: svc.name, label: svc.name })),
+])
+
+const stateOptions: SelectOption[] = [
+  { value: '', label: 'All states' },
+  ...TASK_STATES.map((state) => ({ value: state, label: state })),
+]
 
 onMounted(loadTasks)
 
@@ -134,30 +145,14 @@ function shortId(id: string): string {
           <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest"
             >Service</label
           >
-          <select
-            v-model="filterService"
-            class="bg-mnt-surface border border-mnt-default text-xs text-mnt-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-mnt-default cursor-pointer"
-          >
-            <option value="">All services</option>
-            <option v-for="svc in services" :key="svc.service_id" :value="svc.name">
-              {{ svc.name }}
-            </option>
-          </select>
+          <SelectInput v-model="filterService" size="sm" :options="serviceOptions" class="w-auto" />
         </div>
 
         <div class="flex items-center gap-2">
           <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest"
             >State</label
           >
-          <select
-            v-model="filterState"
-            class="bg-mnt-surface border border-mnt-default text-xs text-mnt-secondary rounded-lg px-3 py-1.5 focus:outline-none focus:border-mnt-default cursor-pointer"
-          >
-            <option value="">All states</option>
-            <option v-for="state in TASK_STATES" :key="state" :value="state">
-              {{ state }}
-            </option>
-          </select>
+          <SelectInput v-model="filterState" size="sm" :options="stateOptions" class="w-auto" />
         </div>
 
         <span class="ml-auto text-xs text-mnt-muted">

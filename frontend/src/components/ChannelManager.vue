@@ -23,6 +23,10 @@ import {
   type NotificationChannel,
 } from '@/services/alertApi'
 import ChannelWizard from '@/components/ChannelWizard.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 
 const store = useChannelsStore()
 
@@ -153,12 +157,7 @@ function handleWizardCreated() {
     <div class="mb-4 flex items-center justify-between">
       <h2 class="text-lg font-semibold text-mnt-primary">Notification Channels</h2>
       <div class="flex gap-2">
-        <button
-          @click="showWizard = true; showForm = false"
-          class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
-        >
-          Add Channel
-        </button>
+        <UiButton variant="primary" @click="showWizard = true; showForm = false">Add Channel</UiButton>
       </div>
     </div>
 
@@ -182,41 +181,58 @@ function handleWizardCreated() {
     <div v-if="showForm && editingId" class="mb-4 rounded-xl border border-mnt-default bg-mnt-surface p-4">
       <h3 class="mb-3 text-sm font-medium text-mnt-primary">Edit Channel</h3>
       <form @submit.prevent="submitForm" class="space-y-3">
-        <div>
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Name</label>
-          <input v-model="form.name" required class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default" />
-        </div>
-        <div>
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">{{ destinationLabel }}</label>
-          <input v-model="form.url" required :type="destinationInputType" class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary focus:outline-none focus:border-mnt-default" />
-        </div>
-        <template v-if="isTelegram">
-          <div>
-            <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Bot Token</label>
-            <input
-              v-model="form.secret"
-              type="password"
-              autocomplete="off"
-              :placeholder="editingHasSecret ? 'Token on file — leave empty to keep it' : '123456789:AA...'"
-              class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default"
+        <FormField label="Name" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="form.name" required :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
+        <FormField :label="destinationLabel" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.url"
+              required
+              :type="destinationInputType"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
             />
-          </div>
-          <div>
-            <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Topic ID (optional)</label>
-            <input v-model="form.threadId" placeholder="42" class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default" />
-          </div>
+          </template>
+        </FormField>
+        <template v-if="isTelegram">
+          <FormField label="Bot Token">
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput
+                :id="id"
+                v-model="form.secret"
+                type="password"
+                autocomplete="off"
+                :placeholder="editingHasSecret ? 'Token on file — leave empty to keep it' : '123456789:AA...'"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+              />
+            </template>
+          </FormField>
+          <FormField label="Topic ID (optional)">
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput :id="id" v-model="form.threadId" placeholder="42" :aria-describedby="describedBy" :invalid="invalid" />
+            </template>
+          </FormField>
         </template>
-        <div v-if="!isTelegram">
-          <label class="block text-[10px] font-bold uppercase tracking-widest text-mnt-muted">Custom Headers (JSON)</label>
-          <input v-model="form.headers" placeholder='{"Authorization": "Bearer ..."}' class="mt-1 w-full rounded-lg border border-mnt-default bg-mnt-primary px-3 py-2 text-sm text-mnt-primary placeholder:text-mnt-muted focus:outline-none focus:border-mnt-default" />
-        </div>
-        <div class="flex items-center gap-2">
-          <input v-model="form.enabled" type="checkbox" id="ch-enabled" class="rounded accent-mnt-green-500" />
-          <label for="ch-enabled" class="text-sm text-mnt-secondary">Enabled</label>
-        </div>
+        <FormField v-if="!isTelegram" label="Custom Headers (JSON)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.headers"
+              placeholder='{"Authorization": "Bearer ..."}'
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
+        <CheckboxInput v-model="form.enabled" label="Enabled" />
         <div class="flex gap-2">
-          <button type="submit" class="px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all">Save</button>
-          <button type="button" @click="resetForm" class="px-4 py-2 rounded-lg border border-mnt-default text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all">Cancel</button>
+          <UiButton type="submit" variant="primary">Save</UiButton>
+          <UiButton type="button" variant="secondary" @click="resetForm">Cancel</UiButton>
         </div>
       </form>
     </div>
@@ -251,9 +267,9 @@ function handleWizardCreated() {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button @click="handleTest(ch.id)" class="rounded-lg border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all">Test</button>
-            <button @click="startEdit(ch)" class="rounded-lg border border-mnt-default px-2.5 py-1 text-xs text-mnt-secondary hover:bg-mnt-elevated transition-all">Edit</button>
-            <button @click="handleDelete(ch.id)" class="rounded-lg border border-mnt-status-down/40 px-2.5 py-1 text-xs text-mnt-status-down hover:bg-mnt-status-down/10 transition-all">Delete</button>
+            <UiButton variant="secondary" size="sm" @click="handleTest(ch.id)">Test</UiButton>
+            <UiButton variant="secondary" size="sm" @click="startEdit(ch)">Edit</UiButton>
+            <UiButton variant="danger" size="sm" @click="handleDelete(ch.id)">Delete</UiButton>
           </div>
         </div>
 

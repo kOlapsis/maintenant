@@ -12,10 +12,11 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { fetchPodDetail, type K8sPodDetailResponse } from '@/services/kubernetesApi'
 import { useResourcesStore } from '@/stores/resources'
 import { timeAgo } from '@/utils/time'
+import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
 
 const props = defineProps<{
   podNamespace: string
@@ -26,16 +27,14 @@ defineEmits<{
   close: []
 }>()
 
-type Tab = 'containers' | 'events'
-
 const detail = ref<K8sPodDetailResponse | null>(null)
 const loading = ref(true)
-const activeTab = ref<Tab>('containers')
+const activeTab = ref('containers')
 
-const tabs: { key: Tab; label: string }[] = [
-  { key: 'containers', label: 'Containers' },
-  { key: 'events', label: 'Events' },
-]
+const tabItems = computed<TabNavItem[]>(() => [
+  { value: 'containers', label: 'Containers', count: detail.value?.pod.containers.length },
+  { value: 'events', label: 'Events', count: detail.value?.events.length },
+])
 
 onMounted(async () => {
   try {
@@ -152,26 +151,8 @@ function eventTypeStyle(type: string): string {
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-mnt-default px-5">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          :class="[
-            'px-4 py-2.5 text-xs font-bold uppercase tracking-widest border-b-2 -mb-px transition-colors',
-            activeTab === tab.key
-              ? 'border-mnt-green-400 text-mnt-green-400'
-              : 'border-transparent text-mnt-muted hover:text-mnt-secondary',
-          ]"
-          @click="activeTab = tab.key"
-        >
-          {{ tab.label }}
-          <span v-if="tab.key === 'containers'" class="ml-1 text-[10px] text-mnt-muted">{{
-            detail.pod.containers.length
-          }}</span>
-          <span v-if="tab.key === 'events'" class="ml-1 text-[10px] text-mnt-muted">{{
-            detail.events.length
-          }}</span>
-        </button>
+      <div class="px-5">
+        <TabNav v-model="activeTab" :items="tabItems" ariaLabel="Pod detail tabs" />
       </div>
 
       <!-- Tab content -->

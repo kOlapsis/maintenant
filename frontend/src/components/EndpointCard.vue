@@ -21,6 +21,7 @@ import { timeAgo } from '@/utils/time'
 import EndpointStatusBadge from './EndpointStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
+import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
   endpoint: Endpoint
@@ -201,14 +202,9 @@ function formatResponseTime(ms: number | undefined): string {
       @click.stop
     >
       <span v-if="isRetired" class="text-xs text-mnt-muted">Container gone</span>
-      <button
-        class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
-        :style="{ color: 'var(--mnt-status-down)' }"
-        :disabled="deleting"
-        @click="handleDelete"
-      >
-        {{ deleting ? 'Deleting...' : 'Delete' }}
-      </button>
+      <UiButton variant="danger" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
+        Delete
+      </UiButton>
     </div>
   </div>
 </template>

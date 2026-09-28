@@ -41,15 +41,11 @@ import { usePostureStore } from '@/stores/posture'
 import { useEdition } from '@/composables/useEdition'
 import type { SecurityScore } from '@/services/postureApi'
 import { getStateStyle, getExitCodeStyle } from '@/utils/containerState'
-import {
-  Trash2,
-  Terminal,
-  Activity,
-  ChartLine,
-  ChevronRight,
-  ExternalLink,
-} from 'lucide-vue-next'
+import { Trash2, ChevronRight, ExternalLink } from 'lucide-vue-next'
 import { fetchSwarmServiceDetail, type SwarmServiceDetailResponse } from '@/services/swarmApi'
+import TabNav, { type TabNavItem } from './ui/TabNav.vue'
+import SelectInput from './ui/SelectInput.vue'
+import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
   containerId: string
@@ -66,8 +62,21 @@ const uptimeDays = ref<UptimeDay[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedLogContainer = ref<string | undefined>(undefined)
-const activeTab = ref<'logs' | 'info' | 'resources'>('info')
+const activeTab = ref<string>('info')
 const isLogExpanded = ref(false)
+
+const tabItems: TabNavItem[] = [
+  { value: 'info', label: 'Details' },
+  { value: 'logs', label: 'Logs' },
+  { value: 'resources', label: 'Resources' },
+]
+
+const selectedLogContainerModel = computed({
+  get: () => selectedLogContainer.value ?? '',
+  set: (value: string | number | null) => {
+    selectedLogContainer.value = value ? String(value) : undefined
+  },
+})
 
 const logStream = useLogStream({
   containerId: toRef(props, 'containerId'),
@@ -297,20 +306,18 @@ watch(() => props.containerId, () => {
           {{ container.state }}
         </span>
         <!-- Delete button (non-running only) -->
-        <button
+        <UiButton
           v-if="container.state !== 'running'"
-          class="shrink-0 rounded-lg p-1.5 transition-colors"
-          :style="{
-            color: confirmingDelete ? 'var(--mnt-status-down)' : 'var(--mnt-text-muted)',
-            backgroundColor: confirmingDelete ? 'var(--mnt-status-down-bg)' : 'transparent',
-          }"
+          variant="ghost"
+          size="sm"
+          :icon="Trash2"
+          class="shrink-0"
+          :class="confirmingDelete ? 'bg-mnt-status-down text-mnt-status-down' : ''"
           :title="confirmingDelete ? 'Click again to confirm deletion' : 'Remove from database'"
           :aria-label="confirmingDelete ? 'Confirm deletion' : 'Remove container from database'"
           :disabled="deleting"
           @click="handleDelete"
-        >
-          <Trash2 :size="14" />
-        </button>
+        />
       </div>
 
       <!-- Resource bar (running only) -->
@@ -350,65 +357,20 @@ watch(() => props.containerId, () => {
       </div>
 
       <!-- Tab bar -->
-      <div
-        class="flex items-center gap-1 border-b px-5"
-        :style="{ borderColor: 'var(--mnt-border-default)' }"
-      >
-        <button
-          class="flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors"
-          :style="{
-            color: activeTab === 'info' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
-            borderBottom: activeTab === 'info' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-          }"
-          @click="activeTab = 'info'"
-        >
-          <Activity :size="13" />
-          Details
-        </button>
-        <button
-          class="flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors"
-          :style="{
-            color: activeTab === 'logs' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
-            borderBottom: activeTab === 'logs' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-          }"
-          @click="activeTab = 'logs'"
-        >
-          <Terminal :size="13" />
-          Logs
-        </button>
-        <button
-          class="flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors"
-          :style="{
-            color: activeTab === 'resources' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
-            borderBottom: activeTab === 'resources' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-          }"
-          @click="activeTab = 'resources'"
-        >
-          <ChartLine :size="13" />
-          Resources
-        </button>
+      <div class="relative flex items-center px-5">
+        <TabNav v-model="activeTab" :items="tabItems" ariaLabel="Container detail tabs" class="flex-1" />
 
         <!-- K8s container selector (logs tab only) -->
-        <select
+        <SelectInput
           v-if="activeTab === 'logs' && hasMultipleContainers && container?.container_names"
-          class="ml-auto text-xs"
-          :style="{
-            backgroundColor: 'var(--mnt-bg-elevated)',
-            color: 'var(--mnt-text-secondary)',
-            padding: '0.25rem 0.5rem',
-            borderRadius: 'var(--mnt-radius-sm)',
-            border: '1px solid var(--mnt-border-default)',
-          }"
-          :value="selectedLogContainer || ''"
-          @change="selectedLogContainer = ($event.target as HTMLSelectElement).value || undefined"
-        >
-          <option value="">All containers</option>
-          <option
-            v-for="name in container.container_names"
-            :key="name"
-            :value="name.replace(' (init)', '')"
-          >{{ name }}</option>
-        </select>
+          v-model="selectedLogContainerModel"
+          size="sm"
+          class="absolute right-0 top-1/2 max-w-[160px] -translate-y-1/2"
+          :options="[
+            { value: '', label: 'All containers' },
+            ...container.container_names.map((name) => ({ value: name.replace(' (init)', ''), label: name })),
+          ]"
+        />
       </div>
 
       <!-- Tab content -->

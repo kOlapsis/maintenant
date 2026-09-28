@@ -18,6 +18,9 @@ import {
   updateAlertConfig,
   type ResourceAlertConfig,
 } from '@/services/resourceApi'
+import UiButton from '@/components/ui/UiButton.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 
 const props = defineProps<{
   containerId: string
@@ -104,15 +107,7 @@ async function save() {
 
     <div class="space-y-3">
       <!-- Enable toggle -->
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          v-model="enabled"
-          type="checkbox"
-          class="rounded"
-          style="accent-color: var(--mnt-accent)"
-        />
-        <span class="text-mnt-muted">Enable alerts</span>
-      </label>
+      <CheckboxInput v-model="enabled" label="Enable alerts" />
 
       <!-- CPU threshold -->
       <div>
@@ -126,18 +121,7 @@ async function save() {
             class="flex-1"
             :style="{ '--fill': cpuFill }"
           />
-          <input
-            v-model.number="cpuThreshold"
-            type="number"
-            min="1"
-            max="1000"
-            class="w-16 rounded-md border px-2 py-1 text-xs outline-none"
-            style="
-              background: var(--mnt-bg-elevated);
-              border-color: var(--mnt-border-default);
-              color: var(--mnt-text-primary);
-            "
-          />
+          <TextInput v-model="cpuThreshold" type="number" min="1" max="1000" size="sm" class="w-16" />
         </div>
       </div>
 
@@ -153,30 +137,15 @@ async function save() {
             class="flex-1"
             :style="{ '--fill': memFill }"
           />
-          <input
-            v-model.number="memThreshold"
-            type="number"
-            min="1"
-            max="100"
-            class="w-16 rounded-md border px-2 py-1 text-xs outline-none"
-            style="
-              background: var(--mnt-bg-elevated);
-              border-color: var(--mnt-border-default);
-              color: var(--mnt-text-primary);
-            "
-          />
+          <TextInput v-model="memThreshold" type="number" min="1" max="100" size="sm" class="w-16" />
         </div>
       </div>
 
       <!-- Save button -->
       <div class="flex items-center gap-2">
-        <button
-          class="rounded bg-mnt-green-600 px-3 py-1.5 text-xs font-medium text-mnt-inverted hover:bg-mnt-green-700 disabled:opacity-50"
-          :disabled="saving"
-          @click="save"
-        >
+        <UiButton variant="primary" size="sm" :loading="saving" @click="save">
           {{ saving ? 'Saving...' : 'Save' }}
-        </button>
+        </UiButton>
         <span v-if="saved" class="text-xs text-mnt-status-ok">Saved</span>
         <span v-if="error" class="text-xs text-mnt-status-down">{{ error }}</span>
       </div>

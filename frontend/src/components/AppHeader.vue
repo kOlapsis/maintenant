@@ -21,10 +21,12 @@ import { useContainersStore } from '@/stores/containers'
 import { useStorageStore } from '@/stores/storage'
 import { useAgentsStore } from '@/stores/agents'
 import { useVisibleInterval } from '@/composables/useVisibleInterval'
-import { Search, Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor, MessageSquare } from 'lucide-vue-next'
+import { Bell, AlertTriangle, Box, Globe, Heart, ShieldCheck, Cpu, Sun, Moon, Monitor, MessageSquare } from 'lucide-vue-next'
 import RuntimeBadge from '@/components/RuntimeBadge.vue'
 import HostFilterDropdown from '@/components/HostFilterDropdown.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
+import SearchInput from '@/components/ui/SearchInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { useTheme } from '@/composables/useTheme'
 import { useFeedbackUrl } from '@/composables/useFeedbackUrl'
 
@@ -167,6 +169,12 @@ const themeTooltip = computed(() => {
   return 'Follow system theme'
 })
 
+const themeIcon = computed(() => {
+  if (theme.value === 'light') return Sun
+  if (theme.value === 'dark') return Moon
+  return Monitor
+})
+
 const { feedbackUrl } = useFeedbackUrl()
 </script>
 
@@ -177,18 +185,7 @@ const { feedbackUrl } = useFeedbackUrl()
       <HostFilterDropdown v-if="activeAgentIds.length > 0" class="w-48 shrink-0" />
 
       <!-- Search -->
-      <div class="relative group">
-        <Search
-          :size="15"
-          class="absolute left-3 top-1/2 -translate-y-1/2 text-mnt-muted group-focus-within:text-mnt-green-400 transition-colors"
-        />
-        <input
-          v-model="dashboard.searchQuery"
-          type="text"
-          placeholder="Search services..."
-          class="bg-mnt-primary border border-mnt-default rounded-lg py-2 pl-9 pr-4 text-sm w-72 focus:outline-none focus:ring-1 focus:ring-mnt-green-500/60 focus:border-mnt-green-500/40 transition-all text-mnt-primary placeholder:text-mnt-muted"
-        />
-      </div>
+      <SearchInput v-model="dashboard.searchQuery" placeholder="Search services..." class="w-72" />
 
       <!-- Monitor health counters (containers + endpoints + heartbeats + certificates) -->
       <div class="hidden sm:flex items-center gap-5 border-l border-mnt-default pl-5">
@@ -262,16 +259,14 @@ const { feedbackUrl } = useFeedbackUrl()
       <RuntimeBadge />
 
       <!-- Theme toggle -->
-      <button
-        @click="cycleTheme"
+      <UiButton
+        variant="ghost"
+        size="sm"
+        :icon="themeIcon"
         :title="themeTooltip"
         :aria-label="themeTooltip"
-        class="p-2 text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated rounded-lg transition-all"
-      >
-        <Sun v-if="theme === 'light'" :size="18" />
-        <Moon v-else-if="theme === 'dark'" :size="18" />
-        <Monitor v-else :size="18" />
-      </button>
+        @click="cycleTheme"
+      />
 
       <!-- Feedback form on maintenant.dev, opened by the browser in a new tab -->
       <a
@@ -290,12 +285,14 @@ const { feedbackUrl } = useFeedbackUrl()
         @mouseenter="onBellEnter"
         @mouseleave="onBellLeave"
       >
-        <button
-          @click="onBellClick"
+        <UiButton
+          variant="ghost"
+          size="sm"
+          :icon="Bell"
+          class="relative"
           :aria-label="alertsStore.totalActiveCount > 0 ? `View alerts (${alertsStore.totalActiveCount} active)` : 'View alerts'"
-          class="p-2 text-mnt-muted hover:text-mnt-primary hover:bg-mnt-elevated rounded-lg transition-all relative"
+          @click="onBellClick"
         >
-          <Bell :size="18" />
           <span
             v-if="alertsStore.totalActiveCount > 0"
             class="absolute top-1.5 right-1.5 h-2 w-2 rounded-full"
@@ -306,7 +303,7 @@ const { feedbackUrl } = useFeedbackUrl()
               :style="{ backgroundColor: alertsStore.activeAlerts.critical.length > 0 ? 'var(--mnt-sev-incident)' : 'var(--mnt-sev-warning)' }"
             />
           </span>
-        </button>
+        </UiButton>
 
         <!-- Popover menu -->
         <Transition

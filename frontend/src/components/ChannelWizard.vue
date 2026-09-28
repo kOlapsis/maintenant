@@ -17,6 +17,10 @@ import { createChannel, testChannel } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
 import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
 import EditionBadge from '@/components/EditionBadge.vue'
+import UiButton from '@/components/ui/UiButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
 
 const { hasFeature, editionPermits, requiredEditionFor } = useEdition()
 
@@ -304,13 +308,7 @@ function goBack() {
       </div>
 
       <div class="mt-4 flex justify-end">
-        <button
-          @click="emit('cancel')"
-          class="rounded-md border px-3 py-1.5 text-sm"
-          style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-        >
-          Cancel
-        </button>
+        <UiButton variant="secondary" @click="emit('cancel')">Cancel</UiButton>
       </div>
     </div>
 
@@ -324,53 +322,59 @@ function goBack() {
       </p>
 
       <form @submit.prevent="submitConfig" class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Channel Name</label>
-          <input
-            v-model="form.name"
-            required
-            placeholder="e.g. #ops-alerts"
-            class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">
-            {{ destinationLabel }}
-          </label>
-          <input
-            v-model="form.url"
-            required
-            :type="destinationInputType"
-            :placeholder="selectedTypeConfig?.urlPlaceholder"
-            class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          />
-        </div>
+        <FormField label="Channel Name" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.name"
+              required
+              placeholder="e.g. #ops-alerts"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
+        <FormField :label="destinationLabel" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.url"
+              required
+              :type="destinationInputType"
+              :placeholder="selectedTypeConfig?.urlPlaceholder"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
         <!-- Telegram: a token and an optional topic instead of a URL. The
              destination is fixed by the product, so there is nothing to type. -->
         <template v-if="selectedType === 'telegram'">
-          <div>
-            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Bot Token</label>
-            <input
-              v-model="form.secret"
-              required
-              type="password"
-              autocomplete="off"
-              placeholder="123456789:AA..."
-              class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Topic ID (optional)</label>
-            <input
-              v-model="form.threadId"
-              placeholder="42"
-              class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-              style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-            />
-          </div>
+          <FormField label="Bot Token" required>
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput
+                :id="id"
+                v-model="form.secret"
+                required
+                type="password"
+                autocomplete="off"
+                placeholder="123456789:AA..."
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+              />
+            </template>
+          </FormField>
+          <FormField label="Topic ID (optional)">
+            <template #default="{ id, describedBy, invalid }">
+              <TextInput
+                :id="id"
+                v-model="form.threadId"
+                placeholder="42"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+              />
+            </template>
+          </FormField>
           <div class="text-xs space-y-1" style="color: var(--mnt-text-muted)">
             <p>
               Create a bot with @BotFather to get the token. To find the chat id, send the bot a
@@ -389,38 +393,24 @@ function goBack() {
             <p>Leave the topic empty unless the group uses topics.</p>
           </div>
         </template>
-        <div v-if="selectedType === 'webhook'">
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Custom Headers (JSON, optional)</label>
-          <input
-            v-model="form.headers"
-            placeholder='{"Authorization": "Bearer ..."}'
-            class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none"
-            style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          />
-        </div>
-        <div class="flex items-center gap-2">
-          <input v-model="form.enabled" type="checkbox" id="wizard-enabled" class="rounded" style="accent-color: var(--mnt-accent)" />
-          <label for="wizard-enabled" class="text-sm" style="color: var(--mnt-text-secondary)">Enable channel immediately</label>
-        </div>
+        <FormField v-if="selectedType === 'webhook'" label="Custom Headers (JSON, optional)">
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput
+              :id="id"
+              v-model="form.headers"
+              placeholder='{"Authorization": "Bearer ..."}'
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+            />
+          </template>
+        </FormField>
+        <CheckboxInput v-model="form.enabled" label="Enable channel immediately" />
         <p v-if="submitError" class="text-xs" style="color: var(--mnt-status-down-text)">
           {{ submitError }}
         </p>
         <div class="flex justify-between pt-2">
-          <button
-            type="button"
-            @click="goBack"
-            class="rounded-md border px-3 py-1.5 text-sm"
-            style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-          >
-            Back
-          </button>
-          <button
-            type="submit"
-            class="rounded-md px-4 py-1.5 text-sm font-medium text-mnt-primary"
-            style="background: var(--mnt-accent)"
-          >
-            Create & Continue
-          </button>
+          <UiButton type="button" variant="secondary" @click="goBack">Back</UiButton>
+          <UiButton type="submit" variant="primary">Create & Continue</UiButton>
         </div>
       </form>
     </div>
@@ -440,14 +430,9 @@ function goBack() {
         <p class="text-xs truncate" style="color: var(--mnt-text-muted)">{{ form.url }}</p>
       </div>
 
-      <button
-        @click="runTest"
-        :disabled="testStatus === 'testing'"
-        class="mb-4 w-full rounded-md px-4 py-2 text-sm font-medium text-mnt-primary disabled:opacity-50 transition-colors"
-        style="background: var(--mnt-accent)"
-      >
+      <UiButton variant="primary" class="mb-4 w-full" :loading="testStatus === 'testing'" @click="runTest">
         {{ testStatus === 'testing' ? 'Sending test...' : 'Send Test Notification' }}
-      </button>
+      </UiButton>
 
       <!-- Test result -->
       <div
@@ -476,20 +461,8 @@ function goBack() {
       </div>
 
       <div class="flex justify-between">
-        <button
-          @click="goBack"
-          class="rounded-md border px-3 py-1.5 text-sm"
-          style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-        >
-          Back
-        </button>
-        <button
-          @click="finish"
-          class="rounded-md px-4 py-1.5 text-sm font-medium text-mnt-primary"
-          style="background: var(--mnt-accent)"
-        >
-          Done
-        </button>
+        <UiButton variant="secondary" @click="goBack">Back</UiButton>
+        <UiButton variant="primary" @click="finish">Done</UiButton>
       </div>
     </div>
   </div>

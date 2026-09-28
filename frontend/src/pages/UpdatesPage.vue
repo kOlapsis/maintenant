@@ -37,6 +37,7 @@ import {
   osTotal,
 } from '@/utils/osSupport'
 import { docUrl } from '@/utils/docs'
+import UiButton from '@/components/ui/UiButton.vue'
 import {
   RefreshCw,
   AlertTriangle,
@@ -167,14 +168,16 @@ onUnmounted(() => {
           <span v-if="updates.summary" class="text-[10px] text-mnt-muted font-bold">
             Last scan: {{ formatTime(updates.summary.last_scan) }}
           </span>
-          <button
+          <UiButton
+            variant="primary"
+            size="sm"
+            class="bg-mnt-green-600 shadow-lg shadow-mnt-green-500/20 hover:bg-mnt-green-500"
+            :icon="RefreshCw"
+            :loading="updates.scanning"
             @click="updates.startScan()"
-            :disabled="updates.scanning"
-            class="px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 disabled:bg-mnt-elevated disabled:text-mnt-muted text-mnt-inverted rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-mnt-green-500/20"
           >
-            <RefreshCw :size="13" :class="{ 'animate-spin': updates.scanning }" />
             {{ updates.scanning ? 'Scanning...' : 'Check now' }}
-          </button>
+          </UiButton>
         </div>
       </div>
 

@@ -21,6 +21,12 @@ import {
   deleteIncident,
   type Incident,
 } from '@/services/statusApi'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import TextareaInput from '@/components/ui/TextareaInput.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import CheckboxInput from '@/components/ui/CheckboxInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const store = useStatusAdminStore()
 
@@ -100,22 +106,13 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
     <div class="mb-4 flex items-center justify-between">
       <h2 class="text-lg font-semibold" style="color: var(--mnt-text-primary)">Incidents</h2>
       <div class="flex items-center gap-3">
-        <select
+        <SelectInput
           v-model="statusFilter"
+          size="sm"
+          :options="[{ value: '', label: 'All statuses' }, ...incidentStatusOptions.map((s) => ({ value: s, label: s }))]"
           @change="applyFilter"
-          class="rounded-md border px-2 py-1.5 text-sm"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-        >
-          <option value="">All statuses</option>
-          <option v-for="s in incidentStatusOptions" :key="s" :value="s">{{ s }}</option>
-        </select>
-        <button
-          @click="showCreateForm = true"
-          class="rounded-md px-3 py-1.5 text-sm font-medium text-mnt-primary"
-          style="background: var(--mnt-accent)"
-        >
-          Create Incident
-        </button>
+        />
+        <UiButton variant="primary" @click="showCreateForm = true">Create Incident</UiButton>
       </div>
     </div>
 
@@ -123,33 +120,37 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
     <div v-if="showCreateForm" class="mb-4 rounded-lg border p-4" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)">
       <h3 class="mb-3 text-sm font-medium" style="color: var(--mnt-text-primary)">New Incident</h3>
       <form @submit.prevent="submitCreate" class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Title</label>
-          <input v-model="createForm.title" required class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Severity</label>
-          <select v-model="createForm.severity" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)">
-            <option v-for="s in severityOptions" :key="s" :value="s">{{ s }}</option>
-          </select>
-        </div>
+        <FormField label="Title" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextInput :id="id" v-model="createForm.title" required :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
+        <FormField label="Severity">
+          <template #default="{ id, describedBy, invalid }">
+            <SelectInput :id="id" v-model="createForm.severity" :aria-describedby="describedBy" :invalid="invalid" :options="severityOptions.map((s) => ({ value: s, label: s }))" />
+          </template>
+        </FormField>
         <div>
           <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Affected Components</label>
           <div class="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border p-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
-            <label v-for="c in store.components" :key="c.id" class="flex items-center gap-2 text-sm" style="color: var(--mnt-text-secondary)">
-              <input type="checkbox" :value="c.id" v-model="createForm.component_ids" class="rounded" style="accent-color: var(--mnt-accent)" />
-              {{ c.display_name }}
-            </label>
+            <CheckboxInput
+              v-for="c in store.components"
+              :key="c.id"
+              :value="c.id"
+              v-model="createForm.component_ids"
+              :label="c.display_name"
+            />
             <p v-if="(store.components?.length ?? 0) === 0" class="text-xs" style="color: var(--mnt-text-muted)">No components configured</p>
           </div>
         </div>
-        <div>
-          <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Initial Message</label>
-          <textarea v-model="createForm.message" required rows="2" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"></textarea>
-        </div>
+        <FormField label="Initial Message" required>
+          <template #default="{ id, describedBy, invalid }">
+            <TextareaInput :id="id" v-model="createForm.message" required :rows="2" :aria-describedby="describedBy" :invalid="invalid" />
+          </template>
+        </FormField>
         <div class="flex gap-2">
-          <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-mnt-primary" style="background: var(--mnt-accent)">Create</button>
-          <button type="button" @click="resetCreateForm" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)">Cancel</button>
+          <UiButton type="submit" variant="primary">Create</UiButton>
+          <UiButton type="button" variant="secondary" @click="resetCreateForm">Cancel</UiButton>
         </div>
       </form>
     </div>
@@ -189,15 +190,10 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
             <span class="text-sm font-medium" style="color: var(--mnt-text-primary)">{{ inc.title }}</span>
           </div>
           <div class="flex items-center gap-2">
-            <button
-              v-if="inc.status !== 'resolved'"
-              @click="startPostUpdate(inc)"
-              class="rounded border px-2 py-1 text-xs"
-              style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)"
-            >
+            <UiButton v-if="inc.status !== 'resolved'" variant="secondary" size="sm" @click="startPostUpdate(inc)">
               Post Update
-            </button>
-            <button @click="handleDelete(inc.id)" class="rounded border px-2 py-1 text-xs" style="border-color: var(--mnt-status-down); color: var(--mnt-status-down)">Delete</button>
+            </UiButton>
+            <UiButton variant="danger" size="sm" @click="handleDelete(inc.id)">Delete</UiButton>
           </div>
         </div>
 
@@ -216,19 +212,19 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
         <!-- Post update form -->
         <div v-if="showUpdateForm === inc.id" class="mt-3 rounded border p-3" style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default)">
           <form @submit.prevent="submitUpdate(inc.id)" class="space-y-2">
-            <div>
-              <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Status</label>
-              <select v-model="updateForm.status" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)">
-                <option v-for="s in incidentStatusOptions" :key="s" :value="s">{{ s }}</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-medium" style="color: var(--mnt-text-secondary)">Message</label>
-              <textarea v-model="updateForm.message" required rows="2" class="mt-1 w-full rounded-md border px-3 py-1.5 text-sm outline-none" style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"></textarea>
-            </div>
+            <FormField label="Status">
+              <template #default="{ id, describedBy, invalid }">
+                <SelectInput :id="id" v-model="updateForm.status" :aria-describedby="describedBy" :invalid="invalid" :options="incidentStatusOptions.map((s) => ({ value: s, label: s }))" />
+              </template>
+            </FormField>
+            <FormField label="Message" required>
+              <template #default="{ id, describedBy, invalid }">
+                <TextareaInput :id="id" v-model="updateForm.message" required :rows="2" :aria-describedby="describedBy" :invalid="invalid" />
+              </template>
+            </FormField>
             <div class="flex gap-2">
-              <button type="submit" class="rounded-md px-3 py-1.5 text-sm text-mnt-primary" style="background: var(--mnt-accent)">Post Update</button>
-              <button type="button" @click="showUpdateForm = null" class="rounded-md border px-3 py-1.5 text-sm" style="border-color: var(--mnt-border-default); color: var(--mnt-text-secondary)">Cancel</button>
+              <UiButton type="submit" variant="primary">Post Update</UiButton>
+              <UiButton type="button" variant="secondary" @click="showUpdateForm = null">Cancel</UiButton>
             </div>
           </form>
         </div>

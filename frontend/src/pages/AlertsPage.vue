@@ -21,6 +21,7 @@ import AlertList from '@/components/AlertList.vue'
 import TriggerManager from '@/components/TriggerManager.vue'
 import SilenceRuleManager from '@/components/SilenceRuleManager.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
+import TabNav, { type TabNavItem } from '@/components/ui/TabNav.vue'
 import { docUrl } from '@/utils/docs'
 
 type Tab = 'history' | 'triggers' | 'silence'
@@ -39,6 +40,12 @@ const activeTab = computed<Tab>({
   },
   set: (tab: Tab) => router.replace({ name: 'alerts', params: { tab } }),
 })
+
+const tabItems = computed<TabNavItem[]>(() => [
+  { value: 'history', label: 'History' },
+  { value: 'triggers', label: 'Triggers', count: triggersStore.triggers.length || undefined },
+  { value: 'silence', label: 'Silence Rules', count: store.activeSilenceCount || undefined, countTone: 'warn' },
+])
 
 onMounted(() => {
   store.fetchAlerts()
@@ -73,53 +80,8 @@ onUnmounted(() => {
     </div>
 
     <!-- Tab navigation -->
-    <div class="mb-4" style="border-bottom: 1px solid var(--mnt-border-default)">
-      <nav class="-mb-px flex gap-6">
-        <button
-          @click="activeTab = 'history'"
-          class="pb-2 text-sm font-medium min-h-[44px]"
-          :style="{
-            borderBottom: activeTab === 'history' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-            color: activeTab === 'history' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
-          }"
-        >
-          History
-        </button>
-        <button
-          @click="activeTab = 'triggers'"
-          class="pb-2 text-sm font-medium min-h-[44px]"
-          :style="{
-            borderBottom: activeTab === 'triggers' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-            color: activeTab === 'triggers' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
-          }"
-        >
-          Triggers
-          <span
-            v-if="triggersStore.triggers.length"
-            class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background-color: var(--mnt-bg-elevated); color: var(--mnt-text-muted)"
-          >
-            {{ triggersStore.triggers.length }}
-          </span>
-        </button>
-        <button
-          @click="activeTab = 'silence'"
-          class="pb-2 text-sm font-medium min-h-[44px]"
-          :style="{
-            borderBottom: activeTab === 'silence' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-            color: activeTab === 'silence' ? 'var(--mnt-accent)' : 'var(--mnt-text-muted)',
-          }"
-        >
-          Silence Rules
-          <span
-            v-if="store.activeSilenceCount"
-            class="ml-1 rounded-full px-1.5 py-0.5 text-xs"
-            style="background-color: var(--mnt-status-warn-bg); color: var(--mnt-status-warn)"
-          >
-            {{ store.activeSilenceCount }}
-          </span>
-        </button>
-      </nav>
+    <div class="mb-4">
+      <TabNav v-model="activeTab" :items="tabItems" ariaLabel="Alerts sections" />
     </div>
 
     <!-- Tab content -->

@@ -15,6 +15,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { ChevronUp, ChevronDown, X } from 'lucide-vue-next'
 import type { UseLogSearchReturn } from '@/composables/useLogSearch'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const props = defineProps<{
   search: UseLogSearchReturn
@@ -78,53 +79,60 @@ const matchDisplay = computed(() => {
     >{{ matchDisplay }}</span>
 
     <!-- Case sensitive toggle -->
-    <button
-      class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
-      :class="search.isCaseSensitive.value
-        ? 'bg-mnt-elevated text-mnt-primary'
-        : 'text-mnt-muted hover:text-mnt-secondary'"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :class="search.isCaseSensitive.value ? 'bg-mnt-elevated text-mnt-primary' : ''"
       title="Match Case"
+      aria-label="Match case"
+      :aria-pressed="search.isCaseSensitive.value"
       @click="search.toggleCaseSensitive()"
-    >Aa</button>
+    >Aa</UiButton>
 
     <!-- Regex toggle -->
-    <button
-      class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold transition-colors"
-      :class="search.isRegex.value
-        ? 'bg-mnt-elevated text-mnt-primary'
-        : 'text-mnt-muted hover:text-mnt-secondary'"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :class="search.isRegex.value ? 'bg-mnt-elevated text-mnt-primary' : ''"
       title="Use Regular Expression"
+      aria-label="Use regular expression"
+      :aria-pressed="search.isRegex.value"
       @click="search.toggleRegex()"
-    >.*</button>
+    >.*</UiButton>
 
     <!-- Navigation -->
-    <button
-      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :icon="ChevronUp"
       title="Previous Match (Shift+Enter)"
       aria-label="Previous match"
       :disabled="search.matches.value.length === 0"
       @click="search.prevMatch()"
-    >
-      <ChevronUp :size="12" />
-    </button>
-    <button
-      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
+    />
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :icon="ChevronDown"
       title="Next Match (Enter)"
       aria-label="Next match"
       :disabled="search.matches.value.length === 0"
       @click="search.nextMatch()"
-    >
-      <ChevronDown :size="12" />
-    </button>
+    />
 
     <!-- Close -->
-    <button
-      class="shrink-0 rounded p-0.5 text-mnt-muted transition-colors hover:text-mnt-secondary"
+    <UiButton
+      variant="ghost"
+      size="sm"
+      class="shrink-0"
+      :icon="X"
       title="Close (Escape)"
       aria-label="Close search"
       @click="search.close()"
-    >
-      <X :size="12" />
-    </button>
+    />
   </div>
 </template>

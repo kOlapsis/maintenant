@@ -15,6 +15,7 @@
 import type { SecurityInsight } from '@/services/securityApi'
 import type { RiskAcknowledgment } from '@/services/postureApi'
 import { ShieldAlert, ShieldCheck, Network, Lock, Server, CheckCircle } from 'lucide-vue-next'
+import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
   insights: SecurityInsight[]
@@ -142,21 +143,25 @@ function getAck(insight: SecurityInsight): RiskAcknowledgment | undefined {
             {{ formatDetail(insight) }}
           </p>
           <div v-if="showAcknowledge" class="mt-1.5">
-            <button
+            <UiButton
               v-if="!getAck(insight)"
-              class="flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium text-mnt-muted hover:bg-mnt-elevated hover:text-mnt-primary transition-colors"
+              variant="ghost"
+              size="sm"
+              :icon="ShieldCheck"
+              class="!min-h-0 px-2 py-0.5 text-[10px]"
               @click.stop="emit('acknowledge', insight)"
             >
-              <ShieldCheck :size="11" />
               Accepter le risque
-            </button>
-            <button
+            </UiButton>
+            <UiButton
               v-else
-              class="cursor-pointer rounded px-2 py-0.5 text-[10px] font-medium text-mnt-status-ok hover:bg-mnt-status-down hover:text-mnt-status-down transition-colors"
+              variant="ghost"
+              size="sm"
+              class="!min-h-0 px-2 py-0.5 text-[10px] text-mnt-status-ok hover:text-mnt-status-down"
               @click.stop="emit('revoke', getAck(insight)!)"
             >
               Révoquer
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>

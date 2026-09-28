@@ -20,6 +20,8 @@ import CertificateStatusBadge from './CertificateStatusBadge.vue'
 import OCSPStatusBadge from './OCSPStatusBadge.vue'
 import CertificateChecksHistory from './CertificateChecksHistory.vue'
 import FeatureGate from './FeatureGate.vue'
+import UiButton from './ui/UiButton.vue'
+import TabNav, { type TabNavItem } from './ui/TabNav.vue'
 
 const props = defineProps<{
   certificateId: string
@@ -33,6 +35,10 @@ const detail = ref<CertificateDetailResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const activeTab = ref<'details' | 'history'>('details')
+const tabItems: TabNavItem[] = [
+  { value: 'details', label: 'Details' },
+  { value: 'history', label: 'History' },
+]
 
 async function load() {
   loading.value = true
@@ -161,23 +167,18 @@ function countdownBgColor(days: number | undefined): string {
         >
           {{ detail.certificate.source }}
         </span>
-        <button
+        <UiButton
           v-if="canCheckNow"
-          type="button"
-          class="ml-auto flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all disabled:cursor-default"
-          :style="{
-            backgroundColor: 'var(--mnt-bg-elevated)',
-            color: checking ? 'var(--mnt-text-muted)' : 'var(--mnt-accent)',
-            border: '1px solid var(--mnt-border-default)',
-            borderRadius: 'var(--mnt-radius-sm)',
-          }"
-          :disabled="checking"
-          :title="'Scan this certificate now instead of waiting for the next scheduled check'"
+          variant="secondary"
+          size="sm"
+          class="ml-auto font-bold"
+          :icon="RefreshCw"
+          :loading="checking"
+          title="Scan this certificate now instead of waiting for the next scheduled check"
           @click="checkNow"
         >
-          <RefreshCw :size="12" :class="{ 'animate-spin': checking }" />
           {{ checking ? 'Checking...' : 'Check now' }}
-        </button>
+        </UiButton>
       </div>
 
       <div
@@ -193,37 +194,13 @@ function countdownBgColor(days: number | undefined): string {
       </div>
 
       <!-- Tabs -->
-      <div
-        class="mb-4 flex gap-4"
-        :style="{ borderBottom: '1px solid var(--mnt-border-default)' }"
-      >
-        <button
-          type="button"
-          class="cursor-pointer text-sm font-medium transition"
-          :style="{
-            padding: '0.5rem 0',
-            color: activeTab === 'details' ? 'var(--mnt-text-primary)' : 'var(--mnt-text-muted)',
-            borderBottom: activeTab === 'details' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-            marginBottom: '-1px',
-          }"
-          @click="activeTab = 'details'"
-        >
-          Details
-        </button>
-        <button
-          type="button"
-          class="cursor-pointer text-sm font-medium transition"
-          :style="{
-            padding: '0.5rem 0',
-            color: activeTab === 'history' ? 'var(--mnt-text-primary)' : 'var(--mnt-text-muted)',
-            borderBottom: activeTab === 'history' ? '2px solid var(--mnt-accent)' : '2px solid transparent',
-            marginBottom: '-1px',
-          }"
-          @click="activeTab = 'history'"
-        >
-          History
-        </button>
-      </div>
+      <TabNav
+        class="mb-4"
+        :model-value="activeTab"
+        :items="tabItems"
+        ariaLabel="Certificate detail tabs"
+        @update:model-value="(v) => (activeTab = v as 'details' | 'history')"
+      />
 
       <CertificateChecksHistory v-if="activeTab === 'history'" :certificate-id="certificateId" />
 

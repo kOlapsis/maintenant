@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ArrowUp, ArrowDown, X } from 'lucide-vue-next'
 import { usePersonalizationStore } from '@/stores/personalization'
+import FormField from '@/components/ui/FormField.vue'
+import TextareaInput from '@/components/ui/TextareaInput.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const store = usePersonalizationStore()
 const footerTextMD = defineModel<string>('footerTextMD', { required: true })
@@ -31,17 +36,11 @@ async function moveLink(from: number, to: number) {
   <div class="space-y-4">
     <h3 class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">Footer</h3>
 
-    <div>
-      <label class="block text-xs text-mnt-muted mb-1">Footer Text (Markdown)</label>
-      <textarea
-        v-model="footerTextMD"
-        maxlength="500"
-        rows="3"
-        class="w-full bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2 text-mnt-primary text-sm font-mono focus:outline-none focus:border-mnt-default resize-none"
-        placeholder="© 2026 Acme — [Privacy](https://acme.example/privacy)"
-      />
-      <p class="text-[11px] text-mnt-muted mt-1">{{ footerTextMD.length }}/500</p>
-    </div>
+    <FormField label="Footer Text (Markdown)" :hint="`${footerTextMD.length}/500`">
+      <template #default="{ id, describedBy, invalid }">
+        <TextareaInput :id="id" v-model="footerTextMD" maxlength="500" :rows="3" mono :aria-describedby="describedBy" :invalid="invalid" placeholder="© 2026 Acme — [Privacy](https://acme.example/privacy)" />
+      </template>
+    </FormField>
 
     <div class="space-y-2">
       <p class="text-xs text-mnt-muted">External Links</p>
@@ -51,41 +50,39 @@ async function moveLink(from: number, to: number) {
         class="flex items-center gap-2 bg-mnt-primary border border-mnt-default rounded-lg px-3 py-2"
       >
         <span class="text-mnt-muted text-xs w-4">{{ idx + 1 }}</span>
-        <input
-          :value="link.label"
-          class="flex-1 bg-transparent text-mnt-primary text-sm focus:outline-none"
+        <TextInput
+          :model-value="link.label"
+          class="flex-1"
           placeholder="Label"
           @change="(e: Event) => store.updateFooterLink(link.id, (e.target as HTMLInputElement).value, link.url)"
         />
-        <input
-          :value="link.url"
-          class="flex-1 bg-transparent text-mnt-muted text-sm focus:outline-none"
+        <TextInput
+          :model-value="link.url"
+          class="flex-1"
           placeholder="https://"
           @change="(e: Event) => store.updateFooterLink(link.id, link.label, (e.target as HTMLInputElement).value)"
         />
         <div class="flex gap-1">
-          <button
+          <UiButton
             v-if="idx > 0"
-            class="text-mnt-muted hover:text-mnt-secondary text-xs px-1"
+            variant="ghost"
+            size="sm"
+            :icon="ArrowUp"
+            aria-label="Move link up"
             @click="moveLink(idx, idx - 1)"
-          >↑</button>
-          <button
+          />
+          <UiButton
             v-if="idx < store.footerLinks.length - 1"
-            class="text-mnt-muted hover:text-mnt-secondary text-xs px-1"
+            variant="ghost"
+            size="sm"
+            :icon="ArrowDown"
+            aria-label="Move link down"
             @click="moveLink(idx, idx + 1)"
-          >↓</button>
-          <button
-            class="text-mnt-muted hover:text-mnt-status-down text-xs px-1"
-            @click="removeLink(link.id)"
-          >✕</button>
+          />
+          <UiButton variant="ghost" size="sm" :icon="X" aria-label="Remove link" @click="removeLink(link.id)" />
         </div>
       </div>
-      <button
-        class="text-xs px-3 py-1.5 border border-mnt-default rounded text-mnt-muted hover:text-mnt-primary hover:border-mnt-default"
-        @click="addLink"
-      >
-        + Add link
-      </button>
+      <UiButton variant="secondary" size="sm" @click="addLink">+ Add link</UiButton>
       <p v-if="linkError" class="text-xs text-mnt-status-down">{{ linkError }}</p>
     </div>
   </div>

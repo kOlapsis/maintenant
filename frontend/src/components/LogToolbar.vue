@@ -16,6 +16,7 @@ import { Maximize2, Minimize2, WrapText, Search } from 'lucide-vue-next'
 import type { LogStreamStatus } from '@/composables/useLogStream'
 import type { UseLogSearchReturn } from '@/composables/useLogSearch'
 import LogSearchBar from './LogSearchBar.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 defineProps<{
   isExpanded: boolean
@@ -44,13 +45,14 @@ const emit = defineEmits<{
         <span class="inline-block h-1.5 w-1.5 rounded-full bg-mnt-green-400" />
         Streaming
       </span>
-      <button
+      <UiButton
         v-if="status === 'closed' || status === 'error'"
-        class="rounded px-2 py-0.5 text-xs text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
+        variant="ghost"
+        size="sm"
         @click="emit('reconnect')"
       >
         Reconnect
-      </button>
+      </UiButton>
     </div>
 
     <div class="flex items-center gap-1">
@@ -58,34 +60,35 @@ const emit = defineEmits<{
       <LogSearchBar :search="search" />
 
       <!-- Search toggle button (when search closed) -->
-      <button
+      <UiButton
         v-if="!search.isOpen.value"
-        class="rounded p-1.5 text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
+        variant="ghost"
+        size="sm"
+        :icon="Search"
         title="Search (Ctrl+K)"
         aria-label="Search logs"
         @click="search.open()"
-      >
-        <Search :size="14" />
-      </button>
+      />
 
-      <button
-        class="rounded p-1.5 text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
+      <UiButton
+        variant="ghost"
+        size="sm"
+        :icon="WrapText"
         :class="{ 'text-mnt-primary bg-mnt-elevated': !wordWrap }"
         :title="wordWrap ? 'Disable word wrap' : 'Enable word wrap'"
         :aria-label="wordWrap ? 'Disable word wrap' : 'Enable word wrap'"
         @click="emit('toggle-wrap')"
-      >
-        <WrapText :size="14" />
-      </button>
-      <button
-        class="rounded p-1.5 text-mnt-muted transition-colors hover:bg-mnt-elevated hover:text-mnt-primary"
+      />
+      <UiButton
+        variant="ghost"
+        size="sm"
         :title="isExpanded ? 'Collapse' : 'Expand'"
         :aria-label="isExpanded ? 'Collapse log viewer' : 'Expand log viewer'"
         @click="emit('toggle-expand')"
       >
         <Maximize2 v-if="!isExpanded" :size="14" />
         <Minimize2 v-else :size="14" />
-      </button>
+      </UiButton>
     </div>
   </div>
 </template>

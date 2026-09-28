@@ -20,6 +20,7 @@ import PolicyEditor from '@/components/escalation/PolicyEditor.vue'
 import { useEscalationStore } from '@/stores/escalation'
 import type { EscalationPolicy } from '@/types/escalation'
 import UnlockCta from '@/components/UnlockCta.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { Plus, BellRing, CheckCircle2, ShieldAlert } from 'lucide-vue-next'
 
 const store = useEscalationStore()
@@ -94,14 +95,9 @@ onMounted(() => {
                 {{ store.policies.length }} {{ store.policies.length === 1 ? 'policy' : 'policies' }}
               </template>
             </p>
-            <button
-              v-if="!showEditor"
-              class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
-              @click="openCreate"
-            >
-              <Plus :size="13" />
+            <UiButton v-if="!showEditor" variant="primary" size="sm" :icon="Plus" @click="openCreate">
               New policy
-            </button>
+            </UiButton>
           </div>
 
           <!-- Editor -->

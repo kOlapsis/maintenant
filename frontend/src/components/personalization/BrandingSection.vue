@@ -3,6 +3,9 @@ import { ref, computed } from 'vue'
 import { Upload, Trash2, X } from 'lucide-vue-next'
 import { personalizationApi } from '@/services/personalizationApi'
 import { usePersonalizationStore } from '@/stores/personalization'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 type AssetRole = 'logo' | 'favicon' | 'hero'
 
@@ -122,37 +125,17 @@ defineExpose({ flushPendingAssets })
     </h3>
 
     <div class="grid grid-cols-1 gap-4">
-      <div>
-        <label
-          class="block text-xs mb-1"
-          style="color: var(--mnt-text-muted)"
-        >Page Title</label>
-        <input
-          v-model="title"
-          type="text"
-          maxlength="100"
-          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          placeholder="System Status"
-        />
-        <p class="mt-1 text-[11px]" style="color: var(--mnt-text-muted)">1–100 characters</p>
-      </div>
+      <FormField label="Page Title" hint="1–100 characters">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput :id="id" v-model="title" maxlength="100" :aria-describedby="describedBy" :invalid="invalid" placeholder="System Status" />
+        </template>
+      </FormField>
 
-      <div>
-        <label
-          class="block text-xs mb-1"
-          style="color: var(--mnt-text-muted)"
-        >Subtitle</label>
-        <input
-          v-model="subtitle"
-          type="text"
-          maxlength="200"
-          class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          placeholder="Real-time service health"
-        />
-        <p class="mt-1 text-[11px]" style="color: var(--mnt-text-muted)">0–200 characters</p>
-      </div>
+      <FormField label="Subtitle" hint="0–200 characters">
+        <template #default="{ id, describedBy, invalid }">
+          <TextInput :id="id" v-model="subtitle" maxlength="200" :aria-describedby="describedBy" :invalid="invalid" placeholder="Real-time service health" />
+        </template>
+      </FormField>
     </div>
 
     <!-- Logo -->
@@ -169,15 +152,9 @@ defineExpose({ flushPendingAssets })
           class="sr-only"
           @change="(e) => onFileSelected('logo', e)"
         />
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          @click="logoInputRef?.click()"
-        >
-          <Upload :size="13" />
+        <UiButton type="button" variant="secondary" size="sm" :icon="Upload" @click="logoInputRef?.click()">
           Choose file…
-        </button>
+        </UiButton>
         <span
           v-if="logoFile"
           class="truncate max-w-[200px] text-xs"
@@ -186,49 +163,29 @@ defineExpose({ flushPendingAssets })
         >
           {{ logoFile.name }}
         </span>
-        <button
-          v-if="logoFile"
-          type="button"
-          class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--mnt-text-muted)"
-          @click="clearSelection('logo')"
-        >
-          <X :size="12" />
+        <UiButton v-if="logoFile" type="button" variant="ghost" size="sm" :icon="X" @click="clearSelection('logo')">
           Clear
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           v-if="hasLogo && !logoFile && !removeLogo"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
-          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
+          variant="secondary"
+          size="sm"
+          :icon="Trash2"
           @click="markForRemoval('logo')"
         >
-          <Trash2 :size="12" />
           Remove
-        </button>
+        </UiButton>
         <span
           v-if="removeLogo"
           class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-          style="background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: #f87171"
+          style="background: var(--mnt-status-down-bg); border-color: var(--mnt-status-down); color: var(--mnt-status-down)"
         >
           Will be removed on save
-          <button
-            type="button"
-            class="hover:underline"
-            @click="undoRemoval('logo')"
-          >
-            Undo
-          </button>
+          <UiButton type="button" variant="ghost" size="sm" @click="undoRemoval('logo')">Undo</UiButton>
         </span>
       </div>
-      <input
-        v-model="logoAlt"
-        type="text"
-        maxlength="200"
-        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-        placeholder="Alt text for logo"
-      />
+      <TextInput v-model="logoAlt" maxlength="200" aria-label="Alt text for logo" placeholder="Alt text for logo" />
     </div>
 
     <!-- Favicon -->
@@ -245,15 +202,9 @@ defineExpose({ flushPendingAssets })
           class="sr-only"
           @change="(e) => onFileSelected('favicon', e)"
         />
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          @click="faviconInputRef?.click()"
-        >
-          <Upload :size="13" />
+        <UiButton type="button" variant="secondary" size="sm" :icon="Upload" @click="faviconInputRef?.click()">
           Choose file…
-        </button>
+        </UiButton>
         <span
           v-if="faviconFile"
           class="truncate max-w-[200px] text-xs"
@@ -262,39 +213,26 @@ defineExpose({ flushPendingAssets })
         >
           {{ faviconFile.name }}
         </span>
-        <button
-          v-if="faviconFile"
-          type="button"
-          class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--mnt-text-muted)"
-          @click="clearSelection('favicon')"
-        >
-          <X :size="12" />
+        <UiButton v-if="faviconFile" type="button" variant="ghost" size="sm" :icon="X" @click="clearSelection('favicon')">
           Clear
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           v-if="hasFavicon && !faviconFile && !removeFavicon"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
-          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
+          variant="secondary"
+          size="sm"
+          :icon="Trash2"
           @click="markForRemoval('favicon')"
         >
-          <Trash2 :size="12" />
           Remove
-        </button>
+        </UiButton>
         <span
           v-if="removeFavicon"
           class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-          style="background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: #f87171"
+          style="background: var(--mnt-status-down-bg); border-color: var(--mnt-status-down); color: var(--mnt-status-down)"
         >
           Will be removed on save
-          <button
-            type="button"
-            class="hover:underline"
-            @click="undoRemoval('favicon')"
-          >
-            Undo
-          </button>
+          <UiButton type="button" variant="ghost" size="sm" @click="undoRemoval('favicon')">Undo</UiButton>
         </span>
       </div>
     </div>
@@ -313,15 +251,9 @@ defineExpose({ flushPendingAssets })
           class="sr-only"
           @change="(e) => onFileSelected('hero', e)"
         />
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-          style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-          @click="heroInputRef?.click()"
-        >
-          <Upload :size="13" />
+        <UiButton type="button" variant="secondary" size="sm" :icon="Upload" @click="heroInputRef?.click()">
           Choose file…
-        </button>
+        </UiButton>
         <span
           v-if="heroFile"
           class="truncate max-w-[200px] text-xs"
@@ -330,49 +262,29 @@ defineExpose({ flushPendingAssets })
         >
           {{ heroFile.name }}
         </span>
-        <button
-          v-if="heroFile"
-          type="button"
-          class="inline-flex items-center gap-1 text-xs hover:underline"
-          style="color: var(--mnt-text-muted)"
-          @click="clearSelection('hero')"
-        >
-          <X :size="12" />
+        <UiButton v-if="heroFile" type="button" variant="ghost" size="sm" :icon="X" @click="clearSelection('hero')">
           Clear
-        </button>
-        <button
+        </UiButton>
+        <UiButton
           v-if="hasHero && !heroFile && !removeHero"
           type="button"
-          class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:border-red-400/40 hover:text-mnt-status-down"
-          style="background: transparent; border-color: var(--mnt-border-default); color: var(--mnt-text-muted)"
+          variant="secondary"
+          size="sm"
+          :icon="Trash2"
           @click="markForRemoval('hero')"
         >
-          <Trash2 :size="12" />
           Remove
-        </button>
+        </UiButton>
         <span
           v-if="removeHero"
           class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
-          style="background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: #f87171"
+          style="background: var(--mnt-status-down-bg); border-color: var(--mnt-status-down); color: var(--mnt-status-down)"
         >
           Will be removed on save
-          <button
-            type="button"
-            class="hover:underline"
-            @click="undoRemoval('hero')"
-          >
-            Undo
-          </button>
+          <UiButton type="button" variant="ghost" size="sm" @click="undoRemoval('hero')">Undo</UiButton>
         </span>
       </div>
-      <input
-        v-model="heroAlt"
-        type="text"
-        maxlength="200"
-        class="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:border-mnt-accent"
-        style="background: var(--mnt-bg-elevated); border-color: var(--mnt-border-default); color: var(--mnt-text-primary)"
-        placeholder="Alt text for hero image"
-      />
+      <TextInput v-model="heroAlt" maxlength="200" aria-label="Alt text for hero image" placeholder="Alt text for hero image" />
     </div>
 
     <div class="hidden">{{ logoPreviewUrl }} {{ faviconPreviewUrl }} {{ heroPreviewUrl }}</div>

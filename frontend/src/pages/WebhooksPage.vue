@@ -16,13 +16,7 @@
   <div class="max-w-7xl mx-auto">
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-black text-mnt-primary">Webhooks</h1>
-      <button
-        @click="showCreate = true"
-        class="min-h-[44px] rounded px-4 text-sm font-medium"
-        style="background-color: var(--mnt-accent); color: var(--mnt-text-inverted); border-radius: var(--mnt-radius-md)"
-      >
-        + Add Webhook
-      </button>
+      <UiButton variant="primary" :icon="Plus" @click="showCreate = true">Add Webhook</UiButton>
     </div>
 
     <FeatureHint
@@ -98,21 +92,18 @@
               <span v-else style="color: var(--mnt-text-muted)">Never</span>
             </td>
             <td class="px-4 py-3 text-right space-x-2">
-              <button
-                @click="handleTest(wh)"
+              <UiButton
+                variant="ghost"
+                size="sm"
+                :loading="testing === wh.id"
                 :disabled="testing === wh.id"
-                class="text-xs min-h-[36px] px-2 disabled:opacity-50"
-                style="color: var(--mnt-accent)"
+                @click="handleTest(wh)"
               >
                 {{ testing === wh.id ? 'Testing...' : 'Test' }}
-              </button>
-              <button
-                @click="handleDelete(wh)"
-                class="text-xs min-h-[36px] px-2"
-                style="color: var(--mnt-status-down)"
-              >
+              </UiButton>
+              <UiButton variant="ghost" size="sm" class="text-mnt-status-down" @click="handleDelete(wh)">
                 Delete
-              </button>
+              </UiButton>
             </td>
           </tr>
           <tr v-if="!webhooks.length">
@@ -143,10 +134,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { Plus } from 'lucide-vue-next'
 import { listWebhooks, deleteWebhook, testWebhook, type WebhookSubscription, type TestWebhookResponse } from '@/services/webhookApi'
 import { useConfirm } from '@/composables/useConfirm'
 import WebhookForm from '@/components/WebhookForm.vue'
 import FeatureHint from '@/components/ui/FeatureHint.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import { docUrl } from '@/utils/docs'
 
 const confirm = useConfirm()

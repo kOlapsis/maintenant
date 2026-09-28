@@ -21,6 +21,7 @@ import { timeAgo } from '@/utils/time'
 import HeartbeatStatusBadge from './HeartbeatStatusBadge.vue'
 import AgentBadge from './AgentBadge.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
+import UiButton from './ui/UiButton.vue'
 
 const props = defineProps<{
   heartbeat: Heartbeat
@@ -161,37 +162,30 @@ async function handleDelete() {
       :style="{ borderTop: '1px solid var(--mnt-border-subtle)' }"
       @click.stop
     >
-      <button
-        class="rounded px-2 py-0.5 text-xs"
-        :style="{ color: 'var(--mnt-text-secondary)' }"
-        @click="copyPingUrl"
-      >
+      <UiButton variant="ghost" size="sm" class="!min-h-0 px-2 py-0.5 text-xs" @click="copyPingUrl">
         {{ copied ? 'Copied!' : 'Copy URL' }}
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-if="heartbeat.status !== 'paused'"
-        class="rounded px-2 py-0.5 text-xs"
-        :style="{ color: 'var(--mnt-status-warn)' }"
+        variant="ghost"
+        size="sm"
+        class="!min-h-0 px-2 py-0.5 text-xs text-mnt-status-warn"
         @click="handlePause"
       >
         Pause
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-else
-        class="rounded px-2 py-0.5 text-xs"
-        :style="{ color: 'var(--mnt-status-ok)' }"
+        variant="ghost"
+        size="sm"
+        class="!min-h-0 px-2 py-0.5 text-xs text-mnt-status-ok"
         @click="handleResume"
       >
         Resume
-      </button>
-      <button
-        class="ml-auto rounded px-2 py-0.5 text-xs transition hover:opacity-80"
-        :style="{ color: 'var(--mnt-status-down)' }"
-        :disabled="deleting"
-        @click="handleDelete"
-      >
-        {{ deleting ? 'Deleting...' : 'Delete' }}
-      </button>
+      </UiButton>
+      <UiButton variant="danger" size="sm" class="ml-auto" :loading="deleting" @click="handleDelete">
+        Delete
+      </UiButton>
     </div>
   </div>
 </template>

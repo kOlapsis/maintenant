@@ -27,6 +27,8 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import ListToolbar from '@/components/ui/ListToolbar.vue'
 import DataTable, { type Column } from '@/components/ui/DataTable.vue'
+import SelectInput from '@/components/ui/SelectInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { ChipTone, StatusChip } from '@/components/ui/listFilters'
 import { usePreferencesStore } from '@/stores/preferences'
 import { ChevronDown, Box, SearchX } from 'lucide-vue-next'
@@ -188,6 +190,11 @@ function setArchived(value: boolean) {
   store.fetchContainers({ archived: value })
 }
 
+const archivedFilterValue = computed({
+  get: () => (showArchived.value ? 'all' : 'live'),
+  set: (value: string | number | null) => setArchived(value === 'all'),
+})
+
 function resetFilters() {
   filter.reset()
   hostFilter.value = ''
@@ -288,36 +295,32 @@ onMounted(() => {
         <template #filters>
           <label v-if="hostOptions.length > 1" class="flex flex-col gap-1">
             <span class="text-[11px] font-semibold uppercase tracking-wide text-mnt-muted">Host</span>
-            <select
+            <SelectInput
               v-model="hostFilter"
-              class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-primary px-2 text-xs text-mnt-secondary"
-            >
-              <option value="">All hosts</option>
-              <option v-for="h in hostOptions" :key="h.value" :value="h.value">{{ h.label }}</option>
-            </select>
+              size="sm"
+              :options="[{ value: '', label: 'All hosts' }, ...hostOptions]"
+            />
           </label>
 
           <label v-if="groupOptions.length > 1" class="flex flex-col gap-1">
             <span class="text-[11px] font-semibold uppercase tracking-wide text-mnt-muted">Group</span>
-            <select
+            <SelectInput
               v-model="groupFilter"
-              class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-primary px-2 text-xs text-mnt-secondary"
-            >
-              <option value="">All groups</option>
-              <option v-for="g in groupOptions" :key="g" :value="g">{{ g }}</option>
-            </select>
+              size="sm"
+              :options="[{ value: '', label: 'All groups' }, ...groupOptions.map((g) => ({ value: g, label: g }))]"
+            />
           </label>
 
           <label v-if="store.archivedCount > 0" class="flex flex-col gap-1">
             <span class="text-[11px] font-semibold uppercase tracking-wide text-mnt-muted">Archived</span>
-            <select
-              class="focus-ring min-h-[38px] rounded-lg border border-mnt-default bg-mnt-primary px-2 text-xs text-mnt-secondary"
-              :value="showArchived ? 'all' : 'live'"
-              @change="setArchived(($event.target as HTMLSelectElement).value === 'all')"
-            >
-              <option value="live">Live only</option>
-              <option value="all">Include archived ({{ store.archivedCount }})</option>
-            </select>
+            <SelectInput
+              v-model="archivedFilterValue"
+              size="sm"
+              :options="[
+                { value: 'live', label: 'Live only' },
+                { value: 'all', label: `Include archived (${store.archivedCount})` },
+              ]"
+            />
           </label>
         </template>
       </ListToolbar>
@@ -330,13 +333,7 @@ onMounted(() => {
         description="Try a broader search term, or clear the status and secondary filters to see the whole fleet again."
       >
         <template #action>
-          <button
-            type="button"
-            class="focus-ring min-h-[38px] rounded-lg border border-mnt-default px-3 text-xs font-semibold text-mnt-secondary hover:text-mnt-primary"
-            @click="resetFilters"
-          >
-            Clear filters
-          </button>
+          <UiButton variant="secondary" size="sm" @click="resetFilters">Clear filters</UiButton>
         </template>
       </EmptyState>
 

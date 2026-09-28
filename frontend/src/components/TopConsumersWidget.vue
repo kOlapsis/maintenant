@@ -15,6 +15,7 @@
 import { ref } from 'vue'
 import { useEdition } from '@/composables/useEdition'
 import { Lock } from 'lucide-vue-next'
+import SegmentedToggle from './ui/SegmentedToggle.vue'
 
 /**
  * A period is whatever the engine's catalogue declares. It used to be a fixed
@@ -82,21 +83,12 @@ function formatValue(consumer: TopConsumer): string {
   <div>
     <!-- Metric + period toggles -->
     <div class="mb-3 flex items-center gap-3">
-      <div class="flex gap-1">
-        <button
-          v-for="m in (['cpu', 'memory'] as const)"
-          :key="m"
-          class="rounded-full px-3 py-1 text-xs font-medium transition cursor-pointer"
-          :style="{
-            backgroundColor: activeMetric === m ? 'var(--mnt-accent)' : 'var(--mnt-bg-elevated)',
-            color: activeMetric === m ? 'var(--mnt-text-inverted)' : 'var(--mnt-text-secondary)',
-            border: activeMetric === m ? '1px solid var(--mnt-accent)' : '1px solid var(--mnt-border-default)',
-          }"
-          @click="switchMetric(m)"
-        >
-          {{ m === 'cpu' ? 'CPU' : 'Memory' }}
-        </button>
-      </div>
+      <SegmentedToggle
+        :model-value="activeMetric"
+        :options="[{ value: 'cpu', label: 'CPU' }, { value: 'memory', label: 'Memory' }]"
+        ariaLabel="Metric"
+        @update:model-value="(v) => switchMetric(v as 'cpu' | 'memory')"
+      />
 
       <div
         class="h-4 w-px"

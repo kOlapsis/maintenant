@@ -19,6 +19,7 @@ import { useChannelsStore } from '@/stores/channels'
 import { useConfirm } from '@/composables/useConfirm'
 import TriggerEditor from '@/components/TriggerEditor.vue'
 import TriggerList from '@/components/TriggerList.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import type { AlertTrigger } from '@/types/triggers'
 
 const store = useTriggersStore()
@@ -86,14 +87,9 @@ onMounted(async () => {
           {{ store.triggers.length }} {{ store.triggers.length === 1 ? 'trigger' : 'triggers' }}
         </template>
       </p>
-      <button
-        v-if="!showEditor"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-mnt-green-600 hover:bg-mnt-green-500 text-mnt-inverted rounded-lg text-xs font-bold transition-all shadow-lg shadow-mnt-green-500/20"
-        @click="openCreate"
-      >
-        <Plus :size="13" />
+      <UiButton v-if="!showEditor" variant="primary" size="sm" :icon="Plus" @click="openCreate">
         New trigger
-      </button>
+      </UiButton>
     </div>
 
     <!-- Editor -->

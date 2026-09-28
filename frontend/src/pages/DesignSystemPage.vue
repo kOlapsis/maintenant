@@ -195,14 +195,9 @@ const demoModalOpen = ref(false)
       <span class="rounded bg-mnt-elevated px-2 py-0.5 font-mono text-[11px] text-mnt-muted">/_ds</span>
       <div class="ml-auto flex items-center gap-2">
         <DensityToggle />
-        <button
-          type="button"
-          class="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-mnt-default px-2.5 py-1.5 text-xs font-semibold text-mnt-secondary hover:text-mnt-primary"
-          @click="flipTheme"
-        >
-          <component :is="resolvedTheme === 'dark' ? Sun : Moon" :size="14" aria-hidden="true" />
+        <UiButton variant="secondary" size="sm" :icon="resolvedTheme === 'dark' ? Sun : Moon" @click="flipTheme">
           {{ resolvedTheme === 'dark' ? 'Light' : 'Dark' }}
-        </button>
+        </UiButton>
       </div>
     </header>
 

@@ -18,6 +18,7 @@ import { useUpdatesStore } from '@/stores/updates'
 import { timeAgo } from '@/utils/time'
 import { osAtRisk, osAtRiskTone, osTotal } from '@/utils/osSupport'
 import { RefreshCw, AlertTriangle, ArrowUpCircle, CheckCircle, Server } from 'lucide-vue-next'
+import UiButton from '@/components/ui/UiButton.vue'
 
 const updates = useUpdatesStore()
 
@@ -44,14 +45,16 @@ const formatTime = timeAgo
         <span v-if="updates.summary" class="text-[10px] text-mnt-muted font-bold">
           Last scan: {{ formatTime(updates.summary.last_scan) }}
         </span>
-        <button
-          @click="updates.startScan()"
+        <UiButton
+          variant="primary"
+          size="sm"
+          :icon="RefreshCw"
+          :loading="updates.scanning"
           :disabled="updates.scanning"
-          class="px-3 py-1.5 bg-mnt-green-600 hover:bg-mnt-green-500 disabled:bg-mnt-elevated disabled:text-mnt-muted text-mnt-inverted rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-mnt-green-500/20"
+          @click="updates.startScan()"
         >
-          <RefreshCw :size="11" :class="{ 'animate-spin': updates.scanning }" />
           {{ updates.scanning ? 'Scan...' : 'Check' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
