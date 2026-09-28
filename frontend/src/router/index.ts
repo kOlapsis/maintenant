@@ -82,16 +82,6 @@ const router = createRouter({
         { path: 'editions', name: 'editions', component: EditionsPage },
         // The old offer page: keep the address working, send it to the comparison.
         { path: 'pro-edition', redirect: { name: 'editions' } },
-        // Dev-only design system gallery (not linked in nav, excluded from prod build)
-        ...(import.meta.env.DEV
-          ? [
-              {
-                path: '_ds',
-                name: 'design-system',
-                component: () => import('../pages/DesignSystemPage.vue'),
-              },
-            ]
-          : []),
       ],
     },
     {
