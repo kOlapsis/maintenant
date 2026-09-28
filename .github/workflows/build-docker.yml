@@ -7,12 +7,10 @@
 # - workflow_call from release.yml: the semver tags and `latest` are published,
 #   and the manifest list digest is returned so the caller can attest and sign it.
 #
-# A fourth, narrower path lives in build-demo/merge-demo: on push to main only,
-# the same Dockerfile is built again with DEMO_MODE=true and published as the
-# single tag `:demo` (read-only public demo). It never
-# runs on a pull_request or on a workflow_call from release.yml, and it never
-# touches jobs.merge.outputs, which release.yml reads to attest and sign the
-# normal image.
+# A fourth path lives in build-demo/merge-demo: on a published, non-prerelease
+# release only, the same Dockerfile is built again with DEMO_MODE=true and
+# published as the single tag `:demo` (read-only public demo). It never touches
+# jobs.merge.outputs, which release.yml reads to attest and sign the normal image.
 #
 # Security model: no default token permissions, every action pinned to a full
 # commit SHA, checkout without persisted credentials, dynamic values passed
@@ -258,16 +256,11 @@ jobs:
   # job already branches on PR-vs-push and on whether to scan; a third axis
   # would multiply those branches instead of adding one readable block, and
   # would risk the demo variant sneaking into steps.build.outputs.digest that
-  # `merge` reads. The `if:` only matches an actual push event on main, which
-  # excludes pull_request (no push_decision branch needed: this job always
-  # pushes) and excludes workflow_call from release.yml (that event is never
-  # named "push", regardless of the `push` input release.yml sets).
+  # `merge` reads. A workflow_call inherits the caller's event, so the `if:`
+  # only matches the call from release.yml.
   build-demo:
     name: Build demo (${{ matrix.platform }})
-    needs: [changes]
-    if: |
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+    if: github.event_name == 'release' && !github.event.release.prerelease
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
@@ -320,8 +313,8 @@ jobs:
       # Not scanned separately: same base image, same dependencies, same
       # Dockerfile as the normal image, which the pull_request gate above
       # already scans on every change. The only difference DEMO_MODE makes is
-      # one linked-in string constant in the Go binary. Pushes to main carry
-      # no Trivy step for the normal image either (see the `build` job above),
+      # one linked-in string constant in the Go binary. Releases carry no
+      # Trivy step for the normal image either (see the `build` job above),
       # so this keeps the same scanning posture as its normal counterpart.
       # No cache on this path either: it publishes, same rule as `build`.
       - name: Build and push by digest
@@ -445,10 +438,8 @@ jobs:
   # Kept separate from `merge` on purpose: this job has no `outputs:` at all,
   # so it cannot become a source for jobs.merge.outputs.* by accident (those
   # feed the top-level outputs: block that release.yml reads to attest and
-  # sign the normal image). needs: build-demo carries no explicit `if:`: when
-  # build-demo is skipped (any event other than a push to main), the default
-  # `success()` condition on this job already evaluates to false, so it skips
-  # too without repeating build-demo's condition here.
+  # sign the normal image). No `if:` needed: when build-demo is skipped, the
+  # default `success()` condition skips this job too.
   merge-demo:
     name: Merge demo manifests
     runs-on: ubuntu-24.04

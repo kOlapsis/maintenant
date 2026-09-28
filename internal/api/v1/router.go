@@ -288,7 +288,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("POST /ping/{uuid}", ph.HandlePing)
 	}
 
-	if d.Outbound != nil {
+	if d.Outbound != nil && !d.DemoMode {
 		oh := NewOutboundHeartbeatHandler(d.Outbound)
 		r.mux.HandleFunc("GET /api/v1/outbound-heartbeats", oh.HandleList)
 		r.mux.HandleFunc("POST /api/v1/outbound-heartbeats", oh.HandleCreate)

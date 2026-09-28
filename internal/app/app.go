@@ -841,7 +841,9 @@ func (a *App) Start(ctx context.Context) error {
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
-	a.outboundSvc.Start(ctx)
+	if !a.cfg.DemoMode {
+		a.outboundSvc.Start(ctx)
+	}
 
 	// Telemetry: best-effort. Self-exits on ctx cancellation; panics are
 	// contained inside the package (FR-009/FR-011/FR-012).

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/outbound"
 )
 
 // This file is SC-003: for the 3 editions × 21 capabilities, the answer must be
@@ -198,6 +199,24 @@ func TestNewRouter_WiresDemoModeIntoTheEditionEndpoint(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, true, body["demo"])
+}
+
+func TestNewRouter_DemoModeDropsOutboundHeartbeats(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := outbound.NewService(outbound.Deps{Store: &memOutboundStore{items: map[string]outbound.OutboundHeartbeat{}}})
+
+	for _, demo := range []bool{true, false} {
+		t.Run(map[bool]string{true: "demo_on", false: "demo_off"}[demo], func(t *testing.T) {
+			r := NewRouter(HandlerDeps{Logger: logger, DemoMode: demo, Outbound: svc})
+			rec := httptest.NewRecorder()
+			r.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/outbound-heartbeats", nil))
+			if demo {
+				assert.Equal(t, http.StatusNotFound, rec.Code)
+			} else {
+				assert.Equal(t, http.StatusOK, rec.Code)
+			}
+		})
+	}
 }
 
 func TestEdition_ExposesDemoMode(t *testing.T) {
