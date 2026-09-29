@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package main
 
@@ -21,6 +13,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/app"
+	"github.com/kolapsis/maintenant/internal/commercial"
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/trust"
@@ -192,7 +185,8 @@ func main() {
 		return
 	}
 
-	application, err := app.New(cfg, logger)
+	commercial.Register()
+	application, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
 	if err != nil {
 		if !logStorageStartupError(logger, err, cfg.DatabaseURL) {
 			logger.Error("failed to initialize application", "error", err)

@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 import { ref, computed } from 'vue'
 import {
@@ -18,6 +10,7 @@ import {
   type LicenseStatus,
   type QuotaResource,
   type HistoryWindowSpec,
+  type SuspendedChannel,
 } from '@/services/editionApi'
 import { sseBus } from '@/services/sseBus'
 import { onProbePayload } from '@/services/authGuard'
@@ -52,7 +45,7 @@ async function loadLicenseStatus() {
   }
 }
 
-// SSE events that change the quota counters — auto-reload on any of them.
+// SSE events that change what /edition reports (quota counters, suspended channels): reload on any of them.
 // Covers user-initiated actions AND label/annotation-driven auto-discovery.
 const QUOTA_EVENTS = [
   'endpoint.discovered',
@@ -65,6 +58,9 @@ const QUOTA_EVENTS = [
   'agent.created',
   'agent.revoked',
   'agent.deleted',
+  'channel.created',
+  'channel.updated',
+  'channel.deleted',
 ] as const
 
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
@@ -236,6 +232,11 @@ export function useEdition() {
     })
   }
 
+  /** The cap on a resource in a given edition (-1 unlimited), or null when the engine reports none. */
+  function tierLimit(tier: Edition, resource: QuotaResource): number | null {
+    return edition.value?.tiers?.[tier]?.[resource] ?? null
+  }
+
   /**
    * The resource-history catalogue, exactly as the engine declares it. An
    * engine that does not report one gives an empty catalogue: the interface
@@ -276,6 +277,10 @@ export function useEdition() {
 
   const personalization = computed(() => hasFeature('personalization'))
 
+  const suspendedChannels = computed<SuspendedChannel[]>(
+    () => edition.value?.suspended_channels?.channels ?? [],
+  )
+
   return {
     edition,
     editionName,
@@ -300,6 +305,8 @@ export function useEdition() {
     load,
     reload,
     getQuota,
+    tierLimit,
+    suspendedChannels,
     licenseStatus,
     licenseMessage,
     licenseStatusValue,

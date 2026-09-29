@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package mcp
 
@@ -48,12 +40,17 @@ type ChannelTester interface {
 	SendTestWebhook(ctx context.Context, ch *alert.NotificationChannel) (int, error)
 }
 
+// ChannelValidators returns the validator of a channel type, if it has one.
+type ChannelValidators interface {
+	Validator(chType string) (alert.ChannelValidator, bool)
+}
+
 type SessionChecker interface {
 	IsConnected(agentID string) bool
 }
 
 // AgentLogFetcher reads logs of a container living on a remote agent's host,
-// which the server's own runtime cannot see. Satisfied by *agentserver.Sessions.
+// which the server's own runtime cannot see. Satisfied by the multi-host session registry.
 type AgentLogFetcher interface {
 	FetchLogs(ctx context.Context, agentID, externalID string, lines int, timestamps bool) ([]string, error)
 }
@@ -79,30 +76,31 @@ type SwarmNodeReader interface {
 
 // Services holds all dependencies required by MCP tool handlers.
 type Services struct {
-	Containers    *container.Service
-	Endpoints     *endpoint.Service
-	Heartbeats    *heartbeat.Service
-	Certificates  *certificate.Service
-	Resources     *resource.Service
-	Alerts        alert.AlertStore
-	Channels      alert.ChannelStore
-	Triggers      alert.TriggerStore
-	Escalator     alert.Escalator
-	ChannelTester ChannelTester
-	Updates       *update.Service
-	Incidents     status.IncidentStore
-	Maintenance   status.MaintenanceStore
-	Runtime       runtime.Runtime
-	LogFetcher    LogFetcher
-	EscalationSvc *escalation.Service
-	Agents        AgentLister
-	Sessions      SessionChecker
-	AgentLogs     AgentLogFetcher
-	EOL           *eol.Service
+	Containers        *container.Service
+	Endpoints         *endpoint.Service
+	Heartbeats        *heartbeat.Service
+	Certificates      *certificate.Service
+	Resources         *resource.Service
+	Alerts            alert.AlertStore
+	Channels          alert.ChannelStore
+	Triggers          alert.TriggerStore
+	Escalator         alert.Escalator
+	ChannelTester     ChannelTester
+	ChannelValidators ChannelValidators
+	Updates           *update.Service
+	Incidents         status.IncidentStore
+	Maintenance       status.MaintenanceStore
+	Runtime           runtime.Runtime
+	LogFetcher        LogFetcher
+	EscalationSvc     escalation.Service
+	Agents            AgentLister
+	Sessions          SessionChecker
+	AgentLogs         AgentLogFetcher
+	EOL               *eol.Service
 
 	// Security & supply-chain (read-only MCP surface).
 	SecuritySvc *security.Service
-	Scorer      *security.Scorer
+	Scorer      security.PostureScorer
 	UpdateStore update.UpdateStore
 
 	// Orchestrators (read-only MCP surface).

@@ -1,0 +1,55 @@
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+  SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+  See internal/commercial/LICENSE.
+-->
+
+<script setup lang="ts">
+import { ExternalLink, AlertTriangle } from 'lucide-vue-next'
+
+defineProps<{
+  changelogUrl: string
+  changelogSummary: string
+  hasBreakingChanges: boolean
+  sourceUrl?: string
+}>()
+</script>
+
+<template>
+  <div class="bg-mnt-primary rounded-xl p-4 border border-mnt-default">
+    <div class="flex items-center justify-between mb-2">
+      <h4 class="text-[10px] font-bold text-mnt-muted uppercase tracking-widest">Changelog</h4>
+      <a
+        v-if="changelogUrl"
+        :href="changelogUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-[10px] text-mnt-green-500 hover:text-mnt-green-400 flex items-center gap-1 transition-colors"
+      >
+        View release <ExternalLink :size="9" />
+      </a>
+    </div>
+
+    <div v-if="hasBreakingChanges" class="flex items-center gap-1.5 mb-2 px-2 py-1 bg-mnt-status-down rounded-lg border border-rose-500/20">
+      <AlertTriangle :size="11" class="text-mnt-status-down" />
+      <span class="text-[10px] font-bold text-mnt-status-down uppercase">Breaking Changes</span>
+    </div>
+
+    <p v-if="changelogSummary" class="text-xs text-mnt-muted leading-relaxed">
+      {{ changelogSummary }}
+    </p>
+    <p v-else class="text-xs text-mnt-muted italic">
+      No summary available
+    </p>
+
+    <a
+      v-if="sourceUrl"
+      :href="sourceUrl"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="mt-2 text-[10px] text-mnt-muted hover:text-mnt-muted flex items-center gap-1 transition-colors"
+    >
+      Source code <ExternalLink :size="9" />
+    </a>
+  </div>
+</template>

@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package kubernetes
 
@@ -30,7 +22,7 @@ type TopologyStore interface {
 
 // IngestService reconciles a Kubernetes topology snapshot reported by an agent
 // (or by the server's own local runtime under the LocalAgent id) into the store.
-// It implements agentserver.KubernetesTopologyHandler.
+// It implements the multi-host KubernetesTopologyHandler.
 type IngestService struct {
 	store     TopologyStore
 	broadcast func(eventType string, data any)

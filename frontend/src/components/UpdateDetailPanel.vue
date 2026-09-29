@@ -1,14 +1,6 @@
 <!--
   Copyright 2026 Benjamin Touchard (kOlapsis)
-
-  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-  or a commercial license. You may not use this file except in compliance
-  with one of these licenses.
-
-  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-  Commercial: See COMMERCIAL-LICENSE.md
-
-  Source: https://github.com/kolapsis/maintenant
+  SPDX-License-Identifier: Apache-2.0
 -->
 
 <script setup lang="ts">
@@ -18,9 +10,9 @@ import { useAlertsStore } from '@/stores/alerts'
 import { type ContainerUpdateDetail, fetchContainerUpdate } from '@/services/updateApi'
 import { type Alert } from '@/services/alertApi'
 import { useEdition } from '@/composables/useEdition'
-import RiskScoreGauge from '@/components/RiskScoreGauge.vue'
-import CveList from '@/components/CveList.vue'
-import ChangelogViewer from '@/components/ChangelogViewer.vue'
+import RiskScoreGauge from '@/commercial/components/updates/RiskScoreGauge.vue'
+import CveList from '@/commercial/components/updates/CveList.vue'
+import ChangelogViewer from '@/commercial/components/updates/ChangelogViewer.vue'
 import FeatureGate from '@/components/FeatureGate.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
 import UiButton from '@/components/ui/UiButton.vue'

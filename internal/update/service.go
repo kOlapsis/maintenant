@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package update
 
@@ -208,7 +200,7 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 
 // GenerateUpdateCommand produces a shell command to update a container.
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) string {
-	repo, _, _ := parseImageRef(c.Image)
+	repo, _, _ := ParseImageRef(c.Image)
 
 	// Kubernetes workloads
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
@@ -238,7 +230,7 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, previousDigest string
 		return ""
 	}
 
-	repo, _, _ := parseImageRef(c.Image)
+	repo, _, _ := ParseImageRef(c.Image)
 
 	// Kubernetes workloads — use rollout undo
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {

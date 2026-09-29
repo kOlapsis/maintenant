@@ -1,21 +1,13 @@
 <!--
   Copyright 2026 Benjamin Touchard (kOlapsis)
-
-  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-  or a commercial license. You may not use this file except in compliance
-  with one of these licenses.
-
-  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-  Commercial: See COMMERCIAL-LICENSE.md
-
-  Source: https://github.com/kolapsis/maintenant
+  SPDX-License-Identifier: Apache-2.0
 -->
 
 <script setup lang="ts">
 import type {Container} from '@/services/containerApi'
 import {useResourcesStore} from '@/stores/resources'
 import {useUpdatesStore} from '@/stores/updates'
-import {usePostureStore} from '@/stores/posture'
+import {usePostureStore} from '@/commercial/stores/posture'
 import {useHostLabel} from '@/composables/useHostLabel'
 import {useEdition} from '@/composables/useEdition'
 import {timeAgo} from '@/utils/time'
@@ -23,7 +15,7 @@ import {getStateStyle as getStateStyleFromUtil} from '@/utils/containerState'
 import {fetchContainerDailyUptime, type UptimeDay} from '@/services/uptimeApi'
 import UpdateBadge from '@/components/UpdateBadge.vue'
 import SecurityInsightBadge from '@/components/SecurityInsightBadge.vue'
-import PostureScoreBadge from '@/components/PostureScoreBadge.vue'
+import PostureScoreBadge from '@/commercial/components/posture/PostureScoreBadge.vue'
 import AgentBadge from '@/components/AgentBadge.vue'
 import UptimeBar90 from '@/components/ui/UptimeBar90.vue'
 import {computed, onMounted, ref} from 'vue'

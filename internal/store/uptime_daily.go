@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package store
 
@@ -44,12 +36,7 @@ func NewUptimeDailyStore(d *DB) *UptimeDailyStore {
 // Returns up to `days` days of data, most recent first.
 // Days with no checks have UptimePercent = nil.
 func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointID string, days int) ([]DailyUptime, error) {
-	if days <= 0 {
-		days = 90
-	}
-	if days > 365 {
-		days = 365
-	}
+	days = clampUptimeDays(days)
 
 	// Calculate the start of the window (beginning of the day N days ago in UTC).
 	now := time.Now().UTC()
@@ -98,7 +85,7 @@ func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointI
 	}
 
 	// Generate a full day range, filling gaps with null uptime.
-	result := make([]DailyUptime, 0, days)
+	result := make([]DailyUptime, 0, maxUptimeDays)
 	for i := 0; i < days; i++ {
 		day := startOfToday.AddDate(0, 0, -i)
 		dateStr := day.Format("2006-01-02")
@@ -117,12 +104,7 @@ func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointI
 // checks), container uptime is the running+healthy fraction of each day. Days
 // before the first recorded transition return nil (no data), most recent first.
 func (s *UptimeDailyStore) GetContainerDailyUptime(ctx context.Context, containerID string, days int) ([]DailyUptime, error) {
-	if days <= 0 {
-		days = 90
-	}
-	if days > 365 {
-		days = 365
-	}
+	days = clampUptimeDays(days)
 
 	now := time.Now().UTC()
 	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -180,7 +162,7 @@ func (s *UptimeDailyStore) GetContainerDailyUptime(ctx context.Context, containe
 		hasData = true
 	}
 
-	result := make([]DailyUptime, 0, days)
+	result := make([]DailyUptime, 0, maxUptimeDays)
 	for i := 0; i < days; i++ {
 		day := startOfToday.AddDate(0, 0, -i)
 		dateStr := day.Format("2006-01-02")
@@ -232,12 +214,7 @@ func countContainerIncidents(transitions []*container.StateTransition, from, to 
 // Returns up to `days` days of data, most recent first.
 // Days with no pings have UptimePercent = nil.
 func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int) ([]DailyUptime, error) {
-	if days <= 0 {
-		days = 90
-	}
-	if days > 365 {
-		days = 365
-	}
+	days = clampUptimeDays(days)
 
 	now := time.Now().UTC()
 	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -286,7 +263,7 @@ func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbea
 		return nil, fmt.Errorf("iterate heartbeat daily uptime: %w", err)
 	}
 
-	result := make([]DailyUptime, 0, days)
+	result := make([]DailyUptime, 0, maxUptimeDays)
 	for i := 0; i < days; i++ {
 		day := startOfToday.AddDate(0, 0, -i)
 		dateStr := day.Format("2006-01-02")
@@ -298,4 +275,13 @@ func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbea
 	}
 
 	return result, nil
+}
+
+const maxUptimeDays = 365
+
+func clampUptimeDays(days int) int {
+	if days <= 0 {
+		return 90
+	}
+	return min(days, maxUptimeDays)
 }

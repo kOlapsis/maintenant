@@ -1,14 +1,6 @@
 <!--
   Copyright 2026 Benjamin Touchard (kOlapsis)
-
-  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-  or a commercial license. You may not use this file except in compliance
-  with one of these licenses.
-
-  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-  Commercial: See COMMERCIAL-LICENSE.md
-
-  Source: https://github.com/kolapsis/maintenant
+  SPDX-License-Identifier: Apache-2.0
 -->
 
 <script setup lang="ts">
@@ -17,7 +9,7 @@ import { useRouter } from 'vue-router'
 import { useDashboardStore } from '@/stores/dashboard'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
 import { useResourcesStore } from '@/stores/resources'
-import { usePostureStore } from '@/stores/posture'
+import { usePostureStore } from '@/commercial/stores/posture'
 import { useContainersStore } from '@/stores/containers'
 import { useUpdatesStore } from '@/stores/updates'
 import { useAgentsStore } from '@/stores/agents'

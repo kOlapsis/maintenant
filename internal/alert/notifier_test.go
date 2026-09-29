@@ -1,20 +1,22 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license.
+// SPDX-License-Identifier: Apache-2.0
 
 package alert
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,73 +84,6 @@ func TestSendTestWebhook_Discord(t *testing.T) {
 	t.Logf("Discord payload:\n%s", mustPretty(*body))
 }
 
-func TestSendTestWebhook_Slack(t *testing.T) {
-	srv, body, ct := captureServer(t, http.StatusOK)
-
-	n := newTestNotifier()
-	ch := &NotificationChannel{Type: "slack", URL: srv.URL}
-
-	code, err := n.SendTestWebhook(context.Background(), ch)
-
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, code)
-	assert.Equal(t, "application/json", *ct)
-
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal(*body, &payload))
-
-	blocks, ok := payload["blocks"].([]interface{})
-	require.True(t, ok, "Slack payload must have 'blocks' array")
-	require.NotEmpty(t, blocks)
-
-	for i, b := range blocks {
-		block := b.(map[string]interface{})
-		assert.Equal(t, "section", block["type"], "block[%d].type", i)
-		text, ok := block["text"].(map[string]interface{})
-		require.True(t, ok, "block[%d].text must be an object", i)
-		assert.Equal(t, "mrkdwn", text["type"])
-		assert.NotEmpty(t, text["text"])
-	}
-
-	t.Logf("Slack payload:\n%s", mustPretty(*body))
-}
-
-func TestSendTestWebhook_Teams(t *testing.T) {
-	srv, body, ct := captureServer(t, http.StatusOK)
-
-	n := newTestNotifier()
-	ch := &NotificationChannel{Type: "teams", URL: srv.URL}
-
-	code, err := n.SendTestWebhook(context.Background(), ch)
-
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, code)
-	assert.Equal(t, "application/json", *ct)
-
-	var payload map[string]interface{}
-	require.NoError(t, json.Unmarshal(*body, &payload))
-
-	assert.Equal(t, "MessageCard", payload["@type"])
-	assert.NotEmpty(t, payload["@context"])
-	assert.NotEmpty(t, payload["title"])
-	assert.NotEmpty(t, payload["themeColor"])
-
-	sections, ok := payload["sections"].([]interface{})
-	require.True(t, ok, "Teams payload must have 'sections' array")
-	require.NotEmpty(t, sections)
-
-	section := sections[0].(map[string]interface{})
-	facts, ok := section["facts"].([]interface{})
-	require.True(t, ok)
-	for i, f := range facts {
-		fact := f.(map[string]interface{})
-		assert.NotEmpty(t, fact["name"], "fact[%d].name", i)
-		assert.NotEmpty(t, fact["value"], "fact[%d].value", i)
-	}
-
-	t.Logf("Teams payload:\n%s", mustPretty(*body))
-}
-
 func TestSendTestWebhook_Non2xx_ReturnsError(t *testing.T) {
 	srv, _, _ := captureServer(t, http.StatusBadRequest)
 
@@ -186,4 +121,140 @@ func mustPretty(b []byte) string {
 	}
 	out, _ := json.MarshalIndent(v, "", "  ")
 	return string(out)
+}
+
+type fakeSender struct {
+	mu        sync.Mutex
+	ready     error
+	fail      error
+	sends     int
+	delays    []time.Duration
+	lastEvent string
+}
+
+func (f *fakeSender) Ready() error { return f.ready }
+
+func (f *fakeSender) Send(_ context.Context, _ *NotificationChannel, eventType string, _ *Alert) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sends++
+	f.lastEvent = eventType
+	return f.fail
+}
+
+func (f *fakeSender) RetryDelay(wait time.Duration, _ error) time.Duration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.delays = append(f.delays, wait)
+	return time.Millisecond
+}
+
+func (f *fakeSender) FailureMessage(err error) string { return "fake: " + err.Error() }
+
+func (f *fakeSender) SendTest(context.Context, *NotificationChannel, *Alert) (int, error) {
+	return 299, nil
+}
+
+type deliveryRecorder struct {
+	ChannelStore
+	mu      sync.Mutex
+	updates []NotificationDelivery
+}
+
+func (r *deliveryRecorder) UpdateDelivery(_ context.Context, d *NotificationDelivery) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.updates = append(r.updates, *d)
+	return nil
+}
+
+func testJob(chType string) NotificationJob {
+	return NotificationJob{
+		Delivery: &NotificationDelivery{ID: "d1"},
+		Channel:  &NotificationChannel{ID: "c1", Type: chType},
+		Alert:    &Alert{ID: "a1", Status: StatusResolved},
+	}
+}
+
+func TestProcessJob_RoutesEachTypeToItsSender(t *testing.T) {
+	rec := &deliveryRecorder{}
+	n := NewNotifier(rec, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
+	a, b := &fakeSender{}, &fakeSender{}
+	n.RegisterChannel("a", a)
+	n.RegisterChannel("b", b)
+
+	n.processJob(context.Background(), testJob("a"))
+	n.processJob(context.Background(), testJob("b"))
+	n.processJob(context.Background(), testJob("b"))
+
+	assert.Equal(t, 1, a.sends)
+	assert.Equal(t, 2, b.sends)
+	assert.Equal(t, "alert.resolved", b.lastEvent)
+	assert.Equal(t, DeliveryDelivered, rec.updates[len(rec.updates)-1].Status)
+
+	code, err := n.SendTestWebhook(context.Background(), &NotificationChannel{Type: "a"})
+	require.NoError(t, err)
+	assert.Equal(t, 299, code)
+}
+
+func TestProcessJob_UsesTheSendersRetryPolicy(t *testing.T) {
+	rec := &deliveryRecorder{}
+	n := NewNotifier(rec, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
+	s := &fakeSender{fail: errors.New("refused")}
+	n.RegisterChannel("x", s)
+
+	job := testJob("x")
+	n.processJob(context.Background(), job)
+
+	assert.Equal(t, maxRetries, s.sends)
+	assert.Equal(t, retryBackoffs[:maxRetries-1], s.delays, "the sender is handed the product's backoff")
+	assert.Equal(t, DeliveryFailed, job.Delivery.Status)
+	assert.Equal(t, maxRetries, job.Delivery.Attempts)
+	assert.Equal(t, "fake: refused", job.Delivery.LastError)
+
+	require.EqualError(t, n.SendNow(context.Background(), job.Alert, job.Channel), "refused")
+}
+
+func withEdition(t *testing.T, e extension.Edition) {
+	t.Helper()
+	prev := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return e }
+	t.Cleanup(func() { extension.CurrentEdition = prev })
+}
+
+func TestProcessJob_UnreadySenderFailsWithoutAnAttempt(t *testing.T) {
+	withEdition(t, extension.Pro)
+	rec := &deliveryRecorder{}
+	n := NewNotifier(rec, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
+	s := &fakeSender{ready: errors.New("SMTP not configured")}
+	n.RegisterChannel("email", s)
+	assert.False(t, n.SMTPConfigured())
+
+	job := testJob("email")
+	n.processJob(context.Background(), job)
+
+	assert.Zero(t, s.sends)
+	assert.Zero(t, job.Delivery.Attempts)
+	assert.Equal(t, "SMTP not configured", job.Delivery.LastError)
+	require.EqualError(t, n.SendNow(context.Background(), job.Alert, job.Channel), "SMTP not configured")
+	_, err := n.SendTestWebhook(context.Background(), job.Channel)
+	require.EqualError(t, err, "SMTP not configured")
+}
+
+func TestSendTestWebhook_UnregisteredTypeIsAGenericWebhook(t *testing.T) {
+	withEdition(t, extension.Pro)
+	srv, body, _ := captureServer(t, http.StatusOK)
+	n := newTestNotifier()
+
+	for _, chType := range []string{"slack", "email", "made-up"} {
+		_, err := n.SendTestWebhook(context.Background(), &NotificationChannel{Type: chType, URL: srv.URL})
+		require.NoError(t, err, chType)
+
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(*body, &payload))
+		assert.Equal(t, "test", payload["event"], chType)
+	}
+
+	_, ok := n.Validator("webhook")
+	assert.False(t, ok)
 }

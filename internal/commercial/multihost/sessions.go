@@ -1,0 +1,596 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+// SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+// See internal/commercial/LICENSE.
+
+package multihost
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/kolapsis/maintenant/internal/agentpb"
+	"github.com/kolapsis/maintenant/internal/agentproto"
+	"github.com/kolapsis/maintenant/internal/event"
+)
+
+// Reasons a session is torn down. They travel to the Push handler as the stream
+// context's cancellation cause, so it can tell the agent whether to give up or
+// reconnect — reporting every teardown as a revocation would make an agent that
+// was merely reaped as stale exit for good.
+var (
+	ErrSessionRevoked  = errors.New("agent_revoked")
+	ErrSessionReplaced = errors.New("session_replaced")
+	ErrSessionStale    = errors.New("session_stale")
+	ErrSessionClosed   = errors.New("session_closed")
+)
+
+// CauseForReason maps a Close reason to the cause handed to the agent.
+func CauseForReason(reason string) error {
+	switch reason {
+	case "revoked", "deleted":
+		return ErrSessionRevoked
+	case "stale":
+		return ErrSessionStale
+	default:
+		return ErrSessionClosed
+	}
+}
+
+// activeStream holds the live state of a connected agent stream.
+type activeStream struct {
+	cancel      context.CancelCauseFunc
+	addr        string
+	connectedAt time.Time
+	eventsSeen  atomic.Int64
+
+	// Spool state as the agent last declared it, so an operator can see a
+	// reconnected agent catching up instead of guessing from its logs.
+	spoolQueued     atomic.Int64
+	spoolDraining   atomic.Bool
+	spoolDropped    atomic.Int64
+	spoolReportedAt atomic.Int64
+
+	// send is drained by the stream's own Push goroutine, which is the only
+	// writer to the gRPC stream. Callers outside that goroutine (HTTP handlers
+	// issuing commands) enqueue here instead of touching the stream.
+	send chan *agentpb.ServerMessage
+	caps map[string]struct{}
+
+	// pending correlates in-flight command request ids to their reply channel.
+	// Its lifetime is the stream's, so a disconnect frees every waiter.
+	mu      sync.Mutex
+	pending map[string]chan *agentpb.CommandResult
+	closed  bool
+}
+
+// deliver hands res to the waiter for its request id, dropping it if nobody
+// waits (a cancelled or already-completed request).
+func (a *activeStream) deliver(res *agentpb.CommandResult) {
+	a.mu.Lock()
+	ch, ok := a.pending[res.GetRequestId()]
+	if ok && res.GetLast() {
+		delete(a.pending, res.GetRequestId())
+	}
+	a.mu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case ch <- res:
+	default:
+		// Reader fell behind; dropping beats stalling the stream's recv loop.
+	}
+	if res.GetLast() {
+		close(ch)
+	}
+}
+
+// closeAll releases every waiter, unblocking readers when the stream dies.
+func (a *activeStream) closeAll() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
+		return
+	}
+	a.closed = true
+	for id, ch := range a.pending {
+		close(ch)
+		delete(a.pending, id)
+	}
+}
+
+// ringBuffer tracks events in 60 slots of 5s each (= 5 minutes).
+type ringBuffer struct {
+	mu     sync.Mutex
+	slots  [60]int64
+	cursor int
+}
+
+func (rb *ringBuffer) add() {
+	rb.mu.Lock()
+	rb.slots[rb.cursor]++
+	rb.mu.Unlock()
+}
+
+func (rb *ringBuffer) advance() {
+	rb.mu.Lock()
+	rb.cursor = (rb.cursor + 1) % 60
+	rb.slots[rb.cursor] = 0
+	rb.mu.Unlock()
+}
+
+// Rate returns events per second averaged over the last 5 minutes.
+func (rb *ringBuffer) Rate() float64 {
+	rb.mu.Lock()
+	var total int64
+	for _, v := range rb.slots {
+		total += v
+	}
+	rb.mu.Unlock()
+	return float64(total) / 300.0
+}
+
+// Sessions tracks all currently connected agent streams.
+type Sessions struct {
+	mu          sync.RWMutex
+	active      map[string]*activeStream
+	logger      *slog.Logger
+	broadcaster EventBroadcaster
+	ring        ringBuffer
+
+	// offlineReported holds the agents whose outage the alert hook already
+	// announced, so the stale watcher re-derives the state without firing on
+	// every sweep. It is deliberately in-memory only: a restart empties it, and
+	// the first sweep after the grace period re-announces whatever is still
+	// absent, which is how an outage that started while the server was down gets
+	// reported at all. Guarded by mu.
+	offlineReported map[string]struct{}
+
+	// alertHook, if set, is invoked on every connect/disconnect transition so
+	// the app layer can raise an alert (connected=false) or clear one
+	// (connected=true). reason carries the disconnect cause ("stream_ended",
+	// "stale", "revoked", "deleted"). Always called WITHOUT s.mu held.
+	alertHook func(agentID, reason string, connected bool)
+}
+
+// NewSessions creates an empty Sessions registry.
+// broadcaster may be nil (SSE events will not be emitted).
+func NewSessions(logger *slog.Logger, broadcaster EventBroadcaster) *Sessions {
+	return &Sessions{
+		active:          make(map[string]*activeStream),
+		offlineReported: make(map[string]struct{}),
+		logger:          logger,
+		broadcaster:     broadcaster,
+	}
+}
+
+// SetLifecycleAlertHook registers a callback fired on connect/disconnect
+// transitions. Must be called once at wiring time, before any agent connects.
+func (s *Sessions) SetLifecycleAlertHook(fn func(agentID, reason string, connected bool)) {
+	s.alertHook = fn
+}
+
+// Token identifies one stream, so a handler closes only the session it opened.
+type Token struct{ stream *activeStream }
+
+// Open registers an active stream for agentID and cancels any pre-existing one.
+// caps are the command families the agent advertised; send is the queue its Push
+// goroutine drains to write to the stream (both may be nil for a telemetry-only
+// stream, in which case no command can be issued to this agent). The returned
+// Token identifies this stream for CloseStream.
+func (s *Sessions) Open(agentID string, cancel context.CancelCauseFunc, addr string, caps []string, send chan *agentpb.ServerMessage) Token {
+	capSet := make(map[string]struct{}, len(caps))
+	for _, c := range caps {
+		capSet[c] = struct{}{}
+	}
+
+	st := &activeStream{
+		cancel:      cancel,
+		addr:        addr,
+		connectedAt: time.Now(),
+		send:        send,
+		caps:        capSet,
+		pending:     make(map[string]chan *agentpb.CommandResult),
+	}
+
+	s.mu.Lock()
+	if existing, ok := s.active[agentID]; ok {
+		existing.cancel(ErrSessionReplaced)
+		existing.closeAll()
+	}
+	delete(s.offlineReported, agentID)
+	s.active[agentID] = st
+	s.mu.Unlock()
+
+	s.logger.Info("agent.connected", "agent_id", agentID, "addr", addr)
+	if s.broadcaster != nil {
+		s.broadcaster.BroadcastEvent(event.AgentConnected, map[string]any{
+			"agent_id": agentID,
+		})
+	}
+	if s.alertHook != nil {
+		s.alertHook(agentID, "", true)
+	}
+	return Token{stream: st}
+}
+
+// Close removes and cancels whatever active stream currently exists for
+// agentID, regardless of which one opened it. For administrative teardown
+// (revoke, delete) where any live session must go.
+func (s *Sessions) Close(agentID, reason string) {
+	s.remove(agentID, nil, reason)
+}
+
+// CloseStream removes and cancels the active stream for agentID only if it is
+// still the one identified by tok. A stale tok (superseded by a reconnect) or
+// a zero Token is a no-op, so a handler unwinding after being replaced can
+// never tear down the session that replaced it.
+func (s *Sessions) CloseStream(agentID string, tok Token, reason string) {
+	if tok.stream == nil {
+		return
+	}
+	s.remove(agentID, tok.stream, reason)
+}
+
+// remove tears down the active stream for agentID. only, when non-nil,
+// restricts the removal to that specific stream; a mismatch is a no-op before
+// any disconnect side effect.
+func (s *Sessions) remove(agentID string, only *activeStream, reason string) {
+	s.mu.Lock()
+	st, had := s.active[agentID]
+	if had && only != nil && st != only {
+		s.mu.Unlock()
+		return
+	}
+	if had {
+		st.cancel(CauseForReason(reason))
+		delete(s.active, agentID)
+	}
+	s.mu.Unlock()
+
+	if had {
+		st.closeAll()
+	}
+
+	if had {
+		s.logger.Info("agent.stream_closed", "agent_id", agentID, "reason", reason)
+		if s.broadcaster != nil {
+			s.broadcaster.BroadcastEvent(event.AgentDisconnected, map[string]any{
+				"agent_id": agentID,
+			})
+		}
+	}
+
+	// Fire the lifecycle hook on a real stream close (had) OR on intentional
+	// removal (revoke/delete), so a pending disconnect alert is resolved even
+	// when the agent was already offline with no live session to close.
+	terminal := reason == "revoked" || reason == "deleted"
+	if s.alertHook != nil && (had || terminal) {
+		s.mu.Lock()
+		if terminal {
+			delete(s.offlineReported, agentID)
+		} else {
+			s.offlineReported[agentID] = struct{}{}
+		}
+		s.mu.Unlock()
+		s.alertHook(agentID, reason, false)
+	}
+}
+
+// IsConnected reports whether agentID currently has an active stream.
+func (s *Sessions) IsConnected(agentID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.active[agentID]
+	return ok
+}
+
+// ListConnected returns all currently connected agent IDs.
+func (s *Sessions) ListConnected() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]string, 0, len(s.active))
+	for id := range s.active {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// maxInFlightPerAgent caps concurrent commands per agent, so a burst of log
+// viewers cannot exhaust the agent's worker budget or our own memory.
+const maxInFlightPerAgent = 8
+
+// commandSendTimeout bounds how long we wait for room in the stream's send queue.
+// Exceeding it means the agent's writer is wedged, not that it is merely busy.
+const commandSendTimeout = 5 * time.Second
+
+// HasCapability reports whether the agent's live stream advertised capability.
+func (s *Sessions) HasCapability(agentID, capability string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	st, ok := s.active[agentID]
+	if !ok {
+		return false
+	}
+	_, has := st.caps[capability]
+	return has
+}
+
+// SendCommand issues cmd to agentID and returns a channel carrying its replies,
+// closed once the terminal result arrives or the stream dies. The returned
+// release func MUST be called by the caller (defer): it drops the pending entry
+// and, when the command may still be running, tells the agent to stop.
+func (s *Sessions) SendCommand(ctx context.Context, agentID, capability string, cmd *agentpb.AgentCommand) (<-chan *agentpb.CommandResult, func(), error) {
+	s.mu.RLock()
+	st, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if !ok || st.send == nil {
+		return nil, nil, agentproto.ErrAgentNotConnected
+	}
+	if _, has := st.caps[capability]; !has {
+		return nil, nil, agentproto.ErrAgentCannotServe
+	}
+
+	requestID := cmd.GetRequestId()
+	ch := make(chan *agentpb.CommandResult, 32)
+
+	st.mu.Lock()
+	if st.closed {
+		st.mu.Unlock()
+		return nil, nil, agentproto.ErrAgentNotConnected
+	}
+	if len(st.pending) >= maxInFlightPerAgent {
+		st.mu.Unlock()
+		return nil, nil, agentproto.ErrTooManyRequests
+	}
+	st.pending[requestID] = ch
+	st.mu.Unlock()
+
+	release := func() {
+		st.mu.Lock()
+		_, stillPending := st.pending[requestID]
+		delete(st.pending, requestID)
+		st.mu.Unlock()
+		// Still pending means the agent never sent a terminal result, so it may
+		// be streaming: tell it to stop rather than leak a follow on its side.
+		if stillPending {
+			// Best-effort: a stream that already died has nothing left to cancel.
+			_ = s.enqueue(context.Background(), st, &agentpb.ServerMessage{
+				Payload: &agentpb.ServerMessage_Command{Command: &agentpb.AgentCommand{
+					RequestId: requestID,
+					Command:   &agentpb.AgentCommand_Cancel{Cancel: &agentpb.CancelRequest{}},
+				}},
+			})
+		}
+	}
+
+	if err := s.enqueue(ctx, st, &agentpb.ServerMessage{
+		Payload: &agentpb.ServerMessage_Command{Command: cmd},
+	}); err != nil {
+		release()
+		return nil, nil, err
+	}
+
+	return ch, release, nil
+}
+
+// enqueue hands msg to the stream's writer goroutine without ever blocking
+// indefinitely: a wedged agent must fail the request, not pin the caller.
+func (s *Sessions) enqueue(ctx context.Context, st *activeStream, msg *agentpb.ServerMessage) error {
+	timer := time.NewTimer(commandSendTimeout)
+	defer timer.Stop()
+	select {
+	case st.send <- msg:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return agentproto.ErrAgentNotConnected
+	}
+}
+
+// FetchLogs performs a one-shot log tail on agentID, collecting the agent's chunks
+// into a single slice. Shared by the REST and MCP read paths.
+func (s *Sessions) FetchLogs(ctx context.Context, agentID, externalID string, lines int, timestamps bool) ([]string, error) {
+	results, release, err := s.SendCommand(ctx, agentID, agentproto.CapabilityLogs,
+		agentproto.LogsCommand(externalID, lines, timestamps, false))
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	var collected []string
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case res, ok := <-results:
+			if !ok {
+				// Closed with no terminal result: the stream died mid-answer.
+				if len(collected) > 0 {
+					return collected, nil
+				}
+				return nil, agentproto.ErrAgentNotConnected
+			}
+			if res.GetErrorCode() != "" {
+				return nil, errors.New(res.GetErrorMessage())
+			}
+			collected = append(collected, res.GetLogs().GetLines()...)
+			if res.GetLast() {
+				return collected, nil
+			}
+		}
+	}
+}
+
+// DeliverResult routes a CommandResult from agentID to whoever awaits it.
+func (s *Sessions) DeliverResult(agentID string, res *agentpb.CommandResult) {
+	s.mu.RLock()
+	st, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if ok {
+		st.deliver(res)
+	}
+}
+
+// IncrEvents increments the events_seen counter for agentID and the ring buffer.
+func (s *Sessions) IncrEvents(agentID string) {
+	s.mu.RLock()
+	if stream, ok := s.active[agentID]; ok {
+		stream.eventsSeen.Add(1)
+	}
+	s.mu.RUnlock()
+	s.ring.add()
+}
+
+// RecordSpoolStatus stores what agentID declared about its spool.
+func (s *Sessions) RecordSpoolStatus(agentID string, st *agentpb.SpoolStatus) {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return
+	}
+	stream.spoolQueued.Store(int64(st.GetQueued()))               // #nosec G115 -- a queue depth reported by the agent
+	stream.spoolDropped.Store(int64(st.GetDroppedSinceConnect())) // #nosec G115 -- a counter reported by the agent
+	stream.spoolDraining.Store(st.GetDraining())
+	stream.spoolReportedAt.Store(time.Now().Unix())
+}
+
+// SpoolStatus returns what agentID last declared, or nil when it is not
+// connected or has never reported (an agent older than the spool).
+func (s *Sessions) SpoolStatus(agentID string) *agentproto.SpoolState {
+	s.mu.RLock()
+	stream, ok := s.active[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	at := stream.spoolReportedAt.Load()
+	if at == 0 {
+		return nil
+	}
+	return &agentproto.SpoolState{
+		Queued:              stream.spoolQueued.Load(),
+		Draining:            stream.spoolDraining.Load(),
+		DroppedSinceConnect: stream.spoolDropped.Load(),
+		ReportedAt:          time.Unix(at, 0),
+	}
+}
+
+// EventsSeen returns the events_seen counter for agentID (0 if not connected).
+func (s *Sessions) EventsSeen(agentID string) int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if stream, ok := s.active[agentID]; ok {
+		return stream.eventsSeen.Load()
+	}
+	return 0
+}
+
+// EventsPerSecond5m returns the average events/s over the last 5 minutes.
+func (s *Sessions) EventsPerSecond5m() float64 {
+	return s.ring.Rate()
+}
+
+// StartRingAdvancer runs the ring buffer advance tick every 5s until ctx is done.
+func (s *Sessions) StartRingAdvancer(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.ring.advance()
+			}
+		}
+	}()
+}
+
+// StaleAgentsFn returns agent IDs whose last_seen_at is older than threshold.
+// Passed to StartStaleWatcher so sessions doesn't import the sqlite package.
+type StaleAgentsFn func(ctx context.Context, threshold time.Duration) ([]string, error)
+
+// OfflineReportGrace is how long after startup the stale watcher waits before
+// reporting agents that are absent with no live stream. An agent reconnects with
+// a backoff capped at 60s ±25% jitter, so a shorter delay would page for every
+// agent still on its way back after a server restart.
+const OfflineReportGrace = 2 * time.Minute
+
+// StartStaleWatcher emits agent.disconnected SSE for agents that have not been
+// seen within threshold but still appear in the sessions map (dead stream), and
+// reports the outage of stale agents that have no session at all.
+//
+// That second half is what makes an absent agent visible across a restart: the
+// connect/disconnect hook only fires on a transition, so an agent that went down
+// while the server was stopped (or during the shutdown storm, where alerts are
+// suppressed on purpose) would otherwise stay silently disconnected forever.
+// grace holds that reporting back after startup, giving healthy agents time to
+// reconnect; each outage is announced once, until the agent is back.
+// Runs until ctx is done.
+func (s *Sessions) StartStaleWatcher(ctx context.Context, interval, threshold, grace time.Duration, staleAgents StaleAgentsFn) {
+	if s.broadcaster == nil || staleAgents == nil {
+		return
+	}
+	go func() {
+		startedAt := time.Now()
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				sweepStart := time.Now()
+				ids, err := staleAgents(ctx, threshold)
+				if err != nil {
+					s.logger.Error("stale watcher query failed", "err", err)
+					continue
+				}
+				settled := time.Since(startedAt) >= grace
+				for _, agentID := range ids {
+					s.mu.Lock()
+					st, connected := s.active[agentID]
+					if connected && st.connectedAt.After(sweepStart) {
+						s.mu.Unlock()
+						continue
+					}
+					if connected {
+						st.cancel(ErrSessionStale)
+						delete(s.active, agentID)
+					}
+					_, reported := s.offlineReported[agentID]
+					// Marked only when the hook is there to announce it, so a
+					// sweep racing an unwired hook cannot swallow the outage.
+					announce := s.alertHook != nil && (connected || (settled && !reported))
+					if announce {
+						s.offlineReported[agentID] = struct{}{}
+					}
+					s.mu.Unlock()
+
+					if connected {
+						st.closeAll()
+						s.logger.Info("agent.stream_closed", "agent_id", agentID, "reason", "stale")
+						s.broadcaster.BroadcastEvent(event.AgentDisconnected, map[string]any{
+							"agent_id": agentID,
+						})
+					}
+					if !announce {
+						continue
+					}
+					if !connected {
+						s.logger.Info("agent.offline", "agent_id", agentID,
+							"detail", "absent with no live stream")
+					}
+					s.alertHook(agentID, "stale", false)
+				}
+			}
+		}
+	}()
+}

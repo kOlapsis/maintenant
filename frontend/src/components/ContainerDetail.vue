@@ -1,14 +1,6 @@
 <!--
   Copyright 2026 Benjamin Touchard (kOlapsis)
-
-  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-  or a commercial license. You may not use this file except in compliance
-  with one of these licenses.
-
-  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-  Commercial: See COMMERCIAL-LICENSE.md
-
-  Source: https://github.com/kolapsis/maintenant
+  SPDX-License-Identifier: Apache-2.0
 -->
 
 <script setup lang="ts">
@@ -30,16 +22,16 @@ import ContainerEventTimeline from './ContainerEventTimeline.vue'
 import UptimeBar90 from './ui/UptimeBar90.vue'
 import { fetchContainerDailyUptime, type UptimeDay } from '@/services/uptimeApi'
 import SecurityInsightList from './SecurityInsightList.vue'
-import PostureScoreBadge from './PostureScoreBadge.vue'
-import PostureCategoryBreakdown from './PostureCategoryBreakdown.vue'
+import PostureScoreBadge from '@/commercial/components/posture/PostureScoreBadge.vue'
+import PostureCategoryBreakdown from '@/commercial/components/posture/PostureCategoryBreakdown.vue'
 import ResourceCharts from './ResourceCharts.vue'
 import ResourceAlertConfig from './ResourceAlertConfig.vue'
 import AgentBadge from './AgentBadge.vue'
 import { useSecurityStore } from '@/stores/security'
 import { useHostLabel } from '@/composables/useHostLabel'
-import { usePostureStore } from '@/stores/posture'
+import { usePostureStore } from '@/commercial/stores/posture'
 import { useEdition } from '@/composables/useEdition'
-import type { SecurityScore } from '@/services/postureApi'
+import type { SecurityScore } from '@/commercial/services/postureApi'
 import { getStateStyle, getExitCodeStyle } from '@/utils/containerState'
 import { Trash2, ChevronRight, ExternalLink } from 'lucide-vue-next'
 import { fetchSwarmServiceDetail, type SwarmServiceDetailResponse } from '@/services/swarmApi'

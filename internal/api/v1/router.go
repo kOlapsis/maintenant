@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package v1
 
@@ -27,7 +19,6 @@ import (
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
-	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/outbound"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
@@ -98,7 +89,8 @@ type HandlerDeps struct {
 	StatusMaintenance  status.MaintenanceStore
 	StatusSvc          *status.Service
 	StatusBroker       *SSEBroker
-	PersonalizationSvc *status.PersonalizationService
+	PersonalizationSvc status.PersonalizationManager
+	StatusMailer       func(status.SmtpConfig) status.Mailer
 
 	// Webhooks
 	WebhookStore webhook.WebhookSubscriptionStore
@@ -116,14 +108,14 @@ type HandlerDeps struct {
 
 	// Security
 	SecuritySvc *security.Service
-	Scorer      *security.Scorer
+	Scorer      security.PostureScorer
 	AckStore    security.AcknowledgmentStore
 
 	// Escalation policies
-	EscalationSvc *escalation.Service
+	EscalationSvc escalation.Service
 
 	// License
-	LicenseMgr *license.Manager
+	LicenseMgr extension.EditionSource
 
 	// Swarm
 	SwarmCluster        func() *swarm.SwarmCluster
@@ -356,7 +348,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Status page admin endpoints
 	if d.StatusComponents != nil {
-		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker)
+		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker, d.StatusMailer)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
 		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
@@ -581,7 +573,7 @@ func rfc3339OrEmpty(t time.Time) string {
 
 // licenseStatusPayload is the wire shape of GET /api/v1/license/status. Every
 // branch goes through it so the response always carries the same keys.
-func licenseStatusPayload(state *license.State, edition extension.Edition) map[string]interface{} {
+func licenseStatusPayload(state *extension.LicenseState, edition extension.Edition) map[string]interface{} {
 	return map[string]interface{}{
 		"status":             state.Status,
 		"edition":            string(edition),
@@ -594,13 +586,13 @@ func licenseStatusPayload(state *license.State, edition extension.Edition) map[s
 	}
 }
 
-func (r *Router) registerLicenseRoutes(mgr *license.Manager) {
+func (r *Router) registerLicenseRoutes(mgr extension.EditionSource) {
 	r.mux.HandleFunc("GET /api/v1/license/status", func(w http.ResponseWriter, req *http.Request) {
 		// No license configured (Community): report an inactive state rather than
 		// leaving the documented route unregistered (404).
 		if mgr == nil {
 			WriteJSON(w, http.StatusOK,
-				licenseStatusPayload(&license.State{Status: "inactive"}, extension.Community))
+				licenseStatusPayload(&extension.LicenseState{Status: "inactive"}, extension.Community))
 			return
 		}
 
@@ -857,13 +849,15 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 		maxWindow := extension.MaxHistoryWindow()
 
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"edition":           string(extension.CurrentEdition()),
-			"organisation_name": r.organisationName,
-			"status_url":        r.statusURL,
-			"demo":              r.demoMode,
-			"features":          features,
-			"feature_editions":  featureEditions,
-			"quotas":            r.computeQuotas(ctx, d),
+			"edition":            string(extension.CurrentEdition()),
+			"organisation_name":  r.organisationName,
+			"status_url":         r.statusURL,
+			"demo":               r.demoMode,
+			"features":           features,
+			"feature_editions":   featureEditions,
+			"quotas":             r.computeQuotas(ctx, d),
+			"tiers":              extension.Tiers(),
+			"suspended_channels": r.suspendedChannels(ctx, d),
 			"resource_history": map[string]interface{}{
 				"max_window":         maxWindow.Name,
 				"max_window_seconds": int64(maxWindow.Duration / time.Second),
@@ -871,6 +865,20 @@ func (r *Router) handleGetEdition(smtpConfigured bool, d HandlerDeps) http.Handl
 			},
 		})
 	}
+}
+
+// suspendedChannels lists the enabled channels the running edition no longer opens.
+func (r *Router) suspendedChannels(ctx context.Context, d HandlerDeps) map[string]interface{} {
+	list := []alert.SuspendedChannel{}
+	if d.ChannelStore != nil {
+		channels, err := d.ChannelStore.ListChannels(ctx)
+		if err != nil {
+			r.logger.Error("failed to list channels for suspension", "error", err)
+		} else {
+			list = alert.SuspendedChannels(channels)
+		}
+	}
+	return map[string]interface{}{"count": len(list), "channels": list}
 }
 
 // computeQuotas returns real usage and the applicable limit for every capped

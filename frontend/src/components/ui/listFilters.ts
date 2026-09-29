@@ -1,7 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. See COMMERCIAL-LICENSE.md.
+// SPDX-License-Identifier: Apache-2.0
 
 /**
  * Shared vocabulary for the list toolbar. Kept in a module rather than in the

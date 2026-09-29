@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package endpoint
 
@@ -20,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -71,7 +64,7 @@ type Deps struct {
 	Store                   EndpointStore           // required
 	Engine                  *CheckEngine            // required
 	Logger                  *slog.Logger            // required
-	LicenseChecker          LicenseChecker          // optional — defaults to community limits
+	LicenseChecker          LicenseChecker          // optional, defaults to extension.Limit
 	EventCallback           EventCallback           // optional — nil-safe
 	AlertCallback           AlertCallback           // optional — nil-safe
 	EndpointRemovedCallback EndpointRemovedCallback // optional — nil-safe
@@ -105,7 +98,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxEndpoints: 10}
+		lc = &DefaultLicenseChecker{MaxEndpoints: extension.Limit(extension.ResourceEndpoints)}
 	}
 	return &Service{
 		store:             d.Store,

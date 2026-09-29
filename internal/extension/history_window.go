@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package extension
 
@@ -33,18 +25,8 @@ type HistoryWindowSpec struct {
 	MinEdition string `json:"min_edition"`
 }
 
-// editionHistoryCap is how far back each edition may look. Three entries, and
-// the only place a change of the commercial tiering has to touch. It is a
-// duration and not a list of windows on purpose: adding a window to the product
-// must not require editing this table.
-var editionHistoryCap = map[Edition]time.Duration{
-	Community: 7 * 24 * time.Hour,
-	Personal:  30 * 24 * time.Hour,
-	Pro:       90 * 24 * time.Hour,
-}
-
 // historyWindows are the windows the product serves, ordered by duration.
-// Adding one here adds neither a capability nor an entry in editionHistoryCap:
+// Adding one here adds neither a capability nor an edition cap:
 // the edition that opens it is derived, never written down.
 var historyWindows = []HistoryWindow{
 	{Name: "1h", Duration: time.Hour},
@@ -58,15 +40,8 @@ var historyWindows = []HistoryWindow{
 // editionOrder is the ascending edition order the derivation walks.
 var editionOrder = []Edition{Community, Personal, Pro}
 
-// historyCap returns how far back e may look. An edition this binary does not
-// know falls back to the Community cap rather than to zero: it keeps
-// MaxHistoryWindow from returning an empty window, and it falls on the safe
-// side, since an unreadable edition opens nothing that is paid for.
 func historyCap(e Edition) time.Duration {
-	if d, ok := editionHistoryCap[e]; ok {
-		return d
-	}
-	return editionHistoryCap[Community]
+	return policy.HistoryCap(e)
 }
 
 // MinEditionForHistoryWindow returns the lowest edition whose cap covers w.

@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package status
 
@@ -52,6 +44,8 @@ type Service struct {
 	monitorName       MonitorNameProvider
 	broadcaster       func(eventType string, data any)
 	subscribers       *SubscriberService
+	notifier          SubscriberNotifier
+	incidentHandler   AlertIncidentHandler
 	smtpConfig        *SmtpConfig
 
 	logger *slog.Logger
@@ -123,15 +117,25 @@ func (s *Service) SetSmtpConfig(cfg *SmtpConfig) {
 	s.smtpConfig = cfg
 }
 
-// notifySubscribers sends a notification to all confirmed subscribers if configured.
-func (s *Service) notifySubscribers(ctx context.Context, subject, message string) {
-	if s.subscribers != nil {
-		go s.subscribers.NotifyAll(ctx, subject, message)
+// SetSubscriberNotifier sets what notifies subscribers of status changes.
+func (s *Service) SetSubscriberNotifier(n SubscriberNotifier) {
+	s.notifier = n
+}
+
+// SetIncidentHandler sets what turns alert events into status page incidents.
+func (s *Service) SetIncidentHandler(h AlertIncidentHandler) {
+	s.incidentHandler = h
+}
+
+// NotifySubscribers sends a notification to all confirmed subscribers, in the background, if a notifier is set.
+func (s *Service) NotifySubscribers(ctx context.Context, subject, message string) {
+	if s.notifier != nil {
+		go s.notifier.NotifyAll(ctx, subject, message)
 	}
 }
 
-// broadcast sends an event if a broadcaster is configured.
-func (s *Service) broadcast(eventType string, data any) {
+// Broadcast sends an event if a broadcaster is configured.
+func (s *Service) Broadcast(eventType string, data any) {
 	if s.broadcaster != nil {
 		s.broadcaster(eventType, data)
 	}
@@ -400,118 +404,11 @@ func (s *Service) NotifyMonitorChanged(ctx context.Context, monitorType string, 
 	}
 }
 
-// HandleAlertEvent processes an alert event and creates/updates incidents for auto-incident components.
+// HandleAlertEvent hands an alert event to the incident handler, if one is set.
 func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
-	if s.incidents == nil {
-		s.logger.Debug("status: no incident store, skipping alert")
-		return
+	if s.incidentHandler != nil {
+		s.incidentHandler.HandleAlertEvent(ctx, evt)
 	}
-
-	comps, err := s.components.ListComponentsByMonitor(ctx, evt.EntityType, evt.EntityID)
-	if err != nil {
-		s.logger.Error("failed to list components by monitor for alert", "error", err,
-			"monitor_type", evt.EntityType, "monitor_id", evt.EntityID)
-		return
-	}
-
-	for _, comp := range comps {
-		if !comp.AutoIncident {
-			continue
-		}
-		s.handleAlertForComponent(ctx, evt, &comp)
-	}
-}
-
-func (s *Service) handleAlertForComponent(ctx context.Context, evt alert.Event, comp *Component) {
-	aggregateStatus := s.DeriveComponentStatus(ctx, comp)
-
-	existing, err := s.incidents.GetActiveIncidentByComponent(ctx, comp.ID)
-	if err != nil {
-		s.logger.Error("failed to check active incident", "error", err, "component_id", comp.ID)
-		return
-	}
-
-	// Skip if override is set.
-	if comp.StatusOverride != nil {
-		return
-	}
-
-	isNonOperational := aggregateStatus != StatusOperational
-
-	if evt.IsRecover && !isNonOperational {
-		if existing != nil {
-			upd := &IncidentUpdate{
-				IncidentID: existing.ID,
-				Status:     IncidentResolved,
-				Message:    "Auto-resolved: all monitors operational",
-				IsAuto:     true,
-			}
-			if _, err := s.incidents.CreateUpdate(ctx, upd); err != nil {
-				s.logger.Error("failed to auto-resolve incident", "error", err)
-				return
-			}
-			s.logger.Info("status: auto-incident resolved", "incident_id", existing.ID)
-			s.broadcast(event.StatusIncidentResolved, map[string]any{
-				"id":    existing.ID,
-				"title": existing.Title,
-			})
-			s.notifySubscribers(ctx, "Resolved: "+existing.Title,
-				"<p>Incident <strong>"+existing.Title+"</strong> has been resolved.</p>")
-		}
-		return
-	}
-
-	if !isNonOperational {
-		return
-	}
-
-	if existing != nil {
-		upd := &IncidentUpdate{
-			IncidentID: existing.ID,
-			Status:     existing.Status,
-			Message:    evt.Message,
-			IsAuto:     true,
-		}
-		if _, err := s.incidents.CreateUpdate(ctx, upd); err != nil {
-			s.logger.Error("failed to add auto update", "error", err)
-		}
-		s.broadcast(event.StatusIncidentUpdated, map[string]any{
-			"id":      existing.ID,
-			"status":  existing.Status,
-			"message": evt.Message,
-		})
-		return
-	}
-
-	severity := SeverityMinor
-	switch evt.Severity {
-	case "critical":
-		severity = SeverityCritical
-	case "warning":
-		severity = SeverityMajor
-	}
-
-	inc := &Incident{
-		Title:    comp.DisplayName + " - " + evt.Message,
-		Severity: severity,
-		Status:   IncidentInvestigating,
-	}
-	incID, err := s.incidents.CreateIncident(ctx, inc, []string{comp.ID}, evt.Message)
-	if err != nil {
-		s.logger.Error("failed to create auto incident", "error", err)
-		return
-	}
-
-	s.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title)
-	s.broadcast(event.StatusIncidentCreated, map[string]any{
-		"id":         incID,
-		"title":      inc.Title,
-		"severity":   inc.Severity,
-		"status":     inc.Status,
-		"components": []string{comp.DisplayName},
-	})
-	s.notifySubscribers(ctx, "["+inc.Severity+"] "+inc.Title,
-		"<p><strong>"+inc.Title+"</strong></p><p>Severity: "+inc.Severity+"</p><p>"+evt.Message+"</p>")
 }
 
 // BroadcastComponentChange notifies public SSE clients of a component status change.
@@ -546,7 +443,7 @@ func (s *Service) BroadcastComponentChange(ctx context.Context, comp *Component)
 		}
 	}
 
-	s.broadcast(event.StatusComponentChanged, map[string]any{
+	s.Broadcast(event.StatusComponentChanged, map[string]any{
 		"component_id": comp.ID,
 		"name":         comp.DisplayName,
 		"status":       effective,
@@ -554,7 +451,7 @@ func (s *Service) BroadcastComponentChange(ctx context.Context, comp *Component)
 	})
 
 	globalStatus, globalMsg := s.ComputeGlobalStatus(ctx)
-	s.broadcast(event.StatusGlobalChanged, map[string]any{
+	s.Broadcast(event.StatusGlobalChanged, map[string]any{
 		"status":  globalStatus,
 		"message": globalMsg,
 	})

@@ -1,0 +1,102 @@
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+  SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+  See internal/commercial/LICENSE.
+-->
+<script setup lang="ts">
+import type { CategoryScore } from '@/commercial/services/postureApi'
+
+defineProps<{
+  categories: CategoryScore[]
+}>()
+
+const barColorMap: Record<string, string> = {
+  green: 'bg-mnt-sev-ok-solid',
+  yellow: 'bg-mnt-sev-warning-solid',
+  orange: 'bg-orange-500',
+  red: 'bg-mnt-sev-incident-solid',
+}
+
+const textColorMap: Record<string, string> = {
+  green: 'text-mnt-status-ok',
+  yellow: 'text-mnt-status-warn',
+  orange: 'text-mnt-status-warn',
+  red: 'text-mnt-status-down',
+}
+
+function scoreColor(score: number): string {
+  if (score >= 80) return 'green'
+  if (score >= 60) return 'yellow'
+  if (score >= 40) return 'orange'
+  return 'red'
+}
+
+function categoryLabel(name: string): string {
+  const labels: Record<string, string> = {
+    tls: 'TLS Certificates',
+    cves: 'Vulnerabilities (CVEs)',
+    updates: 'Available Updates',
+    network_exposure: 'Network Exposure',
+    image_age: 'Image Age',
+  }
+  return labels[name] || name
+}
+
+function unavailableLabel(cat: CategoryScore): string {
+  if (cat.evaluation === 'unsupported') return 'Not covered'
+  if (cat.evaluation === 'not_evaluated' || cat.evaluation === 'error') return 'Not evaluated'
+  return 'Not applicable'
+}
+</script>
+
+<template>
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div
+      v-for="cat in categories"
+      :key="cat.name"
+      class="bg-mnt-surface rounded-xl p-4 border border-mnt-default"
+    >
+      <div class="mb-2 flex items-center justify-between">
+        <span class="text-sm font-semibold text-mnt-primary">
+          {{ categoryLabel(cat.name) }}
+        </span>
+        <span class="text-[10px] text-mnt-muted font-bold">{{ cat.weight }}%</span>
+      </div>
+
+      <template v-if="cat.applicable">
+        <div class="mb-2 flex items-baseline gap-1.5">
+          <span class="text-2xl font-black" :class="textColorMap[scoreColor(cat.sub_score)]">
+            {{ cat.sub_score }}
+          </span>
+          <span class="text-[10px] text-mnt-muted font-bold">/100</span>
+        </div>
+
+        <div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-mnt-primary border border-mnt-default">
+          <div
+            class="h-full rounded-full transition-all duration-700"
+            :class="barColorMap[scoreColor(cat.sub_score)]"
+            :style="{ width: cat.sub_score + '%' }"
+          />
+        </div>
+
+        <div class="flex items-center justify-between text-[10px]">
+          <span class="text-mnt-muted">{{ cat.summary }}</span>
+          <span v-if="cat.issue_count > 0" class="text-mnt-muted font-bold">
+            {{ cat.issue_count }} issue{{ cat.issue_count !== 1 ? 's' : '' }}
+          </span>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="py-2">
+          <span
+            class="inline-flex items-center rounded-full border border-mnt-default px-2 py-0.5 text-[10px] font-bold text-mnt-muted"
+          >
+            {{ unavailableLabel(cat) }}
+          </span>
+          <p v-if="cat.summary" class="mt-1.5 text-[10px] text-mnt-muted">{{ cat.summary }}</p>
+        </div>
+      </template>
+    </div>
+  </div>
+</template>

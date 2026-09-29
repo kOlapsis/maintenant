@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/kolapsis/maintenant/internal/license"
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 // The mode gate is the only refusal to start in the product. A Personal
@@ -21,12 +21,12 @@ func TestMultihostPlanPermitted(t *testing.T) {
 		want    bool
 	}{
 		{"capability granted", true, "active", true},
-		{"capability granted, window in grace", true, license.StatusUpdateWindowGrace, true},
+		{"capability granted, window in grace", true, "update_window_grace", true},
 		{"community, no license", false, "", false},
 		{"community, license expired", false, "expired", false},
 		{"community, license revoked", false, "revoked", false},
 		{"community, server unreachable", false, "unreachable", false},
-		{"bridled by a closed update window", false, license.StatusUpdateWindowEnded, true},
+		{"bridled by a closed update window", false, extension.LicenseStatusUpdateWindowEnded, true},
 	}
 
 	for _, c := range cases {
@@ -40,6 +40,6 @@ func TestMultihostPlanPermitted(t *testing.T) {
 // edition is untouched, so the capability is still granted and the degraded
 // branch must never be the reason the plan runs.
 func TestMultihostPlanPermitted_GraceIsNotADegradation(t *testing.T) {
-	assert.False(t, multihostPlanPermitted(false, license.StatusUpdateWindowGrace),
+	assert.False(t, multihostPlanPermitted(false, "update_window_grace"),
 		"a Community instance must not be let through by the grace status")
 }

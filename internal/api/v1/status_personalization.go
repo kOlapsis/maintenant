@@ -11,10 +11,10 @@ import (
 )
 
 type PersonalizationHandler struct {
-	svc *status.PersonalizationService
+	svc status.PersonalizationManager
 }
 
-func NewPersonalizationHandler(svc *status.PersonalizationService) *PersonalizationHandler {
+func NewPersonalizationHandler(svc status.PersonalizationManager) *PersonalizationHandler {
 	return &PersonalizationHandler{svc: svc}
 }
 
@@ -138,7 +138,7 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	cap := status.AssetSizeCap(role)
+	cap := h.svc.AssetSizeCap(role)
 	r.Body = http.MaxBytesReader(w, r.Body, cap+1024) // +1024 for form overhead
 
 	if err := r.ParseMultipartForm(cap); err != nil { // #nosec G120 -- body bounded by http.MaxBytesReader above
@@ -171,7 +171,7 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 	if len(head) > 512 {
 		head = head[:512]
 	}
-	mime, err := status.DetectAssetMIME(role, head)
+	mime, err := h.svc.DetectAssetMIME(role, head)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, "unsupported_mime", "MIME type not allowed for this role")
 		return

@@ -1,14 +1,6 @@
 <!--
   Copyright 2026 Benjamin Touchard (kOlapsis)
-
-  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-  or a commercial license. You may not use this file except in compliance
-  with one of these licenses.
-
-  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-  Commercial: See COMMERCIAL-LICENSE.md
-
-  Source: https://github.com/kolapsis/maintenant
+  SPDX-License-Identifier: Apache-2.0
 -->
 
 <script setup lang="ts">
@@ -18,10 +10,10 @@ import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlid
 import { timeAgo } from '@/utils/time'
 import type { Alert } from '@/services/alertApi'
 import { humanizeAlertType } from '@/utils/alertLabels'
-import EscalationStatusBadge from '@/components/escalation/EscalationStatusBadge.vue'
+import EscalationStatusBadge from '@/commercial/components/escalation/EscalationStatusBadge.vue'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
-import { useEscalationApi } from '@/composables/useEscalationApi'
-import type { EscalationRun } from '@/types/escalation'
+import { useEscalationApi } from '@/commercial/composables/useEscalationApi'
+import type { EscalationRun } from '@/commercial/types/escalation'
 
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()

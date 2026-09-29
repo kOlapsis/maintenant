@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package v1
 
@@ -31,6 +23,7 @@ type StatusAdminHandler struct {
 	maintenance status.MaintenanceStore
 	statusSvc   *status.Service
 	broker      *SSEBroker
+	mailer      func(status.SmtpConfig) status.Mailer
 }
 
 // NewStatusAdminHandler creates a new status admin handler.
@@ -41,6 +34,7 @@ func NewStatusAdminHandler(
 	maintenance status.MaintenanceStore,
 	statusSvc *status.Service,
 	broker *SSEBroker,
+	mailer func(status.SmtpConfig) status.Mailer,
 ) *StatusAdminHandler {
 	return &StatusAdminHandler{
 		components:  components,
@@ -49,6 +43,7 @@ func NewStatusAdminHandler(
 		maintenance: maintenance,
 		statusSvc:   statusSvc,
 		broker:      broker,
+		mailer:      mailer,
 	}
 }
 
@@ -676,7 +671,11 @@ func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Reque
 		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
 		return
 	}
-	client := status.NewSmtpClient(*cfg)
+	if h.mailer == nil {
+		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
+		return
+	}
+	client := h.mailer(*cfg)
 	if err := client.Send(cfg.FromAddress, "Maintenant SMTP Test", "<p>This is a test email from Maintenant.</p>"); err != nil {
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "error", "error": err.Error()})
 		return

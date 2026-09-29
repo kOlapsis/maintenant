@@ -1,14 +1,6 @@
 <!--
   Copyright 2026 Benjamin Touchard (kOlapsis)
-
-  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-  or a commercial license. You may not use this file except in compliance
-  with one of these licenses.
-
-  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-  Commercial: See COMMERCIAL-LICENSE.md
-
-  Source: https://github.com/kolapsis/maintenant
+  SPDX-License-Identifier: Apache-2.0
 -->
 
 <script setup lang="ts">
@@ -150,6 +142,10 @@ function handleWizardCreated() {
   showWizard.value = false
   store.fetchChannels()
 }
+
+function editionLabel(edition?: string): string {
+  return edition ? edition.charAt(0).toUpperCase() + edition.slice(1) : ''
+}
 </script>
 
 <template>
@@ -261,6 +257,12 @@ function handleWizardCreated() {
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium text-mnt-primary">{{ ch.name }}</span>
                 <span v-if="!ch.enabled" class="rounded px-1.5 py-0.5 text-xs bg-mnt-elevated text-mnt-muted">disabled</span>
+                <span
+                  v-if="ch.suspended"
+                  data-test="channel-suspended"
+                  class="suspended-badge rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                  :title="`The running edition no longer delivers through ${ch.type} channels`"
+                >Suspended · requires {{ editionLabel(ch.required_edition) }}</span>
                 <span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-mnt-elevated text-mnt-muted">{{ ch.type }}</span>
               </div>
               <p class="text-xs text-mnt-muted">{{ channelTarget(ch) }}</p>
@@ -289,3 +291,11 @@ function handleWizardCreated() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.suspended-badge {
+  background: var(--mnt-sev-incident-bg);
+  border-color: var(--mnt-sev-incident-border);
+  color: var(--mnt-sev-incident-text);
+}
+</style>

@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 import { apiFetch } from './apiFetch'
 
@@ -53,6 +45,19 @@ export interface ResourceHistoryContract {
   windows: HistoryWindowSpec[]
 }
 
+/** A channel kept but no longer delivered, because the running edition does not open its type. */
+export interface SuspendedChannel {
+  id: string
+  name: string
+  type: string
+  required_edition: Edition
+}
+
+export interface SuspendedChannels {
+  count: number
+  channels: SuspendedChannel[]
+}
+
 export interface EditionResponse {
   edition: Edition
   organisation_name: string
@@ -61,6 +66,10 @@ export interface EditionResponse {
   /** capability -> minimum edition that opens it, projected from the backend registry */
   feature_editions?: Record<string, Edition>
   quotas?: Partial<Record<QuotaResource, QuotaEntry>>
+  /** edition -> resource -> cap (-1 unlimited), for every edition. */
+  tiers?: Record<string, Partial<Record<QuotaResource, number>>>
+  /** Enabled channels the running edition no longer delivers through. */
+  suspended_channels?: SuspendedChannels
   /** Absent on an engine older than the tiered history: no catalogue, no cap. */
   resource_history?: ResourceHistoryContract
   demo?: boolean

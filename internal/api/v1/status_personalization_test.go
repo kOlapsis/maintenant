@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/commercial/statuspage"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/stretchr/testify/assert"
@@ -141,7 +142,7 @@ func (m *mockPersoStore) ReorderFAQItems(_ context.Context, _ []string) ([]statu
 func newTestPersoHandler(t *testing.T) *PersonalizationHandler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := status.NewPersonalizationService(newMockPersoStore(), logger)
+	svc := statuspage.NewPersonalizationService(newMockPersoStore(), logger)
 	return NewPersonalizationHandler(svc)
 }
 

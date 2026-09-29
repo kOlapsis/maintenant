@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package v1
 
@@ -184,7 +176,7 @@ func TestHandleCreateChannel_EmailValidation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := &AlertHandler{channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
+			h := &AlertHandler{notifier: channelNotifier(), channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger)}
 
 			body := `{"type":"email","name":"team","url":"` + tc.url + `"}`
 			req := httptest.NewRequest("POST", "/api/v1/channels", strings.NewReader(body))
@@ -208,7 +200,7 @@ func TestHandleTestChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	defer func() { extension.CurrentEdition = original }()
 
 	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "slack"}}
-	h := &AlertHandler{channelStore: store}
+	h := &AlertHandler{notifier: channelNotifier(), channelStore: store}
 
 	req := httptest.NewRequest("POST", "/api/v1/channels/1/test", nil)
 	req.SetPathValue("id", "1")
@@ -230,7 +222,7 @@ func TestHandleUpdateChannel_ProTypeBlockedOnCommunity(t *testing.T) {
 	defer func() { extension.CurrentEdition = original }()
 
 	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "webhook"}}
-	h := &AlertHandler{channelStore: store}
+	h := &AlertHandler{notifier: channelNotifier(), channelStore: store}
 
 	body := `{"type":"slack"}`
 	req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(body))
@@ -251,7 +243,7 @@ func TestHandleUpdateChannel_RetainProTypeBlockedOnCommunity(t *testing.T) {
 
 	// Channel already has type "slack" (created under Pro, now downgraded)
 	store := &stubChannelStore{ch: &alert.NotificationChannel{ID: "1", Type: "slack"}}
-	h := &AlertHandler{channelStore: store}
+	h := &AlertHandler{notifier: channelNotifier(), channelStore: store}
 
 	body := `{"name":"renamed"}`
 	req := httptest.NewRequest("PUT", "/api/v1/channels/1", strings.NewReader(body))

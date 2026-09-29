@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package v1
 
@@ -23,11 +15,11 @@ import (
 
 // EscalationHandler handles HTTP endpoints for escalation policies.
 type EscalationHandler struct {
-	svc *escalation.Service
+	svc escalation.Service
 }
 
 // NewEscalationHandler creates a new EscalationHandler.
-func NewEscalationHandler(svc *escalation.Service) *EscalationHandler {
+func NewEscalationHandler(svc escalation.Service) *EscalationHandler {
 	return &EscalationHandler{svc: svc}
 }
 
@@ -255,7 +247,7 @@ func (h *EscalationHandler) HandleOverlapProbe(w http.ResponseWriter, r *http.Re
 		Levels:  levels,
 	}
 
-	warnings := escalation.DetectOverlap(candidate, existing)
+	warnings := h.svc.DetectOverlap(candidate, existing)
 	if warnings == nil {
 		warnings = []escalation.OverlapWarning{}
 	}

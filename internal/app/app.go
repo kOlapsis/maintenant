@@ -1,19 +1,10 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package app
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,16 +12,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
-	"github.com/kolapsis/maintenant/internal/agentserver"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
-	"github.com/kolapsis/maintenant/internal/alert/maintenance"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
@@ -38,9 +26,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/extpoint"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
-	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/mcp"
 	"github.com/kolapsis/maintenant/internal/outbound"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
@@ -83,14 +71,15 @@ type App struct {
 	updateSvc          *update.Service
 	statusSvc          *status.Service
 	subscriberSvc      *status.SubscriberService
-	personalizationSvc *status.PersonalizationService
+	personalizationSvc status.PersonalizationManager
+	statusMailer       func(status.SmtpConfig) status.Mailer
 
 	// Alert pipeline
 	alertEngine     *alert.Engine
 	notifier        *alert.Notifier
 	downDetector    *alert.DownDetector
 	escalationStore *store.EscalationStore
-	escalationSvc   *escalation.Service
+	escalationSvc   escalation.Service
 
 	// HTTP
 	broker        *v1.SSEBroker
@@ -108,8 +97,8 @@ type App struct {
 	certStore      *store.CertificateStore
 	resStore       *store.ResourceStore
 	agentStore     *store.AgentStore
-	agentSessions  *agentserver.Sessions
-	agentSrv       *agentserver.Server
+	agentSessions  extpoint.AgentSessions
+	serveAgents    func(ctx context.Context, cfg extpoint.GRPCConfig) error
 	eolSvc         *eol.Service
 	// shuttingDown suppresses agent-disconnect alerts during graceful shutdown,
 	// where every stream ends at once and would otherwise page for the whole fleet.
@@ -122,12 +111,13 @@ type App struct {
 
 	// Background services
 	checkEngine    *endpoint.CheckEngine
-	maintScheduler *status.MaintenanceScheduler
-	scorer         *security.Scorer
+	maintScheduler status.MaintenanceRunner
+	scorer         security.PostureScorer
 	rl             *ratelimit.Limiter
 	apiRL          *ratelimit.Limiter
 	subscribeRL    *ratelimit.Limiter
-	licenseMgr     *license.Manager
+	licenseMgr     extension.EditionSource
+	ext            extpoint.Set
 	mcpServer      *gomcp.Server
 	// degradedPlanLogged keeps the multi-host degradation to one line: the
 	// helper is consulted at three call sites during a single startup.
@@ -158,7 +148,7 @@ type App struct {
 	k8sIngest *kubernetes.IngestService
 }
 
-// sseBroadcaster adapts the SSEBroker to the agentserver.EventBroadcaster interface.
+// sseBroadcaster adapts the SSEBroker to the extpoint.EventBroadcaster interface.
 type sseBroadcaster struct {
 	broker *v1.SSEBroker
 }
@@ -168,10 +158,13 @@ func (b *sseBroadcaster) BroadcastEvent(eventType string, data any) {
 }
 
 // New creates and wires all application services.
-func New(cfg Config, logger *slog.Logger) (*App, error) {
+func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a := &App{
 		cfg:    cfg,
 		logger: logger,
+	}
+	for _, opt := range opts {
+		opt(a)
 	}
 
 	trustedProxies, err := cfg.ParseTrustedProxies()
@@ -252,16 +245,19 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// edition, Pro included.
 
 	// --- License manager ---
-	license.InitPublicKey(cfg.PublicKeyB64)
-	if cfg.LicenseKey != "" {
-		dataDir := filepath.Dir(cfg.DBPath)
-		lm, err := license.NewManager(cfg.LicenseKey, dataDir, cfg.Version, cfg.BuildDate, logger)
-		if err != nil {
-			logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
-		} else {
-			a.licenseMgr = lm
-			extension.CurrentEdition = lm.Edition
-		}
+	lm, err := extension.NewEditionSource(extension.SourceConfig{
+		LicenseKey:   cfg.LicenseKey,
+		PublicKeyB64: cfg.PublicKeyB64,
+		DataDir:      filepath.Dir(cfg.DBPath),
+		Version:      cfg.Version,
+		BuildDate:    cfg.BuildDate,
+		Logger:       logger,
+	})
+	if err != nil {
+		logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
+	} else if lm != nil {
+		a.licenseMgr = lm
+		extension.CurrentEdition = lm.Edition
 	}
 
 	// --- Runtime detection ---
@@ -317,15 +313,11 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 				})
 				a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
 
-				// Node health, crash-loop detection and update tracking follow the
-				// swarm dashboard capability.
-				if extension.Allows(extension.CapSwarmDashboard) {
-					a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
-					a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
-					a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
-					a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
-					a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
-				}
+				a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
+				a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
+				a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
+				a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
+				a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
 			}
 		}
 	}
@@ -399,23 +391,23 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		Version: cfg.Version,
 	})
 
-	// --- SMTP ---
-	var smtpSender *alert.SMTPSender
-	if cfg.SMTP.Host != "" {
-		smtpSender = alert.NewSMTPSender(alert.SMTPConfig{
-			Host:     cfg.SMTP.Host,
-			Port:     cfg.SMTP.Port,
-			Username: cfg.SMTP.Username,
-			Password: cfg.SMTP.Password,
-			From:     cfg.SMTP.From,
-		})
-		logger.Info("SMTP sender configured", "host", cfg.SMTP.Host)
-	}
-
 	// --- Alert engine ---
 	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks)
-	if smtpSender != nil {
-		a.notifier.SetSMTPSender(smtpSender)
+	if a.ext.Channels != nil {
+		channels := a.ext.Channels(extpoint.ChannelDeps{
+			HTTPClient: a.notifier.HTTPClient(),
+			SMTP: extpoint.SMTPConfig{
+				Host:     cfg.SMTP.Host,
+				Port:     cfg.SMTP.Port,
+				Username: cfg.SMTP.Username,
+				Password: cfg.SMTP.Password,
+				From:     cfg.SMTP.From,
+			},
+			Logger: logger,
+		})
+		for chType, sender := range channels {
+			a.notifier.RegisterChannel(chType, sender)
+		}
 	}
 
 	// --- SSE brokers ---
@@ -429,9 +421,6 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 	a.swarmIngest.SetBroadcaster(topologyBroadcast)
 	a.k8sIngest.SetBroadcaster(topologyBroadcast)
-
-	// Agent session registry (depends on broker)
-	a.agentSessions = agentserver.NewSessions(logger, &sseBroadcaster{broker: a.broker})
 
 	// --- Host operating system end of support ---
 	var eolFetcher *eol.Fetcher
@@ -452,32 +441,32 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("os end-of-support service: %w", err)
 	}
 
-	// Agent gRPC server (Pro-gated at Start time).
-	a.agentSrv = agentserver.New(agentserver.Deps{
-		AgentStore:  a.agentStore,
-		Sessions:    a.agentSessions,
-		Broadcaster: &sseBroadcaster{broker: a.broker},
-		Limiter:     agentserver.NewLimiter(cfg.MultiHost.AgentRateLimitPerSecond),
-		DemoMode:    cfg.DemoMode,
-		Dispatcher: agentserver.NewDispatcher(agentserver.DispatchDeps{
-			Container:   a.containerSvc,
-			Inventory:   a.containerSvc,
-			Resource:    a.resourceSvc,
-			Endpoint:    a.endpointSvc,
-			Certificate: a.certSvc,
-			Heartbeat:   a.heartbeatSvc,
-			Swarm:       a.swarmIngest,
-			Kubernetes:  a.k8sIngest,
-			HostOS:      a.eolSvc,
+	// Agent session registry and gRPC server (served at Start time where multi-host is open).
+	if a.ext.MultiHost != nil {
+		mh := a.ext.MultiHost(extpoint.MultiHostDeps{
+			AgentStore:         a.agentStore,
+			Broadcaster:        &sseBroadcaster{broker: a.broker},
+			RateLimitPerSecond: cfg.MultiHost.AgentRateLimitPerSecond,
+			DemoMode:           cfg.DemoMode,
+			Container:          a.containerSvc,
+			Resource:           a.resourceSvc,
+			Endpoint:           a.endpointSvc,
+			Certificate:        a.certSvc,
+			Heartbeat:          a.heartbeatSvc,
+			Swarm:              a.swarmIngest,
+			Kubernetes:         a.k8sIngest,
+			HostOS:             a.eolSvc,
 			// Provision endpoint/cert monitors from a remote container's labels
 			// (the agent probes them itself; the server never dials them).
 			LabelSync: func(ctx context.Context, agentID, containerName, externalID string, labels map[string]string) {
 				a.endpointSvc.SyncAgentEndpoints(ctx, agentID, containerName, externalID, labels)
 				a.certSvc.SyncAgentCerts(ctx, agentID, externalID, labels)
 			},
-		}),
-		Logger: logger.With("component", "agentserver"),
-	})
+			Logger: logger,
+		})
+		a.agentSessions = mh.Sessions
+		a.serveAgents = mh.Serve
+	}
 
 	a.alertEngine = alert.NewEngine(alert.EngineDeps{
 		AlertStore:   alertStore,
@@ -511,9 +500,24 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		},
 	})
 	a.wireStatusProvider()
-	a.maintScheduler = status.NewMaintenanceScheduler(maintenanceStore, statusCompStore, incidentStore, a.statusSvc, logger)
-	a.personalizationSvc = status.NewPersonalizationService(personalizationStore, logger.With("component", "personalization"))
-	personalizationPublicHandler := status.NewPersonalizationPublicHandler(a.personalizationSvc, logger)
+	if a.ext.StatusPage != nil {
+		sp := a.ext.StatusPage(extpoint.StatusPageDeps{
+			Service:         a.statusSvc,
+			Components:      statusCompStore,
+			Incidents:       incidentStore,
+			Maintenance:     maintenanceStore,
+			Subscribers:     subscriberStore,
+			Personalization: personalizationStore,
+			BaseURL:         cfg.BaseURL,
+			Logger:          logger,
+		})
+		a.statusSvc.SetIncidentHandler(sp.Incidents)
+		a.statusSvc.SetSubscriberNotifier(sp.Notifier)
+		a.maintScheduler = sp.Maintenance
+		a.personalizationSvc = sp.Personalization
+		a.statusMailer = sp.Mailer
+	}
+	personalizationPublicHandler := status.NewPersonalizationPublicHandler(personalizationStore, logger)
 	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL)
 	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
@@ -531,13 +535,8 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	}
 
 	var updateEnricher update.Enricher
-	if extension.Allows(extension.CapCVEEnrichment) {
-		cveClient := update.NewCVEClient(updateStore, logger.With("component", "cve"))
-		changelogResolver := update.NewChangelogResolver(registryClient, logger.With("component", "changelog"))
-		riskEngine := update.NewRiskEngine()
-		ecosystemResolver := update.NewEcosystemResolver(registryClient, logger.With("component", "ecosystem"))
-		updateEnricher = update.NewProEnricher(updateStore, cveClient, changelogResolver, riskEngine, ecosystemResolver, logger.With("component", "enricher"))
-		logger.Info("update enrichment pipeline enabled (Pro)")
+	if a.ext.Enricher != nil {
+		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{Store: updateStore, Registry: registryClient, Logger: logger})
 	}
 	a.updateSvc = update.NewService(update.Deps{
 		Store:      updateStore,
@@ -549,15 +548,17 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// --- Security posture scoring ---
 	ackStore := store.NewAcknowledgmentStore(db)
-	a.scorer = security.NewScorer(security.ScorerDeps{
-		Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
-		CVEs:           &CVEPostureAdapter{Store: updateStore},
-		CVEEvaluations: &CVEEvaluationPostureAdapter{Store: updateStore},
-		Updates:        &UpdatePostureAdapter{Store: updateStore},
-		Security:       a.securitySvc,
-		Acks:           ackStore,
-		Threshold:      cfg.SecurityScoreThreshold,
-	})
+	if a.ext.PostureScorer != nil {
+		a.scorer = a.ext.PostureScorer(extpoint.PostureDeps{
+			Certs:          &CertPostureAdapter{CertSvc: a.certSvc},
+			CVEs:           &CVEPostureAdapter{Store: updateStore},
+			CVEEvaluations: &CVEEvaluationPostureAdapter{Store: updateStore},
+			Updates:        &UpdatePostureAdapter{Store: updateStore},
+			Insights:       a.securitySvc,
+			Acks:           ackStore,
+			Threshold:      cfg.SecurityScoreThreshold,
+		})
+	}
 
 	if cfg.SecurityScoreThreshold > 0 {
 		logger.Info("security posture threshold configured", "threshold", cfg.SecurityScoreThreshold)
@@ -566,44 +567,37 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 	// --- Escalation policies ---
 	a.escalationStore = store.NewEscalationStore(db)
 
-	// Maintenance suppressor: real implementation in Pro, noop in CE.
-	var suppressor alert.MaintenanceSuppressor = extension.NoopMaintenanceSuppressor{}
-	if extension.Allows(extension.CapMaintenanceWindows) {
-		suppressor = maintenance.NewSuppressor(maintenanceStore, logger.With("component", "maintenance-suppressor"))
+	var suppressor alert.MaintenanceSuppressor
+	if a.ext.Suppressor != nil {
+		suppressor = a.ext.Suppressor(extpoint.SuppressorDeps{Windows: maintenanceStore, Logger: logger})
 	}
 	// Must be called before alertEngine.Start (invoked in App.Start).
-	a.alertEngine.SetMaintenanceSuppressor(suppressor)
+	if suppressor != nil {
+		a.alertEngine.SetMaintenanceSuppressor(suppressor)
+	}
 
-	a.escalationSvc = escalation.NewService(
-		a.escalationStore,
-		channelStore,
-		extension.CurrentEdition,
-		suppressor,
-		logger.With("component", "escalation"),
-	)
-
-	// Concrete escalator runner: only wired in Pro. In CE the engine
-	// keeps its built-in noopEscalator, which means the 60s evaluation ticker
-	// (alert.Engine.Start) does not start either. SetEscalator must run before
-	// alertEngine.Start (called later in App.Start).
-	if extension.Allows(extension.CapAlertEscalation) {
-		runner := escalation.NewRunner(escalation.RunnerDeps{
-			Store:        a.escalationStore,
-			AlertStore:   alertStore,
-			ChannelStore: channelStore,
-			Notifier:     a.notifier,
-			Suppressor:   suppressor,
-			Service:      a.escalationSvc,
-			Logger:       logger.With("component", "escalation-runner"),
+	// SetEscalator must run before alertEngine.Start (called later in App.Start).
+	if a.ext.Escalation != nil {
+		esc := a.ext.Escalation(extpoint.EscalationDeps{
+			Store:      a.escalationStore,
+			Alerts:     alertStore,
+			Channels:   channelStore,
+			Notifier:   a.notifier,
+			Suppressor: suppressor,
+			Logger:     logger,
 		})
-		a.alertEngine.SetEscalator(runner)
-		logger.Info("escalation runner enabled (Pro)")
+		a.escalationSvc = esc.Service
+		if esc.Escalator != nil {
+			a.alertEngine.SetEscalator(esc.Escalator)
+		}
 	}
 
 	// --- Wire alert callbacks ---
 	a.wireAlertCallbacks(alertDetector)
 	a.wireUpdateCallback()
-	a.wirePostureCallbacks()
+	if a.scorer != nil {
+		a.wirePostureCallbacks()
+	}
 	a.wireSwarmCallbacks()
 	a.wireAgentLifecycleAlerts()
 
@@ -638,6 +632,7 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 		StatusSvc:          a.statusSvc,
 		StatusBroker:       a.statusBroker,
 		PersonalizationSvc: a.personalizationSvc,
+		StatusMailer:       a.statusMailer,
 		// Webhooks
 		WebhookStore: webhookStore,
 		// UI extras
@@ -686,26 +681,27 @@ func New(cfg Config, logger *slog.Logger) (*App, error) {
 
 	// --- MCP Server ---
 	mcpSvc := &mcp.Services{
-		Containers:    a.containerSvc,
-		Endpoints:     a.endpointSvc,
-		Heartbeats:    a.heartbeatSvc,
-		Certificates:  a.certSvc,
-		Resources:     a.resourceSvc,
-		Alerts:        alertStore,
-		Channels:      channelStore,
-		Triggers:      triggerStore,
-		Escalator:     a.alertEngine.Escalator(),
-		ChannelTester: a.notifier,
-		Updates:       a.updateSvc,
-		Incidents:     incidentStore,
-		Maintenance:   maintenanceStore,
-		Runtime:       rt,
-		LogFetcher:    rt,
-		EscalationSvc: a.escalationSvc,
-		Agents:        a.agentStore,
-		Sessions:      a.agentSessions,
-		AgentLogs:     a.agentSessions,
-		EOL:           a.eolSvc,
+		Containers:        a.containerSvc,
+		Endpoints:         a.endpointSvc,
+		Heartbeats:        a.heartbeatSvc,
+		Certificates:      a.certSvc,
+		Resources:         a.resourceSvc,
+		Alerts:            alertStore,
+		Channels:          channelStore,
+		Triggers:          triggerStore,
+		Escalator:         a.alertEngine.Escalator(),
+		ChannelTester:     a.notifier,
+		ChannelValidators: a.notifier,
+		Updates:           a.updateSvc,
+		Incidents:         incidentStore,
+		Maintenance:       maintenanceStore,
+		Runtime:           rt,
+		LogFetcher:        rt,
+		EscalationSvc:     a.escalationSvc,
+		Agents:            a.agentStore,
+		Sessions:          a.agentSessions,
+		AgentLogs:         a.agentSessions,
+		EOL:               a.eolSvc,
 		// Security & supply-chain (read-only)
 		SecuritySvc: a.securitySvc,
 		Scorer:      a.scorer,
@@ -789,7 +785,7 @@ func (a *App) multihostPlanAllowed() bool {
 // multihostPlanPermitted is the decision itself, kept apart from the manager so
 // it can be exercised directly.
 func multihostPlanPermitted(capabilityGranted bool, licenseStatus string) bool {
-	return capabilityGranted || licenseStatus == license.StatusUpdateWindowEnded
+	return capabilityGranted || licenseStatus == extension.LicenseStatusUpdateWindowEnded
 }
 
 // Start begins all background services and the HTTP server.
@@ -834,7 +830,7 @@ func (a *App) Start(ctx context.Context) error {
 	// Runs here too so DB-backed monitors are swept even without a container runtime.
 	a.pruneOrphanAlerts(ctx)
 
-	if extension.Allows(extension.CapAlertEscalation) {
+	if a.escalationSvc != nil && extension.Allows(extension.CapAlertEscalation) {
 		go a.escalationSvc.RunRetentionLoop(ctx)
 		a.logger.Info("escalation retention loop started")
 	}
@@ -872,19 +868,19 @@ func (a *App) Start(ctx context.Context) error {
 	go a.subscribeRL.Start(ctx)
 	go a.resourceSvc.Start(ctx)
 	go a.certSvc.Start(ctx)
-	go a.maintScheduler.Start(ctx)
+	if a.maintScheduler != nil {
+		go a.maintScheduler.Start(ctx)
+	}
 	go a.subscriberSvc.Start(ctx)
 	go a.updateSvc.Start(ctx)
 
 	// Agent session ring-buffer tick + stale watcher.
 	if a.agentSessions != nil {
-		a.agentSessions.StartRingAdvancer(ctx)
 		threshold := time.Duration(a.cfg.MultiHost.AgentStaleThresholdSeconds) * time.Second
 		if threshold == 0 {
 			threshold = 60 * time.Second
 		}
-		a.agentSessions.StartStaleWatcher(ctx, 10*time.Second, threshold,
-			agentserver.OfflineReportGrace, a.agentStore.StaleAgents)
+		a.agentSessions.StartWatchers(ctx, threshold, a.agentStore.StaleAgents)
 	}
 
 	// Enrollment token GC: purge unconsumed tokens older than 7 days, every hour.
@@ -939,15 +935,21 @@ func (a *App) Start(ctx context.Context) error {
 	a.startRuntimeSupervisor(ctx)
 
 	// Agent gRPC server — server/embedded modes only, where multi-host is open.
-	if a.multihostPlanAllowed() && a.cfg.Mode != "agent" {
-		if err := a.startAgentGRPC(ctx); err != nil {
+	if a.serveAgents != nil && a.multihostPlanAllowed() && a.cfg.Mode != "agent" {
+		if err := a.serveAgents(ctx, extpoint.GRPCConfig{
+			Listen:      a.cfg.MultiHost.GRPCListen,
+			PublicURL:   a.cfg.MultiHost.GRPCPublicURL,
+			TLSCertFile: a.cfg.MultiHost.TLSCertFile,
+			TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
+			Insecure:    a.cfg.MultiHost.InsecureGRPC,
+		}); err != nil {
 			return fmt.Errorf("start agent gRPC server: %w", err)
 		}
 	}
 
 	// Embedded agent (mode=server + --embedded-agent + Pro).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
-	if a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
+	if a.serveAgents != nil && a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
 	}
 
@@ -1090,78 +1092,6 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}()
 
 	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
-}
-
-// startAgentGRPC binds and serves the agent-facing gRPC server in a background
-// goroutine. TLS is required (FR-031); if no keypair is configured a
-// self-signed dev cert is generated in-memory and a warning is logged.
-func (a *App) startAgentGRPC(ctx context.Context) error {
-	listen := a.cfg.MultiHost.GRPCListen
-	if listen == "" {
-		listen = "127.0.0.1:8443"
-	}
-
-	var tlsCfg *tls.Config
-	if a.cfg.MultiHost.InsecureGRPC {
-		a.logger.Warn("agentserver: TLS disabled — only use behind a trusted reverse proxy (MAINTENANT_GRPC_TLS_INSECURE)")
-	} else {
-		hosts := collectGRPCTLSHosts(a.cfg.MultiHost.GRPCPublicURL, listen)
-		var err error
-		tlsCfg, err = agentserver.LoadOrGenerateTLS(
-			a.cfg.MultiHost.TLSCertFile,
-			a.cfg.MultiHost.TLSKeyFile,
-			hosts,
-			a.logger.With("component", "agentserver"),
-		)
-		if err != nil {
-			return err
-		}
-	}
-
-	a.agentSrv.StartTokenGC(ctx)
-	if err := a.agentSrv.Start(ctx, listen, tlsCfg); err != nil {
-		return err
-	}
-	a.logger.Info("agent gRPC server listening", "listen", listen)
-	return nil
-}
-
-// collectGRPCTLSHosts returns the SAN list used for the self-signed dev TLS
-// cert. It pulls the host out of the public URL (when set) and the listen
-// address; wildcards like 0.0.0.0/:: are filtered. Empty result is handled
-// downstream by falling back to 127.0.0.1 + localhost.
-func collectGRPCTLSHosts(publicURL, listen string) []string {
-	var hosts []string
-	add := func(raw string) {
-		if raw == "" {
-			return
-		}
-		h := raw
-		if hh, _, err := net.SplitHostPort(raw); err == nil {
-			h = hh
-		}
-		if h == "" || h == "0.0.0.0" || h == "::" || h == "[::]" {
-			return
-		}
-		hosts = append(hosts, h)
-	}
-
-	if publicURL != "" {
-		stripped := publicURL
-		for _, scheme := range []string{"grpcs://", "grpc://", "https://", "http://"} {
-			if rest, ok := strings.CutPrefix(stripped, scheme); ok {
-				stripped = rest
-				break
-			}
-		}
-		// stripped may carry a trailing path/query — keep only the authority.
-		if i := strings.IndexAny(stripped, "/?#"); i >= 0 {
-			stripped = stripped[:i]
-		}
-		add(stripped)
-	}
-	add(listen)
-	return hosts
 }
 
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.

@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package v1
 
@@ -21,7 +13,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
-	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
@@ -132,7 +124,7 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 		return
 	}
 
-	publicURL, warnings := agentserver.ResolvePublicURL(r, agentserver.PublicURLConfig{
+	publicURL, warnings := agentproto.ResolvePublicURL(r, agentproto.PublicURLConfig{
 		Explicit:       h.grpcPublicURL,
 		ListenAddr:     h.grpcListen,
 		TrustedProxies: h.trustedProxies,
@@ -560,7 +552,7 @@ func ConnectionState(sessions AgentSessions, staleThreshold time.Duration, agent
 // spoolReporter is the optional part of the session registry that knows what an
 // agent last said about its outbound queue.
 type spoolReporter interface {
-	SpoolStatus(agentID string) *agentserver.SpoolState
+	SpoolStatus(agentID string) *agentproto.SpoolState
 }
 
 // spoolForAgent renders what agentID declared, or nil when it is disconnected

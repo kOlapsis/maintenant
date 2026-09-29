@@ -1,7 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. See COMMERCIAL-LICENSE.md.
+// SPDX-License-Identifier: Apache-2.0
 
 package v1
 
@@ -19,12 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
-	"github.com/kolapsis/maintenant/internal/agentserver"
+	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
-// stubLogRequester stands in for agentserver.Sessions.
+// stubLogRequester stands in for the multi-host session registry.
 type stubLogRequester struct {
 	connected bool
 	capable   bool
@@ -63,9 +61,9 @@ func TestWriteRemoteLogsError_Taxonomy(t *testing.T) {
 		wantCode int
 		wantBody string
 	}{
-		{"offline", agentserver.ErrAgentNotConnected, http.StatusServiceUnavailable, "AGENT_OFFLINE"},
-		{"too old", agentserver.ErrAgentCannotServe, http.StatusNotImplemented, "AGENT_TOO_OLD"},
-		{"busy", agentserver.ErrTooManyRequests, http.StatusTooManyRequests, "LOGS_BUSY"},
+		{"offline", agentproto.ErrAgentNotConnected, http.StatusServiceUnavailable, "AGENT_OFFLINE"},
+		{"too old", agentproto.ErrAgentCannotServe, http.StatusNotImplemented, "AGENT_TOO_OLD"},
+		{"busy", agentproto.ErrTooManyRequests, http.StatusTooManyRequests, "LOGS_BUSY"},
 		{"timeout", context.DeadlineExceeded, http.StatusGatewayTimeout, "LOGS_TIMEOUT"},
 		{"other", errors.New("boom"), http.StatusBadGateway, "LOGS_UNAVAILABLE"},
 	}
@@ -99,11 +97,11 @@ func TestFetchRemoteLogs_PassesThroughToAgent(t *testing.T) {
 }
 
 func TestFetchRemoteLogs_SurfacesAgentError(t *testing.T) {
-	req := &stubLogRequester{connected: true, capable: true, err: agentserver.ErrAgentCannotServe}
+	req := &stubLogRequester{connected: true, capable: true, err: agentproto.ErrAgentCannotServe}
 
 	_, err := fetchRemoteLogs(context.Background(), req, "agent-9", "ctr", 100, false)
 
-	assert.ErrorIs(t, err, agentserver.ErrAgentCannotServe)
+	assert.ErrorIs(t, err, agentproto.ErrAgentCannotServe)
 }
 
 // countingLogFetcher records whether the local runtime path was taken.
@@ -185,7 +183,7 @@ func TestHandleLogs_OfflineAgentReportsItPlainly(t *testing.T) {
 		ID: "ctr-uuid", ExternalID: "dead", Name: "web",
 		AgentID: "11111111-2222-3333-4444-555555555555",
 	}
-	remote := &stubLogRequester{err: agentserver.ErrAgentNotConnected}
+	remote := &stubLogRequester{err: agentproto.ErrAgentNotConnected}
 
 	rec := doLogsRequest(logsHandler(t, c, &countingLogFetcher{}, remote), c.ID)
 
@@ -257,7 +255,7 @@ func TestHandleLogs_OfflineAgentErrorUsesLabel(t *testing.T) {
 	const agentID = "11111111-2222-3333-4444-555555555555"
 	c := &container.Container{ID: "ctr-uuid", ExternalID: "dead", Name: "web", AgentID: agentID}
 
-	h := logsHandler(t, c, &countingLogFetcher{}, &stubLogRequester{err: agentserver.ErrAgentNotConnected})
+	h := logsHandler(t, c, &countingLogFetcher{}, &stubLogRequester{err: agentproto.ErrAgentNotConnected})
 	h.SetAgentDirectory(stubAgentDirectory{names: map[string]AgentName{agentID: {Label: "proxy2"}}})
 
 	rec := doLogsRequest(h, c.ID)

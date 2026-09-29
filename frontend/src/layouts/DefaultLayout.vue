@@ -1,7 +1,7 @@
-<!-- Copyright 2026 Benjamin Touchard (kOlapsis) Licensed under the GNU Affero General Public
-License v3.0 (AGPL-3.0) or a commercial license. You may not use this file except in compliance with
-one of these licenses. AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html Commercial: See
-COMMERCIAL-LICENSE.md Source: https://github.com/kolapsis/maintenant -->
+<!--
+  Copyright 2026 Benjamin Touchard (kOlapsis)
+  SPDX-License-Identifier: Apache-2.0
+-->
 
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
@@ -10,6 +10,7 @@ import AppHeader from '@/components/AppHeader.vue'
 import EditionBadge from '@/components/EditionBadge.vue'
 import DemoModeBanner from '@/components/DemoModeBanner.vue'
 import AlertBanner from '@/components/ui/AlertBanner.vue'
+import SuspendedChannelsBanner from '@/components/SuspendedChannelsBanner.vue'
 import DetailSlideOver from '@/components/DetailSlideOver.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
@@ -68,7 +69,9 @@ const {
   licenseSeverity,
   licenseLabel,
   loadLicenseStatus,
+  tierLimit,
 } = useEdition()
+const personalHostLimit = computed(() => tierLimit('personal', 'agent_hosts'))
 const swarmStore = useSwarmStore()
 const runtimeStore = useRuntimeStore()
 const storageStore = useStorageStore()
@@ -338,6 +341,7 @@ watch(
     <main class="flex-1 flex flex-col overflow-hidden">
       <!-- Demo mode banner: persistent, non-dismissible -->
       <DemoModeBanner />
+      <SuspendedChannelsBanner class="shrink-0" />
       <!-- License warning banner -->
       <AlertBanner
         v-if="licenseMessageParts"
@@ -369,8 +373,8 @@ watch(
         <!-- Tier 1 leads with Personal: at this size it is most likely a homelab,
              and Personal is what removes the friction they just hit. -->
         <template v-if="editionBanner.tier.value === 1">
-          Hitting the Community limits? Personal lifts them all and monitors up to 20 machines,
-          for €149 once, for life.
+          Hitting the Community limits? Personal lifts them all<template v-if="personalHostLimit !== null">
+            and monitors up to {{ personalHostLimit }} machines</template>, for €149 once, for life.
         </template>
         <!-- Tier 2 names both: the size no longer tells you which one fits. -->
         <template v-else-if="editionBanner.tier.value === 2">

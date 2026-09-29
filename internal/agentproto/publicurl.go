@@ -1,0 +1,130 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+// SPDX-License-Identifier: Apache-2.0
+
+package agentproto
+
+import (
+	"net"
+	"net/http"
+	"net/netip"
+	"strings"
+
+	"github.com/kolapsis/maintenant/internal/ratelimit"
+)
+
+// PublicURLConfig holds the inputs for resolving the gRPC public URL.
+type PublicURLConfig struct {
+	// Explicit override from MAINTENANT_GRPC_URL env or --grpc-url flag.
+	// If non-empty, it is used as-is (after ensuring the grpcs:// scheme).
+	Explicit string
+
+	// ListenAddr is the address the gRPC server is bound to (e.g. "127.0.0.1:8443").
+	// Used as fallback when neither Explicit nor request headers are available.
+	ListenAddr string
+
+	// TrustedProxies lists the peers whose X-Forwarded-* headers are believed.
+	TrustedProxies []netip.Prefix
+}
+
+// ResolvePublicURL returns the grpcs:// URL that remote agents should use plus a list
+// of warnings. Resolution priority: explicit config > X-Forwarded-Host+Proto headers
+// from the HTTP request > request Host header.
+//
+// A "public_url_appears_local" warning is appended whenever the resolved host
+// is localhost, 127.x.x.x, ::1, or an RFC-1918 / link-local address.
+func ResolvePublicURL(req *http.Request, cfg PublicURLConfig) (string, []string) {
+	var warnings []string
+
+	// 1. Explicit env / flag override.
+	if cfg.Explicit != "" {
+		url := ensureGRPCSScheme(cfg.Explicit)
+		if looksLocal(hostFromURL(url)) {
+			warnings = append(warnings, "public_url_appears_local")
+		}
+		return url, warnings
+	}
+
+	// 2. X-Forwarded-Host headers, believed only from a configured proxy.
+	if req != nil {
+		if ratelimit.NewClientIPResolver(cfg.TrustedProxies).TrustsPeer(req) {
+			fwdHost := req.Header.Get("X-Forwarded-Host")
+			if fwdHost != "" {
+				// Normalise: remove standard gRPC port 443 suffix.
+				host := stripStandardPort(fwdHost, "443")
+				if proto := req.Header.Get("X-Forwarded-Proto"); proto == "grpc" {
+					warnings = append(warnings, "public_url_plaintext_refused")
+				}
+				if looksLocal(fwdHost) {
+					warnings = append(warnings, "public_url_appears_local")
+				}
+				return "grpcs://" + host, warnings
+			}
+		}
+
+		// 3. Request Host header.
+		if req.Host != "" {
+			host := stripStandardPort(req.Host, "443")
+			url := "grpcs://" + host
+			if looksLocal(req.Host) {
+				warnings = append(warnings, "public_url_appears_local")
+			}
+			return url, warnings
+		}
+	}
+
+	// 4. Fallback to configured listen address (almost certainly local).
+	listen := cfg.ListenAddr
+	if listen == "" {
+		listen = "127.0.0.1:8443"
+	}
+	url := "grpcs://" + listen
+	warnings = append(warnings, "public_url_appears_local")
+	return url, warnings
+}
+
+func ensureGRPCSScheme(u string) string {
+	if strings.HasPrefix(u, "grpcs://") || strings.HasPrefix(u, "grpc://") {
+		return u
+	}
+	return "grpcs://" + strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
+}
+
+func hostFromURL(u string) string {
+	for _, prefix := range []string{"grpcs://", "grpc://", "https://", "http://"} {
+		if strings.HasPrefix(u, prefix) {
+			rest := strings.TrimPrefix(u, prefix)
+			// Strip path/port for the local check
+			host, _, _ := net.SplitHostPort(rest)
+			if host != "" {
+				return host
+			}
+			return rest
+		}
+	}
+	return u
+}
+
+// looksLocal returns true when h resolves to a loopback, link-local, or RFC-1918 address.
+func looksLocal(h string) bool {
+	// Strip port if present.
+	host := h
+	if hh, _, err := net.SplitHostPort(h); err == nil {
+		host = hh
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		lower := strings.ToLower(host)
+		return lower == "localhost" || strings.HasSuffix(lower, ".local")
+	}
+
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate()
+}
+
+func stripStandardPort(host, standard string) string {
+	if _, port, err := net.SplitHostPort(host); err == nil && port == standard {
+		h, _, _ := net.SplitHostPort(host)
+		return h
+	}
+	return host
+}

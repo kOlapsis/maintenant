@@ -1,7 +1,5 @@
 // Copyright 2026 Benjamin Touchard (kOlapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license.
+// SPDX-License-Identifier: Apache-2.0
 
 package v1
 

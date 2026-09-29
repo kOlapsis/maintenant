@@ -1,26 +1,16 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package alert
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -69,19 +59,17 @@ type WebhookPayload struct {
 	Timestamp string                 `json:"timestamp"`
 }
 
-// Notifier dispatches webhook notifications with a bounded worker pool.
+// Notifier dispatches alert notifications with a bounded worker pool.
 type Notifier struct {
 	jobs         chan NotificationJob
 	channelStore ChannelStore
 	httpClient   *http.Client
-	smtpSender   *SMTPSender
 	logger       *slog.Logger
+	webhook      *webhookSender
+	senders      map[string]ChannelSender
 
-	// Telegram is reached at a fixed destination with a client of its own
-	// handle, so a test can point both at an httptest server. In production
-	// they are the real API and the notifier's own guarded client.
-	telegramAPIBase string
-	telegramClient  *http.Client
+	suspendedMu     sync.Mutex
+	suspendedLogged map[string]bool
 }
 
 // NewNotifier creates a new webhook notifier. Its HTTP client blocks delivery
@@ -89,32 +77,49 @@ type Notifier struct {
 // (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS).
 func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool) *Notifier {
 	client := ssrf.NewHTTPClient(webhookTimeout, allowPrivate)
+	webhook := &webhookSender{client: client, format: formatWebhookPayload, logger: logger}
 	return &Notifier{
-		jobs:            make(chan NotificationJob, notifierChannelBuffer),
-		channelStore:    channelStore,
-		httpClient:      client,
-		logger:          logger,
-		telegramAPIBase: TelegramAPIBase,
-		telegramClient:  client,
+		jobs:         make(chan NotificationJob, notifierChannelBuffer),
+		channelStore: channelStore,
+		httpClient:   client,
+		logger:       logger,
+		webhook:      webhook,
+		senders: map[string]ChannelSender{
+			"webhook": webhook,
+			"discord": NewWebhookSender(client, formatDiscordPayload, logger),
+		},
+		suspendedLogged: make(map[string]bool),
 	}
 }
 
-// SetTelegramTransport points Telegram delivery at another host with another
-// client. Tests use it: the guarded client refuses 127.0.0.1, where an
-// httptest server listens.
-func (n *Notifier) SetTelegramTransport(apiBase string, client *http.Client) {
-	n.telegramAPIBase = apiBase
-	n.telegramClient = client
+// HTTPClient returns the SSRF-guarded client the notifier delivers webhooks with.
+func (n *Notifier) HTTPClient() *http.Client {
+	return n.httpClient
 }
 
-// SetSMTPSender configures SMTP delivery for email channels.
-func (n *Notifier) SetSMTPSender(sender *SMTPSender) {
-	n.smtpSender = sender
+// RegisterChannel routes every channel of chType to s; call it before Start.
+func (n *Notifier) RegisterChannel(chType string, s ChannelSender) {
+	n.senders[chType] = s
+}
+
+// senderFor returns the sender of chType, the generic webhook for a type nobody registered.
+func (n *Notifier) senderFor(chType string) ChannelSender {
+	if s, ok := n.senders[chType]; ok {
+		return s
+	}
+	return n.webhook
+}
+
+// Validator returns the validator of chType, if its sender has one.
+func (n *Notifier) Validator(chType string) (ChannelValidator, bool) {
+	v, ok := n.senders[chType].(ChannelValidator)
+	return v, ok
 }
 
 // SMTPConfigured reports whether SMTP delivery is available.
 func (n *Notifier) SMTPConfigured() bool {
-	return n.smtpSender != nil
+	s, ok := n.senders["email"]
+	return ok && s.Ready() == nil
 }
 
 // Start begins the worker pool. Call in a goroutine.
@@ -153,55 +158,44 @@ func (n *Notifier) processJob(ctx context.Context, job NotificationJob) {
 	// Pre-rendered body: webhook subscriptions dispatch the raw event payload
 	// (already marshalled and signed), so there is no alert to format from.
 	if job.Body != nil {
-		n.deliverWebhook(ctx, job, job.Body)
+		n.deliver(ctx, job, n.webhook, func() error { return n.webhook.post(ctx, job.Channel, job.Body) })
 		return
 	}
 
-	eventType := event.AlertFired
-	if job.Alert.Status == StatusResolved {
-		eventType = event.AlertResolved
-	}
-
-	channelType := job.Channel.Type
-
-	// Email channel: use SMTP sender
-	if channelType == "email" {
-		n.processEmailJob(ctx, job, eventType)
+	if err := n.suspension(job.Channel); err != nil {
+		job.Delivery.Status = DeliverySuspended
+		job.Delivery.LastError = err.Error()
+		if job.Delivery.ID != "" {
+			if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
+				n.logger.Error("notifier: update suspended delivery", "error", updateErr)
+			}
+		}
 		return
 	}
 
-	// Telegram: not the generic webhook path. That path logs ch.URL, and a
-	// Telegram URL carries the bot token; it also reads nothing but the status
-	// code, where the operator needs Telegram's own words.
-	if channelType == "telegram" {
-		n.processTelegramJob(ctx, job, eventType)
+	eventType := alertEventType(job.Alert)
+	sender := n.senderFor(job.Channel.Type)
+	if err := sender.Ready(); err != nil {
+		n.failDelivery(ctx, job.Delivery, err.Error())
 		return
 	}
-
-	body, err := formatPayload(channelType, eventType, job.Alert)
-	if err != nil {
-		n.failDelivery(ctx, job.Delivery, fmt.Sprintf("marshal payload: %s", err))
-		return
-	}
-
-	n.deliverWebhook(ctx, job, body)
+	n.deliver(ctx, job, sender, func() error { return sender.Send(ctx, job.Channel, eventType, job.Alert) })
 }
 
-// deliverWebhook POSTs body to the job's channel using the shared retry/backoff
-// policy and records the delivery outcome.
-func (n *Notifier) deliverWebhook(ctx context.Context, job NotificationJob, body []byte) {
+// deliver runs send under the shared retry/backoff policy and records the delivery outcome.
+func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender ChannelSender, send func() error) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(retryBackoffs[attempt-1]):
+			case <-time.After(sender.RetryDelay(retryBackoffs[attempt-1], lastErr)):
 			}
 		}
 
 		job.Delivery.Attempts = attempt + 1
-		lastErr = n.sendWebhook(ctx, job.Channel, body)
+		lastErr = send()
 		if lastErr == nil {
 			job.Delivery.Status = DeliveryDelivered
 			if job.Delivery.ID != "" {
@@ -217,142 +211,12 @@ func (n *Notifier) deliverWebhook(ctx context.Context, job NotificationJob, body
 			return
 		}
 
-		n.logger.Warn("notifier: webhook delivery attempt failed",
-			"attempt", attempt+1, "channel_id", job.Channel.ID,
+		n.logger.Warn("notifier: delivery attempt failed",
+			"attempt", attempt+1, "channel_id", job.Channel.ID, "channel_type", job.Channel.Type,
 			"alert_id", jobAlertID(job), "error", lastErr)
 	}
 
-	// All retries exhausted
-	n.failDelivery(ctx, job.Delivery, lastErr.Error())
-}
-
-func (n *Notifier) processEmailJob(ctx context.Context, job NotificationJob, eventType string) {
-	if n.smtpSender == nil {
-		n.failDelivery(ctx, job.Delivery, "SMTP not configured")
-		return
-	}
-
-	to := job.Channel.URL
-	subject := formatEmailSubject(eventType, job.Alert)
-	body := formatEmailBody(eventType, job.Alert)
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			backoff := retryBackoffs[attempt-1]
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(backoff):
-			}
-		}
-
-		job.Delivery.Attempts = attempt + 1
-		err := n.smtpSender.Send(ctx, to, subject, body)
-		if err == nil {
-			job.Delivery.Status = DeliveryDelivered
-			if job.Delivery.ID != "" {
-				if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
-					n.logger.Error("notifier: update delivery status", "error", updateErr)
-				}
-			}
-			n.logger.Debug("alert notifier: email delivered",
-				"alert_id", job.Alert.ID,
-				"channel_id", job.Channel.ID,
-			)
-			return
-		}
-
-		n.logger.Warn("notifier: email delivery attempt failed",
-			"attempt", attempt+1, "channel_id", job.Channel.ID,
-			"alert_id", job.Alert.ID, "error", err)
-	}
-
-	n.failDelivery(ctx, job.Delivery, "email delivery failed after retries")
-}
-
-// processTelegramJob mirrors deliverWebhook: the product's retry policy, three
-// attempts at 1s/5s/25s, with one difference — when Telegram names a delay, the
-// next attempt is never earlier than that (FR-013, FR-014).
-func (n *Notifier) processTelegramJob(ctx context.Context, job NotificationJob, eventType string) {
-	text := BuildTelegramMessage(eventType, job.Alert)
-
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(telegramBackoff(attempt, lastErr)):
-			}
-		}
-
-		job.Delivery.Attempts = attempt + 1
-		lastErr = SendTelegram(ctx, n.telegramClient, n.telegramAPIBase, job.Channel, text)
-		if lastErr == nil {
-			job.Delivery.Status = DeliveryDelivered
-			if job.Delivery.ID != "" {
-				if updateErr := n.channelStore.UpdateDelivery(ctx, job.Delivery); updateErr != nil {
-					n.logger.Error("notifier: update delivery status", "error", updateErr)
-				}
-			}
-			n.logger.Debug("alert notifier: telegram delivered",
-				"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
-			return
-		}
-
-		n.logger.Warn("notifier: telegram delivery attempt failed",
-			"attempt", attempt+1, "channel_id", job.Channel.ID,
-			"alert_id", jobAlertID(job), "error", lastErr)
-	}
-
-	n.failDelivery(ctx, job.Delivery, lastErr.Error())
-}
-
-// telegramBackoff returns the wait before attempt n. It is the product's own
-// backoff, raised to the delay Telegram asked for when it asked for one: never
-// retrying sooner than Telegram allows, never replacing our policy with theirs.
-func telegramBackoff(attempt int, lastErr error) time.Duration {
-	wait := retryBackoffs[attempt-1]
-	var rateLimit *TelegramRateLimitError
-	if errors.As(lastErr, &rateLimit) && rateLimit.RetryAfter > wait {
-		return rateLimit.RetryAfter
-	}
-	return wait
-}
-
-func (n *Notifier) sendWebhook(ctx context.Context, ch *NotificationChannel, body []byte) error {
-	n.logger.Debug("alert notifier: sending webhook",
-		"url", ch.URL,
-		"channel_type", ch.Type,
-	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ch.URL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	// Apply custom headers from channel config
-	if ch.Headers != "" {
-		var headers map[string]string
-		if err := json.Unmarshal([]byte(ch.Headers), &headers); err == nil {
-			for k, v := range headers {
-				req.Header.Set(k, v)
-			}
-		}
-	}
-
-	resp, err := n.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("non-2xx response: %d", resp.StatusCode)
-	}
-
-	return nil
+	n.failDelivery(ctx, job.Delivery, sender.FailureMessage(lastErr))
 }
 
 func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, errMsg string) {
@@ -365,66 +229,43 @@ func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, er
 	}
 }
 
+// suspension returns a *SuspendedError when the running edition no longer opens ch's type, warning once per channel and transition.
+func (n *Notifier) suspension(ch *NotificationChannel) error {
+	required, suspended := ChannelSuspension(ch.Type)
+
+	n.suspendedMu.Lock()
+	defer n.suspendedMu.Unlock()
+	if !suspended {
+		delete(n.suspendedLogged, ch.ID)
+		return nil
+	}
+	if !n.suspendedLogged[ch.ID] {
+		n.suspendedLogged[ch.ID] = true
+		n.logger.Warn("notifier: channel suspended, the running edition no longer opens its type",
+			"channel_id", ch.ID, "channel_type", ch.Type, "required_edition", required)
+	}
+	return &SuspendedError{Required: required}
+}
+
+func alertEventType(a *Alert) string {
+	if a.Status == StatusResolved {
+		return event.AlertResolved
+	}
+	return event.AlertFired
+}
+
 // SendNow performs a synchronous send to the given channel with internal retries.
 // Unlike Enqueue, it does not write to the notification_deliveries table — the
 // caller (e.g. the escalation Runner) manages its own delivery row state.
 // Returns nil on success, or the last error after maxRetries attempts.
 func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChannel) error {
-	eventType := event.AlertFired
-	if a.Status == StatusResolved {
-		eventType = event.AlertResolved
+	if err := n.suspension(ch); err != nil {
+		return err
 	}
-
-	if ch.Type == "email" {
-		if n.smtpSender == nil {
-			return fmt.Errorf("SMTP not configured")
-		}
-		subject := formatEmailSubject(eventType, a)
-		body := formatEmailBody(eventType, a)
-
-		var lastErr error
-		for attempt := 0; attempt < maxRetries; attempt++ {
-			if attempt > 0 {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(retryBackoffs[attempt-1]):
-				}
-			}
-			lastErr = n.smtpSender.Send(ctx, ch.URL, subject, body)
-			if lastErr == nil {
-				return nil
-			}
-			n.logger.Warn("notifier: email attempt failed",
-				"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
-		}
-		return lastErr
-	}
-
-	if ch.Type == "telegram" {
-		text := BuildTelegramMessage(eventType, a)
-		var lastErr error
-		for attempt := 0; attempt < maxRetries; attempt++ {
-			if attempt > 0 {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(telegramBackoff(attempt, lastErr)):
-				}
-			}
-			lastErr = SendTelegram(ctx, n.telegramClient, n.telegramAPIBase, ch, text)
-			if lastErr == nil {
-				return nil
-			}
-			n.logger.Warn("notifier: telegram attempt failed",
-				"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
-		}
-		return lastErr
-	}
-
-	body, err := formatPayload(ch.Type, eventType, a)
-	if err != nil {
-		return fmt.Errorf("marshal payload: %w", err)
+	eventType := alertEventType(a)
+	sender := n.senderFor(ch.Type)
+	if err := sender.Ready(); err != nil {
+		return err
 	}
 
 	var lastErr error
@@ -433,15 +274,15 @@ func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChanne
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(retryBackoffs[attempt-1]):
+			case <-time.After(sender.RetryDelay(retryBackoffs[attempt-1], lastErr)):
 			}
 		}
-		lastErr = n.sendWebhook(ctx, ch, body)
+		lastErr = sender.Send(ctx, ch, eventType, a)
 		if lastErr == nil {
 			return nil
 		}
-		n.logger.Warn("notifier: webhook attempt failed",
-			"attempt", attempt+1, "channel_id", ch.ID, "alert_id", a.ID, "error", lastErr)
+		n.logger.Warn("notifier: attempt failed",
+			"attempt", attempt+1, "channel_id", ch.ID, "channel_type", ch.Type, "alert_id", a.ID, "error", lastErr)
 	}
 	return lastErr
 }
@@ -460,72 +301,14 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 		CreatedAt:  time.Now().UTC(),
 	}
 
-	if ch.Type == "telegram" {
-		if err := SendTelegram(ctx, n.telegramClient, n.telegramAPIBase, ch,
-			BuildTelegramMessage("test", testAlert)); err != nil {
-			return 0, err
-		}
-		return 200, nil
-	}
-
-	// Email channel: test via SMTP
-	if ch.Type == "email" {
-		if n.smtpSender == nil {
-			return 0, fmt.Errorf("SMTP not configured")
-		}
-		err := n.smtpSender.Send(ctx, ch.URL, "maintenant Test Notification", "This is a test notification from maintenant.\n\nIf you received this email, your alert channel is configured correctly.")
-		if err != nil {
-			return 0, err
-		}
-		return 200, nil
-	}
-
-	body, err := formatPayload(ch.Type, "test", testAlert)
-	if err != nil {
+	if err := n.suspension(ch); err != nil {
 		return 0, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ch.URL, bytes.NewReader(body))
-	if err != nil {
+	sender := n.senderFor(ch.Type)
+	if err := sender.Ready(); err != nil {
 		return 0, err
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if ch.Headers != "" {
-		var headers map[string]string
-		if err := json.Unmarshal([]byte(ch.Headers), &headers); err == nil {
-			for k, v := range headers {
-				req.Header.Set(k, v)
-			}
-		}
-	}
-
-	resp, err := n.httpClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-
-	return resp.StatusCode, nil
-}
-
-// formatPayload builds the JSON payload appropriate for the channel type.
-func formatPayload(channelType, eventType string, a *Alert) ([]byte, error) {
-	switch channelType {
-	case "slack":
-		return formatSlackPayload(eventType, a)
-	case "discord":
-		return formatDiscordPayload(eventType, a)
-	case "teams":
-		return formatTeamsPayload(eventType, a)
-	default:
-		return formatWebhookPayload(eventType, a)
-	}
+	return sender.SendTest(ctx, ch, testAlert)
 }
 
 func formatWebhookPayload(eventType string, a *Alert) ([]byte, error) {
@@ -533,61 +316,6 @@ func formatWebhookPayload(eventType string, a *Alert) ([]byte, error) {
 		Event:     eventType,
 		Alert:     alertToMap(a),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-	}
-	return json.Marshal(payload)
-}
-
-func formatSlackPayload(eventType string, a *Alert) ([]byte, error) {
-	emoji := severityEmoji(a.Severity)
-	title := fmt.Sprintf("%s *%s*", emoji, eventTitle(eventType, a))
-
-	fields := fmt.Sprintf(
-		"*Source:* %s  |  *Severity:* %s  |  *Entity:* %s\n%s",
-		a.Source, a.Severity, a.EntityName, a.Message,
-	)
-
-	blocks := []map[string]interface{}{
-		{
-			"type": "section",
-			"text": map[string]string{
-				"type": "mrkdwn",
-				"text": title,
-			},
-		},
-		{
-			"type": "section",
-			"text": map[string]string{
-				"type": "mrkdwn",
-				"text": fields,
-			},
-		},
-	}
-
-	if a.Source == "update" {
-		if details := parseAlertDetails(a.Details); details != nil {
-			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
-				blocks = append(blocks, map[string]interface{}{
-					"type": "section",
-					"text": map[string]string{
-						"type": "mrkdwn",
-						"text": fmt.Sprintf("*Update command:*\n```%s```", cmd),
-					},
-				})
-			}
-			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
-				blocks = append(blocks, map[string]interface{}{
-					"type": "section",
-					"text": map[string]string{
-						"type": "mrkdwn",
-						"text": fmt.Sprintf("*Rollback command:*\n```%s```", cmd),
-					},
-				})
-			}
-		}
-	}
-
-	payload := map[string]interface{}{
-		"blocks": blocks,
 	}
 	return json.Marshal(payload)
 }
@@ -602,7 +330,7 @@ func formatDiscordPayload(eventType string, a *Alert) ([]byte, error) {
 	}
 
 	if a.Source == "update" {
-		if details := parseAlertDetails(a.Details); details != nil {
+		if details := ParseAlertDetails(a.Details); details != nil {
 			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
 				fields = append(fields, map[string]interface{}{
 					"name": "Update Command", "value": fmt.Sprintf("```%s```", cmd), "inline": false,
@@ -617,7 +345,7 @@ func formatDiscordPayload(eventType string, a *Alert) ([]byte, error) {
 	}
 
 	embed := map[string]interface{}{
-		"title":       eventTitle(eventType, a),
+		"title":       EventTitle(eventType, a),
 		"description": a.Message,
 		"color":       color,
 		"timestamp":   time.Now().UTC().Format(time.RFC3339),
@@ -630,75 +358,8 @@ func formatDiscordPayload(eventType string, a *Alert) ([]byte, error) {
 	return json.Marshal(payload)
 }
 
-func formatTeamsPayload(eventType string, a *Alert) ([]byte, error) {
-	facts := []map[string]string{
-		{"name": "Source", "value": a.Source},
-		{"name": "Severity", "value": a.Severity},
-		{"name": "Entity", "value": a.EntityName},
-		{"name": "Type", "value": a.AlertType},
-	}
-
-	if a.Source == "update" {
-		if details := parseAlertDetails(a.Details); details != nil {
-			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
-				facts = append(facts, map[string]string{"name": "Update Command", "value": "`" + cmd + "`"})
-			}
-			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
-				facts = append(facts, map[string]string{"name": "Rollback Command", "value": "`" + cmd + "`"})
-			}
-		}
-	}
-
-	payload := map[string]interface{}{
-		"@type":      "MessageCard",
-		"@context":   "http://schema.org/extensions",
-		"themeColor": severityHexColor(a.Severity),
-		"title":      eventTitle(eventType, a),
-		"sections": []map[string]interface{}{
-			{
-				"activityTitle": a.Message,
-				"facts":         facts,
-			},
-		},
-	}
-	return json.Marshal(payload)
-}
-
-func formatEmailSubject(eventType string, a *Alert) string {
-	prefix := "ALERT"
-	if strings.Contains(eventType, "resolved") {
-		prefix = "RESOLVED"
-	} else if eventType == "test" {
-		prefix = "TEST"
-	}
-	return fmt.Sprintf("[maintenant] %s: %s", prefix, a.Message)
-}
-
-func formatEmailBody(eventType string, a *Alert) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Event: %s\n", eventType)
-	fmt.Fprintf(&b, "Source: %s\n", a.Source)
-	fmt.Fprintf(&b, "Severity: %s\n", a.Severity)
-	fmt.Fprintf(&b, "Entity: %s (%s)\n", a.EntityName, a.EntityType)
-	fmt.Fprintf(&b, "Message: %s\n", a.Message)
-	fmt.Fprintf(&b, "Time: %s\n", a.FiredAt.UTC().Format(time.RFC3339))
-
-	if a.Source == "update" {
-		if details := parseAlertDetails(a.Details); details != nil {
-			if cmd, ok := details["update_command"].(string); ok && cmd != "" {
-				fmt.Fprintf(&b, "\nUpdate command:\n  %s\n", cmd)
-			}
-			if cmd, ok := details["rollback_command"].(string); ok && cmd != "" {
-				fmt.Fprintf(&b, "\nRollback command:\n  %s\n", cmd)
-			}
-		}
-	}
-
-	return b.String()
-}
-
-// parseAlertDetails deserializes the JSON details string from a persisted alert.
-func parseAlertDetails(details string) map[string]interface{} {
+// ParseAlertDetails deserializes the JSON details string from a persisted alert.
+func ParseAlertDetails(details string) map[string]interface{} {
 	if details == "" || details == "{}" {
 		return nil
 	}
@@ -709,7 +370,8 @@ func parseAlertDetails(details string) map[string]interface{} {
 	return m
 }
 
-func eventTitle(eventType string, a *Alert) string {
+// EventTitle is the headline of a fired, resolved or test notification.
+func EventTitle(eventType string, a *Alert) string {
 	switch {
 	case eventType == "test":
 		return "maintenant Test Notification"
@@ -720,7 +382,8 @@ func eventTitle(eventType string, a *Alert) string {
 	}
 }
 
-func severityEmoji(severity string) string {
+// SeverityEmoji is the coloured circle that leads a notification of this severity.
+func SeverityEmoji(severity string) string {
 	switch severity {
 	case SeverityCritical:
 		return "\xF0\x9F\x94\xB4" // red circle
@@ -739,16 +402,5 @@ func severityColor(severity string) int {
 		return 0xF59E0B // amber
 	default:
 		return 0x22C55E // green
-	}
-}
-
-func severityHexColor(severity string) string {
-	switch severity {
-	case SeverityCritical:
-		return "EF4444"
-	case SeverityWarning:
-		return "F59E0B"
-	default:
-		return "22C55E"
 	}
 }

@@ -1,14 +1,6 @@
 <!--
   Copyright 2026 Benjamin Touchard (kOlapsis)
-
-  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-  or a commercial license. You may not use this file except in compliance
-  with one of these licenses.
-
-  AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-  Commercial: See COMMERCIAL-LICENSE.md
-
-  Source: https://github.com/kolapsis/maintenant
+  SPDX-License-Identifier: Apache-2.0
 -->
 
 <script setup lang="ts">
@@ -84,18 +76,16 @@ const RESOURCE_LABELS: Record<QuotaResource, string> = {
   agent_hosts: 'Machines monitored',
 }
 
-/**
- * The caps per tier. They mirror extension.Limit — the backend only reports the
- * running edition's own limits, so the other two columns cannot be read from
- * the API and are stated here.
- */
-const QUOTAS: Record<QuotaResource, Record<Tier, number>> = {
-  endpoints: { community: 10, personal: -1, pro: -1 },
-  heartbeats: { community: 5, personal: -1, pro: -1 },
-  certificates: { community: 5, personal: -1, pro: -1 },
-  status_components: { community: 3, personal: -1, pro: -1 },
-  agent_hosts: { community: 1, personal: 20, pro: -1 },
-}
+/** The caps per tier, as the engine declares them. */
+const quotaRows = computed(() => {
+  const tiers = edition.value?.tiers
+  if (!tiers) return []
+  return (Object.keys(RESOURCE_LABELS) as QuotaResource[]).map((resource) => ({
+    resource,
+    label: RESOURCE_LABELS[resource],
+    limits: TIERS.map((tier) => tiers[tier]?.[resource]),
+  }))
+})
 
 /**
  * The capability rows, grouped by the tier that opens them and ordered
@@ -144,9 +134,11 @@ function includedIn(minEdition: Edition, tier: Tier): boolean {
   return min !== undefined && RANK[tier] >= min
 }
 
-function quotaLabel(value: number): string {
+function quotaLabel(resource: QuotaResource, value: number | undefined): string {
+  if (value === undefined) return ''
   if (value < 0) return 'Unlimited'
-  if (value === 1) return 'This machine only'
+  // agent_hosts counts remote agents: none means only the local machine.
+  if (resource === 'agent_hosts' && value === 0) return 'This machine only'
   return String(value)
 }
 
@@ -252,18 +244,18 @@ function isUpgrade(tier: Tier): boolean {
         </thead>
         <tbody>
           <tr
-            v-for="(label, resource) in RESOURCE_LABELS"
-            :key="resource"
+            v-for="row in quotaRows"
+            :key="row.resource"
             class="border-b border-mnt-subtle last:border-0"
           >
-            <td class="px-4 py-2.5 text-mnt-secondary">{{ label }}</td>
+            <td class="px-4 py-2.5 text-mnt-secondary">{{ row.label }}</td>
             <td
-              v-for="tier in TIERS"
+              v-for="(tier, i) in TIERS"
               :key="tier"
               class="px-4 py-2.5 text-center"
               :class="isActive(tier) ? 'text-mnt-primary font-medium' : 'text-mnt-muted'"
             >
-              {{ quotaLabel(QUOTAS[resource][tier]) }}
+              {{ quotaLabel(row.resource, row.limits[i]) }}
             </td>
           </tr>
 

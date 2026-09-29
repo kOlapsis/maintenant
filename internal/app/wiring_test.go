@@ -1,13 +1,5 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
-//
-// Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0)
-// or a commercial license. You may not use this file except in compliance
-// with one of these licenses.
-//
-// AGPL-3.0: https://www.gnu.org/licenses/agpl-3.0.html
-// Commercial: See COMMERCIAL-LICENSE.md
-//
-// Source: https://github.com/kolapsis/maintenant
+// SPDX-License-Identifier: Apache-2.0
 
 package app_test
 
@@ -27,8 +19,8 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	commesc "github.com/kolapsis/maintenant/internal/commercial/escalation"
 	"github.com/kolapsis/maintenant/internal/extension"
-	"github.com/kolapsis/maintenant/internal/license"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -104,7 +96,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	db.StartWriter(ctx)
 
 	store := store.NewEscalationStore(db)
-	svc := escalation.NewService(
+	svc := commesc.NewService(
 		store,
 		&noopChannelStore{},
 		func() extension.Edition { return extension.Pro },
@@ -147,9 +139,9 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	// and trigger a Pro→CE transition.
 	var (
 		cbMu      sync.Mutex
-		callbacks []license.EditionChangeCallback
+		callbacks []extension.EditionChangeCallback
 	)
-	register := func(cb license.EditionChangeCallback) {
+	register := func(cb extension.EditionChangeCallback) {
 		cbMu.Lock()
 		defer cbMu.Unlock()
 		callbacks = append(callbacks, cb)
@@ -168,7 +160,7 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 
 	// Fire: Pro → Community.
 	cbMu.Lock()
-	cbs := make([]license.EditionChangeCallback, len(callbacks))
+	cbs := make([]extension.EditionChangeCallback, len(callbacks))
 	copy(cbs, callbacks)
 	cbMu.Unlock()
 	for _, cb := range cbs {
@@ -196,7 +188,7 @@ func TestRetentionLoopStartsInProOnly(t *testing.T) {
 
 	t.Run("pro_mode_calls_purge", func(t *testing.T) {
 		pstore := &purgeCountStore{}
-		svc := escalation.NewService(
+		svc := commesc.NewService(
 			pstore,
 			&noopChannelStore{},
 			func() extension.Edition { return extension.Pro },
@@ -231,7 +223,7 @@ func TestRetentionLoopStartsInProOnly(t *testing.T) {
 
 	t.Run("ce_mode_no_purge", func(t *testing.T) {
 		pstore := &purgeCountStore{}
-		svc := escalation.NewService(
+		svc := commesc.NewService(
 			pstore,
 			&noopChannelStore{},
 			func() extension.Edition { return extension.Community },
