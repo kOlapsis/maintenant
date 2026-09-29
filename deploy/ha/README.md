@@ -57,9 +57,10 @@ sudo apt install qemu-kvm libvirt-daemon-system python3-libvirt qemu-utils xorri
 ansible-galaxy collection install -r deploy/ha/ansible/requirements.yml
 ```
 
-The invoking user needs passwordless sudo and an SSH key at `~/.ssh/id_ed25519.pub`: that
-key is what cloud-init installs on the four machines, and no bench command ever asks a
-question. `lab up` checks each of these before touching anything.
+The invoking user needs passwordless sudo and an SSH key pair, `~/.ssh/id_ed25519` of the
+user who ran `sudo` unless `LAB_SSH_KEY` names another private key (its `.pub` beside it):
+cloud-init installs that key on the four machines, the bench reaches them with it, and no
+bench command ever asks a question. `lab up` checks each of these before touching anything.
 
 `up` builds the three networks and the four machines from `lab/topology.yml`, which is the
 single source of addresses, sizes and images. Each machine boots a qcow2 overlay on a

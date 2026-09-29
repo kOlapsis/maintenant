@@ -26,7 +26,7 @@
     libvirt_uri: qemu:///system
     lab_work_dir: /var/lib/libvirt/images/{{ lab_prefix }}
     lab_image_cache: /var/lib/libvirt/images/{{ lab_prefix }}-base
-    lab_ssh_public_key_file: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
+    lab_ssh_public_key_file: "{{ lookup('env', 'LAB_SSH_KEY') | default(lookup('env', 'HOME') ~ '/.ssh/id_ed25519', true) }}.pub"
     lab_emulator_path: /usr/bin/qemu-system-x86_64
     lab_required_tools: [/usr/bin/virsh, /usr/bin/qemu-img, "{{ lab_emulator_path }}"]
     lab_iso_candidates: [/usr/bin/genisoimage, /usr/bin/xorrisofs, /usr/bin/mkisofs]

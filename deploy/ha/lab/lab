@@ -29,11 +29,22 @@ INVENTORY="${LAB_INVENTORY:-$ANSIBLE_DIR/inventories/lab/hosts.yml}"
 ANSIBLE_CONFIG="$ANSIBLE_DIR/ansible.cfg"
 export ANSIBLE_CONFIG
 
+# Under sudo, the key is the invoking user's, not root's.
+if [ -z "${LAB_SSH_KEY:-}" ]; then
+	operator_home=$HOME
+	if [ -n "${SUDO_USER:-}" ]; then
+		operator_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+	fi
+	LAB_SSH_KEY="$operator_home/.ssh/id_ed25519"
+fi
+ANSIBLE_PRIVATE_KEY_FILE=$LAB_SSH_KEY
+export LAB_SSH_KEY ANSIBLE_PRIVATE_KEY_FILE
+
 DEFAULT_MODE="ip-only"
 KNOWN_MODES="ip-only postgres/streaming sqlite/drbd postgres/drbd"
 
 SSH_WAIT_TIMEOUT=300
-SSH_BATCH_OPTS="-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+SSH_BATCH_OPTS="-i $LAB_SSH_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
 # Domains are named after the machines, with the prefix the provisioning uses.
 LAB_DOMAIN_PREFIX="${LAB_DOMAIN_PREFIX:-mnt-lab-}"
@@ -130,6 +141,9 @@ modes: ip-only (default), postgres/streaming, sqlite/drbd, postgres/drbd
 environment:
   LAB_INVENTORY   Ansible inventory to target
                   (default: ansible/inventories/lab/hosts.yml)
+  LAB_SSH_KEY     private key installed on the machines and used to reach
+                  them; its .pub must sit next to it
+                  (default: ~/.ssh/id_ed25519 of the user who ran sudo)
 USAGE
 }
 
@@ -1078,6 +1092,9 @@ cmd_up() {
 		esac
 	done
 	valid_mode "$mode" || die "unknown mode: $mode (known: $KNOWN_MODES)" 2
+	if [ ! -f "$LAB_SSH_KEY" ] || [ ! -f "$LAB_SSH_KEY.pub" ]; then
+		die "ssh key not found: $LAB_SSH_KEY and $LAB_SSH_KEY.pub (set LAB_SSH_KEY)" 4
+	fi
 	template="$HA_DIR/opensvc/maintenant-$(printf '%s' "$mode" | tr '/' '-').conf"
 	[ -f "$template" ] || die "mode $mode has no service template yet: $template" 2
 
