@@ -1,0 +1,69 @@
+---
+# Scenario 18, specific to postgres/streaming, and the variant of scenario 10.
+# Numbers 1 to 12 belong to the bench plan; the allocation of the others is
+# fixed in README.md.
+id: 18
+slug: forced-promotion
+name: Forced promotion
+source: postgres/streaming
+repetitions: 1
+injection:
+  'on': host
+  command: |
+    set -eu
+    $LAB_SSH_ACTIVE "sudo -n cat /var/lib/maintenant-pg/events.log | wc -l" >"$LAB_RUN_DIR/scenario-18-events"
+    $LAB_SSH_ACTIVE "sudo -n sh -c '. /etc/maintenant-pg/ha.conf && systemctl mask --runtime \"\$PG_UNIT\" && pkill -9 -x postgres'"
+repair:
+  'on': host
+  command: |
+    set -eu
+    $LAB_SSH_ACTIVE "sudo -n sh -c '. /etc/maintenant-pg/ha.conf && systemctl unmask --runtime \"\$PG_UNIT\"'"
+    start=$(cat "$LAB_RUN_DIR/scenario-18-events")
+    tries=0
+    until $LAB_SSH_ACTIVE "sudo -n cat /var/lib/maintenant-pg/events.log" 2>/dev/null | tail -n +"$((start + 1))" |
+      awk '/event=fenced/ { fenced = 1 } fenced && /event=(primary_started|primary_confirmed|promoted)/ { primary = 1 } fenced && /event=rebuilt/ { rebuilt = 1 } END { exit !(fenced && rebuilt && !primary) }'; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 60 ]; then
+        echo "$LAB_ACTIVE was not rebuilt as a standby" >&2
+        exit 1
+      fi
+      sleep 5
+    done
+verify:
+  'on': host
+  command: |
+    set -eu
+    curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    primaries=0
+    for node in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
+      if $node sudo -n /usr/local/sbin/maintenant-pg-state 2>/dev/null | jq -e '.role == "primary"' >/dev/null; then
+        primaries=$((primaries + 1))
+      fi
+    done
+    [ "$primaries" -eq 1 ]
+measures:
+- rto_ms
+- writes
+- local_restarts
+- primary_count
+- former_primary_rebuild
+modes:
+  ip-only:
+    applicable: false
+    reason: no PostgreSQL in this mode
+  postgres/streaming:
+    applicable: true
+    max_rto_s: 90
+    expected: 'The primary is killed with its unit masked, so the local restart cannot succeed.
+      om3 tries app#pg.restart times (run.json.settings.local_restarts), then monitor_action
+      moves the service. The standby is promoted only once the former primary is stopped and
+      no other primary answers; exactly one primary exists before app#0 starts, and
+      writes.lost == 0. The former node, its allowance withdrawn by the stop, is marked
+      overtaken and, once the unit is unmasked, rebuilt as a standby of the new primary
+      without ever running as a primary.'
+  sqlite/drbd:
+    applicable: false
+    reason: there is no external database in this mode
+  postgres/drbd:
+    applicable: false
+    reason: there is no standby to promote in this mode; the local restart of scenario 10 is its whole expectation

@@ -28,6 +28,8 @@ measures:
 - agents
 - nodes_written
 - inventory
+- primary_count
+- former_primary_rebuild
 modes:
   ip-only:
     applicable: true
@@ -35,13 +37,18 @@ modes:
     expected: 'Automatic failover with no human action: the survivor fences the destroyed node, takes the service address and starts the application. The availability probe measures the outage. Data is local to each node in this mode, so writes are not compared.'
   postgres/streaming:
     applicable: true
-    expected: Automatic failover with no human action. The service answers again on the same
-      address in under 60 s, never more than 90 s across all runs (SC-001). writes.lost ==
-      0 over at least 20 repetitions (SC-002). Every enrolled agent reconnects within 90 s
-      with the same identity, with no re-enrolment and no alert caused by the failover alone
-      (SC-007). The standby is promoted, exactly one primary is established before
-      the application starts, and the returning node is rebuilt as a standby, never restarted
-      as a primary (SC-011).
+    max_rto_s: 60
+    expected: 'Automatic failover with no human action. The survivor fences the destroyed
+      node, then app#pg promotes its standby, only once no other primary answers and only if
+      that standby had caught up since it was built; app#0 starts after it. The service answers
+      again on the same address in under 60 s, never more than 90 s across all runs (SC-001).
+      writes.lost == 0 over at least 20 repetitions (SC-002). Every enrolled agent reconnects
+      within 90 s with the same identity, with no re-enrolment and no alert caused by the failover
+      alone (SC-007). When the destroyed node boots again, its PostgreSQL unit refuses to start
+      as a primary: the node marks itself overtaken and rebuilds as a standby of the survivor,
+      pg_rewind first and a full copy if that fails, with no intervention. The bench turns green
+      again only once that standby streams synchronously; the service stays on the survivor
+      (SC-011).'
   sqlite/drbd:
     applicable: true
     expected: Automatic failover with no human action. The service answers again on the same

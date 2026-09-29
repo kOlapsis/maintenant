@@ -15,27 +15,34 @@ injection:
   command: pkill -9 -x postgres
 repair:
   'on': host
-  command: echo "let the bounded local restart happen; the variant rebuilds the former primary
-    as a standby"
+  command: 'echo "no repair: the bounded local restart is what is under test; the variant is
+    scenario 18"'
 verify:
-  'on': measurement
-  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+  'on': active
+  command: |
+    set -eu
+    curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    [ "$(runuser -u postgres -- psql -X -A -t -d postgres -c 'select pg_is_in_recovery()')" = f ]
 measures:
 - rto_ms
 - writes
 - local_restarts
 - primary_count
+variant: 18
 modes:
   ip-only:
     applicable: false
     reason: no PostgreSQL in this mode
   postgres/streaming:
     applicable: true
-    expected: 'Bounded local restart of the primary: crash recovery, standby still attached.
-      The standby is promoted only if the restart fails, because promoting on a mere process
-      death would contradict local restart before failover and would force a rebuild for nothing.
-      In the variant, promotion happens, exactly one primary is established, and the former
-      primary is locked out of write service until it is rebuilt.'
+    max_rto_s: 30
+    expected: 'Bounded local restart of the primary: app#pg fails its check, om3 restarts it on
+      the same node (the count is app#pg.restart, recorded in run.json.settings.local_restarts),
+      PostgreSQL runs its crash recovery and the standby reattaches. No promotion, no failover:
+      after recovery the injected node is still the one primary and the application reads its
+      storage again. Promoting on a mere process death would contradict local restart before
+      failover and force a rebuild for nothing. The variant that makes the restart impossible
+      is scenario 18.'
   sqlite/drbd:
     applicable: false
     reason: there is no external database in this mode

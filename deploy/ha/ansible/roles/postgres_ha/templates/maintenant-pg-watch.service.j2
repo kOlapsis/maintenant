@@ -1,0 +1,13 @@
+[Unit]
+Description=Maintenant PostgreSQL high availability watch
+After=network-online.target {{ postgres_ha_unit }}
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{ postgres_ha_sbin_dir }}/maintenant-pg-watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -20,3 +20,7 @@
 ha_fencing_method: "" # ipmi | pdu | provider_api
 ha_fencing_command: ""
 ha_fencing_check_command: ""
+
+# postgres/streaming: the disk that carries the PostgreSQL data directory.
+# Empty keeps it on the system disk.
+ha_postgres_data_device: ""

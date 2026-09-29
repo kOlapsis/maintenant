@@ -11,3 +11,7 @@
 ha_fencing_method: libvirt
 ha_fencing_command: 'virsh destroy "$ha_fencing_target"'
 ha_fencing_check_command: 'virsh domstate "$ha_fencing_target"'
+
+# The second disk of each node carries the PostgreSQL data directory in the
+# streaming mode (see lab/topology.yml).
+ha_postgres_data_device: /dev/vdb

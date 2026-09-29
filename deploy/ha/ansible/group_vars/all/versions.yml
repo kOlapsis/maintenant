@@ -35,6 +35,9 @@ drbd_version: "9.2"
 # PostgreSQL, from PGDG. 14 is the product floor; the bench pins one major and
 # keeps it for the whole campaign.
 postgres_version: "16"
+# apt is pinned to this exact build, so the minor release cannot move under the
+# campaign either.
+postgres_package_version: "16.15-1.pgdg12+2"
 
 # The kernel is a version too: it decides whether fanotify (fatrace) is
 # available for the on-disk state inventory, and it is reported in

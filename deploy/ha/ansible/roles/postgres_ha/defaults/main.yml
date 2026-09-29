@@ -1,0 +1,71 @@
+---
+postgres_ha_version: "{{ postgres_version }}"
+postgres_ha_package_version: "{{ postgres_package_version }}"
+postgres_ha_codename: "{{ node_codename | default('bookworm') }}"
+postgres_ha_repo_url: https://apt.postgresql.org/pub/repos/apt
+postgres_ha_repo_key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+postgres_ha_keyring: /etc/apt/keyrings/pgdg.asc
+
+postgres_ha_cluster: main
+postgres_ha_port: 5432
+postgres_ha_unit: "postgresql@{{ postgres_ha_version }}-{{ postgres_ha_cluster }}.service"
+postgres_ha_home: /var/lib/postgresql
+postgres_ha_datadir: "{{ postgres_ha_home }}/{{ postgres_ha_version }}/{{ postgres_ha_cluster }}"
+postgres_ha_confdir: "/etc/postgresql/{{ postgres_ha_version }}/{{ postgres_ha_cluster }}"
+postgres_ha_bindir: "/usr/lib/postgresql/{{ postgres_ha_version }}/bin"
+
+# A dedicated disk for the data directory, mounted on postgres_ha_home before
+# the packages create anything there. Empty keeps the data on the system disk.
+postgres_ha_data_device: "{{ ha_postgres_data_device | default('') }}"
+
+# Lives on the system disk, never under postgres_ha_home: a rebuild replaces the
+# data directory, and the anti-return mark must outlive it.
+postgres_ha_state_dir: /var/lib/maintenant-pg
+postgres_ha_etc_dir: /etc/maintenant-pg
+postgres_ha_lib_dir: /usr/local/lib/maintenant-pg
+postgres_ha_sbin_dir: /usr/local/sbin
+
+postgres_ha_promote: "{{ postgres_ha_sbin_dir }}/maintenant-pg-promote"
+postgres_ha_resource: "{{ postgres_ha_sbin_dir }}/maintenant-pg-resource"
+postgres_ha_state: "{{ postgres_ha_sbin_dir }}/maintenant-pg-state"
+postgres_ha_rebuild: "{{ postgres_ha_sbin_dir }}/maintenant-pg-rebuild"
+
+# block: writes wait while the standby is missing, nothing acknowledged can be
+# lost. continue: after the grace, the primary drops to asynchronous replication
+# and announces the loss window; it goes back to synchronous only once the
+# standby has fully caught up.
+postgres_ha_standby_missing: block
+postgres_ha_standby_missing_grace_seconds: 10
+
+# The most WAL the primary keeps for an absent standby. Past it the slot is
+# lost and the standby is rebuilt from a full copy; the primary never fills its
+# disk waiting.
+postgres_ha_max_slot_wal_keep_size: 2GB
+
+postgres_ha_watch_interval_seconds: 5
+postgres_ha_ready_timeout_seconds: 60
+postgres_ha_promote_timeout_seconds: 60
+
+postgres_ha_user: maintenant_ha
+postgres_ha_password_file: "{{ maintenant_build_dir | default('/tmp/maintenant-build') }}/postgres/maintenant_ha.password"
+postgres_ha_database: "{{ maintenant_database_name | default('maintenant') }}"
+postgres_ha_database_owner: "{{ maintenant_user | default('maintenant') }}"
+
+# The node the cluster is first built on as primary: the preferred node of the
+# inventory, or the first cluster host when none is marked.
+postgres_ha_initial_primary: >-
+  {{ ((groups['opensvc_cluster'] | map('extract', hostvars)
+       | selectattr('ha_preferred', 'defined') | selectattr('ha_preferred')
+       | map(attribute='inventory_hostname') | list)
+      + groups['opensvc_cluster']) | first }}
+
+postgres_ha_node_address: "{{ ansible_host | default(inventory_hostname) }}"
+postgres_ha_peer: "{{ groups['opensvc_cluster'] | reject('equalto', inventory_hostname) | first }}"
+postgres_ha_peer_address: "{{ hostvars[postgres_ha_peer].ansible_host | default(postgres_ha_peer) }}"
+postgres_ha_self_name: "{{ inventory_hostname | regex_replace('[^A-Za-z0-9]', '_') }}"
+postgres_ha_peer_name: "{{ postgres_ha_peer | regex_replace('[^A-Za-z0-9]', '_') }}"
+
+postgres_ha_wait_retries: 36
+postgres_ha_wait_delay: 5
+
+postgres_ha_password: "{{ lookup('ansible.builtin.password', postgres_ha_password_file ~ ' length=40 chars=ascii_letters,digits') }}"

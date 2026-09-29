@@ -1,0 +1,84 @@
+---
+# Scenario 17, specific to postgres/streaming. Numbers 1 to 12 belong to the
+# bench plan; the allocation of the others is fixed in README.md.
+id: 17
+slug: wal-retention-exhausted
+name: Write-ahead log retention exhausted
+source: postgres/streaming
+repetitions: 1
+injection:
+  'on': host
+  command: |
+    set -eu
+    $LAB_SSH_PASSIVE "sudo -n cat /var/lib/maintenant-pg/events.log | wc -l" >"$LAB_RUN_DIR/scenario-17-events"
+    $LAB_SSH_PASSIVE "sudo -n systemctl stop maintenant-pg-watch.service 'postgresql@*.service'"
+    $LAB_SSH_ACTIVE "sudo -n runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 -d postgres" <<'SQL'
+    set synchronous_commit = local;
+    create table lab_wal_filler (i int);
+    do $$
+    declare
+      segments int := pg_size_bytes(current_setting('max_slot_wal_keep_size'))
+                      / pg_size_bytes(current_setting('wal_segment_size')) + 64;
+    begin
+      for k in 1..segments loop
+        insert into lab_wal_filler values (k);
+        perform pg_switch_wal();
+      end loop;
+    end
+    $$;
+    drop table lab_wal_filler;
+    checkpoint;
+    checkpoint;
+    SQL
+repair:
+  'on': host
+  command: |
+    set -eu
+    $LAB_SSH_PASSIVE "sudo -n systemctl start maintenant-pg-watch.service"
+    start=$(cat "$LAB_RUN_DIR/scenario-17-events")
+    tries=0
+    until $LAB_SSH_PASSIVE "sudo -n cat /var/lib/maintenant-pg/events.log" 2>/dev/null | tail -n +"$((start + 1))" |
+      awk '/event=retention_exceeded/ { seen = 1 } seen && /event=rebuilt method=basebackup/ { rebuilt = 1 } END { exit !(seen && rebuilt) }'; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 90 ]; then
+        echo "$LAB_PASSIVE was not rebuilt from a full copy" >&2
+        exit 1
+      fi
+      sleep 5
+    done
+verify:
+  'on': host
+  command: |
+    set -eu
+    curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    primaries=0
+    for node in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
+      if $node sudo -n /usr/local/sbin/maintenant-pg-state 2>/dev/null | jq -e '.role == "primary"' >/dev/null; then
+        primaries=$((primaries + 1))
+      fi
+    done
+    [ "$primaries" -eq 1 ]
+measures:
+- rto_ms
+- writes
+- former_primary_rebuild
+modes:
+  ip-only:
+    applicable: false
+    reason: no PostgreSQL in this mode
+  postgres/streaming:
+    applicable: true
+    expected: 'With the standby stopped, the primary writes more WAL than max_slot_wal_keep_size
+      (run.json.settings.max_slot_wal_keep_size) and checkpoints: the standby slot is invalidated
+      instead of the primary disk filling up. The primary never stops serving and no failover
+      happens (writes are refused or unknown while the standby is gone in block mode, never
+      lost). When the standby returns it cannot catch up; the watch sees the lost slot
+      (event=retention_exceeded) and rebuilds it from a full copy (event=rebuilt
+      method=basebackup), with no human action. The bench is green again once it streams
+      synchronously.'
+  sqlite/drbd:
+    applicable: false
+    reason: no write-ahead log shipping in this mode
+  postgres/drbd:
+    applicable: false
+    reason: no write-ahead log shipping in this mode; the volume is replicated block by block

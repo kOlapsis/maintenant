@@ -1,0 +1,65 @@
+---
+# Scenario 19, specific to postgres/streaming. Numbers 1 to 12 belong to the
+# bench plan; the allocation of the others is fixed in README.md.
+id: 19
+slug: giveback
+name: Full giveback to the preferred node
+source: postgres/streaming
+repetitions: 1
+injection:
+  'on': active
+  command: om "$LAB_SERVICE" switch --wait
+repair:
+  'on': host
+  command: |
+    set -eu
+    $LAB_SSH_ACTIVE "sudo -n systemctl stop maintenant-pg-watch.service 'postgresql@*.service'"
+    if "$LAB_CLI" giveback; then
+      echo "giveback was accepted while the copy on $LAB_ACTIVE was stopped" >&2
+      exit 1
+    fi
+    $LAB_SSH_ACTIVE "sudo -n systemctl start maintenant-pg-watch.service"
+    tries=0
+    until "$LAB_CLI" giveback; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 30 ]; then
+        echo "giveback to $LAB_ACTIVE was still refused after its copy came back" >&2
+        exit 1
+      fi
+      sleep 10
+    done
+verify:
+  'on': host
+  command: |
+    set -eu
+    curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    primaries=0
+    for node in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
+      if $node sudo -n /usr/local/sbin/maintenant-pg-state 2>/dev/null | jq -e '.role == "primary"' >/dev/null; then
+        primaries=$((primaries + 1))
+      fi
+    done
+    [ "$primaries" -eq 1 ]
+measures:
+- rto_ms
+- writes
+- primary_count
+- former_primary_rebuild
+modes:
+  ip-only:
+    applicable: false
+    reason: no replicated copy to compare in this mode; scenario 1 covers the move itself
+  postgres/streaming:
+    applicable: true
+    expected: 'The service is switched away from the preferred node, which is rebuilt as a
+      standby. lab giveback is refused while the copy on the preferred node is stopped, and
+      refused again until it is a caught-up standby, streaming, synchronous and zero bytes
+      behind. Once it is, the giveback stops the primary cleanly, promotes the preferred node,
+      and the other node is rebuilt as its standby by pg_rewind with nothing to rewind. No
+      acknowledged write is lost; exactly one node holds the service throughout.'
+  sqlite/drbd:
+    applicable: false
+    reason: the DRBD giveback belongs to scenario 21 and its own phase
+  postgres/drbd:
+    applicable: false
+    reason: the DRBD giveback belongs to scenario 21 and its own phase

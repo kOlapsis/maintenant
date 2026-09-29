@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Kolapsis
+  role_name: postgres_ha
+  description: PostgreSQL primary and synchronous standby, with promotion, anti-return lock and rebuild
+  license: LicenseRef-Maintenant-Commercial
+  min_ansible_version: "2.15"
+dependencies: []

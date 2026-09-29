@@ -1,0 +1,66 @@
+---
+# Scenario 16, specific to postgres/streaming. Numbers 1 to 12 belong to the
+# bench plan; the allocation of the others is fixed in README.md.
+id: 16
+slug: former-primary-return
+name: Former primary returns and is rebuilt as standby
+source: postgres/streaming
+repetitions: 10
+injection:
+  'on': host
+  command: |
+    set -eu
+    $LAB_SSH_ACTIVE "sudo -n cat /var/lib/maintenant-pg/events.log | wc -l" >"$LAB_RUN_DIR/scenario-16-events"
+    virsh destroy "$LAB_ACTIVE_DOMAIN"
+repair:
+  'on': host
+  command: |
+    set -eu
+    virsh start "$LAB_ACTIVE_DOMAIN"
+    start=$(cat "$LAB_RUN_DIR/scenario-16-events")
+    tries=0
+    until $LAB_SSH_ACTIVE "sudo -n cat /var/lib/maintenant-pg/events.log" 2>/dev/null | tail -n +"$((start + 1))" |
+      awk '/event=fenced/ { fenced = 1 } fenced && /event=(primary_started|primary_confirmed|promoted)/ { primary = 1 } fenced && /event=rebuilt/ { rebuilt = 1 } END { exit !(fenced && rebuilt && !primary) }'; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge 60 ]; then
+        echo "$LAB_ACTIVE was not rebuilt as a standby after its return" >&2
+        exit 1
+      fi
+      sleep 5
+    done
+verify:
+  'on': host
+  command: |
+    set -eu
+    curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    primaries=0
+    for node in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
+      if $node sudo -n /usr/local/sbin/maintenant-pg-state 2>/dev/null | jq -e '.role == "primary"' >/dev/null; then
+        primaries=$((primaries + 1))
+      fi
+    done
+    [ "$primaries" -eq 1 ]
+measures:
+- rto_ms
+- writes
+- primary_count
+- former_primary_rebuild
+modes:
+  ip-only:
+    applicable: false
+    reason: no PostgreSQL in this mode
+  postgres/streaming:
+    applicable: true
+    max_rto_s: 60
+    expected: 'The standby is promoted as in scenario 2. When the destroyed node boots, its
+      PostgreSQL unit refuses to start without the primary allowance, the node sees the survivor
+      answering as a primary, marks itself overtaken (event=fenced) and rebuilds as a standby of
+      the survivor with pg_rewind, falling back to pg_basebackup (event=rebuilt method=...).
+      Between the mark and the rebuild it never runs as a primary. No human action; the service
+      stays on the survivor. Each repetition counts one return towards SC-011.'
+  sqlite/drbd:
+    applicable: false
+    reason: no PostgreSQL standby in this mode; the returning node's resynchronisation is scenario 21
+  postgres/drbd:
+    applicable: false
+    reason: no PostgreSQL standby in this mode; the returning node's resynchronisation is scenario 21

@@ -1,0 +1,83 @@
+---
+- name: Install what the repository and the scripts need
+  ansible.builtin.apt:
+    name: [ca-certificates, gnupg, jq]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the keyring directory
+  ansible.builtin.file:
+    path: "{{ postgres_ha_keyring | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Install the PGDG signing key
+  ansible.builtin.get_url:
+    url: "{{ postgres_ha_repo_key_url }}"
+    dest: "{{ postgres_ha_keyring }}"
+    mode: "0644"
+
+- name: Declare the PGDG repository
+  ansible.builtin.deb822_repository:
+    name: pgdg
+    types: [deb]
+    uris: "{{ postgres_ha_repo_url }}"
+    suites: "{{ postgres_ha_codename }}-pgdg"
+    components: [main]
+    signed_by: "{{ postgres_ha_keyring }}"
+    state: present
+
+- name: Hold PostgreSQL at the pinned build
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/pgdg
+    mode: "0644"
+    content: |
+      Package: postgresql-{{ postgres_ha_version }} postgresql-client-{{ postgres_ha_version }}
+      Pin: version {{ postgres_ha_package_version }}
+      Pin-Priority: 1001
+
+- name: Create the directory of cluster creation settings
+  ansible.builtin.file:
+    path: /etc/postgresql-common/createcluster.d
+    state: directory
+    mode: "0755"
+
+# The cluster is created by this role, with checksums; the package must not
+# create and start one of its own first.
+- name: Keep the package from creating a cluster
+  ansible.builtin.copy:
+    dest: /etc/postgresql-common/createcluster.d/maintenant.conf
+    mode: "0644"
+    content: |
+      create_main_cluster = false
+
+- name: Install PostgreSQL
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgres_ha_version }}={{ postgres_ha_package_version }}"
+      - "postgresql-client-{{ postgres_ha_version }}={{ postgres_ha_package_version }}"
+    state: present
+    update_cache: true
+    allow_downgrade: true
+
+- name: Read the installed build
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, "--showformat=${Version}", "postgresql-{{ postgres_ha_version }}"]
+  register: postgres_ha_installed
+  changed_when: false
+
+- name: Refuse to go on with a build the campaign is not pinned to
+  ansible.builtin.assert:
+    that: postgres_ha_installed.stdout == postgres_ha_package_version
+    fail_msg: >-
+      the campaign is pinned to PostgreSQL {{ postgres_ha_package_version }} but
+      this node runs {{ postgres_ha_installed.stdout }}.
+
+- name: Give the data directory root to PostgreSQL
+  ansible.builtin.file:
+    path: "{{ postgres_ha_home }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"

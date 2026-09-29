@@ -13,6 +13,13 @@ opensvc_service_ip_restart: 2
 opensvc_service_ip_restart_delay: 2s
 opensvc_service_app_restart: 2
 opensvc_service_app_restart_delay: 5s
+opensvc_service_pg_restart: 2
+opensvc_service_pg_restart_delay: 5s
+opensvc_service_pg_start_timeout: 120s
+opensvc_service_pg_stop_timeout: 60s
+
+# The binary's standard output and error, which om3 would otherwise discard.
+opensvc_service_log_identifier: maintenant
 
 opensvc_service_wait_retries: 36
 opensvc_service_wait_delay: 5

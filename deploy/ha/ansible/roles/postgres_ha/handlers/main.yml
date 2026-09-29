@@ -1,0 +1,16 @@
+---
+- name: Reload the systemd units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+# A stopped cluster stays stopped: its guard decides whether it may start.
+- name: Reload PostgreSQL
+  ansible.builtin.command:
+    argv: [systemctl, try-reload-or-restart, "{{ postgres_ha_unit }}"]
+  changed_when: true
+
+# try-restart: before the pair is built the watch must not run, it would race the role's rebuild.
+- name: Restart the watch
+  ansible.builtin.command:
+    argv: [systemctl, try-restart, maintenant-pg-watch.service]
+  changed_when: true

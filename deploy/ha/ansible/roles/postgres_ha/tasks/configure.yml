@@ -1,0 +1,115 @@
+---
+- name: Create the directories of the scripts and their state
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ postgres_ha_etc_dir }}", group: postgres, mode: "0750" }
+    - { path: "{{ postgres_ha_state_dir }}", group: root, mode: "0700" }
+    - { path: "{{ postgres_ha_lib_dir }}", group: root, mode: "0755" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Write the replication credentials
+  ansible.builtin.template:
+    src: pgpass.j2
+    dest: "{{ postgres_ha_etc_dir }}/pgpass"
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  no_log: true
+
+- name: Write the settings the scripts read
+  ansible.builtin.template:
+    src: ha.conf.j2
+    dest: "{{ postgres_ha_etc_dir }}/ha.conf"
+    owner: root
+    group: postgres
+    mode: "0640"
+  notify: Restart the watch
+
+- name: Install the shared functions of the scripts
+  ansible.builtin.copy:
+    src: common.sh
+    dest: "{{ postgres_ha_lib_dir }}/common.sh"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart the watch
+
+- name: Install the scripts
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ postgres_ha_sbin_dir }}/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - { src: promote.sh, name: maintenant-pg-promote }
+    - { src: resource.sh, name: maintenant-pg-resource }
+    - { src: fence-old-primary.sh, name: maintenant-pg-fence }
+    - { src: rebuild-standby.sh, name: maintenant-pg-rebuild }
+    - { src: guard.sh, name: maintenant-pg-guard }
+    - { src: watch.sh, name: maintenant-pg-watch }
+    - { src: state.sh, name: maintenant-pg-state }
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Restart the watch
+
+- name: Create the cluster, with data checksums
+  ansible.builtin.command:
+    argv:
+      - pg_createcluster
+      - "{{ postgres_ha_version }}"
+      - "{{ postgres_ha_cluster }}"
+      - --datadir={{ postgres_ha_datadir }}
+      - --port={{ postgres_ha_port }}
+      - --
+      - --data-checksums
+    creates: "{{ postgres_ha_confdir }}/postgresql.conf"
+
+- name: Write the replication settings
+  ansible.builtin.template:
+    src: maintenant-ha.conf.j2
+    dest: "{{ postgres_ha_confdir }}/conf.d/maintenant-ha.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Reload PostgreSQL
+
+- name: Write the client authentication rules
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ postgres_ha_confdir }}/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Reload PostgreSQL
+
+- name: Create the directory of the unit's drop-ins
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ postgres_ha_unit }}.d"
+    state: directory
+    mode: "0755"
+
+- name: Guard every start of the cluster
+  ansible.builtin.template:
+    src: guard.conf.j2
+    dest: "/etc/systemd/system/{{ postgres_ha_unit }}.d/maintenant-guard.conf"
+    mode: "0644"
+  notify: Reload the systemd units
+
+- name: Install the watch
+  ansible.builtin.template:
+    src: maintenant-pg-watch.service.j2
+    dest: /etc/systemd/system/maintenant-pg-watch.service
+    mode: "0644"
+  notify:
+    - Reload the systemd units
+    - Restart the watch
+
+- name: Load the guard before the cluster is ever started
+  ansible.builtin.meta: flush_handlers

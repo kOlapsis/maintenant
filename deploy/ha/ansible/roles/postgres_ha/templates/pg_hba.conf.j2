@@ -1,0 +1,5 @@
+# Written by the postgres_ha role.
+local   all                     postgres                                peer
+local   {{ postgres_ha_database }}  {{ postgres_ha_database_owner }}      peer
+host    replication             {{ postgres_ha_user }}  {{ postgres_ha_peer_address }}/32  scram-sha-256
+host    postgres                {{ postgres_ha_user }}  {{ postgres_ha_peer_address }}/32  scram-sha-256

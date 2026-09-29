@@ -1,0 +1,48 @@
+---
+- name: Read the settings a rebuild relies on
+  ansible.builtin.command:
+    argv:
+      - runuser
+      - -u
+      - postgres
+      - --
+      - psql
+      - -X
+      - -A
+      - -t
+      - -F
+      - " "
+      - -d
+      - postgres
+      - -c
+      - >-
+        select current_setting('wal_log_hints'), current_setting('data_checksums'),
+        current_setting('full_page_writes'), current_setting('max_slot_wal_keep_size'),
+        (select count(*) from pg_replication_slots where slot_name = '{{ postgres_ha_peer_name }}')
+  register: postgres_ha_settings
+  changed_when: false
+
+- name: Refuse a cluster pg_rewind could not rewind
+  ansible.builtin.assert:
+    that:
+      - settings[0] == 'on' or settings[1] == 'on'
+      - settings[2] == 'on'
+    fail_msg: >-
+      pg_rewind needs wal_log_hints or data checksums, and full_page_writes;
+      {{ inventory_hostname }} has wal_log_hints={{ settings[0] }},
+      data_checksums={{ settings[1] }}, full_page_writes={{ settings[2] }}.
+  vars:
+    settings: "{{ postgres_ha_settings.stdout.split() }}"
+
+- name: Refuse unbounded or absent WAL retention for the standby
+  ansible.builtin.assert:
+    that:
+      - settings[3] != '-1'
+      - (postgres_ha_node_state.stdout | from_json).role != 'primary' or settings[4] == '1'
+    fail_msg: >-
+      the primary must keep the standby's WAL in a slot, bounded by
+      max_slot_wal_keep_size; {{ inventory_hostname }} has
+      max_slot_wal_keep_size={{ settings[3] }} and {{ settings[4] }} slot for
+      {{ postgres_ha_peer_name }}.
+  vars:
+    settings: "{{ postgres_ha_settings.stdout.split() }}"

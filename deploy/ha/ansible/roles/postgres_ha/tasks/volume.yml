@@ -1,0 +1,21 @@
+---
+- name: Read the file system on the data disk
+  ansible.builtin.command:
+    argv: [blkid, -o, value, -s, TYPE, "{{ postgres_ha_data_device }}"]
+  register: postgres_ha_fstype
+  changed_when: false
+  failed_when: postgres_ha_fstype.rc not in [0, 2]
+
+- name: Format the data disk
+  ansible.builtin.command:
+    argv: [mkfs.ext4, -q, -L, pgdata, "{{ postgres_ha_data_device }}"]
+  when: postgres_ha_fstype.stdout | trim | length == 0
+  changed_when: true
+
+- name: Mount the data disk where PostgreSQL keeps its data
+  ansible.posix.mount:
+    path: "{{ postgres_ha_home }}"
+    src: "{{ postgres_ha_data_device }}"
+    fstype: ext4
+    opts: defaults,noatime
+    state: mounted

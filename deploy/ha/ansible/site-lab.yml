@@ -14,12 +14,14 @@
     - opensvc_arbitrator
     - fencing
 
-# One play: the service template reads the defaults of the two product roles.
+# One play: the service template reads the defaults of the product roles.
 - name: Install the product and declare the service
   hosts: opensvc_cluster
   roles:
     - maintenant
     - maintenant_check
+    - role: postgres_ha
+      when: ha_mode | default('ip-only') == 'postgres/streaming'
     - opensvc_service
 
 - name: Start the probes

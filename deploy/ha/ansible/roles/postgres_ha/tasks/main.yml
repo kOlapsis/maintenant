@@ -1,0 +1,28 @@
+---
+- name: Refuse a cluster that is not a pair of nodes
+  ansible.builtin.assert:
+    that: groups['opensvc_cluster'] | length == 2
+    fail_msg: "postgres/streaming runs on exactly two nodes, the inventory declares {{ groups['opensvc_cluster'] | length }}"
+  run_once: true
+
+- name: Refuse an unknown conduct for a missing standby
+  ansible.builtin.assert:
+    that: postgres_ha_standby_missing in ['block', 'continue']
+    fail_msg: "postgres_ha_standby_missing must be block or continue, got {{ postgres_ha_standby_missing }}"
+  run_once: true
+
+- name: Mount the data disk
+  ansible.builtin.include_tasks: volume.yml
+  when: postgres_ha_data_device | length > 0
+
+- name: Install PostgreSQL at the pinned release
+  ansible.builtin.include_tasks: install.yml
+
+- name: Configure the cluster and install the scripts
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Build the primary and its standby
+  ansible.builtin.include_tasks: bootstrap.yml
+
+- name: Check what a rebuild relies on
+  ansible.builtin.include_tasks: verify.yml

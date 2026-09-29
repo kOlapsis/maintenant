@@ -4,6 +4,7 @@
 #   lab up [--mode <mode>]   build the topology and deploy the mode
 #   lab down                 destroy everything, leaving no residue
 #   lab status [--json]      cluster, mode, probes and OpenSVC agent state
+#   lab giveback             move the service back to the preferred node
 #
 # Contract: specs/030-ha-opensvc/contracts/lab-cli.md. No command ever asks a
 # question: the bench is built, played and torn down unattended (FR-046).
@@ -60,6 +61,15 @@ OM="sudo -n om"
 # the only place the bench touches om's command line.
 OM_DAEMON_STATUS="$OM daemon status -o json --sections daemon,nodes,arbitrators"
 
+PG_STATE="sudo -n /usr/local/sbin/maintenant-pg-state"
+GIVEBACK_LAG_TRIES=10
+
+# Must match opensvc_service_log_identifier: the tag systemd-cat gives the binary's output.
+SERVER_LOG_IDENTIFIER="maintenant"
+# The ping is answered 200 even when its history row was not written, so a run
+# where this was logged cannot conclude on its writes.
+SERVER_LOG_INCONCLUSIVE="insert ping"
+
 # virsh reads qemu:///session for a non-root user, where the bench has nothing.
 LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
 export LIBVIRT_DEFAULT_URI
@@ -108,11 +118,14 @@ usage: lab <command> [options]
   heal <n>               repair scenario n
   run-all [--mode <mode>] [--repeat <k>]
   report [--run <id>]
+  giveback               move the service back to the preferred node, refused
+                         while that node's copy of the data is not up to date
   inventory              on-disk state inventory of the active node
 
 modes: ip-only (default), postgres/streaming, sqlite/drbd, postgres/drbd
        ip-only is the bare bench: service address failover, no replicated
-       backend. The replication modes arrive with their own roles.
+       backend. postgres/streaming runs a primary and a synchronous standby.
+       sqlite/drbd and postgres/drbd have no role yet: up refuses them.
 
 environment:
   LAB_INVENTORY   Ansible inventory to target
@@ -216,7 +229,7 @@ node_status() {
 	address=$2
 	if ! ssh_to "$name" true >/dev/null 2>&1; then
 		jq -n --arg n "$name" \
-			'{name: $n, reachable: false, opensvc: "unreachable", holds_address: false}'
+			'{name: $n, reachable: false, opensvc: "unreachable", holds_address: false, postgres: null}'
 		return 0
 	fi
 	if ssh_to "$name" "$OM_DAEMON_STATUS" >/dev/null 2>&1; then
@@ -231,8 +244,13 @@ node_status() {
 	else
 		holds="false"
 	fi
-	jq -n --arg n "$name" --arg om "$om" --argjson holds "$holds" \
-		'{name: $n, reachable: true, opensvc: $om, holds_address: $holds}'
+	pg="null"
+	if [ "$(current_mode)" = postgres/streaming ]; then
+		pg=$(ssh_to "$name" "$PG_STATE" 2>/dev/null | jq -c '.' 2>/dev/null) || pg=""
+		[ -n "$pg" ] || pg='{"role": "unknown"}'
+	fi
+	jq -n --arg n "$name" --arg om "$om" --argjson holds "$holds" --argjson pg "$pg" \
+		'{name: $n, reachable: true, opensvc: $om, holds_address: $holds, postgres: $pg}'
 }
 
 unit_status() {
@@ -302,6 +320,18 @@ collect_status() {
 		--argjson nodes "$nodes" \
 		'
 		def holders: [$nodes[] | select(.holds_address)] | length;
+		def postgres_nominal:
+			if $mode != "postgres/streaming" then true
+			else
+				([$nodes[] | select(.postgres.role == "primary")] as $p
+				| [$nodes[] | select(.postgres.role == "standby")] as $s
+				| ($p | length) == 1 and ($s | length) == 1
+				  and $p[0].holds_address
+				  and $p[0].postgres.standby.state == "streaming"
+				  and $p[0].postgres.standby.sync_state == "sync"
+				  and $s[0].postgres.receiver == "streaming"
+				  and ($s[0].postgres.fenced | not))
+			end;
 		{
 			mode: $mode,
 			generated_at: $at,
@@ -312,10 +342,12 @@ collect_status() {
 			verdict: (
 				if holders > 1 then "split"
 				elif holders == 0 then "down"
+				elif $mode == "postgres/streaming" and ([$nodes[] | select(.postgres.role == "primary")] | length) > 1 then "split"
 				elif ([$nodes[] | select(.reachable | not)] | length) > 0 then "degraded"
 				elif ([$nodes[] | select(.opensvc != "up")] | length) > 0 then "degraded"
 				elif $arb != "up" then "degraded"
 				elif $availability != "running" or $writes != "running" or $observer != "running" then "degraded"
+				elif postgres_nominal | not then "degraded"
 				else "green"
 				end
 			)
@@ -334,8 +366,13 @@ render_status() {
 		"arbitrator \(.arbitrator)",
 		"probes     availability=\(.probes.availability) writes=\(.probes.writes) observer=\(.probes.observer)",
 		"",
-		"NODE         REACHABLE  OPENSVC      ADDRESS",
-		(.nodes[] | [pad(.name; 12), pad(if .reachable then "yes" else "no" end; 10), pad(.opensvc; 12), (if .holds_address then "held" else "-" end)] | join(" ")),
+		"NODE         REACHABLE  OPENSVC      ADDRESS  POSTGRES",
+		(.nodes[] | [pad(.name; 12), pad(if .reachable then "yes" else "no" end; 10), pad(.opensvc; 12), pad(if .holds_address then "held" else "-" end; 8),
+			(if .postgres == null then "-"
+			 elif .postgres.fenced then "\(.postgres.role) fenced"
+			 elif .postgres.role == "primary" then "primary, standby \(.postgres.standby.state // "absent")/\(.postgres.standby.sync_state // "-") lag=\(.postgres.standby.lag_bytes // "-")"
+			 elif .postgres.role == "standby" then "standby, receiver \(.postgres.receiver // "none"), synced=\(.postgres.synced)"
+			 else .postgres.role end)] | join(" ")),
 		"",
 		"verdict    \(colour(.verdict))\(.verdict)\($reset)"
 	'
@@ -408,21 +445,28 @@ run_all_versions() {
 	node=$(first_cluster_host)
 	opensvc_version=""
 	kernel_version=""
+	postgres_version=""
 	if [ -n "$node" ]; then
 		opensvc_version=$(ssh_to "$node" "$OM --version" 2>/dev/null | head -n 1) || opensvc_version=""
 		kernel_version=$(ssh_to "$node" "uname -r" 2>/dev/null) || kernel_version=""
+		case "$(current_mode)" in
+		postgres/*)
+			postgres_version=$(ssh_to "$node" "$PG_STATE" 2>/dev/null | jq -r '.package_version // empty') || postgres_version=""
+			;;
+		esac
 	fi
 
 	jq -n \
 		--arg maintenant "$maintenant_version" \
 		--arg opensvc "$opensvc_version" \
 		--arg kernel "$kernel_version" \
+		--arg postgres "$postgres_version" \
 		--arg lab_commit "$lab_commit" \
 		'{
 			maintenant: (if $maintenant == "" then null else $maintenant end),
 			opensvc: (if $opensvc == "" then null else $opensvc end),
 			drbd: null,
-			postgres: null,
+			postgres: (if $postgres == "" then null else $postgres end),
 			kernel: (if $kernel == "" then null else $kernel end),
 			lab_commit: (if $lab_commit == "" then null else $lab_commit end)
 		}'
@@ -433,26 +477,60 @@ run_all_settings() {
 	quorum_raw=""
 	stonith_raw=""
 	sqlite_sync=""
+	app_restart=""
+	pg_restart=""
+	sync_standby=""
+	slot_keep=""
 	if [ -n "$node" ]; then
 		quorum_raw=$(ssh_to "$node" "sudo -n om node config get --kw cluster.quorum" 2>/dev/null | tr -d '[:space:]') || quorum_raw=""
 		stonith_raw=$(ssh_to "$node" "sudo -n om maintenant config get --kw DEFAULT.stonith" 2>/dev/null | tr -d '[:space:]') || stonith_raw=""
 		sqlite_sync=$(ssh_to "$node" "sudo -n grep -m1 '^MAINTENANT_SQLITE_SYNCHRONOUS=' /etc/maintenant.env" 2>/dev/null | cut -d= -f2-) || sqlite_sync=""
+		app_restart=$(ssh_to "$node" "sudo -n om maintenant config get --kw 'app#0.restart'" 2>/dev/null | tr -d '[:space:]') || app_restart=""
+		case "$(current_mode)" in
+		postgres/*)
+			pg_restart=$(ssh_to "$node" "sudo -n om maintenant config get --kw 'app#pg.restart'" 2>/dev/null | tr -d '[:space:]') || pg_restart=""
+			sync_standby=$(ssh_to "$node" "$PG_STATE" 2>/dev/null | jq -r '.standby_missing // empty') || sync_standby=""
+			slot_keep=$(ssh_to "$node" "sudo -n runuser -u postgres -- psql -X -A -t -d postgres -c 'show max_slot_wal_keep_size'" 2>/dev/null | tr -d '[:space:]') || slot_keep=""
+			;;
+		esac
 	fi
 
 	jq -n \
 		--arg quorum "$quorum_raw" \
 		--arg stonith "$stonith_raw" \
 		--arg sqlite_sync "$sqlite_sync" \
+		--arg app_restart "$app_restart" \
+		--arg pg_restart "$pg_restart" \
+		--arg sync_standby "$sync_standby" \
+		--arg slot_keep "$slot_keep" \
 		'
 		def boolish(s): if s == "" then null elif s == "true" then true elif s == "false" then false else s end;
+		def num(s): if s == "" then null else (s | tonumber? // s) end;
+		def str(s): if s == "" then null else s end;
 		{
-			sqlite_synchronous: (if $sqlite_sync == "" then null else $sqlite_sync end),
+			sqlite_synchronous: str($sqlite_sync),
 			hb_timeout_s: null,
 			ready_period_s: null,
 			quorum: boolish($quorum),
 			stonith: boolish($stonith),
-			sync_standby: null
+			sync_standby: str($sync_standby),
+			local_restarts: {app: num($app_restart), postgres: num($pg_restart)},
+			max_slot_wal_keep_size: str($slot_keep)
 		}'
+}
+
+# Prints one line per failed ping insert the server logged between two epochs,
+# on every cluster node, and one line per node whose journal cannot be read.
+server_log_findings() {
+	since=$1
+	until=$2
+	for host in $(group_hosts opensvc_cluster); do
+		if ! journal=$(ssh_to "$host" "sudo -n journalctl --quiet --no-pager -o short-iso -t $SERVER_LOG_IDENTIFIER --since @$since --until @$until" 2>/dev/null); then
+			printf '%s: journal unreadable\n' "$host"
+			continue
+		fi
+		printf '%s\n' "$journal" | grep -F "$SERVER_LOG_INCONCLUSIVE" | sed "s/^/$host: /" || true
+	done
 }
 
 # Aggregates one scenario's repetitions into its measures and verdict.
@@ -633,6 +711,11 @@ run_all_scenario() {
 
 		rto_ms=$(printf '%s' "$availability_json" | jq -r 'if . == null then "" else (.rto_ms | tostring) end' 2>/dev/null)
 
+		log_since=$(($(date -u -d "$t0" +%s) - CLOCK_DRIFT_MAX))
+		log_until=$(($(date -u -d "$t1_window" +%s) + CLOCK_DRIFT_MAX))
+		server_log_findings "$log_since" "$log_until" >"$TMP/server-log-$number-$rep.txt"
+		server_log_json=$(jq -Rsc 'split("\n") | map(select(length > 0))' "$TMP/server-log-$number-$rep.txt")
+
 		reasons_file="$TMP/reasons-$number-$rep.json"
 		printf '[]' >"$reasons_file"
 		add_reason() {
@@ -644,6 +727,9 @@ run_all_scenario() {
 		[ "$repair_rc" -eq 0 ] || add_reason "repair failed (rc=$repair_rc)"
 		[ "$green_after" -eq 1 ] || add_reason "bench did not return to green after repair"
 		[ "$holders" -eq 1 ] || add_reason "holders after recovery = $holders, expected 1"
+		if [ -s "$TMP/server-log-$number-$rep.txt" ]; then
+			add_reason "inconclusive: the server logged '$SERVER_LOG_INCONCLUSIVE' or its journal could not be read during the measurement window"
+		fi
 		if [ -n "$max_rto_s" ]; then
 			if [ -z "$rto_ms" ]; then
 				add_reason "max_rto_s is set but the availability rto_ms is unavailable"
@@ -679,6 +765,7 @@ run_all_scenario() {
 			--argjson availability_error "$availability_error" \
 			--argjson observer "$observer_json" \
 			--argjson observer_error "$observer_error" \
+			--argjson server_log "$server_log_json" \
 			--argjson reasons "$(cat "$reasons_file")" \
 			--arg verdict "$rep_verdict" \
 			'{
@@ -688,6 +775,7 @@ run_all_scenario() {
 				rto_ms: (if $rto_ms_raw == "" then null else ($rto_ms_raw | tonumber) end),
 				availability: $availability, availability_error: $availability_error,
 				observer: $observer, observer_error: $observer_error,
+				server_log: $server_log,
 				verdict: $verdict, reasons: $reasons
 			}')
 		printf '%s\n' "$one" >>"$reps_ndjson"
@@ -876,12 +964,15 @@ scenario_env() {
 		awk -v a="$LAB_ACTIVE_ADDRESS/" '$0 ~ " inet "a {print $2; exit}')
 	LAB_SSH_ACTIVE="ssh $SSH_BATCH_OPTS $(ssh_target "$active")"
 	LAB_SSH_PASSIVE="ssh $SSH_BATCH_OPTS $(ssh_target "$passive")"
+	LAB_CLI="$LAB_DIR/lab"
+	LAB_RUN_DIR="$STATE_DIR"
+	mkdir -p "$LAB_RUN_DIR"
 
 	export LAB_MODE LAB_SERVICE LAB_SERVICE_ADDRESS LAB_SERVICE_NETMASK \
 		LAB_ACTIVE LAB_PASSIVE LAB_ACTIVE_ADDRESS LAB_PASSIVE_ADDRESS \
 		LAB_ARBITRATOR_ADDRESS LAB_MEASUREMENT_ADDRESS \
 		LAB_ACTIVE_DOMAIN LAB_PASSIVE_DOMAIN LAB_STATE_DIR LAB_INTERCONNECT \
-		LAB_SSH_ACTIVE LAB_SSH_PASSIVE
+		LAB_SSH_ACTIVE LAB_SSH_PASSIVE LAB_CLI LAB_RUN_DIR
 }
 
 shell_quote() {
@@ -987,6 +1078,8 @@ cmd_up() {
 		esac
 	done
 	valid_mode "$mode" || die "unknown mode: $mode (known: $KNOWN_MODES)" 2
+	template="$HA_DIR/opensvc/maintenant-$(printf '%s' "$mode" | tr '/' '-').conf"
+	[ -f "$template" ] || die "mode $mode has no service template yet: $template" 2
 
 	need ansible-playbook
 	need ansible-inventory
@@ -1175,6 +1268,69 @@ cmd_report() {
 	render_report "$run_json_file" | tee "$run_dir/run.md"
 }
 
+preferred_node() {
+	for name in $(group_hosts opensvc_cluster); do
+		if [ "$(hostvar "$name" ha_preferred false)" = "true" ]; then
+			printf '%s\n' "$name"
+			return 0
+		fi
+	done
+	first_cluster_host
+}
+
+# The preferred node is up to date when it is a standby that has caught up since
+# its rebuild, streaming, synchronous, and zero bytes behind the primary.
+postgres_copy_current() {
+	preferred=$1
+	primary=$2
+	standby=$(ssh_to "$preferred" "$PG_STATE") || die "cannot read the PostgreSQL state of $preferred" 1
+	printf '%s' "$standby" | jq -e '.role == "standby" and (.fenced | not) and .synced and .receiver == "streaming"' >/dev/null ||
+		die "giveback refused: $preferred is not a caught-up standby ($(printf '%s' "$standby" | jq -c '{role, fenced, synced, receiver}'))" 1
+
+	tries=$GIVEBACK_LAG_TRIES
+	while :; do
+		current=$(ssh_to "$primary" "$PG_STATE") || die "cannot read the PostgreSQL state of $primary" 1
+		if printf '%s' "$current" | jq -e '.role == "primary" and .standby.state == "streaming" and .standby.sync_state == "sync" and .standby.lag_bytes == 0' >/dev/null; then
+			return 0
+		fi
+		tries=$((tries - 1))
+		if [ "$tries" -le 0 ]; then
+			die "giveback refused: the copy on $preferred is not current ($(printf '%s' "$current" | jq -c '.standby'))" 1
+		fi
+		sleep 1
+	done
+}
+
+cmd_giveback() {
+	[ $# -eq 0 ] || die "giveback takes no option" 2
+	need ansible-inventory
+	need jq
+	need ssh
+
+	mode=$(current_mode)
+	[ "$mode" != "unknown" ] || die "no mode is deployed: run 'lab up' first" 2
+
+	collect_status >"$TMP/status-giveback.json"
+	holder=$(jq -r '.service.holders | if length == 1 then .[0] else empty end' "$TMP/status-giveback.json")
+	[ -n "$holder" ] || die "giveback refused: the service is not held by exactly one node" 1
+	preferred=$(preferred_node)
+	[ "$holder" != "$preferred" ] || die "the service already runs on the preferred node $preferred" 1
+
+	case "$mode" in
+	ip-only) info "ip-only keeps no replicated data: nothing to compare before the giveback" ;;
+	postgres/streaming) postgres_copy_current "$preferred" "$holder" ;;
+	*) die "giveback is not implemented for mode $mode yet" 3 ;;
+	esac
+
+	info "giving the service back to $preferred"
+	ssh_to "$holder" "$OM ${LAB_SERVICE_NAME:-maintenant} giveback --wait"
+	if ! wait_for_status_green "$RUN_ALL_GREEN_TIMEOUT" "$RUN_ALL_GREEN_INTERVAL" "$TMP/status-giveback-after.json"; then
+		render_status <"$TMP/status-giveback-after.json"
+		die "the bench did not return to green after the giveback" 1
+	fi
+	render_status <"$TMP/status-giveback-after.json"
+}
+
 not_yet() {
 	die "$1 is not implemented yet ($2)" 3
 }
@@ -1194,6 +1350,7 @@ main() {
 	heal) cmd_heal "$@" ;;
 	run-all) cmd_run_all "$@" ;;
 	report) cmd_report "$@" ;;
+	giveback) cmd_giveback "$@" ;;
 	inventory) not_yet "inventory" "T080" ;;
 	help | --help | -h)
 		usage

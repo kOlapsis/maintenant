@@ -44,7 +44,7 @@ is fixed here so that later phases cannot collide:
 | 15 | Standby absent while writes continue | `postgres/streaming` |
 | 16 | Former primary returns and is rebuilt as standby | `postgres/streaming` |
 | 17 | Write-ahead log retention exhausted | `postgres/streaming` |
-| 18 | Forced promotion | `postgres/streaming` |
+| 18 | Forced promotion (the variant of scenario 10) | `postgres/streaming` |
 | 19 | Full giveback to the preferred node | `postgres/streaming` |
 | 20 | SQLite journal recovery after crash | `sqlite/drbd` |
 | 21 | Volume resynchronisation when the node returns | `sqlite/drbd` |
@@ -151,10 +151,10 @@ This is the failure mode most HA setups miss. It is one of the three that decide
 
 | | |
 |---|---|
-| **Injection** | `kill -9` on the PostgreSQL primary. A variant makes the local restart impossible, to force the promotion path. |
-| **Repair** | Let the local restart happen; in the variant, rebuild the former primary as a standby. |
+| **Injection** | `kill -9` on the PostgreSQL primary. The variant that makes the local restart impossible, to force the promotion path, is scenario 18. |
+| **Repair** | None: the bounded local restart is what is being tested. |
 | **Expected, `ip-only`** | *Not applicable* — no PostgreSQL in this mode. |
-| **Expected, `postgres/streaming`** | Bounded local restart of the primary — crash recovery, standby still attached. The standby is promoted **only if** the restart fails: promoting on a mere process death would contradict "local restart before failover" and would force a rebuild for nothing. In the variant, promotion happens, exactly one primary is established, and the former primary is locked out of write service until it is rebuilt. |
+| **Expected, `postgres/streaming`** | Bounded local restart of the primary: crash recovery, standby still attached. `app#pg` fails its check and om3 restarts it on the same node, at most `app#pg.restart` times (recorded in `run.json.settings.local_restarts`). The standby is promoted **only if** the restart fails: promoting on a mere process death would contradict "local restart before failover" and would force a rebuild for nothing. After recovery the injected node is still the one primary. The promotion path is scenario 18. |
 | **Expected, `sqlite/drbd`** | *Not applicable* — there is no external database in this mode. |
 | **Expected, `postgres/drbd`** | Local restart, if this mode is played. |
 | **Measures** | `rto_ms`, `writes`, local restart count, primary count after recovery. |
@@ -194,8 +194,77 @@ Their numbers, names and scope are fixed here.
 | 15 | Standby absent while writes continue | `postgres/streaming` | The configured conduct when the standby is missing: either block writes, or continue without a standby while announcing the loss window. Return to synchronous replication only after a full catch-up. |
 | 16 | Former primary returns and is rebuilt | `postgres/streaming` | The node that was overtaken comes back. It is never restarted as a primary; it is rebuilt as a standby without intervention. |
 | 17 | Write-ahead log retention exhausted | `postgres/streaming` | Retention for an absent standby is bounded. Crossing the bound triggers a documented full rebuild, never a failure of the primary. |
-| 18 | Forced promotion | `postgres/streaming` | Promotion requested while the standby is behind; exactly one primary must be established before the application starts. |
+| 18 | Forced promotion | `postgres/streaming` | Scenario 10 with the local restart made impossible: the restarts run out, the service moves, the standby is promoted, and exactly one primary is established before the application starts. |
 | 19 | Full giveback | `postgres/streaming` | Return to nominal on operator request only, refused while the preferred node's copy is not up to date. |
 | 20 | SQLite journal recovery after crash | `sqlite/drbd` | The journal left behind by an abrupt loss is recovered on the surviving node before the application is allowed to start. |
 | 21 | Volume resynchronisation on node return | `sqlite/drbd` | The returning node resynchronises from the survivor without overwriting an acknowledged write, and does not restart the service on its own. |
 | 22 | Storage split-brain and its manual resolution | `sqlite/drbd` | Automatic resolution is forbidden: it throws writes away. The bench must show the refusal to promote, name the side to keep, and document the manual procedure. |
+
+---
+
+## Streaming scenarios
+
+The PostgreSQL role (`ansible/roles/postgres_ha`) runs the database on both nodes, outside the
+OpenSVC service: primary on the active node, synchronous standby on the passive one. The
+service carries the primary role through `app#pg`, whose start trigger promotes the standby.
+The scripts on each node log every role change to `/var/lib/maintenant-pg/events.log` and to
+the journal (tag `maintenant-pg`): `promoted`, `fenced`, `rebuild_started`, `rebuilt`,
+`start_refused`, `standby_absent`, `sync_dropped`, `sync_restored`, `retention_exceeded`. The
+scenarios read that log; `maintenant-pg-state` prints the role of a node as JSON.
+
+In this mode `lab status` is green only when exactly one node runs a primary, holds the
+service address, and has its standby streaming synchronously. Every repair is therefore
+checked down to the rebuild of the former primary.
+
+### 15. Standby absent while writes continue
+
+| | |
+|---|---|
+| **Injection** | Stop the standby and its watch on the passive node. |
+| **Repair** | Start the watch again; it restarts the standby, which catches up. |
+| **Expected** | With `block` (the default of `postgres_ha_standby_missing`), writes wait: none is acknowledged while the standby is gone, `writes.lost == 0`. With `continue`, the primary drops to asynchronous replication after the grace and logs the opening of the loss window; it returns to synchronous replication only once the standby is zero bytes behind. No failover either way. The conduct is recorded in `run.json.settings.sync_standby`. |
+| **Measures** | `rto_ms`, `writes`, `sync_standby`, the loss window from the events log. |
+
+### 16. Former primary returns and is rebuilt as standby
+
+| | |
+|---|---|
+| **Injection** | `virsh destroy` on the active node, as in scenario 2. |
+| **Repair** | Restart the VM, then wait until its events log shows, after the injection, the node marked overtaken and rebuilt, with no primary start in between. |
+| **Expected** | The standby is promoted. The returning node's PostgreSQL unit refuses to start without the allowance the promotion grants, which lives under `/run` and never survives a reboot; the node sees the survivor answering as a primary, marks itself overtaken, and rebuilds as a standby with `pg_rewind`, or `pg_basebackup` when the rewind fails. No human action. Played ten times, it is the SC-011 count. |
+| **Measures** | `rto_ms`, `writes`, `primary_count`, `former_primary_rebuild`. |
+
+### 17. Write-ahead log retention exhausted
+
+| | |
+|---|---|
+| **Injection** | Stop the standby and its watch, then write more WAL on the primary than `max_slot_wal_keep_size` and checkpoint. |
+| **Repair** | Start the watch again, then wait until the events log shows the lost slot and the rebuild from a full copy. |
+| **Expected** | The standby slot is invalidated; the primary never fills its disk and never stops serving. The returning standby cannot catch up, and the watch rebuilds it from a full copy without human action. |
+| **Measures** | `rto_ms`, `writes`, `former_primary_rebuild`. |
+
+### 18. Forced promotion
+
+| | |
+|---|---|
+| **Injection** | Mask the PostgreSQL unit on the active node, then `kill -9` the primary. |
+| **Repair** | Unmask the unit, then wait until the events log shows the node marked overtaken and rebuilt, with no primary start in between. |
+| **Expected** | The local restarts fail, `monitor_action` moves the service, and the standby is promoted once the former primary is stopped and no other primary answers. Exactly one primary exists before the application starts; `writes.lost == 0`. The former primary is locked out until rebuilt. |
+| **Measures** | `rto_ms`, `writes`, `local_restarts`, `primary_count`, `former_primary_rebuild`. |
+
+### 19. Full giveback
+
+| | |
+|---|---|
+| **Injection** | `om <service> switch` away from the preferred node. |
+| **Repair** | Stop the preferred node's copy and check `lab giveback` is refused; start it again and retry `lab giveback` until it is accepted. |
+| **Expected** | The giveback is refused while the preferred node is not a caught-up standby, streaming, synchronous and zero bytes behind. Once it is, the service goes back, the other node is rebuilt as its standby, and no acknowledged write is lost. |
+| **Measures** | `rto_ms`, `writes`, `primary_count`, `former_primary_rebuild`. |
+
+## Runs that cannot conclude
+
+`lab run-all` fails a repetition as inconclusive when a node's journal holds a line with
+`insert ping` from the server during the measurement window, or cannot be read. The server
+answers a heartbeat ping with 200 even when it failed to write the ping's history row, so a
+run where that happened cannot conclude on its writes. The binary's output reaches the
+journal under the tag `maintenant`, through `systemd-cat` in the service templates.

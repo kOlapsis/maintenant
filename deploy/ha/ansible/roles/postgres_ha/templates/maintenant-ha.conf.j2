@@ -1,0 +1,23 @@
+# Written by the postgres_ha role. The same file serves both roles: a primary
+# ignores the standby settings, a standby ignores the synchronous ones.
+
+listen_addresses = 'localhost,{{ postgres_ha_node_address }}'
+port = {{ postgres_ha_port }}
+
+fsync = on
+full_page_writes = on
+wal_log_hints = on
+wal_level = replica
+
+synchronous_commit = on
+synchronous_standby_names = '{{ postgres_ha_peer_name }}'
+
+max_wal_senders = 5
+max_replication_slots = 5
+wal_keep_size = 0
+max_slot_wal_keep_size = {{ postgres_ha_max_slot_wal_keep_size }}
+
+hot_standby = on
+primary_conninfo = 'host={{ postgres_ha_peer_address }} port={{ postgres_ha_port }} user={{ postgres_ha_user }} application_name={{ postgres_ha_self_name }} passfile={{ postgres_ha_etc_dir }}/pgpass connect_timeout=5'
+primary_slot_name = '{{ postgres_ha_self_name }}'
+recovery_target_timeline = 'latest'

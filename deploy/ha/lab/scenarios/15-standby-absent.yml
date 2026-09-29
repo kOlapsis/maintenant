@@ -1,0 +1,52 @@
+---
+# Scenario 15, specific to postgres/streaming. Numbers 1 to 12 belong to the
+# bench plan; the allocation of the others is fixed in README.md.
+id: 15
+slug: standby-absent
+name: Standby absent while writes continue
+source: postgres/streaming
+repetitions: 1
+injection:
+  'on': passive
+  command: systemctl stop maintenant-pg-watch.service 'postgresql@*.service'
+repair:
+  'on': passive
+  command: systemctl start maintenant-pg-watch.service
+verify:
+  'on': host
+  command: |
+    set -eu
+    curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" | jq -e '.storage.connected == true' >/dev/null
+    primaries=0
+    for node in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
+      if $node sudo -n /usr/local/sbin/maintenant-pg-state 2>/dev/null | jq -e '.role == "primary"' >/dev/null; then
+        primaries=$((primaries + 1))
+      fi
+    done
+    [ "$primaries" -eq 1 ]
+measures:
+- rto_ms
+- writes
+- sync_standby
+- loss_window
+modes:
+  ip-only:
+    applicable: false
+    reason: no PostgreSQL in this mode
+  postgres/streaming:
+    applicable: true
+    expected: 'The conduct is the one recorded in run.json.settings.sync_standby. With block,
+      the primary keeps answering reads and every write waits for the standby: writes made
+      while it is gone are refused or unknown, never acknowledged, and writes.lost == 0. With
+      continue, after the grace the primary drops to asynchronous replication and logs
+      event=sync_dropped loss_window=open; writes are acknowledged again, and only those are
+      exposed to a loss if the primary dies before the standby is back. Either way no failover
+      happens. After repair the watch restarts the standby, which catches up; synchronous
+      replication comes back only once it is zero bytes behind (event=sync_restored), and the
+      bench is green again only then.'
+  sqlite/drbd:
+    applicable: false
+    reason: no PostgreSQL standby in this mode
+  postgres/drbd:
+    applicable: false
+    reason: the replicated volume has no standby database; its resynchronisation is scenario 21

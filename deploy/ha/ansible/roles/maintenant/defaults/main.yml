@@ -23,6 +23,13 @@ maintenant_service_name: "{{ ha_service_name }}"
 maintenant_grpc_url: "grpcs://{{ maintenant_service_name }}:{{ maintenant_grpc_port }}"
 
 maintenant_sqlite_synchronous: NORMAL
+
+# The PostgreSQL modes run the database on the node that runs the service, so the
+# product reaches it over the local socket, as its own system account.
+maintenant_database_name: maintenant
+maintenant_database_url: >-
+  {{ ('postgres://' ~ maintenant_user ~ '@/' ~ maintenant_database_name ~ '?host=/var/run/postgresql')
+     if (ha_mode | default('ip-only')).startswith('postgres/') else '' }}
 maintenant_require_state_dir: true
 maintenant_require_existing_data: false
 
@@ -50,4 +57,5 @@ maintenant_server_settings:
 
 maintenant_settings: >-
   {{ maintenant_base_settings
-     | combine(maintenant_server_settings if maintenant_mode == 'server' else {}) }}
+     | combine(maintenant_server_settings if maintenant_mode == 'server' else {})
+     | combine({'MAINTENANT_DATABASE_URL': maintenant_database_url} if maintenant_database_url | length > 0 else {}) }}

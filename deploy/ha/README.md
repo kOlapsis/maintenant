@@ -18,11 +18,12 @@ No throwaway script is ever required to deploy.
 | `ansible/roles/fencing/` | the callout a survivor runs to shoot its unreachable peer |
 | `ansible/roles/maintenant/` | the static binary, the state root, the settings and, in server mode, the gRPC pair, one table for both the env file and the service |
 | `ansible/roles/maintenant_check/` | the application test the service runs: 0 alive, 1 degraded, 2 dead |
+| `ansible/roles/postgres_ha/` | `postgres/streaming`: PostgreSQL primary and synchronous standby, promotion, anti-return lock, rebuild of the former primary |
 | `ansible/roles/opensvc_service/` | renders the mode's template, declares the service and waits for it to be up on one node |
 | `ansible/roles/probes/` | the two probes, built, shipped and kept running on the measurement machine |
 | `opensvc/` | service templates, one per replication mode |
 | `lab/` | bench topology, provisioning, `lab` CLI, scenarios and probes |
-| `lab/lab` | the single entry point: `up`, `down`, `status`, `chaos`, `heal`, `run-all` |
+| `lab/lab` | the single entry point: `up`, `down`, `status`, `chaos`, `heal`, `run-all`, `giveback` |
 | `lab/scenarios/` | the twelve scenarios of the bench plan, plus the mode-specific ones |
 | `lab/probes/` | the measurement probes (availability, writes, observer), in Go |
 | `reports/` | versioned run reports, one directory per run |

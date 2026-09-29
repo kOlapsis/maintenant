@@ -1,0 +1,138 @@
+---
+- name: Look for a node already built
+  ansible.builtin.stat:
+    path: "{{ postgres_ha_state_dir }}/built"
+  register: postgres_ha_built
+
+# Once built, the roles belong to the cluster: a replay of the playbook must
+# never turn the current standby back into a primary.
+- name: Decide whether the pair is built from scratch
+  ansible.builtin.set_fact:
+    postgres_ha_fresh: >-
+      {{ groups['opensvc_cluster'] | map('extract', hostvars, ['postgres_ha_built', 'stat', 'exists'])
+         | select | list | length == 0 }}
+
+- name: Build the pair from scratch
+  when: postgres_ha_fresh | bool
+  block:
+    - name: Create the directory of the primary allowance
+      ansible.builtin.file:
+        path: /run/maintenant-pg
+        state: directory
+        mode: "0755"
+      when: inventory_hostname == postgres_ha_initial_primary
+
+    - name: Allow the first primary to start
+      ansible.builtin.file:
+        path: /run/maintenant-pg/primary-allowed
+        state: touch
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+      when: inventory_hostname == postgres_ha_initial_primary
+
+    - name: Start the first primary
+      ansible.builtin.systemd_service:
+        name: "{{ postgres_ha_unit }}"
+        state: started
+        enabled: true
+      when: inventory_hostname == postgres_ha_initial_primary
+
+    - name: Wait for the first primary to accept connections
+      ansible.builtin.command:
+        argv: [runuser, -u, postgres, --, pg_isready, -q, -h, /var/run/postgresql, -p, "{{ postgres_ha_port }}"]
+      register: postgres_ha_ready
+      changed_when: false
+      retries: 30
+      delay: 2
+      until: postgres_ha_ready.rc == 0
+      when: inventory_hostname == postgres_ha_initial_primary
+
+    - name: Create the replication role, the product role and its database
+      ansible.builtin.command:
+        argv: [runuser, -u, postgres, --, psql, -X, -q, -v, ON_ERROR_STOP=1, -d, postgres]
+        stdin: |
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_ha_user }}') THEN
+              CREATE ROLE {{ postgres_ha_user }};
+            END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_ha_database_owner }}') THEN
+              CREATE ROLE {{ postgres_ha_database_owner }};
+            END IF;
+          END
+          $$;
+          ALTER ROLE {{ postgres_ha_user }} WITH LOGIN REPLICATION PASSWORD '{{ postgres_ha_password }}';
+          ALTER ROLE {{ postgres_ha_database_owner }} WITH LOGIN;
+          GRANT pg_read_all_stats TO {{ postgres_ha_user }};
+          GRANT EXECUTE ON FUNCTION pg_catalog.pg_ls_dir(text, boolean, boolean) TO {{ postgres_ha_user }};
+          GRANT EXECUTE ON FUNCTION pg_catalog.pg_stat_file(text, boolean) TO {{ postgres_ha_user }};
+          GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) TO {{ postgres_ha_user }};
+          GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text, bigint, bigint, boolean) TO {{ postgres_ha_user }};
+          SELECT 'CREATE DATABASE {{ postgres_ha_database }} OWNER {{ postgres_ha_database_owner }}'
+          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ postgres_ha_database }}')
+          \gexec
+      changed_when: true
+      no_log: true
+      when: inventory_hostname == postgres_ha_initial_primary
+
+    - name: Mark the empty cluster of the standby as a standby
+      ansible.builtin.file:
+        path: "{{ postgres_ha_datadir }}/standby.signal"
+        state: touch
+        owner: postgres
+        group: postgres
+        mode: "0600"
+        modification_time: preserve
+        access_time: preserve
+      when: inventory_hostname != postgres_ha_initial_primary
+
+    - name: Build the standby from a full copy of the primary
+      ansible.builtin.command:
+        argv: ["{{ postgres_ha_rebuild }}", --full]
+      changed_when: true
+      when: inventory_hostname != postgres_ha_initial_primary
+
+    - name: Enable the standby at boot
+      ansible.builtin.systemd_service:
+        name: "{{ postgres_ha_unit }}"
+        enabled: true
+      when: inventory_hostname != postgres_ha_initial_primary
+
+    - name: Record that the pair is built
+      ansible.builtin.copy:
+        dest: "{{ postgres_ha_state_dir }}/built"
+        mode: "0600"
+        content: "initial_primary={{ postgres_ha_initial_primary }}\n"
+
+- name: Start the watch
+  ansible.builtin.systemd_service:
+    name: maintenant-pg-watch.service
+    state: started
+    enabled: true
+
+- name: Wait for one primary and one standby that has caught up
+  ansible.builtin.command:
+    argv: ["{{ postgres_ha_state }}"]
+  register: postgres_ha_node_state
+  changed_when: false
+  retries: "{{ postgres_ha_wait_retries }}"
+  delay: "{{ postgres_ha_wait_delay }}"
+  until: >-
+    postgres_ha_node_state.rc == 0
+    and ((postgres_ha_node_state.stdout | from_json).role == 'primary'
+         or ((postgres_ha_node_state.stdout | from_json).role == 'standby'
+             and (postgres_ha_node_state.stdout | from_json).synced
+             and (postgres_ha_node_state.stdout | from_json).receiver == 'streaming'))
+
+- name: Refuse a pair that does not have exactly one primary
+  ansible.builtin.assert:
+    that: primaries | length == 1
+    fail_msg: "expected one primary, found {{ primaries | length }}: {{ primaries | join(', ') }}"
+  vars:
+    primaries: >-
+      {{ groups['opensvc_cluster']
+         | map('extract', hostvars, ['postgres_ha_node_state', 'stdout'])
+         | map('from_json') | selectattr('role', 'equalto', 'primary')
+         | map(attribute='node') | list }}
+  run_once: true
