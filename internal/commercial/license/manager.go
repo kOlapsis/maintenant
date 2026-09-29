@@ -56,6 +56,14 @@ type Manager struct {
 	callbacks   []EditionChangeCallback
 	lastEdition extension.Edition
 	baselineSet bool
+
+	resolveOnce  sync.Once
+	holdDispatch bool
+	pending      *editionChange
+}
+
+type editionChange struct {
+	prev, next extension.Edition
 }
 
 // NewManager creates a new license manager and synchronously loads the
@@ -100,12 +108,26 @@ func NewManager(licenseKey, dataDir, version, buildDate string, logger *slog.Log
 	return m, nil
 }
 
-// Start performs an initial license check, then starts a background ticker.
-// Non-blocking: errors during the initial check are logged, not fatal. The
-// disk cache has already been loaded by NewManager.
+// Resolve runs the initial license check once and holds back the edition change it causes until Start.
+func (m *Manager) Resolve(ctx context.Context) {
+	m.resolveOnce.Do(func() {
+		from, known := m.lastEdition, m.baselineSet
+		m.holdDispatch = true
+		m.check(ctx)
+		m.holdDispatch = false
+		if known && from != m.lastEdition {
+			m.pending = &editionChange{prev: from, next: m.lastEdition}
+		}
+	})
+}
+
+// Start resolves the edition if Resolve has not run, delivers the held-back change to the callbacks, then starts the periodic check.
 func (m *Manager) Start(ctx context.Context) {
-	// Run initial check (non-blocking on failure)
-	m.check(ctx)
+	m.Resolve(ctx)
+	if p := m.pending; p != nil {
+		m.pending = nil
+		m.dispatchEditionChange(ctx, p.prev, p.next)
+	}
 
 	go m.ticker(ctx)
 }
@@ -193,7 +215,7 @@ func (m *Manager) setStateAndNotify(ctx context.Context, newState *State) {
 	prev := m.lastEdition
 	m.state.Store(newState)
 	next := newState.Edition
-	if m.baselineSet && prev != next {
+	if m.baselineSet && !m.holdDispatch && prev != next {
 		m.dispatchEditionChange(ctx, prev, next)
 	}
 	m.lastEdition = next

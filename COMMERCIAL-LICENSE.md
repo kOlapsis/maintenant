@@ -14,8 +14,8 @@ Maintenant is made of two parts:
 - **The core**, licensed under the Apache License, Version 2.0 (see `LICENSE`).
   It is free for any use, commercial or not, and needs no key. It is the
   Community edition.
-- **The commercial code**, under `internal/commercial/` and
-  `frontend/src/commercial/`, licensed under the Maintenant Commercial Source
+- **The commercial code**, under `internal/commercial/`,
+  `frontend/src/commercial/` and `deploy/ha/`, licensed under the Maintenant Commercial Source
   License (see `internal/commercial/LICENSE`). It implements the features a
   Personal or Pro licence key opens.
 

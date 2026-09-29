@@ -28,6 +28,7 @@ var minEdition = map[extension.Capability]extension.Edition{
 	extension.CapMaintenanceWindows: extension.Pro,
 	extension.CapSubscribers:        extension.Pro,
 	extension.CapPersonalization:    extension.Pro,
+	extension.CapHighAvailability:   extension.Pro,
 }
 
 var limits = map[extension.Edition]map[extension.Resource]int{

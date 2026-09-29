@@ -42,6 +42,7 @@ type EditionSource interface {
 	Edition() Edition
 	State() *LicenseState
 	RegisterEditionChangeCallback(cb EditionChangeCallback)
+	Resolve(ctx context.Context)
 	Start(ctx context.Context)
 	Stop()
 }

@@ -2,7 +2,7 @@ Maintenant
 Copyright 2025-2026 Benjamin Touchard (Kolapsis)
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE),
-with one exception: the files under internal/commercial/ and
-frontend/src/commercial/ are licensed under the Maintenant Commercial Source
-License (see internal/commercial/LICENSE). That code implements the features
+with one exception: the files under internal/commercial/,
+frontend/src/commercial/ and deploy/ha/ are licensed under the Maintenant
+Commercial Source License (see internal/commercial/LICENSE). That code implements the features
 opened by a Personal or Pro licence key.

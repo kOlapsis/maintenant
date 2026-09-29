@@ -14,6 +14,7 @@ import (
 
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -43,6 +44,42 @@ func checkRequireStateDir(cfg Config) error {
 		return ErrStateDirRequired
 	}
 	return nil
+}
+
+func highAvailabilityOptionsInUse(cfg Config) []string {
+	var inUse []string
+	if synchronousFull(cfg) {
+		inUse = append(inUse, "MAINTENANT_SQLITE_SYNCHRONOUS=FULL")
+	}
+	if cfg.RequireStateDir {
+		inUse = append(inUse, "MAINTENANT_REQUIRE_STATE_DIR")
+	}
+	if cfg.RequireExistingData {
+		inUse = append(inUse, "MAINTENANT_REQUIRE_EXISTING_DATA")
+	}
+	return inUse
+}
+
+func synchronousFull(cfg Config) bool {
+	synchronous, err := store.NormalizeSynchronous(cfg.SQLiteSynchronous)
+	return err == nil && synchronous == store.SynchronousFull
+}
+
+func applyHighAvailabilityPolicy(cfg Config, logger *slog.Logger) (Config, []string) {
+	ignored := highAvailabilityOptionsInUse(cfg)
+	if len(ignored) == 0 || extension.Allows(extension.CapHighAvailability) {
+		return cfg, nil
+	}
+	if synchronousFull(cfg) {
+		cfg.SQLiteSynchronous = store.SynchronousNormal
+	}
+	cfg.RequireStateDir = false
+	cfg.RequireExistingData = false
+	logger.Warn("high availability options ignored: the current edition does not include them",
+		"options", ignored,
+		"required_edition", extension.MinEdition(extension.CapHighAvailability),
+		"current_edition", extension.CurrentEdition())
+	return cfg, ignored
 }
 
 func checkRequireExistingData(ctx context.Context, cfg Config, db *store.DB) error {

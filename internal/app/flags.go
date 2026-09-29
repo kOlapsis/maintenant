@@ -103,7 +103,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_SQLITE_SYNCHRONOUS", FlagName: "sqlite-synchronous",
 			Type: FlagTypeString, Default: "NORMAL",
-			Description: "SQLite journal synchronisation (NORMAL|FULL)",
+			Description: "SQLite journal synchronisation (NORMAL|FULL, FULL is Pro)",
 			ApplyTo: func(c *Config, v string) error {
 				if _, err := store.NormalizeSynchronous(v); err != nil {
 					return err
@@ -115,7 +115,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_REQUIRE_STATE_DIR", FlagName: "require-state-dir",
 			Type: FlagTypeBool, Default: "false",
-			Description: "Refuse to start unless the state directory is set",
+			Description: "Refuse to start unless the state directory is set (Pro, ignored otherwise)",
 			ApplyTo: func(c *Config, v string) error {
 				c.RequireStateDir = parseTruthy(v)
 				return nil
@@ -124,7 +124,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_REQUIRE_EXISTING_DATA", FlagName: "require-existing-data",
 			Type: FlagTypeBool, Default: "false",
-			Description: "Refuse to start on a data set with no migration applied",
+			Description: "Refuse to start on a data set with no migration applied (Pro, ignored otherwise)",
 			ApplyTo: func(c *Config, v string) error {
 				c.RequireExistingData = parseTruthy(v)
 				return nil

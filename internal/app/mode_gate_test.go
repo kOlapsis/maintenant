@@ -161,3 +161,26 @@ func TestStart_EmbeddedMode_NotGated(t *testing.T) {
 		})
 	}
 }
+
+func TestStart_RequireStateDir_IgnoredBelowPro(t *testing.T) {
+	withEdition(t, extension.Community)
+	cfg, logger := modeGateCfg(t, "")
+	cfg.RequireStateDir = true
+
+	a, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
+	require.NoError(t, err, "an option the edition does not open must not block startup")
+
+	err = startAndCollect(t, a, 2*time.Second)
+	if err != nil {
+		assert.NotErrorIs(t, err, app.ErrStateDirRequired)
+	}
+}
+
+func TestStart_RequireStateDir_AppliedWithPro(t *testing.T) {
+	withEdition(t, extension.Pro)
+	cfg, logger := modeGateCfg(t, "")
+	cfg.RequireStateDir = true
+
+	_, err := app.New(cfg, logger, app.WithExtensions(commercial.Extensions()))
+	require.ErrorIs(t, err, app.ErrStateDirRequired)
+}

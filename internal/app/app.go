@@ -193,17 +193,36 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// A configured but unusable external database refuses to start: there is
 	// no silent fallback to the local file (FR-004).
 	ctx := context.Background()
-	if err := checkRequireStateDir(cfg); err != nil {
-		return nil, err
-	}
 	root, err := ResolveStateRoot(cfg)
 	if err != nil {
 		return nil, err
 	}
 	cfg.DBPath = root.DBPath
-	a.cfg = cfg
 	a.stateRoot = root
 	if err := prepareStateRoot(root); err != nil {
+		return nil, err
+	}
+
+	// --- License manager ---
+	lm, err := extension.NewEditionSource(extension.SourceConfig{
+		LicenseKey:   cfg.LicenseKey,
+		PublicKeyB64: cfg.PublicKeyB64,
+		DataDir:      root.LicenseDir,
+		Version:      cfg.Version,
+		BuildDate:    cfg.BuildDate,
+		Logger:       logger,
+	})
+	if err != nil {
+		logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
+	} else if lm != nil {
+		lm.Resolve(ctx)
+		a.licenseMgr = lm
+		extension.CurrentEdition = lm.Edition
+	}
+
+	cfg, _ = applyHighAvailabilityPolicy(cfg, logger)
+	a.cfg = cfg
+	if err := checkRequireStateDir(cfg); err != nil {
 		return nil, err
 	}
 
@@ -256,26 +275,6 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.updateStore = updateStore
 	agentStore := store.NewAgentStore(db)
 	a.agentStore = agentStore
-
-	// The mode gate lives in Start(), after the license manager has resolved the
-	// edition. Evaluating it here would read the package default and reject every
-	// edition, Pro included.
-
-	// --- License manager ---
-	lm, err := extension.NewEditionSource(extension.SourceConfig{
-		LicenseKey:   cfg.LicenseKey,
-		PublicKeyB64: cfg.PublicKeyB64,
-		DataDir:      root.LicenseDir,
-		Version:      cfg.Version,
-		BuildDate:    cfg.BuildDate,
-		Logger:       logger,
-	})
-	if err != nil {
-		logger.Warn("license manager initialization failed, running as Community Edition", "error", err)
-	} else if lm != nil {
-		a.licenseMgr = lm
-		extension.CurrentEdition = lm.Edition
-	}
 
 	// --- Runtime detection ---
 	rt, err := runtime.Detect(ctx, logger)
@@ -834,11 +833,7 @@ func (a *App) Start(ctx context.Context) error {
 		a.licenseMgr.Start(ctx)
 	}
 
-	// Mode gate: server mode needs multi-host. Checked here because
-	// licenseMgr.Start runs the initial verification synchronously, so the
-	// edition is settled — NewManager has already loaded the disk cache and Start
-	// has refreshed it. Checking it in New() read the package default and
-	// rejected every edition, Pro included.
+	// Mode gate: server mode needs multi-host.
 	if a.cfg.Mode != "" && a.cfg.Mode != "embedded" {
 		if !a.multihostPlanAllowed() {
 			return fmt.Errorf("%s mode requires the %s edition (current edition: %s)",

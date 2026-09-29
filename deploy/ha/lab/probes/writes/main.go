@@ -1,3 +1,7 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+// SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+// See deploy/ha/LICENSE.
+
 // Command writes measures data loss across a failover.
 //
 // It writes numbered records through the product's API and journals what the

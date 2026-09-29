@@ -38,6 +38,7 @@ const (
 	CapMaintenanceWindows Capability = "maintenance_windows"
 	CapSubscribers        Capability = "subscribers"
 	CapPersonalization    Capability = "personalization"
+	CapHighAvailability   Capability = "high_availability"
 )
 
 // channelCapabilities maps a notification channel type to the capability that

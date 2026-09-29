@@ -83,8 +83,8 @@ func TestConformance_FeatureEditionsMirrorsTheFlags(t *testing.T) {
 			features := body["features"].(map[string]any)
 			editions := body["feature_editions"].(map[string]any)
 
-			require.Len(t, features, 20)
-			require.Len(t, editions, 20)
+			require.Len(t, features, 21)
+			require.Len(t, editions, 21)
 			for key := range features {
 				require.Contains(t, editions, key, "feature_editions is missing %q", key)
 			}

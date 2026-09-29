@@ -3,6 +3,6 @@ galaxy_info:
   author: Kolapsis
   role_name: opensvc
   description: Install om3 on the frozen release and join the cluster
-  license: AGPL-3.0-or-later
+  license: LicenseRef-Maintenant-Commercial
   min_ansible_version: "2.15"
 dependencies: []

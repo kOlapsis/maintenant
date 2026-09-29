@@ -472,7 +472,7 @@ Code contributions are welcome. Open an issue first for bigger changes; small fi
 
 Copyright 2025-2026 Benjamin Touchard / kOlapsis, Bordeaux, France.
 
-The core is licensed under the [Apache License 2.0](LICENSE). The code that Personal and Pro keys unlock, under `internal/commercial/` and `frontend/src/commercial/`, is source-available under the [Maintenant Commercial Source License](internal/commercial/LICENSE): free to read and contribute to, production use requires a matching licence key. See [NOTICE](NOTICE) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+The core is licensed under the [Apache License 2.0](LICENSE). The code that Personal and Pro keys unlock, under `internal/commercial/`, `frontend/src/commercial/` and `deploy/ha/`, is source-available under the [Maintenant Commercial Source License](internal/commercial/LICENSE): free to read and contribute to, production use requires a matching licence key. See [NOTICE](NOTICE) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ---
 

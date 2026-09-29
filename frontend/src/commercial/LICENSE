@@ -2,9 +2,10 @@ Maintenant Commercial Source License, version 1.0
 
 Copyright 2025-2026 Benjamin Touchard (Kolapsis). All rights reserved.
 
-This license covers every file under internal/commercial/ and
-frontend/src/commercial/ in the Maintenant repository (the "Software"). The
-rest of the repository is licensed under the Apache License, Version 2.0.
+This license covers every file under internal/commercial/,
+frontend/src/commercial/ and deploy/ha/ in the Maintenant repository (the
+"Software"). The rest of the repository is licensed under the Apache License,
+Version 2.0.
 
 1. Reading and contributing
 

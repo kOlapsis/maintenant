@@ -6,6 +6,11 @@
     that: maintenant_require_state_dir | bool
     fail_msg: maintenant_require_state_dir must stay true in a highly available deployment.
 
+- name: Refuse a deployment without a Pro licence key
+  ansible.builtin.assert:
+    that: maintenant_license_key | length > 0
+    fail_msg: High availability needs the Pro edition; set MAINTENANT_LICENSE_KEY or maintenant_license_key.
+
 - name: Refuse a mode the highly available deployment does not run
   ansible.builtin.assert:
     that: maintenant_mode in ['embedded', 'server']
@@ -150,3 +155,4 @@
     owner: root
     group: "{{ maintenant_user }}"
     mode: "0640"
+  no_log: true

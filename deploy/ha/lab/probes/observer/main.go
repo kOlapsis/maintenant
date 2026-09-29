@@ -1,3 +1,7 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+// SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+// See deploy/ha/LICENSE.
+
 // Command observer collects the two figures that are reported beside the write
 // loss and never mixed into it: the telemetry hole a failover leaves, and the
 // alerts the failover alone caused (FR-020).

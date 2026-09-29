@@ -31,10 +31,12 @@ maintenant_require_existing_data: false
 maintenant_clock_drift_max_seconds: 30
 
 maintenant_mode: embedded
+maintenant_license_key: "{{ lookup('ansible.builtin.env', 'MAINTENANT_LICENSE_KEY') }}"
 
 maintenant_base_settings:
   MAINTENANT_MODE: "{{ maintenant_mode }}"
   MAINTENANT_ADDR: "{{ maintenant_service_address }}:{{ maintenant_http_port }}"
+  MAINTENANT_LICENSE_KEY: "{{ maintenant_license_key }}"
   MAINTENANT_STATE_DIR: "{{ maintenant_state_dir }}"
   MAINTENANT_SQLITE_SYNCHRONOUS: "{{ maintenant_sqlite_synchronous }}"
   MAINTENANT_REQUIRE_STATE_DIR: "{{ maintenant_require_state_dir | bool | ternary('1', '0') }}"

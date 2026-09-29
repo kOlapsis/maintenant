@@ -1,3 +1,7 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+// SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+// See deploy/ha/LICENSE.
+
 // Package journal reads back what a probe already wrote.
 //
 // Both probes append to their journal and are restarted by systemd if they

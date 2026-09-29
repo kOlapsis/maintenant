@@ -9,9 +9,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kolapsis/maintenant/internal/extension"
 )
 
 func TestRequireStateDirRefusesToStartWithoutARoot(t *testing.T) {
+	asEdition(t, extension.Pro)
 	cfg, _, logger := storageEnv(t)
 	cfg.RequireStateDir = true
 
@@ -21,6 +24,7 @@ func TestRequireStateDirRefusesToStartWithoutARoot(t *testing.T) {
 }
 
 func TestRequireStateDirIsSatisfiedByARoot(t *testing.T) {
+	asEdition(t, extension.Pro)
 	cfg, _, logger := storageEnv(t)
 	cfg.RequireStateDir = true
 	cfg.StateDir = t.TempDir()
@@ -33,6 +37,7 @@ func TestRequireStateDirIsSatisfiedByARoot(t *testing.T) {
 }
 
 func TestRequireExistingDataRefusesAFreshDataSet(t *testing.T) {
+	asEdition(t, extension.Pro)
 	cfg, _, logger := storageEnv(t)
 	cfg.RequireExistingData = true
 
@@ -43,6 +48,7 @@ func TestRequireExistingDataRefusesAFreshDataSet(t *testing.T) {
 }
 
 func TestRequireExistingDataAcceptsAMigratedDataSet(t *testing.T) {
+	asEdition(t, extension.Pro)
 	cfg, _, logger := storageEnv(t)
 
 	first, err := New(cfg, logger)
@@ -65,4 +71,22 @@ func TestStartupWithoutGuardsCreatesTheDataSet(t *testing.T) {
 	version, err := a.db.SchemaVersion(t.Context())
 	require.NoError(t, err)
 	assert.NotZero(t, version)
+}
+
+func TestGuardsAreIgnoredBelowPro(t *testing.T) {
+	asEdition(t, extension.Community)
+	cfg, _, logger := storageEnv(t)
+	cfg.RequireStateDir = true
+	cfg.RequireExistingData = true
+	cfg.SQLiteSynchronous = "FULL"
+
+	a, err := New(cfg, logger)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = a.db.Close() })
+	assert.False(t, a.cfg.RequireStateDir)
+	assert.False(t, a.cfg.RequireExistingData)
+
+	var synchronous int
+	require.NoError(t, a.db.ReadDB().QueryRow("PRAGMA synchronous").Scan(&synchronous))
+	assert.Equal(t, 1, synchronous, "FULL is ignored below Pro, SQLite opens with NORMAL")
 }

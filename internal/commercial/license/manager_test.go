@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -782,4 +783,38 @@ func TestManager_PersonalLicenseIsPerpetualAndDegradesLikePro(t *testing.T) {
 	assert.Equal(t, extension.Personal, m.Edition())
 	assert.True(t, m.State().ExpiresAt.IsZero(), "a perpetual license carries no end date")
 	assert.Equal(t, "active", m.State().Status)
+}
+
+func TestManager_ResolveHoldsTheBootChangeUntilStart(t *testing.T) {
+	pub, priv := generateTestKeyPair(t)
+	var hits atomic.Int32
+	m := testManager(t, pub, func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		payload := LicensePayload{Status: "expired", ExpiresAt: time.Now().Add(-time.Hour), VerifiedAt: time.Now()}
+		_ = json.NewEncoder(w).Encode(signPayload(t, priv, payload))
+	})
+	m.setStateAndNotify(context.Background(), &State{Status: "active", Edition: extension.Pro})
+
+	m.Resolve(context.Background())
+	assert.Equal(t, extension.Community, m.Edition())
+	assert.Equal(t, int32(1), hits.Load())
+
+	changes := make(chan [2]extension.Edition, 2)
+	m.RegisterEditionChangeCallback(func(_ context.Context, prev, next extension.Edition) {
+		changes <- [2]extension.Edition{prev, next}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.Start(ctx)
+	defer m.Stop()
+
+	select {
+	case got := <-changes:
+		assert.Equal(t, [2]extension.Edition{extension.Pro, extension.Community}, got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the change found by Resolve must reach callbacks registered before Start")
+	}
+	assert.Equal(t, int32(1), hits.Load(), "Start must not verify a second time")
+	assert.Never(t, func() bool { return len(changes) > 0 }, 200*time.Millisecond, 10*time.Millisecond)
 }

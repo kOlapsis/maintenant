@@ -1,3 +1,7 @@
+// Copyright 2026 Benjamin Touchard (Kolapsis)
+// SPDX-License-Identifier: LicenseRef-Maintenant-Commercial
+// See deploy/ha/LICENSE.
+
 // Command availability measures what a user sees: one request every 100 ms on
 // the service address, one ndjson line per request.
 //
