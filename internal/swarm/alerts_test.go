@@ -190,6 +190,43 @@ func TestNodeService_AlertsCarryTheNodeID(t *testing.T) {
 	assert.Equal(t, "n2", events[1].EntityID)
 }
 
+func TestNodeService_QuorumAlertResolvesWhenTheQuorumIsBack(t *testing.T) {
+	sink := &alertSink{}
+	ns := NewNodeService(nil, nil, quietLogger())
+	ns.SetAlertCallback(sink.record)
+
+	ns.checkQuorum(3, 1)
+	fired := sink.take()
+	require.Len(t, fired, 1)
+	assert.Equal(t, "quorum_degraded", fired[0].AlertType)
+	assert.Equal(t, alert.SeverityCritical, fired[0].Severity)
+	assert.False(t, fired[0].IsRecover)
+
+	ns.checkQuorum(3, 1)
+	assert.Empty(t, sink.take(), "a degraded quorum alerts once")
+
+	ns.checkQuorum(3, 2)
+	recovered := sink.take()
+	require.Len(t, recovered, 1)
+	assert.True(t, recovered[0].IsRecover)
+	assert.Equal(t, "quorum_degraded", recovered[0].AlertType)
+
+	ns.checkQuorum(3, 3)
+	assert.Empty(t, sink.take())
+}
+
+func TestNodeService_ResumesAQuorumAlert(t *testing.T) {
+	sink := &alertSink{}
+	ns := NewNodeService(nil, nil, quietLogger())
+	ns.SetAlertCallback(sink.record)
+	ns.Resume([]*alert.Alert{{Source: "swarm", AlertType: "quorum_degraded", EntityType: "swarm_cluster"}})
+
+	ns.checkQuorum(3, 3)
+	recovered := sink.take()
+	require.Len(t, recovered, 1)
+	assert.True(t, recovered[0].IsRecover)
+}
+
 func TestUpdateTracker_CompletedUpdateResolvesItsAlerts(t *testing.T) {
 	sink := &alertSink{}
 	client := &updateClient{svc: rollingUpdate(swarm.UpdateStatePaused, nil)}

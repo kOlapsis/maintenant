@@ -7,11 +7,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 )
+
+const alertTypeQuorumDegraded = "quorum_degraded"
 
 // NodeStore abstracts persistence for swarm nodes.
 type NodeStore interface {
@@ -32,6 +35,21 @@ type NodeService struct {
 	logger   *slog.Logger
 	callback EventCallback
 	alertCb  NodeAlertCallback
+
+	mu            sync.Mutex
+	quorumAlerted bool
+}
+
+// Resume takes over an active quorum alert left by a previous run, so the
+// quorum coming back resolves it.
+func (ns *NodeService) Resume(active []*alert.Alert) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	for _, a := range active {
+		if a.Source == "swarm" && a.AlertType == alertTypeQuorumDegraded {
+			ns.quorumAlerted = true
+		}
+	}
 }
 
 // NewNodeService creates a new node health monitoring service.
@@ -252,25 +270,40 @@ func (ns *NodeService) detectTransitions(old, current *SwarmNode) {
 	}
 }
 
-// checkQuorum detects when the manager quorum is degraded.
+// checkQuorum raises an alert when fewer managers than the quorum are ready,
+// and resolves it once the quorum is back.
 func (ns *NodeService) checkQuorum(totalManagers, readyManagers int) {
 	quorumNeeded := (totalManagers / 2) + 1
-	if readyManagers < quorumNeeded {
-		ns.sendAlert(alert.Event{
-			Source:     "swarm",
-			AlertType:  "quorum_degraded",
-			Severity:   alert.SeverityCritical,
-			Message:    fmt.Sprintf("Swarm quorum degraded: %d/%d managers ready (need %d)", readyManagers, totalManagers, quorumNeeded),
-			EntityType: "swarm_cluster",
-			EntityName: "swarm",
-			Details: map[string]any{
-				"total_managers": totalManagers,
-				"ready_managers": readyManagers,
-				"quorum_needed":  quorumNeeded,
-			},
-			Timestamp: time.Now(),
-		})
+	degraded := readyManagers < quorumNeeded
+
+	ns.mu.Lock()
+	changed := degraded != ns.quorumAlerted
+	ns.quorumAlerted = degraded
+	ns.mu.Unlock()
+	if !changed {
+		return
 	}
+
+	evt := alert.Event{
+		Source:     "swarm",
+		AlertType:  alertTypeQuorumDegraded,
+		Severity:   alert.SeverityCritical,
+		Message:    fmt.Sprintf("Swarm quorum degraded: %d/%d managers ready (need %d)", readyManagers, totalManagers, quorumNeeded),
+		EntityType: "swarm_cluster",
+		EntityName: "swarm",
+		Details: map[string]any{
+			"total_managers": totalManagers,
+			"ready_managers": readyManagers,
+			"quorum_needed":  quorumNeeded,
+		},
+		Timestamp: time.Now(),
+	}
+	if !degraded {
+		evt.Severity = alert.SeverityInfo
+		evt.IsRecover = true
+		evt.Message = fmt.Sprintf("Swarm quorum restored: %d/%d managers ready", readyManagers, totalManagers)
+	}
+	ns.sendAlert(evt)
 }
 
 func (ns *NodeService) emit(eventType string, data interface{}) {

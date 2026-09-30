@@ -262,6 +262,7 @@ func (a *App) seedSwarmAlertTracking(ctx context.Context, m *swarmManager) {
 	m.replicaChecker.Resume(activeAlerts)
 	m.crashLoop.Resume(activeAlerts)
 	m.updateTracker.Resume(activeAlerts)
+	m.nodeSvc.Resume(activeAlerts)
 }
 
 // startNodeRefresh runs periodic Swarm node reconciliation and alert checks (60s).
