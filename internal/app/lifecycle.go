@@ -99,21 +99,17 @@ func (a *App) reconcile(ctx context.Context) {
 
 	a.pruneOrphanAlerts(ctx)
 
-	// Swarm service discovery on startup.
-	if a.swarmDiscovery != nil {
+	if m := a.swarmMgr.Load(); m != nil {
 		a.logger.Info("running Swarm service discovery")
-		services, err := a.swarmDiscovery.DiscoverAll(ctx)
+		services, err := m.discovery.DiscoverAll(ctx)
 		if err != nil {
 			a.logger.Error("Swarm service discovery failed", "error", err)
 		} else {
 			a.logger.Info("Swarm discovery complete", "services", len(services))
 		}
-	}
 
-	// Swarm node reconciliation on startup (Pro).
-	if a.swarmNodeSvc != nil {
 		a.logger.Info("running Swarm node reconciliation")
-		if err := a.swarmNodeSvc.Reconcile(ctx); err != nil {
+		if err := m.nodeSvc.Reconcile(ctx); err != nil {
 			a.logger.Error("Swarm node reconciliation failed", "error", err)
 		} else {
 			a.logger.Info("Swarm node reconciliation complete")
@@ -161,81 +157,80 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 	go func() {
 		defer close(done)
 		for evt := range eventCh {
-			// Route Swarm service/node events to the Swarm event processor.
-			if evt.ResourceType == runtime.ResourceService || evt.ResourceType == runtime.ResourceNode {
-				if a.swarmEvents != nil {
-					a.swarmEvents.ProcessEvent(ctx, evt)
-
-					// On service update, check rolling update status (Pro).
-					if evt.ResourceType == runtime.ResourceService && evt.Action == "update" && a.swarmUpdateTracker != nil {
-						go a.swarmUpdateTracker.CheckService(ctx, evt.ExternalID)
-					}
-				}
-				continue
-			}
-
-			// A `docker compose run` container carries the service's labels under
-			// a generated name; monitoring it would duplicate the service it was
-			// run from. Discovery skips them, and so does the event stream.
-			if docker.IsOneOff(evt.Labels) {
-				continue
-			}
-
-			a.containerSvc.ProcessEvent(ctx, container.ContainerEvent{
-				Action:       evt.Action,
-				AgentID:      uid.LocalAgent,
-				ExternalID:   evt.ExternalID,
-				Name:         evt.Name,
-				ExitCode:     evt.ExitCode,
-				HealthStatus: evt.HealthStatus,
-				ErrorDetail:  evt.ErrorDetail,
-				Timestamp:    evt.Timestamp,
-				Labels:       evt.Labels,
-			})
-
-			switch evt.Action {
-			case "start":
-				name := evt.Name
-				if len(name) > 0 && name[0] == '/' {
-					name = name[1:]
-				}
-				a.endpointSvc.HandleContainerStart(ctx, name, evt.ExternalID, evt.Labels,
-					container.OrchestrationGroupFromLabels(evt.Labels),
-					evt.Labels["com.docker.compose.service"])
-				a.certSvc.SyncFromLabels(ctx, evt.ExternalID, evt.Labels)
-
-				if dr, ok := a.rt.(*docker.Runtime); ok {
-					go ScanContainerSecurity(ctx, dr, a.containerSvc, a.securitySvc, evt.ExternalID, a.logger)
-				}
-			case "stop", "die", "kill":
-				a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
-
-				// Feed Swarm task failures to crash-loop detector (Pro).
-				if a.swarmCrashLoop != nil {
-					if svcID, svcName, ok := swarmTaskFailure(evt); ok {
-						a.swarmCrashLoop.RecordFailure(svcID, svcName, evt.ErrorDetail)
-
-						// Emit task_failed SSE event.
-						a.broker.Broadcast(v1.SSEEvent{
-							Type: event.SwarmTaskFailed,
-							Data: map[string]interface{}{
-								"service_id":   svcID,
-								"service_name": svcName,
-								"container_id": evt.ExternalID,
-								"error":        evt.ErrorDetail,
-								"exit_code":    evt.ExitCode,
-								"timestamp":    evt.Timestamp.Format(time.RFC3339),
-							},
-						})
-					}
-				}
-			case "destroy":
-				a.endpointSvc.HandleContainerDestroy(ctx, evt.ExternalID)
-				a.certSvc.HandleContainerDestroy(ctx, evt.ExternalID)
-			}
+			a.dispatchRuntimeEvent(ctx, evt)
 		}
 	}()
 	return done
+}
+
+// dispatchRuntimeEvent hands one runtime event to the services it concerns.
+func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent) {
+	m := a.swarmMgr.Load()
+
+	if evt.ResourceType == runtime.ResourceService || evt.ResourceType == runtime.ResourceNode {
+		if m != nil {
+			m.events.ProcessEvent(ctx, evt)
+			if evt.ResourceType == runtime.ResourceService && evt.Action == "update" {
+				go m.updateTracker.CheckService(ctx, evt.ExternalID)
+			}
+		}
+		return
+	}
+
+	// A `docker compose run` container carries the service's labels under
+	// a generated name; monitoring it would duplicate the service it was
+	// run from. Discovery skips them, and so does the event stream.
+	if docker.IsOneOff(evt.Labels) {
+		return
+	}
+
+	a.containerSvc.ProcessEvent(ctx, container.ContainerEvent{
+		Action:       evt.Action,
+		AgentID:      uid.LocalAgent,
+		ExternalID:   evt.ExternalID,
+		Name:         evt.Name,
+		ExitCode:     evt.ExitCode,
+		HealthStatus: evt.HealthStatus,
+		ErrorDetail:  evt.ErrorDetail,
+		Timestamp:    evt.Timestamp,
+		Labels:       evt.Labels,
+	})
+
+	switch evt.Action {
+	case "start":
+		name := evt.Name
+		if len(name) > 0 && name[0] == '/' {
+			name = name[1:]
+		}
+		a.endpointSvc.HandleContainerStart(ctx, name, evt.ExternalID, evt.Labels,
+			container.OrchestrationGroupFromLabels(evt.Labels),
+			evt.Labels["com.docker.compose.service"])
+		a.certSvc.SyncFromLabels(ctx, evt.ExternalID, evt.Labels)
+
+		if dr, ok := a.rt.(*docker.Runtime); ok {
+			go ScanContainerSecurity(ctx, dr, a.containerSvc, a.securitySvc, evt.ExternalID, a.logger)
+		}
+	case "stop", "die", "kill":
+		a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
+
+		if svcID, svcName, ok := swarmTaskFailure(evt); ok && m != nil {
+			m.crashLoop.RecordFailure(svcID, svcName, evt.ErrorDetail)
+			a.broker.Broadcast(v1.SSEEvent{
+				Type: event.SwarmTaskFailed,
+				Data: map[string]interface{}{
+					"service_id":   svcID,
+					"service_name": svcName,
+					"container_id": evt.ExternalID,
+					"error":        evt.ErrorDetail,
+					"exit_code":    evt.ExitCode,
+					"timestamp":    evt.Timestamp.Format(time.RFC3339),
+				},
+			})
+		}
+	case "destroy":
+		a.endpointSvc.HandleContainerDestroy(ctx, evt.ExternalID)
+		a.certSvc.HandleContainerDestroy(ctx, evt.ExternalID)
+	}
 }
 
 // swarmTaskFailure returns the service of a Swarm task that died, unless the
@@ -248,8 +243,29 @@ func swarmTaskFailure(evt runtime.RuntimeEvent) (serviceID, serviceName string, 
 	return serviceID, evt.Labels["com.docker.swarm.service.name"], true
 }
 
-// startNodeRefresh runs periodic Swarm node reconciliation (Pro, 60s).
-func (a *App) startNodeRefresh(ctx context.Context) {
+// startSwarmManager resumes the Swarm alerts left by a previous run, then starts
+// the manager's periodic loops.
+func (a *App) startSwarmManager(ctx context.Context, m *swarmManager) {
+	a.seedSwarmAlertTracking(ctx, m)
+	go a.startNodeRefresh(ctx, m)
+	go a.startSwarmTopologyReconcile(ctx, m)
+}
+
+// seedSwarmAlertTracking hands the active Swarm alerts to the services that
+// resolve them.
+func (a *App) seedSwarmAlertTracking(ctx context.Context, m *swarmManager) {
+	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
+	if err != nil {
+		a.logger.Error("seed swarm alert tracking", "error", err)
+		return
+	}
+	m.replicaChecker.Resume(activeAlerts)
+	m.crashLoop.Resume(activeAlerts)
+	m.updateTracker.Resume(activeAlerts)
+}
+
+// startNodeRefresh runs periodic Swarm node reconciliation and alert checks (60s).
+func (a *App) startNodeRefresh(ctx context.Context, m *swarmManager) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -257,17 +273,11 @@ func (a *App) startNodeRefresh(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := a.swarmNodeSvc.Reconcile(ctx); err != nil {
+			if err := m.nodeSvc.Reconcile(ctx); err != nil {
 				a.logger.Warn("periodic node reconciliation failed", "error", err)
 			}
-			// Check crash-loop recoveries.
-			if a.swarmCrashLoop != nil {
-				a.swarmCrashLoop.CheckRecoveries()
-			}
-			// Check sustained under-replication.
-			if a.swarmReplicaChecker != nil && a.swarmDiscovery != nil {
-				a.swarmReplicaChecker.Check(a.swarmDiscovery.ListServices())
-			}
+			m.crashLoop.CheckRecoveries()
+			m.replicaChecker.Check(m.discovery.ListServices())
 		}
 	}
 }
@@ -332,17 +342,14 @@ func (a *App) startKubernetesReconcile(ctx context.Context, src kubernetes.Snaps
 // startSwarmTopologyReconcile periodically snapshots the server's own Swarm
 // services and tasks into the per-agent store under the LocalAgent id. Nodes are
 // left to the Pro NodeService to avoid two writers fighting over the same
-// rows. No-op unless this server is a swarm manager.
-func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
-	if a.swarmDiscovery == nil || a.swarmIngest == nil {
-		return
-	}
+// rows.
+func (a *App) startSwarmTopologyReconcile(ctx context.Context, m *swarmManager) {
 	dr, ok := a.rt.(*docker.Runtime)
 	if !ok {
 		return
 	}
 	reconcile := func() {
-		snap, err := swarm.SnapshotFromClient(ctx, a.swarmDiscovery, dr.Client())
+		snap, err := swarm.SnapshotFromClient(ctx, m.discovery, dr.Client())
 		if err != nil {
 			a.logger.Warn("local swarm reconcile: snapshot failed", "error", err)
 			return
@@ -350,7 +357,7 @@ func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
 		if err := a.swarmIngest.ReconcileServicesTasks(ctx, uid.LocalAgent, snap); err != nil {
 			a.logger.Warn("local swarm reconcile: store failed", "error", err)
 		}
-		a.pruneSwarmServiceAlerts(ctx, snap.Services)
+		a.pruneSwarmAlerts(ctx, snap)
 	}
 	reconcile()
 	ticker := time.NewTicker(localTopologyReconcileInterval)
@@ -365,26 +372,39 @@ func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
 	}
 }
 
-// pruneSwarmServiceAlerts resolves the active alerts of Swarm services the
+// pruneSwarmAlerts resolves the active alerts of Swarm services and nodes the
 // manager no longer lists.
-func (a *App) pruneSwarmServiceAlerts(ctx context.Context, services []swarm.SwarmService) {
-	live := make(map[string]bool, len(services))
-	for _, s := range services {
-		live[s.ServiceID] = true
+func (a *App) pruneSwarmAlerts(ctx context.Context, snap swarm.TopologySnapshot) {
+	services := make(map[string]bool, len(snap.Services))
+	for _, s := range snap.Services {
+		services[s.ServiceID] = true
+	}
+	nodes := make(map[string]bool, len(snap.Nodes))
+	for _, n := range snap.Nodes {
+		nodes[n.NodeID] = true
 	}
 	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
 	if err != nil {
-		a.logger.Warn("prune swarm service alerts", "error", err)
+		a.logger.Warn("prune swarm alerts", "error", err)
 		return
 	}
-	gone := make(map[string]bool)
+	type entity struct{ kind, id string }
+	gone := make(map[entity]bool)
 	for _, al := range activeAlerts {
-		if al.EntityType == "swarm_service" && !live[al.EntityID] {
-			gone[al.EntityID] = true
+		var isGone bool
+		switch al.EntityType {
+		case "swarm_service":
+			isGone = !services[al.EntityID]
+		case "swarm_node":
+			// A manager always lists itself: no node at all means the list failed.
+			isGone = len(snap.Nodes) > 0 && !nodes[al.EntityID]
+		}
+		if isGone {
+			gone[entity{al.EntityType, al.EntityID}] = true
 		}
 	}
-	for id := range gone {
-		a.alertEngine.ResolveByEntity(ctx, "swarm_service", id)
+	for e := range gone {
+		a.alertEngine.ResolveByEntity(ctx, e.kind, e.id)
 	}
 }
 
@@ -467,71 +487,71 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 				a.logger.Warn("swarm recheck failed", "error", err)
 				continue
 			}
-			if !changed {
-				continue
+			if changed {
+				a.applySwarmContext(ctx, result)
 			}
-
-			now := time.Now().UTC().Format(time.RFC3339)
-			var previousCtx, newCtx, message string
-
-			if result.Active && result.IsManager {
-				// Swarm activated.
-				previousCtx = "docker"
-				newCtx = "swarm"
-				message = "Swarm cluster detected — dashboard adapted."
-
-				a.swarmCluster = &swarm.SwarmCluster{
-					ID:        result.ClusterID,
-					IsManager: true,
-				}
-
-				if a.swarmDiscovery == nil {
-					if dr, ok := a.rt.(*docker.Runtime); ok {
-						a.activateSwarm(ctx, dr)
-					}
-				}
-			} else {
-				// Swarm deactivated.
-				previousCtx = "swarm"
-				newCtx = "docker"
-				message = "Swarm cluster deactivated — switched to Docker mode."
-
-				a.swarmCluster = nil
-			}
-
-			a.logger.Info("runtime context changed",
-				"previous", previousCtx,
-				"current", newCtx,
-			)
-
-			a.broker.Broadcast(v1.SSEEvent{
-				Type: event.RuntimeContextChanged,
-				Data: map[string]interface{}{
-					"previous":    previousCtx,
-					"current":     newCtx,
-					"message":     message,
-					"detected_at": now,
-				},
-			})
 		}
 	}
+}
+
+// applySwarmContext follows a Swarm activation or deactivation detected while
+// the server runs, and announces it.
+func (a *App) applySwarmContext(ctx context.Context, result swarm.DetectionResult) {
+	var previousCtx, newCtx, message string
+
+	if result.Active && result.IsManager {
+		previousCtx = "docker"
+		newCtx = "swarm"
+		message = "Swarm cluster detected — dashboard adapted."
+
+		a.swarmCluster.Store(&swarm.SwarmCluster{
+			ID:        result.ClusterID,
+			IsManager: true,
+		})
+		if a.swarmMgr.Load() == nil {
+			if dr, ok := a.rt.(*docker.Runtime); ok {
+				a.activateSwarm(ctx, dr)
+			}
+		}
+	} else {
+		previousCtx = "swarm"
+		newCtx = "docker"
+		message = "Swarm cluster deactivated — switched to Docker mode."
+
+		a.swarmCluster.Store(nil)
+	}
+
+	a.logger.Info("runtime context changed",
+		"previous", previousCtx,
+		"current", newCtx,
+	)
+
+	a.broker.Broadcast(v1.SSEEvent{
+		Type: event.RuntimeContextChanged,
+		Data: map[string]interface{}{
+			"previous":    previousCtx,
+			"current":     newCtx,
+			"message":     message,
+			"detected_at": time.Now().UTC().Format(time.RFC3339),
+		},
+	})
 }
 
 // activateSwarm builds, wires and starts the Swarm manager services when Swarm
 // is enabled while the server runs, as New and Start do at boot.
 func (a *App) activateSwarm(ctx context.Context, dr *docker.Runtime) {
-	a.setupSwarmManager(dr)
-	a.wireSwarmCallbacks()
+	m := newSwarmManager(dr, a.swarmNodeStore, a.logger)
+	a.wireSwarmCallbacks(m)
+	a.swarmMgr.Store(m)
 
-	services, err := a.swarmDiscovery.DiscoverAll(ctx)
+	services, err := m.discovery.DiscoverAll(ctx)
 	if err != nil {
 		a.logger.Error("initial Swarm discovery after activation failed", "error", err)
 	} else {
 		a.logger.Info("Swarm discovery after activation complete", "services", len(services))
 	}
 
-	go a.startNodeRefresh(ctx)
-	go a.startSwarmTopologyReconcile(ctx)
+	a.startSwarmManager(ctx, m)
 }
 
 // wireContainerMonitoring câbles la surveillance conteneur pour un cycle de connexion :

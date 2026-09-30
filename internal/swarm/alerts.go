@@ -57,6 +57,20 @@ func (rhc *ReplicaHealthChecker) SetAlertCallback(cb NodeAlertCallback) {
 	rhc.alertCb = cb
 }
 
+// Resume takes over the active replica alerts left by a previous run, so the
+// next check resolves those whose service is healthy again.
+func (rhc *ReplicaHealthChecker) Resume(active []*alert.Alert) {
+	rhc.mu.Lock()
+	defer rhc.mu.Unlock()
+
+	now := time.Now()
+	for _, a := range active {
+		if a.Source == "swarm" && a.AlertType == "replica_unhealthy" && a.EntityType == "swarm_service" {
+			rhc.services[a.EntityID] = &replicaState{firstSeen: now.Add(-rhc.alertDelay), alerted: true}
+		}
+	}
+}
+
 // Check evaluates replica health for all services and emits alerts
 // for services that have been under-replicated beyond the alert delay.
 func (rhc *ReplicaHealthChecker) Check(services []*SwarmService) {

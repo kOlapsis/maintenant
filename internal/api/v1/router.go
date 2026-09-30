@@ -117,14 +117,13 @@ type HandlerDeps struct {
 	LicenseMgr extension.EditionSource
 
 	// Swarm
-	SwarmCluster        func() *swarm.SwarmCluster
-	SwarmDiscovery      func() *swarm.ServiceDiscovery
-	SwarmDetector       func() *swarm.Detector
-	SwarmNodeStore      swarm.NodeStore
-	SwarmUpdateTracker  *swarm.UpdateTracker
-	SwarmCrashLoop      *swarm.CrashLoopDetector
-	SwarmReplicaChecker *swarm.ReplicaHealthChecker
-	SwarmTopologyStore  *store.SwarmTopologyStore
+	SwarmCluster       func() *swarm.SwarmCluster
+	SwarmDiscovery     func() *swarm.ServiceDiscovery
+	SwarmDetector      func() *swarm.Detector
+	SwarmNodeStore     swarm.NodeStore
+	SwarmUpdateTracker func() *swarm.UpdateTracker
+	SwarmCrashLoop     func() *swarm.CrashLoopDetector
+	SwarmTopologyStore *store.SwarmTopologyStore
 
 	// Kubernetes (per-agent store-backed reads)
 	KubernetesStore *store.KubernetesStore
@@ -709,7 +708,7 @@ func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 	if d.SwarmTopologyStore == nil {
 		return
 	}
-	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmTopologyStore, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop, d.SwarmReplicaChecker, d.Containers, d.Resources)
+	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmTopologyStore, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop, d.Containers, d.Resources)
 	if d.AgentStore != nil {
 		sh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 	}

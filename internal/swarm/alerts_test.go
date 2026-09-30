@@ -157,3 +157,125 @@ func TestCrashLoopDetector_RecoveryNamesTheService(t *testing.T) {
 	assert.Equal(t, "svc1", recovered[0].EntityID)
 	assert.Equal(t, "prod_web", recovered[0].EntityName)
 }
+
+func TestNodeService_AlertsCarryTheNodeID(t *testing.T) {
+	sink := &alertSink{}
+	ns := NewNodeService(nil, nil, quietLogger())
+	ns.SetAlertCallback(sink.record)
+
+	ready := func(id, host string) *SwarmNode {
+		return &SwarmNode{NodeID: id, Hostname: host, Role: "worker", Status: "ready", Availability: "active"}
+	}
+	down := func(id, host string) *SwarmNode {
+		n := ready(id, host)
+		n.Status = "down"
+		return n
+	}
+
+	ns.detectTransitions(ready("n1", "worker-1"), down("n1", "worker-1"))
+	ns.detectTransitions(ready("n2", "worker-2"), down("n2", "worker-2"))
+	fired := sink.take()
+	require.Len(t, fired, 2)
+	assert.ElementsMatch(t, []string{"n1", "n2"}, []string{fired[0].EntityID, fired[1].EntityID})
+
+	drained := ready("n1", "worker-1")
+	drained.Availability = "drain"
+	ns.detectTransitions(ready("n1", "worker-1"), drained)
+	ns.detectTransitions(down("n2", "worker-2"), ready("n2", "worker-2"))
+	events := sink.take()
+	require.Len(t, events, 2)
+	assert.Equal(t, "node_drain", events[0].AlertType)
+	assert.Equal(t, "n1", events[0].EntityID)
+	assert.True(t, events[1].IsRecover)
+	assert.Equal(t, "n2", events[1].EntityID)
+}
+
+func TestUpdateTracker_CompletedUpdateResolvesItsAlerts(t *testing.T) {
+	sink := &alertSink{}
+	client := &updateClient{svc: rollingUpdate(swarm.UpdateStatePaused, nil)}
+	ut := NewUpdateTracker(client, quietLogger())
+	ut.SetAlertCallback(sink.record)
+
+	ut.CheckService(context.Background(), "svc1")
+	client.svc = rollingUpdate(swarm.UpdateStateRollbackCompleted, nil)
+	ut.CheckService(context.Background(), "svc1")
+	require.Len(t, sink.take(), 2)
+
+	client.svc = rollingUpdate(swarm.UpdateStateCompleted, nil)
+	ut.CheckService(context.Background(), "svc1")
+	recovered := sink.take()
+	require.Len(t, recovered, 2)
+	var types []string
+	for _, evt := range recovered {
+		assert.True(t, evt.IsRecover)
+		assert.Equal(t, "svc1", evt.EntityID)
+		types = append(types, evt.AlertType)
+	}
+	assert.ElementsMatch(t, []string{"update_stalled", "update_rollback"}, types)
+
+	ut.CheckService(context.Background(), "svc1")
+	assert.Empty(t, sink.take(), "a resolved alert is not resolved twice")
+}
+
+func TestUpdateTracker_IgnoringAServiceResolvesItsAlerts(t *testing.T) {
+	sink := &alertSink{}
+	client := &updateClient{svc: rollingUpdate(swarm.UpdateStateRollbackCompleted, nil)}
+	ut := NewUpdateTracker(client, quietLogger())
+	ut.SetAlertCallback(sink.record)
+
+	ut.CheckService(context.Background(), "svc1")
+	require.Len(t, sink.take(), 1)
+
+	client.svc = rollingUpdate(swarm.UpdateStateRollbackCompleted, ignoreLabels)
+	ut.CheckService(context.Background(), "svc1")
+	recovered := sink.take()
+	require.Len(t, recovered, 1)
+	assert.True(t, recovered[0].IsRecover)
+}
+
+func TestResume_TakesOverAlertsLeftByThePreviousRun(t *testing.T) {
+	active := []*alert.Alert{
+		{Source: "swarm", AlertType: "replica_unhealthy", EntityType: "swarm_service", EntityID: "svc1", EntityName: "prod_web"},
+		{Source: "swarm", AlertType: "crash_loop", EntityType: "swarm_service", EntityID: "svc2", EntityName: "prod_api"},
+		{Source: "swarm", AlertType: "update_rollback", EntityType: "swarm_service", EntityID: "svc3", EntityName: "prod_db"},
+		{Source: "kubernetes", AlertType: "crash_loop", EntityType: "pod", EntityID: "shop/api"},
+	}
+
+	t.Run("replicas", func(t *testing.T) {
+		sink := &alertSink{}
+		rhc := NewReplicaHealthChecker(quietLogger())
+		rhc.SetAlertCallback(sink.record)
+		rhc.Resume(active)
+		rhc.Check([]*SwarmService{{ServiceID: "svc1", Name: "prod_web", Mode: "replicated", DesiredReplicas: 3, RunningReplicas: 3}})
+		recovered := sink.take()
+		require.Len(t, recovered, 1)
+		assert.True(t, recovered[0].IsRecover)
+		assert.Equal(t, "svc1", recovered[0].EntityID)
+	})
+
+	t.Run("crash loop", func(t *testing.T) {
+		sink := &alertSink{}
+		cld := NewCrashLoopDetector(quietLogger())
+		cld.SetAlertCallback(sink.record)
+		cld.Resume(active)
+		require.True(t, cld.IsCrashLooping("svc2"))
+		cld.services["svc2"].lastFailure = time.Now().Add(-crashLoopRecoveryTime)
+		cld.CheckRecoveries()
+		recovered := sink.take()
+		require.Len(t, recovered, 1)
+		assert.Equal(t, "svc2", recovered[0].EntityID)
+		assert.Equal(t, "prod_api", recovered[0].EntityName)
+	})
+
+	t.Run("updates", func(t *testing.T) {
+		sink := &alertSink{}
+		ut := NewUpdateTracker(&updateClient{svc: rollingUpdate(swarm.UpdateStateCompleted, nil)}, quietLogger())
+		ut.SetAlertCallback(sink.record)
+		ut.Resume(active)
+		ut.CheckService(context.Background(), "svc3")
+		recovered := sink.take()
+		require.Len(t, recovered, 1)
+		assert.Equal(t, "update_rollback", recovered[0].AlertType)
+		assert.Equal(t, "svc3", recovered[0].EntityID)
+	})
+}

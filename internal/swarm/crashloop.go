@@ -55,6 +55,20 @@ func (cld *CrashLoopDetector) SetAlertCallback(cb NodeAlertCallback) {
 	cld.alertCb = cb
 }
 
+// Resume takes over the active crash-loop alerts left by a previous run, so a
+// service that stays quiet for the recovery time resolves its alert.
+func (cld *CrashLoopDetector) Resume(active []*alert.Alert) {
+	cld.mu.Lock()
+	defer cld.mu.Unlock()
+
+	now := time.Now()
+	for _, a := range active {
+		if a.Source == "swarm" && a.AlertType == "crash_loop" && a.EntityType == "swarm_service" {
+			cld.services[a.EntityID] = &serviceFailureState{name: a.EntityName, inCrashLoop: true, lastFailure: now}
+		}
+	}
+}
+
 // RecordFailure records a task failure for a service and checks for crash-loop.
 func (cld *CrashLoopDetector) RecordFailure(serviceID, serviceName, lastError string) {
 	cld.mu.Lock()

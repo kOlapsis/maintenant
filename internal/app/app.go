@@ -132,18 +132,12 @@ type App struct {
 	webhookDispatcher *webhook.Dispatcher
 
 	// Swarm
-	swarmDetector       *swarm.Detector
-	swarmCluster        *swarm.SwarmCluster
-	swarmDiscovery      *swarm.ServiceDiscovery
-	swarmEvents         *swarm.EventProcessor
-	swarmNodeStore      *store.SwarmNodeStore
-	swarmTopologyStore  *store.SwarmTopologyStore
-	swarmIngest         *swarm.IngestService
-	swarmNodeSvc        *swarm.NodeService
-	swarmCrashLoop      *swarm.CrashLoopDetector
-	swarmUpdateTracker  *swarm.UpdateTracker
-	swarmTaskTracker    *swarm.TaskTracker
-	swarmReplicaChecker *swarm.ReplicaHealthChecker
+	swarmDetector      *swarm.Detector
+	swarmCluster       atomic.Pointer[swarm.SwarmCluster]
+	swarmMgr           atomic.Pointer[swarmManager]
+	swarmNodeStore     *store.SwarmNodeStore
+	swarmTopologyStore *store.SwarmTopologyStore
+	swarmIngest        *swarm.IngestService
 
 	// Kubernetes
 	k8sStore  *store.KubernetesStore
@@ -303,11 +297,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 			if err != nil {
 				logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
 			} else if result.Active && result.IsManager {
-				a.swarmCluster = &swarm.SwarmCluster{
+				a.swarmCluster.Store(&swarm.SwarmCluster{
 					ID:        result.ClusterID,
 					IsManager: result.IsManager,
-				}
-				a.setupSwarmManager(dr)
+				})
+				a.swarmMgr.Store(newSwarmManager(dr, a.swarmNodeStore, logger))
 			}
 		}
 	}
@@ -588,7 +582,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	if a.scorer != nil {
 		a.wirePostureCallbacks()
 	}
-	a.wireSwarmCallbacks()
+	if m := a.swarmMgr.Load(); m != nil {
+		a.wireSwarmCallbacks(m)
+	}
 	a.wireKubernetesAlerts()
 	a.wireAgentLifecycleAlerts()
 
@@ -641,14 +637,13 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		// License
 		LicenseMgr: a.licenseMgr,
 		// Swarm
-		SwarmCluster:        func() *swarm.SwarmCluster { return a.swarmCluster },
-		SwarmDiscovery:      func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
-		SwarmDetector:       func() *swarm.Detector { return a.swarmDetector },
-		SwarmNodeStore:      a.swarmNodeStoreAsInterface(),
-		SwarmUpdateTracker:  a.swarmUpdateTracker,
-		SwarmCrashLoop:      a.swarmCrashLoop,
-		SwarmReplicaChecker: a.swarmReplicaChecker,
-		SwarmTopologyStore:  a.swarmTopologyStore,
+		SwarmCluster:       a.swarmCluster.Load,
+		SwarmDiscovery:     a.currentSwarmDiscovery,
+		SwarmDetector:      func() *swarm.Detector { return a.swarmDetector },
+		SwarmNodeStore:     a.swarmNodeStoreAsInterface(),
+		SwarmUpdateTracker: a.currentSwarmUpdateTracker,
+		SwarmCrashLoop:     a.currentSwarmCrashLoop,
+		SwarmTopologyStore: a.swarmTopologyStore,
 		// Kubernetes (per-agent store-backed reads)
 		KubernetesStore: a.k8sStore,
 		// Multi-host agents (Pro)
@@ -699,8 +694,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		UpdateStore: updateStore,
 		// Orchestrators (read-only)
 		Kubernetes:           a.k8sStore,
-		SwarmCluster:         func() *swarm.SwarmCluster { return a.swarmCluster },
-		SwarmDiscovery:       func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
+		SwarmCluster:         a.swarmCluster.Load,
+		SwarmDiscovery:       a.currentSwarmDiscovery,
 		SwarmTopology:        a.swarmTopologyStore,
 		SwarmNodes:           a.swarmNodeStore,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
@@ -896,14 +891,11 @@ func (a *App) Start(ctx context.Context) error {
 		}()
 	}
 
-	// Swarm node periodic refresh (Pro, 60s).
-	if a.swarmNodeSvc != nil {
-		go a.startNodeRefresh(ctx)
+	// Swarm manager loops; the Kubernetes reconcile is wired with each runtime
+	// connection cycle.
+	if m := a.swarmMgr.Load(); m != nil {
+		a.startSwarmManager(ctx, m)
 	}
-
-	// Local Swarm topology reconcile into the per-agent store (under LocalAgent);
-	// the Kubernetes one is wired with each runtime connection cycle.
-	go a.startSwarmTopologyReconcile(ctx)
 
 	// Sustained container downtime (opt-in via MAINTENANT_CONTAINER_DOWN_AFTER).
 	if a.downDetector != nil {
@@ -1094,23 +1086,55 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
 }
 
-// setupSwarmManager builds the services of a Swarm manager on the Docker client.
-func (a *App) setupSwarmManager(dr *docker.Runtime) {
-	a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), a.logger)
-	a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
+// swarmManager holds a Swarm manager's services, published whole so no reader sees half of it.
+type swarmManager struct {
+	discovery      *swarm.ServiceDiscovery
+	events         *swarm.EventProcessor
+	nodeSvc        *swarm.NodeService
+	crashLoop      *swarm.CrashLoopDetector
+	updateTracker  *swarm.UpdateTracker
+	replicaChecker *swarm.ReplicaHealthChecker
+}
+
+// newSwarmManager builds the services of a Swarm manager on the Docker client.
+func newSwarmManager(dr *docker.Runtime, nodeStore swarm.NodeStore, logger *slog.Logger) *swarmManager {
+	discovery := swarm.NewServiceDiscovery(dr.Client(), logger)
+	discovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
 		net, err := dr.Client().NetworkInspect(ctx, networkID)
 		if err != nil {
 			return "", "", err
 		}
 		return net.Name, net.Scope, nil
 	})
-	a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, a.logger)
+	return &swarmManager{
+		discovery:      discovery,
+		events:         swarm.NewEventProcessor(discovery, logger),
+		nodeSvc:        swarm.NewNodeService(dr.Client(), nodeStore, logger),
+		crashLoop:      swarm.NewCrashLoopDetector(logger),
+		updateTracker:  swarm.NewUpdateTracker(dr.Client(), logger),
+		replicaChecker: swarm.NewReplicaHealthChecker(logger),
+	}
+}
 
-	a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, a.logger)
-	a.swarmCrashLoop = swarm.NewCrashLoopDetector(a.logger)
-	a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), a.logger)
-	a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), a.logger)
-	a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(a.logger)
+func (a *App) currentSwarmDiscovery() *swarm.ServiceDiscovery {
+	if m := a.swarmMgr.Load(); m != nil {
+		return m.discovery
+	}
+	return nil
+}
+
+func (a *App) currentSwarmUpdateTracker() *swarm.UpdateTracker {
+	if m := a.swarmMgr.Load(); m != nil {
+		return m.updateTracker
+	}
+	return nil
+}
+
+func (a *App) currentSwarmCrashLoop() *swarm.CrashLoopDetector {
+	if m := a.swarmMgr.Load(); m != nil {
+		return m.crashLoop
+	}
+	return nil
 }
 
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.

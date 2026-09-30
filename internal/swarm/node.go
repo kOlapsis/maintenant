@@ -177,6 +177,7 @@ func (ns *NodeService) detectTransitions(old, current *SwarmNode) {
 			Severity:   alert.SeverityCritical,
 			Message:    fmt.Sprintf("Swarm node %s (%s) is %s", current.Hostname, current.Role, current.Status),
 			EntityType: "swarm_node",
+			EntityID:   current.NodeID,
 			EntityName: current.Hostname,
 			Details: map[string]any{
 				"node_id":    current.NodeID,
@@ -197,6 +198,7 @@ func (ns *NodeService) detectTransitions(old, current *SwarmNode) {
 			IsRecover:  true,
 			Message:    fmt.Sprintf("Swarm node %s (%s) recovered", current.Hostname, current.Role),
 			EntityType: "swarm_node",
+			EntityID:   current.NodeID,
 			EntityName: current.Hostname,
 			Details: map[string]any{
 				"node_id":    current.NodeID,
@@ -216,6 +218,7 @@ func (ns *NodeService) detectTransitions(old, current *SwarmNode) {
 			Severity:   alert.SeverityWarning,
 			Message:    fmt.Sprintf("Swarm node %s (%s) set to drain", current.Hostname, current.Role),
 			EntityType: "swarm_node",
+			EntityID:   current.NodeID,
 			EntityName: current.Hostname,
 			Details: map[string]any{
 				"node_id":          current.NodeID,
@@ -236,6 +239,7 @@ func (ns *NodeService) detectTransitions(old, current *SwarmNode) {
 			IsRecover:  true,
 			Message:    fmt.Sprintf("Swarm node %s (%s) returned to %s", current.Hostname, current.Role, current.Availability),
 			EntityType: "swarm_node",
+			EntityID:   current.NodeID,
 			EntityName: current.Hostname,
 			Details: map[string]any{
 				"node_id":          current.NodeID,

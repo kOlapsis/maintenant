@@ -26,17 +26,16 @@ type swarmTopologyReader interface {
 // store-backed (per-agent); the live views (dashboard, cluster,
 // update-status, resources) read the server's own live runtime.
 type SwarmHandler struct {
-	cluster        func() *swarm.SwarmCluster
-	discovery      func() *swarm.ServiceDiscovery
-	detector       func() *swarm.Detector
-	topo           swarmTopologyReader
-	nodeStore      swarm.NodeStore
-	updateTracker  *swarm.UpdateTracker
-	crashLoop      *swarm.CrashLoopDetector
-	replicaChecker *swarm.ReplicaHealthChecker
-	containerSvc   *container.Service
-	resourceSvc    *resource.Service
-	agents         AgentDirectory
+	cluster       func() *swarm.SwarmCluster
+	discovery     func() *swarm.ServiceDiscovery
+	detector      func() *swarm.Detector
+	topo          swarmTopologyReader
+	nodeStore     swarm.NodeStore
+	updateTracker func() *swarm.UpdateTracker
+	crashLoop     func() *swarm.CrashLoopDetector
+	containerSvc  *container.Service
+	resourceSvc   *resource.Service
+	agents        AgentDirectory
 }
 
 // SetAgentDirectory wires agent name resolution so multi-host list views can show
@@ -63,23 +62,21 @@ func NewSwarmHandler(
 	detectorFn func() *swarm.Detector,
 	topo swarmTopologyReader,
 	nodeStore swarm.NodeStore,
-	updateTracker *swarm.UpdateTracker,
-	crashLoop *swarm.CrashLoopDetector,
-	replicaChecker *swarm.ReplicaHealthChecker,
+	updateTrackerFn func() *swarm.UpdateTracker,
+	crashLoopFn func() *swarm.CrashLoopDetector,
 	containerSvc *container.Service,
 	resourceSvc *resource.Service,
 ) *SwarmHandler {
 	return &SwarmHandler{
-		cluster:        clusterFn,
-		discovery:      discoveryFn,
-		detector:       detectorFn,
-		topo:           topo,
-		nodeStore:      nodeStore,
-		updateTracker:  updateTracker,
-		crashLoop:      crashLoop,
-		replicaChecker: replicaChecker,
-		containerSvc:   containerSvc,
-		resourceSvc:    resourceSvc,
+		cluster:       clusterFn,
+		discovery:     discoveryFn,
+		detector:      detectorFn,
+		topo:          topo,
+		nodeStore:     nodeStore,
+		updateTracker: updateTrackerFn,
+		crashLoop:     crashLoopFn,
+		containerSvc:  containerSvc,
+		resourceSvc:   resourceSvc,
 	}
 }
 
@@ -274,7 +271,8 @@ func (h *SwarmHandler) HandleGetUpdateStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if h.updateTracker == nil {
+	tracker := h.updateTracker()
+	if tracker == nil {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"service_id":    serviceID,
 			"service_name":  svc.Name,
@@ -284,7 +282,7 @@ func (h *SwarmHandler) HandleGetUpdateStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	progress, err := h.updateTracker.GetUpdateStatus(r.Context(), serviceID)
+	progress, err := tracker.GetUpdateStatus(r.Context(), serviceID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get update status")
 		return
@@ -408,6 +406,7 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 	services := make([]map[string]interface{}, 0)
 
 	if disc != nil {
+		crashLoop := h.crashLoop()
 		svcList := disc.ListServices()
 		serviceCount = len(svcList)
 		for _, svc := range svcList {
@@ -426,7 +425,7 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 			if svc.UpdateStatus != nil {
 				entry["update_state"] = svc.UpdateStatus.State
 			}
-			if h.crashLoop != nil && h.crashLoop.IsCrashLooping(svc.ServiceID) {
+			if crashLoop != nil && crashLoop.IsCrashLooping(svc.ServiceID) {
 				entry["crash_loop"] = true
 			}
 			services = append(services, entry)

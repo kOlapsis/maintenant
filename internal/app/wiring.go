@@ -596,72 +596,35 @@ func (a *App) wirePostureCallbacks() {
 	})
 }
 
-// wireSwarmCallbacks wires Swarm event callbacks for SSE broadcasting.
-func (a *App) wireSwarmCallbacks() {
-	if a.swarmEvents == nil {
-		return
-	}
-	a.swarmEvents.SetCallback(func(eventType string, data any) {
+// wireSwarmCallbacks routes the Swarm manager's events to the SSE broker and
+// its alerts to the alert engine.
+func (a *App) wireSwarmCallbacks(m *swarmManager) {
+	sseBroadcast := func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-	})
-
-	// Wire replica health alerting (available for all editions with Swarm).
-	{
-		alertCh := a.alertEngine.EventChannel()
-		ctx := context.Background()
-		a.swarmEvents.SetAlertCallback(func(evt alert.Event) {
-			alertCh <- evt
-			a.statusSvc.HandleAlertEvent(ctx, evt)
-		})
 	}
 
-	// Wire node service into event processor and alert pipeline (Pro).
-	if a.swarmNodeSvc != nil {
-		a.swarmEvents.SetNodeService(a.swarmNodeSvc)
+	m.events.SetCallback(sseBroadcast)
+	m.events.SetAlertCallback(a.emitAlert)
+	m.events.SetNodeService(m.nodeSvc)
 
-		alertCh := a.alertEngine.EventChannel()
-		ctx := context.Background()
+	m.nodeSvc.SetEventCallback(sseBroadcast)
+	m.nodeSvc.SetAlertCallback(a.emitAlert)
+	m.crashLoop.SetEventCallback(sseBroadcast)
+	m.crashLoop.SetAlertCallback(a.emitAlert)
+	m.updateTracker.SetEventCallback(sseBroadcast)
+	m.updateTracker.SetAlertCallback(a.emitAlert)
+	m.replicaChecker.SetEventCallback(sseBroadcast)
+	m.replicaChecker.SetAlertCallback(a.emitAlert)
 
-		sseBroadcast := func(eventType string, data any) {
-			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-		}
-		alertForward := func(evt alert.Event) {
-			alertCh <- evt
-			a.statusSvc.HandleAlertEvent(ctx, evt)
-		}
-
-		a.swarmNodeSvc.SetEventCallback(sseBroadcast)
-		a.swarmNodeSvc.SetAlertCallback(alertForward)
-
-		// Wire crash-loop detector (Pro).
-		if a.swarmCrashLoop != nil {
-			a.swarmCrashLoop.SetEventCallback(sseBroadcast)
-			a.swarmCrashLoop.SetAlertCallback(alertForward)
-		}
-
-		// Wire update tracker (Pro).
-		if a.swarmUpdateTracker != nil {
-			a.swarmUpdateTracker.SetEventCallback(sseBroadcast)
-			a.swarmUpdateTracker.SetAlertCallback(alertForward)
-		}
-
-		// Wire replica health checker (Pro).
-		if a.swarmReplicaChecker != nil {
-			a.swarmReplicaChecker.SetEventCallback(sseBroadcast)
-			a.swarmReplicaChecker.SetAlertCallback(alertForward)
-		}
-	}
-
-	// Broadcast initial Swarm status.
-	if a.swarmCluster != nil {
+	if cluster := a.swarmCluster.Load(); cluster != nil {
 		a.broker.Broadcast(v1.SSEEvent{
 			Type: event.SwarmStatus,
 			Data: map[string]any{
 				"active":        true,
-				"is_manager":    a.swarmCluster.IsManager,
-				"cluster_id":    a.swarmCluster.ID,
-				"manager_count": a.swarmCluster.ManagerCount,
-				"worker_count":  a.swarmCluster.WorkerCount,
+				"is_manager":    cluster.IsManager,
+				"cluster_id":    cluster.ID,
+				"manager_count": cluster.ManagerCount,
+				"worker_count":  cluster.WorkerCount,
 			},
 		})
 	}
