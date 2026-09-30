@@ -75,6 +75,15 @@ ssh -L 8080:127.0.0.1:8080 ubuntu@<instance-public-ip>
 
 Open **http://localhost:8080**. Every container on the host is already discovered.
 
+!!! note "You are `ubuntu`, not root"
+    The Ubuntu image's default user is `ubuntu`. The tunnel works as is, but the commands later in
+    this guide (mounting the volume, editing `/etc/fstab` and `/opt/maintenant/compose.yml`,
+    `docker compose`, backups) need root. Run `sudo -i` once after logging in and work from that
+    shell.
+
+!!! warning "The Docker socket is root on this instance"
+    The cloud-config mounts `/var/run/docker.sock`. `:ro` only protects the socket file: the Docker API behind it still accepts writes, so whoever controls maintenant can start containers on this instance. Before you open the dashboard to anyone else, put a read-only docker-socket-proxy in front of the socket. See [Security: Docker socket proxy](../security.md#recommended-docker-socket-proxy), and enable `IMAGES` on the proxy as well if you use update checks.
+
 ---
 
 ## Step 2 — Security groups
@@ -114,6 +123,19 @@ Note what is **not** in that list: port `8080`. Publish the dashboard through a 
     openstack port set --enable-port-security <port-id>
     ```
 
+### Behind a reverse proxy
+
+Authentication is the proxy's job: maintenant has none. [Security](../security.md#reverse-proxy-setup) has working Traefik, Caddy and nginx setups. Two settings in `/opt/maintenant/compose.yml` make maintenant behave correctly behind it:
+
+```yaml
+    environment:
+      MAINTENANT_BASE_URL: "https://maintenant.example.com"
+      MAINTENANT_TRUSTED_PROXIES: "172.18.0.1"
+```
+
+- `MAINTENANT_BASE_URL` is the public address. It defaults to `http://0.0.0.0:8080` here, which is what heartbeat ping URLs, status page subscriber links and the MCP OAuth issuer would otherwise carry.
+- `MAINTENANT_TRUSTED_PROXIES` lists the addresses the proxy connects from. Empty, no forwarded header is read and every visitor is counted as the proxy, so they share one rate limit. A proxy on this instance reaches the port published on `127.0.0.1` through the Docker network's gateway, so list that address (`docker network inspect maintenant_default`, field `Gateway`), not `127.0.0.1`. See [Running behind a proxy](../security.md#running-behind-a-proxy).
+
 ---
 
 ## Step 3 — Put the database on a Block Storage volume
@@ -145,6 +167,20 @@ Then point the Compose volume at it:
     environment:
       MAINTENANT_DB: "/data/maintenant.db"
 ```
+
+You do not need to create or `chown` the `maintenant` directory: Docker creates it as root if it is missing, and the entrypoint hands it to uid 65534 at start.
+
+The first boot already started maintenant on the named volume `maintenant_maintenant-data`, and the database created there does not follow the new mount: the next start opens an empty database at the new path. That is fine on an instance you have just created. To keep what was collected, copy it across while the stack is stopped (`cp -a` keeps the ownership):
+
+```bash
+docker compose -f /opt/maintenant/compose.yml down
+mkdir -p /mnt/maintenant-data/maintenant
+cp -a /var/lib/docker/volumes/maintenant_maintenant-data/_data/. /mnt/maintenant-data/maintenant/
+# edit compose.yml as above, then
+docker compose -f /opt/maintenant/compose.yml up -d
+```
+
+Do this before you enrol any agent: the server's database holds their identities. Once maintenant runs on the volume, `docker volume rm maintenant_maintenant-data` removes the old copy.
 
 !!! tip "Mount by UUID, not by device name"
     `/dev/vdb` is the order the kernel happened to enumerate the disks in. Attach a second volume
@@ -184,15 +220,41 @@ private network: the request was closed as not planned. Agents therefore dial a 
 name you maintain yourself in `/etc/hosts` or your own DNS. Whichever you choose, the name has to
 match the certificate the server presents.
 
-Bind the gRPC listener to the private address on the server:
+The security group from Step 2 applies to private traffic too, and it only lets SSH, HTTP and HTTPS in. Let the agents reach the gRPC port from the private subnet only:
 
 ```bash
-MAINTENANT_GRPC_LISTEN=10.0.0.2:8443
-MAINTENANT_GRPC_URL=grpcs://maintenant.internal.example.com:8443
+openstack security group rule create --protocol tcp --dst-port 8443 \
+  --remote-ip 10.0.0.0/24 maintenant
 ```
 
-Then enrol each other instance. Generate a token from **Agents → Add host**: the modal hands you a
-ready-made command. Run it on the host, pointing at the private address:
+!!! note "Enrolling hosts needs the Personal edition"
+    Remote hosts require the Personal edition or above (`MAINTENANT_LICENSE_KEY`). Personal covers up to 20 hosts, Pro has no cap. On Community the server does not open the agent port: it logs `agent gRPC listener not started: agents need the personal edition or above`.
+
+The gRPC listener defaults to `127.0.0.1:8443`. Inside the container that address cannot be reached from the network, for the same reason as the HTTP port. The server must listen on all interfaces **in the container**, and the private address must be published in the Compose file. Edit `/opt/maintenant/compose.yml`:
+
+```diff
+   maintenant:
+     ports:
+       - "127.0.0.1:8080:8080"
++      - "10.0.0.2:8443:8443"
+     volumes:
++      - /opt/maintenant/tls:/etc/maintenant/tls:ro
+       - maintenant-data:/data
+     environment:
+       MAINTENANT_ADDR: "0.0.0.0:8080"
+       MAINTENANT_DB: "/data/maintenant.db"
++      MAINTENANT_LICENSE_KEY: "<your license key>"
++      MAINTENANT_GRPC_LISTEN: "0.0.0.0:8443"
++      MAINTENANT_GRPC_URL: "grpcs://maintenant.internal.example.com:8443"
++      MAINTENANT_GRPC_TLS_CERT: "/etc/maintenant/tls/server.crt"
++      MAINTENANT_GRPC_TLS_KEY: "/etc/maintenant/tls/server.key"
+```
+
+Publish on the private address (`10.0.0.2`), never as a bare `8443:8443`. That address must exist on the host when the container starts, or Docker refuses it with `cannot assign requested address`. Apply with `docker compose -f /opt/maintenant/compose.yml up -d`.
+
+The certificate and key are read at startup by uid 65534, so they must be readable by it, and a renewed certificate is only picked up when the container restarts. The certificate has to cover the name in `MAINTENANT_GRPC_URL`. A DNS-01 ACME certificate works for a name that only resolves privately, as long as the domain is yours. With a private CA instead, issue the server certificate from it and give the agents the CA, as shown below. If you put the private IP itself in `MAINTENANT_GRPC_URL`, the enrollment modal shows a "Local address detected" warning: expected here, since the agents reach the server over the private network.
+
+Then enrol each other instance. In the web UI, open **Agents** and click **Generate enrollment token**: the modal shows the token once, with a ready-made command per environment and the server address taken from `MAINTENANT_GRPC_URL`. Run it on the host, pointing at the private address:
 
 ```bash
 docker run -d \
@@ -209,11 +271,21 @@ docker run -d \
 ```
 
 !!! important "Private does not mean plaintext"
-    Binding on the private address keeps the listener off the public internet, but the agent still
-    speaks TLS. Use a certificate that covers the name you gave the server; a DNS-01 ACME
-    certificate works for a name that only resolves privately. Do **not** reach for
-    `--grpc-insecure-skip-tls-verify` outside a lab. The full matrix of TLS modes is in
+    Publishing on the private address keeps the listener off the public internet, but the agent
+    still speaks TLS. Use a certificate that covers the name you gave the server. Do **not** reach
+    for `--grpc-insecure-skip-tls-verify` outside a lab. The full matrix of TLS modes is in
     [Agent Setup → Step 1](agent-setup.md#step-1-make-the-grpc-endpoint-reachable).
+
+    With a private CA, add these two lines to the agent command (the generated one does not
+    include them):
+
+    ```bash
+      -e MAINTENANT_CA_CERT=/etc/maintenant/ca.pem \
+      -v /opt/maintenant/ca.pem:/etc/maintenant/ca.pem:ro \
+    ```
+
+    The file must be readable by uid 65534: an unreadable or invalid CA makes the agent stop at
+    start with `failed to load extra CA bundle`.
 
 ---
 
@@ -291,10 +363,12 @@ A volume snapshot does not require detaching the volume, so it copies the databa
 being written to. For SQLite in WAL mode that is a torn copy, not a backup. Take an
 application-level copy first, then snapshot.
 
+The image does not ship a `sqlite3` client. Install one on the instance and copy the database from the file behind the volume, which works while maintenant keeps running:
+
 ```bash
-# On the instance: consistent copy while maintenant keeps running
-docker compose -f /opt/maintenant/compose.yml exec maintenant \
-  sqlite3 /data/maintenant.db ".backup '/data/maintenant.backup.db'"
+apt-get install -y sqlite3
+sqlite3 -readonly /mnt/maintenant-data/maintenant/maintenant.db \
+  ".backup '/mnt/maintenant-data/maintenant/maintenant.backup.db'"
 
 # Then snapshot the volume, or image the whole instance
 openstack volume snapshot create --volume <volume-id> --force \
@@ -302,11 +376,12 @@ openstack volume snapshot create --volume <volume-id> --force \
 openstack server image create --name "maintenant-$(date -u +%F)" <server-id>
 ```
 
-If the image has no `sqlite3` binary, stop the stack for the few seconds the copy takes:
+Without a client, stop the stack for the few seconds the copy takes and copy the database files together:
 
 ```bash
 docker compose -f /opt/maintenant/compose.yml stop
-cp /mnt/maintenant-data/maintenant/maintenant.db /root/maintenant-$(date -u +%F).db
+mkdir -p /root/maintenant-$(date -u +%F)
+cp -a /mnt/maintenant-data/maintenant/maintenant.db* /root/maintenant-$(date -u +%F)/
 docker compose -f /opt/maintenant/compose.yml start
 ```
 

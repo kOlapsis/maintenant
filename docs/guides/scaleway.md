@@ -51,6 +51,9 @@ ssh -L 8080:127.0.0.1:8080 root@<instance-public-ip>
 
 Open **http://localhost:8080**. Every container on the host is already discovered.
 
+!!! warning "The Docker socket is root on this Instance"
+    The cloud-config mounts `/var/run/docker.sock`. `:ro` only protects the socket file: the Docker API behind it still accepts writes, so whoever controls maintenant can start containers on this Instance. Before you open the dashboard to anyone else, put a read-only docker-socket-proxy in front of the socket. See [Security: Docker socket proxy](../security.md#recommended-docker-socket-proxy), and enable `IMAGES` on the proxy as well if you use update checks.
+
 !!! note "Changing the cloud-config later"
     `cloud-init=@file` is a CLI convenience: it stores the file as a user-data key named
     `cloud-init`. You can replace it afterwards and reboot:
@@ -99,6 +102,19 @@ Note what is **not** in that list: port `8080`. Publish the dashboard through a 
     A security group has no effect on Private Network traffic. What filters that is the VPC's
     network ACLs, which is where the agent gRPC port belongs.
 
+### Behind a reverse proxy
+
+Authentication is the proxy's job: maintenant has none. [Security](../security.md#reverse-proxy-setup) has working Traefik, Caddy and nginx setups. Two settings in `/opt/maintenant/compose.yml` make maintenant behave correctly behind it:
+
+```yaml
+    environment:
+      MAINTENANT_BASE_URL: "https://maintenant.example.com"
+      MAINTENANT_TRUSTED_PROXIES: "172.18.0.1"
+```
+
+- `MAINTENANT_BASE_URL` is the public address. It defaults to `http://0.0.0.0:8080` here, which is what heartbeat ping URLs, status page subscriber links and the MCP OAuth issuer would otherwise carry.
+- `MAINTENANT_TRUSTED_PROXIES` lists the addresses the proxy connects from. Empty, no forwarded header is read and every visitor is counted as the proxy, so they share one rate limit. A proxy on this Instance reaches the port published on `127.0.0.1` through the Docker network's gateway, so list that address (`docker network inspect maintenant_default`, field `Gateway`), not `127.0.0.1`. See [Running behind a proxy](../security.md#running-behind-a-proxy).
+
 ---
 
 ## Step 3 — Put the database on a Block Storage volume
@@ -142,6 +158,20 @@ Then point the Compose volume at it:
       MAINTENANT_DB: "/data/maintenant.db"
 ```
 
+You do not need to create or `chown` the `maintenant` directory: Docker creates it as root if it is missing, and the entrypoint hands it to uid 65534 at start.
+
+The first boot already started maintenant on the named volume `maintenant_maintenant-data`, and the database created there does not follow the new mount: the next start opens an empty database at the new path. That is fine on an Instance you have just created. To keep what was collected, copy it across while the stack is stopped (`cp -a` keeps the ownership):
+
+```bash
+docker compose -f /opt/maintenant/compose.yml down
+mkdir -p /mnt/maintenant-data/maintenant
+cp -a /var/lib/docker/volumes/maintenant_maintenant-data/_data/. /mnt/maintenant-data/maintenant/
+# edit compose.yml as above, then
+docker compose -f /opt/maintenant/compose.yml up -d
+```
+
+Do this before you enrol any agent: the server's database holds their identities. Once maintenant runs on the volume, `docker volume rm maintenant_maintenant-data` removes the old copy.
+
 !!! tip "Mount by UUID, not by device name"
     `/dev/sdb` is the order the kernel happened to enumerate the disks in. Attach a second volume
     and the names can swap, which is how a database ends up pointed at the wrong filesystem. The
@@ -175,16 +205,36 @@ scw instance private-nic create server-id=<other-server-id> private-network-id=$
 
 Each attached Instance gets a private IP automatically from a `/22` range, and keeps it across reboots.
 
-**And this is where Scaleway saves you a certificate problem.** A Private Network comes with internal DNS: every attached resource resolves as `<hostname>.<private-network-name>.internal`. The Instance named `maintenant` on the network named `maintenant` is reachable at `maintenant.maintenant.internal` from any other Instance on that network, with no configuration.
+**And this is where Scaleway saves you a DNS zone.** A Private Network comes with internal DNS: every attached resource resolves as `<hostname>.<private-network-name>.internal`. The Instance named `maintenant` on the network named `maintenant` is reachable at `maintenant.maintenant.internal` from any other Instance on that network, with no configuration. It does not save you the certificate: see below.
 
-So the server binds gRPC to its private address and announces the internal name:
+!!! note "Enrolling hosts needs the Personal edition"
+    Remote hosts require the Personal edition or above (`MAINTENANT_LICENSE_KEY`). Personal covers up to 20 hosts, Pro has no cap. On Community the server does not open the agent port: it logs `agent gRPC listener not started: agents need the personal edition or above`.
 
-```bash
-MAINTENANT_GRPC_LISTEN=<private-ip>:8443
-MAINTENANT_GRPC_URL=grpcs://maintenant.maintenant.internal:8443
+The gRPC listener defaults to `127.0.0.1:8443`. Inside the container that address cannot be reached from the network, for the same reason as the HTTP port. The server must listen on all interfaces **in the container**, the private address must be published in the Compose file, and the internal name is announced to the agents. Edit `/opt/maintenant/compose.yml`:
+
+```diff
+   maintenant:
+     ports:
+       - "127.0.0.1:8080:8080"
++      - "<private-ip>:8443:8443"
+     volumes:
++      - /opt/maintenant/tls:/etc/maintenant/tls:ro
+       - maintenant-data:/data
+     environment:
+       MAINTENANT_ADDR: "0.0.0.0:8080"
+       MAINTENANT_DB: "/data/maintenant.db"
++      MAINTENANT_LICENSE_KEY: "<your license key>"
++      MAINTENANT_GRPC_LISTEN: "0.0.0.0:8443"
++      MAINTENANT_GRPC_URL: "grpcs://maintenant.maintenant.internal:8443"
++      MAINTENANT_GRPC_TLS_CERT: "/etc/maintenant/tls/server.crt"
++      MAINTENANT_GRPC_TLS_KEY: "/etc/maintenant/tls/server.key"
 ```
 
-Then enrol each other Instance. Generate a token from **Agents → Add host**: the modal hands you a ready-made command. Run it on the host, pointing at the internal name:
+Publish on the private address, never as a bare `8443:8443`. That address must exist on the host when the container starts, or Docker refuses it with `cannot assign requested address`. Apply with `docker compose -f /opt/maintenant/compose.yml up -d`.
+
+The certificate and key are read at startup by uid 65534, so they must be readable by it, and a renewed certificate is only picked up when the container restarts.
+
+Then enrol each other Instance. In the web UI, open **Agents** and click **Generate enrollment token**: the modal shows the token once, with a ready-made command per environment and the server address taken from `MAINTENANT_GRPC_URL`. Run it on the host, pointing at the internal name:
 
 ```bash
 docker run -d \
@@ -201,11 +251,21 @@ docker run -d \
 ```
 
 !!! important "Private does not mean plaintext"
-    The internal name keeps the listener off the public internet, but the agent still speaks TLS,
-    and a certificate must cover `maintenant.maintenant.internal`. A DNS-01 ACME certificate
-    works for a name that only resolves privately. Do **not** reach for
+    Publishing on the private address keeps the listener off the public internet, but the agent
+    still speaks TLS, and the certificate must cover the name in `MAINTENANT_GRPC_URL`. No public
+    CA issues a certificate for a `.internal` name, so for `maintenant.maintenant.internal` the
+    certificate comes from a private CA. Do **not** reach for
     `--grpc-insecure-skip-tls-verify` outside a lab. The full matrix of TLS modes is in
     [Agent Setup → Step 1](agent-setup.md#step-1-make-the-grpc-endpoint-reachable).
+
+    With a private CA, issue the server certificate from it and give the agents the CA: add
+    `-e MAINTENANT_CA_CERT=/etc/maintenant/ca.pem` and
+    `-v /opt/maintenant/ca.pem:/etc/maintenant/ca.pem:ro` to the agent command (the generated one
+    does not include them). The file must be readable by uid 65534: an unreadable or invalid CA
+    makes the agent stop at start with `failed to load extra CA bundle`.
+
+    The alternative is a name in a domain you own that resolves to the server's private address,
+    with a DNS-01 ACME certificate for it. Put that name in `MAINTENANT_GRPC_URL` instead.
 
 Three documented traps with internal DNS, all of which look like an agent bug:
 
@@ -287,10 +347,12 @@ Full RBAC, namespace filtering and Helm values are in the [Kubernetes Guide](kub
 
 A snapshot copies the volume while the database is being written to. For SQLite in WAL mode that is a torn copy, not a backup. Take an application-level copy first, then snapshot.
 
+The image does not ship a `sqlite3` client. Install one on the Instance and copy the database from the file behind the volume, which works while maintenant keeps running:
+
 ```bash
-# On the Instance: consistent copy while maintenant keeps running
-docker compose -f /opt/maintenant/compose.yml exec maintenant \
-  sqlite3 /data/maintenant.db ".backup '/data/maintenant.backup.db'"
+apt-get install -y sqlite3
+sqlite3 -readonly /mnt/maintenant-data/maintenant/maintenant.db \
+  ".backup '/mnt/maintenant-data/maintenant/maintenant.backup.db'"
 
 # Then snapshot the volume, or image the whole Instance
 scw block snapshot create volume-id=<volume-id> \
@@ -298,11 +360,12 @@ scw block snapshot create volume-id=<volume-id> \
 scw instance server backup <server-id> name="maintenant-$(date -u +%F)" zone=fr-par-1
 ```
 
-If the image has no `sqlite3` binary, stop the stack for the few seconds the copy takes:
+Without a client, stop the stack for the few seconds the copy takes and copy the database files together:
 
 ```bash
 docker compose -f /opt/maintenant/compose.yml stop
-cp /mnt/maintenant-data/maintenant/maintenant.db /root/maintenant-$(date -u +%F).db
+mkdir -p /root/maintenant-$(date -u +%F)
+cp -a /mnt/maintenant-data/maintenant/maintenant.db* /root/maintenant-$(date -u +%F)/
 docker compose -f /opt/maintenant/compose.yml start
 ```
 

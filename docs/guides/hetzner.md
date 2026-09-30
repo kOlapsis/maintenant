@@ -47,6 +47,9 @@ ssh -L 8080:127.0.0.1:8080 root@$(hcloud server ip maintenant)
 
 Open **http://localhost:8080**. Every container on the host is already discovered.
 
+!!! warning "The Docker socket is root on this server"
+    The cloud-config mounts `/var/run/docker.sock`. `:ro` only protects the socket file: the Docker API behind it still accepts writes, so whoever controls maintenant can start containers on this server. Before you open the dashboard to anyone else, put a read-only docker-socket-proxy in front of the socket. See [Security: Docker socket proxy](../security.md#recommended-docker-socket-proxy), and enable `IMAGES` on the proxy as well if you use update checks.
+
 !!! tip "Hetzner's Docker app image"
     Hetzner also publishes a `docker-ce` app image. It works, but the cloud-config installs Docker
     itself so the same file stays valid on a plain `ubuntu-24.04` image and on a rescued or rebuilt
@@ -87,6 +90,19 @@ Note what is **not** in that list: port `8080`. Publish the dashboard through a 
     [Installation → Docker Compose](../getting-started/installation.md#docker-compose-recommended)
     and [Configuration → Choosing a Bind Address](../getting-started/configuration.md#choosing-a-bind-address).
 
+### Behind a reverse proxy
+
+Authentication is the proxy's job: maintenant has none. [Security](../security.md#reverse-proxy-setup) has working Traefik, Caddy and nginx setups. Two settings in `/opt/maintenant/compose.yml` make maintenant behave correctly behind it:
+
+```yaml
+    environment:
+      MAINTENANT_BASE_URL: "https://maintenant.example.com"
+      MAINTENANT_TRUSTED_PROXIES: "172.18.0.1"
+```
+
+- `MAINTENANT_BASE_URL` is the public address. It defaults to `http://0.0.0.0:8080` here, which is what heartbeat ping URLs, status page subscriber links and the MCP OAuth issuer would otherwise carry.
+- `MAINTENANT_TRUSTED_PROXIES` lists the addresses the proxy connects from. Empty, no forwarded header is read and every visitor is counted as the proxy, so they share one rate limit. A proxy on this server reaches the port published on `127.0.0.1` through the Docker network's gateway, so list that address (`docker network inspect maintenant_default`, field `Gateway`), not `127.0.0.1`. See [Running behind a proxy](../security.md#running-behind-a-proxy).
+
 ---
 
 ## Step 3 — Put the database on a Hetzner Volume
@@ -111,6 +127,20 @@ Hetzner mounts it at `/mnt/HC_Volume_<volume-id>`. Point the Compose volume at t
     environment:
       MAINTENANT_DB: "/data/maintenant.db"
 ```
+
+You do not need to create or `chown` the `maintenant` directory: Docker creates it as root if it is missing, and the entrypoint hands it to uid 65534 at start.
+
+The first boot already started maintenant on the named volume `maintenant_maintenant-data`, and the database created there does not follow the new mount: the next start opens an empty database at the new path. That is fine on a server you have just created. To keep what was collected, copy it across while the stack is stopped (`cp -a` keeps the ownership):
+
+```bash
+docker compose -f /opt/maintenant/compose.yml down
+mkdir -p /mnt/HC_Volume_123456789/maintenant
+cp -a /var/lib/docker/volumes/maintenant_maintenant-data/_data/. /mnt/HC_Volume_123456789/maintenant/
+# edit compose.yml as above, then
+docker compose -f /opt/maintenant/compose.yml up -d
+```
+
+Do this before you enrol any agent: the server's database holds their identities. Once maintenant runs on the volume, `docker volume rm maintenant_maintenant-data` removes the old copy.
 
 !!! warning "Size the volume for migrations, not just for the data"
     Schema migrations rebuild tables in place and transiently need several times the size of the
@@ -137,14 +167,34 @@ hcloud server attach-to-network maintenant --network backend --ip 10.0.0.2
 hcloud server attach-to-network web-01     --network backend --ip 10.0.0.3
 ```
 
-On the server, bind the gRPC listener to the private address only:
+!!! note "Enrolling hosts needs the Personal edition"
+    Remote hosts require the Personal edition or above (`MAINTENANT_LICENSE_KEY`). Personal covers up to 20 hosts, Pro has no cap. On Community the server does not open the agent port: it logs `agent gRPC listener not started: agents need the personal edition or above`.
 
-```bash
-MAINTENANT_GRPC_LISTEN=10.0.0.2:8443
-MAINTENANT_GRPC_URL=grpcs://maintenant.internal.example.com:8443
+The gRPC listener defaults to `127.0.0.1:8443`. Inside the container that address cannot be reached from the network, for the same reason as the HTTP port. The server must listen on all interfaces **in the container**, and the private address must be published in the Compose file. Edit `/opt/maintenant/compose.yml`:
+
+```diff
+   maintenant:
+     ports:
+       - "127.0.0.1:8080:8080"
++      - "10.0.0.2:8443:8443"
+     volumes:
++      - /opt/maintenant/tls:/etc/maintenant/tls:ro
+       - maintenant-data:/data
+     environment:
+       MAINTENANT_ADDR: "0.0.0.0:8080"
+       MAINTENANT_DB: "/data/maintenant.db"
++      MAINTENANT_LICENSE_KEY: "<your license key>"
++      MAINTENANT_GRPC_LISTEN: "0.0.0.0:8443"
++      MAINTENANT_GRPC_URL: "grpcs://maintenant.internal.example.com:8443"
++      MAINTENANT_GRPC_TLS_CERT: "/etc/maintenant/tls/server.crt"
++      MAINTENANT_GRPC_TLS_KEY: "/etc/maintenant/tls/server.key"
 ```
 
-Then enrol each other server. Generate a token from **Agents → Add host**: the modal hands you a ready-made command, with the server address already filled in. Run it on the host, over the private address:
+Publish on the private address (`10.0.0.2`), never as a bare `8443:8443`. That address must exist on the host when the container starts, or Docker refuses it with `cannot assign requested address`. Apply with `docker compose -f /opt/maintenant/compose.yml up -d`.
+
+The certificate and key are read at startup by uid 65534, so they must be readable by it, and a renewed certificate is only picked up when the container restarts. The certificate has to cover the name in `MAINTENANT_GRPC_URL`. A DNS-01 ACME certificate works for a name that only resolves privately, as long as the domain is yours. With a private CA instead, issue the server certificate from it and give the agents the CA, as shown below.
+
+Then enrol each other server. In the web UI, open **Agents** and click **Generate enrollment token**: the modal shows the token once, with a ready-made command per environment and the server address taken from `MAINTENANT_GRPC_URL`. Run it on the host, over the private address:
 
 ```bash
 docker run -d \
@@ -160,16 +210,22 @@ docker run -d \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
 ```
 
-The token is consumed on first enrolment and cannot be retrieved again. The full walkthrough, including the Compose and Kubernetes variants, is in [Agent Setup](agent-setup.md).
+The token is consumed on first enrolment and cannot be retrieved again. With a private CA, add these two lines to the command (the generated one does not include them):
+
+```bash
+  -e MAINTENANT_CA_CERT=/etc/maintenant/ca.pem \
+  -v /opt/maintenant/ca.pem:/etc/maintenant/ca.pem:ro \
+```
+
+The file must be readable by uid 65534: an unreadable or invalid CA makes the agent stop at start with `failed to load extra CA bundle`. The full walkthrough, including the Compose and Kubernetes variants, is in [Agent Setup](agent-setup.md).
 
 !!! important "Private does not mean plaintext"
-    Binding on `10.0.0.2` keeps the listener off the public internet, but the agent still speaks
-    TLS. Use a certificate that covers the internal hostname — a DNS-01 ACME certificate works
-    fine for a name that only resolves privately. Do **not** reach for
+    Publishing on `10.0.0.2` keeps the listener off the public internet, but the agent still speaks
+    TLS. Use a certificate that covers the internal hostname. Do **not** reach for
     `--grpc-insecure-skip-tls-verify` outside a lab. The full matrix of TLS modes is in
     [Agent Setup → Step 1](agent-setup.md#step-1-make-the-grpc-endpoint-reachable).
 
-Also add a Cloud Firewall rule allowing TCP `8443` **from `10.0.0.0/16` only** — Cloud Firewalls filter the public interface, so this is about not opening it there by accident.
+No Cloud Firewall rule is needed for `8443`: Cloud Firewalls filter the public interface, and the port is published on the private address only. Keep it out of the public rules.
 
 ---
 
@@ -207,9 +263,10 @@ helm install maintenant ./deploy/helm/maintenant \
 `hcloud-volumes` is the storage class created by the [Hetzner CSI driver](https://github.com/hetznercloud/csi-driver), which all of the above install by default. Without it, the PVC stays `Pending`.
 
 !!! note "Talos and other socket-less nodes"
-    Talos exposes no Docker socket. maintenant detects the in-cluster API on its own; if detection
-    needs a nudge, set `runtime: kubernetes` explicitly. Monitoring then happens at the
-    workload/pod level, which is what you want on Talos anyway.
+    Talos exposes no Docker socket. The chart already sets `runtime: kubernetes` (its default),
+    and inside a pod maintenant finds the in-cluster API on its own, so there is nothing to
+    configure. Monitoring happens at the workload and pod level, which is what you want on Talos
+    anyway.
 
 Full RBAC, namespace filtering and Helm values are in the [Kubernetes Guide](kubernetes.md).
 
@@ -219,21 +276,24 @@ Full RBAC, namespace filtering and Helm values are in the [Kubernetes Guide](kub
 
 A Hetzner snapshot copies the disk while the database is being written to. For SQLite in WAL mode that is a torn copy, not a backup.
 
+The image does not ship a `sqlite3` client. Install one on the server and copy the database from the file behind the volume, which works while maintenant keeps running:
+
 ```bash
-# On the server — consistent copy while maintenant keeps running
-docker compose -f /opt/maintenant/compose.yml exec maintenant \
-  sqlite3 /data/maintenant.db ".backup '/data/maintenant.backup.db'"
+apt-get install -y sqlite3
+sqlite3 -readonly /mnt/HC_Volume_123456789/maintenant/maintenant.db \
+  ".backup '/root/maintenant-backup.db'"
 
 # Then snapshot, or ship the file to a Storage Box
 hcloud server create-image --type snapshot \
   --description "maintenant $(date -u +%F)" maintenant
 ```
 
-If the container image has no `sqlite3` binary, stop the stack for the few seconds the copy takes:
+Without a client, stop the stack for the few seconds the copy takes and copy the database files together:
 
 ```bash
 docker compose -f /opt/maintenant/compose.yml stop
-cp /mnt/HC_Volume_123456789/maintenant/maintenant.db /root/maintenant-$(date -u +%F).db
+mkdir -p /root/maintenant-$(date -u +%F)
+cp -a /mnt/HC_Volume_123456789/maintenant/maintenant.db* /root/maintenant-$(date -u +%F)/
 docker compose -f /opt/maintenant/compose.yml start
 ```
 

@@ -1,5 +1,5 @@
 #cloud-config
-# maintenant — first-boot provisioning for any Ubuntu cloud server.
+# maintenant: first-boot provisioning for any Ubuntu cloud server.
 #
 # Pass this file as user data when creating the server. Each provider spells
 # that differently:
@@ -8,14 +8,24 @@
 #                     --user-data-from-file deploy/cloud-init/maintenant.yaml
 #   DigitalOcean    doctl compute droplet create --image ubuntu-24-04-x64 \
 #                     --user-data-file deploy/cloud-init/maintenant.yaml
+#   Scaleway        scw instance server create image=ubuntu_noble \
+#                     cloud-init=@deploy/cloud-init/maintenant.yaml
+#   OVHcloud        openstack server create --user-data deploy/cloud-init/maintenant.yaml
+#                     (Public Cloud only: a VPS cannot run cloud-init)
+#   Vultr           vultr-cli instance create --os=<Ubuntu 24.04 id> \
+#                     --userdata-file=deploy/cloud-init/maintenant.yaml
 #
 # The dashboard is published on 127.0.0.1:8080 only. Reach it through an SSH
 # tunnel, or put a reverse proxy with authentication in front of it:
 #
-#   ssh -L 8080:127.0.0.1:8080 root@<server-ip>
+#   ssh -L 8080:127.0.0.1:8080 root@<server-ip>      (OVHcloud images: ubuntu@)
 #
 # Per-provider guides (firewall, volumes, private network, managed Kubernetes):
 # https://docs.maintenant.dev/guides/hetzner/
+# https://docs.maintenant.dev/guides/digitalocean/
+# https://docs.maintenant.dev/guides/scaleway/
+# https://docs.maintenant.dev/guides/ovhcloud/
+# https://docs.maintenant.dev/guides/vultr/
 
 package_update: true
 package_upgrade: true
