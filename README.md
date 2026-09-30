@@ -61,11 +61,12 @@ docker compose up -d
 
 Open **http://localhost:8080**. Your containers are already there, with their health, restart loops, resources and logs. Nothing to configure.
 
-Docker socket access is automatic: the entrypoint reads the mounted socket's group and grants it to the unprivileged user, on Compose and on Swarm (where `docker stack deploy` silently ignores `group_add`). If containers do not show up, see [Troubleshooting](https://docs.maintenant.dev/troubleshooting/).
+Docker socket access is automatic: the entrypoint reads the mounted socket's group and grants it to the unprivileged user, on Compose and on Swarm (where `docker stack deploy` silently ignores `group_add`). A socket owned by group `root` needs `DOCKER_GID=0`. If containers do not show up, see [Troubleshooting](https://docs.maintenant.dev/troubleshooting/).
 
 **Kubernetes**
 
 ```bash
+kubectl create namespace maintenant
 kubectl apply -f deploy/kubernetes/
 ```
 
@@ -234,11 +235,11 @@ docker run -d --name maintenant-agent --restart unless-stopped \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX --label="prod-worker-01"
 ```
 
-Agents detect their local runtime (Docker, Swarm or Kubernetes), stream container state, endpoints, certificates, host CPU/memory/disk, and reconnect on their own. Every entity is attributed to its host, so nothing gets mixed across machines. *Personal: up to 20 remote machines. Pro: unlimited.*
+Agents detect their local runtime (Docker, Swarm or Kubernetes), stream container state, endpoints, certificates, host CPU/memory/disk, and reconnect on their own, replaying what they saw while disconnected as history. Every entity is attributed to its host, so nothing gets mixed across machines. *Personal: up to 20 remote machines. Pro: unlimited.*
 
 ### [Update intelligence](https://docs.maintenant.dev/features/updates/)
 
-Scans OCI registries and compares digests, so you know which images have an update before you `docker pull` blindly. Compose-aware update and rollback commands, with the right `--project-directory`. No Diun, no Watchtower, no extra container: it is part of the monitor.
+Scans OCI registries: newer versions for fixed tags, and for floating tags like `latest` a comparison between the digest your container runs and the one the tag points at now. You know which images have an update before you `docker pull` blindly. Update and rollback commands for Compose, plain Docker and Kubernetes, with the right `cd` into the Compose project. No Diun, no Watchtower, no extra container: it is part of the monitor.
 
 ### [Host OS end-of-support](https://docs.maintenant.dev/features/host-os/)
 
@@ -246,7 +247,7 @@ Every monitored host reports its distribution and version; maintenant checks it 
 
 ### [Endpoint monitoring](https://docs.maintenant.dev/features/endpoints/)
 
-HTTP and TCP checks declared as Docker labels, picked up when the container starts. Response times, uptime history, 90-day sparklines, failure and recovery thresholds.
+HTTP and TCP checks declared as Docker labels, picked up when the container starts, or added by hand. Endpoints can also be derived from Traefik and Caddy labels (opt-in). Response times, uptime history, 90-day sparklines, failure and recovery thresholds.
 
 ```yaml
 labels:
@@ -257,7 +258,7 @@ labels:
 
 ### [Heartbeat and cron monitoring](https://docs.maintenant.dev/features/heartbeats/)
 
-Create a monitor, get a URL, add one `curl` to the job. maintenant tracks start and finish, duration, exit code, and alerts when the deadline is missed.
+Create a monitor, get a URL, add one `curl` to the job. maintenant tracks start and finish, duration, exit code, and alerts when the deadline is missed. Outbound heartbeats let two maintenant instances watch each other, so a dead monitor does not go unnoticed.
 
 ```bash
 curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
@@ -273,21 +274,21 @@ Real-time CPU, memory, network and disk I/O per container and per host, top-cons
 
 ### [Network security insights](https://docs.maintenant.dev/features/security/)
 
-Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, Kubernetes NodePort and LoadBalancer services without a NetworkPolicy. Each image is mapped to its software ecosystem through OCI manifest inspection. **Personal** adds CVE enrichment, a risk score per container and a unified security posture dashboard.
+Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, Kubernetes Services of type NodePort or LoadBalancer, and database ports exposed through them. Each image is mapped to its software ecosystem through OCI manifest inspection. **Personal** adds CVE enrichment, a risk score per container and a unified security posture dashboard.
 
 ### [Alert engine](https://docs.maintenant.dev/features/alerts/)
 
-One alert pipeline for every source: container restart loops and unhealthy checks, endpoint failures, missed heartbeats, expiring or invalid certificates, CPU and memory thresholds, available updates. Channels are silent by default and routed through **triggers** (severity, source, scope, tags). Silence rules for planned maintenance, exponential backoff on delivery.
+One alert pipeline for every source: container restart loops, unhealthy checks and stopped containers, endpoint failures, missed heartbeats, expiring or invalid certificates, CPU and memory thresholds, available updates, Swarm and Kubernetes health, agents going offline, hosts whose OS loses support. Channels are silent by default and routed through **triggers** (severity, source, scope). Alerts can be acknowledged. Silence rules for planned maintenance, three delivery attempts per notification.
 
 Channels: Discord and webhooks (Community), email and Telegram (Personal), Slack and Microsoft Teams (Pro). **Pro** adds [escalation policies](https://docs.maintenant.dev/features/alert-escalation/) that page the on-call, then the backup, then the lead, plus per-entity routing and maintenance windows.
 
 ### [Public status page](https://docs.maintenant.dev/features/status-page/)
 
-Real-time status page with severity aggregation across every monitor, live over SSE. **Personal** adds incident timelines, **Pro** adds subscriber notifications (email and webhook) and branding.
+Real-time status page with severity aggregation across every monitor, live over SSE. **Personal** adds incident timelines, **Pro** adds email subscribers (double opt-in, through your own SMTP server), maintenance windows and branding.
 
 ### [MCP server](https://docs.maintenant.dev/features/mcp/)
 
-Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Ask your AI assistant what is burning, read a container's logs, check the alert queue, acknowledge an alert, open an incident. stdio and Streamable HTTP transports, full OAuth2 for remote clients (Claude web, mobile and Desktop).
+Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server with 51 tools. Ask your AI assistant what is burning, read a container's logs, check the alert queue, acknowledge an alert, open an incident. stdio and Streamable HTTP transports, OAuth2 with a client id and secret for remote clients (Claude web, mobile and Desktop).
 
 ---
 
@@ -296,7 +297,7 @@ Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server. Ask 
 Everything is driven by **Docker labels** and a handful of **environment variables**. No YAML to maintain.
 
 - [Environment variables](https://docs.maintenant.dev/getting-started/configuration/): bind address, database, base URL, PostgreSQL DSN, MCP, Kubernetes namespaces, license key, telemetry.
-- [Docker labels reference](https://docs.maintenant.dev/guides/docker-labels/): endpoints, TLS, alert severity, restart thresholds, channel routing, grouping, ignore.
+- [Docker labels reference](https://docs.maintenant.dev/guides/docker-labels/): endpoints, TLS, alert severity, restart thresholds, update tracking, grouping, ignore.
 - [REST API](https://docs.maintenant.dev/api/reference/) under `/api/v1/`, plus an SSE event stream.
 
 <details>
@@ -331,7 +332,6 @@ services:
       maintenant.endpoint.http: "http://api:3000/health"
       maintenant.endpoint.interval: "15s"
       maintenant.alert.severity: "critical"
-      maintenant.alert.channels: "ops-webhook"
 
   postgres:
     image: postgres:16
@@ -356,8 +356,8 @@ volumes:
 
 - **No built-in authentication, by design.** Like Dozzle and Prometheus, maintenant sits behind your reverse proxy and auth middleware (Traefik or Caddy, Authelia or Authentik). `/ping/{uuid}` and `/status/` are meant to stay public. [Reverse proxy setup](https://docs.maintenant.dev/security/#reverse-proxy-setup).
 - **Read-only everywhere.** Docker socket mounted `:ro`, read-only RBAC on Kubernetes, read-only agents. maintenant never starts, stops or modifies a container. A [socket proxy](https://docs.maintenant.dev/security/#recommended-docker-socket-proxy) is supported if you would rather not mount the socket at all.
-- **Hardened container.** Runs as `nobody`, `read_only` root filesystem, `no-new-privileges`.
-- **Anonymous, opt-out telemetry.** One counts-only snapshot per hour, no hostnames, IPs, names, URLs or keys, ever. `MAINTENANT_DISABLE_TELEMETRY=1` turns it off with no background goroutine and no outbound packet. [Exact payload and details](https://docs.maintenant.dev/getting-started/configuration/#telemetry).
+- **Hardened container.** Drops to `nobody` (uid 65534) once it has fixed the ownership of its volume, `read_only` root filesystem, `no-new-privileges`.
+- **Anonymous, opt-out telemetry.** One snapshot per hour: counts of monitored objects, edition, storage engine, version and runtime figures (OS, architecture, CPU cores, memory). No hostnames, IPs, names, URLs or keys, ever. `MAINTENANT_DISABLE_TELEMETRY=1` turns it off with no background goroutine and no outbound packet. [Exact payload and details](https://docs.maintenant.dev/getting-started/configuration/#telemetry).
 
 ---
 
@@ -388,11 +388,11 @@ Community is free forever and runs production infrastructure every day: it is th
 | Alert channels            | Discord, webhooks        | + email, Telegram, advanced filters | + Slack, Teams, escalation, per-entity routing, maintenance windows |
 | Security                  | network insights         | + CVE enrichment, risk scoring, security posture, OCSP | same                     |
 | Status page               | 3 components             | unlimited, incident timelines      | + subscriber notifications, branding |
-| Use                       | anything                 | your own infrastructure            | + running it for others, priority support |
+| Use                       | anything                 | your own infrastructure            | + running it for others, email support |
 
-Personal covers one person on infrastructure they own or run for themselves, freelancers included, and ships with one year of updates (then €59 per extra year; every version released inside a paid year stays licensed for life). Pro adds the right to monitor other people's infrastructure. Enterprise (SSO, audit logs, SLAs, on-prem support): [hello@kolapsis.com](mailto:hello@kolapsis.com).
+Personal covers one person on infrastructure they own or run for themselves, freelancers included, and ships with one year of updates (then €59 per extra year; every version released inside a paid year stays licensed for life). Pro adds the right to monitor other people's infrastructure. Volume pricing and custom agreements: [license@maintenant.dev](mailto:license@maintenant.dev).
 
-Paid editions are the same binary, self-hosted the same way. The key is verified against the license server and the signed answer is cached, so being offline for weeks changes nothing. **Your monitoring data never leaves your infrastructure.**
+Paid editions are the same binary, self-hosted the same way. The key is verified against the license server and the signed answer is cached: the instance falls back to Community only after 60 days without reaching the server, so a few weeks offline change nothing. **Your monitoring data never leaves your infrastructure.**
 
 ```bash
 MAINTENANT_LICENSE_KEY=your-license-key   # Personal or Pro, restart, done
