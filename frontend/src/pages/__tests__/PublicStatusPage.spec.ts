@@ -6,11 +6,19 @@ const { guardedFetch } = vi.hoisted(() => ({ guardedFetch: vi.fn() }))
 
 vi.mock('@/services/apiFetch', () => ({ guardedFetch }))
 
+const listeners = new Map<string, (e: Event) => void>()
+
 class FakeEventSource {
-  addEventListener() {}
+  addEventListener(name: string, fn: (e: Event) => void) {
+    listeners.set(name, fn)
+  }
   close() {}
 }
 vi.stubGlobal('EventSource', FakeEventSource)
+
+function emit(name: string, payload: unknown) {
+  listeners.get(name)?.(new MessageEvent(name, { data: JSON.stringify(payload) }))
+}
 
 function jsonResponse(status: number, body: unknown) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
@@ -79,5 +87,56 @@ describe('PublicStatusPage subscription form', () => {
 
     expect(wrapper.text()).toContain('Too many attempts')
     expect(wrapper.text()).not.toContain('Check your inbox')
+  })
+})
+
+describe('PublicStatusPage live updates', () => {
+  beforeEach(() => {
+    guardedFetch.mockReset()
+    guardedFetch.mockImplementation(async (url: string) => {
+      if (url !== '/status/api') return jsonResponse(404, {})
+      return jsonResponse(200, {
+        ...statusSnapshot(false),
+        components: [{ id: 'c1', name: 'API', status: 'operational' }],
+      })
+    })
+  })
+
+  const statusCalls = () => guardedFetch.mock.calls.filter(([url]) => url === '/status/api').length
+
+  it('updates a component and the banner in place', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('Operational')
+
+    emit('status.component_changed', {
+      component_id: 'c1',
+      name: 'Public API',
+      status: 'major_outage',
+      monitors: [{ type: 'endpoint', id: 'e1', name: 'https://api.example.com', status: 'major_outage' }],
+    })
+    emit('status.global_changed', { status: 'major_outage', message: 'Major Outage' })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Public API')
+    expect(wrapper.text()).toContain('Major Outage')
+    expect(wrapper.find('[aria-controls="breakdown-c1"]').exists()).toBe(true)
+    expect(statusCalls()).toBe(1)
+  })
+
+  it('ignores a component the page does not show', async () => {
+    const wrapper = await mountPage()
+    emit('status.component_changed', { component_id: 'hidden', name: 'Internal', status: 'major_outage', monitors: null })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Internal')
+    expect(statusCalls()).toBe(1)
+  })
+
+  it('reloads when a component is added, edited or removed', async () => {
+    await mountPage()
+    emit('status.component_created', { component_id: 'c2' })
+    await flushPromises()
+
+    expect(statusCalls()).toBe(2)
   })
 })

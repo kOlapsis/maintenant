@@ -124,34 +124,46 @@ async function fetchStatus() {
   }
 }
 
-function handleComponentChangedEvent(e: Event) {
-  const msgEvent = e as MessageEvent
-  if (msgEvent.data) {
-    try {
-      const payload = JSON.parse(msgEvent.data) as { id?: string; monitors?: MonitorRef[]; status?: string; name?: string }
-      if (payload.id !== undefined && data.value) {
-        const comp = data.value.components.find(c => c.id === payload.id)
-        if (comp) {
-          if (payload.status !== undefined) comp.status = payload.status
-          if (payload.name !== undefined) comp.name = payload.name
-          if (payload.monitors !== undefined) comp.monitors = payload.monitors
-          return
-        }
-      }
-    } catch { /* fall through to full refresh */ }
-  }
-  fetchStatus()
+interface ComponentChangedPayload { component_id: string; name: string; status: string; monitors: MonitorRef[] | null }
+interface GlobalChangedPayload { status: string; message: string }
+
+// A hidden component also reports its changes, but it is not on the page.
+function onComponentChanged(e: Event) {
+  const payload = JSON.parse((e as MessageEvent).data) as ComponentChangedPayload
+  const comp = data.value?.components.find((c) => c.id === payload.component_id)
+  if (!comp) return
+  comp.name = payload.name
+  comp.status = payload.status
+  comp.monitors = payload.monitors ?? []
 }
+
+function onGlobalChanged(e: Event) {
+  if (!data.value) {
+    void fetchStatus()
+    return
+  }
+  const payload = JSON.parse((e as MessageEvent).data) as GlobalChangedPayload
+  data.value.global_status = payload.status
+  data.value.global_message = payload.message
+  data.value.updated_at = new Date().toISOString()
+}
+
+const REFETCH_EVENTS = [
+  'status.component_created',
+  'status.component_updated',
+  'status.component_deleted',
+  'status.incident_created',
+  'status.incident_updated',
+  'status.incident_resolved',
+  'status.maintenance_started',
+  'status.maintenance_ended',
+] as const
 
 function connectSSE() {
   eventSource = new EventSource('/status/events')
-  eventSource.addEventListener('status.component_changed', handleComponentChangedEvent)
-  eventSource.addEventListener('status.global_changed', () => fetchStatus())
-  eventSource.addEventListener('status.incident_created', () => fetchStatus())
-  eventSource.addEventListener('status.incident_updated', () => fetchStatus())
-  eventSource.addEventListener('status.incident_resolved', () => fetchStatus())
-  eventSource.addEventListener('status.maintenance_started', () => fetchStatus())
-  eventSource.addEventListener('status.maintenance_ended', () => fetchStatus())
+  eventSource.addEventListener('status.component_changed', onComponentChanged)
+  eventSource.addEventListener('status.global_changed', onGlobalChanged)
+  for (const name of REFETCH_EVENTS) eventSource.addEventListener(name, () => void fetchStatus())
 }
 
 onMounted(() => {
