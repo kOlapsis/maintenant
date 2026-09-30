@@ -15,7 +15,6 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/runtime"
-	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/uid"
@@ -92,7 +91,7 @@ func (a *App) reconcile(ctx context.Context) {
 	// Swarm service discovery on startup.
 	if a.swarmDiscovery != nil {
 		a.logger.Info("running Swarm service discovery")
-		_, services, err := a.swarmDiscovery.DiscoverAll(ctx)
+		services, err := a.swarmDiscovery.DiscoverAll(ctx)
 		if err != nil {
 			a.logger.Error("Swarm service discovery failed", "error", err)
 		} else {
@@ -130,21 +129,7 @@ func (a *App) reconcile(ctx context.Context) {
 
 				dbC := dbByExtID[r.Container.ExternalID]
 				if r.SecurityConfig != nil && dbC != nil && dbC.ID != "" {
-					bindings := make([]security.PortBinding, 0, len(r.SecurityConfig.PortBindings))
-					for _, pb := range r.SecurityConfig.PortBindings {
-						bindings = append(bindings, security.PortBinding{
-							HostIP:   pb.HostIP,
-							HostPort: pb.HostPort,
-							Port:     pb.ContainerPort,
-							Protocol: pb.Protocol,
-						})
-					}
-					insights := security.AnalyzeDocker(dbC.ID, dbC.Name, security.DockerSecurityConfig{
-						Privileged:  r.SecurityConfig.Privileged,
-						NetworkMode: r.SecurityConfig.NetworkMode,
-						Bindings:    bindings,
-					}, now)
-					a.securitySvc.UpdateContainer(dbC.ID, dbC.Name, insights)
+					a.securitySvc.UpdateContainer(dbC.ID, dbC.Name, dockerInsights(dbC, r.SecurityConfig, now))
 				}
 			}
 			if swept := a.endpointSvc.SweepOrphanedLabelEndpoints(ctx, seen); swept > 0 {
@@ -204,7 +189,7 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 					name = name[1:]
 				}
 				a.endpointSvc.HandleContainerStart(ctx, name, evt.ExternalID, evt.Labels,
-					evt.Labels["com.docker.compose.project"],
+					container.OrchestrationGroupFromLabels(evt.Labels),
 					evt.Labels["com.docker.compose.service"])
 				a.certSvc.SyncFromLabels(ctx, evt.ExternalID, evt.Labels)
 
@@ -215,9 +200,8 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 				a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
 
 				// Feed Swarm task failures to crash-loop detector (Pro).
-				if evt.Action == "die" && a.swarmCrashLoop != nil {
-					if svcID, ok := evt.Labels["com.docker.swarm.service.id"]; ok && svcID != "" {
-						svcName := evt.Labels["com.docker.swarm.service.name"]
+				if a.swarmCrashLoop != nil {
+					if svcID, svcName, ok := swarmTaskFailure(evt); ok {
 						a.swarmCrashLoop.RecordFailure(svcID, svcName, evt.ErrorDetail)
 
 						// Emit task_failed SSE event.
@@ -241,6 +225,16 @@ func (a *App) startEventStream(ctx context.Context) <-chan struct{} {
 		}
 	}()
 	return done
+}
+
+// swarmTaskFailure returns the service of a Swarm task that died, unless the
+// task is ignored.
+func swarmTaskFailure(evt runtime.RuntimeEvent) (serviceID, serviceName string, ok bool) {
+	serviceID = evt.Labels["com.docker.swarm.service.id"]
+	if evt.Action != "die" || serviceID == "" || container.IgnoredByLabels(evt.Labels) {
+		return "", "", false
+	}
+	return serviceID, evt.Labels["com.docker.swarm.service.name"], true
 }
 
 // startNodeRefresh runs periodic Swarm node reconciliation (Pro, 60s).
@@ -304,6 +298,9 @@ func (a *App) startKubernetesReconcile(ctx context.Context, src kubernetes.Snaps
 		if err := a.k8sIngest.Reconcile(ctx, uid.LocalAgent, snap); err != nil {
 			a.logger.Warn("local kubernetes reconcile: store failed", "error", err)
 		}
+		if exposures, ok := a.rt.(serviceExposureSource); ok {
+			ScanKubernetesSecurity(ctx, exposures, a.containerSvc, a.securitySvc, a.logger)
+		}
 	}
 	reconcile()
 	ticker := time.NewTicker(localTopologyReconcileInterval)
@@ -363,6 +360,7 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 		HeartbeatStore:   a.hbStore,
 		CertificateStore: a.certStore,
 		ResourceStore:    a.resStore,
+		UptimeStore:      a.uptimeStore,
 		Config: store.RetentionConfig{
 			Snapshots: a.cfg.Retention.Snapshots,
 			Interval:  a.cfg.Retention.Interval,
@@ -465,7 +463,7 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 						a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, a.logger)
 
 						// Run initial discovery.
-						_, services, err := a.swarmDiscovery.DiscoverAll(ctx)
+						services, err := a.swarmDiscovery.DiscoverAll(ctx)
 						if err != nil {
 							a.logger.Error("initial Swarm discovery after activation failed", "error", err)
 						} else {

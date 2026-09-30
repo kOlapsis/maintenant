@@ -8,11 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/moby/moby/api/types/swarm"
-
-	cmodel "github.com/kolapsis/maintenant/internal/container"
 )
 
 // ServiceClient abstracts Docker SDK calls needed for Swarm service discovery.
@@ -52,38 +49,25 @@ func (sd *ServiceDiscovery) SetNetworkResolver(resolver NetworkResolver) {
 	sd.networkResolver = resolver
 }
 
-// DiscoverAll discovers all Swarm services and maps them to Container models.
-// Returns containers representing Swarm tasks with Swarm fields populated.
-func (sd *ServiceDiscovery) DiscoverAll(ctx context.Context) ([]*cmodel.Container, []*SwarmService, error) {
+// DiscoverAll discovers all Swarm services and refreshes the service cache.
+func (sd *ServiceDiscovery) DiscoverAll(ctx context.Context) ([]*SwarmService, error) {
 	services, err := sd.client.ServiceList(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("discover services: %w", err)
+		return nil, fmt.Errorf("discover services: %w", err)
 	}
 
 	tasks, err := sd.client.TaskList(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("discover tasks: %w", err)
+		return nil, fmt.Errorf("discover tasks: %w", err)
 	}
 
-	// Build node hostname map for task placement.
-	nodeHostnames := make(map[string]string)
-	nodes, err := sd.client.NodeList(ctx)
-	if err != nil {
-		sd.logger.Warn("failed to list nodes for hostname resolution", "error", err)
-	} else {
-		for _, n := range nodes {
-			nodeHostnames[n.ID] = n.Description.Hostname
+	runningByService := make(map[string]int)
+	for _, t := range tasks {
+		if t.Status.State == swarm.TaskStateRunning {
+			runningByService[t.ServiceID]++
 		}
 	}
 
-	// Group tasks by service ID.
-	tasksByService := make(map[string][]swarm.Task)
-	for _, t := range tasks {
-		tasksByService[t.ServiceID] = append(tasksByService[t.ServiceID], t)
-	}
-
-	now := time.Now()
-	var containers []*cmodel.Container
 	swarmServices := make([]*SwarmService, 0, len(services))
 
 	sd.mu.Lock()
@@ -94,37 +78,16 @@ func (sd *ServiceDiscovery) DiscoverAll(ctx context.Context) ([]*cmodel.Containe
 
 	for _, svc := range services {
 		ss := mapService(svc)
-
-		serviceTasks := tasksByService[svc.ID]
-		runningCount := 0
-		for _, t := range serviceTasks {
-			if t.Status.State == swarm.TaskStateRunning {
-				runningCount++
-			}
-		}
-		ss.RunningReplicas = runningCount
+		ss.RunningReplicas = runningByService[svc.ID]
 
 		sd.resolveNetworks(ctx, ss)
 		sd.services[svc.ID] = ss
 		swarmServices = append(swarmServices, ss)
-
-		// Map tasks to containers.
-		for _, t := range serviceTasks {
-			// Only map tasks with an active desired state.
-			if t.DesiredState != swarm.TaskStateRunning && t.DesiredState != swarm.TaskStateShutdown {
-				continue
-			}
-
-			c := mapTaskToContainer(svc, t, ss, nodeHostnames, now)
-			containers = append(containers, c)
-		}
 	}
 
-	sd.logger.Info("discovered Swarm services",
-		"services", len(services),
-		"tasks", len(containers))
+	sd.logger.Info("discovered Swarm services", "services", len(services))
 
-	return containers, swarmServices, nil
+	return swarmServices, nil
 }
 
 // GetService returns a cached Swarm service by ID.
@@ -311,73 +274,4 @@ func mapService(svc swarm.Service) *SwarmService {
 	}
 
 	return ss
-}
-
-func mapTaskToContainer(svc swarm.Service, task swarm.Task, ss *SwarmService, nodeHostnames map[string]string, now time.Time) *cmodel.Container {
-	containerID := ""
-	if task.Status.ContainerStatus != nil {
-		containerID = task.Status.ContainerStatus.ContainerID
-	}
-
-	name := svc.Spec.Name
-	if task.Slot > 0 {
-		name = fmt.Sprintf("%s.%d", svc.Spec.Name, task.Slot)
-	}
-
-	state := mapTaskState(task.Status.State)
-	readyCount := 0
-	if state == cmodel.StateRunning {
-		readyCount = 1
-	}
-
-	c := &cmodel.Container{
-		ExternalID:           containerID,
-		Name:                 name,
-		Image:                ss.Image,
-		State:                state,
-		RuntimeType:          "docker",
-		ControllerKind:       "swarm-service",
-		OrchestrationUnit:    svc.Spec.Name,
-		PodCount:             1,
-		ReadyCount:           readyCount,
-		AlertSeverity:        cmodel.SeverityWarning,
-		RestartThreshold:     3,
-		FirstSeenAt:          now,
-		LastStateChangeAt:    task.Status.Timestamp,
-		SwarmServiceID:       svc.ID,
-		SwarmServiceName:     svc.Spec.Name,
-		SwarmServiceMode:     ss.Mode,
-		SwarmNodeID:          task.NodeID,
-		SwarmTaskSlot:        task.Slot,
-		SwarmDesiredReplicas: ss.DesiredReplicas,
-	}
-
-	// Set error detail from task errors.
-	if task.Status.Err != "" {
-		c.ErrorDetail = task.Status.Err
-	}
-
-	// Apply service-level labels.
-	ApplyServiceLabels(c, svc.Spec.Labels)
-
-	return c
-}
-
-func mapTaskState(state swarm.TaskState) cmodel.ContainerState {
-	switch state {
-	case swarm.TaskStateRunning:
-		return cmodel.StateRunning
-	case swarm.TaskStateComplete:
-		return cmodel.StateCompleted
-	case swarm.TaskStateFailed, swarm.TaskStateRejected:
-		return cmodel.StateExited
-	case swarm.TaskStateShutdown:
-		return cmodel.StateExited
-	case swarm.TaskStateNew, swarm.TaskStatePending, swarm.TaskStateAssigned,
-		swarm.TaskStateAccepted, swarm.TaskStatePreparing, swarm.TaskStateStarting,
-		swarm.TaskStateReady:
-		return cmodel.StateCreated
-	default:
-		return cmodel.StateCreated
-	}
 }

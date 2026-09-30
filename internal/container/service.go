@@ -208,6 +208,9 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		}
 		return
 	}
+	if c.IsIgnored {
+		return
+	}
 
 	previousState := c.State
 	if evt.Replayed {
@@ -336,7 +339,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		s.logger.Error("get container for health change", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
-	if c == nil {
+	if c == nil || c.IsIgnored {
 		return
 	}
 
@@ -471,7 +474,9 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				dc.ImageVersion, dc.ImageSource, dc.ImageURL, dc.ImageDescription
 		}
 
-		if sc.State == dc.State && metadataChanged {
+		labelsChanged := sc.adoptLabelFields(dc)
+
+		if sc.State == dc.State && (metadataChanged || labelsChanged) {
 			if err := s.store.UpdateContainer(ctx, sc); err != nil {
 				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
 			}
@@ -496,9 +501,11 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
 			}
 
-			s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
-				"id": sc.ID, "state": dc.State, "previous_state": previousState, "timestamp": now, "agent_id": sc.AgentID,
-			})
+			if !sc.IsIgnored {
+				s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
+					"id": sc.ID, "state": dc.State, "previous_state": previousState, "timestamp": now, "agent_id": sc.AgentID,
+				})
+			}
 		}
 	}
 
@@ -532,7 +539,9 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				}
 			}
 
-			s.emitEvent(event.ContainerDiscovered, dc)
+			if !dc.IsIgnored {
+				s.emitEvent(event.ContainerDiscovered, dc)
+			}
 		}
 	}
 

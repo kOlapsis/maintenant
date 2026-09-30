@@ -75,7 +75,7 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 						continue
 					}
 					if evt.ResourceType == "container" {
-						evt.Labels = c.containerLabels(evt.Labels)
+						evt.Labels = c.containerLabels(ctx, evt.Labels)
 					}
 
 					select {

@@ -116,6 +116,15 @@ CREATE TABLE state_transitions (
 CREATE INDEX idx_transition_container_time ON state_transitions(container_id, timestamp DESC);
 CREATE INDEX idx_transition_timestamp ON state_transitions(timestamp);
 
+CREATE TABLE container_uptime_daily (
+    id             TEXT PRIMARY KEY NOT NULL,
+    container_id   TEXT NOT NULL REFERENCES containers(id) ON DELETE CASCADE,
+    day            BIGINT NOT NULL,                           -- UTC midnight, epoch seconds
+    uptime_percent REAL NOT NULL,
+    incident_count INTEGER NOT NULL,
+    UNIQUE(container_id, day)
+);
+
 CREATE TABLE resource_snapshots (
     id            TEXT PRIMARY KEY NOT NULL,
     container_id  TEXT NOT NULL REFERENCES containers(id) ON DELETE CASCADE,
@@ -220,6 +229,15 @@ CREATE TABLE check_results (
 );
 CREATE INDEX idx_check_endpoint_time ON check_results(endpoint_id, timestamp DESC);
 CREATE INDEX idx_check_timestamp ON check_results(timestamp);
+
+CREATE TABLE endpoint_uptime_daily (
+    id             TEXT PRIMARY KEY NOT NULL,
+    endpoint_id    TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+    day            BIGINT NOT NULL,                           -- UTC midnight, epoch seconds
+    uptime_percent REAL NOT NULL,
+    incident_count INTEGER NOT NULL,
+    UNIQUE(endpoint_id, day)
+);
 
 -- ========================================================= cert monitors =====
 CREATE TABLE cert_monitors (
@@ -333,6 +351,15 @@ CREATE TABLE heartbeat_pings (
 );
 CREATE INDEX idx_hb_ping_heartbeat_time ON heartbeat_pings(heartbeat_id, timestamp DESC);
 CREATE INDEX idx_hb_ping_timestamp ON heartbeat_pings(timestamp);
+
+CREATE TABLE heartbeat_uptime_daily (
+    id             TEXT PRIMARY KEY NOT NULL,
+    heartbeat_id   TEXT NOT NULL REFERENCES heartbeats(id) ON DELETE CASCADE,
+    day            BIGINT NOT NULL,                           -- UTC midnight, epoch seconds
+    uptime_percent REAL NOT NULL,
+    incident_count INTEGER NOT NULL,
+    UNIQUE(heartbeat_id, day)
+);
 
 CREATE TABLE heartbeat_executions (
     id            TEXT PRIMARY KEY NOT NULL,

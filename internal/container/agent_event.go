@@ -98,6 +98,9 @@ func (s *Service) refreshAgentContainer(ctx context.Context, c *Container, ev *a
 	if labels := ev.GetLabels(); len(labels) > 0 && c.ApplyImageLabels(labels) {
 		dirty = true
 	}
+	if labels := ev.GetLabels(); len(labels) > 0 && c.adoptLabelFields(agentLabelFields(labels)) {
+		dirty = true
+	}
 	if ev.GetHasHealthCheck() && !c.HasHealthCheck {
 		c.HasHealthCheck = true
 		dirty = true
@@ -186,7 +189,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		Name:               ev.GetName(),
 		Image:              ev.GetImage(),
 		State:              state,
-		OrchestrationGroup: labels[labelComposeProject],
+		OrchestrationGroup: OrchestrationGroupFromLabels(labels),
 		OrchestrationUnit:  labels[labelComposeService],
 		ComposeWorkingDir:  labels[labelComposeWorkingDir],
 		RuntimeType:        s.resolveAgentRuntime(ctx, agentID),
@@ -238,7 +241,9 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 
 	s.logger.Info("agent event: container discovered",
 		"external_id", shortID(externalID), "name", c.Name, "agent_id", agentID, "state", string(state))
-	s.emitEvent(event.ContainerDiscovered, c)
+	if !c.IsIgnored {
+		s.emitEvent(event.ContainerDiscovered, c)
+	}
 	return nil
 }
 

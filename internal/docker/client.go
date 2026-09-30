@@ -30,6 +30,9 @@ type Client struct {
 	connected bool
 
 	proxyLabels bool
+
+	serviceMu     sync.Mutex
+	serviceLabels map[string]serviceLabels
 }
 
 // NewClient creates a new Docker client wrapper.
@@ -59,7 +62,11 @@ func (c *Client) SetProxyLabels(enabled bool) {
 	c.proxyLabels = enabled
 }
 
-func (c *Client) containerLabels(labels map[string]string) map[string]string {
+// containerLabels returns the labels maintenant reads for a container: its own,
+// over those of its Swarm service, expanded from reverse proxy labels when
+// enabled.
+func (c *Client) containerLabels(ctx context.Context, labels map[string]string) map[string]string {
+	labels = withServiceLabels(labels, c.swarmServiceLabels(ctx, labels[labelSwarmServiceID]))
 	if !c.proxyLabels {
 		return labels
 	}

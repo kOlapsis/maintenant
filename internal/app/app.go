@@ -97,6 +97,7 @@ type App struct {
 	hbStore        *store.HeartbeatStore
 	certStore      *store.CertificateStore
 	resStore       *store.ResourceStore
+	uptimeStore    *store.UptimeDailyStore
 	agentStore     *store.AgentStore
 	agentSessions  extpoint.AgentSessions
 	serveAgents    func(ctx context.Context, cfg extpoint.GRPCConfig) error
@@ -606,7 +607,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.wireAgentLifecycleAlerts()
 
 	// --- Router ---
-	uptimeDailyStore := store.NewUptimeDailyStore(db)
+	a.uptimeStore = store.NewUptimeDailyStore(db)
 	a.router = v1.NewRouter(v1.HandlerDeps{
 		// Core services
 		Broker:       a.broker,
@@ -639,7 +640,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		// Webhooks
 		WebhookStore: webhookStore,
 		// UI extras
-		UptimeDaily:      uptimeDailyStore,
+		UptimeDaily:      a.uptimeStore,
 		LogStreamer:      rt,
 		ResourceTopSvc:   a.resourceSvc,
 		SparklineFetcher: epStore,

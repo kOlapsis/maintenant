@@ -12,7 +12,6 @@ export type InsightType =
   | 'host_network_mode'
   | 'service_load_balancer'
   | 'service_node_port'
-  | 'missing_network_policy'
 
 export interface SecurityInsight {
   type: InsightType

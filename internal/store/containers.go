@@ -333,8 +333,14 @@ func (s *ContainerStore) DeleteTransitionsBefore(ctx context.Context, before tim
 	return deleted, err
 }
 
+// deleteTransitionsBefore keeps the latest transition of each container,
+// however old: it is the state the container is still in, and uptime starts
+// from it.
 func (s *ContainerStore) deleteTransitionsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
-	return deleteRowsBefore(ctx, s.writer, o, "state_transitions", "timestamp", before)
+	return deleteRowsWhere(ctx, s.writer, o, "state_transitions",
+		`timestamp < ? AND EXISTS (SELECT 1 FROM state_transitions later
+			WHERE later.container_id = state_transitions.container_id AND later.timestamp > state_transitions.timestamp)`,
+		before.Unix())
 }
 
 func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, before time.Time) (int64, error) {

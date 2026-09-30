@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	labelComposeProject    = "com.docker.compose.project"
 	labelComposeService    = "com.docker.compose.service"
 	labelComposeWorkingDir = "com.docker.compose.project.working_dir"
 	labelComposeOneOff     = "com.docker.compose.oneoff"
@@ -81,10 +80,11 @@ func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 		if IsOneOff(dc.Labels) {
 			continue
 		}
-		result, err := c.inspectAndMap(ctx, dc, now)
+		labels := c.containerLabels(ctx, dc.Labels)
+		result, err := c.inspectAndMap(ctx, dc, labels, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
-			containers = append(containers, mapFromList(dc, now))
+			containers = append(containers, mapFromList(dc, labels, now))
 			continue
 		}
 		containers = append(containers, result.Container)
@@ -108,18 +108,19 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 		if IsOneOff(dc.Labels) {
 			continue
 		}
-		result, err := c.inspectAndMap(ctx, dc, now)
+		labels := c.containerLabels(ctx, dc.Labels)
+		result, err := c.inspectAndMap(ctx, dc, labels, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
 			results = append(results, &DiscoveryResult{
-				Container: mapFromList(dc, now),
-				Labels:    c.containerLabels(dc.Labels),
+				Container: mapFromList(dc, labels, now),
+				Labels:    labels,
 			})
 			continue
 		}
 		results = append(results, &DiscoveryResult{
 			Container:      result.Container,
-			Labels:         c.containerLabels(dc.Labels),
+			Labels:         labels,
 			SecurityConfig: result.SecurityConfig,
 		})
 	}
@@ -159,14 +160,14 @@ type inspectResult struct {
 }
 
 // inspectAndMap calls ContainerInspect and maps the result to our domain model.
-func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, now time.Time) (*inspectResult, error) {
+func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, labels map[string]string, now time.Time) (*inspectResult, error) {
 	res, err := c.cli.ContainerInspect(ctx, dc.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s: %w", dc.ID[:12], err)
 	}
 	info := res.Container
 
-	cm := mapFromList(dc, now)
+	cm := mapFromList(dc, labels, now)
 
 	// Health check info from inspect
 	if info.Config != nil && info.Config.Healthcheck != nil && len(info.Config.Healthcheck.Test) > 0 {
@@ -218,8 +219,9 @@ func extractSecurityConfig(hc *container.HostConfig) *SecurityConfig {
 	return cfg
 }
 
-// mapFromList creates a Container from the docker ContainerList response.
-func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
+// mapFromList creates a Container from the docker ContainerList response and
+// the container's effective labels.
+func mapFromList(dc container.Summary, labels map[string]string, now time.Time) *cmodel.Container {
 	name := ""
 	if len(dc.Names) > 0 {
 		name = dc.Names[0]
@@ -239,9 +241,9 @@ func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
 		Name:               name,
 		Image:              dc.Image,
 		State:              state,
-		OrchestrationGroup: dc.Labels[labelComposeProject],
-		OrchestrationUnit:  dc.Labels[labelComposeService],
-		ComposeWorkingDir:  dc.Labels[labelComposeWorkingDir],
+		OrchestrationGroup: cmodel.OrchestrationGroupFromLabels(labels),
+		OrchestrationUnit:  labels[labelComposeService],
+		ComposeWorkingDir:  labels[labelComposeWorkingDir],
 		RuntimeType:        "docker",
 		PodCount:           1,
 		ReadyCount:         readyCount,
@@ -251,8 +253,8 @@ func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
 		LastStateChangeAt:  now,
 	}
 
-	applyLabels(cm, dc.Labels)
-	cm.ApplyImageLabels(dc.Labels)
+	applyLabels(cm, labels)
+	cm.ApplyImageLabels(labels)
 
 	return cm
 }

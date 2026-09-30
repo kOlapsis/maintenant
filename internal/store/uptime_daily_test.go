@@ -5,419 +5,396 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"log/slog"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/kolapsis/maintenant/internal/uid"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kolapsis/maintenant/internal/endpoint"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
-// setupTestDB creates an in-memory SQLite database with the required schema for testing.
-func setupTestDB(t *testing.T) *DB {
+func seedUptimeEndpoint(t *testing.T, db *DB) string {
 	t.Helper()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	rawDB, err := sql.Open("sqlite3", ":memory:")
+	id, err := NewEndpointStore(db).UpsertEndpoint(context.Background(), &endpoint.Endpoint{
+		ContainerName: "web-" + uid.New(),
+		LabelKey:      "maintenant.endpoint.http",
+		ExternalID:    "ext-web",
+		EndpointType:  endpoint.TypeHTTP,
+		Target:        "http://web:8080",
+	})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = rawDB.Close() })
+	return id
+}
 
-	// Create required tables.
-	_, err = rawDB.Exec(`
-		CREATE TABLE IF NOT EXISTS endpoints (
-			id TEXT PRIMARY KEY NOT NULL,
-			container_name TEXT NOT NULL,
-			label_key TEXT NOT NULL,
-			external_id TEXT NOT NULL DEFAULT '',
-			endpoint_type TEXT NOT NULL DEFAULT 'http',
-			target TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL DEFAULT 'unknown',
-			alert_state TEXT NOT NULL DEFAULT 'normal',
-			consecutive_failures INTEGER NOT NULL DEFAULT 0,
-			consecutive_successes INTEGER NOT NULL DEFAULT 0,
-			last_check_at INTEGER,
-			last_response_time_ms INTEGER,
-			last_http_status INTEGER,
-			last_error TEXT,
-			config_json TEXT NOT NULL DEFAULT '{}',
-			active INTEGER NOT NULL DEFAULT 1,
-			first_seen_at INTEGER NOT NULL,
-			last_seen_at INTEGER NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS check_results (
-			id TEXT PRIMARY KEY NOT NULL,
-			endpoint_id TEXT NOT NULL,
-			success INTEGER NOT NULL,
-			response_time_ms INTEGER NOT NULL DEFAULT 0,
-			http_status INTEGER,
-			error_message TEXT,
-			timestamp INTEGER NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS heartbeats (
-			id TEXT PRIMARY KEY NOT NULL,
-			uuid TEXT NOT NULL,
-			name TEXT NOT NULL,
-			status TEXT NOT NULL DEFAULT 'new',
-			alert_state TEXT NOT NULL DEFAULT 'normal',
-			interval_seconds INTEGER NOT NULL DEFAULT 300,
-			grace_seconds INTEGER NOT NULL DEFAULT 60,
-			last_ping_at INTEGER,
-			next_deadline_at INTEGER,
-			current_run_started_at INTEGER,
-			last_exit_code INTEGER,
-			last_duration_ms INTEGER,
-			consecutive_failures INTEGER NOT NULL DEFAULT 0,
-			consecutive_successes INTEGER NOT NULL DEFAULT 0,
-			active INTEGER NOT NULL DEFAULT 1,
-			created_at INTEGER NOT NULL,
-			updated_at INTEGER NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS heartbeat_pings (
-			id TEXT PRIMARY KEY NOT NULL,
-			heartbeat_id TEXT NOT NULL,
-			ping_type TEXT NOT NULL,
-			exit_code INTEGER,
-			source_ip TEXT NOT NULL DEFAULT '',
-			http_method TEXT NOT NULL DEFAULT 'GET',
-			payload TEXT,
-			timestamp INTEGER NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS state_transitions (
-			id TEXT PRIMARY KEY NOT NULL,
-			container_id TEXT NOT NULL,
-			previous_state TEXT NOT NULL,
-			new_state TEXT NOT NULL,
-			previous_health TEXT,
-			new_health TEXT,
-			exit_code INTEGER,
-			log_snippet TEXT,
-			timestamp INTEGER NOT NULL
-		);
-	`)
+func seedUptimeHeartbeat(t *testing.T, db *DB) string {
+	t.Helper()
+	id, err := NewHeartbeatStore(db).CreateHeartbeat(context.Background(), &heartbeat.Heartbeat{
+		Name: "backup", IntervalSeconds: 300, GraceSeconds: 60,
+	})
 	require.NoError(t, err)
+	return id
+}
 
-	db := &DB{
-		db:     rawDB,
-		logger: logger,
+func addCheck(t *testing.T, db *DB, endpointID string, success bool, ts time.Time) {
+	t.Helper()
+	ok := 0
+	if success {
+		ok = 1
 	}
-	return db
-}
-
-func insertCheckResult(t *testing.T, db *Reader, endpointID string, success int, ts time.Time) {
-	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := db.Writer().Exec(context.Background(),
 		`INSERT INTO check_results (id, endpoint_id, success, response_time_ms, timestamp) VALUES (?, ?, ?, 100, ?)`,
-		uid.New(), endpointID, success, ts.Unix(),
-	)
+		uid.New(), endpointID, ok, ts.Unix())
 	require.NoError(t, err)
 }
 
-func insertHeartbeatPing(t *testing.T, db *Reader, heartbeatID string, pingType string, ts time.Time) {
+func addPing(t *testing.T, db *DB, heartbeatID, pingType string, exitCode *int, ts time.Time) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO heartbeat_pings (id, heartbeat_id, ping_type, source_ip, http_method, timestamp) VALUES (?, ?, ?, '127.0.0.1', 'GET', ?)`,
-		uid.New(), heartbeatID, pingType, ts.Unix(),
-	)
+	_, err := db.Writer().Exec(context.Background(),
+		`INSERT INTO heartbeat_pings (id, heartbeat_id, ping_type, exit_code, source_ip, http_method, timestamp)
+		VALUES (?, ?, ?, ?, '127.0.0.1', 'GET', ?)`,
+		uid.New(), heartbeatID, pingType, exitCode, ts.Unix())
 	require.NoError(t, err)
 }
 
-func insertTransition(t *testing.T, db *Reader, containerID, prevState, newState string, ts time.Time) {
+func addTransition(t *testing.T, db *DB, containerID, prevState, newState string, ts time.Time) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := db.Writer().Exec(context.Background(),
 		`INSERT INTO state_transitions (id, container_id, previous_state, new_state, timestamp) VALUES (?, ?, ?, ?, ?)`,
-		uid.New(), containerID, prevState, newState, ts.Unix(),
-	)
+		uid.New(), containerID, prevState, newState, ts.Unix())
 	require.NoError(t, err)
 }
 
-func TestContainerDailyUptime(t *testing.T) {
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+func exitCode(n int) *int { return &n }
 
-	t.Run("no transitions returns null days", func(t *testing.T) {
-		store := NewUptimeDailyStore(setupTestDB(t))
-		result, err := store.GetContainerDailyUptime(context.Background(), "c1", 3)
-		require.NoError(t, err)
-		assert.Len(t, result, 3)
-		for _, du := range result {
-			assert.Nil(t, du.UptimePercent, "day %s should be null with no data", du.Date)
-			assert.Equal(t, 0, du.IncidentCount)
+// dayOf returns the entry for day in a most-recent-first series.
+func dayOf(t *testing.T, series []DailyUptime, day time.Time) DailyUptime {
+	t.Helper()
+	for _, du := range series {
+		if du.Date == day.Format("2006-01-02") {
+			return du
 		}
-	})
+	}
+	t.Fatalf("day %s missing from the series", day.Format("2006-01-02"))
+	return DailyUptime{}
+}
 
-	t.Run("running since before the window is 100% today", func(t *testing.T) {
-		d := setupTestDB(t)
-		insertTransition(t, d.Reader(), "c1", "created", "running", today.AddDate(0, 0, -5))
-		result, err := NewUptimeDailyStore(d).GetContainerDailyUptime(context.Background(), "c1", 1)
-		require.NoError(t, err)
-		require.Len(t, result, 1)
-		require.NotNil(t, result[0].UptimePercent)
-		assert.Equal(t, 100.0, *result[0].UptimePercent)
-		assert.Equal(t, 0, result[0].IncidentCount)
-	})
-
-	t.Run("full past day with a down period is time-weighted", func(t *testing.T) {
-		d := setupTestDB(t)
-		// Running well before the window so every day is seeded as up.
-		insertTransition(t, d.Reader(), "c1", "created", "running", today.AddDate(0, 0, -10))
-		// Two days ago: down from +8h to +16h (8h of a full 24h day -> 66.66% up).
-		twoDaysAgo := today.AddDate(0, 0, -2)
-		insertTransition(t, d.Reader(), "c1", "running", "exited", twoDaysAgo.Add(8*time.Hour))
-		insertTransition(t, d.Reader(), "c1", "exited", "running", twoDaysAgo.Add(16*time.Hour))
-
-		result, err := NewUptimeDailyStore(d).GetContainerDailyUptime(context.Background(), "c1", 3)
-		require.NoError(t, err)
-		require.Len(t, result, 3)
-		// Most recent first: [0]=today, [1]=yesterday, [2]=two days ago.
-		require.NotNil(t, result[2].UptimePercent)
-		assert.Equal(t, 66.66, *result[2].UptimePercent)
-		assert.Equal(t, 1, result[2].IncidentCount)
-		require.NotNil(t, result[1].UptimePercent)
-		assert.Equal(t, 100.0, *result[1].UptimePercent)
-	})
-
-	t.Run("days clamped from 0 to 90", func(t *testing.T) {
-		store := NewUptimeDailyStore(setupTestDB(t))
-		result, err := store.GetContainerDailyUptime(context.Background(), "c1", 0)
-		require.NoError(t, err)
-		assert.Len(t, result, 90)
-	})
+func requirePercent(t *testing.T, du DailyUptime, want float64) {
+	t.Helper()
+	require.NotNil(t, du.UptimePercent, "day %s has no uptime", du.Date)
+	assert.InDelta(t, want, *du.UptimePercent, 0.001, "day %s", du.Date)
 }
 
 func TestEndpointDailyUptime(t *testing.T) {
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	today := startOfUTCDay(time.Now())
+	yesterday := today.AddDate(0, 0, -1)
 
-	tests := []struct {
-		name          string
-		endpointID    string
-		days          int
-		setup         func(t *testing.T, db *Reader)
-		wantLen       int
-		checkFirstDay func(t *testing.T, du DailyUptime)
-		checkNullDays bool // expect null uptime for days with no data
-	}{
-		{
-			name:       "no checks returns all null days",
-			endpointID: "1",
-			days:       3,
-			setup:      func(t *testing.T, db *Reader) {},
-			wantLen:    3,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				assert.Equal(t, today.Format("2006-01-02"), du.Date)
-				assert.Nil(t, du.UptimePercent, "no checks should yield null uptime")
-				assert.Equal(t, 0, du.IncidentCount)
-			},
-			checkNullDays: true,
-		},
-		{
-			name:       "100% uptime day",
-			endpointID: "1",
-			days:       1,
-			setup: func(t *testing.T, db *Reader) {
-				for i := 0; i < 10; i++ {
-					insertCheckResult(t, db, "1", 1, today.Add(time.Duration(i)*time.Hour))
-				}
-			},
-			wantLen: 1,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				require.NotNil(t, du.UptimePercent)
-				assert.Equal(t, 100.0, *du.UptimePercent)
-				assert.Equal(t, 0, du.IncidentCount)
-			},
-		},
-		{
-			name:       "0% uptime day",
-			endpointID: "2",
-			days:       1,
-			setup: func(t *testing.T, db *Reader) {
-				for i := 0; i < 5; i++ {
-					insertCheckResult(t, db, "2", 0, today.Add(time.Duration(i)*time.Hour))
-				}
-			},
-			wantLen: 1,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				require.NotNil(t, du.UptimePercent)
-				assert.Equal(t, 0.0, *du.UptimePercent)
-			},
-		},
-		{
-			name:       "partial uptime with incident",
-			endpointID: "3",
-			days:       1,
-			setup: func(t *testing.T, db *Reader) {
-				// 4 success, then 1 failure = 80% uptime, 1 incident
-				for i := 0; i < 4; i++ {
-					insertCheckResult(t, db, "3", 1, today.Add(time.Duration(i)*time.Hour))
-				}
-				insertCheckResult(t, db, "3", 0, today.Add(4*time.Hour))
-			},
-			wantLen: 1,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				require.NotNil(t, du.UptimePercent)
-				assert.Equal(t, 80.0, *du.UptimePercent)
-				assert.Equal(t, 1, du.IncidentCount)
-			},
-		},
-		{
-			name:       "multi-day with gap",
-			endpointID: "4",
-			days:       3,
-			setup: func(t *testing.T, db *Reader) {
-				// Today: 2 checks both success
-				insertCheckResult(t, db, "4", 1, today.Add(1*time.Hour))
-				insertCheckResult(t, db, "4", 1, today.Add(2*time.Hour))
-				// Yesterday: no checks (should be null)
-				// Day before: 1 check, failure
-				twoDaysAgo := today.AddDate(0, 0, -2)
-				insertCheckResult(t, db, "4", 0, twoDaysAgo.Add(5*time.Hour))
-			},
-			wantLen: 3,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				// Most recent first = today
-				assert.Equal(t, today.Format("2006-01-02"), du.Date)
-				require.NotNil(t, du.UptimePercent)
-				assert.Equal(t, 100.0, *du.UptimePercent)
-			},
-		},
-		{
-			name:       "default days clamped from 0 to 90",
-			endpointID: "1",
-			days:       0,
-			setup:      func(t *testing.T, db *Reader) {},
-			wantLen:    90,
-		},
-		{
-			name:       "max days clamped to 365",
-			endpointID: "1",
-			days:       500,
-			setup:      func(t *testing.T, db *Reader) {},
-			wantLen:    365,
-		},
-	}
+	t.Run("no checks returns all null days, most recent first", func(t *testing.T) {
+		db := openTestDB(t)
+		result, err := NewUptimeDailyStore(db).GetEndpointDailyUptime(ctx, seedUptimeEndpoint(t, db), 3)
+		require.NoError(t, err)
+		require.Len(t, result, 3)
+		assert.Equal(t, today.Format("2006-01-02"), result[0].Date)
+		assert.Equal(t, yesterday.Format("2006-01-02"), result[1].Date)
+		for _, du := range result {
+			assert.Nil(t, du.UptimePercent)
+			assert.Zero(t, du.IncidentCount)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := setupTestDB(t)
-			store := NewUptimeDailyStore(d)
-			tt.setup(t, d.Reader())
+	t.Run("partial uptime with incident", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedUptimeEndpoint(t, db)
+		for i := 0; i < 4; i++ {
+			addCheck(t, db, id, true, yesterday.Add(time.Duration(i)*time.Hour))
+		}
+		addCheck(t, db, id, false, yesterday.Add(4*time.Hour))
 
-			result, err := store.GetEndpointDailyUptime(context.Background(), tt.endpointID, tt.days)
-			require.NoError(t, err)
-			assert.Len(t, result, tt.wantLen)
+		result, err := NewUptimeDailyStore(db).GetEndpointDailyUptime(ctx, id, 2)
+		require.NoError(t, err)
+		requirePercent(t, result[1], 80)
+		assert.Equal(t, 1, result[1].IncidentCount)
+	})
 
-			if tt.checkFirstDay != nil && len(result) > 0 {
-				tt.checkFirstDay(t, result[0])
-			}
+	t.Run("a day opening on a failure after a success counts an incident", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedUptimeEndpoint(t, db)
+		addCheck(t, db, id, true, yesterday.Add(-time.Hour))
+		addCheck(t, db, id, false, yesterday.Add(time.Minute))
 
-			if tt.checkNullDays {
-				for _, du := range result {
-					assert.Nil(t, du.UptimePercent, "day %s should have null uptime", du.Date)
-				}
-			}
+		result, err := NewUptimeDailyStore(db).GetEndpointDailyUptime(ctx, id, 2)
+		require.NoError(t, err)
+		requirePercent(t, result[1], 0)
+		assert.Equal(t, 1, result[1].IncidentCount)
+	})
 
-			// Verify ordering: the most recent first.
-			if len(result) > 1 {
-				assert.GreaterOrEqual(t, result[0].Date, result[1].Date, "days should be ordered most recent first")
-			}
-		})
-	}
+	t.Run("gap days stay null", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedUptimeEndpoint(t, db)
+		addCheck(t, db, id, false, today.AddDate(0, 0, -3).Add(5*time.Hour))
+		addCheck(t, db, id, true, yesterday.Add(time.Hour))
+
+		result, err := NewUptimeDailyStore(db).GetEndpointDailyUptime(ctx, id, 4)
+		require.NoError(t, err)
+		requirePercent(t, result[1], 100)
+		assert.Nil(t, result[2].UptimePercent)
+		requirePercent(t, result[3], 0)
+	})
+
+	t.Run("days default to 90 and cap at 365", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedUptimeEndpoint(t, db)
+		store := NewUptimeDailyStore(db)
+
+		result, err := store.GetEndpointDailyUptime(ctx, id, 0)
+		require.NoError(t, err)
+		assert.Len(t, result, 90)
+
+		result, err = store.GetEndpointDailyUptime(ctx, id, 500)
+		require.NoError(t, err)
+		assert.Len(t, result, 365)
+	})
 }
 
 func TestHeartbeatDailyUptime(t *testing.T) {
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	yesterday := startOfUTCDay(time.Now()).AddDate(0, 0, -1)
 
-	tests := []struct {
-		name          string
-		heartbeatID   string
-		days          int
-		setup         func(t *testing.T, db *Reader)
-		wantLen       int
-		checkFirstDay func(t *testing.T, du DailyUptime)
-		checkNullDays bool
-	}{
-		{
-			name:        "no pings returns null days",
-			heartbeatID: "1",
-			days:        3,
-			setup:       func(t *testing.T, db *Reader) {},
-			wantLen:     3,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				assert.Nil(t, du.UptimePercent)
-				assert.Equal(t, 0, du.IncidentCount)
-			},
-			checkNullDays: true,
-		},
-		{
-			name:        "all success pings = 100%",
-			heartbeatID: "1",
-			days:        1,
-			setup: func(t *testing.T, db *Reader) {
-				for i := 0; i < 6; i++ {
-					insertHeartbeatPing(t, db, "1", "success", today.Add(time.Duration(i)*time.Hour))
-				}
-			},
-			wantLen: 1,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				require.NotNil(t, du.UptimePercent)
-				assert.Equal(t, 100.0, *du.UptimePercent)
-				assert.Equal(t, 0, du.IncidentCount)
-			},
-		},
-		{
-			name:        "mixed pings with exit_code type",
-			heartbeatID: "2",
-			days:        1,
-			setup: func(t *testing.T, db *Reader) {
-				// 3 successes + 1 exit_code (not success) = 75%
-				insertHeartbeatPing(t, db, "2", "success", today.Add(1*time.Hour))
-				insertHeartbeatPing(t, db, "2", "success", today.Add(2*time.Hour))
-				insertHeartbeatPing(t, db, "2", "success", today.Add(3*time.Hour))
-				insertHeartbeatPing(t, db, "2", "exit_code", today.Add(4*time.Hour))
-			},
-			wantLen: 1,
-			checkFirstDay: func(t *testing.T, du DailyUptime) {
-				require.NotNil(t, du.UptimePercent)
-				assert.Equal(t, 75.0, *du.UptimePercent)
-				assert.Equal(t, 1, du.IncidentCount) // success->exit_code transition
-			},
-		},
-		{
-			name:        "90 day window default",
-			heartbeatID: "1",
-			days:        0,
-			setup:       func(t *testing.T, db *Reader) {},
-			wantLen:     90,
-		},
+	t.Run("no pings returns null days", func(t *testing.T) {
+		db := openTestDB(t)
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, seedUptimeHeartbeat(t, db), 3)
+		require.NoError(t, err)
+		require.Len(t, result, 3)
+		for _, du := range result {
+			assert.Nil(t, du.UptimePercent)
+		}
+	})
+
+	t.Run("a run reported with start then exit code 0 is up", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedUptimeHeartbeat(t, db)
+		for i := 0; i < 3; i++ {
+			run := yesterday.Add(time.Duration(i) * time.Hour)
+			addPing(t, db, id, "start", nil, run)
+			addPing(t, db, id, "exit_code", exitCode(0), run.Add(time.Minute))
+		}
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 2)
+		require.NoError(t, err)
+		requirePercent(t, result[1], 100)
+		assert.Zero(t, result[1].IncidentCount)
+	})
+
+	t.Run("a failing exit code after a success is an incident", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedUptimeHeartbeat(t, db)
+		addPing(t, db, id, "success", nil, yesterday.Add(1*time.Hour))
+		addPing(t, db, id, "success", nil, yesterday.Add(2*time.Hour))
+		addPing(t, db, id, "exit_code", exitCode(0), yesterday.Add(3*time.Hour))
+		addPing(t, db, id, "exit_code", exitCode(2), yesterday.Add(4*time.Hour))
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 2)
+		require.NoError(t, err)
+		requirePercent(t, result[1], 75)
+		assert.Equal(t, 1, result[1].IncidentCount)
+	})
+}
+
+func TestContainerDailyUptime(t *testing.T) {
+	ctx := context.Background()
+	today := startOfUTCDay(time.Now())
+
+	t.Run("no transitions returns null days", func(t *testing.T) {
+		db := openTestDB(t)
+		cid := seedHostContainer(t, NewContainerStore(db), "ext-none", "")
+		result, err := NewUptimeDailyStore(db).GetContainerDailyUptime(ctx, cid, 3)
+		require.NoError(t, err)
+		require.Len(t, result, 3)
+		for _, du := range result {
+			assert.Nil(t, du.UptimePercent)
+		}
+	})
+
+	t.Run("full past day with a down period is time-weighted", func(t *testing.T) {
+		db := openTestDB(t)
+		cid := seedHostContainer(t, NewContainerStore(db), "ext-weighted", "")
+		addTransition(t, db, cid, "created", "running", today.AddDate(0, 0, -10))
+		twoDaysAgo := today.AddDate(0, 0, -2)
+		addTransition(t, db, cid, "running", "exited", twoDaysAgo.Add(8*time.Hour))
+		addTransition(t, db, cid, "exited", "running", twoDaysAgo.Add(16*time.Hour))
+
+		result, err := NewUptimeDailyStore(db).GetContainerDailyUptime(ctx, cid, 3)
+		require.NoError(t, err)
+		requirePercent(t, result[2], 66.66)
+		assert.Equal(t, 1, result[2].IncidentCount)
+		requirePercent(t, result[1], 100)
+	})
+
+	t.Run("days after its archival have no uptime", func(t *testing.T) {
+		db := openTestDB(t)
+		cs := NewContainerStore(db)
+		cid := seedHostContainer(t, cs, "ext-archived", "")
+		addTransition(t, db, cid, "created", "running", today.AddDate(0, 0, -5))
+		addTransition(t, db, cid, "running", "exited", today.AddDate(0, 0, -3).Add(12*time.Hour))
+		require.NoError(t, cs.ArchiveContainer(ctx, cid, today.AddDate(0, 0, -3).Add(13*time.Hour)))
+
+		result, err := NewUptimeDailyStore(db).GetContainerDailyUptime(ctx, cid, 5)
+		require.NoError(t, err)
+		requirePercent(t, result[4], 100)
+		require.NotNil(t, result[3].UptimePercent)
+		assert.Nil(t, result[2].UptimePercent, "the container no longer existed")
+		assert.Nil(t, result[0].UptimePercent)
+	})
+}
+
+// A completed day is written to the daily aggregate before its raw rows are
+// purged, so the 90-day bars outlive the 30-day raw retention.
+func TestUptimeDaily_SurvivesRawPurge(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	logger := testLogger()
+	today := startOfUTCDay(time.Now())
+	day := today.AddDate(0, 0, -3)
+
+	epID := seedUptimeEndpoint(t, db)
+	for i := 0; i < 3; i++ {
+		addCheck(t, db, epID, true, day.Add(time.Duration(i)*time.Hour))
+	}
+	addCheck(t, db, epID, false, day.Add(3*time.Hour))
+
+	hbID := seedUptimeHeartbeat(t, db)
+	addPing(t, db, hbID, "success", nil, day.Add(time.Hour))
+	addPing(t, db, hbID, "exit_code", exitCode(1), day.Add(2*time.Hour))
+
+	cs := NewContainerStore(db)
+	cid := seedHostContainer(t, cs, "ext-purge", "")
+	addTransition(t, db, cid, "created", "running", day)
+	addTransition(t, db, cid, "running", "exited", day.Add(18*time.Hour))
+	addTransition(t, db, cid, "exited", "running", today.AddDate(0, 0, -2))
+
+	uptime := NewUptimeDailyStore(db)
+	eps, hbs := NewEndpointStore(db), NewHeartbeatStore(db)
+	pass := func(raw time.Duration) {
+		cfg := RetentionConfig{CheckResults: raw, HeartbeatPings: raw, Transitions: raw}.withDefaults(logger)
+		var p retentionPass
+		runCleanup(ctx, cs, uptime, logger, cfg, &p)
+		runEndpointCleanup(ctx, eps, uptime, logger, cfg, &p)
+		runHeartbeatCleanup(ctx, hbs, uptime, logger, cfg, &p)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := setupTestDB(t)
-			store := NewUptimeDailyStore(d)
-			tt.setup(t, d.Reader())
+	pass(30 * 24 * time.Hour)
+	pass(time.Hour)
 
-			result, err := store.GetHeartbeatDailyUptime(context.Background(), tt.heartbeatID, tt.days)
-			require.NoError(t, err)
-			assert.Len(t, result, tt.wantLen)
+	assert.Zero(t, countTableRows(t, db, "check_results"), "the raw checks are gone")
+	assert.Zero(t, countTableRows(t, db, "heartbeat_pings"), "the raw pings are gone")
 
-			if tt.checkFirstDay != nil && len(result) > 0 {
-				tt.checkFirstDay(t, result[0])
-			}
+	ep, err := uptime.GetEndpointDailyUptime(ctx, epID, 7)
+	require.NoError(t, err)
+	requirePercent(t, dayOf(t, ep, day), 75)
+	assert.Equal(t, 1, dayOf(t, ep, day).IncidentCount)
 
-			if tt.checkNullDays {
-				for _, du := range result {
-					assert.Nil(t, du.UptimePercent, "day %s should have null uptime", du.Date)
-				}
-			}
+	hb, err := uptime.GetHeartbeatDailyUptime(ctx, hbID, 7)
+	require.NoError(t, err)
+	requirePercent(t, dayOf(t, hb, day), 50)
 
-			if len(result) > 1 {
-				assert.GreaterOrEqual(t, result[0].Date, result[1].Date, "days should be ordered most recent first")
-			}
-		})
+	ct, err := uptime.GetContainerDailyUptime(ctx, cid, 7)
+	require.NoError(t, err)
+	requirePercent(t, dayOf(t, ct, day), 75)
+	assert.Equal(t, 1, dayOf(t, ct, day).IncidentCount)
+	requirePercent(t, dayOf(t, ct, today), 100)
+}
+
+// A check replayed by an agent after the day was aggregated still lands in it.
+func TestUptimeRollup_RewritesTheLastAggregatedDay(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	yesterday := startOfUTCDay(now).AddDate(0, 0, -1)
+	uptime := NewUptimeDailyStore(db)
+
+	id := seedUptimeEndpoint(t, db)
+	addCheck(t, db, id, true, yesterday.Add(time.Hour))
+	require.NoError(t, uptime.rollupEndpoints(ctx, now, 30*24*time.Hour))
+
+	addCheck(t, db, id, false, yesterday.Add(2*time.Hour))
+	require.NoError(t, uptime.rollupEndpoints(ctx, now, 30*24*time.Hour))
+
+	stored, err := uptime.storedDays(ctx, endpointUptimeTable, id, yesterday, yesterday.Add(uptimeDay))
+	require.NoError(t, err)
+	require.Contains(t, stored, yesterday.Unix())
+	assert.InDelta(t, 50, stored[yesterday.Unix()].percent, 0.001)
+}
+
+// Once the purge has started eating a day, the rollup must not rewrite it from
+// what is left.
+func TestUptimeRollup_LeavesAPartlyPurgedDayAlone(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	day := startOfUTCDay(now).AddDate(0, 0, -5)
+	uptime := NewUptimeDailyStore(db)
+
+	id := seedUptimeEndpoint(t, db)
+	addCheck(t, db, id, true, day.Add(time.Hour))
+	addCheck(t, db, id, false, day.Add(2*time.Hour))
+	require.NoError(t, uptime.rollupEndpoints(ctx, now, 30*24*time.Hour))
+
+	_, err := db.Writer().Exec(ctx, `DELETE FROM check_results WHERE endpoint_id = ? AND success = 0`, id)
+	require.NoError(t, err)
+	require.NoError(t, uptime.rollupEndpoints(ctx, now, 5*24*time.Hour))
+
+	stored, err := uptime.storedDays(ctx, endpointUptimeTable, id, day, day.Add(uptimeDay))
+	require.NoError(t, err)
+	assert.InDelta(t, 50, stored[day.Unix()].percent, 0.001)
+}
+
+func TestUptimeDailyCleanup_KeepsAYear(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	today := startOfUTCDay(time.Now())
+	id := seedUptimeEndpoint(t, db)
+
+	for _, day := range []time.Time{today.AddDate(0, 0, -364), today.AddDate(0, 0, -400)} {
+		_, err := db.Writer().Exec(ctx,
+			`INSERT INTO endpoint_uptime_daily (id, endpoint_id, day, uptime_percent, incident_count) VALUES (?, ?, ?, 99.5, 0)`,
+			uid.New(), id, day.Unix())
+		require.NoError(t, err)
 	}
+
+	var p retentionPass
+	runUptimeDailyCleanup(ctx, NewUptimeDailyStore(db), testLogger(), RetentionConfig{}.withDefaults(testLogger()), &p)
+
+	assert.Equal(t, int64(1), p.deleted)
+	result, err := NewUptimeDailyStore(db).GetEndpointDailyUptime(ctx, id, 365)
+	require.NoError(t, err)
+	requirePercent(t, dayOf(t, result, today.AddDate(0, 0, -364)), 99.5)
+}
+
+// A container that has not changed state for longer than the transition
+// retention still knows the state it is in.
+func TestDeleteTransitionsBefore_KeepsTheLatestOfEachContainer(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cs := NewContainerStore(db)
+	old := time.Now().AddDate(0, 0, -200)
+
+	stable := seedHostContainer(t, cs, "ext-stable", "")
+	addTransition(t, db, stable, "created", "running", old)
+
+	flappy := seedHostContainer(t, cs, "ext-flappy", "")
+	addTransition(t, db, flappy, "created", "running", old)
+	addTransition(t, db, flappy, "running", "exited", old.Add(time.Hour))
+	addTransition(t, db, flappy, "exited", "running", time.Now().Add(-time.Hour))
+
+	deleted, err := cs.DeleteTransitionsBefore(ctx, time.Now().AddDate(0, 0, -90), 1000)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), deleted)
+	assert.Equal(t, 2, countTableRows(t, db, "state_transitions"))
+
+	result, err := NewUptimeDailyStore(db).GetContainerDailyUptime(ctx, stable, 1)
+	require.NoError(t, err)
+	requirePercent(t, result[0], 100)
 }

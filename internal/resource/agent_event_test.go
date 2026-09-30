@@ -74,6 +74,21 @@ func TestHandleAgentEvent_SkipsWhenContainerUnknown(t *testing.T) {
 	assert.Empty(t, rstore.snapshots, "no snapshot when container not yet known")
 }
 
+func TestHandleAgentEvent_SkipsIgnoredContainer(t *testing.T) {
+	extID := "abc123def4567890"
+	c := &container.Container{
+		ID:         uid.Container(uid.Agent("agent-9"), extID),
+		ExternalID: extID, AgentID: "agent-9", Name: "demo", IsIgnored: true,
+	}
+	rstore := newMockResourceStore()
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore(c)), nil)
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 3,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+	assert.Empty(t, rstore.snapshots, "an ignored container is left out of resource collection")
+}
+
 func TestHandleAgentEvent_UsesRowIDNotDerivedID(t *testing.T) {
 	extID := "abc123def4567890"
 	// An inherited row: its primary key does not derive from its current agent.

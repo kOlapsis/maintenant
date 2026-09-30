@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 const (
@@ -45,8 +47,12 @@ func (e *LabelParseError) Error() string {
 }
 
 // ParseEndpointLabels extracts endpoint definitions from a Docker container's labels.
-// Returns parsed endpoints and any configuration errors encountered.
+// Returns parsed endpoints and any configuration errors encountered; an ignored
+// container declares none.
 func ParseEndpointLabels(labels map[string]string, logger *slog.Logger) ([]*ParsedEndpoint, []*LabelParseError) {
+	if container.IgnoredByLabels(labels) {
+		return nil, nil
+	}
 	endpointMap := make(map[int]*ParsedEndpoint)
 	globalConfig := make(map[string]string)
 	indexedConfigs := make(map[int]map[string]string)

@@ -285,7 +285,7 @@ func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runt
 	}
 
 	for _, c := range containers {
-		if c.State != cmodel.StateRunning {
+		if c.State != cmodel.StateRunning || c.IsIgnored {
 			continue
 		}
 		raw, err := rt.StatsSnapshot(ctx, c.ExternalID)

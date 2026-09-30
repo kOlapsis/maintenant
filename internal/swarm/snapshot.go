@@ -16,7 +16,7 @@ import (
 // ingest service under the LocalAgent id). disc supplies services and tasks;
 // client supplies nodes.
 func SnapshotFromClient(ctx context.Context, disc *ServiceDiscovery, client ServiceClient) (TopologySnapshot, error) {
-	_, services, err := disc.DiscoverAll(ctx)
+	services, err := disc.DiscoverAll(ctx)
 	if err != nil {
 		return TopologySnapshot{}, err
 	}

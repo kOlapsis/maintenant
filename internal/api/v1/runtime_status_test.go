@@ -65,7 +65,7 @@ func discoveryWithServices(t *testing.T, n int) *swarm.ServiceDiscovery {
 		svcs[i] = dockerswarm.Service{ID: "svc" + string(rune('a'+i))}
 	}
 	disc := swarm.NewServiceDiscovery(fakeServiceClient{services: svcs}, testLogger())
-	_, _, err := disc.DiscoverAll(context.Background())
+	_, err := disc.DiscoverAll(context.Background())
 	require.NoError(t, err)
 	return disc
 }

@@ -1089,3 +1089,39 @@ func TestService_ProcessCheckResult_DuplicateReplayDoesNotInflateCounters(t *tes
 	assert.Equal(t, first.ConsecutiveFailures, second.ConsecutiveFailures,
 		"the same probe delivered twice must count once")
 }
+
+func TestParseEndpointLabels_IgnoredContainerDeclaresNone(t *testing.T) {
+	parsed, errs := ParseEndpointLabels(map[string]string{
+		"maintenant.ignore":        "true",
+		"maintenant.endpoint.http": "http://web:8080/health",
+		"maintenant.endpoint.tcp":  "not a target",
+	}, noopLogger())
+	assert.Empty(t, parsed)
+	assert.Empty(t, errs)
+}
+
+func TestService_SyncEndpoints_IgnoredContainerLosesItsEndpoints(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+	labels := map[string]string{"maintenant.endpoint.http": "http://web:8080/health"}
+
+	svc.SyncEndpoints(ctx, "web", "container-1", labels, "", "")
+	eps, err := store.ListEndpointsByExternalID(ctx, uid.LocalAgent, "container-1")
+	require.NoError(t, err)
+	require.Len(t, eps, 1)
+
+	labels["maintenant.ignore"] = "true"
+	svc.SyncEndpoints(ctx, "web", "container-1", labels, "", "")
+	ep, err := store.GetEndpointByID(ctx, eps[0].ID)
+	require.NoError(t, err)
+	assert.False(t, ep.Active, "an ignored container keeps no endpoint")
+
+	svc.SyncAgentEndpoints(ctx, "agent-1", "api", "container-2", map[string]string{
+		"maintenant.ignore":        "1",
+		"maintenant.endpoint.http": "http://api:8080/health",
+	})
+	agentEps, err := store.ListEndpointsByExternalID(ctx, "agent-1", "container-2")
+	require.NoError(t, err)
+	assert.Empty(t, agentEps)
+}

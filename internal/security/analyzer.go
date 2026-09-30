@@ -101,6 +101,67 @@ func analyzePortBindings(containerID string, containerName string, bindings []Po
 	return insights
 }
 
+// Kubernetes Service types that open a port outside the cluster.
+const (
+	ServiceTypeLoadBalancer = "LoadBalancer"
+	ServiceTypeNodePort     = "NodePort"
+)
+
+// ServicePort is one port a LoadBalancer or NodePort Service exposes for a workload.
+type ServicePort struct {
+	Service    string // namespace/name
+	Type       string // ServiceTypeLoadBalancer or ServiceTypeNodePort
+	Port       int
+	TargetPort int // 0 when the Service targets a named port
+	NodePort   int
+	Protocol   string
+}
+
+// AnalyzeKubernetes returns the insights of the ports Services expose for a workload.
+func AnalyzeKubernetes(containerID string, containerName string, ports []ServicePort, now time.Time) []Insight {
+	var insights []Insight
+	for _, p := range ports {
+		port := p.TargetPort
+		if port == 0 {
+			port = p.Port
+		}
+		details := map[string]any{"port": port, "protocol": p.Protocol, "service": p.Service, "service_type": p.Type}
+		if p.NodePort != 0 {
+			details["node_port"] = p.NodePort
+		}
+		insight := Insight{
+			Severity:      SeverityCritical,
+			ContainerID:   containerID,
+			ContainerName: containerName,
+			Details:       details,
+			DetectedAt:    now,
+		}
+
+		switch dbType, isDB := knownDatabasePorts[port]; {
+		case isDB:
+			insight.Type = DatabasePortExposed
+			insight.Title = "Database port publicly exposed"
+			insight.Description = fmt.Sprintf("%s port %d is reachable from outside the cluster through %s service %s.",
+				dbType, port, p.Type, p.Service)
+			details["database_type"] = dbType
+		case p.Type == ServiceTypeLoadBalancer:
+			insight.Type = ServiceLoadBalancer
+			insight.Title = "Port exposed by a LoadBalancer service"
+			insight.Description = fmt.Sprintf("Port %d/%s is reachable from outside the cluster through LoadBalancer service %s.",
+				port, p.Protocol, p.Service)
+		case p.Type == ServiceTypeNodePort:
+			insight.Type = ServiceNodePort
+			insight.Title = "Port exposed on every node"
+			insight.Description = fmt.Sprintf("Port %d/%s is published on port %d of every node by NodePort service %s.",
+				port, p.Protocol, p.NodePort, p.Service)
+		default:
+			continue
+		}
+		insights = append(insights, insight)
+	}
+	return insights
+}
+
 func isExposedOnAllInterfaces(hostIP string) bool {
 	return hostIP == "" || hostIP == "0.0.0.0" || hostIP == "::"
 }

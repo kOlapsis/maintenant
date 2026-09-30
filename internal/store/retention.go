@@ -28,6 +28,7 @@ const (
 	resourceSnapshotRetention = resource.DefaultSnapshotRetention
 	resourceHourlyRetention   = 90 * 24 * time.Hour  // 90 days
 	resourceDailyRetention    = 365 * 24 * time.Hour // 1 year
+	uptimeDailyRetention      = 365 * 24 * time.Hour // the longest range the uptime API serves
 
 	// Below this many deleted rows an autocheckpoint keeps up on its own and
 	// forcing a truncating checkpoint is just noise.
@@ -54,6 +55,7 @@ type RetentionConfig struct {
 	HeartbeatPings    time.Duration
 	HeartbeatExecs    time.Duration
 	CertCheckResults  time.Duration
+	UptimeDaily       time.Duration
 }
 
 // withDefaults fills unset fields and rejects values that would break the loop
@@ -92,6 +94,7 @@ func (c RetentionConfig) withDefaults(logger *slog.Logger) RetentionConfig {
 	c.HeartbeatPings = orDefault(c.HeartbeatPings, heartbeatPingRetention)
 	c.HeartbeatExecs = orDefault(c.HeartbeatExecs, heartbeatExecRetention)
 	c.CertCheckResults = orDefault(c.CertCheckResults, certCheckResultRetention)
+	c.UptimeDaily = orDefault(c.UptimeDaily, uptimeDailyRetention)
 
 	return c
 }
@@ -134,6 +137,7 @@ type RetentionOpts struct {
 	HeartbeatStore   *HeartbeatStore
 	CertificateStore *CertificateStore
 	ResourceStore    *ResourceStore
+	UptimeStore      *UptimeDailyStore
 	Config           RetentionConfig
 }
 
@@ -199,12 +203,15 @@ func runRetentionPass(ctx context.Context, store *ContainerStore, db *DB, logger
 	started := time.Now()
 	var pass retentionPass
 
-	runCleanup(ctx, store, logger, cfg, &pass)
+	runCleanup(ctx, store, opts.UptimeStore, logger, cfg, &pass)
 	if opts.EndpointStore != nil {
-		runEndpointCleanup(ctx, opts.EndpointStore, logger, cfg, &pass)
+		runEndpointCleanup(ctx, opts.EndpointStore, opts.UptimeStore, logger, cfg, &pass)
 	}
 	if opts.HeartbeatStore != nil {
-		runHeartbeatCleanup(ctx, opts.HeartbeatStore, logger, cfg, &pass)
+		runHeartbeatCleanup(ctx, opts.HeartbeatStore, opts.UptimeStore, logger, cfg, &pass)
+	}
+	if opts.UptimeStore != nil {
+		runUptimeDailyCleanup(ctx, opts.UptimeStore, logger, cfg, &pass)
 	}
 	if opts.CertificateStore != nil {
 		runCertificateCleanup(ctx, opts.CertificateStore, logger, cfg, &pass)
@@ -227,15 +234,17 @@ func runRetentionPass(ctx context.Context, store *ContainerStore, db *DB, logger
 	return pass.truncated
 }
 
-func runCleanup(ctx context.Context, store *ContainerStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {
+func runCleanup(ctx context.Context, store *ContainerStore, uptime *UptimeDailyStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {
 	// Clean old transitions
-	cutoff := time.Now().Add(-cfg.Transitions)
-	deleted, truncated, err := store.deleteTransitionsBefore(ctx, cutoff, cfg.batchOpts())
-	pass.add(deleted, truncated)
-	if err != nil {
-		logger.Error("retention cleanup: transitions", "error", err)
-	} else if deleted > 0 {
-		logger.Info("retention cleanup: deleted transitions", "count", deleted)
+	if rolledUp(ctx, logger, uptime, "containers", cfg.Transitions, (*UptimeDailyStore).rollupContainers) {
+		cutoff := time.Now().Add(-cfg.Transitions)
+		deleted, truncated, err := store.deleteTransitionsBefore(ctx, cutoff, cfg.batchOpts())
+		pass.add(deleted, truncated)
+		if err != nil {
+			logger.Error("retention cleanup: transitions", "error", err)
+		} else if deleted > 0 {
+			logger.Info("retention cleanup: deleted transitions", "count", deleted)
+		}
 	}
 
 	// Clean old archived containers
@@ -249,15 +258,17 @@ func runCleanup(ctx context.Context, store *ContainerStore, logger *slog.Logger,
 	}
 }
 
-func runHeartbeatCleanup(ctx context.Context, store *HeartbeatStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {
+func runHeartbeatCleanup(ctx context.Context, store *HeartbeatStore, uptime *UptimeDailyStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {
 	// Clean old heartbeat pings
-	pingCutoff := time.Now().Add(-cfg.HeartbeatPings)
-	deleted, truncated, err := store.deletePingsBefore(ctx, pingCutoff, cfg.batchOpts())
-	pass.add(deleted, truncated)
-	if err != nil {
-		logger.Error("retention cleanup: heartbeat pings", "error", err)
-	} else if deleted > 0 {
-		logger.Info("retention cleanup: deleted heartbeat pings", "count", deleted)
+	if rolledUp(ctx, logger, uptime, "heartbeats", cfg.HeartbeatPings, (*UptimeDailyStore).rollupHeartbeats) {
+		pingCutoff := time.Now().Add(-cfg.HeartbeatPings)
+		deleted, truncated, err := store.deletePingsBefore(ctx, pingCutoff, cfg.batchOpts())
+		pass.add(deleted, truncated)
+		if err != nil {
+			logger.Error("retention cleanup: heartbeat pings", "error", err)
+		} else if deleted > 0 {
+			logger.Info("retention cleanup: deleted heartbeat pings", "count", deleted)
+		}
 	}
 
 	// Clean old heartbeat executions
@@ -311,15 +322,17 @@ func runResourceCleanup(ctx context.Context, store *ResourceStore, logger *slog.
 	}
 }
 
-func runEndpointCleanup(ctx context.Context, store *EndpointStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {
+func runEndpointCleanup(ctx context.Context, store *EndpointStore, uptime *UptimeDailyStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {
 	// Clean old check results
-	cutoff := time.Now().Add(-cfg.CheckResults)
-	deleted, truncated, err := store.deleteCheckResultsBefore(ctx, cutoff, cfg.batchOpts())
-	pass.add(deleted, truncated)
-	if err != nil {
-		logger.Error("retention cleanup: check results", "error", err)
-	} else if deleted > 0 {
-		logger.Info("retention cleanup: deleted check results", "count", deleted)
+	if rolledUp(ctx, logger, uptime, "endpoints", cfg.CheckResults, (*UptimeDailyStore).rollupEndpoints) {
+		cutoff := time.Now().Add(-cfg.CheckResults)
+		deleted, truncated, err := store.deleteCheckResultsBefore(ctx, cutoff, cfg.batchOpts())
+		pass.add(deleted, truncated)
+		if err != nil {
+			logger.Error("retention cleanup: check results", "error", err)
+		} else if deleted > 0 {
+			logger.Info("retention cleanup: deleted check results", "count", deleted)
+		}
 	}
 
 	// Clean inactive endpoints
@@ -330,6 +343,34 @@ func runEndpointCleanup(ctx context.Context, store *EndpointStore, logger *slog.
 		logger.Error("retention cleanup: inactive endpoints", "error", err)
 	} else if epDeleted > 0 {
 		logger.Info("retention cleanup: deleted inactive endpoints", "count", epDeleted)
+	}
+}
+
+// rolledUp writes the daily uptime aggregates of one monitor kind and reports
+// whether its raw rows may be purged: a day the rollup could not write stays in
+// the raw table until a later pass succeeds.
+func rolledUp(ctx context.Context, logger *slog.Logger, uptime *UptimeDailyStore, kind string, rawRetention time.Duration,
+	rollup func(*UptimeDailyStore, context.Context, time.Time, time.Duration) error) bool {
+	if uptime == nil {
+		return true
+	}
+	if err := rollup(uptime, ctx, time.Now(), rawRetention); err != nil {
+		logger.Error("retention cleanup: uptime rollup failed, raw rows kept", "kind", kind, "error", err)
+		return false
+	}
+	return true
+}
+
+func runUptimeDailyCleanup(ctx context.Context, uptime *UptimeDailyStore, logger *slog.Logger, cfg RetentionConfig, pass *retentionPass) {
+	cutoff := time.Now().Add(-cfg.UptimeDaily)
+	for _, t := range []uptimeTable{endpointUptimeTable, heartbeatUptimeTable, containerUptimeTable} {
+		deleted, truncated, err := uptime.deleteBefore(ctx, t, cutoff, cfg.batchOpts())
+		pass.add(deleted, truncated)
+		if err != nil {
+			logger.Error("retention cleanup: "+t.name, "error", err)
+		} else if deleted > 0 {
+			logger.Info("retention cleanup: deleted "+t.name, "count", deleted)
+		}
 	}
 }
 

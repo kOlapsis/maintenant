@@ -280,6 +280,15 @@ func TestParseCertificateLabels_StripsSchemeAndPath(t *testing.T) {
 	assert.Equal(t, 443, parsed[0].Port)
 }
 
+func TestParseCertificateLabels_IgnoredContainerDeclaresNone(t *testing.T) {
+	parsed := ParseCertificateLabels(map[string]string{
+		"maintenant.ignore":           "true",
+		"maintenant.tls.certificates": "example.com",
+	})
+
+	assert.Empty(t, parsed)
+}
+
 // ---------------------------------------------------------------------------
 // Mock store for quota testing
 // ---------------------------------------------------------------------------

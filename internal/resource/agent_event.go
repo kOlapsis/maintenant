@@ -32,7 +32,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	c, err := s.containerSvc.GetContainerByExternalID(ctx, agentID, containerExternalID)
-	if err != nil || c == nil {
+	if err != nil || c == nil || c.IsIgnored {
 		return err
 	}
 
