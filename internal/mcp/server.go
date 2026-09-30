@@ -97,6 +97,7 @@ type Services struct {
 	Incidents         status.IncidentStore
 	IncidentAnnouncer IncidentAnnouncer
 	Maintenance       status.MaintenanceStore
+	StatusComponents  status.ComponentStore
 	Runtime           runtime.Runtime
 	LogFetcher        LogFetcher
 	EscalationSvc     escalation.Service

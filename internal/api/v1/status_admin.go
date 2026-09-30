@@ -5,7 +5,7 @@ package v1
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/mail"
@@ -591,26 +591,15 @@ func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *h
 
 // componentIDsExist answers 400 unless every id names a distinct existing component.
 func (h *StatusAdminHandler) componentIDsExist(w http.ResponseWriter, r *http.Request, ids []string) bool {
-	seen := make(map[string]bool, len(ids))
-	for i, id := range ids {
-		if id == "" {
-			WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("component_ids[%d] is empty", i))
-			return false
-		}
-		if seen[id] {
-			WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("component_ids[%d] repeats %q", i, id))
-			return false
-		}
-		seen[id] = true
-		c, err := h.components.GetComponent(r.Context(), id)
-		if err != nil {
-			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
-			return false
-		}
-		if c == nil {
-			WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("component_ids[%d]: no component %q", i, id))
-			return false
-		}
+	err := status.CheckComponentIDs(r.Context(), h.components, ids)
+	var invalid *status.InvalidComponentIDsError
+	switch {
+	case errors.As(err, &invalid):
+		WriteError(w, http.StatusBadRequest, "validation", invalid.Error())
+		return false
+	case err != nil:
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return false
 	}
 	return true
 }

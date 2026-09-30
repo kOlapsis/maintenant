@@ -121,6 +121,22 @@ func checkCapability(c extension.Capability) (*gomcp.CallToolResult, any, error)
 	}, nil, nil
 }
 
+// checkComponentIDs refuses, as the REST API does, component ids that do not each name a distinct existing component.
+func checkComponentIDs(ctx context.Context, svc *Services, ids []string) (*gomcp.CallToolResult, any, error) {
+	if len(ids) > 0 && svc.StatusComponents == nil {
+		return errResult("status component store not available")
+	}
+	err := status.CheckComponentIDs(ctx, svc.StatusComponents, ids)
+	var invalid *status.InvalidComponentIDsError
+	if errors.As(err, &invalid) {
+		return errResult("invalid input: " + invalid.Error())
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check component_ids: %w", err)
+	}
+	return nil, nil, nil
+}
+
 // titleEdition renders an edition for display: "personal" reads as "Personal".
 func titleEdition(e extension.Edition) string {
 	s := string(e)
@@ -197,6 +213,9 @@ func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInp
 		if err := status.CheckIncidentStatus("status", st); err != nil {
 			return errResult("invalid input: " + err.Error())
 		}
+		if r, v, err := checkComponentIDs(ctx, svc, input.ComponentIDs); r != nil || err != nil {
+			return r, v, err
+		}
 
 		inc := &status.Incident{Title: input.Title, Severity: input.Severity, Status: st}
 		id, err := svc.Incidents.CreateIncident(ctx, inc, input.ComponentIDs, input.Message)
@@ -269,6 +288,9 @@ func createMaintenanceHandler(svc *Services) gomcp.ToolHandlerFor[createMaintena
 		}
 		if endsAt.Before(startsAt) {
 			return errResult("invalid input: end_time must be after start_time")
+		}
+		if r, v, err := checkComponentIDs(ctx, svc, input.ComponentIDs); r != nil || err != nil {
+			return r, v, err
 		}
 
 		mw := &status.MaintenanceWindow{

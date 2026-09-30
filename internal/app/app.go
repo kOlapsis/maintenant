@@ -674,6 +674,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Incidents:         incidentStore,
 		IncidentAnnouncer: a.statusSvc,
 		Maintenance:       maintenanceStore,
+		StatusComponents:  statusCompStore,
 		Runtime:           rt,
 		LogFetcher:        rt,
 		EscalationSvc:     a.escalationSvc,
