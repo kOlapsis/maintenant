@@ -148,6 +148,7 @@ type App struct {
 	// Kubernetes
 	k8sStore  *store.KubernetesStore
 	k8sIngest *kubernetes.IngestService
+	k8sAlerts *kubernetes.K8sAlertChecker
 }
 
 // sseBroadcaster adapts the SSEBroker to the extpoint.EventBroadcaster interface.
@@ -291,6 +292,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// server's own runtime.
 	a.k8sStore = store.NewKubernetesStore(db)
 	a.k8sIngest = kubernetes.NewIngestService(a.k8sStore, logger)
+	a.k8sAlerts = kubernetes.NewK8sAlertChecker(logger)
 
 	// --- Swarm detection (only when runtime is connected) ---
 	if rt.IsConnected() {
@@ -305,21 +307,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 					ID:        result.ClusterID,
 					IsManager: result.IsManager,
 				}
-				a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), logger)
-				a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
-					net, err := dr.Client().NetworkInspect(ctx, networkID)
-					if err != nil {
-						return "", "", err
-					}
-					return net.Name, net.Scope, nil
-				})
-				a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
-
-				a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
-				a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
-				a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
-				a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
-				a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
+				a.setupSwarmManager(dr)
 			}
 		}
 	}
@@ -601,6 +589,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		a.wirePostureCallbacks()
 	}
 	a.wireSwarmCallbacks()
+	a.wireKubernetesAlerts()
 	a.wireAgentLifecycleAlerts()
 
 	// --- Router ---
@@ -925,6 +914,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	a.seedRestartAlertTracking(ctx)
 	go a.containerSvc.RunRestartRecoveryLoop(ctx)
+	a.seedKubernetesAlertTracking(ctx)
 
 	// Swarm context recheck (60s) — detects swarm activation/deactivation.
 	if a.swarmDetector != nil {
@@ -1102,6 +1092,25 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}()
 
 	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
+}
+
+// setupSwarmManager builds the services of a Swarm manager on the Docker client.
+func (a *App) setupSwarmManager(dr *docker.Runtime) {
+	a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), a.logger)
+	a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
+		net, err := dr.Client().NetworkInspect(ctx, networkID)
+		if err != nil {
+			return "", "", err
+		}
+		return net.Name, net.Scope, nil
+	})
+	a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, a.logger)
+
+	a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, a.logger)
+	a.swarmCrashLoop = swarm.NewCrashLoopDetector(a.logger)
+	a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), a.logger)
+	a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), a.logger)
+	a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(a.logger)
 }
 
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.

@@ -667,6 +667,15 @@ func (a *App) wireSwarmCallbacks() {
 	}
 }
 
+// wireKubernetesAlerts routes the local cluster's alerts to the alert engine and
+// their SSE events to the broker.
+func (a *App) wireKubernetesAlerts() {
+	a.k8sAlerts.SetAlertCallback(a.emitAlert)
+	a.k8sAlerts.SetEventCallback(func(eventType string, data any) {
+		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+	})
+}
+
 // agentLifecycleEvent builds the alert event for an agent connection-state
 // change. A genuine outage (stream drop or stale liveness past the threshold)
 // raises a Warning — the severity is owned by the alert engine and surfaced

@@ -273,6 +273,10 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		"image_source":         c.ImageSource,
 		"image_url":            c.ImageURL,
 		"image_description":    c.ImageDescription,
+		"swarm_service_id":     c.SwarmServiceID,
+		"swarm_service_name":   c.SwarmServiceName,
+		"swarm_node_id":        c.SwarmNodeID,
+		"swarm_task_slot":      c.SwarmTaskSlot,
 	}
 
 	// Add uptime if calculator is available

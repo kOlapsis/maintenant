@@ -215,9 +215,6 @@ func (h *KubernetesHandler) HandleGetWorkload(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Pods owning-ref'd to this workload. Note: Deployment pods carry a
-	// ReplicaSet workload_ref, so for Deployments this may under-match until the
-	// agent resolves refs up to the top-level controller.
 	pods, err := h.store.ListPods(r.Context(), agentID, []string{wl.Namespace}, kubernetes.PodFilters{Workload: id})
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "K8S_ERROR", "Failed to list workload pods")

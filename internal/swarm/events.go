@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )
@@ -118,11 +119,8 @@ func (ep *EventProcessor) processNodeEvent(ctx context.Context, evt runtime.Runt
 }
 
 func (ep *EventProcessor) checkReplicaHealth(svc *SwarmService) {
-	if svc.Mode != "replicated" || svc.DesiredReplicas == 0 {
-		return
-	}
-
-	degraded := svc.RunningReplicas < svc.DesiredReplicas
+	degraded := svc.Mode == "replicated" && svc.DesiredReplicas > 0 &&
+		svc.RunningReplicas < svc.DesiredReplicas && !container.IgnoredByLabels(svc.Labels)
 	wasAlerted := ep.replicaAlerted[svc.ServiceID]
 
 	if degraded && !wasAlerted {
@@ -137,6 +135,7 @@ func (ep *EventProcessor) checkReplicaHealth(svc *SwarmService) {
 				Severity:   alert.SeverityWarning,
 				Message:    fmt.Sprintf("Swarm service %s degraded: %d/%d replicas running", svc.Name, svc.RunningReplicas, svc.DesiredReplicas),
 				EntityType: "swarm_service",
+				EntityID:   svc.ServiceID,
 				EntityName: svc.Name,
 				Details: map[string]any{
 					"service_id":       svc.ServiceID,
@@ -158,6 +157,7 @@ func (ep *EventProcessor) checkReplicaHealth(svc *SwarmService) {
 				IsRecover:  true,
 				Message:    fmt.Sprintf("Swarm service %s recovered: %d/%d replicas running", svc.Name, svc.RunningReplicas, svc.DesiredReplicas),
 				EntityType: "swarm_service",
+				EntityID:   svc.ServiceID,
 				EntityName: svc.Name,
 				Details: map[string]any{
 					"service_id":       svc.ServiceID,

@@ -242,14 +242,14 @@ func copyStatements() []stmt {
 			 orchestration_group, orchestration_unit, custom_group, is_ignored, alert_severity,
 			 restart_threshold, archived, first_seen_at, last_state_change_at, archived_at,
 			 runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
-			 compose_working_dir, swarm_service_id, swarm_service_name, swarm_service_mode,
-			 swarm_node_id, swarm_task_slot, swarm_desired_replicas)
+			 compose_working_dir, swarm_service_id, swarm_service_name,
+			 swarm_node_id, swarm_task_slot)
 			SELECT mnt_container_id('` + s + `', external_id), '` + s + `', external_id, name, image, state,
 			 health_status, has_health_check, orchestration_group, orchestration_unit, custom_group,
 			 is_ignored, alert_severity, restart_threshold, archived, first_seen_at,
 			 last_state_change_at, archived_at, runtime_type, error_detail, controller_kind, namespace,
 			 pod_count, ready_count, compose_working_dir, swarm_service_id, swarm_service_name,
-			 swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas
+			 swarm_node_id, swarm_task_slot
 			FROM _old_containers`},
 
 		{"state_transitions", `INSERT INTO state_transitions

@@ -11,6 +11,7 @@ import { useHostLabel } from '@/composables/useHostLabel'
 import { useListFilter } from '@/composables/useListFilter'
 import { timeAgo } from '@/utils/time'
 import { getStateStyle } from '@/utils/containerState'
+import { controllerGroups, type ControllerGroup } from '@/utils/controllerGroups'
 import type { Container } from '@/services/containerApi'
 import ContainerCard from './ContainerCard.vue'
 import ContainerRow from './ContainerRow.vue'
@@ -39,14 +40,6 @@ const groupFilter = ref('')
 const emit = defineEmits<{
   select: [container: Container]
 }>()
-
-interface ControllerGroup {
-  kind: string
-  name: string
-  containers: Container[]
-  readyCount: number
-  podCount: number
-}
 
 const view = computed(() => prefs.listView('containers'))
 const hasControllerHierarchy = computed(() => store.isKubernetesMode || store.isSwarmMode)
@@ -149,28 +142,7 @@ const visibleGroups = computed(() =>
 
 function getControllerGroups(containers: Container[]): ControllerGroup[] {
   if (!hasControllerHierarchy.value) return []
-
-  const map = new Map<string, ControllerGroup>()
-  for (const c of containers) {
-    if (!c.controller_kind) continue
-    const key = `${c.controller_kind}/${c.orchestration_unit || c.name}`
-    if (!map.has(key)) {
-      const isSwarmService = c.controller_kind === 'swarm-service'
-      map.set(key, {
-        kind: c.controller_kind,
-        name: c.orchestration_unit || c.name,
-        containers: [],
-        readyCount: isSwarmService ? 0 : (c.ready_count ?? 0),
-        podCount: isSwarmService ? (c.swarm_desired_replicas ?? 0) : (c.pod_count ?? 0),
-      })
-    }
-    const group = map.get(key)!
-    group.containers.push(c)
-    if (c.controller_kind === 'swarm-service' && c.state === 'running') {
-      group.readyCount++
-    }
-  }
-  return Array.from(map.values())
+  return controllerGroups(containers)
 }
 
 function getUngroupedContainers(containers: Container[]): Container[] {
@@ -426,7 +398,11 @@ onMounted(() => {
                       {{ ctrl.kind }}
                     </span>
                     <span class="text-sm font-medium text-mnt-primary">{{ ctrl.name }}</span>
+                    <span v-if="ctrl.podCount === null" class="text-xs text-mnt-muted">
+                      {{ ctrl.readyCount }} running
+                    </span>
                     <span
+                      v-else
                       class="text-xs"
                       :style="{
                         color: ctrl.readyCount === ctrl.podCount ? 'var(--mnt-status-ok)' : 'var(--mnt-status-warn)',

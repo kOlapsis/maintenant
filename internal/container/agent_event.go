@@ -211,6 +211,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		c.HealthStatus = &h
 	}
 	applyAgentLabels(c, labels)
+	c.ApplySwarmTaskLabels(labels)
 	c.ApplyImageLabels(labels)
 
 	id, err := s.store.InsertContainer(ctx, c)

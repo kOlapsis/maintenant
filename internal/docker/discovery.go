@@ -254,6 +254,7 @@ func mapFromList(dc container.Summary, labels map[string]string, now time.Time) 
 	}
 
 	applyLabels(cm, labels)
+	cm.ApplySwarmTaskLabels(labels)
 	cm.ApplyImageLabels(labels)
 
 	return cm

@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
@@ -82,6 +83,7 @@ func (ut *UpdateTracker) CheckService(ctx context.Context, serviceID string) {
 
 	state := string(us.State)
 	serviceName := svc.Spec.Name
+	ignored := container.IgnoredByLabels(svc.Spec.Labels)
 	newImage := ""
 	if svc.Spec.TaskTemplate.ContainerSpec != nil {
 		newImage = svc.Spec.TaskTemplate.ContainerSpec.Image
@@ -138,29 +140,33 @@ func (ut *UpdateTracker) CheckService(ctx context.Context, serviceID string) {
 			"completed_at": formatTimePtr(us.CompletedAt),
 		})
 
-		ut.sendAlert(alert.Event{
-			Source:     "swarm",
-			AlertType:  "update_rollback",
-			Severity:   alert.SeverityWarning,
-			Message:    fmt.Sprintf("Swarm service %s rolling update rolled back", serviceName),
-			EntityType: "swarm_service",
-			EntityName: serviceName,
-			Details: map[string]any{
-				"service_id": serviceID,
-				"state":      state,
-				"message":    us.Message,
-			},
-			Timestamp: now,
-		})
+		if !ignored {
+			ut.sendAlert(alert.Event{
+				Source:     "swarm",
+				AlertType:  "update_rollback",
+				Severity:   alert.SeverityWarning,
+				Message:    fmt.Sprintf("Swarm service %s rolling update rolled back", serviceName),
+				EntityType: "swarm_service",
+				EntityID:   serviceID,
+				EntityName: serviceName,
+				Details: map[string]any{
+					"service_id": serviceID,
+					"state":      state,
+					"message":    us.Message,
+				},
+				Timestamp: now,
+			})
+		}
 		ut.clearTracked(serviceID)
 
-	case state == string(swarm.UpdateStatePaused) && prevState != string(swarm.UpdateStatePaused):
+	case state == string(swarm.UpdateStatePaused) && prevState != string(swarm.UpdateStatePaused) && !ignored:
 		ut.sendAlert(alert.Event{
 			Source:     "swarm",
 			AlertType:  "update_stalled",
 			Severity:   alert.SeverityWarning,
 			Message:    fmt.Sprintf("Swarm service %s rolling update paused: %s", serviceName, us.Message),
 			EntityType: "swarm_service",
+			EntityID:   serviceID,
 			EntityName: serviceName,
 			Details: map[string]any{
 				"service_id": serviceID,

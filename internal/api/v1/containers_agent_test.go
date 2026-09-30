@@ -181,3 +181,28 @@ func TestHandleGet_EnrichesAgentIdentity(t *testing.T) {
 	assert.NotContains(t, local, "agent_hostname")
 	assert.NotContains(t, local, "agent_label")
 }
+
+func TestHandleGet_CarriesTheSwarmService(t *testing.T) {
+	store := &agentEnrichStore{containers: []*container.Container{{
+		ID: "1", ExternalID: "ext-task", Name: "prod_web.2.x7k", State: container.StateRunning,
+		ControllerKind: container.ControllerSwarmService, SwarmServiceID: "svc1", SwarmServiceName: "prod_web",
+		SwarmNodeID: "node1", SwarmTaskSlot: 2,
+	}}}
+	svc := container.NewService(container.Deps{Store: store, Logger: slog.Default()})
+	h := NewContainerHandler(svc, nil)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/containers/{id}", h.HandleGet)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/containers/1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "swarm-service", body["controller_kind"])
+	assert.Equal(t, "svc1", body["swarm_service_id"])
+	assert.Equal(t, "prod_web", body["swarm_service_name"])
+	assert.Equal(t, "node1", body["swarm_node_id"])
+	assert.EqualValues(t, 2, body["swarm_task_slot"])
+}

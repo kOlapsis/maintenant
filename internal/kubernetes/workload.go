@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	cmodel "github.com/kolapsis/maintenant/internal/container"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +31,7 @@ type K8sWorkload struct {
 	Status          string // healthy, degraded, progressing, failed
 	Conditions      []K8sCondition
 	Labels          map[string]string
+	Ignored         bool // maintenant.ignore annotation
 	CreatedAt       time.Time
 	LastTransition  time.Time
 }
@@ -47,6 +49,7 @@ type K8sPod struct {
 	HostIP       string
 	Containers   []K8sContainerStatus
 	WorkloadRef  string // owning workload ID
+	Ignored      bool   // maintenant.ignore annotation
 	CreatedAt    time.Time
 }
 
@@ -526,6 +529,7 @@ func mapDeploymentWorkload(dep *appsv1.Deployment) K8sWorkload {
 		Status:          workloadStatus(dep.Status.ReadyReplicas, desired, conditions, "Progressing"),
 		Conditions:      conditions,
 		Labels:          dep.Labels,
+		Ignored:         cmodel.IgnoredByLabels(dep.Annotations),
 		CreatedAt:       dep.CreationTimestamp.Time,
 		LastTransition:  lastTransition,
 	}
@@ -561,6 +565,7 @@ func mapStatefulSetWorkload(ss *appsv1.StatefulSet) K8sWorkload {
 		Status:          workloadStatus(ss.Status.ReadyReplicas, desired, conditions, ""),
 		Conditions:      conditions,
 		Labels:          ss.Labels,
+		Ignored:         cmodel.IgnoredByLabels(ss.Annotations),
 		CreatedAt:       ss.CreationTimestamp.Time,
 		LastTransition:  lastTransition,
 	}
@@ -593,6 +598,7 @@ func mapDaemonSetWorkload(ds *appsv1.DaemonSet) K8sWorkload {
 		Status:          workloadStatus(ds.Status.NumberReady, desired, conditions, ""),
 		Conditions:      conditions,
 		Labels:          ds.Labels,
+		Ignored:         cmodel.IgnoredByLabels(ds.Annotations),
 		CreatedAt:       ds.CreationTimestamp.Time,
 		LastTransition:  lastTransition,
 	}
@@ -636,6 +642,7 @@ func mapJobWorkload(job *batchv1.Job) K8sWorkload {
 		Status:          status,
 		Conditions:      conditions,
 		Labels:          job.Labels,
+		Ignored:         cmodel.IgnoredByLabels(job.Annotations),
 		CreatedAt:       job.CreationTimestamp.Time,
 		LastTransition:  lastTransition,
 	}
@@ -704,12 +711,13 @@ func mapPod(pod *corev1.Pod) K8sPod {
 		HostIP:       pod.Status.HostIP,
 		Containers:   containerStatuses,
 		WorkloadRef:  workloadRef,
+		Ignored:      cmodel.IgnoredByLabels(pod.Annotations),
 		CreatedAt:    pod.CreationTimestamp.Time,
 	}
 }
 
-// podWorkloadRef returns the owning workload ID for a pod, or empty string if
-// the pod is standalone.
+// podWorkloadRef returns the owning workload ID for a pod, the Deployment for a
+// pod of one of its ReplicaSets, or empty string if the pod is standalone.
 func podWorkloadRef(pod *corev1.Pod) string {
 	for _, ref := range pod.OwnerReferences {
 		if ref.Controller == nil || !*ref.Controller {
@@ -717,9 +725,9 @@ func podWorkloadRef(pod *corev1.Pod) string {
 		}
 		switch ref.Kind {
 		case "ReplicaSet":
-			// ReplicaSets are owned by Deployments; resolve up one level if
-			// possible, but we'd need an extra API call. Use namespace/ReplicaSet/name
-			// as a fallback — callers can enrich if needed.
+			if hash := pod.Labels[appsv1.DefaultDeploymentUniqueLabelKey]; hash != "" && strings.HasSuffix(ref.Name, "-"+hash) {
+				return fmt.Sprintf("%s/Deployment/%s", pod.Namespace, strings.TrimSuffix(ref.Name, "-"+hash))
+			}
 			return fmt.Sprintf("%s/ReplicaSet/%s", pod.Namespace, ref.Name)
 		case "StatefulSet", "DaemonSet", "Job":
 			return fmt.Sprintf("%s/%s/%s", pod.Namespace, ref.Kind, ref.Name)

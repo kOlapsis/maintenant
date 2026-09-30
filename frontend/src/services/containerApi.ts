@@ -42,10 +42,8 @@ export interface Container {
   security_highest_severity?: string | null
   swarm_service_id?: string
   swarm_service_name?: string
-  swarm_service_mode?: string
   swarm_node_id?: string
   swarm_task_slot?: number
-  swarm_desired_replicas?: number
   agent_id?: string | null
   agent_hostname?: string | null
   agent_label?: string | null

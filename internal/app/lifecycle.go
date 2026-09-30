@@ -75,6 +75,17 @@ func (a *App) seedRestartAlertTracking(ctx context.Context) {
 	a.containerSvc.TrackRestartAlerts(ids)
 }
 
+// seedKubernetesAlertTracking hands the active Kubernetes alerts to the checker,
+// so the local cluster's reconcile loop resolves those whose condition is gone.
+func (a *App) seedKubernetesAlertTracking(ctx context.Context) {
+	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
+	if err != nil {
+		a.logger.Error("seed kubernetes alert tracking", "error", err)
+		return
+	}
+	a.k8sAlerts.Resume(activeAlerts)
+}
+
 // reconcile performs startup reconciliation and endpoint/security discovery.
 // Must only be called when the runtime is connected.
 func (a *App) reconcile(ctx context.Context) {
@@ -298,6 +309,7 @@ func (a *App) startKubernetesReconcile(ctx context.Context, src kubernetes.Snaps
 		if err := a.k8sIngest.Reconcile(ctx, uid.LocalAgent, snap); err != nil {
 			a.logger.Warn("local kubernetes reconcile: store failed", "error", err)
 		}
+		a.k8sAlerts.Check(snap)
 		if exposures, ok := a.rt.(serviceExposureSource); ok {
 			ScanKubernetesSecurity(ctx, exposures, a.containerSvc, a.securitySvc, a.logger)
 		}
@@ -338,6 +350,7 @@ func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
 		if err := a.swarmIngest.ReconcileServicesTasks(ctx, uid.LocalAgent, snap); err != nil {
 			a.logger.Warn("local swarm reconcile: store failed", "error", err)
 		}
+		a.pruneSwarmServiceAlerts(ctx, snap.Services)
 	}
 	reconcile()
 	ticker := time.NewTicker(localTopologyReconcileInterval)
@@ -349,6 +362,29 @@ func (a *App) startSwarmTopologyReconcile(ctx context.Context) {
 		case <-ticker.C:
 			reconcile()
 		}
+	}
+}
+
+// pruneSwarmServiceAlerts resolves the active alerts of Swarm services the
+// manager no longer lists.
+func (a *App) pruneSwarmServiceAlerts(ctx context.Context, services []swarm.SwarmService) {
+	live := make(map[string]bool, len(services))
+	for _, s := range services {
+		live[s.ServiceID] = true
+	}
+	activeAlerts, err := a.alertStore.ListActiveAlerts(ctx)
+	if err != nil {
+		a.logger.Warn("prune swarm service alerts", "error", err)
+		return
+	}
+	gone := make(map[string]bool)
+	for _, al := range activeAlerts {
+		if al.EntityType == "swarm_service" && !live[al.EntityID] {
+			gone[al.EntityID] = true
+		}
+	}
+	for id := range gone {
+		a.alertEngine.ResolveByEntity(ctx, "swarm_service", id)
 	}
 }
 
@@ -449,26 +485,9 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 					IsManager: true,
 				}
 
-				// Create swarm discovery and event processor if needed.
 				if a.swarmDiscovery == nil {
 					if dr, ok := a.rt.(*docker.Runtime); ok {
-						a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), a.logger)
-						a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
-							net, err := dr.Client().NetworkInspect(ctx, networkID)
-							if err != nil {
-								return "", "", err
-							}
-							return net.Name, net.Scope, nil
-						})
-						a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, a.logger)
-
-						// Run initial discovery.
-						services, err := a.swarmDiscovery.DiscoverAll(ctx)
-						if err != nil {
-							a.logger.Error("initial Swarm discovery after activation failed", "error", err)
-						} else {
-							a.logger.Info("Swarm discovery after activation complete", "services", len(services))
-						}
+						a.activateSwarm(ctx, dr)
 					}
 				}
 			} else {
@@ -496,6 +515,23 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 			})
 		}
 	}
+}
+
+// activateSwarm builds, wires and starts the Swarm manager services when Swarm
+// is enabled while the server runs, as New and Start do at boot.
+func (a *App) activateSwarm(ctx context.Context, dr *docker.Runtime) {
+	a.setupSwarmManager(dr)
+	a.wireSwarmCallbacks()
+
+	services, err := a.swarmDiscovery.DiscoverAll(ctx)
+	if err != nil {
+		a.logger.Error("initial Swarm discovery after activation failed", "error", err)
+	} else {
+		a.logger.Info("Swarm discovery after activation complete", "services", len(services))
+	}
+
+	go a.startNodeRefresh(ctx)
+	go a.startSwarmTopologyReconcile(ctx)
 }
 
 // wireContainerMonitoring câbles la surveillance conteneur pour un cycle de connexion :

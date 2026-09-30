@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
@@ -68,8 +69,7 @@ func (rhc *ReplicaHealthChecker) Check(services []*SwarmService) {
 	for _, svc := range services {
 		activeServiceIDs[svc.ServiceID] = true
 
-		// Only check replicated services with a non-zero desired count.
-		if svc.Mode != "replicated" || svc.DesiredReplicas == 0 {
+		if svc.Mode != "replicated" || svc.DesiredReplicas == 0 || container.IgnoredByLabels(svc.Labels) {
 			rhc.recover(svc.ServiceID, svc.Name, now)
 			continue
 		}
@@ -141,6 +141,7 @@ func (rhc *ReplicaHealthChecker) emitAlert(svc *SwarmService, now time.Time) {
 			Severity:   alert.SeverityWarning,
 			Message:    fmt.Sprintf("Swarm service %s under-replicated for %s: %d/%d replicas", svc.Name, rhc.alertDelay, svc.RunningReplicas, svc.DesiredReplicas),
 			EntityType: "swarm_service",
+			EntityID:   svc.ServiceID,
 			EntityName: svc.Name,
 			Details: map[string]any{
 				"service_id":       svc.ServiceID,
@@ -161,6 +162,7 @@ func (rhc *ReplicaHealthChecker) emitRecovery(serviceID, serviceName string, now
 			IsRecover:  true,
 			Message:    fmt.Sprintf("Swarm service %s replicas restored", serviceName),
 			EntityType: "swarm_service",
+			EntityID:   serviceID,
 			EntityName: serviceName,
 			Details: map[string]any{
 				"service_id": serviceID,

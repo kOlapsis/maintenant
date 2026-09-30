@@ -112,10 +112,11 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"ALTER TABLE containers DROP COLUMN image_version, DROP COLUMN image_source, DROP COLUMN image_url, DROP COLUMN image_description",                                                  // 32
 		"ALTER TABLE agents DROP COLUMN os_id, DROP COLUMN os_version_id, DROP COLUMN os_pretty_name, DROP COLUMN os_source, DROP COLUMN os_unavailable_reason, DROP COLUMN os_reported_at", // 33
 		"DROP TABLE outbound_heartbeats", // 34
-		"DROP TABLE container_uptime_daily, heartbeat_uptime_daily, endpoint_uptime_daily", // 35
-		"ALTER TABLE containers ADD COLUMN alert_channels TEXT",                            // 36
-		"ALTER TABLE escalation_policies ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",  // 36
-		"ALTER TABLE alert_triggers ADD COLUMN filter_tags TEXT NOT NULL DEFAULT ''",       // 36
+		"DROP TABLE container_uptime_daily, heartbeat_uptime_daily, endpoint_uptime_daily",                                                            // 35
+		"ALTER TABLE containers ADD COLUMN alert_channels TEXT",                                                                                       // 36
+		"ALTER TABLE escalation_policies ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",                                                             // 36
+		"ALTER TABLE alert_triggers ADD COLUMN filter_tags TEXT NOT NULL DEFAULT ''",                                                                  // 36
+		"ALTER TABLE containers ADD COLUMN swarm_service_mode TEXT NOT NULL DEFAULT '', ADD COLUMN swarm_desired_replicas INTEGER NOT NULL DEFAULT 0", // 37
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

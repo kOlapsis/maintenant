@@ -22,6 +22,7 @@ const (
 
 // serviceFailureState tracks failure timestamps for a single service.
 type serviceFailureState struct {
+	name        string
 	failures    []time.Time
 	inCrashLoop bool
 	lastFailure time.Time
@@ -66,6 +67,7 @@ func (cld *CrashLoopDetector) RecordFailure(serviceID, serviceName, lastError st
 		cld.services[serviceID] = state
 	}
 
+	state.name = serviceName
 	state.failures = append(state.failures, now)
 	state.lastFailure = now
 
@@ -108,6 +110,7 @@ func (cld *CrashLoopDetector) RecordFailure(serviceID, serviceName, lastError st
 			Severity:   alert.SeverityCritical,
 			Message:    fmt.Sprintf("Swarm service %s is crash-looping (%d failures in %d min)", serviceName, count, int(crashLoopWindow.Minutes())),
 			EntityType: "swarm_service",
+			EntityID:   serviceID,
 			EntityName: serviceName,
 			Details: map[string]any{
 				"service_id":    serviceID,
@@ -135,7 +138,7 @@ func (cld *CrashLoopDetector) CheckRecoveries() {
 
 			cld.emit(event.SwarmCrashLoopRecovered, map[string]interface{}{
 				"service_id":   serviceID,
-				"service_name": serviceID, // best effort — name may not be available
+				"service_name": state.name,
 				"timestamp":    now.Format(time.RFC3339),
 			})
 
@@ -144,9 +147,10 @@ func (cld *CrashLoopDetector) CheckRecoveries() {
 				AlertType:  "crash_loop",
 				Severity:   alert.SeverityInfo,
 				IsRecover:  true,
-				Message:    fmt.Sprintf("Swarm service crash-loop resolved for %s", serviceID),
+				Message:    fmt.Sprintf("Swarm service crash-loop resolved for %s", state.name),
 				EntityType: "swarm_service",
-				EntityName: serviceID,
+				EntityID:   serviceID,
+				EntityName: state.name,
 				Timestamp:  now,
 			})
 		}
