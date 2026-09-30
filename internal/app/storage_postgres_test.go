@@ -149,7 +149,8 @@ func sentinelRoleDSN(t *testing.T) string {
 	require.NoError(t, err)
 	defer func() { _ = admin.Close() }()
 
-	role := "r_" + strings.ReplaceAll(uid.New(), "-", "")[:16]
+	// Never truncated: a UUIDv7's first half is a timestamp that parallel test processes share.
+	role := "r_" + strings.ReplaceAll(uid.New(), "-", "")
 	ctx := context.Background()
 	_, err = admin.ExecContext(ctx,
 		"CREATE ROLE "+role+" LOGIN PASSWORD '"+sentinelPassword+"'")
