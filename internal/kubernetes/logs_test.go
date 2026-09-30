@@ -16,13 +16,12 @@ import (
 
 func TestResolveLogTarget_PodLevel(t *testing.T) {
 	cs := fake.NewClientset()
-	rt := &Runtime{
-		logger:    slog.Default(),
-		clientset: cs,
-		nsFilter:  NewNamespaceFilter("", ""),
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	ns, pod, container, err := rt.resolveLogTarget(context.Background(), "default/my-pod")
 	if err != nil {
@@ -41,13 +40,12 @@ func TestResolveLogTarget_PodLevel(t *testing.T) {
 
 func TestResolveLogTarget_PodWithContainer(t *testing.T) {
 	cs := fake.NewClientset()
-	rt := &Runtime{
-		logger:    slog.Default(),
-		clientset: cs,
-		nsFilter:  NewNamespaceFilter("", ""),
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	ns, pod, container, err := rt.resolveLogTarget(context.Background(), "default/my-pod/sidecar")
 	if err != nil {
@@ -89,13 +87,12 @@ func TestResolveLogTarget_ControllerResolvesToPod(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep, pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		clientset: cs,
-		nsFilter:  NewNamespaceFilter("", ""),
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	ns, podName, container, err := rt.resolveLogTarget(context.Background(), "prod/Deployment/web")
 	if err != nil {
@@ -146,13 +143,12 @@ func TestResolveLogTarget_ControllerWithContainer(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep, pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		clientset: cs,
-		nsFilter:  NewNamespaceFilter("", ""),
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	ns, podName, container, err := rt.resolveLogTarget(context.Background(), "prod/Deployment/web/sidecar")
 	if err != nil {
@@ -165,13 +161,12 @@ func TestResolveLogTarget_ControllerWithContainer(t *testing.T) {
 
 func TestResolveLogTarget_InvalidFormat(t *testing.T) {
 	cs := fake.NewClientset()
-	rt := &Runtime{
-		logger:    slog.Default(),
-		clientset: cs,
-		nsFilter:  NewNamespaceFilter("", ""),
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	_, _, _, err := rt.resolveLogTarget(context.Background(), "invalid")
 	if err == nil {
@@ -202,13 +197,12 @@ func TestResolveLogTarget_NoPods(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		clientset: cs,
-		nsFilter:  NewNamespaceFilter("", ""),
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	_, _, _, err := rt.resolveLogTarget(context.Background(), "default/Deployment/ghost")
 	if err == nil {

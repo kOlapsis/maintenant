@@ -40,13 +40,12 @@ func TestDiscoverAll_Deployments(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -105,13 +104,12 @@ func TestDiscoverAll_NamespaceFiltering(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -143,13 +141,12 @@ func TestDiscoverAll_BarePods(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -191,13 +188,12 @@ func TestDiscoverAll_ManagedPodsExcluded(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -235,13 +231,12 @@ func TestDiscoverAll_Annotations(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {

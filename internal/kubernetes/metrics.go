@@ -43,7 +43,8 @@ type NodeResourceMetrics struct {
 // rate on metrics.k8s.io at O(1) per collection cycle instead of O(pods),
 // avoiding client-go's default 5 QPS / burst 10 throttle on large clusters.
 func (r *Runtime) cachedPodMetrics(ctx context.Context, namespace, name string) (*metricsv1beta1.PodMetrics, error) {
-	if r.metrics == nil {
+	mc := r.metricsClient()
+	if mc == nil {
 		return nil, fmt.Errorf("metrics-server not available")
 	}
 
@@ -51,7 +52,7 @@ func (r *Runtime) cachedPodMetrics(ctx context.Context, namespace, name string) 
 	defer r.podMetricsMu.Unlock()
 
 	if time.Since(r.podMetricsAt) > podMetricsCacheTTL || r.podMetricsCache == nil {
-		list, err := r.metrics.MetricsV1beta1().PodMetricses("").List(ctx, metav1.ListOptions{})
+		list, err := mc.MetricsV1beta1().PodMetricses("").List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("list pod metrics: %w", err)
 		}
@@ -73,6 +74,10 @@ func (r *Runtime) cachedPodMetrics(ctx context.Context, namespace, name string) 
 
 // GetPodMetrics queries metrics-server for a pod's CPU and memory usage.
 func (r *Runtime) GetPodMetrics(ctx context.Context, namespace, name string) (*PodResourceMetrics, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	pm, err := r.cachedPodMetrics(ctx, namespace, name)
 	if err != nil {
 		return nil, err
@@ -86,7 +91,7 @@ func (r *Runtime) GetPodMetrics(ctx context.Context, namespace, name string) (*P
 
 	// Get memory limit from pod spec.
 	var memLimit int64
-	pod, err := r.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	pod, err := cs.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
 		for _, c := range pod.Spec.Containers {
 			if lim := c.Resources.Limits.Memory(); lim != nil {
@@ -107,11 +112,16 @@ func (r *Runtime) GetPodMetrics(ctx context.Context, namespace, name string) (*P
 
 // GetNodeMetrics queries metrics-server for a node's CPU and memory usage.
 func (r *Runtime) GetNodeMetrics(ctx context.Context, name string) (*NodeResourceMetrics, error) {
-	if r.metrics == nil {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	mc := r.metricsClient()
+	if mc == nil {
 		return nil, fmt.Errorf("metrics-server not available")
 	}
 
-	nm, err := r.metrics.MetricsV1beta1().NodeMetricses().Get(ctx, name, metav1.GetOptions{})
+	nm, err := mc.MetricsV1beta1().NodeMetricses().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get node metrics %s: %w", name, err)
 	}
@@ -121,7 +131,7 @@ func (r *Runtime) GetNodeMetrics(ctx context.Context, name string) (*NodeResourc
 
 	// Get capacity from node spec.
 	var cpuCapacity, memCapacity int64
-	node, err := r.clientset.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	node, err := cs.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
 		if cpu := node.Status.Capacity.Cpu(); cpu != nil {
 			cpuCapacity = cpu.MilliValue()

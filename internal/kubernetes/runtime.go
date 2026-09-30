@@ -5,11 +5,13 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cmodel "github.com/kolapsis/maintenant/internal/container"
@@ -34,11 +36,10 @@ func init() {
 
 // Runtime implements runtime.Runtime for Kubernetes.
 type Runtime struct {
-	logger    *slog.Logger
-	nsFilter  *NamespaceFilter
-	clientset k8s.Interface
-	metrics   metricsv.Interface
-	stopCh    chan struct{}
+	logger   *slog.Logger
+	nsFilter *NamespaceFilter
+	conn     atomic.Pointer[clients]
+	stopCh   chan struct{}
 
 	probeEvery  time.Duration
 	probeMisses int
@@ -51,6 +52,31 @@ type Runtime struct {
 	podMetricsMu    sync.Mutex
 	podMetricsCache map[string]*metricsv1beta1.PodMetrics // key: "namespace/name"
 	podMetricsAt    time.Time
+}
+
+// clients are the API clients of one connection, replaced as a whole when the runtime reconnects.
+type clients struct {
+	core    k8s.Interface
+	metrics metricsv.Interface
+}
+
+var errNotConnected = errors.New("kubernetes runtime has never connected")
+
+func (r *Runtime) client() (k8s.Interface, error) {
+	c := r.conn.Load()
+	if c == nil {
+		return nil, errNotConnected
+	}
+	return c.core, nil
+}
+
+// metricsClient returns the metrics-server client of the current connection, nil when there is none.
+func (r *Runtime) metricsClient() metricsv.Interface {
+	c := r.conn.Load()
+	if c == nil {
+		return nil
+	}
+	return c.metrics
 }
 
 type cpuPrev struct {
@@ -124,9 +150,8 @@ func (r *Runtime) connect(ctx context.Context, config *rest.Config) error {
 		}
 	}
 
+	r.conn.Store(&clients{core: clientset, metrics: metricsClient})
 	r.mu.Lock()
-	r.clientset = clientset
-	r.metrics = metricsClient
 	r.metricsAvailable = metricsOK
 	r.connected = true
 	r.mu.Unlock()
@@ -234,12 +259,16 @@ func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*runtim
 // ListContainerNames returns the container names in a workload's pod spec.
 // For controllers, resolves to a pod's spec. For bare pods, reads the pod directly.
 func (r *Runtime) ListContainerNames(ctx context.Context, externalID string) ([]string, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	ns, podName, _, err := r.resolveLogTarget(ctx, externalID)
 	if err != nil {
 		return nil, err
 	}
 
-	pod, err := r.clientset.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
+	pod, err := cs.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get pod %s/%s: %w", ns, podName, err)
 	}

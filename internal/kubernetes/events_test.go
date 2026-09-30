@@ -29,14 +29,13 @@ import (
 const testProbeEvery = 20 * time.Millisecond
 
 func streamRuntime(cs *fake.Clientset) *Runtime {
-	return &Runtime{
+	return withClient(&Runtime{
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		nsFilter:    NewNamespaceFilter("", ""),
-		clientset:   cs,
 		stopCh:      make(chan struct{}),
 		probeEvery:  testProbeEvery,
 		probeMisses: 2,
-	}
+	}, cs)
 }
 
 func newStreamRuntime(t *testing.T, cs *fake.Clientset) *Runtime {

@@ -17,7 +17,7 @@ import (
 // statsSnapshot queries metrics-server for a workload's CPU and memory.
 // externalID format: "namespace/ControllerKind/name" or "namespace/pod-name".
 func (r *Runtime) statsSnapshot(ctx context.Context, externalID string) (*runtime.RawStats, error) {
-	if r.metrics == nil {
+	if r.metricsClient() == nil {
 		return nil, fmt.Errorf("metrics-server not available")
 	}
 
@@ -36,6 +36,10 @@ func (r *Runtime) statsSnapshot(ctx context.Context, externalID string) (*runtim
 }
 
 func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*runtime.RawStats, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	pm, err := r.cachedPodMetrics(ctx, ns, podName)
 	if err != nil {
 		return nil, err
@@ -51,7 +55,7 @@ func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*runtime.Ra
 	cpuPercent := r.computeCPUPercent(pm.Name, totalCPUMilli, pm.Timestamp.Time)
 
 	// Get memory limit from pod spec.
-	pod, err := r.clientset.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
+	pod, err := cs.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
 	var memLimit int64
 	if err == nil {
 		for _, c := range pod.Spec.Containers {
@@ -74,13 +78,17 @@ func (r *Runtime) podStats(ctx context.Context, ns, podName string) (*runtime.Ra
 }
 
 func (r *Runtime) controllerStats(ctx context.Context, ns, kind, name string) (*runtime.RawStats, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	// Build label selector from controller spec.
 	selector, err := r.controllerSelector(ctx, ns, kind, name)
 	if err != nil {
 		return nil, err
 	}
 
-	podList, err := r.clientset.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
+	podList, err := cs.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
 		LabelSelector: selector,
 	})
 	if err != nil {
@@ -142,9 +150,13 @@ func (r *Runtime) computeCPUPercent(key string, milliCPU int64, ts time.Time) fl
 }
 
 func (r *Runtime) controllerSelector(ctx context.Context, ns, kind, name string) (string, error) {
+	cs, err := r.client()
+	if err != nil {
+		return "", err
+	}
 	switch kind {
 	case "Deployment":
-		dep, err := r.clientset.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+		dep, err := cs.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("get deployment %s/%s: %w", ns, name, err)
 		}
@@ -152,7 +164,7 @@ func (r *Runtime) controllerSelector(ctx context.Context, ns, kind, name string)
 			return labels.Set(dep.Spec.Selector.MatchLabels).String(), nil
 		}
 	case "StatefulSet":
-		ss, err := r.clientset.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
+		ss, err := cs.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("get statefulset %s/%s: %w", ns, name, err)
 		}
@@ -160,7 +172,7 @@ func (r *Runtime) controllerSelector(ctx context.Context, ns, kind, name string)
 			return labels.Set(ss.Spec.Selector.MatchLabels).String(), nil
 		}
 	case "DaemonSet":
-		ds, err := r.clientset.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
+		ds, err := cs.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return "", fmt.Errorf("get daemonset %s/%s: %w", ns, name, err)
 		}

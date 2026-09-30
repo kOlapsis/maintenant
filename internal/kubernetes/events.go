@@ -24,9 +24,12 @@ const informerResync = 30 * time.Second
 func (r *Runtime) streamEvents(ctx context.Context) <-chan runtime.RuntimeEvent {
 	out := make(chan runtime.RuntimeEvent, 128)
 
-	r.mu.Lock()
-	clientset := r.clientset
-	r.mu.Unlock()
+	clientset, err := r.client()
+	if err != nil {
+		r.logger.Error("kubernetes event stream not started", "error", err)
+		close(out)
+		return out
+	}
 	factory := informers.NewSharedInformerFactory(clientset, informerResync)
 
 	podInformer := factory.Core().V1().Pods().Informer()

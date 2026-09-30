@@ -107,6 +107,10 @@ type PodFilters struct {
 // non-empty only those namespaces are queried; otherwise all allowed
 // namespaces are included.
 func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8sWorkloadGroup, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	targetNS := r.resolveNamespaces(namespaces)
 
 	// Collect per-namespace workloads.
@@ -116,7 +120,7 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 	}
 
 	// Deployments.
-	depList, err := r.clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	depList, err := cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if !k8serrors.IsForbidden(err) {
 			return nil, fmt.Errorf("list deployments: %w", err)
@@ -136,7 +140,7 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 	}
 
 	// StatefulSets.
-	ssList, err := r.clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	ssList, err := cs.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if !k8serrors.IsForbidden(err) {
 			return nil, fmt.Errorf("list statefulsets: %w", err)
@@ -156,7 +160,7 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 	}
 
 	// DaemonSets.
-	dsList, err := r.clientset.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	dsList, err := cs.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if !k8serrors.IsForbidden(err) {
 			return nil, fmt.Errorf("list daemonsets: %w", err)
@@ -176,7 +180,7 @@ func (r *Runtime) ListWorkloads(ctx context.Context, namespaces []string) ([]K8s
 	}
 
 	// Jobs.
-	jobList, err := r.clientset.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
+	jobList, err := cs.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if !k8serrors.IsForbidden(err) {
 			return nil, fmt.Errorf("list jobs: %w", err)
@@ -260,6 +264,10 @@ func (r *Runtime) GetWorkload(ctx context.Context, id string) (*K8sWorkload, []K
 
 // ListPods returns a flat pod list optionally filtered by workload, node, and status.
 func (r *Runtime) ListPods(ctx context.Context, namespaces []string, filters PodFilters) ([]K8sPod, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	targetNS := r.resolveNamespaces(namespaces)
 
 	listNS := ""
@@ -267,7 +275,7 @@ func (r *Runtime) ListPods(ctx context.Context, namespaces []string, filters Pod
 		listNS = targetNS[0]
 	}
 
-	podList, err := r.clientset.CoreV1().Pods(listNS).List(ctx, metav1.ListOptions{})
+	podList, err := cs.CoreV1().Pods(listNS).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
@@ -300,7 +308,11 @@ func (r *Runtime) ListPods(ctx context.Context, namespaces []string, filters Pod
 
 // GetPodDetail returns details for a single pod plus recent events.
 func (r *Runtime) GetPodDetail(ctx context.Context, namespace, name string) (*K8sPod, []K8sEvent, error) {
-	pod, err := r.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	cs, err := r.client()
+	if err != nil {
+		return nil, nil, err
+	}
+	pod, err := cs.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
 	}
@@ -319,30 +331,34 @@ func (r *Runtime) GetPodDetail(ctx context.Context, namespace, name string) (*K8
 // --- internal helpers ---
 
 func (r *Runtime) fetchWorkload(ctx context.Context, ns, kind, name string) (*K8sWorkload, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	switch kind {
 	case "Deployment":
-		dep, err := r.clientset.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+		dep, err := cs.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get deployment %s/%s: %w", ns, name, err)
 		}
 		wl := mapDeploymentWorkload(dep)
 		return &wl, nil
 	case "StatefulSet":
-		ss, err := r.clientset.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
+		ss, err := cs.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get statefulset %s/%s: %w", ns, name, err)
 		}
 		wl := mapStatefulSetWorkload(ss)
 		return &wl, nil
 	case "DaemonSet":
-		ds, err := r.clientset.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
+		ds, err := cs.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get daemonset %s/%s: %w", ns, name, err)
 		}
 		wl := mapDaemonSetWorkload(ds)
 		return &wl, nil
 	case "Job":
-		job, err := r.clientset.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{})
+		job, err := cs.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("get job %s/%s: %w", ns, name, err)
 		}
@@ -354,7 +370,11 @@ func (r *Runtime) fetchWorkload(ctx context.Context, ns, kind, name string) (*K8
 }
 
 func (r *Runtime) listPodsForSelector(ctx context.Context, ns, selector, workloadID string) ([]K8sPod, error) {
-	podList, err := r.clientset.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	podList, err := cs.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
 		LabelSelector: selector,
 	})
 	if err != nil {
@@ -384,7 +404,11 @@ func (r *Runtime) listPodEvents(ctx context.Context, ns, name string) ([]K8sEven
 // with the object it concerns, so the server can persist them per-agent and
 // serve them back on workload/pod detail views.
 func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
-	evtList, err := r.clientset.CoreV1().Events("").List(ctx, metav1.ListOptions{})
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	evtList, err := cs.CoreV1().Events("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list all events: %w", err)
 	}
@@ -418,7 +442,11 @@ func (r *Runtime) ListAllEvents(ctx context.Context) ([]K8sEventRef, error) {
 }
 
 func (r *Runtime) fetchEvents(ctx context.Context, ns, fieldSelector string) ([]K8sEvent, error) {
-	evtList, err := r.clientset.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	evtList, err := cs.CoreV1().Events(ns).List(ctx, metav1.ListOptions{
 		FieldSelector: fieldSelector,
 	})
 	if err != nil {
