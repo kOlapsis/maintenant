@@ -292,16 +292,6 @@ func (s *IncidentStoreImpl) CreateUpdate(ctx context.Context, u *status.Incident
 	return u.ID, nil
 }
 
-func (s *IncidentStoreImpl) DeleteIncidentsOlderThan(ctx context.Context, days int) (int64, error) {
-	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
-	res, err := s.writer.Exec(ctx,
-		`DELETE FROM incidents WHERE status = 'resolved' AND resolved_at < ?`, cutoff)
-	if err != nil {
-		return 0, fmt.Errorf("delete old incidents: %w", err)
-	}
-	return res.RowsAffected, nil
-}
-
 // --- Scan helpers ---
 
 func (s *IncidentStoreImpl) scanIncidents(ctx context.Context, rows *sql.Rows) ([]status.Incident, error) {

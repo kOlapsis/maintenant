@@ -385,7 +385,7 @@ func TestStatusAPIReportsWhetherSubscriptionsAreOpen(t *testing.T) {
 				Logger:      logger,
 				Subscribers: NewSubscriberService(&recordingSubscriberStore{}, tc.mailer, "http://localhost", logger),
 			})
-			h := NewHandler(svc, nil, logger, nil)
+			h := NewHandler(svc, nil, logger, nil, "https://status.example.com")
 
 			rec := httptest.NewRecorder()
 			h.HandleStatusAPI(rec, httptest.NewRequest(http.MethodGet, "/status/api", nil))
@@ -398,6 +398,86 @@ func TestStatusAPIReportsWhetherSubscriptionsAreOpen(t *testing.T) {
 				t.Fatalf("subscriptions_enabled %v, want %v", body.SubscriptionsEnabled, tc.want)
 			}
 		})
+	}
+}
+
+func TestStatusAPIDetailsTheMonitorsOfEachComponent(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(Deps{
+		Components: &mockComponentStore{visibleComponents: []Component{{
+			ID: "c1", DisplayName: "API", CompositionMode: CompositionExplicit, Visible: true,
+			Monitors: []MonitorRef{{Type: "endpoint", ID: "e1", Name: "https://api.example.com"}},
+		}}},
+		Logger:        logger,
+		MonitorStatus: func(context.Context, string, string) string { return StatusMajorOutage },
+	})
+	h := NewHandler(svc, nil, logger, nil, "https://status.example.com")
+
+	rec := httptest.NewRecorder()
+	h.HandleStatusAPI(rec, httptest.NewRequest(http.MethodGet, "/status/api", nil))
+
+	var body struct {
+		Components []struct {
+			ID       string       `json:"id"`
+			Monitors []MonitorRef `json:"monitors"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := MonitorRef{Type: "endpoint", ID: "e1", Name: "https://api.example.com", Status: StatusMajorOutage}
+	if len(body.Components) != 1 || len(body.Components[0].Monitors) != 1 || body.Components[0].Monitors[0] != want {
+		t.Fatalf("components %+v, want c1 with the monitor %+v", body.Components, want)
+	}
+}
+
+func TestHandleSubscribeAcceptsMediaTypeParameters(t *testing.T) {
+	h, store := newSubscribeHandler(t)
+
+	for _, ct := range []string{"application/json; charset=utf-8", "Application/JSON"} {
+		req := httptest.NewRequest(http.MethodPost, "/status/subscribe", strings.NewReader(`{"email":"ok@example.com"}`))
+		req.Header.Set("Content-Type", ct)
+		req.RemoteAddr = "203.0.113.5:44000"
+		rec := httptest.NewRecorder()
+		h.HandleSubscribe(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%q: got %d %q, want 200", ct, rec.Code, rec.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/status/subscribe", strings.NewReader("email=form%40example.com"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+	req.RemoteAddr = "203.0.113.5:44000"
+	rec := httptest.NewRecorder()
+	h.HandleSubscribe(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("form: got %d %q, want 200", rec.Code, rec.Body.String())
+	}
+	if want := []string{"ok@example.com", "ok@example.com", "form@example.com"}; strings.Join(store.created, ",") != strings.Join(want, ",") {
+		t.Fatalf("stored %v, want %v", store.created, want)
+	}
+}
+
+func TestHandleSubscribeRefusesAnotherMediaType(t *testing.T) {
+	h, store := newSubscribeHandler(t)
+
+	for _, ct := range []string{"", "text/plain", "multipart/form-data; boundary=x", "application/json;;"} {
+		req := httptest.NewRequest(http.MethodPost, "/status/subscribe", strings.NewReader(`{"email":"ok@example.com"}`))
+		if ct != "" {
+			req.Header.Set("Content-Type", ct)
+		}
+		req.RemoteAddr = "203.0.113.5:44000"
+		rec := httptest.NewRecorder()
+		h.HandleSubscribe(rec, req)
+		if rec.Code != http.StatusUnsupportedMediaType {
+			t.Fatalf("%q: got %d, want 415", ct, rec.Code)
+		}
+		if code := errorCode(t, rec); code != "unsupported_media_type" {
+			t.Fatalf("%q: code %q, want unsupported_media_type", ct, code)
+		}
+	}
+	if len(store.created) != 0 {
+		t.Fatalf("the store was written to: %v", store.created)
 	}
 }
 

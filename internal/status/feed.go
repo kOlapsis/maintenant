@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,14 @@ type AtomEntry struct {
 	Summary string   `xml:"summary"`
 }
 
+// PageURL is the public address of the status page: statusURL when set, otherwise baseURL followed by /status.
+func PageURL(statusURL, baseURL string) string {
+	if statusURL != "" {
+		return strings.TrimRight(statusURL, "/")
+	}
+	return strings.TrimRight(baseURL, "/") + "/status"
+}
+
 // HandleAtomFeed serves the Atom feed of the ongoing incidents and those resolved in the last 30 days, latest change first.
 func (h *Handler) HandleAtomFeed(w http.ResponseWriter, r *http.Request) {
 	active, err := h.service.incidents.ListActiveIncidents(r.Context())
@@ -54,16 +63,11 @@ func (h *Handler) HandleAtomFeed(w http.ResponseWriter, r *http.Request) {
 		return incidents[i].UpdatedAt.After(incidents[j].UpdatedAt)
 	})
 
-	baseURL := fmt.Sprintf("https://%s", r.Host)
-	if r.TLS == nil {
-		baseURL = fmt.Sprintf("http://%s", r.Host)
-	}
-
 	feed := AtomFeed{
 		XMLNS:   "http://www.w3.org/2005/Atom",
 		Title:   "Status Updates",
-		ID:      baseURL + "/status/feed.atom",
-		Link:    AtomLink{Href: baseURL + "/status", Rel: "alternate", Type: "text/html"},
+		ID:      h.pageURL + "/feed.atom",
+		Link:    AtomLink{Href: h.pageURL, Rel: "alternate", Type: "text/html"},
 		Updated: time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -75,8 +79,8 @@ func (h *Handler) HandleAtomFeed(w http.ResponseWriter, r *http.Request) {
 
 		feed.Entries = append(feed.Entries, AtomEntry{
 			Title:   fmt.Sprintf("[%s] %s", inc.Severity, inc.Title),
-			ID:      fmt.Sprintf("%s/status/incidents/%s", baseURL, inc.ID),
-			Link:    AtomLink{Href: baseURL + "/status", Rel: "alternate"},
+			ID:      h.pageURL + "/incidents/" + inc.ID,
+			Link:    AtomLink{Href: h.pageURL, Rel: "alternate"},
 			Updated: inc.UpdatedAt.UTC().Format(time.RFC3339),
 			Summary: summary,
 		})

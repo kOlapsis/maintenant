@@ -77,14 +77,72 @@ func newAnnouncingService(t *testing.T, mailer Mailer) (*Service, *recordingNoti
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	b := &recordingBroadcaster{}
 	svc := NewService(Deps{
-		Components:  emptyComponentStore{},
-		Logger:      logger,
-		Broadcaster: b.broadcast,
-		Subscribers: NewSubscriberService(&recordingSubscriberStore{}, mailer, "http://localhost", logger),
+		Components:        emptyComponentStore{},
+		Logger:            logger,
+		PublicBroadcaster: b.broadcast,
+		Subscribers:       NewSubscriberService(&recordingSubscriberStore{}, mailer, "http://localhost", logger),
 	})
 	n := newRecordingNotifier()
 	svc.SetSubscriberNotifier(n)
 	return svc, n, b
+}
+
+func newTwoStreamService() (*Service, *recordingBroadcaster, *recordingBroadcaster) {
+	public, admin := &recordingBroadcaster{}, &recordingBroadcaster{}
+	svc := NewService(Deps{
+		Components:        emptyComponentStore{},
+		Logger:            discardLogger(),
+		PublicBroadcaster: public.broadcast,
+		AdminBroadcaster:  admin.broadcast,
+	})
+	return svc, public, admin
+}
+
+func TestHiddenComponentChangeStaysOffThePublicStream(t *testing.T) {
+	svc, public, admin := newTwoStreamService()
+
+	svc.BroadcastComponentChange(context.Background(), &Component{
+		ID: "db", DisplayName: "Internal DB", CompositionMode: CompositionMatchAll, MatchAllType: "container",
+	})
+
+	if got := public.all(); len(got) != 0 {
+		t.Fatalf("the public stream heard %v about a hidden component", got)
+	}
+	if got := admin.all(); len(got) != 1 || got[0] != event.StatusComponentChanged {
+		t.Fatalf("dashboard events %v, want one %s", got, event.StatusComponentChanged)
+	}
+}
+
+func TestVisibleComponentChangeReachesBothStreams(t *testing.T) {
+	svc, public, admin := newTwoStreamService()
+
+	svc.BroadcastComponentChange(context.Background(), &Component{
+		ID: "api", DisplayName: "API", CompositionMode: CompositionMatchAll, MatchAllType: "endpoint", Visible: true,
+	})
+
+	if got := public.all(); len(got) != 2 || got[0] != event.StatusComponentChanged || got[1] != event.StatusGlobalChanged {
+		t.Fatalf("public events %v, want %s then %s", got, event.StatusComponentChanged, event.StatusGlobalChanged)
+	}
+	if got := admin.all(); len(got) == 0 || got[0] != event.StatusComponentChanged {
+		t.Fatalf("dashboard events %v, want %s first", got, event.StatusComponentChanged)
+	}
+}
+
+func TestAnnounceComponentChangeReachesThePublicPageOnlyWhenItConcernsIt(t *testing.T) {
+	svc, public, admin := newTwoStreamService()
+
+	svc.AnnounceComponentChange(context.Background(), event.StatusComponentUpdated, "hidden", false)
+	if got := public.all(); len(got) != 0 {
+		t.Fatalf("the public stream heard %v about a hidden component", got)
+	}
+	if got := admin.all(); len(got) != 1 || got[0] != event.StatusComponentUpdated {
+		t.Fatalf("dashboard events %v, want one %s", got, event.StatusComponentUpdated)
+	}
+
+	svc.AnnounceComponentChange(context.Background(), event.StatusComponentUpdated, "api", true)
+	if got := public.all(); len(got) != 2 || got[0] != event.StatusComponentUpdated || got[1] != event.StatusGlobalChanged {
+		t.Fatalf("public events %v, want %s then %s", got, event.StatusComponentUpdated, event.StatusGlobalChanged)
+	}
 }
 
 func TestAnnounceIncidentEmailsSubscribersOnce(t *testing.T) {

@@ -31,9 +31,6 @@ type IncidentStore interface {
 	// Incident updates
 	ListUpdates(ctx context.Context, incidentID string) ([]IncidentUpdate, error)
 	CreateUpdate(ctx context.Context, u *IncidentUpdate) (string, error)
-
-	// Cleanup
-	DeleteIncidentsOlderThan(ctx context.Context, days int) (int64, error)
 }
 
 // SubscriberStore defines the persistence interface for email subscribers.

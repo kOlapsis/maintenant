@@ -29,7 +29,8 @@ type Deps struct {
 	MonitorStatus     MonitorStatusProvider            // optional — nil-safe
 	MonitorPopulation MonitorPopulationProvider        // optional — nil-safe
 	MonitorName       MonitorNameProvider              // optional — nil-safe
-	Broadcaster       func(eventType string, data any) // optional — nil-safe
+	PublicBroadcaster func(eventType string, data any) // optional, nil-safe
+	AdminBroadcaster  func(eventType string, data any) // optional, nil-safe
 	Subscribers       *SubscriberService               // optional — nil-safe
 }
 
@@ -42,7 +43,8 @@ type Service struct {
 	monitorStatus     MonitorStatusProvider
 	monitorPopulation MonitorPopulationProvider
 	monitorName       MonitorNameProvider
-	broadcaster       func(eventType string, data any)
+	publicBroadcaster func(eventType string, data any)
+	adminBroadcaster  func(eventType string, data any)
 	subscribers       *SubscriberService
 	notifier          SubscriberNotifier
 	incidentHandler   AlertIncidentHandler
@@ -66,7 +68,8 @@ func NewService(d Deps) *Service {
 		monitorStatus:     d.MonitorStatus,
 		monitorPopulation: d.MonitorPopulation,
 		monitorName:       d.MonitorName,
-		broadcaster:       d.Broadcaster,
+		publicBroadcaster: d.PublicBroadcaster,
+		adminBroadcaster:  d.AdminBroadcaster,
 		subscribers:       d.Subscribers,
 	}
 }
@@ -84,11 +87,6 @@ func (s *Service) SetMonitorPopulationProvider(fn MonitorPopulationProvider) {
 // SetMonitorNameProvider sets the function used to resolve monitor display names.
 func (s *Service) SetMonitorNameProvider(fn MonitorNameProvider) {
 	s.monitorName = fn
-}
-
-// SetBroadcaster sets the function used to broadcast SSE events.
-func (s *Service) SetBroadcaster(fn func(eventType string, data any)) {
-	s.broadcaster = fn
 }
 
 // SetIncidentStore sets the incident store used by the feed handler.
@@ -129,10 +127,17 @@ func (s *Service) NotifySubscribers(ctx context.Context, subject, message string
 	go s.notifier.NotifyAll(context.WithoutCancel(ctx), subject, message)
 }
 
-// Broadcast sends an event if a broadcaster is configured.
+// Broadcast sends an event to the public page and to the dashboard.
 func (s *Service) Broadcast(eventType string, data any) {
-	if s.broadcaster != nil {
-		s.broadcaster(eventType, data)
+	if s.publicBroadcaster != nil {
+		s.publicBroadcaster(eventType, data)
+	}
+	s.broadcastAdmin(eventType, data)
+}
+
+func (s *Service) broadcastAdmin(eventType string, data any) {
+	if s.adminBroadcaster != nil {
+		s.adminBroadcaster(eventType, data)
 	}
 }
 
@@ -321,33 +326,12 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 
 		effective := s.DeriveComponentStatus(ctx, c)
 
-		// Build per-monitor status breakdown.
-		var monitorRefs []MonitorRef
-		if c.CompositionMode == CompositionExplicit {
-			for _, ref := range c.Monitors {
-				mr := MonitorRef{Type: ref.Type, ID: ref.ID, Name: ref.Name}
-				if s.monitorStatus != nil {
-					mr.Status = s.monitorStatus(ctx, ref.Type, ref.ID)
-				}
-				monitorRefs = append(monitorRefs, mr)
-			}
-		} else if c.CompositionMode == CompositionMatchAll && s.monitorPopulation != nil {
-			refs := s.monitorPopulation(ctx, c.MatchAllType)
-			for _, ref := range refs {
-				mr := MonitorRef{Type: ref.Type, ID: ref.ID, Name: ref.Name}
-				if s.monitorStatus != nil {
-					mr.Status = s.monitorStatus(ctx, ref.Type, ref.ID)
-				}
-				monitorRefs = append(monitorRefs, mr)
-			}
-		}
-
 		compData = append(compData, ComponentData{
 			ID:              c.ID,
 			DisplayName:     c.DisplayName,
 			EffectiveStatus: effective,
 			StatusLabel:     statusLabel(effective),
-			Monitors:        monitorRefs,
+			Monitors:        s.componentMonitors(ctx, c),
 		})
 	}
 
@@ -385,8 +369,7 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 	return pd, nil
 }
 
-// NotifyMonitorChanged checks whether any status components are linked to the
-// given monitor and, if so, broadcasts updated statuses to public SSE clients.
+// NotifyMonitorChanged broadcasts the updated status of every component linked to the given monitor.
 func (s *Service) NotifyMonitorChanged(ctx context.Context, monitorType string, monitorID string) {
 	comps, err := s.components.ListComponentsByMonitor(ctx, monitorType, monitorID)
 	if err != nil {
@@ -406,45 +389,40 @@ func (s *Service) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 	}
 }
 
-// BroadcastComponentChange notifies public SSE clients of a component status change.
+// BroadcastComponentChange sends a component's status and monitors to the dashboard, and to the public page only when the component is visible there.
 func (s *Service) BroadcastComponentChange(ctx context.Context, comp *Component) {
-	effective := s.DeriveComponentStatus(ctx, comp)
-
-	var monitorsWithStatus []map[string]any
-	if comp.CompositionMode == CompositionExplicit && len(comp.Monitors) > 0 {
-		for _, ref := range comp.Monitors {
-			m := map[string]any{
-				"type": ref.Type,
-				"id":   ref.ID,
-				"name": ref.Name,
-			}
-			if s.monitorStatus != nil {
-				m["status"] = s.monitorStatus(ctx, ref.Type, ref.ID)
-			}
-			monitorsWithStatus = append(monitorsWithStatus, m)
-		}
-	} else if comp.CompositionMode == CompositionMatchAll && s.monitorPopulation != nil {
-		refs := s.monitorPopulation(ctx, comp.MatchAllType)
-		for _, ref := range refs {
-			m := map[string]any{
-				"type": ref.Type,
-				"id":   ref.ID,
-				"name": ref.Name,
-			}
-			if s.monitorStatus != nil {
-				m["status"] = s.monitorStatus(ctx, ref.Type, ref.ID)
-			}
-			monitorsWithStatus = append(monitorsWithStatus, m)
-		}
-	}
-
-	s.Broadcast(event.StatusComponentChanged, map[string]any{
+	payload := map[string]any{
 		"component_id": comp.ID,
 		"name":         comp.DisplayName,
-		"status":       effective,
-		"monitors":     monitorsWithStatus,
-	})
+		"status":       s.DeriveComponentStatus(ctx, comp),
+		"monitors":     s.componentMonitors(ctx, comp),
+	}
+	if !comp.Visible {
+		s.broadcastAdmin(event.StatusComponentChanged, payload)
+		return
+	}
+	s.Broadcast(event.StatusComponentChanged, payload)
 	s.broadcastGlobalStatus(ctx)
+}
+
+// componentMonitors lists the monitors a component aggregates, each with its current status.
+func (s *Service) componentMonitors(ctx context.Context, c *Component) []MonitorRef {
+	var refs []MonitorRef
+	switch {
+	case c.CompositionMode == CompositionExplicit:
+		refs = c.Monitors
+	case c.CompositionMode == CompositionMatchAll && s.monitorPopulation != nil:
+		refs = s.monitorPopulation(ctx, c.MatchAllType)
+	}
+	var out []MonitorRef
+	for _, ref := range refs {
+		mr := MonitorRef{Type: ref.Type, ID: ref.ID, Name: ref.Name}
+		if s.monitorStatus != nil {
+			mr.Status = s.monitorStatus(ctx, ref.Type, ref.ID)
+		}
+		out = append(out, mr)
+	}
+	return out
 }
 
 func (s *Service) broadcastGlobalStatus(ctx context.Context) {

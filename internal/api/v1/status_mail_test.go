@@ -111,7 +111,7 @@ func TestStatusPageMailFlow(t *testing.T) {
 	svc.SetSubscriberNotifier(statuspage.NewSubscriberNotifier(subscribers, mailer, baseURL, logger))
 
 	public := http.NewServeMux()
-	status.NewHandler(svc, http.NotFoundHandler(), logger, ratelimit.New(5.0/3600.0, 5, nil)).Register(public, nil)
+	status.NewHandler(svc, http.NotFoundHandler(), logger, ratelimit.New(5.0/3600.0, 5, nil), "https://status.example.com/status").Register(public, nil)
 	admin := NewRouter(HandlerDeps{
 		Logger:            logger,
 		StatusComponents:  components,
@@ -195,7 +195,7 @@ func TestSubscribeRevealsNothingAboutTheAddress(t *testing.T) {
 		Subscribers: status.NewSubscriberService(subscribers, mailer, "https://status.example.com", logger),
 	})
 	public := http.NewServeMux()
-	status.NewHandler(svc, http.NotFoundHandler(), logger, ratelimit.New(5.0/3600.0, 5, nil)).Register(public, nil)
+	status.NewHandler(svc, http.NotFoundHandler(), logger, ratelimit.New(5.0/3600.0, 5, nil), "https://status.example.com/status").Register(public, nil)
 	subscribe := func() *httptest.ResponseRecorder {
 		return serve(t, public, http.MethodPost, "/status/subscribe", `{"email":"visitor@example.com"}`)
 	}

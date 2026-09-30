@@ -127,7 +127,6 @@ async function fetchStatus() {
 interface ComponentChangedPayload { component_id: string; name: string; status: string; monitors: MonitorRef[] | null }
 interface GlobalChangedPayload { status: string; message: string }
 
-// A hidden component also reports its changes, but it is not on the page.
 function onComponentChanged(e: Event) {
   const payload = JSON.parse((e as MessageEvent).data) as ComponentChangedPayload
   const comp = data.value?.components.find((c) => c.id === payload.component_id)

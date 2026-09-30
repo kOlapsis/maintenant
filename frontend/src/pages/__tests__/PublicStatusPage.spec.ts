@@ -123,6 +123,24 @@ describe('PublicStatusPage live updates', () => {
     expect(statusCalls()).toBe(1)
   })
 
+  it('offers the monitor breakdown from the first load', async () => {
+    guardedFetch.mockImplementation(async (url: string) => {
+      if (url !== '/status/api') return jsonResponse(404, {})
+      return jsonResponse(200, {
+        ...statusSnapshot(false),
+        components: [{
+          id: 'c1', name: 'API', status: 'degraded',
+          monitors: [{ type: 'endpoint', id: 'e1', name: 'https://api.example.com', status: 'degraded' }],
+        }],
+      })
+    })
+    const wrapper = await mountPage()
+
+    await wrapper.find('[aria-controls="breakdown-c1"]').trigger('click')
+
+    expect(wrapper.find('#breakdown-c1').text()).toContain('https://api.example.com')
+  })
+
   it('ignores a component the page does not show', async () => {
     const wrapper = await mountPage()
     emit('status.component_changed', { component_id: 'hidden', name: 'Internal', status: 'major_outage', monitors: null })

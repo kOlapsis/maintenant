@@ -9,6 +9,7 @@ import (
 	"errors"
 	"html"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/mail"
 	"time"
@@ -24,16 +25,19 @@ type Handler struct {
 	personalization *PersonalizationPublicHandler
 	indexHTML       []byte
 	subscribeRL     *ratelimit.Limiter
+	pageURL         string
 }
 
 // NewHandler creates a new public status page handler.
 // sseHandler should be an SSEBroker that implements http.Handler for /status/events.
-func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger, subscribeRL *ratelimit.Limiter) *Handler {
+// pageURL is the public address of the page, as PageURL resolves it.
+func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger, subscribeRL *ratelimit.Limiter, pageURL string) *Handler {
 	return &Handler{
 		service:     service,
 		sseHandler:  sseHandler,
 		logger:      logger,
 		subscribeRL: subscribeRL,
+		pageURL:     pageURL,
 	}
 }
 
@@ -110,9 +114,10 @@ type StatusAPIResponse struct {
 
 // APIComponentBrief is a brief component in the JSON API.
 type APIComponentBrief struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	ID       string       `json:"id"`
+	Name     string       `json:"name"`
+	Status   string       `json:"status"`
+	Monitors []MonitorRef `json:"monitors"`
 }
 
 // APIIncidentBrief is a brief incident in the JSON API.
@@ -163,9 +168,10 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 
 	for _, c := range data.Components {
 		resp.Components = append(resp.Components, APIComponentBrief{
-			ID:     c.ID,
-			Name:   c.DisplayName,
-			Status: c.EffectiveStatus,
+			ID:       c.ID,
+			Name:     c.DisplayName,
+			Status:   c.EffectiveStatus,
+			Monitors: c.Monitors,
 		})
 	}
 
@@ -243,8 +249,12 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 	}
 
-	contentType := r.Header.Get("Content-Type")
-	if contentType == "application/json" {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		mediaType = ""
+	}
+	switch mediaType {
+	case "application/json":
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
@@ -254,7 +264,7 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 			return
 		}
-	} else {
+	case "application/x-www-form-urlencoded":
 		if err := r.ParseForm(); err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
@@ -265,6 +275,10 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.Email = r.PostFormValue("email")
+	default:
+		writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
+			"Content-Type must be application/json or application/x-www-form-urlencoded")
+		return
 	}
 
 	if len(req.Email) > maxEmailLength {

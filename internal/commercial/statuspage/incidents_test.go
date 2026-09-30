@@ -157,9 +157,6 @@ func (m *mockIncidentStore) DeleteIncident(ctx context.Context, id string) error
 func (m *mockIncidentStore) ListUpdates(ctx context.Context, incidentID string) ([]status.IncidentUpdate, error) {
 	return nil, nil
 }
-func (m *mockIncidentStore) DeleteIncidentsOlderThan(ctx context.Context, days int) (int64, error) {
-	return 0, nil
-}
 
 // --- Helpers ---
 

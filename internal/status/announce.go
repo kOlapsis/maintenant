@@ -11,9 +11,14 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
-// AnnounceComponentChange tells SSE clients that a component was created, updated or deleted, by id only since it may be hidden, then republishes the global status.
-func (s *Service) AnnounceComponentChange(ctx context.Context, eventType, componentID string) {
-	s.Broadcast(eventType, map[string]any{"component_id": componentID})
+// AnnounceComponentChange tells the dashboard that a component was created, updated or deleted, by id only; the public page hears of it, then of the global status, only when the component is or was visible there.
+func (s *Service) AnnounceComponentChange(ctx context.Context, eventType, componentID string, public bool) {
+	payload := map[string]any{"component_id": componentID}
+	if !public {
+		s.broadcastAdmin(eventType, payload)
+		return
+	}
+	s.Broadcast(eventType, payload)
 	s.broadcastGlobalStatus(ctx)
 }
 

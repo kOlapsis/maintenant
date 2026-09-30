@@ -154,11 +154,11 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 	}
 	if _, err := h.components.CreateComponent(r.Context(), c); err != nil {
 		slog.Error("failed to create status component", "error", err)
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create component")
+		WriteError(w, http.StatusInternalServerError, "internal", "Failed to create component")
 		return
 	}
 	c.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), c)
-	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentCreated, c.ID)
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentCreated, c.ID, c.Visible)
 	WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -173,6 +173,7 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 		WriteError(w, http.StatusNotFound, "not_found", "Component not found")
 		return
 	}
+	wasVisible := existing.Visible
 	var req struct {
 		CompositionMode *string             `json:"composition_mode"`
 		Monitors        []status.MonitorRef `json:"monitors"`
@@ -254,7 +255,7 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 	} else {
 		existing.EffectiveStatus = existing.DerivedStatus
 	}
-	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentUpdated, existing.ID)
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentUpdated, existing.ID, wasVisible || existing.Visible)
 	WriteJSON(w, http.StatusOK, existing)
 }
 
@@ -264,11 +265,16 @@ func (h *StatusAdminHandler) HandleDeleteComponent(w http.ResponseWriter, r *htt
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid component ID")
 		return
 	}
+	existing, err := h.components.GetComponent(r.Context(), id)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 	if err := h.components.DeleteComponent(r.Context(), id); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentDeleted, id)
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentDeleted, id, existing != nil && existing.Visible)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -559,6 +565,10 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 			return
 		}
 		existing.EndsAt = t
+	}
+	if existing.EndsAt.Before(existing.StartsAt) {
+		WriteError(w, http.StatusBadRequest, "validation", "ends_at must be after starts_at")
+		return
 	}
 	if !h.componentIDsExist(w, r, req.ComponentIDs) {
 		return

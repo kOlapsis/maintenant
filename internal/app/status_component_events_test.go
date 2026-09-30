@@ -27,7 +27,15 @@ func drainEvents(ch chan v1.SSEEvent) []v1.SSEEvent {
 	}
 }
 
-func TestStatusComponentAdmin_AnnouncesEachChangeOnBothBuses(t *testing.T) {
+func eventTypes(events []v1.SSEEvent) []string {
+	types := make([]string, 0, len(events))
+	for _, evt := range events {
+		types = append(types, evt.Type)
+	}
+	return types
+}
+
+func TestStatusComponentAdmin_HiddenComponentStaysOnTheAdminBus(t *testing.T) {
 	a, _ := newTestApp(t, nil)
 	admin := make(chan v1.SSEEvent, 64)
 	a.broker.AddObserver(admin)
@@ -49,21 +57,26 @@ func TestStatusComponentAdmin_AnnouncesEachChangeOnBothBuses(t *testing.T) {
 	rec = serve(a, http.MethodDelete, "/api/v1/status/components/"+created.ID, "", nil)
 	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
 
-	want := []string{
-		"status.component_created", "status.global_changed",
-		"status.component_updated", "status.global_changed",
-		"status.component_deleted", "status.global_changed",
+	assert.Empty(t, drainEvents(public), "the public page hears nothing of a hidden component")
+	events := drainEvents(admin)
+	require.Equal(t, []string{"status.component_created", "status.component_updated", "status.component_deleted"}, eventTypes(events))
+	for _, evt := range events {
+		assert.Equal(t, map[string]any{"component_id": created.ID}, evt.Data, "a component change travels by id only")
 	}
-	for bus, ch := range map[string]chan v1.SSEEvent{"admin": admin, "public": public} {
-		events := drainEvents(ch)
-		types := make([]string, 0, len(events))
-		for _, evt := range events {
-			types = append(types, evt.Type)
-		}
-		require.Equal(t, want, types, "%s bus", bus)
-		for _, i := range []int{0, 2, 4} {
-			assert.Equal(t, map[string]any{"component_id": created.ID}, events[i].Data,
-				"%s bus: a hidden component travels by id only", bus)
-		}
-	}
+}
+
+func TestStatusComponentAdmin_VisibleComponentReachesBothBuses(t *testing.T) {
+	a, _ := newTestApp(t, nil)
+	admin := make(chan v1.SSEEvent, 64)
+	a.broker.AddObserver(admin)
+	public := make(chan v1.SSEEvent, 64)
+	a.statusBroker.AddObserver(public)
+
+	rec := serve(a, http.MethodPost, "/api/v1/status/components",
+		`{"display_name":"API","composition_mode":"match-all","match_all_type":"endpoint"}`, map[string]string{"Content-Type": "application/json"})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	want := []string{"status.component_created", "status.global_changed"}
+	assert.Equal(t, want, eventTypes(drainEvents(admin)), "admin bus")
+	assert.Equal(t, want, eventTypes(drainEvents(public)), "public bus")
 }

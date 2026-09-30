@@ -464,10 +464,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Logger:      logger,
 		Incidents:   incidentStore,
 		Maintenance: maintenanceStore,
-		Broadcaster: func(eventType string, data any) {
-			evt := v1.SSEEvent{Type: eventType, Data: data}
-			a.statusBroker.Broadcast(evt)
-			a.broker.Broadcast(evt)
+		PublicBroadcaster: func(eventType string, data any) {
+			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		},
+		AdminBroadcaster: func(eventType string, data any) {
+			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		},
 	})
 	a.wireStatusProvider()
@@ -492,7 +493,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.subscriberSvc = status.NewSubscriberService(subscriberStore, a.statusMailer, cfg.BaseURL, logger)
 	a.statusSvc.SetSubscriberService(a.subscriberSvc)
 	personalizationPublicHandler := status.NewPersonalizationPublicHandler(personalizationStore, logger)
-	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL)
+	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL, status.PageURL(cfg.StatusURL, cfg.BaseURL))
 	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
 	// --- Webhook dispatcher ---

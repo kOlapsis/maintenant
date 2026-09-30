@@ -140,9 +140,6 @@ func (m *mcpIncidentStore) CreateUpdate(_ context.Context, u *status.IncidentUpd
 	m.updates = append(m.updates, u)
 	return "upd-1", nil
 }
-func (m *mcpIncidentStore) DeleteIncidentsOlderThan(_ context.Context, _ int) (int64, error) {
-	return 0, nil
-}
 
 type mcpMaintenanceStore struct {
 	windows map[string]*status.MaintenanceWindow

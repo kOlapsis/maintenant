@@ -4,7 +4,9 @@
 package v1
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/store"
@@ -71,6 +74,70 @@ func TestStatusAdmin_RefusesValuesOutsideTheModel(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &comps))
 	require.Len(t, comps, 1)
 	assert.Nil(t, comps[0].StatusOverride, "a refused override must not be stored")
+}
+
+func TestStatusAdmin_PublicStreamHearsOnlyOfComponentsItShows(t *testing.T) {
+	withEdition(t, extension.Pro)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	db := storetest.Open(t, logger)
+	components := store.NewStatusComponentStore(db)
+	var public []string
+	svc := status.NewService(status.Deps{
+		Components:        components,
+		Logger:            logger,
+		PublicBroadcaster: func(eventType string, _ any) { public = append(public, eventType) },
+	})
+	admin := NewRouter(HandlerDeps{Logger: logger, StatusComponents: components, StatusSvc: svc}).Handler()
+	heard := func() []string {
+		got := public
+		public = nil
+		return got
+	}
+
+	rec := serve(t, admin, http.MethodPost, "/api/v1/status/components",
+		`{"display_name":"API","composition_mode":"match-all","match_all_type":"endpoint"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var comp status.Component
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &comp))
+	assert.Equal(t, []string{event.StatusComponentCreated, event.StatusGlobalChanged}, heard())
+
+	rec = serve(t, admin, http.MethodPut, "/api/v1/status/components/"+comp.ID, `{"visible":false}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, []string{event.StatusComponentUpdated, event.StatusGlobalChanged}, heard(), "hiding a component removes it from the page")
+
+	rec = serve(t, admin, http.MethodPut, "/api/v1/status/components/"+comp.ID, `{"display_name":"Internal API"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	rec = serve(t, admin, http.MethodDelete, "/api/v1/status/components/"+comp.ID, "")
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+	rec = serve(t, admin, http.MethodPost, "/api/v1/status/components",
+		`{"display_name":"Internal DB","composition_mode":"match-all","match_all_type":"container","visible":false}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Empty(t, heard(), "a hidden component is edited, deleted and created without the public page hearing of it")
+}
+
+type failingComponentStore struct{ status.ComponentStore }
+
+func (failingComponentStore) CreateComponent(context.Context, *status.Component) (string, error) {
+	return "", errors.New("disk full")
+}
+
+func TestStatusAdmin_FailedCreationAnswersTheLowerCaseCode(t *testing.T) {
+	withEdition(t, extension.Pro)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	components := failingComponentStore{}
+	admin := NewRouter(HandlerDeps{
+		Logger:           logger,
+		StatusComponents: components,
+		StatusSvc:        status.NewService(status.Deps{Components: components, Logger: logger}),
+	}).Handler()
+
+	rec := serve(t, admin, http.MethodPost, "/api/v1/status/components",
+		`{"display_name":"API","composition_mode":"match-all","match_all_type":"endpoint"}`)
+	require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	var body ErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "internal", body.Error.Code)
+	assert.NotContains(t, rec.Body.String(), "disk full")
 }
 
 func TestStatusAdmin_AcceptsEveryModelValue(t *testing.T) {
