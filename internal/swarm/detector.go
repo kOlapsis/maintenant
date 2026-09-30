@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/moby/moby/api/types/system"
 )
@@ -19,9 +20,26 @@ type InfoProvider interface {
 
 // DetectionResult holds the outcome of Swarm mode detection.
 type DetectionResult struct {
-	Active    bool   `json:"active"`
-	IsManager bool   `json:"is_manager"`
-	ClusterID string `json:"cluster_id,omitempty"`
+	Active       bool      `json:"active"`
+	IsManager    bool      `json:"is_manager"`
+	ClusterID    string    `json:"cluster_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at,omitzero"`
+	ManagerCount int       `json:"manager_count,omitempty"`
+	WorkerCount  int       `json:"worker_count,omitempty"`
+}
+
+// Cluster returns the cluster this node manages, or nil when it is not an active manager.
+func (r DetectionResult) Cluster() *SwarmCluster {
+	if !r.Active || !r.IsManager {
+		return nil
+	}
+	return &SwarmCluster{
+		ID:           r.ClusterID,
+		CreatedAt:    r.CreatedAt,
+		ManagerCount: r.ManagerCount,
+		WorkerCount:  r.WorkerCount,
+		IsManager:    true,
+	}
 }
 
 // Detector detects whether the Docker engine is part of a Swarm cluster
@@ -60,6 +78,13 @@ func (d *Detector) Detect(ctx context.Context) (DetectionResult, error) {
 	result.IsManager = info.Swarm.ControlAvailable
 	if info.Swarm.Cluster != nil {
 		result.ClusterID = info.Swarm.Cluster.ID
+		result.CreatedAt = info.Swarm.Cluster.CreatedAt
+	}
+	result.ManagerCount = info.Swarm.Managers
+	result.WorkerCount = info.Swarm.Nodes - info.Swarm.Managers
+	if prev := d.Result(); result.IsManager && info.Swarm.Nodes == 0 && prev.IsManager {
+		// A manager without a leader reads neither the cluster nor its nodes: keep what it read last.
+		result = prev
 	}
 
 	if result.IsManager {
@@ -79,17 +104,6 @@ func (d *Detector) Result() DetectionResult {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.result
-}
-
-// Recheck re-checks the Swarm state and returns true if it changed.
-func (d *Detector) Recheck(ctx context.Context) (changed bool, result DetectionResult, err error) {
-	prev := d.Result()
-	result, err = d.Detect(ctx)
-	if err != nil {
-		return false, result, err
-	}
-	changed = prev.Active != result.Active || prev.IsManager != result.IsManager
-	return changed, result, nil
 }
 
 func (d *Detector) setResult(r DetectionResult) {

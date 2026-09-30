@@ -628,7 +628,7 @@ func (a *App) wireSwarmCallbacks(m *swarmManager) {
 	}
 
 	m.events.SetCallback(sseBroadcast)
-	m.events.SetAlertCallback(a.emitAlert)
+	m.events.SetReplicaChecker(m.replicaChecker)
 	m.events.SetNodeService(m.nodeSvc)
 
 	m.nodeSvc.SetEventCallback(sseBroadcast)

@@ -153,15 +153,16 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		return nil, nil
 	}
 
-	// Override registry if specified in labels
-	if cfg.Registry != "" {
-		registry = cfg.Registry
-	}
-
 	// Build full ref for registry queries
 	fullRef := imageRef
 	if registry != "" && !strings.Contains(imageRef, "/") {
 		fullRef = "library/" + imageRef
+	}
+
+	// The registry label points the queries at a mirror serving the same repository.
+	if cfg.Registry != "" {
+		registry = cfg.Registry
+		fullRef = registry + "/" + repositoryPath(fullRef)
 	}
 
 	target := scanTarget{
@@ -441,4 +442,12 @@ func ParseImageRef(image string) (repo, tag, registry string) {
 	}
 
 	return image, tag, registry
+}
+
+// repositoryPath strips the registry host from a repository ("ghcr.io/org/repo" -> "org/repo").
+func repositoryPath(repo string) string {
+	if host, path, ok := strings.Cut(repo, "/"); ok && strings.ContainsAny(host, ".:") {
+		return path
+	}
+	return repo
 }

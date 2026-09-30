@@ -4,10 +4,14 @@
 package app
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	dockerswarm "github.com/moby/moby/api/types/swarm"
+	dockersystem "github.com/moby/moby/api/types/system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,6 +22,79 @@ import (
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/swarm"
 )
+
+func crashingService() swarm.TopologySnapshot {
+	snap := swarm.TopologySnapshot{Services: []swarm.SwarmService{{ServiceID: "svc1", Name: "prod_web", Mode: "replicated", DesiredReplicas: 1}}}
+	code := 1
+	for _, id := range []string{"t1", "t2", "t3"} {
+		snap.Tasks = append(snap.Tasks, swarm.SwarmTask{
+			TaskID: id, ServiceID: "svc1", NodeID: "n2", State: "failed", DesiredState: "shutdown", ExitCode: &code, Timestamp: time.Now(),
+		})
+	}
+	return snap
+}
+
+type swarmInfo struct{ info dockerswarm.Info }
+
+func (s swarmInfo) Info(context.Context) (dockersystem.Info, error) {
+	return dockersystem.Info{Swarm: s.info}, nil
+}
+
+func TestNew_ArmsSwarmDetectionWhileDockerIsUnreachable(t *testing.T) {
+	a, ctx := newKubernetesAlertApp(t)
+	require.False(t, a.rt.IsConnected())
+	require.NotNil(t, a.swarmDetector, "Docker not answering at startup still leaves Swarm detection armed")
+
+	a.swarmDetector = swarm.NewDetector(swarmInfo{info: dockerswarm.Info{
+		LocalNodeState: dockerswarm.LocalNodeStateActive, ControlAvailable: true, Nodes: 5, Managers: 3,
+		Cluster: &dockerswarm.ClusterInfo{ID: "cluster-1"},
+	}}, a.logger)
+	go a.startSwarmRecheck(ctx)
+	a.wireContainerMonitoring(ctx)
+
+	require.Eventually(t, func() bool { return a.swarmMgr.Load() != nil }, 2*time.Second, 10*time.Millisecond,
+		"a manager is detected once the runtime connects, not a recheck period later")
+	cluster := a.swarmCluster.Load()
+	require.NotNil(t, cluster)
+	assert.Equal(t, "cluster-1", cluster.ID)
+	assert.Equal(t, 3, cluster.ManagerCount)
+	assert.Equal(t, 2, cluster.WorkerCount)
+}
+
+func TestApplySwarmDetection_KeepsTheClusterCountsCurrent(t *testing.T) {
+	a, ctx := newKubernetesAlertApp(t)
+	sse := make(chan v1.SSEEvent, 64)
+	a.broker.AddObserver(sse)
+
+	a.applySwarmDetection(ctx, swarm.DetectionResult{Active: true})
+	assert.Nil(t, a.swarmCluster.Load())
+	assert.Empty(t, sse, "a worker was never a Swarm context: nothing switches")
+
+	a.swarmCluster.Store(&swarm.SwarmCluster{ID: "cluster-1", IsManager: true})
+	a.applySwarmDetection(ctx, swarm.DetectionResult{Active: true, IsManager: true, ClusterID: "cluster-1", ManagerCount: 3, WorkerCount: 4})
+	cluster := a.swarmCluster.Load()
+	require.NotNil(t, cluster)
+	assert.Equal(t, 3, cluster.ManagerCount)
+	assert.Equal(t, 4, cluster.WorkerCount)
+	assert.Empty(t, sse, "a manager staying a manager does not switch the context")
+}
+
+func TestDispatchRuntimeEvent_TaskContainersStoppingAreNoCrash(t *testing.T) {
+	a, ctx := newKubernetesAlertApp(t)
+	dr, ok := a.rt.(*docker.Runtime)
+	require.True(t, ok)
+	a.activateSwarm(ctx, dr)
+	m := a.swarmMgr.Load()
+	require.NotNil(t, m)
+
+	task := map[string]string{"com.docker.swarm.service.id": "svc1", "com.docker.swarm.service.name": "prod_web"}
+	for i := range 3 {
+		a.dispatchRuntimeEvent(ctx, runtime.RuntimeEvent{
+			Action: "die", ExternalID: fmt.Sprintf("task-%d", i), ExitCode: "143", Labels: task, Timestamp: time.Now(),
+		})
+	}
+	assert.False(t, m.crashLoop.IsCrashLooping("svc1"), "a rolling update stopping three tasks is not a crash loop")
+}
 
 func TestActivateSwarm_WiresEventsAndAlertsLikeAtBoot(t *testing.T) {
 	a, ctx := newKubernetesAlertApp(t)
@@ -35,9 +112,7 @@ func TestActivateSwarm_WiresEventsAndAlertsLikeAtBoot(t *testing.T) {
 	m.events.ProcessEvent(ctx, runtime.RuntimeEvent{
 		ResourceType: runtime.ResourceService, Action: "remove", ExternalID: "svc1", Name: "prod_web",
 	})
-	for range 3 {
-		m.crashLoop.RecordFailure("svc1", "prod_web", "exit 1")
-	}
+	m.crashLoop.ObserveTasks(crashingService())
 
 	seen := map[string]bool{}
 	require.Eventually(t, func() bool {

@@ -217,35 +217,10 @@ func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent
 		}
 	case "stop", "die", "kill":
 		a.endpointSvc.HandleContainerStop(ctx, evt.ExternalID)
-
-		if svcID, svcName, ok := swarmTaskFailure(evt); ok && m != nil {
-			m.crashLoop.RecordFailure(svcID, svcName, evt.ErrorDetail)
-			a.broker.Broadcast(v1.SSEEvent{
-				Type: event.SwarmTaskFailed,
-				Data: map[string]interface{}{
-					"service_id":   svcID,
-					"service_name": svcName,
-					"container_id": evt.ExternalID,
-					"error":        evt.ErrorDetail,
-					"exit_code":    evt.ExitCode,
-					"timestamp":    evt.Timestamp.Format(time.RFC3339),
-				},
-			})
-		}
 	case "destroy":
 		a.endpointSvc.HandleContainerDestroy(ctx, evt.ExternalID)
 		a.certSvc.HandleContainerDestroy(ctx, evt.ExternalID)
 	}
-}
-
-// swarmTaskFailure returns the service of a Swarm task that died, unless the
-// task is ignored.
-func swarmTaskFailure(evt runtime.RuntimeEvent) (serviceID, serviceName string, ok bool) {
-	serviceID = evt.Labels["com.docker.swarm.service.id"]
-	if evt.Action != "die" || serviceID == "" || container.IgnoredByLabels(evt.Labels) {
-		return "", "", false
-	}
-	return serviceID, evt.Labels["com.docker.swarm.service.name"], true
 }
 
 // startSwarmManager resumes the Swarm alerts left by a previous run, then starts
@@ -360,6 +335,7 @@ func (a *App) startSwarmTopologyReconcile(ctx context.Context, m *swarmManager) 
 			a.logger.Warn("local swarm reconcile: snapshot failed", "error", err)
 			return
 		}
+		m.crashLoop.ObserveTasks(snap)
 		if err := a.swarmIngest.ReconcileServicesTasks(ctx, uid.LocalAgent, snap); err != nil {
 			a.logger.Warn("local swarm reconcile: store failed", "error", err)
 		}
@@ -476,7 +452,8 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 	}
 }
 
-// startSwarmRecheck periodically re-checks Swarm mode and broadcasts context changes.
+// startSwarmRecheck re-reads the Swarm state every 60 seconds, and as soon as
+// the runtime connects.
 func (a *App) startSwarmRecheck(ctx context.Context) {
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -485,15 +462,35 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			changed, result, err := a.swarmDetector.Recheck(ctx)
-			if err != nil {
-				a.logger.Warn("swarm recheck failed", "error", err)
-				continue
-			}
-			if changed {
-				a.applySwarmContext(ctx, result)
-			}
+		case <-a.swarmRecheckNow:
 		}
+		result, err := a.swarmDetector.Detect(ctx)
+		if err != nil {
+			a.logger.Warn("swarm recheck failed", "error", err)
+			continue
+		}
+		a.applySwarmDetection(ctx, result)
+	}
+}
+
+// requestSwarmRecheck wakes the Swarm recheck without waiting for its next tick.
+func (a *App) requestSwarmRecheck() {
+	select {
+	case a.swarmRecheckNow <- struct{}{}:
+	default:
+	}
+}
+
+// applySwarmDetection switches the runtime context when the node becomes or
+// stops being a Swarm manager, and otherwise refreshes the cluster it manages.
+func (a *App) applySwarmDetection(ctx context.Context, result swarm.DetectionResult) {
+	cluster := result.Cluster()
+	if (cluster != nil) != (a.swarmCluster.Load() != nil) {
+		a.applySwarmContext(ctx, result)
+		return
+	}
+	if cluster != nil {
+		a.swarmCluster.Store(cluster)
 	}
 }
 
@@ -502,15 +499,12 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 func (a *App) applySwarmContext(ctx context.Context, result swarm.DetectionResult) {
 	var previousCtx, newCtx, message string
 
-	if result.Active && result.IsManager {
+	if cluster := result.Cluster(); cluster != nil {
 		previousCtx = "docker"
 		newCtx = "swarm"
 		message = "Swarm cluster detected — dashboard adapted."
 
-		a.swarmCluster.Store(&swarm.SwarmCluster{
-			ID:        result.ClusterID,
-			IsManager: true,
-		})
+		a.swarmCluster.Store(cluster)
 		if a.swarmMgr.Load() == nil {
 			if dr, ok := a.rt.(*docker.Runtime); ok {
 				a.activateSwarm(ctx, dr)
@@ -564,6 +558,9 @@ func (a *App) activateSwarm(ctx context.Context, dr *docker.Runtime) {
 func (a *App) wireContainerMonitoring(ctx context.Context) <-chan struct{} {
 	a.reconcile(ctx)
 	streamDone := a.startEventStream(ctx)
+	if a.swarmDetector != nil {
+		a.requestSwarmRecheck()
+	}
 	if src, ok := a.rt.(kubernetes.SnapshotSource); ok {
 		go a.startKubernetesReconcile(ctx, src, streamDone)
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,6 +77,9 @@ func (ns *NodeService) SetAlertCallback(cb NodeAlertCallback) {
 func (ns *NodeService) Reconcile(ctx context.Context) error {
 	nodes, err := ns.client.NodeList(ctx)
 	if err != nil {
+		if isLeaderless(err) {
+			ns.quorumLost(err)
+		}
 		return fmt.Errorf("reconcile nodes: %w", err)
 	}
 
@@ -142,6 +146,19 @@ func (ns *NodeService) Reconcile(ctx context.Context) error {
 		} else {
 			ns.logger.Info("new Swarm node discovered",
 				"node_id", nodeID, "hostname", hostname, "role", role, "status", status)
+		}
+		if existing == nil || existing.Role != role || existing.Hostname != hostname ||
+			existing.EngineVersion != engineVersion || existing.Address != address {
+			ns.emit(event.SwarmNodeUpdated, map[string]interface{}{
+				"node_id":        nodeID,
+				"hostname":       hostname,
+				"role":           role,
+				"status":         status,
+				"availability":   availability,
+				"engine_version": engineVersion,
+				"address":        address,
+				"task_count":     newNode.TaskCount,
+			})
 		}
 
 		if err := ns.store.UpsertNode(ctx, newNode); err != nil {
@@ -274,8 +291,24 @@ func (ns *NodeService) detectTransitions(old, current *SwarmNode) {
 // and resolves it once the quorum is back.
 func (ns *NodeService) checkQuorum(totalManagers, readyManagers int) {
 	quorumNeeded := (totalManagers / 2) + 1
-	degraded := readyManagers < quorumNeeded
+	details := map[string]any{
+		"total_managers": totalManagers,
+		"ready_managers": readyManagers,
+		"quorum_needed":  quorumNeeded,
+	}
+	if readyManagers < quorumNeeded {
+		ns.setQuorumDegraded(true, fmt.Sprintf("Swarm quorum degraded: %d/%d managers ready (need %d)", readyManagers, totalManagers, quorumNeeded), details)
+		return
+	}
+	ns.setQuorumDegraded(false, fmt.Sprintf("Swarm quorum restored: %d/%d managers ready", readyManagers, totalManagers), details)
+}
 
+// quorumLost raises the quorum alert when the managers answer that the swarm has no leader.
+func (ns *NodeService) quorumLost(err error) {
+	ns.setQuorumDegraded(true, "Swarm quorum lost: the swarm has no leader", map[string]any{"error": err.Error()})
+}
+
+func (ns *NodeService) setQuorumDegraded(degraded bool, message string, details map[string]any) {
 	ns.mu.Lock()
 	changed := degraded != ns.quorumAlerted
 	ns.quorumAlerted = degraded
@@ -288,22 +321,22 @@ func (ns *NodeService) checkQuorum(totalManagers, readyManagers int) {
 		Source:     "swarm",
 		AlertType:  alertTypeQuorumDegraded,
 		Severity:   alert.SeverityCritical,
-		Message:    fmt.Sprintf("Swarm quorum degraded: %d/%d managers ready (need %d)", readyManagers, totalManagers, quorumNeeded),
+		Message:    message,
 		EntityType: "swarm_cluster",
 		EntityName: "swarm",
-		Details: map[string]any{
-			"total_managers": totalManagers,
-			"ready_managers": readyManagers,
-			"quorum_needed":  quorumNeeded,
-		},
-		Timestamp: time.Now(),
+		Details:    details,
+		Timestamp:  time.Now(),
 	}
 	if !degraded {
 		evt.Severity = alert.SeverityInfo
 		evt.IsRecover = true
-		evt.Message = fmt.Sprintf("Swarm quorum restored: %d/%d managers ready", readyManagers, totalManagers)
 	}
 	ns.sendAlert(evt)
+}
+
+// isLeaderless reports the error of a manager whose swarm lost its quorum, which the Engine API carries only as swarmkit's text.
+func isLeaderless(err error) bool {
+	return strings.Contains(err.Error(), "swarm does not have a leader")
 }
 
 func (ns *NodeService) emit(eventType string, data interface{}) {

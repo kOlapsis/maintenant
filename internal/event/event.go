@@ -124,6 +124,7 @@ const (
 // Swarm node, task and rolling update events.
 const (
 	SwarmNodeStatusChanged  = "swarm.node_status_changed"
+	SwarmNodeUpdated        = "swarm.node_updated"
 	SwarmTaskFailed         = "swarm.task_failed"
 	SwarmCrashLoopDetected  = "swarm.crash_loop_detected"
 	SwarmCrashLoopRecovered = "swarm.crash_loop_recovered"

@@ -133,6 +133,7 @@ type App struct {
 
 	// Swarm
 	swarmDetector      *swarm.Detector
+	swarmRecheckNow    chan struct{}
 	swarmCluster       atomic.Pointer[swarm.SwarmCluster]
 	swarmMgr           atomic.Pointer[swarmManager]
 	swarmNodeStore     *store.SwarmNodeStore
@@ -288,19 +289,16 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	a.k8sIngest = kubernetes.NewIngestService(a.k8sStore, logger)
 	a.k8sAlerts = kubernetes.NewK8sAlertChecker(logger)
 
-	// --- Swarm detection (only when runtime is connected) ---
-	if rt.IsConnected() {
-		if dr, ok := rt.(*docker.Runtime); ok {
-			detector := swarm.NewDetector(dr.Client(), logger)
-			a.swarmDetector = detector
-			result, err := detector.Detect(ctx)
+	// --- Swarm detection: armed for any Docker runtime, run now if it answers ---
+	if dr, ok := rt.(*docker.Runtime); ok {
+		a.swarmDetector = swarm.NewDetector(dr.Client(), logger)
+		a.swarmRecheckNow = make(chan struct{}, 1)
+		if rt.IsConnected() {
+			result, err := a.swarmDetector.Detect(ctx)
 			if err != nil {
 				logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
-			} else if result.Active && result.IsManager {
-				a.swarmCluster.Store(&swarm.SwarmCluster{
-					ID:        result.ClusterID,
-					IsManager: result.IsManager,
-				})
+			} else if cluster := result.Cluster(); cluster != nil {
+				a.swarmCluster.Store(cluster)
 				a.swarmMgr.Store(newSwarmManager(dr, a.swarmNodeStore, logger))
 			}
 		}

@@ -9,7 +9,10 @@ import (
 	"sync"
 	"time"
 
+	dockerswarm "github.com/moby/moby/api/types/swarm"
+
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
@@ -30,18 +33,20 @@ type serviceFailureState struct {
 
 // CrashLoopDetector detects crash-loop patterns per service.
 type CrashLoopDetector struct {
-	mu       sync.Mutex
-	services map[string]*serviceFailureState // keyed by service ID
-	logger   *slog.Logger
-	callback EventCallback
-	alertCb  NodeAlertCallback
+	mu          sync.Mutex
+	services    map[string]*serviceFailureState // keyed by service ID
+	failedTasks map[string]bool                 // failed task IDs already counted
+	logger      *slog.Logger
+	callback    EventCallback
+	alertCb     NodeAlertCallback
 }
 
 // NewCrashLoopDetector creates a new crash-loop detector.
 func NewCrashLoopDetector(logger *slog.Logger) *CrashLoopDetector {
 	return &CrashLoopDetector{
-		services: make(map[string]*serviceFailureState),
-		logger:   logger,
+		services:    make(map[string]*serviceFailureState),
+		failedTasks: make(map[string]bool),
+		logger:      logger,
 	}
 }
 
@@ -69,12 +74,56 @@ func (cld *CrashLoopDetector) Resume(active []*alert.Alert) {
 	}
 }
 
-// RecordFailure records a task failure for a service and checks for crash-loop.
-func (cld *CrashLoopDetector) RecordFailure(serviceID, serviceName, lastError string) {
+// ObserveTasks counts once each task of the snapshot that failed within the detection window, on any node.
+func (cld *CrashLoopDetector) ObserveTasks(snap TopologySnapshot) {
+	services := make(map[string]*SwarmService, len(snap.Services))
+	for i := range snap.Services {
+		services[snap.Services[i].ServiceID] = &snap.Services[i]
+	}
+
 	cld.mu.Lock()
 	defer cld.mu.Unlock()
 
 	now := time.Now()
+	failed := make(map[string]bool)
+	for _, t := range snap.Tasks {
+		svc, known := services[t.ServiceID]
+		if !known || !taskFailed(t) {
+			continue
+		}
+		failed[t.TaskID] = true
+		at := t.Timestamp
+		if at.IsZero() {
+			at = now
+		}
+		if cld.failedTasks[t.TaskID] || container.IgnoredByLabels(svc.Labels) || now.Sub(at) >= crashLoopWindow {
+			continue
+		}
+		cld.emit(event.SwarmTaskFailed, map[string]interface{}{
+			"task_id":      t.TaskID,
+			"service_id":   t.ServiceID,
+			"service_name": svc.Name,
+			"node_id":      t.NodeID,
+			"container_id": t.ContainerID,
+			"error":        t.Error,
+			"exit_code":    t.ExitCode,
+			"timestamp":    at.Format(time.RFC3339),
+		})
+		cld.recordFailure(t.ServiceID, svc.Name, t.Error, at, now)
+	}
+	cld.failedTasks = failed
+}
+
+// taskFailed reports a task that stopped while Swarm wanted it running: a rolling update or a scale-down shuts tasks down instead of failing them.
+func taskFailed(t SwarmTask) bool {
+	if t.State != string(dockerswarm.TaskStateFailed) {
+		return false
+	}
+	// The task API does not report the OOM killer, so a SIGKILL there counts as one.
+	return t.ExitCode == nil || !container.IsCleanExit(*t.ExitCode, true)
+}
+
+func (cld *CrashLoopDetector) recordFailure(serviceID, serviceName, lastError string, at, now time.Time) {
 	state, ok := cld.services[serviceID]
 	if !ok {
 		state = &serviceFailureState{}
@@ -82,8 +131,10 @@ func (cld *CrashLoopDetector) RecordFailure(serviceID, serviceName, lastError st
 	}
 
 	state.name = serviceName
-	state.failures = append(state.failures, now)
-	state.lastFailure = now
+	state.failures = append(state.failures, at)
+	if at.After(state.lastFailure) {
+		state.lastFailure = at
+	}
 
 	// Prune old failures beyond buffer max.
 	cutoff := now.Add(-crashLoopBufferMax)
