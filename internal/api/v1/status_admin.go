@@ -21,16 +21,18 @@ type StatusAdminHandler struct {
 	incidents   status.IncidentStore
 	subscribers status.SubscriberStore
 	maintenance status.MaintenanceStore
+	maintRunner status.MaintenanceRunner
 	statusSvc   *status.Service
 	mailer      status.Mailer
 }
 
-// NewStatusAdminHandler creates a status admin handler; a nil mailer means SMTP is not configured.
+// NewStatusAdminHandler creates a status admin handler; a nil mailer means SMTP is not configured, a nil runner that no window ever runs.
 func NewStatusAdminHandler(
 	components status.ComponentStore,
 	incidents status.IncidentStore,
 	subscribers status.SubscriberStore,
 	maintenance status.MaintenanceStore,
+	maintRunner status.MaintenanceRunner,
 	statusSvc *status.Service,
 	mailer status.Mailer,
 ) *StatusAdminHandler {
@@ -39,6 +41,7 @@ func NewStatusAdminHandler(
 		incidents:   incidents,
 		subscribers: subscribers,
 		maintenance: maintenance,
+		maintRunner: maintRunner,
 		statusSvc:   statusSvc,
 		mailer:      mailer,
 	}
@@ -227,6 +230,10 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 		if *req.StatusOverride == "" {
 			existing.StatusOverride = nil
 		} else {
+			if err := status.CheckComponentStatus("status_override", *req.StatusOverride); err != nil {
+				WriteError(w, http.StatusBadRequest, "validation", err.Error())
+				return
+			}
 			existing.StatusOverride = req.StatusOverride
 		}
 	}
@@ -303,6 +310,14 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 	if req.Status == "" {
 		req.Status = status.IncidentInvestigating
 	}
+	if err := status.CheckSeverity("severity", req.Severity); err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	if err := status.CheckIncidentStatus("status", req.Status); err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
 	inc := &status.Incident{
 		Title:    req.Title,
 		Severity: req.Severity,
@@ -345,6 +360,10 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 		WriteError(w, http.StatusBadRequest, "validation", "status and message are required")
 		return
 	}
+	if err := status.CheckIncidentStatus("status", req.Status); err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
 	upd := &status.IncidentUpdate{
 		IncidentID: id,
 		Status:     req.Status,
@@ -385,6 +404,10 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		inc.Title = *req.Title
 	}
 	if req.Severity != nil {
+		if err := status.CheckSeverity("severity", *req.Severity); err != nil {
+			WriteError(w, http.StatusBadRequest, "validation", err.Error())
+			return
+		}
 		inc.Severity = *req.Severity
 	}
 	if err := h.incidents.UpdateIncident(r.Context(), inc, req.ComponentIDs); err != nil {
@@ -540,7 +563,13 @@ func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *h
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid maintenance ID")
 		return
 	}
-	if err := h.maintenance.DeleteMaintenance(r.Context(), id); err != nil {
+	var err error
+	if h.maintRunner != nil {
+		err = h.maintRunner.DeleteWindow(r.Context(), id)
+	} else {
+		err = h.maintenance.DeleteMaintenance(r.Context(), id)
+	}
+	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

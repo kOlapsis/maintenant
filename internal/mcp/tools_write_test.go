@@ -179,6 +179,9 @@ func (m *mcpMaintenanceStore) GetPendingDeactivation(_ context.Context, _ int64)
 func (m *mcpMaintenanceStore) SetActive(_ context.Context, _ string, _ bool, _ *string) error {
 	return nil
 }
+func (m *mcpMaintenanceStore) CoveredByAnotherActiveWindow(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
 
 // --- acknowledge_alert (CE, not edition-gated) ---
 
@@ -278,6 +281,36 @@ func TestCreateIncidentHandler_Pro_MissingSeverity(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "invalid input")
+}
+
+func TestCreateIncidentHandler_Pro_RefusesValuesOutsideTheModel(t *testing.T) {
+	withEdition(t, extension.Pro)
+	for _, in := range []createIncidentInput{
+		{Title: "x", Severity: "apocalyptic"},
+		{Title: "x", Severity: "minor", Status: "panicking"},
+	} {
+		store := newMCPIncidentStore()
+		svc := &Services{Incidents: store, Logger: slog.Default(), Version: "test"}
+
+		result, _, err := createIncidentHandler(svc)(context.Background(), nil, in)
+		require.NoError(t, err)
+		assert.True(t, result.IsError, "%+v", in)
+		assert.Contains(t, textFromContent(t, result.Content), "must be one of")
+		assert.Empty(t, store.incidents)
+	}
+}
+
+func TestUpdateIncidentHandler_Pro_RefusesAStatusOutsideTheModel(t *testing.T) {
+	withEdition(t, extension.Pro)
+	store := newMCPIncidentStore()
+	store.incidents["inc-1"] = &status.Incident{ID: "inc-1", Title: "API down", Status: status.IncidentInvestigating}
+	svc := &Services{Incidents: store, Logger: slog.Default(), Version: "test"}
+
+	result, _, err := updateIncidentHandler(svc)(context.Background(), nil, updateIncidentInput{IncidentID: "inc-1", Status: "panicking", Message: "hm"})
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textFromContent(t, result.Content), "status must be one of")
+	assert.Empty(t, store.updates)
 }
 
 type recordingAnnouncer struct {

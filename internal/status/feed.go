@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 )
 
@@ -36,13 +37,22 @@ type AtomEntry struct {
 	Summary string   `xml:"summary"`
 }
 
-// HandleAtomFeed serves the Atom feed of recent incident updates.
+// HandleAtomFeed serves the Atom feed of the ongoing incidents and those resolved in the last 30 days, latest change first.
 func (h *Handler) HandleAtomFeed(w http.ResponseWriter, r *http.Request) {
-	incidents, err := h.service.incidents.ListRecentIncidents(r.Context(), 30)
+	active, err := h.service.incidents.ListActiveIncidents(r.Context())
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	recent, err := h.service.incidents.ListRecentIncidents(r.Context(), 30)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	incidents := append(active, recent...)
+	sort.SliceStable(incidents, func(i, j int) bool {
+		return incidents[i].UpdatedAt.After(incidents[j].UpdatedAt)
+	})
 
 	baseURL := fmt.Sprintf("https://%s", r.Host)
 	if r.TLS == nil {

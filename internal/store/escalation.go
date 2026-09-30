@@ -133,19 +133,25 @@ func (s *EscalationStore) SelectPolicies(ctx context.Context, activeOnly bool) (
 }
 
 func (s *EscalationStore) DeletePolicy(ctx context.Context, id string) error {
-	now := time.Now().Unix()
 	// Stop active runs before deleting; runs retain history via ended_at.
-	_, err := s.writer.Exec(ctx,
-		`UPDATE escalation_runs SET status='stopped_by_policy_deletion', ended_at=?, next_action_at=NULL
-		WHERE policy_id=? AND status IN ('active','paused_by_maintenance')`,
-		now, id,
-	)
-	if err != nil {
+	if err := s.StopPolicyRuns(ctx, id, escalation.RunStatusStoppedByPolicyDelete, time.Now()); err != nil {
 		return fmt.Errorf("stop runs before policy delete: %w", err)
 	}
-	_, err = s.writer.Exec(ctx, `DELETE FROM escalation_policies WHERE id = ?`, id)
-	if err != nil {
+	if _, err := s.writer.Exec(ctx, `DELETE FROM escalation_policies WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete escalation policy: %w", err)
+	}
+	return nil
+}
+
+// StopPolicyRuns ends the running and paused runs of one policy with the given status.
+func (s *EscalationStore) StopPolicyRuns(ctx context.Context, policyID string, stopStatus string, endedAt time.Time) error {
+	_, err := s.writer.Exec(ctx,
+		`UPDATE escalation_runs SET status = ?, ended_at = ?, next_action_at = NULL
+		WHERE policy_id = ? AND status IN ('active','paused_by_maintenance')`,
+		stopStatus, endedAt.Unix(), policyID,
+	)
+	if err != nil {
+		return fmt.Errorf("stop policy runs: %w", err)
 	}
 	return nil
 }

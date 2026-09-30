@@ -167,11 +167,11 @@ func (h *PersonalizationHandler) HandlePutAsset(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	head := data
-	if len(head) > 512 {
-		head = head[:512]
+	mime, err := h.svc.DetectAssetMIME(role, data)
+	if errors.Is(err, status.ErrAssetActiveSVG) {
+		WriteError(w, http.StatusBadRequest, "active_svg", "SVG files may not contain scripts, event handlers, javascript: links or embedded HTML")
+		return
 	}
-	mime, err := h.svc.DetectAssetMIME(role, head)
 	if err != nil {
 		WriteError(w, http.StatusBadRequest, "unsupported_mime", "MIME type not allowed for this role")
 		return

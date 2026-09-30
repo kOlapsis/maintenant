@@ -132,6 +132,9 @@ func (s *runStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { r
 func (s *runStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
+func (s *runStore) StopPolicyRuns(_ context.Context, _ string, _ string, _ time.Time) error {
+	return nil
+}
 func (s *runStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
 	return nil
 }

@@ -498,7 +498,7 @@ CREATE TABLE escalation_deliveries (
     run_id        TEXT NOT NULL REFERENCES escalation_runs(id) ON DELETE CASCADE,
     level_index   INTEGER NOT NULL,
     channel_id    TEXT REFERENCES notification_channels(id) ON DELETE SET NULL,
-    status        TEXT NOT NULL CHECK(status IN ('pending','sent','failed','abandoned','skipped_maintenance')),
+    status        TEXT NOT NULL CHECK(status IN ('pending','sent','failed','abandoned')),
     error         TEXT,
     attempt_started_at BIGINT NOT NULL DEFAULT 0,
     sent_at       BIGINT
@@ -518,7 +518,8 @@ CREATE TABLE status_components (
     status_override TEXT,
     auto_incident   INTEGER NOT NULL DEFAULT 0,
     created_at      BIGINT NOT NULL,
-    updated_at      BIGINT NOT NULL
+    updated_at      BIGINT NOT NULL,
+    override_before_maintenance TEXT
 );
 CREATE INDEX idx_status_components_visible ON status_components(visible);
 

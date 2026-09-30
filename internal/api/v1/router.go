@@ -88,6 +88,7 @@ type HandlerDeps struct {
 	StatusIncidents    status.IncidentStore
 	StatusSubscribers  status.SubscriberStore
 	StatusMaintenance  status.MaintenanceStore
+	StatusMaintRunner  status.MaintenanceRunner
 	StatusSvc          *status.Service
 	PersonalizationSvc status.PersonalizationManager
 	StatusMailer       status.Mailer
@@ -350,7 +351,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Status page admin endpoints
 	if d.StatusComponents != nil {
-		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusMailer)
+		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusMaintRunner, d.StatusSvc, d.StatusMailer)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
 		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)

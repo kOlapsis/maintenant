@@ -150,6 +150,38 @@ func TestConfigFromEnv_ContainerDownAfterInvalidIsRefused(t *testing.T) {
 	}
 }
 
+func TestConfigFromEnv_MaxBodySize(t *testing.T) {
+	t.Setenv("MAINTENANT_MAX_BODY_SIZE", "")
+	cfg := ConfigFromEnv()
+	assert.Equal(t, int64(1048576), cfg.MaxBodySize, "unset keeps the 1 MiB default")
+	assert.NoError(t, cfg.ValidateBodySize())
+
+	t.Setenv("MAINTENANT_MAX_BODY_SIZE", "2097152")
+	cfg = ConfigFromEnv()
+	assert.Equal(t, int64(2097152), cfg.MaxBodySize)
+	assert.NoError(t, cfg.ValidateBodySize())
+}
+
+// A typo must stop startup rather than silently fall back to 1 MiB.
+func TestConfigFromEnv_MaxBodySizeInvalidIsRefused(t *testing.T) {
+	for _, raw := range []string{"2MB", "0", "-5", "1.5"} {
+		t.Run(raw, func(t *testing.T) {
+			t.Setenv("MAINTENANT_MAX_BODY_SIZE", raw)
+			err := ConfigFromEnv().ValidateBodySize()
+			require.ErrorIs(t, err, ErrMaxBodySize)
+			assert.Contains(t, err.Error(), raw)
+		})
+	}
+}
+
+func TestValidateBodySize_FlagOverridesAnInvalidEnvironment(t *testing.T) {
+	t.Setenv("MAINTENANT_MAX_BODY_SIZE", "2MB")
+	cfg := ConfigFromEnv()
+	require.NoError(t, MergeArgsIntoConfig(&cfg, map[string]string{"maxBodySize": "4096"}))
+	assert.NoError(t, cfg.ValidateBodySize())
+	assert.Equal(t, int64(4096), cfg.MaxBodySize)
+}
+
 func TestParseTrustedProxies(t *testing.T) {
 	cfg := Config{TrustedProxies: "10.0.0.0/8, 192.168.1.4 , 2001:db8::/32"}
 

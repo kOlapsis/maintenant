@@ -104,7 +104,6 @@ type PostureScorer interface {
 	ScoreContainer(ctx context.Context, containerID, containerExternalID, containerName string) (*SecurityScore, error)
 	ScoreInfrastructure(ctx context.Context, containers []ContainerInfo) (*InfrastructurePosture, error)
 	InvalidateCache(containerID string)
-	CheckPostureThreshold(score int, color string)
 	Threshold() int
 	SetPostureAlertCallback(cb PostureAlertCallback)
 	SetPostureEventCallback(cb PostureEventCallback)

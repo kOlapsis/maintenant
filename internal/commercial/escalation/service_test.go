@@ -28,6 +28,7 @@ type mockStore struct {
 	activeCount int
 	insertErr   error
 	selectErr   error
+	stopped     []string
 }
 
 func newMockStore() *mockStore {
@@ -86,6 +87,10 @@ func (m *mockStore) SelectRunDeliveries(_ context.Context, _ string) ([]*esc.Del
 func (m *mockStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
 func (m *mockStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
 func (m *mockStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+func (m *mockStore) StopPolicyRuns(_ context.Context, policyID string, stopStatus string, _ time.Time) error {
+	m.stopped = append(m.stopped, policyID+":"+stopStatus)
 	return nil
 }
 func (m *mockStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
@@ -389,4 +394,79 @@ func TestSetPolicyActive_NotFound(t *testing.T) {
 	svc := newTestService(newMockStore())
 	_, err := svc.SetPolicyActive(context.Background(), "999", true)
 	assert.True(t, errors.Is(err, esc.ErrPolicyNotFound))
+}
+
+func fiveLevelsPlusOne() []esc.LevelReq {
+	levels := make([]esc.LevelReq, esc.MaxLevels+1)
+	for i := range levels {
+		levels[i] = esc.LevelReq{DelaySeconds: 300 * (i + 1), ChannelIDs: []string{"1"}}
+	}
+	return levels
+}
+
+func TestCreatePolicy_TooManyLevels(t *testing.T) {
+	svc := newTestService(newMockStore())
+	req := validRequest()
+	req.Levels = fiveLevelsPlusOne()
+	_, err := svc.CreatePolicy(context.Background(), req)
+	require.ErrorIs(t, err, esc.ErrValidationFailed)
+	assert.Contains(t, err.Error(), "at most 5 levels")
+
+	req.Levels = req.Levels[:esc.MaxLevels]
+	_, err = svc.CreatePolicy(context.Background(), req)
+	require.NoError(t, err, "exactly the cap is allowed")
+}
+
+func TestUpdatePolicy_TooManyLevels(t *testing.T) {
+	svc := newTestService(newMockStore())
+	created, err := svc.CreatePolicy(context.Background(), validRequest())
+	require.NoError(t, err)
+
+	req := validRequest()
+	req.Levels = fiveLevelsPlusOne()
+	_, err = svc.UpdatePolicy(context.Background(), created.ID, req)
+	require.ErrorIs(t, err, esc.ErrValidationFailed)
+	assert.Contains(t, err.Error(), "at most 5 levels")
+}
+
+func TestGetPlanLimits_ReportsTheLevelCap(t *testing.T) {
+	limits, err := newTestService(newMockStore()).GetPlanLimits(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, esc.MaxLevels, limits.MaxLevels)
+	assert.Equal(t, -1, limits.MaxActive)
+}
+
+func TestSetPolicyActive_DisablingStopsItsRuns(t *testing.T) {
+	store := newMockStore()
+	svc := newTestService(store)
+	req := validRequest()
+	req.Active = true
+	created, err := svc.CreatePolicy(context.Background(), req)
+	require.NoError(t, err)
+
+	_, err = svc.SetPolicyActive(context.Background(), created.ID, true)
+	require.NoError(t, err)
+	assert.Empty(t, store.stopped, "an active policy staying active keeps its runs")
+
+	_, err = svc.SetPolicyActive(context.Background(), created.ID, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{created.ID + ":" + esc.RunStatusStoppedByPolicyDisabled}, store.stopped)
+}
+
+func TestUpdatePolicy_DisablingStopsItsRuns(t *testing.T) {
+	store := newMockStore()
+	svc := newTestService(store)
+	req := validRequest()
+	req.Active = true
+	created, err := svc.CreatePolicy(context.Background(), req)
+	require.NoError(t, err)
+
+	_, err = svc.UpdatePolicy(context.Background(), created.ID, req)
+	require.NoError(t, err)
+	assert.Empty(t, store.stopped)
+
+	req.Active = false
+	_, err = svc.UpdatePolicy(context.Background(), created.ID, req)
+	require.NoError(t, err)
+	assert.Equal(t, []string{created.ID + ":" + esc.RunStatusStoppedByPolicyDisabled}, store.stopped)
 }

@@ -4,13 +4,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
-import type { EscalationPolicy } from '@/commercial/types/escalation'
+import type { EscalationLimits, EscalationPolicy } from '@/commercial/types/escalation'
 import PolicyEditor from '@/commercial/components/escalation/PolicyEditor.vue'
 
 const updatePolicy = vi.fn()
+let limits: EscalationLimits | null = null
 
 vi.mock('@/commercial/stores/escalation', () => ({
-  useEscalationStore: () => ({ updatePolicy, createPolicy: vi.fn() }),
+  useEscalationStore: () => ({ updatePolicy, createPolicy: vi.fn(), limits }),
 }))
 
 vi.mock('@/stores/triggers', () => ({
@@ -48,6 +49,32 @@ describe('PolicyEditor', () => {
   beforeEach(() => {
     updatePolicy.mockReset()
     updatePolicy.mockResolvedValue(policy)
+    limits = null
+  })
+
+  it('stops adding levels at the cap the server reports', async () => {
+    limits = { max_active: -1, max_levels: 2, current_active: 1 }
+    const twoLevels: EscalationPolicy = {
+      ...policy,
+      levels: [
+        { order: 0, delay_seconds: 300, channel_ids: ['c1'] },
+        { order: 1, delay_seconds: 600, channel_ids: ['c1'] },
+      ],
+    }
+    const wrapper = mount(PolicyEditor, { props: { policy: twoLevels }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="level-count"]').text()).toBe('2/2 levels')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Add level'))).toBe(false)
+  })
+
+  it('offers another level below the cap', async () => {
+    limits = { max_active: -1, max_levels: 2, current_active: 1 }
+    const wrapper = mount(PolicyEditor, { props: { policy }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="level-count"]').text()).toBe('1/2 levels')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Add level'))).toBe(true)
   })
 
   it('shows the scopes of the policy it edits', async () => {

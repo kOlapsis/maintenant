@@ -6,7 +6,12 @@ package statuspage
 
 import (
 	"bytes"
+	"encoding/xml"
+	"errors"
+	"io"
 	"net/http"
+	"strings"
+	"unicode"
 
 	"github.com/kolapsis/maintenant/internal/status"
 )
@@ -17,9 +22,9 @@ var assetMIMEAllowlist = map[status.AssetRole][]string{
 	status.AssetRoleHero:    {"image/png", "image/jpeg", "image/webp"},
 }
 
-// DetectAssetMIME sniffs the MIME type from the first 512 bytes and validates it for the given role.
-func DetectAssetMIME(role status.AssetRole, head []byte) (string, error) {
-	sniffed := http.DetectContentType(head)
+// DetectAssetMIME sniffs the MIME type of the whole upload and validates it for the given role, refusing an SVG that carries active content.
+func DetectAssetMIME(role status.AssetRole, data []byte) (string, error) {
+	sniffed := http.DetectContentType(data)
 	// Normalize: strip parameters (e.g., "text/xml; charset=utf-8")
 	for i, c := range sniffed {
 		if c == ';' || c == ' ' {
@@ -28,9 +33,14 @@ func DetectAssetMIME(role status.AssetRole, head []byte) (string, error) {
 		}
 	}
 
-	// SVG fallback: http.DetectContentType returns "text/xml" for SVG
-	if (sniffed == "text/xml" || sniffed == "application/xml") && isSVG(head) {
-		sniffed = "image/svg+xml"
+	// http.DetectContentType has no SVG signature: it reports XML, HTML or plain text.
+	if strings.HasPrefix(sniffed, "text/") || sniffed == "application/xml" {
+		switch inspectSVG(data) {
+		case svgInert:
+			sniffed = "image/svg+xml"
+		case svgActive:
+			return "", status.ErrAssetActiveSVG
+		}
 	}
 
 	allowed, ok := assetMIMEAllowlist[role]
@@ -46,21 +56,71 @@ func DetectAssetMIME(role status.AssetRole, head []byte) (string, error) {
 	return "", status.ErrAssetUnsupportedMIME
 }
 
-func isSVG(data []byte) bool {
-	trimmed := bytes.TrimSpace(data)
-	// skip XML declaration if present
-	if bytes.HasPrefix(trimmed, []byte("<?xml")) {
-		end := bytes.Index(trimmed, []byte("?>"))
-		if end != -1 {
-			trimmed = bytes.TrimSpace(trimmed[end+2:])
+type svgVerdict int
+
+const (
+	notSVG svgVerdict = iota
+	svgInert
+	svgActive
+)
+
+const xhtmlNamespace = "http://www.w3.org/1999/xhtml"
+
+var activeSVGElements = map[string]bool{
+	"script": true, "foreignobject": true, "iframe": true, "embed": true, "object": true, "handler": true,
+}
+
+// inspectSVG reads the whole document and flags as active any script, event handler, script URL, embedded HTML or unparsable content.
+func inspectSVG(data []byte) svgVerdict {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	rootSeen := false
+	for {
+		tok, err := dec.Token()
+		if errors.Is(err, io.EOF) {
+			if rootSeen {
+				return svgInert
+			}
+			return notSVG
+		}
+		if err != nil {
+			if rootSeen {
+				return svgActive
+			}
+			return notSVG
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			if !rootSeen {
+				if !strings.EqualFold(t.Name.Local, "svg") {
+					return notSVG
+				}
+				rootSeen = true
+			}
+			if t.Name.Space == xhtmlNamespace || activeSVGElements[strings.ToLower(t.Name.Local)] {
+				return svgActive
+			}
+			for _, a := range t.Attr {
+				if strings.HasPrefix(strings.ToLower(a.Name.Local), "on") || carriesScriptURL(a.Value) {
+					return svgActive
+				}
+			}
+		case xml.ProcInst:
+			if rootSeen || !strings.EqualFold(t.Target, "xml") {
+				return svgActive
+			}
 		}
 	}
-	lower := bytes.ToLower(trimmed)
-	if !bytes.HasPrefix(lower, []byte("<svg")) {
-		return false
-	}
-	// Reject if it contains a <script tag (basic XSS guard)
-	return !bytes.Contains(lower, []byte("<script"))
+}
+
+// carriesScriptURL reports whether an attribute value holds a script URL, however it is cased or split by blanks.
+func carriesScriptURL(v string) bool {
+	folded := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, v)
+	return strings.Contains(folded, "javascript:") || strings.Contains(folded, "vbscript:")
 }
 
 var assetSizeCaps = map[status.AssetRole]int64{

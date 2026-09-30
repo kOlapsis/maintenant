@@ -90,6 +90,9 @@ func (m *escalationTestStore) BulkRestorePoliciesFromDowngrade(_ context.Context
 func (m *escalationTestStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }
+func (m *escalationTestStore) StopPolicyRuns(_ context.Context, _ string, _ string, _ time.Time) error {
+	return nil
+}
 func (m *escalationTestStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
 	return nil
 }
@@ -308,7 +311,7 @@ func TestEscalation_ListPolicies_Empty(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
 	assert.Empty(t, resp.Policies)
 	assert.Equal(t, -1, resp.Limits.MaxActive) // Pro = unlimited
-	assert.Equal(t, -1, resp.Limits.MaxLevels)
+	assert.Equal(t, escalation.MaxLevels, resp.Limits.MaxLevels)
 }
 
 func TestEscalation_GetPolicy_NotFound(t *testing.T) {

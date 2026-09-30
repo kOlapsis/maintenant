@@ -117,6 +117,8 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"ALTER TABLE escalation_policies ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",                                                             // 36
 		"ALTER TABLE alert_triggers ADD COLUMN filter_tags TEXT NOT NULL DEFAULT ''",                                                                  // 36
 		"ALTER TABLE containers ADD COLUMN swarm_service_mode TEXT NOT NULL DEFAULT '', ADD COLUMN swarm_desired_replicas INTEGER NOT NULL DEFAULT 0", // 37
+		"ALTER TABLE status_components DROP COLUMN override_before_maintenance",                                                                       // 38
+		"ALTER TABLE escalation_deliveries DROP CONSTRAINT escalation_deliveries_status_check, ADD CONSTRAINT escalation_deliveries_status_check CHECK(status IN ('pending','sent','failed','abandoned','skipped_maintenance'))", // 38
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

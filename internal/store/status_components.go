@@ -32,7 +32,7 @@ func NewStatusComponentStore(d *DB) *StatusComponentStoreImpl {
 
 const componentSelectCols = `SELECT sc.id, sc.composition_mode, sc.match_all_type, sc.display_name,
 	sc.display_order, sc.visible,
-	sc.status_override, sc.auto_incident, sc.created_at, sc.updated_at
+	sc.status_override, sc.override_before_maintenance, sc.auto_incident, sc.created_at, sc.updated_at
 FROM status_components sc`
 
 func (s *StatusComponentStoreImpl) ListComponents(ctx context.Context) ([]status.Component, error) {
@@ -109,7 +109,7 @@ func (s *StatusComponentStoreImpl) ListComponentsByMonitor(ctx context.Context, 
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT DISTINCT sc.id, sc.composition_mode, sc.match_all_type, sc.display_name,
 			sc.display_order, sc.visible,
-			sc.status_override, sc.auto_incident, sc.created_at, sc.updated_at
+			sc.status_override, sc.override_before_maintenance, sc.auto_incident, sc.created_at, sc.updated_at
 		FROM status_components sc
 		LEFT JOIN status_component_monitors m ON m.component_id = sc.id
 		WHERE (m.monitor_type = ? AND m.monitor_id = ?)
@@ -160,10 +160,10 @@ func (s *StatusComponentStoreImpl) CreateComponent(ctx context.Context, c *statu
 	c.ID = uid.New()
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO status_components (id, composition_mode, match_all_type, display_name,
-			display_order, visible, status_override, auto_incident, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			display_order, visible, status_override, override_before_maintenance, auto_incident, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ID, string(c.CompositionMode), matchAllType, c.DisplayName,
-		c.DisplayOrder, boolToInt(c.Visible), c.StatusOverride, boolToInt(c.AutoIncident),
+		c.DisplayOrder, boolToInt(c.Visible), c.StatusOverride, c.OverrideBeforeMaintenance, boolToInt(c.AutoIncident),
 		now, now,
 	)
 	if err != nil {
@@ -197,10 +197,10 @@ func (s *StatusComponentStoreImpl) UpdateComponent(ctx context.Context, c *statu
 
 	_, err := s.writer.Exec(ctx,
 		`UPDATE status_components SET display_name = ?, display_order = ?,
-			visible = ?, status_override = ?, auto_incident = ?, match_all_type = ?, updated_at = ?
+			visible = ?, status_override = ?, override_before_maintenance = ?, auto_incident = ?, match_all_type = ?, updated_at = ?
 		WHERE id = ?`,
 		c.DisplayName, c.DisplayOrder,
-		boolToInt(c.Visible), c.StatusOverride, boolToInt(c.AutoIncident),
+		boolToInt(c.Visible), c.StatusOverride, c.OverrideBeforeMaintenance, boolToInt(c.AutoIncident),
 		matchAllType, now, c.ID,
 	)
 	if err != nil {
@@ -360,14 +360,14 @@ func scanComponents(rows *sql.Rows) ([]status.Component, error) {
 		var c status.Component
 		var compositionMode string
 		var matchAllType sql.NullString
-		var override sql.NullString
+		var override, overrideBeforeMaint sql.NullString
 		var visible, autoInc int
 		var createdAt, updatedAt int64
 
 		if err := rows.Scan(
 			&c.ID, &compositionMode, &matchAllType, &c.DisplayName,
 			&c.DisplayOrder, &visible,
-			&override, &autoInc, &createdAt, &updatedAt,
+			&override, &overrideBeforeMaint, &autoInc, &createdAt, &updatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan component: %w", err)
 		}
@@ -378,6 +378,9 @@ func scanComponents(rows *sql.Rows) ([]status.Component, error) {
 		}
 		if override.Valid {
 			c.StatusOverride = &override.String
+		}
+		if overrideBeforeMaint.Valid {
+			c.OverrideBeforeMaintenance = &overrideBeforeMaint.String
 		}
 		c.Visible = visible != 0
 		c.AutoIncident = autoInc != 0

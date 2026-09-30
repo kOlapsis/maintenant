@@ -6,11 +6,16 @@ package v1
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
+
+// sseKeepAliveInterval stays under the 60 s a proxy such as nginx lets a silent stream idle before cutting it.
+var sseKeepAliveInterval = 25 * time.Second
 
 // SSEBroker manages Server-Sent Event connections and broadcasts events.
 type SSEBroker struct {
@@ -99,11 +104,18 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		close(ch)
 	}()
 
+	keepAlive := time.NewTicker(sseKeepAliveInterval)
+	defer keepAlive.Stop()
+
 	ctx := r.Context()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-keepAlive.C:
+			if !writeSSEKeepAlive(w, flusher) {
+				return
+			}
 		case event := <-ch:
 			data, err := json.Marshal(event.Data)
 			if err != nil {
@@ -115,6 +127,15 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// writeSSEKeepAlive sends an SSE comment, which clients ignore, and reports whether the client is still reachable.
+func writeSSEKeepAlive(w io.Writer, flusher http.Flusher) bool {
+	if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
 }
 
 // setSSEHeaders marks a response as an event stream that no cache or buffering proxy may hold back.

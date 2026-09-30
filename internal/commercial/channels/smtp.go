@@ -6,6 +6,7 @@ package channels
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"mime"
 	"net"
@@ -27,14 +28,17 @@ type SMTPConfig struct {
 	From     string
 }
 
-// SMTPSender sends email notifications via SMTP with STARTTLS.
+const implicitTLSPort = "465"
+
+// SMTPSender sends email notifications via SMTP, over implicit TLS on port 465 and STARTTLS elsewhere when the server offers it.
 type SMTPSender struct {
-	cfg SMTPConfig
+	cfg         SMTPConfig
+	implicitTLS bool
 }
 
 // NewSMTPSender creates a new SMTPSender with the given configuration.
 func NewSMTPSender(cfg SMTPConfig) *SMTPSender {
-	return &SMTPSender{cfg: cfg}
+	return &SMTPSender{cfg: cfg, implicitTLS: cfg.Port == implicitTLSPort}
 }
 
 // Send delivers a plain-text email via SMTP, giving up when ctx ends or after smtpTimeout.
@@ -42,9 +46,18 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 	ctx, cancel := context.WithTimeout(ctx, smtpTimeout)
 	defer cancel()
 	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
+	tlsCfg := trust.ClientTLSConfig()
+	tlsCfg.ServerName = s.cfg.Host
 
-	var dialer net.Dialer
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	var conn net.Conn
+	var err error
+	if s.implicitTLS {
+		dialer := tls.Dialer{Config: tlsCfg}
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	} else {
+		var dialer net.Dialer
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
@@ -63,10 +76,14 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 		_ = c.Close()
 	}(c)
 
-	// STARTTLS best-effort: some servers don't support it, so continue in plaintext on error.
-	tlsCfg := trust.ClientTLSConfig()
-	tlsCfg.ServerName = s.cfg.Host
-	_ = c.StartTLS(tlsCfg)
+	// A relay that does not offer STARTTLS is accepted in clear; one that offers it and fails the negotiation is not.
+	if !s.implicitTLS {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(tlsCfg); err != nil {
+				return fmt.Errorf("smtp starttls: %w", err)
+			}
+		}
+	}
 
 	// AUTH PLAIN if credentials are configured
 	if s.cfg.Username != "" {

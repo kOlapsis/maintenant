@@ -32,6 +32,7 @@ const statusLabel = computed(() => {
     stopped_by_ack: 'Stopped (ack)',
     stopped_by_resolution: 'Stopped (resolved)',
     stopped_by_policy_deletion: 'Stopped (policy deleted)',
+    stopped_by_policy_disabled: 'Stopped (policy disabled)',
     stopped_by_edition_downgrade: 'Paused (CE)',
     exhausted: 'Exhausted',
     paused_by_maintenance: 'Paused',

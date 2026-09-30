@@ -32,7 +32,6 @@ func (stubPostureScorer) ScoreInfrastructure(_ context.Context, cs []security.Co
 }
 
 func (stubPostureScorer) InvalidateCache(string)                                {}
-func (stubPostureScorer) CheckPostureThreshold(int, string)                     {}
 func (stubPostureScorer) Threshold() int                                        { return 0 }
 func (stubPostureScorer) SetPostureAlertCallback(security.PostureAlertCallback) {}
 func (stubPostureScorer) SetPostureEventCallback(security.PostureEventCallback) {}

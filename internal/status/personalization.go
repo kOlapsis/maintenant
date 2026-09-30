@@ -16,6 +16,7 @@ const (
 var (
 	ErrAssetTooLarge        = errors.New("asset exceeds size cap")
 	ErrAssetUnsupportedMIME = errors.New("asset MIME not allowed for this role")
+	ErrAssetActiveSVG       = errors.New("SVG carries a script, an event handler, a javascript: link or embedded HTML")
 	ErrInvalidScheme        = errors.New("URL scheme not in allowlist (http, https)")
 	ErrInvalidHex           = errors.New("color must be #RRGGBB or #RRGGBBAA")
 	ErrInvalidLocale        = errors.New("locale not supported")

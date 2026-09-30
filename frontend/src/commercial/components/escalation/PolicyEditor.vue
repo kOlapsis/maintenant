@@ -36,7 +36,6 @@ interface Channel {
 
 const props = defineProps<{
   policy?: EscalationPolicy | null
-  maxLevels?: number
 }>()
 
 const emit = defineEmits<{
@@ -53,7 +52,8 @@ const active = ref(props.policy?.active ?? true)
 const severities = ref<string[]>(props.policy?.filters.severities ?? [])
 const scopes = ref<EscalationScope[]>(props.policy?.filters.scopes.map((s) => ({ ...s })) ?? [])
 
-const maxLevels = computed(() => props.maxLevels ?? 5)
+const maxLevels = computed(() => store.limits?.max_levels ?? null)
+const canAddLevel = computed(() => maxLevels.value === null || levels.value.length < maxLevels.value)
 const levels = ref<Array<{ delay_seconds: number; channel_ids: string[] }>>(
   props.policy?.levels.map((l) => ({ delay_seconds: l.delay_seconds, channel_ids: [...l.channel_ids] })) ??
     [{ delay_seconds: 300, channel_ids: [] }],
@@ -99,7 +99,7 @@ watch([name, severities, levels], () => checkOverlap(), { deep: true })
 const SEVERITY_OPTIONS = ['warning', 'critical']
 
 function addLevel() {
-  if (levels.value.length >= maxLevels.value) return
+  if (!canAddLevel.value) return
   const last = levels.value[levels.value.length - 1]
   const prevDelay = last?.delay_seconds ?? 300
   levels.value = [...levels.value, { delay_seconds: prevDelay + 300, channel_ids: [] }]
@@ -278,7 +278,9 @@ onMounted(() => {
           <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest block">
             Escalation levels
           </label>
-          <span class="text-[10px] text-mnt-muted">{{ levels.length }}/{{ maxLevels }} levels</span>
+          <span class="text-[10px] text-mnt-muted" data-test="level-count">
+            {{ maxLevels === null ? levels.length : `${levels.length}/${maxLevels}` }} levels
+          </span>
         </div>
 
         <div v-if="channelsLoading" class="flex items-center gap-2 text-xs text-mnt-muted py-2">
@@ -299,7 +301,7 @@ onMounted(() => {
           />
 
           <UiButton
-            v-if="levels.length < maxLevels"
+            v-if="canAddLevel"
             variant="secondary"
             size="sm"
             :icon="Plus"

@@ -37,16 +37,19 @@ func (s *MaintenanceStoreImpl) ListMaintenance(ctx context.Context, statusFilter
 	now := time.Now().Unix()
 	switch statusFilter {
 	case "upcoming":
-		query += ` WHERE mw.active = 0 AND mw.starts_at > ?`
+		query += ` WHERE mw.active = 0 AND mw.starts_at > ? ORDER BY mw.starts_at ASC`
 		args = append(args, now)
 	case "active":
-		query += ` WHERE mw.active = 1`
+		query += ` WHERE mw.active = 1 ORDER BY mw.starts_at ASC`
 	case "completed":
-		query += ` WHERE mw.active = 0 AND mw.ends_at <= ?`
+		query += ` WHERE mw.active = 0 AND mw.ends_at <= ? ORDER BY mw.ends_at DESC`
 		args = append(args, now)
+	default:
+		query += ` ORDER BY CASE WHEN mw.active = 1 THEN 0 WHEN mw.ends_at > ? THEN 1 ELSE 2 END,
+			CASE WHEN mw.active = 1 OR mw.ends_at > ? THEN mw.starts_at ELSE 0 END ASC,
+			mw.ends_at DESC`
+		args = append(args, now, now)
 	}
-
-	query += ` ORDER BY mw.starts_at DESC`
 
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -200,6 +203,21 @@ func (s *MaintenanceStoreImpl) SetActive(ctx context.Context, id string, active 
 		return fmt.Errorf("set active: %w", err)
 	}
 	return nil
+}
+
+// CoveredByAnotherActiveWindow reports whether an active window other than windowID lists the component.
+func (s *MaintenanceStoreImpl) CoveredByAnotherActiveWindow(ctx context.Context, componentID, windowID string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM maintenance_components mc
+		JOIN maintenance_windows mw ON mw.id = mc.maintenance_id
+		WHERE mc.component_id = ? AND mw.active = 1 AND mw.id <> ?`,
+		componentID, windowID,
+	).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("covered by another active window: %w", err)
+	}
+	return n > 0, nil
 }
 
 // --- Scan helpers ---

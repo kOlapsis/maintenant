@@ -42,8 +42,9 @@ type Config struct {
 	MCP MCPConfig
 
 	// HTTP
-	CORSOrigins string
-	MaxBodySize int64
+	CORSOrigins        string
+	MaxBodySize        int64
+	MaxBodySizeInvalid string
 	// TrustedProxies lists the CIDRs and addresses whose forwarded headers are
 	// believed, comma-separated. Empty means no header is ever read.
 	TrustedProxies string
@@ -224,6 +225,22 @@ func (c Config) ValidateProxies() error {
 	return err
 }
 
+// ErrMaxBodySize refuses a request body cap that is not a positive number of bytes.
+var ErrMaxBodySize = errors.New(
+	"MAINTENANT_MAX_BODY_SIZE is not a valid size: use a positive whole number of bytes such as 1048576")
+
+// ValidateBodySize refuses a request body cap that would silently be replaced by the 1 MiB default.
+func (c Config) ValidateBodySize() error {
+	switch {
+	case c.MaxBodySize > 0:
+		return nil
+	case c.MaxBodySizeInvalid != "":
+		return fmt.Errorf("%w (got %q)", ErrMaxBodySize, c.MaxBodySizeInvalid)
+	default:
+		return fmt.Errorf("%w (got %d)", ErrMaxBodySize, c.MaxBodySize)
+	}
+}
+
 // ErrContainerDownAfter refuses a container-down threshold that does not parse.
 var ErrContainerDownAfter = errors.New(
 	"MAINTENANT_CONTAINER_DOWN_AFTER is not a valid duration: use a Go duration such as 5m, 30s or 1h30m")
@@ -347,7 +364,6 @@ func ConfigFromEnv() Config {
 
 		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),
 		TrustedProxies: os.Getenv("MAINTENANT_TRUSTED_PROXIES"),
-		MaxBodySize:    int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
 		CACertFile:     os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
@@ -373,6 +389,7 @@ func ConfigFromEnv() Config {
 	}
 
 	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
+	cfg.MaxBodySize, cfg.MaxBodySizeInvalid = envBodySize("MAINTENANT_MAX_BODY_SIZE", 1048576)
 
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
 	cfg.DisableOSEOLRefresh = parseTruthy(os.Getenv("MAINTENANT_DISABLE_OS_EOL_REFRESH"))
@@ -410,13 +427,17 @@ func ConfigFromEnv() Config {
 	return cfg
 }
 
-func int64OrDefault(key string, def int64) int64 {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
-			return n
-		}
+// envBodySize reads a positive byte count, returning the raw value instead when it is not one.
+func envBodySize(key string, def int64) (int64, string) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def, ""
 	}
-	return def
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, raw
+	}
+	return n, ""
 }
 
 func parseTruthy(raw string) bool {

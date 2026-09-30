@@ -61,4 +61,5 @@ type MaintenanceStore interface {
 	GetPendingActivation(ctx context.Context, now int64) ([]MaintenanceWindow, error)
 	GetPendingDeactivation(ctx context.Context, now int64) ([]MaintenanceWindow, error)
 	SetActive(ctx context.Context, id string, active bool, incidentID *string) error
+	CoveredByAnotherActiveWindow(ctx context.Context, componentID, windowID string) (bool, error)
 }

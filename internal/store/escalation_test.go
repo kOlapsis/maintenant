@@ -91,7 +91,7 @@ func setupEscalationTestDB(t *testing.T) (*EscalationStore, *sql.DB) {
 			run_id TEXT NOT NULL REFERENCES escalation_runs(id) ON DELETE CASCADE,
 			level_index INTEGER NOT NULL,
 			channel_id TEXT REFERENCES notification_channels(id) ON DELETE SET NULL,
-			status TEXT NOT NULL CHECK (status IN ('pending','sent','failed','abandoned','skipped_maintenance')),
+			status TEXT NOT NULL CHECK (status IN ('pending','sent','failed','abandoned')),
 			error TEXT,
 			attempt_started_at BIGINT NOT NULL DEFAULT 0,
 			sent_at BIGINT
@@ -280,6 +280,47 @@ func TestEscalationStore_BulkStopActiveRuns(t *testing.T) {
 	err = rawDB.QueryRowContext(ctx, `SELECT status FROM escalation_runs WHERE id = ?`, runID).Scan(&status)
 	require.NoError(t, err)
 	assert.Equal(t, "stopped_by_edition_downgrade", status)
+}
+
+func TestEscalationStore_StopPolicyRuns(t *testing.T) {
+	store, rawDB := setupEscalationTestDB(t)
+	ctx := context.Background()
+	alertID := insertTestAlert(t, rawDB)
+	target, err := store.InsertPolicy(ctx, makeTestPolicy("target", true))
+	require.NoError(t, err)
+	other, err := store.InsertPolicy(ctx, makeTestPolicy("other", true))
+	require.NoError(t, err)
+
+	insertRun := func(policyID, status string) string {
+		id := uid.New()
+		_, err := rawDB.ExecContext(ctx,
+			`INSERT INTO escalation_runs (id, policy_id, policy_snapshot_json, alert_id, status, started_at, next_action_at)
+			VALUES (?, ?, '{}', ?, ?, ?, ?)`,
+			id, policyID, alertID, status, time.Now().Unix(), time.Now().Unix())
+		require.NoError(t, err)
+		return id
+	}
+	active := insertRun(target, escalation.RunStatusActive)
+	paused := insertRun(target, escalation.RunStatusPausedByMaintenance)
+	done := insertRun(target, escalation.RunStatusExhausted)
+	elsewhere := insertRun(other, escalation.RunStatusActive)
+
+	require.NoError(t, store.StopPolicyRuns(ctx, target, escalation.RunStatusStoppedByPolicyDisabled, time.Now()))
+
+	for id, want := range map[string]string{
+		active:    escalation.RunStatusStoppedByPolicyDisabled,
+		paused:    escalation.RunStatusStoppedByPolicyDisabled,
+		done:      escalation.RunStatusExhausted,
+		elsewhere: escalation.RunStatusActive,
+	} {
+		r, err := store.SelectRun(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, want, r.Status)
+		if want == escalation.RunStatusStoppedByPolicyDisabled {
+			assert.NotNil(t, r.EndedAt)
+			assert.Nil(t, r.NextActionAt)
+		}
+	}
 }
 
 func TestEscalationStore_PurgeRunsAndDeliveries(t *testing.T) {

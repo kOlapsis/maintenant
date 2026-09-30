@@ -63,9 +63,6 @@ func (h *PostureHandler) HandleGetPosture(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Check threshold alerts after scoring
-	h.scorer.CheckPostureThreshold(posture.Score, posture.ColorLevel)
-
 	WriteJSON(w, http.StatusOK, posture)
 }
 

@@ -67,7 +67,7 @@ func registerEscalationTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "set_escalation_policy_active",
-		Description: "Activate or deactivate an escalation policy." + requires(extension.CapAlertEscalation),
+		Description: "Activate or deactivate an escalation policy; deactivating it stops its running escalations." + requires(extension.CapAlertEscalation),
 	}, setEscalationPolicyActiveHandler(svc))
 }
 

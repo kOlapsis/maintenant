@@ -616,6 +616,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		StatusIncidents:    incidentStore,
 		StatusSubscribers:  subscriberStore,
 		StatusMaintenance:  maintenanceStore,
+		StatusMaintRunner:  a.maintScheduler,
 		StatusSvc:          a.statusSvc,
 		PersonalizationSvc: a.personalizationSvc,
 		StatusMailer:       a.statusMailer,
@@ -900,6 +901,10 @@ func (a *App) Start(ctx context.Context) error {
 	// Sustained container downtime (opt-in via MAINTENANT_CONTAINER_DOWN_AFTER).
 	if a.downDetector != nil {
 		go a.startContainerDownCheck(ctx)
+	}
+
+	if a.scorer != nil && a.scorer.Threshold() > 0 {
+		go a.startPostureCheck(ctx)
 	}
 
 	a.startOSEOL(ctx)

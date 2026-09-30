@@ -66,6 +66,8 @@ type Scorer struct {
 	lastInfraScore int
 	onPostureAlert security.PostureAlertCallback
 	onPostureEvent security.PostureEventCallback
+
+	evalMu sync.Mutex
 }
 
 // NewScorer creates a new Scorer with the given data source readers.
@@ -298,7 +300,7 @@ func (s *Scorer) cveEvaluationState(ctx context.Context, containerExternalID str
 	}
 }
 
-// ScoreInfrastructure computes the infrastructure-wide security posture.
+// ScoreInfrastructure computes the infrastructure-wide security posture and evaluates the alert threshold against it.
 func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []security.ContainerInfo) (*security.InfrastructurePosture, error) {
 	var scores []*security.SecurityScore
 	partialCount := 0
@@ -377,7 +379,7 @@ func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []security.
 		}
 	}
 
-	return &security.InfrastructurePosture{
+	posture := &security.InfrastructurePosture{
 		Score:          avgScore,
 		ColorLevel:     ColorLevel(avgScore),
 		ContainerCount: len(containers),
@@ -386,7 +388,9 @@ func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []security.
 		Categories:     catSummaries,
 		TopRisks:       topRisks,
 		ComputedAt:     time.Now(),
-	}, nil
+	}
+	s.evaluateThreshold(posture.Score, posture.ColorLevel)
+	return posture, nil
 }
 
 // InvalidateCache removes a container's cached score.
@@ -424,8 +428,11 @@ func (s *Scorer) SetThreshold(threshold int) {
 	s.mu.Unlock()
 }
 
-// CheckPostureThreshold compares the current score against the threshold and fires alerts.
-func (s *Scorer) CheckPostureThreshold(score int, color string) {
+// evaluateThreshold compares a fresh infrastructure score against the threshold and fires the alert or its recovery.
+func (s *Scorer) evaluateThreshold(score int, color string) {
+	s.evalMu.Lock()
+	defer s.evalMu.Unlock()
+
 	s.mu.RLock()
 	threshold := s.threshold
 	previousScore := s.lastInfraScore

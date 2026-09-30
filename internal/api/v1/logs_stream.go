@@ -142,24 +142,41 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 	setSSEHeaders(w.Header())
 	flusher.Flush()
 
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), 64*1024)
-
 	ctx := r.Context()
-	for scanner.Scan() {
+	scanned := make(chan string)
+	go func() {
+		defer close(scanned)
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 64*1024), 64*1024)
+		for scanner.Scan() {
+			select {
+			case scanned <- scanner.Text():
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	keepAlive := time.NewTicker(sseKeepAliveInterval)
+	defer keepAlive.Stop()
+	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-		}
-
-		if !writeLogLine(w, flusher, containerDBID, scanner.Text()) {
-			return
+		case <-keepAlive.C:
+			if !writeSSEKeepAlive(w, flusher) {
+				return
+			}
+		case line, ok := <-scanned:
+			if !ok {
+				writeLogError(w, flusher, containerDBID, "container stopped")
+				return
+			}
+			if !writeLogLine(w, flusher, containerDBID, line) {
+				return
+			}
 		}
 	}
-
-	// If scanner stops (container stopped or error), emit error event.
-	writeLogError(w, flusher, containerDBID, "container stopped")
 }
 
 // writeLogLine emits one SSE log line, reporting whether the client is still
@@ -233,11 +250,18 @@ func (h *LogStreamHandler) streamRemote(
 	setSSEHeaders(w.Header())
 	flusher.Flush()
 
+	keepAlive := time.NewTicker(sseKeepAliveInterval)
+	defer keepAlive.Stop()
+
 	ctx := r.Context()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-keepAlive.C:
+			if !writeSSEKeepAlive(w, flusher) {
+				return
+			}
 		case res, ok := <-results:
 			if !ok {
 				writeLogError(w, flusher, containerDBID, "agent disconnected")

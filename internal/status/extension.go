@@ -27,6 +27,8 @@ type AlertIncidentHandler interface {
 // MaintenanceRunner activates and closes maintenance windows as their time comes.
 type MaintenanceRunner interface {
 	Start(ctx context.Context)
+	// DeleteWindow removes a window, closing it first as its scheduled end would when it is running.
+	DeleteWindow(ctx context.Context, id string) error
 }
 
 // PersonalizationReader is what the public settings.json reads.
@@ -52,5 +54,5 @@ type PersonalizationManager interface {
 	DeleteFAQItem(ctx context.Context, id string) error
 	ReorderFAQItems(ctx context.Context, ids []string) ([]FAQItem, error)
 	AssetSizeCap(role AssetRole) int64
-	DetectAssetMIME(role AssetRole, head []byte) (string, error)
+	DetectAssetMIME(role AssetRole, data []byte) (string, error)
 }

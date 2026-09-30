@@ -191,6 +191,12 @@ func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInp
 		if st == "" {
 			st = status.IncidentInvestigating
 		}
+		if err := status.CheckSeverity("severity", input.Severity); err != nil {
+			return errResult("invalid input: " + err.Error())
+		}
+		if err := status.CheckIncidentStatus("status", st); err != nil {
+			return errResult("invalid input: " + err.Error())
+		}
 
 		inc := &status.Incident{Title: input.Title, Severity: input.Severity, Status: st}
 		id, err := svc.Incidents.CreateIncident(ctx, inc, input.ComponentIDs, input.Message)
@@ -217,6 +223,9 @@ func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInp
 		}
 		if input.IncidentID == "" || input.Status == "" || input.Message == "" {
 			return errResult("invalid input: incident_id, status and message are required")
+		}
+		if err := status.CheckIncidentStatus("status", input.Status); err != nil {
+			return errResult("invalid input: " + err.Error())
 		}
 		inc, err := svc.Incidents.GetIncident(ctx, input.IncidentID)
 		if err != nil {
