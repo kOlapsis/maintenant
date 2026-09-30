@@ -354,6 +354,61 @@ func TestHandleUpdateTrigger_NotifyOnResolve_OmittedKeepsExisting(t *testing.T) 
 	assert.False(t, got.NotifyOnResolve, "omitted field must keep the existing value")
 }
 
+func TestHandleUpdateTrigger_Enabled_OmittedKeepsExisting(t *testing.T) {
+	h, ts := newTriggerHandler(true)
+	id := seedTrigger(t, ts, "Original")
+	ts.triggers[id].Enabled = false
+
+	body := `{"name":"Renamed","channel_ids":["1"]}`
+	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	h.HandleUpdateTrigger(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.False(t, ts.triggers[id].Enabled, "an update that does not mention enabled must not switch the trigger on")
+}
+
+func TestHandleUpdateTrigger_UnchangedScopes_AllowedAfterDowngrade(t *testing.T) {
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Community }
+	defer func() { extension.CurrentEdition = original }()
+
+	h, ts := newTriggerHandler(true)
+	id := seedTrigger(t, ts, "Scoped")
+	ts.triggers[id].FilterScopes = "container:42"
+
+	for _, enabled := range []bool{false, true} {
+		body := fmt.Sprintf(`{"name":"Scoped","filter_scopes":"container:42","enabled":%t,"channel_ids":["1"]}`, enabled)
+		req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", id)
+		rec := httptest.NewRecorder()
+		h.HandleUpdateTrigger(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, enabled, ts.triggers[id].Enabled)
+	}
+}
+
+func TestHandleUpdateTrigger_ChangedScopes_RefusedAfterDowngrade(t *testing.T) {
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Community }
+	defer func() { extension.CurrentEdition = original }()
+
+	h, ts := newTriggerHandler(true)
+	id := seedTrigger(t, ts, "Scoped")
+	ts.triggers[id].FilterScopes = "container:42"
+
+	body := `{"name":"Scoped","filter_scopes":"container:43","channel_ids":["1"]}`
+	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	h.HandleUpdateTrigger(rec, req)
+	assertAdvancedFiltersRefusal(t, rec)
+	assert.Equal(t, "container:42", ts.triggers[id].FilterScopes)
+}
+
 func TestHandleUpdateTrigger_NotFound(t *testing.T) {
 	h, _ := newTriggerHandler(true)
 	body := `{"name":"X","channel_ids":["1"]}`

@@ -35,12 +35,12 @@ async function acknowledge() {
     <span
       v-if="alert.acknowledged_at"
       class="ack-done"
-      :title="alert.acknowledged_by ? `Acquittée par ${alert.acknowledged_by}` : 'Acquittée'"
+      :title="alert.acknowledged_by ? `Acknowledged by ${alert.acknowledged_by}` : 'Acknowledged'"
     >
       <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="2.5 7.5 5.5 10.5 11.5 4" />
       </svg>
-      Acquittée
+      Acknowledged
     </span>
 
     <!-- Action -->
@@ -54,7 +54,7 @@ async function acknowledge() {
       <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="2.5 7.5 5.5 10.5 11.5 4" />
       </svg>
-      {{ pending ? 'Acquittement…' : 'Acquitter' }}
+      {{ pending ? 'Acknowledging…' : 'Acknowledge' }}
     </button>
   </template>
 </template>

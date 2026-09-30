@@ -87,7 +87,7 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
-	if refuseAdvancedFilters(w, &input) {
+	if refuseAdvancedFilters(w, input.FilterScopes, "") {
 		return
 	}
 	if err := h.checkChannelsExist(r, input.ChannelIDs); err != nil {
@@ -164,7 +164,7 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
-	if refuseAdvancedFilters(w, &input) {
+	if refuseAdvancedFilters(w, input.FilterScopes, existing.FilterScopes) {
 		return
 	}
 	if err := h.checkChannelsExist(r, input.ChannelIDs); err != nil {
@@ -172,7 +172,7 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 		return
 	}
 
-	enabled := true
+	enabled := existing.Enabled
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
@@ -251,10 +251,11 @@ func validateTriggerInput(t *triggerInput) error {
 	return nil
 }
 
-// refuseAdvancedFilters writes the edition refusal when a scope filter is set
-// on an edition that does not open it, and reports whether it did.
-func refuseAdvancedFilters(w http.ResponseWriter, t *triggerInput) bool {
-	if t.FilterScopes == "" || extension.Allows(extension.CapAlertAdvancedFilters) {
+// refuseAdvancedFilters writes the edition refusal when a request sets a scope
+// filter other than the stored one on an edition that does not open it, and
+// reports whether it did.
+func refuseAdvancedFilters(w http.ResponseWriter, scopes, stored string) bool {
+	if scopes == "" || scopes == stored || extension.Allows(extension.CapAlertAdvancedFilters) {
 		return false
 	}
 	refuseCapability(w, extension.CapAlertAdvancedFilters)
