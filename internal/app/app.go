@@ -908,10 +908,8 @@ func (a *App) Start(ctx context.Context) error {
 		go a.startNodeRefresh(ctx)
 	}
 
-	// Local-runtime topology reconcile into the per-agent store (under LocalAgent),
-	// so store-backed K8s/Swarm views reflect the local cluster too. Each is a
-	// no-op unless the matching runtime is active.
-	go a.startKubernetesReconcile(ctx)
+	// Local Swarm topology reconcile into the per-agent store (under LocalAgent);
+	// the Kubernetes one is wired with each runtime connection cycle.
 	go a.startSwarmTopologyReconcile(ctx)
 
 	// Sustained container downtime (opt-in via MAINTENANT_CONTAINER_DOWN_AFTER).

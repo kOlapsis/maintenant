@@ -1,9 +1,12 @@
-# Apply with: kubectl apply -n <your-namespace> -f deployment.yaml
-# No namespace is hardcoded — kubectl -n sets it.
+# Apply with:
+#   kubectl create namespace maintenant
+#   kubectl apply -f deploy/kubernetes/
+# The namespace is fixed here and in rbac.yaml; change both together.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: maintenant
+  namespace: maintenant
   labels:
     app.kubernetes.io/name: maintenant
     app.kubernetes.io/component: monitoring
@@ -105,6 +108,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: maintenant-data
+  namespace: maintenant
 spec:
   accessModes:
     - ReadWriteOnce
@@ -119,6 +123,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: maintenant
+  namespace: maintenant
   labels:
     app.kubernetes.io/name: maintenant
 spec:

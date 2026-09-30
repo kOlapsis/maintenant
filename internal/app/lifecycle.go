@@ -293,12 +293,8 @@ func (a *App) startContainerDownCheck(ctx context.Context) {
 // startKubernetesReconcile periodically snapshots the server's own Kubernetes
 // runtime into the per-agent store under the LocalAgent id, so the store-backed
 // Workloads/Pods/Nodes views reflect the local cluster the same way they reflect
-// remote agents. No-op unless the local runtime is Kubernetes.
-func (a *App) startKubernetesReconcile(ctx context.Context) {
-	src, ok := a.rt.(kubernetes.SnapshotSource)
-	if !ok || a.k8sIngest == nil {
-		return
-	}
+// remote agents. It runs for one connection cycle and stops when until closes.
+func (a *App) startKubernetesReconcile(ctx context.Context, src kubernetes.SnapshotSource, until <-chan struct{}) {
 	reconcile := func() {
 		snap, err := kubernetes.SnapshotFromRuntime(ctx, src)
 		if err != nil {
@@ -315,6 +311,8 @@ func (a *App) startKubernetesReconcile(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-until:
 			return
 		case <-ticker.C:
 			reconcile()
@@ -508,7 +506,11 @@ func (a *App) startSwarmRecheck(ctx context.Context) {
 // Appelée exactement une fois par cycle de connexion (la garde est le superviseur).
 func (a *App) wireContainerMonitoring(ctx context.Context) <-chan struct{} {
 	a.reconcile(ctx)
-	return a.startEventStream(ctx)
+	streamDone := a.startEventStream(ctx)
+	if src, ok := a.rt.(kubernetes.SnapshotSource); ok {
+		go a.startKubernetesReconcile(ctx, src, streamDone)
+	}
+	return streamDone
 }
 
 // broadcastRuntimeAvailability diffuse l'état runtime courant via SSE.

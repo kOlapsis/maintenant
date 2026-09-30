@@ -13,6 +13,7 @@ import (
 	"time"
 
 	cmodel "github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
@@ -66,12 +67,35 @@ func NewRuntime(logger *slog.Logger, nsFilter *NamespaceFilter) (*Runtime, error
 	}, nil
 }
 
+const (
+	connectInitialBackoff = 1 * time.Second
+	connectMaxBackoff     = 30 * time.Second
+)
+
+// Connect retries until the API server answers or ctx is cancelled, but returns a configuration error at once.
 func (r *Runtime) Connect(ctx context.Context) error {
 	config, err := buildConfig()
 	if err != nil {
 		return fmt.Errorf("kubernetes config: %w", err)
 	}
 
+	b := retry.New(connectInitialBackoff, connectMaxBackoff, 0)
+	for {
+		err := r.connect(ctx, config)
+		if err == nil {
+			return nil
+		}
+		delay := b.Next()
+		r.logger.Warn("kubernetes connection failed, retrying", "error", err, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+}
+
+func (r *Runtime) connect(ctx context.Context, config *rest.Config) error {
 	clientset, err := k8s.NewForConfig(config)
 	if err != nil {
 		return fmt.Errorf("kubernetes clientset: %w", err)
@@ -82,9 +106,7 @@ func (r *Runtime) Connect(ctx context.Context) error {
 		r.logger.Warn("metrics-server client failed; resource metrics will be unavailable", "error", err)
 	}
 
-	// Verify connectivity.
-	_, err = clientset.Discovery().ServerVersion()
-	if err != nil {
+	if _, err := clientset.Discovery().RESTClient().Get().AbsPath("/version").DoRaw(ctx); err != nil {
 		return fmt.Errorf("kubernetes connectivity check failed: %w", err)
 	}
 
@@ -117,10 +139,15 @@ func (r *Runtime) Connect(ctx context.Context) error {
 	return nil
 }
 
+// TryConnect makes a single attempt bounded to a few seconds.
 func (r *Runtime) TryConnect(ctx context.Context) error {
+	config, err := buildConfig()
+	if err != nil {
+		return fmt.Errorf("kubernetes config: %w", err)
+	}
 	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	return r.Connect(tctx)
+	return r.connect(tctx, config)
 }
 
 func buildConfig() (*rest.Config, error) {

@@ -51,6 +51,9 @@ RUN apk add --no-cache ca-certificates tzdata setpriv \
 # /tmp as a tiny tmpfs, which SQLITE_FULL-fails the conversion; /data has real space.
 ENV SQLITE_TMPDIR=/data
 
+# Its directory also holds the licence cache and the update window, PostgreSQL or not.
+ENV MAINTENANT_DB=/data/maintenant.db
+
 # Tells the OS identity reader it must not fall back to the image's own
 # /etc/os-release, which describes the container rather than the host.
 ENV MAINTENANT_CONTAINER=1

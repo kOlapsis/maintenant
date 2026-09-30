@@ -1,28 +1,35 @@
-# Apply with: kubectl apply -n <your-namespace> -f rbac.yaml
-# The ServiceAccount is created in the target namespace automatically.
-# The ClusterRoleBinding references it, so update the namespace below
-# if you are NOT using "maintenant" as your namespace.
+# Apply with:
+#   kubectl create namespace maintenant
+#   kubectl apply -f deploy/kubernetes/
+# The namespace is fixed here, in the ClusterRoleBinding subject and in
+# deployment.yaml; change all of them together.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: maintenant
+  namespace: maintenant
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: maintenant
 rules:
-  # Core resources — read-only
+  # Read-only, exactly the APIs the runtime calls (internal/kubernetes/rbac.go).
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "namespaces", "events"]
+    resources: ["namespaces", "nodes", "pods", "events", "services"]
     verbs: ["get", "list", "watch"]
-  # Apps — read-only
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch"]
-  # Metrics — read-only (requires metrics-server)
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]
+  # Requires metrics-server.
   - apiGroups: ["metrics.k8s.io"]
-    resources: ["pods"]
+    resources: ["pods", "nodes"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -36,4 +43,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: maintenant
-    namespace: maintenant # ← change this to match your namespace
+    namespace: maintenant

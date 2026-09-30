@@ -379,6 +379,7 @@ func ConfigFromEnv() Config {
 		EnrollmentToken:            os.Getenv("MAINTENANT_ENROLLMENT_TOKEN"),
 		RuntimeOverride:            os.Getenv("MAINTENANT_RUNTIME"),
 		Label:                      os.Getenv("MAINTENANT_LABEL"),
+		NodeName:                   os.Getenv("MAINTENANT_NODE_NAME"),
 		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
 		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
 	}

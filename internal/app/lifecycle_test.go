@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -42,6 +43,40 @@ func TestSupervisor_DegradedThenHTTPUp(t *testing.T) {
 	go func() { done <- a.Start(ctx) }()
 
 	// App should shutdown cleanly when ctx is cancelled.
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start() did not return after context cancellation")
+	}
+}
+
+// A kubeconfig whose cluster does not answer starts the server degraded, and it
+// must stay up until shutdown instead of reading from a client never connected.
+func TestStart_KubernetesUnreachable(t *testing.T) {
+	tmpDir := t.TempDir()
+	kubeconfig := filepath.Join(tmpDir, "kubeconfig")
+	cfg := "apiVersion: v1\nkind: Config\n" +
+		"clusters:\n- name: gone\n  cluster:\n    server: https://127.0.0.1:1\n" +
+		"users:\n- name: gone\n  user:\n    token: gone\n" +
+		"contexts:\n- name: gone\n  context:\n    cluster: gone\n    user: gone\n" +
+		"current-context: gone\n"
+	require.NoError(t, os.WriteFile(kubeconfig, []byte(cfg), 0o600))
+	t.Setenv("MAINTENANT_RUNTIME", "kubernetes")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBECONFIG", kubeconfig)
+
+	a, err := app.New(app.Config{
+		DBPath: filepath.Join(tmpDir, "test.db"),
+		Addr:   "127.0.0.1:0",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- a.Start(ctx) }()
+
 	select {
 	case err := <-done:
 		assert.NoError(t, err)

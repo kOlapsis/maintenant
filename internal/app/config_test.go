@@ -172,6 +172,12 @@ func TestValidateProxiesRefusesGarbage(t *testing.T) {
 	}
 }
 
+func TestConfigFromEnv_NodeName(t *testing.T) {
+	t.Setenv("MAINTENANT_NODE_NAME", "worker-2")
+
+	assert.Equal(t, "worker-2", ConfigFromEnv().MultiHost.NodeName)
+}
+
 func TestConfigFromEnv_AgentSpoolDefaults(t *testing.T) {
 	cfg := ConfigFromEnv()
 

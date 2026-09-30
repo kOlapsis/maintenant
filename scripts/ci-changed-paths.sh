@@ -43,12 +43,16 @@ if [ -z "$reason" ]; then
 	list=$(mktemp)
 	printf '%s\n' "$files" >"$list"
 
-	# A path can only fall in one bucket, so order matters: the inert list
-	# wins over everything, then the frontend, then the backend. What no
-	# pattern claims is unknown, and unknown means run it all.
+	# A path can only fall in one bucket, so order matters: the Kubernetes
+	# manifests come first, then the inert list, then the frontend, then the
+	# backend. What no pattern claims is unknown, and unknown means run it all.
 	while read -r f; do
 		[ -n "$f" ] || continue
 		case "$f" in
+		# The Go tests of internal/kubernetes check their RBAC and namespaces.
+		deploy/kubernetes/* | deploy/helm/*)
+			backend=true
+			;;
 		# Nothing in CI reads these. The docs have their own workflow.
 		docs/* | mkdocs.yml | deploy/* | *.md | LICENSE | .env.example | .gitignore) ;;
 		frontend/*)
