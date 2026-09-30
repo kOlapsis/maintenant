@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
-	"sync/atomic"
 )
 
 const writerBufferSize = 256
@@ -71,10 +69,10 @@ type Writer struct {
 	dialect Dialect
 	ch      chan WriteOp
 	logger  *slog.Logger
-	stopped atomic.Bool
-	wg      sync.WaitGroup
-	once    sync.Once
+	stopped chan struct{}
 }
+
+var errWriterStopped = errors.New("writer is stopped")
 
 func NewWriter(db *sql.DB, dialect Dialect, logger *slog.Logger) *Writer {
 	return &Writer{
@@ -82,6 +80,7 @@ func NewWriter(db *sql.DB, dialect Dialect, logger *slog.Logger) *Writer {
 		dialect: dialect,
 		ch:      make(chan WriteOp, writerBufferSize),
 		logger:  logger,
+		stopped: make(chan struct{}),
 	}
 }
 
@@ -94,19 +93,9 @@ func (w *Writer) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				w.once.Do(func() {
-					w.stopped.Store(true)
-					w.wg.Wait()
-					close(w.ch)
-				})
-				for op := range w.ch {
-					op.Done <- WriteResult{Err: ctx.Err()}
-				}
+				close(w.stopped)
 				return
-			case op, ok := <-w.ch:
-				if !ok {
-					return
-				}
+			case op := <-w.ch:
 				if op.Fn != nil {
 					op.Done <- w.runTx(ctx, op.Fn)
 					continue
@@ -145,18 +134,10 @@ func (w *Writer) Tx(ctx context.Context, fn func(context.Context, *Tx) error) er
 }
 
 func (w *Writer) submit(ctx context.Context, op WriteOp) (WriteResult, error) {
-	if w.stopped.Load() {
-		return WriteResult{}, errors.New("writer is stopped")
-	}
-	w.wg.Add(1)
-	if w.stopped.Load() {
-		w.wg.Done()
-		return WriteResult{}, errors.New("writer is stopped")
-	}
-	defer w.wg.Done()
-
 	op.Done = make(chan WriteResult, 1)
 	select {
+	case <-w.stopped:
+		return WriteResult{}, errWriterStopped
 	case w.ch <- op:
 	case <-ctx.Done():
 		return WriteResult{}, ctx.Err()
@@ -164,6 +145,14 @@ func (w *Writer) submit(ctx context.Context, op WriteOp) (WriteResult, error) {
 	select {
 	case res := <-op.Done:
 		return res, res.Err
+	case <-w.stopped:
+		// The writer answers an op it took before it stops, so a result may be waiting.
+		select {
+		case res := <-op.Done:
+			return res, res.Err
+		default:
+			return WriteResult{}, errWriterStopped
+		}
 	case <-ctx.Done():
 		return WriteResult{}, ctx.Err()
 	}
