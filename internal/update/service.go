@@ -200,7 +200,7 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 
 // GenerateUpdateCommand produces a shell command to update a container.
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) string {
-	repo, _, _ := ParseImageRef(c.Image)
+	repo, currentTag, _ := ParseImageRef(c.Image)
 
 	// Kubernetes workloads
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
@@ -210,13 +210,14 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) strin
 	}
 
 	// Docker Compose
-	if c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != "" {
-		dir := c.ComposeWorkingDir
-		if dir == "" {
-			dir = "<compose-project-dir>"
+	if isCompose(c) {
+		// Compose pulls the tag written in the compose file, so a new tag has to be written there first.
+		if latestTag != currentTag {
+			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s:%s in the compose file, then:\ndocker compose pull %s\ndocker compose up -d %s",
+				composeDir(c), c.OrchestrationUnit, repo, latestTag, c.OrchestrationUnit, c.OrchestrationUnit)
 		}
 		return fmt.Sprintf("cd %s\ndocker compose pull %s\ndocker compose up -d --force-recreate %s",
-			dir, c.OrchestrationUnit, c.OrchestrationUnit)
+			composeDir(c), c.OrchestrationUnit, c.OrchestrationUnit)
 	}
 
 	// Standalone Docker container
@@ -224,34 +225,66 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) strin
 		repo, latestTag, c.Name, c.Name, c.Name, repo, latestTag)
 }
 
-// GenerateRollbackCommand produces a shell command to revert a container to its previous image digest.
-func (s *Service) GenerateRollbackCommand(c ContainerInfo, previousDigest string) string {
-	if previousDigest == "" {
+// GenerateRollbackCommand produces a shell command that puts a container back on the image it ran before the update, or "" when that image cannot be named.
+func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) string {
+	ref := previousImageRef(u.Image, u.CurrentTag, u.PreviousDigest)
+	if ref == "" {
 		return ""
 	}
 
-	repo, _, _ := ParseImageRef(c.Image)
-
-	// Kubernetes workloads — use rollout undo
+	// Kubernetes workloads
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
 		kind := strings.ToLower(c.ControllerKind)
-		return fmt.Sprintf("kubectl rollout undo %s/%s -n %s",
-			kind, c.OrchestrationUnit, c.OrchestrationGroup)
+		return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
+			kind, c.OrchestrationUnit, c.Name, ref, c.OrchestrationGroup)
 	}
 
-	// Docker Compose — recreate with previous digest
-	if c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != "" {
-		dir := c.ComposeWorkingDir
-		if dir == "" {
-			dir = "<compose-project-dir>"
+	// Docker Compose
+	if isCompose(c) {
+		svc := c.OrchestrationUnit
+		if u.LatestTag == u.CurrentTag {
+			// The compose file keeps the same tag: point that tag back at the previous image locally.
+			return fmt.Sprintf("cd %s\ndocker pull %s\ndocker tag %s %s\ndocker compose up -d --pull never --force-recreate %s",
+				composeDir(c), ref, ref, imageWithoutDigest(u.Image), svc)
 		}
-		return fmt.Sprintf("cd %s\ndocker compose pull %s\ndocker compose up -d --force-recreate %s",
-			dir, c.OrchestrationUnit, c.OrchestrationUnit)
+		return fmt.Sprintf("cd %s\n# Set the image of service %s back to %s in the compose file, then:\ndocker compose up -d %s",
+			composeDir(c), svc, ref, svc)
 	}
 
-	// Standalone Docker container — stop/rm/run with digest reference
-	return fmt.Sprintf("docker stop %s && docker rm %s\ndocker run -d --name %s %s@%s",
-		c.Name, c.Name, c.Name, repo, previousDigest)
+	// Standalone Docker container
+	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
+		ref, c.Name, c.Name, c.Name, ref)
+}
+
+// previousImageRef names the image a container ran before an update: by digest when known,
+// else by its tag when that tag is a fixed release; a moving tag without digest cannot name it.
+func previousImageRef(image, currentTag, previousDigest string) string {
+	repo, _, _ := ParseImageRef(image)
+	if previousDigest != "" {
+		return repo + "@" + previousDigest
+	}
+	if isFixedVersionTag(currentTag) {
+		return repo + ":" + currentTag
+	}
+	return ""
+}
+
+func imageWithoutDigest(image string) string {
+	if i := strings.Index(image, "@"); i > 0 {
+		return image[:i]
+	}
+	return image
+}
+
+func isCompose(c ContainerInfo) bool {
+	return c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != ""
+}
+
+func composeDir(c ContainerInfo) string {
+	if c.ComposeWorkingDir == "" {
+		return "<compose-project-dir>"
+	}
+	return c.ComposeWorkingDir
 }
 
 // GenerateFixCommand produces a shell command to update a container to a specific CVE fix version.
@@ -371,19 +404,20 @@ func (s *Service) runScan(ctx context.Context) {
 
 		riskScore := BaseRiskScore(r.UpdateType)
 		u := &ImageUpdate{
-			ScanID:        scanID,
-			ContainerID:   r.ContainerID,
-			ContainerName: r.ContainerName,
-			Image:         r.Image,
-			CurrentTag:    r.CurrentTag,
-			CurrentDigest: r.CurrentDigest,
-			Registry:      r.Registry,
-			LatestTag:     r.LatestTag,
-			LatestDigest:  r.LatestDigest,
-			UpdateType:    r.UpdateType,
-			RiskScore:     riskScore,
-			Status:        StatusAvailable,
-			DetectedAt:    time.Now(),
+			ScanID:         scanID,
+			ContainerID:    r.ContainerID,
+			ContainerName:  r.ContainerName,
+			Image:          r.Image,
+			CurrentTag:     r.CurrentTag,
+			CurrentDigest:  r.CurrentDigest,
+			Registry:       r.Registry,
+			LatestTag:      r.LatestTag,
+			LatestDigest:   r.LatestDigest,
+			UpdateType:     r.UpdateType,
+			RiskScore:      riskScore,
+			PreviousDigest: r.PreviousDigest,
+			Status:         StatusAvailable,
+			DetectedAt:     time.Now(),
 		}
 
 		if _, err := s.store.InsertImageUpdate(ctx, u); err != nil {
@@ -402,12 +436,13 @@ func (s *Service) runScan(ctx context.Context) {
 			"latest_tag":     r.LatestTag,
 			"update_type":    string(r.UpdateType),
 			"risk_score":     riskScore,
+			"alert_on":       r.AlertOn,
 		}
 
 		if ci, ok := containerByID[r.ContainerID]; ok {
 			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag)
-			if r.CurrentDigest != "" {
-				eventData["rollback_command"] = s.GenerateRollbackCommand(ci, r.CurrentDigest)
+			if cmd := s.GenerateRollbackCommand(ci, u); cmd != "" {
+				eventData["rollback_command"] = cmd
 			}
 		}
 

@@ -528,10 +528,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	registryClient := update.NewRegistryClient()
 	updateScanner := update.NewScanner(registryClient, updateStore, logger)
 	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc)
-	// Wire live label fetching from Docker so maintenant.update.tag-include/exclude labels
-	// are available at scan time (labels are not persisted in SQLite).
+	// Wire live label and image digest fetching from Docker so maintenant.update.* labels
+	// and the running image's digests are available at scan time (neither is persisted).
 	if dr, ok := a.rt.(*docker.Runtime); ok {
-		containerAdapter.WithLabelFetcher(&dockerLabelFetcher{rt: dr})
+		fetcher := &dockerLabelFetcher{rt: dr}
+		containerAdapter.WithLabelFetcher(fetcher).WithRepoDigestFetcher(fetcher)
 	}
 
 	var updateEnricher update.Enricher
@@ -1103,11 +1104,14 @@ func (a *App) swarmNodeStoreAsInterface() swarm.NodeStore {
 	return a.swarmNodeStore
 }
 
-// dockerLabelFetcher implements update.LabelFetcher for Docker runtimes.
-// It fetches live container labels at scan time so tag-include/tag-exclude labels
-// are available without persisting them in SQLite.
+// dockerLabelFetcher implements update.LabelFetcher and update.RepoDigestFetcher for Docker runtimes.
+// It fetches live container labels and image digests at scan time, without persisting them.
 type dockerLabelFetcher struct {
 	rt *docker.Runtime
+}
+
+func (f *dockerLabelFetcher) FetchRepoDigests(ctx context.Context) (map[string][]string, error) {
+	return f.rt.ContainerRepoDigests(ctx)
 }
 
 func (f *dockerLabelFetcher) FetchLabels(ctx context.Context) (map[string]map[string]string, error) {

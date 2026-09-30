@@ -17,10 +17,16 @@ type LabelFetcher interface {
 	FetchLabels(ctx context.Context) (map[string]map[string]string, error)
 }
 
+// RepoDigestFetcher maps each container external ID to the repo digests of its image, an empty list marking an image that never came from a registry.
+type RepoDigestFetcher interface {
+	FetchRepoDigests(ctx context.Context) (map[string][]string, error)
+}
+
 // ContainerServiceAdapter adapts container.Service to the ContainerLister interface.
 type ContainerServiceAdapter struct {
-	svc          *container.Service
-	labelFetcher LabelFetcher // optional — nil when runtime doesn't support label fetching
+	svc           *container.Service
+	labelFetcher  LabelFetcher      // optional, nil when runtime doesn't support label fetching
+	digestFetcher RepoDigestFetcher // optional, nil when the runtime does not report image digests
 }
 
 // NewContainerServiceAdapter creates a new adapter.
@@ -32,6 +38,12 @@ func NewContainerServiceAdapter(svc *container.Service) *ContainerServiceAdapter
 // When set, ContainerInfo.Labels is populated with live runtime labels at scan time.
 func (a *ContainerServiceAdapter) WithLabelFetcher(lf LabelFetcher) *ContainerServiceAdapter {
 	a.labelFetcher = lf
+	return a
+}
+
+// WithRepoDigestFetcher attaches the runtime source of ContainerInfo.RepoDigests and ContainerInfo.LocallyBuilt.
+func (a *ContainerServiceAdapter) WithRepoDigestFetcher(df RepoDigestFetcher) *ContainerServiceAdapter {
+	a.digestFetcher = df
 	return a
 }
 
@@ -49,24 +61,21 @@ func (a *ContainerServiceAdapter) ListContainerInfos(ctx context.Context) ([]Con
 	if a.labelFetcher != nil {
 		labelsByExtID, _ = a.labelFetcher.FetchLabels(ctx)
 	}
+	var digestsByExtID map[string][]string
+	if a.digestFetcher != nil {
+		digestsByExtID, _ = a.digestFetcher.FetchRepoDigests(ctx)
+	}
 
 	infos := make([]ContainerInfo, 0, len(containers))
 	for _, c := range containers {
 		if c.IsIgnored || c.Archived {
 			continue
 		}
-		infos = append(infos, ContainerInfo{
-			UID:                c.ID,
-			ExternalID:         c.ExternalID,
-			Name:               c.Name,
-			Image:              c.Image,
-			Labels:             labelsByExtID[c.ExternalID],
-			OrchestrationGroup: c.OrchestrationGroup,
-			OrchestrationUnit:  c.OrchestrationUnit,
-			RuntimeType:        c.RuntimeType,
-			ControllerKind:     c.ControllerKind,
-			ComposeWorkingDir:  c.ComposeWorkingDir,
-		})
+		info := newContainerInfo(c, labelsByExtID[c.ExternalID])
+		digests, known := digestsByExtID[c.ExternalID]
+		info.RepoDigests = digests
+		info.LocallyBuilt = known && len(digests) == 0
+		infos = append(infos, info)
 	}
 	return infos, nil
 }
@@ -86,19 +95,23 @@ func (a *ContainerServiceAdapter) GetContainerInfo(ctx context.Context, external
 
 	for _, c := range containers {
 		if c.ExternalID == externalID {
-			return ContainerInfo{
-				UID:                c.ID,
-				ExternalID:         c.ExternalID,
-				Name:               c.Name,
-				Image:              c.Image,
-				Labels:             labelsByExtID[c.ExternalID],
-				OrchestrationGroup: c.OrchestrationGroup,
-				OrchestrationUnit:  c.OrchestrationUnit,
-				RuntimeType:        c.RuntimeType,
-				ControllerKind:     c.ControllerKind,
-				ComposeWorkingDir:  c.ComposeWorkingDir,
-			}, nil
+			return newContainerInfo(c, labelsByExtID[c.ExternalID]), nil
 		}
 	}
 	return ContainerInfo{}, fmt.Errorf("container not found: %s", externalID)
+}
+
+func newContainerInfo(c *container.Container, labels map[string]string) ContainerInfo {
+	return ContainerInfo{
+		UID:                c.ID,
+		ExternalID:         c.ExternalID,
+		Name:               c.Name,
+		Image:              c.Image,
+		Labels:             labels,
+		OrchestrationGroup: c.OrchestrationGroup,
+		OrchestrationUnit:  c.OrchestrationUnit,
+		RuntimeType:        c.RuntimeType,
+		ControllerKind:     c.ControllerKind,
+		ComposeWorkingDir:  c.ComposeWorkingDir,
+	}
 }

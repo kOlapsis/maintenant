@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -24,6 +25,8 @@ type ContainerInfo struct {
 	RuntimeType        string
 	ControllerKind     string
 	ComposeWorkingDir  string
+	RepoDigests        []string // "repo@sha256:..." of the running image, as the local runtime reports them
+	LocallyBuilt       bool     // the runtime reports an image never pulled from nor pushed to a registry
 }
 
 // Scanner checks containers for available updates by comparing tags and digests.
@@ -118,10 +121,8 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		return nil, fmt.Errorf("cannot parse image reference: %s", c.Image)
 	}
 
-	// Skip local/private images that have no registry and no slash (locally built)
-	if !strings.Contains(imageRef, "/") && currentTag == "latest" && registry == "registry-1.docker.io" {
-		// Likely a locally-built image (e.g. "myapp" or "myapp:latest") — skip silently
-		sc.logger.Debug("scanner: skipping likely local image", "image", c.Image)
+	if c.LocallyBuilt {
+		sc.logger.Debug("scanner: skipping locally built image", "image", c.Image)
 		return nil, nil
 	}
 
@@ -162,11 +163,24 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		fullRef = "library/" + imageRef
 	}
 
+	target := scanTarget{
+		container:     c,
+		fullRef:       fullRef,
+		currentTag:    currentTag,
+		registry:      registry,
+		runningDigest: repoDigestFor(c.RepoDigests, imageRef),
+		alertOn:       cfg.AlertOn,
+	}
+
+	level := cfg.TrackLevel()
+	if level == TrackDigest {
+		return sc.checkDigest(ctx, target)
+	}
+
 	// List all tags from registry
 	tags, err := sc.registry.ListTags(ctx, fullRef)
 	if err != nil {
-		// Skip images that fail auth (private/local images not on any registry)
-		if strings.Contains(err.Error(), "UNAUTHORIZED") || strings.Contains(err.Error(), "NAME_UNKNOWN") || strings.Contains(err.Error(), "denied") {
+		if isUnreachableImage(err) {
 			sc.logger.Debug("scanner: skipping unreachable image", "image", c.Image, "reason", err.Error())
 			return nil, nil
 		}
@@ -181,70 +195,31 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	if _, parseErr := ParseTag(versionPart); parseErr == nil {
 		// Semver tag: apply user-configured tag filters
 		tf := NewTagFilter(cfg.TagInclude, cfg.TagExclude, variant)
-		tags = tf.Filter(tags)
-		if len(tags) == 0 {
-			sc.logger.Warn("scanner: tag filter produced no candidates, skipping update check",
+		filtered := tf.Filter(tags)
+		if len(filtered) == 0 {
+			sc.logger.Warn("scanner: tag filter produced no candidates",
 				"container", c.Name, "image", c.Image)
+		}
+		// The current tag stays the reference for digest comparison even when the filter rejects it.
+		if slices.Contains(tags, currentTag) && !slices.Contains(filtered, currentTag) {
+			filtered = append(filtered, currentTag)
+		}
+		tags = filtered
+		if len(tags) == 0 {
 			return nil, nil
 		}
 	}
 
 	// Find best update
-	bestTag, updateType := FindBestUpdate(currentTag, tags)
+	bestTag, updateType := findBestUpdate(currentTag, tags, level)
 	if bestTag == "" {
 		return nil, nil
 	}
 
-	// Digest-only mode: floating tags, i.e. non-semver channels like "lts", "alpine",
-	// "stable", "latest", plus partial versions like "v3" or "1.2" that the registry moves.
-	// Compare the current remote digest against the stored baseline to detect rebuilds.
+	// Floating tags, i.e. non-semver channels like "lts", "alpine", "stable", "latest",
+	// plus partial versions like "v3" or "1.2" that the registry moves.
 	if bestTag == currentTag && updateType == UpdateTypeDigestOnly {
-		tagRef := fullRef + ":" + currentTag
-		remoteDigest, err := sc.registry.GetDigest(ctx, tagRef)
-		if err != nil || remoteDigest == "" {
-			sc.logger.Debug("scanner: cannot fetch digest for channel tag",
-				"container", c.Name, "tag", currentTag, "error", err)
-			return nil, nil
-		}
-
-		baseline, _ := sc.store.GetDigestBaseline(ctx, c.ExternalID)
-
-		// Store/update the baseline for next scan comparison
-		now := time.Now()
-		if err := sc.store.UpsertDigestBaseline(ctx, &DigestBaseline{
-			ContainerID:  c.ExternalID,
-			Image:        c.Image,
-			Tag:          currentTag,
-			RemoteDigest: remoteDigest,
-			CheckedAt:    now,
-		}); err != nil {
-			sc.logger.Warn("scanner: failed to store digest baseline",
-				"container", c.Name, "error", err)
-		}
-
-		if baseline == nil || baseline.RemoteDigest == remoteDigest {
-			// First scan or digest unchanged — no update
-			return nil, nil
-		}
-
-		// Digest changed — the tag was republished with a new build
-		sc.logger.Info("scanner: digest change detected for channel tag",
-			"container", c.Name, "tag", currentTag,
-			"old_digest", baseline.RemoteDigest[:19], "new_digest", remoteDigest[:19])
-
-		return &UpdateResult{
-			ContainerID:    c.ExternalID,
-			ContainerName:  c.Name,
-			Image:          c.Image,
-			CurrentTag:     currentTag,
-			CurrentDigest:  baseline.RemoteDigest,
-			PreviousDigest: baseline.RemoteDigest,
-			Registry:       registry,
-			LatestTag:      currentTag,
-			LatestDigest:   remoteDigest,
-			UpdateType:     UpdateTypeDigestOnly,
-			HasUpdate:      true,
-		}, nil
+		return sc.checkDigest(ctx, target)
 	}
 
 	// Semver update: a newer version tag exists
@@ -256,26 +231,141 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	}
 
 	result := &UpdateResult{
-		ContainerID:   c.ExternalID,
-		ContainerName: c.Name,
-		Image:         c.Image,
-		CurrentTag:    currentTag,
-		Registry:      registry,
-		LatestTag:     bestTag,
-		LatestDigest:  latestDigest,
-		UpdateType:    updateType,
-		HasUpdate:     true,
+		ContainerID:    c.ExternalID,
+		ContainerName:  c.Name,
+		Image:          c.Image,
+		CurrentTag:     currentTag,
+		Registry:       registry,
+		LatestTag:      bestTag,
+		LatestDigest:   latestDigest,
+		UpdateType:     updateType,
+		HasUpdate:      true,
+		PreviousDigest: target.runningDigest,
+		AlertOn:        cfg.AlertOn,
 	}
 
 	return result, nil
 }
 
+// scanTarget carries what the digest comparison needs about one container.
+type scanTarget struct {
+	container     ContainerInfo
+	fullRef       string
+	currentTag    string
+	registry      string
+	runningDigest string
+	alertOn       string
+}
+
+// checkDigest compares the remote digest of the current tag with the one recorded at the
+// previous scan, which detects a republished tag without looking at other tags.
+func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult, error) {
+	c := t.container
+	remoteDigest, err := sc.registry.GetDigest(ctx, t.fullRef+":"+t.currentTag)
+	if err != nil {
+		if isUnreachableImage(err) {
+			sc.logger.Debug("scanner: skipping unreachable tag",
+				"container", c.Name, "tag", t.currentTag, "reason", err.Error())
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get digest: %w", err)
+	}
+	if remoteDigest == "" {
+		return nil, nil
+	}
+
+	baseline, err := sc.store.GetDigestBaseline(ctx, c.ExternalID)
+	if err != nil {
+		return nil, fmt.Errorf("get digest baseline: %w", err)
+	}
+
+	if err := sc.store.UpsertDigestBaseline(ctx, &DigestBaseline{
+		ContainerID:  c.ExternalID,
+		Image:        c.Image,
+		Tag:          t.currentTag,
+		RemoteDigest: remoteDigest,
+		CheckedAt:    time.Now(),
+	}); err != nil {
+		sc.logger.Warn("scanner: failed to store digest baseline",
+			"container", c.Name, "error", err)
+	}
+
+	if baseline == nil || baseline.RemoteDigest == remoteDigest {
+		return nil, nil
+	}
+
+	sc.logger.Info("scanner: digest change detected for channel tag",
+		"container", c.Name, "tag", t.currentTag,
+		"old_digest", shortDigest(baseline.RemoteDigest), "new_digest", shortDigest(remoteDigest))
+
+	previous := t.runningDigest
+	if previous == "" {
+		previous = baseline.RemoteDigest
+	}
+
+	return &UpdateResult{
+		ContainerID:    c.ExternalID,
+		ContainerName:  c.Name,
+		Image:          c.Image,
+		CurrentTag:     t.currentTag,
+		CurrentDigest:  baseline.RemoteDigest,
+		PreviousDigest: previous,
+		Registry:       t.registry,
+		LatestTag:      t.currentTag,
+		LatestDigest:   remoteDigest,
+		UpdateType:     UpdateTypeDigestOnly,
+		HasUpdate:      true,
+		AlertOn:        t.alertOn,
+	}, nil
+}
+
+// isUnreachableImage reports a registry answer meaning the image or tag cannot be
+// checked there at all (private, unknown or never published), as opposed to a failure.
+func isUnreachableImage(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "UNAUTHORIZED") || strings.Contains(msg, "NAME_UNKNOWN") ||
+		strings.Contains(msg, "MANIFEST_UNKNOWN") || strings.Contains(msg, "denied")
+}
+
+func shortDigest(d string) string {
+	if len(d) > 19 {
+		return d[:19]
+	}
+	return d
+}
+
+// repoDigestFor returns the digest recorded for repo among an image's repo digests.
+func repoDigestFor(repoDigests []string, repo string) string {
+	want := familiarRepo(repo)
+	for _, rd := range repoDigests {
+		name, digest, ok := strings.Cut(rd, "@")
+		if ok && familiarRepo(name) == want {
+			return digest
+		}
+	}
+	return ""
+}
+
+// familiarRepo reduces a Docker Hub repository to the short form Docker prints ("library/nginx" -> "nginx").
+func familiarRepo(repo string) string {
+	repo = strings.TrimPrefix(repo, "docker.io/")
+	repo = strings.TrimPrefix(repo, "index.docker.io/")
+	if rest, ok := strings.CutPrefix(repo, "library/"); ok && !strings.Contains(rest, "/") {
+		return rest
+	}
+	return repo
+}
+
 func (sc *Scanner) isExcluded(image, tag string, exclusions []*UpdateExclusion) bool {
+	repo, _, _ := ParseImageRef(image)
 	for _, e := range exclusions {
 		switch e.PatternType {
 		case ExclusionTypeImage:
-			if matched, _ := filepath.Match(e.Pattern, image); matched {
-				return true
+			// The full reference is still tried so that patterns written with a tag keep matching.
+			for _, candidate := range []string{repo, familiarRepo(repo), image} {
+				if matched, _ := filepath.Match(e.Pattern, candidate); matched {
+					return true
+				}
 			}
 		case ExclusionTypeTag:
 			if matched, _ := filepath.Match(e.Pattern, tag); matched {

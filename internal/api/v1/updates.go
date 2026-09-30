@@ -175,8 +175,8 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 	ci, ciErr := h.containers.GetContainerInfo(r.Context(), containerID)
 	if ciErr == nil {
 		resp["update_command"] = h.service.GenerateUpdateCommand(ci, u.LatestTag)
-		if u.PreviousDigest != "" {
-			resp["rollback_command"] = h.service.GenerateRollbackCommand(ci, u.PreviousDigest)
+		if cmd := h.service.GenerateRollbackCommand(ci, u); cmd != "" {
+			resp["rollback_command"] = cmd
 		}
 		// Tag filter labels (raw pattern strings, shown as configured even if regex was invalid)
 		if v := ci.Labels["maintenant.update.tag-include"]; v != "" {

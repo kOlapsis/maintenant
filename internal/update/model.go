@@ -142,6 +142,7 @@ type UpdateResult struct {
 	HasBreakingChanges bool
 	SourceURL          string
 	PreviousDigest     string
+	AlertOn            string
 }
 
 // ScanError represents an error scanning a specific container.
@@ -306,6 +307,21 @@ type EcosystemResult struct {
 	DetectionMethod string `json:"detection_method"`
 }
 
+// Accepted values of the maintenant.update.track label.
+const (
+	TrackMajor  = "major"
+	TrackMinor  = "minor"
+	TrackPatch  = "patch"
+	TrackDigest = "digest"
+)
+
+// Accepted values of the maintenant.update.alert_on label.
+const (
+	AlertOnAll      = "all"
+	AlertOnCritical = "critical"
+	AlertOnNone     = "none"
+)
+
 // UpdateConfig holds parsed maintenant.update.* label values.
 type UpdateConfig struct {
 	Enabled     bool
@@ -317,4 +333,19 @@ type UpdateConfig struct {
 	DigestOnly  bool
 	TagInclude  *regexp.Regexp // compiled tag-include regex, nil if absent/invalid
 	TagExclude  *regexp.Regexp // compiled tag-exclude regex, nil if absent/invalid
+}
+
+// TrackLevel returns the widest change the labels allow: a Track* value, digest_only and ignore_major applied.
+func (cfg UpdateConfig) TrackLevel() string {
+	if cfg.DigestOnly {
+		return TrackDigest
+	}
+	level := cfg.Track
+	if level == "" {
+		level = TrackMajor
+	}
+	if cfg.IgnoreMajor && level == TrackMajor {
+		return TrackMinor
+	}
+	return level
 }

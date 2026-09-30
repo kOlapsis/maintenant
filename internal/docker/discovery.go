@@ -128,6 +128,31 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 	return results, nil
 }
 
+// ContainerRepoDigests maps each container ID to the repo digests of the image it runs, empty for an image never pulled nor pushed.
+func (c *Client) ContainerRepoDigests(ctx context.Context) (map[string][]string, error) {
+	containers, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("container list: %w", err)
+	}
+	images, err := c.cli.ImageList(ctx, client.ImageListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("image list: %w", err)
+	}
+
+	digestsByImage := make(map[string][]string, len(images.Items))
+	for _, img := range images.Items {
+		digestsByImage[img.ID] = img.RepoDigests
+	}
+
+	out := make(map[string][]string, len(containers.Items))
+	for _, dc := range containers.Items {
+		if digests, ok := digestsByImage[dc.ImageID]; ok {
+			out[dc.ID] = digests
+		}
+	}
+	return out, nil
+}
+
 // inspectResult holds the mapped container along with its extracted security config.
 type inspectResult struct {
 	Container      *cmodel.Container

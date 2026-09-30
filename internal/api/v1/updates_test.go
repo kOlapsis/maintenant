@@ -169,3 +169,66 @@ func TestHandleListAgents_CarriesOSSupport(t *testing.T) {
 	}
 	t.Fatal("agent web-03 missing from the listing")
 }
+
+type fixedContainerInfo struct {
+	info update.ContainerInfo
+}
+
+func (f fixedContainerInfo) GetContainerInfo(context.Context, string) (update.ContainerInfo, error) {
+	return f.info, nil
+}
+
+func TestHandleGetContainerUpdate_RollbackReturnsToThePreviousImage(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	db := storetest.Open(t, logger)
+	updateStore := store.NewUpdateStore(db)
+
+	scanID, err := updateStore.InsertScanRecord(ctx, &update.ScanRecord{StartedAt: time.Now(), Status: update.ScanStatusCompleted})
+	require.NoError(t, err)
+	_, err = updateStore.InsertImageUpdate(ctx, &update.ImageUpdate{
+		ScanID:         scanID,
+		ContainerID:    "ctr1",
+		ContainerName:  "app-web-1",
+		Image:          "nginx:latest",
+		CurrentTag:     "latest",
+		CurrentDigest:  "sha256:old",
+		Registry:       "registry-1.docker.io",
+		LatestTag:      "latest",
+		LatestDigest:   "sha256:new",
+		UpdateType:     update.UpdateTypeDigestOnly,
+		PreviousDigest: "sha256:old",
+		Status:         update.StatusAvailable,
+		DetectedAt:     time.Now(),
+	})
+	require.NoError(t, err)
+
+	h := NewUpdateHandler(update.NewService(update.Deps{
+		Store:      updateStore,
+		Scanner:    update.NewScanner(update.NewRegistryClient(), updateStore, logger),
+		Containers: noContainers{},
+		Logger:     logger,
+	}), updateStore, fixedContainerInfo{info: update.ContainerInfo{
+		ExternalID:         "ctr1",
+		Name:               "app-web-1",
+		Image:              "nginx:latest",
+		OrchestrationGroup: "app",
+		OrchestrationUnit:  "web",
+		ComposeWorkingDir:  "/srv/app",
+		RuntimeType:        "docker",
+	}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/updates/ctr1", nil)
+	req.SetPathValue("container_id", "ctr1")
+	rec := httptest.NewRecorder()
+	h.HandleGetContainerUpdate(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		UpdateCommand   string `json:"update_command"`
+		RollbackCommand string `json:"rollback_command"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.NotEqual(t, body.UpdateCommand, body.RollbackCommand)
+	assert.Contains(t, body.RollbackCommand, "docker tag nginx@sha256:old nginx:latest")
+}

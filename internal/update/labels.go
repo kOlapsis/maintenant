@@ -15,7 +15,7 @@ const updateLabelPrefix = "maintenant.update."
 func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConfig {
 	cfg := UpdateConfig{
 		Enabled: true, // enabled by default
-		AlertOn: "all",
+		AlertOn: AlertOnAll,
 	}
 
 	for key, value := range labels {
@@ -27,17 +27,14 @@ func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConf
 
 		switch suffix {
 		case "enabled":
-			switch strings.ToLower(value) {
-			case "false", "0", "no":
-				cfg.Enabled = false
-			case "true", "1", "yes":
-				cfg.Enabled = true
-			default:
+			if b, ok := parseLabelBool(value); ok {
+				cfg.Enabled = b
+			} else {
 				logger.Warn("invalid maintenant.update.enabled value", "value", value)
 			}
 		case "track":
 			switch strings.ToLower(value) {
-			case "major", "minor", "patch", "digest":
+			case TrackMajor, TrackMinor, TrackPatch, TrackDigest:
 				cfg.Track = strings.ToLower(value)
 			default:
 				logger.Warn("invalid maintenant.update.track value", "value", value)
@@ -45,25 +42,25 @@ func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConf
 		case "pin":
 			cfg.Pin = value
 		case "ignore_major":
-			switch strings.ToLower(value) {
-			case "true", "1", "yes":
-				cfg.IgnoreMajor = true
-			case "false", "0", "no":
-				cfg.IgnoreMajor = false
+			if b, ok := parseLabelBool(value); ok {
+				cfg.IgnoreMajor = b
+			} else {
+				logger.Warn("invalid maintenant.update.ignore_major value", "value", value)
 			}
 		case "registry":
 			cfg.Registry = value
 		case "alert_on":
 			switch strings.ToLower(value) {
-			case "all", "critical", "none":
+			case AlertOnAll, AlertOnCritical, AlertOnNone:
 				cfg.AlertOn = strings.ToLower(value)
 			default:
 				logger.Warn("invalid maintenant.update.alert_on value", "value", value)
 			}
 		case "digest_only":
-			switch strings.ToLower(value) {
-			case "true", "1", "yes":
-				cfg.DigestOnly = true
+			if b, ok := parseLabelBool(value); ok {
+				cfg.DigestOnly = b
+			} else {
+				logger.Warn("invalid maintenant.update.digest_only value", "value", value)
 			}
 		case "tag-include":
 			if value == "" {
@@ -91,4 +88,15 @@ func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConf
 	}
 
 	return cfg
+}
+
+func parseLabelBool(value string) (bool, bool) {
+	switch strings.ToLower(value) {
+	case "true", "1", "yes":
+		return true, true
+	case "false", "0", "no":
+		return false, true
+	default:
+		return false, false
+	}
 }

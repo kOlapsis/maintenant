@@ -155,6 +155,15 @@ func SortTags(tags []string) []*semver.Version {
 	return versions
 }
 
+// isFixedVersionTag reports whether a tag names a single release (major.minor.patch) rather than a line the registry moves.
+func isFixedVersionTag(tag string) bool {
+	versionPart, _ := splitVariant(tag)
+	if _, err := semver.NewVersion(versionPart); err != nil {
+		return false
+	}
+	return semverPrecision(versionPart) >= 3
+}
+
 // digestOnly returns the current tag for digest comparison when the registry still
 // publishes it, so a republished or moved tag is detected. It never switches channel.
 func digestOnly(currentTag string, allTags []string) (string, UpdateType) {
@@ -168,7 +177,7 @@ func digestOnly(currentTag string, allTags []string) (string, UpdateType) {
 // written the same way: same variant suffix, same "v" prefix, same number of numeric
 // components. Candidates whose major has far more digits than the current one are
 // build IDs (e.g. "608111629"), not releases.
-func bestFloatingUpdate(currentVer *semver.Version, versionPart, variant string, allTags []string) *tagVersion {
+func bestFloatingUpdate(currentVer *semver.Version, versionPart, variant string, allTags []string, level string) *tagVersion {
 	candidates := sortTagVersions(allTags, variant, false, semverPrecision(versionPart))
 
 	var best *tagVersion
@@ -181,11 +190,23 @@ func bestFloatingUpdate(currentVer *semver.Version, versionPart, variant string,
 		if digitCount(c.version.Major()) > digitCount(currentVer.Major())+1 {
 			continue
 		}
-		if c.version.GreaterThan(currentVer) {
+		if c.version.GreaterThan(currentVer) && withinTrack(currentVer, c.version, level) {
 			best = c
 		}
 	}
 	return best
+}
+
+// withinTrack reports whether moving from current to candidate stays inside the tracked level.
+func withinTrack(current, candidate *semver.Version, level string) bool {
+	switch level {
+	case TrackMinor:
+		return candidate.Major() == current.Major()
+	case TrackPatch:
+		return candidate.Major() == current.Major() && candidate.Minor() == current.Minor()
+	default:
+		return true
+	}
 }
 
 // FindBestUpdate finds the best available update for the given current tag among all tags.
@@ -197,6 +218,12 @@ func bestFloatingUpdate(currentVer *semver.Version, versionPart, variant string,
 // Only a higher tag of the same shape counts; otherwise the same tag is returned so the
 // scanner compares digests.
 func FindBestUpdate(currentTag string, allTags []string) (bestTag string, updateType UpdateType) {
+	return findBestUpdate(currentTag, allTags, TrackMajor)
+}
+
+// findBestUpdate is FindBestUpdate restricted to candidates within the tracked level
+// (TrackMajor, TrackMinor or TrackPatch).
+func findBestUpdate(currentTag string, allTags []string, level string) (bestTag string, updateType UpdateType) {
 	versionPart, variant := splitVariant(currentTag)
 
 	currentVer, err := semver.NewVersion(versionPart)
@@ -207,7 +234,7 @@ func FindBestUpdate(currentTag string, allTags []string) (bestTag string, update
 
 	// Partial version tag (e.g. "v3", "1.2", "16-bookworm"): floating channel.
 	if semverPrecision(versionPart) < 3 {
-		best := bestFloatingUpdate(currentVer, versionPart, variant, allTags)
+		best := bestFloatingUpdate(currentVer, versionPart, variant, allTags, level)
 		if best == nil {
 			return digestOnly(currentTag, allTags)
 		}
@@ -224,7 +251,7 @@ func FindBestUpdate(currentTag string, allTags []string) (bestTag string, update
 	// Find the highest version greater than current
 	var best *tagVersion
 	for i := range candidates {
-		if candidates[i].version.GreaterThan(currentVer) {
+		if candidates[i].version.GreaterThan(currentVer) && withinTrack(currentVer, candidates[i].version, level) {
 			best = &candidates[i]
 		}
 	}

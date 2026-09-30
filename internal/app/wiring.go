@@ -16,6 +16,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 const restartLoopAlertType = "restart_loop"
@@ -484,6 +485,19 @@ func updateDetectedAlert(m map[string]any, withChangelog bool) alert.Event {
 	}
 }
 
+// updateAlertWanted applies the container's maintenant.update.alert_on label to the severity computed for its update.
+func updateAlertWanted(m map[string]any, severity string) bool {
+	alertOn, _ := m["alert_on"].(string)
+	switch alertOn {
+	case update.AlertOnNone:
+		return false
+	case update.AlertOnCritical:
+		return severity == alert.SeverityCritical
+	default:
+		return true
+	}
+}
+
 // updateResolvedAlert builds the recovery event when a container's update is no
 // longer pending. EntityID uses the same container UID as updateDetectedAlert so
 // the right alert is resolved by dedup key. The caller sets Timestamp.
@@ -532,7 +546,10 @@ func (a *App) wireUpdateCallback() {
 			}
 			sendAlert(updateResolvedAlert(m))
 		case event.UpdateDetected:
-			sendAlert(updateDetectedAlert(m, extension.Allows(extension.CapChangelog)))
+			evt := updateDetectedAlert(m, extension.Allows(extension.CapChangelog))
+			if updateAlertWanted(m, evt.Severity) {
+				sendAlert(evt)
+			}
 		}
 	})
 }
