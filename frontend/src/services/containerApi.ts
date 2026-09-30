@@ -58,10 +58,10 @@ export interface ContainerListResponse {
 
 export interface ContainerDetailResponse extends Container {
   uptime?: {
-    '24h': number | null
-    '7d': number | null
-    '30d': number | null
-    '90d': number | null
+    '24h': number
+    '7d'?: number
+    '30d'?: number
+    '90d'?: number
   }
   recent_transitions?: StateTransition[]
   container_names?: string[]

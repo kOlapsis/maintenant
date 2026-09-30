@@ -11,6 +11,7 @@ type WebhookSubscriptionStore interface {
 	GetByID(ctx context.Context, id string) (*WebhookSubscription, error)
 	Create(ctx context.Context, sub *WebhookSubscription) error
 	Delete(ctx context.Context, id string) error
-	UpdateDeliveryStatus(ctx context.Context, id string, status string, failureCount int) error
+	// RecordDelivery stores a delivery outcome: a failure counts toward the automatic disable, a success resets the count and re-enables.
+	RecordDelivery(ctx context.Context, id string, delivered bool) error
 	ListActive(ctx context.Context) ([]*WebhookSubscription, error)
 }

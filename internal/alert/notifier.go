@@ -41,6 +41,8 @@ type NotificationJob struct {
 	// they already marshalled and signed). When nil, the body is formatted
 	// from Alert.
 	Body []byte
+	// Done, when set, receives the outcome once the last attempt is over.
+	Done func(ctx context.Context, err error)
 }
 
 // jobAlertID returns the job's alert id for logging, or "" when the job has no
@@ -208,6 +210,9 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 				"channel_id", job.Channel.ID,
 				"channel_type", job.Channel.Type,
 			)
+			if job.Done != nil {
+				job.Done(ctx, nil)
+			}
 			return
 		}
 
@@ -217,6 +222,9 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 	}
 
 	n.failDelivery(ctx, job.Delivery, sender.FailureMessage(lastErr))
+	if job.Done != nil {
+		job.Done(ctx, lastErr)
+	}
 }
 
 func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, errMsg string) {
@@ -285,6 +293,11 @@ func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChanne
 			"attempt", attempt+1, "channel_id", ch.ID, "channel_type", ch.Type, "alert_id", a.ID, "error", lastErr)
 	}
 	return lastErr
+}
+
+// SendBodyNow posts a pre-rendered body to ch once, with the channel's headers, and returns the HTTP status.
+func (n *Notifier) SendBodyNow(ctx context.Context, ch *NotificationChannel, body []byte) (int, error) {
+	return n.webhook.sendBody(ctx, ch, body)
 }
 
 // SendTestWebhook sends a test notification to verify a channel is reachable.

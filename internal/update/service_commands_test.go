@@ -111,6 +111,21 @@ func TestGenerateRollbackCommand_KubernetesNamesThePodContainer(t *testing.T) {
 	assert.Equal(t, "kubectl set image deployment/api server=ghcr.io/acme/api@sha256:old -n prod", got)
 }
 
+func TestGenerateCommands_KubernetesBarePodIsUpdatedInPlace(t *testing.T) {
+	svc := &Service{}
+	pod := ContainerInfo{
+		Name: "debug", Image: "busybox:1.36", RuntimeType: "kubernetes",
+		OrchestrationUnit: "debug", OrchestrationGroup: "tools", PodContainer: "shell",
+	}
+
+	assert.Equal(t, "kubectl set image pod/debug shell=busybox:1.37 -n tools",
+		svc.GenerateUpdateCommand(pod, "1.37", "sha256:new"))
+	assert.Equal(t, "kubectl set image pod/debug shell=busybox@sha256:old -n tools",
+		svc.GenerateRollbackCommand(pod, &ImageUpdate{
+			Image: "busybox:1.36", CurrentTag: "1.36", LatestTag: "1.37", PreviousDigest: "sha256:old",
+		}))
+}
+
 // A moving tag without a known digest cannot name the image it pointed to before.
 func TestGenerateRollbackCommand_MovingTagWithoutDigest(t *testing.T) {
 	svc := &Service{}

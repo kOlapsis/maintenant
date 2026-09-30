@@ -12,7 +12,6 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/extension"
-	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -144,7 +143,7 @@ func (h *UpdateHandler) HandleGetUpdateSummary(w http.ResponseWriter, r *http.Re
 	WriteJSON(w, http.StatusOK, resp)
 }
 
-// HandleGetContainerUpdate handles GET /api/v1/updates/{container_id}.
+// HandleGetContainerUpdate handles GET /api/v1/updates/container/{container_id...}.
 func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.Request) {
 	containerID := r.PathValue("container_id")
 	if containerID == "" {
@@ -297,7 +296,7 @@ func (h *UpdateHandler) HandleGetDryRun(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// HandlePinVersion handles POST /api/v1/updates/{container_id}/pin.
+// HandlePinVersion handles POST /api/v1/updates/pin/{container_id...}.
 func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request) {
 	containerID := r.PathValue("container_id")
 	if containerID == "" {
@@ -346,7 +345,7 @@ func (h *UpdateHandler) HandlePinVersion(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// HandleUnpinVersion handles DELETE /api/v1/updates/{container_id}/pin.
+// HandleUnpinVersion handles DELETE /api/v1/updates/pin/{container_id...}.
 func (h *UpdateHandler) HandleUnpinVersion(w http.ResponseWriter, r *http.Request) {
 	containerID := r.PathValue("container_id")
 	if containerID == "" {
@@ -418,19 +417,19 @@ func (h *UpdateHandler) HandleCreateExclusion(w http.ResponseWriter, r *http.Req
 		CreatedAt:   time.Now(),
 	}
 
-	id, err := h.store.InsertExclusion(r.Context(), exc)
+	created, err := h.store.CreateExclusion(r.Context(), exc)
 	if err != nil {
-		if store.IsUniqueViolation(err) {
-			WriteError(w, http.StatusConflict, "DUPLICATE_EXCLUSION", "An exclusion with this pattern already exists")
-			return
-		}
 		slog.Error("failed to create exclusion", "error", err, "pattern", input.Pattern)
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create exclusion")
 		return
 	}
 
-	WriteJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":           id,
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	WriteJSON(w, status, map[string]interface{}{
+		"id":           exc.ID,
 		"pattern":      exc.Pattern,
 		"pattern_type": string(exc.PatternType),
 		"created_at":   exc.CreatedAt,

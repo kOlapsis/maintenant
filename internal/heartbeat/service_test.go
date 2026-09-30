@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -456,7 +457,7 @@ func TestService_CreateHeartbeat_GraceExceedsInterval(t *testing.T) {
 func TestService_CreateHeartbeat_LicenseLimitReached(t *testing.T) {
 	store := newMockStore()
 	// Pre-fill store with heartbeats up to the limit.
-	lc := &DefaultLicenseChecker{MaxHeartbeats: 2}
+	lc := heartbeatCap(2)
 	seedHeartbeat(store, "existing-1", StatusUp, AlertNormal)
 	seedHeartbeat(store, "existing-2", StatusUp, AlertNormal)
 
@@ -1067,22 +1068,15 @@ func TestService_ProcessExitCodePing_PayloadPreservedForPro(t *testing.T) {
 	assert.Equal(t, payload, *lastPing.Payload)
 }
 
-// TestDefaultLicenseChecker_Unlimited: -1 means no cap, not a cap of -1.
-func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxHeartbeats: -1}
-	for _, count := range []int{0, 1, 5, 500} {
-		if !c.CanCreateHeartbeat(count) {
-			t.Errorf("CanCreateHeartbeat(%d) = false with an unlimited cap", count)
-		}
-	}
-}
+type heartbeatCap int
 
-func TestDefaultLicenseChecker_Capped(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxHeartbeats: 5}
-	if !c.CanCreateHeartbeat(4) {
-		t.Error("the fifth heartbeat must be allowed")
-	}
-	if c.CanCreateHeartbeat(5) {
-		t.Error("the sixth heartbeat must be refused")
-	}
+func (c heartbeatCap) CanCreateHeartbeat(currentCount int) bool { return currentCount < int(c) }
+func (heartbeatCap) CanStorePayload() bool                      { return false }
+
+func TestDefaultLicenseChecker_AppliesTheRunningEditionCap(t *testing.T) {
+	limit := extension.Limit(extension.ResourceHeartbeats)
+	require.Positive(t, limit)
+	c := DefaultLicenseChecker{}
+	assert.True(t, c.CanCreateHeartbeat(limit-1))
+	assert.False(t, c.CanCreateHeartbeat(limit))
 }

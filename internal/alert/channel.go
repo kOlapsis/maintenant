@@ -87,6 +87,11 @@ func (s *webhookSender) SendTest(ctx context.Context, ch *NotificationChannel, t
 	if err != nil {
 		return 0, err
 	}
+	return s.sendBody(ctx, ch, body)
+}
+
+// sendBody posts body once and reports the HTTP status, with the start of the answer when it is not a 2xx.
+func (s *webhookSender) sendBody(ctx context.Context, ch *NotificationChannel, body []byte) (int, error) {
 	req, err := s.request(ctx, ch, body)
 	if err != nil {
 		return 0, err

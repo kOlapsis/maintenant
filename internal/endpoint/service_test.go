@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -703,7 +704,7 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 		Store:          store,
 		Engine:         noopEngine(),
 		Logger:         noopLogger(),
-		LicenseChecker: &DefaultLicenseChecker{MaxEndpoints: 2},
+		LicenseChecker: endpointCap(2),
 	})
 	ctx := context.Background()
 
@@ -738,7 +739,7 @@ func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) 
 		Store:          store,
 		Engine:         noopEngine(),
 		Logger:         noopLogger(),
-		LicenseChecker: &DefaultLicenseChecker{MaxEndpoints: 2},
+		LicenseChecker: endpointCap(2),
 	})
 	ctx := context.Background()
 
@@ -746,7 +747,7 @@ func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) 
 	for i := 1; i <= 5; i++ {
 		labels[fmt.Sprintf("maintenant.endpoint.%d.http", i)] = fmt.Sprintf("http://svc:80%d/health", i)
 	}
-	svc.SyncEndpoints(ctx, "web", "container-1", labels, "", "")
+	svc.SyncEndpoints(ctx, "web", "container-1", labels)
 
 	all, err := store.ListEndpoints(ctx, ListEndpointsOpts{})
 	require.NoError(t, err)
@@ -772,26 +773,16 @@ func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) 
 	require.Equal(t, 2, count, "the reported usage never exceeds the cap")
 }
 
-// TestDefaultLicenseChecker_Unlimited: extension.Limit reports -1 for an
-// uncapped resource, and the checker must read that as "no cap" rather than as
-// a maximum of minus one, which would refuse every creation.
-func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxEndpoints: -1}
-	for _, count := range []int{0, 1, 10, 1000} {
-		if !c.CanCreateEndpoint(count) {
-			t.Errorf("CanCreateEndpoint(%d) = false with an unlimited cap", count)
-		}
-	}
-}
+type endpointCap int
 
-func TestDefaultLicenseChecker_Capped(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxEndpoints: 10}
-	if !c.CanCreateEndpoint(9) {
-		t.Error("the tenth endpoint must be allowed")
-	}
-	if c.CanCreateEndpoint(10) {
-		t.Error("the eleventh endpoint must be refused")
-	}
+func (c endpointCap) CanCreateEndpoint(currentCount int) bool { return currentCount < int(c) }
+
+func TestDefaultLicenseChecker_AppliesTheRunningEditionCap(t *testing.T) {
+	limit := extension.Limit(extension.ResourceEndpoints)
+	require.Positive(t, limit)
+	c := DefaultLicenseChecker{}
+	assert.True(t, c.CanCreateEndpoint(limit-1))
+	assert.False(t, c.CanCreateEndpoint(limit))
 }
 
 // ---------------------------------------------------------------------------
@@ -1106,13 +1097,13 @@ func TestService_SyncEndpoints_IgnoredContainerLosesItsEndpoints(t *testing.T) {
 	ctx := context.Background()
 	labels := map[string]string{"maintenant.endpoint.http": "http://web:8080/health"}
 
-	svc.SyncEndpoints(ctx, "web", "container-1", labels, "", "")
+	svc.SyncEndpoints(ctx, "web", "container-1", labels)
 	eps, err := store.ListEndpointsByExternalID(ctx, uid.LocalAgent, "container-1")
 	require.NoError(t, err)
 	require.Len(t, eps, 1)
 
 	labels["maintenant.ignore"] = "true"
-	svc.SyncEndpoints(ctx, "web", "container-1", labels, "", "")
+	svc.SyncEndpoints(ctx, "web", "container-1", labels)
 	ep, err := store.GetEndpointByID(ctx, eps[0].ID)
 	require.NoError(t, err)
 	assert.False(t, ep.Active, "an ignored container keeps no endpoint")

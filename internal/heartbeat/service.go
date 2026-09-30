@@ -26,20 +26,14 @@ type LicenseChecker interface {
 	CanStorePayload() bool
 }
 
-// DefaultLicenseChecker caps how many heartbeats may exist. A negative maximum
-// means unlimited (extension.Limit reports -1 for an uncapped resource).
-type DefaultLicenseChecker struct {
-	MaxHeartbeats int
+// DefaultLicenseChecker caps heartbeats at the running edition's limit, read at every call.
+type DefaultLicenseChecker struct{}
+
+func (DefaultLicenseChecker) CanCreateHeartbeat(currentCount int) bool {
+	return extension.WithinLimit(extension.ResourceHeartbeats, currentCount)
 }
 
-func (c *DefaultLicenseChecker) CanCreateHeartbeat(currentCount int) bool {
-	if c.MaxHeartbeats < 0 {
-		return true
-	}
-	return currentCount < c.MaxHeartbeats
-}
-
-func (c *DefaultLicenseChecker) CanStorePayload() bool {
+func (DefaultLicenseChecker) CanStorePayload() bool {
 	return false
 }
 
@@ -54,7 +48,7 @@ var (
 type Deps struct {
 	Store          HeartbeatStore // required
 	Logger         *slog.Logger   // required
-	LicenseChecker LicenseChecker // optional, defaults to extension.Limit
+	LicenseChecker LicenseChecker // optional, defaults to DefaultLicenseChecker
 	EventCallback  EventCallback  // optional — nil-safe
 	AlertCallback  AlertCallback  // optional — nil-safe
 	BaseURL        string         // optional
@@ -80,7 +74,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxHeartbeats: extension.Limit(extension.ResourceHeartbeats)}
+		lc = DefaultLicenseChecker{}
 	}
 	return &Service{
 		store:          d.Store,

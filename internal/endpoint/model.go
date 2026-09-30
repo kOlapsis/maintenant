@@ -87,8 +87,6 @@ type Endpoint struct {
 	Active               bool           `json:"active"`
 	FirstSeenAt          time.Time      `json:"first_seen_at"`
 	LastSeenAt           time.Time      `json:"last_seen_at"`
-	OrchestrationGroup   string         `json:"orchestration_group,omitempty"`
-	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
 	Source               EndpointSource `json:"source"`
 	Name                 string         `json:"name,omitempty"`
 	AgentID              string         `json:"agent_id"`
@@ -150,13 +148,12 @@ func DefaultConfig() EndpointConfig {
 
 // ListEndpointsOpts configures endpoint listing queries.
 type ListEndpointsOpts struct {
-	Status             string
-	ContainerName      string
-	OrchestrationGroup string
-	EndpointType       string
-	Source             string
-	IncludeInactive    bool
-	AgentFilter        *string
+	Status          string
+	ContainerName   string
+	EndpointType    string
+	Source          string
+	IncludeInactive bool
+	AgentFilter     *string
 }
 
 // ListChecksOpts configures check result listing queries.

@@ -112,7 +112,7 @@ type NotificationChannel struct {
 // AlertTrigger is a routing rule that maps an alert filter to one or more channels.
 // Filters are stored as CSV strings; an empty filter matches anything.
 // Filters are combined in AND between fields, OR within a field.
-// FilterScopes is Pro-only (gated at the handler level).
+// FilterScopes needs the advanced filters capability (gated at the handler level).
 type AlertTrigger struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`

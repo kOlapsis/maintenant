@@ -4,9 +4,8 @@
 package v1
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -17,16 +16,22 @@ import (
 	"github.com/kolapsis/maintenant/internal/webhook"
 )
 
+// WebhookTester sends a subscription the test delivery and returns the HTTP status it got.
+type WebhookTester interface {
+	Test(ctx context.Context, sub *webhook.WebhookSubscription) (int, error)
+}
+
 // WebhookHandler handles webhook subscription CRUD endpoints.
 type WebhookHandler struct {
 	store                webhook.WebhookSubscriptionStore
+	tester               WebhookTester
 	logger               *slog.Logger
 	allowPrivateWebhooks bool
 }
 
 // NewWebhookHandler creates a new webhook handler.
-func NewWebhookHandler(store webhook.WebhookSubscriptionStore, logger *slog.Logger, allowPrivateWebhooks bool) *WebhookHandler {
-	return &WebhookHandler{store: store, logger: logger, allowPrivateWebhooks: allowPrivateWebhooks}
+func NewWebhookHandler(store webhook.WebhookSubscriptionStore, tester WebhookTester, logger *slog.Logger, allowPrivateWebhooks bool) *WebhookHandler {
+	return &WebhookHandler{store: store, tester: tester, logger: logger, allowPrivateWebhooks: allowPrivateWebhooks}
 }
 
 // HandleListWebhooks handles GET /api/v1/webhooks.
@@ -150,55 +155,16 @@ func (h *WebhookHandler) HandleTestWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Send a test payload synchronously
-	payload := webhook.WebhookEvent{
-		Type:      "test",
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Data: map[string]interface{}{
-			"message": "maintenant webhook test",
-		},
+	httpStatus, err := h.tester.Test(r.Context(), testSub)
+	result := map[string]interface{}{"status": webhook.DeliveryDelivered}
+	if httpStatus != 0 {
+		result["http_status"] = httpStatus
 	}
-
-	body, err := json.Marshal(payload)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to marshal test payload")
-		return
+		result["status"] = webhook.DeliveryFailed
+		result["error"] = err.Error()
 	}
-
-	// #nosec G704 -- delivered through the SSRF-guarded client below (internal/ssrf).
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, testSub.URL, bytes.NewReader(body))
-	if err != nil {
-		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"status": "failed",
-			"error":  err.Error(),
-		})
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-maintenant-Event", "test")
-	req.Header.Set("X-maintenant-Delivery", uuid.New().String())
-
-	client := ssrf.NewHTTPClient(10*time.Second, h.allowPrivateWebhooks)
-	resp, err := client.Do(req) // #nosec G704 -- ssrf.NewHTTPClient blocks private ranges at dial time.
-	if err != nil {
-		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"status": "failed",
-			"error":  err.Error(),
-		})
-		return
-	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
-
-	status := "delivered"
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		status = "failed"
-	}
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"status":      status,
-		"http_status": resp.StatusCode,
-	})
+	WriteJSON(w, http.StatusOK, result)
 }
 
 var platformWebhookPrefixes = []string{

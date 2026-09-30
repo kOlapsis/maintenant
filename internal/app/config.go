@@ -80,7 +80,7 @@ type Config struct {
 
 	ProxyLabels bool
 
-	// Multi-host agent mode (Pro only)
+	// Multi-host agent mode
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
 
@@ -99,7 +99,7 @@ type Config struct {
 	DemoToken    string
 }
 
-// MultiHostConfig holds multi-server agent configuration (Pro only).
+// MultiHostConfig holds multi-server agent configuration.
 type MultiHostConfig struct {
 	GRPCPublicURL              string
 	GRPCListen                 string

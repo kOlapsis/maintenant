@@ -89,9 +89,8 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 	// serve its own logs, so only gate the local path on it.
 	remote := isRemoteAgent(agentID)
 	if !remote && h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"error":"container monitoring unavailable"}`))
+		WriteError(w, http.StatusServiceUnavailable, "RUNTIME_UNAVAILABLE",
+			"Container monitoring is unavailable: the container runtime is disconnected.")
 		return
 	}
 

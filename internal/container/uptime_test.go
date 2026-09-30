@@ -5,6 +5,7 @@ package container
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -240,45 +241,37 @@ func (m *uptimeStore) DeleteArchivedContainersBefore(_ context.Context, _ time.T
 	return 0, nil
 }
 
-func TestUptimeCalculator_CommunityOnly24h(t *testing.T) {
-	const containerID = "1"
-	store := newUptimeStore(containerID, nil) // no transitions → 100%
-	calc := NewUptimeCalculator(store)
+func TestUptimeCalculator_WindowsFollowTheHistoryCap(t *testing.T) {
+	const day = 24 * time.Hour
+	cases := []struct {
+		name      string
+		maxWindow time.Duration
+		want      []string
+	}{
+		{"7 days", 7 * day, []string{"24h", "7d"}},
+		{"30 days", 30 * day, []string{"24h", "7d", "30d"}},
+		{"90 days", 90 * day, []string{"24h", "7d", "30d", "90d"}},
+		{"below a day", time.Hour, []string{"24h"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			const containerID = "2"
+			calc := NewUptimeCalculator(newUptimeStore(containerID, nil)) // no transitions: 100% everywhere
 
-	result, err := calc.Calculate(context.Background(), containerID, false)
+			result, err := calc.Calculate(context.Background(), containerID, tc.maxWindow)
+			require.NoError(t, err)
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-
-	// 24h must be populated.
-	require.NotNil(t, result.Hours24, "Hours24 must be set for community tier")
-	assert.Equal(t, 100.0, *result.Hours24)
-
-	// Extended windows must be nil for community tier.
-	assert.Nil(t, result.Days7, "Days7 must be nil for community tier")
-	assert.Nil(t, result.Days30, "Days30 must be nil for community tier")
-	assert.Nil(t, result.Days90, "Days90 must be nil for community tier")
-}
-
-func TestUptimeCalculator_ProAllWindows(t *testing.T) {
-	const containerID = "2"
-	store := newUptimeStore(containerID, nil) // no transitions → 100% everywhere
-	calc := NewUptimeCalculator(store)
-
-	result, err := calc.Calculate(context.Background(), containerID, true)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-
-	require.NotNil(t, result.Hours24, "Hours24 must be set")
-	require.NotNil(t, result.Days7, "Days7 must be set for pro tier")
-	require.NotNil(t, result.Days30, "Days30 must be set for pro tier")
-	require.NotNil(t, result.Days90, "Days90 must be set for pro tier")
-
-	assert.Equal(t, 100.0, *result.Hours24)
-	assert.Equal(t, 100.0, *result.Days7)
-	assert.Equal(t, 100.0, *result.Days30)
-	assert.Equal(t, 100.0, *result.Days90)
+			got := map[string]*float64{"24h": result.Hours24, "7d": result.Days7, "30d": result.Days30, "90d": result.Days90}
+			for name, v := range got {
+				if slices.Contains(tc.want, name) {
+					require.NotNil(t, v, "window %s must be computed", name)
+					assert.Equal(t, 100.0, *v)
+				} else {
+					assert.Nil(t, v, "window %s must be left out", name)
+				}
+			}
+		})
+	}
 }
 
 func TestUptimeCalculator_CachesResult(t *testing.T) {
@@ -288,11 +281,11 @@ func TestUptimeCalculator_CachesResult(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := calc.Calculate(ctx, containerID, false)
+	_, err := calc.Calculate(ctx, containerID, 24*time.Hour)
 	require.NoError(t, err)
 
 	// The 24h window result is cached. A second call must not hit the store again.
-	_, err = calc.Calculate(ctx, containerID, false)
+	_, err = calc.Calculate(ctx, containerID, 24*time.Hour)
 	require.NoError(t, err)
 
 	// GetTransitionsInWindow should have been called exactly once across both

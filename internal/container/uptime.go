@@ -32,37 +32,29 @@ func NewUptimeCalculator(store ContainerStore) *UptimeCalculator {
 	return &UptimeCalculator{store: store}
 }
 
-// Calculate computes uptime for a container across all windows.
-// Community tier receives only 24h; Pro+ gets all windows.
-func (u *UptimeCalculator) Calculate(ctx context.Context, containerID string, proLicense bool) (*UptimeResult, error) {
+// Calculate computes a container's uptime over 24h and over every longer window that fits in maxWindow.
+func (u *UptimeCalculator) Calculate(ctx context.Context, containerID string, maxWindow time.Duration) (*UptimeResult, error) {
 	result := &UptimeResult{}
-
-	h24, err := u.calculateWindow(ctx, containerID, 24*time.Hour, "24h")
-	if err != nil {
-		return nil, err
+	windows := []struct {
+		name     string
+		duration time.Duration
+		value    **float64
+	}{
+		{"24h", 24 * time.Hour, &result.Hours24},
+		{"7d", 7 * 24 * time.Hour, &result.Days7},
+		{"30d", 30 * 24 * time.Hour, &result.Days30},
+		{"90d", 90 * 24 * time.Hour, &result.Days90},
 	}
-	result.Hours24 = h24
-
-	if proLicense {
-		d7, err := u.calculateWindow(ctx, containerID, 7*24*time.Hour, "7d")
+	for i, w := range windows {
+		if i > 0 && w.duration > maxWindow {
+			break
+		}
+		pct, err := u.calculateWindow(ctx, containerID, w.duration, w.name)
 		if err != nil {
 			return nil, err
 		}
-		result.Days7 = d7
-
-		d30, err := u.calculateWindow(ctx, containerID, 30*24*time.Hour, "30d")
-		if err != nil {
-			return nil, err
-		}
-		result.Days30 = d30
-
-		d90, err := u.calculateWindow(ctx, containerID, 90*24*time.Hour, "90d")
-		if err != nil {
-			return nil, err
-		}
-		result.Days90 = d90
+		*w.value = pct
 	}
-
 	return result, nil
 }
 

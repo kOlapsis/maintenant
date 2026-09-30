@@ -269,7 +269,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	}
 
 	if err := rt.TryConnect(ctx); err != nil {
-		logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name())
+		logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name(), "error", err)
 		rt.SetDisconnected()
 	}
 
@@ -329,19 +329,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Logger:       logger,
 		RawWindow:    cfg.Retention.Snapshots,
 	})
-	// --- License checkers for quota enforcement ---
-	// The checkers are always injected, built from the single declaration of the
-	// caps: -1 means unlimited, so there is no sentinel to invent and no edition
-	// branch here. Leaving them nil in one edition let the service defaults drift
-	// away from the values the interface reports.
-	certLicenseChecker := &certificate.DefaultLicenseChecker{MaxCertificates: extension.Limit(extension.ResourceCertificates)}
-	endpointLicenseChecker := &endpoint.DefaultLicenseChecker{MaxEndpoints: extension.Limit(extension.ResourceEndpoints)}
-	heartbeatLicenseChecker := &heartbeat.DefaultLicenseChecker{MaxHeartbeats: extension.Limit(extension.ResourceHeartbeats)}
-
 	a.certSvc = certificate.NewService(certificate.Deps{
-		Store:          certStore,
-		Logger:         logger,
-		LicenseChecker: certLicenseChecker,
+		Store:  certStore,
+		Logger: logger,
 	})
 
 	// --- Endpoint monitoring ---
@@ -355,19 +345,17 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		}
 	}, logger)
 	a.endpointSvc = endpoint.NewService(endpoint.Deps{
-		Store:          epStore,
-		Engine:         a.checkEngine,
-		Logger:         logger,
-		LicenseChecker: endpointLicenseChecker,
+		Store:  epStore,
+		Engine: a.checkEngine,
+		Logger: logger,
 	})
 	alertDetector := alert.NewEndpointAlertDetector()
 
 	// --- Heartbeat monitoring ---
 	a.heartbeatSvc = heartbeat.NewService(heartbeat.Deps{
-		Store:          hbStore,
-		Logger:         logger,
-		LicenseChecker: heartbeatLicenseChecker,
-		BaseURL:        cfg.BaseURL,
+		Store:   hbStore,
+		Logger:  logger,
+		BaseURL: cfg.BaseURL,
 	})
 	a.outboundSvc = outbound.NewService(outbound.Deps{
 		Store:   store.NewOutboundHeartbeatStore(db),
@@ -479,7 +467,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Incidents:   incidentStore,
 		Maintenance: maintenanceStore,
 		Broadcaster: func(eventType string, data any) {
-			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+			evt := v1.SSEEvent{Type: eventType, Data: data}
+			a.statusBroker.Broadcast(evt)
+			a.broker.Broadcast(evt)
 		},
 	})
 	a.wireStatusProvider()
@@ -514,7 +504,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	registryClient := update.NewRegistryClient()
 	updateScanner := update.NewScanner(registryClient, updateStore, logger)
 	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc, logger)
-	if fetcher := updateDetailsFetcher(a.rt); fetcher != nil {
+	if fetcher := updateDetailsFetcher(a.rt, logger); fetcher != nil {
 		containerAdapter.WithDetailsFetcher(fetcher)
 	}
 
@@ -621,7 +611,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		PersonalizationSvc: a.personalizationSvc,
 		StatusMailer:       a.statusMailer,
 		// Webhooks
-		WebhookStore: webhookStore,
+		WebhookStore:  webhookStore,
+		WebhookTester: a.webhookDispatcher,
 		// UI extras
 		UptimeDaily:      a.uptimeStore,
 		LogStreamer:      rt,
@@ -647,7 +638,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		SwarmTopologyStore: a.swarmTopologyStore,
 		// Kubernetes (per-agent store-backed reads)
 		KubernetesStore: a.k8sStore,
-		// Multi-host agents (Pro)
+		// Multi-host agents
 		AgentStore:          a.agentStore,
 		AgentSessions:       a.agentSessions,
 		GRPCPublicURL:       cfg.MultiHost.GRPCPublicURL,
@@ -660,6 +651,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		MaxBodySize:          cfg.MaxBodySize,
 		BuildVersion:         cfg.Version,
 		OrganisationName:     cfg.OrgName,
+		StatusURL:            cfg.StatusURL,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 		TrustedProxies:       trustedProxies,
 		DemoMode:             cfg.DemoMode,
@@ -821,10 +813,6 @@ func (a *App) Start(ctx context.Context) error {
 	// Runs here too so DB-backed monitors are swept even without a container runtime.
 	a.pruneOrphanAlerts(ctx)
 
-	if a.escalationSvc != nil && extension.Allows(extension.CapAlertEscalation) {
-		go a.escalationSvc.RunRetentionLoop(ctx)
-		a.logger.Info("escalation retention loop started")
-	}
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
@@ -944,7 +932,7 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}
 
-	// Embedded agent (mode=server + --embedded-agent + Pro).
+	// Embedded agent (mode=server + --embedded-agent + multi-host plan).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
 	if a.serveAgents != nil && a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
@@ -1025,7 +1013,7 @@ func (a *App) Shutdown() error {
 
 // startEmbeddedAgent launches a local agent goroutine connecting to the local gRPC endpoint.
 // If the agent is not yet enrolled, a short-lived enrollment token is auto-created.
-// Called only when mode=server, --embedded-agent, and Pro license are all active.
+// Called only when mode=server, --embedded-agent and the multi-host plan are all active.
 func (a *App) startEmbeddedAgent(ctx context.Context) {
 	dataDir := filepath.Dir(a.cfg.DBPath)
 	agentDataDir := filepath.Join(dataDir, "embedded-agent")

@@ -79,8 +79,8 @@ func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, 
 }
 func (s *stubStore) GetVersionPin(_ context.Context, _ string) (*VersionPin, error) { return nil, nil }
 func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error             { return nil }
-func (s *stubStore) InsertExclusion(_ context.Context, _ *UpdateExclusion) (string, error) {
-	return "", nil
+func (s *stubStore) CreateExclusion(_ context.Context, _ *UpdateExclusion) (bool, error) {
+	return false, nil
 }
 func (s *stubStore) ListExclusions(_ context.Context) ([]*UpdateExclusion, error) {
 	return s.exclusions, nil

@@ -187,10 +187,16 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		}
 	})
 
+	// Endpoint events: the alerts they announce are raised by the alert callback below.
+	a.endpointSvc.SetEventCallback(func(eventType string, data any) {
+		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		if m, ok := data.(map[string]any); ok && eventType == event.EndpointStatusChanged {
+			a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", toString(m["endpoint_id"]))
+		}
+	})
+
 	// Endpoint alerts
 	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, any) {
-		a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", ep.ID)
-
 		epName := ep.ContainerName
 		if epName == "" {
 			epName = ep.Name

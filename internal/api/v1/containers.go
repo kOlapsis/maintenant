@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -281,7 +282,7 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 	// Add uptime if calculator is available
 	if h.uptime != nil {
-		uptimeResult, err := h.uptime.Calculate(r.Context(), c.ID, false)
+		uptimeResult, err := h.uptime.Calculate(r.Context(), c.ID, extension.MaxHistoryWindow().Duration)
 		if err == nil && uptimeResult != nil {
 			detail["uptime"] = uptimeResult
 		}

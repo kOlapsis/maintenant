@@ -94,7 +94,8 @@ type HandlerDeps struct {
 	StatusMailer       status.Mailer
 
 	// Webhooks
-	WebhookStore webhook.WebhookSubscriptionStore
+	WebhookStore  webhook.WebhookSubscriptionStore
+	WebhookTester WebhookTester
 
 	// UI extras
 	UptimeDaily      UptimeDailyFetcher
@@ -211,7 +212,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Webhook management
 	if d.WebhookStore != nil {
-		wh := NewWebhookHandler(d.WebhookStore, d.Logger, d.AllowPrivateWebhooks)
+		wh := NewWebhookHandler(d.WebhookStore, d.WebhookTester, d.Logger, d.AllowPrivateWebhooks)
 		r.mux.HandleFunc("GET /api/v1/webhooks", wh.HandleListWebhooks)
 		r.mux.HandleFunc("POST /api/v1/webhooks", wh.HandleCreateWebhook)
 		r.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", wh.HandleDeleteWebhook)

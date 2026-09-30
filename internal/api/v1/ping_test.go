@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/store"
@@ -23,11 +24,13 @@ import (
 )
 
 func TestPing_SourceIPIsResolvedLikeTheRateLimit(t *testing.T) {
+	prev := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	t.Cleanup(func() { extension.CurrentEdition = prev })
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := heartbeat.NewService(heartbeat.Deps{
-		Store:          store.NewHeartbeatStore(storetest.Open(t, logger)),
-		Logger:         logger,
-		LicenseChecker: &heartbeat.DefaultLicenseChecker{MaxHeartbeats: -1},
+		Store:  store.NewHeartbeatStore(storetest.Open(t, logger)),
+		Logger: logger,
 	})
 	resolver := ratelimit.NewClientIPResolver([]netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")})
 

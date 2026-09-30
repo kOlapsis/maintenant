@@ -160,7 +160,7 @@ func acknowledgeAlertHandler(svc *Services) gomcp.ToolHandlerFor[acknowledgeAler
 			return nil, nil, fmt.Errorf("failed to acknowledge alert: %w", err)
 		}
 
-		// Best-effort: terminate active escalation runs (Pro). Noop in CE.
+		// Best-effort: stop the escalation runs of this alert.
 		if svc.Escalator != nil {
 			if err := svc.Escalator.OnAlertAcknowledged(ctx, input.AlertID, alert.Acknowledgment{By: by, At: now}); err != nil && svc.Logger != nil {
 				svc.Logger.Warn("mcp: OnAlertAcknowledged hook error", "error", err, "alert_id", input.AlertID)

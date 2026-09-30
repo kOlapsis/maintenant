@@ -200,7 +200,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         status: s.status,
         statusLabel: s.label,
         subtitle: `${e.endpoint_type.toUpperCase()} - ${e.container_name}`,
-        group: e.orchestration_group || null,
+        group: null,
         sparklineData: epSparkline?.length ? epSparkline : null,
         sparklineType: 'latency',
         metricValue: e.last_response_time_ms != null ? `${e.last_response_time_ms}ms` : null,

@@ -626,18 +626,41 @@ func (s *UpdateStore) DeleteVersionPin(ctx context.Context, containerID string) 
 
 // --- Update exclusions ---
 
-func (s *UpdateStore) InsertExclusion(ctx context.Context, e *update.UpdateExclusion) (string, error) {
-	e.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
-		`INSERT INTO update_exclusions (id, pattern, pattern_type, created_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(pattern, pattern_type) DO UPDATE SET created_at=excluded.created_at`,
-		e.ID, e.Pattern, string(e.PatternType), e.CreatedAt.Unix(),
-	)
+// CreateExclusion stores e unless the same pattern and type already exist, and
+// fills e with the stored row either way. It reports whether e was created.
+func (s *UpdateStore) CreateExclusion(ctx context.Context, e *update.UpdateExclusion) (bool, error) {
+	created := false
+	err := s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if err := tx.Serialize(ctx, "update_exclusions"); err != nil {
+			return err
+		}
+		var id string
+		var createdAt int64
+		err := tx.QueryRowContext(ctx,
+			`SELECT id, created_at FROM update_exclusions WHERE pattern = ? AND pattern_type = ?`,
+			e.Pattern, string(e.PatternType)).Scan(&id, &createdAt)
+		switch {
+		case err == nil:
+			e.ID = id
+			e.CreatedAt = time.Unix(createdAt, 0)
+			return nil
+		case !errors.Is(err, sql.ErrNoRows):
+			return err
+		}
+		e.ID = uid.New()
+		e.CreatedAt = e.CreatedAt.Truncate(time.Second)
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO update_exclusions (id, pattern, pattern_type, created_at) VALUES (?, ?, ?, ?)`,
+			e.ID, e.Pattern, string(e.PatternType), e.CreatedAt.Unix()); err != nil {
+			return err
+		}
+		created = true
+		return nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("insert exclusion: %w", err)
+		return false, fmt.Errorf("create exclusion: %w", err)
 	}
-	return e.ID, nil
+	return created, nil
 }
 
 func (s *UpdateStore) ListExclusions(ctx context.Context) ([]*update.UpdateExclusion, error) {
@@ -739,6 +762,15 @@ func (s *UpdateStore) CleanupExpired(ctx context.Context, olderThan time.Time) (
 		`DELETE FROM cve_cache WHERE expires_at < ?`, time.Now().Unix())
 	if err != nil {
 		return totalDeleted, fmt.Errorf("cleanup cve cache: %w", err)
+	}
+	totalDeleted += res.RowsAffected
+
+	res, err = s.writer.Exec(ctx,
+		`DELETE FROM digest_baselines WHERE NOT EXISTS (
+			SELECT 1 FROM containers c
+			WHERE c.external_id = digest_baselines.container_id AND c.archived = 0)`)
+	if err != nil {
+		return totalDeleted, fmt.Errorf("cleanup digest baselines: %w", err)
 	}
 	totalDeleted += res.RowsAffected
 

@@ -63,12 +63,11 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 	q := r.URL.Query()
 
 	opts := endpoint.ListEndpointsOpts{
-		Status:             q.Get("status"),
-		ContainerName:      q.Get("container"),
-		OrchestrationGroup: q.Get("orchestration_group"),
-		EndpointType:       q.Get("type"),
-		Source:             q.Get("source"),
-		IncludeInactive:    q.Get("include_inactive") == "true",
+		Status:          q.Get("status"),
+		ContainerName:   q.Get("container"),
+		EndpointType:    q.Get("type"),
+		Source:          q.Get("source"),
+		IncludeInactive: q.Get("include_inactive") == "true",
 	}
 	if a := q.Get("agent_id"); a != "" {
 		opts.AgentFilter = &a

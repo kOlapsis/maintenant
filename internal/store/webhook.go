@@ -85,8 +85,7 @@ func (s *WebhookStoreImpl) GetByID(ctx context.Context, id string) (*webhook.Web
 	var secret sql.NullString
 	var eventTypesStr string
 	var lastStatus sql.NullString
-	var lastDeliveryAt sql.NullString
-	var createdAt string
+	var lastDeliveryAt, createdAt any
 
 	err := row.Scan(&sub.ID, &sub.Name, &sub.URL, &secret,
 		&eventTypesStr, &sub.IsActive, &lastStatus, &lastDeliveryAt,
@@ -117,7 +116,7 @@ func (s *WebhookStoreImpl) Create(ctx context.Context, sub *webhook.WebhookSubsc
 		`INSERT INTO webhook_subscriptions (id, name, url, secret, event_types, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		sub.ID, sub.Name, sub.URL, secretVal,
-		string(eventTypesJSON), sub.CreatedAt.UTC().Format(time.RFC3339))
+		string(eventTypesJSON), sub.CreatedAt.Unix())
 	if err != nil {
 		return fmt.Errorf("create webhook: %w", err)
 	}
@@ -136,22 +135,20 @@ func (s *WebhookStoreImpl) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *WebhookStoreImpl) UpdateDeliveryStatus(ctx context.Context, id string, status string, failureCount int) error {
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	// Auto-disable at MaxConsecutiveFailures
-	isActive := 1
-	if failureCount >= webhook.MaxConsecutiveFailures {
-		isActive = 0
+func (s *WebhookStoreImpl) RecordDelivery(ctx context.Context, id string, delivered bool) error {
+	status, success := webhook.DeliveryFailed, 0
+	if delivered {
+		status, success = webhook.DeliveryDelivered, 1
 	}
-
 	_, err := s.writer.Exec(ctx,
 		`UPDATE webhook_subscriptions
-		 SET last_delivery_status = ?, last_delivery_at = ?, failure_count = ?, is_active = ?
+		 SET last_delivery_status = ?, last_delivery_at = ?,
+		     failure_count = CASE WHEN ? = 1 THEN 0 ELSE failure_count + 1 END,
+		     is_active = CASE WHEN ? = 1 THEN 1 WHEN failure_count + 1 >= ? THEN 0 ELSE is_active END
 		 WHERE id = ?`,
-		status, now, failureCount, isActive, id)
+		status, time.Now().Unix(), success, success, webhook.MaxConsecutiveFailures, id)
 	if err != nil {
-		return fmt.Errorf("update webhook delivery status: %w", err)
+		return fmt.Errorf("record webhook delivery: %w", err)
 	}
 	return nil
 }
@@ -161,8 +158,7 @@ func scanWebhookRow(rows *sql.Rows) (*webhook.WebhookSubscription, error) {
 	var secret sql.NullString
 	var eventTypesStr string
 	var lastStatus sql.NullString
-	var lastDeliveryAt sql.NullString
-	var createdAt string
+	var lastDeliveryAt, createdAt any
 
 	err := rows.Scan(&sub.ID, &sub.Name, &sub.URL, &secret,
 		&eventTypesStr, &sub.IsActive, &lastStatus, &lastDeliveryAt,
@@ -175,7 +171,7 @@ func scanWebhookRow(rows *sql.Rows) (*webhook.WebhookSubscription, error) {
 	return &sub, nil
 }
 
-func populateWebhookFields(sub *webhook.WebhookSubscription, secret sql.NullString, eventTypesStr string, lastStatus sql.NullString, lastDeliveryAt sql.NullString, createdAt string) {
+func populateWebhookFields(sub *webhook.WebhookSubscription, secret sql.NullString, eventTypesStr string, lastStatus sql.NullString, lastDeliveryAt, createdAt any) {
 	if secret.Valid {
 		sub.Secret = secret.String
 	}
@@ -186,14 +182,27 @@ func populateWebhookFields(sub *webhook.WebhookSubscription, secret sql.NullStri
 		s := lastStatus.String
 		sub.LastDeliveryStatus = &s
 	}
-	if lastDeliveryAt.Valid {
-		if parsed, err := time.Parse(time.RFC3339, lastDeliveryAt.String); err == nil {
-			sub.LastDeliveryAt = &parsed
-		}
+	if t, ok := webhookTime(lastDeliveryAt); ok {
+		sub.LastDeliveryAt = &t
 	}
-	if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil {
-		sub.CreatedAt = parsed
+	if t, ok := webhookTime(createdAt); ok {
+		sub.CreatedAt = t
 	}
+}
+
+// webhookTime reads an epoch column that earlier builds filled with RFC 3339 text on SQLite.
+func webhookTime(v any) (time.Time, bool) {
+	switch t := v.(type) {
+	case int64:
+		return time.Unix(t, 0), true
+	case string:
+		parsed, err := time.Parse(time.RFC3339, t)
+		return parsed, err == nil
+	case []byte:
+		parsed, err := time.Parse(time.RFC3339, string(t))
+		return parsed, err == nil
+	}
+	return time.Time{}, false
 }
 
 // CountConfigured returns the number of operator-configured webhook

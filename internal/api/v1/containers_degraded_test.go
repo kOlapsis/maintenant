@@ -28,10 +28,10 @@ func TestLogStream_503WhenDegraded(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 
-	var body map[string]string
+	var body ErrorResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "container monitoring unavailable", body["error"],
-		"503 body must be exactly {\"error\":\"container monitoring unavailable\"}")
+	assert.Equal(t, "RUNTIME_UNAVAILABLE", body.Error.Code)
+	assert.NotEmpty(t, body.Error.Message)
 }
 
 // TestLogStream_200WhenConnected verifies that log stream works normally when connected.
@@ -47,20 +47,4 @@ func TestLogStream_200WhenConnected(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-// TestLogStream_503ExactBody ensures the exact JSON contract.
-func TestLogStream_503ExactBody(t *testing.T) {
-	h := NewLogStreamHandler(nil, nil)
-	h.SetRuntimeChecker(&stubRuntimeChecker{connected: false})
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/containers/{id}/logs/stream", h.HandleLogStream)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/containers/42/logs/stream", nil)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-	assert.JSONEq(t, `{"error":"container monitoring unavailable"}`, w.Body.String())
 }

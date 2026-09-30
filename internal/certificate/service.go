@@ -42,18 +42,11 @@ type LicenseChecker interface {
 	CanCreateCertificate(currentCount int) bool
 }
 
-// DefaultLicenseChecker caps how many certificate monitors may exist. A
-// negative maximum means unlimited (extension.Limit reports -1 for an uncapped
-// resource).
-type DefaultLicenseChecker struct {
-	MaxCertificates int
-}
+// DefaultLicenseChecker caps certificate monitors at the running edition's limit, read at every call.
+type DefaultLicenseChecker struct{}
 
-func (c *DefaultLicenseChecker) CanCreateCertificate(currentCount int) bool {
-	if c.MaxCertificates < 0 {
-		return true
-	}
-	return currentCount < c.MaxCertificates
+func (DefaultLicenseChecker) CanCreateCertificate(currentCount int) bool {
+	return extension.WithinLimit(extension.ResourceCertificates, currentCount)
 }
 
 // checkTimeout bounds a single TLS dial, scheduled or on demand.
@@ -66,7 +59,7 @@ type EventCallback func(eventType string, data interface{})
 type Deps struct {
 	Store          CertificateStore // required
 	Logger         *slog.Logger     // required
-	LicenseChecker LicenseChecker   // optional, defaults to extension.Limit
+	LicenseChecker LicenseChecker   // optional, defaults to DefaultLicenseChecker
 	EventCallback  EventCallback    // optional — nil-safe
 }
 
@@ -92,7 +85,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxCertificates: extension.Limit(extension.ResourceCertificates)}
+		lc = DefaultLicenseChecker{}
 	}
 	return &Service{
 		store:          d.Store,

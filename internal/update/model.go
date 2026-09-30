@@ -275,16 +275,6 @@ type ReleaseInfo struct {
 	HasBreakingChanges bool      `json:"has_breaking_changes"`
 }
 
-// DigestReport is a structured summary of all updates for digest generation.
-type DigestReport struct {
-	Critical    []ImageUpdate `json:"critical"`
-	Recommended []ImageUpdate `json:"recommended"`
-	Available   []ImageUpdate `json:"available"`
-	UpToDate    int           `json:"up_to_date"`
-	Untracked   int           `json:"untracked"`
-	TotalCVEs   int           `json:"total_cves"`
-}
-
 // RiskLevelFromScore converts a numeric score to a risk level.
 func RiskLevelFromScore(score int) RiskLevel {
 	switch {

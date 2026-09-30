@@ -14,6 +14,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
@@ -23,6 +24,12 @@ import (
 // localTopologyReconcileInterval is how often the server re-snapshots its own
 // runtime's topology into the per-agent store under the LocalAgent id.
 const localTopologyReconcileInterval = 30 * time.Second
+
+// Bounds of the delay between two attempts to reach a runtime whose Connect gives up.
+const (
+	runtimeRetryMin = time.Second
+	runtimeRetryMax = time.Minute
+)
 
 // pruneOrphanAlerts resolves active alerts whose underlying entity no longer
 // exists: a container that was removed, an agent deleted while already offline,
@@ -130,8 +137,7 @@ func (a *App) reconcile(ctx context.Context) {
 			seen := make(map[string]struct{}, len(results))
 			for _, r := range results {
 				seen[r.Container.ExternalID] = struct{}{}
-				a.endpointSvc.SyncEndpoints(ctx, r.Container.Name, r.Container.ExternalID, r.Labels,
-					r.Container.OrchestrationGroup, r.Container.OrchestrationUnit)
+				a.endpointSvc.SyncEndpoints(ctx, r.Container.Name, r.Container.ExternalID, r.Labels)
 				a.certSvc.SyncFromLabels(ctx, r.Container.ExternalID, r.Labels)
 
 				dbC := dbByExtID[r.Container.ExternalID]
@@ -203,9 +209,7 @@ func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent
 		if len(name) > 0 && name[0] == '/' {
 			name = name[1:]
 		}
-		a.endpointSvc.HandleContainerStart(ctx, name, evt.ExternalID, evt.Labels,
-			container.OrchestrationGroupFromLabels(evt.Labels),
-			evt.Labels["com.docker.compose.service"])
+		a.endpointSvc.HandleContainerStart(ctx, name, evt.ExternalID, evt.Labels)
 		a.certSvc.SyncFromLabels(ctx, evt.ExternalID, evt.Labels)
 
 		if dr, ok := a.rt.(*docker.Runtime); ok {
@@ -343,7 +347,7 @@ func (a *App) startKubernetesReconcile(ctx context.Context, src kubernetes.Snaps
 
 // startSwarmTopologyReconcile periodically snapshots the server's own Swarm
 // services and tasks into the per-agent store under the LocalAgent id. Nodes are
-// left to the Pro NodeService to avoid two writers fighting over the same
+// left to the NodeService to avoid two writers fighting over the same
 // rows.
 func (a *App) startSwarmTopologyReconcile(ctx context.Context, m *swarmManager) {
 	dr, ok := a.rt.(*docker.Runtime)
@@ -468,10 +472,7 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 
 	// Escalation run retention (90 days, nightly at 03:00).
 	if a.escalationSvc != nil {
-		go func() {
-			a.escalationSvc.RunRetentionLoop(ctx)
-			a.logger.ErrorContext(ctx, "escalation: retention loop exited unexpectedly")
-		}()
+		go a.escalationSvc.RunRetentionLoop(ctx)
 	}
 }
 
@@ -590,17 +591,17 @@ func (a *App) startRuntimeSupervisor(ctx context.Context) {
 	if a.rt.IsConnected() {
 		// Comportement nominal : câblage immédiat + supervision de fond.
 		streamDone := a.wireContainerMonitoring(ctx)
-		go a.supervisorLoop(ctx, streamDone)
+		go a.supervisorLoop(ctx, streamDone, retry.New(runtimeRetryMin, runtimeRetryMax, 0))
 	} else {
 		// Dégradé au boot : reconnexion de fond.
 		a.logger.Info("container runtime unavailable, monitoring suspended", "runtime", a.rt.Name())
-		go a.supervisorLoop(ctx, nil)
+		go a.supervisorLoop(ctx, nil, retry.New(runtimeRetryMin, runtimeRetryMax, 0))
 	}
 }
 
 // supervisorLoop gère le cycle reconnexion → câblage → détection de perte.
 // streamDone est non-nil si une connexion est déjà active (fermeture = perte).
-func (a *App) supervisorLoop(ctx context.Context, streamDone <-chan struct{}) {
+func (a *App) supervisorLoop(ctx context.Context, streamDone <-chan struct{}, backoff *retry.Backoff) {
 	lossNotify := streamDone
 
 	for {
@@ -619,9 +620,21 @@ func (a *App) supervisorLoop(ctx context.Context, streamDone <-chan struct{}) {
 
 		// Tentative de reconnexion (avec retry de fond, respecte ctx.Done).
 		if err := a.rt.Connect(ctx); err != nil {
-			// ctx annulé — arrêt propre.
-			return
+			if ctx.Err() != nil {
+				return
+			}
+			delay := backoff.Next()
+			a.logger.Warn("container runtime connection failed, retrying",
+				"runtime", a.rt.Name(), "error", err, "retry_in", delay)
+			lossNotify = nil
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
+			}
+			continue
 		}
+		backoff.Reset()
 
 		// T026 : garde idempotente par cycle — le superviseur lui-même garantit
 		// qu'on passe ici une seule fois par reconnexion.

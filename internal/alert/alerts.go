@@ -36,13 +36,13 @@ func NewRestartDetector(store container.ContainerStore, logger *slog.Logger) *Re
 
 // RestartAlert represents a restart threshold alert.
 type RestartAlert struct {
-	ContainerID   string
-	ContainerName string
-	RestartCount  int
-	Threshold     int
-	Severity      container.AlertSeverity
-	Timestamp     time.Time
-	AgentID       string
+	ContainerID   string                  `json:"container_id"`
+	ContainerName string                  `json:"container_name"`
+	RestartCount  int                     `json:"restart_count"`
+	Threshold     int                     `json:"threshold"`
+	Severity      container.AlertSeverity `json:"severity"`
+	Timestamp     time.Time               `json:"timestamp"`
+	AgentID       string                  `json:"agent_id"`
 }
 
 // Check evaluates whether the container has exceeded its restart threshold.

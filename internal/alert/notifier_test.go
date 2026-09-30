@@ -215,6 +215,22 @@ func TestProcessJob_UsesTheSendersRetryPolicy(t *testing.T) {
 	require.EqualError(t, n.SendNow(context.Background(), job.Alert, job.Channel), "refused")
 }
 
+func TestProcessJob_ReportsTheFinalOutcomeOnce(t *testing.T) {
+	n := NewNotifier(&deliveryRecorder{}, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
+	n.RegisterChannel("ok", &fakeSender{})
+	n.RegisterChannel("ko", &fakeSender{fail: errors.New("refused")})
+
+	for chType, wantErr := range map[string]bool{"ok": false, "ko": true} {
+		var outcomes []error
+		job := testJob(chType)
+		job.Done = func(_ context.Context, err error) { outcomes = append(outcomes, err) }
+		n.processJob(context.Background(), job)
+
+		require.Len(t, outcomes, 1, "channel %s", chType)
+		assert.Equal(t, wantErr, outcomes[0] != nil, "channel %s", chType)
+	}
+}
+
 func withEdition(t *testing.T, e extension.Edition) {
 	t.Helper()
 	prev := extension.CurrentEdition

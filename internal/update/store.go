@@ -35,7 +35,7 @@ type UpdateStore interface {
 	DeleteVersionPin(ctx context.Context, containerID string) error
 
 	// Update exclusions
-	InsertExclusion(ctx context.Context, e *UpdateExclusion) (string, error)
+	CreateExclusion(ctx context.Context, e *UpdateExclusion) (bool, error)
 	ListExclusions(ctx context.Context) ([]*UpdateExclusion, error)
 	DeleteExclusion(ctx context.Context, id string) error
 
@@ -82,6 +82,5 @@ type UpdateSummary struct {
 	Recommended int `json:"recommended"`
 	Available   int `json:"available"`
 	UpToDate    int `json:"up_to_date"`
-	Untracked   int `json:"untracked"`
 	Pinned      int `json:"pinned"`
 }

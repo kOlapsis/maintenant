@@ -15,13 +15,12 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
-// Enricher enriches raw scan results with additional data.
-// CE: no-op (returns nil). Pro: runs an enrichment pipeline (CVE, changelog, risk).
+// Enricher enriches raw scan results with CVE, changelog and risk data, as far as the running edition opens them.
 type Enricher interface {
 	Enrich(ctx context.Context, results []UpdateResult) error
 }
 
-// noopUpdateEnricher is the CE default — skips enrichment silently.
+// noopUpdateEnricher is the default when no enricher is plugged in.
 type noopUpdateEnricher struct{}
 
 func (noopUpdateEnricher) Enrich(_ context.Context, _ []UpdateResult) error {
@@ -101,7 +100,7 @@ func NewService(d Deps) *Service {
 	}
 }
 
-// SetEnricher sets the update enricher (no-op in CE, CVE/changelog/risk in Pro).
+// SetEnricher sets the update enricher.
 func (s *Service) SetEnricher(e Enricher) {
 	s.enricher = e
 }
@@ -202,15 +201,13 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest string) string {
 	repo, currentTag, _ := ParseImageRef(c.Image)
 
-	// Kubernetes workloads
-	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
+	if c.RuntimeType == "kubernetes" {
 		ref := repo + ":" + latestTag
 		// An unchanged image reference leaves the pod template as it is, so nothing would roll out.
 		if latestTag == currentTag && latestDigest != "" {
 			ref += "@" + latestDigest
 		}
-		return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
-			strings.ToLower(c.ControllerKind), c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
+		return kubectlSetImage(c, ref)
 	}
 
 	// Docker Compose
@@ -236,10 +233,8 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) strin
 		return ""
 	}
 
-	// Kubernetes workloads
-	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
-		return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
-			strings.ToLower(c.ControllerKind), c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
+	if c.RuntimeType == "kubernetes" {
+		return kubectlSetImage(c, ref)
 	}
 
 	// Docker Compose
@@ -277,6 +272,16 @@ func imageWithoutDigest(image string) string {
 		return image[:i]
 	}
 	return image
+}
+
+// kubectlSetImage points the workload's container at ref; a pod without a controller is updated in place.
+func kubectlSetImage(c ContainerInfo, ref string) string {
+	kind := strings.ToLower(c.ControllerKind)
+	if kind == "" {
+		kind = "pod"
+	}
+	return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
+		kind, c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
 }
 
 // podContainer names the container of a Kubernetes pod that runs the workload's image.
@@ -460,7 +465,7 @@ func (s *Service) runScan(ctx context.Context) {
 		s.emitEvent(event.UpdateDetected, eventData)
 	}
 
-	// Enrichment pipeline (no-op in CE, runs CVE/changelog/risk in Pro).
+	// Enrichment pipeline: CVE, changelog and risk, as far as the edition opens them.
 	// Gated on results, not updates: a container on its latest tag still needs a CVE pass.
 	if len(results) > 0 {
 		s.logger.Info("starting enrichment pipeline", "containers", len(results), "updates", updatesFound)

@@ -177,6 +177,10 @@ func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, labels
 	info := res.Container
 
 	cm := mapFromList(dc, labels, now)
+	// The list shows the image ID instead once the tag the container was created from points elsewhere.
+	if info.Config != nil && info.Config.Image != "" {
+		cm.Image = info.Config.Image
+	}
 
 	// Health check info from inspect
 	if info.Config != nil && info.Config.Healthcheck != nil && len(info.Config.Healthcheck.Test) > 0 {
