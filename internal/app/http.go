@@ -213,11 +213,15 @@ func (a *App) buildHTTPServer() *http.Server {
 	topMux := http.NewServeMux()
 
 	if a.cfg.MCP.Enabled && !a.cfg.DemoMode {
+		oauthConfigured := a.cfg.MCP.ClientID != "" && a.cfg.MCP.ClientSecret != ""
 		mcpHandler := unbufferedStream(gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
 			return a.mcpServer
-		}, nil))
+		}, &gomcp.StreamableHTTPOptions{
+			// A reverse proxy on the same host forwards the public Host, which the SDK refuses on a loopback listener.
+			DisableLocalhostProtection: oauthConfigured,
+		}))
 
-		if a.cfg.MCP.ClientID != "" && a.cfg.MCP.ClientSecret != "" {
+		if oauthConfigured {
 			a.warnWeakMCPClientSecret()
 			mcpOAuthStore := store.NewMCPOAuthStore(a.db)
 			oauthSrv := mcpoauth.NewOAuthServer(mcpoauth.Config{

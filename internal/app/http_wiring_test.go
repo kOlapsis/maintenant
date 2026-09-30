@@ -12,11 +12,15 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
+	mcpoauth "github.com/kolapsis/maintenant/internal/mcp/oauth"
+	"github.com/kolapsis/maintenant/internal/store"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 const wiringWebhookBody = `{"name":"hook","url":"https://8.8.8.8/hook","event_types":["*"]}`
@@ -120,6 +124,64 @@ func TestHTTPServer_MCPStreamIsNotBuffered(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
 	assert.Equal(t, "no", rec.Header().Get("X-Accel-Buffering"))
+}
+
+func postInitializeViaLocalProxy(t *testing.T, a *App, bearer string) (*http.Response, string) {
+	t.Helper()
+	srv := httptest.NewServer(a.srv.Handler)
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/mcp", strings.NewReader(initializeRequest))
+	require.NoError(t, err)
+	req.Host = "maintenant.example.com"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp, string(body)
+}
+
+func TestHTTPServer_MCPWithOAuthServesALocalReverseProxy(t *testing.T) {
+	a, _ := newTestApp(t, func(c *Config) {
+		c.MCP.Enabled = true
+		c.MCP.ClientID = "claude"
+		c.MCP.ClientSecret = strings.Repeat("0f", 32)
+		c.BaseURL = "https://maintenant.example.com"
+	})
+	token, hash := mcpoauth.GenerateToken()
+	require.NoError(t, store.NewMCPOAuthStore(a.db).StoreToken(context.Background(), &mcpoauth.MCPOAuthToken{
+		TokenHash: hash,
+		TokenType: "access",
+		ClientID:  "claude",
+		ExpiresAt: time.Now().Add(time.Hour),
+		FamilyID:  uid.New(),
+		CreatedAt: time.Now(),
+	}))
+
+	resp, body := postInitializeViaLocalProxy(t, a, token)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, body)
+	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	resp, _ = postInitializeViaLocalProxy(t, a, "")
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "the bearer token still guards /mcp")
+}
+
+func TestHTTPServer_MCPWithoutAuthKeepsTheLocalhostProtection(t *testing.T) {
+	a, _ := newTestApp(t, func(c *Config) {
+		c.MCP.Enabled = true
+		c.MCP.AllowUnauthenticated = true
+	})
+
+	resp, body := postInitializeViaLocalProxy(t, a, "")
+
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.Contains(t, body, "invalid Host header")
 }
 
 func TestHTTPServer_WarnsAboutAShortMCPClientSecret(t *testing.T) {
