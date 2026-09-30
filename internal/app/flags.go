@@ -132,7 +132,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_MAX_BODY_SIZE", FlagName: "maxBodySize",
 			Type: FlagTypeInt, Default: "1048576",
-			Description: "Max request body size in bytes",
+			Description: "Maximum request body size in bytes on the API and ping routes (a value that is not a positive whole number stops the startup)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := strconv.ParseInt(v, 10, 64)
 				if err != nil {
@@ -168,7 +168,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_SECURITY_SCORE_THRESHOLD", FlagName: "securityScoreThreshold",
 			Type: FlagTypeInt, Default: "",
-			Description: "Raise an alert when the security posture score drops below this value (Personal edition; unset = no alert)",
+			Description: "Raise an alert when the security posture score drops below this value, checked every 5 minutes (Personal edition; unset = no alert)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := strconv.Atoi(v)
 				if err != nil {
@@ -196,7 +196,7 @@ func init() {
 				return nil
 			},
 		},
-		// Pro
+		// License
 		{
 			EnvName: "MAINTENANT_LICENSE_KEY", FlagName: "licenseKey",
 			Type: FlagTypeString, Default: "", Sensitive: true,
@@ -207,13 +207,13 @@ func init() {
 		{
 			EnvName: "MAINTENANT_SMTP_HOST", FlagName: "smtpHost",
 			Type: FlagTypeString, Default: "",
-			Description: "SMTP server hostname",
+			Description: "SMTP server hostname (empty = email not configured)",
 			ApplyTo:     func(c *Config, v string) error { c.SMTP.Host = v; return nil },
 		},
 		{
 			EnvName: "MAINTENANT_SMTP_PORT", FlagName: "smtpPort",
 			Type: FlagTypeString, Default: "587",
-			Description: "SMTP server port",
+			Description: "SMTP server port (465 uses implicit TLS, other ports use STARTTLS when the server announces it)",
 			ApplyTo:     func(c *Config, v string) error { c.SMTP.Port = v; return nil },
 		},
 		{
@@ -287,7 +287,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_STATUS_URL", FlagName: "statusUrl",
 			Type: FlagTypeString, Default: "",
-			Description: "Canonical public URL of the status page",
+			Description: "Canonical public URL of the status page, reported as status_url by GET /api/v1/edition and opened by the admin link",
 			ApplyTo:     func(c *Config, v string) error { c.StatusURL = v; return nil },
 		},
 		// Alerting
@@ -570,7 +570,7 @@ func init() {
 		{Name: "HTTP", Specs: specsFor("maxBodySize", "trustedProxies")},
 		{Name: "Updates", Specs: specsFor("updateInterval", "disableOsEolRefresh")},
 		{Name: "Security", Specs: specsFor("securityScoreThreshold", "disableTelemetry", "allowPrivateWebhooks")},
-		{Name: "Pro", Specs: specsFor("licenseKey")},
+		{Name: "License (Personal and Pro)", Specs: specsFor("licenseKey")},
 		{Name: "SMTP", Specs: specsFor("smtpHost", "smtpPort", "smtpUsername", "smtpPassword", "smtpFrom")},
 		{Name: "MCP", Specs: specsFor(
 			"mcp", "mcpClientId", "mcpClientSecret",

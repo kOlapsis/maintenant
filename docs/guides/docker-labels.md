@@ -445,7 +445,7 @@ Control how maintenant tracks image updates for each container.
 | `maintenant.update.ignore_major` | `true` / `false` | `false` | `true` behaves as `track: minor` when `track` is absent or `major`. It has no effect with another `track`. |
 | `maintenant.update.digest_only` | `true` / `false` | `false` | `true` behaves as `track: digest` and wins over `track` and `ignore_major`. |
 | `maintenant.update.alert_on` | `all`, `critical`, `none` | `all` | Which updates raise an `update_available` alert. `critical` keeps only updates of critical severity, which in practice means major updates. `none` tracks the update without alerting: it is still listed on the Updates page. |
-| `maintenant.update.registry` | registry host | — | Changes the registry name reported with the update. It does not change where tags are queried, which always comes from the image reference. |
+| `maintenant.update.registry` | registry host, with a port if needed | — | Queries this registry instead of the one in the image reference, as a mirror that serves the same repository: `nginx` is looked up as `<registry>/library/nginx` and `ghcr.io/acme/api` as `<registry>/acme/api`. It is also the registry reported with the update. |
 | `maintenant.update.tag-include` | Go regex | — | Only tags matching this pattern are update candidates. |
 | `maintenant.update.tag-exclude` | Go regex | — | Tags matching this pattern are removed from the candidates, after `tag-include`. |
 
@@ -459,7 +459,9 @@ labels:
   maintenant.update.tag-exclude: "(rc|beta|alpha)"              # No pre-releases
 ```
 
-Update tracking covers the running containers of the server's Docker runtime and of Docker agents, and the workloads of the server's own Kubernetes cluster, where the settings are [annotations](#kubernetes-annotations). Images that were built locally and never pulled from a registry are not checked.
+Update tracking covers the running containers of the server's Docker runtime and of Docker agents, and the workloads of the server's own Kubernetes cluster, where the settings are [annotations](#kubernetes-annotations). Images that were built locally and never pulled from a registry are not checked. The update scan reads these labels and annotations again each time it runs, so a change applies at the next scan.
+
+The update, rollback and CVE fix commands depend on where the container runs: Compose commands for a Compose service, `docker service update --image <image> <service>` for a Swarm task, `kubectl set image` for a Kubernetes workload, and `docker pull`, `stop`, `rm` and `run` for a standalone container.
 
 See [Tag Filtering](../features/updates.md#tag-filtering) in the Update Intelligence guide for full details, examples, and troubleshooting.
 
@@ -484,11 +486,13 @@ services:
 | `deploy.labels` | Labels of the service | A maintenant or an agent running on a **manager**, which can read services |
 | `labels` (top level) | Labels of each task container | Every maintenant and every agent, including those on a worker |
 
-On a worker the service cannot be read, so only the labels of the container count: use the top-level `labels` for anything a worker must see. Service labels are cached for 30 seconds. Changing them with `docker service update --label-add` does not restart the tasks, so running tasks take the new values the next time maintenant reconciles: at startup, when the runtime reconnects, or when a new container starts.
+On a worker the service cannot be read, so only the labels of the container count: use the top-level `labels` for anything a worker must see. Service labels are cached for 30 seconds. Changing them with `docker service update --label-add` does not restart the tasks, so running tasks take the new values the next time maintenant reconciles: at startup, when the runtime reconnects, or when a new container starts. The exception is `maintenant.update.*`, read at each update scan.
 
 Each replica is a container of its own, so an endpoint label on a service with three replicas creates three monitors on the same URL.
 
-The group of a task is the stack name (`com.docker.stack.namespace`), unless the container carries a Compose project. `maintenant.group` overrides both. `maintenant.ignore` on a service hides its tasks and silences the replica, crash-loop and rolling update alerts of that service.
+The group of a task is the stack name (`com.docker.stack.namespace`), unless the container carries a Compose project. `maintenant.group` overrides both.
+
+`maintenant.ignore` on a service hides its tasks and silences the replica, crash-loop and rolling update alerts of that service. Those alerts read the service only, so the label must be in `deploy.labels`: on a task container it applies to that container alone. They read the labels of the service about every 30 seconds, without waiting for a reconciliation.
 
 See the [Docker Swarm Monitoring](../features/swarm.md) guide for full details.
 
@@ -514,7 +518,7 @@ kubectl annotate deployment/api -n production \
 
 Annotations are read on the server's own cluster. A Kubernetes agent reports the topology of its cluster without them. The endpoint and certificate labels have no Kubernetes equivalent.
 
-A changed annotation is picked up when maintenant next reconciles: at startup, when the runtime reconnects, or when a new workload appears. The exception is `maintenant.ignore` on a workload or a pod, which drives the alerts and is re-read every 30 seconds. See the [Kubernetes guide](kubernetes.md#annotations).
+A changed annotation is picked up when maintenant next reconciles: at startup, when the runtime reconnects, or when a new workload appears. There are two exceptions: `maintenant.ignore` on a workload or a pod, which drives the alerts and is re-read every 30 seconds, and `maintenant.update.*`, which is read at each update scan. See the [Kubernetes guide](kubernetes.md#annotations).
 
 ---
 

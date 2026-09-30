@@ -206,7 +206,9 @@ services:
 !!! warning "Service labels vs container labels"
     Only a maintenant running on a **manager** can read service labels. A maintenant or an agent on a worker sees the container labels only. If a label must work everywhere, put it in the top-level `labels` of the service instead of `deploy.labels`.
 
-Service labels are cached for 30 seconds, and changing them does not restart the tasks. The running tasks pick the new values up at the next reconciliation: when maintenant starts, when its Docker connection is re-established, or when a new container starts. The labels an agent reads are refreshed every 30 seconds.
+    The exception is `maintenant.ignore` for the Swarm alerts (replicas, crash loops, rolling updates): they read the service only, so it has to be in `deploy.labels`. On a task container it applies to that container only.
+
+Service labels are cached for 30 seconds, and changing them does not restart the tasks. The running tasks pick the new values up at the next reconciliation: when maintenant starts, when its Docker connection is re-established, or when a new container starts. The labels an agent reads are refreshed every 30 seconds. The Swarm alerts do not wait for a reconciliation: they read the labels of the service about every 30 seconds, so `maintenant.ignore` on a service silences them without recreating the tasks.
 
 A service with several replicas has one container per replica, so an endpoint label creates one monitor per replica on the same URL.
 
@@ -243,6 +245,12 @@ services:
 
 ---
 
+## Image Updates
+
+[Update tracking](../features/updates.md) covers the task containers of the manager, and those of an agent on a Swarm node. For a task, the update, rollback and CVE fix commands that maintenant shows are `docker service update --image <image> <service>`: Swarm replaces a task stopped by hand, so the service is what must get the new image. A tag that was republished is deployed by its digest (`nginx:stable@sha256:...`). The `maintenant.update.*` labels can go on the service like any other label: see [Update settings](docker-labels.md#update-settings) and [Update and Rollback Commands](../features/updates.md#update-and-rollback-commands).
+
+---
+
 ## Graceful Degradation
 
 maintenant handles edge cases without user intervention:
@@ -252,6 +260,8 @@ maintenant handles edge cases without user intervention:
 | Worker node deployment | Falls back to container monitoring, logs a message |
 | Manager demotion or `docker swarm leave` at runtime | Swarm views report `active: false` and maintenant announces `runtime.context_changed`, within 60 seconds |
 | Swarm enabled while maintenant runs | Swarm monitoring starts without a restart, within 60 seconds |
+| Docker not reachable when maintenant starts | Swarm is detected as soon as Docker answers, without a restart |
+| The swarm has no leader | The manager cannot list its nodes: `quorum_degraded` is raised, and resolved once the quorum is back |
 | Docker socket unavailable | Degraded mode: monitoring is suspended while maintenant retries the connection with backoff (1 to 30 seconds) |
 | Swarm events missed (restart, reconnection) | Full reconciliation on startup and after each reconnection, then a snapshot every 30 seconds |
 | Restart while Swarm alerts are open | The open alerts are taken over and resolved once their condition is gone |
@@ -279,7 +289,7 @@ maintenant handles edge cases without user intervention:
     ```bash
     docker service logs maintenant 2>&1 | grep -i swarm
     ```
-    A line containing `detected Swarm mode (worker node)` means maintenant runs on a worker. If there is no Swarm line at all, either the node is not in Swarm mode, or Docker was not reachable when maintenant started: restart the service, because Swarm is only detected when Docker answers at startup.
+    A line containing `detected Swarm mode (worker node)` means maintenant runs on a worker. If there is no Swarm line at all, the node is not in Swarm mode, or Docker does not answer yet: Swarm is detected as soon as Docker answers, and again every 60 seconds, so no restart is needed.
 
 ### Node health not showing
 
@@ -300,9 +310,15 @@ This is expected when all tasks are pending, failed, or shutting down. Check the
 - Service labels are cached for 30 seconds, and running tasks take new values only at the next reconciliation (see [Swarm Labels for Services](#swarm-labels-for-services)). Recreating the tasks (for example `docker service update --force`) applies them to the new containers.
 - `maintenant.alert.channels` no longer exists: alert routing is configured with channels and triggers.
 
-### No crash-loop alert for a service on another node
+### A crash-looping service raises no `crash_loop` alert
 
-Crash loops are counted from the containers that die on the node where maintenant runs. A service that crashes on another node still shows failed tasks in the Tasks page, but raises no `crash_loop` alert.
+Crash loops are counted from the tasks that Swarm marks `failed`, on every node of the cluster, read from the task list every 30 seconds. The alert needs 3 failed tasks of the same service within 5 minutes. Not counted:
+
+- tasks that Swarm shuts down itself (rolling update, scale down, `docker service update --force`) and containers stopped with SIGTERM (exit code 143);
+- tasks that never start (state `rejected`, for example an image that cannot be pulled);
+- tasks of a service labelled `maintenant.ignore` in `deploy.labels`.
+
+A container killed with SIGKILL (exit code 137) does count.
 
 ---
 

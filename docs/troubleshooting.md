@@ -137,7 +137,7 @@ When the container runtime cannot be reached at startup, maintenant does not exi
 What you see:
 
 - the red **RUNTIME OFFLINE** banner in the interface, and `"connected": false` under `runtime` in `GET /api/v1/health`. That endpoint still answers `200`, so the container stays `healthy`;
-- in the logs, `container runtime unavailable, starting in degraded mode`, then `Docker connection failed, retrying` with the cause in `error` and the delay in `retry_in` (1 s, doubling up to 30 s);
+- in the logs, `container runtime unavailable, starting in degraded mode` with the cause in `error`, then `Docker connection failed, retrying` with the cause in `error` and the delay in `retry_in` (1 s, doubling up to 30 s);
 - `container runtime reconnected, resuming container monitoring` once the runtime is back. If it disappears while maintenant runs, the log says `container runtime lost, entering degraded mode` and the same retry loop starts.
 
 The `error` value tells the cause:
@@ -163,7 +163,7 @@ Upgrade the engine to 19.03 or later.
 
 ## Update checks ignore locally built images behind a socket proxy
 
-Each update scan asks the Docker API for the image list (`GET /images/json`) to learn which digest every container runs and to recognise images built on the host, which have no registry to check. [docker-socket-proxy](security.md#recommended-docker-socket-proxy) answers `403` to that call unless `IMAGES` is enabled, and maintenant ignores the refusal without logging it. The effects:
+Each update scan asks the Docker API for the image list (`GET /images/json`) to learn which digest every container runs and to recognise images built on the host, which have no registry to check. [docker-socket-proxy](security.md#recommended-docker-socket-proxy) answers `403` to that call unless `IMAGES` is enabled. maintenant logs one warning, `update scan: the Docker API refused the image list (GET /images/json)`, which tells you to set `IMAGES=1`, and the scan goes on without the image list. The warning comes back only after the image list has worked again. The effects:
 
 - an image built locally is not recognised: it is looked up in a registry under its own name, and one built as `nginx:latest` is compared with the public image of that name;
 - the rollback commands cannot pin the exact digest the container runs, so they fall back to the digest seen at the previous scan or to the tag.
@@ -207,6 +207,19 @@ The agent gRPC listener fails the same way, with `start agent gRPC server: agent
 
 ---
 
+## Startup stops on an invalid setting
+
+A setting that cannot be parsed stops the process with exit code 1 instead of silently falling back to a default, and the log line names the variable and the value it got:
+
+| Log message | Setting | Expected value |
+|---|---|---|
+| `invalid HTTP configuration` | `MAINTENANT_MAX_BODY_SIZE` | A positive whole number of bytes, such as `1048576`. A suffix like `10MB` is refused. |
+| `invalid alerting configuration` | `MAINTENANT_CONTAINER_DOWN_AFTER` | A Go duration such as `5m`, `30s` or `1h30m` |
+| `invalid agent spool configuration` | `MAINTENANT_AGENT_SPOOL_MAX_*` | A non-negative whole number; `0` disables the limit or the spool |
+| `invalid proxy configuration` | `MAINTENANT_TRUSTED_PROXIES` | Comma-separated IPs or CIDRs |
+
+---
+
 ## Startup fails with "attempt to write a readonly database"
 
 **Symptom:** the logs end with:
@@ -245,7 +258,7 @@ The runtime is chosen in this order: `MAINTENANT_RUNTIME`, then the in-cluster e
 kubeconfig present but its cluster is unreachable, falling back to Docker; set MAINTENANT_RUNTIME=kubernetes to wait for that cluster instead
 ```
 
-The `kubeconfig` and `error` fields name the file and the failure. If you want Docker, remove or unmount the stale kubeconfig, or set `MAINTENANT_RUNTIME=docker`. If you want the cluster, set `MAINTENANT_RUNTIME=kubernetes`: maintenant then starts in degraded mode and retries until the API server answers (`kubernetes connection failed, retrying`, 1 s doubling up to 30 s). A kubeconfig that cannot be used at all (no cluster or no context in it) is not retried: the instance stays in degraded mode, with only `container runtime unavailable, starting in degraded mode` in the logs and no cause. Fix the file and restart. The in-cluster environment never falls back to Docker.
+The `kubeconfig` and `error` fields name the file and the failure. If you want Docker, remove or unmount the stale kubeconfig, or set `MAINTENANT_RUNTIME=docker`. If you want the cluster, set `MAINTENANT_RUNTIME=kubernetes`: maintenant then starts in degraded mode and retries until the API server answers (`kubernetes connection failed, retrying`, 1 s doubling up to 30 s). A kubeconfig that cannot be used at all (no cluster or no context in it) is retried as well, with `container runtime connection failed, retrying`: the cause is in `error` and the delay in `retry_in` (1 s doubling up to 60 s), and each attempt reads the file again, so fixing it is enough. The in-cluster environment never falls back to Docker.
 
 **The API server goes away while maintenant runs.** It probes the API every 15 s, logs `kubernetes API server unreachable` with `misses` counting up to 3, and after the third miss (about 45 s) enters degraded mode (**RUNTIME OFFLINE**), then reconnects with the same backoff.
 
@@ -264,7 +277,7 @@ volumes:
   - ./ca.pem:/etc/maintenant/ca.pem:ro
 ```
 
-The bundle is added to the system roots and applies to every outbound TLS connection: endpoint probes, certificate checks, webhooks and notification channels, outbound heartbeats, SMTP with STARTTLS, the license server, OSV, GitHub, endoflife.date, image registries, and the agent's connection to its server. If the endpoint is attached to an agent, set it on the **agent**: it is the one performing the probe.
+The bundle is added to the system roots and applies to every outbound TLS connection: endpoint probes, certificate checks, webhooks and notification channels, outbound heartbeats, SMTP (STARTTLS and implicit TLS), the license server, OSV, GitHub, endoflife.date, image registries, and the agent's connection to its server. If the endpoint is attached to an agent, set it on the **agent**: it is the one performing the probe.
 
 **An unreadable or invalid bundle stops maintenant.** It exits with code 1 right after `maintenant starting`, and with `restart: unless-stopped` it loops. The log says `failed to load extra CA bundle`, and `error` gives the reason:
 

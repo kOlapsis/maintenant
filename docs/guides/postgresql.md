@@ -7,7 +7,7 @@ install, nothing to administer, and a backup is a file copy.
 It becomes a ceiling once the instance watches a fleet. The server holds one
 class of data the agents cannot rebuild: **their identity and their
 enrolment**. If the machine carrying the file is lost, so is the link between
-the server and every monitored host — bringing up a replacement would mean
+the server and every monitored host. Bringing up a replacement would mean
 re-enrolling the fleet by hand, host by host, while monitoring is blind.
 
 Pointing the server at a PostgreSQL database you already operate removes that:
@@ -28,8 +28,12 @@ refuses a connection string outright.
 
 - PostgreSQL 14 or newer, reachable from the instance, with an empty database
   and a role that may create tables in it.
+- A connection string written as a `postgres://` or `postgresql://` URL.
 - An instance in server or embedded mode. **In agent mode the setting is
   refused**, with a message naming the mode.
+
+PostgreSQL storage is open in every edition. `--mode=server` and enrolling
+agents need the Personal edition or above, not the database.
 
 ## New install
 
@@ -61,7 +65,6 @@ services:
     environment:
       MAINTENANT_ADDR: "0.0.0.0:8080"
       MAINTENANT_DATABASE_URL: *database-url
-      MAINTENANT_LICENSE_KEY: "…"
 
 volumes:
   maintenant-data:
@@ -80,6 +83,11 @@ The schema is created on first start, with no manual step. Check it:
 curl -s localhost:8080/api/v1/health | jq .storage
 # { "engine": "postgres", "connected": true, "peers": 0 }
 ```
+
+When the database does not answer, refuses the credentials, runs a PostgreSQL
+older than 14, or holds a schema written by a newer release, the instance stops
+at startup with a message naming the cause. It never falls back to the local
+file.
 
 Without `MAINTENANT_DATABASE_URL`, nothing changes: SQLite, exactly as before.
 
@@ -105,7 +113,9 @@ local, the product adds **`sslmode=require`**: an external database is reached
 over TLS by default. Any explicit value wins, `disable` included, so a database
 on the same host or a private link can be relaxed deliberately. For a database
 crossing a network you do not control, prefer `sslmode=verify-full`, which also
-checks the server's certificate against its hostname.
+checks the server's certificate against its hostname. When that certificate comes
+from a private CA, add `sslrootcert=/path/to/ca.pem` to the connection string:
+`MAINTENANT_CA_CERT` covers the HTTPS and gRPC connections, not the database one.
 
 "Local" means a host that is empty, `localhost`, `127.0.0.1` or `::1`, or a Unix
 socket (a `host` parameter starting with `/`). Anything else, a Compose service
@@ -126,7 +136,7 @@ the telemetry. Where a target has to be named, it appears redacted:
 
 ## What must follow the instance
 
-Two states live in the data directory rather than in the database. That
+A few files live in the data directory rather than in the database. That
 directory is the one holding `MAINTENANT_DB`, which stays meaningful with
 PostgreSQL: it no longer holds the data, but it still says where these files
 go. The image sets it to `/data/maintenant.db`, so the directory is `/data`; on a
@@ -137,6 +147,7 @@ follows the instance.
 |---|---|---|
 | Signed licence cache | `<dataDir>/.maintenant-license` | Re-verified online at startup. Offline: Community until the network returns. |
 | Update window record | `<dataDir>/.maintenant-update-window` | A fresh grace window opens, which plays in your favour. |
+| Embedded agent identity (only with `MAINTENANT_EMBEDDED_AGENT`) | `<dataDir>/embedded-agent/` | The embedded agent enrols again as a new host. The previous one stays in the list, stale, until you delete it. |
 
 Anonymous telemetry keeps its own state in a `shm` directory next to them
 (`/data/shm` in the image). There is no setting for it. Losing it only breaks
@@ -264,17 +275,18 @@ before writing anything:
 
 Exit codes: `0` copied and verified, `1` refused (non-empty target, unreadable
 or out-of-date source, unreachable target, or you declined), `2` failed
-mid-copy and rolled back.
+mid-copy and rolled back. A source written by an older version is refused too:
+start the current version once on it so that it migrates, then copy.
 
 The copy does not switch your configuration: you set
 `MAINTENANT_DATABASE_URL` and restart yourself, deliberately. It does not run
-in the other direction either — going back means removing the variable, which
+in the other direction either: going back means removing the variable, which
 returns to the local file as you left it.
 
 ## Latency
 
 Every write now costs a round trip to the database, where a local file cost
-none. Put the database in the same region — ideally the same network — as the
+none. Put the database in the same region, ideally the same network, as the
 instance. The measure that matters is the one you feel: the delay between an
 event reported by an agent and its appearance on screen should stay in the same
 class as before. A database several tens of milliseconds away is fine; one on
@@ -283,12 +295,20 @@ another continent is not.
 ## The probe must not kill the pod
 
 `/api/v1/health` answers **`200` even when the database is momentarily
-unreachable** — the outage is reported in `storage.connected`, not in the HTTP
+unreachable**. The outage is reported in `storage.connected`, not in the HTTP
 status. This is deliberate: the endpoint is the target of the Kubernetes
 liveness and startup probes, and a probe failing on a ten-second blip would
 restart the instance exactly when the database needs to be left alone.
 
 Do not replace it with a check that fails on that case.
+
+## Upgrading
+
+The first instance that starts on a new version applies the schema changes.
+Instances started together queue on a lock held in the database, so only one of
+them migrates. An older version refuses a schema written by a newer one and
+does not write into it: to run an older version again, restore a backup of the
+database taken before the upgrade.
 
 ## Two instances on one database
 
@@ -329,7 +349,7 @@ to watch), then drives it through its HTTP surface:
 ```bash
 make e2e-sqlite     # the stack on the default local file
 make e2e-postgres   # the same stack, on PostgreSQL 14
-make e2e-both       # both in turn, on clean state — this is the one that matters
+make e2e-both       # both in turn, on clean state: this is the one that matters
 ```
 
 `e2e-both` is the check worth running before shipping anything that touches
@@ -344,7 +364,7 @@ something already listens there.
 
 **The migration, end to end.** `make e2e-migrate` takes a running SQLite stack,
 stops it, copies it into the PostgreSQL one the way an operator would, restarts
-on the database and re-runs the checks — so the path from an existing install
+on the database and re-runs the checks, so the path from an existing install
 to an external database is exercised, not just described. It runs the very
 `copy-store` service shown above, on the released image and entrypoint, so what
 CI proves is the command you type.

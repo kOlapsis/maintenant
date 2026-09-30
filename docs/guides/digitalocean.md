@@ -24,7 +24,7 @@ maintenant is a single Go binary with the frontend embedded and SQLite as its de
 
 ---
 
-## Step 1 — Create the Droplet
+## Step 1: Create the Droplet
 
 The repository ships a ready-to-use cloud-config at [`deploy/cloud-init/maintenant.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/cloud-init/maintenant.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
 
@@ -65,7 +65,7 @@ Droplet joins the right rules by carrying the tag.
 
 ---
 
-## Step 2 — Cloud Firewall
+## Step 2: Cloud Firewall
 
 `droplet create` has no `--firewall` flag, so the firewall is created separately and attached by tag.
 
@@ -111,7 +111,7 @@ Authentication is the proxy's job: maintenant has none. [Security](../security.m
 
 ---
 
-## Step 3 — Put the database on a Volume
+## Step 3: Put the database on a Volume
 
 The Droplet's disk goes away with the Droplet. A Volume survives a rebuild, resizes, and can be
 snapshotted on its own. Volumes start at 1 GiB and cost $0.10 per GiB per month.

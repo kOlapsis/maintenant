@@ -173,7 +173,7 @@ PersistentVolumeClaims are not tracked, and volumes are not part of a StatefulSe
 
 ## Annotations
 
-Annotations on a workload adjust how maintenant treats it. They use the names of the [Docker labels](docker-labels.md#kubernetes-annotations) and go on the metadata of the Deployment, StatefulSet, DaemonSet, Job or bare pod, not on its pod template:
+Annotations on a workload adjust how maintenant treats it. They use the names of the [Docker labels](docker-labels.md#kubernetes-annotations) and go on the metadata of the Deployment, StatefulSet, DaemonSet or bare pod, not on its pod template. A Job only reads `maintenant.ignore`:
 
 | Annotation | Effect |
 |------------|--------|
@@ -189,7 +189,9 @@ kubectl annotate deployment/api -n production \
   maintenant.alert.severity=critical
 ```
 
-The alerts below read `maintenant.ignore` every 30 seconds. The other annotations are picked up when maintenant reconciles: at startup, when it reconnects to the API server, or when a new workload appears. Only the server's own cluster reads annotations: a Kubernetes agent reports topology without them.
+The alerts below read `maintenant.ignore` every 30 seconds, and the update scan reads `maintenant.update.*` each time it runs. The other annotations are picked up when maintenant reconciles: at startup, when it reconnects to the API server, or when a new workload appears. Only the server's own cluster reads annotations: a Kubernetes agent reports topology without them.
+
+The update command shown for a workload is `kubectl set image <kind>/<name> <container>=<image> -n <namespace>`, where the container is the first one of the pod spec. A tag that was republished is deployed by its digest (`nginx:stable@sha256:...`), and a bare pod is updated in place.
 
 ---
 
@@ -239,7 +241,7 @@ When detection finds a kubeconfig but its cluster does not answer, maintenant fa
 
 ### Connection loss
 
-maintenant never gives up on the API server: at startup and after a loss it retries with a backoff from 1 to 30 seconds, for as long as it takes. Pods, Deployments, StatefulSets and DaemonSets are watched, so changes appear as they happen. When the API server stops answering for three probes in a row, 15 seconds apart (about 45 seconds), maintenant goes into degraded mode: monitoring is suspended and `/api/v1/health` reports `runtime.connected: false`. It reconnects by itself and resumes when the API server answers. An error answer such as `403 Forbidden` counts as an answer, not as a loss.
+maintenant never gives up on the API server: at startup and after a loss it retries with a backoff from 1 to 30 seconds, for as long as it takes. Pods, Deployments, StatefulSets and DaemonSets are watched, so changes appear as they happen. When the API server stops answering for three probes in a row, 15 seconds apart (about 45 seconds), maintenant goes into degraded mode: monitoring is suspended and `/api/v1/health` reports `runtime.connected: false`. It reconnects by itself and resumes when the API server answers. An error answer such as `403 Forbidden` counts as an answer, not as a loss. A configuration error (no in-cluster configuration and no kubeconfig) is retried as well, every 1 to 60 seconds, and each attempt logs its cause.
 
 ---
 
@@ -487,10 +489,8 @@ helm upgrade maintenant ./deploy/helm/maintenant -n maintenant
 helm uninstall maintenant -n maintenant
 ```
 
-!!! warning "PVC not deleted on uninstall"
-    Helm does not delete PersistentVolumeClaims on uninstall to prevent accidental data loss.
-    Delete it manually if needed: `kubectl delete pvc maintenant-data -n maintenant`
-    (the claim is named `<release fullname>-data`).
+!!! warning "The chart's PVC is deleted on uninstall"
+    The chart creates the claim (`<release fullname>-data`) as one of its own resources, so `helm uninstall` deletes it, and the data with it unless the storage class keeps volumes after their claim is gone. Back up the database first. To keep the data outside the release, create the claim yourself and set `persistence.existingClaim`.
 
 ---
 

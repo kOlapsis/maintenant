@@ -65,6 +65,8 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
 
 Boolean flags take no value (`--proxyLabels`) or an explicit one (`--proxyLabels=false`); `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`, `t`, `f`, `y` and `n` are accepted. `--proxyLabels true`, with a space, is refused: `true` would be read as a separate, unknown argument. Any other flag needs a non-empty, single-line value. For a value that starts with `--`, use the `--flagName=value` form. The script exits with code 2 on an unknown flag, a missing value or a bad boolean.
 
+A flag value shows up in the process list while the script runs, and in your shell history. For a long-lived secret (license key, SMTP password, database URL), add the line to `/etc/maintenant/maintenant.env` yourself, as described further down.
+
 ### Without systemd (containers, CI, minimal hosts)
 
 ```bash
@@ -196,6 +198,7 @@ Run `maintenant --help` to see this list with descriptions at any time.
 | `MAINTENANT_INSTALL_DIR` | `/usr/local/bin` | Where the binary goes. |
 | `MAINTENANT_DATA_DIR` | `/var/lib/maintenant` | Data directory. |
 | `MAINTENANT_CONFIG_DIR` | `/etc/maintenant` | Configuration directory. |
+| `MAINTENANT_SKIP_COSIGN` | unset | Any non-empty value behaves like `--skip-cosign`. |
 | `NO_COLOR` | unset | Disable ANSI colors. |
 
 Because `sudo` does not pass the environment through, give these on the `sudo` command line, as in `sudo MAINTENANT_VERSION=v1.8.0 bash`.
@@ -212,7 +215,9 @@ curl -fsSL https://install.maintenant.dev | sudo bash -s -- \
   --label web-01
 ```
 
-This is the command the *Standalone* tab of the enrollment dialog shows. The agent keeps its identity and its spool in `/var/lib/maintenant`. See [Agent Setup](guides/agent-setup.md) for the server side and the enrollment token.
+This is the command the *Standalone* tab of the enrollment dialog shows, with `--label` added. The agent keeps its identity and its spool in `/var/lib/maintenant`. See [Agent Setup](guides/agent-setup.md) for the server side and the enrollment token.
+
+The token stays in `/etc/maintenant/maintenant.env`. The agent uses it for its first enrolment. If the server later refuses the stored identity (the agent was deleted or revoked), the agent enrols a new one with the token in the file. A token works once, so create a new one and run the script again with `--enrollment-token NEWTOKEN`: it replaces the value in the file and restarts the service.
 
 ### The `/etc/maintenant/maintenant.env` file
 

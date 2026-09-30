@@ -1,12 +1,12 @@
 # Hetzner Cloud Deployment Guide
 
-How to run maintenant on Hetzner Cloud — a single server with `cloud-init`, a private network for the agents, Hetzner Volumes for the database, and Kubernetes clusters built with the usual Hetzner tooling.
+How to run maintenant on Hetzner Cloud: a single server with `cloud-init`, a private network for the agents, Hetzner Volumes for the database, and Kubernetes clusters built with the usual Hetzner tooling.
 
 ---
 
 ## Why it fits a Hetzner box
 
-maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles under 30 MB of RAM and needs no database server, no Prometheus, no Redis. That makes it a natural fit for a small Hetzner Cloud server that already runs something else — it does not need a machine of its own.
+maintenant is a single Go binary with the frontend embedded and SQLite as its default store. It idles under 30 MB of RAM and needs no database server, no Prometheus, no Redis. That makes it a natural fit for a small Hetzner Cloud server that already runs something else: it does not need a machine of its own.
 
 The image is published for `linux/amd64` **and** `linux/arm64`, so the Ampere-based **CAX** line works as well as the Intel/AMD **CX** and **CPX** lines.
 
@@ -24,7 +24,7 @@ The image is published for `linux/amd64` **and** `linux/arm64`, so the Ampere-ba
 
 ---
 
-## Step 1 — Provision the server
+## Step 1: Provision the server
 
 The repository ships a ready-to-use cloud-config at [`deploy/cloud-init/maintenant.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/cloud-init/maintenant.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
 
@@ -41,7 +41,7 @@ hcloud server create \
 Once the server is up:
 
 ```bash
-# The UI listens on loopback only — reach it through an SSH tunnel
+# The UI listens on loopback only: reach it through an SSH tunnel
 ssh -L 8080:127.0.0.1:8080 root@$(hcloud server ip maintenant)
 ```
 
@@ -57,7 +57,7 @@ Open **http://localhost:8080**. Every container on the host is already discovere
 
 ---
 
-## Step 2 — Lock the Hetzner Cloud Firewall
+## Step 2: Lock the Hetzner Cloud Firewall
 
 The cloud-config publishes the UI on `127.0.0.1:8080` only, so nothing is exposed before you decide it should be. A Cloud Firewall makes that explicit at the network edge:
 
@@ -86,7 +86,7 @@ Note what is **not** in that list: port `8080`. Publish the dashboard through a 
 !!! warning "maintenant will flag its own exposure"
     If you change the Compose file to publish `"8080:8080"`, maintenant's own network security
     scanner reports a critical **Port exposed on all interfaces** finding for its own container.
-    That is the intended behaviour, not a bug — see the note in
+    That is the intended behaviour, not a bug. See the note in
     [Installation → Docker Compose](../getting-started/installation.md#docker-compose-recommended)
     and [Configuration → Choosing a Bind Address](../getting-started/configuration.md#choosing-a-bind-address).
 
@@ -105,7 +105,7 @@ Authentication is the proxy's job: maintenant has none. [Security](../security.m
 
 ---
 
-## Step 3 — Put the database on a Hetzner Volume
+## Step 3: Put the database on a Hetzner Volume
 
 The boot disk of a CX22 is 40 GB and disappears with the server. A Volume survives a rebuild and can be resized, which matters once you keep months of history.
 
@@ -147,7 +147,7 @@ Do this before you enrol any agent: the server's database holds their identities
     database. A volume sized to the current database will fail an upgrade. 10 GB is a sane floor.
 
 !!! note "Watching more than one host? Consider PostgreSQL"
-    The server holds the agents' identity and enrolment — the one thing they cannot rebuild on
+    The server holds the agents' identity and enrolment, the one thing they cannot rebuild on
     their own. On the default SQLite file, losing that server means re-enrolling every host by
     hand. Hetzner has no managed PostgreSQL, but if you already run one, pointing the server at it
     makes the instance replaceable. See [PostgreSQL storage](postgresql.md).
@@ -245,13 +245,13 @@ The per-target checks run over the private network from the maintenant server, s
 !!! tip "Certificates on managed Load Balancers"
     If the Load Balancer terminates TLS with a Hetzner-managed certificate, add the public
     hostname to [TLS Certificate Monitoring](../features/certificates.md). Managed renewal usually
-    works — the point is to be told when it does not.
+    works, and the point is to be told when it does not.
 
 ---
 
 ## Kubernetes on Hetzner
 
-maintenant runs unchanged on the clusters produced by the usual Hetzner tooling — [`terraform-hcloud-kube-hetzner`](https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner), [`vitobotta/hetzner-k3s`](https://github.com/vitobotta/hetzner-k3s), [`terraform-hcloud-talos`](https://github.com/hcloud-talos/terraform-hcloud-talos) or a Cluster API deployment.
+maintenant runs unchanged on the clusters produced by the usual Hetzner tooling: [`terraform-hcloud-kube-hetzner`](https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner), [`vitobotta/hetzner-k3s`](https://github.com/vitobotta/hetzner-k3s), [`terraform-hcloud-talos`](https://github.com/hcloud-talos/terraform-hcloud-talos) or a Cluster API deployment.
 
 ```bash
 helm install maintenant ./deploy/helm/maintenant \
@@ -305,12 +305,12 @@ docker compose -f /opt/maintenant/compose.yml start
 
 ## Related
 
-- [Installation](../getting-started/installation.md) — Docker, Kubernetes and source builds
-- [DigitalOcean Deployment](digitalocean.md) — The same ground on DigitalOcean
-- [Scaleway Deployment](scaleway.md) — The same ground on Scaleway
-- [OVHcloud Deployment](ovhcloud.md) — The same ground on OVHcloud
-- [Vultr Deployment](vultr.md) — The same ground on Vultr
-- [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
-- [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
-- [PostgreSQL Storage](postgresql.md) — Making the server replaceable
-- [Endpoint Monitoring](../features/endpoints.md) — HTTP/TCP checks behind a Load Balancer
+- [Installation](../getting-started/installation.md): Docker, Kubernetes and source builds
+- [DigitalOcean Deployment](digitalocean.md): The same ground on DigitalOcean
+- [Scaleway Deployment](scaleway.md): The same ground on Scaleway
+- [OVHcloud Deployment](ovhcloud.md): The same ground on OVHcloud
+- [Vultr Deployment](vultr.md): The same ground on Vultr
+- [Agent Setup](agent-setup.md): Enrolling additional hosts over gRPC
+- [Kubernetes Guide](kubernetes.md): RBAC, Helm values, workload monitoring
+- [PostgreSQL Storage](postgresql.md): Making the server replaceable
+- [Endpoint Monitoring](../features/endpoints.md): HTTP/TCP checks behind a Load Balancer

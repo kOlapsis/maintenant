@@ -64,7 +64,7 @@ Two more entry points share the binary: `maintenant --mcp-stdio` serves the MCP 
 
 **Label-driven**: Monitoring is declared where the workload is defined: Docker labels, Swarm `deploy.labels` and, for a few settings, Kubernetes annotations. Manual endpoints, heartbeats, certificates, channels and the status page are managed in the interface or through the API, and the instance itself is configured with `MAINTENANT_*` variables or their matching flags.
 
-**Runtime-agnostic**: Docker (with Swarm detection) and Kubernetes sit behind a common `Runtime` interface in `internal/runtime`. At startup the runtime is chosen in this order: `MAINTENANT_RUNTIME`, then `KUBERNETES_SERVICE_HOST` (in cluster), then a kubeconfig whose cluster answers, then the Docker socket. A kubeconfig whose cluster does not answer falls back to Docker with a warning. When the runtime is lost the instance keeps serving in degraded mode and reconnects in the background.
+**Runtime-agnostic**: Docker (with Swarm detection) and Kubernetes sit behind a common `Runtime` interface in `internal/runtime`. At startup the runtime is chosen in this order: `MAINTENANT_RUNTIME`, then `KUBERNETES_SERVICE_HOST` (in cluster), then a kubeconfig whose cluster answers, then the Docker socket. A kubeconfig whose cluster does not answer falls back to Docker with a warning. When the runtime is lost the instance keeps serving in degraded mode and reconnects in the background, retrying with a growing delay (1 second at first, 30 seconds at most) and logging the cause of each failure. A Swarm is detected as soon as Docker connects, so enabling Swarm later needs no restart.
 
 **Editions are data, not builds**: `internal/extension` defines the editions (Community, Personal, Pro), the capabilities, the quotas and the history windows. The tier table that says which edition opens what lives in `internal/commercial/tiers`, and `internal/extpoint` declares the implementations a licensed build plugs into the core (update enrichment, posture scoring, notification channels, status page extras, maintenance suppression, escalation, multi-host). A nil implementation keeps the Community behaviour. `GET /api/v1/edition` publishes the table so the frontend never holds one of its own.
 
@@ -215,9 +215,13 @@ Check engine (one ticker per endpoint)
   → HTTP/TCP probe
     → endpoint.Service.ProcessCheckResult()
       → store (persist check result and status)
+      → event callback (endpoint.status_changed, internal/app/wiring.go)
+        → SSE broker → browsers
+                     → webhook dispatcher (observer)
+        → status page (component status, on a status change)
       → alert callback (internal/app/wiring.go)
         → alert engine (consecutive failures, untrusted certificate)
-        → status page (component status)
+        → SSE broker (endpoint.alert, endpoint.recovery)
     → certificate service (auto-detect TLS on HTTPS targets)
 ```
 
@@ -247,9 +251,9 @@ alert.Event → alert engine
   → alert triggers → channels → notifier queue (workers, retries)
 ```
 
-Channels are silent by default: an alert reaches a channel only through an alert trigger or an escalation policy. The notifier retries a failed delivery.
+Channels are silent by default: an alert reaches a channel only through an alert trigger or an escalation policy. The notifier tries a delivery up to three times, waiting 1 second and then 5 seconds. The notifications of one alert to one channel go through the same worker one after the other, so a recovery never overtakes the alert it resolves.
 
-Webhook subscriptions are a separate path. The webhook dispatcher is an observer of the SSE broker: it reacts to six event types (`container.state_changed`, `endpoint.status_changed`, `heartbeat.status_changed`, `certificate.status_changed`, `alert.fired`, `alert.resolved`) and sends them through the notifier's worker pool.
+Webhook subscriptions are a separate path. The webhook dispatcher is an observer of the SSE broker: it reacts to six event types (`container.state_changed`, `endpoint.status_changed`, `heartbeat.status_changed`, `certificate.status_changed`, `alert.fired`, `alert.resolved`) and sends them through the notifier's worker pool. The events sent to one URL are delivered in order. The dispatcher records each delivery on the subscription (last status, consecutive failures) and deactivates it after 10 failures in a row; a success reactivates it.
 
 ---
 
@@ -257,12 +261,12 @@ Webhook subscriptions are a separate path. The webhook dispatcher is an observer
 
 Multi-host monitoring needs Personal or above. The gRPC protocol is defined in `proto/ingest.proto` (service `Ingest`).
 
-- **Enrollment**: an operator creates a one-time enrollment token (24 hours by default, 7 days at most). The agent generates an Ed25519 key pair and calls `RegisterAgent` with the token.
+- **Enrollment**: an operator creates a one-time enrollment token (24 hours by default, 7 days at most). The agent generates an Ed25519 key pair and calls `RegisterAgent` with the token. When the server revokes the agent or no longer knows it, the agent discards its spool and enrols a fresh identity once with the token it is configured with. Without a usable token it exits with an error that names `MAINTENANT_ENROLLMENT_TOKEN`.
 - **Authentication**: every `Push` stream starts with a random 32-byte nonce from the server. The agent answers with a signature over the nonce, its id and a timestamp. A clock difference above 300 seconds, a revoked agent or an unknown agent is refused.
 - **Stream**: the agent pushes container events and inventories, endpoint and certificate probe results, resource samples, Swarm and Kubernetes topologies and the host OS identity. The server answers with acknowledgements and errors (`agent_revoked`, `rate_limited`, ...). Commands are the one exception to the push-only stream: the server can ask an agent for container logs.
 - **Probing**: the agent probes the endpoints and certificates of its own containers itself, from their labels. The server never dials them.
 - **Spool**: events are queued in memory, then in `spool.db`, while the server is unreachable, and replayed after the reconnect. Bounds: `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES`, `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` and `MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS`. State snapshots are never queued, and a replayed event is stored for history without raising live events or alerts.
-- **Transport**: TLS. Without `MAINTENANT_GRPC_TLS_CERT` and `MAINTENANT_GRPC_TLS_KEY` the server generates a self-signed certificate and logs a warning. `MAINTENANT_GRPC_TLS_INSECURE` serves plain h2c behind a trusted reverse proxy. The listener defaults to `127.0.0.1:8443`.
+- **Transport**: TLS. Without `MAINTENANT_GRPC_TLS_CERT` and `MAINTENANT_GRPC_TLS_KEY` the server generates a self-signed certificate and logs a warning. `MAINTENANT_GRPC_TLS_INSECURE` serves plain h2c behind a trusted reverse proxy, and the embedded agent then dials `grpc://` instead of `grpcs://`. A certificate without its key, or the reverse, stops the startup. The listener defaults to `127.0.0.1:8443`.
 - **Identity**: the server's own runtime is an agent too, with the sentinel id `00000000-0000-0000-0000-000000000000` (`uid.LocalAgent`), so every entity carries an `agent_id`.
 
 See [Multi-Host Monitoring](features/multihost.md) and [Agent Setup](guides/agent-setup.md).
@@ -355,7 +359,7 @@ Before the raw transitions, check results and heartbeat pings are deleted, the s
 
 ## HTTP layer
 
-The top-level mux routes `/mcp` and the OAuth endpoints (when MCP is enabled), `/status/*` (public status page), `/api/`, `/ping/` and, for everything else, the embedded single-page application with a fallback to `index.html`. Three per-IP token buckets protect it: 10 requests per second (burst 20) for `/ping/`, `/status/`, `/mcp` and `/oauth/`, 50 per second (burst 200) for `/api/`, and 5 per hour for status page subscriptions. Client addresses are read from forwarded headers only for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
+The top-level mux routes `/mcp` (when MCP is enabled) and the OAuth endpoints (when a client id and secret are also set), `/status/*` (public status page), `/api/`, `/ping/` and, for everything else, the embedded single-page application with a fallback to `index.html`. Three per-IP token buckets protect it: 10 requests per second (burst 20) for `/ping/`, `/status/`, `/mcp` and `/oauth/`, 50 per second (burst 200) for `/api/`, and 5 per hour for status page subscriptions. Client addresses are read from forwarded headers only for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
 
 Around the mux, from the outside in: security headers and a content security policy, a 10-second timeout for every request except the streaming ones, and the demo guard. The API router adds panic recovery, request logging, a request id, CORS, the cross-origin guard for unsafe methods, and the body size limit. The server itself uses a 5-second read timeout and no write timeout, which SSE requires. The API has no authentication of its own: see [Security](security.md) for what to put in front of it.
 
@@ -367,8 +371,10 @@ The SSE brokers are the central hub for real-time updates. There are two, one pe
 
 1. **Services** emit events when state changes (container state, heartbeat ping, alert fired, agent connected)
 2. **The main broker** (`GET /api/v1/containers/events`) fans out events to every connected dashboard. A client that falls 64 events behind loses events instead of blocking the others.
-3. **The status broker** (`GET /status/events`) carries only `status.*` events, so the public status page never sees dashboard events.
+3. **The status broker** (`GET /status/events`) carries only `status.*` events, so the public status page never sees dashboard events. The same `status.*` events also go to the main broker, for the dashboard.
 4. **The webhook dispatcher** observes the main broker and delivers six event types to external URLs.
+
+Both streams send a keep-alive comment every 25 seconds so that a proxy does not cut an idle connection.
 
 The alert engine is not a subscriber: services call it directly (see [Alerts](#alerts)).
 

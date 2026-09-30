@@ -191,7 +191,7 @@ server {
 The `(/|$)` ending matters: `/mcp` has no trailing slash, and a pattern that requires one sends it to the authenticated `location /`. `X-Forwarded-For` is what `MAINTENANT_TRUSTED_PROXIES` relies on; `Host` is used by the [cross-origin check](#csrf-protection) and to build the agent enrolment URL.
 
 !!! tip "Streaming routes and proxy timeouts"
-    `/api/v1/containers/events`, `/api/v1/containers/{id}/logs/stream`, `/status/events` and every `/mcp` response are streams. maintenant sends `X-Accel-Buffering: no` on them, so nginx relays them as they are written without `proxy_buffering off`. They send no periodic keep-alive, so a proxy read timeout closes a stream that stays quiet (`proxy_read_timeout` is 60 seconds by default in nginx): raise it on the paths you want to keep open. Caddy handles streaming natively, no special configuration needed.
+    `/api/v1/containers/events`, `/api/v1/containers/{id}/logs/stream`, `/status/events` and every `/mcp` response are streams. maintenant sends `X-Accel-Buffering: no` on them, so nginx relays them as they are written without `proxy_buffering off`. The three event streams (`/api/v1/containers/events`, `/api/v1/containers/{id}/logs/stream` and `/status/events`) send a keep-alive comment every 25 seconds, which stays under the 60 seconds that nginx waits by default (`proxy_read_timeout`) before it closes a quiet connection. `/mcp` sends none, so raise the read timeout on that path, as the example above does. Caddy handles streaming natively, no special configuration needed.
 
 ---
 
@@ -314,7 +314,7 @@ HSTS is deliberately **not** set by the application. TLS terminates at your reve
 
 ### Request Size Limits
 
-Request bodies on `/api/` and `/ping/` are limited to **1 MB** by default, whatever the method. Configurable via `MAINTENANT_MAX_BODY_SIZE` (in bytes; a value that is not a positive integer falls back to the default). The public `/status/` routes have a fixed limit of 4 KiB. `/mcp` and `/oauth/*` set no size limit of their own.
+Request bodies on `/api/` and `/ping/` are limited to **1 MB** by default, whatever the method. Configurable via `MAINTENANT_MAX_BODY_SIZE` (in bytes; a value that is not a positive whole number stops the startup with an error that names the variable). The public `/status/` routes have a fixed limit of 4 KiB. `/mcp` and `/oauth/*` set no size limit of their own.
 
 ### Request Timeouts
 
@@ -523,8 +523,8 @@ Key points:
 
 - The proxy is the root-equivalent component. Keep it on an **internal network** and never publish port 2375 on the host.
 - With this setup, even a fully compromised maintenant could only *read* the Docker API: the proxy answers `403` to every write.
-- Without `IMAGES: "1"` the update scan still runs, but it cannot recognise locally built images or read the exact digest of the running image.
-- If maintenant starts before the proxy is reachable, it boots in degraded mode and reconnects automatically once the proxy is up.
+- Without `IMAGES: "1"` the update scan still runs, but it cannot recognise locally built images or read the exact digest of the running image. The proxy refuses `GET /images/json`, and maintenant logs one warning that names `IMAGES=1` and carries on with the scan.
+- If maintenant starts before the proxy is reachable, it boots in degraded mode and reconnects automatically once the proxy is up, retrying with a growing delay (1 second at first, 30 seconds at most) and logging the cause of each failure.
 - Works identically in **agent mode**: the agent uses the same Docker client, so a per-host socket proxy plus `DOCKER_HOST` replaces the socket mount there too.
 
 #### Alternative: direct socket mount
@@ -593,7 +593,7 @@ Endpoint and certificate monitors are not subject to this guard: probing interna
 
 ### Outgoing mail
 
-The email channel and the status page subscription mails go through the one SMTP server set with `MAINTENANT_SMTP_*`. The connection starts in plaintext and is upgraded with STARTTLS when the server offers it; a server that does not offer it receives the message unencrypted. The SMTP client refuses to send a username and password over an unencrypted connection unless the server is `localhost`, so a server without STARTTLS cannot be used with credentials. Implicit TLS (port 465) is not supported.
+The email channel and the status page subscription mails go through the one SMTP server set with `MAINTENANT_SMTP_*`. With `MAINTENANT_SMTP_PORT=465`, maintenant uses implicit TLS: the connection is encrypted from the first byte. On any other port the connection starts in plaintext and is upgraded with STARTTLS when the server announces it. A server that announces STARTTLS and then fails the negotiation gets no message: the send fails instead of falling back to plaintext. A server that does not announce STARTTLS receives the message unencrypted. The SMTP client refuses to send a username and password over an unencrypted connection unless the server is `localhost`, so a server without STARTTLS or TLS cannot be used with credentials.
 
 ### Private CA
 

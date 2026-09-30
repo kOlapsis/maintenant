@@ -19,7 +19,7 @@ This is a step-by-step guide. For the architecture, streaming protocol and full 
 
 - A Maintenant **server** running the Personal edition or above (`--mode=server`, or the default mode: the agent listener starts in both).
 - The server's **gRPC endpoint reachable from the agent host** (see [Step 1](#step-1-make-the-grpc-endpoint-reachable)).
-- On the agent host: Docker, a Swarm node, a Kubernetes cluster, or just a bare-metal/VM host. The runtime is auto-detected.
+- On the agent host: a Docker engine (a Swarm node included) or a Kubernetes cluster, detected automatically. The agent waits for that runtime to answer before it enrolls, retrying every 1 to 30 seconds, so a host without any container runtime cannot run an agent.
 - A free host slot. Personal caps enrolled hosts at 20, Pro has no cap. When the cap is reached, generating a token is refused (`409 HOST_LIMIT_REACHED`) and enrollment is rejected with `agent host limit reached`.
 
 ---
@@ -250,7 +250,7 @@ Every flag has an environment variable with the same effect (`--server` is `MAIN
 | `--mode` | `agent` (also `MAINTENANT_MODE=agent`). |
 | `--server` | Server gRPC URL, e.g. `grpcs://agents.example.com` (port defaults to 443). |
 | `--enrollment-token` | One-time token. Needed on first boot, and again to enroll as a new agent when the server refuses the stored identity. Once enrolled and accepted, it is not used. |
-| `--label` | Display name at enrollment (max 64 chars). Defaults to the hostname. |
+| `--label` | Display name at enrollment. Defaults to the hostname, which also replaces a label longer than 64 characters. |
 | `--runtime` | Override auto-detection: `docker`, `swarm`, or `kubernetes`. |
 | `--nodeName` | Kubernetes node the agent runs on. Found from the pod when empty. |
 | `--data-dir` | Directory of the identity, liveness file and spool (default `/var/lib/maintenant`). The image healthcheck reads `MAINTENANT_DATA_DIR`, so set the variable rather than the flag if you move it. |

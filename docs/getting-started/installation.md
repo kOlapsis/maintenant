@@ -151,7 +151,7 @@ Both approaches deploy:
 - A **PersistentVolumeClaim** (10Gi) for the SQLite database, the license cache and the telemetry identity.
 - A **ClusterIP Service** on port 80.
 
-maintenant auto-detects the in-cluster Kubernetes API. It monitors every namespace except `kube-system`, `kube-public` and `kube-node-lease` unless you set an allowlist or blocklist, and workload-level monitoring works out of the box. The pod starts as a non-root user, so the image entrypoint runs the binary directly and leaves the volume permissions to `fsGroup`.
+maintenant auto-detects the in-cluster Kubernetes API. It monitors every namespace except `kube-system`, `kube-public` and `kube-node-lease`, and workload-level monitoring works out of the box. `MAINTENANT_K8S_NAMESPACES` replaces that default with an allowlist, and `MAINTENANT_K8S_EXCLUDE_NAMESPACES` adds namespaces to the excluded ones. The pod starts as a non-root user, so the image entrypoint runs the binary directly and leaves the volume permissions to `fsGroup`.
 
 !!! note
     The deployment uses `strategy: Recreate` because SQLite requires a single writer.

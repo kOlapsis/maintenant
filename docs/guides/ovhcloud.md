@@ -46,7 +46,7 @@ PostgreSQL and monitor hundreds of containers.
 
 ---
 
-## Step 1 — Create the instance
+## Step 1: Create the instance
 
 Public Cloud is driven with the standard OpenStack client. Download the RC file from the OVHcloud
 Control Panel under **Users & Roles**, then source it. One RC file covers one user and one region.
@@ -86,7 +86,7 @@ Open **http://localhost:8080**. Every container on the host is already discovere
 
 ---
 
-## Step 2 — Security groups
+## Step 2: Security groups
 
 OpenStack blocks inbound traffic by default: the stock rules allow outgoing traffic only. Create a
 group, then apply it to the instance's port.
@@ -138,7 +138,7 @@ Authentication is the proxy's job: maintenant has none. [Security](../security.m
 
 ---
 
-## Step 3 — Put the database on a Block Storage volume
+## Step 3: Put the database on a Block Storage volume
 
 The instance's disk goes away with the instance. A Cinder volume survives, resizes, and can be snapshotted on its own. Volumes run from 10 GB to 12 TB; `high-speed-gen2` is the current performance class, `classic` the cheaper one.
 
@@ -395,12 +395,12 @@ docker compose -f /opt/maintenant/compose.yml start
 
 ## Related
 
-- [Installation](../getting-started/installation.md) — Docker, Kubernetes and source builds
-- [Hetzner Cloud Deployment](hetzner.md) — The same ground on Hetzner
-- [DigitalOcean Deployment](digitalocean.md) — The same ground on DigitalOcean
-- [Scaleway Deployment](scaleway.md) — The same ground on Scaleway
-- [Vultr Deployment](vultr.md) — The same ground on Vultr
-- [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
-- [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
-- [PostgreSQL Storage](postgresql.md) — Making the server replaceable
-- [Endpoint Monitoring](../features/endpoints.md) — HTTP/TCP checks behind a load balancer
+- [Installation](../getting-started/installation.md): Docker, Kubernetes and source builds
+- [Hetzner Cloud Deployment](hetzner.md): The same ground on Hetzner
+- [DigitalOcean Deployment](digitalocean.md): The same ground on DigitalOcean
+- [Scaleway Deployment](scaleway.md): The same ground on Scaleway
+- [Vultr Deployment](vultr.md): The same ground on Vultr
+- [Agent Setup](agent-setup.md): Enrolling additional hosts over gRPC
+- [Kubernetes Guide](kubernetes.md): RBAC, Helm values, workload monitoring
+- [PostgreSQL Storage](postgresql.md): Making the server replaceable
+- [Endpoint Monitoring](../features/endpoints.md): HTTP/TCP checks behind a load balancer

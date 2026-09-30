@@ -26,7 +26,7 @@ The image is published for `linux/amd64` **and** `linux/arm64`, and the `ubuntu_
 
 ---
 
-## Step 1 — Create the Instance
+## Step 1: Create the Instance
 
 The repository ships a ready-to-use cloud-config at [`deploy/cloud-init/maintenant.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/cloud-init/maintenant.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
 
@@ -66,7 +66,7 @@ Open **http://localhost:8080**. Every container on the host is already discovere
 
 ---
 
-## Step 2 — Security group
+## Step 2: Security group
 
 ```bash
 SG=$(scw instance security-group create \
@@ -117,7 +117,7 @@ Authentication is the proxy's job: maintenant has none. [Security](../security.m
 
 ---
 
-## Step 3 — Put the database on a Block Storage volume
+## Step 3: Put the database on a Block Storage volume
 
 The Instance's local storage goes away with the Instance. A Block Storage volume survives, resizes, and can be snapshotted on its own. Volumes start at 5 GB and come in two flavours: `sbs_5k` (5 000 IOPS) and `sbs_15k`.
 
@@ -382,12 +382,12 @@ docker compose -f /opt/maintenant/compose.yml start
 
 ## Related
 
-- [Installation](../getting-started/installation.md) — Docker, Kubernetes and source builds
-- [Hetzner Cloud Deployment](hetzner.md) — The same ground on Hetzner
-- [DigitalOcean Deployment](digitalocean.md) — The same ground on DigitalOcean
-- [OVHcloud Deployment](ovhcloud.md) — The same ground on OVHcloud
-- [Vultr Deployment](vultr.md) — The same ground on Vultr
-- [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
-- [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
-- [PostgreSQL Storage](postgresql.md) — Making the server replaceable
-- [Endpoint Monitoring](../features/endpoints.md) — HTTP/TCP checks behind a Load Balancer
+- [Installation](../getting-started/installation.md): Docker, Kubernetes and source builds
+- [Hetzner Cloud Deployment](hetzner.md): The same ground on Hetzner
+- [DigitalOcean Deployment](digitalocean.md): The same ground on DigitalOcean
+- [OVHcloud Deployment](ovhcloud.md): The same ground on OVHcloud
+- [Vultr Deployment](vultr.md): The same ground on Vultr
+- [Agent Setup](agent-setup.md): Enrolling additional hosts over gRPC
+- [Kubernetes Guide](kubernetes.md): RBAC, Helm values, workload monitoring
+- [PostgreSQL Storage](postgresql.md): Making the server replaceable
+- [Endpoint Monitoring](../features/endpoints.md): HTTP/TCP checks behind a Load Balancer
