@@ -19,13 +19,12 @@ import (
 )
 
 func serviceRuntime(nsFilter *NamespaceFilter, objects ...k8sruntime.Object) *Runtime {
-	return &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  nsFilter,
-		clientset: fake.NewClientset(objects...),
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	return withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: nsFilter,
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, fake.NewClientset(objects...))
 }
 
 func service(ns, name string, typ corev1.ServiceType, selector map[string]string, ports ...corev1.ServicePort) *corev1.Service {

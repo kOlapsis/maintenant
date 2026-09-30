@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	k8s "k8s.io/client-go/kubernetes"
 )
 
 // ServiceExposure is one port a LoadBalancer or NodePort Service opens outside
@@ -36,7 +37,11 @@ type selectableWorkload struct {
 // ListServiceExposures returns the ports LoadBalancer and NodePort Services
 // expose, one entry per workload each Service selects.
 func (r *Runtime) ListServiceExposures(ctx context.Context) ([]ServiceExposure, error) {
-	list, err := r.clientset.CoreV1().Services("").List(ctx, metav1.ListOptions{})
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	list, err := cs.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list services: %w", err)
 	}
@@ -54,7 +59,7 @@ func (r *Runtime) ListServiceExposures(ctx context.Context) ([]ServiceExposure, 
 		return nil, nil
 	}
 
-	workloads, err := r.selectableWorkloads(ctx)
+	workloads, err := r.selectableWorkloads(ctx, cs)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +90,7 @@ func (r *Runtime) ListServiceExposures(ctx context.Context) ([]ServiceExposure, 
 // selectableWorkloads lists what a Service selector can match: the pod
 // templates of the controllers and the labels of bare pods. A kind the RBAC
 // denies is left out, as in discoverAll.
-func (r *Runtime) selectableWorkloads(ctx context.Context) ([]selectableWorkload, error) {
+func (r *Runtime) selectableWorkloads(ctx context.Context, cs k8s.Interface) ([]selectableWorkload, error) {
 	var out []selectableWorkload
 	keep := func(ns string) bool { return r.nsFilter.IsAllowed(ns) }
 	skip := func(kind string, err error) error {
@@ -96,7 +101,7 @@ func (r *Runtime) selectableWorkloads(ctx context.Context) ([]selectableWorkload
 		return fmt.Errorf("list %s: %w", kind, err)
 	}
 
-	deployments, err := r.clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	deployments, err := cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if err := skip("deployments", err); err != nil {
 			return nil, err
@@ -109,7 +114,7 @@ func (r *Runtime) selectableWorkloads(ctx context.Context) ([]selectableWorkload
 		}
 	}
 
-	statefulSets, err := r.clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	statefulSets, err := cs.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if err := skip("statefulsets", err); err != nil {
 			return nil, err
@@ -122,7 +127,7 @@ func (r *Runtime) selectableWorkloads(ctx context.Context) ([]selectableWorkload
 		}
 	}
 
-	daemonSets, err := r.clientset.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	daemonSets, err := cs.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if err := skip("daemonsets", err); err != nil {
 			return nil, err
@@ -135,7 +140,7 @@ func (r *Runtime) selectableWorkloads(ctx context.Context) ([]selectableWorkload
 		}
 	}
 
-	pods, err := r.clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	pods, err := cs.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if err := skip("pods", err); err != nil {
 			return nil, err
