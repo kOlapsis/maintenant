@@ -509,7 +509,13 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 
 	var updateEnricher update.Enricher
 	if a.ext.Enricher != nil {
-		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{Store: updateStore, Registry: registryClient, Logger: logger})
+		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{
+			Store:    updateStore,
+			Registry: registryClient,
+			Insights: a.securitySvc,
+			Restarts: containerStore,
+			Logger:   logger,
+		})
 	}
 	a.updateSvc = update.NewService(update.Deps{
 		Store:      updateStore,

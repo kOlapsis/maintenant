@@ -55,19 +55,6 @@ func parseHostFilter(r *http.Request) *string {
 	return &v
 }
 
-// hostMatches reports whether a snapshot owned by snapAgent belongs to the host
-// described by filter (nil = all, "" = local, id = that agent). A snapshot is
-// "local" when its agent id is empty or the LocalAgent sentinel.
-func hostMatches(snapAgent string, filter *string) bool {
-	if filter == nil {
-		return true
-	}
-	if *filter == "" {
-		return snapAgent == "" || snapAgent == uid.LocalAgent
-	}
-	return snapAgent == *filter
-}
-
 // HandleGetCurrent handles GET /api/v1/containers/{id}/resources/current.
 func (h *ResourceHandler) HandleGetCurrent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -111,17 +98,7 @@ func (h *ResourceHandler) HandleGetSummary(w http.ResponseWriter, r *http.Reques
 		filter = &empty
 	}
 
-	// Net rates and container count for the selected host only.
-	var totalNetRxRate, totalNetTxRate int64
-	containerCount := 0
-	for _, snap := range h.service.GetAllLatestSnapshots() {
-		if !hostMatches(snap.AgentID, filter) {
-			continue
-		}
-		totalNetRxRate += snap.NetRxBytes
-		totalNetTxRate += snap.NetTxBytes
-		containerCount++
-	}
+	containerCount, totalNetRxRate, totalNetTxRate := h.service.NetworkTotals(filter)
 
 	sample := h.service.HostStatForAgent(*filter)
 	available := sample != nil

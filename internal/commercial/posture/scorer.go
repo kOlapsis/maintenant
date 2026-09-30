@@ -92,28 +92,78 @@ func NewScorer(d ScorerDeps) *Scorer {
 
 // ScoreContainer computes the security score for a single container.
 func (s *Scorer) ScoreContainer(ctx context.Context, containerID string, containerExternalID string, containerName string) (*security.SecurityScore, error) {
+	scores, err := s.ScoreContainers(ctx, []security.ContainerInfo{{ID: containerID, ExternalID: containerExternalID, Name: containerName}})
+	if err != nil {
+		return nil, err
+	}
+	return scores[0], nil
+}
+
+// ScoreContainers scores each container, reading certificates and updates once for all of them.
+func (s *Scorer) ScoreContainers(ctx context.Context, containers []security.ContainerInfo) ([]*security.SecurityScore, error) {
+	scores := make([]*security.SecurityScore, len(containers))
+	var pending []int
+	now := time.Now()
 	s.mu.RLock()
-	if cached, ok := s.cache[containerID]; ok && time.Now().Before(cached.expiresAt) {
-		s.mu.RUnlock()
-		return cached.score, nil
+	for i, c := range containers {
+		if cached, ok := s.cache[c.ID]; ok && now.Before(cached.expiresAt) {
+			scores[i] = cached.score
+		} else {
+			pending = append(pending, i)
+		}
 	}
 	s.mu.RUnlock()
+	if len(pending) == 0 {
+		return scores, nil
+	}
 
-	score, err := s.computeContainerScore(ctx, containerID, containerExternalID, containerName)
+	externalIDs := make([]string, len(pending))
+	for j, i := range pending {
+		externalIDs[j] = containers[i].ExternalID
+	}
+	in, err := s.readInputs(ctx, externalIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	if score != nil {
-		s.mu.Lock()
-		s.cache[containerID] = cachedScore{score: score, expiresAt: time.Now().Add(10 * time.Second)}
-		s.mu.Unlock()
+	for _, i := range pending {
+		c := containers[i]
+		score, err := s.computeContainerScore(ctx, in, c.ID, c.ExternalID, c.Name)
+		if err != nil {
+			return nil, err
+		}
+		if score != nil {
+			s.mu.Lock()
+			s.cache[c.ID] = cachedScore{score: score, expiresAt: time.Now().Add(10 * time.Second)}
+			s.mu.Unlock()
+		}
+		scores[i] = score
 	}
-
-	return score, nil
+	return scores, nil
 }
 
-func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, containerExternalID string, containerName string) (*security.SecurityScore, error) {
+type scoringInputs struct {
+	certs   map[string][]security.CertificateInfo
+	updates map[string][]security.UpdateInfo
+}
+
+func (s *Scorer) readInputs(ctx context.Context, containerExternalIDs []string) (*scoringInputs, error) {
+	in := &scoringInputs{}
+	var err error
+	if s.certs != nil {
+		if in.certs, err = s.certs.CertificatesByContainer(ctx, containerExternalIDs); err != nil {
+			return nil, fmt.Errorf("reading certificates for scoring: %w", err)
+		}
+	}
+	if s.updates != nil {
+		if in.updates, err = s.updates.UpdatesByContainer(ctx, containerExternalIDs); err != nil {
+			return nil, fmt.Errorf("reading updates for scoring: %w", err)
+		}
+	}
+	return in, nil
+}
+
+func (s *Scorer) computeContainerScore(ctx context.Context, in *scoringInputs, containerID string, containerExternalID string, containerName string) (*security.SecurityScore, error) {
 	type categoryResult struct {
 		name       string
 		weight     int
@@ -130,11 +180,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 	// --- TLS ---
 	tlsResult := categoryResult{name: CategoryTLS, weight: WeightTLS}
 	if s.certs != nil {
-		certs, err := s.certs.ListCertificatesForContainer(ctx, containerExternalID)
-		if err != nil {
-			return nil, fmt.Errorf("scoring tls for container %s: %w", containerID, err)
-		}
-		if len(certs) > 0 {
+		if certs := in.certs[containerExternalID]; len(certs) > 0 {
 			tlsResult.applicable = true
 			tlsResult.subScore, tlsResult.issueCount, tlsResult.summary = scoreTLS(certs)
 		}
@@ -177,11 +223,7 @@ func (s *Scorer) computeContainerScore(ctx context.Context, containerID string, 
 	updateResult := categoryResult{name: CategoryUpdates, weight: WeightUpdates}
 	imageAgeResult := categoryResult{name: CategoryImageAge, weight: WeightImageAge}
 	if s.updates != nil {
-		updates, err := s.updates.ListUpdatesForContainer(ctx, containerExternalID)
-		if err != nil {
-			return nil, fmt.Errorf("scoring updates for container %s: %w", containerID, err)
-		}
-
+		updates := in.updates[containerExternalID]
 		updateResult.applicable = true
 		if len(updates) > 0 {
 			updateResult.subScore, updateResult.issueCount, updateResult.summary = scoreUpdates(updates)
@@ -302,14 +344,13 @@ func (s *Scorer) cveEvaluationState(ctx context.Context, containerExternalID str
 
 // ScoreInfrastructure computes the infrastructure-wide security posture and evaluates the alert threshold against it.
 func (s *Scorer) ScoreInfrastructure(ctx context.Context, containers []security.ContainerInfo) (*security.InfrastructurePosture, error) {
+	all, err := s.ScoreContainers(ctx, containers)
+	if err != nil {
+		return nil, err
+	}
 	var scores []*security.SecurityScore
 	partialCount := 0
-
-	for _, c := range containers {
-		score, err := s.ScoreContainer(ctx, c.ID, c.ExternalID, c.Name)
-		if err != nil {
-			return nil, fmt.Errorf("scoring container %s: %w", c.Name, err)
-		}
+	for _, score := range all {
 		if score == nil {
 			continue
 		}

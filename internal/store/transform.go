@@ -140,11 +140,11 @@ func runConversion(ctx context.Context, conn *sql.Conn) error {
 	// Drop any pre-existing agents/enrollment_tokens from the never-deployed
 	// agent migrations (22-23) so the new schema can recreate them cleanly. No-op
 	// on production databases (migrations 1-21 never created these tables).
-	// instances, cve_evaluations, outbound_heartbeats and the uptime_daily
-	// tables were created empty by later migrations moments ago (none is a
-	// legacy table), and uuid_schema recreates them below.
+	// instances, cve_evaluations, outbound_heartbeats, the uptime_daily tables
+	// and heartbeat_pauses were created by later migrations moments ago (none is
+	// a legacy table), and uuid_schema recreates them below.
 	for _, t := range []string{"agents", "enrollment_tokens", "instances", "cve_evaluations", "outbound_heartbeats",
-		"endpoint_uptime_daily", "heartbeat_uptime_daily", "container_uptime_daily"} {
+		"endpoint_uptime_daily", "heartbeat_uptime_daily", "container_uptime_daily", "heartbeat_pauses"} {
 		if err := exec("drop unreleased "+t, fmt.Sprintf("DROP TABLE IF EXISTS %q", t)); err != nil {
 			return err
 		}
@@ -339,10 +339,10 @@ func copyStatements() []stmt {
 		{"heartbeats", `INSERT INTO heartbeats
 			(id, agent_id, name, status, alert_state, interval_seconds, grace_seconds, last_ping_at,
 			 next_deadline_at, current_run_started_at, last_exit_code, last_duration_ms,
-			 consecutive_failures, consecutive_successes, active, created_at, updated_at)
+			 consecutive_failures, consecutive_successes, created_at, updated_at)
 			SELECT uuid, '` + s + `', name, status, alert_state, interval_seconds, grace_seconds, last_ping_at,
 			 next_deadline_at, current_run_started_at, last_exit_code, last_duration_ms, consecutive_failures,
-			 consecutive_successes, active, created_at, updated_at
+			 consecutive_successes, created_at, updated_at
 			FROM _old_heartbeats`},
 
 		{"heartbeat_pings", `INSERT INTO heartbeat_pings

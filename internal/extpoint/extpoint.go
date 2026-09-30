@@ -43,7 +43,14 @@ type Set struct {
 type EnricherDeps struct {
 	Store    update.UpdateStore
 	Registry *update.RegistryClient
+	Insights security.InsightsReader
+	Restarts RestartCounter
 	Logger   *slog.Logger
+}
+
+// RestartCounter counts the restarts of a container since a given moment.
+type RestartCounter interface {
+	CountRestartsSince(ctx context.Context, containerID string, since time.Time) (int, error)
 }
 
 // PostureDeps is what a security posture scorer is built from.

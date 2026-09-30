@@ -6,12 +6,15 @@ package updates
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,7 +108,7 @@ func osvTestServer(t *testing.T) *httptest.Server {
 }
 
 func newTestEnricher(store update.UpdateStore, cve *CVEClient) *ProEnricher {
-	return NewProEnricher(store, cve, nil, NewRiskEngine(), NewEcosystemResolver(nil, testLogger()), testLogger())
+	return NewProEnricher(store, cve, nil, NewRiskEngine(nil, nil), NewEcosystemResolver(nil, testLogger()), testLogger())
 }
 
 func TestEnrichScansContainerWithoutUpdate(t *testing.T) {
@@ -202,6 +205,52 @@ func TestEnrichRecordsErrorOnQueryFailure(t *testing.T) {
 	assert.Equal(t, update.CVEEvaluationError, eval.Status)
 	assert.NotEmpty(t, eval.Error)
 	assert.Empty(t, store.storedCVEs(), "a failed query must not invent a clean bill of health")
+}
+
+type insightsStub map[string]*security.ContainerInsights
+
+func (s insightsStub) GetContainerInsights(containerID string) *security.ContainerInsights {
+	return s[containerID]
+}
+
+type restartsStub map[string]int
+
+func (s restartsStub) CountRestartsSince(_ context.Context, containerID string, _ time.Time) (int, error) {
+	return s[containerID], nil
+}
+
+// Exposure and restarts come from what monitoring knows about the container,
+// and no factor without a source is left in the score.
+func TestEnrichRiskWeighsExposureAndRestarts(t *testing.T) {
+	store := newEnricherStubStore()
+	store.imageUpdate.UpdateType = update.UpdateTypePatch
+	risk := NewRiskEngine(
+		insightsStub{"uid-1": {Insights: []security.Insight{{Type: security.PortExposedAllInterfaces}}}},
+		restartsStub{"uid-1": 6},
+	)
+	enricher := NewProEnricher(store, nil, nil, risk, nil, testLogger())
+
+	results := []update.UpdateResult{{
+		ContainerID:   "c1",
+		ContainerUID:  "uid-1",
+		ContainerName: "web",
+		Image:         "nginx",
+		CurrentTag:    "1.27.0",
+		LatestTag:     "1.27.1",
+		UpdateType:    update.UpdateTypePatch,
+		HasUpdate:     true,
+	}}
+	require.NoError(t, enricher.Enrich(context.Background(), results))
+
+	records := store.storedRiskRecords()
+	require.Len(t, records, 1)
+	var factors map[string]update.RiskFactor
+	require.NoError(t, json.Unmarshal([]byte(records[0].FactorsJSON), &factors))
+	assert.Equal(t, 10, factors["public_exposure"].Score)
+	assert.Equal(t, 10, factors["stability"].Score)
+	assert.NotContains(t, factors, "criticality")
+	assert.NotContains(t, factors, "dependents")
+	assert.Equal(t, 26, records[0].Score, "patch 6 + exposure 10 + restarts 10, above the patch floor of 15")
 }
 
 func TestShortErrorTruncates(t *testing.T) {

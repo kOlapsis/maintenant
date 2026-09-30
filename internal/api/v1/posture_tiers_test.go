@@ -27,6 +27,14 @@ func (stubPostureScorer) ScoreContainer(_ context.Context, id, _, name string) (
 	return &security.SecurityScore{ContainerID: id, ContainerName: name}, nil
 }
 
+func (stubPostureScorer) ScoreContainers(_ context.Context, cs []security.ContainerInfo) ([]*security.SecurityScore, error) {
+	scores := make([]*security.SecurityScore, len(cs))
+	for i, c := range cs {
+		scores[i] = &security.SecurityScore{ContainerID: c.ID, ContainerName: c.Name}
+	}
+	return scores, nil
+}
+
 func (stubPostureScorer) ScoreInfrastructure(_ context.Context, cs []security.ContainerInfo) (*security.InfrastructurePosture, error) {
 	return &security.InfrastructurePosture{ContainerCount: len(cs)}, nil
 }

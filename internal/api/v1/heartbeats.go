@@ -176,6 +176,10 @@ func (h *HeartbeatHandler) HandlePause(w http.ResponseWriter, r *http.Request) {
 			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Heartbeat not found")
 			return
 		}
+		if errors.Is(err, heartbeat.ErrInvalidInput) {
+			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			return
+		}
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to pause heartbeat")
 		return
 	}

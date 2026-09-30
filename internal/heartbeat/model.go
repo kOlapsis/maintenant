@@ -73,7 +73,6 @@ type Heartbeat struct {
 	LastDurationMs       *int64          `json:"last_duration_ms,omitempty"`
 	ConsecutiveFailures  int             `json:"consecutive_failures"`
 	ConsecutiveSuccesses int             `json:"consecutive_successes"`
-	Active               bool            `json:"active"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
 	AgentID              string          `json:"agent_id"`
@@ -110,8 +109,7 @@ type HeartbeatExecution struct {
 
 // ListHeartbeatsOpts configures heartbeat listing queries.
 type ListHeartbeatsOpts struct {
-	Status          string
-	IncludeInactive bool
+	Status string
 	// AgentFilter filters by agent_id. Nil = no filter; "local" = the local
 	// sentinel agent; UUID = specific agent.
 	AgentFilter *string

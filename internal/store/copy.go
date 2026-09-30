@@ -115,7 +115,7 @@ var leftBehindGroups = []leftBehindGroup{
 		"kubernetes_nodes", "kubernetes_events"},
 		"re-sent whole, the full inventory passes every 30s"},
 	{"Check history", []string{"check_results", "cert_check_results", "cert_chain_entries",
-		"heartbeat_pings", "heartbeat_executions",
+		"heartbeat_pings", "heartbeat_executions", "heartbeat_pauses",
 		"endpoint_uptime_daily", "heartbeat_uptime_daily", "container_uptime_daily"}, "starts again, fills itself"},
 	{"Resource history", []string{"resource_snapshots", "resource_hourly", "resource_daily"},
 		"same, and it is the bulk of the volume"},

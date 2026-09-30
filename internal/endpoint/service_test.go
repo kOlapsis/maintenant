@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1089,6 +1090,55 @@ func TestParseEndpointLabels_IgnoredContainerDeclaresNone(t *testing.T) {
 	}, noopLogger())
 	assert.Empty(t, parsed)
 	assert.Empty(t, errs)
+}
+
+// A label cannot probe faster than the API allows: the interval is raised to the
+// minimum, and the operator is told why.
+func TestParseEndpointLabels_IntervalBelowTheMinimumIsRaised(t *testing.T) {
+	var logs strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	parsed, errs := ParseEndpointLabels(map[string]string{
+		"maintenant.endpoint.0.http":     "http://web:8080/health",
+		"maintenant.endpoint.0.interval": "1s",
+		"maintenant.endpoint.1.http":     "http://web:8080/ready",
+		"maintenant.endpoint.1.interval": "10s",
+	}, logger)
+	require.Empty(t, errs)
+	require.Len(t, parsed, 2)
+
+	intervals := map[string]time.Duration{}
+	for _, p := range parsed {
+		intervals[p.Target] = time.Duration(p.Config.Interval)
+	}
+	assert.Equal(t, MinInterval, intervals["http://web:8080/health"])
+	assert.Equal(t, 10*time.Second, intervals["http://web:8080/ready"])
+	assert.Contains(t, logs.String(), "endpoint interval below the minimum")
+}
+
+func TestValidateTarget(t *testing.T) {
+	for _, tc := range []struct {
+		typ    EndpointType
+		target string
+		ok     bool
+	}{
+		{TypeHTTP, "https://example.com/health", true},
+		{TypeHTTP, "http://10.0.0.1:8080", true},
+		{TypeHTTP, "ftp://example.com", false},
+		{TypeHTTP, "/health", false},
+		{TypeHTTP, "example.com", false},
+		{TypeTCP, "db:5432", true},
+		{TypeTCP, "[::1]:6379", true},
+		{TypeTCP, "db", false},
+		{TypeTCP, ":5432", false},
+		{TypeTCP, "db:http", false},
+		{TypeTCP, "db:0", false},
+		{TypeTCP, "db:70000", false},
+		{"icmp", "db", false},
+	} {
+		err := ValidateTarget(tc.typ, tc.target)
+		assert.Equal(t, tc.ok, err == nil, "%s %q: %v", tc.typ, tc.target, err)
+	}
 }
 
 func TestService_SyncEndpoints_IgnoredContainerLosesItsEndpoints(t *testing.T) {

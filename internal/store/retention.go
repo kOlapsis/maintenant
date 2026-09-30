@@ -269,6 +269,14 @@ func runHeartbeatCleanup(ctx context.Context, store *HeartbeatStore, uptime *Upt
 		} else if deleted > 0 {
 			logger.Info("retention cleanup: deleted heartbeat pings", "count", deleted)
 		}
+
+		pausesDeleted, pausesTruncated, err := store.deletePausesBefore(ctx, pingCutoff, cfg.batchOpts())
+		pass.add(pausesDeleted, pausesTruncated)
+		if err != nil {
+			logger.Error("retention cleanup: heartbeat pauses", "error", err)
+		} else if pausesDeleted > 0 {
+			logger.Info("retention cleanup: deleted heartbeat pauses", "count", pausesDeleted)
+		}
 	}
 
 	// Clean old heartbeat executions

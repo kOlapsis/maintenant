@@ -316,12 +316,10 @@ CREATE TABLE heartbeats (
     last_duration_ms BIGINT,
     consecutive_failures  INTEGER NOT NULL DEFAULT 0,
     consecutive_successes INTEGER NOT NULL DEFAULT 0,
-    active          INTEGER NOT NULL DEFAULT 1,
     created_at      BIGINT NOT NULL,
     updated_at      BIGINT NOT NULL
 );
-CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at) WHERE active=1;
-CREATE INDEX idx_heartbeat_active ON heartbeats(active);
+CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at);
 CREATE INDEX idx_heartbeats_agent_id ON heartbeats(agent_id);
 
 CREATE TABLE outbound_heartbeats (
@@ -349,6 +347,14 @@ CREATE TABLE heartbeat_pings (
 );
 CREATE INDEX idx_hb_ping_heartbeat_time ON heartbeat_pings(heartbeat_id, timestamp DESC);
 CREATE INDEX idx_hb_ping_timestamp ON heartbeat_pings(timestamp);
+
+CREATE TABLE heartbeat_pauses (
+    id           TEXT PRIMARY KEY NOT NULL,
+    heartbeat_id TEXT NOT NULL REFERENCES heartbeats(id) ON DELETE CASCADE,
+    paused_at    BIGINT NOT NULL,
+    resumed_at   BIGINT
+);
+CREATE INDEX idx_hb_pause_heartbeat ON heartbeat_pauses(heartbeat_id, paused_at);
 
 CREATE TABLE heartbeat_uptime_daily (
     id             TEXT PRIMARY KEY NOT NULL,

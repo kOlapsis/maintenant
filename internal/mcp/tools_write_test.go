@@ -12,6 +12,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/status"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -34,6 +35,31 @@ func withEdition(t *testing.T, e extension.Edition) {
 }
 
 // --- fakes ---
+
+// noHeartbeats knows no heartbeat at all.
+type noHeartbeats struct{ heartbeat.HeartbeatStore }
+
+func (noHeartbeats) GetHeartbeatByID(context.Context, string) (*heartbeat.Heartbeat, error) {
+	return nil, nil
+}
+
+// An unknown heartbeat is an answer for the model to read, not a tool failure.
+func TestPauseAndResumeMonitor_UnknownHeartbeatIsNotFound(t *testing.T) {
+	svc := newCEServices()
+	svc.Heartbeats = heartbeat.NewService(heartbeat.Deps{Store: noHeartbeats{}, Logger: slog.Default()})
+
+	pause, _, err := pauseMonitorHandler(svc)(context.Background(), nil, pauseMonitorInput{MonitorType: "heartbeat", MonitorID: "missing"})
+	require.NoError(t, err)
+	require.NotNil(t, pause)
+	assert.True(t, pause.IsError)
+	assert.Contains(t, textFromContent(t, pause.Content), "not found")
+
+	resume, _, err := resumeMonitorHandler(svc)(context.Background(), nil, resumeMonitorInput{MonitorType: "heartbeat", MonitorID: "missing"})
+	require.NoError(t, err)
+	require.NotNil(t, resume)
+	assert.True(t, resume.IsError)
+	assert.Contains(t, textFromContent(t, resume.Content), "not found")
+}
 
 type mcpAlertStore struct {
 	alerts map[string]*alert.Alert

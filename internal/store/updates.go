@@ -743,17 +743,12 @@ func (s *UpdateStore) CleanupExpired(ctx context.Context, olderThan time.Time) (
 	var totalDeleted int64
 	ts := olderThan.Unix()
 
+	// Deleting a scan a pending update still names would null its scan_id: unreadable, and never stale.
 	res, err := s.writer.Exec(ctx,
-		`DELETE FROM image_update_scans WHERE started_at < ?`, ts)
+		`DELETE FROM image_update_scans WHERE started_at < ? AND NOT EXISTS (
+			SELECT 1 FROM image_updates u WHERE u.scan_id = image_update_scans.id)`, ts)
 	if err != nil {
 		return 0, fmt.Errorf("cleanup scan records: %w", err)
-	}
-	totalDeleted += res.RowsAffected
-
-	res, err = s.writer.Exec(ctx,
-		`DELETE FROM image_updates WHERE detected_at < ?`, ts)
-	if err != nil {
-		return totalDeleted, fmt.Errorf("cleanup image updates: %w", err)
 	}
 	totalDeleted += res.RowsAffected
 

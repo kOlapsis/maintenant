@@ -128,6 +128,7 @@ type UpdateExclusion struct {
 // UpdateResult is the output of scanning a single container.
 type UpdateResult struct {
 	ContainerID        string
+	ContainerUID       string
 	ContainerName      string
 	Image              string
 	CurrentTag         string

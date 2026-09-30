@@ -43,6 +43,43 @@ func TestCreateExclusion_ADuplicateReturnsTheStoredRow(t *testing.T) {
 	assert.ElementsMatch(t, []string{first.ID, other.ID}, ids)
 }
 
+// A pending update leaves only through a scan, which announces its recovery: the
+// retention must neither delete it behind the alert's back nor, by purging its
+// scan record, hide it from the next scan's staleness check.
+func TestCleanupExpired_KeepsPendingUpdatesForTheNextScanToResolve(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	cs := NewContainerStore(db)
+	us := NewUpdateStore(db)
+
+	seedScannedContainer(t, cs, "ext-web", "web", nil)
+	longAgo := time.Now().Add(-40 * 24 * time.Hour)
+	oldScan, err := us.InsertScanRecord(ctx, &update.ScanRecord{StartedAt: longAgo, Status: update.ScanStatusCompleted})
+	require.NoError(t, err)
+	_, err = us.InsertImageUpdate(ctx, &update.ImageUpdate{
+		ScanID: oldScan, ContainerID: "ext-web", ContainerName: "web", Image: "nginx",
+		CurrentTag: "1.0.0", Registry: "docker.io", LatestTag: "2.0.0", UpdateType: update.UpdateTypeMajor,
+		Status: update.StatusAvailable, DetectedAt: longAgo,
+	})
+	require.NoError(t, err)
+
+	_, err = us.CleanupExpired(ctx, time.Now().Add(-30*24*time.Hour))
+	require.NoError(t, err)
+
+	pending, err := us.GetImageUpdateByContainer(ctx, "ext-web")
+	require.NoError(t, err)
+	require.NotNil(t, pending, "an update still pending must survive the retention")
+
+	newScan := seedScan(t, us)
+	stale, err := us.ListStaleImageUpdates(ctx, newScan, []string{"web"})
+	require.NoError(t, err)
+	assert.Equal(t, []update.StaleImageUpdate{{ContainerID: "ext-web", ContainerName: "web"}}, stale)
+
+	deleted, err := us.DeleteStaleImageUpdates(ctx, newScan, []string{"web"})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, deleted)
+}
+
 func TestCleanupExpired_PurgesTheDigestBaselinesOfGoneContainers(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

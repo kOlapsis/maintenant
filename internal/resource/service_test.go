@@ -33,6 +33,8 @@ type mockResourceStore struct {
 	dailyRangeCalls int
 	dailyFrom       time.Time
 	dailyTo         time.Time
+
+	topLimit int
 }
 
 func newMockResourceStore() *mockResourceStore {
@@ -99,7 +101,10 @@ func (m *mockResourceStore) AggregateHourlyRollup(_ context.Context, _, _ time.T
 func (m *mockResourceStore) AggregateDailyRollup(_ context.Context, _, _ time.Time) error {
 	return nil
 }
-func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, _ int, _ *string) ([]TopConsumerRow, error) {
+func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, limit int, _ *string) ([]TopConsumerRow, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.topLimit = limit
 	return nil, nil
 }
 func (m *mockResourceStore) DeleteHourlyBefore(_ context.Context, _ time.Time, _ int) (int64, error) {

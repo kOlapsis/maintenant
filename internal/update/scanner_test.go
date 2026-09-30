@@ -176,6 +176,19 @@ func TestScanner_TagInclude_FiltersTagsBeforeFindBestUpdate(t *testing.T) {
 	assert.True(t, results[0].HasUpdate)
 }
 
+// The enricher reads exposure and restarts by the container's store id, so every result carries it.
+func TestScanner_ResultsCarryTheContainerUID(t *testing.T) {
+	reg := &stubRegistry{tags: map[string][]string{"library/nginx": {"1.24.0", "1.25.0"}}}
+	sc := newTestScanner(reg, &stubStore{})
+	c := ContainerInfo{UID: "uid-1", ExternalID: "ctr1", Name: "nginx", Image: "nginx:1.24.0"}
+
+	results, errs := sc.Scan(context.Background(), []ContainerInfo{c})
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "uid-1", results[0].ContainerUID)
+	assert.Equal(t, "uid-1", runningImage(c).ContainerUID)
+}
+
 // TestScanner_TagInclude_NoMatchingTags_NoUpdate verifies that when tag-include
 // matches no tags in the registry, no update is reported.
 func TestScanner_TagInclude_NoMatchingTags_NoUpdate(t *testing.T) {

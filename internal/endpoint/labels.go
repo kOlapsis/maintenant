@@ -5,8 +5,10 @@ package endpoint
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -19,6 +21,9 @@ import (
 const (
 	labelPrefix = "maintenant.endpoint."
 )
+
+// MinInterval is the shortest check interval an endpoint may have.
+var MinInterval = 5 * time.Second
 
 // Indexed label regex: maintenant.endpoint.N.http or maintenant.endpoint.N.tcp
 var indexedLabelRe = regexp.MustCompile(`^maintenant\.endpoint\.(\d+)\.(http|tcp)$`)
@@ -149,24 +154,8 @@ func parseEndpointTarget(labelKey string, epType EndpointType, value string) (*P
 		return nil, &LabelParseError{LabelKey: labelKey, Value: value, Message: "empty target"}
 	}
 
-	switch epType {
-	case TypeHTTP:
-		u, err := url.Parse(value)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return nil, &LabelParseError{LabelKey: labelKey, Value: value, Message: "invalid HTTP URL: must have http:// or https:// scheme and host"}
-		}
-	case TypeTCP:
-		// Expect host:port format
-		if !strings.Contains(value, ":") {
-			return nil, &LabelParseError{LabelKey: labelKey, Value: value, Message: "invalid TCP target: must be host:port format"}
-		}
-		parts := strings.SplitN(value, ":", 2)
-		if parts[0] == "" {
-			return nil, &LabelParseError{LabelKey: labelKey, Value: value, Message: "invalid TCP target: empty host"}
-		}
-		if _, err := strconv.Atoi(parts[1]); err != nil {
-			return nil, &LabelParseError{LabelKey: labelKey, Value: value, Message: "invalid TCP target: port must be numeric"}
-		}
+	if err := ValidateTarget(epType, value); err != nil {
+		return nil, &LabelParseError{LabelKey: labelKey, Value: value, Message: err.Error()}
 	}
 
 	return &ParsedEndpoint{
@@ -176,12 +165,42 @@ func parseEndpointTarget(labelKey string, epType EndpointType, value string) (*P
 	}, nil
 }
 
+// ValidateTarget reports why target cannot be probed as an endpoint of type t.
+func ValidateTarget(t EndpointType, target string) error {
+	switch t {
+	case TypeHTTP:
+		u, err := url.Parse(target)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return errors.New("invalid HTTP URL: must have http:// or https:// scheme and host")
+		}
+	case TypeTCP:
+		host, port, err := net.SplitHostPort(target)
+		if err != nil {
+			return errors.New("invalid TCP target: must be host:port format")
+		}
+		if host == "" {
+			return errors.New("invalid TCP target: empty host")
+		}
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return errors.New("invalid TCP target: port must be a number between 1 and 65535")
+		}
+	default:
+		return fmt.Errorf("unknown endpoint type %q", t)
+	}
+	return nil
+}
+
 func applyConfigLabels(cfg *EndpointConfig, labels map[string]string, logger *slog.Logger) {
 	if v, ok := labels["interval"]; ok {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			cfg.Interval = Duration(d)
-		} else {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil || d <= 0:
 			logger.Warn("invalid endpoint interval", "value", v)
+		case d < MinInterval:
+			logger.Warn("endpoint interval below the minimum, raised to it", "value", v, "minimum", MinInterval)
+			cfg.Interval = Duration(MinInterval)
+		default:
+			cfg.Interval = Duration(d)
 		}
 	}
 	if v, ok := labels["timeout"]; ok {

@@ -14,8 +14,6 @@ type HeartbeatStore interface {
 	// Heartbeat CRUD
 	CreateHeartbeat(ctx context.Context, h *Heartbeat) (string, error)
 	GetHeartbeatByID(ctx context.Context, id string) (*Heartbeat, error)
-	// GetHeartbeatByUUID looks up by the ping token (which is the id).
-	GetHeartbeatByUUID(ctx context.Context, token string) (*Heartbeat, error)
 	ListHeartbeats(ctx context.Context, opts ListHeartbeatsOpts) ([]*Heartbeat, error)
 	UpdateHeartbeat(ctx context.Context, id string, input UpdateHeartbeatInput) error
 	DeleteHeartbeat(ctx context.Context, id string) error
@@ -25,8 +23,9 @@ type HeartbeatStore interface {
 		lastPingAt *time.Time, nextDeadlineAt *time.Time, currentRunStartedAt *time.Time,
 		lastExitCode *int, lastDurationMs *int64,
 		consecutiveFailures, consecutiveSuccesses int) error
-	PauseHeartbeat(ctx context.Context, id string) error
-	ResumeHeartbeat(ctx context.Context, id string, nextDeadlineAt time.Time) error
+	PauseHeartbeat(ctx context.Context, id string, at time.Time) error
+	ResumeHeartbeat(ctx context.Context, id string, at, nextDeadlineAt time.Time) error
+	EndPause(ctx context.Context, id string, at time.Time) error
 
 	// Deadline scanning
 	ListOverdueHeartbeats(ctx context.Context, now time.Time) ([]*Heartbeat, error)

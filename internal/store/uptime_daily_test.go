@@ -259,14 +259,43 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 		db := openTestDB(t)
 		id := seedHeartbeatEvery(t, db, 3600, 300)
 		pingHourly(t, db, id, day, -1, 12)
-		_, err := db.Writer().Exec(ctx, `UPDATE heartbeats SET status = 'paused', updated_at = ? WHERE id = ?`,
-			day.Add(11*time.Hour+30*time.Minute).Unix(), id)
-		require.NoError(t, err)
+		require.NoError(t, NewHeartbeatStore(db).PauseHeartbeat(ctx, id, day.Add(11*time.Hour+30*time.Minute)))
 
 		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 3)
 		require.NoError(t, err)
 		requirePercent(t, dayOf(t, result, day), 100)
 		assert.Nil(t, dayOf(t, result, today.AddDate(0, 0, -1)).UptimePercent, "a paused heartbeat is not down")
+	})
+
+	t.Run("a past pause is left out, and a resume restarts the deadline", func(t *testing.T) {
+		db := openTestDB(t)
+		hbs := NewHeartbeatStore(db)
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		pingHourly(t, db, id, day, -1, 6) // last ping 05:00
+		require.NoError(t, hbs.PauseHeartbeat(ctx, id, day.Add(5*time.Hour+30*time.Minute)))
+		resumed := day.Add(10 * time.Hour)
+		require.NoError(t, hbs.ResumeHeartbeat(ctx, id, resumed, resumed.Add(65*time.Minute)))
+		pingHourly(t, db, id, day, 12, 25) // no ping before 12:00: down from 11:05
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 3)
+		require.NoError(t, err)
+		requirePercent(t, dayOf(t, result, day), 95.3) // 55 min down out of the 19.5 h not paused
+		assert.Equal(t, 1, dayOf(t, result, day).IncidentCount)
+	})
+
+	t.Run("a ping ends the pause it arrives in", func(t *testing.T) {
+		db := openTestDB(t)
+		hbs := NewHeartbeatStore(db)
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		pingHourly(t, db, id, day, -1, 6)
+		require.NoError(t, hbs.PauseHeartbeat(ctx, id, day.Add(5*time.Hour+30*time.Minute)))
+		require.NoError(t, hbs.EndPause(ctx, id, day.Add(12*time.Hour)))
+		pingHourly(t, db, id, day, 12, 25)
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 3)
+		require.NoError(t, err)
+		requirePercent(t, dayOf(t, result, day), 100)
+		assert.Zero(t, dayOf(t, result, day).IncidentCount)
 	})
 }
 

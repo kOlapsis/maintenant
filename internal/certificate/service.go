@@ -921,7 +921,7 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 	copy(sorted, monitor.WarningThresholds)
 	sort.Sort(sort.Reverse(sort.IntSlice(sorted)))
 
-	// Find the highest threshold that's been crossed
+	// Walking down from the largest threshold, the loop ends on the smallest one crossed: the most urgent.
 	var crossedThreshold *int
 	for _, threshold := range sorted {
 		if daysRemaining <= threshold {

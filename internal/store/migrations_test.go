@@ -10,10 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 )
 
 // setupPreMigrationDB creates a DB with the schema state prior to migration 19
@@ -253,4 +256,59 @@ func TestMigration36_DropsTagFiltersAndAlertChannels(t *testing.T) {
 	assertColumns(true)
 	apply("up")
 	assertColumns(false)
+}
+
+// Migration 39 purges the heartbeats deleted before hard deletion existed, and
+// gives the heartbeats already paused the pause their uptime needs.
+func TestMigration39_PurgesDeletedHeartbeatsAndRecordsCurrentPauses(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	apply := func(direction string) {
+		t.Helper()
+		sqlText, err := fs.ReadFile(migrationFS,
+			"migrations/"+db.dialect.String()+"/39_heartbeat_pauses_and_hard_delete."+direction+".sql")
+		require.NoError(t, err)
+		_, err = db.ReadDB().ExecContext(ctx, string(sqlText))
+		require.NoError(t, err, direction)
+	}
+	apply("down")
+
+	hbs := NewHeartbeatStore(db)
+	for _, id := range []string{"hb-gone", "hb-paused", "hb-live"} {
+		_, err := hbs.CreateHeartbeat(ctx, &heartbeat.Heartbeat{ID: id, Name: id, IntervalSeconds: 60, GraceSeconds: 10})
+		require.NoError(t, err)
+		_, err = hbs.InsertPing(ctx, &heartbeat.HeartbeatPing{HeartbeatID: id, PingType: heartbeat.PingSuccess,
+			SourceIP: "10.0.0.1", HTTPMethod: "GET", Timestamp: time.Unix(1000, 0)})
+		require.NoError(t, err)
+	}
+	_, err := db.Writer().Exec(ctx, `UPDATE heartbeats SET active = 0 WHERE id = 'hb-gone'`)
+	require.NoError(t, err)
+	_, err = db.Writer().Exec(ctx, `UPDATE heartbeats SET status = 'paused', updated_at = 5000 WHERE id = 'hb-paused'`)
+	require.NoError(t, err)
+
+	apply("up")
+
+	var ids []string
+	rows, err := db.ReadDB().QueryContext(ctx, `SELECT id FROM heartbeats ORDER BY id`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id string
+		require.NoError(t, rows.Scan(&id))
+		ids = append(ids, id)
+	}
+	require.NoError(t, rows.Err())
+	_ = rows.Close()
+	assert.Equal(t, []string{"hb-live", "hb-paused"}, ids)
+
+	var orphanPings int
+	require.NoError(t, db.ReadDB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM heartbeat_pings WHERE heartbeat_id = 'hb-gone'`).Scan(&orphanPings))
+	assert.Zero(t, orphanPings)
+
+	var pausedAt int64
+	var resumedAt sql.NullInt64
+	require.NoError(t, db.ReadDB().QueryRowContext(ctx,
+		`SELECT paused_at, resumed_at FROM heartbeat_pauses WHERE heartbeat_id = 'hb-paused'`).Scan(&pausedAt, &resumedAt))
+	assert.EqualValues(t, 5000, pausedAt)
+	assert.False(t, resumedAt.Valid)
 }

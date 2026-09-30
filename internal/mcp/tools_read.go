@@ -49,7 +49,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_resources",
-		Description: "Get current host resource metrics summary including CPU usage, memory usage, network I/O, and disk usage.",
+		Description: "Get current host resource metrics summary including CPU usage, memory usage, network throughput in bytes per second (net_rx_rate, net_tx_rate), and disk usage.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getResourcesHandler(svc))
 
@@ -122,7 +122,7 @@ type getResourcesInput struct{}
 type getTopConsumersInput struct {
 	Metric string `json:"metric" jsonschema:"Resource metric to sort by: cpu or memory"`
 	Period string `json:"period,omitempty" jsonschema:"Time period for ranking: current (live), or one of 1h, 6h, 24h, 7d, 30d, 90d. How far back a history window may go depends on the edition."`
-	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of containers to return, default 10"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of containers to return, default 10, at most 20"`
 }
 type listEndpointsInput struct {
 	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for endpoints checked directly by the server. Omit to return all."`
@@ -252,15 +252,13 @@ func getResourcesHandler(svc *Services) gomcp.ToolHandlerFor[getResourcesInput, 
 
 		var totalCPU float64
 		var totalMemUsed, totalMemLimit int64
-		var totalNetRx, totalNetTx int64
 
 		for _, snap := range all {
 			totalCPU += snap.CPUPercent
 			totalMemUsed += snap.MemUsed
 			totalMemLimit += snap.MemLimit
-			totalNetRx += snap.NetRxBytes
-			totalNetTx += snap.NetTxBytes
 		}
+		_, netRxRate, netTxRate := svc.Resources.NetworkTotals(nil)
 
 		totalMemPercent := 0.0
 		if totalMemLimit > 0 {
@@ -286,8 +284,8 @@ func getResourcesHandler(svc *Services) gomcp.ToolHandlerFor[getResourcesInput, 
 			"mem_used":        totalMemUsed,
 			"mem_limit":       totalMemLimit,
 			"mem_percent":     totalMemPercent,
-			"net_rx_bytes":    totalNetRx,
-			"net_tx_bytes":    totalNetTx,
+			"net_rx_rate":     netRxRate,
+			"net_tx_rate":     netTxRate,
 			"disk_total":      diskTotal,
 			"disk_used":       diskUsed,
 			"disk_percent":    diskPercent,

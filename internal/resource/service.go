@@ -123,6 +123,21 @@ func (s *Service) GetAllLatestSnapshots() map[string]*ResourceSnapshot {
 	return all
 }
 
+// NetworkTotals counts the containers of the hosts filter selects and sums their network throughput in bytes per second.
+func (s *Service) NetworkTotals(filter *string) (containers int, rxPerSec, txPerSec float64) {
+	for _, snap := range s.GetAllLatestSnapshots() {
+		if !hostMatchesFilter(snap.AgentID, filter) {
+			continue
+		}
+		containers++
+		if snap.HasNetRates {
+			rxPerSec += snap.NetRxBytesPerSec
+			txPerSec += snap.NetTxBytesPerSec
+		}
+	}
+	return containers, rxPerSec, txPerSec
+}
+
 // GetHostStat returns the host stat reader for CPU and memory.
 func (s *Service) GetHostStat() *HostStatReader {
 	return s.collector.GetHostStat()
@@ -198,12 +213,16 @@ func (s *Service) UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfi
 	return s.store.UpsertAlertConfig(ctx, cfg)
 }
 
+// MaxTopConsumers caps how many containers a top consumers ranking returns.
+const MaxTopConsumers = 20
+
 // TopConsumersNow ranks containers on their latest sample rather than on a
 // history window. It is open in every edition: what the tiering caps is how far
 // back a history goes, not the live picture.
 //
 // agentID filters by host with the same convention as the historical ranking.
 func (s *Service) TopConsumersNow(metric string, limit int, agentID *string) []TopConsumerRow {
+	limit = min(limit, MaxTopConsumers)
 	all := s.GetAllLatestSnapshots()
 
 	rows := make([]TopConsumerRow, 0, len(all))
@@ -252,7 +271,7 @@ func hostMatchesFilter(snapAgent string, filter *string) bool {
 // period. agentID filters by host: nil = all hosts, *agentID == "" = the local
 // server, *agentID == id = that agent.
 func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]TopConsumerRow, error) {
-	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, limit, agentID)
+	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, min(limit, MaxTopConsumers), agentID)
 	if err != nil {
 		return nil, fmt.Errorf("get top consumers by period: %w", err)
 	}

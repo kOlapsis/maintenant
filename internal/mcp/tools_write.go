@@ -12,6 +12,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/status"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -300,8 +301,11 @@ func pauseMonitorHandler(svc *Services) gomcp.ToolHandlerFor[pauseMonitorInput, 
 		}
 		hb, err := svc.Heartbeats.PauseHeartbeat(ctx, input.MonitorID)
 		if err != nil {
-			if errors.Is(err, fmt.Errorf("not found")) {
+			if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
 				return errResult("not found: heartbeat monitor does not exist")
+			}
+			if errors.Is(err, heartbeat.ErrInvalidInput) {
+				return errResult(err.Error())
 			}
 			return nil, nil, fmt.Errorf("failed to pause heartbeat: %w", err)
 		}
@@ -319,8 +323,11 @@ func resumeMonitorHandler(svc *Services) gomcp.ToolHandlerFor[resumeMonitorInput
 		}
 		hb, err := svc.Heartbeats.ResumeHeartbeat(ctx, input.MonitorID)
 		if err != nil {
-			if errors.Is(err, fmt.Errorf("not found")) {
+			if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
 				return errResult("not found: heartbeat monitor does not exist")
+			}
+			if errors.Is(err, heartbeat.ErrInvalidInput) {
+				return errResult(err.Error())
 			}
 			return nil, nil, fmt.Errorf("failed to resume heartbeat: %w", err)
 		}

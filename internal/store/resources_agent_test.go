@@ -214,6 +214,72 @@ func TestGetTopConsumersByPeriod_AddedWindows(t *testing.T) {
 	assert.Empty(t, thirtyDays, "the bucket is older than thirty days")
 }
 
+// A fresh instance has no closed hour or day yet: the rankings over 24 hours and
+// more must still show what the samples of the period in progress say.
+func TestGetTopConsumersByPeriod_IncludesThePeriodInProgress(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	rstore := NewResourceStore(db)
+	cid := seedHostContainer(t, NewContainerStore(db), "ext-fresh", "")
+
+	_, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
+		ContainerID: cid, CPUPercent: 40, MemUsed: 25, MemLimit: 100, Timestamp: time.Now(),
+	})
+	require.NoError(t, err)
+
+	for _, period := range []string{"24h", "7d", "30d", "90d"} {
+		cpu, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", period, 10, nil)
+		require.NoError(t, err)
+		require.Len(t, cpu, 1, period)
+		assert.EqualValues(t, 40, cpu[0].AvgValue, period)
+
+		mem, err := rstore.GetTopConsumersByPeriod(ctx, "memory", period, 10, nil)
+		require.NoError(t, err)
+		require.Len(t, mem, 1, period)
+		assert.InDelta(t, 25, mem[0].AvgPercent, 0.001, period)
+	}
+}
+
+// The period in progress weighs one bucket, like each closed one, and a bucket
+// already rolled up is not counted twice.
+func TestGetTopConsumersByPeriod_WeighsThePeriodInProgressAsOneBucket(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	rstore := NewResourceStore(db)
+	cid := seedHostContainer(t, NewContainerStore(db), "ext-mixed", "")
+
+	now := time.Now().UTC()
+	currentHour := now.Truncate(time.Hour)
+	for _, cpu := range []float64{40, 60} {
+		_, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
+			ContainerID: cid, CPUPercent: cpu, MemLimit: 100, Timestamp: now,
+		})
+		require.NoError(t, err)
+	}
+	lastHour := currentHour.Add(-time.Hour)
+	require.NoError(t, rstore.InsertHourlyRollup(ctx, &resource.RollupRow{
+		ContainerID: cid, Bucket: lastHour, AvgCPUPercent: 10, AvgMemLimit: 100, SampleCount: 360,
+	}))
+	yesterday := startOfUTCDay(now).AddDate(0, 0, -1)
+	require.NoError(t, rstore.InsertDailyRollup(ctx, &resource.RollupRow{
+		ContainerID: cid, Bucket: yesterday, AvgCPUPercent: 90, AvgMemLimit: 100, SampleCount: 8640,
+	}))
+
+	day, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "24h", 10, nil)
+	require.NoError(t, err)
+	require.Len(t, day, 1)
+	assert.InDelta(t, 30, day[0].AvgValue, 0.001, "the closed hour at 10 and the hour in progress at 50")
+
+	today := 50.0
+	if !lastHour.Before(startOfUTCDay(now)) {
+		today = 30
+	}
+	week, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "7d", 10, nil)
+	require.NoError(t, err)
+	require.Len(t, week, 1)
+	assert.InDelta(t, (90+today)/2, week[0].AvgValue, 0.001, "yesterday at 90 and today so far")
+}
+
 // The host filter applies to the added periods like to the others.
 func TestGetTopConsumersByPeriod_AddedWindowsRespectTheHostFilter(t *testing.T) {
 	db := openTestDB(t)

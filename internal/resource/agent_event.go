@@ -81,6 +81,7 @@ func (a *agentLatest) put(snap *ResourceSnapshot, now time.Time) {
 	if a.samples == nil {
 		a.samples = make(map[string]agentSample)
 	}
+	setNetRates(snap, a.samples[snap.ContainerID].snap)
 	a.samples[snap.ContainerID] = agentSample{snap: snap, receivedAt: now}
 }
 

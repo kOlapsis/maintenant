@@ -29,6 +29,31 @@ type ResourceSnapshot struct {
 	Timestamp       time.Time `json:"timestamp"`
 	AgentID         string    `json:"agent_id"`
 	Replayed        bool      `json:"-"`
+
+	NetRxBytesPerSec float64 `json:"-"`
+	NetTxBytesPerSec float64 `json:"-"`
+	HasNetRates      bool    `json:"-"`
+}
+
+// setNetRates derives snap's network throughput from prev, the previous sample of the same container.
+func setNetRates(snap, prev *ResourceSnapshot) {
+	if prev == nil {
+		return
+	}
+	secs := snap.Timestamp.Sub(prev.Timestamp).Seconds()
+	rx, rxOK := counterRate(prev.NetRxBytes, snap.NetRxBytes, secs)
+	tx, txOK := counterRate(prev.NetTxBytes, snap.NetTxBytes, secs)
+	if rxOK && txOK {
+		snap.NetRxBytesPerSec, snap.NetTxBytesPerSec, snap.HasNetRates = rx, tx, true
+	}
+}
+
+// counterRate is the per-second growth of a cumulative counter; a negative one is unavailable and a drop is a restart.
+func counterRate(prev, cur int64, secs float64) (float64, bool) {
+	if secs <= 0 || prev < 0 || cur < prev {
+		return 0, false
+	}
+	return float64(cur-prev) / secs, true
 }
 
 // HostSample is the latest host-level resource measurement for a single host:

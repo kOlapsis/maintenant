@@ -234,6 +234,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 
 	result := &UpdateResult{
 		ContainerID:    c.ExternalID,
+		ContainerUID:   c.UID,
 		ContainerName:  c.Name,
 		Image:          c.Image,
 		CurrentTag:     currentTag,
@@ -291,6 +292,7 @@ func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult
 
 	return &UpdateResult{
 		ContainerID:    c.ExternalID,
+		ContainerUID:   c.UID,
 		ContainerName:  c.Name,
 		Image:          c.Image,
 		CurrentTag:     t.currentTag,
@@ -362,6 +364,7 @@ func runningImage(c ContainerInfo) UpdateResult {
 	repo, tag, registry := ParseImageRef(c.Image)
 	return UpdateResult{
 		ContainerID:   c.ExternalID,
+		ContainerUID:  c.UID,
 		ContainerName: c.Name,
 		Image:         c.Image,
 		CurrentTag:    tag,

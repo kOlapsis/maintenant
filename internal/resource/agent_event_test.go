@@ -5,6 +5,7 @@ package resource
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -240,4 +241,62 @@ func TestHandleAgentEvent_ReplayedSamplesNeitherAlertNorMoveBreachCounters(t *te
 	assert.Equal(t, AlertStateNormal, cfg.AlertState, "a replayed breach must not open an alert")
 	assert.Equal(t, 1, cfg.CPUConsecutiveBreaches, "the breach counters belong to live samples")
 	assert.Equal(t, 0, cfg.MemConsecutiveBreaches)
+}
+
+// Two samples of a container give its network throughput. A counter the runtime
+// cannot read (-1 on Kubernetes) or one reset by a restart gives none, rather
+// than a negative or absurd figure.
+func TestNetworkTotals_AreRatesBetweenTwoSamples(t *testing.T) {
+	extID := "net0123456789abc"
+	id := uid.Container(uid.Agent("agent-9"), extID)
+	c := &container.Container{ID: id, ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	svc := newTestService(newMockResourceStore(), buildContainerSvc(newMockContainerStore(c)), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+
+	t0 := time.Now()
+	for i, counters := range [][2]uint64{{1000, 500}, {6000, 1500}} {
+		require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+			ContainerId: extID, NetworkRxBytes: counters[0], NetworkTxBytes: counters[1],
+		}, agentevent.Meta{ObservedAt: t0.Add(time.Duration(i) * 10 * time.Second)}))
+	}
+
+	for _, pair := range [][2]*ResourceSnapshot{
+		{{ContainerID: "k8s", NetRxBytes: -1, NetTxBytes: -1, Timestamp: t0},
+			{ContainerID: "k8s", NetRxBytes: -1, NetTxBytes: -1, Timestamp: t0.Add(10 * time.Second)}},
+		{{ContainerID: "restarted", NetRxBytes: 9000, NetTxBytes: 9000, Timestamp: t0},
+			{ContainerID: "restarted", NetRxBytes: 10, NetTxBytes: 10, Timestamp: t0.Add(10 * time.Second)}},
+	} {
+		pair[0].AgentID, pair[1].AgentID = uid.LocalAgent, uid.LocalAgent
+		svc.collector.keep(pair[0])
+		svc.collector.keep(pair[1])
+	}
+
+	agent := "agent-9"
+	n, rx, tx := svc.NetworkTotals(&agent)
+	assert.Equal(t, 1, n)
+	assert.InDelta(t, 500, rx, 0.001)
+	assert.InDelta(t, 100, tx, 0.001)
+
+	local := ""
+	n, rx, tx = svc.NetworkTotals(&local)
+	assert.Equal(t, 2, n)
+	assert.Zero(t, rx)
+	assert.Zero(t, tx)
+}
+
+// Every surface (REST, MCP) goes through the service, so the cap holds for all of them.
+func TestTopConsumers_AreCappedWhateverTheCaller(t *testing.T) {
+	rstore := newMockResourceStore()
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore()), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+	for i := range MaxTopConsumers + 5 {
+		id := fmt.Sprintf("ctr-%d", i)
+		svc.collector.latest[id] = &ResourceSnapshot{ContainerID: id, CPUPercent: float64(i), AgentID: uid.LocalAgent}
+	}
+
+	assert.Len(t, svc.TopConsumersNow("cpu", 50, nil), MaxTopConsumers)
+
+	_, err := svc.GetTopConsumersByPeriod(context.Background(), "cpu", "24h", 50, nil)
+	require.NoError(t, err)
+	assert.Equal(t, MaxTopConsumers, rstore.topLimit)
 }

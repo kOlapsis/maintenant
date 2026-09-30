@@ -5,25 +5,62 @@
 package updates
 
 import (
+	"context"
 	"encoding/json"
+	"time"
 
+	"github.com/kolapsis/maintenant/internal/extpoint"
+	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
-// RiskEngine computes contextual risk scores for containers with updates.
-type RiskEngine struct{}
+const restartWindow = 24 * time.Hour
 
-// NewRiskEngine creates a risk score engine.
-func NewRiskEngine() *RiskEngine {
-	return &RiskEngine{}
+// RiskEngine computes contextual risk scores for containers with updates.
+type RiskEngine struct {
+	insights security.InsightsReader
+	restarts extpoint.RestartCounter
 }
 
-// RiskContext provides monitoring context for risk calculation.
+// NewRiskEngine creates a risk score engine; a nil source leaves its factor at zero.
+func NewRiskEngine(insights security.InsightsReader, restarts extpoint.RestartCounter) *RiskEngine {
+	return &RiskEngine{insights: insights, restarts: restarts}
+}
+
+// RiskContext is what monitoring knows about the container an update targets.
 type RiskContext struct {
-	HasEndpointCheck bool
-	RestartCount     int
-	DependentCount   int
-	Criticality      string // from maintenant.severity label
+	PubliclyExposed bool
+	RestartCount    int
+}
+
+// Context reads the network exposure and the last day's restarts of a container, by its store id.
+func (re *RiskEngine) Context(ctx context.Context, containerUID string) (RiskContext, error) {
+	var rc RiskContext
+	if re.insights != nil {
+		rc.PubliclyExposed = networkExposed(re.insights.GetContainerInsights(containerUID))
+	}
+	if re.restarts != nil {
+		n, err := re.restarts.CountRestartsSince(ctx, containerUID, time.Now().Add(-restartWindow))
+		if err != nil {
+			return rc, err
+		}
+		rc.RestartCount = n
+	}
+	return rc, nil
+}
+
+func networkExposed(ci *security.ContainerInsights) bool {
+	if ci == nil {
+		return false
+	}
+	for _, i := range ci.Insights {
+		switch i.Type {
+		case security.PortExposedAllInterfaces, security.DatabasePortExposed, security.HostNetworkMode,
+			security.ServiceLoadBalancer, security.ServiceNodePort:
+			return true
+		}
+	}
+	return false
 }
 
 // CalculateScore computes a risk score (0-100) from update data and monitoring context.
@@ -31,7 +68,7 @@ func (re *RiskEngine) CalculateScore(u *update.ImageUpdate, cves []*update.Conta
 	factors := make(map[string]update.RiskFactor)
 	total := 0
 
-	// Factor 1: Update type (20% weight, max 20)
+	// Factor 1: Update type (max 20)
 	updateScore := 0
 	switch u.UpdateType {
 	case update.UpdateTypeMajor:
@@ -46,7 +83,7 @@ func (re *RiskEngine) CalculateScore(u *update.ImageUpdate, cves []*update.Conta
 	factors["update_type"] = update.RiskFactor{Label: string(u.UpdateType), Score: updateScore}
 	total += updateScore
 
-	// Factor 2: CVE severity (30% weight, max 30)
+	// Factor 2: CVE severity (max 30)
 	cveScore := 0
 	if len(cves) > 0 {
 		maxCVE := 0
@@ -75,32 +112,15 @@ func (re *RiskEngine) CalculateScore(u *update.ImageUpdate, cves []*update.Conta
 	factors["cve_severity"] = update.RiskFactor{Label: riskSeverityLabel(cves), Score: cveScore}
 	total += cveScore
 
-	// Factor 3: Container criticality (15% weight, max 15)
-	critScore := 0
-	switch rctx.Criticality {
-	case "critical":
-		critScore = 15
-	case "high":
-		critScore = 11
-	case "medium":
-		critScore = 7
-	case "low":
-		critScore = 3
-	default:
-		critScore = 7 // default medium
-	}
-	factors["criticality"] = update.RiskFactor{Label: rctx.Criticality, Score: critScore}
-	total += critScore
-
-	// Factor 4: Public exposure (10% weight, max 10)
+	// Factor 3: Network exposure (max 10)
 	exposureScore := 0
-	if rctx.HasEndpointCheck {
+	if rctx.PubliclyExposed {
 		exposureScore = 10
 	}
-	factors["public_exposure"] = update.RiskFactor{Label: riskBoolLabel(rctx.HasEndpointCheck), Score: exposureScore}
+	factors["public_exposure"] = update.RiskFactor{Label: riskBoolLabel(rctx.PubliclyExposed), Score: exposureScore}
 	total += exposureScore
 
-	// Factor 5: Stability from restart history (10% weight, max 10)
+	// Factor 4: Stability from the restarts of the last day (max 10)
 	stabilityScore := 0
 	if rctx.RestartCount > 5 {
 		stabilityScore = 10
@@ -112,29 +132,13 @@ func (re *RiskEngine) CalculateScore(u *update.ImageUpdate, cves []*update.Conta
 	factors["stability"] = update.RiskFactor{Label: riskRestartLabel(rctx.RestartCount), Score: stabilityScore}
 	total += stabilityScore
 
-	// Factor 6: Dependents (10% weight, max 10)
-	depScore := 0
-	if rctx.DependentCount > 5 {
-		depScore = 10
-	} else if rctx.DependentCount > 2 {
-		depScore = 6
-	} else if rctx.DependentCount > 0 {
-		depScore = 3
-	}
-	factors["dependents"] = update.RiskFactor{Label: riskDepLabel(rctx.DependentCount), Score: depScore}
-	total += depScore
-
-	// Factor 7: Breaking changes (5% weight, max 5)
+	// Factor 5: Breaking changes (max 5)
 	breakingScore := 0
 	if u.HasBreakingChanges {
 		breakingScore = 5
 	}
 	factors["breaking_changes"] = update.RiskFactor{Label: riskBoolLabel(u.HasBreakingChanges), Score: breakingScore}
 	total += breakingScore
-
-	if total > 100 {
-		total = 100
-	}
 
 	return update.RiskScore{
 		ContainerID: u.ContainerID,
@@ -183,14 +187,4 @@ func riskRestartLabel(count int) string {
 		return "minor_restarts"
 	}
 	return "unstable"
-}
-
-func riskDepLabel(count int) string {
-	if count == 0 {
-		return "standalone"
-	}
-	if count <= 2 {
-		return "few"
-	}
-	return "many"
 }

@@ -74,9 +74,12 @@ func (l *probeLog) all() []*agentpb.AgentEvent {
 	return append([]*agentpb.AgentEvent(nil), l.events...)
 }
 
-// startProbes runs the endpoint prober until the test ends.
+// startProbes runs the endpoint prober until the test ends, with intervals short enough for a test.
 func startProbes(t *testing.T, ld labeledDiscoverer, discoverEvery time.Duration) *probeLog {
 	t.Helper()
+	floor := endpoint.MinInterval
+	endpoint.MinInterval = 10 * time.Millisecond
+	t.Cleanup(func() { endpoint.MinInterval = floor })
 	log := &probeLog{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

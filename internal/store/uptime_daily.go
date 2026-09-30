@@ -9,10 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
-	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -187,26 +187,21 @@ func (s *UptimeDailyStore) endpointDays(ctx context.Context, id string, from, to
 	return agg.result(), nil
 }
 
-// heartbeatDays replays the pings as the service does (every ping resets the deadline, a completion sets up or down, a lapsed deadline is down) and weighs each day by its time up.
+// heartbeatDays replays the pings and pauses as the service does (every ping resets the deadline, a completion sets up or down, a lapsed deadline is down, a pause counts for nothing) and weighs each day by its time up.
 func (s *UptimeDailyStore) heartbeatDays(ctx context.Context, id string, from, to time.Time) (dayUptimes, error) {
 	out := dayUptimes{}
+	if !to.After(from) {
+		return out, nil
+	}
 
-	var period, updatedAt int64
-	var status string
+	var period int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT interval_seconds + grace_seconds, status, updated_at FROM heartbeats WHERE id = ?`, id).
-		Scan(&period, &status, &updatedAt)
+		`SELECT interval_seconds + grace_seconds FROM heartbeats WHERE id = ?`, id).Scan(&period)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return out, nil
 	case err != nil:
 		return nil, fmt.Errorf("heartbeat daily uptime: %w", err)
-	}
-	if pausedAt := time.Unix(updatedAt, 0).UTC(); status == string(heartbeat.StatusPaused) && pausedAt.Before(to) {
-		to = pausedAt
-	}
-	if !to.After(from) {
-		return out, nil
 	}
 
 	// Replay from the last completion before the window: it fixes the status the window opens on.
@@ -218,28 +213,32 @@ func (s *UptimeDailyStore) heartbeatDays(ctx context.Context, id string, from, t
 		return nil, fmt.Errorf("heartbeat daily uptime seed: %w", err)
 	}
 
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT timestamp, ping_type, exit_code FROM heartbeat_pings
-		WHERE heartbeat_id = ? AND timestamp >= ? AND timestamp < ?
-		ORDER BY timestamp`,
-		id, seed.Int64, to.Unix())
+	events, err := s.heartbeatPingEvents(ctx, id, seed.Int64, to.Unix())
 	if err != nil {
-		return nil, fmt.Errorf("heartbeat daily uptime: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	pauses, err := s.heartbeatPauseEvents(ctx, id, seed.Int64, to.Unix())
+	if err != nil {
+		return nil, err
+	}
+	events = append(events, pauses...)
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].ts != events[j].ts {
+			return events[i].ts < events[j].ts
+		}
+		return events[i].kind < events[j].kind
+	})
 
 	tl := &hbTimeline{period: period}
-	for rows.Next() {
-		var ts int64
-		var pingType string
-		var exitCode sql.NullInt64
-		if err := rows.Scan(&ts, &pingType, &exitCode); err != nil {
-			return nil, fmt.Errorf("scan heartbeat daily uptime: %w", err)
+	for _, e := range events {
+		switch e.kind {
+		case hbResume:
+			tl.resume(e.ts)
+		case hbPing:
+			tl.ping(e.ts, e.pingType, e.exitCode)
+		case hbPause:
+			tl.pause(e.ts)
 		}
-		tl.ping(ts, pingType, exitCode)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate heartbeat daily uptime: %w", err)
 	}
 	if !tl.started {
 		return out, nil
@@ -252,16 +251,95 @@ func (s *UptimeDailyStore) heartbeatDays(ctx context.Context, id string, from, t
 		if end <= start {
 			continue
 		}
-		out[day] = tl.over(start, end)
+		if v, ok := tl.over(start, end); ok {
+			out[day] = v
+		}
 	}
 	return out, nil
 }
+
+func (s *UptimeDailyStore) heartbeatPingEvents(ctx context.Context, id string, from, to int64) ([]hbEvent, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT timestamp, ping_type, exit_code FROM heartbeat_pings
+		WHERE heartbeat_id = ? AND timestamp >= ? AND timestamp < ?
+		ORDER BY timestamp`,
+		id, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("heartbeat daily uptime: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var events []hbEvent
+	for rows.Next() {
+		e := hbEvent{kind: hbPing}
+		if err := rows.Scan(&e.ts, &e.pingType, &e.exitCode); err != nil {
+			return nil, fmt.Errorf("scan heartbeat daily uptime: %w", err)
+		}
+		events = append(events, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate heartbeat daily uptime: %w", err)
+	}
+	return events, nil
+}
+
+// heartbeatPauseEvents returns the start and the end of every pause that overlaps [from, to).
+func (s *UptimeDailyStore) heartbeatPauseEvents(ctx context.Context, id string, from, to int64) ([]hbEvent, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT paused_at, resumed_at FROM heartbeat_pauses
+		WHERE heartbeat_id = ? AND paused_at < ? AND (resumed_at IS NULL OR (resumed_at > ? AND resumed_at > paused_at))`,
+		id, to, from)
+	if err != nil {
+		return nil, fmt.Errorf("heartbeat daily uptime pauses: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var events []hbEvent
+	for rows.Next() {
+		var pausedAt int64
+		var resumedAt sql.NullInt64
+		if err := rows.Scan(&pausedAt, &resumedAt); err != nil {
+			return nil, fmt.Errorf("scan heartbeat daily uptime pauses: %w", err)
+		}
+		events = append(events, hbEvent{ts: pausedAt, kind: hbPause})
+		if resumedAt.Valid {
+			events = append(events, hbEvent{ts: resumedAt.Int64, kind: hbResume})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate heartbeat daily uptime pauses: %w", err)
+	}
+	return events, nil
+}
+
+// Within one second, a resume comes before the ping that caused it, and a pause after the ping it follows.
+const (
+	hbResume = iota
+	hbPing
+	hbPause
+)
+
+type hbEvent struct {
+	ts       int64
+	kind     int
+	pingType string
+	exitCode sql.NullInt64
+}
+
+type hbState int8
+
+const (
+	hbDown hbState = iota
+	hbUp
+	hbPaused
+)
 
 type hbTimeline struct {
 	period    int64
 	started   bool
 	first     int64
 	up        bool
+	paused    bool
 	cursor    int64
 	deadline  int64
 	spans     []hbSpan
@@ -270,13 +348,16 @@ type hbTimeline struct {
 
 type hbSpan struct {
 	from, to int64
-	up       bool
+	state    hbState
 }
 
 func (t *hbTimeline) ping(ts int64, pingType string, exitCode sql.NullInt64) {
-	if !t.started {
+	switch {
+	case !t.started:
 		t.started, t.first, t.up, t.cursor = true, ts, true, ts
-	} else {
+	case t.paused:
+		t.resume(ts)
+	default:
 		t.advance(ts)
 	}
 	switch {
@@ -291,37 +372,72 @@ func (t *hbTimeline) ping(ts int64, pingType string, exitCode sql.NullInt64) {
 	t.deadline = ts + t.period
 }
 
+// pause stops the clock: until the resume, time counts neither up nor down.
+func (t *hbTimeline) pause(ts int64) {
+	if !t.started || t.paused {
+		return
+	}
+	t.advance(ts)
+	t.paused = true
+}
+
+// resume puts the heartbeat back up with a fresh deadline, as the service does.
+func (t *hbTimeline) resume(ts int64) {
+	if !t.paused {
+		return
+	}
+	t.span(t.cursor, ts, hbPaused)
+	t.cursor, t.paused, t.up, t.deadline = ts, false, true, ts+t.period
+}
+
 // advance records the time up to ts, going down where the deadline lapsed first.
 func (t *hbTimeline) advance(ts int64) {
 	if t.up && ts > t.deadline {
-		t.span(t.cursor, t.deadline, true)
+		t.span(t.cursor, t.deadline, hbUp)
 		t.incidents = append(t.incidents, t.deadline)
 		t.cursor, t.up = t.deadline, false
 	}
-	t.span(t.cursor, ts, t.up)
+	state := hbDown
+	if t.up {
+		state = hbUp
+	}
+	t.span(t.cursor, ts, state)
 	t.cursor = ts
 }
 
-func (t *hbTimeline) span(from, to int64, up bool) {
-	if n := len(t.spans); n > 0 && t.spans[n-1].up == up && t.spans[n-1].to == from {
+func (t *hbTimeline) span(from, to int64, state hbState) {
+	if n := len(t.spans); n > 0 && t.spans[n-1].state == state && t.spans[n-1].to == from {
 		t.spans[n-1].to = to
 		return
 	}
-	t.spans = append(t.spans, hbSpan{from, to, up})
+	t.spans = append(t.spans, hbSpan{from, to, state})
 }
 
 func (t *hbTimeline) close(end int64) {
-	if end > t.cursor {
+	switch {
+	case end <= t.cursor:
+	case t.paused:
+		t.span(t.cursor, end, hbPaused)
+	default:
 		t.advance(end)
 	}
 }
 
-func (t *hbTimeline) over(start, end int64) dayUptime {
-	var up int64
+// over weighs [start, end) by its time up, paused time left out; a span paused throughout has no value.
+func (t *hbTimeline) over(start, end int64) (dayUptime, bool) {
+	var up, paused int64
 	for _, sp := range t.spans {
-		if sp.up {
-			up += max(0, min(sp.to, end)-max(sp.from, start))
+		d := max(0, min(sp.to, end)-max(sp.from, start))
+		switch sp.state {
+		case hbUp:
+			up += d
+		case hbPaused:
+			paused += d
 		}
+	}
+	observed := end - start - paused
+	if observed <= 0 {
+		return dayUptime{}, false
 	}
 	n := 0
 	for _, ts := range t.incidents {
@@ -330,9 +446,9 @@ func (t *hbTimeline) over(start, end int64) dayUptime {
 		}
 	}
 	return dayUptime{
-		percent:   math.Round(float64(up)/float64(end-start)*10000) / 100,
+		percent:   math.Round(float64(up)/float64(observed)*10000) / 100,
 		incidents: n,
-	}
+	}, true
 }
 
 // containerDays weighs each day by the time spent up, starting from the last

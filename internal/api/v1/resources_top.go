@@ -49,9 +49,6 @@ func (h *ResourceTopHandler) HandleGetTopConsumers(w http.ResponseWriter, r *htt
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
 			limit = n
-			if limit > 20 {
-				limit = 20
-			}
 		}
 	}
 

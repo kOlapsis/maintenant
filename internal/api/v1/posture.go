@@ -125,17 +125,24 @@ func (h *PostureHandler) HandleListContainerPostures(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Score all containers
+	infos := make([]security.ContainerInfo, len(containers))
+	for i, c := range containers {
+		infos[i] = security.ContainerInfo{ID: c.ID, ExternalID: c.ExternalID, Name: c.Name}
+	}
+	scores, err := h.scorer.ScoreContainers(r.Context(), infos)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to compute posture")
+		return
+	}
+
 	type scoredContainer struct {
 		score *security.SecurityScore
 	}
 	var scored []scoredContainer
-	for _, c := range containers {
-		s, err := h.scorer.ScoreContainer(r.Context(), c.ID, c.ExternalID, c.Name)
-		if err != nil || s == nil {
-			continue
+	for _, s := range scores {
+		if s != nil {
+			scored = append(scored, scoredContainer{score: s})
 		}
-		scored = append(scored, scoredContainer{score: s})
 	}
 
 	// Sort by score ascending (worst first)
