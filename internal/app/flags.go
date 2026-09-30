@@ -65,13 +65,13 @@ func init() {
 		{
 			EnvName: "MAINTENANT_BASE_URL", FlagName: "baseUrl",
 			Type: FlagTypeString, Default: "",
-			Description: "Public base URL for status pages and links",
+			Description: "Public base URL: heartbeat ping URLs, status page email links, MCP OAuth issuer (default: http://<addr>)",
 			ApplyTo:     func(c *Config, v string) error { c.BaseURL = v; return nil },
 		},
 		{
 			EnvName: "MAINTENANT_CORS_ORIGINS", FlagName: "corsOrigins",
 			Type: FlagTypeString, Default: "",
-			Description: "Comma-separated CORS origins (empty = same-origin)",
+			Description: "Comma-separated origins allowed to call the API and to send state-changing requests from a browser (empty = same-origin)",
 			ApplyTo:     func(c *Config, v string) error { c.CORSOrigins = v; return nil },
 		},
 		{
@@ -90,7 +90,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_DB", FlagName: "db",
 			Type: FlagTypeString, Default: "./maintenant.db",
-			Description: "SQLite database path",
+			Description: "SQLite database path; its directory also holds the license cache and the telemetry identity, even with PostgreSQL",
 			ApplyTo:     func(c *Config, v string) error { c.DBPath = v; return nil },
 		},
 		// Branding
@@ -168,7 +168,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_SECURITY_SCORE_THRESHOLD", FlagName: "securityScoreThreshold",
 			Type: FlagTypeInt, Default: "",
-			Description: "Minimum security score threshold for alerts",
+			Description: "Raise an alert when the security posture score drops below this value (Personal edition; unset = no alert)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := strconv.Atoi(v)
 				if err != nil {
@@ -190,7 +190,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_ALLOW_PRIVATE_WEBHOOKS", FlagName: "allowPrivateWebhooks",
 			Type: FlagTypeBool, Default: "false",
-			Description: "Allow webhook targets on private/loopback addresses",
+			Description: "Allow http:// and private or loopback targets for channels and webhooks (development only)",
 			ApplyTo: func(c *Config, v string) error {
 				c.AllowPrivateWebhooks = parseTruthy(v)
 				return nil
@@ -200,7 +200,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_LICENSE_KEY", FlagName: "licenseKey",
 			Type: FlagTypeString, Default: "", Sensitive: true,
-			Description: "Pro license key (enables Pro features)",
+			Description: "Personal or Pro license key",
 			ApplyTo:     func(c *Config, v string) error { c.LicenseKey = v; return nil },
 		},
 		// SMTP
@@ -260,7 +260,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_MCP_ALLOWED_REDIRECT_URIS", FlagName: "mcpAllowedRedirectUris",
 			Type: FlagTypeString, Default: "",
-			Description: "Comma-separated OAuth redirect URIs accepted by /mcp",
+			Description: "Comma-separated OAuth redirect URIs accepted on /oauth/authorize, matched exactly (loopback is always accepted)",
 			ApplyTo:     func(c *Config, v string) error { c.MCP.AllowedRedirectURIs = v; return nil },
 		},
 		{
@@ -287,7 +287,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_STATUS_URL", FlagName: "statusUrl",
 			Type: FlagTypeString, Default: "",
-			Description: "Public status page URL advertised in notifications",
+			Description: "Canonical public URL of the status page",
 			ApplyTo:     func(c *Config, v string) error { c.StatusURL = v; return nil },
 		},
 		// Alerting
@@ -352,7 +352,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_MODE", FlagName: "mode",
 			Type: FlagTypeString, Default: "embedded",
-			Description: "Operating mode (embedded|server|agent)",
+			Description: "Operating mode (embedded|server|agent; server needs the Personal edition)",
 			ApplyTo:     func(c *Config, v string) error { c.Mode = v; return nil },
 		},
 		{
@@ -382,25 +382,25 @@ func init() {
 		{
 			EnvName: "MAINTENANT_GRPC_LISTEN", FlagName: "grpc-listen",
 			Type: FlagTypeString, Default: "127.0.0.1:8443",
-			Description: "gRPC listen address (server mode)",
+			Description: "Agent gRPC listen address (server and embedded modes)",
 			ApplyTo:     func(c *Config, v string) error { c.MultiHost.GRPCListen = v; return nil },
 		},
 		{
 			EnvName: "MAINTENANT_GRPC_URL", FlagName: "grpc-url",
 			Type: FlagTypeString, Default: "",
-			Description: "Public gRPC URL handed to agents (server mode)",
+			Description: "Public gRPC URL shown to agents in the enrollment commands (default: derived from the web request Host)",
 			ApplyTo:     func(c *Config, v string) error { c.MultiHost.GRPCPublicURL = v; return nil },
 		},
 		{
 			EnvName: "MAINTENANT_GRPC_TLS_CERT", FlagName: "grpc-tls-cert",
 			Type: FlagTypeString, Default: "",
-			Description: "TLS certificate file for the gRPC listener (server mode)",
+			Description: "TLS certificate file for the gRPC listener (server mode; set with the key, default: self-signed)",
 			ApplyTo:     func(c *Config, v string) error { c.MultiHost.TLSCertFile = v; return nil },
 		},
 		{
 			EnvName: "MAINTENANT_GRPC_TLS_KEY", FlagName: "grpc-tls-key",
 			Type: FlagTypeString, Default: "",
-			Description: "TLS key file for the gRPC listener (server mode)",
+			Description: "TLS key file for the gRPC listener (server mode; set with the certificate)",
 			ApplyTo:     func(c *Config, v string) error { c.MultiHost.TLSKeyFile = v; return nil },
 		},
 		{
@@ -415,7 +415,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_EMBEDDED_AGENT", FlagName: "embedded-agent",
 			Type: FlagTypeBool, Default: "false",
-			Description: "Also run a local agent (server mode, Pro)",
+			Description: "Also run a local agent (server mode, Personal edition or above)",
 			ApplyTo: func(c *Config, v string) error {
 				c.MultiHost.EmbeddedAgent = parseTruthy(v)
 				return nil
@@ -459,7 +459,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES", FlagName: "agentSpoolMaxMemoryBytes",
 			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxMemoryBytes, 10),
-			Description: "Bytes buffered in memory before the spool writes to disk (agent mode; 0 disables the spool)",
+			Description: "Bytes buffered in memory before the spool writes to disk (agent mode; 0 here and for the disk budget disables the spool)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := parseAgentSpoolSetting(v)
 				if err != nil {
@@ -473,7 +473,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", FlagName: "agentSpoolMaxDiskBytes",
 			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxDiskBytes, 10),
-			Description: "Maximum size of the spool database, oldest events dropped first (agent mode; 0 disables the spool)",
+			Description: "Maximum size of the spool database, oldest events dropped first (agent mode; 0 here and for the memory budget disables the spool)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := parseAgentSpoolSetting(v)
 				if err != nil {
@@ -487,7 +487,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS", FlagName: "agentSpoolMaxAgeSeconds",
 			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxAgeSeconds, 10),
-			Description: "Age past which a spooled event is neither kept nor replayed (agent mode)",
+			Description: "Age in seconds past which a spooled event is neither kept nor replayed (agent mode; 0 = no limit)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := parseAgentSpoolSetting(v)
 				if err != nil {
@@ -501,7 +501,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_DATA_DIR", FlagName: "data-dir",
 			Type: FlagTypeString, Default: "/var/lib/maintenant",
-			Description: "Directory holding the agent identity and liveness files (agent mode)",
+			Description: "Directory holding the agent identity, spool database and liveness file (agent mode)",
 			// Read straight from the environment where the agent starts, so the
 			// flag has to land there too.
 			ApplyTo: func(_ *Config, v string) error {
@@ -511,7 +511,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_CA_CERT", FlagName: "ca-cert",
 			Type: FlagTypeString, Default: "",
-			Description: "PEM bundle of extra root CAs, added to the system store",
+			Description: "PEM bundle of extra root CAs, added to the system roots for every outbound HTTPS and gRPC connection",
 			ApplyTo:     func(c *Config, v string) error { c.CACertFile = v; return nil },
 		},
 		{
