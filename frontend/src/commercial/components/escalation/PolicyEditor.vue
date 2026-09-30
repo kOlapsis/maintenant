@@ -68,7 +68,6 @@ function buildCurrentPayload() {
     filters: {
       severities: severities.value,
       scopes: [],
-      tags: [],
     },
     levels: levels.value.map((l) => ({
       delay_seconds: l.delay_seconds,
@@ -137,7 +136,6 @@ async function handleSave() {
       filters: {
         severities: severities.value,
         scopes: [],
-        tags: [],
       },
       levels: levels.value.map((l) => ({
         delay_seconds: l.delay_seconds,

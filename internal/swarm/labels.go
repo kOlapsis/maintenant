@@ -19,7 +19,6 @@ const (
 	labelMaintIgnore    = "maintenant.ignore"
 	labelMaintSeverity  = "maintenant.alert.severity"
 	labelMaintThreshold = "maintenant.alert.restart_threshold"
-	labelMaintChannels  = "maintenant.alert.channels"
 )
 
 // IsSwarmManaged returns true if the container has a Swarm service ID label.
@@ -52,9 +51,6 @@ func ApplyServiceLabels(c *cmodel.Container, serviceLabels map[string]string) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.RestartThreshold = n
 		}
-	}
-	if v, ok := serviceLabels[labelMaintChannels]; ok && v != "" {
-		c.AlertChannels = v
 	}
 
 	// Stack grouping via com.docker.stack.namespace

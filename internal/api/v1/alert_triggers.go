@@ -37,7 +37,6 @@ type triggerInput struct {
 	FilterSeverities string   `json:"filter_severities"`
 	FilterSources    string   `json:"filter_sources"`
 	FilterScopes     string   `json:"filter_scopes"`
-	FilterTags       string   `json:"filter_tags"`
 	Enabled          *bool    `json:"enabled"`
 	NotifyOnResolve  *bool    `json:"notify_on_resolve"`
 	ChannelIDs       []string `json:"channel_ids"`
@@ -88,8 +87,7 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
-	if err := h.checkAdvancedFiltersGating(&input); err != nil {
-		WriteError(w, http.StatusForbidden, "edition_required", err.Error())
+	if refuseAdvancedFilters(w, &input) {
 		return
 	}
 	if err := h.checkChannelsExist(r, input.ChannelIDs); err != nil {
@@ -111,7 +109,6 @@ func (h *AlertTriggerHandler) HandleCreateTrigger(w http.ResponseWriter, r *http
 		FilterSeverities: input.FilterSeverities,
 		FilterSources:    input.FilterSources,
 		FilterScopes:     input.FilterScopes,
-		FilterTags:       input.FilterTags,
 		Enabled:          enabled,
 		NotifyOnResolve:  notifyOnResolve,
 		ChannelIDs:       input.ChannelIDs,
@@ -167,8 +164,7 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 		WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
-	if err := h.checkAdvancedFiltersGating(&input); err != nil {
-		WriteError(w, http.StatusForbidden, "edition_required", err.Error())
+	if refuseAdvancedFilters(w, &input) {
 		return
 	}
 	if err := h.checkChannelsExist(r, input.ChannelIDs); err != nil {
@@ -189,7 +185,6 @@ func (h *AlertTriggerHandler) HandleUpdateTrigger(w http.ResponseWriter, r *http
 	existing.FilterSeverities = input.FilterSeverities
 	existing.FilterSources = input.FilterSources
 	existing.FilterScopes = input.FilterScopes
-	existing.FilterTags = input.FilterTags
 	existing.Enabled = enabled
 	existing.NotifyOnResolve = notifyOnResolve
 	existing.ChannelIDs = input.ChannelIDs
@@ -256,16 +251,14 @@ func validateTriggerInput(t *triggerInput) error {
 	return nil
 }
 
-// checkAdvancedFiltersGating returns an error when CE is used with Pro-only filters.
-func (h *AlertTriggerHandler) checkAdvancedFiltersGating(t *triggerInput) error {
-	if t.FilterScopes == "" && t.FilterTags == "" {
-		return nil
+// refuseAdvancedFilters writes the edition refusal when a scope filter is set
+// on an edition that does not open it, and reports whether it did.
+func refuseAdvancedFilters(w http.ResponseWriter, t *triggerInput) bool {
+	if t.FilterScopes == "" || extension.Allows(extension.CapAlertAdvancedFilters) {
+		return false
 	}
-	if extension.Allows(extension.CapAlertAdvancedFilters) {
-		return nil
-	}
-	return errors.New("advanced filters (scopes, tags) require the " +
-		titleEdition(extension.MinEdition(extension.CapAlertAdvancedFilters)) + " edition")
+	refuseCapability(w, extension.CapAlertAdvancedFilters)
+	return true
 }
 
 // checkChannelsExist verifies that each channel_id points at an existing row.

@@ -26,7 +26,6 @@ const (
 	labelPBGroup           = "maintenant.group"
 	labelPBSeverity        = "maintenant.alert.severity"
 	labelPBThreshold       = "maintenant.alert.restart_threshold"
-	labelPBChannels        = "maintenant.alert.channels"
 )
 
 // SecurityConfig holds security-relevant fields extracted from Docker's ContainerInspect.
@@ -275,9 +274,6 @@ func applyLabels(cm *cmodel.Container, labels map[string]string) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cm.RestartThreshold = n
 		}
-	}
-	if v, ok := labels[labelPBChannels]; ok && v != "" {
-		cm.AlertChannels = v
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -290,22 +291,21 @@ func TestCreateTriggerHandler_FilterScopes_CommunityBlocked(t *testing.T) {
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
 }
 
-func TestCreateTriggerHandler_FilterTags_CommunityBlocked(t *testing.T) {
-	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Community }
-	defer func() { extension.CurrentEdition = original }()
-
-	svc, _ := buildTriggerServices()
-	handler := createTriggerHandler(svc)
-
-	result, _, err := handler(context.Background(), nil, triggerInput{
-		Name:       "TaggedTrigger",
-		FilterTags: "prod",
-		ChannelIDs: []string{"1"},
-	})
-	require.NoError(t, err)
-	require.True(t, result.IsError)
-	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
+func TestFilterTools_HaveNoTagFilter(t *testing.T) {
+	tools := listToolNames(t, newTestServer(t))
+	for name, property := range map[string]string{
+		"create_trigger":           `"filter_tags"`,
+		"update_trigger":           `"filter_tags"`,
+		"create_escalation_policy": `"tags"`,
+		"update_escalation_policy": `"tags"`,
+	} {
+		tool := tools[name]
+		require.NotNil(t, tool, name)
+		schema, err := json.Marshal(tool.InputSchema)
+		require.NoError(t, err)
+		assert.NotContains(t, string(schema), property, "%s must not offer a tag filter", name)
+		assert.NotContains(t, strings.ToLower(tool.Description), "tag", name)
+	}
 }
 
 func TestCreateTriggerHandler_FilterScopes_ProAllowed(t *testing.T) {

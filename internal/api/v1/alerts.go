@@ -236,7 +236,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		Headers string          `json:"headers"`
 		Secret  string          `json:"secret"`
 		Config  json.RawMessage `json:"config"`
-		Enabled bool            `json:"enabled"`
+		Enabled *bool           `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
@@ -276,6 +276,11 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+
 	ch := &alert.NotificationChannel{
 		Name:    input.Name,
 		Type:    input.Type,
@@ -283,7 +288,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		Headers: input.Headers,
 		Secret:  input.Secret,
 		Config:  config,
-		Enabled: input.Enabled,
+		Enabled: enabled,
 	}
 
 	id, err := h.channelStore.InsertChannel(r.Context(), ch)

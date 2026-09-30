@@ -26,7 +26,6 @@ const (
 	labelPBGroup     = "maintenant.group"
 	labelPBSeverity  = "maintenant.alert.severity"
 	labelPBThreshold = "maintenant.alert.restart_threshold"
-	labelPBChannels  = "maintenant.alert.channels"
 )
 
 // HandleAgentEvent processes a ContainerEvent received from a remote agent.
@@ -239,9 +238,6 @@ func applyAgentLabels(c *Container, labels map[string]string) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.RestartThreshold = n
 		}
-	}
-	if v, ok := labels[labelPBChannels]; ok && v != "" {
-		c.AlertChannels = v
 	}
 }
 

@@ -337,9 +337,6 @@ func applyAnnotations(cm *cmodel.Container, annotations map[string]string) {
 			cm.RestartThreshold = n
 		}
 	}
-	if v, ok := annotations["maintenant.alert.channels"]; ok && v != "" {
-		cm.AlertChannels = v
-	}
 	// Fallback display name from K8s standard labels.
 	if cm.Name == "" {
 		if v, ok := annotations["app.kubernetes.io/name"]; ok {

@@ -23,7 +23,6 @@ export interface Container {
   is_ignored: boolean
   alert_severity: string
   restart_threshold: number
-  alert_channels?: string
   archived: boolean
   first_seen_at: string
   last_state_change_at: string

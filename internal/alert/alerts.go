@@ -41,7 +41,6 @@ type RestartAlert struct {
 	RestartCount  int
 	Threshold     int
 	Severity      container.AlertSeverity
-	Channels      string
 	Timestamp     time.Time
 	AgentID       string
 }
@@ -72,7 +71,6 @@ func (d *RestartDetector) Check(ctx context.Context, c *container.Container) (in
 		RestartCount:  count,
 		Threshold:     c.RestartThreshold,
 		Severity:      c.AlertSeverity,
-		Channels:      c.AlertChannels,
 		Timestamp:     time.Now(),
 		AgentID:       c.AgentID,
 	}, nil
@@ -85,7 +83,6 @@ type HealthAlert struct {
 	PreviousHealth *container.HealthStatus
 	NewHealth      container.HealthStatus
 	Severity       container.AlertSeverity
-	Channels       string
 	Timestamp      time.Time
 }
 
@@ -102,7 +99,6 @@ func CheckHealthTransition(c *container.Container, previousHealth *container.Hea
 		PreviousHealth: previousHealth,
 		NewHealth:      newHealth,
 		Severity:       c.AlertSeverity,
-		Channels:       c.AlertChannels,
 		Timestamp:      time.Now(),
 	}
 }

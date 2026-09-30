@@ -64,7 +64,6 @@ func setupEscalationTestDB(t *testing.T) (*EscalationStore, *sql.DB) {
 			active_before_downgrade INTEGER NOT NULL DEFAULT 0,
 			severities_json TEXT NOT NULL DEFAULT '[]',
 			scopes_json TEXT NOT NULL DEFAULT '[]',
-			tags_json TEXT NOT NULL DEFAULT '[]',
 			levels_json TEXT NOT NULL,
 			created_at BIGINT NOT NULL DEFAULT 0,
 			created_by TEXT,
@@ -119,7 +118,6 @@ func makeTestPolicy(name string, active bool) *escalation.Policy {
 		Filters: escalation.Filters{
 			Severities: []string{"critical"},
 			Scopes:     []escalation.Scope{{Kind: "container", RefID: "1"}},
-			Tags:       []string{"prod"},
 		},
 		Levels: []escalation.Level{
 			{Order: 0, DelaySeconds: 300, ChannelIDs: []string{"1", "2"}},

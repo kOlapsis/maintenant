@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -211,4 +212,45 @@ func TestMigrateSQLite_DirtyFirstMigrationRecovers(t *testing.T) {
 	v, err := db.SchemaVersion(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, head, v, "the interrupted install must be replayed to the head")
+}
+
+func TestMigration36_DropsTagFiltersAndAlertChannels(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	dropped := map[string]string{
+		"alert_triggers":      "filter_tags",
+		"escalation_policies": "tags_json",
+		"containers":          "alert_channels",
+	}
+
+	assertColumns := func(present bool) {
+		t.Helper()
+		desc := introspectSQLite
+		if db.dialect == DialectPostgres {
+			desc = introspectPostgres
+		}
+		tables := desc(t, db.ReadDB()).tables
+		for table, col := range dropped {
+			require.Contains(t, tables, table)
+			if present {
+				assert.Contains(t, tables[table], col)
+			} else {
+				assert.NotContains(t, tables[table], col)
+			}
+		}
+	}
+	apply := func(direction string) {
+		t.Helper()
+		sqlText, err := fs.ReadFile(migrationFS,
+			"migrations/"+db.dialect.String()+"/36_drop_tag_filters_and_alert_channels."+direction+".sql")
+		require.NoError(t, err)
+		_, err = db.ReadDB().ExecContext(ctx, string(sqlText))
+		require.NoError(t, err, direction)
+	}
+
+	assertColumns(false)
+	apply("down")
+	assertColumns(true)
+	apply("up")
+	assertColumns(false)
 }

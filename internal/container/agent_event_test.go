@@ -247,7 +247,6 @@ func TestHandleAgentEvent_AppliesMaintenantLabels(t *testing.T) {
 			labelPBGroup:     "infra",
 			labelPBSeverity:  "critical",
 			labelPBThreshold: "5",
-			labelPBChannels:  "ops",
 		},
 	}
 	require.NoError(t, svc.HandleAgentEvent(context.Background(), "a", ev, agentevent.Meta{ObservedAt: time.Now()}))
@@ -258,7 +257,6 @@ func TestHandleAgentEvent_AppliesMaintenantLabels(t *testing.T) {
 	assert.Equal(t, "infra", c.CustomGroup)
 	assert.Equal(t, SeverityCritical, c.AlertSeverity)
 	assert.Equal(t, 5, c.RestartThreshold)
-	assert.Equal(t, "ops", c.AlertChannels)
 }
 
 func TestHandleAgentEvent_EmptyContainerIDIsNoOp(t *testing.T) {

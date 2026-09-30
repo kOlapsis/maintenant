@@ -45,7 +45,6 @@ const notifyOnResolve = ref(props.trigger?.notify_on_resolve ?? true)
 const severities = ref<string[]>(toCsvArray(props.trigger?.filter_severities ?? ''))
 const sources = ref<string[]>(toCsvArray(props.trigger?.filter_sources ?? ''))
 const scopesCsv = ref(props.trigger?.filter_scopes ?? '')
-const tagsCsv = ref(props.trigger?.filter_tags ?? '')
 const selectedChannelIds = ref<string[]>(props.trigger?.channel_ids ?? [])
 
 const saving = ref(false)
@@ -60,7 +59,6 @@ watch(
     severities.value = toCsvArray(t?.filter_severities ?? '')
     sources.value = toCsvArray(t?.filter_sources ?? '')
     scopesCsv.value = t?.filter_scopes ?? ''
-    tagsCsv.value = t?.filter_tags ?? ''
     selectedChannelIds.value = t?.channel_ids ?? []
   },
 )
@@ -95,8 +93,7 @@ const matchAll = computed(
   () =>
     severities.value.length === 0 &&
     sources.value.length === 0 &&
-    scopesCsv.value.trim() === '' &&
-    tagsCsv.value.trim() === '',
+    scopesCsv.value.trim() === '',
 )
 
 async function handleSave() {
@@ -116,7 +113,6 @@ async function handleSave() {
       filter_severities: severities.value.join(','),
       filter_sources: sources.value.join(','),
       filter_scopes: scopesCsv.value.trim(),
-      filter_tags: tagsCsv.value.trim(),
       enabled: enabled.value,
       notify_on_resolve: notifyOnResolve.value,
       channel_ids: selectedChannelIds.value,
@@ -262,7 +258,7 @@ async function handleSave() {
         </div>
       </div>
 
-      <!-- Scopes / Tags — gated by the alert_advanced_filters capability -->
+      <!-- Scopes: gated by the alert_advanced_filters capability -->
       <div class="space-y-3 rounded-xl border border-mnt-default bg-mnt-primary p-4">
         <div class="flex items-center justify-between">
           <label class="text-[10px] font-bold uppercase tracking-widest text-mnt-muted">
@@ -277,7 +273,7 @@ async function handleSave() {
           </span>
         </div>
         <p v-if="!canUseAdvancedFilters" class="text-xs text-mnt-muted">
-          Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">container:42</code>) or by tags.
+          Filter triggers by per-entity scope (e.g. <code class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px]">container:42</code>).
         </p>
 
         <FormField label="Scopes (CSV)">
@@ -287,19 +283,6 @@ async function handleSave() {
               v-model="scopesCsv"
               :disabled="!canUseAdvancedFilters"
               placeholder="container:42, endpoint:7"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-            />
-          </template>
-        </FormField>
-
-        <FormField label="Tags (CSV)">
-          <template #default="{ id, describedBy, invalid }">
-            <TextInput
-              :id="id"
-              v-model="tagsCsv"
-              :disabled="!canUseAdvancedFilters"
-              placeholder="prod, payments"
               :aria-describedby="describedBy"
               :invalid="invalid"
             />

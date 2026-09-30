@@ -639,9 +639,6 @@ func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a
 // matchesTrigger reports whether an alert satisfies all of a trigger's
 // non-empty filters (AND between fields, OR within a CSV field). An empty
 // filter matches everything.
-//
-// FilterTags is treated as no-op for now: Alert does not yet expose tags.
-// The match is enforced via filter_severities, filter_sources and filter_scopes.
 func matchesTrigger(t *AlertTrigger, a *Alert) bool {
 	if a.Status == StatusResolved && !t.NotifyOnResolve {
 		return false

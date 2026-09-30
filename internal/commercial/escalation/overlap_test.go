@@ -14,11 +14,11 @@ import (
 
 func TestOverlap_BothEmpty_AllFilters_SharedChannel(t *testing.T) {
 	a := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1", "2"}}},
 	}
 	b := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"2", "3"}}},
 	}
 	warnings := DetectOverlap(a, []*esc.Policy{b})
@@ -28,11 +28,11 @@ func TestOverlap_BothEmpty_AllFilters_SharedChannel(t *testing.T) {
 
 func TestOverlap_NoSharedChannel(t *testing.T) {
 	a := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1"}}},
 	}
 	b := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"2"}}},
 	}
 	warnings := DetectOverlap(a, []*esc.Policy{b})
@@ -41,11 +41,11 @@ func TestOverlap_NoSharedChannel(t *testing.T) {
 
 func TestOverlap_DisjointSeverities(t *testing.T) {
 	a := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{"warning"}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{"warning"}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1"}}},
 	}
 	b := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1"}}},
 	}
 	warnings := DetectOverlap(a, []*esc.Policy{b})
@@ -54,11 +54,11 @@ func TestOverlap_DisjointSeverities(t *testing.T) {
 
 func TestOverlap_OneEmptyFilters_IntersectsAll(t *testing.T) {
 	a := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1"}}},
 	}
 	b := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{"critical"}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1"}}},
 	}
 	warnings := DetectOverlap(a, []*esc.Policy{b})
@@ -68,12 +68,12 @@ func TestOverlap_OneEmptyFilters_IntersectsAll(t *testing.T) {
 func TestOverlap_SkipsSelf(t *testing.T) {
 	a := &esc.Policy{
 		ID:      "1",
-		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1"}}},
 	}
 	b := &esc.Policy{
 		ID:      "1",
-		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"1"}}},
 	}
 	warnings := DetectOverlap(a, []*esc.Policy{b})
@@ -82,14 +82,14 @@ func TestOverlap_SkipsSelf(t *testing.T) {
 
 func TestOverlap_MultiLevelSharedChannel(t *testing.T) {
 	a := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}},
 		Levels: []esc.Level{
 			{ChannelIDs: []string{"10"}},
 			{ChannelIDs: []string{"5"}},
 		},
 	}
 	b := &esc.Policy{
-		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}, Tags: []string{}},
+		Filters: esc.Filters{Severities: []string{}, Scopes: []esc.Scope{}},
 		Levels:  []esc.Level{{ChannelIDs: []string{"5", "6"}}},
 	}
 	warnings := DetectOverlap(a, []*esc.Policy{b})

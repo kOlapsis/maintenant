@@ -5,6 +5,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -247,23 +248,47 @@ func TestHandleCreateTrigger_ProFilterScopes_CommunityBlocked(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.HandleCreateTrigger(rec, req)
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "edition_required")
+	assertAdvancedFiltersRefusal(t, rec)
 }
 
-func TestHandleCreateTrigger_ProFilterTags_CommunityBlocked(t *testing.T) {
+func TestHandleUpdateTrigger_ProFilterScopes_CommunityBlocked(t *testing.T) {
 	original := extension.CurrentEdition
 	extension.CurrentEdition = func() extension.Edition { return extension.Community }
 	defer func() { extension.CurrentEdition = original }()
 
+	h, ts := newTriggerHandler(true)
+	id := seedTrigger(t, ts, "Original")
+	body := `{"name":"Scoped","filter_scopes":"container:42","channel_ids":["1"]}`
+	req := httptest.NewRequest("PUT", "/api/v1/alert-triggers/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	h.HandleUpdateTrigger(rec, req)
+	assertAdvancedFiltersRefusal(t, rec)
+	assert.Equal(t, "Original", ts.triggers[id].Name, "a refused update leaves the trigger alone")
+}
+
+func assertAdvancedFiltersRefusal(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	var body ErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "EDITION_REQUIRED", body.Error.Code)
+	assert.Equal(t, string(extension.CapAlertAdvancedFilters), body.Error.Feature)
+	assert.Equal(t, string(extension.MinEdition(extension.CapAlertAdvancedFilters)), body.Error.RequiredEdition)
+}
+
+func TestHandleCreateTrigger_HasNoTagFilter(t *testing.T) {
 	h, _ := newTriggerHandler(true)
-	body := `{"name":"Tagged","filter_tags":"prod","channel_ids":["1"]}`
+	body := `{"name":"Plain","channel_ids":["1"]}`
 	req := httptest.NewRequest("POST", "/api/v1/alert-triggers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.HandleCreateTrigger(rec, req)
-	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.Contains(t, rec.Body.String(), "edition_required")
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.NotContains(t, got, "filter_tags")
 }
 
 func TestHandleCreateTrigger_ProFilterAllowed_Pro(t *testing.T) {

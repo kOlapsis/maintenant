@@ -175,7 +175,6 @@ func validRequest() esc.PolicyRequest {
 		Filters: esc.Filters{
 			Severities: []string{"critical"},
 			Scopes:     []esc.Scope{},
-			Tags:       []string{},
 		},
 		Levels: []esc.LevelReq{
 			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
@@ -353,7 +352,6 @@ func TestUpdatePolicy_HappyPath(t *testing.T) {
 		Filters: esc.Filters{
 			Severities: []string{"warning"},
 			Scopes:     []esc.Scope{},
-			Tags:       []string{},
 		},
 		Levels: []esc.LevelReq{
 			{DelaySeconds: 300, ChannelIDs: []string{"1"}},

@@ -259,7 +259,6 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		"is_ignored":           c.IsIgnored,
 		"alert_severity":       c.AlertSeverity,
 		"restart_threshold":    c.RestartThreshold,
-		"alert_channels":       c.AlertChannels,
 		"archived":             c.Archived,
 		"first_seen_at":        c.FirstSeenAt,
 		"last_state_change_at": c.LastStateChangeAt,

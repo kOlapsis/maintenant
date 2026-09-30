@@ -44,8 +44,7 @@ func DetectOverlap(candidate *esc.Policy, existing []*esc.Policy) []esc.OverlapW
 // Empty list = universe (matches all). Non-empty list = explicit set.
 func filtersIntersect(a, b esc.Filters) bool {
 	return setsIntersect(a.Severities, b.Severities) &&
-		scopeSetsIntersect(a.Scopes, b.Scopes) &&
-		setsIntersect(a.Tags, b.Tags)
+		scopeSetsIntersect(a.Scopes, b.Scopes)
 }
 
 // setsIntersect returns true if two string slices share at least one element,
@@ -111,9 +110,6 @@ func filterIntersectionDescription(a, b esc.Filters) string {
 	}
 	if len(a.Scopes) > 0 || len(b.Scopes) > 0 {
 		parts = append(parts, "scopes")
-	}
-	if len(a.Tags) > 0 || len(b.Tags) > 0 {
-		parts = append(parts, "tags")
 	}
 	if len(parts) == 0 {
 		return "all"

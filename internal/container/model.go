@@ -52,7 +52,6 @@ type Container struct {
 	IsIgnored            bool           `json:"is_ignored"`
 	AlertSeverity        AlertSeverity  `json:"alert_severity"`
 	RestartThreshold     int            `json:"restart_threshold"`
-	AlertChannels        string         `json:"alert_channels,omitempty"`
 	Archived             bool           `json:"archived"`
 	FirstSeenAt          time.Time      `json:"first_seen_at"`
 	LastStateChangeAt    time.Time      `json:"last_state_change_at"`

@@ -91,7 +91,6 @@ type createEscalationPolicyInput struct {
 type escalationFiltersInput struct {
 	Severities []string               `json:"severities,omitempty" jsonschema:"Severity filters: warning, critical"`
 	Scopes     []escalationScopeInput `json:"scopes,omitempty" jsonschema:"Scope filters"`
-	Tags       []string               `json:"tags,omitempty" jsonschema:"Tag filters"`
 }
 
 type escalationScopeInput struct {
@@ -198,7 +197,6 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 			Filters: escalation.Filters{
 				Severities: input.Filters.Severities,
 				Scopes:     scopes,
-				Tags:       input.Filters.Tags,
 			},
 			Levels: levels,
 		}
@@ -292,7 +290,6 @@ func updateEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[updateEsc
 			Filters: escalation.Filters{
 				Severities: input.Filters.Severities,
 				Scopes:     scopes,
-				Tags:       input.Filters.Tags,
 			},
 			Levels: levels,
 		}

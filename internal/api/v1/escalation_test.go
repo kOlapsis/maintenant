@@ -199,7 +199,6 @@ func validPolicyBody() escalation.PolicyRequest {
 		Filters: escalation.Filters{
 			Severities: []string{"critical"},
 			Scopes:     []escalation.Scope{},
-			Tags:       []string{},
 		},
 		Levels: []escalation.LevelReq{
 			{DelaySeconds: 300, ChannelIDs: []string{"1"}},
@@ -406,7 +405,6 @@ func TestEscalation_UpdatePolicy_HappyPath(t *testing.T) {
 		Filters: escalation.Filters{
 			Severities: []string{"critical"},
 			Scopes:     []escalation.Scope{},
-			Tags:       []string{},
 		},
 		Levels: []escalation.LevelReq{
 			{DelaySeconds: 300, ChannelIDs: []string{"1"}},

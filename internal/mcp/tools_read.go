@@ -433,6 +433,9 @@ func getHealthHandler(svc *Services) gomcp.ToolHandlerFor[getHealthInput, any] {
 
 func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listAgentsInput) (*gomcp.CallToolResult, any, error) {
+		if r, v, err := checkCapability(extension.CapMultihost); r != nil {
+			return r, v, err
+		}
 		if svc.Agents == nil {
 			return jsonResult([]any{})
 		}

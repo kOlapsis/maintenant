@@ -179,7 +179,7 @@ func (r *Runner) OnAlertCreated(ctx context.Context, a *alert.Alert) error {
 }
 
 // OnAlertAcknowledged terminates every active run attached to the alert and
-// dispatches an ack notification on the channels of the last executed level.
+// dispatches an ack notification on every channel the run has notified.
 func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack alert.Acknowledgment) error {
 	runs, err := r.store.SelectActiveRunsByAlert(ctx, alertID)
 	if err != nil {
@@ -206,18 +206,39 @@ func (r *Runner) OnAlertAcknowledged(ctx context.Context, alertID string, ack al
 		if a == nil || run.LastExecutedLevelIndex < 0 {
 			continue
 		}
-		policy, perr := unmarshalPolicySnapshot(run.PolicySnapshotJSON)
-		if perr != nil || policy == nil {
+		channelIDs, cErr := r.notifiedChannels(ctx, run.ID)
+		if cErr != nil {
+			r.logger.ErrorContext(ctx, "escalation: list notified channels for ack", "error", cErr, "run_id", run.ID)
 			continue
 		}
-		idx := run.LastExecutedLevelIndex
-		if idx >= len(policy.Levels) {
-			continue
-		}
-		ackAlert := formatAckAlert(a, ack)
-		r.dispatchSpecial(ctx, run.ID, specialLevelAck, policy.Levels[idx].ChannelIDs, ackAlert)
+		r.dispatchSpecial(ctx, run.ID, specialLevelAck, channelIDs, formatAckAlert(a, ack))
 	}
 	return nil
+}
+
+// notifiedChannels returns, once each and in delivery order, the channels a
+// level of the run has sent to or is still sending to.
+func (r *Runner) notifiedChannels(ctx context.Context, runID string) ([]string, error) {
+	deliveries, err := r.store.SelectRunDeliveries(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(deliveries))
+	var ids []string
+	for _, d := range deliveries {
+		if d.LevelIndex < 0 || d.ChannelID == nil {
+			continue
+		}
+		if d.Status != esc.DeliveryStatusSent && d.Status != esc.DeliveryStatusPending {
+			continue
+		}
+		if _, dup := seen[*d.ChannelID]; dup {
+			continue
+		}
+		seen[*d.ChannelID] = struct{}{}
+		ids = append(ids, *d.ChannelID)
+	}
+	return ids, nil
 }
 
 // OnAlertResolved terminates every active run attached to the alert. The
@@ -326,12 +347,16 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 
 	// Schedule the next tick. After the last level we still want the run to
 	// surface once more so the next cycle can dispatch the "exhausted" notif
-	// and terminate the run — set next_action_at = now to make that happen.
-	var nextAt time.Time
+	// and terminate the run: next_action_at = now makes that happen.
+	nextAt := now
 	if nextLevel+1 < len(policy.Levels) {
-		nextAt = now.Add(time.Duration(policy.Levels[nextLevel+1].DelaySeconds) * time.Second)
-	} else {
-		nextAt = now
+		// Step from the due slot, not from now: delays are cumulative and only a maintenance pause shifts them.
+		dueAt := now
+		if run.NextActionAt != nil {
+			dueAt = *run.NextActionAt
+		}
+		gap := policy.Levels[nextLevel+1].DelaySeconds - level.DelaySeconds
+		nextAt = dueAt.Add(time.Duration(gap) * time.Second)
 	}
 	if err := r.store.UpdateRunProgress(ctx, run.ID, nextLevel, &nextAt, esc.RunStatusActive); err != nil {
 		return fmt.Errorf("update run progress: %w", err)
@@ -455,8 +480,7 @@ func (r *Runner) abandonDelivery(ctx context.Context, d *esc.Delivery, reason st
 // --- helpers ---
 
 // matchPolicyFilters reports whether an alert satisfies a policy's filters.
-// Empty filter buckets match everything (universe). Tags are not yet exposed
-// on the Alert entity — treated as no-op (consistent with engine.matchesTrigger).
+// Empty filter buckets match everything (universe).
 func matchPolicyFilters(a *alert.Alert, p *esc.Policy) bool {
 	if len(p.Filters.Severities) > 0 && !slices.Contains(p.Filters.Severities, a.Severity) {
 		return false
@@ -493,24 +517,28 @@ func unmarshalPolicySnapshot(s string) (*esc.Policy, error) {
 func formatAckAlert(a *alert.Alert, ack alert.Acknowledgment) *alert.Alert {
 	cp := *a
 	cp.Status = alert.StatusResolved // routes the notifier through the "resolved" copy
-	at := ack.At.Format(time.RFC3339)
-	by := ack.By
-	if by == "" {
-		by = "—"
+	at := ack.At.UTC().Format(time.RFC3339)
+	if ack.By == "" {
+		cp.Message = fmt.Sprintf("Acknowledged at %s: %s", at, a.Message)
+	} else {
+		cp.Message = fmt.Sprintf("Acknowledged by %s at %s: %s", ack.By, at, a.Message)
 	}
-	cp.Message = fmt.Sprintf("✓ Acquittée par %s à %s — %s", by, at, a.Message)
 	return &cp
 }
 
 // formatExhaustedAlert produces a synthetic *Alert for the "escalation
-// exhausted — human intervention required" notification (FR-013).
+// exhausted, human intervention required" notification (FR-013).
 func formatExhaustedAlert(a *alert.Alert, totalLevels int) *alert.Alert {
 	cp := *a
 	// Keep severity/status of the original alert so the notifier still routes
 	// it as a critical/warning event but with an explicit message.
+	levels := "levels"
+	if totalLevels == 1 {
+		levels = "level"
+	}
 	cp.Message = fmt.Sprintf(
-		"⚠ Escalation épuisée — action humaine requise après %d palier(s) sans acquittement. %s",
-		totalLevels, a.Message,
+		"Escalation exhausted after %d %s without acknowledgment, human action required: %s",
+		totalLevels, levels, a.Message,
 	)
 	return &cp
 }
