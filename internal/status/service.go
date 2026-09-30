@@ -444,7 +444,10 @@ func (s *Service) BroadcastComponentChange(ctx context.Context, comp *Component)
 		"status":       effective,
 		"monitors":     monitorsWithStatus,
 	})
+	s.broadcastGlobalStatus(ctx)
+}
 
+func (s *Service) broadcastGlobalStatus(ctx context.Context) {
 	globalStatus, globalMsg := s.ComputeGlobalStatus(ctx)
 	s.Broadcast(event.StatusGlobalChanged, map[string]any{
 		"status":  globalStatus,

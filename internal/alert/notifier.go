@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -63,7 +64,7 @@ type WebhookPayload struct {
 
 // Notifier dispatches alert notifications with a bounded worker pool.
 type Notifier struct {
-	jobs         chan NotificationJob
+	queues       [notifierWorkerCount]chan NotificationJob
 	channelStore ChannelStore
 	httpClient   *http.Client
 	logger       *slog.Logger
@@ -80,8 +81,7 @@ type Notifier struct {
 func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool) *Notifier {
 	client := ssrf.NewHTTPClient(webhookTimeout, allowPrivate)
 	webhook := &webhookSender{client: client, format: formatWebhookPayload, logger: logger}
-	return &Notifier{
-		jobs:         make(chan NotificationJob, notifierChannelBuffer),
+	n := &Notifier{
 		channelStore: channelStore,
 		httpClient:   client,
 		logger:       logger,
@@ -92,6 +92,10 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 		},
 		suspendedLogged: make(map[string]bool),
 	}
+	for i := range n.queues {
+		n.queues[i] = make(chan NotificationJob, notifierChannelBuffer)
+	}
+	return n
 }
 
 // HTTPClient returns the SSRF-guarded client the notifier delivers webhooks with.
@@ -127,27 +131,39 @@ func (n *Notifier) SMTPConfigured() bool {
 // Start begins the worker pool. Call in a goroutine.
 func (n *Notifier) Start(ctx context.Context) {
 	n.logger.Info("alert notifier: started", "workers", notifierWorkerCount)
-	for i := 0; i < notifierWorkerCount; i++ {
-		go n.worker(ctx)
+	for _, q := range n.queues {
+		go n.worker(ctx, q)
 	}
 }
 
-// Enqueue adds a notification job to the work queue.
+// Enqueue adds a notification job to the queue of its stream, whose jobs one worker delivers in order.
 func (n *Notifier) Enqueue(job NotificationJob) {
 	select {
-	case n.jobs <- job:
+	case n.queues[streamOf(job)] <- job:
 	default:
 		n.logger.Warn("notifier: job queue full, dropping notification",
 			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
 	}
 }
 
-func (n *Notifier) worker(ctx context.Context) {
+// streamOf picks the queue shared by an alert's notifications to one channel, or by a webhook subscription's
+// events, so a recovery never overtakes the alert it resolves.
+func streamOf(job NotificationJob) uint32 {
+	h := fnv.New32a()
+	if job.Alert != nil {
+		_, _ = h.Write([]byte(job.Alert.ID + "\x00" + job.Channel.ID))
+	} else {
+		_, _ = h.Write([]byte(job.Channel.URL))
+	}
+	return h.Sum32() % notifierWorkerCount
+}
+
+func (n *Notifier) worker(ctx context.Context, jobs <-chan NotificationJob) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case job, ok := <-n.jobs:
+		case job, ok := <-jobs:
 			if !ok {
 				return
 			}

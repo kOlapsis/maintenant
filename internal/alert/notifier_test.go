@@ -231,6 +231,59 @@ func TestProcessJob_ReportsTheFinalOutcomeOnce(t *testing.T) {
 	}
 }
 
+// firstAttemptFails refuses the first delivery it is handed and records the events it delivers.
+type firstAttemptFails struct {
+	mu        sync.Mutex
+	refused   bool
+	delivered []string
+}
+
+func (s *firstAttemptFails) Ready() error { return nil }
+
+func (s *firstAttemptFails) Send(_ context.Context, _ *NotificationChannel, eventType string, _ *Alert) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.refused {
+		s.refused = true
+		return errors.New("receiver unavailable")
+	}
+	s.delivered = append(s.delivered, eventType)
+	return nil
+}
+
+func (s *firstAttemptFails) RetryDelay(time.Duration, error) time.Duration {
+	return 50 * time.Millisecond
+}
+
+func (s *firstAttemptFails) FailureMessage(err error) string { return err.Error() }
+
+func (s *firstAttemptFails) SendTest(context.Context, *NotificationChannel, *Alert) (int, error) {
+	return http.StatusOK, nil
+}
+
+func (s *firstAttemptFails) events() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.delivered...)
+}
+
+func TestNotifier_ARecoveryNeverOvertakesItsAlert(t *testing.T) {
+	n := NewNotifier(&deliveryRecorder{}, slog.New(slog.NewTextHandler(io.Discard, nil)), true)
+	s := &firstAttemptFails{}
+	n.RegisterChannel("x", s)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	n.Start(ctx)
+
+	ch := &NotificationChannel{ID: "c1", Type: "x"}
+	n.Enqueue(NotificationJob{Delivery: &NotificationDelivery{}, Channel: ch, Alert: &Alert{ID: "a1", Status: StatusActive}})
+	n.Enqueue(NotificationJob{Delivery: &NotificationDelivery{}, Channel: ch, Alert: &Alert{ID: "a1", Status: StatusResolved}})
+
+	require.Eventually(t, func() bool { return len(s.events()) == 2 }, 5*time.Second, 5*time.Millisecond)
+	assert.Equal(t, []string{"alert.fired", "alert.resolved"}, s.events(),
+		"the recovery waits for the alert's retried delivery")
+}
+
 func withEdition(t *testing.T, e extension.Edition) {
 	t.Helper()
 	prev := extension.CurrentEdition

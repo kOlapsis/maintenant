@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/status"
 )
@@ -157,6 +158,7 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 		return
 	}
 	c.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), c)
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentCreated, c.ID)
 	WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -252,6 +254,7 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 	} else {
 		existing.EffectiveStatus = existing.DerivedStatus
 	}
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentUpdated, existing.ID)
 	WriteJSON(w, http.StatusOK, existing)
 }
 
@@ -265,6 +268,7 @@ func (h *StatusAdminHandler) HandleDeleteComponent(w http.ResponseWriter, r *htt
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentDeleted, id)
 	w.WriteHeader(http.StatusNoContent)
 }
 

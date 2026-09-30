@@ -150,6 +150,9 @@ const (
 
 // Public status page events.
 const (
+	StatusComponentCreated = "status.component_created"
+	StatusComponentUpdated = "status.component_updated"
+	StatusComponentDeleted = "status.component_deleted"
 	StatusComponentChanged = "status.component_changed"
 	StatusIncidentCreated  = "status.incident_created"
 	StatusIncidentUpdated  = "status.incident_updated"
