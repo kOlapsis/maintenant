@@ -110,5 +110,8 @@ func TestUpdateMaintenance_RefusesAnEndBeforeTheStart(t *testing.T) {
 	assert.True(t, got.StartsAt.Equal(mw.StartsAt) && got.EndsAt.Equal(mw.EndsAt), "a refused update leaves the window as it was")
 
 	rec = serve(t, admin, http.MethodPut, "/api/v1/status/maintenance/"+mw.ID, `{"ends_at":"2099-01-01T02:00:00Z"}`)
-	require.Equal(t, http.StatusOK, rec.Code, "a window may end when it starts, as on creation: %s", rec.Body.String())
+	require.Equal(t, http.StatusBadRequest, rec.Code, "a window that ends when it starts has no duration: %s", rec.Body.String())
+
+	rec = serve(t, admin, http.MethodPut, "/api/v1/status/maintenance/"+mw.ID, `{"ends_at":"2099-01-01T03:00:00Z"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }

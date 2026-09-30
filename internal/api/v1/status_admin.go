@@ -493,7 +493,7 @@ func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *h
 		WriteError(w, http.StatusBadRequest, "validation", "Invalid ends_at format")
 		return
 	}
-	if endsAt.Before(startsAt) {
+	if !endsAt.After(startsAt) {
 		WriteError(w, http.StatusBadRequest, "validation", "ends_at must be after starts_at")
 		return
 	}
@@ -566,7 +566,7 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		}
 		existing.EndsAt = t
 	}
-	if existing.EndsAt.Before(existing.StartsAt) {
+	if !existing.EndsAt.After(existing.StartsAt) {
 		WriteError(w, http.StatusBadRequest, "validation", "ends_at must be after starts_at")
 		return
 	}

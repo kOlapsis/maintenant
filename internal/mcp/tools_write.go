@@ -270,7 +270,7 @@ func createMaintenanceHandler(svc *Services) gomcp.ToolHandlerFor[createMaintena
 		if err != nil {
 			return errResult("invalid input: end_time must be RFC 3339")
 		}
-		if endsAt.Before(startsAt) {
+		if !endsAt.After(startsAt) {
 			return errResult("invalid input: end_time must be after start_time")
 		}
 		if r, v, err := checkComponentIDs(ctx, svc, input.ComponentIDs); r != nil || err != nil {
