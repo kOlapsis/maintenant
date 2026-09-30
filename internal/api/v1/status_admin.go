@@ -5,6 +5,7 @@ package v1
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/mail"
@@ -318,6 +319,9 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 		WriteError(w, http.StatusBadRequest, "validation", err.Error())
 		return
 	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
+		return
+	}
 	inc := &status.Incident{
 		Title:    req.Title,
 		Severity: req.Severity,
@@ -410,6 +414,9 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		}
 		inc.Severity = *req.Severity
 	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
+		return
+	}
 	if err := h.incidents.UpdateIncident(r.Context(), inc, req.ComponentIDs); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -480,6 +487,9 @@ func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *h
 		WriteError(w, http.StatusBadRequest, "validation", "ends_at must be after starts_at")
 		return
 	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
+		return
+	}
 	mw := &status.MaintenanceWindow{
 		Title:       req.Title,
 		Description: req.Description,
@@ -546,6 +556,9 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		}
 		existing.EndsAt = t
 	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
+		return
+	}
 	if err := h.maintenance.UpdateMaintenance(r.Context(), existing, req.ComponentIDs); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -574,6 +587,32 @@ func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *h
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// componentIDsExist answers 400 unless every id names a distinct existing component.
+func (h *StatusAdminHandler) componentIDsExist(w http.ResponseWriter, r *http.Request, ids []string) bool {
+	seen := make(map[string]bool, len(ids))
+	for i, id := range ids {
+		if id == "" {
+			WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("component_ids[%d] is empty", i))
+			return false
+		}
+		if seen[id] {
+			WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("component_ids[%d] repeats %q", i, id))
+			return false
+		}
+		seen[id] = true
+		c, err := h.components.GetComponent(r.Context(), id)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+			return false
+		}
+		if c == nil {
+			WriteError(w, http.StatusBadRequest, "validation", fmt.Sprintf("component_ids[%d]: no component %q", i, id))
+			return false
+		}
+	}
+	return true
 }
 
 // --- Subscribers ---

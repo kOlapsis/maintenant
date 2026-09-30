@@ -42,7 +42,7 @@ export interface Incident {
 }
 
 export interface IncidentComponentRef {
-  component_id: string
+  id: string
   name: string
 }
 
@@ -66,7 +66,7 @@ export interface MaintenanceWindow {
 }
 
 export interface MaintenanceComponentRef {
-  component_id: string
+  id: string
   name: string
 }
 

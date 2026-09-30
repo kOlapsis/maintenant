@@ -46,7 +46,7 @@ function startEdit(mw: MaintenanceWindow) {
     description: mw.description,
     starts_at: mw.starts_at.slice(0, 16),
     ends_at: mw.ends_at.slice(0, 16),
-    component_ids: mw.components?.map(c => c.component_id) || [],
+    component_ids: mw.components?.map((c) => c.id) ?? [],
   }
   showForm.value = true
 }
@@ -189,7 +189,7 @@ function statusStyle(mw: MaintenanceWindow): { bg: string; color: string } {
         <div v-if="mw.components?.length" class="mt-1 flex flex-wrap gap-1">
           <span
             v-for="c in mw.components"
-            :key="c.component_id"
+            :key="c.id"
             class="rounded px-1.5 py-0.5 text-xs"
             style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
           >
