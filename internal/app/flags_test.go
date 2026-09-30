@@ -349,6 +349,14 @@ func TestHelpListsAllRegistryEntries(t *testing.T) {
 	}
 }
 
+func TestHelpHasNoEmDash(t *testing.T) {
+	var buf bytes.Buffer
+	PrintHelp(&buf, ConfigFromEnv())
+	if strings.Contains(buf.String(), "—") {
+		t.Errorf("--help output contains an em dash")
+	}
+}
+
 // ── Helper: find .env.example ─────────────────────────────────────────────────
 
 func findEnvExample(t *testing.T) string {

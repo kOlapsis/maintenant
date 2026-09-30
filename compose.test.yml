@@ -48,7 +48,6 @@ services:
       MAINTENANT_DATABASE_URL: "${MAINTENANT_DATABASE_URL:-}"
       MAINTENANT_ORGANISATION_NAME: "e2e"
       MAINTENANT_DISABLE_TELEMETRY: "true"
-      MAINTENANT_TELEMETRY_DATADIR: "/data"
       MAINTENANT_SMTP_HOST: mailpit
       MAINTENANT_SMTP_PORT: "1025"
       MAINTENANT_SMTP_FROM: "e2e@maintenant.test"
@@ -57,7 +56,6 @@ services:
       # (server mode, escalation policies, security posture). Without it the
       # stack runs in Community, which covers everything storage touches.
       MAINTENANT_LICENSE_KEY: "${MAINTENANT_LICENSE_KEY:-}"
-      MAINTENANT_TZ: "Europe/Paris"
     healthcheck:
       # Same probe as the image, on a shorter cycle: a test run should not
       # wait 30s to learn the instance is up.

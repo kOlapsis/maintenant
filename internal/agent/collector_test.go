@@ -5,6 +5,9 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	cmodel "github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
+	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
@@ -165,6 +169,78 @@ func TestSyncInventory_CarriesTheExitOfStoppedContainers(t *testing.T) {
 	assert.Equal(t, "137", entries["oom"].GetStatusMessage())
 	assert.True(t, entries["oom"].GetOomKilled())
 	assert.Empty(t, entries["web"].GetStatusMessage())
+}
+
+// lateRuntime is a Docker-like runtime that answers only once it is up.
+type lateRuntime struct {
+	runtime.Runtime
+	up       atomic.Bool
+	attempts atomic.Int32
+}
+
+func (r *lateRuntime) TryConnect(context.Context) error {
+	r.attempts.Add(1)
+	if !r.up.Load() {
+		return errors.New("docker ping failed")
+	}
+	return nil
+}
+
+func (r *lateRuntime) DiscoverAll(context.Context) ([]*cmodel.Container, error) { return nil, nil }
+
+func (r *lateRuntime) StreamEvents(context.Context) <-chan runtime.RuntimeEvent { return nil }
+
+func TestRunCollector_ReportsTheHostUntilTheRuntimeAnswers(t *testing.T) {
+	prev := resourceSampleInterval
+	resourceSampleInterval = 10 * time.Millisecond
+	t.Cleanup(func() { resourceSampleInterval = prev })
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	rt := &lateRuntime{}
+	link := newRuntimeLink(rt, RuntimeDocker)
+	_, err := link.attach(context.Background(), testLogger())
+	require.Error(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		link.keepTrying(ctx, err, retry.New(time.Millisecond, 5*time.Millisecond, 0), testLogger())
+	}()
+	go func() {
+		defer wg.Done()
+		assert.NoError(t, runCollector(ctx, &Identity{AgentID: "agent-1"}, link, "", spool, testLogger()))
+	}()
+
+	seen := func() (hostOS, hostSample, inventory bool) {
+		for _, ev := range sink.events() {
+			hostOS = hostOS || ev.GetHostOs() != nil
+			hostSample = hostSample || (ev.GetResource() != nil && ev.GetResource().GetContainerId() == "")
+			inventory = inventory || ev.GetInventory() != nil
+		}
+		return
+	}
+
+	require.Eventually(t, func() bool {
+		hostOS, hostSample, _ := seen()
+		return hostOS && hostSample && rt.attempts.Load() >= 3
+	}, 5*time.Second, 5*time.Millisecond, "the host must be reported while the runtime keeps being retried")
+	_, _, inventory := seen()
+	assert.False(t, inventory, "no container inventory before the runtime answers")
+
+	rt.up.Store(true)
+	require.Eventually(t, func() bool {
+		_, _, inventory := seen()
+		return inventory
+	}, 5*time.Second, 5*time.Millisecond, "container monitoring must start as soon as the runtime answers")
+
+	cancel()
+	wg.Wait()
 }
 
 func TestRuntimeEventToProto_DieCarriesTheOOMFlag(t *testing.T) {

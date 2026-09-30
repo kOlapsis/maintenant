@@ -64,7 +64,8 @@ type Config struct {
 	K8sExcludeNS  string
 
 	// Security
-	SecurityScoreThreshold int
+	SecurityScoreThreshold        int
+	SecurityScoreThresholdInvalid string
 
 	// ContainerDownAfter is how long a container must stay stopped before it
 	// raises an alert. Zero disables the check.
@@ -245,11 +246,31 @@ func (c Config) ValidateBodySize() error {
 var ErrContainerDownAfter = errors.New(
 	"MAINTENANT_CONTAINER_DOWN_AFTER is not a valid duration: use a Go duration such as 5m, 30s or 1h30m")
 
+// ErrSecurityScoreThreshold refuses a posture threshold that is not a score.
+var ErrSecurityScoreThreshold = errors.New(
+	"MAINTENANT_SECURITY_SCORE_THRESHOLD is not a valid score: use a whole number from 1 to 100, or 0 to disable the alert")
+
+// parseScoreThreshold reads a posture score threshold, empty or 0 meaning no alert.
+func parseScoreThreshold(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 || n > 100 {
+		return 0, fmt.Errorf("%w (got %q)", ErrSecurityScoreThreshold, raw)
+	}
+	return n, nil
+}
+
 // ValidateAlerting refuses an alerting configuration that would leave a check
 // silently off.
 func (c Config) ValidateAlerting() error {
 	if c.ContainerDownAfterInvalid != "" {
 		return fmt.Errorf("%w (got %q)", ErrContainerDownAfter, c.ContainerDownAfterInvalid)
+	}
+	if c.SecurityScoreThresholdInvalid != "" {
+		return fmt.Errorf("%w (got %q)", ErrSecurityScoreThreshold, c.SecurityScoreThresholdInvalid)
 	}
 	return nil
 }
@@ -376,10 +397,11 @@ func ConfigFromEnv() Config {
 		LogLevel: envOr("MAINTENANT_LOG_LEVEL", "info"),
 	}
 
-	if thresholdStr := os.Getenv("MAINTENANT_SECURITY_SCORE_THRESHOLD"); thresholdStr != "" {
-		if threshold, err := strconv.Atoi(thresholdStr); err == nil && threshold > 0 {
-			cfg.SecurityScoreThreshold = threshold
-		}
+	threshold := os.Getenv("MAINTENANT_SECURITY_SCORE_THRESHOLD")
+	if n, err := parseScoreThreshold(threshold); err != nil {
+		cfg.SecurityScoreThresholdInvalid = strings.TrimSpace(threshold)
+	} else {
+		cfg.SecurityScoreThreshold = n
 	}
 
 	cfg.Retention = RetentionConfig{

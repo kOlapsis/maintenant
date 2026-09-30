@@ -280,6 +280,29 @@ func TestCrashLoopDetector_IgnoredServiceRaisesNothing(t *testing.T) {
 	assert.False(t, cld.IsCrashLooping("svc1"))
 }
 
+func TestCrashLoopDetector_ServiceIgnoredWhileLoopingResolvesAtOnce(t *testing.T) {
+	sink := &alertSink{}
+	cld := NewCrashLoopDetector(quietLogger())
+	cld.SetAlertCallback(sink.record)
+
+	now := time.Now()
+	failures := []SwarmTask{failedTask("a", "n1", 1, now), failedTask("b", "n1", 1, now), failedTask("c", "n1", 1, now)}
+	cld.ObserveTasks(tasksOf(nil, failures...))
+	require.Len(t, sink.take(), 1)
+
+	cld.ObserveTasks(tasksOf(ignoreLabels, failures...))
+	recovered := sink.take()
+	require.Len(t, recovered, 1, "ignoring a looping service must not wait for the quiet period")
+	assert.True(t, recovered[0].IsRecover)
+	assert.Equal(t, "crash_loop", recovered[0].AlertType)
+	assert.Equal(t, "svc1", recovered[0].EntityID)
+	assert.False(t, cld.IsCrashLooping("svc1"))
+
+	cld.ObserveTasks(tasksOf(nil, failures...))
+	cld.ObserveTasks(tasksOf(nil, append(failures, failedTask("d", "n1", 1, now))...))
+	assert.Empty(t, sink.take(), "failures counted before the service was ignored no longer count")
+}
+
 func TestCrashLoopDetector_RecoveryNamesTheService(t *testing.T) {
 	sink := &alertSink{}
 	cld := NewCrashLoopDetector(quietLogger())

@@ -150,6 +150,44 @@ func TestConfigFromEnv_ContainerDownAfterInvalidIsRefused(t *testing.T) {
 	}
 }
 
+func TestConfigFromEnv_SecurityScoreThreshold(t *testing.T) {
+	for raw, want := range map[string]int{"": 0, "0": 0, "70": 70, " 100 ": 100} {
+		t.Run(raw, func(t *testing.T) {
+			t.Setenv("MAINTENANT_SECURITY_SCORE_THRESHOLD", raw)
+			cfg := ConfigFromEnv()
+
+			assert.Equal(t, want, cfg.SecurityScoreThreshold)
+			assert.NoError(t, cfg.ValidateAlerting())
+		})
+	}
+}
+
+// The variable and the flag follow one rule: a value that is not a score stops
+// startup instead of silently leaving the alert off.
+func TestSecurityScoreThresholdInvalidIsRefused(t *testing.T) {
+	for _, raw := range []string{"-5", "101", "seventy", "7.5"} {
+		t.Run(raw, func(t *testing.T) {
+			t.Setenv("MAINTENANT_SECURITY_SCORE_THRESHOLD", raw)
+			err := ConfigFromEnv().ValidateAlerting()
+			require.ErrorIs(t, err, ErrSecurityScoreThreshold)
+			assert.Contains(t, err.Error(), raw)
+
+			t.Setenv("MAINTENANT_SECURITY_SCORE_THRESHOLD", "")
+			cfg := ConfigFromEnv()
+			err = MergeArgsIntoConfig(&cfg, map[string]string{"securityScoreThreshold": raw})
+			require.ErrorIs(t, err, ErrSecurityScoreThreshold)
+		})
+	}
+}
+
+func TestSecurityScoreThreshold_FlagOverridesAnInvalidEnvironment(t *testing.T) {
+	t.Setenv("MAINTENANT_SECURITY_SCORE_THRESHOLD", "-5")
+	cfg := ConfigFromEnv()
+	require.NoError(t, MergeArgsIntoConfig(&cfg, map[string]string{"securityScoreThreshold": "0"}))
+	assert.NoError(t, cfg.ValidateAlerting())
+	assert.Zero(t, cfg.SecurityScoreThreshold)
+}
+
 func TestConfigFromEnv_MaxBodySize(t *testing.T) {
 	t.Setenv("MAINTENANT_MAX_BODY_SIZE", "")
 	cfg := ConfigFromEnv()

@@ -15,6 +15,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/runtime"
 )
 
 func TestKubernetesTopologyEvent_MarshalsSnapshot(t *testing.T) {
@@ -56,10 +57,17 @@ func TestKubernetesTopologyEvent_MarshalsSnapshot(t *testing.T) {
 	require.Equal(t, int32(7), body.GetNodes()[0].GetRunningPods())
 }
 
-// TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples guards the bug fix:
-// a Kubernetes agent must report BOTH cluster topology and its own host-level
+// kubeRuntime is a reachable Kubernetes runtime serving an empty cluster.
+type kubeRuntime struct {
+	runtime.Runtime
+	fakeSnapshotSource
+}
+
+func (kubeRuntime) TryConnect(context.Context) error { return nil }
+
+// A Kubernetes agent must report BOTH cluster topology and its own host-level
 // resource sample (empty container_id), so the dashboard host gauges populate.
-func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
+func TestRunCollector_KubernetesEmitsTopologyAndHostSamples(t *testing.T) {
 	prev := resourceSampleInterval
 	resourceSampleInterval = 10 * time.Millisecond
 	t.Cleanup(func() { resourceSampleInterval = prev })
@@ -74,9 +82,13 @@ func TestCollectKubernetesRuntime_EmitsTopologyAndHostSamples(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	link := newRuntimeLink(kubeRuntime{}, RuntimeKubernetes)
+	_, err := link.attach(ctx, slog.Default())
+	require.NoError(t, err)
+
 	done := make(chan error, 1)
 	go func() {
-		done <- collectKubernetesRuntime(ctx, id, &fakeSnapshotSource{}, "", spool, slog.Default())
+		done <- runCollector(ctx, id, link, "", spool, slog.Default())
 	}()
 
 	var sawTopology, sawHostSample bool

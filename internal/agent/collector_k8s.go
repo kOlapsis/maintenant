@@ -20,15 +20,12 @@ import (
 
 const kubernetesTopologyInterval = 30 * time.Second
 
-// collectKubernetesRuntime runs the two contributions of a Kubernetes agent in
-// parallel: the cluster topology stream and the agent host's own resource
-// samples. The host samples report CPU/mem/disk of the node the agent pod runs
-// on, so the dashboard and cluster overview can show its gauges like any other
-// host. Blocks until ctx is cancelled or a push fails.
+// collectKubernetesRuntime streams the cluster topology and the operating
+// system of the node the agent pod runs on. Blocks until ctx is cancelled or a
+// push fails.
 func collectKubernetesRuntime(ctx context.Context, id *Identity, src kubernetes.SnapshotSource, nodeName string, spool *Spool, logger *slog.Logger) error {
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error { return streamKubernetesTopology(gCtx, id, src, spool, logger) })
-	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
 	g.Go(func() error {
 		read := func() hoststat.OSRelease { return nodeOSRelease(gCtx, src, nodeName) }
 		return streamHostOS(gCtx, id, read, spool, logger)

@@ -168,13 +168,14 @@ func init() {
 		{
 			EnvName: "MAINTENANT_SECURITY_SCORE_THRESHOLD", FlagName: "securityScoreThreshold",
 			Type: FlagTypeInt, Default: "",
-			Description: "Raise an alert when the security posture score drops below this value, checked every 5 minutes (Personal edition; unset = no alert)",
+			Description: "Raise an alert when the security posture score drops below this value, from 1 to 100, checked every 5 minutes (Personal edition; unset or 0 = no alert, any other value stops the startup)",
 			ApplyTo: func(c *Config, v string) error {
-				n, err := strconv.Atoi(v)
+				n, err := parseScoreThreshold(v)
 				if err != nil {
-					return fmt.Errorf("expected integer, got %q", v)
+					return err
 				}
 				c.SecurityScoreThreshold = n
+				c.SecurityScoreThresholdInvalid = ""
 				return nil
 			},
 		},
@@ -655,7 +656,7 @@ func specByFlagName(name string) (FlagSpec, bool) {
 
 // PrintHelp writes the formatted help text to w.
 func PrintHelp(w io.Writer, _ Config) {
-	_, _ = fmt.Fprintln(w, "maintenant — infrastructure monitoring (single binary)")
+	_, _ = fmt.Fprintln(w, "maintenant: infrastructure monitoring (single binary)")
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Usage:")
 	_, _ = fmt.Fprintln(w, "  maintenant [FLAGS]")

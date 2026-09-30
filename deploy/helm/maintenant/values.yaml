@@ -10,7 +10,7 @@ imagePullSecrets: []
 ## Runtime: "kubernetes" or "docker"
 runtime: kubernetes
 
-## License key (Pro edition)
+## License key (Personal or Pro edition)
 license:
   key: ""
   ## Use an existing secret instead of the inline key above.
@@ -60,8 +60,8 @@ resources:
 
 ## Extra environment variables injected into the container
 extraEnv: []
-# - name: MAINTENANT_WEBHOOK_URL
-#   value: "https://hooks.example.com/..."
+# - name: MAINTENANT_BASE_URL
+#   value: "https://maintenant.example.com"
 
 ## External PostgreSQL for the server data set (optional).
 ##

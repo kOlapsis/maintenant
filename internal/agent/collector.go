@@ -32,12 +32,27 @@ var resourceSampleInterval = 10 * time.Second
 // aligned with the Swarm and Kubernetes topology snapshots.
 var containerInventoryInterval = 30 * time.Second
 
-// RunCollector starts collecting events from the local runtime and pushing them to stream.
-// rt is the already-connected runtime resolved by agent.Run; label is the reported
-// runtime kind ("docker", "swarm" or "kubernetes"); nodeName is the Kubernetes node
-// the agent runs on, empty unless the operator set it.
+// runCollector reports the host at once and the local runtime from the moment it
+// answers, pushing both to spool. nodeName is the Kubernetes node the agent runs
+// on, empty unless the operator set it.
 // Blocks until ctx is cancelled or a fatal push error occurs.
-func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label, nodeName string, spool *Spool, logger *slog.Logger) error {
+func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName string, spool *Spool, logger *slog.Logger) error {
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
+	// A Kubernetes agent runs in a pod: its host identity comes from the node, once the cluster answers.
+	if link.kind != RuntimeKubernetes {
+		g.Go(func() error { return streamHostOS(gCtx, id, hoststat.ReadOSRelease, spool, logger) })
+	}
+	g.Go(func() error {
+		if !link.wait(gCtx) {
+			return nil
+		}
+		return collectRuntime(gCtx, id, link.rt, link.label, nodeName, spool, logger)
+	})
+	return g.Wait()
+}
+
+func collectRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label, nodeName string, spool *Spool, logger *slog.Logger) error {
 	switch label {
 	case RuntimeDocker, RuntimeSwarm:
 		return collectContainerRuntime(ctx, id, rt, label, spool, logger)
@@ -62,9 +77,7 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return streamInventory(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, spool, logger) })
-	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
 	g.Go(func() error { return runLabelProbers(gCtx, id, rt, spool, logger) })
-	g.Go(func() error { return streamHostOS(gCtx, id, hoststat.ReadOSRelease, spool, logger) })
 
 	// Swarm: also push a periodic full topology snapshot (services/tasks/nodes)
 	// so the server can serve the Services/Tasks/Nodes views for this agent.

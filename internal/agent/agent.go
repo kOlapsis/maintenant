@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/docker"
+	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/swarm"
 )
@@ -40,16 +42,37 @@ type AgentConfig struct {
 	SpoolMaxAgeSeconds  int64
 }
 
+// Bounds of the delay between two attempts to reach a runtime that did not answer at startup.
+const (
+	runtimeRetryMin = time.Second
+	runtimeRetryMax = time.Minute
+)
+
 // Run is the main agent entry point (mode=agent).
 // It detects the local runtime, loads or creates the agent identity, enrolls if needed,
-// then enters the long-lived Push streaming loop (US2).
+// then enters the long-lived Push streaming loop (US2). A runtime that does not
+// answer yet leaves the agent reporting its host alone until it does.
 func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
-	rt, rtLabel, err := resolveRuntime(ctx, cfg.RuntimeOverride, cfg.ProxyLabels, logger)
+	rt, kind, err := detectRuntime(ctx, cfg.RuntimeOverride, cfg.ProxyLabels, logger)
 	if err != nil {
 		return fmt.Errorf("runtime detection: %w", err)
 	}
-	defer func() { _ = rt.Close() }()
-	logger.Info("runtime detected", "runtime", rtLabel)
+	link := newRuntimeLink(rt, kind)
+	linkCtx, stopLink := context.WithCancel(ctx)
+	var retrying sync.WaitGroup
+	defer func() {
+		stopLink()
+		retrying.Wait()
+		_ = rt.Close()
+	}()
+	rtLabel, connErr := link.attach(ctx, logger)
+	if connErr != nil {
+		retrying.Go(func() {
+			link.keepTrying(linkCtx, connErr, retry.New(runtimeRetryMin, runtimeRetryMax, 0), logger)
+		})
+	} else {
+		logger.Info("runtime detected", "runtime", rtLabel)
+	}
 
 	id, err := LoadOrCreate(cfg.DataDir)
 	if err != nil {
@@ -69,7 +92,7 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 		return RunEnrollment(ctx, id, cfg.DataDir, cfg.EnrollmentToken, rtLabel, cfg.Label, cfg.AgentVersion, grpcClient)
 	}
 	serve := func(ctx context.Context, id *Identity) error {
-		return runEnrolled(ctx, cfg, id, rt, rtLabel, grpcClient, logger)
+		return runEnrolled(ctx, cfg, id, link, grpcClient, logger)
 	}
 	return enrollAndServe(ctx, cfg, id, enroll, serve, logger)
 }
@@ -122,7 +145,7 @@ func enrollAndServe(
 }
 
 // runEnrolled streams as id until ctx ends or the server refuses the identity.
-func runEnrolled(parent context.Context, cfg AgentConfig, id *Identity, rt runtime.Runtime, rtLabel string, grpcClient *Client, logger *slog.Logger) error {
+func runEnrolled(parent context.Context, cfg AgentConfig, id *Identity, link *runtimeLink, grpcClient *Client, logger *slog.Logger) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
@@ -140,7 +163,7 @@ func runEnrolled(parent context.Context, cfg AgentConfig, id *Identity, rt runti
 	collectorDone := make(chan struct{})
 	go func() {
 		defer close(collectorDone)
-		if cerr := RunCollector(ctx, id, rt, rtLabel, cfg.NodeName, spool, logger); cerr != nil && ctx.Err() == nil {
+		if cerr := runCollector(ctx, id, link, cfg.NodeName, spool, logger); cerr != nil && ctx.Err() == nil {
 			logger.Error("agent: collector stopped", "error", cerr)
 		}
 	}()
@@ -179,45 +202,87 @@ func spoolConfig(cfg AgentConfig) SpoolConfig {
 	}
 }
 
-// resolveRuntime detects (or uses the override for) the local container runtime,
-// connects to it, and returns it along with a label ("docker"/"swarm"/"kubernetes")
-// suitable for the gRPC enrollment payload. Swarm is derived from the swarm.Detector
-// applied to the docker runtime — there is no separate "swarm" factory.
-func resolveRuntime(ctx context.Context, override string, proxyLabels bool, logger *slog.Logger) (runtime.Runtime, string, error) {
-	forceLabel := ""
+// detectRuntime picks the local container runtime, or the one override names, without waiting for it to answer.
+func detectRuntime(ctx context.Context, override string, proxyLabels bool, logger *slog.Logger) (rt runtime.Runtime, kind string, err error) {
 	rtOverride := override
 	switch override {
-	case "":
-		// auto-detect
-	case RuntimeDocker, RuntimeKubernetes:
-		// passthrough
+	case "", RuntimeDocker, RuntimeKubernetes:
 	case RuntimeSwarm:
 		rtOverride = RuntimeDocker
-		forceLabel = RuntimeSwarm
 	default:
 		return nil, "", fmt.Errorf("unknown runtime override %q (valid: docker, swarm, kubernetes)", override)
 	}
 
-	rt, err := runtime.DetectWithOverride(ctx, logger, rtOverride)
+	rt, err = runtime.DetectWithOverride(ctx, logger, rtOverride)
 	if err != nil {
 		return nil, "", err
 	}
 	if dr, ok := rt.(*docker.Runtime); ok {
 		dr.SetProxyLabels(proxyLabels)
 	}
-	if err := rt.Connect(ctx); err != nil {
-		_ = rt.Close()
-		return nil, "", fmt.Errorf("connect to runtime %s: %w", rt.Name(), err)
+	kind = override
+	if kind == "" {
+		kind = rt.Name()
 	}
+	return rt, kind, nil
+}
 
-	label := rt.Name()
-	if forceLabel != "" {
-		label = forceLabel
-	} else if dr, ok := rt.(*docker.Runtime); ok {
-		det := swarm.NewDetector(dr.Client(), logger)
-		if res, err := det.Detect(ctx); err == nil && res.Active {
-			label = RuntimeSwarm
+// runtimeLink hands the local runtime to the collector once it answers, which may be long after the agent started.
+type runtimeLink struct {
+	rt    runtime.Runtime
+	kind  string
+	ready chan struct{}
+	label string // set before ready closes
+}
+
+func newRuntimeLink(rt runtime.Runtime, kind string) *runtimeLink {
+	return &runtimeLink{rt: rt, kind: kind, ready: make(chan struct{})}
+}
+
+// attach makes one bounded attempt at the runtime and, when it answers, hands it to the collector under its final label.
+func (l *runtimeLink) attach(ctx context.Context, logger *slog.Logger) (string, error) {
+	if err := l.rt.TryConnect(ctx); err != nil {
+		return l.kind, err
+	}
+	l.label = l.kind
+	if dr, ok := l.rt.(*docker.Runtime); ok && l.kind == RuntimeDocker {
+		if res, err := swarm.NewDetector(dr.Client(), logger).Detect(ctx); err == nil && res.Active {
+			l.label = RuntimeSwarm
 		}
 	}
-	return rt, label, nil
+	close(l.ready)
+	return l.label, nil
+}
+
+// keepTrying retries attach with backoff until the runtime answers or ctx ends.
+func (l *runtimeLink) keepTrying(ctx context.Context, lastErr error, backoff *retry.Backoff, logger *slog.Logger) {
+	for {
+		delay := backoff.Next()
+		logger.Warn("agent: container runtime unreachable, reporting host metrics only until it answers",
+			"runtime", l.kind, "error", lastErr, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		label, err := l.attach(ctx, logger)
+		if err == nil {
+			logger.Info("agent: container runtime reachable, container monitoring started", "runtime", label)
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		lastErr = err
+	}
+}
+
+// wait blocks until the runtime answers, reporting false when ctx ends first.
+func (l *runtimeLink) wait(ctx context.Context) bool {
+	select {
+	case <-l.ready:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
