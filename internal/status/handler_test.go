@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"time"
 	"testing"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/ratelimit"

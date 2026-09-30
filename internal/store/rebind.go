@@ -9,7 +9,7 @@ import (
 )
 
 // rebindPostgres rewrites `?` placeholders as `$1..$n`. A `?` inside a string
-// literal ('...' with '' escapes), a quoted identifier ("..."), a line comment
+// literal ('...' with ” escapes), a quoted identifier ("..."), a line comment
 // (-- ...) or a block comment (/* ... */) is left untouched, as is a doubled
 // `??` (not a placeholder on either engine).
 func rebindPostgres(query string) string {

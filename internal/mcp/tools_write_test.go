@@ -85,7 +85,7 @@ type mcpRecordingEscalator struct {
 	ackedID string
 }
 
-func (m *mcpRecordingEscalator) EvaluateCycle(_ context.Context) error            { return nil }
+func (m *mcpRecordingEscalator) EvaluateCycle(_ context.Context) error                  { return nil }
 func (m *mcpRecordingEscalator) OnAlertCreated(_ context.Context, _ *alert.Alert) error { return nil }
 func (m *mcpRecordingEscalator) OnAlertAcknowledged(_ context.Context, alertID string, _ alert.Acknowledgment) error {
 	m.acked = true

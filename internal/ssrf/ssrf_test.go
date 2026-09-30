@@ -47,15 +47,15 @@ func TestValidateURL(t *testing.T) {
 	ctx := context.Background()
 
 	rejected := []string{
-		"http://example.com/",                    // not https
-		"ftp://example.com/",                     // not https
-		"https://127.0.0.1/",                     // loopback literal
-		"https://[::1]/",                         // loopback literal v6
+		"http://example.com/",                       // not https
+		"ftp://example.com/",                        // not https
+		"https://127.0.0.1/",                        // loopback literal
+		"https://[::1]/",                            // loopback literal v6
 		"https://169.254.169.254/latest/meta-data/", // cloud IMDS
-		"https://10.0.0.5/hook",                  // private literal
-		"https://localhost/hook",                 // resolves to loopback
-		"https:///nohost",                        // no host
-		"",                                       // empty
+		"https://10.0.0.5/hook",                     // private literal
+		"https://localhost/hook",                    // resolves to loopback
+		"https:///nohost",                           // no host
+		"",                                          // empty
 	}
 	for _, u := range rejected {
 		assert.Errorf(t, ValidateURL(ctx, u), "%q should be rejected", u)

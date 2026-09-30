@@ -30,14 +30,14 @@ type Config struct {
 
 // OAuthServer implements OAuth 2.1 with PKCE for MCP authentication.
 type OAuthServer struct {
-	clientID               string
-	clientSecretHash       [sha256.Size]byte
-	issuerURL              string
-	accessTTL              time.Duration
-	refreshTTL             time.Duration
-	allowedRedirectURIs    []string
-	store                  MCPOAuthStore
-	logger                 *slog.Logger
+	clientID            string
+	clientSecretHash    [sha256.Size]byte
+	issuerURL           string
+	accessTTL           time.Duration
+	refreshTTL          time.Duration
+	allowedRedirectURIs []string
+	store               MCPOAuthStore
+	logger              *slog.Logger
 }
 
 // NewOAuthServer creates an OAuth 2.1 server from config.
@@ -60,14 +60,14 @@ func NewOAuthServer(cfg Config, store MCPOAuthStore, logger *slog.Logger) *OAuth
 	}
 
 	return &OAuthServer{
-		clientID:               cfg.ClientID,
-		clientSecretHash:       sha256.Sum256([]byte(cfg.ClientSecret)),
-		issuerURL:              strings.TrimRight(cfg.IssuerURL, "/"),
-		accessTTL:              accessTTL,
-		refreshTTL:             refreshTTL,
-		allowedRedirectURIs:    allowed,
-		store:                  store,
-		logger:                 logger,
+		clientID:            cfg.ClientID,
+		clientSecretHash:    sha256.Sum256([]byte(cfg.ClientSecret)),
+		issuerURL:           strings.TrimRight(cfg.IssuerURL, "/"),
+		accessTTL:           accessTTL,
+		refreshTTL:          refreshTTL,
+		allowedRedirectURIs: allowed,
+		store:               store,
+		logger:              logger,
 	}
 }
 
