@@ -7,10 +7,20 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/extension"
 )
+
+// ErrSubscriptionsDisabled is returned when no mailer is configured or the running edition does not open subscribers.
+var ErrSubscriptionsDisabled = errors.New("email subscriptions are not enabled")
+
+// ErrConfirmationNotSent is returned when the confirmation email could not be delivered; the subscription is dropped.
+var ErrConfirmationNotSent = errors.New("confirmation email could not be sent")
 
 // SubscriberService manages email subscriptions for status updates.
 type SubscriberService struct {
@@ -21,14 +31,19 @@ type SubscriberService struct {
 	baseURL string
 }
 
-// NewSubscriberService creates a new subscriber service.
+// NewSubscriberService creates a subscriber service; a nil mailer keeps subscriptions disabled.
 func NewSubscriberService(store SubscriberStore, mailer Mailer, baseURL string, logger *slog.Logger) *SubscriberService {
 	return &SubscriberService{
 		store:   store,
 		mailer:  mailer,
 		logger:  logger,
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 	}
+}
+
+// Enabled reports whether a mailer is configured and the running edition opens subscribers.
+func (s *SubscriberService) Enabled() bool {
+	return s != nil && s.mailer != nil && extension.Allows(extension.CapSubscribers)
 }
 
 func generateToken() (string, error) {
@@ -39,8 +54,11 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// Subscribe creates a new subscriber with double opt-in.
+// Subscribe creates an unconfirmed subscriber and emails it the confirmation link of the double opt-in.
 func (s *SubscriberService) Subscribe(ctx context.Context, email string) error {
+	if !s.Enabled() {
+		return ErrSubscriptionsDisabled
+	}
 	s.logger.Info("status: new subscription request", "email", email)
 	confirmToken, err := generateToken()
 	if err != nil {
@@ -60,21 +78,20 @@ func (s *SubscriberService) Subscribe(ctx context.Context, email string) error {
 		UnsubToken:     unsubToken,
 	}
 
-	if _, err := s.store.CreateSubscriber(ctx, sub); err != nil {
+	id, err := s.store.CreateSubscriber(ctx, sub)
+	if err != nil {
 		return fmt.Errorf("create subscriber: %w", err)
 	}
 
-	if s.mailer != nil {
-		confirmURL := fmt.Sprintf("%s/status/confirm?token=%s", s.baseURL, confirmToken)
-		body := fmt.Sprintf(`<html><body>
-<h2>Confirm your subscription</h2>
-<p>Click the link below to confirm your status page subscription:</p>
-<p><a href="%s">Confirm Subscription</a></p>
-<p>This link expires in 24 hours.</p>
-</body></html>`, confirmURL)
-		if err := s.mailer.Send(email, "Confirm your status page subscription", body); err != nil {
-			s.logger.Error("failed to send confirmation email", "error", err, "email", email)
+	confirmURL := fmt.Sprintf("%s/status/confirm?token=%s", s.baseURL, confirmToken)
+	body := fmt.Sprintf("Confirm your subscription to status updates by opening this link:\n\n%s\n\n"+
+		"The link expires in 24 hours. If you did not ask for this, ignore this email.\n", confirmURL)
+	if err := s.mailer.Send(ctx, email, "Confirm your status page subscription", body); err != nil {
+		s.logger.Error("failed to send confirmation email", "error", err, "email", email)
+		if delErr := s.store.DeleteSubscriber(context.WithoutCancel(ctx), id); delErr != nil {
+			s.logger.Error("failed to drop unconfirmable subscriber", "error", delErr, "email", email)
 		}
+		return fmt.Errorf("%w: %w", ErrConfirmationNotSent, err)
 	}
 
 	return nil

@@ -77,12 +77,7 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 				return
 			}
 			h.logger.Info("status: auto-incident resolved", "incident_id", existing.ID)
-			h.service.Broadcast(event.StatusIncidentResolved, map[string]any{
-				"id":    existing.ID,
-				"title": existing.Title,
-			})
-			h.service.NotifySubscribers(ctx, "Resolved: "+existing.Title,
-				"<p>status.Incident <strong>"+existing.Title+"</strong> has been resolved.</p>")
+			h.service.AnnounceIncidentUpdate(ctx, existing, upd)
 		}
 		return
 	}
@@ -129,13 +124,7 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 	}
 
 	h.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title)
-	h.service.Broadcast(event.StatusIncidentCreated, map[string]any{
-		"id":         incID,
-		"title":      inc.Title,
-		"severity":   inc.Severity,
-		"status":     inc.Status,
-		"components": []string{comp.DisplayName},
-	})
-	h.service.NotifySubscribers(ctx, "["+inc.Severity+"] "+inc.Title,
-		"<p><strong>"+inc.Title+"</strong></p><p>Severity: "+inc.Severity+"</p><p>"+evt.Message+"</p>")
+	inc.ID = incID
+	inc.Components = []status.IncidentCompRef{{ID: comp.ID, Name: comp.DisplayName}}
+	h.service.AnnounceIncident(ctx, inc, evt.Message)
 }

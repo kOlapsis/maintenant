@@ -27,6 +27,12 @@ const fr = {
   subscribeEmail: 'Votre adresse e-mail',
   subscribePlaceholder: 'vous@exemple.com',
   subscribeConfirm: 'S\'abonner',
+  subscribeSent: 'Vérifiez votre boîte de réception : ouvrez le lien que nous vous avons envoyé pour confirmer votre abonnement.',
+  subscribeInvalidEmail: 'Saisissez une adresse e-mail valide.',
+  subscribeRateLimited: 'Trop de tentatives. Réessayez plus tard.',
+  subscribeUnavailable: 'Les mises à jour par e-mail ne sont pas disponibles pour le moment.',
+  subscribeConfirmationFailed: 'L\'e-mail de confirmation n\'a pas pu être envoyé. Réessayez plus tard.',
+  subscribeFailed: 'L\'abonnement a échoué. Réessayez plus tard.',
   updatedAt: 'Mis à jour',
   poweredBy: 'Propulsé par Maintenant',
 } as const

@@ -9,9 +9,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 )
 
-// Mailer sends one HTML email.
+// Mailer sends one plain-text email.
 type Mailer interface {
-	Send(to, subject, htmlBody string) error
+	Send(ctx context.Context, to, subject, textBody string) error
 }
 
 // SubscriberNotifier emails every confirmed subscriber.

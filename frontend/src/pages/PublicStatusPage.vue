@@ -9,7 +9,11 @@ import StatusComponentBreakdown from '@/components/StatusComponentBreakdown.vue'
 import { useStatusPageI18n } from '@/composables/useStatusPageI18n'
 import { guardedFetch } from '@/services/apiFetch'
 import type { MonitorRef } from '@/services/statusApi'
+import type { StatusPageDictKey } from '@/locales/status-page/en'
 import DisclosureButton from '@/components/ui/DisclosureButton.vue'
+import FormField from '@/components/ui/FormField.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 
 // --- Personalization settings ---
 interface PublicSettings {
@@ -88,6 +92,7 @@ interface ComponentBrief { id: string; name: string; status: string; monitors?: 
 interface StatusData {
   global_status: string; global_message: string; updated_at: string
   components: ComponentBrief[]; active_incidents: IncidentBrief[]; upcoming_maintenance: MaintenanceBrief[]
+  subscriptions_enabled: boolean
 }
 
 const data = ref<StatusData | null>(null)
@@ -156,6 +161,44 @@ onMounted(() => {
 })
 
 onUnmounted(() => { eventSource?.close() })
+
+// --- Email subscription ---
+const subscribeEmail = ref('')
+const subscribing = ref(false)
+const subscribeResult = ref<{ ok: boolean; message: string } | null>(null)
+
+const subscribeErrors: Record<string, StatusPageDictKey> = {
+  invalid_email: 'subscribeInvalidEmail',
+  rate_limited: 'subscribeRateLimited',
+  subscriptions_unavailable: 'subscribeUnavailable',
+  confirmation_failed: 'subscribeConfirmationFailed',
+}
+
+async function handleSubscribe() {
+  const email = subscribeEmail.value.trim()
+  if (!email) return
+  subscribing.value = true
+  subscribeResult.value = null
+  try {
+    const res = await guardedFetch('/status/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    if (res.ok) {
+      subscribeEmail.value = ''
+      subscribeResult.value = { ok: true, message: t('subscribeSent') }
+      return
+    }
+    const body = await res.json().catch(() => null) as { error?: { code?: string } } | null
+    const key = subscribeErrors[body?.error?.code ?? ''] ?? 'subscribeFailed'
+    subscribeResult.value = { ok: false, message: t(key) }
+  } catch {
+    subscribeResult.value = { ok: false, message: t('subscribeFailed') }
+  } finally {
+    subscribing.value = false
+  }
+}
 
 const globalBanner = computed(() => {
   const s = data.value?.global_status
@@ -384,6 +427,42 @@ function formatDate(iso: string) {
               </div>
             </div>
           </div>
+        </section>
+
+        <!-- Email subscription -->
+        <section v-if="data.subscriptions_enabled" aria-labelledby="status-subscribe-title">
+          <h2 id="status-subscribe-title" class="text-xs font-bold uppercase tracking-widest mb-3 opacity-50">{{ t('subscribeButton') }}</h2>
+          <form
+            class="rounded-xl border p-5 flex flex-col gap-3 sm:flex-row sm:items-end"
+            :style="{ backgroundColor: 'var(--mnt-surface, #12151C)', borderColor: 'var(--mnt-border, #1F2937)' }"
+            @submit.prevent="handleSubscribe"
+          >
+            <FormField :label="t('subscribeEmail')" class="flex-1">
+              <template #default="{ id, describedBy, invalid }">
+                <TextInput
+                  :id="id"
+                  v-model="subscribeEmail"
+                  type="email"
+                  autocomplete="email"
+                  required
+                  :placeholder="t('subscribePlaceholder')"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                />
+              </template>
+            </FormField>
+            <UiButton type="submit" variant="primary" :loading="subscribing" :disabled="!subscribeEmail.trim()">
+              {{ t('subscribeConfirm') }}
+            </UiButton>
+          </form>
+          <p
+            v-if="subscribeResult"
+            role="status"
+            class="mt-2 text-xs"
+            :class="subscribeResult.ok ? 'text-mnt-status-ok' : 'text-mnt-status-down'"
+          >
+            {{ subscribeResult.message }}
+          </p>
         </section>
 
         <!-- FAQ -->

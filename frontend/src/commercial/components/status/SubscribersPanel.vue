@@ -6,8 +6,11 @@
 
 <script setup lang="ts">
 import { useStatusAdminStore } from '@/stores/statusAdmin'
+import { useEdition } from '@/composables/useEdition'
+import SmtpNotConfigured from '@/components/SmtpNotConfigured.vue'
 
 const store = useStatusAdminStore()
+const { hasFeature } = useEdition()
 </script>
 
 <template>
@@ -16,6 +19,11 @@ const store = useStatusAdminStore()
     style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
   >
     <h2 class="mb-3 text-lg font-semibold" style="color: var(--mnt-text-primary)">Subscribers</h2>
+    <SmtpNotConfigured
+      v-if="!hasFeature('smtp')"
+      class="mb-3"
+      title="Visitors cannot subscribe until SMTP is configured"
+    />
     <div class="mb-3 flex gap-4">
       <div class="rounded-lg border px-4 py-2" style="border-color: var(--mnt-border-default); background: var(--mnt-bg-elevated)">
         <p class="text-2xl font-bold" style="color: var(--mnt-text-primary)">{{ store.subscriberTotal }}</p>

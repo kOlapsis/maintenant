@@ -15,7 +15,6 @@ require (
 	github.com/moby/moby/client v0.6.0
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/stretchr/testify v1.12.1
-	github.com/wneessen/go-mail v0.7.2
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.55.0
 	golang.org/x/sync v0.22.0

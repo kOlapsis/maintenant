@@ -81,17 +81,18 @@ type StatusPageDeps struct {
 	Maintenance     status.MaintenanceStore
 	Subscribers     status.SubscriberStore
 	Personalization status.PersonalizationStore
+	SMTP            SMTPConfig
 	BaseURL         string
 	Logger          *slog.Logger
 }
 
-// StatusPage holds the status page features a licensed build adds.
+// StatusPage holds the status page features a licensed build adds; Mailer and Notifier stay nil without an SMTP host.
 type StatusPage struct {
 	Incidents       status.AlertIncidentHandler
 	Notifier        status.SubscriberNotifier
 	Maintenance     status.MaintenanceRunner
 	Personalization status.PersonalizationManager
-	Mailer          func(status.SmtpConfig) status.Mailer
+	Mailer          status.Mailer
 }
 
 // MaintenanceWindows tells whether a monitor sits inside an active maintenance window.

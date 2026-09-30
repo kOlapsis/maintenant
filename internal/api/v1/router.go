@@ -88,9 +88,8 @@ type HandlerDeps struct {
 	StatusSubscribers  status.SubscriberStore
 	StatusMaintenance  status.MaintenanceStore
 	StatusSvc          *status.Service
-	StatusBroker       *SSEBroker
 	PersonalizationSvc status.PersonalizationManager
-	StatusMailer       func(status.SmtpConfig) status.Mailer
+	StatusMailer       status.Mailer
 
 	// Webhooks
 	WebhookStore webhook.WebhookSubscriptionStore
@@ -351,7 +350,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Status page admin endpoints
 	if d.StatusComponents != nil {
-		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker, d.StatusMailer)
+		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusMailer)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
 		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
@@ -376,9 +375,6 @@ func NewRouter(d HandlerDeps) *Router {
 		if d.StatusSubscribers != nil {
 			r.mux.HandleFunc("GET /api/v1/status/subscribers", requireCapability(extension.CapSubscribers, sh.HandleListSubscribers))
 		}
-		// SMTP config (Pro only)
-		r.mux.HandleFunc("GET /api/v1/status/smtp", requireCapability(extension.CapSMTP, sh.HandleGetSmtpConfig))
-		r.mux.HandleFunc("PUT /api/v1/status/smtp", requireCapability(extension.CapSMTP, sh.HandleUpdateSmtpConfig))
 		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requireCapability(extension.CapSMTP, sh.HandleTestSmtp))
 	}
 

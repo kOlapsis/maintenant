@@ -46,7 +46,6 @@ type Service struct {
 	subscribers       *SubscriberService
 	notifier          SubscriberNotifier
 	incidentHandler   AlertIncidentHandler
-	smtpConfig        *SmtpConfig
 
 	logger *slog.Logger
 }
@@ -107,16 +106,6 @@ func (s *Service) SetMaintenanceStore(store MaintenanceStore) {
 	s.maintenance = store
 }
 
-// GetSmtpConfig returns the current SMTP configuration.
-func (s *Service) GetSmtpConfig() *SmtpConfig {
-	return s.smtpConfig
-}
-
-// SetSmtpConfig updates the SMTP configuration.
-func (s *Service) SetSmtpConfig(cfg *SmtpConfig) {
-	s.smtpConfig = cfg
-}
-
 // SetSubscriberNotifier sets what notifies subscribers of status changes.
 func (s *Service) SetSubscriberNotifier(n SubscriberNotifier) {
 	s.notifier = n
@@ -127,11 +116,17 @@ func (s *Service) SetIncidentHandler(h AlertIncidentHandler) {
 	s.incidentHandler = h
 }
 
-// NotifySubscribers sends a notification to all confirmed subscribers, in the background, if a notifier is set.
+// SubscriptionsEnabled reports whether visitors can subscribe to email updates and subscribers get them.
+func (s *Service) SubscriptionsEnabled() bool {
+	return s.subscribers.Enabled()
+}
+
+// NotifySubscribers emails a plain-text message to every confirmed subscriber, in the background, when subscriptions are enabled.
 func (s *Service) NotifySubscribers(ctx context.Context, subject, message string) {
-	if s.notifier != nil {
-		go s.notifier.NotifyAll(ctx, subject, message)
+	if s.notifier == nil || !s.SubscriptionsEnabled() {
+		return
 	}
+	go s.notifier.NotifyAll(context.WithoutCancel(ctx), subject, message)
 }
 
 // Broadcast sends an event if a broadcaster is configured.

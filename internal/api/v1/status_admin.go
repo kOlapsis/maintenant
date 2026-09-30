@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"time"
 
-	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/status"
 )
@@ -22,19 +22,17 @@ type StatusAdminHandler struct {
 	subscribers status.SubscriberStore
 	maintenance status.MaintenanceStore
 	statusSvc   *status.Service
-	broker      *SSEBroker
-	mailer      func(status.SmtpConfig) status.Mailer
+	mailer      status.Mailer
 }
 
-// NewStatusAdminHandler creates a new status admin handler.
+// NewStatusAdminHandler creates a status admin handler; a nil mailer means SMTP is not configured.
 func NewStatusAdminHandler(
 	components status.ComponentStore,
 	incidents status.IncidentStore,
 	subscribers status.SubscriberStore,
 	maintenance status.MaintenanceStore,
 	statusSvc *status.Service,
-	broker *SSEBroker,
-	mailer func(status.SmtpConfig) status.Mailer,
+	mailer status.Mailer,
 ) *StatusAdminHandler {
 	return &StatusAdminHandler{
 		components:  components,
@@ -42,7 +40,6 @@ func NewStatusAdminHandler(
 		subscribers: subscribers,
 		maintenance: maintenance,
 		statusSvc:   statusSvc,
-		broker:      broker,
 		mailer:      mailer,
 	}
 }
@@ -320,18 +317,7 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 	if created != nil {
 		inc = created
 	}
-
-	compNames := make([]string, 0, len(inc.Components))
-	for _, c := range inc.Components {
-		compNames = append(compNames, c.Name)
-	}
-	h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentCreated, Data: map[string]any{
-		"id":         inc.ID,
-		"title":      inc.Title,
-		"severity":   inc.Severity,
-		"status":     inc.Status,
-		"components": compNames,
-	}})
+	h.statusSvc.AnnounceIncident(r.Context(), inc, req.Message)
 
 	WriteJSON(w, http.StatusCreated, inc)
 }
@@ -370,19 +356,7 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 		return
 	}
 	upd.ID = updateID
-
-	if req.Status == status.IncidentResolved {
-		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentResolved, Data: map[string]any{
-			"id":    id,
-			"title": inc.Title,
-		}})
-	} else {
-		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentUpdated, Data: map[string]any{
-			"id":      id,
-			"status":  req.Status,
-			"message": req.Message,
-		}})
-	}
+	h.statusSvc.AnnounceIncidentUpdate(r.Context(), inc, upd)
 
 	WriteJSON(w, http.StatusCreated, upd)
 }
@@ -610,74 +584,30 @@ func (h *StatusAdminHandler) HandleListSubscribers(w http.ResponseWriter, r *htt
 	})
 }
 
-// --- SMTP Config ---
+// --- SMTP ---
 
-func (h *StatusAdminHandler) HandleGetSmtpConfig(w http.ResponseWriter, r *http.Request) {
-	cfg := h.statusSvc.GetSmtpConfig()
-	if cfg == nil {
-		WriteJSON(w, http.StatusOK, struct {
-			Host        string `json:"host"`
-			Port        int    `json:"port"`
-			Username    string `json:"username"`
-			TLSPolicy   string `json:"tls_policy"`
-			FromAddress string `json:"from_address"`
-			FromName    string `json:"from_name"`
-			Configured  bool   `json:"configured"`
-			PasswordSet bool   `json:"password_set"`
-		}{})
+// HandleTestSmtp sends a test email to the given address through the SMTP server of the environment.
+func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Request) {
+	if h.mailer == nil {
+		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured: set MAINTENANT_SMTP_HOST")
 		return
 	}
-	resp := struct {
-		Host        string `json:"host"`
-		Port        int    `json:"port"`
-		Username    string `json:"username"`
-		TLSPolicy   string `json:"tls_policy"`
-		FromAddress string `json:"from_address"`
-		FromName    string `json:"from_name"`
-		Configured  bool   `json:"configured"`
-		PasswordSet bool   `json:"password_set"`
-	}{
-		Host:        cfg.Host,
-		Port:        cfg.Port,
-		Username:    cfg.Username,
-		TLSPolicy:   cfg.TLSPolicy,
-		FromAddress: cfg.FromAddress,
-		FromName:    cfg.FromName,
-		Configured:  cfg.Configured,
-		PasswordSet: cfg.Password != "",
+	var req struct {
+		To string `json:"to"`
 	}
-	WriteJSON(w, http.StatusOK, resp)
-}
-
-func (h *StatusAdminHandler) HandleUpdateSmtpConfig(w http.ResponseWriter, r *http.Request) {
-	var cfg status.SmtpConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 		return
 	}
-	if cfg.Password == "" {
-		if old := h.statusSvc.GetSmtpConfig(); old != nil {
-			cfg.Password = old.Password
-		}
-	}
-	cfg.Configured = cfg.Host != "" && cfg.Port > 0 && cfg.FromAddress != ""
-	h.statusSvc.SetSmtpConfig(&cfg)
-	WriteJSON(w, http.StatusOK, map[string]string{"status": "saved"})
-}
-
-func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Request) {
-	cfg := h.statusSvc.GetSmtpConfig()
-	if cfg == nil || !cfg.Configured {
-		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
+	addr, err := mail.ParseAddress(req.To)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", "to must be a valid email address")
 		return
 	}
-	if h.mailer == nil {
-		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
-		return
-	}
-	client := h.mailer(*cfg)
-	if err := client.Send(cfg.FromAddress, "Maintenant SMTP Test", "<p>This is a test email from Maintenant.</p>"); err != nil {
-		WriteJSON(w, http.StatusOK, map[string]any{"status": "error", "error": err.Error()})
+	if err := h.mailer.Send(r.Context(), addr.Address, "maintenant SMTP test",
+		"This is a test email from the maintenant status page.\n\n"+
+			"If you received it, subscription confirmations and incident notifications can be delivered.\n"); err != nil {
+		WriteError(w, http.StatusBadGateway, "smtp_failed", err.Error())
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "sent"})

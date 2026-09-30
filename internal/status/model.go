@@ -36,12 +36,6 @@ const (
 	GlobalMaintenance    = "Scheduled Maintenance"
 )
 
-// TLS policy values for SMTP.
-const (
-	TLSMandatory = "mandatory"
-	TLSNone      = "none"
-)
-
 // CompositionMode describes how a status component selects its monitors.
 type CompositionMode string
 
@@ -133,18 +127,6 @@ type MaintenanceWindow struct {
 	Components  []IncidentCompRef `json:"components,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
-}
-
-// SmtpConfig holds SMTP server configuration for sending emails.
-type SmtpConfig struct {
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	Password    string `json:"password,omitempty"`
-	TLSPolicy   string `json:"tls_policy"`
-	FromAddress string `json:"from_address"`
-	FromName    string `json:"from_name"`
-	Configured  bool   `json:"configured"`
 }
 
 // ListIncidentsOpts contains filter parameters for listing incidents.

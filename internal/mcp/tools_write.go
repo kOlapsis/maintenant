@@ -200,6 +200,9 @@ func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInp
 		if created, _ := svc.Incidents.GetIncident(ctx, id); created != nil {
 			inc = created
 		}
+		if svc.IncidentAnnouncer != nil {
+			svc.IncidentAnnouncer.AnnounceIncident(ctx, inc, input.Message)
+		}
 		return jsonResult(inc)
 	}
 }
@@ -229,6 +232,9 @@ func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInp
 			return nil, nil, fmt.Errorf("failed to post incident update: %w", err)
 		}
 		upd.ID = updateID
+		if svc.IncidentAnnouncer != nil {
+			svc.IncidentAnnouncer.AnnounceIncidentUpdate(ctx, inc, upd)
+		}
 		return jsonResult(upd)
 	}
 }

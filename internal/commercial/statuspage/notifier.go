@@ -6,8 +6,8 @@ package statuspage
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/kolapsis/maintenant/internal/status"
 )
@@ -20,18 +20,13 @@ type SubscriberNotifier struct {
 	logger  *slog.Logger
 }
 
-// NewSubscriberNotifier returns a notifier sending through mailer, which may be nil.
+// NewSubscriberNotifier returns a notifier sending through mailer.
 func NewSubscriberNotifier(store status.SubscriberStore, mailer status.Mailer, baseURL string, logger *slog.Logger) *SubscriberNotifier {
-	return &SubscriberNotifier{store: store, mailer: mailer, baseURL: baseURL, logger: logger}
+	return &SubscriberNotifier{store: store, mailer: mailer, baseURL: strings.TrimRight(baseURL, "/"), logger: logger}
 }
 
-// NotifyAll sends an incident notification to all confirmed subscribers.
+// NotifyAll emails message, followed by a personal unsubscribe link, to every confirmed subscriber.
 func (s *SubscriberNotifier) NotifyAll(ctx context.Context, subject, message string) {
-	if s.mailer == nil {
-		s.logger.Debug("status: SMTP not configured, skipping notification")
-		return
-	}
-
 	subs, err := s.store.ListConfirmedSubscribers(ctx)
 	if err != nil {
 		s.logger.Error("failed to list subscribers for notification", "error", err)
@@ -40,16 +35,10 @@ func (s *SubscriberNotifier) NotifyAll(ctx context.Context, subject, message str
 
 	s.logger.Debug("status: sending notifications", "count", len(subs), "subject", subject)
 
+	text := strings.TrimRight(message, "\n")
 	for _, sub := range subs {
-		unsubURL := fmt.Sprintf("%s/status/unsubscribe?token=%s", s.baseURL, sub.UnsubToken)
-		body := fmt.Sprintf(`<html><body>
-<h2>Status Update</h2>
-<p>%s</p>
-<hr>
-<p><small><a href="%s">Unsubscribe</a></small></p>
-</body></html>`, message, unsubURL)
-
-		if err := s.mailer.Send(sub.Email, subject, body); err != nil {
+		body := text + "\n\n-- \nUnsubscribe: " + s.baseURL + "/status/unsubscribe?token=" + sub.UnsubToken + "\n"
+		if err := s.mailer.Send(ctx, sub.Email, subject, body); err != nil {
 			s.logger.Error("failed to send notification", "error", err, "email", sub.Email)
 		}
 	}

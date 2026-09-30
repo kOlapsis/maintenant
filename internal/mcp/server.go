@@ -49,6 +49,12 @@ type SessionChecker interface {
 	IsConnected(agentID string) bool
 }
 
+// IncidentAnnouncer pushes incident changes to the public status page and emails its subscribers.
+type IncidentAnnouncer interface {
+	AnnounceIncident(ctx context.Context, inc *status.Incident, message string)
+	AnnounceIncidentUpdate(ctx context.Context, inc *status.Incident, upd *status.IncidentUpdate)
+}
+
 // AgentLogFetcher reads logs of a container living on a remote agent's host,
 // which the server's own runtime cannot see. Satisfied by the multi-host session registry.
 type AgentLogFetcher interface {
@@ -89,6 +95,7 @@ type Services struct {
 	ChannelValidators ChannelValidators
 	Updates           *update.Service
 	Incidents         status.IncidentStore
+	IncidentAnnouncer IncidentAnnouncer
 	Maintenance       status.MaintenanceStore
 	Runtime           runtime.Runtime
 	LogFetcher        LogFetcher

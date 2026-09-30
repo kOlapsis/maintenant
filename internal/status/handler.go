@@ -105,6 +105,7 @@ type StatusAPIResponse struct {
 	ActiveIncidents        []APIIncidentBrief  `json:"active_incidents"`
 	UpcomingMaint          []APIMaintBrief     `json:"upcoming_maintenance"`
 	PersonalizationVersion int64               `json:"personalization_version,omitempty"`
+	SubscriptionsEnabled   bool                `json:"subscriptions_enabled"`
 }
 
 // APIComponentBrief is a brief component in the JSON API.
@@ -151,9 +152,10 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := StatusAPIResponse{
-		GlobalStatus:  data.GlobalStatus,
-		GlobalMessage: data.GlobalMessage,
-		UpdatedAt:     time.Now().UTC(),
+		GlobalStatus:         data.GlobalStatus,
+		GlobalMessage:        data.GlobalMessage,
+		UpdatedAt:            time.Now().UTC(),
+		SubscriptionsEnabled: h.service.SubscriptionsEnabled(),
 	}
 	if h.personalization != nil {
 		resp.PersonalizationVersion = h.personalization.GetVersion(r)
@@ -225,15 +227,15 @@ func limitBody(maxBytes int64, next http.Handler) http.Handler {
 
 // HandleSubscribe processes a new email subscription request.
 func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
-	if h.service.subscribers == nil {
-		http.Error(w, "Subscriptions not available", http.StatusServiceUnavailable)
+	if !h.service.SubscriptionsEnabled() {
+		writeSubscriptionsUnavailable(w)
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxStatusBody)
 
 	if !h.subscribeRL.AllowRequest(r) {
-		http.Error(w, "Too many requests", http.StatusTooManyRequests)
+		h.subscribeRL.Reject(w)
 		return
 	}
 
@@ -246,44 +248,65 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
-				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body too large")
 				return
 			}
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 			return
 		}
 	} else {
 		if err := r.ParseForm(); err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
-				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body too large")
 				return
 			}
-			http.Error(w, "Invalid form", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "Invalid form")
 			return
 		}
 		req.Email = r.PostFormValue("email")
 	}
 
 	if len(req.Email) > maxEmailLength {
-		http.Error(w, "Email is too long", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_email", "Email is too long")
 		return
 	}
 	addr, err := mail.ParseAddress(req.Email)
 	if err != nil {
-		http.Error(w, "Email is not a valid address", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_email", "Email is not a valid address")
 		return
 	}
 	req.Email = addr.Address
 
 	if err := h.service.subscribers.Subscribe(r.Context(), req.Email); err != nil {
 		h.logger.Error("subscribe failed", "error", err)
-		http.Error(w, "Subscription failed", http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, ErrSubscriptionsDisabled):
+			writeSubscriptionsUnavailable(w)
+		case errors.Is(err, ErrConfirmationNotSent):
+			writeJSONError(w, http.StatusBadGateway, "confirmation_failed", "The confirmation email could not be sent, try again later")
+		default:
+			writeJSONError(w, http.StatusInternalServerError, "subscription_failed", "Subscription failed")
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmation_sent"})
+}
+
+func writeSubscriptionsUnavailable(w http.ResponseWriter) {
+	writeJSONError(w, http.StatusServiceUnavailable, "subscriptions_unavailable",
+		"Email subscriptions are not available on this status page")
+}
+
+// writeJSONError answers with the error shape of the rest of the API.
+func writeJSONError(w http.ResponseWriter, statusCode int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
 }
 
 // HandleConfirm processes a subscription confirmation.
@@ -294,7 +317,7 @@ func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service.subscribers == nil {
+	if !h.service.SubscriptionsEnabled() {
 		writeSimpleHTML(w, http.StatusServiceUnavailable, "Error", "Subscriptions not available.")
 		return
 	}

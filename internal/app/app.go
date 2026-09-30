@@ -72,7 +72,7 @@ type App struct {
 	statusSvc          *status.Service
 	subscriberSvc      *status.SubscriberService
 	personalizationSvc status.PersonalizationManager
-	statusMailer       func(status.SmtpConfig) status.Mailer
+	statusMailer       status.Mailer
 
 	// Alert pipeline
 	alertEngine     *alert.Engine
@@ -392,18 +392,19 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	})
 
 	// --- Alert engine ---
+	smtpCfg := extpoint.SMTPConfig{
+		Host:     cfg.SMTP.Host,
+		Port:     cfg.SMTP.Port,
+		Username: cfg.SMTP.Username,
+		Password: cfg.SMTP.Password,
+		From:     cfg.SMTP.From,
+	}
 	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks)
 	if a.ext.Channels != nil {
 		channels := a.ext.Channels(extpoint.ChannelDeps{
 			HTTPClient: a.notifier.HTTPClient(),
-			SMTP: extpoint.SMTPConfig{
-				Host:     cfg.SMTP.Host,
-				Port:     cfg.SMTP.Port,
-				Username: cfg.SMTP.Username,
-				Password: cfg.SMTP.Password,
-				From:     cfg.SMTP.From,
-			},
-			Logger: logger,
+			SMTP:       smtpCfg,
+			Logger:     logger,
 		})
 		for chType, sender := range channels {
 			a.notifier.RegisterChannel(chType, sender)
@@ -488,13 +489,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	}
 
 	// --- Public Status Page ---
-	a.subscriberSvc = status.NewSubscriberService(subscriberStore, nil, cfg.BaseURL, logger)
 	a.statusSvc = status.NewService(status.Deps{
 		Components:  statusCompStore,
 		Logger:      logger,
 		Incidents:   incidentStore,
 		Maintenance: maintenanceStore,
-		Subscribers: a.subscriberSvc,
 		Broadcaster: func(eventType string, data any) {
 			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		},
@@ -508,6 +507,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 			Maintenance:     maintenanceStore,
 			Subscribers:     subscriberStore,
 			Personalization: personalizationStore,
+			SMTP:            smtpCfg,
 			BaseURL:         cfg.BaseURL,
 			Logger:          logger,
 		})
@@ -517,6 +517,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		a.personalizationSvc = sp.Personalization
 		a.statusMailer = sp.Mailer
 	}
+	a.subscriberSvc = status.NewSubscriberService(subscriberStore, a.statusMailer, cfg.BaseURL, logger)
+	a.statusSvc.SetSubscriberService(a.subscriberSvc)
 	personalizationPublicHandler := status.NewPersonalizationPublicHandler(personalizationStore, logger)
 	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL)
 	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
@@ -631,7 +633,6 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		StatusSubscribers:  subscriberStore,
 		StatusMaintenance:  maintenanceStore,
 		StatusSvc:          a.statusSvc,
-		StatusBroker:       a.statusBroker,
 		PersonalizationSvc: a.personalizationSvc,
 		StatusMailer:       a.statusMailer,
 		// Webhooks
@@ -695,6 +696,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		ChannelValidators: a.notifier,
 		Updates:           a.updateSvc,
 		Incidents:         incidentStore,
+		IncidentAnnouncer: a.statusSvc,
 		Maintenance:       maintenanceStore,
 		Runtime:           rt,
 		LogFetcher:        rt,

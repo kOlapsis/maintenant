@@ -66,7 +66,7 @@ func newCreator(t *testing.T, r extension.Resource) func(i int) *httptest.Respon
 	case extension.ResourceStatusComponents:
 		components := store.NewStatusComponentStore(db)
 		svc := status.NewService(status.Deps{Components: components, Logger: logger})
-		h := NewStatusAdminHandler(components, nil, nil, nil, svc, nil, nil)
+		h := NewStatusAdminHandler(components, nil, nil, nil, svc, nil)
 		return func(i int) *httptest.ResponseRecorder {
 			return post(h.HandleCreateComponent, "/api/v1/status/components",
 				fmt.Sprintf(`{"display_name":"c-%d","composition_mode":"match-all","match_all_type":"container"}`, i))

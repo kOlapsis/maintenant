@@ -280,6 +280,47 @@ func TestCreateIncidentHandler_Pro_MissingSeverity(t *testing.T) {
 	assert.Contains(t, textFromContent(t, result.Content), "invalid input")
 }
 
+type recordingAnnouncer struct {
+	opened  []string
+	updates []string
+}
+
+func (a *recordingAnnouncer) AnnounceIncident(_ context.Context, inc *status.Incident, message string) {
+	a.opened = append(a.opened, inc.Title+"|"+message)
+}
+
+func (a *recordingAnnouncer) AnnounceIncidentUpdate(_ context.Context, inc *status.Incident, upd *status.IncidentUpdate) {
+	a.updates = append(a.updates, inc.Status+">"+upd.Status+"|"+upd.Message)
+}
+
+func TestCreateIncidentHandler_AnnouncesTheIncident(t *testing.T) {
+	withEdition(t, extension.Pro)
+	announcer := &recordingAnnouncer{}
+	svc := &Services{Incidents: newMCPIncidentStore(), IncidentAnnouncer: announcer, Logger: slog.Default(), Version: "test"}
+
+	result, _, err := createIncidentHandler(svc)(context.Background(), nil, createIncidentInput{
+		Title:    "API down",
+		Severity: "critical",
+		Message:  "investigating",
+	})
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	assert.Equal(t, []string{"API down|investigating"}, announcer.opened)
+}
+
+func TestUpdateIncidentHandler_AnnouncesTheUpdateAgainstThePreviousState(t *testing.T) {
+	withEdition(t, extension.Pro)
+	store := newMCPIncidentStore()
+	store.incidents["inc-1"] = &status.Incident{ID: "inc-1", Title: "API down", Status: status.IncidentInvestigating}
+	announcer := &recordingAnnouncer{}
+	svc := &Services{Incidents: store, IncidentAnnouncer: announcer, Logger: slog.Default(), Version: "test"}
+
+	result, _, err := updateIncidentHandler(svc)(context.Background(), nil, updateIncidentInput{IncidentID: "inc-1", Status: "resolved", Message: "fixed"})
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	assert.Equal(t, []string{"investigating>resolved|fixed"}, announcer.updates)
+}
+
 // --- update_incident ---
 
 func TestUpdateIncidentHandler_CE_EditionRequired(t *testing.T) {

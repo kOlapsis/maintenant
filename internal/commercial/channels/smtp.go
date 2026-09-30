@@ -11,7 +11,10 @@ import (
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
 )
+
+const smtpTimeout = 30 * time.Second
 
 // SMTPConfig holds SMTP connection parameters.
 type SMTPConfig struct {
@@ -32,14 +35,21 @@ func NewSMTPSender(cfg SMTPConfig) *SMTPSender {
 	return &SMTPSender{cfg: cfg}
 }
 
-// Send delivers an email via SMTP. The to parameter is the recipient address,
-// subject is the email subject line, and textBody is the plain-text content.
-func (s *SMTPSender) Send(_ context.Context, to, subject, textBody string) error {
+// Send delivers a plain-text email via SMTP, giving up when ctx ends or after smtpTimeout.
+func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) error {
+	ctx, cancel := context.WithTimeout(ctx, smtpTimeout)
+	defer cancel()
 	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
 
-	conn, err := net.Dial("tcp", addr)
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
+	}
+	deadline, _ := ctx.Deadline()
+	if err := conn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("smtp deadline: %w", err)
 	}
 
 	c, err := smtp.NewClient(conn, s.cfg.Host)
