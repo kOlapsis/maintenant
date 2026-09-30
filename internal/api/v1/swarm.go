@@ -459,9 +459,8 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 			"task_count":         taskCount,
 			"healthy_task_count": healthyTaskCount,
 		},
-		"nodes":         nodeResults,
-		"services":      services,
-		"recent_events": []interface{}{},
+		"nodes":    nodeResults,
+		"services": services,
 	})
 }
 

@@ -335,3 +335,81 @@ func TestContainerStateToProto(t *testing.T) {
 		assert.Equal(t, tc.want, got, "state %q mapping", tc.in)
 	}
 }
+
+// lostRuntime answers, then closes its first event stream the way a lost Docker daemon does.
+type lostRuntime struct {
+	lateRuntime
+	mu            sync.Mutex
+	streams       []chan runtime.RuntimeEvent
+	subscriptions int
+	connects      int
+}
+
+func (r *lostRuntime) Connect(context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.connects++
+	return nil
+}
+
+func (r *lostRuntime) StreamEvents(context.Context) <-chan runtime.RuntimeEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.subscriptions++
+	if len(r.streams) == 0 {
+		return nil
+	}
+	ch := r.streams[0]
+	r.streams = r.streams[1:]
+	return ch
+}
+
+func TestRunCollector_StartsAgainOnceALostRuntimeAnswers(t *testing.T) {
+	lost := make(chan runtime.RuntimeEvent)
+	close(lost)
+	back := make(chan runtime.RuntimeEvent, 1)
+	back <- runtime.RuntimeEvent{Action: "start", ExternalID: "c2", Name: "web", Timestamp: time.Now()}
+	rt := &lostRuntime{streams: []chan runtime.RuntimeEvent{lost, back}}
+	rt.up.Store(true)
+	link := newRuntimeLink(rt, RuntimeDocker)
+	_, err := link.attach(context.Background())
+	require.NoError(t, err)
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runCollector(ctx, &Identity{AgentID: "agent-1"}, link, "", spool, testLogger()) }()
+
+	require.Eventually(t, func() bool {
+		for _, ev := range sink.events() {
+			if ev.GetContainer().GetContainerId() == "c2" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 5*time.Millisecond, "events after a runtime loss still reach the server")
+
+	inventories := 0
+	for _, ev := range sink.events() {
+		if ev.GetInventory() != nil {
+			inventories++
+		}
+	}
+	assert.Equal(t, 2, inventories, "the inventory is resent once the runtime answers again")
+	rt.mu.Lock()
+	assert.Equal(t, 1, rt.connects, "the runtime is waited for before collecting again")
+	assert.Equal(t, 2, rt.subscriptions, "one subscription per connection")
+	rt.mu.Unlock()
+
+	cancel()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the collector did not stop with its context")
+	}
+}

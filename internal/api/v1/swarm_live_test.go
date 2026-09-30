@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -66,4 +68,23 @@ func TestSwarmHandler_ReadsTheUpdateTrackerOfTheMomentNotOfConstruction(t *testi
 	assert.Nil(t, progress())
 	tracker.Store(swarm.NewUpdateTracker(client, slog.Default()))
 	assert.NotNil(t, progress(), "a tracker built after the handler is used")
+}
+
+func TestSwarmDashboard_ServesOnlyWhatItHasASourceFor(t *testing.T) {
+	h := NewSwarmHandler(
+		func() *swarm.SwarmCluster { return &swarm.SwarmCluster{ID: "cluster-1", IsManager: true} },
+		func() *swarm.ServiceDiscovery { return nil },
+		func() *swarm.Detector { return nil },
+		&fakeSwarmTopo{}, nil,
+		func() *swarm.UpdateTracker { return nil },
+		func() *swarm.CrashLoopDetector { return nil },
+		nil, nil,
+	)
+	w := httptest.NewRecorder()
+	h.HandleGetDashboard(w, httptest.NewRequest(http.MethodGet, "/api/v1/swarm/dashboard", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.ElementsMatch(t, []string{"cluster", "nodes", "services"}, slices.Collect(maps.Keys(body)))
 }

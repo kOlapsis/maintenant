@@ -67,36 +67,40 @@ func (d *Detector) Detect(ctx context.Context) (DetectionResult, error) {
 		return DetectionResult{}, fmt.Errorf("swarm detection: %w", err)
 	}
 
+	prev := d.Result()
 	result := DetectionResult{}
-
-	if info.Swarm.LocalNodeState != "active" {
-		d.setResult(result)
-		return result, nil
+	if info.Swarm.LocalNodeState == "active" {
+		result.Active = true
+		result.IsManager = info.Swarm.ControlAvailable
+		if info.Swarm.Cluster != nil {
+			result.ClusterID = info.Swarm.Cluster.ID
+			result.CreatedAt = info.Swarm.Cluster.CreatedAt
+		}
+		result.ManagerCount = info.Swarm.Managers
+		result.WorkerCount = info.Swarm.Nodes - info.Swarm.Managers
+		if result.IsManager && info.Swarm.Nodes == 0 && prev.IsManager {
+			// A manager without a leader reads neither the cluster nor its nodes: keep what it read last.
+			result = prev
+		}
 	}
 
-	result.Active = true
-	result.IsManager = info.Swarm.ControlAvailable
-	if info.Swarm.Cluster != nil {
-		result.ClusterID = info.Swarm.Cluster.ID
-		result.CreatedAt = info.Swarm.Cluster.CreatedAt
+	if result.Active != prev.Active || result.IsManager != prev.IsManager || result.ClusterID != prev.ClusterID {
+		d.logRole(result)
 	}
-	result.ManagerCount = info.Swarm.Managers
-	result.WorkerCount = info.Swarm.Nodes - info.Swarm.Managers
-	if prev := d.Result(); result.IsManager && info.Swarm.Nodes == 0 && prev.IsManager {
-		// A manager without a leader reads neither the cluster nor its nodes: keep what it read last.
-		result = prev
-	}
-
-	if result.IsManager {
-		d.logger.Info("detected Swarm mode (manager node)",
-			"cluster_id", result.ClusterID)
-	} else {
-		d.logger.Info("detected Swarm mode (worker node) — Swarm management APIs not available, falling back to container monitoring",
-			"cluster_id", result.ClusterID)
-	}
-
 	d.setResult(result)
 	return result, nil
+}
+
+func (d *Detector) logRole(r DetectionResult) {
+	switch {
+	case r.IsManager:
+		d.logger.Info("detected Swarm mode (manager node)", "cluster_id", r.ClusterID)
+	case r.Active:
+		d.logger.Info("detected Swarm mode (worker node): Swarm management APIs not available, falling back to container monitoring",
+			"cluster_id", r.ClusterID)
+	default:
+		d.logger.Info("Swarm mode left")
+	}
 }
 
 // Result returns the cached detection result.

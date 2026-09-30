@@ -5,6 +5,8 @@ package docker
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -28,93 +30,86 @@ type ContainerEvent struct {
 	Labels       map[string]string
 }
 
-// StreamEvents subscribes to Docker container events and sends them to the returned channel.
-// On disconnection, it reconnects with backoff and uses Since to avoid missing events.
-// The caller should cancel ctx to stop the stream.
+// StreamEvents relays Docker container, service and node events, resumes a cut stream while the daemon answers, and closes the channel once ctx ends or the daemon is lost.
 func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 	out := make(chan ContainerEvent, 64)
-
 	go func() {
 		defer close(out)
-
-		var since string
-		backoff := retry.New(initialBackoff, maxBackoff, 0)
-
-		for {
-			if err := ctx.Err(); err != nil {
-				return
-			}
-
-			opts := client.EventsListOptions{
-				Filters: make(client.Filters).Add("type",
-					string(events.ContainerEventType),
-					string(events.ServiceEventType),
-					string(events.NodeEventType),
-				),
-			}
-			if since != "" {
-				opts.Since = since
-			}
-
-			stream := c.cli.Events(ctx, opts)
-			msgCh, errCh := stream.Messages, stream.Err
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case msg, ok := <-msgCh:
-					if !ok {
-						goto reconnect
-					}
-					backoff.Reset() // reset on successful message
-
-					since = timeToSince(msg.Time, msg.TimeNano)
-
-					evt := processEvent(msg)
-					if evt == nil {
-						continue
-					}
-					if evt.ResourceType == "container" {
-						evt.Labels = c.containerLabels(ctx, evt.Labels)
-					}
-					if evt.Action == "die" && evt.ExitCode == "137" {
-						evt.OOMKilled = c.oomKilled(ctx, evt.ExternalID)
-					}
-
-					select {
-					case out <- *evt:
-					case <-ctx.Done():
-						return
-					}
-
-				case err, ok := <-errCh:
-					if !ok {
-						goto reconnect
-					}
-					c.logger.Warn("Docker event stream error", "error", err)
-					c.SetDisconnected()
-					goto reconnect
-				}
-			}
-
-		reconnect:
-			delay := backoff.Next()
-			c.logger.Info("reconnecting Docker event stream", "backoff", delay)
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(delay):
-			}
-
-			// Try to reconnect
-			if err := c.Connect(ctx); err != nil {
-				c.logger.Warn("Docker reconnect failed", "error", err)
-			}
+		err := c.relayEvents(ctx, out)
+		if ctx.Err() == nil {
+			c.SetDisconnected()
+			c.logger.Warn("Docker daemon lost, event stream closed", "error", err)
 		}
 	}()
-
 	return out
+}
+
+// relayEvents runs until ctx ends or the daemon stops answering after a cut, and returns why.
+func (c *Client) relayEvents(ctx context.Context, out chan<- ContainerEvent) error {
+	var since string
+	backoff := retry.New(initialBackoff, maxBackoff, 0)
+	for {
+		resume, cut := c.relaySubscription(ctx, out, since)
+		if resume != since {
+			since = resume
+			backoff.Reset()
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := c.ping(ctx); err != nil {
+			return fmt.Errorf("event stream ended (%v) and the daemon does not answer: %w", cut, err)
+		}
+		delay := backoff.Next()
+		c.logger.Info("Docker event stream cut, resubscribing", "error", cut, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+}
+
+// relaySubscription forwards one subscription's events from since, and returns where to resume and why it ended.
+func (c *Client) relaySubscription(ctx context.Context, out chan<- ContainerEvent, since string) (string, error) {
+	stream := c.cli.Events(ctx, client.EventsListOptions{
+		Since: since,
+		Filters: make(client.Filters).Add("type",
+			string(events.ContainerEventType),
+			string(events.ServiceEventType),
+			string(events.NodeEventType),
+		),
+	})
+	for {
+		select {
+		case <-ctx.Done():
+			return since, ctx.Err()
+		case err := <-stream.Err:
+			return since, err
+		case msg, ok := <-stream.Messages:
+			if !ok {
+				return since, io.EOF
+			}
+			since = resumeAfter(msg.Time, msg.TimeNano)
+
+			evt := processEvent(msg)
+			if evt == nil {
+				continue
+			}
+			if evt.ResourceType == "container" {
+				evt.Labels = c.containerLabels(ctx, evt.Labels)
+			}
+			if evt.Action == "die" && evt.ExitCode == "137" {
+				evt.OOMKilled = c.oomKilled(ctx, evt.ExternalID)
+			}
+
+			select {
+			case out <- *evt:
+			case <-ctx.Done():
+				return since, ctx.Err()
+			}
+		}
+	}
 }
 
 func processEvent(msg events.Message) *ContainerEvent {
@@ -193,9 +188,7 @@ func eventTimestamp(sec int64, nano int64) time.Time {
 	return time.Unix(sec, 0)
 }
 
-func timeToSince(sec int64, nano int64) string {
-	if nano > 0 {
-		return time.Unix(sec, nano).Format(time.RFC3339Nano)
-	}
-	return time.Unix(sec, 0).Format(time.RFC3339)
+// resumeAfter is the Since value that resubscribes right after the event at sec, nano.
+func resumeAfter(sec int64, nano int64) string {
+	return eventTimestamp(sec, nano).Add(time.Nanosecond).Format(time.RFC3339Nano)
 }

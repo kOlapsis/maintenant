@@ -35,8 +35,9 @@ var containerInventoryInterval = 30 * time.Second
 
 // runCollector reports the host at once and the local runtime from the moment it
 // answers, pushing both to spool, and restarts the runtime part under its new
-// label when the host joins or leaves a Swarm. nodeName is the Kubernetes node
-// the agent runs on, empty unless the operator set it.
+// label when the host joins or leaves a Swarm, or once a lost runtime answers
+// again. nodeName is the Kubernetes node the agent runs on, empty unless the
+// operator set it.
 // Blocks until ctx is cancelled or a fatal push error occurs.
 func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName string, spool *Spool, logger *slog.Logger) error {
 	g, gCtx := errgroup.WithContext(ctx)
@@ -52,6 +53,13 @@ func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName
 		label := link.label
 		for {
 			err := collectRuntime(gCtx, id, link, label, nodeName, spool, logger)
+			if errors.Is(err, errRuntimeLost) {
+				logger.Warn("agent: container runtime lost, waiting for it to come back", "runtime", label)
+				if err := link.rt.Connect(gCtx); err != nil {
+					return err
+				}
+				continue
+			}
 			var changed runtimeChanged
 			if !errors.As(err, &changed) {
 				return err
@@ -264,6 +272,9 @@ func containerStateToProto(s cmodel.ContainerState) (agentpb.ContainerState, boo
 	}
 }
 
+// errRuntimeLost ends the runtime collection when the runtime event stream closes, so it restarts once the runtime answers again.
+var errRuntimeLost = errors.New("container runtime lost")
+
 func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	evCh := rt.StreamEvents(ctx)
 	for {
@@ -272,7 +283,10 @@ func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, s
 			return nil
 		case ev, ok := <-evCh:
 			if !ok {
-				return nil
+				if ctx.Err() != nil {
+					return nil
+				}
+				return errRuntimeLost
 			}
 			proto := runtimeEventToProto(ev)
 			if proto == nil {

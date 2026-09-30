@@ -463,6 +463,11 @@ func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
 				"Cannot connect to container runtime for log retrieval.")
 			return
 		}
+		if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+			WriteError(w, http.StatusServiceUnavailable, "RUNTIME_UNAVAILABLE",
+				"Container monitoring is unavailable: the container runtime is disconnected.")
+			return
+		}
 		local, err := h.logFetcher.FetchLogs(r.Context(), c.ExternalID, lines, timestamps)
 		if err != nil {
 			WriteError(w, http.StatusBadGateway, "LOGS_UNAVAILABLE", "Cannot retrieve logs from Docker")

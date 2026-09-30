@@ -104,7 +104,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_RUNTIME", FlagName: "runtime",
 			Type: FlagTypeString, Default: "",
-			Description: "Force container runtime (docker|kubernetes; default: autodetect)",
+			Description: "Force container runtime (docker|kubernetes, or swarm in agent mode; default: autodetect)",
 			// Propagate to env so pbruntime.Detect() picks it up, and to the
 			// agent config, which carries the same override over the wire.
 			ApplyTo: func(c *Config, v string) error {
@@ -460,7 +460,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES", FlagName: "agentSpoolMaxMemoryBytes",
 			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxMemoryBytes, 10),
-			Description: "Bytes buffered in memory before the spool writes to disk (agent mode; 0 here and for the disk budget disables the spool)",
+			Description: "Bytes buffered in memory before the spool writes to disk (agent mode; 0 writes every event to disk; the spool is off only when both budgets are 0)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := parseAgentSpoolSetting(v)
 				if err != nil {
@@ -474,7 +474,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES", FlagName: "agentSpoolMaxDiskBytes",
 			Type: FlagTypeInt, Default: strconv.FormatInt(DefaultAgentSpoolMaxDiskBytes, 10),
-			Description: "Maximum size of the spool database, oldest events dropped first (agent mode; 0 here and for the memory budget disables the spool)",
+			Description: "Maximum size of the spool database, oldest events dropped first (agent mode; 0 = no size limit; the spool is off only when both budgets are 0)",
 			ApplyTo: func(c *Config, v string) error {
 				n, err := parseAgentSpoolSetting(v)
 				if err != nil {

@@ -1094,6 +1094,8 @@ type swarmManager struct {
 	crashLoop      *swarm.CrashLoopDetector
 	updateTracker  *swarm.UpdateTracker
 	replicaChecker *swarm.ReplicaHealthChecker
+	stop           context.CancelFunc
+	loops          sync.WaitGroup
 }
 
 // newSwarmManager builds the services of a Swarm manager on the Docker client.

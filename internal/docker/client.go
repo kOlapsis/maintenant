@@ -19,6 +19,7 @@ import (
 const (
 	initialBackoff = 1 * time.Second
 	maxBackoff     = 30 * time.Second
+	pingTimeout    = 3 * time.Second
 )
 
 // Client wraps the Docker SDK client with reconnection logic.
@@ -89,15 +90,10 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// ConnectWithRetry attempts to connect with exponential backoff.
+// TryConnect pings the daemon once, bounded by pingTimeout.
 func (c *Client) TryConnect(ctx context.Context) error {
-	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	_, err := c.cli.Ping(tctx, client.PingOptions{})
-	if err != nil {
-		c.mu.Lock()
-		c.connected = false
-		c.mu.Unlock()
+	if err := c.ping(ctx); err != nil {
+		c.SetDisconnected()
 		return fmt.Errorf("docker ping failed: %w", err)
 	}
 	c.mu.Lock()
@@ -107,6 +103,15 @@ func (c *Client) TryConnect(ctx context.Context) error {
 	return nil
 }
 
+// ping reports whether the daemon answers within pingTimeout.
+func (c *Client) ping(ctx context.Context) error {
+	pctx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+	_, err := c.cli.Ping(pctx, client.PingOptions{})
+	return err
+}
+
+// ConnectWithRetry attempts to connect with exponential backoff.
 func (c *Client) ConnectWithRetry(ctx context.Context) error {
 	b := retry.New(initialBackoff, maxBackoff, 0)
 	for {

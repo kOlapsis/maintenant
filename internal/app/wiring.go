@@ -641,19 +641,6 @@ func (a *App) wireSwarmCallbacks(m *swarmManager) {
 	m.updateTracker.SetAlertCallback(a.emitAlert)
 	m.replicaChecker.SetEventCallback(sseBroadcast)
 	m.replicaChecker.SetAlertCallback(a.emitAlert)
-
-	if cluster := a.swarmCluster.Load(); cluster != nil {
-		a.broker.Broadcast(v1.SSEEvent{
-			Type: event.SwarmStatus,
-			Data: map[string]any{
-				"active":        true,
-				"is_manager":    cluster.IsManager,
-				"cluster_id":    cluster.ID,
-				"manager_count": cluster.ManagerCount,
-				"worker_count":  cluster.WorkerCount,
-			},
-		})
-	}
 }
 
 // wireKubernetesAlerts routes the local cluster's alerts to the alert engine and

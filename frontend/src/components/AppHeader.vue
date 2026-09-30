@@ -360,7 +360,7 @@ const { feedbackUrl } = useFeedbackUrl()
 
   <!-- Runtime disconnection banner -->
   <AlertBanner
-    v-if="!containers.runtimeConnected"
+    v-if="!containers.isContainerMonitoringAvailable"
     severity="critical"
     label="RUNTIME OFFLINE"
   >

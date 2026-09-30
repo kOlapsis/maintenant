@@ -76,7 +76,75 @@ func TestApplySwarmDetection_KeepsTheClusterCountsCurrent(t *testing.T) {
 	require.NotNil(t, cluster)
 	assert.Equal(t, 3, cluster.ManagerCount)
 	assert.Equal(t, 4, cluster.WorkerCount)
-	assert.Empty(t, sse, "a manager staying a manager does not switch the context")
+	for _, evt := range drain(sse) {
+		assert.NotEqual(t, event.RuntimeContextChanged, evt.Type, "a manager staying a manager does not switch the context")
+	}
+}
+
+func drain(sse chan v1.SSEEvent) []v1.SSEEvent {
+	var out []v1.SSEEvent
+	for {
+		select {
+		case evt := <-sse:
+			out = append(out, evt)
+		default:
+			return out
+		}
+	}
+}
+
+func TestApplySwarmDetection_AnnouncesEachChangeOfTheSwarmState(t *testing.T) {
+	a, ctx := newKubernetesAlertApp(t)
+	sse := make(chan v1.SSEEvent, 64)
+	a.broker.AddObserver(sse)
+	manager := swarm.DetectionResult{Active: true, IsManager: true, ClusterID: "cluster-1", ManagerCount: 3, WorkerCount: 4}
+
+	a.applySwarmDetection(ctx, manager)
+	a.applySwarmDetection(ctx, manager)
+	manager.WorkerCount = 5
+	a.applySwarmDetection(ctx, manager)
+	a.applySwarmDetection(ctx, swarm.DetectionResult{Active: true})
+	a.applySwarmDetection(ctx, swarm.DetectionResult{})
+
+	var statuses []any
+	for _, evt := range drain(sse) {
+		if evt.Type == event.SwarmStatus {
+			statuses = append(statuses, evt.Data)
+		}
+	}
+	assert.Equal(t, []any{
+		map[string]any{"active": true, "is_manager": true, "cluster_id": "cluster-1", "manager_count": 3, "worker_count": 4},
+		map[string]any{"active": true, "is_manager": true, "cluster_id": "cluster-1", "manager_count": 3, "worker_count": 5},
+		map[string]any{"active": false},
+	}, statuses)
+}
+
+func TestSwarmDeactivation_StopsTheManagerUntilSwarmReturns(t *testing.T) {
+	a, ctx := newKubernetesAlertApp(t)
+	manager := swarm.DetectionResult{Active: true, IsManager: true, ClusterID: "cluster-1"}
+
+	a.applySwarmDetection(ctx, manager)
+	m := a.swarmMgr.Load()
+	require.NotNil(t, m)
+
+	a.applySwarmDetection(ctx, swarm.DetectionResult{})
+	assert.Nil(t, a.swarmMgr.Load(), "no Swarm manager outlives the cluster")
+	assert.Nil(t, a.currentSwarmDiscovery())
+	stopped := make(chan struct{})
+	go func() {
+		m.loops.Wait()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loops of the deactivated manager still run")
+	}
+
+	a.applySwarmDetection(ctx, manager)
+	again := a.swarmMgr.Load()
+	require.NotNil(t, again)
+	assert.NotSame(t, m, again, "a reactivation starts a new manager")
 }
 
 func TestDispatchRuntimeEvent_TaskContainersStoppingAreNoCrash(t *testing.T) {

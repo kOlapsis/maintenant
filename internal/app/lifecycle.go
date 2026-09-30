@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
@@ -224,11 +225,18 @@ func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent
 }
 
 // startSwarmManager resumes the Swarm alerts left by a previous run, then starts
-// the manager's periodic loops.
+// the manager's periodic loops until halt.
 func (a *App) startSwarmManager(ctx context.Context, m *swarmManager) {
 	a.seedSwarmAlertTracking(ctx, m)
-	go a.startNodeRefresh(ctx, m)
-	go a.startSwarmTopologyReconcile(ctx, m)
+	ctx, m.stop = context.WithCancel(ctx)
+	m.loops.Go(func() { a.startNodeRefresh(ctx, m) })
+	m.loops.Go(func() { a.startSwarmTopologyReconcile(ctx, m) })
+}
+
+// halt stops the manager's loops and waits for them to return.
+func (m *swarmManager) halt() {
+	m.stop()
+	m.loops.Wait()
 }
 
 // seedSwarmAlertTracking hands the active Swarm alerts to the services that
@@ -485,12 +493,28 @@ func (a *App) requestSwarmRecheck() {
 // stops being a Swarm manager, and otherwise refreshes the cluster it manages.
 func (a *App) applySwarmDetection(ctx context.Context, result swarm.DetectionResult) {
 	cluster := result.Cluster()
-	if (cluster != nil) != (a.swarmCluster.Load() != nil) {
+	previous := a.swarmCluster.Load()
+	if (cluster != nil) != (previous != nil) {
 		a.applySwarmContext(ctx, result)
-		return
-	}
-	if cluster != nil {
+	} else if cluster != nil {
 		a.swarmCluster.Store(cluster)
+	}
+	if status := swarmStatus(cluster); !maps.Equal(status, swarmStatus(previous)) {
+		a.broker.Broadcast(v1.SSEEvent{Type: event.SwarmStatus, Data: status})
+	}
+}
+
+// swarmStatus is the swarm.status payload for the cluster this node manages, if any.
+func swarmStatus(c *swarm.SwarmCluster) map[string]any {
+	if c == nil {
+		return map[string]any{"active": false}
+	}
+	return map[string]any{
+		"active":        true,
+		"is_manager":    c.IsManager,
+		"cluster_id":    c.ID,
+		"manager_count": c.ManagerCount,
+		"worker_count":  c.WorkerCount,
 	}
 }
 
@@ -516,6 +540,9 @@ func (a *App) applySwarmContext(ctx context.Context, result swarm.DetectionResul
 		message = "Swarm cluster deactivated — switched to Docker mode."
 
 		a.swarmCluster.Store(nil)
+		if m := a.swarmMgr.Swap(nil); m != nil {
+			m.halt()
+		}
 	}
 
 	a.logger.Info("runtime context changed",

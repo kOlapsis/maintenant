@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/kolapsis/maintenant/internal/agent"
 )
 
 // ── T027: Registry covers all MAINTENANT_* vars from .env.example ─────────────
@@ -354,6 +356,23 @@ func TestHelpHasNoEmDash(t *testing.T) {
 	PrintHelp(&buf, ConfigFromEnv())
 	if strings.Contains(buf.String(), "—") {
 		t.Errorf("--help output contains an em dash")
+	}
+}
+
+func TestHelpDescribesWhatTheAgentAccepts(t *testing.T) {
+	help := make(map[string]string, len(Registry))
+	for _, spec := range Registry {
+		help[spec.FlagName] = spec.Description
+	}
+	for _, rt := range []string{agent.RuntimeDocker, agent.RuntimeKubernetes, agent.RuntimeSwarm} {
+		if !strings.Contains(help["runtime"], rt) {
+			t.Errorf("--runtime help omits %q, which the agent accepts: %q", rt, help["runtime"])
+		}
+	}
+	for _, budget := range []string{"agentSpoolMaxMemoryBytes", "agentSpoolMaxDiskBytes"} {
+		if !strings.Contains(help[budget], "only when both budgets are 0") {
+			t.Errorf("--%s help does not say that the spool needs both budgets at 0 to be off: %q", budget, help[budget])
+		}
 	}
 }
 

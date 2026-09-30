@@ -170,13 +170,6 @@ export interface SwarmDashboardResponse {
   cluster: SwarmDashboardCluster
   nodes: SwarmDashboardNode[]
   services: SwarmDashboardService[]
-  recent_events: Array<{
-    type: string
-    service_name?: string
-    node_hostname?: string
-    message: string
-    timestamp: string
-  }>
 }
 
 export function fetchSwarmDashboard(): Promise<SwarmDashboardResponse> {

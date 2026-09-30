@@ -97,7 +97,7 @@ or "--flag=true|false". Run "maintenant --help" for what each flag does.
   --retentionBatchSize <int>
   --organisationName <name>
   --statusUrl <url>
-  --runtime <docker|kubernetes>
+  --runtime <docker|kubernetes|swarm>
   --proxyLabels
   --logLevel <level>
   --maxBodySize <bytes>
