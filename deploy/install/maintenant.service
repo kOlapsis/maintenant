@@ -1,5 +1,5 @@
 [Unit]
-Description=Maintenant monitoring
+Description=Maintenant infrastructure monitoring
 Documentation=https://docs.maintenant.dev
 After=network-online.target
 Wants=network-online.target
@@ -8,14 +8,13 @@ Wants=network-online.target
 Type=simple
 User=maintenant
 Group=maintenant
+Environment=MAINTENANT_DATA_DIR=/var/lib/maintenant
 EnvironmentFile=-/etc/maintenant/maintenant.env
 ExecStart=/usr/local/bin/maintenant
 WorkingDirectory=/var/lib/maintenant
 Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65536
-
-# Hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

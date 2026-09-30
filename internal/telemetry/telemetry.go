@@ -16,7 +16,6 @@ import (
 // operator-configurable; the cfg struct exists so tests can override them.
 const (
 	defaultEndpoint    = "https://metrics.kolapsis.com"
-	defaultDataDir     = "/data/shm"
 	defaultEnvironment = "production"
 	appName            = "Maintenant"
 )
@@ -28,11 +27,10 @@ const (
 )
 
 // Config carries the wire-relevant constants for the telemetry subsystem.
-// All fields have safe defaults populated by New when unset.
 type Config struct {
 	Disabled    bool   // true if MAINTENANT_DISABLE_TELEMETRY is truthy
 	Endpoint    string // default: defaultEndpoint
-	DataDir     string // default: defaultDataDir
+	DataDir     string // no default: telemetry stays off when empty or unwritable
 	AppVersion  string // injected via ldflags at build time
 	Environment string // default: defaultEnvironment
 }
@@ -151,9 +149,6 @@ func (s *Service) IsActive() bool {
 func applyDefaults(cfg Config) Config {
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = defaultEndpoint
-	}
-	if cfg.DataDir == "" {
-		cfg.DataDir = defaultDataDir
 	}
 	if cfg.Environment == "" {
 		cfg.Environment = defaultEnvironment

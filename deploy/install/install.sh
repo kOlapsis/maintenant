@@ -18,6 +18,21 @@ SERVICE_FILE="${SERVICE_FILE:-/etc/systemd/system/maintenant.service}"
 GITHUB_REPO="kOlapsis/maintenant"
 GITHUB_API="https://api.github.com"
 SCRIPT_VERSION="__GIT_SHA__"
+NL='
+'
+
+# Kept in step with internal/app/flags.go by internal/app/install_script_test.go.
+BOOL_FLAGS="proxyLabels disableOsEolRefresh disableTelemetry allowPrivateWebhooks \
+mcp mcpAllowUnauthenticated grpc-tls-insecure grpc-insecure-skip-tls-verify embedded-agent"
+VALUE_FLAGS="addr baseUrl corsOrigins trustedProxies db organisationName runtime logLevel \
+maxBodySize updateInterval securityScoreThreshold licenseKey \
+smtpHost smtpPort smtpUsername smtpPassword smtpFrom \
+mcpClientId mcpClientSecret mcpAllowedRedirectUris k8sNamespaces k8sExcludeNamespaces \
+statusUrl containerDownAfter retentionSnapshots retentionInterval retentionBatchSize \
+mode server enrollment-token label nodeName grpc-listen grpc-url grpc-tls-cert grpc-tls-key \
+agentRateLimitPerSecond agentStaleThresholdSeconds \
+agentSpoolMaxMemoryBytes agentSpoolMaxDiskBytes agentSpoolMaxAgeSeconds \
+data-dir ca-cert database-url"
 
 # ── Color / output ────────────────────────────────────────────────────────────
 
@@ -38,11 +53,17 @@ abort() {
     exit "${2:-1}"
 }
 
+_fs() {
+    "$@" || abort "Filesystem operation failed: $*" 30
+}
+
 # ── Cleanup trap ──────────────────────────────────────────────────────────────
 
 TMPDIR_INSTALL="${TMPDIR_INSTALL:-}"
+BINARY_TMP=""
 cleanup() {
     if [ -n "${TMPDIR_INSTALL:-}" ]; then rm -rf "$TMPDIR_INSTALL"; fi
+    if [ -n "${BINARY_TMP:-}" ]; then rm -f "$BINARY_TMP"; fi
 }
 trap cleanup EXIT
 
@@ -57,18 +78,31 @@ Script flags:
   --uninstall           Remove Maintenant (keeps data and user by default)
   --purge               With --uninstall: also remove data dir, config, user
   --skip-cosign         Skip cosign signature check (SHA256 still required)
+  --binary <path>       Install this local binary instead of downloading one
+                        (offline install: no network access at all)
+  --sha256sums <path>   With --binary: check it against this SHA256SUMS file
   --help, -h            Show this help
 
-Binary configuration flags (written to /etc/maintenant/maintenant.env):
+Binary configuration flags (written to /etc/maintenant/maintenant.env).
+Value flags take "--flag value" or "--flag=value". Boolean flags take "--flag"
+or "--flag=true|false". Run "maintenant --help" for what each flag does.
   --addr <host:port>
   --baseUrl <url>
-  --db <path>
-  --organisationName <name>
   --corsOrigins <list>
+  --trustedProxies <list>
+  --db <path>
+  --containerDownAfter <duration>
+  --retentionSnapshots <duration>
+  --retentionInterval <duration>
+  --retentionBatchSize <int>
+  --organisationName <name>
+  --statusUrl <url>
   --runtime <docker|kubernetes>
+  --proxyLabels
   --logLevel <level>
   --maxBodySize <bytes>
   --updateInterval <duration>
+  --disableOsEolRefresh
   --securityScoreThreshold <int>
   --disableTelemetry
   --allowPrivateWebhooks
@@ -85,14 +119,11 @@ Binary configuration flags (written to /etc/maintenant/maintenant.env):
   --mcpAllowUnauthenticated
   --k8sNamespaces <list>
   --k8sExcludeNamespaces <list>
-  --statusUrl <url>
-  --retentionSnapshots <duration>
-  --retentionInterval <duration>
-  --retentionBatchSize <int>
   --mode <embedded|server|agent>
   --server <url>
   --enrollment-token <token>
   --label <name>
+  --nodeName <name>
   --grpc-listen <host:port>
   --grpc-url <url>
   --grpc-tls-cert <path>
@@ -101,9 +132,12 @@ Binary configuration flags (written to /etc/maintenant/maintenant.env):
   --grpc-insecure-skip-tls-verify
   --agentRateLimitPerSecond <int>
   --agentStaleThresholdSeconds <int>
-  --data-dir <path>
+  --agentSpoolMaxMemoryBytes <bytes>
+  --agentSpoolMaxDiskBytes <bytes>
+  --agentSpoolMaxAgeSeconds <int>
   --embedded-agent
   --ca-cert <path>
+  --data-dir <path>
   --database-url <postgres-url>
 
 Examples:
@@ -114,8 +148,11 @@ Examples:
   install.sh --mode agent --server grpcs://maintenant.example.com:8443 \
              --enrollment-token TOKEN --label web-01
 
+  # Offline, from a binary and its SHA256SUMS copied onto this host
+  install.sh --binary ./maintenant-v1.2.3-linux-amd64 --sha256sums ./SHA256SUMS
+
 Environment variables:
-  MAINTENANT_VERSION       Version to install (default: latest)
+  MAINTENANT_VERSION       Version to download (default: latest)
   MAINTENANT_INSTALL_DIR   Binary install path (default: /usr/local/bin)
   MAINTENANT_DATA_DIR      Data directory (default: /var/lib/maintenant)
   MAINTENANT_CONFIG_DIR    Config directory (default: /etc/maintenant)
@@ -142,9 +179,8 @@ detect_platform() {
 check_prereqs() {
     [ "$(id -u)" -eq 0 ] || abort "This script must be run as root (EUID 0)" 11
 
-    # curl or wget
-    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
-        abort "curl or wget is required" 12
+    if [ -z "${LOCAL_BINARY:-}" ] && ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+        abort "curl or wget is required (or install a local binary with --binary)" 12
     fi
 
     # No tar: the release assets are bare binaries, not archives.
@@ -250,8 +286,10 @@ download_and_verify() {
     BASE_URL="https://github.com/$GITHUB_REPO/releases/download/${VERSION}"
 
     log_step "Downloading $ASSET_NAME..."
-    fetch_url_to "$BASE_URL/$ASSET_NAME"       "$TMPDIR_INSTALL/$ASSET_NAME"
-    fetch_url_to "$BASE_URL/SHA256SUMS"        "$TMPDIR_INSTALL/SHA256SUMS"
+    fetch_url_to "$BASE_URL/$ASSET_NAME" "$TMPDIR_INSTALL/$ASSET_NAME" \
+        || abort "Failed to download $ASSET_NAME" 20
+    fetch_url_to "$BASE_URL/SHA256SUMS" "$TMPDIR_INSTALL/SHA256SUMS" \
+        || abort "Failed to download SHA256SUMS" 20
 
     log_step "Verifying SHA256 checksum..."
     (cd "$TMPDIR_INSTALL" && sha256sum -c SHA256SUMS --ignore-missing) \
@@ -267,7 +305,8 @@ download_and_verify() {
         # the signature either.
         log_warn "cosign 3 or later is required to read the release bundle — skipping signature verification"
     else
-        fetch_url_to "$BASE_URL/SHA256SUMS.bundle" "$TMPDIR_INSTALL/SHA256SUMS.bundle"
+        fetch_url_to "$BASE_URL/SHA256SUMS.bundle" "$TMPDIR_INSTALL/SHA256SUMS.bundle" \
+            || abort "Failed to download SHA256SUMS.bundle" 20
         log_step "Verifying cosign signature..."
         if ! cosign verify-blob \
             --bundle "$TMPDIR_INSTALL/SHA256SUMS.bundle" \
@@ -278,6 +317,42 @@ download_and_verify() {
         fi
         log_info "cosign signature verified"
     fi
+
+    BINARY_SRC="$TMPDIR_INSTALL/$ASSET_NAME"
+}
+
+# ── use_local_binary ──────────────────────────────────────────────────────────
+
+use_local_binary() {
+    [ -f "$LOCAL_BINARY" ] || abort "Binary not found: $LOCAL_BINARY" 2
+    TMPDIR_INSTALL=$(mktemp -d)
+    BINARY_SRC="$LOCAL_BINARY"
+    VERSION="local"
+
+    if [ -z "${LOCAL_SUMS:-}" ]; then
+        log_warn "No --sha256sums given: the integrity of $LOCAL_BINARY is not checked"
+        return
+    fi
+    [ -f "$LOCAL_SUMS" ] || abort "SHA256SUMS file not found: $LOCAL_SUMS" 2
+
+    log_step "Verifying SHA256 checksum against $LOCAL_SUMS..."
+    LOCAL_SUM=$(sha256sum "$LOCAL_BINARY" | cut -d ' ' -f 1)
+    MATCHED_ASSET=$(awk -v sum="$LOCAL_SUM" -v suffix="-linux-$ARCH" '
+        $1 == sum {
+            name = $2
+            sub(/^\*/, "", name)
+            if (name ~ /^maintenant-/ && substr(name, length(name) - length(suffix) + 1) == suffix) {
+                print name
+                exit
+            }
+        }' "$LOCAL_SUMS")
+    [ -n "$MATCHED_ASSET" ] \
+        || abort "SHA256 of $LOCAL_BINARY matches no linux-$ARCH binary listed in $LOCAL_SUMS" 21
+
+    VERSION="${MATCHED_ASSET#maintenant-}"
+    VERSION="${VERSION%-linux-"$ARCH"}"
+    log_info "Checksum matches $MATCHED_ASSET"
+    log_warn "Offline install: the cosign signature of $LOCAL_SUMS is not verified"
 }
 
 # ── ensure_user ───────────────────────────────────────────────────────────────
@@ -288,7 +363,8 @@ ensure_user() {
     else
         log_step "Creating system user $SERVICE_USER..."
         useradd -r -s /usr/sbin/nologin -d "$DATA_DIR" \
-            -c "Maintenant service user" "$SERVICE_USER"
+            -c "Maintenant service user" "$SERVICE_USER" \
+            || abort "Failed to create user $SERVICE_USER"
         log_info "User $SERVICE_USER created"
     fi
 
@@ -302,31 +378,126 @@ ensure_user() {
     fi
 }
 
+# ── resolve_paths ─────────────────────────────────────────────────────────────
+# A flag given now wins over the env file, which wins over the defaults.
+
+_env_file_value() {
+    [ -f "$2" ] || return 0
+    awk -v key="$1" -v q="'" '
+        {
+            line = $0
+            sub(/^[ \t]+/, "", line)
+            if (!match(line, /^[A-Za-z_][A-Za-z0-9_]*[ \t]*=/)) next
+            k = substr(line, 1, RLENGTH - 1)
+            sub(/[ \t]+$/, "", k)
+            if (k != key) next
+            v = substr(line, RLENGTH + 1)
+            sub(/^[ \t]+/, "", v)
+            sub(/[ \t]+$/, "", v)
+            if (length(v) >= 2 && (v ~ /^".*"$/ || v ~ ("^" q ".*" q "$"))) v = substr(v, 2, length(v) - 2)
+            found = v
+        }
+        END { printf "%s", found }
+    ' "$2"
+}
+
+_strip_trailing_slashes() {
+    p="$1"
+    while [ "$p" != "/" ]; do
+        case "$p" in
+            */) p="${p%/}" ;;
+            *) break ;;
+        esac
+    done
+    printf '%s' "$p"
+}
+
+resolve_paths() {
+    ENV_FILE="$CONFIG_DIR/maintenant.env"
+
+    if _has_binary_flag data-dir; then
+        DATA_DIR=$(_binary_flag_value data-dir)
+    else
+        from_file=$(_env_file_value MAINTENANT_DATA_DIR "$ENV_FILE")
+        [ -z "$from_file" ] || DATA_DIR="$from_file"
+    fi
+    DATA_DIR=$(_strip_trailing_slashes "$DATA_DIR")
+    case "$DATA_DIR" in
+        /?*) ;;
+        *) abort "The data directory must be an absolute path other than /: $DATA_DIR" 2 ;;
+    esac
+
+    if _has_binary_flag db; then
+        DB_PATH=$(_binary_flag_value db)
+    else
+        DB_PATH=$(_env_file_value MAINTENANT_DB "$ENV_FILE")
+    fi
+    [ -n "$DB_PATH" ] || DB_PATH="./maintenant.db"
+    while :; do
+        case "$DB_PATH" in
+            ./*) DB_PATH="${DB_PATH#./}" ;;
+            *) break ;;
+        esac
+    done
+    case "$DB_PATH" in
+        /*) ;;
+        *) DB_PATH="$DATA_DIR/$DB_PATH" ;;
+    esac
+    DB_DIR=$(dirname "$DB_PATH")
+
+    for unit_path in "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DB_DIR"; do
+        case "$unit_path" in
+            *[!A-Za-z0-9._/@+-]*)
+                abort "Unsupported character in path (letters, digits and ._/@+- only): $unit_path" 2 ;;
+        esac
+    done
+}
+
+# ── prepare_dirs ──────────────────────────────────────────────────────────────
+
+_refuse_foreign_dir() {
+    [ -d "$1" ] || return 0
+    [ -z "$(find "$1" -prune -user "$SERVICE_USER" 2>/dev/null)" ] || return 0
+    [ -z "$(ls -A "$1")" ] && return 0
+    abort "$1 already exists, is not empty and does not belong to $SERVICE_USER: use a dedicated directory, or chown it to $SERVICE_USER first" 30
+}
+
+_own_dir() {
+    _fs mkdir -p "$1"
+    _fs chown "$SERVICE_USER:$SERVICE_USER" "$1"
+    _fs chmod 0750 "$1"
+}
+
+prepare_dirs() {
+    _refuse_foreign_dir "$DATA_DIR"
+    _refuse_foreign_dir "$DB_DIR"
+
+    _fs mkdir -p "$CONFIG_DIR"
+    _fs chown "root:$SERVICE_USER" "$CONFIG_DIR"
+    _fs chmod 0750 "$CONFIG_DIR"
+
+    _own_dir "$DATA_DIR"
+    [ "$DB_DIR" = "$DATA_DIR" ] || _own_dir "$DB_DIR"
+}
+
 # ── install_binary ────────────────────────────────────────────────────────────
 
 install_binary() {
     log_step "Installing binary..."
-    mkdir -p "$DATA_DIR"
-    chown "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR"
-    chmod 0750 "$DATA_DIR"
-
-    mkdir -p "$CONFIG_DIR"
-    chown "root:$SERVICE_USER" "$CONFIG_DIR"
-    chmod 0750 "$CONFIG_DIR"
-
-    install -m 0755 -o root -g root \
-        "$TMPDIR_INSTALL/maintenant-${VERSION}-linux-${ARCH}" \
-        "$INSTALL_DIR/maintenant"
+    BINARY_TMP=$(mktemp "$INSTALL_DIR/.maintenant.XXXXXX") \
+        || abort "Cannot create a temporary file in $INSTALL_DIR" 30
+    _fs install -m 0755 -o root -g root "$BINARY_SRC" "$BINARY_TMP"
+    _fs mv -f "$BINARY_TMP" "$INSTALL_DIR/maintenant"
+    BINARY_TMP=""
     log_info "Binary installed to $INSTALL_DIR/maintenant"
 }
 
 # ── install_service ───────────────────────────────────────────────────────────
 
-install_service() {
-    [ -z "${NO_SERVICE:-}" ] || { log_info "Skipping service installation (--no-service)"; return; }
-
-    log_step "Installing systemd service..."
-    cat > "$SERVICE_FILE" <<'UNIT'
+render_unit() {
+    rw_paths="$DATA_DIR"
+    [ "$DB_DIR" = "$DATA_DIR" ] || rw_paths="$rw_paths $DB_DIR"
+    cat <<UNIT
 [Unit]
 Description=Maintenant infrastructure monitoring
 Documentation=https://docs.maintenant.dev
@@ -335,11 +506,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=maintenant
-Group=maintenant
-EnvironmentFile=-/etc/maintenant/maintenant.env
-ExecStart=/usr/local/bin/maintenant
-WorkingDirectory=/var/lib/maintenant
+User=$SERVICE_USER
+Group=$SERVICE_USER
+Environment=MAINTENANT_DATA_DIR=$DATA_DIR
+EnvironmentFile=-$CONFIG_DIR/maintenant.env
+ExecStart=$INSTALL_DIR/maintenant
+WorkingDirectory=$DATA_DIR
 Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65536
@@ -347,7 +519,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/maintenant
+ReadWritePaths=$rw_paths
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
@@ -358,9 +530,29 @@ LockPersonality=true
 [Install]
 WantedBy=multi-user.target
 UNIT
+}
 
-    systemctl daemon-reload
-    systemctl enable --now maintenant
+install_service() {
+    if [ -n "${NO_SERVICE:-}" ]; then
+        log_info "Skipping service installation (--no-service)"
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet maintenant 2>/dev/null; then
+            log_warn "maintenant.service still runs the previous binary: systemctl restart maintenant"
+        fi
+        return
+    fi
+
+    log_step "Installing systemd service..."
+    render_unit > "$SERVICE_FILE" || abort "Failed to write $SERVICE_FILE" 30
+
+    systemctl daemon-reload || abort "systemctl daemon-reload failed" 31
+    systemctl enable maintenant || abort "systemctl enable maintenant failed" 31
+    if systemctl is-active --quiet maintenant; then
+        log_step "Restarting the service on the new binary..."
+        systemctl restart maintenant || abort "systemctl restart maintenant failed" 31
+    else
+        log_step "Starting the service..."
+        systemctl start maintenant || abort "systemctl start maintenant failed" 31
+    fi
 
     log_step "Waiting for service to become active..."
     i=0
@@ -381,7 +573,12 @@ UNIT
 # ── print_summary ─────────────────────────────────────────────────────────────
 
 print_summary() {
-    LISTEN_ADDR="${MAINTENANT_ADDR:-127.0.0.1:8080}"
+    if _has_binary_flag addr; then
+        LISTEN_ADDR=$(_binary_flag_value addr)
+    else
+        LISTEN_ADDR=$(_env_file_value MAINTENANT_ADDR "$CONFIG_DIR/maintenant.env")
+    fi
+    [ -n "$LISTEN_ADDR" ] || LISTEN_ADDR="127.0.0.1:8080"
     cat <<EOF
 
   ╔══════════════════════════════════════════════════════╗
@@ -401,8 +598,8 @@ EOF
 
 # ── parse_maintenant_flags ────────────────────────────────────────────────────
 # Separates script-own flags from binary configuration flags.
-# Sets: NO_SERVICE, DO_UNINSTALL, DO_PURGE, SKIP_COSIGN
-# Populates: BINARY_FLAGS associative-style via BINARY_FLAG_KEYS / BINARY_FLAG_VALS
+# Sets: NO_SERVICE, DO_UNINSTALL, DO_PURGE, SKIP_COSIGN, LOCAL_BINARY, LOCAL_SUMS
+# Populates: BINARY_FLAG_KEYS / BINARY_FLAG_VALS, two parallel line lists
 
 BINARY_FLAG_KEYS=""
 BINARY_FLAG_VALS=""
@@ -416,17 +613,33 @@ _store_binary_flag() {
 "
 }
 
-_get_binary_flag_val() {
-    # Returns value for key $1 (newline-separated parallel lists)
-    key="$1"
-    line=0
-    printf '%s\n' "$BINARY_FLAG_KEYS" | while IFS= read -r k; do
-        line=$((line + 1))
-        if [ "$k" = "$key" ]; then
-            printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${line}p"
-            return
-        fi
-    done
+_binary_flag_line() {
+    printf '%s\n' "$BINARY_FLAG_KEYS" | awk -v want="$1" '$0 == want { n = NR } END { print n + 0 }'
+}
+
+_has_binary_flag() {
+    [ "$(_binary_flag_line "$1")" -gt 0 ]
+}
+
+_binary_flag_value() {
+    line_no=$(_binary_flag_line "$1")
+    [ "$line_no" -gt 0 ] || return 0
+    printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${line_no}p"
+}
+
+_in_list() {
+    case " $2 " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
+_bool_value() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        1|t|true|y|yes|on) printf 'true' ;;
+        0|f|false|n|no|off) printf 'false' ;;
+        *) return 1 ;;
+    esac
 }
 
 parse_maintenant_flags() {
@@ -436,6 +649,8 @@ parse_maintenant_flags() {
     # Kept from the environment when already set: MAINTENANT_SKIP_COSIGN and the
     # test harness both drive it that way.
     SKIP_COSIGN="${SKIP_COSIGN:-${MAINTENANT_SKIP_COSIGN:-}}"
+    LOCAL_BINARY=""
+    LOCAL_SUMS=""
     BINARY_FLAG_KEYS=""
     BINARY_FLAG_VALS=""
 
@@ -448,26 +663,52 @@ parse_maintenant_flags() {
             --help|-h)       usage; exit 0 ;;
             --*)
                 FLAG="${1#--}"
-                # Boolean binary flags (no value)
                 case "$FLAG" in
-                    disableTelemetry|allowPrivateWebhooks|mcp|mcpAllowUnauthenticated|\
-                    embedded-agent|grpc-tls-insecure|grpc-insecure-skip-tls-verify)
-                        _store_binary_flag "$FLAG" "true"
-                        shift
-                        ;;
-                    *)
-                        # Value-taking flag: require next argument
-                        [ $# -gt 1 ] || abort "Flag --$FLAG requires a value" 2
-                        _store_binary_flag "$FLAG" "$2"
-                        shift 2
-                        ;;
+                    *=*) VAL="${FLAG#*=}"; FLAG="${FLAG%%=*}"; INLINE=1 ;;
+                    *)   VAL=""; INLINE="" ;;
                 esac
+                shift
+
+                if [ "$FLAG" = binary ] || [ "$FLAG" = sha256sums ]; then
+                    if [ -z "$INLINE" ]; then
+                        [ $# -gt 0 ] || abort "Flag --$FLAG requires a path" 2
+                        VAL="$1"
+                        shift
+                    fi
+                    [ -n "$VAL" ] || abort "Flag --$FLAG requires a path" 2
+                    if [ "$FLAG" = binary ]; then LOCAL_BINARY="$VAL"; else LOCAL_SUMS="$VAL"; fi
+                    continue
+                fi
+
+                if _in_list "$FLAG" "$BOOL_FLAGS"; then
+                    [ -n "$INLINE" ] || VAL=true
+                    VAL=$(_bool_value "$VAL") \
+                        || abort "Flag --$FLAG takes no value or =true/=false" 2
+                elif _in_list "$FLAG" "$VALUE_FLAGS"; then
+                    if [ -z "$INLINE" ]; then
+                        [ $# -gt 0 ] || abort "Flag --$FLAG requires a value" 2
+                        case "$1" in
+                            --*) abort "Flag --$FLAG requires a value (write --$FLAG=VALUE for a value starting with --)" 2 ;;
+                        esac
+                        VAL="$1"
+                        shift
+                    fi
+                    [ -n "$VAL" ] || abort "Flag --$FLAG requires a value" 2
+                else
+                    abort "Unknown argument: --$FLAG" 2
+                fi
+                case "$VAL" in
+                    *"$NL"*) abort "Flag --$FLAG: the value must fit on one line" 2 ;;
+                esac
+                _store_binary_flag "$FLAG" "$VAL"
                 ;;
             *)
                 abort "Unknown argument: $1" 2
                 ;;
         esac
     done
+
+    [ -z "$LOCAL_SUMS" ] || [ -n "$LOCAL_BINARY" ] || abort "--sha256sums requires --binary" 2
 }
 
 # ── flag_to_env ───────────────────────────────────────────────────────────────
@@ -485,7 +726,8 @@ flag_to_env() {
 }
 
 # ── merge_env_file ────────────────────────────────────────────────────────────
-# Implements R7: idempotent key-by-key merge into /etc/maintenant/maintenant.env
+# Key-by-key merge into /etc/maintenant/maintenant.env: the keys passed as flags
+# are replaced or appended, every other line of the file is kept as it is.
 
 merge_env_file() {
     ENV_FILE="$CONFIG_DIR/maintenant.env"
@@ -495,80 +737,83 @@ merge_env_file() {
 # Script version: $SCRIPT_VERSION
 # Edit this file directly then: systemctl restart maintenant"
 
-    # Build new key=value pairs from provided binary flags
+    idx=0
     printf '%s\n' "$BINARY_FLAG_KEYS" | while IFS= read -r flagname; do
+        idx=$((idx + 1))
         [ -n "$flagname" ] || continue
-        envname=$(flag_to_env "$flagname")
-        # Use parallel list trick — find index
-        idx=0
-        printf '%s\n' "$BINARY_FLAG_KEYS" | while IFS= read -r k; do
-            idx=$((idx + 1))
-            if [ "$k" = "$flagname" ]; then
-                val=$(printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${idx}p")
-                printf '%s=%s\n' "$envname" "$val"
-                break
-            fi
-        done
+        printf '%s=%s\n' "$(flag_to_env "$flagname")" \
+            "$(printf '%s\n' "$BINARY_FLAG_VALS" | sed -n "${idx}p")"
     done > "$TMPDIR_INSTALL/new_flags.env"
 
     if [ ! -f "$ENV_FILE" ]; then
-        # First creation
         {
             printf '%s\n\n' "$HEADER"
             cat "$TMPDIR_INSTALL/new_flags.env"
-        } > "$ENV_FILE"
-        chown "root:$SERVICE_USER" "$ENV_FILE"
-        chmod 0640 "$ENV_FILE"
+        } > "$TMPDIR_INSTALL/merged.env" || abort "Cannot write $TMPDIR_INSTALL/merged.env" 30
+        _install_env_file
         log_info "Created $ENV_FILE"
         return
     fi
 
-    # Merge: read existing, override with new
-    KEYS_COUNT=0
-    UPDATES=0
-
-    # Read existing non-comment lines
-    grep -E '^MAINTENANT_[A-Z_]+=.*$' "$ENV_FILE" > "$TMPDIR_INSTALL/existing.env" 2>/dev/null || true
-
-    # Build merged file
     {
         printf '%s\n\n' "$HEADER"
+        awk -v counts="$TMPDIR_INSTALL/merge.counts" '
+            BEGIN { head = 1 }
+            FILENAME == ARGV[1] {
+                i = index($0, "=")
+                if (i > 1) {
+                    k = substr($0, 1, i - 1)
+                    if (!(k in val)) order[++n] = k
+                    val[k] = substr($0, i + 1)
+                }
+                next
+            }
+            head && /^# (Generated by install\.sh$|Last updated: |Script version: |Edit this file directly then: )/ { generated = 1; next }
+            head && generated && /^[ \t]*$/ { head = 0; next }
+            { head = 0 }
+            {
+                line = $0
+                sub(/^[ \t]+/, "", line)
+                if (match(line, /^[A-Za-z_][A-Za-z0-9_]*[ \t]*=/)) {
+                    k = substr(line, 1, RLENGTH - 1)
+                    sub(/[ \t]+$/, "", k)
+                    if (k in val) {
+                        print k "=" val[k]
+                        written[k] = 1
+                        updated++
+                        next
+                    }
+                }
+                print
+            }
+            END {
+                for (j = 1; j <= n; j++) {
+                    if (!(order[j] in written)) {
+                        print order[j] "=" val[order[j]]
+                        added++
+                    }
+                }
+                print (updated + 0) " " (added + 0) > counts
+            }
+        ' "$TMPDIR_INSTALL/new_flags.env" "$ENV_FILE"
+    } > "$TMPDIR_INSTALL/merged.env" || abort "Cannot merge into $ENV_FILE" 30
 
-        # Start with existing entries, override if in new_flags
-        while IFS='=' read -r key rest; do
-            [ -n "$key" ] || continue
-            val="$rest"
-            # Check if this key appears in new flags
-            new_val=$(grep "^${key}=" "$TMPDIR_INSTALL/new_flags.env" | cut -d= -f2-)
-            if [ -n "$new_val" ]; then
-                printf '%s=%s\n' "$key" "$new_val"
-                UPDATES=$((UPDATES + 1))
-            else
-                printf '%s=%s\n' "$key" "$val"
-            fi
-            KEYS_COUNT=$((KEYS_COUNT + 1))
-        done < "$TMPDIR_INSTALL/existing.env"
+    read -r UPDATED ADDED < "$TMPDIR_INSTALL/merge.counts"
+    _install_env_file
+    log_info "$ENV_FILE updated (${UPDATED} keys replaced, ${ADDED} keys added, other lines kept)"
+}
 
-        # Add new keys not already in existing
-        while IFS='=' read -r key rest; do
-            [ -n "$key" ] || continue
-            if ! grep -q "^${key}=" "$TMPDIR_INSTALL/existing.env" 2>/dev/null; then
-                printf '%s=%s\n' "$key" "$rest"
-                KEYS_COUNT=$((KEYS_COUNT + 1))
-            fi
-        done < "$TMPDIR_INSTALL/new_flags.env"
-    } > "$TMPDIR_INSTALL/merged.env"
-
-    mv "$TMPDIR_INSTALL/merged.env" "$ENV_FILE"
-    chown "root:$SERVICE_USER" "$ENV_FILE"
-    chmod 0640 "$ENV_FILE"
-    log_info "$ENV_FILE updated (${KEYS_COUNT} keys preserved, ${UPDATES} keys updated)"
+_install_env_file() {
+    _fs chown "root:$SERVICE_USER" "$TMPDIR_INSTALL/merged.env"
+    _fs chmod 0640 "$TMPDIR_INSTALL/merged.env"
+    _fs mv -f "$TMPDIR_INSTALL/merged.env" "$ENV_FILE"
 }
 
 # ── uninstall ─────────────────────────────────────────────────────────────────
 
 uninstall() {
     log_step "Uninstalling Maintenant..."
+    resolve_paths
 
     # Stop and disable service
     systemctl stop maintenant 2>/dev/null || true
@@ -623,6 +868,10 @@ _purge() {
         rm -rf "$DATA_DIR"
         log_info "Removed $DATA_DIR"
     fi
+    case "$DB_DIR/" in
+        "$DATA_DIR"/*) ;;
+        *) [ ! -d "$DB_DIR" ] || log_warn "Database directory kept, it lies outside $DATA_DIR: $DB_DIR" ;;
+    esac
     if [ -d "$CONFIG_DIR" ]; then
         rm -rf "$CONFIG_DIR"
         log_info "Removed $CONFIG_DIR"
@@ -670,10 +919,15 @@ main() {
     log_step "Starting Maintenant installation"
     detect_platform
     check_prereqs
-    resolve_version
-    download_and_verify
+    resolve_paths
+    if [ -n "$LOCAL_BINARY" ]; then
+        use_local_binary
+    else
+        resolve_version
+        download_and_verify
+    fi
     ensure_user
-    install_binary
+    prepare_dirs
 
     # Apply binary flags to env file if any were provided
     if [ -n "$BINARY_FLAG_KEYS" ]; then
@@ -681,6 +935,7 @@ main() {
         merge_env_file
     fi
 
+    install_binary
     install_service
     print_summary
 }

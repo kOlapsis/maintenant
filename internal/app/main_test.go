@@ -13,5 +13,9 @@ import (
 
 func TestMain(m *testing.M) {
 	extension.Register(tiers.Policy{}, nil)
+	// Tests that call App.Start must never report to the real telemetry endpoint.
+	if err := os.Setenv("DO_NOT_TRACK", "1"); err != nil {
+		panic(err)
+	}
 	os.Exit(m.Run())
 }

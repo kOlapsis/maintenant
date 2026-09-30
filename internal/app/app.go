@@ -725,6 +725,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// --- Telemetry (SHM SDK, opt-out via MAINTENANT_DISABLE_TELEMETRY) ---
 	a.telemetrySvc = telemetry.New(telemetry.Config{
 		Disabled:   cfg.DisableTelemetry,
+		DataDir:    filepath.Join(filepath.Dir(cfg.DBPath), "shm"),
 		AppVersion: cfg.Version,
 	}, telemetry.Deps{
 		Containers:       containerStore,

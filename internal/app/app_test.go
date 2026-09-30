@@ -1,7 +1,9 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -34,6 +36,32 @@ func TestNew_DegradedBoot(t *testing.T) {
 	a, err := app.New(cfg, logger)
 	require.NoError(t, err, "app.New() must not return an error when runtime is unreachable")
 	assert.NotNil(t, a, "app.New() must return a non-nil *App")
+}
+
+func TestNew_TelemetryDataDirSitsNextToTheDatabase(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg, _ := degradedEnv(t, tmpDir)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+
+	_, err := app.New(cfg, logger)
+	require.NoError(t, err)
+
+	want := filepath.Join(tmpDir, "shm")
+	assert.DirExists(t, want)
+	var found bool
+	for _, line := range bytes.Split(logs.Bytes(), []byte("\n")) {
+		var rec struct {
+			Msg     string `json:"msg"`
+			DataDir string `json:"datadir"`
+		}
+		if json.Unmarshal(line, &rec) != nil || rec.Msg != "telemetry enabled" {
+			continue
+		}
+		found = true
+		assert.Equal(t, want, rec.DataDir)
+	}
+	assert.True(t, found, "telemetry must start with a directory next to the database")
 }
 
 // TestStart_DegradedMode (T008): Start() must launch non-container services and expose
