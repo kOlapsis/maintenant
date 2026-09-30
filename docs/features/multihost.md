@@ -101,7 +101,7 @@ Omit both cert and key. The server generates a self-signed certificate in-memory
 
 ### Embedded agent
 
-With `--embedded-agent` (`MAINTENANT_EMBEDDED_AGENT`), a server also runs an agent of its own that enrolls itself under the label `embedded`, with its state in an `embedded-agent` directory next to the database. It dials the listener over TLS with verification off, so it cannot be combined with `MAINTENANT_GRPC_TLS_INSECURE=true`. It needs `--mode=server` and a Personal or Pro edition, and is not started in demo mode.
+With `--embedded-agent` (`MAINTENANT_EMBEDDED_AGENT`), a server also runs an agent of its own that enrolls itself under the label `embedded`, with its state in an `embedded-agent` directory next to the database. It dials the local listener with the scheme the listener serves: over TLS with verification off by default, and over plaintext h2c when `MAINTENANT_GRPC_TLS_INSECURE=true`. It needs `--mode=server` and a Personal or Pro edition, and is not started in demo mode. Unlike the server's own runtime, this agent is an enrolled host and counts toward the host limit.
 
 ---
 
@@ -117,13 +117,12 @@ Or via API:
 
 ```
 POST /api/v1/agents/enrollment-tokens
-Authorization: Bearer <session>
 Content-Type: application/json
 
 { "ttl_hours": 24 }
 ```
 
-`ttl_hours` defaults to 24 and is capped at 168 (7 days). When the host limit is already reached, the request is refused with `409 HOST_LIMIT_REACHED` before any token is created.
+`ttl_hours` defaults to 24 and is capped at 168 (7 days). When the host limit is already reached, the request is refused with `409 HOST_LIMIT_REACHED` before any token is created. The limit is checked again when the agent enrolls, which leaves the token unused if it fails.
 
 The response contains:
 - `token`: the cleartext token, shown **once only**
@@ -159,7 +158,7 @@ On first boot the agent:
 3. Calls `RegisterAgent` on the server with the token and public key
 4. Marks itself as enrolled and enters the streaming loop
 
-The `--label` flag sets a human-readable display name (max 64 chars), used at enrollment only: rename the host later from the Agents page. If omitted, the hostname is used.
+The `--label` flag sets a human-readable display name (max 64 chars), used at enrollment only: rename the host later from the Agents page. If omitted, or longer than 64 characters, the hostname is used.
 
 On Kubernetes, one agent watches the whole cluster and counts as **one host**. It runs as a single-replica Deployment (strategy `Recreate`) with a 1 Gi volume for its data directory, a hardened pod (non-root, read-only root filesystem, no capabilities) and the read-only RBAC of the [Kubernetes guide](../guides/kubernetes.md). The generated manifest sets no label, so the agent appears under the hostname `maintenant-agent`; rename it from the Agents page.
 
@@ -280,7 +279,9 @@ keyed by the event, so a duplicate rewrites the same row instead of adding one.
 The spool is bounded so it cannot threaten the host it monitors. Past the memory
 budget it spills to disk; past the disk budget the **oldest** events are dropped
 in favour of the recent ones, and the count is reported to the server. Anything
-older than the retention window is never replayed.
+older than the retention window is never replayed. If the spool database cannot
+be opened, the agent logs a warning and keeps the queue in memory only, so what
+is queued does not survive a restart.
 
 The defaults absorb roughly an hour of outage on an ordinary host. Raise them if
 your agents sit behind a link that fails for longer, and set both budgets to `0`
@@ -298,11 +299,11 @@ badge clears once the agent is back in step.
 
 ## Per-Host Resource Metrics
 
-In addition to per-container stats, each agent reports the **machine-level** CPU, memory and disk usage of the host it runs on. The central server keeps the latest sample for every host in memory (local server + each agent) and exposes it to the UI. A host that has not reported for 35 seconds shows no current metrics.
+In addition to per-container stats, each agent reports the **machine-level** CPU, memory and disk usage of the host it runs on. The central server keeps the latest sample for every host in memory (local server + each agent) and exposes it to the UI. A host that has not reported for 35 seconds shows no current metrics. The latest sample of each container of an agent is kept the same way, for 35 seconds, so the containers of agents appear in the live views of the resources API next to the server's own.
 
 ### Host selector and badge
 
-As soon as one agent is enrolled, a **host scope** selector appears in the header with the entries *All resources*, *Local* and one per agent. Picking a host scopes every list (containers, endpoints, certificates, heartbeats, workloads, pods, services, tasks, nodes), the dashboard gauges (CPU / MEM / DISK) and the **top consumers** widget to that machine. With no agent enrolled the selector is hidden and behaviour is unchanged.
+As soon as one agent is enrolled, a **host scope** selector appears at the top of the sidebar with the entries *All resources*, *Local* and one per active agent. Picking a host scopes every list (containers, endpoints, certificates, heartbeats, workloads, pods, services, tasks, nodes), the dashboard gauges (CPU / MEM / DISK) and the **top consumers** widget to that machine. With no agent enrolled the selector is hidden and behaviour is unchanged.
 
 Each container card carries a host badge (hostname / label) so you can tell at a glance which machine a workload runs on. The badge is shown as soon as an agent is enrolled and no host is selected; once you pick a host, every row is on it and the badge is hidden.
 
@@ -310,9 +311,10 @@ Each container card carries a host badge (hostname / label) so you can tell at a
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/resources/hosts` | Lists every host (local + agents) with its current CPU / memory / disk and running-container count. |
-| `GET /api/v1/resources/summary?agent_id=local\|<id>` | Resource summary scoped to one host. Omitting `agent_id` returns the local server. |
-| `GET /api/v1/resources/top?...&agent_id=local\|<id>` | Top consumers scoped to one host. Omitting `agent_id` aggregates all hosts over a `period`; the live ranking (no `period`) covers the server's own containers. |
+| `GET /api/v1/resources/hosts` | Lists every host (local + agents) with its current CPU / memory / disk and count of containers with a current sample. Enrolled agents that have not reported yet appear as unavailable. |
+| `GET /api/v1/resources/summary?agent_id=local\|<id>` | Resource summary scoped to one host: container count and network rates from the current container samples, plus the host CPU, memory and disk. Omitting `agent_id` returns the local server. |
+| `GET /api/v1/resources/top?...&agent_id=local\|<id>` | Top consumers, live or over a `period`. Omitting `agent_id` ranks the containers of all hosts, the server's own and those of agents. |
+| `GET /api/v1/containers/{id}/resources/current` | Current sample of one container, local or on an agent. |
 
 ### Requirements
 
@@ -348,7 +350,7 @@ From **Agents** in the web UI:
 |--------|--------|
 | **Revoke** | Closes the active stream immediately. Agent receives `PermissionDenied: agent_revoked` and stops retrying. |
 | **Delete** | Revokes the stream and purges all historical events for that agent in a single transaction. Irreversible. |
-| **Edit label** | Updates the display name (max 64 chars). Takes effect on next UI refresh. |
+| **Edit label** | Updates the display name (max 64 chars). Open pages follow through the `agent.updated` event. |
 
 Agent status is updated in real time via SSE. The `connection_state` field reflects whether the agent is actively streaming (`connected`) or has not been seen for more than 60 seconds (`disconnected`, the `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` default).
 
@@ -395,11 +397,11 @@ Available for development and testing against self-signed certificates. A boot-t
 | `MAINTENANT_NODE_NAME` / `--nodeName` | _(found from the pod)_ | Kubernetes node the agent runs on (agent) |
 | `MAINTENANT_RUNTIME` / `--runtime` | _(auto-detected)_ | Override runtime detection: `docker`, `swarm` (agent only) or `kubernetes` |
 | `MAINTENANT_DATA_DIR` / `--data-dir` | `/var/lib/maintenant` | Directory of the agent's identity, liveness file and spool. The image healthcheck reads the variable, so prefer it over the flag |
-| `MAINTENANT_CA_CERT` / `--ca-cert` | none | PEM bundle of extra root CAs added to the system store, used by the agent for its server, its probes and its scans |
+| `MAINTENANT_CA_CERT` / `--ca-cert` | none | PEM bundle of extra root CAs added to the system store for every outbound HTTPS and gRPC connection. An agent uses it for its server, its probes and its scans. A bundle that cannot be read, or holds no valid certificate, stops startup |
 | `MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY` / `--grpc-insecure-skip-tls-verify` | `false` | Skip TLS cert verification (agent, dev only) |
 | `MAINTENANT_PROXY_LABELS` / `--proxyLabels` | `false` | Create endpoints from Traefik and Caddy labels. Read by each agent from its own environment, see [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy) |
 | `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES` / `--agentSpoolMaxMemoryBytes` | `16777216` (16 MB) | Buffer held in memory before spilling to disk (agent) |
-| `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` / `--agentSpoolMaxDiskBytes` | `134217728` (128 MB) | Spool ceiling; past it the oldest events are dropped. `0` on both budgets disables the spool |
-| `MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS` / `--agentSpoolMaxAgeSeconds` | `86400` (24 h) | Age past which a queued event is neither kept nor replayed |
+| `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` / `--agentSpoolMaxDiskBytes` | `134217728` (128 MB) | Spool ceiling; past it the oldest events are dropped. `0` on both budgets disables the spool, and `0` alone lifts the ceiling |
+| `MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS` / `--agentSpoolMaxAgeSeconds` | `86400` (24 h) | Age past which a queued event is neither kept nor replayed. `0` sets no age limit |
 
 A spool setting that is not a non-negative whole number stops the agent at startup instead of falling back to its default.

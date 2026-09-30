@@ -18,13 +18,13 @@ Each check records:
 
 An endpoint is `degraded` when the host answers but its TLS certificate is not trusted (see [Untrusted certificates](certificates.md#untrusted-certificates-are-degraded-not-down)), and `unknown` until its first check.
 
-When the container behind a label-discovered endpoint disappears, the endpoint
+When the container behind a label-discovered endpoint disappears, or the label is removed, the endpoint
 is **retired**: checks stop and it leaves the list. Retirement happens on the
 container's `destroy` event, and again at every startup for anything that
 vanished while the instance was down.
 
 Retired endpoints are hidden by default; the **Include retired** filter (`include_inactive=true` in the API) brings
-them back so you can delete them without waiting for retention to do it. A
+them back so you can delete them without waiting for retention, which removes them for good 30 days after they were last seen. A
 label endpoint whose container is still running cannot be deleted: the next
 discovery pass would recreate it. Remove the label, or the container.
 
@@ -49,7 +49,7 @@ That is it. maintenant starts checking `http://api:3000/health` every 15 seconds
 
 ## HTTP Checks
 
-HTTP checks send a request to the configured URL and validate the response status code.
+HTTP checks send a request to the configured URL and validate the response status code. The URL needs an `http://` or `https://` scheme and a host.
 
 ```yaml
 labels:
@@ -77,7 +77,7 @@ A value that cannot be parsed is ignored and the default applies; a malformed ta
 
 ## TCP Checks
 
-TCP checks attempt to establish a connection to the configured host and port.
+TCP checks attempt to establish a connection to the configured host and port. The target is `host:port`, with a numeric port.
 
 ```yaml
 labels:
@@ -166,7 +166,8 @@ POST /api/v1/endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/endpoints` | List endpoints (filters `status`, `type`, `source`, `container`, `orchestration_group`, `agent_id`, `include_inactive`) |
+| `GET` | `/api/v1/endpoints` | List endpoints (filters `status`, `type`, `source`, `container` by container name, `agent_id`, `include_inactive`) |
+| `GET` | `/api/v1/containers/{id}/endpoints` | Endpoints of one container |
 | `POST` | `/api/v1/endpoints` | Create a manual endpoint |
 | `GET` | `/api/v1/endpoints/{id}` | Endpoint details and uptime percentages |
 | `PUT` | `/api/v1/endpoints/{id}` | Update a manual endpoint (`400 NOT_STANDALONE` for a label endpoint) |
@@ -179,17 +180,37 @@ Only endpoints the server probes can be checked on demand: an endpoint probed by
 
 Community is limited to **10 manual endpoints**. Endpoints created from labels are not counted, and Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
 
+!!! note "Probes are not restricted to public addresses"
+    A check can target a private, loopback or link-local address: that is how a container is reached by its name on the Docker network. maintenant logs a warning, once per endpoint, when a target resolves to a loopback, link-local or cloud metadata address. Since the API has no authentication of its own, keep it behind a reverse proxy (see [Security](../security.md)).
+
 ---
 
 ## Endpoints from reverse proxy labels
 
-If your containers already carry Traefik or Caddy docker-proxy labels, set `MAINTENANT_PROXY_LABELS=true` and maintenant creates an HTTP endpoint from them, with no `maintenant.endpoint.*` label to write. A container gets **one** endpoint: when its labels route several hostnames, maintenant keeps one URL, preferring routes without an authentication middleware, then the shortest path, then HTTPS. The expected status defaults to `2xx,3xx` (unless the container sets `maintenant.endpoint.http.expected-status`), because a protected or redirecting route answers with a redirect, and a Caddy site served with `tls internal` is probed without TLS verification. A container that declares its own endpoint target keeps full control, and `maintenant.proxy-labels: "false"` opts a container out. See [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy).
+If your containers already carry Traefik or Caddy docker-proxy labels, set `MAINTENANT_PROXY_LABELS=true` and maintenant creates an HTTP endpoint from them, with no `maintenant.endpoint.*` label to write. A container gets **one** endpoint: when its labels route several hostnames, maintenant keeps one URL, preferring routes without an authentication middleware, then the shortest path, then HTTPS. The expected status defaults to `2xx,3xx` (unless the container sets `maintenant.endpoint.http.expected-status`), because a protected or redirecting route answers with a redirect, and a Caddy site served with `tls internal` is probed without TLS verification. The HTTPS hostname of the retained route is also added to the container's certificate monitors (see [TLS Certificate Monitoring](certificates.md#docker-labels)). A container that declares its own endpoint target keeps full control, `maintenant.proxy-labels: "false"` opts a container out, and `traefik.enable: "false"` leaves out its Traefik routes. See [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy).
 
 ---
 
 ## Containers on remote hosts
 
 Endpoints declared on the containers of a [remote agent](multihost.md) are probed by that agent, from its own network, at the interval and timeout their labels set. The agent re-reads the labels every 30 seconds. The server never probes them, and while an agent is offline its endpoints are flagged stale. Results an agent could not deliver during an outage are replayed afterwards and feed the uptime history only.
+
+---
+
+## Events
+
+Endpoint events are broadcast on the SSE stream (`GET /api/v1/containers/events`), for label, manual and agent-probed endpoints alike:
+
+| Event | Sent when | Main fields |
+|-------|-----------|-------------|
+| `endpoint.discovered` | A label endpoint is found or a manual one is created | `endpoint_id`, `container_name`, `endpoint_type`, `target` |
+| `endpoint.status_changed` | The status moves between `up`, `down`, `degraded` and `unknown` | `endpoint_id`, `container_name`, `target`, `previous_status`, `new_status`, `response_time_ms`, `http_status`, `error`, `timestamp`, `agent_id` |
+| `endpoint.removed` | An endpoint is retired or deleted | `endpoint_id`, `reason` (`label_removed`, `container_destroyed`, `container_gone` or `user_deleted`), and `container_name` except for `user_deleted` |
+| `endpoint.alert` | The failure threshold is reached | `endpoint_id`, `container_name`, `target`, `consecutive_failures`, `threshold`, `last_error`, `timestamp` |
+| `endpoint.recovery` | The recovery threshold is reached | `endpoint_id`, `container_name`, `target`, `consecutive_successes`, `threshold`, `timestamp` |
+| `endpoint.config_error` | A label target is malformed | `endpoint_id` (always `null`), `container_name`, `label_key`, `error`, `timestamp` |
+
+[Webhook subscriptions](../api/reference.md#webhooks) receive `endpoint.discovered`, `endpoint.status_changed` and `endpoint.removed` under the single type `endpoint.status_changed`, with the payload above as `data`. `endpoint.alert`, `endpoint.recovery` and `endpoint.config_error` are not sent to webhooks: the alert itself reaches them as `alert.fired` and `alert.resolved`.
 
 ---
 

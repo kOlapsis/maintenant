@@ -78,7 +78,7 @@ GET /api/v1/containers/{id}/resources/history?range=24h
 
 A window above your edition's cap is refused with `403 EDITION_REQUIRED`, which names the edition that opens it (`required_edition`), the window asked for and your current cap (`max_window`). It is never silently shortened to the cap. A window the product does not know is a `400 INVALID_RANGE` instead: a bad request, not an edition question.
 
-The same catalogue and the same cap apply to the [top consumers](#top-consumers-view) and to the `get_top_consumers` MCP tool. There is no window that one surface serves and another refuses.
+The same catalogue and the same cap apply to the [top consumers](#top-consumers-view) (where the `period` parameter plays the role of `range`) and to the `get_top_consumers` MCP tool, whose `period` also accepts `current` for the live ranking. There is no window that one surface serves and another refuses.
 
 ---
 
@@ -98,7 +98,7 @@ PUT /api/v1/containers/{id}/resources/alerts
 ```
 
 - **cpu_threshold**: alert when CPU usage reaches this percentage, from 1 to 1000. CPU is measured like `docker stats`, so 200 means two full cores.
-- **mem_threshold**: alert when memory usage reaches this percentage of the container's memory limit, from 1 to 100.
+- **mem_threshold**: alert when memory usage reaches this percentage of the container's memory limit, from 1 to 100. A value outside its range, for either threshold, answers `400 INVALID_THRESHOLD`.
 - **enabled**: alerts are only evaluated while this is `true`. It has no default, so always send it: a body without it saves the thresholds with the alerts off.
 
 `GET` on the same route returns the saved configuration, or `90` / `90` with `enabled: false` for a container that has none.
@@ -123,7 +123,7 @@ GET /api/v1/resources/top?metric=cpu&period=30d&limit=10 # ranked over a history
 
 `metric` is required (`cpu` or `memory`, otherwise `400 INVALID_METRIC`), and `limit` defaults to 5 with a maximum of 20. Each entry has `container_id`, `container_name`, `value`, `percent` and `rank`.
 
-Omitting `period` ranks containers on their latest sample and is open in every edition. That live ranking covers the containers of the server's own runtime: containers of a remote agent appear in the rankings over a `period`. Passing a `period` reads history (averaged over the window), and the edition cap applies exactly as it does to the per-container charts.
+Omitting `period` ranks containers on their latest sample and is open in every edition. That live ranking covers the containers of the server's own runtime and those of remote agents, as long as the agent's latest sample is less than 35 seconds old. Passing a `period` reads history (averaged over the window), and the edition cap applies exactly as it does to the per-container charts. Periods of 24 hours and more are averaged from the hourly rollup (24 hours) or the daily rollup (7, 30 and 90 days), which only hold completed hours and days: the current hour or day is not in the average. A `period` the product does not know answers `400 INVALID_PERIOD`.
 
 ---
 
@@ -135,7 +135,7 @@ Get the load of a host, with the number of containers running on it and their ne
 GET /api/v1/resources/summary
 ```
 
-The CPU, memory and disk gauges are those of the machine itself (read from `/proc` and the root filesystem), not a sum over containers. `available` is `false` when a remote host has not reported recently.
+The CPU, memory and disk gauges are those of the machine itself (read from `/proc` and the root filesystem), not a sum over containers. `available` is `false` when a remote host has not reported recently. `container_count` counts the containers of that host with a recent sample, remote agents' containers included when you pass their `agent_id`. `total_net_rx_rate` and `total_net_tx_rate` add up the network byte counters of those containers: despite their names they are cumulative totals, not rates.
 
 ---
 
@@ -145,7 +145,7 @@ In a [multi-host](multihost.md) deployment (Personal or Pro), resource metrics a
 
 - Each agent streams its host's **machine-level CPU, memory and disk**, in addition to per-container stats. A host that has not reported for 35 seconds is shown as unavailable.
 - The interface gets a **host scope selector** (hidden on a single host). Selecting a host scopes the CPU / MEM / DISK gauges and the top consumers widget to that machine.
-- Scope any resources call to one host with `?agent_id=local` (the central server) or `?agent_id=<id>` (a remote agent). Omitting it returns the local server for the summary, and aggregates all hosts for top consumers over a `period`.
+- Scope any resources call to one host with `?agent_id=local` (the central server) or `?agent_id=<id>` (a remote agent). Omitting it returns the local server for the summary, and aggregates all hosts for top consumers, live or over a `period`.
 
 ```
 GET /api/v1/resources/hosts                       # list hosts + current metrics
@@ -153,7 +153,7 @@ GET /api/v1/resources/summary?agent_id=<id>       # summary for one host
 GET /api/v1/resources/top?metric=cpu&period=24h&agent_id=<id> # top consumers for one host
 ```
 
-The charts and the alert thresholds work the same way for the containers of a remote agent. While the agent is offline it keeps sampling into its spool, and what it replays afterwards fills the charts but never raises an alert. See [Multi-Host Monitoring](multihost.md) for the full agent/server setup.
+The containers of a remote agent appear in `current`, `summary`, `hosts` and the live top consumers like local ones, while their latest sample is less than 35 seconds old. The charts and the alert thresholds work the same way for them. While the agent is offline it keeps sampling into its spool, and what it replays afterwards fills the charts but never raises an alert. See [Multi-Host Monitoring](multihost.md) for the full agent/server setup.
 
 ---
 
@@ -164,7 +164,9 @@ The charts and the alert thresholds work the same way for the containers of a re
 | `cpu_threshold` | CPU usage stayed at or above the threshold for two samples in a row | Warning |
 | `memory_threshold` | Memory usage stayed at or above the threshold for two samples in a row | Warning |
 
-The alert message reads `Resource cpu threshold exceeded for container <name>` (or `memory`) and carries the current value and the threshold. When a single metric breached, the alert is resolved, with a recovery notification, once that metric is back under its threshold.
+The alert message reads `Resource cpu threshold exceeded for container <name>` (or `memory`) and carries the current value and the threshold. CPU and memory are independent: each one raises and resolves its own alert, so a container can have one active while the other recovers. A metric resolves, with a recovery notification, as soon as one sample is back under its threshold.
+
+The same transitions are broadcast on the SSE stream as `resource.alert` (with `alert_type` set to `cpu` or `memory`) and `resource.recovery` (with `recovered_type` set to `cpu` or `memory`). Every stored live sample also produces a `resource.snapshot` event.
 
 ---
 
@@ -172,7 +174,7 @@ The alert message reads `Resource cpu threshold exceeded for container <name>` (
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/containers/{id}/resources/current` | Latest sample (`404` when the server has none: containers of a remote agent have no live sample here, only history) |
+| `GET` | `/api/v1/containers/{id}/resources/current` | Latest sample (`404` when there is none: a stopped or ignored container, or a container of a remote agent whose latest sample is older than 35 seconds) |
 | `GET` | `/api/v1/containers/{id}/resources/history` | Historical metrics |
 | `GET` | `/api/v1/containers/{id}/resources/alerts` | Get alert config |
 | `PUT` | `/api/v1/containers/{id}/resources/alerts` | Set alert thresholds |
@@ -186,15 +188,3 @@ The alert message reads `Resource cpu threshold exceeded for container <name>` (
 
 - [Container Monitoring](containers.md): container states and health checks
 - [Alert Engine](alerts.md): resource threshold alerts
-
----
-
-## Changelog
-
-**2026-08-27, history windows per edition.** Until this release the history API
-was open to Personal and above as a whole, so a Community instance saw no chart
-at all, and the 30-day period of the top consumers endpoint was reachable from
-any edition by calling it directly. Both are fixed: Community now sees up to
-7 days, Pro gains a 90-day window, and every surface enforces the cap
-server-side. The tiering above is what the product serves, and what the pricing
-page states.

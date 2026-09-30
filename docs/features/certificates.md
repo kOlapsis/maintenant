@@ -35,7 +35,7 @@ A monitor has one of these statuses: `valid`, `expiring` (inside the largest war
 
 After renewing a certificate by hand, **Check now** in the certificate panel scans it immediately: the status, the chain and the alert are recomputed on the spot, and the next scheduled scan is pushed a full interval out. No need to wait for the nightly run to see an incident close.
 
-The button is only offered for monitors the server scans itself. A monitor discovered by an agent is scanned from that agent's network, on a one-minute cycle, so it refreshes on its own (the API answers `409 AGENT_SCANNED`).
+The button is only offered for monitors the server scans itself. A monitor discovered by an agent is scanned from that agent's network, on a one-minute cycle, so it refreshes on its own (the API answers `409 AGENT_SCANNED`). A second request while a check of the same monitor is running answers `409 CHECK_IN_PROGRESS`.
 
 Endpoints have the same button in their panel, for the same reason.
 
@@ -43,9 +43,9 @@ Endpoints have the same button in their panel, for the same reason.
 
 ## Alert Thresholds
 
-maintenant raises an `expiring` alert as the expiry date approaches. The thresholds are **30, 14, 7, 3 and 1 days** before expiry by default, and each monitor can carry its own list (`warning_thresholds`, in days). The alert is raised when the remaining time first falls under a threshold, and again each time it falls under the next lower one; a renewed certificate starts over.
+maintenant raises an `expiring` alert as the expiry date approaches. The thresholds are **30, 14, 7, 3 and 1 days** before expiry by default, and each monitor can carry its own list (`warning_thresholds`, in days). The alert is raised when the remaining time first falls under a threshold, and again each time it falls under the next lower one; a certificate renewed past the largest threshold starts over.
 
-Its severity depends on the days left when the alert is raised and on who issued the certificate. Certificates from CAs that renew automatically (Let's Encrypt, ZeroSSL, Buypass, Google Trust Services) are expected to renew by themselves, so they alert later:
+Its severity depends on the days left when the alert is raised and on who issued the certificate. Certificates from CAs that renew automatically (Let's Encrypt, ZeroSSL, Buypass, Google Trust Services) are expected to renew by themselves, so they alert later. A monitor scanned by a [remote agent](multihost.md) never reports its issuer organization, so the *Other issuers* column always applies to it.
 
 | Days left | Automatic CA | Other issuers |
 |----------:|:------------:|:-------------:|
@@ -66,7 +66,7 @@ maintenant validates the certificate chain the server presents against the trust
 - **Intermediate certificates**: issued by the CA to sign the leaf
 - **Root certificate**: it must be one of the roots maintenant trusts (the system roots plus your own CA, see below)
 
-If any certificate in the chain is invalid, expired, or missing, maintenant fires a `chain_invalid` alert with the reason (`expired chain certificate`, `untrusted root or missing intermediate`, and so on). A certificate that is valid but does not cover the hostname being checked (or the `server_name`, see below) fires `hostname_mismatch`.
+If any certificate in the chain is invalid, expired, or missing, maintenant fires a `chain_invalid` alert with the reason (`expired chain certificate`, `untrusted root or missing intermediate`, and so on). A certificate that does not cover the hostname being checked (or the `server_name`, see below) fires `hostname_mismatch`. The chain check includes the hostname, so the same scan also fires `chain_invalid`, with a reason that starts with `chain validation failed: x509:`.
 
 ---
 
@@ -111,13 +111,13 @@ A host that is genuinely unreachable (timeout, DNS failure, connection refused) 
 
 | Event | Description | Severity | Resolved |
 |-------|-------------|----------|----------|
-| `expiring` | Certificate approaching expiry (see [Alert Thresholds](#alert-thresholds)) | Info, Warning or Critical | Automatically, once the renewed certificate is past every threshold |
-| `expired` | Certificate has expired | Critical | Not automatically |
-| `chain_invalid` | Certificate chain validation failed | Critical | Not automatically |
-| `hostname_mismatch` | The certificate does not cover the hostname | Critical | Not automatically |
-| `ocsp_revoked` | The OCSP staple reports the certificate as revoked (Personal) | Critical | Not automatically |
+| `expiring` | Certificate approaching expiry (see [Alert Thresholds](#alert-thresholds)) | Info, Warning or Critical | Once the renewed certificate is past every threshold |
+| `expired` | Certificate has expired | Critical | When a scan finds a certificate that has not expired |
+| `chain_invalid` | Certificate chain validation failed | Critical | When the chain validates again |
+| `hostname_mismatch` | The certificate does not cover the hostname | Critical | When the certificate covers the hostname again |
+| `ocsp_revoked` | The OCSP staple reports the certificate as revoked (Personal) | Critical | When the staple no longer reports it as revoked, including when the server stops stapling |
 
-Only `expiring` is resolved by a later good scan. The other alerts stay active until the monitor is deleted, and can be acknowledged in the meantime. All of them go through the standard pipeline, so [Alert Triggers](alerts.md), escalation policies, silences and acknowledgments apply.
+A later good scan resolves each alert whose condition is gone. A scan that cannot connect changes nothing: the first scan that connects afterwards resolves every alert whose condition has cleared in the meantime. Deleting the monitor resolves all of its alerts. Every resolution is announced on the SSE stream by a `certificate.recovery` event, whose `previous_alert_type` names the alert that cleared. An active alert can be acknowledged in the meantime. All of them go through the standard pipeline, so [Alert Triggers](alerts.md), escalation policies, silences and acknowledgments apply.
 
 ---
 
@@ -207,11 +207,11 @@ Community is limited to **5 standalone monitors**. Automatic and label monitors 
 | `POST` | `/api/v1/certificates` | Create a standalone monitor |
 | `GET` | `/api/v1/certificates/{id}` | Monitor details, with its latest check and certificate chain |
 | `PUT` | `/api/v1/certificates/{id}` | Change `check_interval_seconds` and `warning_thresholds` |
-| `DELETE` | `/api/v1/certificates/{id}` | Delete a monitor. Automatic monitors cannot be deleted: they follow their endpoint |
+| `DELETE` | `/api/v1/certificates/{id}` | Delete a monitor. Automatic monitors cannot be deleted (`400 CANNOT_DELETE_AUTO`): they follow their endpoint |
 | `GET` | `/api/v1/certificates/{id}/checks` | List check history (`limit`, `offset`) |
 | `POST` | `/api/v1/certificates/{id}/check` | Scan now, without waiting for the next scheduled check |
 
-Check results are kept for 30 days.
+Check results are kept for 30 days. Scans that come from an endpoint probe (every 30 seconds by default) or from an agent (every 60 seconds) arrive far more often than the monitor's interval. One is stored per `check_interval_seconds`, or sooner when its outcome changes (another certificate, chain, hostname match, OCSP state or error). The alerts are evaluated on every scan, stored or not.
 
 ---
 
@@ -224,7 +224,7 @@ labels:
   maintenant.tls.certificates: "api.example.com,dashboard.example.com:8443"
 ```
 
-Domains are comma-separated. Port defaults to `443` if omitted, and a scheme or path pasted by mistake is stripped. See the [Docker Labels Reference](../guides/docker-labels.md) for details.
+Domains are comma-separated. Port defaults to `443` if omitted, and a scheme or path pasted by mistake is stripped. The monitors are created when the container is discovered or started, and removed when a domain leaves the label (at the container's next start) or when the container is destroyed. A container with `maintenant.ignore` declares none. See the [Docker Labels Reference](../guides/docker-labels.md) for details.
 
 With `MAINTENANT_PROXY_LABELS=true`, the HTTPS hostname of the route retained for the container (see [Endpoints from reverse proxy labels](endpoints.md#endpoints-from-reverse-proxy-labels)) is added to `maintenant.tls.certificates` for you, merged with any value you already set. Sites served with `tls internal` are left out, since their certificate comes from Caddy's local CA. See [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy).
 

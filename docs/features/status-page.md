@@ -16,8 +16,8 @@ maintenant serves the public status page through the same Vue SPA as the admin U
 The status page displays:
 
 - **Component status**: operational, degraded, partial outage, major outage, under maintenance
-- **Active incidents**: current issues with timeline updates
-- **Scheduled maintenance**: upcoming planned downtime windows (up to five)
+- **Active incidents**: current issues with their latest update
+- **Scheduled maintenance**: the next five planned downtime windows that have not started yet
 - **Subscription form**: only when email subscriptions are open (see [Subscriber Notifications](#subscriber-notifications))
 
 What each edition opens:
@@ -31,7 +31,7 @@ What each edition opens:
 | Email subscribers | — | — | yes |
 | Personalization (branding, FAQ, footer) | — | — | yes |
 
-Reading incidents and maintenance windows through the API is open in every edition; only creating, changing and deleting them is gated. Below the required edition those calls return `403 EDITION_REQUIRED`; creating a fourth component in Community returns `403 QUOTA_EXCEEDED`.
+Reading incidents and maintenance windows through the API is open in every edition; only creating, changing and deleting them is gated. Below the required edition those calls return `403 EDITION_REQUIRED`; creating a fourth component in Community returns `403 QUOTA_EXCEEDED`. `GET /api/v1/edition` reports the current count and the limit under `quotas.status_components`.
 
 ---
 
@@ -164,6 +164,8 @@ A status override replaces the derived status. The global status of the page is 
 
 The global banner reads *All Systems Operational*, *Degraded Performance*, *Partial System Outage*, *Major System Outage* or *Scheduled Maintenance*.
 
+`status_override` accepts only these five values (or an empty string to clear it). An incident severity must be `minor`, `major` or `critical`, and an incident status `investigating`, `identified`, `monitoring` or `resolved`. Any other value is refused with `400 validation`.
+
 ---
 
 ## Public Access
@@ -174,14 +176,30 @@ The status page is designed to be publicly accessible without authentication. Co
 - `/status/api`: the JSON payload backing the page
 - `/status/events`: the real-time SSE stream
 - `/status/settings.json`: the personalization document
-- `/status/feed.atom`: Atom feed of the incidents resolved in the last 30 days
+- `/status/feed.atom`: Atom feed of the ongoing incidents and those resolved in the last 30 days
 - `/status/subscribe`, `/status/confirm`, `/status/unsubscribe`: email subscriptions
 - `/assets/*`: the JavaScript and CSS of the SPA, which the page needs when it shares a host with a protected dashboard
 
 !!! warning "Reverse proxy configuration"
     See the [Security Guide → Public Routes](../security.md#public-routes) for the full list of routes that must bypass authentication, and worked examples for Traefik, Caddy, and nginx.
 
-The status page is a responsive Vue SPA with live SSE updates. The SSE stream carries `status.component_changed`, `status.global_changed`, `status.incident_created`, `status.incident_updated`, `status.incident_resolved`, `status.maintenance_started` and `status.maintenance_ended`.
+The status page is a responsive Vue SPA with live SSE updates. It can be embedded in a frame on any site, and `/status/api` and `/status/settings.json` answer cross-origin requests (`Access-Control-Allow-Origin: *`). Every public route is rate limited to 10 requests per second per client address, and a request body is capped at 4 KiB. A demo build is read-only: the admin calls that write and `POST /status/subscribe` answer `403 DEMO_MODE`.
+
+### `/status/events`
+
+The stream carries these events. They are also sent on the admin stream `/api/v1/containers/events`, which is how `/status-admin` stays current.
+
+| Event | Payload | Sent when |
+|-------|---------|-----------|
+| `status.component_changed` | `component_id`, `name`, `status`, `monitors` | A monitor linked to the component changes (container state or health, endpoint status, heartbeat or certificate alert) |
+| `status.global_changed` | `status`, `message` | After every component change, creation, edit or deletion |
+| `status.component_created`, `status.component_updated`, `status.component_deleted` | `component_id` | A component is created, edited or deleted |
+| `status.incident_created` | `id`, `title`, `severity`, `status`, `components` | An incident is opened |
+| `status.incident_updated` | `id`, `status`, `message` | A timeline entry is added |
+| `status.incident_resolved` | `id`, `title` | An incident is resolved |
+| `status.maintenance_started`, `status.maintenance_ended` | `id`, `title`, `components` | A maintenance window starts or ends |
+
+The page updates in place: `status.component_changed` and `status.global_changed` change the displayed status without a request, and every other event makes it reload `/status/api`. The stream sends a keep-alive comment every 25 seconds so that a reverse proxy does not close an idle connection.
 
 ### `/status/api`
 
@@ -204,6 +222,10 @@ The status page is a responsive Vue SPA with live SSE updates. The SSE stream ca
 ```
 
 `subscriptions_enabled` is `true` only when email subscriptions are open. The page shows its *Subscribe to updates* form only in that case. `personalization_version` is omitted when no personalization has been saved.
+
+### `/status/feed.atom`
+
+An Atom feed of the ongoing incidents and of those resolved in the last 30 days, the most recently changed first. Each entry is titled `[<severity>] <title>` and summarizes the incident with its latest update message. The feed may be cached for 60 seconds.
 
 ---
 
@@ -240,7 +262,11 @@ POST /api/v1/status/incidents/{id}/updates
 }
 ```
 
-`title` and `severity` are required on creation; the initial status is `investigating`. An update requires both `status` and `message`, and sets the status of the incident. The admin UI offers `investigating`, `identified`, `monitoring` and `resolved`; `resolved` closes the incident. `PUT /api/v1/status/incidents/{id}` edits the title, severity and components without posting an update.
+`title` and `severity` are required on creation. The optional `status` sets the initial status and defaults to `investigating`. An update requires both `status` and `message`, and sets the status of the incident. The admin UI offers `investigating`, `identified`, `monitoring` and `resolved`; `resolved` closes the incident. `PUT /api/v1/status/incidents/{id}` edits the title, severity and components without posting an update, and leaves the components alone when `component_ids` is omitted.
+
+Every entry of `component_ids` must be the id of an existing component and appear only once. An empty, unknown or repeated entry answers `400 validation` and nothing is written. The `create_incident` tool of the [MCP server](mcp.md) applies the same rule.
+
+`GET /api/v1/status/incidents` returns `{"incidents": […], "total": n}`, the most recently changed first. `limit` defaults to 20, and a value above 100 is replaced by 20. Incidents stay until they are deleted.
 
 Creating an incident, posting an update and resolving an incident are emailed to subscribers when subscriptions are open, whether they come from the API, the admin UI or the [MCP server](mcp.md). Editing with `PUT` is not announced.
 
@@ -260,16 +286,18 @@ POST /api/v1/status/maintenance
 }
 ```
 
-`title`, `starts_at` and `ends_at` (RFC 3339) are required, and `ends_at` must not be before `starts_at`. A window that is currently running cannot be edited (`409`).
+`title`, `starts_at` and `ends_at` (RFC 3339) are required, and `ends_at` must not be before `starts_at`. `component_ids` follows the [same rule as for incidents](#incident-management). A window that is currently running cannot be edited (`409`). When a `PUT` omits `component_ids`, the window keeps its components.
 
 A scheduler checks the windows every 60 seconds:
 
 - **At the start**, it creates an incident `Scheduled Maintenance: <title>` (severity `minor`), sets `under_maintenance` on every listed component, and emails subscribers `Maintenance Started: <title>`.
-- **At the end**, it resolves that incident, removes the `under_maintenance` status and emails subscribers `Maintenance Completed: <title>`.
+- **At the end**, it resolves that incident, gives each component back the manual override it had before the window (if any), and emails subscribers `Maintenance Completed: <title>`. A component that another running window still lists stays under maintenance.
+
+Deleting a window that is running closes it the same way: the incident is resolved, the components get their previous status back and subscribers receive `Maintenance Completed: <title>`.
 
 The status page start and end can therefore lag the scheduled times by up to a minute. The alert suppression does not: from `starts_at` to `ends_at`, alerts about the monitors of the listed components are dropped, and [escalation runs](alert-escalation.md#maintenance-windows-suspend-escalation) on them are paused. A match-all component in a window covers every monitor of its type.
 
-Until a window starts, the public page lists it under upcoming maintenance.
+`GET /api/v1/status/maintenance` returns the windows with their components; `limit` defaults to 20, and a value above 100 is replaced by 20. Until a window starts, the public page lists it under upcoming maintenance, which shows the next five. Windows stay until they are deleted.
 
 ---
 
@@ -325,6 +353,12 @@ The type of an upload is detected from its content, not from its name:
 | `favicon` | PNG, ICO, SVG | 50 KiB |
 | `hero` | PNG, JPEG, WebP | 500 KiB |
 
+An upload over the limit answers `400 payload_too_large`, and a format the role does not accept answers `400 unsupported_mime`.
+
+An SVG is read in full and refused with `400 active_svg` when it carries active content: a `<script>` element, an event-handler attribute such as `onload`, a `javascript:` or `vbscript:` link, embedded HTML (`foreignObject`, `iframe`, `embed`, `object`), an XML entity other than the five predefined ones, a processing instruction other than a leading XML declaration, or markup that cannot be parsed. A `DOCTYPE` line is accepted, and so is an SVG without an XML declaration.
+
+The footer of the public page always ends with a *Powered by Maintenant* link, whatever the footer settings.
+
 ---
 
 ## Subscriber Notifications :material-crown:{ title="Pro" }
@@ -343,7 +377,7 @@ Subscriptions are open only when both conditions hold, and the page reports the 
 | `MAINTENANT_SMTP_PASSWORD` | — | Password for that login. |
 | `MAINTENANT_SMTP_FROM` | `maintenant@localhost` | Sender address. |
 
-The same server sends the emails of the email alert channel. maintenant upgrades the connection with STARTTLS when the server offers it; implicit TLS (port 465) is not supported. Any send gives up after 30 seconds. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses); the Subscribers tab warns when SMTP is missing.
+The same server sends the emails of the email alert channel. Port 465 uses implicit TLS. On any other port, maintenant upgrades the connection with STARTTLS whenever the server offers it, and a send fails if the server offers STARTTLS but the negotiation does not succeed. A server that does not offer STARTTLS is used without encryption, and the client then refuses to send credentials to it unless it is `localhost`. Any send gives up after 30 seconds. Subjects are MIME-encoded, so a title with accents or other non-ASCII characters arrives intact. The SMTP tab of `/status-admin` shows whether SMTP is configured and sends a test email (`POST /api/v1/status/smtp/test` with `{"to": "you@example.com"}`, from Personal; `400 not_configured` without `MAINTENANT_SMTP_HOST`, `502 smtp_failed` when the server refuses); the Subscribers tab warns when SMTP is missing.
 
 ```bash
 # List subscribers (emails are masked)
@@ -370,7 +404,7 @@ The answer to `POST /status/subscribe` is the same for a new address, a pending 
 | `400` | `invalid_email` | Not a valid address, or longer than 254 characters |
 | `400` | `invalid_body` | Body that is neither JSON nor a form |
 | `413` | `body_too_large` | Body over 4 KiB |
-| `429` | `rate_limited` | Limit of 5 attempts per hour per address (one attempt is given back every 12 minutes); `Retry-After` is 720 seconds |
+| `429` | `rate_limited` | Limit of 5 attempts per hour per client IP address (one attempt is given back every 12 minutes); `Retry-After` is 720 seconds |
 | `503` | `subscriptions_unavailable` | SMTP missing or edition below Pro |
 
 !!! warning "Set `MAINTENANT_BASE_URL`"
@@ -408,7 +442,7 @@ Incidents opened and resolved automatically are included; timeline entries added
 | `GET` | `/api/v1/status/maintenance` | List windows (`status` = `upcoming`, `active` or `completed`; `limit`) | Community |
 | `POST` | `/api/v1/status/maintenance` | Schedule maintenance | Pro |
 | `PUT` | `/api/v1/status/maintenance/{id}` | Edit a window that is not running | Pro |
-| `DELETE` | `/api/v1/status/maintenance/{id}` | Delete a window | Pro |
+| `DELETE` | `/api/v1/status/maintenance/{id}` | Delete a window (a running window is closed first) | Pro |
 | `GET` | `/api/v1/status/subscribers` | List subscribers | Pro |
 | `POST` | `/api/v1/status/smtp/test` | Send a test email | Personal |
 | `GET`, `PUT` | `/api/v1/status-page/settings` | Personalization settings | Pro |

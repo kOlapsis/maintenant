@@ -25,10 +25,10 @@ Deploy one container, and maintenant auto-discovers your entire stack. Docker or
 - **[Heartbeat & Cron Monitoring](features/heartbeats.md)** — Create a monitor, get a URL, curl from your cron job. Tracks durations, exit codes, missed deadlines. Outbound heartbeats let a second instance watch this one.
 - **[TLS Certificate Monitoring](features/certificates.md)** — Auto-detection from HTTPS endpoints. Alerts at 30, 14, 7, 3, and 1 day before expiry. Full chain validation.
 - **[Resource Metrics](features/resources.md)** — CPU, memory, network I/O, disk I/O per container. Historical charts (7 days in Community, 30 in Personal, 90 in Pro), alert thresholds, top consumers view.
-- **[Update Intelligence](features/updates.md)** — OCI registry scanning, digest comparison. Compose-aware update commands. Know when your images have updates available.
+- **[Update Intelligence](features/updates.md)** — OCI registry scanning with digest comparison for floating tags. Know when your images have updates available, with update and rollback commands for Compose, plain Docker, Swarm and Kubernetes. CVE enrichment, changelogs and risk scores with Personal.
 - **[Host OS End-of-Support](features/host-os.md)** — Tracks Debian, Ubuntu, RHEL, Rocky, Alma, Alpine and SLES support cycles. Warns 30 days before a host's security support ends, critical once it has.
-- **[Network Security Insights](features/security.md)** — Automatic detection of exposed ports, dangerous network configurations, and privileged containers. CVE ecosystem mapping via OCI manifest inspection (Personal).
-- **[Alert Engine](features/alerts.md)** — Unified alerts across all sources. Channels silent by default, routed via Alert Triggers. Webhook and Discord channels, plus email and Telegram with Personal. Silence rules, retries with backoff. Slack, Teams and multi-level escalation policies with Pro.
+- **[Network Security Insights](features/security.md)** — Automatic detection of exposed ports, dangerous network configurations, and privileged containers. With Personal: CVE ecosystem mapping via OCI manifest inspection, risk scoring and a security posture dashboard.
+- **[Alert Engine](features/alerts.md)** — Unified alerts across all sources. Channels silent by default, routed via Alert Triggers. Webhook and Discord channels, plus email and Telegram with Personal. Silence rules, three delivery attempts per notification. Slack, Teams and multi-level escalation policies with Pro.
 - **[Public Status Page](features/status-page.md)** — Component groups, live SSE updates. Incident management with Personal. Maintenance windows, subscriber notifications and branding with Pro.
 - **[MCP Server](features/mcp.md)** — Expose monitoring data to AI assistants (Claude Code, Cursor) via the Model Context Protocol. 51 tools across monitoring, security, Kubernetes, Swarm and alert routing; stdio and HTTP transports.
 
@@ -61,11 +61,11 @@ The core of maintenant is licensed under **Apache 2.0** and needs no key: it is 
 
 | Edition | For | Adds |
 |---|---|---|
-| **Community** | Everyone, free | Containers, endpoints, heartbeats, certificates, the status page, the Swarm and Kubernetes views, 7 days of resource history, on a single host, with caps on hand-made monitors (10 endpoints, 5 heartbeats, 5 certificate monitors, 3 status components). |
+| **Community** | Everyone, free | Containers, endpoints, heartbeats, certificates, the status page, alerts with Discord and webhook channels, the Swarm and Kubernetes views, 7 days of resource history, on a single host, with caps on hand-made monitors (10 endpoints, 5 heartbeats, 5 certificate monitors, 3 status components). |
 | **Personal** | One person, on their own infrastructure, freelancers included | No caps, up to 20 remote hosts, email and Telegram alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, 30 days of resource history, advanced trigger filters, OCSP stapling. Bought once, it never expires and includes a year of updates. |
 | **Pro** | Teams, and anyone running it for others | Everything in Personal with unlimited hosts, Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, 90 days of resource history, and support. Subscription. |
 
-Prices and terms are in [COMMERCIAL-LICENSE.md](https://github.com/kOlapsis/maintenant/blob/main/COMMERCIAL-LICENSE.md). The [Configuration](getting-started/configuration.md#license) page explains how a license key is verified and what happens offline or after a downgrade.
+Prices and terms are in [COMMERCIAL-LICENSE.md](https://github.com/kOlapsis/maintenant/blob/main/COMMERCIAL-LICENSE.md). The Configuration page explains [how a license key is verified and what happens offline](getting-started/configuration.md#verification-and-offline-behavior), and [what happens when the edition drops](getting-started/configuration.md#when-the-edition-drops).
 
 ---
 

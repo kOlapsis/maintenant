@@ -239,7 +239,7 @@ Agents detect their local runtime (Docker, Swarm or Kubernetes), stream containe
 
 ### [Update intelligence](https://docs.maintenant.dev/features/updates/)
 
-Scans OCI registries: newer versions for fixed tags, and for floating tags like `latest` a comparison between the digest your container runs and the one the tag points at now. You know which images have an update before you `docker pull` blindly. Update and rollback commands for Compose, plain Docker and Kubernetes, with the right `cd` into the Compose project. No Diun, no Watchtower, no extra container: it is part of the monitor.
+Scans OCI registries: newer versions for fixed tags, and for floating tags like `latest` a comparison between the digest your container runs and the one the tag points at now. You know which images have an update before you `docker pull` blindly. Update and rollback commands for Compose, plain Docker, Swarm and Kubernetes, with the right `cd` into the Compose project. No Diun, no Watchtower, no extra container: it is part of the monitor.
 
 ### [Host OS end-of-support](https://docs.maintenant.dev/features/host-os/)
 
@@ -274,13 +274,13 @@ Real-time CPU, memory, network and disk I/O per container and per host, top-cons
 
 ### [Network security insights](https://docs.maintenant.dev/features/security/)
 
-Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, Kubernetes Services of type NodePort or LoadBalancer, and database ports exposed through them. Each image is mapped to its software ecosystem through OCI manifest inspection. **Personal** adds CVE enrichment, a risk score per container and a unified security posture dashboard.
+Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports, host-network mode, privileged containers, Kubernetes Services of type NodePort or LoadBalancer, and database ports exposed through them. **Personal** adds CVE enrichment (each image is mapped to its software ecosystem through OCI manifest inspection), a risk score per container and a unified security posture dashboard.
 
 ### [Alert engine](https://docs.maintenant.dev/features/alerts/)
 
 One alert pipeline for every source: container restart loops, unhealthy checks and stopped containers, endpoint failures, missed heartbeats, expiring or invalid certificates, CPU and memory thresholds, available updates, Swarm and Kubernetes health, agents going offline, hosts whose OS loses support. Channels are silent by default and routed through **triggers** (severity, source, scope). Alerts can be acknowledged. Silence rules for planned maintenance, three delivery attempts per notification.
 
-Channels: Discord and webhooks (Community), email and Telegram (Personal), Slack and Microsoft Teams (Pro). **Pro** adds [escalation policies](https://docs.maintenant.dev/features/alert-escalation/) that page the on-call, then the backup, then the lead, plus per-entity routing and maintenance windows.
+Channels: Discord and webhooks (Community), email and Telegram (Personal), Slack and Microsoft Teams (Pro). **Pro** adds [escalation policies](https://docs.maintenant.dev/features/alert-escalation/) of up to five levels that page the on-call, then the backup, then the lead, plus per-entity routing and maintenance windows.
 
 ### [Public status page](https://docs.maintenant.dev/features/status-page/)
 

@@ -65,7 +65,7 @@ MAINTENANT_MCP_ALLOWED_REDIRECT_URIS=https://claude.ai/api/mcp/auth_callback
 
 ### Stdio
 
-No authentication. The stdio transport is a local, trusted channel: only the process that spawned maintenant can communicate with it. The `--mcp-stdio` flag is independent of `MAINTENANT_MCP`.
+No authentication. The stdio transport is a local, trusted channel: only the process that spawned maintenant can communicate with it. The `--mcp-stdio` flag is independent of `MAINTENANT_MCP`. It must be the first argument, and in this mode the logs go to stderr so that stdout carries only the protocol.
 
 ### Streamable HTTP (OAuth2)
 
@@ -169,15 +169,15 @@ and add an `agent_label` to each row that belongs to a remote agent.
 | Tool | Description | Edition |
 |------|-------------|---------|
 | `list_containers` | List all monitored containers with state, health, and metadata | Community |
-| `get_container` | Detailed container info with recent state transitions | Community |
-| `get_container_logs` | Recent log lines from a container: `lines` (default 100, at most 1000) and optional `timestamps`. A container on a remote agent is read through that agent. | Community |
+| `get_container` | Detailed info for one container (`container_id`) with recent state transitions | Community |
+| `get_container_logs` | Recent log lines from a container (`container_id`): `lines` (default 100, at most 1000) and optional `timestamps`. A container on a remote agent is read through that agent. | Community |
 | `list_endpoints` | All HTTP/TCP endpoints with status, response time, uptime | Community |
-| `get_endpoint_history` | Check history for a specific endpoint (`limit`, default 50) | Community |
+| `get_endpoint_history` | Check history for a specific endpoint (`endpoint_id`, `limit` defaulting to 50) | Community |
 | `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
 | `list_certificates` | TLS certificates with expiration, issuer, chain validity | Community |
 | `list_alerts` | Active alerts (or the last 100, resolved and silenced included, with `active_only: false`) | Community |
-| `get_resources` | Host resource summary: CPU, memory, network, disk | Community |
-| `get_top_consumers` | Containers ranked by CPU or memory usage, live or over a history window | Community (see above) |
+| `get_resources` | Resource summary: CPU, memory and network totals across the containers, plus disk usage of the server's root filesystem | Community |
+| `get_top_consumers` | Containers ranked by CPU or memory usage (`metric`, `limit` defaulting to 10), live or over a history window (`period`) | Community (see above) |
 | `get_updates` | Returns `updates` (available image updates), `hosts` (each host's OS and end-of-support status) and `eol_table` | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
 | `list_agents` | Active remote agents with label, hostname, runtime and connection state | Personal |
@@ -187,10 +187,10 @@ and add an `agent_label` to each row that belongs to a remote agent.
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `get_security_insights` | Security insights (dangerous runtime configs), all containers or one, with a severity summary | Community |
-| `list_cve` | Active CVE vulnerabilities in container images, filterable by container or minimum severity. For one container, the answer carries an `evaluation` state (`evaluated`, `unsupported`, `not_evaluated`, `error`): an empty list means "no known CVEs" only when it is `evaluated`. | Personal |
-| `list_risk_scores` | Image-update risk scores per container (0 to 100) with risk level | Personal |
-| `get_security_posture` | Infrastructure posture score, or a single container's posture | Personal |
+| `get_security_insights` | Security insights (dangerous runtime configs), all containers or one (`container_id`), with a severity summary | Community |
+| `list_cve` | Active CVE vulnerabilities in container images, filterable by `container_id` or by minimum `severity` (`low`, `medium`, `high` or `critical`). For one container, the answer carries an `evaluation` state (`evaluated`, `unsupported`, `not_evaluated`, `error`): an empty list means "no known CVEs" only when it is `evaluated`. | Personal |
+| `list_risk_scores` | Image-update risk scores per container (0 to 100) with risk level; `container_id` fetches a single one | Personal |
+| `get_security_posture` | Infrastructure posture score, or a single container's posture (`container_id`) | Personal |
 
 ### Kubernetes (read)
 
@@ -205,14 +205,14 @@ and add an `agent_label` to each row that belongs to a remote agent.
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `get_swarm_info` | Cluster info (manager/worker counts, manager status); reports inactive when Swarm is off | Community |
+| `get_swarm_info` | Cluster info: `cluster_id`, `created_at`, `manager_count`, `worker_count` and `is_manager`, read from the Docker daemon and refreshed every 60 seconds; answers `{"active": false}` when Swarm is not detected | Community |
 | `list_swarm_services` | Services with image, mode, desired/running replicas | Community |
-| `list_swarm_tasks` | Tasks (a service's running units) with state and node; filter by service | Community |
+| `list_swarm_tasks` | Tasks (a service's running units) with state and node; filter by service (`service_id`) | Community |
 | `list_swarm_nodes` | Nodes with role, status, availability and task count | Community |
 
 ### Alert routing (read & write)
 
-The write tools of this section change configuration: channels, triggers and escalation policies.
+The write tools of this section change configuration: channels, triggers and escalation policies. A tool that creates, changes or tests a channel of a gated type (email, Telegram, Slack or Teams) is refused below the edition that opens it; switching a channel off always works.
 
 | Tool | Description | Edition |
 |------|-------------|---------|
@@ -220,9 +220,9 @@ The write tools of this section change configuration: channels, triggers and esc
 | `create_channel` / `update_channel` / `delete_channel` | Manage notification channels (webhook is Community; email and Telegram need Personal, Slack and Teams need Pro). A channel is created enabled unless `enabled` is `false`. | Community |
 | `test_channel` | Send a test notification through a channel | Community |
 | `list_triggers` / `get_trigger` | List or fetch alert triggers (entity to channel routing) | Community |
-| `create_trigger` / `update_trigger` / `delete_trigger` | Manage alert triggers. A trigger is created enabled unless `enabled` is `false`, and an update that omits `enabled` keeps the stored value. Scope filters (`filter_scopes`) require Personal. | Community |
+| `create_trigger` / `update_trigger` / `delete_trigger` | Manage alert triggers. A trigger needs at least one channel in `channel_ids`, is created enabled unless `enabled` is `false`, and relays recoveries unless `notify_on_resolve` is `false`. An update replaces the name, the filters and the channels, so send them all; an update that omits `enabled` or `notify_on_resolve` keeps the stored value. Scope filters (`filter_scopes`) require Personal. | Community |
 | `list_escalation_policies` / `get_escalation_policy` | List or fetch escalation policies | Pro |
-| `create_escalation_policy` / `update_escalation_policy` / `delete_escalation_policy` | Manage escalation policies | Pro |
+| `create_escalation_policy` / `update_escalation_policy` / `delete_escalation_policy` | Manage escalation policies: 1 to 5 levels, each with a delay of 60 to 86400 seconds (counted from the start of the alert, at least 60 seconds after the previous level) and at least one channel. An update replaces the whole policy. | Pro |
 | `set_escalation_policy_active` | Enable or disable a policy | Pro |
 | `list_alert_escalation_runs` / `get_escalation_run` | Inspect escalation runs for an alert | Pro |
 
@@ -230,12 +230,14 @@ The write tools of this section change configuration: channels, triggers and esc
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `acknowledge_alert` | Acknowledge an active alert (stops escalation). `acknowledged_by` defaults to `mcp`. | Community |
-| `pause_monitor` | Pause a heartbeat monitor (heartbeats only) | Community |
-| `resume_monitor` | Resume a paused heartbeat monitor | Community |
-| `create_incident` | Create a status page incident; announced on the page and emailed to subscribers like an incident created in the UI | Personal |
-| `update_incident` | Post a status update to an incident, announced the same way | Personal |
-| `create_maintenance` | Schedule a maintenance window (`start_time` and `end_time` in RFC 3339) | Pro |
+| `acknowledge_alert` | Acknowledge an active alert (`alert_id`), which stops its escalation. The optional `acknowledged_by` defaults to `mcp`. | Community |
+| `pause_monitor` | Pause a heartbeat monitor (`monitor_type` must be `heartbeat`, plus `monitor_id`) | Community |
+| `resume_monitor` | Resume a paused heartbeat monitor (same parameters) | Community |
+| `create_incident` | Create a status page incident (`title`, `severity`, optional `status`, `message` and `component_ids`); announced on the page and emailed to subscribers like an incident created in the UI | Personal |
+| `update_incident` | Post a status update to an incident (`incident_id`, `status`, `message`), announced the same way | Personal |
+| `create_maintenance` | Schedule a maintenance window (`title`, `start_time` and `end_time` in RFC 3339, optional `message` and `component_ids`) | Pro |
+
+`severity` is `minor`, `major` or `critical`, and `status` is `investigating`, `identified`, `monitoring` or `resolved`. A value outside these lists is refused. So is a `component_ids` entry that is empty, unknown or repeated: the tool answers an error and writes nothing, as the REST API does with `400`. `create_maintenance` only stores the window: the scheduler of the [status page](status-page.md#maintenance-windows) starts and ends it, and emails subscribers at those moments.
 
 ---
 
@@ -267,7 +269,7 @@ If maintenant runs behind a reverse proxy, `/mcp` and the OAuth routes need spec
 - **No buffering**: every `/mcp` response carries `X-Accel-Buffering: no`, which nginx honours. For a proxy that ignores it, disable response buffering for `/mcp`.
 - **Pass-through for OAuth**: the `/oauth/authorize` endpoint issues 302 redirects. Ensure your proxy does not intercept them.
 - **Set `MAINTENANT_BASE_URL`** to the public URL, for example `https://now.example.com`. It becomes the OAuth issuer, so a wrong value breaks discovery.
-- **Set `MAINTENANT_TRUSTED_PROXIES`** to the proxy's address. `/mcp` and `/oauth/*` share a rate limit of 10 requests per second per client address with `/ping/` and `/status/`; without the setting, every request appears to come from the proxy.
+- **Set `MAINTENANT_TRUSTED_PROXIES`** to the proxy's address. `/mcp`, `/oauth/authorize` and `/oauth/token` share a rate limit of 10 requests per second per client address (bursts of up to 20) with `/ping/` and `/status/`; without the setting, every request appears to come from the proxy.
 
 With OAuth configured, `/mcp` accepts any `Host` header, so a proxy on the same machine (nginx on `127.0.0.1` forwarding `now.example.com`) works. With `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED=true` and a listener on a loopback address, a request whose `Host` is not a loopback name is refused with `403 invalid Host header`.
 

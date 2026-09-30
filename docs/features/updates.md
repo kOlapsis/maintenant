@@ -15,7 +15,7 @@ maintenant periodically scans the registry of each running container's image. Fo
 
 ### What the scan covers
 
-The scan covers the running containers that are not ignored and not archived: those of the server's own runtime (Docker, Swarm, or the workloads of the Kubernetes cluster it runs in), and those of Docker agents once they have reported since the server started. The server queries the registries itself, with its own network and credentials. Agents never do.
+The scan covers the running containers that are not ignored (`maintenant.ignore`, which also works on a Swarm service) and not archived: those of the server's own runtime (Docker, Swarm, or the workloads of the Kubernetes cluster it runs in), and those of remote agents once they have reported since the server started. The server queries the registries itself, with its own network and credentials. Agents never do.
 
 It leaves out:
 
@@ -46,11 +46,13 @@ For a floating tag, maintenant reports a `digest_only` update for as long as the
 When the runtime cannot say what a container runs, the first scan stores the digest the tag points at as the baseline for that container, without reporting anything. Later scans compare the tag with that baseline, so a tag moved after the first scan is detected, but a container that was already behind at that first scan is not. A recreated container gets a new baseline.
 
 !!! note "docker-socket-proxy needs `IMAGES`"
-    The scan reads the Docker image list (`GET /images/json`) on every pass. Behind a socket proxy, set `IMAGES: "1"` on it. If the list is refused, the scan carries on and logs one warning: images built locally are no longer recognised, the exact running digest is unknown (floating tags fall back to the baseline above) and rollback commands lose the digest.
+    The scan reads the Docker image list (`GET /images/json`) on every pass. Behind a socket proxy, set `IMAGES: "1"` on it. If the list is refused, the scan carries on and logs one warning that names `IMAGES=1` (a new one only after the list was served again): images built locally are no longer recognised, the exact running digest is unknown (floating tags fall back to the baseline above) and rollback commands lose the digest.
 
 ### When an update goes away
 
-Each scan replaces the pending updates of the containers it covered. An update that a scan no longer finds is removed from the list and its [alert](#update-alerts) is resolved. This happens when the container is recreated on the new image, when its tag filter or labels change, when it is excluded or pinned, and when its container is gone. A container for which the registry cannot be reached during a scan loses its pending update the same way, until a scan reaches the registry again.
+Each scan replaces the pending updates of the containers it covered. An update that a scan no longer finds is removed from the list and its [alert](#update-alerts) is resolved. This happens when the container is recreated on the new image, when its tag filter or labels change, when it is excluded or pinned, when the registry stops serving the image to maintenant (credentials refused, tag removed), and when its container is gone.
+
+A container whose check failed during the scan (a registry that is down, a timeout) is left out of that cleanup: it keeps its pending update and its alert until a scan checks it successfully.
 
 ---
 
@@ -84,7 +86,7 @@ maintenant queries the OCI (Docker) registry API:
 - **GitHub Container Registry (GHCR)**: `ghcr.io` images
 - **Self-hosted registries**: any OCI-compliant registry
 
-**Private registries.** maintenant authenticates with the Docker client configuration of its own process: the `config.json` in the directory named by `DOCKER_CONFIG`, or in `~/.docker`. In a container, mount it read-only and set `DOCKER_CONFIG`; the image has no credential helper, so the file must hold the credentials themselves. A registry that refuses the credentials is skipped quietly, like any image the credentials do not open. `MAINTENANT_CA_CERT` adds a private root certificate to the registry connections.
+**Private registries.** maintenant authenticates with the Docker client configuration of its own process: the `config.json` in the directory named by `DOCKER_CONFIG`, or in `~/.docker`. In a container, mount it read-only and set `DOCKER_CONFIG`; the image has no credential helper, so the file must hold the credentials themselves. A registry that refuses the credentials is skipped quietly, like any image the credentials do not open. The credentials are looked up for the registry that is queried, so a mirror set with `maintenant.update.registry` needs its own entry. `MAINTENANT_CA_CERT` adds a private root certificate to the registry connections.
 
 **Errors.** A failure other than "unauthorized", "denied", unknown name or unknown manifest (a registry that is down, a timeout) counts as an error of the scan, reported in its `errors` count and logged as a warning. Such a container is checked again at the next scan.
 
@@ -103,9 +105,9 @@ Every container is tracked by default. These labels adjust that per container. T
 | `maintenant.update.pin` | Any non-empty value freezes the container: no update is reported for it. |
 | `maintenant.update.alert_on` | Which updates raise an alert: `all` (default), `critical` or `none`. The update is listed on the Updates page in every case. |
 | `maintenant.update.tag-include`, `maintenant.update.tag-exclude` | Go regular expressions that narrow the candidate tags, see [Tag Filtering](#tag-filtering). |
-| `maintenant.update.registry` | Changes the registry name recorded with the update. The registry queried is always the one in the image reference. |
+| `maintenant.update.registry` | Queries this registry instead of the one in the image reference, for a mirror that serves the same repositories. The repository path is kept (`<mirror>/library/nginx` for the official `nginx` image), and the registry name recorded with the update becomes the value of the label. |
 
-**Where the labels are read.** They are container labels on the server's own Docker runtime and on Docker agents (Swarm included), and annotations with the same names on Kubernetes workloads: Deployments, StatefulSets, DaemonSets and pods without a controller, of the cluster the server runs in. The annotation goes on the workload object, and the image checked is the first container of its pod spec. A remote Kubernetes agent reports neither annotations nor image digests, so its workloads are tracked without them. A label that cannot be parsed is ignored and logged as a warning.
+**Where the labels are read.** They are container labels on the server's own Docker runtime and on Docker agents (on a Swarm manager, the `deploy.labels` of the service count too), and annotations with the same names on Kubernetes workloads: Deployments, StatefulSets, DaemonSets and pods without a controller, of the cluster the server runs in. The annotation goes on the workload object, and the image checked is the first container of its pod spec. A remote Kubernetes agent reports neither annotations nor image digests, so its workloads are tracked without them. A label that cannot be parsed is ignored and logged as a warning.
 
 ---
 
@@ -292,7 +294,13 @@ docker stop web && docker rm web
 docker run -d --name web nginx:1.27.0
 ```
 
-This form only names the image. The `docker run` line carries none of the original options (ports, volumes, environment): use it as a template, or recreate the container the way you created it. A Swarm task also gets this form, and it is not what to run there: update the service instead (`docker service update --image <image> <service>`).
+This form only names the image. The `docker run` line carries none of the original options (ports, volumes, environment): use it as a template, or recreate the container the way you created it.
+
+**Docker Swarm.** A task gets the command that points its service at the new image, and Swarm replaces the tasks with its rolling update:
+
+```bash
+docker service update --image nginx:1.27.0 web
+```
 
 **Kubernetes.** The command sets the image of the workload's first pod container, in its namespace. The workload kind comes from the controller (`deployment`, `statefulset`, `daemonset`), and a pod without a controller is updated in place as `pod/<name>`:
 
@@ -300,7 +308,7 @@ This form only names the image. The `docker run` line carries none of the origin
 kubectl set image deployment/web nginx=nginx:1.27.0 -n production
 ```
 
-When the tag is unchanged (a republished floating tag), the reference carries the digest of the registry's current manifest index (`nginx:latest@sha256:…`), because an unchanged reference would leave the pod template as it is and nothing would roll out.
+On Kubernetes and Swarm, when the tag is unchanged (a republished floating tag), the reference carries the digest of the registry's current manifest index (`nginx:latest@sha256:…`), because an unchanged reference would leave the pod template or the service as it is and nothing would roll out.
 
 **Rollback.** The rollback names the image the container ran before by its digest (`repo@sha256:…`) when maintenant knows it, else by its tag when that tag is a fixed version (`repo:1.25.3`). When it can name neither, for instance a `latest` container whose digest the runtime does not report, there is no `rollback_command`. A Compose rollback when the tag is unchanged pulls the old image, tags it back to the name in the compose file and recreates the service without pulling:
 
@@ -311,7 +319,7 @@ docker tag nginx@sha256:… nginx:latest
 docker compose up -d --pull never --force-recreate web
 ```
 
-When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose up -d <service>`. Standalone containers use `docker pull`, `stop`, `rm` and `run` with the previous reference, and Kubernetes `kubectl set image` with it.
+When the update changed the tag, the rollback tells you to set the image of the service back to the previous reference in the compose file, then to run `docker compose up -d <service>`. Standalone containers use `docker pull`, `stop`, `rm` and `run` with the previous reference, Swarm tasks `docker service update --image <previous reference> <service>`, and Kubernetes `kubectl set image` with the previous reference.
 
 ---
 
@@ -319,7 +327,7 @@ When the update changed the tag, the rollback tells you to set the image of the 
 
 With Personal, update intelligence goes beyond digest comparison. Each scan enriches what it found:
 
-- **CVE details**: known vulnerabilities of the version the container runs, from [OSV.dev](https://osv.dev) (results are cached for 24 hours), for each container with a pending update whose image maps to a known software ecosystem. For a CVE with a known fix, the detail of an update says whether the update fixes it (`is_fixed_by_update`) and gives a command to reach the fixed version (`fix_command`). How an image is mapped to an ecosystem is described in [Network Security Insights](security.md).
+- **CVE details**: known vulnerabilities of the version the container runs, from [OSV.dev](https://osv.dev) (results are cached for 24 hours). The lookup covers every running container that is neither ignored nor archived and whose image maps to a known software ecosystem, whether or not an update is pending, and including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images). For a CVE with a known fix, the detail of an update says whether the update fixes it (`is_fixed_by_update`) and gives the update command for the fixed version (`fix_command`, in the form of the runtime: Compose, `docker run`, `docker service update --image <ref> <service>` on Swarm or `kubectl set image`). `fix_command` is empty when the fixed version is not a version tag newer than the one that runs. How an image is mapped to an ecosystem is described in [Network Security Insights](security.md).
 - **Risk scoring**: a score from 0 to 100 for each pending update. It never falls below the base score of the update type (major 85, minor 50, patch 15, digest-only 5), and known CVEs and breaking changes in the release notes can raise it. Risk levels are `critical` from 81, `high` from 61, `moderate` from 31 and `low` below.
 - **Changelog**: the release notes of the new version. maintenant reads the source repository from the image's `org.opencontainers.image.source` (or `org.label-schema.vcs-url`) label, and when it is on GitHub, takes the release that matches the new tag, else the latest one. It returns the link, a summary of up to 500 characters and a `has_breaking_changes` flag set from keywords such as "breaking change" or "migration required". Set the `GITHUB_TOKEN` environment variable to raise GitHub's rate limit.
 
@@ -357,7 +365,7 @@ With Personal, the alert details carry the `update_command` and the `rollback_co
 
 ## Data Retention
 
-Scan records older than 30 days are deleted, once a day. The baselines of containers that no longer exist go with them.
+Once a day, maintenant deletes the scan records older than 30 days, the pending updates that no scan has refreshed for 30 days, the expired CVE cache entries and the baselines of containers that no longer exist.
 
 ---
 

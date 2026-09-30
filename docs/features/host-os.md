@@ -6,7 +6,7 @@ Know when a host's Linux distribution stops receiving security updates, before i
 
 ## How It Works
 
-Every host — the server itself and every remote agent, binary, in a Docker container, or on a Kubernetes node — reports its operating system identity. maintenant matches it against a support-cycle table and raises a `host` / `os_eol` alert per host:
+Every host reports its operating system identity: the server itself and every remote agent, whether it runs as a binary, in a Docker container or on a Kubernetes node. maintenant matches it against a support-cycle table and raises a `host` / `os_eol` alert per host:
 
 - **Warning** once 30 days or fewer remain before the security support date.
 - **Critical** the day after that date passes.
@@ -22,8 +22,8 @@ Hosts are evaluated once a day (the first pass runs 30 seconds after startup) an
 
 The identity is always read at the source, never guessed:
 
-- **Binary agent and server binary** — read `/etc/os-release` directly.
-- **In a container** — read `/host/etc/os-release`, the host's file bind-mounted read-only:
+- **Binary agent and server binary**: read `/etc/os-release` directly.
+- **In a container**: read `/host/etc/os-release`, the host's file bind-mounted read-only:
 
 ```bash
 docker run … -v /etc/os-release:/host/etc/os-release:ro …
@@ -34,13 +34,13 @@ volumes:
   - /etc/os-release:/host/etc/os-release:ro
 ```
 
-Without the mount, the host shows as **unknown** with the reason "mount missing" — never the operating system of the container's own image. This is the same fallback pattern as the existing `/proc:/host/proc:ro` mount for resource metrics, except there is no fallback: guessing the wrong OS would be worse than showing nothing. The [Multi-Host Monitoring](multihost.md#requirements) mount snippet, the generated `docker run` and Compose commands on the Agents page, and this repository's own `compose.yml`, all include it already.
+Without the mount, the host shows as **unknown** with the reason "mount missing", never the operating system of the container's own image. This follows the convention of the `/proc:/host/proc:ro` mount for resource metrics, without its fallback: guessing the wrong OS would be worse than showing nothing. A process counts as running in a container when `/.dockerenv` or `/run/.containerenv` exists or `MAINTENANT_CONTAINER` is set to a true value; the published image sets it. The [Multi-Host Monitoring](multihost.md#requirements) mount snippet, the generated `docker run` and Compose commands on the Agents page, and this repository's own `compose.yml` all include the mount already.
 
 - **On Kubernetes**: no mount at all. The agent (one per cluster, a single-replica Deployment) derives the identity from the `osImage` of the node its pod runs on, which it already collects as part of its topology snapshot. The agent finds its own node by pod name, or by the `MAINTENANT_NODE_NAME` environment variable (set from `spec.nodeName` in the generated manifest) when the pod name does not match. The alert therefore follows that one node, while the nodes page evaluates every node of the cluster.
 
 The agent re-reads the identity every hour and reports it again only when it changed, so an upgrade is seen within the day without restarting the agent.
 
-**Limit**: a bind-mounted file keeps the inode it resolved at container start. An OS upgrade that rewrites `/etc/os-release` (as `dpkg` does) is only picked up after the *container* restarts — the hourly re-read cannot see it, because the mount itself is stale. This is not a concern for the binary agent, which reads the live file every time.
+**Limit**: a bind-mounted file keeps the inode it resolved at container start. An OS upgrade that rewrites `/etc/os-release` (as `dpkg` does) is only picked up after the *container* restarts: the hourly re-read cannot see it, because the mount itself is stale. This is not a concern for the binary agent, which reads the live file every time.
 
 ---
 
@@ -50,13 +50,13 @@ Every tracked distribution has up to three end-of-support dates:
 
 | Date | Meaning | Used for alerting? |
 |------|---------|---------------------|
-| End of active support | End of new features and minor updates | No — informational only |
-| End of free security support | Last day security patches ship without a paid subscription (for Debian, this is the end of LTS) | **Yes — this is the date the alert is based on** |
-| End of paid extended support | ELTS (Debian), ESM (Ubuntu Pro), ELS (RHEL), LTSS (SLES) | No — shown, never alerted on |
+| End of active support | End of new features and minor updates | No, informational only |
+| End of free security support | Last day security patches ship without a paid subscription (for Debian, this is the end of LTS) | **Yes, this is the date the alert is based on** |
+| End of paid extended support | ELTS (Debian), ESM (Ubuntu Pro), ELS (RHEL), LTSS (SLES) | No, shown but never alerted on |
 
-Extended support is never used to compute the alert, because maintenant has no way to know whether you are actually subscribed to it. If you are, acknowledge the alert or silence it with a rule — that is preferable to staying silent for everyone who is not subscribed.
+Extended support is never used to compute the alert, because maintenant has no way to know whether you are actually subscribed to it. If you are, acknowledge the alert or silence it with a rule: that is preferable to staying silent for everyone who is not subscribed.
 
-**Example**: Debian 11's free security support ended on 2026-08-31. The warning opens on 2026-08-01 (30 days before), and the alert turns critical on 2026-09-01 — even though Debian's paid ELTS keeps that release patched until 2031.
+**Example**: Debian 11's free security support ended on 2026-08-31. The warning opens on 2026-08-01 (30 days before), and the alert turns critical on 2026-09-01, even though Debian's paid ELTS keeps that release patched until 2031.
 
 ---
 
@@ -80,7 +80,7 @@ Extended support is never used to compute the alert, because maintenant has no w
 | `node_not_found` | Kubernetes: the agent's node could not be resolved |
 | `agent_too_old` | The agent has never reported an OS identity at all |
 
-`untracked` covers distribution derivatives (Raspberry Pi OS, Linux Mint, Pop!_OS…), distributions maintenant does not follow (Fedora, Arch, NixOS, Amazon Linux, Flatcar, Talos, Bottlerocket), and versions the table does not recognize — including Debian testing/sid, which has no `VERSION_ID` to match against. A derivative's identity is displayed exactly as reported; its dates are never guessed from a parent distribution. `unknown` and `untracked` hosts never raise an alert.
+`untracked` covers distribution derivatives (Raspberry Pi OS, Linux Mint, Pop!_OS…), distributions maintenant does not follow (Fedora, Arch, NixOS, Amazon Linux, Flatcar, Talos, Bottlerocket), and versions the table does not recognize, including Debian testing/sid, which has no `VERSION_ID` to match against. A derivative's identity is displayed exactly as reported; its dates are never guessed from a parent distribution. `unknown` and `untracked` hosts never raise an alert.
 
 ---
 
@@ -109,13 +109,13 @@ Set `MAINTENANT_DISABLE_OS_EOL_REFRESH=1` to turn the refresh off entirely, for 
 
 - Pending package updates (`apt`, `dnf`, `apk`) and unapplied security patches.
 - Kernel version, reboot-required detection.
-- End-of-support for the base image of a *container* — that is a separate concern, tracked as part of Update Intelligence.
+- End-of-support for the base image of a *container*: that is a separate concern, tracked as part of Update Intelligence.
 
 ---
 
 ## Related
 
-- [Multi-Host Monitoring](multihost.md) — the `os-release` mount, alongside the `/proc` mount for resource metrics
-- [Update Intelligence](updates.md) — the "Operating systems" section on the Updates page
-- [Alert Engine](alerts.md) — how the `host` / `os_eol` alert fits the shared alert pipeline
-- [MCP Server](mcp.md) — host OS and support state via `get_updates`
+- [Multi-Host Monitoring](multihost.md): the `os-release` mount, alongside the `/proc` mount for resource metrics
+- [Update Intelligence](updates.md): the "Operating systems" section on the Updates page
+- [Alert Engine](alerts.md): how the `host` / `os_eol` alert fits the shared alert pipeline
+- [MCP Server](mcp.md): host OS and support state via `get_updates`

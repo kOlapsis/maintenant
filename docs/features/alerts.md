@@ -28,14 +28,14 @@ maintenant raises alerts from every monitoring subsystem. An alert is identified
 | `swarm` | `replica_unhealthy` | `swarm_service` | Warning | The running replicas match the desired count again |
 | `swarm` | `node_down` | `swarm_node` | Critical | The node is `ready` again |
 | `swarm` | `node_drain` | `swarm_node` | Warning | The node leaves `drain` |
-| `swarm` | `quorum_degraded` | `swarm_cluster` | Critical | Enough managers are ready again |
+| `swarm` | `quorum_degraded` | `swarm_cluster` | Critical | Enough managers are ready again and the swarm has a leader |
 | `swarm` | `crash_loop` | `swarm_service` | Critical | No task failure for 10 minutes |
 | `swarm` | `update_rollback`, `update_stalled` | `swarm_service` | Warning | A rolling update of the service completes |
 | `kubernetes` | `replica_health` | `workload` | Warning, Critical with no ready replica | The workload has all its replicas ready |
 | `kubernetes` | `crash_loop` | `pod` | Critical | The pod stops crash-looping |
 | `kubernetes` | `node_condition` | `node` | Critical when not Ready, Warning under memory, disk or PID pressure | The node has no problem left |
 
-Removing the object an alert is about resolves the alert. A container, workload or Swarm service labelled `maintenant.ignore` raises none.
+Removing the object an alert is about resolves the alert. A container labelled `maintenant.ignore`, a Swarm service labelled with it and a Kubernetes workload annotated with it raise none. The Swarm service alerts read the label on the service itself (`deploy.labels` in a stack file), not on its task containers.
 
 ### Container alerts
 
@@ -47,7 +47,7 @@ Removing the object an alert is about resolves the alert. A container, workload 
 
 A container that stops and stays stopped raises no alert on its own: `restart_loop` needs it to come back, and `health_unhealthy` needs a `HEALTHCHECK`. Set `MAINTENANT_CONTAINER_DOWN_AFTER` to a Go duration (`5m`, `30s`, `1h`) and `container_down` fires once a container has been in `exited` or `dead` for that long, at the severity configured on the container (`warning` unless `maintenant.alert.severity` says otherwise). It resolves on its own when the container runs again.
 
-The threshold is unset by default, because switching it on alerts retroactively on every container already stopped. A container that stops cleanly is recorded as `completed` and never counts as down, so a finished job stays quiet. Clean means exit code 0, or 143 (SIGTERM), or 137 (SIGKILL) unless the kernel's out-of-memory killer sent it: an OOM kill is a crash. The sweep runs every 30 seconds, which is the alert's resolution, not its threshold. It covers the containers of remote agents as well.
+The check is off by default (unset, or `0`), because switching it on alerts retroactively on every container already stopped. A value that is not a valid duration stops maintenant from starting, so a typo cannot leave the check silently off. A container that stops cleanly is recorded as `completed` and never counts as down, so a finished job stays quiet. Clean means exit code 0, or 143 (SIGTERM), or 137 (SIGKILL) unless the kernel's out-of-memory killer sent it: an OOM kill is a crash. The sweep runs every 30 seconds, which is the alert's resolution, not its threshold. It covers the containers of remote agents as well.
 
 ### Certificate, endpoint and heartbeat alerts
 
@@ -69,7 +69,7 @@ A host alert fires when the operating system of a monitored host reaches the end
 
 ### Security alerts
 
-`dangerous_configuration` is raised in every edition, once per container, whenever the set of security insights of the container changes. Its severity follows the worst insight: critical for critical, warning for high, info for medium or low. It resolves when the container has no insight left. See [Network Security Insights](security.md).
+`dangerous_configuration` is raised in every edition, once per container, whenever the set of security insights of the container changes. Its severity follows the worst insight: critical for critical, warning for high, info for medium or low. An open alert rises with the worst insight but keeps its severity if the insight becomes milder, and it resolves when the container has no insight left. See [Network Security Insights](security.md).
 
 `posture_threshold` needs Personal and `MAINTENANT_SECURITY_SCORE_THRESHOLD` set to a score above 0. The infrastructure score is checked every 5 minutes and each time the posture is computed: the alert fires when it falls under the threshold, and is Critical when it falls more than 20 points under.
 
@@ -77,13 +77,15 @@ A host alert fires when the operating system of a monitored host reaches the end
 
 Swarm alerts come from the Swarm cluster the server is connected to, and Kubernetes alerts from the cluster it runs in. Agents do not raise them.
 
-- **`replica_unhealthy`** fires as soon as a Swarm service update shows fewer running replicas than desired, and after 5 minutes of continuous shortfall when no update announced it (a task that died, for instance). Only services in replicated mode with at least one desired replica are checked.
-- **`crash_loop`** (Swarm) fires at 3 task failures in 5 minutes and resolves after 10 quiet minutes.
-- **`quorum_degraded`** fires once when fewer managers than the quorum (more than half of them) are ready.
+- **`replica_unhealthy`** fires when a service has had fewer running replicas than desired for 5 minutes in a row. The 5 minutes start at the first service event or periodic check (every 60 seconds) that sees the shortfall. Only services in replicated mode with at least one desired replica are checked.
+- **`crash_loop`** (Swarm) fires at 3 task failures in 5 minutes, counted over the tasks of every node of the swarm (read every 30 seconds), and resolves after 10 quiet minutes. A task that Swarm shut down (a rolling update, a scale-down) is not a failure, and neither is one that exited with code 0 or 143. Exit code 137 counts, because the task API does not say whether the kernel's out-of-memory killer sent it.
+- **`quorum_degraded`** fires once when fewer managers than the quorum (more than half of them) are ready, or when the managers report that the swarm has no leader.
 - **`update_rollback`** and **`update_stalled`** follow the rolling update status of a service: a rollback that completed, or an update that paused.
-- **`replica_health`** (Kubernetes) fires after a workload has been under-replicated for 5 minutes, and escalates to Critical when no replica is ready. Jobs are not checked.
+- **`replica_health`** (Kubernetes) fires after a workload has been under-replicated for 5 minutes, and escalates to Critical when no replica is ready. Jobs and workloads with no desired replica are not checked.
 - **`crash_loop`** (Kubernetes) fires for a pod in `CrashLoopBackOff`, or that restarted 3 times in 10 minutes.
-- **`node_condition`** is one alert per node. A node whose Ready condition is False or Unknown counts as not ready.
+- **`node_condition`** is one alert per node. A node whose Ready condition is False or Unknown counts as not ready. If the nodes cannot be listed, no node alert is raised or resolved.
+
+The Kubernetes alerts are evaluated every 30 seconds.
 
 See [Docker Swarm](swarm.md) and the [Kubernetes guide](../guides/kubernetes.md).
 
@@ -91,12 +93,12 @@ See [Docker Swarm](swarm.md) and the [Kubernetes guide](../guides/kubernetes.md)
 
 ## Life of an Alert
 
-- **First event.** maintenant stores the alert as `active`, broadcasts `alert.fired` over SSE, sends it to the channels whose [trigger](#alert-triggers) matches (plus the channels of per-entity routing, Pro) and hands it to the [escalation policies](alert-escalation.md) (Pro).
-- **Same event again.** While an alert is active, a further event with the same source, type and entity is ignored. One with a higher severity raises the active alert in place: new severity, message and details, a new notification, and the escalation policies are evaluated again. The severity of an active alert never goes down.
-- **Recovery.** The alert becomes `resolved` and gets a `resolved_at`. A second alert record, `resolved` with severity `info` and the recovery message, is stored and referenced by `resolved_by_id`. Channels receive a resolved notification, routed by the severity and source of the original alert.
-- **Entity removed.** When a container is archived, or an endpoint, a heartbeat or a certificate is deleted, its active alerts are resolved without a recovery record and without a notification. At startup, maintenant also resolves any active alert whose container, agent, heartbeat, endpoint or certificate no longer exists, so alerts left behind by an earlier version cannot linger.
+- **First event.** maintenant stores the alert as `active`, broadcasts `alert.fired` over SSE, sends it to the channels whose [trigger](#alert-triggers) matches and hands it to the [escalation policies](alert-escalation.md) (Pro).
+- **Same event again.** While an alert is active, a further event with the same source, type and entity is ignored. One with a higher severity raises the active alert in place: new severity, message, entity name and details, a new `alert.fired` broadcast and a new notification, and the escalation policies are evaluated again. The severity of an active alert never goes down.
+- **Recovery.** The alert becomes `resolved` and gets a `resolved_at`. A second alert record, `resolved` with severity `info` and the recovery message, is stored and referenced by `resolved_by_id`. Channels receive a resolved notification, routed by the severity, source and entity of the original alert.
+- **Entity removed.** When a container is archived, an endpoint, a heartbeat or a certificate is deleted, or a heartbeat is paused, its active alerts are resolved without a recovery record and without a notification (the dashboard still receives `alert.resolved`). At startup, maintenant also resolves any active alert whose container, agent, heartbeat, endpoint or certificate no longer exists, so alerts left behind by an earlier run cannot linger.
 - **Silenced.** An alert that fires while a [silence rule](#silence-rules) or a maintenance window matches is stored as `silenced` and broadcast as `alert.silenced`. It is not sent and not escalated.
-- **Retention.** Alerts older than 90 days are deleted.
+- **Retention.** Alerts created more than 90 days ago are deleted, once a day.
 
 ---
 
@@ -156,7 +158,7 @@ POST /api/v1/channels
 }
 ```
 
-maintenant POSTs this JSON body, with `event` set to `alert.fired` or `alert.resolved`:
+maintenant POSTs this JSON body, with `event` set to `alert.fired` or `alert.resolved` (`test` for a test notification):
 
 ```json
 {
@@ -184,7 +186,7 @@ maintenant POSTs this JSON body, with `event` set to `alert.fired` or `alert.res
 }
 ```
 
-A resolved notification carries the same alert with `status` set to `resolved`, a `resolved_at` time, the `info` severity and the recovery message. The payload is maintenant's own: Slack and Teams expect theirs, which is why they are native channels.
+A resolved notification carries the same alert with `status` set to `resolved`, a `resolved_at` time, the `resolved_by_id` of the recovery record, the `info` severity and the recovery message. The payload is maintenant's own: Slack and Teams expect theirs, which is why they are native channels.
 
 ### Email (SMTP) :material-star-four-points:{ title="Personal" }
 
@@ -249,10 +251,11 @@ first line, so a phone notification says what happened before you open it. A
 recovery arrives as a separate message, marked ✅. Anything over Telegram's
 4096-character limit is truncated with a visible marker rather than rejected.
 
-When a send fails, the delivery log carries Telegram's own words (`chat not
-found`, `bot was kicked from the supergroup chat`, `bot can't initiate
-conversation with a user`) because those name the fix, where an HTTP code does
-not. On a rate limit, the retry waits at least as long as Telegram asked.
+When a send fails, the log and the delivery record carry Telegram's own words
+(`chat not found`, `bot was kicked from the supergroup chat`, `bot can't
+initiate conversation with a user`) because those name the fix, where an HTTP
+code does not. On a rate limit, the retry waits at least as long as Telegram
+asked.
 
 ### Slack & Teams :material-crown:{ title="Pro" }
 
@@ -276,13 +279,13 @@ The HTTP channel types (`webhook`, `discord`, `slack`, `teams`) only accept dest
 - The host must not resolve to a loopback, private (RFC 1918 and ULA), link-local, carrier-grade NAT (`100.64.0.0/10`), unspecified or multicast address.
 - The check runs when the channel is saved, and again at every connection, redirects included, so a host that changes its DNS answer afterwards is refused as well.
 
-A refused destination answers `400 VALIDATION_ERROR` with the reason. To deliver to an internal relay on a development setup, set `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` to a true value (`1`, `true`): it lifts both the `https` requirement and the address guard, for channels and event webhooks alike. Telegram always calls `api.telegram.org`, and email goes to the SMTP server you configured, so neither depends on it.
+A refused destination answers `400 VALIDATION_ERROR` with the reason. To deliver to an internal relay on a development setup, set `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` to a true value (`1`, `true`, `yes` or `on`): it lifts both the `https` requirement and the address guard, for channels and event webhooks alike. Telegram always calls `api.telegram.org`, and email goes to the SMTP server you configured, so neither depends on it.
 
 ### When the edition drops
 
 If a licence lapses or is downgraded, the channels of the types the running edition no longer opens are kept but **suspended**: email and Telegram below Personal, Slack and Teams below Pro.
 
-- Nothing is delivered through a suspended channel. Each delivery is recorded as `suspended` with the required edition, and one warning per channel is logged.
+- Nothing is delivered through a suspended channel. Each delivery is recorded as `suspended` with the required edition as its error, and one warning per channel is logged.
 - `GET /api/v1/channels` marks it with `suspended: true` and its `required_edition`. The interface shows a banner on every page and a **Suspended** badge on the channel.
 - `GET /api/v1/edition` lists the enabled suspended channels in `suspended_channels`.
 - Creating, editing, enabling or testing such a channel is refused with `403 EDITION_REQUIRED`. Disabling it and deleting it stay open: an expired licence never leaves you unable to silence a channel.
@@ -293,7 +296,7 @@ Nothing is lost: once the edition is back, the channels deliver again. Move the 
 
 ## Channels are silent by default
 
-A `notification_channel` represents **where** to send (a URL, an email address, a chat). It does not decide *when* to send. After creating a channel, it stays silent until it is referenced by an [Alert Trigger](#alert-triggers), by an [Escalation Policy](alert-escalation.md) or, with Pro, by per-entity routing.
+A `notification_channel` represents **where** to send (a URL, an email address, a chat). It does not decide *when* to send. After creating a channel, it stays silent until it is referenced by an [Alert Trigger](#alert-triggers) or by an [Escalation Policy](alert-escalation.md) (Pro).
 
 This decoupling enables the **reserved-escalation** pattern: a channel that only fires through an escalation policy at a delayed level (e.g. CTO email at T+1h), without receiving the initial alert.
 
@@ -321,12 +324,12 @@ POST /api/v1/alert-triggers
 | `name` | Required, at most 120 characters, unique (`409 name_conflict`). |
 | `filter_severities` | Comma-separated severities: `critical`, `warning`, `info`. |
 | `filter_sources` | Comma-separated sources: `container`, `endpoint`, `heartbeat`, `certificate`, `resource`, `update`, `security`, `agent`, `host`, `swarm`, `kubernetes`. |
-| `filter_scopes` | Comma-separated `entity_type:entity_id` pairs, such as `container:0198b1c2-…`. The entity types are in the table of [alert sources](#alert-sources). The id is the one the alert carries in `entity_id`: a UUID for most entities, a Docker ID for Swarm objects, a name or a `namespace/name` path for Kubernetes objects. |
+| `filter_scopes` | Comma-separated `entity_type:entity_id` pairs, such as `container:0198b1c2-…`. The entity types are in the table of [alert sources](#alert-sources). The id is the one the alert carries in `entity_id`: a UUID for most entities, a Docker ID for Swarm objects, and for Kubernetes `namespace/Kind/name` for a workload (`production/Deployment/api`), `namespace/name` for a pod and the node name for a node. |
 | `enabled` | Defaults to `true` on creation and keeps its value on update when omitted. |
 | `notify_on_resolve` | Defaults to `true` and keeps its value on update when omitted. Set it to `false` for a channel that should only receive failures. |
 | `channel_ids` | Required, at least one channel UUID, each of an existing channel. |
 
-Filters combine in AND between fields and OR within a field. An empty filter matches everything. A disabled channel is skipped. Multiple triggers can share the same channel without duplicating deliveries: a channel receives an alert once, however many triggers match. A `PUT` needs the `name` and the `channel_ids` again, and a filter left out is cleared. Unknown fields, such as the former `filter_tags`, are ignored.
+Filters combine in AND between fields and OR within a field. An empty filter matches everything. A disabled channel is skipped. Multiple triggers can share the same channel without duplicating deliveries: a channel receives an alert once, however many triggers match. A `PUT` needs the `name` and the `channel_ids` again, and a filter left out is cleared. Unknown fields are ignored. An unknown trigger answers `404 trigger_not_found`, and a request that breaks a rule `400 validation_failed`.
 
 A trigger relays both the initial alert and its recovery. The recovery of an alert is matched with the source, severity and scope of the original alert, so a trigger on `critical` receives the recovery of a critical alert.
 
@@ -352,8 +355,6 @@ Trigger CRUD endpoints:
 
 Triggers can also be managed via MCP tools: `list_triggers`, `get_trigger`, `create_trigger`, `update_trigger`, `delete_trigger`. Channels have the matching set: `list_channels`, `get_channel`, `create_channel`, `update_channel`, `delete_channel`, `test_channel`.
 
-> **Migration note**: previous versions used `routing_rules` attached to channels. On upgrade, those rules were converted to alert triggers (one trigger per rule), and a channel without any rule received a generated trigger that sends it every alert, to keep the broadcast behavior. The legacy `/api/v1/channels/{id}/rules*` endpoints have been removed.
-
 ---
 
 ## Testing Channels
@@ -364,7 +365,7 @@ Send a test alert to verify your channel configuration:
 POST /api/v1/channels/{id}/test
 ```
 
-The test sends one notification (no retry) for an alert of source `test`, and always answers `200`: `{"status": "delivered", "response_code": 204}` when the destination accepted it, `{"status": "failed", "error": "…"}` otherwise. For an email or Telegram channel `response_code` is `200`.
+The test sends one notification (no retry) for an alert of source `test`, and answers `200` whether the destination accepted it or not: `{"status": "delivered", "response_code": 204}` when it did, `{"status": "failed", "error": "…"}` otherwise. For an email or Telegram channel `response_code` is `200`. An unknown channel answers `404 NOT_FOUND`, and a channel whose type the edition does not open `403 EDITION_REQUIRED`.
 
 ---
 
@@ -424,19 +425,21 @@ POST /api/v1/alerts/{id}/acknowledge
 }
 ```
 
-`acknowledged_by` is required. The answer is the alert with its `acknowledged_at` and `acknowledged_by`. Acknowledging broadcasts `alert.acknowledged`, removes the alert from `GET /api/v1/alerts/active` and stops its [escalation](alert-escalation.md). Only an active alert that is not yet acknowledged can be acknowledged: anything else answers `409 CONFLICT`, an unknown id `404 NOT_FOUND`.
+`acknowledged_by` is required (`400 INVALID_REQUEST` without it). The answer is the alert with its `acknowledged_at` and `acknowledged_by`. Acknowledging broadcasts `alert.acknowledged`, removes the alert from `GET /api/v1/alerts/active` and stops its [escalation](alert-escalation.md). Only an active alert that is not yet acknowledged can be acknowledged: anything else answers `409 CONFLICT`, an unknown id `404 NOT_FOUND`.
 
-The Alerts page has an **Acknowledge** button, and the MCP tool `acknowledge_alert` does the same, with `mcp` as the default name. Acknowledging every security insight of a container in the security posture (Personal) acknowledges its `dangerous_configuration` alert as well.
+The **Active Alerts** list of the Alerts page has an **Acknowledge** button, which records the acknowledgement as `operator`. The MCP tool `acknowledge_alert` does the same, with `mcp` as the default name. Acknowledging every security insight of a container in the security posture (Personal) acknowledges its `dangerous_configuration` alert as well.
 
 ---
 
 ## Delivery and Retries
 
-Notifications are delivered by a pool of ten workers fed by a queue of 256. If the queue is full, the notification is dropped and a warning is logged.
+Notifications are delivered by ten workers, each fed by its own queue of 256 notifications. If a queue is full, the notification is dropped and a warning is logged.
 
-A delivery makes up to **three attempts**: one at once, one after 1 second and one after 5 seconds. An HTTP attempt times out after 10 seconds and an email attempt after 30. After the third failure the delivery is recorded as `failed` with the last error and is not retried later. A Telegram rate limit lengthens the wait to the delay Telegram asked for.
+The notifications of one alert to one channel always go through the same worker, so they reach the channel in order: a recovery never overtakes the alert it resolves, even when the alert is still being retried. Other alerts and other channels are spread over the ten workers.
 
-A delivery is `pending`, `delivered`, `failed` or `suspended`. A channel whose last delivery failed shows `health: failing`.
+A delivery makes up to **three attempts**: one at once, one after 1 second and one after 5 seconds. A sender can lengthen the wait, never shorten it: a Telegram rate limit raises it to the delay Telegram asked for. An HTTP attempt times out after 10 seconds and an email attempt after 30. Every failed attempt is logged with its error. After the third failure the delivery is recorded as `failed` and is not retried later. An email channel with no SMTP server configured fails at once, without retries.
+
+Deliveries are kept in the `notification_deliveries` table, which no API lists. A delivery is `pending`, `delivered`, `failed` or `suspended`, and a channel whose last delivery failed shows `health: failing`.
 
 ---
 
@@ -460,13 +463,13 @@ Returns alerts, resolved ones included, newest first, as `{"alerts": […], "has
 
 | Parameter | Description |
 |-----------|-------------|
-| `limit` | 1 to 200, default 50. |
-| `before` | An RFC 3339 time: only alerts fired before it. Pass the `fired_at` of the last alert you received to read the next page while `has_more` is `true`. |
+| `limit` | 1 to 200, default 50. Another value answers `400 INVALID_PARAM`. |
+| `before` | An RFC 3339 time: only alerts fired before it. Pass the `fired_at` of the last alert you received to read the next page while `has_more` is `true`. A value that is not a time answers `400 INVALID_PARAM`. |
 | `source` | Only this source. |
 | `severity` | Only this severity. |
 | `status` | `active`, `resolved` or `silenced`. |
 
-Each resolution also stores a recovery record, so the list holds both the original alert and its `resolved` recovery.
+Each resolution also stores a recovery record, so the list holds both the original alert and its `resolved` recovery. In these responses `details` is a string holding JSON, while the `alert.fired`, `alert.resolved` and `alert.silenced` events and the webhook bodies carry it as an object.
 
 ### Single Alert
 
@@ -502,7 +505,7 @@ GET /api/v1/alerts/{id}
 | `GET` | `/api/v1/escalation-runs/{run_id}` | Get a run (Pro) |
 | `GET` | `/api/v1/alerts/{alert_id}/escalation-runs` | List runs for an alert (Pro) |
 
-Alerts are also broadcast on the SSE event stream as `alert.fired`, `alert.resolved`, `alert.silenced` and `alert.acknowledged`. The MCP tools `list_alerts` and `acknowledge_alert` read and acknowledge alerts.
+Alerts are also broadcast on the SSE event stream as `alert.fired`, `alert.resolved`, `alert.silenced` and `alert.acknowledged`, and the changes to channels, triggers and silence rules as `channel.created`, `channel.updated`, `channel.deleted`, `trigger.created`, `trigger.updated`, `trigger.deleted`, `silence.created` and `silence.cancelled`. `alert.fired` and `alert.resolved` can also be delivered to a webhook subscription (see the [API reference](../api/reference.md#webhooks)). The MCP tool `list_alerts` returns the active alerts, acknowledged ones included, or with `active_only` set to `false` the last 100 alerts, resolved and silenced ones included. `acknowledge_alert` acknowledges one.
 
 ---
 
@@ -516,3 +519,6 @@ Alerts are also broadcast on the SSE event stream as `alert.fired`, `alert.resol
 - [Resource Metrics](resources.md): Threshold alerts
 - [Update Intelligence](updates.md): Update alerts
 - [Host OS End-of-Support](host-os.md): `host` / `os_eol` alerts
+- [Network Security Insights](security.md): `dangerous_configuration` and `posture_threshold` alerts
+- [Docker Swarm](swarm.md) and the [Kubernetes guide](../guides/kubernetes.md): Swarm and Kubernetes alerts
+- [Status Page](status-page.md#maintenance-windows): Maintenance windows that silence alerts (Pro)

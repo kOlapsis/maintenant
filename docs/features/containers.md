@@ -22,8 +22,8 @@ When a new container starts, maintenant immediately begins tracking:
 | State | Meaning |
 |-------|---------|
 | `running` | The container is up. |
-| `exited` | The container stopped with an exit code other than 0, 137 or 143, or was killed. |
-| `completed` | The container stopped with exit code 0, 137 (`SIGKILL`, what `docker stop` falls back to) or 143 (`SIGTERM`): a normal end, not a crash. |
+| `exited` | The container stopped with an exit code other than 0, 137 or 143, or with 137 after the out-of-memory killer stopped it. |
+| `completed` | The container stopped with exit code 0, 143 (`SIGTERM`) or 137 (`SIGKILL`, what `docker stop` falls back to) unless the out-of-memory killer sent the 137: a normal end, not a crash. |
 | `restarting` | The runtime reports the container as restarting. |
 | `paused` | The container is paused. |
 | `created` | The container exists but never started. |
@@ -31,7 +31,11 @@ When a new container starts, maintenant immediately begins tracking:
 
 All state transitions are persisted in the database and pushed to the browser via SSE in real time. Raw transitions are kept for 90 days (the latest one of each container is always kept), and the daily uptime computed from them is kept for 365 days.
 
+A container that exits with 137 is inspected to tell an out-of-memory kill from a stop: maintenant reads the `OOMKilled` flag of the container, on the server's own runtime and on agents.
+
 When a local container dies, the last 50 lines of its logs are stored with the transition, so you can see why it stopped after the container is gone.
+
+A container that is destroyed, or that the runtime no longer lists, is archived: it leaves the container list (`?archived=true` brings it back) and is deleted after 30 days.
 
 ---
 
@@ -58,7 +62,7 @@ When a local container dies, the last 50 lines of its logs are stored with the t
 
 === "Kubernetes"
 
-    maintenant uses the in-cluster Kubernetes API with a read-only ServiceAccount. It lists and watches:
+    maintenant uses the in-cluster Kubernetes API with a read-only ServiceAccount, or the cluster of a kubeconfig (`KUBECONFIG`, else `~/.kube/config`) when it runs outside one. It lists and watches:
 
     - **Deployments**: rollout status, replica counts
     - **StatefulSets**: ordered pod management
@@ -112,7 +116,7 @@ Health states:
 | `starting` | Container just started, health check not yet run |
 | none | No health check defined: the API returns `health_status: null` and `has_health_check: false` |
 
-When a container goes from `healthy` to `unhealthy`, maintenant raises a `health_unhealthy` alert at Warning severity through the [Alert Engine](alerts.md), and resolves it when the container is healthy again. A container that never became healthy (`starting` to `unhealthy`) does not raise it, and `maintenant.alert.severity` does not change its severity.
+When a container goes from `healthy` to `unhealthy`, maintenant raises a `health_unhealthy` alert at Warning severity through the [Alert Engine](alerts.md), and resolves it when the container is healthy again. A container that never became healthy (`starting` to `unhealthy`) does not raise it, and `maintenant.alert.severity` does not change its severity. The alert is named after the container, and so is the `container.health_changed` event, which carries `id`, `container_name`, `health_status`, `previous_health`, `timestamp` and `agent_id`.
 
 ---
 
@@ -130,9 +134,11 @@ labels:
   maintenant.alert.restart_threshold: "5"  # Alert after 5 restarts in 10 minutes
 ```
 
+The SSE event `container.restart_alert` carries `container_id`, `container_name`, `restart_count`, `threshold` and `agent_id`. `container.restart_recovery` is sent when the count falls back under the threshold.
+
 ### Stopped containers
 
-A container that stops and stays stopped raises no restart alert. Set `MAINTENANT_CONTAINER_DOWN_AFTER` (for example `5m`) and a `container_down` alert fires for any container that stays `exited` or `dead` for that long, at the severity of the container's `maintenant.alert.severity` (Warning by default). It resolves when the container runs again. See [Alert Engine](alerts.md).
+A container that stops and stays stopped raises no restart alert. Set `MAINTENANT_CONTAINER_DOWN_AFTER` to a Go duration such as `5m` and a `container_down` alert fires for any container, on the server or on an agent, that stays `exited` or `dead` for that long, at the severity of the container's `maintenant.alert.severity` (Warning by default). It resolves when the container runs again. Without the variable, or with `0`, the alert does not exist, and a value that is not a duration stops maintenant at startup. A `completed` container is not down. See [Alert Engine](alerts.md).
 
 ---
 
@@ -143,9 +149,9 @@ maintenant provides real-time log streaming, with stdout and stderr interleaved 
 Access logs via the API:
 
 - `GET /api/v1/containers/{id}/logs`: fetch recent logs. `lines` defaults to 100 and is capped at 500, `timestamps=true` prefixes each line with its time.
-- `GET /api/v1/containers/{id}/logs/stream`: SSE stream of live logs. It emits `container.log_line` events, then a final `container.log_error` event when the container stops. `lines` sets the initial backlog (default 100, maximum 500). On Kubernetes, `container` selects a container of the pod.
+- `GET /api/v1/containers/{id}/logs/stream`: SSE stream of live logs. It emits `container.log_line` events, then a final `container.log_error` event when the container stops, and a keep-alive comment every 25 seconds. `lines` sets the initial backlog (default 100, maximum 500). On Kubernetes, `container` selects a container of the pod. While the server's own runtime is disconnected, it answers `503 RUNTIME_UNAVAILABLE`.
 
-Containers of a [remote agent](multihost.md) are read through that agent. A tail waits at most 15 seconds, and an agent serves four live streams at a time. The API answers `AGENT_OFFLINE` (503), `AGENT_TOO_OLD` (501), `LOGS_BUSY` (429) or `LOGS_TIMEOUT` (504) when it cannot.
+Containers of a [remote agent](multihost.md) are read through that agent, whatever the state of the server's own runtime. A tail waits at most 15 seconds, and an agent serves four live streams at a time. The API answers `AGENT_OFFLINE` (503), `AGENT_TOO_OLD` (501), `LOGS_BUSY` (429) or `LOGS_TIMEOUT` (504) when it cannot.
 
 ---
 
@@ -163,27 +169,35 @@ labels:
 An ignored container is still known to maintenant but is left alone:
 
 - it is hidden from the container list and the dashboard,
-- no state or health change is recorded, and no `container.state_changed` or `container.discovered` event is sent over SSE or webhooks,
+- the state and health events of the runtime are not recorded, and no `container.state_changed` or `container.discovered` event is sent over SSE or webhooks,
 - it raises no alert (restart loop, health, container down),
 - it gets no security insight and no resource sample,
 - it is left out of update checks,
 - the endpoint and certificate monitors that its labels would create are not created.
 
-Settings read from labels and annotations (`ignore`, `group`, severity, restart threshold) are refreshed when maintenant reconciles with the runtime, at startup and after a reconnection. After changing a label on an existing Swarm service or Kubernetes workload, restart maintenant to apply it without waiting.
+Settings read from labels and annotations (`ignore`, `group`, severity, restart threshold) are refreshed when maintenant reconciles with the runtime: at startup, after a reconnection, and when a new container starts. After changing a label on an existing Swarm service or Kubernetes workload, restart maintenant to apply it without waiting. The Kubernetes alerts (crash loop, replicas) are the exception: they read the `maintenant.ignore` annotation again every 30 seconds.
 
 ---
 
 ## Uptime
 
-The container detail panel shows the share of each day the container was `running` and not `unhealthy`, for up to 365 days:
+The container detail panel shows a 90-day bar: for each day, the share of time the container was `running` and not `unhealthy`. The API serves up to 365 days:
 
 ```
 GET /api/v1/containers/{id}/uptime/daily?days=90
 ```
 
-The response has one entry per UTC day, most recent first, each with `date`, `uptime_percent` (`null` for a day maintenant has no data for) and `incident_count` (transitions from up to not up). `days` defaults to 90 and is capped at 365. The state timeline is available at `GET /api/v1/containers/{id}/transitions`.
+The response carries `monitor_id`, `monitor_type` (`container`) and a `days` array with one entry per UTC day, most recent first, each with `date`, `uptime_percent` (`null` for a day maintenant has no data for) and `incident_count` (transitions from up to not up). `days` defaults to 90 and is capped at 365. The state timeline is available at `GET /api/v1/containers/{id}/transitions`.
 
-Completed days are aggregated once a day ends, so the history outlives the raw transitions. Days that were already past the raw retention when this aggregation appeared are not recovered, and an archived container has no value after its archival.
+`GET /api/v1/containers/{id}` also returns an `uptime` object with the percentage over 24 hours and over longer windows, limited by the history window of the edition:
+
+| Edition | Keys of `uptime` |
+|---------|------------------|
+| Community | `24h`, `7d` |
+| Personal | `24h`, `7d`, `30d` |
+| Pro | `24h`, `7d`, `30d`, `90d` |
+
+Completed days are aggregated once a day ends, so the history outlives the raw transitions. A day past the raw retention that was never aggregated has no value, and an archived container has no value after its archival.
 
 ---
 
@@ -202,13 +216,13 @@ If the container runtime (Docker socket or Kubernetes API) is unavailable when m
 - The app starts and serves the full UI and API normally.
 - Endpoint, SSL certificate, and heartbeat monitors are **unaffected**: they continue checking and alerting as usual.
 - Container list and detail pages show **last-known data** (marked as stale) so history is preserved.
-- Live operations (log streaming, real-time stats) return a clear error instead of crashing.
-- A non-blocking banner appears on the Containers and Dashboard pages.
+- Live operations (log streaming, real-time stats) return a clear error instead of crashing: `logs/stream` answers `503 RUNTIME_UNAVAILABLE` with the standard error body.
+- A non-blocking banner appears on the Containers and Dashboard pages, and a **RUNTIME OFFLINE** banner at the top of every page.
 - The runtime availability is exposed on `GET /api/v1/health` (`runtime.connected: false`) and broadcast in real time via SSE when the state changes.
 
-**Automatic recovery**: maintenant retries the runtime connection in the background. When the runtime becomes reachable again, container monitoring resumes (reconciliation runs, the event stream restarts, and the banner disappears), all without a restart.
+**Automatic recovery**: maintenant retries the runtime connection in the background. Each failed attempt is logged with its cause (`error`) and the delay before the next one (`retry_in`), which starts at 1 second and doubles up to 30 seconds. When the runtime becomes reachable again, container monitoring resumes (reconciliation runs, the event stream restarts, and the banner disappears), all without a restart.
 
-On Kubernetes the runtime retries indefinitely with a backoff, and it is considered lost after about 45 seconds without an answer from the API server (three missed probes, 15 seconds apart). When maintenant starts outside a cluster with a kubeconfig whose cluster does not answer, it falls back to Docker and logs a warning, unless `MAINTENANT_RUNTIME=kubernetes` makes it wait for that cluster.
+On Kubernetes the runtime retries indefinitely with a backoff, and it is considered lost after about 45 seconds without an answer from the API server (three missed probes, 15 seconds apart). The events of Deployments, StatefulSets, DaemonSets and bare pods are read live from the API server. When maintenant starts outside a cluster with a kubeconfig whose cluster does not answer, it falls back to Docker and logs a warning, unless `MAINTENANT_RUNTIME=kubernetes` makes it wait for that cluster. In a cluster, it never falls back.
 
 This makes it safe to run maintenant without mounting the Docker socket, or to temporarily stop Docker during a host maintenance window while keeping all other monitors active.
 

@@ -103,11 +103,22 @@ For each heartbeat monitor, maintenant records:
 | **Duration** | Time between start and finish pings |
 | **Status** | `new` (no ping yet), `started` (a start ping is waiting for its finish), `up` (pinging on time), `down` (deadline missed), `paused` |
 | **Next deadline** | Last ping (or start ping) + interval + grace |
+| **Source address** | Address of the client that sent each ping (`source_ip` in `GET /api/v1/heartbeats/{id}/pings`) |
 | **Execution history** | Past executions with their outcome: `success`, `failure`, `timeout` or `in_progress` |
 
 A ping that reports a non-zero exit code leaves the status at `up`, since the job did report in, and raises the `exit_code_failure` alert instead. Only a missed deadline turns the status to `down`.
 
-Pings and executions are kept for 30 days. `GET /api/v1/heartbeats/{id}/uptime/daily?days=90` returns one value per UTC day for up to 365 days (`days` defaults to 90): the share of finished runs that succeeded that day, where a plain ping or an exit code `0` succeeds and a start ping is not counted. A day with no finished run has no value, and a missed deadline produces no ping, so it does not lower the percentage by itself. Completed days are aggregated once they end, which is what keeps the 365 days available after the raw pings are purged.
+The source address is the address of the connection, unless the request comes from a proxy listed in `MAINTENANT_TRUSTED_PROXIES`: maintenant then reads it from `X-Forwarded-For` (or `X-Real-IP`). Behind a reverse proxy, set that variable, otherwise every ping carries the proxy's address.
+
+Pings and executions are kept for 30 days.
+
+### Uptime
+
+`GET /api/v1/heartbeats/{id}/uptime/daily?days=90` returns one entry per UTC day, most recent first, for up to 365 days (`days` defaults to 90). Each entry has a `date`, an `uptime_percent` and an `incident_count`.
+
+Uptime is weighted by time. A heartbeat counts as up from a successful ping (a plain ping or exit code `0`) until its deadline lapses without another ping, or until a ping reports a non-zero exit code. A start ping moves the deadline but does not change the state. `uptime_percent` is the share of the day spent up, and `incident_count` is the number of times the heartbeat went from up to down that day. A day before the first ping has no value (`uptime_percent` is `null`), and neither has a paused heartbeat after the moment it was paused.
+
+Completed days are aggregated by the retention job and kept for 365 days, which is what keeps the full range available after the raw pings are purged.
 
 ---
 
@@ -158,7 +169,7 @@ Resuming a heartbeat that is not paused answers `400 INVALID_INPUT`. A ping that
 | `GET` | `/api/v1/heartbeats/{id}/pings` | Raw pings |
 | `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime |
 
-Community is limited to **5 heartbeats**; Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
+Community is limited to **5 heartbeats**; Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`. The cap counts every active heartbeat, paused ones included, and `GET /api/v1/edition` reports the current count and the limit under `quotas.heartbeats`.
 
 ---
 
@@ -186,7 +197,7 @@ The first send happens within seconds of creating the target. Two instances can 
 
 !!! note "HTTPS and public addresses only"
     Targets must use `https://` and resolve to a public address. Loopback, private,
-    link-local and carrier-grade NAT ranges are refused when the target is saved and
+    link-local, carrier-grade NAT, unspecified and multicast ranges are refused when the target is saved and
     again at every connection, including redirects and DNS answers that change
     between the two, so the feature cannot be used to reach services on your
     internal network. `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` does not lift this
@@ -217,6 +228,8 @@ The first send happens within seconds of creating the target. Two instances can 
 ## Public Ping Endpoints
 
 The `/ping/` routes are designed to be publicly accessible. maintenant applies no authentication of its own to them, since your cron jobs and external services need to reach them directly.
+
+Pings are rate limited to 10 requests per second per client address, with a burst of 20, and a request over the limit answers `429` with a `Retry-After` header. Behind a reverse proxy, set `MAINTENANT_TRUSTED_PROXIES`: without it every caller counts as the proxy and shares its single limit. A demo build does not accept pings: the `/ping/` routes answer `403 DEMO_MODE`.
 
 !!! warning "Reverse proxy configuration"
     Make sure your reverse proxy allows unauthenticated access to `/ping/` paths.

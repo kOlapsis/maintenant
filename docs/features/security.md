@@ -51,7 +51,7 @@ The reported port is the numeric target port of the Service, or the Service port
 
 ## CVE Ecosystem Mapping
 
-The CVE lookup is part of [Update Intelligence](updates.md) and needs the Personal edition. To look an image up in [OSV.dev](https://osv.dev), maintenant first has to work out which packages and which ecosystem (`Debian:12`, `Alpine:3.20`, `Ubuntu:22.04`, `Go`) the image belongs to. It tries, in order, and stops at the first answer:
+The CVE lookup is part of [Update Intelligence](updates.md) and needs the Personal edition. It runs at every update scan, on every running container that is neither ignored nor archived, including the containers left out of update tracking (pinned, `maintenant.update.enabled: "false"`, excluded images) and those with no update pending. To look an image up in [OSV.dev](https://osv.dev), maintenant first has to work out which packages and which ecosystem (`Debian:12`, `Alpine:3.20`, `Ubuntu:22.04`, `Go`) the image belongs to. It tries, in order, and stops at the first answer:
 
 1. **Known image table**: about fifteen common images are mapped directly. `nginx`, `postgres`, `redis`, `mysql`, `mariadb`, `node`, `python`, `golang`, `httpd`, `memcached`, `mongo` and `rabbitmq` map to Debian 12 packages; `traefik`, `grafana` and `prometheus` map to Go.
 2. **Image labels from the registry**: for images of Docker Hub, `ghcr.io`, `quay.io`, `gcr.io` and `public.ecr.aws`, the `org.opencontainers.image.base.name` label names the base image (Debian, Ubuntu, Alpine, CentOS or Fedora) and its version. The fetch gives up after 5 seconds.
@@ -98,7 +98,7 @@ Two alert types come from this feature, both with source `security`:
 - **`dangerous_configuration`**, in every edition: one alert per container, raised when the set of insights of the container changes and resolved when it is empty again. Its severity follows the worst insight: critical for critical, warning for high, info for medium. Like any alert, it reaches a channel through an [alert trigger](alerts.md#alert-triggers).
 - **`posture_threshold`**, from Personal: set `MAINTENANT_SECURITY_SCORE_THRESHOLD` to a whole number above 0 to be alerted when the infrastructure score falls below it. The alert is a warning, and critical when the score is more than 20 points under the threshold. It resolves when the score is back at the threshold or above. Unset or `0`, there is no threshold alert.
 
-The infrastructure score is only computed when something asks for it (the Security Posture page, the dashboard or a call to `GET /api/v1/security/posture`), and the threshold is checked at that moment. No alert is raised while nobody looks at the score.
+The threshold is checked every time the infrastructure score is computed. With a threshold set, maintenant computes the score itself every 5 minutes, so the alert does not wait for someone to open the Security Posture page. The score is also computed on each read (the page, the dashboard, `GET /api/v1/security/posture` or the `get_security_posture` MCP tool), and the alert follows that fresh value.
 
 ---
 
