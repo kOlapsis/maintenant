@@ -129,7 +129,7 @@ type HandlerDeps struct {
 	// Kubernetes (per-agent store-backed reads)
 	KubernetesStore *store.KubernetesStore
 
-	// Multi-host agents (Pro)
+	// Multi-host agents
 	AgentStore          *store.AgentStore
 	AgentSessions       AgentSessions
 	GRPCPublicURL       string
@@ -333,7 +333,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("PUT /api/v1/channels/{id}", ah.HandleUpdateChannel)
 		r.mux.HandleFunc("DELETE /api/v1/channels/{id}", ah.HandleDeleteChannel)
 		r.mux.HandleFunc("POST /api/v1/channels/{id}/test", ah.HandleTestChannel)
-		// Alert triggers (CRUD; advanced filters scopes/tags gated to Pro inside the handler)
+		// Alert triggers
 		if d.TriggerStore != nil {
 			th := NewAlertTriggerHandler(d.TriggerStore, d.ChannelStore, d.Broker)
 			r.mux.HandleFunc("GET /api/v1/alert-triggers", th.HandleListTriggers)
@@ -411,7 +411,7 @@ func NewRouter(d HandlerDeps) *Router {
 	// Runtime status endpoint
 	r.mux.HandleFunc("GET /api/v1/runtime/status", r.handleRuntimeStatus(d))
 
-	// Edition endpoint — exposes CE/Pro feature flags for frontend gating
+	// Edition endpoint: feature flags, quotas and tiers for frontend gating
 	smtpConfigured := d.Notifier != nil && d.Notifier.SMTPConfigured()
 	r.mux.HandleFunc("GET /api/v1/edition", r.handleGetEdition(smtpConfigured, d))
 
@@ -439,7 +439,7 @@ func NewRouter(d HandlerDeps) *Router {
 	// Kubernetes monitoring
 	r.registerKubernetesRoutes(d)
 
-	// Multi-host agents (Pro)
+	// Multi-host agents
 	r.registerAgentRoutes(d)
 
 	return r
@@ -626,8 +626,7 @@ func (r *Router) registerUpdateRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("GET /api/v1/cve", ch.HandleListCVEs)
 	r.mux.HandleFunc("GET /api/v1/cve/{container_id...}", ch.HandleGetContainerCVEs)
 
-	// Risk scoring routes (Pro only)
-	// Note: history uses a query param (?history=1) to avoid conflict with {container_id...}.
+	// Risk scoring routes; the history is the ?period= form of the per-container route.
 	rh := NewRiskHandler(d.UpdateStore)
 	r.mux.HandleFunc("GET /api/v1/risk", requireCapability(extension.CapRiskScoring, rh.HandleListRiskScores))
 	r.mux.HandleFunc("GET /api/v1/risk/{container_id...}", requireCapability(extension.CapRiskScoring, rh.HandleGetContainerRisk))
@@ -691,14 +690,11 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 		kh.SetEOLTables(d.EOL)
 	}
 
-	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/kubernetes/namespaces", kh.HandleListNamespaces)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads", kh.HandleListWorkloads)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}", kh.HandleGetWorkload)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/pods", kh.HandleListPods)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/pods/{namespace}/{name}", kh.HandleGetPodDetail)
-
-	// Pro endpoints
 	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes", kh.HandleListNodes)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes/{name}/resources", kh.HandleGetNodeResources)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}/resources", kh.HandleGetWorkloadResources)
@@ -708,8 +704,8 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 	// Mounted unconditionally: the services/tasks/nodes lists are store-backed
 	// (per-agent), so they work even when this server is not itself a swarm
-	// manager. The live Pro dashboards guard internally on the local
-	// runtime being a swarm cluster.
+	// manager. The live dashboards guard internally on the local runtime
+	// being a swarm cluster.
 	if d.SwarmTopologyStore == nil {
 		return
 	}
@@ -718,17 +714,12 @@ func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 		sh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 	}
 
-	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/info", sh.HandleGetInfo)
 	r.mux.HandleFunc("GET /api/v1/swarm/services", sh.HandleListServices)
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}", sh.HandleGetService)
 	r.mux.HandleFunc("GET /api/v1/swarm/tasks", sh.HandleListTasks)
-
-	// Pro node endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/nodes", sh.HandleListNodes)
 	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", sh.HandleGetNodeDetail)
-
-	// Pro update status, resources, dashboard, and cluster endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", sh.HandleGetUpdateStatus)
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/resources", sh.HandleGetServiceResources)
 	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", sh.HandleGetDashboard)

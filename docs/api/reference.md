@@ -1,35 +1,117 @@
 # API Reference
 
-All endpoints are under `/api/v1/`. Responses are JSON. Errors follow a standard format:
+The REST API lives under `/api/v1/`. Requests and responses are JSON unless a route says otherwise. Besides the REST API, the server exposes the public ping endpoints (`/ping/`), the public status page (`/status/`), the MCP endpoint (`/mcp`) with its OAuth routes, and the Server-Sent Events streams. Every route is listed on this page.
+
+---
+
+## Conventions
+
+### Authentication
+
+maintenant has no built-in authentication for the dashboard or the REST API. Every `/api/` route answers anyone who can reach the listener, so put the instance behind a reverse proxy or an authentication proxy (see [Security](../security.md)). Three surfaces are open on purpose:
+
+- `/ping/{uuid}`: heartbeat pings. The UUID is the only secret.
+- `/status/`: the public status page, its JSON snapshot, its event stream and its subscription links.
+- `/mcp`: protected by its own OAuth 2.0 flow (see [MCP and OAuth routes](#mcp-and-oauth-routes)).
+
+The health check `/api/v1/health` is an ordinary `/api/` route, so it is exposed like the others. It reports the version, the runtime and the storage state.
+
+### Errors
+
+A failed request answers with a JSON body of this shape:
 
 ```json
 {
   "error": {
-    "code": "not_found",
-    "message": "Container not found"
+    "code": "QUOTA_EXCEEDED",
+    "message": "The Community edition is limited to 10 endpoints.",
+    "resource": "endpoints",
+    "limit": 10,
+    "required_edition": "personal"
   }
 }
 ```
 
+`code` and `message` are always present. The other fields (`feature`, `resource`, `limit`, `required_edition`, `window`, `max_window`) only appear on edition and quota refusals, so a client never has to parse the message.
+
+| Code | Status | Meaning |
+|------|:------:|---------|
+| `EDITION_REQUIRED` | 403 | The running edition does not open this feature. Carries `feature` (the capability) and `required_edition`. A history window the edition does not open also carries `window` and `max_window` (the largest window the edition opens). |
+| `QUOTA_EXCEEDED` | 403 | A creation would pass the edition cap on endpoints, heartbeat monitors, certificate monitors or status page components. Carries `resource`, `limit` and `required_edition`, the lowest edition that lifts the cap. |
+| `HOST_LIMIT_REACHED` | 409 | `POST /api/v1/agents/enrollment-tokens` when the edition's cap on remote agents is reached (20 on Personal). Same fields as `QUOTA_EXCEEDED`. |
+| `STORAGE_UNAVAILABLE` | 503 | The database is unreachable. Only the routes that read through the store answer this, the others answer `INTERNAL_ERROR`. Clients should retry. |
+| `INTERNAL_ERROR` | 500 | Unexpected failure, including a recovered panic. |
+| `CROSS_ORIGIN_REFUSED` | 403 | A browser sent a write (`POST`, `PUT`, `PATCH`, `DELETE`) from an origin the server does not trust. See [Cross-origin writes](#cross-origin-writes). |
+| `DEMO_MODE` | 403 | The instance runs in demo mode. See [Demo mode](#demo-mode). |
+| `rate_limited` | 429 | The client IP went over a rate limit. Carries a `Retry-After` header. |
+
+The remaining codes are specific to a route and are listed with it. Most are upper case (`INVALID_JSON`, `NOT_FOUND`), but several handlers use lower case codes: webhooks, risk scoring, alert triggers, escalation policies, the status page administration and personalization, the public status page routes and `rate_limited`. Codes are given here exactly as the server returns them.
+
+Three answers are not JSON:
+
+- A route the server did not register (a feature that is not wired, such as the outbound heartbeats in demo mode) and a wrong method on a known path answer the plain-text `404` and `405` of the Go router.
+- A request still running after 10 seconds is cut with `503` and the plain-text body `request timeout`. Streams are exempt. The work the request started can still finish, for example a synchronous certificate scan.
+- The OAuth routes answer with the RFC 6749 shape (`{"error": "...", "error_description": "..."}`).
+
+### Editions and quotas
+
+`GET /api/v1/edition` returns the edition table the server applies, so a client never needs its own copy. Editions are ordered Community, Personal, Pro.
+
+| Edition | Capabilities opened |
+|---------|---------------------|
+| Community | `alert_routing`, `swarm_dashboard`, `k8s_cluster`, `resource_history` |
+| Personal | Community, plus `multihost`, `cve_enrichment`, `risk_scoring`, `changelog`, `incidents`, `smtp`, `alert_advanced_filters`, `security_posture`, `ocsp_stapling`, `telegram` |
+| Pro | Personal, plus `slack`, `teams`, `alert_escalation`, `alert_entity_routing`, `maintenance_windows`, `subscribers`, `personalization` |
+
+| Resource | Community | Personal | Pro |
+|----------|:---------:|:--------:|:---:|
+| Standalone endpoints | 10 | unlimited | unlimited |
+| Heartbeat monitors | 5 | unlimited | unlimited |
+| Standalone certificate monitors | 5 | unlimited | unlimited |
+| Status page components | 3 | unlimited | unlimited |
+| Remote agents | 0 | 20 | unlimited |
+| History window (resources) | 7 days | 30 days | 90 days |
+
+The tables under each section give the edition a route needs in the **Edition** column. A dash means the route is open in every edition.
+
+### Host scope
+
+The local runtime is itself an agent, identified by the sentinel id `00000000-0000-0000-0000-000000000000`. Routes that list monitored entities accept an `agent_id` query parameter: `local` selects the server's own runtime, any other value selects that agent. Without it, list routes cover every host, with these exceptions: `GET /api/v1/resources/summary` defaults to the local host, and the single-entity Kubernetes routes (`workloads/{id}`, `pods/{namespace}/{name}`) look in the local runtime unless `agent_id` is given. The parameter is never validated: an unknown agent yields an empty list or a `404`.
+
+### Limits
+
+- **Rate limits**: per client IP, in token buckets. `/api/` allows 50 requests per second (burst 200). `/ping/`, `/status/`, `/mcp` and `/oauth/` share a tighter bucket of 10 requests per second (burst 20). Status page subscriptions are limited to 5 per hour. Client addresses behind a reverse proxy are only read from forwarded headers for the proxies listed in `MAINTENANT_TRUSTED_PROXIES`.
+- **Body size**: 1 MiB for `/api/` by default (`MAINTENANT_MAX_BODY_SIZE`), whatever the method. Past it the JSON decoding fails and the route answers its invalid body error. Public `/status/` routes accept 4 KiB.
+- **Timeout**: 10 seconds for every route except the event streams.
+
+### Cross-origin writes
+
+The API refuses a browser write that comes from another origin, unless that origin is listed in `MAINTENANT_CORS_ORIGINS`: the answer is `403 CROSS_ORIGIN_REFUSED`. Same-origin requests, requests whose `Sec-Fetch-Site` is `none` and requests without `Origin` and `Sec-Fetch-Site` headers (curl, scripts) pass. A browser old enough to send no `Sec-Fetch-Site` header is refused behind a proxy that rewrites the `Host` header. The wildcard `*` in `MAINTENANT_CORS_ORIGINS` allows cross-origin reads but no longer cross-origin writes. `/ping/`, `/status/`, `/mcp` and `/oauth/` are not concerned.
+
+### Demo mode
+
+A demo build of maintenant is read-only. Every request other than `GET`, `HEAD` and `OPTIONS` answers `403 DEMO_MODE` (only `POST /api/v1/escalation-policies/overlap-probe`, which changes nothing, is let through). `/ping/`, `/mcp`, `/oauth/` and `/.well-known/oauth-*` answer `403 DEMO_MODE` for every method, and the outbound heartbeat routes are not registered. A request carrying the `X-Maintenant-Demo-Token` header with the value of `MAINTENANT_DEMO_TOKEN` bypasses the guard. `GET /api/v1/edition` reports `"demo": true`.
+
 ---
 
-## Health
+## Health and instance information
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/health` | Health check, returns `{"status": "ok", "version": "...", "runtime": {...}, "storage": {...}}` |
-| `GET` | `/api/v1/runtime/status` | Runtime info (docker/kubernetes, connection state) |
-| `GET` | `/api/v1/edition` | Edition and feature flags |
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/health` | Health check | — |
+| `GET` | `/api/v1/runtime/status` | Active runtime and its connection state | — |
+| `GET` | `/api/v1/edition` | Edition, features, quotas and tiers | — |
+| `GET` | `/api/v1/license/status` | Licence state | — |
 
-The `storage` object reports the engine backing this instance, whether it
-answers, and how many other instances beat on the same database:
+### Health
+
+`GET /api/v1/health` always answers `200`:
 
 ```json
-{ "engine": "postgres", "connected": true, "peers": 0 }
+{ "status": "ok", "version": "1.8.0", "runtime": { "name": "docker", "connected": true }, "storage": { "engine": "sqlite", "connected": true, "peers": 0 } }
 ```
 
-`engine` is `sqlite` or `postgres`. It never carries the connection string, the
-host or any credential.
+`version`, `runtime` and `storage` are left out when they are not known. The `storage` object reports the engine backing this instance, whether it answers, and how many other instances beat on the same database. `engine` is `sqlite` or `postgres`. It never carries the connection string, the host or any credential.
 
 !!! warning "This endpoint answers 200 during a database outage"
 
@@ -40,64 +122,141 @@ host or any credential.
     `503 STORAGE_UNAVAILABLE` in the meantime, which clients should ride out
     rather than treat as data loss.
 
+### Runtime status
+
+`GET /api/v1/runtime/status` returns `runtime` (`docker` or `kubernetes`), `context` (`docker`, `swarm` or `kubernetes`), `connected`, `label` (`Containers`, `Services` or `Workloads`), `detected_at` and `metadata`. On a Swarm manager `metadata` holds `cluster_id`, `is_manager`, `manager_count`, `worker_count` and `service_count`. A Swarm worker reports the `docker` context.
+
+### Edition
+
+`GET /api/v1/edition` returns:
+
+| Field | Description |
+|-------|-------------|
+| `edition` | `community`, `personal` or `pro` |
+| `organisation_name` | Value of `MAINTENANT_ORGANISATION_NAME` (default `Maintenant`) |
+| `status_url` | Public status page URL. Empty in this version: the value of `MAINTENANT_STATUS_URL` is not passed to the API |
+| `demo` | `true` in demo mode |
+| `features` | Every capability mapped to a boolean: does the running edition open it. `smtp` is also `false` until SMTP is configured |
+| `feature_editions` | Every capability mapped to the lowest edition that opens it |
+| `quotas` | For each capped resource present (`agent_hosts`, `endpoints`, `heartbeats`, `certificates`, `status_components`), an object `{ "used": n, "limit": n }`. A limit of `-1` means unlimited |
+| `tiers` | The cap of every resource for every edition: `{ "community": {...}, "personal": {...}, "pro": {...} }` |
+| `suspended_channels` | `{ "count": n, "channels": [{ "id", "name", "type", "required_edition" }] }`: enabled channels the running edition no longer opens |
+| `resource_history` | `{ "max_window", "max_window_seconds", "windows": [{ "window", "seconds", "min_edition" }] }`. The window catalogue is the same in every edition |
+
+### Licence
+
+`GET /api/v1/license/status` always returns the same eight keys: `status`, `edition`, `plan`, `message`, `verified_at`, `expires_at`, `updates_until` and `update_grace_until`. Dates are RFC 3339 strings, or an empty string when the licence has none (a perpetual licence has no `expires_at`). Without a licence key the status is `inactive` and the edition `community`. Other statuses include `active`, `grace`, `expired`, `revoked`, `update_window_grace` and `update_window_ended`.
+
 ---
 
 ## Containers
 
+All routes are open in every edition.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/containers` | List all containers with groups |
-| `GET` | `/api/v1/containers/{id}` | Get container details with uptime stats |
+| `GET` | `/api/v1/containers` | List containers, grouped |
+| `GET` | `/api/v1/containers/{id}` | Get a container with its 24-hour uptime |
 | `GET` | `/api/v1/containers/{id}/transitions` | List state transitions |
 | `GET` | `/api/v1/containers/{id}/logs` | Fetch recent logs |
-| `GET` | `/api/v1/containers/{id}/logs/stream` | Stream logs in real time (SSE) |
+| `GET` | `/api/v1/containers/{id}/logs/stream` | Follow logs in real time (SSE) |
+| `GET` | `/api/v1/containers/{id}/uptime/daily` | Daily uptime percentages |
+| `GET` | `/api/v1/containers/{id}/endpoints` | List the endpoints of a container |
 | `DELETE` | `/api/v1/containers/{id}` | Remove a container from monitoring |
-| `GET` | `/api/v1/containers/{id}/endpoints` | List endpoints for a container |
+
+`GET /api/v1/containers` query parameters: `archived=true` also returns archived containers, `group` (a custom or orchestration group name), `state` (for example `running`, `exited`, `completed`, `restarting`, `paused`, `created`, `dead`) and `agent_id`. Containers marked `maintenant.ignore` are never listed. The answer is `{ "groups": [{ "name", "source", "containers": [...] }], "total", "archived_count" }`, plus `"stale": true` when the local runtime is disconnected. `source` is `label`, `namespace`, `compose`, `orchestration` or `default`. Each container carries its identity (`id`, `external_id`, `agent_id`, `name`, `image`), `state`, `health_status` (`null` without a health check), `has_health_check`, group and orchestration fields, `is_ignored`, `alert_severity`, `restart_threshold`, `archived`, timestamps, Kubernetes and Swarm details where they apply, `security_insight_count` and `security_highest_severity`. A container reported by a remote agent also carries `agent_hostname` and `agent_label`, and `stale` plus `agent_offline` when that agent has no live stream.
+
+`GET /api/v1/containers/{id}` returns the same core fields as one flat object, plus `uptime` (`{ "24h": percent }`, the only window computed here; use the daily route for longer history) and, for a Kubernetes workload, `container_names`.
+
+`GET /api/v1/containers/{id}/transitions` query parameters: `since` and `until` (RFC 3339; `since` defaults to 24 hours ago, an invalid value removes the bound), `limit` (default 50) and `offset`. The answer is `{ "container_id", "transitions", "total", "has_more" }`, newest first.
+
+`GET /api/v1/containers/{id}/logs` query parameters: `lines` (default 100, at most 500) and `timestamps=true`. The answer is `{ "container_id", "container_name", "lines", "total_lines", "truncated" }`. Logs of a remote container are fetched from its agent (15-second deadline).
+
+`GET /api/v1/containers/{id}/logs/stream` is a Server-Sent Events stream with its own `lines` parameter (default 100, at most 500) and, on Kubernetes, `container` to pick a container of the pod. It sends `container.log_line` events (`container_id`, `line`, `stream`, `timestamp`) and ends with a `container.log_error` event (`container_id`, `error`: `container stopped`, `agent disconnected` or the agent's error). The route exists when the local runtime can read logs or an agent can serve them.
+
+`DELETE /api/v1/containers/{id}` removes the container and its history with a hard delete and answers `204`. It emits `container.archived`.
+
+Errors:
+
+- `404 CONTAINER_NOT_FOUND`: no such container (also on the logs, stream and `endpoints` routes).
+- `409 CONTAINER_RUNNING`: the container is running and cannot be deleted.
+- `502 RUNTIME_UNAVAILABLE`: the local runtime or agent support is not available for logs. `502 LOGS_UNAVAILABLE`: the runtime or the agent could not return the logs.
+- Logs of a remote container: `503 AGENT_OFFLINE`, `501 AGENT_TOO_OLD` (the agent predates the log command), `429 LOGS_BUSY` (too many concurrent log requests for that agent) and `504 LOGS_TIMEOUT`.
+- `logs/stream` answers `503` with the body `{"error": "container monitoring unavailable"}` (a string, not the usual object) when the local runtime is disconnected.
+
+`GET /api/v1/containers/{id}/uptime/daily` (and the same route for endpoints and heartbeats) takes `days` (default 90, at most 365) and answers `{ "monitor_id", "monitor_type", "days": [{ "date", "uptime_percent", "incident_count" }] }`: one entry per UTC day, most recent first. `uptime_percent` is `null` for a day without data. Completed days come from the daily aggregates, which are kept for 365 days; the current day is computed from the raw rows.
 
 ---
 
 ## Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/endpoints` | List all monitored endpoints |
-| `GET` | `/api/v1/endpoints/{id}` | Get endpoint details |
-| `GET` | `/api/v1/endpoints/{id}/checks` | List check results |
-| `POST` | `/api/v1/endpoints/{id}/check` | Probe now and return the refreshed endpoint |
-| `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime percentages |
+Endpoint monitors are discovered from labels or created through the API (a standalone endpoint). All routes are open in every edition, except that creating a standalone endpoint is capped.
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/endpoints` | List endpoints | — |
+| `POST` | `/api/v1/endpoints` | Create a standalone endpoint (10 on Community) | — |
+| `GET` | `/api/v1/endpoints/{id}` | Get an endpoint with its uptime | — |
+| `PUT` | `/api/v1/endpoints/{id}` | Update a standalone endpoint | — |
+| `DELETE` | `/api/v1/endpoints/{id}` | Delete an endpoint | — |
+| `GET` | `/api/v1/endpoints/{id}/checks` | List check results | — |
+| `POST` | `/api/v1/endpoints/{id}/check` | Probe now and return the refreshed endpoint | — |
+| `GET` | `/api/v1/endpoints/{id}/uptime/daily` | Daily uptime percentages | — |
+
+An endpoint has `id`, `endpoint_type` (`http` or `tcp`), `target`, `status` (`up`, `down`, `degraded` or `unknown`), `alert_state` (`normal` or `alerting`), the consecutive counters, the last check fields, `source` (`label` or `standalone`), `name`, `agent_id` and a `config` object (`interval` and `timeout` as duration strings such as `30s`, `failure_threshold`, `recovery_threshold`, `method`, `expected_status`, `tls_verify`, `headers`, `max_redirects`). A new standalone endpoint defaults to a 30-second interval, a 10-second timeout, failure threshold 3, recovery threshold 2, method `GET`, expected status `2xx`, TLS verification on and 5 redirects.
+
+- `GET /api/v1/endpoints` query parameters: `status`, `container` (container name), `type`, `source`, `include_inactive=true` and `agent_id`. The answer is `{ "endpoints": [...], "total" }`. `stale` and `agent_offline` mark an endpoint probed by an agent with no live stream.
+- `POST /api/v1/endpoints` body: `name` (required), `target` (required; a URL for `http`), `endpoint_type` (required, `http` or `tcp`), `interval` (duration, at least 5s, default 30s), `timeout` (duration, at least 1s, default 10s, not above the interval), `method` (default `GET`) and `headers` (object). Thresholds, expected status, TLS verification and redirects cannot be set through the API. Answers `201` with `{ "endpoint": {...} }`.
+- `PUT /api/v1/endpoints/{id}` accepts the same fields, all optional; an omitted or empty field keeps its value and `headers` replaces the whole map. Only standalone endpoints can be updated.
+- `GET /api/v1/endpoints/{id}` answers `{ "endpoint", "uptime": { "1h", "24h", "7d", "30d" } }`.
+- `GET /api/v1/endpoints/{id}/checks` takes `limit` (default 50, at most 500), `offset` and `since` (Unix seconds). The answer is `{ "endpoint_id", "checks", "total", "has_more" }`.
+- `POST /api/v1/endpoints/{id}/check` probes synchronously and answers `{ "endpoint", "uptime" }`.
+
+Errors:
+
+- `400 INVALID_JSON`, `400 INVALID_INPUT` (the message names the field), `400 NOT_STANDALONE` (updating a label-discovered endpoint).
+- `403 QUOTA_EXCEEDED`: creating past the cap (`resource: "endpoints"`, `limit: 10` on Community).
+- `404 ENDPOINT_NOT_FOUND`.
+- `409 ENDPOINT_LIVE`: deleting an endpoint whose container still runs. It becomes deletable once its container is gone.
+- `409 AGENT_PROBED`: `check` on an endpoint an agent probes itself. `409 CHECK_IN_PROGRESS`: a check is already running.
 
 ---
 
 ## Heartbeats
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/heartbeats` | List all heartbeat monitors |
-| `POST` | `/api/v1/heartbeats` | Create a heartbeat monitor |
-| `GET` | `/api/v1/heartbeats/{id}` | Get a heartbeat monitor |
-| `PUT` | `/api/v1/heartbeats/{id}` | Update a heartbeat monitor |
-| `DELETE` | `/api/v1/heartbeats/{id}` | Delete a heartbeat monitor |
-| `POST` | `/api/v1/heartbeats/{id}/pause` | Pause deadline checking |
-| `POST` | `/api/v1/heartbeats/{id}/resume` | Resume deadline checking |
-| `GET` | `/api/v1/heartbeats/{id}/executions` | List executions |
-| `GET` | `/api/v1/heartbeats/{id}/pings` | List raw pings |
-| `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime percentages |
+All routes are open in every edition, except that creating a heartbeat monitor is capped.
 
-### Outbound Heartbeats
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/heartbeats` | List heartbeat monitors | — |
+| `POST` | `/api/v1/heartbeats` | Create a heartbeat monitor (5 on Community) | — |
+| `GET` | `/api/v1/heartbeats/{id}` | Get a heartbeat monitor and its ping snippets | — |
+| `PUT` | `/api/v1/heartbeats/{id}` | Update a heartbeat monitor | — |
+| `DELETE` | `/api/v1/heartbeats/{id}` | Delete a heartbeat monitor | — |
+| `POST` | `/api/v1/heartbeats/{id}/pause` | Pause deadline checking | — |
+| `POST` | `/api/v1/heartbeats/{id}/resume` | Resume deadline checking | — |
+| `GET` | `/api/v1/heartbeats/{id}/executions` | List executions | — |
+| `GET` | `/api/v1/heartbeats/{id}/pings` | List raw pings | — |
+| `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime percentages | — |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/outbound-heartbeats` | List all targets |
-| `POST` | `/api/v1/outbound-heartbeats` | Create a target |
-| `PUT` | `/api/v1/outbound-heartbeats/{id}` | Update a target |
-| `DELETE` | `/api/v1/outbound-heartbeats/{id}` | Delete a target |
-| `POST` | `/api/v1/outbound-heartbeats/{id}/send` | Send a ping now |
+A heartbeat has `id` (which is also its ping token), `name`, `status` (`new`, `up`, `down`, `started` or `paused`), `alert_state`, `interval_seconds`, `grace_seconds`, the last ping and deadline fields, the consecutive counters, `active` and timestamps. The deadline is the last ping plus the interval plus the grace period.
 
-See [Outbound Heartbeats](../features/heartbeats.md#outbound-heartbeats).
+- `POST /api/v1/heartbeats` body: `name` (required, 1 to 255 characters), `interval_seconds` (required, 60 to 604800) and `grace_seconds` (0 to the interval, default 0). Answers `201` with the heartbeat object. The cap counts every active heartbeat, paused and agent-relayed ones included.
+- `PUT /api/v1/heartbeats/{id}` takes the same fields, all optional.
+- `GET /api/v1/heartbeats`: query parameters `status` and `agent_id`; answers `{ "heartbeats", "total" }`.
+- `GET /api/v1/heartbeats/{id}` answers `{ "heartbeat", "snippets" }`; `snippets` holds ready-to-paste `curl`, `wget`, `python`, `go`, `bash` and `docker_healthcheck` snippets once `MAINTENANT_BASE_URL` is set.
+- `executions` (`limit` default 20, at most 500, and `offset`) answers `{ "executions", "total" }`, newest first; each has an `outcome` of `success`, `failure`, `timeout` or `in_progress`. `pings` (`limit` default 50, at most 500, and `offset`) answers `{ "pings", "total" }` with `expected_at` and `grace_deadline` computed for each ping.
+- `pause`, `resume` and `PUT` answer `200` with the heartbeat; `DELETE` answers `204`. Deleting is a soft delete: the monitor stops accepting pings and leaves the list, but its id still resolves on these routes.
 
-### Ping Endpoints (Public)
+Errors:
 
-These routes do not require authentication:
+- `400 INVALID_JSON`, `400 INVALID_INPUT` (including `heartbeat is not paused` on `resume`).
+- `403 QUOTA_EXCEEDED`: creating past the cap (`resource: "heartbeats"`, `limit: 5` on Community).
+- `404 NOT_FOUND`.
+
+### Ping endpoints (public)
+
+These routes need no credentials: the UUID of the heartbeat is the secret. They share the tight rate limit of `/ping/` and answer `403 DEMO_MODE` in demo mode.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -105,82 +264,208 @@ These routes do not require authentication:
 | `GET/POST` | `/ping/{uuid}/start` | Signal job start |
 | `GET/POST` | `/ping/{uuid}/{exit_code}` | Ping with exit code (0 = success) |
 
+- `/ping/{uuid}` and `/ping/{uuid}/start` answer `200 {"ok": true}`. `/ping/{uuid}/{exit_code}` answers `200 {"ok": true, "exit_code": n}`. A non-zero exit code raises an alert.
+- Errors: `404 HEARTBEAT_NOT_FOUND` (unknown or deleted heartbeat), `400 INVALID_EXIT_CODE` (not an integer between 0 and 255, checked before the lookup) and `500 INTERNAL_ERROR`.
+- A `POST` body of up to 10 KiB is read but never stored.
+
+### Outbound heartbeats
+
+Outbound heartbeats make this instance ping an external URL so another system notices when it stops. The routes are not registered in demo mode. All are open in every edition. See [Outbound Heartbeats](../features/heartbeats.md#outbound-heartbeats).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/outbound-heartbeats` | List all targets |
+| `POST` | `/api/v1/outbound-heartbeats` | Create a target |
+| `PUT` | `/api/v1/outbound-heartbeats/{id}` | Replace a target |
+| `DELETE` | `/api/v1/outbound-heartbeats/{id}` | Delete a target |
+| `POST` | `/api/v1/outbound-heartbeats/{id}/send` | Send a ping now |
+
+A target has `id`, `name`, `url`, `interval_seconds`, `enabled`, `last_sent_at`, `last_status_code`, `last_error`, `created_at` and `updated_at`. The body of `POST` and `PUT` holds `name` (1 to 255 characters), `url` (an absolute HTTPS URL that does not resolve to a private or internal address), `interval_seconds` (30 to 86400) and `enabled` (default `true`; `PUT` replaces the target, so omitting `enabled` enables it). The list answers `{ "outbound_heartbeats": [...] }`. `send` works on a disabled target and answers `200` with the refreshed object: a failed send is recorded in `last_error` and `last_status_code`, not returned as an HTTP error. Errors: `400 INVALID_JSON`, `400 INVALID_INPUT` and `404 NOT_FOUND`.
+
 ---
 
 ## Certificates
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/certificates` | List all certificate monitors |
-| `POST` | `/api/v1/certificates` | Create a standalone certificate monitor |
-| `GET` | `/api/v1/certificates/{id}` | Get certificate details |
-| `PUT` | `/api/v1/certificates/{id}` | Update a certificate monitor |
-| `DELETE` | `/api/v1/certificates/{id}` | Delete a certificate monitor |
-| `GET` | `/api/v1/certificates/{id}/checks` | List check history |
-| `POST` | `/api/v1/certificates/{id}/check` | Scan now and return the refreshed monitor |
+All routes are open in every edition, except that creating a standalone monitor is capped.
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/certificates` | List certificate monitors | — |
+| `POST` | `/api/v1/certificates` | Create a standalone certificate monitor (5 on Community) | — |
+| `GET` | `/api/v1/certificates/{id}` | Get a monitor with its latest check and chain | — |
+| `PUT` | `/api/v1/certificates/{id}` | Update a monitor | — |
+| `DELETE` | `/api/v1/certificates/{id}` | Delete a monitor | — |
+| `GET` | `/api/v1/certificates/{id}/checks` | List check history | — |
+| `POST` | `/api/v1/certificates/{id}/check` | Scan now and return the refreshed monitor | — |
+
+A monitor has `id`, `hostname`, `port`, `server_name`, `source` (`auto`, `standalone` or `label`), `status` (`valid`, `expiring`, `expired`, `error` or `unknown`), `check_interval_seconds`, `warning_thresholds` (days, default `[30, 14, 7, 3, 1]`), the last check and next check times, `agent_id` and timestamps.
+
+- `GET /api/v1/certificates` query parameters: `status`, `source` and `agent_id`. Each monitor carries a `latest_check` object, and the answer is `{ "certificates", "total" }`.
+- `POST /api/v1/certificates` body: `hostname` (required), `port` (default 443), `server_name` (a bare host name, optional), `check_interval_seconds` (3600 to 604800, default 43200) and `warning_thresholds`. The first TLS check runs before the answer, so `201` returns `{ "certificate", "latest_check" }`.
+- `PUT /api/v1/certificates/{id}` accepts `check_interval_seconds` and `warning_thresholds` only; other fields are ignored.
+- `GET /api/v1/certificates/{id}` returns `{ "certificate", "latest_check" }` where `latest_check` holds the subject, issuer, SANs, validity dates, `days_remaining`, `chain_valid`, `chain_error`, `hostname_match`, the `chain` and, for a stapled response, `ocsp_stapled`, `ocsp_status`, `ocsp_produced_at`, `ocsp_next_update` and `ocsp_error`.
+- `GET /api/v1/certificates/{id}/checks` takes `limit` (default 50, at most 500) and `offset` and answers `{ "monitor_id", "checks", "total", "has_more" }`. Each check lists `ocsp_stapled` and `ocsp_status` only; the other OCSP fields are on `latest_check`.
+
+Errors:
+
+- `400 INVALID_JSON`, `400 INVALID_INPUT`, `400 CANNOT_DELETE_AUTO` (an auto-detected monitor is removed by removing its label).
+- `403 QUOTA_EXCEEDED` (`resource: "certificates"`, `limit: 5` on Community).
+- `404 NOT_FOUND`.
+- `409 DUPLICATE_MONITOR`, `409 ALREADY_AUTO_DETECTED`, `409 AGENT_SCANNED` (the agent scans this one itself) and `409 CHECK_IN_PROGRESS`.
 
 ---
 
 ## Resources
 
+All routes are open in every edition. The history window is capped by the edition.
+
 | Method | Endpoint | Description | Edition |
 |--------|----------|-------------|:-------:|
-| `GET` | `/api/v1/containers/{id}/resources/current` | Current CPU, memory, network, I/O | |
-| `GET` | `/api/v1/containers/{id}/resources/history` | Historical metrics (`?range=24h`) | Pro |
-| `GET` | `/api/v1/containers/{id}/resources/alerts` | Get alert thresholds | |
-| `PUT` | `/api/v1/containers/{id}/resources/alerts` | Set alert thresholds | |
-| `GET` | `/api/v1/resources/summary` | Aggregate resource summary (`?agent_id=local\|<id>` to scope to a host) | |
-| `GET` | `/api/v1/resources/top` | Top consumers (`?sort=cpu&limit=10`, `?agent_id=` to scope to a host) | |
-| `GET` | `/api/v1/resources/hosts` | List hosts (local + agents) with current CPU/memory/disk | Pro |
+| `GET` | `/api/v1/containers/{id}/resources/current` | Current CPU, memory, network, I/O | — |
+| `GET` | `/api/v1/containers/{id}/resources/history` | Historical metrics (`?range=24h`; window `30d` needs Personal, `90d` needs Pro) | — |
+| `GET` | `/api/v1/containers/{id}/resources/alerts` | Get alert thresholds | — |
+| `PUT` | `/api/v1/containers/{id}/resources/alerts` | Set alert thresholds | — |
+| `GET` | `/api/v1/resources/summary` | Aggregate resource summary of one host | — |
+| `GET` | `/api/v1/resources/top` | Top consumers (a `period` of `30d` needs Personal, `90d` needs Pro) | — |
+| `GET` | `/api/v1/resources/hosts` | List hosts (local and agents) with current CPU, memory and disk | — |
+
+- `current` answers `container_id`, `cpu_percent` (100 is one core), `mem_used`, `mem_limit`, `mem_percent`, `net_rx_bytes`, `net_tx_bytes`, `block_read_bytes`, `block_write_bytes` and `timestamp`. It returns `404 NOT_FOUND` when no sample exists yet.
+- `history` takes `range`: `1h` (the default), `6h`, `24h`, `7d`, `30d` or `90d`. The answer is `{ "container_id", "range", "granularity", "points" }` with `granularity` of `raw`, `1m`, `5m`, `1h` or `1d`. Errors: `400 INVALID_RANGE` for an unknown window, `403 EDITION_REQUIRED` for a window the edition does not open (with `feature: "resource_history"`, `required_edition`, `window` and `max_window`).
+- `alerts` (GET) answers `container_id`, `cpu_threshold`, `mem_threshold`, `enabled`, `alert_state` and `last_alerted_at`; without configuration it returns 90, 90 and `enabled: false`. `PUT` takes `cpu_threshold` (1 to 1000, required), `mem_threshold` (1 to 100) and `enabled` (omitted means `false`). An alert fires after two consecutive breaching samples. Errors: `400 INVALID_THRESHOLD`.
+- `summary` takes `agent_id` (`local` or absent for the local host) and answers the host totals: `available`, `total_cpu_percent`, `cpu_count`, `total_mem_used`, `total_mem_limit`, `total_mem_percent`, `container_count`, `disk_total`, `disk_used`, `disk_percent` and `timestamp`.
+- `top` requires `metric` (`cpu` or `memory`, otherwise `400 INVALID_METRIC`), and takes `limit` (default 5, at most 20), `agent_id` (absent means every host) and `period` (a history window). Without `period` the ranking uses the latest samples and is open in every edition. The answer is `{ "metric", "period", "consumers": [{ "container_id", "container_name", "value", "percent", "rank" }] }`. A bad `period` answers `400 INVALID_PERIOD`, or `403 EDITION_REQUIRED` as for `history`.
+- `hosts` answers `{ "hosts": [{ "agent_id", "hostname", "label", "is_local", "available", "cpu_percent", "mem_used", "mem_total", "mem_percent", "disk_total", "disk_used", "disk_percent", "container_count" }] }`, the local host first.
+
+---
+
+## Kubernetes
+
+All routes are open in every edition. They are read from the store, per agent, so they also serve clusters monitored by a remote agent. The routes that need metrics-server (`workloads/{id}/resources`, `nodes/{name}/resources`) answer `200` with `"metrics_available": false` and a message when the data is not available, which is always the case for a remote agent.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/kubernetes/namespaces` | List namespaces |
+| `GET` | `/api/v1/kubernetes/workloads` | List workloads, grouped by namespace |
+| `GET` | `/api/v1/kubernetes/workloads/{id}` | Workload with its pods and events |
+| `GET` | `/api/v1/kubernetes/workloads/{id}/resources` | Per-pod CPU and memory from metrics-server |
+| `GET` | `/api/v1/kubernetes/pods` | List pods |
+| `GET` | `/api/v1/kubernetes/pods/{namespace}/{name}` | Pod with its events |
+| `GET` | `/api/v1/kubernetes/nodes` | List nodes |
+| `GET` | `/api/v1/kubernetes/nodes/{name}/resources` | Node CPU and memory from metrics-server |
+| `GET` | `/api/v1/kubernetes/cluster` | Cluster overview |
+
+- Every route takes `agent_id`.
+- `workloads` takes `namespaces` (comma-separated), `kind` (`Deployment`, `StatefulSet`, `DaemonSet` or `Job`) and `status` (`healthy`, `degraded`, `progressing` or `failed`). It answers `{ "groups": [{ "namespace", "workloads" }], "total" }`. A workload has `id` (`namespace/Kind/name`), `name`, `namespace`, `kind`, `images`, `ready_replicas`, `desired_replicas`, `status` and `created_at`.
+- `{id}` is the workload id with its slashes URL-encoded (`default%2FDeployment%2Fweb`).
+- `pods` takes `namespaces`, `workload` (id prefix), `node` and `status` (for example `Running`, `Pending`). `{ "pods", "total" }`.
+- `cluster` answers `namespace_count`, `node_count`, `node_ready_count`, `pod_status`, `workload_count`, `workload_healthy`, `cluster_health` (`healthy` or `degraded`) and a per-namespace summary.
+- Errors: `404 K8S_WORKLOAD_NOT_FOUND`, `404 K8S_POD_NOT_FOUND`, `400 INVALID_ID` (bad workload id encoding) and `500 K8S_ERROR`.
+
+---
+
+## Swarm
+
+All routes are open in every edition. Services, tasks and nodes are read from the store, per agent. `info`, `dashboard`, `cluster`, `update-status` and `resources` read the server's own live Swarm and answer `409 SWARM_NOT_ACTIVE` when the local runtime is not a Swarm manager.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/swarm/info` | Swarm state of the local runtime (`{ "active": false }` when there is none) |
+| `GET` | `/api/v1/swarm/services` | List services (`?stack=`, `?agent_id=`) |
+| `GET` | `/api/v1/swarm/services/{serviceID}` | Service with its tasks |
+| `GET` | `/api/v1/swarm/services/{serviceID}/update-status` | Rolling update state (live) |
+| `GET` | `/api/v1/swarm/services/{serviceID}/resources` | Per-task CPU, memory and network (live) |
+| `GET` | `/api/v1/swarm/tasks` | List tasks (`?service=`, `?node=`, `?state=`, `?agent_id=`) |
+| `GET` | `/api/v1/swarm/nodes` | List nodes (`?agent_id=`) |
+| `GET` | `/api/v1/swarm/nodes/{nodeID}` | Node with its tasks (live) |
+| `GET` | `/api/v1/swarm/dashboard` | Cluster, node and service summary (live) |
+| `GET` | `/api/v1/swarm/cluster` | Cluster health and counts (live) |
+
+Errors: `404 SWARM_SERVICE_NOT_FOUND`, `404 SWARM_NODE_NOT_FOUND`, `409 SWARM_NOT_ACTIVE`, `409 SWARM_NODES_NOT_AVAILABLE` (node monitoring is not available) and `500 INTERNAL_ERROR`.
 
 ---
 
 ## Agents
 
-Multi-host agent management (`--mode=server`). All endpoints require **Personal** or above. Below that they return `403 EDITION_REQUIRED`, naming the capability and the edition that grants it. See [Multi-Host Monitoring](../features/multihost.md).
+Multi-host agent management. Every route requires **Personal** or above (capability `multihost`) and answers `403 EDITION_REQUIRED` below that. See [Multi-Host Monitoring](../features/multihost.md).
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/agents` | List enrolled agents, their connection state and their host OS (`os`) |
-| `GET` | `/api/v1/agents/{id}` | Get an agent |
-| `PATCH` | `/api/v1/agents/{id}` | Update an agent's display label |
-| `POST` | `/api/v1/agents/{id}/revoke` | Revoke an agent (closes its stream, stops retries) |
-| `DELETE` | `/api/v1/agents/{id}` | Delete an agent and purge all its events |
-| `GET` | `/api/v1/agents/metrics` | Aggregate fleet metrics (counts by status) |
-| `POST` | `/api/v1/agents/enrollment-tokens` | Create a one-time enrollment token (`{ "ttl_hours": 24 }`) |
-| `GET` | `/api/v1/agents/enrollment-tokens` | List enrollment tokens (masked) |
-| `GET` | `/api/v1/agents/enrollment-tokens/{token_id}` | Get an enrollment token (masked) |
-| `DELETE` | `/api/v1/agents/enrollment-tokens/{token_id}` | Delete an enrollment token |
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/agents` | List enrolled agents | Personal |
+| `GET` | `/api/v1/agents/{id}` | Get an agent | Personal |
+| `PATCH` | `/api/v1/agents/{id}` | Update an agent's display label | Personal |
+| `POST` | `/api/v1/agents/{id}/revoke` | Revoke an agent (closes its stream, stops retries) | Personal |
+| `DELETE` | `/api/v1/agents/{id}` | Delete an agent and purge all its events | Personal |
+| `GET` | `/api/v1/agents/metrics` | Fleet counts | Personal |
+| `POST` | `/api/v1/agents/enrollment-tokens` | Create a one-time enrollment token | Personal |
+| `GET` | `/api/v1/agents/enrollment-tokens` | List enrollment tokens (masked) | Personal |
+| `GET` | `/api/v1/agents/enrollment-tokens/{token_id}` | Get an enrollment token (masked) | Personal |
+| `DELETE` | `/api/v1/agents/enrollment-tokens/{token_id}` | Delete an enrollment token | Personal |
+
+An agent has `agent_id`, `hostname`, `label`, `os_arch`, `agent_version`, `detected_runtime` (`docker`, `swarm` or `kubernetes`), `status` (`active` or `revoked`), `connection_state` (`connected` or `disconnected`), `last_seen_at`, `created_at`, `revoked_at`, `revoked_by`, `spool` and `os`. `spool` (`queued`, `draining`, `dropped_since_connect`, `reported_at`) is `null` while the agent is disconnected. `os` holds the host operating system (`id`, `version_id`, `pretty_name`, `source`, `unavailable_reason`, `reported_at`) and its end-of-support state. An agent is `connected` while its stream is live or it was seen within `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` (60 by default).
+
+- `GET /api/v1/agents` takes `status` (`active`, `revoked` or `all`) and `connection_state` (`connected` or `disconnected`); the answer is `{ "agents": [...] }`.
+- `PATCH` takes `{ "label": "..." }` (required, up to 64 characters, empty clears it) and answers the updated agent.
+- `revoke` answers the agent and `delete` answers `204`.
+- `POST /api/v1/agents/enrollment-tokens` takes an optional `{ "ttl_hours": n }` (default 24, at most 168). The `201` answer carries `token_id`, `token` (shown only here), `token_masked`, `created_at`, `expires_at`, `install_templates` (`standalone`, `docker_run`, `docker_compose`, `kubernetes`) and `warnings` (for example `public_url_appears_local`, `public_url_plaintext_refused`).
+- `GET .../enrollment-tokens` lists unconsumed, unexpired tokens; `include_expired=true` and `include_consumed=true` widen the list. The answer is `{ "tokens": [...] }`.
+- `GET /api/v1/agents/metrics` answers `total`, `by_status`, `by_runtime`, `by_connection_state` and `total_events_per_second_observed_5m`.
+
+Errors: `404 NOT_FOUND`, `400 INVALID_JSON`, `400 MISSING_FIELD`, `400 LABEL_TOO_LONG`, `409 TOKEN_CONSUMED` (deleting a consumed token) and `409 HOST_LIMIT_REACHED` (creating a token when the cap is reached: 20 active remote agents on Personal, the error names `pro` as the edition that lifts it).
 
 ---
 
 ## Alerts
 
+All routes are open in every edition.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/alerts` | List all alerts (including resolved) |
-| `GET` | `/api/v1/alerts/active` | List active (unresolved) alerts |
-| `GET` | `/api/v1/alerts/{id}` | Get alert details |
+| `GET` | `/api/v1/alerts` | List alerts (including resolved), newest first |
+| `GET` | `/api/v1/alerts/active` | List active alerts, by severity |
+| `GET` | `/api/v1/alerts/{id}` | Get an alert |
+| `POST` | `/api/v1/alerts/{id}/acknowledge` | Acknowledge an active alert |
+
+- `GET /api/v1/alerts` takes `source`, `severity` and `status` (`active`, `resolved` or `silenced`), `before` (RFC 3339; returns alerts fired before it) and `limit` (1 to 200, default 50). The answer is `{ "alerts": [...], "has_more": bool }`. To page, pass the `fired_at` of the last alert as `before`. Errors: `400 INVALID_PARAM`.
+- `GET /api/v1/alerts/active` answers `{ "critical": [...], "warning": [...], "info": [...] }`. Acknowledged alerts are left out.
+- An alert has `id`, `source`, `alert_type`, `severity` (`critical`, `warning` or `info`), `status`, `message`, `entity_type`, `entity_id`, `entity_name`, `details` (a string holding JSON), `fired_at`, `resolved_at`, `resolved_by_id`, `acknowledged_at`, `acknowledged_by`, `escalated_at` and `created_at`.
+- `POST .../acknowledge` takes `{ "acknowledged_by": "..." }` (required). It answers the alert, emits `alert.acknowledged` and stops its running escalation. Errors: `400 INVALID_BODY`, `400 INVALID_REQUEST`, `404 NOT_FOUND` and `409 CONFLICT` (the alert is not active or is already acknowledged).
 
 ---
 
 ## Notification Channels
 
-Channels are silent by default. They only fire when referenced by an [Alert Trigger](#alert-triggers) or an [Escalation Policy](#escalation-policies).
+Channels are silent by default. They only fire when referenced by an [Alert Trigger](#alert-triggers) or an [Escalation Policy](#escalation-policies). Every route is open, but the channel type needs an edition.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/v1/channels` | List notification channels |
-| `POST` | `/api/v1/channels` | Create a channel (slack, discord, teams, webhook, email) |
+| `POST` | `/api/v1/channels` | Create a channel |
 | `PUT` | `/api/v1/channels/{id}` | Update a channel |
 | `DELETE` | `/api/v1/channels/{id}` | Delete a channel |
-| `POST` | `/api/v1/channels/{id}/test` | Send a test alert |
+| `POST` | `/api/v1/channels/{id}/test` | Send a test notification |
+
+| Channel `type` | Destination (`url`) | Edition |
+|----------------|---------------------|:-------:|
+| `webhook` (default) | HTTPS URL | — |
+| `discord` | Discord webhook URL | — |
+| `email` | Recipient address (needs `MAINTENANT_SMTP_*`) | Personal |
+| `telegram` | Chat id (`-1001234567890`) or public `@username` | Personal |
+| `slack` | Slack webhook URL | Pro |
+| `teams` | Teams webhook URL | Pro |
+
+A channel has `id`, `name`, `type`, `url`, `headers` (a string holding a JSON object), `config` (a string holding JSON, for example `{"thread_id": "42"}` on Telegram), `has_secret`, `enabled`, `health` (`healthy` or `failing`, on the list only), `suspended`, `required_edition` and timestamps. The secret (a Telegram bot token) is never returned, only `has_secret`; the URL and headers are returned as stored.
+
+- `POST` body: `name` (required), `url` (required), `type`, `headers`, `secret` (required for Telegram), `config` and `enabled` (default `true`). A URL must be HTTPS and must not resolve to a private or internal address, unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` is set. Answers `201` with the channel.
+- `PUT` takes the same fields, all optional. A secret cannot be cleared. A request that only sets `enabled` to `false` is always accepted, even after the edition dropped.
+- `test` answers `404 NOT_FOUND` for an unknown channel. Otherwise it answers `200`: `{ "status": "delivered", "response_code": n }` or `{ "status": "failed", "error": "..." }`.
+- Creating, updating or testing a channel of a type the edition does not open answers `403 EDITION_REQUIRED` (`feature` is the capability: `slack`, `teams`, `smtp` or `telegram`). After a downgrade such a channel is `suspended`: it stops delivering and `GET /api/v1/edition` lists it under `suspended_channels`.
+- Errors: `400 INVALID_BODY`, `400 VALIDATION_ERROR`, `404 NOT_FOUND` and `409 DUPLICATE_NAME` on create.
 
 ---
 
 ## Alert Triggers
 
-Triggers route alerts to channels based on filters (severity, source, scope, tag).
+Triggers route alerts to channels based on filters. A trigger matches when all of its non-empty filters match.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -190,44 +475,62 @@ Triggers route alerts to channels based on filters (severity, source, scope, tag
 | `PUT` | `/api/v1/alert-triggers/{id}` | Update a trigger |
 | `DELETE` | `/api/v1/alert-triggers/{id}` | Delete a trigger |
 
-Filters `filter_scopes` and `filter_tags` require Personal or above; `filter_severities` and `filter_sources` are available on every edition.
+A trigger has `id`, `name`, `filter_severities`, `filter_sources` and `filter_scopes` (comma-separated strings, empty matches everything; a scope is `entity_type:entity_id`), `enabled`, `notify_on_resolve`, `channel_ids` and timestamps. The list answers `{ "triggers": [...] }`.
 
-`notify_on_resolve` (boolean, default `true`) controls whether the trigger also relays `alert.resolved` events; set it to `false` for a channel that should only receive failures.
+- `POST` body: `name` (required, up to 120 characters), `channel_ids` (required, at least one existing channel), the three filters, `enabled` (default `true`) and `notify_on_resolve` (default `true`, set it to `false` for a channel that should only receive failures).
+- `PUT` replaces the name, the filters and the channels; `enabled` and `notify_on_resolve` keep their value when omitted.
+- `filter_scopes` requires **Personal** (capability `alert_advanced_filters`). Below Personal, a non-empty value that differs from the stored one answers `403 EDITION_REQUIRED`; keeping or clearing the stored value is allowed. `filter_severities` and `filter_sources` are open in every edition.
+- Errors (lower case codes): `400 validation_failed`, `404 trigger_not_found`, `409 name_conflict`. Invalid JSON answers `400 INVALID_BODY`.
 
 ---
 
-## Escalation Policies :material-crown:{ title="Pro" }
+## Escalation Policies
 
-Multi-level escalation chains for unacknowledged alerts.
+Multi-level escalation chains for unacknowledged alerts. Every route requires **Pro** (capability `alert_escalation`) and answers `403 EDITION_REQUIRED` below it.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/escalation-policies` | List all policies |
-| `POST` | `/api/v1/escalation-policies` | Create a policy |
-| `GET` | `/api/v1/escalation-policies/{id}` | Get a policy |
-| `PUT` | `/api/v1/escalation-policies/{id}` | Update a policy |
-| `PATCH` | `/api/v1/escalation-policies/{id}/active` | Activate / deactivate |
-| `DELETE` | `/api/v1/escalation-policies/{id}` | Delete a policy |
-| `POST` | `/api/v1/escalation-policies/overlap-probe` | Detect overlapping policies |
-| `GET` | `/api/v1/escalation-policies/{id}/runs` | List recent runs for a policy |
-| `GET` | `/api/v1/alerts/{id}/escalation-runs` | List runs for an alert |
-| `GET` | `/api/v1/escalation-runs/{id}` | Get run detail and deliveries |
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/escalation-policies` | List policies (`?active=true` keeps the active ones) | Pro |
+| `POST` | `/api/v1/escalation-policies` | Create a policy | Pro |
+| `GET` | `/api/v1/escalation-policies/{id}` | Get a policy | Pro |
+| `PUT` | `/api/v1/escalation-policies/{id}` | Replace a policy | Pro |
+| `PATCH` | `/api/v1/escalation-policies/{id}/active` | Activate or deactivate | Pro |
+| `DELETE` | `/api/v1/escalation-policies/{id}` | Delete a policy | Pro |
+| `POST` | `/api/v1/escalation-policies/overlap-probe` | Detect overlapping policies | Pro |
+| `GET` | `/api/v1/escalation-policies/{id}/runs` | List recent runs of a policy | Pro |
+| `GET` | `/api/v1/alerts/{alert_id}/escalation-runs` | List the runs of an alert | Pro |
+| `GET` | `/api/v1/escalation-runs/{run_id}` | Get a run with its deliveries | Pro |
 
-Endpoints return `403 edition_required` on Community.
+A policy is `{ "name", "active", "filters": { "severities", "scopes": [{ "kind", "ref_id" }] }, "levels": [{ "delay_seconds", "channel_ids" }] }`. Validation: a name of 1 to 120 characters, at least one level, each delay between 60 and 86400 seconds and at least 60 seconds after the previous level, and at least one channel per level. `active` has no default: leaving it out creates or replaces the policy as inactive. The delays of the levels count from the start of the run.
+
+- `GET /api/v1/escalation-policies` answers `{ "policies": [...], "limits": { "max_active", "max_levels", "current_active" } }`; a limit of `-1` is unlimited.
+- `overlap-probe` takes a policy body and answers `{ "overlapping": [{ "policy_id", "policy_name", "shared_channels", "filter_intersection" }] }`: policies whose filters intersect and that share at least one channel.
+- `PATCH .../active` takes `{ "active": bool }` and answers `{ "id", "active", "updated_at" }`.
+- `runs` takes `limit` (default 50, at most 200) and `cursor` (a run id; returns older runs) and answers `{ "runs": [...] }`. A run has a `status` (`active`, `paused_by_maintenance`, `stopped_by_ack`, `stopped_by_resolution`, `stopped_by_policy_deletion`, `stopped_by_policy_disabled`, `stopped_by_edition_downgrade` or `exhausted`); its deliveries have a `status` of `pending`, `sent`, `failed`, `abandoned` or `skipped_maintenance`.
+- Errors (lower case codes): `400 validation_failed`, `400 invalid_body`, `404 policy_not_found`, `404 run_not_found` and `500 internal_error`.
 
 ---
 
 ## Silence Rules
 
+All routes are open in every edition.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/silence` | List active silence rules |
+| `GET` | `/api/v1/silence` | List silence rules (`?active=true` keeps the ones in effect) |
 | `POST` | `/api/v1/silence` | Create a silence rule |
 | `DELETE` | `/api/v1/silence/{id}` | Cancel a silence rule |
+
+- `POST` body: `duration_seconds` (required, above zero) and optional `entity_type`, `entity_id`, `source` and `reason`. All three filters empty silence everything; otherwise an alert must match every filter that is set. Answers `201` with the rule.
+- The list answers `{ "rules": [...] }`. A rule has `id`, `entity_type`, `entity_id`, `source`, `reason`, `starts_at`, `duration_seconds`, `expires_at`, `is_active`, `cancelled_at` and `created_at`.
+- `DELETE` cancels the rule (`is_active` becomes `false`, the rule stays listed) and answers `204`, even for an unknown id.
+- Errors: `400 INVALID_BODY`, `400 VALIDATION_ERROR`.
 
 ---
 
 ## Webhooks
+
+Webhook subscriptions deliver raw events to a URL. To notify a chat service, use a [channel](#notification-channels) instead: a webhook URL of Discord, Slack or Teams is refused. All routes are open in every edition.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -235,6 +538,11 @@ Endpoints return `403 edition_required` on Community.
 | `POST` | `/api/v1/webhooks` | Create a webhook subscription |
 | `DELETE` | `/api/v1/webhooks/{id}` | Delete a webhook subscription |
 | `POST` | `/api/v1/webhooks/{id}/test` | Send a test payload |
+
+- `POST` body: `name` (required, 1 to 100 characters), `url` (required, HTTPS, not resolving to a private or internal address unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` is set), `secret` (optional, enables the signature) and `event_types` (default `["*"]`). Valid event types are `*`, `container.state_changed`, `endpoint.status_changed`, `heartbeat.status_changed`, `certificate.status_changed`, `alert.fired` and `alert.resolved`. Answers `201` with the subscription (the secret is never returned).
+- The list answers `{ "webhooks": [...] }`. A subscription has `id`, `name`, `url`, `event_types`, `is_active`, `last_delivery_status`, `last_delivery_at`, `failure_count` and `created_at`.
+- `test` sends `{"type": "test", "timestamp": "...", "data": {"message": "maintenant webhook test"}}` synchronously, without a signature, and answers `200` with `{ "status": "delivered", "http_status": n }`, `{ "status": "failed", "http_status": n }` or `{ "status": "failed", "error": "..." }`.
+- Errors use lower case codes: `400 invalid_json`, `400 invalid_input`, `404 not_found` and `500 internal_error`.
 
 ### Delivery format
 
@@ -255,7 +563,11 @@ Each delivery is a `POST` with a JSON body of the shape `{type, timestamp, data}
 }
 ```
 
-The `data` fields depend on `type` (`container.state_changed`, `endpoint.status_changed`, `heartbeat.status_changed`, `certificate.status_changed`, `alert.fired`, `alert.resolved`). Subscribe to specific types or `*` for all.
+The `data` fields are those of the [SSE event](#sse-event-stream) of the same type. A subscription to `container.state_changed` also receives the `container.discovered` payloads, under that type. A delivery is attempted up to three times, with a 1 second then a 5 second wait between attempts. Subscribe to specific types or `*` for all.
+
+!!! note "Endpoint events are not delivered yet"
+
+    Webhooks observe the main event stream, and the server does not broadcast endpoint events on it (see the note under [SSE Event Stream](#sse-event-stream)). A subscription to `endpoint.status_changed` is accepted but receives nothing in this version.
 
 Headers on every delivery:
 
@@ -263,7 +575,7 @@ Headers on every delivery:
 |--------|-------|
 | `X-maintenant-Event` | the event `type` |
 | `X-maintenant-Delivery` | a unique delivery UUID |
-| `X-maintenant-Signature` | `sha256=<hmac>` — present only when the subscription has a secret |
+| `X-maintenant-Signature` | `sha256=<hmac>`, present only when the subscription has a secret |
 
 When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_request_body)` and comparing (constant-time) against the hex digest in `X-maintenant-Signature`. The signature is computed over the exact bytes of the request body.
 
@@ -274,114 +586,214 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 
 ## Status Page (Admin)
 
+The admin routes of the public status page. See [Status Page](../features/status-page.md). The routes below sit under `/api/v1/status/`; the public page is served under `/status/` (see [Public status page](#public-status-page)).
+
 ### Components
 
+All routes are open in every edition, except that creating a component is capped.
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/status/components` | List components | — |
+| `POST` | `/api/v1/status/components` | Create a component (3 on Community) | — |
+| `PUT` | `/api/v1/status/components/{id}` | Update a component | — |
+| `DELETE` | `/api/v1/status/components/{id}` | Delete a component | — |
+
+The list is a bare JSON array (`null` when empty), ordered by `display_order`. A component has `id`, `composition_mode` (`explicit` or `match-all`), `monitors` (`[{ "type", "id" }]`), `match_all_type`, `display_name`, `display_order`, `visible`, `derived_status`, `status_override`, `effective_status`, `auto_incident`, `needs_attention` and timestamps. Statuses are `operational`, `degraded`, `partial_outage`, `major_outage` and `under_maintenance`.
+
+- `POST` body: `display_name` (required), `composition_mode` (default `explicit`), `monitors` (an `explicit` component needs at least one, each of type `container`, `endpoint`, `heartbeat` or `certificate`), `match_all_type` (required in `match-all` mode, empty otherwise), `display_order`, `visible` (default `true`) and `auto_incident`. `403 QUOTA_EXCEEDED` when the cap is reached (`resource: "status_components"`, `limit: 3` on Community).
+- `PUT` takes the same fields, all optional. `composition_mode` and `match_all_type` cannot change, a `match-all` component's monitors cannot be edited, and `status_override` set to an empty string clears the override.
+- `DELETE` answers `204`.
+- Errors (lower case codes): `400 invalid_body`, `400 validation`, `404 not_found` and `500 internal`.
+
+### Incidents
+
+Reading is open in every edition. Writing requires **Personal** (capability `incidents`).
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/status/incidents` | List all incidents | — |
+| `POST` | `/api/v1/status/incidents` | Create an incident | Personal |
+| `PUT` | `/api/v1/status/incidents/{id}` | Update an incident's title, severity or components | Personal |
+| `DELETE` | `/api/v1/status/incidents/{id}` | Delete an incident | Personal |
+| `POST` | `/api/v1/status/incidents/{id}/updates` | Add an incident update | Personal |
+
+- `GET` takes `status`, `severity`, `limit` (1 to 100, default 20) and `offset`, and answers `{ "incidents": [...], "total" }`. An incident has `id`, `title`, `severity`, `status`, `is_maintenance`, `components`, `updates` and timestamps.
+- `POST` body: `title` and `severity` (`minor`, `major` or `critical`) are required; `status` defaults to `investigating`; `component_ids` and `message` (the first update) are optional. It emits `status.incident_created` and emails the confirmed subscribers when subscriptions are open.
+- `POST .../updates` takes `status` and `message` (both required). An update with status `resolved` resolves the incident and emits `status.incident_resolved`; any other update emits `status.incident_updated`.
+- Errors (lower case codes): `400 validation`, `404 not_found`.
+
+### Maintenance windows
+
+Reading is open in every edition. Writing requires **Pro** (capability `maintenance_windows`).
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/status/maintenance` | List maintenance windows | — |
+| `POST` | `/api/v1/status/maintenance` | Schedule a maintenance window | Pro |
+| `PUT` | `/api/v1/status/maintenance/{id}` | Update a maintenance window | Pro |
+| `DELETE` | `/api/v1/status/maintenance/{id}` | Delete a maintenance window | Pro |
+
+- `GET` takes `status` (`upcoming`, `active` or `completed`) and `limit` (1 to 100, default 20) and answers a bare array (`null` when empty).
+- `POST` body: `title`, `starts_at` and `ends_at` (RFC 3339, `ends_at` not before `starts_at`) are required; `description` and `component_ids` are optional.
+- `PUT` takes the same fields, all optional, and answers `409 conflict` while the window is active. A scheduler checks the windows every 60 seconds: starting one opens a "Scheduled Maintenance" incident, puts its components under maintenance and emits `status.maintenance_started`; ending it emits `status.maintenance_ended`.
+
+### Subscribers
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/status/subscribers` | List email subscribers (addresses masked) | Pro |
+
+Answers `{ "subscribers": [{ "id", "email", "confirmed", "created_at" }], "total", "confirmed" }`.
+
+### SMTP test
+
+Status page emails are sent through the SMTP server configured with the `MAINTENANT_SMTP_*` variables. There is no route to read or change that configuration.
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `POST` | `/api/v1/status/smtp/test` | Send a test email | Personal |
+
+Body: `{ "to": "address" }`. Answers `200 {"status": "sent"}`. Errors: `400 not_configured` (no SMTP host), `400 invalid_body`, `400 validation` (invalid address) and `502 smtp_failed` (the message is the SMTP error).
+
+### Personalization
+
+Branding of the public page. Every route requires **Pro** (capability `personalization`), reads included, and answers `403 EDITION_REQUIRED` below it. Errors use the codes `validation_error`, `payload_too_large`, `unsupported_mime`, `not_found` and `internal_error`.
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/status-page/settings` | Get the settings | Pro |
+| `PUT` | `/api/v1/status-page/settings` | Replace the settings | Pro |
+| `GET` | `/api/v1/status-page/assets/{role}` | Download an asset | Pro |
+| `PUT` | `/api/v1/status-page/assets/{role}` | Upload an asset (multipart, part `file`, optional `alt_text`) | Pro |
+| `DELETE` | `/api/v1/status-page/assets/{role}` | Delete an asset | Pro |
+| `GET` | `/api/v1/status-page/footer-links` | List footer links | Pro |
+| `POST` | `/api/v1/status-page/footer-links` | Add a footer link | Pro |
+| `PUT` | `/api/v1/status-page/footer-links/order` | Reorder footer links (`{ "ids": [...] }`) | Pro |
+| `PUT` | `/api/v1/status-page/footer-links/{id}` | Update a footer link | Pro |
+| `DELETE` | `/api/v1/status-page/footer-links/{id}` | Delete a footer link | Pro |
+| `GET` | `/api/v1/status-page/faq` | List FAQ items | Pro |
+| `POST` | `/api/v1/status-page/faq` | Add an FAQ item | Pro |
+| `PUT` | `/api/v1/status-page/faq/order` | Reorder FAQ items (`{ "ids": [...] }`) | Pro |
+| `PUT` | `/api/v1/status-page/faq/{id}` | Update an FAQ item | Pro |
+| `DELETE` | `/api/v1/status-page/faq/{id}` | Delete an FAQ item | Pro |
+
+- **Settings** (`PUT` replaces every field): `title` (1 to 100 characters), `subtitle` (200), `colors` (`bg`, `surface`, `border`, `text`, `accent`, `status_operational`, `status_degraded`, `status_partial`, `status_major`, each `#RRGGBB` or `#RRGGBBAA`), `announcement` (`enabled`, `message_md` up to 1000 characters, `url` over HTTP or HTTPS), `footer_text_md` (500), `locale` (`en` or `fr`), `timezone` (an IANA name or empty) and `date_format` (`relative` or `absolute`). Markdown is rendered to sanitized HTML on the server. The answer adds `version` and, when the palette misses WCAG AA contrast, a `warnings.contrast` list that never blocks the save.
+- **Assets**: `role` is `logo` (200 KiB; PNG, JPEG, WebP or SVG), `favicon` (50 KiB; PNG, ICO or SVG) or `hero` (500 KiB; PNG, JPEG or WebP). The type is sniffed from the content, and an SVG must start with an `<?xml` prolog. An oversized file answers `400 payload_too_large`, a wrong type `400 unsupported_mime`.
+- **Footer links** take `label` (1 to 60 characters) and `url` (HTTP or HTTPS). **FAQ items** take `question` (1 to 200 characters) and `answer_md` (up to 4000). Lists answer `{ "items": [...] }`.
+
+---
+
+## Public status page
+
+These routes need no credentials, are not under `/api/`, share the 10 requests per second bucket of the public surfaces and cap bodies at 4 KiB. The page can be framed from any origin. See [Status Page](../features/status-page.md).
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/status/components` | List components |
-| `POST` | `/api/v1/status/components` | Create a component |
-| `PUT` | `/api/v1/status/components/{id}` | Update a component |
-| `DELETE` | `/api/v1/status/components/{id}` | Delete a component |
+| `GET` | `/status/` | The status page (the dashboard application at the status route). `/status` redirects to it |
+| `GET` | `/status/api` | JSON snapshot of the current status |
+| `GET` | `/status/events` | Event stream of the status page (SSE) |
+| `GET` | `/status/feed.atom` | Atom feed of the incidents resolved in the last 30 days |
+| `GET` | `/status/settings.json` | Branding for the page: colors, assets, footer, FAQ |
+| `POST` | `/status/subscribe` | Subscribe an email address to updates |
+| `GET` | `/status/confirm?token=` | Confirm a subscription |
+| `GET` | `/status/unsubscribe?token=` | Unsubscribe |
 
-### Incidents :material-star-four-points:{ title="Personal" }
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/status/incidents` | List all incidents |
-| `POST` | `/api/v1/status/incidents` | Create an incident |
-| `PUT` | `/api/v1/status/incidents/{id}` | Update an incident |
-| `DELETE` | `/api/v1/status/incidents/{id}` | Delete an incident |
-| `POST` | `/api/v1/status/incidents/{id}/updates` | Add an incident update |
-
-### Maintenance Windows :material-crown:{ title="Pro" }
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/status/maintenance` | List maintenance windows |
-| `POST` | `/api/v1/status/maintenance` | Schedule a maintenance window |
-| `PUT` | `/api/v1/status/maintenance/{id}` | Update a maintenance window |
-| `DELETE` | `/api/v1/status/maintenance/{id}` | Delete a maintenance window |
-
-### Subscribers :material-crown:{ title="Pro" }
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/status/subscribers` | List email subscribers |
-
-### SMTP Configuration :material-star-four-points:{ title="Personal" }
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/status/smtp` | Get SMTP configuration |
-| `PUT` | `/api/v1/status/smtp` | Update SMTP configuration |
-| `POST` | `/api/v1/status/smtp/test` | Send a test email |
+- `GET /status/api` answers `global_status`, `global_message`, `updated_at`, `components` (`[{ "id", "name", "status" }]`, visible components only), `active_incidents`, `upcoming_maintenance`, `subscriptions_enabled` and, once the page has been personalized, `personalization_version`. List fields are `null` when empty. It sends `Access-Control-Allow-Origin: *`.
+- `GET /status/settings.json` returns the branding with images inlined as `data:` URLs (there is no public asset URL). Below Pro it returns the default settings. It sends an `ETag` (`"v<version>"`), answers `304` to a matching `If-None-Match` and sends `Access-Control-Allow-Origin: *`.
+- `POST /status/subscribe` takes `{ "email": "..." }` (`Content-Type: application/json`) or a form field `email`. Subscriptions are open when SMTP is configured and the edition is **Pro**; otherwise the route answers `503 subscriptions_unavailable`. The answer is always `200 {"status": "confirmation_sent"}`, whether the address is new, pending or already confirmed, so nothing reveals who is subscribed. A pending address gets a new link, which replaces the old one, and a confirmed address gets no mail. Errors: `400 invalid_email`, `400 invalid_body`, `413 body_too_large`, `429 rate_limited` (5 per hour and per IP, with `Retry-After`) and `500 subscription_failed`.
+- `confirm` and `unsubscribe` answer small HTML pages. The link in the confirmation mail is valid for 24 hours. `confirm` answers `503` while subscriptions are closed; `unsubscribe` keeps working.
+- Plain-text errors on the page, API and feed routes: `503 Status page not available` when the application is not embedded and `500 Internal Server Error`.
 
 ---
 
 ## Updates
 
+All routes are open in every edition. Two response fields depend on the edition: `cve_counts` in the summary and the changelog and CVE fields of a container's update (Personal).
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/updates` | List available updates (`?status=&update_type=`) |
+| `GET` | `/api/v1/updates` | List updates (`?status=&update_type=`) |
 | `GET` | `/api/v1/updates/summary` | Update summary with counts (`os_counts` for host operating systems) |
 | `GET` | `/api/v1/updates/hosts` | Every monitored host with its OS identity and end-of-support status, plus the support table in use |
 | `POST` | `/api/v1/updates/scan` | Trigger a manual scan |
 | `GET` | `/api/v1/updates/scan/{scan_id}` | Get scan status |
-| `GET` | `/api/v1/updates/dry-run` | Preview what a scan would check |
+| `GET` | `/api/v1/updates/dry-run` | Dry run: list the available updates |
 | `GET` | `/api/v1/updates/container/{container_id}` | Update details for a container |
-| `POST` | `/api/v1/updates/pin/{container_id}` | Pin current version |
-| `DELETE` | `/api/v1/updates/pin/{container_id}` | Unpin version |
+| `POST` | `/api/v1/updates/pin/{container_id}` | Pin the current version |
+| `DELETE` | `/api/v1/updates/pin/{container_id}` | Unpin the version |
 | `GET` | `/api/v1/updates/exclusions` | List exclusions |
 | `POST` | `/api/v1/updates/exclusions` | Create an exclusion |
 | `DELETE` | `/api/v1/updates/exclusions/{id}` | Delete an exclusion |
+
+`{container_id}` is the container's external id (the runtime id; for Kubernetes `namespace/Kind/name`, slashes included).
+
+- `GET /api/v1/updates` takes `status` (`available` or `pinned`) and `update_type` (`major`, `minor`, `patch`, `digest_only` or `unknown`). The answer is `{ "updates": [...], "last_scan", "next_scan" }` (both dates are the zero time until a scan finishes). An update has `id`, `container_id`, `container_name`, `image`, `current_tag`, `current_digest`, `latest_tag`, `latest_digest`, `update_type`, `risk_score`, `status`, `detected_at`, and `pin_reason` when pinned.
+- `summary` answers `last_scan`, `next_scan`, `scan_status` (`running`, `completed`, `failed` or `idle`), `counts` (`critical`, `recommended`, `available`, `up_to_date`, `untracked`, `pinned`), `cve_counts` (Personal) and `os_counts` (`ended`, `ending_soon`, `unknown`, `untracked`, `supported`).
+- `hosts` answers `{ "hosts": [...], "eol_table": { "source", "fetched_at", "refresh_enabled", "last_refresh_error" } }`. A host has `agent_id`, `hostname`, `label`, `is_local`, `runtime`, `connection_state` and an `os` object with its `support` state (`unknown`, `untracked`, `supported`, `security_only`, `ending_soon` or `ended`).
+- `scan` answers `202 {"status": "running", "started_at": "..."}` without a scan id: the id arrives in the `update.scan_started` event. `409 SCAN_IN_PROGRESS` when a scan is running.
+- `scan/{scan_id}` answers `scan_id`, `status`, `started_at`, `containers_scanned`, `updates_found`, `errors` and `completed_at`; `404 NOT_FOUND` for an unknown scan.
+- `dry-run` answers `{ "would_update": [{ "container_id", "container_name", "image", "current_tag", "latest_tag", "update_type" }] }`, the updates with status `available`.
+- `container/{container_id}` adds `pinned`, `pin_reason`, `update_command`, `rollback_command`, `tag_include` and `tag_exclude`. On Personal and above it also carries `source_url`, `previous_digest`, `changelog_url`, `changelog_summary`, `has_breaking_changes` and `active_cves`. Errors: `404 NOT_FOUND`.
+- `pin` takes an optional `{ "reason": "..." }` and answers `200 { "container_id", "pinned_tag", "pinned_digest", "reason", "pinned_at" }`; `404 NOT_FOUND` when the container has no update data. `DELETE` always answers `204`.
+- `exclusions` (POST) takes `pattern` (required) and `pattern_type` (`image` or `tag`), and answers `201`. Posting a pattern that already exists also answers `201`, but the `id` returned is not the stored one. Errors: `400 INVALID_JSON`, `400 INVALID_PATTERN`, `400 INVALID_TYPE`.
 
 ---
 
 ## Security
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/security/insights` | List all network security insights |
-| `GET` | `/api/v1/security/insights/{container_id}` | Get insights for a specific container |
-| `GET` | `/api/v1/security/summary` | Aggregated counts by severity and type |
+Insights are open in every edition.
 
-### Security Posture :material-star-four-points:{ title="Personal" }
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/security/insights` | List all insights, by container | — |
+| `GET` | `/api/v1/security/insights/{container_id}` | Insights of a container | — |
+| `GET` | `/api/v1/security/summary` | Aggregated counts by severity and type | — |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/security/posture` | Global infrastructure posture score |
-| `GET` | `/api/v1/security/posture/containers` | Per-container posture scores (`?limit=&offset=`) |
-| `GET` | `/api/v1/security/posture/containers/{id}` | Posture score for a single container |
-| `POST` | `/api/v1/security/acknowledgments` | Acknowledge a finding |
-| `DELETE` | `/api/v1/security/acknowledgments/{id}` | Revoke an acknowledgment |
-| `GET` | `/api/v1/security/acknowledgments` | List acknowledgments (`?container_id=`) |
+The list answers `{ "containers": [...], "summary": {...} }` and the summary route answers the same `summary` object (`total_containers_monitored`, `total_containers_affected`, `total_insights`, `by_severity`, `by_type`). An insight has `type` (`port_exposed_all_interfaces`, `database_port_exposed`, `privileged_container`, `host_network_mode`, `service_load_balancer` or `service_node_port`), `severity` (`critical`, `high` or `medium`), `container_id`, `container_name`, `title`, `description`, `details` and `detected_at`. `{container_id}` is the maintenant container id; an unknown one answers `404 CONTAINER_NOT_FOUND`.
 
----
+### Security Posture
 
-## CVE Intelligence :material-star-four-points:{ title="Personal" }
+Requires **Personal** (capability `security_posture`). Every route answers `403 EDITION_REQUIRED` below it.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/cve` | List known CVEs across all containers |
-| `GET` | `/api/v1/cve/{container_id}` | List CVEs for a specific container |
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/security/posture` | Global infrastructure posture score | Personal |
+| `GET` | `/api/v1/security/posture/containers` | Per-container posture scores (`?limit=&offset=`) | Personal |
+| `GET` | `/api/v1/security/posture/containers/{container_id}` | Posture score for one container | Personal |
+| `POST` | `/api/v1/security/acknowledgments` | Acknowledge a finding | Personal |
+| `GET` | `/api/v1/security/acknowledgments` | List acknowledgments (`?container_id=`) | Personal |
+| `DELETE` | `/api/v1/security/acknowledgments/{id}` | Revoke an acknowledgment | Personal |
 
----
-
-## Risk Scoring :material-star-four-points:{ title="Personal" }
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/risk` | Risk scores for all containers |
-| `GET` | `/api/v1/risk/{container_id}` | Risk score for a specific container |
-| `GET` | `/api/v1/risk/{container_id}/history` | Risk score history |
+- The global score has `score`, `color` (`green` from 80, `yellow` from 60, `orange` from 40, else `red`), `container_count`, `scored_count`, `is_partial`, `categories` (`tls`, `cves`, `updates`, `network_exposure`, `image_age`), `top_risks` and `computed_at`. Reading it can raise the posture threshold alert (`MAINTENANT_SECURITY_SCORE_THRESHOLD`).
+- `containers` takes `limit` (default 50) and `offset` and answers `{ "containers", "total", "limit", "offset" }`, worst score first.
+- `POST acknowledgments` takes `container_id` and `finding_type` (required), `finding_key`, `acknowledged_by` and `reason`. Answers `201`. Errors: `400 INVALID_BODY`, `400 MISSING_FIELDS`, `404 NOT_FOUND`, `409 ALREADY_ACKNOWLEDGED`.
 
 ---
 
-## License
+## CVE Intelligence
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/license/status` | Current license status and edition info |
+Requires **Personal** (capability `cve_enrichment`). The check is made by the handler, which answers `403 EDITION_REQUIRED` below it.
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/cve` | List known CVEs across all containers (`?severity=&container_id=`) | Personal |
+| `GET` | `/api/v1/cve/{container_id}` | List CVEs for a specific container | Personal |
+
+`{container_id}` is the external id. The list answers `{ "cves": [{ "cve_id", "cvss_score", "severity", "summary", "first_detected_at", "affected_containers" }], "total", "by_severity" }`; `total` and `by_severity` count container-CVE pairs, not distinct CVEs. The container route answers `{ "container_id", "cves": [...] }`.
+
+---
+
+## Risk Scoring
+
+Requires **Personal** (capability `risk_scoring`). Every route answers `403 EDITION_REQUIRED` below it. Error codes here are lower case.
+
+| Method | Endpoint | Description | Edition |
+|--------|----------|-------------|:-------:|
+| `GET` | `/api/v1/risk` | Risk scores for all containers | Personal |
+| `GET` | `/api/v1/risk/{container_id}` | Risk score of a container; with `?period=24h\|7d\|30d`, its score history | Personal |
+
+The list answers `{ "containers": [{ "container_id", "container_name", "risk_score", "level" }], "host_risk_score", "host_risk_level" }`. `level` is `critical` from 81, `high` from 61, `moderate` from 31, else `low`. With `period`, the container route answers `{ "container_id", "history": [{ "score", "recorded_at" }] }`. Errors: `400 invalid_period`, `404 not_found` (no risk data), `500 internal`.
 
 ---
 
@@ -389,7 +801,28 @@ When a secret is set, verify authenticity by computing `HMAC-SHA256(secret, raw_
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/dashboard/sparklines` | Sparkline data for all endpoints |
+| `GET` | `/api/v1/dashboard/sparklines` | Response times of the last 20 checks of every active endpoint |
+
+Answers an object keyed `endpoint:<endpoint_id>`, each value an array of response times in milliseconds, oldest first. Open in every edition.
+
+---
+
+## MCP and OAuth routes
+
+The MCP server is off unless `MAINTENANT_MCP` is enabled, and none of these routes exist in demo mode. When `MAINTENANT_MCP_CLIENT_ID` and `MAINTENANT_MCP_CLIENT_SECRET` are set, `/mcp` requires an OAuth access token. Without them the instance refuses to start, unless `MAINTENANT_MCP_ALLOW_UNAUTHENTICATED` leaves `/mcp` open. See [MCP Server](../features/mcp.md).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET`, `POST`, `DELETE` | `/mcp`, `/mcp/` | MCP over streamable HTTP. Needs `Authorization: Bearer <token>` when OAuth is configured |
+| `GET` | `/.well-known/oauth-authorization-server` | Authorization server metadata |
+| `GET` | `/.well-known/oauth-protected-resource` | Protected resource metadata for `/mcp` |
+| `GET` | `/oauth/authorize` | Authorization endpoint (authorization code with PKCE) |
+| `POST` | `/oauth/token` | Token endpoint |
+
+- `/oauth/authorize` takes `response_type=code`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method=S256` and an optional `state`. It asks for no login: a valid request is approved at once and redirected with a `code`. The redirect URI must be a loopback address or one of `MAINTENANT_MCP_ALLOWED_REDIRECT_URIS`. The code lives 10 minutes and works once.
+- `/oauth/token` takes form fields. `grant_type=authorization_code` needs `code`, `client_id`, `client_secret`, `redirect_uri` and `code_verifier`; `grant_type=refresh_token` needs `refresh_token`, `client_id` and `client_secret`. The client authenticates with its secret in the form (`client_secret_post`). The answer is `{ "access_token", "token_type": "Bearer", "expires_in": 3600, "refresh_token" }`: access tokens last 1 hour, refresh tokens 30 days, and each refresh token is used once.
+- OAuth errors use the RFC 6749 shape: `invalid_request`, `invalid_client` (401), `invalid_grant`, `unsupported_grant_type`, `unsupported_response_type`, `unauthorized_client` and `server_error`. `/mcp` answers `401` with a `WWW-Authenticate` header pointing to the protected resource metadata when the token is missing, expired or revoked.
+- The issuer of the metadata is `MAINTENANT_BASE_URL`.
 
 ---
 
@@ -401,36 +834,103 @@ Connect to the real-time event stream:
 GET /api/v1/containers/events
 ```
 
-This is a Server-Sent Events (SSE) endpoint. Each event has a `type` field and a JSON `data` payload.
+This is a Server-Sent Events (SSE) endpoint. The server writes each event as:
+
+```
+event: container.state_changed
+data: {"id":"a1b2c3d4e5f6","state":"running",...}
+```
+
+The SSE `event:` field is the event type, and `data:` holds the JSON payload only (there is no `{type, data}` envelope). There is no `id:` field, no keepalive comment and no event on connection: a client only receives events broadcast after it connects, and refetches state after a reconnect. A client that falls 64 events behind loses events instead of slowing the others. The response sets `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
 
 ### Event Types
 
-| Event | Source | Description |
-|-------|--------|-------------|
-| `container.state_changed` | Container | State transition (running, stopped, etc.) |
-| `container.health_changed` | Container | Health check status change |
-| `container.restart_alert` | Container | Restart loop detected |
-| `endpoint.check_result` | Endpoint | Check completed (up/down, response time) |
-| `endpoint.alert` | Endpoint | Consecutive failure threshold reached |
-| `endpoint.recovery` | Endpoint | Endpoint recovered |
-| `heartbeat.pinged` | Heartbeat | Ping received |
-| `heartbeat.deadline_missed` | Heartbeat | Missed deadline |
-| `certificate.alert` | Certificate | Expiry warning |
-| `certificate.recovery` | Certificate | Certificate renewed |
-| `resource.snapshot` | Resource | New metrics snapshot |
-| `resource.alert` | Resource | Threshold exceeded |
-| `resource.recovery` | Resource | Usage returned to normal |
-| `update.scan_started` | Update | Scan in progress |
-| `update.scan_completed` | Update | Scan finished |
-| `update.detected` | Update | New update found |
-| `update.pinned` | Update | Version pinned |
-| `update.unpinned` | Update | Version unpinned |
-| `storage.availability_changed` | Storage | Database became unreachable, or answered again (`{engine, connected}`) |
+| Event | Emitted when | Payload keys |
+|-------|--------------|--------------|
+| `container.discovered` | A container the store did not know appears (not for ignored containers) | the container object |
+| `container.state_changed` | A container changes state | `id`, `state`, `previous_state`, `health_status`, `exit_code`, `timestamp`, `agent_id` |
+| `container.health_changed` | A container's health status changes | `id`, `health_status`, `previous_health`, `timestamp`, `agent_id` |
+| `container.archived` | A container is destroyed, vanished while offline, missing from an agent inventory or deleted through the API | `id`, `archived_at`, `agent_id` (the API delete sends `id` only) |
+| `container.restart_alert` | A restart loop is detected | `ContainerID`, `ContainerName`, `RestartCount`, `Threshold`, `Severity`, `Timestamp`, `AgentID` (capitalized keys) |
+| `container.restart_recovery` | The restart rate is back under the threshold | `container_id`, `container_name`, `timestamp`, `agent_id` |
+| `heartbeat.created` | A heartbeat monitor is created | `heartbeat_id`, `name`, `status` |
+| `heartbeat.ping_received` | A ping arrives (`ping_type`: `success`, `start` or `exit_code`) | `heartbeat_id`, `ping_type`, `status`, plus `exit_code` or `agent_id` |
+| `heartbeat.status_changed` | A heartbeat changes status (ping, missed deadline, pause, resume) | `heartbeat_id`, `old_status`, `new_status`, `agent_id` on a ping |
+| `heartbeat.alert` | A deadline is missed or a ping carries a non-zero exit code | `heartbeat_id`, `name`, `alert_type`, `details` |
+| `heartbeat.recovery` | A failing heartbeat recovers | `heartbeat_id`, `name`, `agent_id` on a ping |
+| `heartbeat.deleted` | A heartbeat monitor is deleted | `heartbeat_id` |
+| `certificate.created` | A certificate monitor is created or auto-detected | `monitor_id`, `hostname`, `port`, `source`, plus `server_name` and `agent_id` when they apply |
+| `certificate.check_completed` | A check finishes, including failed ones | `monitor_id`, `hostname`, `status`, `checked_at`, plus `subject_cn`, `issuer_cn`, `not_after`, `days_remaining`, `chain_valid`, `hostname_match` when known |
+| `certificate.status_changed` | A monitor changes status | `monitor_id`, `hostname`, `previous_status`, `new_status`, `days_remaining`, `timestamp` |
+| `certificate.alert` | Expiry threshold, invalid chain, hostname mismatch, revoked OCSP response or expiry | `monitor_id`, `hostname`, `port`, `alert_type`, `severity`, `timestamp` and details |
+| `certificate.recovery` | A certificate was renewed | `monitor_id`, `hostname`, `port`, `previous_alert_type`, `new_not_after`, `days_remaining`, `timestamp` |
+| `certificate.deleted` | A certificate monitor is deleted | `monitor_id`, `hostname` |
+| `resource.snapshot` | A sample is stored (live samples only) | `container_id`, `cpu_percent`, `mem_used`, `mem_limit`, `mem_percent`, `net_rx_bytes`, `net_tx_bytes`, `block_read_bytes`, `block_write_bytes`, `timestamp`, `agent_id` |
+| `resource.alert` | CPU or memory stays over its threshold | `container_id`, `container_name`, `alert_type`, `current_value`, `threshold`, `timestamp` |
+| `resource.recovery` | Usage returns to normal | `container_id`, `container_name`, `recovered_type`, `current_value`, `threshold`, `timestamp` |
+| `alert.fired` | An alert is raised, or its severity escalates | the alert: `id`, `source`, `alert_type`, `severity`, `status`, `message`, `entity_type`, `entity_id`, `entity_name`, `details` (an object), `fired_at`, `created_at` |
+| `alert.silenced` | An alert is raised while a silence rule or a maintenance window matches | same as `alert.fired` |
+| `alert.resolved` | An alert resolves | same as `alert.fired`, with `resolved_at` |
+| `alert.acknowledged` | An alert is acknowledged | the alert as stored: `details` is a string holding JSON |
+| `channel.created`, `channel.updated` | A channel changes (REST or MCP) | the channel object |
+| `channel.deleted` | A channel is deleted | `id` |
+| `trigger.created`, `trigger.updated` | A trigger changes | the trigger object |
+| `trigger.deleted` | A trigger is deleted | `id` |
+| `silence.created` | A silence rule is created | the rule object |
+| `silence.cancelled` | A silence rule is cancelled | `id` |
+| `runtime.context_changed` | Swarm is activated or deactivated | `previous`, `current`, `message`, `detected_at` |
+| `runtime.availability_changed` | The runtime connects or is lost | `name`, `connected` |
+| `storage.availability_changed` | The database becomes unreachable, or answers again | `engine`, `connected` |
+| `update.scan_started` | A scan starts | `scan_id`, `started_at` |
+| `update.scan_completed` | A scan ends | `scan_id`, `updates_found`, `errors` |
+| `update.detected` | A scan finds an update (on every scan, for each container) | `container_id`, `container_uid`, `container_name`, `image`, `current_tag`, `latest_tag`, `update_type`, `risk_score`, `alert_on`, plus `update_command`, `rollback_command` |
+| `update.resolved` | An update is no longer pending | `container_id`, `container_uid`, `container_name` |
+| `security.insights_changed` | A container's insights change | `container_id`, `container_name`, `highest_severity`, `count`, `change` |
+| `security.insights_resolved` | All insights of a container are gone | `container_id`, `container_name` |
+| `security.posture_changed` | The posture score moved (needs `MAINTENANT_SECURITY_SCORE_THRESHOLD` and a read of the posture) | `score`, `previous_score`, `color` |
+| `swarm.service_discovered` | A Swarm service is created | `service_id`, `name`, `mode`, `desired_replicas`, `stack_name`, `image` |
+| `swarm.service_updated` | A Swarm service is updated, or stays under-replicated | `service_id`, `name`, `desired_replicas`, `running_replicas`, `image` |
+| `swarm.service_removed` | A Swarm service is removed | `service_id`, `name` |
+| `swarm.status` | Once at startup on a Swarm manager | `active`, `is_manager`, `cluster_id`, `manager_count`, `worker_count` |
+| `swarm.node_status_changed` | A node's status or availability changes | `node_id`, `hostname`, `role`, `old_status`, `new_status`, `old_availability`, `new_availability` |
+| `swarm.task_failed` | A Swarm task dies | `service_id`, `service_name`, `container_id`, `error`, `exit_code`, `timestamp` |
+| `swarm.crash_loop_detected` | A service fails 3 times within 5 minutes | `service_id`, `service_name`, `failure_count`, `window_minutes`, `last_error`, `timestamp` |
+| `swarm.crash_loop_recovered` | A crash-looping service is stable for 10 minutes | `service_id`, `service_name`, `timestamp` |
+| `swarm.update_progress` | A rolling update progresses | `service_id`, `service_name`, `state`, `tasks_updated`, `tasks_total`, `new_image`, `message`, `timestamp` |
+| `swarm.update_completed` | A rolling update completes or rolls back | `service_id`, `service_name`, `state`, `message`, `started_at`, `completed_at` |
+| `swarm.topology_changed` | A remote agent reported a new Swarm topology | `agent_id` |
+| `kubernetes.topology_changed` | A remote agent reported a new Kubernetes topology | `agent_id` |
+| `agent.created` | An agent enrols | `agent_id`, `hostname`, `label`, `runtime`, `status` |
+| `agent.updated` | An agent's label or host OS changes | `agent_id`, `label` for a label change, the agent object for a host OS change |
+| `agent.revoked`, `agent.deleted` | An agent is revoked or deleted | `agent_id` |
+| `agent.connected`, `agent.disconnected` | An agent stream opens or closes (or goes stale) | `agent_id` |
 
-### Status Page SSE
+Events carrying `agent_id` use the sentinel `00000000-0000-0000-0000-000000000000` for the local runtime. Data that a remote agent replays from its spool after a reconnection is stored for history and does not raise events.
 
-The public status page has its own event stream:
+!!! note "Events the server defines but does not send"
+
+    The endpoint monitor events (`endpoint.discovered`, `endpoint.status_changed`, `endpoint.removed`, `endpoint.alert`, `endpoint.recovery`, `endpoint.config_error`) are not broadcast by this version: the endpoint service has no event callback wired to the stream. `runtime.status`, `update.pinned`, `update.unpinned`, `kubernetes.workload_changed`, `kubernetes.pod_changed` and `kubernetes.node_changed` are declared but never emitted. Read endpoint state with the endpoint routes instead.
+
+### Container log stream
+
+`GET /api/v1/containers/{id}/logs/stream` is a separate stream per container (see [Containers](#containers)). It sends `container.log_line` and, at the end, `container.log_error`.
+
+### Status page stream
+
+The public status page has its own event stream, separate from the one above:
 
 ```
 GET /status/events
 ```
+
+It carries only the status page events, so the public page never receives dashboard data.
+
+| Event | Emitted when | Payload keys |
+|-------|--------------|--------------|
+| `status.component_changed` | A monitor linked to a component changes state | `component_id`, `name`, `status`, `monitors` |
+| `status.global_changed` | Right after every `status.component_changed` | `status`, `message` |
+| `status.incident_created` | An incident is created, manually or automatically | `id`, `title`, `severity`, `status`, `components` |
+| `status.incident_updated` | An update is added to an incident | `id`, `status`, `message` |
+| `status.incident_resolved` | An incident is resolved | `id`, `title` |
+| `status.maintenance_started` | A maintenance window starts | `id`, `title`, `components` |
+| `status.maintenance_ended` | A maintenance window ends | `id`, `title`, `components` |

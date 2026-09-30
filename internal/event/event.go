@@ -113,7 +113,7 @@ const (
 	SecurityPostureChanged   = "security.posture_changed"
 )
 
-// Swarm monitoring events (CE).
+// Swarm service events.
 const (
 	SwarmServiceDiscovered = "swarm.service_discovered"
 	SwarmServiceUpdated    = "swarm.service_updated"
@@ -121,7 +121,7 @@ const (
 	SwarmStatus            = "swarm.status"
 )
 
-// Swarm monitoring events (Pro).
+// Swarm node, task and rolling update events.
 const (
 	SwarmNodeStatusChanged  = "swarm.node_status_changed"
 	SwarmTaskFailed         = "swarm.task_failed"
@@ -138,7 +138,7 @@ const (
 	KubernetesNodeChanged     = "kubernetes.node_changed"
 )
 
-// Multi-host agent events (Pro).
+// Multi-host agent events.
 const (
 	AgentCreated      = "agent.created"
 	AgentUpdated      = "agent.updated"
