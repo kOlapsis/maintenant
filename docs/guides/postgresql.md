@@ -93,8 +93,10 @@ Without `MAINTENANT_DATABASE_URL`, nothing changes: SQLite, exactly as before.
     x-database-url: &database-url "${MAINTENANT_DATABASE_URL:?}"
     ```
 
-    A Compose secret works too. The product itself never writes the string
-    anywhere, so the file is the only place it can leak from.
+    `MAINTENANT_DATABASE_URL` has no `_FILE` variant: the value is read from the
+    environment only, so a Compose or Docker secret cannot be pointed to directly.
+    The product itself never writes the string anywhere, so the file that carries
+    it is the only place it can leak from.
 
 ### Transport encryption
 
@@ -105,26 +107,65 @@ on the same host or a private link can be relaxed deliberately. For a database
 crossing a network you do not control, prefer `sslmode=verify-full`, which also
 checks the server's certificate against its hostname.
 
+"Local" means a host that is empty, `localhost`, `127.0.0.1` or `::1`, or a Unix
+socket (a `host` parameter starting with `/`). Anything else, a Compose service
+name such as `db` included, is not local and gets `sslmode=require`.
+
+A PostgreSQL that does not offer TLS then stops the instance at startup with
+`the database server does not accept TLS`. When the string carries no `sslmode`,
+the message says that `sslmode=require` was added by default and names the two
+ways out: enable TLS on the PostgreSQL server, or set `sslmode=disable`
+explicitly in `MAINTENANT_DATABASE_URL` if the network to the database is
+trusted (a container on the same Docker network, for instance). When the string
+already sets a mode that requires TLS, the message gives the same two ways out,
+the second one being to lower the `sslmode` you set.
+
 The connection string is never written to the logs, the API, the interface or
 the telemetry. Where a target has to be named, it appears redacted:
 `postgres://maintenant@db.internal:5432/maintenant`.
 
 ## What must follow the instance
 
-Two states live in the data directory rather than in the database:
+Two states live in the data directory rather than in the database. That
+directory is the one holding `MAINTENANT_DB`, which stays meaningful with
+PostgreSQL: it no longer holds the data, but it still says where these files
+go. The image sets it to `/data/maintenant.db`, so the directory is `/data`; on a
+native install, set `MAINTENANT_DB` (or `--db`) to a path in a directory that
+follows the instance.
 
 | State | File | If the directory does not follow |
 |---|---|---|
 | Signed licence cache | `<dataDir>/.maintenant-license` | Re-verified online at startup. Offline: Community until the network returns. |
 | Update window record | `<dataDir>/.maintenant-update-window` | A fresh grace window opens, which plays in your favour. |
 
-Anonymous telemetry keeps its own state under `MAINTENANT_TELEMETRY_DATADIR`
-(`/data/shm` by default). Losing it only breaks the continuity of anonymous
-counters; nothing about the fleet depends on it.
+Anonymous telemetry keeps its own state in a `shm` directory next to them
+(`/data/shm` in the image). There is no setting for it. Losing it only breaks
+the continuity of anonymous counters; nothing about the fleet depends on it.
 
 So keep the `/data` volume with the instance when it moves. It is the only case
 where a move is not fully transparent, and it is settled by carrying the volume,
 which any cluster manager can do.
+
+## On Kubernetes (Helm)
+
+The chart takes the connection string from a Secret you create, so it never
+appears in the values:
+
+```yaml
+# values.yaml
+database:
+  existingSecret: maintenant-database   # Secret holding the connection string
+  urlKey: url                           # key inside that Secret (default: url)
+```
+
+```bash
+kubectl create secret generic maintenant-database \
+  --from-literal=url='postgres://maintenant:secret@db.internal:5432/maintenant?sslmode=require'
+```
+
+Leave `database.existingSecret` empty and the instance keeps using SQLite on its
+volume. The volume (`persistence.*`) stays in use with PostgreSQL: it carries the
+licence cache and the update window record described above.
 
 ## Migrating an existing install
 
@@ -189,7 +230,7 @@ about to do and waits for you. For an unattended run, add `--yes` to the
 ### What travels
 
 Agent identities and enrolment tokens, container rows, declared endpoint,
-heartbeat and certificate monitors, notification channels and their secrets,
+heartbeat and certificate monitors, outbound heartbeat targets, notification channels and their secrets,
 alert triggers, silences, escalation policies, webhook subscriptions,
 per-container thresholds, the whole status page (settings, components, assets,
 FAQ, footer, **subscribers**), published incidents, planned maintenance
@@ -208,8 +249,9 @@ before writing anything:
 - **An alert acknowledged before the copy comes back unacknowledged** if it is
   still active. The acknowledgement lives on the alert row, which does not
   travel. One click to redo, but it should not surprise you.
-- **Curves start from zero**: resource, uptime and check history. Aggregates
-  rebuild at their usual intervals.
+- **Curves start from zero**: resource, uptime and check history, daily uptime
+  aggregates included (the 365-day history of endpoints, heartbeats and
+  containers). Aggregates rebuild at their usual intervals.
 
 ### Guarantees
 

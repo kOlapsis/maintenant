@@ -6,10 +6,12 @@ Monitor cron jobs, scheduled tasks, and any periodic process. Create a monitor, 
 
 ## How It Works
 
-1. **Create a heartbeat monitor** through the API or dashboard — give it a name and a deadline (e.g., "every 5 minutes").
-2. **Get a unique ping URL** — maintenant generates a UUID-based URL for this monitor.
-3. **Ping the URL** from your cron job or script — maintenant records the ping and resets the deadline timer.
-4. **Get alerted** if the deadline is missed — the job did not report in on time.
+1. **Create a heartbeat monitor** through the API or dashboard: give it a name, an interval (how often the job runs, from 60 seconds to 7 days) and a grace period (extra time allowed, from 0 up to the interval).
+2. **Get a unique ping URL**: maintenant generates a UUID-based URL for this monitor.
+3. **Ping the URL** from your cron job or script: maintenant records the ping and moves the deadline to *now + interval + grace*.
+4. **Get alerted** if the deadline is missed: the job did not report in on time.
+
+Deadlines are checked every 15 seconds. A new heartbeat has the status `new` and is not watched until its first ping, since the deadline starts from a ping: a job that never runs at all does not raise an alert. Send one ping when you create the monitor, or run the job once.
 
 ---
 
@@ -21,7 +23,7 @@ Every heartbeat monitor gets a unique URL:
 {BASE_URL}/ping/{uuid}
 ```
 
-Where `{BASE_URL}` is your `MAINTENANT_BASE_URL` environment variable.
+Where `{BASE_URL}` is your `MAINTENANT_BASE_URL` environment variable. The ready-made snippets (curl, wget, Python, Go, Bash and a Docker healthcheck) shown in a heartbeat's detail panel, and returned by `GET /api/v1/heartbeats/{id}`, are built from it. It defaults to `http://` plus `MAINTENANT_ADDR` (`http://127.0.0.1:8080`), so set it to the public address of your instance or the snippets will not work from another machine.
 
 ### Simple Ping
 
@@ -40,7 +42,8 @@ curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/$?
 ```
 
 - Exit code `0` = success
-- Any other exit code = failure
+- Any other exit code (an integer from 1 to 255) = failure
+- Anything else answers `400 INVALID_EXIT_CODE`
 
 ### Start/Finish Pings
 
@@ -58,7 +61,9 @@ EXIT_CODE=$?
 curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/${EXIT_CODE}
 ```
 
-maintenant calculates the duration between start and finish pings.
+maintenant calculates the duration between start and finish pings. A start ping also moves the deadline, so a job that starts and never finishes raises an alert once the deadline passes. Starting again while a run is still open closes the previous run as `timeout`.
+
+All ping routes accept `GET` and `POST`. A `POST` body of up to 10 KB is accepted but not stored. An unknown UUID answers `404 HEARTBEAT_NOT_FOUND`.
 
 ---
 
@@ -96,8 +101,13 @@ For each heartbeat monitor, maintenant records:
 | **Last ping** | Timestamp of the most recent ping |
 | **Exit code** | Exit code reported by the job (0 = success) |
 | **Duration** | Time between start and finish pings |
-| **Status** | `up` (pinging on time), `down` (deadline missed), `paused` |
-| **Execution history** | Full list of past executions with timestamps and results |
+| **Status** | `new` (no ping yet), `started` (a start ping is waiting for its finish), `up` (pinging on time), `down` (deadline missed), `paused` |
+| **Next deadline** | Last ping (or start ping) + interval + grace |
+| **Execution history** | Past executions with their outcome: `success`, `failure`, `timeout` or `in_progress` |
+
+A ping that reports a non-zero exit code leaves the status at `up`, since the job did report in, and raises the `exit_code_failure` alert instead. Only a missed deadline turns the status to `down`.
+
+Pings and executions are kept for 30 days. `GET /api/v1/heartbeats/{id}/uptime/daily?days=90` returns one value per UTC day for up to 365 days (`days` defaults to 90): the share of finished runs that succeeded that day, where a plain ping or an exit code `0` succeeds and a start ping is not counted. A day with no finished run has no value, and a missed deadline produces no ping, so it does not lower the percentage by itself. Completed days are aggregated once they end, which is what keeps the 365 days available after the raw pings are purged.
 
 ---
 
@@ -112,9 +122,10 @@ This means your cron job either:
 - Is taking longer than expected
 
 !!! tip "Set reasonable deadlines"
-    Set the deadline slightly longer than your expected job duration.
-    A job that runs every 5 minutes with a 1-minute runtime should have
-    a deadline of about 6-7 minutes to avoid false positives.
+    The deadline is the interval plus the grace period. Set the grace slightly
+    longer than your expected job duration: a job that runs every 5 minutes with
+    a 1-minute runtime should have a grace of 1 to 2 minutes to avoid false
+    positives.
 
 ---
 
@@ -125,22 +136,29 @@ This means your cron job either:
 Temporarily disable a heartbeat monitor during planned maintenance:
 
 ```bash
-# Pause — stops deadline checking
+# Pause: stops deadline checking and clears active alerts
 POST /api/v1/heartbeats/{id}/pause
 
-# Resume — resets the deadline timer
+# Resume: back to up, with a new deadline counted from now
 POST /api/v1/heartbeats/{id}/resume
 ```
+
+Resuming a heartbeat that is not paused answers `400 INVALID_INPUT`. A ping that arrives while the heartbeat is paused puts it back to `up`.
 
 ### CRUD Operations
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/heartbeats` | List all heartbeat monitors |
-| `POST` | `/api/v1/heartbeats` | Create a new heartbeat monitor |
-| `GET` | `/api/v1/heartbeats/{id}` | Get a specific monitor |
+| `GET` | `/api/v1/heartbeats` | List all heartbeat monitors (filters `status`, `agent_id`) |
+| `POST` | `/api/v1/heartbeats` | Create a new heartbeat monitor (`name`, `interval_seconds`, `grace_seconds`) |
+| `GET` | `/api/v1/heartbeats/{id}` | Get a specific monitor, with its snippets |
 | `PUT` | `/api/v1/heartbeats/{id}` | Update a monitor |
-| `DELETE` | `/api/v1/heartbeats/{id}` | Delete a monitor |
+| `DELETE` | `/api/v1/heartbeats/{id}` | Delete a monitor: its ping URL answers 404 from then on |
+| `GET` | `/api/v1/heartbeats/{id}/executions` | Execution history |
+| `GET` | `/api/v1/heartbeats/{id}/pings` | Raw pings |
+| `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime |
+
+Community is limited to **5 heartbeats**; Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`.
 
 ---
 
@@ -151,11 +169,11 @@ A monitoring tool cannot report its own outage. Outbound heartbeats solve this b
 ### Setting It Up
 
 1. On the **other** instance, create a heartbeat monitor with an interval that matches the one you will use below, plus some grace time. Copy its ping URL.
-2. On **this** instance, open **Outbound heartbeats** in the Administration section of the menu and click **New target**.
+2. On **this** instance, open **Outbound heartbeats** in the sidebar menu and click **New target**.
 3. Paste the ping URL, give the target a name and choose an interval.
 4. Click **Send now** to check the target right away. The row shows the HTTP status it received, or the error.
 
-Two instances can watch each other this way, each with one incoming and one outgoing heartbeat.
+The first send happens within seconds of creating the target. Two instances can watch each other this way, each with one incoming and one outgoing heartbeat.
 
 ### How Sends Work
 
@@ -163,12 +181,16 @@ Two instances can watch each other this way, each with one incoming and one outg
 - The interval goes from 30 seconds to 24 hours.
 - A 2xx response counts as a success. Any other status, or a network error, is recorded as the target's last error and logged as a warning.
 - A disabled target keeps its settings but is no longer called.
+- An extra root CA set with `MAINTENANT_CA_CERT` applies, so the other instance may use an internal PKI.
+- The page is not available in demo mode.
 
 !!! note "HTTPS and public addresses only"
-    Targets must use `https://` and resolve to a public address. Loopback and
-    private ranges are refused when the target is saved and again when it is
-    called, so the feature cannot be used to reach services on your internal
-    network. The other instance therefore has to be reachable over HTTPS from
+    Targets must use `https://` and resolve to a public address. Loopback, private,
+    link-local and carrier-grade NAT ranges are refused when the target is saved and
+    again at every connection, including redirects and DNS answers that change
+    between the two, so the feature cannot be used to reach services on your
+    internal network. `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` does not lift this
+    restriction. The other instance therefore has to be reachable over HTTPS from
     this one.
 
 ### API
@@ -194,7 +216,7 @@ Two instances can watch each other this way, each with one incoming and one outg
 
 ## Public Ping Endpoints
 
-The `/ping/` routes are designed to be publicly accessible. They do not require authentication, since your cron jobs and external services need to reach them directly.
+The `/ping/` routes are designed to be publicly accessible. maintenant applies no authentication of its own to them, since your cron jobs and external services need to reach them directly.
 
 !!! warning "Reverse proxy configuration"
     Make sure your reverse proxy allows unauthenticated access to `/ping/` paths.
@@ -204,5 +226,5 @@ The `/ping/` routes are designed to be publicly accessible. They do not require 
 
 ## Related
 
-- [Alert Engine](alerts.md) — `deadline_missed` alerts for heartbeat monitors
-- [API Reference](../api/reference.md) — Full heartbeat API endpoints
+- [Alert Engine](alerts.md): `deadline_missed` alerts for heartbeat monitors
+- [API Reference](../api/reference.md): full heartbeat API endpoints
