@@ -174,7 +174,7 @@ func (h *UpdateHandler) HandleGetContainerUpdate(w http.ResponseWriter, r *http.
 	// Generate commands on-the-fly from container metadata
 	ci, ciErr := h.containers.GetContainerInfo(r.Context(), containerID)
 	if ciErr == nil {
-		resp["update_command"] = h.service.GenerateUpdateCommand(ci, u.LatestTag)
+		resp["update_command"] = h.service.GenerateUpdateCommand(ci, u.LatestTag, u.LatestDigest)
 		if cmd := h.service.GenerateRollbackCommand(ci, u); cmd != "" {
 			resp["rollback_command"] = cmd
 		}

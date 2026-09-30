@@ -88,6 +88,9 @@ type Service struct {
 	restartRecoveryInterval time.Duration
 	restartMu               sync.Mutex
 	trackedRestartAlerts    map[string]struct{}
+
+	agentDetailsMu sync.RWMutex
+	agentDetails   map[agentContainerKey]AgentDetails
 }
 
 // NewService creates a new container service with all dependencies.
@@ -112,6 +115,7 @@ func NewService(d Deps) *Service {
 		agentRuntime:            d.AgentRuntime,
 		restartRecoveryInterval: interval,
 		trackedRestartAlerts:    make(map[string]struct{}),
+		agentDetails:            make(map[agentContainerKey]AgentDetails),
 	}
 }
 

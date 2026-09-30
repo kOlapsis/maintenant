@@ -531,12 +531,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// --- Update intelligence ---
 	registryClient := update.NewRegistryClient()
 	updateScanner := update.NewScanner(registryClient, updateStore, logger)
-	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc)
-	// Wire live label and image digest fetching from Docker so maintenant.update.* labels
-	// and the running image's digests are available at scan time (neither is persisted).
-	if dr, ok := a.rt.(*docker.Runtime); ok {
-		fetcher := &dockerLabelFetcher{rt: dr}
-		containerAdapter.WithLabelFetcher(fetcher).WithRepoDigestFetcher(fetcher)
+	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc, logger)
+	if fetcher := updateDetailsFetcher(a.rt); fetcher != nil {
+		containerAdapter.WithDetailsFetcher(fetcher)
 	}
 
 	var updateEnricher update.Enricher
@@ -1113,26 +1110,4 @@ func (a *App) swarmNodeStoreAsInterface() swarm.NodeStore {
 		return nil
 	}
 	return a.swarmNodeStore
-}
-
-// dockerLabelFetcher implements update.LabelFetcher and update.RepoDigestFetcher for Docker runtimes.
-// It fetches live container labels and image digests at scan time, without persisting them.
-type dockerLabelFetcher struct {
-	rt *docker.Runtime
-}
-
-func (f *dockerLabelFetcher) FetchRepoDigests(ctx context.Context) (map[string][]string, error) {
-	return f.rt.ContainerRepoDigests(ctx)
-}
-
-func (f *dockerLabelFetcher) FetchLabels(ctx context.Context) (map[string]map[string]string, error) {
-	results, err := f.rt.DiscoverAllWithLabels(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fetch container labels: %w", err)
-	}
-	labels := make(map[string]map[string]string, len(results))
-	for _, r := range results {
-		labels[r.Container.ExternalID] = r.Labels
-	}
-	return labels, nil
 }

@@ -4,7 +4,9 @@
 package agent
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,6 +69,56 @@ func TestSyncInventory_EmptySnapshotIsSentComplete(t *testing.T) {
 	require.NotNil(t, inv)
 	assert.Empty(t, inv.GetContainers())
 	assert.True(t, inv.GetComplete(), "a successful discovery that found nothing is still complete")
+}
+
+type digestRuntime struct {
+	runtime.Runtime
+	containers []*cmodel.Container
+	digests    map[string][]string
+}
+
+func (r digestRuntime) DiscoverAll(context.Context) ([]*cmodel.Container, error) {
+	return r.containers, nil
+}
+
+func (r digestRuntime) ContainerRepoDigests(context.Context) (map[string][]string, error) {
+	return r.digests, nil
+}
+
+func TestSyncInventory_CarriesTheRepoDigestsOfTheRunningImages(t *testing.T) {
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+	rt := digestRuntime{
+		containers: []*cmodel.Container{
+			{ExternalID: "pulled", Name: "web", State: cmodel.StateRunning},
+			{ExternalID: "built", Name: "app", State: cmodel.StateRunning},
+			{ExternalID: "unlisted", Name: "db", State: cmodel.StateRunning},
+		},
+		digests: map[string][]string{"pulled": {"nginx@sha256:running"}, "built": nil},
+	}
+
+	require.NoError(t, syncInventory(context.Background(), &Identity{AgentID: "agent-1"}, rt, spool, testLogger()))
+
+	var entries map[string]*agentpb.ContainerEvent
+	require.Eventually(t, func() bool {
+		for _, ev := range sink.events() {
+			if inv := ev.GetInventory(); inv != nil {
+				entries = map[string]*agentpb.ContainerEvent{}
+				for _, c := range inv.GetContainers() {
+					entries[c.GetContainerId()] = c
+				}
+				return true
+			}
+		}
+		return false
+	}, time.Second, 2*time.Millisecond)
+
+	assert.Equal(t, []string{"nginx@sha256:running"}, entries["pulled"].GetRepoDigests().GetDigests())
+	require.NotNil(t, entries["built"].GetRepoDigests(), "an image without registry digests is reported as such")
+	assert.Empty(t, entries["built"].GetRepoDigests().GetDigests())
+	assert.Nil(t, entries["unlisted"].GetRepoDigests(), "an image the runtime did not list stays unreported")
 }
 
 func TestContainerStateToProto(t *testing.T) {

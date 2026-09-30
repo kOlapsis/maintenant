@@ -256,8 +256,7 @@ type RiskScore struct {
 	Factors     map[string]RiskFactor `json:"factors"`
 }
 
-// DigestBaseline stores the last-known remote digest for a non-semver tag.
-// Used to detect when a channel tag (e.g. "lts", "alpine") has been republished.
+// DigestBaseline records the registry digest a container runs, the reference for a floating tag when its runtime does not report it.
 type DigestBaseline struct {
 	ContainerID  string    `json:"container_id"`
 	Image        string    `json:"image"`

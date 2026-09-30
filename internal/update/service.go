@@ -198,15 +198,19 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 	return s.store.ListImageUpdates(ctx, opts)
 }
 
-// GenerateUpdateCommand produces a shell command to update a container.
-func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) string {
+// GenerateUpdateCommand produces a shell command to update a container to latestTag, whose manifest is latestDigest.
+func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest string) string {
 	repo, currentTag, _ := ParseImageRef(c.Image)
 
 	// Kubernetes workloads
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
-		kind := strings.ToLower(c.ControllerKind)
-		return fmt.Sprintf("kubectl set image %s/%s %s=%s:%s -n %s",
-			kind, c.OrchestrationUnit, c.Name, repo, latestTag, c.OrchestrationGroup)
+		ref := repo + ":" + latestTag
+		// An unchanged image reference leaves the pod template as it is, so nothing would roll out.
+		if latestTag == currentTag && latestDigest != "" {
+			ref += "@" + latestDigest
+		}
+		return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
+			strings.ToLower(c.ControllerKind), c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
 	}
 
 	// Docker Compose
@@ -234,9 +238,8 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) strin
 
 	// Kubernetes workloads
 	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
-		kind := strings.ToLower(c.ControllerKind)
 		return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
-			kind, c.OrchestrationUnit, c.Name, ref, c.OrchestrationGroup)
+			strings.ToLower(c.ControllerKind), c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
 	}
 
 	// Docker Compose
@@ -276,6 +279,14 @@ func imageWithoutDigest(image string) string {
 	return image
 }
 
+// podContainer names the container of a Kubernetes pod that runs the workload's image.
+func podContainer(c ContainerInfo) string {
+	if c.PodContainer != "" {
+		return c.PodContainer
+	}
+	return c.Name
+}
+
 func isCompose(c ContainerInfo) bool {
 	return c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != ""
 }
@@ -309,7 +320,7 @@ func (s *Service) GenerateFixCommand(c ContainerInfo, currentTag, fixedInVersion
 		return ""
 	}
 
-	return s.GenerateUpdateCommand(c, fixedInVersion)
+	return s.GenerateUpdateCommand(c, fixedInVersion, "")
 }
 
 // IsFixedByUpdate returns true when the latest available tag already covers the CVE fix version.
@@ -440,7 +451,7 @@ func (s *Service) runScan(ctx context.Context) {
 		}
 
 		if ci, ok := containerByID[r.ContainerID]; ok {
-			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag)
+			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag, r.LatestDigest)
 			if cmd := s.GenerateRollbackCommand(ci, u); cmd != "" {
 				eventData["rollback_command"] = cmd
 			}

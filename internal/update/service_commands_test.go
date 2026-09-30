@@ -35,7 +35,7 @@ func TestGenerateRollbackCommand_ComposeSameTag_RetagsThePreviousImage(t *testin
 		"docker pull nginx@sha256:old\n"+
 		"docker tag nginx@sha256:old nginx:latest\n"+
 		"docker compose up -d --pull never --force-recreate web", got)
-	assert.NotEqual(t, svc.GenerateUpdateCommand(c, "latest"), got)
+	assert.NotEqual(t, svc.GenerateUpdateCommand(c, "latest", "sha256:new"), got)
 }
 
 func TestGenerateRollbackCommand_ComposeNewTag_PinsThePreviousImage(t *testing.T) {
@@ -82,6 +82,35 @@ func TestGenerateRollbackCommand_Kubernetes(t *testing.T) {
 	assert.Equal(t, "kubectl set image deployment/api api=ghcr.io/acme/api:1.0.0 -n prod", got)
 }
 
+func kubeAPI(image string) ContainerInfo {
+	return ContainerInfo{
+		Name: "api", Image: image, RuntimeType: "kubernetes", ControllerKind: "Deployment",
+		OrchestrationUnit: "api", OrchestrationGroup: "prod", PodContainer: "server",
+	}
+}
+
+// Setting the image a workload already has changes nothing, so a republished tag is deployed by its digest.
+func TestGenerateUpdateCommand_KubernetesSameTagDeploysTheNewDigest(t *testing.T) {
+	svc := &Service{}
+
+	assert.Equal(t, "kubectl set image deployment/api server=ghcr.io/acme/api:stable@sha256:new -n prod",
+		svc.GenerateUpdateCommand(kubeAPI("ghcr.io/acme/api:stable"), "stable", "sha256:new"))
+	assert.Equal(t, "kubectl set image deployment/api server=ghcr.io/acme/api:stable@sha256:new -n prod",
+		svc.GenerateUpdateCommand(kubeAPI("ghcr.io/acme/api:stable@sha256:old"), "stable", "sha256:new"))
+	assert.Equal(t, "kubectl set image deployment/api server=ghcr.io/acme/api:1.1.0 -n prod",
+		svc.GenerateUpdateCommand(kubeAPI("ghcr.io/acme/api:1.0.0"), "1.1.0", "sha256:new"))
+}
+
+func TestGenerateRollbackCommand_KubernetesNamesThePodContainer(t *testing.T) {
+	svc := &Service{}
+
+	got := svc.GenerateRollbackCommand(kubeAPI("ghcr.io/acme/api:stable"), &ImageUpdate{
+		Image: "ghcr.io/acme/api:stable", CurrentTag: "stable", LatestTag: "stable", PreviousDigest: "sha256:old",
+	})
+
+	assert.Equal(t, "kubectl set image deployment/api server=ghcr.io/acme/api@sha256:old -n prod", got)
+}
+
 // A moving tag without a known digest cannot name the image it pointed to before.
 func TestGenerateRollbackCommand_MovingTagWithoutDigest(t *testing.T) {
 	svc := &Service{}
@@ -99,11 +128,11 @@ func TestGenerateUpdateCommand_ComposeNewTagIsWrittenInTheComposeFile(t *testing
 	assert.Equal(t, "cd /srv/app\n"+
 		"# Set the image of service web to nginx:1.26.0 in the compose file, then:\n"+
 		"docker compose pull web\n"+
-		"docker compose up -d web", svc.GenerateUpdateCommand(composeWeb("nginx:1.24.0"), "1.26.0"))
+		"docker compose up -d web", svc.GenerateUpdateCommand(composeWeb("nginx:1.24.0"), "1.26.0", "sha256:new"))
 
 	assert.Equal(t, "cd /srv/app\n"+
 		"docker compose pull web\n"+
-		"docker compose up -d --force-recreate web", svc.GenerateUpdateCommand(composeWeb("nginx:latest"), "latest"))
+		"docker compose up -d --force-recreate web", svc.GenerateUpdateCommand(composeWeb("nginx:latest"), "latest", "sha256:new"))
 }
 
 func TestScanner_LocallyBuiltImage_IsSkipped(t *testing.T) {

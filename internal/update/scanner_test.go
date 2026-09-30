@@ -19,6 +19,7 @@ import (
 type stubRegistry struct {
 	tags      map[string][]string // imageRef -> tags
 	digest    string
+	platforms []string
 	listCalls int
 }
 
@@ -30,11 +31,11 @@ func (r *stubRegistry) ListTags(_ context.Context, imageRef string) ([]string, e
 	return []string{}, nil
 }
 
-func (r *stubRegistry) GetDigest(_ context.Context, _ string) (string, error) {
-	return r.digest, nil
+func (r *stubRegistry) ResolveDigests(_ context.Context, _ string) (RemoteDigests, error) {
+	return RemoteDigests{Digest: r.digest, Platforms: r.platforms}, nil
 }
 
-// stubStore is a minimal UpdateStore that returns no pins, no exclusions, and no baseline.
+// stubStore is a minimal UpdateStore that returns no pins, no exclusions, and the baseline last upserted.
 type stubStore struct {
 	baseline   *DigestBaseline
 	exclusions []*UpdateExclusion
@@ -110,8 +111,11 @@ func (s *stubStore) UpsertCVEEvaluation(_ context.Context, _ *CVEEvaluation) err
 func (s *stubStore) GetCVEEvaluation(_ context.Context, _ string) (*CVEEvaluation, error) {
 	return nil, nil
 }
-func (s *stubStore) DeleteCVEEvaluation(_ context.Context, _ string) error           { return nil }
-func (s *stubStore) UpsertDigestBaseline(_ context.Context, _ *DigestBaseline) error { return nil }
+func (s *stubStore) DeleteCVEEvaluation(_ context.Context, _ string) error { return nil }
+func (s *stubStore) UpsertDigestBaseline(_ context.Context, b *DigestBaseline) error {
+	s.baseline = b
+	return nil
+}
 func (s *stubStore) GetDigestBaseline(_ context.Context, _ string) (*DigestBaseline, error) {
 	return s.baseline, nil
 }

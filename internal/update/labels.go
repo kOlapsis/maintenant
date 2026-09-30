@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
-const updateLabelPrefix = "maintenant.update."
-
-// ParseUpdateLabels extracts update configuration from Docker container labels.
+// ParseUpdateLabels extracts update configuration from container labels or Kubernetes annotations.
 func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConfig {
 	cfg := UpdateConfig{
 		Enabled: true, // enabled by default
@@ -19,10 +19,10 @@ func ParseUpdateLabels(labels map[string]string, logger *slog.Logger) UpdateConf
 	}
 
 	for key, value := range labels {
-		if !strings.HasPrefix(key, updateLabelPrefix) {
+		suffix, ok := strings.CutPrefix(key, container.UpdateLabelPrefix)
+		if !ok {
 			continue
 		}
-		suffix := key[len(updateLabelPrefix):]
 		value = strings.TrimSpace(value)
 
 		switch suffix {

@@ -25,8 +25,9 @@ type ContainerInfo struct {
 	RuntimeType        string
 	ControllerKind     string
 	ComposeWorkingDir  string
-	RepoDigests        []string // "repo@sha256:..." of the running image, as the local runtime reports them
+	RepoDigests        []string // "repo@sha256:..." of the running image, as its runtime reports them
 	LocallyBuilt       bool     // the runtime reports an image never pulled from nor pushed to a registry
+	PodContainer       string   // Kubernetes: the pod container that runs Image
 }
 
 // Scanner checks containers for available updates by comparing tags and digests.
@@ -34,7 +35,7 @@ type ContainerInfo struct {
 // Satisfied by *RegistryClient in production; replaced by stubs in tests.
 type registryQuerier interface {
 	ListTags(ctx context.Context, imageRef string) ([]string, error)
-	GetDigest(ctx context.Context, imageRef string) (string, error)
+	ResolveDigests(ctx context.Context, imageRef string) (RemoteDigests, error)
 }
 
 type Scanner struct {
@@ -168,7 +169,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		fullRef:       fullRef,
 		currentTag:    currentTag,
 		registry:      registry,
-		runningDigest: repoDigestFor(c.RepoDigests, imageRef),
+		runningDigest: runningDigest(c, imageRef),
 		alertOn:       cfg.AlertOn,
 	}
 
@@ -223,8 +224,7 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 	}
 
 	// Semver update: a newer version tag exists
-	latestRef := fullRef + ":" + bestTag
-	latestDigest, err := sc.registry.GetDigest(ctx, latestRef)
+	latest, err := sc.registry.ResolveDigests(ctx, fullRef+":"+bestTag)
 	if err != nil {
 		sc.logger.Warn("scanner: failed to get digest for latest tag",
 			"image", fullRef, "tag", bestTag, "error", err)
@@ -235,9 +235,10 @@ func (sc *Scanner) scanContainer(ctx context.Context, c ContainerInfo, exclusion
 		ContainerName:  c.Name,
 		Image:          c.Image,
 		CurrentTag:     currentTag,
+		CurrentDigest:  target.runningDigest,
 		Registry:       registry,
 		LatestTag:      bestTag,
-		LatestDigest:   latestDigest,
+		LatestDigest:   latest.Digest,
 		UpdateType:     updateType,
 		HasUpdate:      true,
 		PreviousDigest: target.runningDigest,
@@ -257,11 +258,11 @@ type scanTarget struct {
 	alertOn       string
 }
 
-// checkDigest compares the remote digest of the current tag with the one recorded at the
-// previous scan, which detects a republished tag without looking at other tags.
+// checkDigest reports an update for as long as the container does not run what its tag
+// points at now, which detects a republished tag without looking at other tags.
 func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult, error) {
 	c := t.container
-	remoteDigest, err := sc.registry.GetDigest(ctx, t.fullRef+":"+t.currentTag)
+	remote, err := sc.registry.ResolveDigests(ctx, t.fullRef+":"+t.currentTag)
 	if err != nil {
 		if isUnreachableImage(err) {
 			sc.logger.Debug("scanner: skipping unreachable tag",
@@ -270,53 +271,73 @@ func (sc *Scanner) checkDigest(ctx context.Context, t scanTarget) (*UpdateResult
 		}
 		return nil, fmt.Errorf("get digest: %w", err)
 	}
-	if remoteDigest == "" {
+	if remote.Digest == "" {
 		return nil, nil
 	}
 
-	baseline, err := sc.store.GetDigestBaseline(ctx, c.ExternalID)
+	current, err := sc.currentDigest(ctx, t, remote)
 	if err != nil {
-		return nil, fmt.Errorf("get digest baseline: %w", err)
+		return nil, err
 	}
-
-	if err := sc.store.UpsertDigestBaseline(ctx, &DigestBaseline{
-		ContainerID:  c.ExternalID,
-		Image:        c.Image,
-		Tag:          t.currentTag,
-		RemoteDigest: remoteDigest,
-		CheckedAt:    time.Now(),
-	}); err != nil {
-		sc.logger.Warn("scanner: failed to store digest baseline",
-			"container", c.Name, "error", err)
-	}
-
-	if baseline == nil || baseline.RemoteDigest == remoteDigest {
+	if current == "" || remote.Contains(current) {
 		return nil, nil
 	}
 
-	sc.logger.Info("scanner: digest change detected for channel tag",
+	sc.logger.Info("scanner: tag now points at another digest than the running one",
 		"container", c.Name, "tag", t.currentTag,
-		"old_digest", shortDigest(baseline.RemoteDigest), "new_digest", shortDigest(remoteDigest))
-
-	previous := t.runningDigest
-	if previous == "" {
-		previous = baseline.RemoteDigest
-	}
+		"running_digest", shortDigest(current), "tag_digest", shortDigest(remote.Digest))
 
 	return &UpdateResult{
 		ContainerID:    c.ExternalID,
 		ContainerName:  c.Name,
 		Image:          c.Image,
 		CurrentTag:     t.currentTag,
-		CurrentDigest:  baseline.RemoteDigest,
-		PreviousDigest: previous,
+		CurrentDigest:  current,
+		PreviousDigest: current,
 		Registry:       t.registry,
 		LatestTag:      t.currentTag,
-		LatestDigest:   remoteDigest,
+		LatestDigest:   remote.Digest,
 		UpdateType:     UpdateTypeDigestOnly,
 		HasUpdate:      true,
 		AlertOn:        t.alertOn,
 	}, nil
+}
+
+// currentDigest returns the digest the container runs and records it as the container's baseline,
+// under the tag's multi-platform digest when the two name the same release. When the runtime does
+// not report it, the baseline stands in: the last digest the container was seen running, else the
+// one its tag pointed at on first sight, recorded then with nothing to compare.
+func (sc *Scanner) currentDigest(ctx context.Context, t scanTarget, remote RemoteDigests) (string, error) {
+	c := t.container
+	current := t.runningDigest
+	if current == "" {
+		baseline, err := sc.store.GetDigestBaseline(ctx, c.ExternalID)
+		if err != nil {
+			return "", fmt.Errorf("get digest baseline: %w", err)
+		}
+		if baseline != nil && baseline.Tag == t.currentTag {
+			current = baseline.RemoteDigest
+			if current == remote.Digest || !remote.Contains(current) {
+				return current, nil
+			}
+		}
+	}
+
+	recorded := current
+	if recorded == "" || remote.Contains(recorded) {
+		recorded = remote.Digest
+	}
+	if err := sc.store.UpsertDigestBaseline(ctx, &DigestBaseline{
+		ContainerID:  c.ExternalID,
+		Image:        c.Image,
+		Tag:          t.currentTag,
+		RemoteDigest: recorded,
+		CheckedAt:    time.Now(),
+	}); err != nil {
+		sc.logger.Warn("scanner: failed to store digest baseline",
+			"container", c.Name, "error", err)
+	}
+	return current, nil
 }
 
 // isUnreachableImage reports a registry answer meaning the image or tag cannot be
@@ -332,6 +353,17 @@ func shortDigest(d string) string {
 		return d[:19]
 	}
 	return d
+}
+
+// runningDigest names the image a container runs by the digest its runtime pulled for repo, else by the digest pinned in its reference.
+func runningDigest(c ContainerInfo, repo string) string {
+	if d := repoDigestFor(c.RepoDigests, repo); d != "" {
+		return d
+	}
+	if _, d, ok := strings.Cut(c.Image, "@"); ok {
+		return d
+	}
+	return ""
 }
 
 // repoDigestFor returns the digest recorded for repo among an image's repo digests.

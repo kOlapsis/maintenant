@@ -56,11 +56,16 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	if ev.GetDestroyed() {
+		s.forgetAgentDetails(agentID, externalID)
 		if c != nil {
 			base.Action = "destroy"
 			s.ProcessEvent(ctx, base)
 		}
 		return nil
+	}
+
+	if !meta.Replayed {
+		s.recordAgentDetails(agentID, ev)
 	}
 
 	if c == nil {
@@ -159,6 +164,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 			s.logger.Error("agent inventory: archive", "external_id", shortID(sc.ExternalID), "error", err)
 			continue
 		}
+		s.forgetAgentDetails(agentID, sc.ExternalID)
 		s.untrackRestartAlert(sc.ID)
 		s.logger.Info("agent inventory: container gone, archived",
 			"external_id", shortID(sc.ExternalID), "name", sc.Name, "agent_id", agentID)

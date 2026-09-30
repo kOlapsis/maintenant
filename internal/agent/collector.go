@@ -86,10 +86,24 @@ type labeledDiscoverer interface {
 	DiscoverAllWithLabels(ctx context.Context) ([]*docker.DiscoveryResult, error)
 }
 
+// repoDigestLister is satisfied by the docker runtime, so the inventory names each running image by its registry digests.
+type repoDigestLister interface {
+	ContainerRepoDigests(ctx context.Context) (map[string][]string, error)
+}
+
 // syncInventory pushes a full snapshot of every container the runtime currently
 // knows about, marked complete so the server can reconcile away what it no
 // longer sees. Discovery failure yields no message at all.
 func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
+	var digests map[string][]string
+	if dl, ok := rt.(repoDigestLister); ok {
+		d, err := dl.ContainerRepoDigests(ctx)
+		if err != nil {
+			logger.Warn("collector: image digests not read", "err", err)
+		}
+		digests = d
+	}
+
 	entry := func(c *cmodel.Container, labels map[string]string) *agentpb.ContainerEvent {
 		state, ok := containerStateToProto(c.State)
 		if !ok {
@@ -99,7 +113,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 		if c.HealthStatus != nil {
 			health = string(*c.HealthStatus)
 		}
-		return &agentpb.ContainerEvent{
+		ev := &agentpb.ContainerEvent{
 			ContainerId:    c.ExternalID,
 			Name:           c.Name,
 			Image:          c.Image,
@@ -108,6 +122,10 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 			HealthStatus:   health,
 			HasHealthCheck: c.HasHealthCheck,
 		}
+		if d, known := digests[c.ExternalID]; known {
+			ev.RepoDigests = &agentpb.RepoDigests{Digests: d}
+		}
+		return ev
 	}
 
 	var entries []*agentpb.ContainerEvent
