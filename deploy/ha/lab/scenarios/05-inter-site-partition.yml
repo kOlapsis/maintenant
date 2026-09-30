@@ -15,12 +15,21 @@ injection:
   command: iptables -A INPUT -s "$LAB_PASSIVE_ADDRESS" -j DROP && iptables -A OUTPUT -d "$LAB_PASSIVE_ADDRESS"
     -j DROP
 repair:
-  'on': active
-  command: iptables -D INPUT -s "$LAB_PASSIVE_ADDRESS" -j DROP; iptables -D OUTPUT -d "$LAB_PASSIVE_ADDRESS"
-    -j DROP
+  'on': host
+  command: |
+    $LAB_SSH_ACTIVE "sudo -n iptables -D INPUT -s $LAB_PASSIVE_ADDRESS -j DROP; sudo -n iptables -D OUTPUT -d $LAB_PASSIVE_ADDRESS -j DROP" 2>/dev/null
+    for d in "$LAB_ACTIVE_DOMAIN" "$LAB_PASSIVE_DOMAIN"; do
+      virsh list --name | grep -qx "$d" || virsh start "$d" || exit 1
+    done
+settle_s: 60
 verify:
-  'on': measurement
-  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+  'on': host
+  command: |
+    holders=0
+    for s in "$LAB_SSH_ACTIVE" "$LAB_SSH_PASSIVE"; do
+      $s ip -o addr show 2>/dev/null | grep -q " inet $LAB_SERVICE_ADDRESS/" && holders=$((holders + 1))
+    done
+    [ "$holders" -eq 1 ] && curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
 measures:
 - nodes_written
 - writes

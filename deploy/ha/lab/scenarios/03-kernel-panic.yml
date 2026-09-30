@@ -12,7 +12,8 @@ source: bench plan
 repetitions: 20
 injection:
   'on': active
-  command: echo c > /proc/sysrq-trigger
+  # Detached and delayed, or the ssh session dies with the kernel and never returns.
+  command: nohup sh -c 'sleep 1; echo c > /proc/sysrq-trigger' >/dev/null 2>&1 &
 repair:
   'on': host
   command: virsh start "$LAB_ACTIVE_DOMAIN"

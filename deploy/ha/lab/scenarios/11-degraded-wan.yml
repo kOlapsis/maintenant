@@ -16,9 +16,12 @@ injection:
 repair:
   'on': active
   command: tc qdisc del dev "$LAB_INTERCONNECT" root
+settle_s: 120
 verify:
-  'on': measurement
-  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+  'on': host
+  command: |
+    $LAB_SSH_ACTIVE ip -o addr show | grep -q " inet $LAB_SERVICE_ADDRESS/" &&
+      curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
 measures:
 - failover_count
 - rto_ms

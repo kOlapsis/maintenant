@@ -16,11 +16,13 @@ injection:
     -j DROP && iptables -A OUTPUT -d "$LAB_ARBITRATOR_ADDRESS" -j DROP
 repair:
   'on': host
-  command: virsh start "$LAB_ACTIVE_DOMAIN" 2>/dev/null; virsh start "$LAB_PASSIVE_DOMAIN"
-    2>/dev/null; true
+  command: virsh start "$LAB_ACTIVE_DOMAIN"
 verify:
-  'on': measurement
-  command: curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
+  'on': host
+  command: |
+    $LAB_SSH_PASSIVE ip -o addr show | grep -q " inet $LAB_SERVICE_ADDRESS/" &&
+      ! $LAB_SSH_ACTIVE ip -o addr show 2>/dev/null | grep -q " inet $LAB_SERVICE_ADDRESS/" &&
+      curl -fsS -m 5 "http://$LAB_SERVICE_ADDRESS:8080/api/v1/health" >/dev/null
 measures:
 - nodes_written
 - writes

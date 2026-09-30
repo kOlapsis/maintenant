@@ -44,7 +44,7 @@ DEFAULT_MODE="ip-only"
 KNOWN_MODES="ip-only postgres/streaming sqlite/drbd postgres/drbd"
 
 SSH_WAIT_TIMEOUT=300
-SSH_BATCH_OPTS="-i $LAB_SSH_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+SSH_BATCH_OPTS="-i $LAB_SSH_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
 # Domains are named after the machines, with the prefix the provisioning uses.
 LAB_DOMAIN_PREFIX="${LAB_DOMAIN_PREFIX:-mnt-lab-}"
@@ -631,6 +631,7 @@ run_all_scenario() {
 		repetitions=$repeat_override
 	fi
 	max_rto_s=$(printf '%s' "$mode_entry" | jq -r '.max_rto_s // empty')
+	settle_s=$(jq -r '.settle_s // 0' "$TMP/scenario-def-$number.json")
 
 	reps_ndjson="$TMP/reps-$number.ndjson"
 	: >"$reps_ndjson"
@@ -654,6 +655,7 @@ run_all_scenario() {
 			injection_rc=$?
 		fi
 		printf '%s\n' "$inj_out" >>"$run_log"
+		sleep "$settle_s"
 
 		verify_ok=0
 		deadline=$(($(date +%s) + RUN_ALL_VERIFY_TIMEOUT))
