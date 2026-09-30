@@ -371,6 +371,14 @@ func TestService_ProcessEvent_StartTransitionsToRunning(t *testing.T) {
 	assert.Equal(t, StateRunning, transitions[0].NewState)
 }
 
+func TestService_ProcessEvent_ShortKubernetesIDOfAnUnknownContainer(t *testing.T) {
+	svc := newTestService(newSvcStore())
+
+	assert.NotPanics(t, func() {
+		svc.ProcessEvent(context.Background(), makeTestEvent("die", "db/pg-0"))
+	})
+}
+
 func TestService_HandleStateChange_LogFetcherSkippedForRemote(t *testing.T) {
 	// Remote container (AgentID set): logFetcher must NOT be called — it targets
 	// the server's local runtime and cannot read a remote agent's container logs.

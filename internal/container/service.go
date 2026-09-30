@@ -193,16 +193,16 @@ func (s *Service) timelineAt(ctx context.Context, c *Container, ts time.Time) (C
 func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, newState ContainerState) {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
-		s.logger.Error("get container for state change", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("get container for state change", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
 	if c == nil {
 		if newState != StateRunning || s.discoverer == nil || uid.Agent(evt.AgentID) != uid.LocalAgent {
-			s.logger.Debug("unknown container event, skipping", "external_id", evt.ExternalID[:12], "action", evt.Action)
+			s.logger.Debug("unknown container event, skipping", "external_id", shortID(evt.ExternalID), "action", evt.Action)
 			return
 		}
 		// New container started after initial reconciliation — discover it.
-		s.logger.Info("new container detected, running reconciliation", "external_id", evt.ExternalID[:12])
+		s.logger.Info("new container detected, running reconciliation", "external_id", shortID(evt.ExternalID))
 		if err := s.Reconcile(ctx, s.discoverer); err != nil {
 			s.logger.Error("on-demand reconciliation failed", "error", err)
 		}
@@ -255,7 +255,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == uid.LocalAgent {
 		snippet, err := s.logFetcher.FetchLogSnippet(ctx, evt.ExternalID)
 		if err != nil {
-			s.logger.Warn("fetch log snippet", "external_id", evt.ExternalID[:12], "error", err)
+			s.logger.Warn("fetch log snippet", "external_id", shortID(evt.ExternalID), "error", err)
 		} else {
 			transition.LogSnippet = snippet
 		}
@@ -307,7 +307,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
-		s.logger.Error("get container for destroy", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("get container for destroy", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
 	if c == nil {
@@ -317,7 +317,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 
 	now := evt.Timestamp
 	if err := s.store.ArchiveContainer(ctx, c.ID, now); err != nil {
-		s.logger.Error("archive container", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("archive container", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
 	s.untrackRestartAlert(c.ID)
@@ -333,7 +333,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
-		s.logger.Error("get container for health change", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("get container for health change", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
 	if c == nil {

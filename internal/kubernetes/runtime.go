@@ -16,7 +16,6 @@ import (
 	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/informers"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -39,8 +38,10 @@ type Runtime struct {
 	nsFilter  *NamespaceFilter
 	clientset k8s.Interface
 	metrics   metricsv.Interface
-	factory   informers.SharedInformerFactory
 	stopCh    chan struct{}
+
+	probeEvery  time.Duration
+	probeMisses int
 
 	mu               sync.Mutex
 	connected        bool
@@ -60,10 +61,12 @@ type cpuPrev struct {
 // NewRuntime creates a Kubernetes runtime. Connection is deferred to Connect().
 func NewRuntime(logger *slog.Logger, nsFilter *NamespaceFilter) (*Runtime, error) {
 	return &Runtime{
-		logger:   logger,
-		nsFilter: nsFilter,
-		prevCPU:  make(map[string]*cpuPrev),
-		stopCh:   make(chan struct{}),
+		logger:      logger,
+		nsFilter:    nsFilter,
+		prevCPU:     make(map[string]*cpuPrev),
+		stopCh:      make(chan struct{}),
+		probeEvery:  15 * time.Second,
+		probeMisses: 3,
 	}, nil
 }
 
@@ -110,8 +113,6 @@ func (r *Runtime) connect(ctx context.Context, config *rest.Config) error {
 		return fmt.Errorf("kubernetes connectivity check failed: %w", err)
 	}
 
-	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
-
 	// Probe metrics-server availability.
 	metricsOK := false
 	if metricsClient != nil {
@@ -127,13 +128,8 @@ func (r *Runtime) connect(ctx context.Context, config *rest.Config) error {
 	r.clientset = clientset
 	r.metrics = metricsClient
 	r.metricsAvailable = metricsOK
-	r.factory = factory
 	r.connected = true
 	r.mu.Unlock()
-
-	// Start informers.
-	factory.Start(r.stopCh)
-	factory.WaitForCacheSync(r.stopCh)
 
 	r.logger.Info("kubernetes runtime connected")
 	return nil
