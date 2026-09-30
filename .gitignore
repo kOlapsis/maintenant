@@ -64,3 +64,4 @@ specs/
 
 # Local state of the HA bench, written by deploy/ha/lab/lab
 deploy/ha/lab/.state/
+/deploy/ha/reports/
