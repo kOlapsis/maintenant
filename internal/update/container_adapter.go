@@ -128,5 +128,6 @@ func newContainerInfo(c *container.Container, d RuntimeDetails) ContainerInfo {
 		RepoDigests:        d.RepoDigests,
 		LocallyBuilt:       d.DigestsKnown && len(d.RepoDigests) == 0,
 		PodContainer:       d.PodContainer,
+		SwarmService:       c.SwarmServiceName,
 	}
 }

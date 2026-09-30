@@ -201,11 +201,14 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest string) string {
 	repo, currentTag, _ := ParseImageRef(c.Image)
 
-	if c.RuntimeType == "kubernetes" {
+	if c.RuntimeType == "kubernetes" || c.SwarmService != "" {
 		ref := repo + ":" + latestTag
-		// An unchanged image reference leaves the pod template as it is, so nothing would roll out.
+		// An unchanged image reference can leave the workload as it is, so a republished tag is deployed by its digest.
 		if latestTag == currentTag && latestDigest != "" {
 			ref += "@" + latestDigest
+		}
+		if c.SwarmService != "" {
+			return swarmServiceUpdate(c, ref)
 		}
 		return kubectlSetImage(c, ref)
 	}
@@ -235,6 +238,9 @@ func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) strin
 
 	if c.RuntimeType == "kubernetes" {
 		return kubectlSetImage(c, ref)
+	}
+	if c.SwarmService != "" {
+		return swarmServiceUpdate(c, ref)
 	}
 
 	// Docker Compose
@@ -282,6 +288,11 @@ func kubectlSetImage(c ContainerInfo, ref string) string {
 	}
 	return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
 		kind, c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
+}
+
+// swarmServiceUpdate points the Swarm service that runs the task at ref.
+func swarmServiceUpdate(c ContainerInfo, ref string) string {
+	return fmt.Sprintf("docker service update --image %s %s", ref, c.SwarmService)
 }
 
 // podContainer names the container of a Kubernetes pod that runs the workload's image.
@@ -405,10 +416,16 @@ func (s *Service) runScan(ctx context.Context) {
 		containerByID[c.ExternalID] = c
 	}
 
-	// Collect scanned container names for stale update cleanup
+	// A container whose scan failed keeps its pending update until a scan reaches its registry.
+	failed := make(map[string]bool, len(scanErrors))
+	for _, se := range scanErrors {
+		failed[se.ContainerName] = true
+	}
 	scannedNames := make([]string, 0, len(containers))
 	for _, c := range containers {
-		scannedNames = append(scannedNames, c.Name)
+		if !failed[c.Name] {
+			scannedNames = append(scannedNames, c.Name)
+		}
 	}
 
 	// Persist results
@@ -465,11 +482,11 @@ func (s *Service) runScan(ctx context.Context) {
 		s.emitEvent(event.UpdateDetected, eventData)
 	}
 
-	// Enrichment pipeline: CVE, changelog and risk, as far as the edition opens them.
-	// Gated on results, not updates: a container on its latest tag still needs a CVE pass.
-	if len(results) > 0 {
-		s.logger.Info("starting enrichment pipeline", "containers", len(results), "updates", updatesFound)
-		if err := s.enricher.Enrich(ctx, results); err != nil {
+	// Enrichment pipeline, as far as the edition opens it: a CVE pass on every container,
+	// then changelog and risk on those with an update.
+	if targets := enrichmentTargets(containers, results); len(targets) > 0 {
+		s.logger.Info("starting enrichment pipeline", "containers", len(targets), "updates", updatesFound)
+		if err := s.enricher.Enrich(ctx, targets); err != nil {
 			s.logger.Warn("update enrichment failed", "error", err)
 		}
 		s.logger.Info("enrichment pipeline completed")
@@ -523,6 +540,21 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	s.completeScan(ctx, scanRecord, ScanStatusCompleted, len(containers), updatesFound, len(scanErrors))
+}
+
+// enrichmentTargets returns the scan results, followed by the running image of every container they do not cover.
+func enrichmentTargets(containers []ContainerInfo, results []UpdateResult) []UpdateResult {
+	covered := make(map[string]bool, len(results))
+	for _, r := range results {
+		covered[r.ContainerID] = true
+	}
+	targets := append(make([]UpdateResult, 0, len(containers)), results...)
+	for _, c := range containers {
+		if !covered[c.ExternalID] {
+			targets = append(targets, runningImage(c))
+		}
+	}
+	return targets
 }
 
 func (s *Service) completeScan(ctx context.Context, record *ScanRecord, status ScanStatus, scanned, found, errors int) {

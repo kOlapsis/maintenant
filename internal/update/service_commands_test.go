@@ -126,6 +126,42 @@ func TestGenerateCommands_KubernetesBarePodIsUpdatedInPlace(t *testing.T) {
 		}))
 }
 
+func swarmWeb(image string) ContainerInfo {
+	return ContainerInfo{
+		Name:               "shop_web.1.x7k2p9q4m1n8",
+		Image:              image,
+		OrchestrationGroup: "shop",
+		RuntimeType:        "docker",
+		ControllerKind:     "swarm-service",
+		SwarmService:       "shop_web",
+	}
+}
+
+// Swarm replaces a task that is stopped by hand, so the service is what gets the new image.
+func TestGenerateUpdateCommand_SwarmTaskUpdatesItsService(t *testing.T) {
+	svc := &Service{}
+
+	assert.Equal(t, "docker service update --image nginx:1.26.0 shop_web",
+		svc.GenerateUpdateCommand(swarmWeb("nginx:1.24.0"), "1.26.0", "sha256:new"))
+	assert.Equal(t, "docker service update --image nginx:stable@sha256:new shop_web",
+		svc.GenerateUpdateCommand(swarmWeb("nginx:stable@sha256:old"), "stable", "sha256:new"))
+	assert.Equal(t, "docker service update --image nginx:1.25.0 shop_web",
+		svc.GenerateFixCommand(swarmWeb("nginx:1.24.0"), "1.24.0", "1.25.0"))
+}
+
+func TestGenerateRollbackCommand_SwarmTaskUpdatesItsService(t *testing.T) {
+	svc := &Service{}
+
+	assert.Equal(t, "docker service update --image nginx@sha256:old shop_web",
+		svc.GenerateRollbackCommand(swarmWeb("nginx:stable"), &ImageUpdate{
+			Image: "nginx:stable", CurrentTag: "stable", LatestTag: "stable", PreviousDigest: "sha256:old",
+		}))
+	assert.Equal(t, "docker service update --image nginx:1.24.0 shop_web",
+		svc.GenerateRollbackCommand(swarmWeb("nginx:1.24.0"), &ImageUpdate{
+			Image: "nginx:1.24.0", CurrentTag: "1.24.0", LatestTag: "1.26.0",
+		}))
+}
+
 // A moving tag without a known digest cannot name the image it pointed to before.
 func TestGenerateRollbackCommand_MovingTagWithoutDigest(t *testing.T) {
 	svc := &Service{}

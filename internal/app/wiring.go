@@ -168,6 +168,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					Message:    "Container became unhealthy",
 					EntityType: "container",
 					EntityID:   toString(m["id"]),
+					EntityName: toString(m["container_name"]),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})
@@ -180,6 +181,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					Message:    "Container recovered to healthy",
 					EntityType: "container",
 					EntityID:   toString(m["id"]),
+					EntityName: toString(m["container_name"]),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})

@@ -391,6 +391,7 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 
 	s.emitEvent(event.ContainerHealthChanged, map[string]interface{}{
 		"id":              c.ID,
+		"container_name":  c.Name,
 		"health_status":   newHealth,
 		"previous_health": previousHealth,
 		"timestamp":       evt.Timestamp,

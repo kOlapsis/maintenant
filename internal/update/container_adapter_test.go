@@ -93,6 +93,19 @@ func TestContainerServiceAdapter_RepoDigestsAndLocalBuilds(t *testing.T) {
 	assert.False(t, byID["unknown"].LocallyBuilt, "a runtime that says nothing about the image must not hide it")
 }
 
+func TestContainerServiceAdapter_SwarmTaskNamesItsService(t *testing.T) {
+	task := localContainer("task", "nginx:1.26.0")
+	task.ApplySwarmTaskLabels(map[string]string{
+		"com.docker.swarm.service.id":   "svc-id",
+		"com.docker.swarm.service.name": "shop_web",
+	})
+	svc := newAdapterService(task, localContainer("plain", "redis:7"))
+
+	byID := infosByID(t, NewContainerServiceAdapter(svc, testLogger()))
+	assert.Equal(t, "shop_web", byID["task"].SwarmService)
+	assert.Empty(t, byID["plain"].SwarmService)
+}
+
 func TestContainerServiceAdapter_LocalContainersFollowTheirRuntime(t *testing.T) {
 	svc := newAdapterService(localContainer("seen", "nginx:latest"), localContainer("gone", "redis:latest"))
 	details := map[string]RuntimeDetails{"seen": {

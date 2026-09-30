@@ -28,6 +28,7 @@ type ContainerInfo struct {
 	RepoDigests        []string // "repo@sha256:..." of the running image, as its runtime reports them
 	LocallyBuilt       bool     // the runtime reports an image never pulled from nor pushed to a registry
 	PodContainer       string   // Kubernetes: the pod container that runs Image
+	SwarmService       string   // Swarm: the service the task belongs to
 }
 
 // Scanner checks containers for available updates by comparing tags and digests.
@@ -354,6 +355,19 @@ func shortDigest(d string) string {
 		return d[:19]
 	}
 	return d
+}
+
+// runningImage describes the image a container runs, as a result without an update.
+func runningImage(c ContainerInfo) UpdateResult {
+	repo, tag, registry := ParseImageRef(c.Image)
+	return UpdateResult{
+		ContainerID:   c.ExternalID,
+		ContainerName: c.Name,
+		Image:         c.Image,
+		CurrentTag:    tag,
+		CurrentDigest: runningDigest(c, repo),
+		Registry:      registry,
+	}
 }
 
 // runningDigest names the image a container runs by the digest its runtime pulled for repo, else by the digest pinned in its reference.
