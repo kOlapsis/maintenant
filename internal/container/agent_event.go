@@ -85,10 +85,11 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		s.ProcessEvent(ctx, h)
 	}
 
-	if action := containerStateToAction(ev.GetState()); action != "" {
+	if action := containerStateToAction(ev); action != "" {
 		st := base
 		st.Action = action
 		st.ExitCode = ev.GetStatusMessage()
+		st.OOMKilled = ev.GetOomKilled()
 		s.ProcessEvent(ctx, st)
 	}
 	return nil
@@ -180,7 +181,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta) error {
 	externalID := ev.GetContainerId()
 	labels := ev.GetLabels()
-	state := containerStateToState(ev.GetState())
+	state := agentContainerState(ev)
 	now := agentEventTime(ev, meta)
 
 	readyCount := 0
@@ -312,13 +313,26 @@ func containerStateToState(state agentpb.ContainerState) ContainerState {
 	}
 }
 
+// agentContainerState reads an EXITED report that carries a clean exit code as completed.
+func agentContainerState(ev *agentpb.ContainerEvent) ContainerState {
+	state := containerStateToState(ev.GetState())
+	if state == StateExited && ev.GetStatusMessage() != "" && IsCleanExit(parseExitCode(ev.GetStatusMessage()), ev.GetOomKilled()) {
+		return StateCompleted
+	}
+	return state
+}
+
 // containerStateToAction maps a proto ContainerState to the action string
 // expected by ProcessEvent (mirrors the Docker event action vocabulary).
-func containerStateToAction(state agentpb.ContainerState) string {
-	switch state {
+// An EXITED report without an exit code (stop, kill, older agent's inventory) is a stop: it keeps a completed container completed.
+func containerStateToAction(ev *agentpb.ContainerEvent) string {
+	switch ev.GetState() {
 	case agentpb.ContainerState_CONTAINER_STATE_RUNNING:
 		return "start"
 	case agentpb.ContainerState_CONTAINER_STATE_EXITED:
+		if ev.GetStatusMessage() == "" {
+			return "stop"
+		}
 		return "die"
 	case agentpb.ContainerState_CONTAINER_STATE_PAUSED:
 		return "pause"

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,7 +105,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 		digests = d
 	}
 
-	entry := func(c *cmodel.Container, labels map[string]string) *agentpb.ContainerEvent {
+	entry := func(c *cmodel.Container, labels map[string]string, exit *docker.ExitInfo) *agentpb.ContainerEvent {
 		state, ok := containerStateToProto(c.State)
 		if !ok {
 			return nil
@@ -122,6 +123,10 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 			HealthStatus:   health,
 			HasHealthCheck: c.HasHealthCheck,
 		}
+		if exit != nil && state == agentpb.ContainerState_CONTAINER_STATE_EXITED {
+			ev.StatusMessage = strconv.Itoa(exit.Code)
+			ev.OomKilled = exit.OOMKilled
+		}
 		if d, known := digests[c.ExternalID]; known {
 			ev.RepoDigests = &agentpb.RepoDigests{Digests: d}
 		}
@@ -136,7 +141,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 			return nil
 		}
 		for _, res := range results {
-			if e := entry(res.Container, res.Labels); e != nil {
+			if e := entry(res.Container, res.Labels, res.Exit); e != nil {
 				entries = append(entries, e)
 			}
 		}
@@ -147,7 +152,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 			return nil
 		}
 		for _, c := range containers {
-			if e := entry(c, nil); e != nil {
+			if e := entry(c, nil, nil); e != nil {
 				entries = append(entries, e)
 			}
 		}
@@ -381,6 +386,7 @@ func runtimeEventToProto(ev runtime.RuntimeEvent) *agentpb.ContainerEvent {
 		Image:         ev.Image,
 		State:         state,
 		StatusMessage: ev.ExitCode,
+		OomKilled:     ev.OOMKilled,
 		Labels:        ev.Labels,
 	}
 }

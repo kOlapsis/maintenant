@@ -789,20 +789,15 @@ func TestService_ProcessEvent_DieWithoutLogFetcherLeavesEmptySnippet(t *testing.
 	assert.Empty(t, transitions[0].LogSnippet)
 }
 
-// ---------------------------------------------------------------------------
-// isGracefulExitCode tests
-// ---------------------------------------------------------------------------
-
-func TestIsGracefulExitCode(t *testing.T) {
-	graceful := []int{0, 137, 143}
-	for _, code := range graceful {
-		assert.True(t, isGracefulExitCode(code), "exit code %d should be graceful", code)
+func TestIsCleanExit(t *testing.T) {
+	for _, code := range []int{0, 137, 143} {
+		assert.True(t, IsCleanExit(code, false), "exit code %d should be a clean stop", code)
 	}
-
-	nonGraceful := []int{1, 2, 127, 255, -1, 130, 138}
-	for _, code := range nonGraceful {
-		assert.False(t, isGracefulExitCode(code), "exit code %d should not be graceful", code)
+	for _, code := range []int{1, 2, 127, 255, -1, 130, 138} {
+		assert.False(t, IsCleanExit(code, false), "exit code %d should be a crash", code)
 	}
+	assert.False(t, IsCleanExit(137, true), "an OOM kill is a crash")
+	assert.True(t, IsCleanExit(143, true), "SIGTERM stays a stop whatever the OOM flag")
 }
 
 // ---------------------------------------------------------------------------
@@ -995,6 +990,25 @@ func TestService_ProcessEvent_DieWithSIGTERM143SetsCompleted(t *testing.T) {
 
 	assert.Equal(t, StateCompleted, store.storedState(c.ExternalID),
 		"exit code 143 (SIGTERM) is considered graceful")
+}
+
+func TestService_ProcessEvent_DieWithOOMKill137SetsExitedAndCountsRestart(t *testing.T) {
+	store := newSvcStore()
+	c := makeTestContainer(extID("oom"), StateRunning)
+	c.ID = "102"
+	store.seed(c)
+
+	checker := &mockRestartChecker{result: nil}
+	svc := newTestService(store, func(d *Deps) { d.RestartChecker = checker })
+
+	die := makeTestEvent("die", c.ExternalID)
+	die.ExitCode = "137"
+	die.OOMKilled = true
+	svc.ProcessEvent(context.Background(), die)
+	assert.Equal(t, StateExited, store.storedState(c.ExternalID), "an OOM kill is a crash, not a stop")
+
+	svc.ProcessEvent(context.Background(), makeTestEvent("start", c.ExternalID))
+	assert.Equal(t, 1, checker.calls, "the restart after an OOM kill must count towards the restart loop")
 }
 
 // ---------------------------------------------------------------------------

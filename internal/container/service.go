@@ -27,6 +27,7 @@ type ContainerEvent struct {
 	ExternalID   string
 	Name         string
 	ExitCode     string
+	OOMKilled    bool
 	HealthStatus string
 	ErrorDetail  string
 	Timestamp    time.Time
@@ -152,7 +153,7 @@ func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 		}
 		s.handleStateChange(ctx, evt, StateExited)
 	case "die":
-		if evt.ExitCode != "" && isGracefulExitCode(parseExitCode(evt.ExitCode)) {
+		if evt.ExitCode != "" && IsCleanExit(parseExitCode(evt.ExitCode), evt.OOMKilled) {
 			s.handleStateChange(ctx, evt, StateCompleted)
 		} else {
 			s.handleStateChange(ctx, evt, StateExited)
@@ -601,11 +602,14 @@ func parseExitCode(s string) int {
 	return ec
 }
 
-// isGracefulExitCode returns true for exit codes that indicate a voluntary/normal
-// termination rather than a crash:
-//   - 0: normal exit
-//   - 137: SIGKILL (128+9) — sent by docker stop after SIGTERM timeout
-//   - 143: SIGTERM (128+15) — graceful shutdown signal
-func isGracefulExitCode(code int) bool {
-	return code == 0 || code == 137 || code == 143
+// IsCleanExit reports whether a container that exited with code stopped normally rather than crashed: exit 0, SIGTERM (143) or SIGKILL (137) unless the OOM killer sent it.
+func IsCleanExit(code int, oomKilled bool) bool {
+	switch code {
+	case 0, 143:
+		return true
+	case 137:
+		return !oomKilled
+	default:
+		return false
+	}
 }

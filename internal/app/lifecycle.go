@@ -190,6 +190,7 @@ func (a *App) dispatchRuntimeEvent(ctx context.Context, evt runtime.RuntimeEvent
 		ExternalID:   evt.ExternalID,
 		Name:         evt.Name,
 		ExitCode:     evt.ExitCode,
+		OOMKilled:    evt.OOMKilled,
 		HealthStatus: evt.HealthStatus,
 		ErrorDetail:  evt.ErrorDetail,
 		Timestamp:    evt.Timestamp,

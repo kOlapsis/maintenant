@@ -21,6 +21,7 @@ type ContainerEvent struct {
 	Name         string
 	Image        string
 	ExitCode     string
+	OOMKilled    bool
 	HealthStatus string
 	ResourceType string // "container", "service", or "node"
 	Timestamp    time.Time
@@ -76,6 +77,9 @@ func (c *Client) StreamEvents(ctx context.Context) <-chan ContainerEvent {
 					}
 					if evt.ResourceType == "container" {
 						evt.Labels = c.containerLabels(ctx, evt.Labels)
+					}
+					if evt.Action == "die" && evt.ExitCode == "137" {
+						evt.OOMKilled = c.oomKilled(ctx, evt.ExternalID)
 					}
 
 					select {
@@ -167,6 +171,16 @@ func processEvent(msg events.Message) *ContainerEvent {
 	}
 
 	return evt
+}
+
+// oomKilled reports whether the kernel OOM killer stopped the container; the die event itself does not say.
+func (c *Client) oomKilled(ctx context.Context, id string) bool {
+	res, err := c.cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		c.logger.Debug("inspect after exit 137 failed, counted as a stop", "docker_id", id, "error", err)
+		return false
+	}
+	return res.Container.State != nil && res.Container.State.OOMKilled
 }
 
 // eventTimestamp converts Docker event time fields to time.Time.

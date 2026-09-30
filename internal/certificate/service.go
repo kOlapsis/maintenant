@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -197,7 +198,7 @@ func (s *Service) ProcessAutoDetectedCerts(ctx context.Context, endpointID strin
 	}
 
 	result := CheckCertificateFromPeerCerts(certs, hostname, ocspResponse)
-	s.processCheckResult(ctx, monitor, result)
+	s.processCheckResult(ctx, monitor, result, true)
 }
 
 // --- US2: Standalone ---
@@ -275,7 +276,7 @@ func (s *Service) CreateStandalone(ctx context.Context, input CreateCertificateI
 
 	// Run first check immediately
 	checkResult := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, 10*time.Second)
-	result := s.processCheckResult(ctx, monitor, checkResult)
+	result := s.processCheckResult(ctx, monitor, checkResult, false)
 
 	return monitor, result, nil
 }
@@ -593,7 +594,7 @@ func (s *Service) runScheduledChecks(ctx context.Context) {
 
 			s.logger.Debug("certificate: checking", "hostname", monitor.Hostname, "port", monitor.Port, "server_name", monitor.ServerName, "source", string(monitor.Source))
 			result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
-			s.processCheckResult(ctx, monitor, result)
+			s.processCheckResult(ctx, monitor, result, false)
 		}(m)
 	}
 
@@ -625,20 +626,26 @@ func (s *Service) CheckNow(ctx context.Context, monitorID string) (*CertMonitor,
 	s.logger.Info("certificate: on-demand check", "monitor_id", monitorID,
 		"hostname", monitor.Hostname, "port", monitor.Port)
 	result := CheckCertificate(monitor.Hostname, monitor.Port, monitor.ServerName, checkTimeout)
-	s.processCheckResult(ctx, monitor, result)
+	s.processCheckResult(ctx, monitor, result, false)
 
 	return s.GetMonitor(ctx, monitorID)
 }
 
 // --- Core: Process check result + alerts ---
 
-func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, raw *CheckCertificateResult) *CertCheckResult {
+// A pushed scan (endpoint probe, agent) comes far more often than the monitor's interval: it is stored once per interval or when its outcome changes.
+func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, raw *CheckCertificateResult, pushed bool) *CertCheckResult {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Captured before the scan overwrites it: everything below compares against
 	// the status the monitor had when it came in.
 	previousStatus := monitor.Status
+
+	previous, err := s.store.GetLatestCheckResult(ctx, monitor.ID)
+	if err != nil {
+		s.logger.Error("read latest cert check result", "error", err, "monitor_id", monitor.ID)
+	}
 
 	now := time.Now()
 	result := &CertCheckResult{
@@ -687,32 +694,13 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 		monitor.NextCheckAt = &next
 	}
 
-	// Store check result
-	checkID, err := s.store.InsertCheckResult(ctx, result)
-	if err != nil {
-		s.logger.Error("insert cert check result", "error", err, "monitor_id", monitor.ID)
-	}
-
-	// Store chain entries
-	if len(raw.Chain) > 0 && checkID != "" {
-		entries := make([]*CertChainEntry, len(raw.Chain))
-		for i, c := range raw.Chain {
-			entries[i] = &CertChainEntry{
-				CheckResultID: checkID,
-				Position:      i,
-				SubjectCN:     c.SubjectCN,
-				IssuerCN:      c.IssuerCN,
-				NotBefore:     c.NotBefore,
-				NotAfter:      c.NotAfter,
-			}
-		}
-		if err := s.store.InsertChainEntries(ctx, entries); err != nil {
-			s.logger.Error("insert chain entries", "error", err, "monitor_id", monitor.ID)
-		}
+	interval := time.Duration(monitor.CheckIntervalSeconds) * time.Second
+	if !pushed || previous == nil || now.Sub(previous.CheckedAt) >= interval || !sameOutcome(previous, result) {
+		s.recordCheckResult(ctx, monitor, result, raw)
 	}
 
 	// Evaluate alerts (US3)
-	s.evaluateAlerts(ctx, monitor, result)
+	s.evaluateAlerts(monitor, result, previous)
 
 	// Update monitor in DB
 	if err := s.store.UpdateMonitor(ctx, monitor); err != nil {
@@ -738,6 +726,64 @@ func (s *Service) processCheckResult(ctx context.Context, monitor *CertMonitor, 
 	return result
 }
 
+func (s *Service) recordCheckResult(ctx context.Context, monitor *CertMonitor, result *CertCheckResult, raw *CheckCertificateResult) {
+	checkID, err := s.store.InsertCheckResult(ctx, result)
+	if err != nil {
+		s.logger.Error("insert cert check result", "error", err, "monitor_id", monitor.ID)
+		return
+	}
+	if len(raw.Chain) == 0 {
+		return
+	}
+	entries := make([]*CertChainEntry, len(raw.Chain))
+	for i, c := range raw.Chain {
+		entries[i] = &CertChainEntry{
+			CheckResultID: checkID,
+			Position:      i,
+			SubjectCN:     c.SubjectCN,
+			IssuerCN:      c.IssuerCN,
+			NotBefore:     c.NotBefore,
+			NotAfter:      c.NotAfter,
+		}
+	}
+	if err := s.store.InsertChainEntries(ctx, entries); err != nil {
+		s.logger.Error("insert chain entries", "error", err, "monitor_id", monitor.ID)
+	}
+}
+
+// sameOutcome reports whether two scans saw the same certificate in the same state, at the second precision the store keeps.
+func sameOutcome(a, b *CertCheckResult) bool {
+	return a.ErrorMessage == b.ErrorMessage &&
+		a.SubjectCN == b.SubjectCN &&
+		a.IssuerCN == b.IssuerCN &&
+		a.IssuerOrg == b.IssuerOrg &&
+		slices.Equal(a.SANs, b.SANs) &&
+		a.SerialNumber == b.SerialNumber &&
+		a.SignatureAlgorithm == b.SignatureAlgorithm &&
+		sameSecond(a.NotBefore, b.NotBefore) &&
+		sameSecond(a.NotAfter, b.NotAfter) &&
+		sameBool(a.ChainValid, b.ChainValid) &&
+		a.ChainError == b.ChainError &&
+		sameBool(a.HostnameMatch, b.HostnameMatch) &&
+		a.OCSPStapled == b.OCSPStapled &&
+		a.OCSPStatus == b.OCSPStatus &&
+		a.OCSPError == b.OCSPError
+}
+
+func sameSecond(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Unix() == b.Unix()
+}
+
+func sameBool(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func (s *Service) computeStatus(raw *CheckCertificateResult, thresholds []int) CertStatus {
 	if raw.NotAfter.Before(time.Now()) {
 		return StatusExpired
@@ -761,7 +807,19 @@ func (s *Service) computeStatus(raw *CheckCertificateResult, thresholds []int) C
 
 // --- US3: Alert evaluation ---
 
-func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, result *CertCheckResult) {
+var clearableAlerts = []string{AlertTypeChainInvalid, AlertTypeHostnameMismatch, AlertTypeOCSPRevoked, AlertTypeExpired} // expiring clears through its thresholds
+
+// certProblems lists the clearable alert types a successful scan raises, judging expiry at the given time.
+func certProblems(r *CertCheckResult, at time.Time) map[string]bool {
+	return map[string]bool{
+		AlertTypeChainInvalid:     r.ChainValid != nil && !*r.ChainValid,
+		AlertTypeHostnameMismatch: r.HostnameMatch != nil && !*r.HostnameMatch,
+		AlertTypeOCSPRevoked:      r.OCSPStatus == "revoked",
+		AlertTypeExpired:          r.NotAfter != nil && r.NotAfter.Before(at),
+	}
+}
+
+func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertCheckResult) {
 	if result.ErrorMessage != "" {
 		// Connection error — no cert data to evaluate
 		return
@@ -776,13 +834,39 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 		return data
 	}
 
+	recovery := func(alertType string) {
+		data := withSNI(map[string]interface{}{
+			"monitor_id":          monitor.ID,
+			"hostname":            monitor.Hostname,
+			"port":                monitor.Port,
+			"previous_alert_type": alertType,
+			"days_remaining":      result.DaysRemaining(),
+			"timestamp":           result.CheckedAt.Format(time.RFC3339),
+		})
+		if result.NotAfter != nil {
+			data["new_not_after"] = result.NotAfter.Format(time.RFC3339)
+		}
+		s.emit(event.CertificateRecovery, data)
+	}
+
+	// After a failed scan the previous state is unknown: every clear condition recovers, the engine ignores what was not active.
+	if previous != nil {
+		now := certProblems(result, result.CheckedAt)
+		was := certProblems(previous, result.CheckedAt)
+		for _, alertType := range clearableAlerts {
+			if !now[alertType] && (was[alertType] || previous.ErrorMessage != "") {
+				recovery(alertType)
+			}
+		}
+	}
+
 	// Check chain validation alerts
 	if result.ChainValid != nil && !*result.ChainValid {
 		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
 			"monitor_id":  monitor.ID,
 			"hostname":    monitor.Hostname,
 			"port":        monitor.Port,
-			"alert_type":  "chain_invalid",
+			"alert_type":  AlertTypeChainInvalid,
 			"severity":    "critical",
 			"chain_error": result.ChainError,
 			"timestamp":   result.CheckedAt.Format(time.RFC3339),
@@ -795,7 +879,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
-			"alert_type": "hostname_mismatch",
+			"alert_type": AlertTypeHostnameMismatch,
 			"severity":   "critical",
 			"timestamp":  result.CheckedAt.Format(time.RFC3339),
 		}))
@@ -808,7 +892,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
-			"alert_type": "ocsp_revoked",
+			"alert_type": AlertTypeOCSPRevoked,
 			"severity":   "critical",
 			"timestamp":  result.CheckedAt.Format(time.RFC3339),
 		})
@@ -830,7 +914,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
-			"alert_type":     "expired",
+			"alert_type":     AlertTypeExpired,
 			"severity":       "critical",
 			"not_after":      result.NotAfter.Format(time.RFC3339),
 			"days_remaining": daysRemaining,
@@ -857,15 +941,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 		// No threshold crossed — check if we need a recovery alert
 		if monitor.LastAlertedThreshold != nil {
 			// Certificate renewed, past all thresholds
-			s.emit(event.CertificateRecovery, withSNI(map[string]interface{}{
-				"monitor_id":          monitor.ID,
-				"hostname":            monitor.Hostname,
-				"port":                monitor.Port,
-				"previous_alert_type": "expiring",
-				"new_not_after":       result.NotAfter.Format(time.RFC3339),
-				"days_remaining":      daysRemaining,
-				"timestamp":           result.CheckedAt.Format(time.RFC3339),
-			}))
+			recovery(AlertTypeExpiring)
 			monitor.LastAlertedThreshold = nil
 		}
 		return
@@ -879,7 +955,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, monitor *CertMonitor, resu
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
-			"alert_type":     "expiring",
+			"alert_type":     AlertTypeExpiring,
 			"severity":       ExpiringSeverity(daysRemaining, result.IssuerOrg),
 			"threshold_days": *crossedThreshold,
 			"days_remaining": daysRemaining,

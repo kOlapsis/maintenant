@@ -311,6 +311,74 @@ func TestHandleAgentEvent_DieNonZeroExitBecomesExited(t *testing.T) {
 	assert.Equal(t, StateExited, store.storedState(id))
 }
 
+func TestHandleAgentEvent_OOMKillBecomesExited(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+	ctx := context.Background()
+	id := extID("oom")
+
+	agentID := "agent-1"
+	seed := makeTestContainer(id, StateRunning)
+	seed.AgentID = agentID
+	store.seed(seed)
+
+	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+		ContainerId: id, Name: "oom",
+		State:         agentpb.ContainerState_CONTAINER_STATE_EXITED,
+		StatusMessage: "137",
+		OomKilled:     true,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+	assert.Equal(t, StateExited, store.storedState(id))
+}
+
+func TestHandleAgentInventory_KeepsCompletedContainersCompleted(t *testing.T) {
+	for name, entry := range map[string]*agentpb.ContainerEvent{
+		"exit code reported":    {State: agentpb.ContainerState_CONTAINER_STATE_EXITED, StatusMessage: "137"},
+		"older agent, no code":  {State: agentpb.ContainerState_CONTAINER_STATE_EXITED},
+		"clean exit code (0)":   {State: agentpb.ContainerState_CONTAINER_STATE_EXITED, StatusMessage: "0"},
+		"SIGTERM with OOM flag": {State: agentpb.ContainerState_CONTAINER_STATE_EXITED, StatusMessage: "143", OomKilled: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newSvcStore()
+			svc := newTestService(store)
+			ctx := context.Background()
+			id := extID("job")
+
+			seed := makeTestContainer(id, StateCompleted)
+			seed.AgentID = "agent-1"
+			store.seed(seed)
+
+			entry.ContainerId, entry.Name = id, "job"
+			require.NoError(t, svc.HandleAgentInventory(ctx, "agent-1", &agentpb.ContainerInventory{
+				Containers: []*agentpb.ContainerEvent{entry}, Complete: true,
+			}, agentevent.Meta{ObservedAt: time.Now()}))
+
+			assert.Equal(t, StateCompleted, store.storedState(id))
+			c, _ := store.GetContainerByExternalID(ctx, "agent-1", id)
+			require.NotNil(t, c)
+			assert.Empty(t, store.transitionsFor(c.ID))
+		})
+	}
+}
+
+func TestHandleAgentInventory_InsertsCompletedContainerAsCompleted(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+	ctx := context.Background()
+	id := extID("oneshot")
+
+	require.NoError(t, svc.HandleAgentInventory(ctx, "agent-1", &agentpb.ContainerInventory{
+		Containers: []*agentpb.ContainerEvent{{
+			ContainerId: id, Name: "oneshot",
+			State:         agentpb.ContainerState_CONTAINER_STATE_EXITED,
+			StatusMessage: "0",
+		}},
+		Complete: true,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+
+	assert.Equal(t, StateCompleted, store.storedState(id))
+}
+
 func TestHandleAgentEvent_PreservesImageWhenEventImageEmpty(t *testing.T) {
 	store := newSvcStore()
 	svc := newTestService(store)

@@ -53,6 +53,13 @@ type DiscoveryResult struct {
 	Container      *cmodel.Container
 	Labels         map[string]string
 	SecurityConfig *SecurityConfig
+	Exit           *ExitInfo // nil unless the container has exited and inspect succeeded
+}
+
+// ExitInfo is how an exited container last stopped.
+type ExitInfo struct {
+	Code      int
+	OOMKilled bool
 }
 
 // IsOneOff reports whether a container was created by `docker compose run`.
@@ -122,6 +129,7 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 			Container:      result.Container,
 			Labels:         labels,
 			SecurityConfig: result.SecurityConfig,
+			Exit:           result.Exit,
 		})
 	}
 
@@ -157,6 +165,7 @@ func (c *Client) ContainerRepoDigests(ctx context.Context) (map[string][]string,
 type inspectResult struct {
 	Container      *cmodel.Container
 	SecurityConfig *SecurityConfig
+	Exit           *ExitInfo
 }
 
 // inspectAndMap calls ContainerInspect and maps the result to our domain model.
@@ -178,16 +187,18 @@ func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, labels
 		cm.HealthStatus = &hs
 	}
 
-	// Reclassify gracefully-stopped containers as "completed" (normal termination).
-	// Exit 0 = normal exit, 137 = SIGKILL (docker stop), 143 = SIGTERM.
-	if info.State != nil && info.State.Status == "exited" && isGracefulExitCode(info.State.ExitCode) {
-		cm.State = cmodel.StateCompleted
+	var exit *ExitInfo
+	if info.State != nil && info.State.Status == "exited" {
+		exit = &ExitInfo{Code: info.State.ExitCode, OOMKilled: info.State.OOMKilled}
+		if cmodel.IsCleanExit(exit.Code, exit.OOMKilled) {
+			cm.State = cmodel.StateCompleted
+		}
 	}
 
 	// Extract security-relevant config from HostConfig
 	secCfg := extractSecurityConfig(info.HostConfig)
 
-	return &inspectResult{Container: cm, SecurityConfig: secCfg}, nil
+	return &inspectResult{Container: cm, SecurityConfig: secCfg, Exit: exit}, nil
 }
 
 // extractSecurityConfig extracts security-relevant fields from Docker's HostConfig.
@@ -288,12 +299,6 @@ func mapContainerState(state string) cmodel.ContainerState {
 	default:
 		return cmodel.StateCreated
 	}
-}
-
-// isGracefulExitCode returns true for exit codes that indicate a voluntary stop:
-// 0 = normal, 137 = SIGKILL (docker stop), 143 = SIGTERM.
-func isGracefulExitCode(code int) bool {
-	return code == 0 || code == 137 || code == 143
 }
 
 func mapHealthStatus(status string) cmodel.HealthStatus {

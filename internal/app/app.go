@@ -1057,7 +1057,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		enrollToken = cleartext
 	}
 
-	grpcURL := "grpcs://" + a.cfg.MultiHost.GRPCListen
+	grpcURL := embeddedAgentURL(a.cfg.MultiHost)
 	agentCfg := agent.AgentConfig{
 		DataDir:             agentDataDir,
 		ServerURL:           grpcURL,
@@ -1135,6 +1135,14 @@ func (a *App) currentSwarmCrashLoop() *swarm.CrashLoopDetector {
 		return m.crashLoop
 	}
 	return nil
+}
+
+// embeddedAgentURL dials the local gRPC listener with the scheme it serves: plaintext h2c in insecure mode, TLS otherwise.
+func embeddedAgentURL(mh MultiHostConfig) string {
+	if mh.InsecureGRPC {
+		return "grpc://" + mh.GRPCListen
+	}
+	return "grpcs://" + mh.GRPCListen
 }
 
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.

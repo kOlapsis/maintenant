@@ -107,6 +107,7 @@ func (r *Runtime) StreamEvents(ctx context.Context) <-chan runtime.RuntimeEvent 
 				Name:         evt.Name,
 				Image:        evt.Image,
 				ExitCode:     evt.ExitCode,
+				OOMKilled:    evt.OOMKilled,
 				HealthStatus: evt.HealthStatus,
 				ResourceType: evt.ResourceType,
 				Timestamp:    evt.Timestamp,

@@ -255,6 +255,8 @@ message ContainerEvent {
   bool destroyed = 11;
   // The repo digests of the image the container runs, carried by inventory entries; absent when the agent could not read them.
   RepoDigests repo_digests = 12;
+  // Set with an EXITED state when the kernel OOM killer stopped the container: its 137 exit code is then a crash, not a stop.
+  bool oom_killed = 13;
 }
 
 // Wrapped so that "not reported" stays distinct from an empty list, which marks an image never pulled from nor pushed to a registry.

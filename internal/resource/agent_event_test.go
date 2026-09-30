@@ -5,6 +5,7 @@ package resource
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -118,6 +119,71 @@ func TestHandleAgentEvent_IgnoresOtherAgentsContainer(t *testing.T) {
 		ContainerId: extID, CpuPercent: 3,
 	}, agentevent.Meta{ObservedAt: time.Now()}))
 	assert.Empty(t, rstore.snapshots, "a sample must never land on another agent's container")
+}
+
+func TestHandleAgentEvent_LiveSampleFeedsTheCurrentReads(t *testing.T) {
+	extID := "live0123456789ab"
+	id := uid.Container(uid.Agent("agent-9"), extID)
+	c := &container.Container{ID: id, ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	svc := newTestService(newMockResourceStore(), buildContainerSvc(newMockContainerStore(c)), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+	svc.collector.latest = map[string]*ResourceSnapshot{
+		"local-ctr": {ContainerID: "local-ctr", CPUPercent: 10, AgentID: uid.LocalAgent},
+	}
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 42, MemoryBytes: 10, MemoryLimitBytes: 100,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+
+	cur := svc.GetCurrentSnapshot(id)
+	require.NotNil(t, cur, "an agent container has a current sample")
+	assert.Equal(t, 42.0, cur.CPUPercent)
+
+	all := svc.GetAllLatestSnapshots()
+	assert.Len(t, all, 2)
+	assert.Contains(t, all, id)
+	assert.Contains(t, all, "local-ctr")
+
+	rows := svc.TopConsumersNow("cpu", 10, nil)
+	require.Len(t, rows, 2)
+	assert.Equal(t, id, rows[0].ContainerID, "the live ranking includes the agents")
+	agent := "agent-9"
+	scoped := svc.TopConsumersNow("cpu", 10, &agent)
+	require.Len(t, scoped, 1)
+	assert.Equal(t, id, scoped[0].ContainerID)
+}
+
+func TestHandleAgentEvent_ReplayedSampleIsNotCurrent(t *testing.T) {
+	extID := "replay0123456789"
+	id := uid.Container(uid.Agent("agent-9"), extID)
+	c := &container.Container{ID: id, ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	svc := newTestService(newMockResourceStore(), buildContainerSvc(newMockContainerStore(c)), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 42,
+	}, agentevent.Meta{ObservedAt: time.Now(), Replayed: true}))
+
+	assert.Nil(t, svc.GetCurrentSnapshot(id))
+	assert.Empty(t, svc.GetAllLatestSnapshots())
+}
+
+func TestAgentLatest_ExpiresOnReceiveTime(t *testing.T) {
+	var reg agentLatest
+	now := time.Now()
+	reg.put(&ResourceSnapshot{ContainerID: "a", Timestamp: now.Add(time.Hour)}, now)
+	reg.put(&ResourceSnapshot{ContainerID: "b", Timestamp: now}, now.Add(-agentSnapshotTTL-time.Second))
+
+	assert.NotNil(t, reg.get("a", now), "a sample stamped ahead by the agent's clock is still judged on receive time")
+	assert.Nil(t, reg.get("b", now), "a sample not refreshed within the TTL is gone")
+
+	fresh := reg.fresh(now)
+	assert.Len(t, fresh, 1)
+	assert.Contains(t, fresh, "a")
+	assert.Nil(t, reg.get("a", now.Add(agentSnapshotTTL+time.Second)))
+
+	reg.put(&ResourceSnapshot{ContainerID: "a", Timestamp: now}, now)
+	assert.Equal(t, now, reg.get("a", now).Timestamp, "an agent whose clock stepped back still refreshes its sample")
 }
 
 // FR-026: a replayed sample is stored at the time the agent observed it, and it

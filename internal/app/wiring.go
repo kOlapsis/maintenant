@@ -10,6 +10,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
+	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/event"
@@ -55,6 +56,32 @@ func heartbeatAlertEvents(h *heartbeat.Heartbeat, alertType string, details map[
 		msg = fmt.Sprintf("Heartbeat '%s' failed with exit code %v", h.Name, details["exit_code"])
 	}
 	return []alert.Event{build(hbAlertType, false, alert.SeverityCritical, msg)}
+}
+
+// certificateRecoveryEvent resolves the certificate alert whose type the recovery names. Caller sets Timestamp.
+func certificateRecoveryEvent(m map[string]any) alert.Event {
+	alertType := toString(m["previous_alert_type"])
+	host := toString(m["hostname"])
+	msg := fmt.Sprintf("Certificate renewed for %s", host)
+	switch alertType {
+	case certificate.AlertTypeChainInvalid:
+		msg = fmt.Sprintf("Certificate chain for %s verifies again", host)
+	case certificate.AlertTypeHostnameMismatch:
+		msg = fmt.Sprintf("Certificate for %s matches its hostname again", host)
+	case certificate.AlertTypeOCSPRevoked:
+		msg = fmt.Sprintf("Certificate for %s is no longer reported revoked", host)
+	}
+	return alert.Event{
+		Source:     alert.SourceCertificate,
+		AlertType:  alertType,
+		Severity:   alert.SeverityInfo,
+		IsRecover:  true,
+		Message:    msg,
+		EntityType: "certificate",
+		EntityID:   toString(m["monitor_id"]),
+		EntityName: host,
+		Details:    m,
+	}
 }
 
 // wireAlertCallbacks wires all service event callbacks for SSE broadcasting,
@@ -343,18 +370,9 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				Timestamp:  time.Now(),
 			})
 		case "certificate.recovery":
-			sendAlert(alert.Event{
-				Source:     alert.SourceCertificate,
-				AlertType:  "expiring",
-				Severity:   alert.SeverityInfo,
-				IsRecover:  true,
-				Message:    fmt.Sprintf("Certificate renewed for %v", m["hostname"]),
-				EntityType: "certificate",
-				EntityID:   toString(m["monitor_id"]),
-				EntityName: toString(m["hostname"]),
-				Details:    m,
-				Timestamp:  time.Now(),
-			})
+			evt := certificateRecoveryEvent(m)
+			evt.Timestamp = time.Now()
+			sendAlert(evt)
 		}
 	})
 

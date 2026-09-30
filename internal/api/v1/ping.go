@@ -10,16 +10,18 @@ import (
 	"strconv"
 
 	"github.com/kolapsis/maintenant/internal/heartbeat"
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 )
 
 // PingHandler handles public ping endpoints.
 type PingHandler struct {
-	svc *heartbeat.Service
+	svc      *heartbeat.Service
+	clientIP *ratelimit.ClientIPResolver
 }
 
-// NewPingHandler creates a new ping handler.
-func NewPingHandler(svc *heartbeat.Service) *PingHandler {
-	return &PingHandler{svc: svc}
+// NewPingHandler creates a ping handler that records the source address the way the rate limit resolves it.
+func NewPingHandler(svc *heartbeat.Service, clientIP *ratelimit.ClientIPResolver) *PingHandler {
+	return &PingHandler{svc: svc, clientIP: clientIP}
 }
 
 // HandlePing handles GET|POST /ping/{uuid}
@@ -42,10 +44,7 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sourceIP := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		sourceIP = fwd
-	}
+	sourceIP := h.clientIP.ClientIP(r)
 
 	_, err := h.svc.ProcessPing(r.Context(), uuid, sourceIP, r.Method, payload, nil)
 	if err != nil {
@@ -68,10 +67,7 @@ func (h *PingHandler) HandleStartPing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceIP := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		sourceIP = fwd
-	}
+	sourceIP := h.clientIP.ClientIP(r)
 
 	_, err := h.svc.ProcessStartPing(r.Context(), uuid, sourceIP, r.Method)
 	if err != nil {
@@ -113,10 +109,7 @@ func (h *PingHandler) HandleExitCodePing(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	sourceIP := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		sourceIP = fwd
-	}
+	sourceIP := h.clientIP.ClientIP(r)
 
 	_, err = h.svc.ProcessExitCodePing(r.Context(), uuid, exitCode, sourceIP, r.Method, payload)
 	if err != nil {

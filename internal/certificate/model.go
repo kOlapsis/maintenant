@@ -29,6 +29,15 @@ const (
 	SourceLabel      CertSource = "label"
 )
 
+// Certificate alert types (Source is always SourceCertificate in internal/alert).
+const (
+	AlertTypeExpiring         = "expiring"
+	AlertTypeExpired          = "expired"
+	AlertTypeChainInvalid     = "chain_invalid"
+	AlertTypeHostnameMismatch = "hostname_mismatch"
+	AlertTypeOCSPRevoked      = "ocsp_revoked"
+)
+
 // CertMonitor represents a monitored SSL/TLS certificate.
 type CertMonitor struct {
 	ID       string `json:"id"`

@@ -31,11 +31,24 @@ func seedUptimeEndpoint(t *testing.T, db *DB) string {
 
 func seedUptimeHeartbeat(t *testing.T, db *DB) string {
 	t.Helper()
+	return seedHeartbeatEvery(t, db, 300, 60)
+}
+
+func seedHeartbeatEvery(t *testing.T, db *DB, interval, grace int) string {
+	t.Helper()
 	id, err := NewHeartbeatStore(db).CreateHeartbeat(context.Background(), &heartbeat.Heartbeat{
-		Name: "backup", IntervalSeconds: 300, GraceSeconds: 60,
+		Name: "backup", IntervalSeconds: interval, GraceSeconds: grace,
 	})
 	require.NoError(t, err)
 	return id
+}
+
+// pingHourly sends a success ping at every hour offset in [from, to) from base.
+func pingHourly(t *testing.T, db *DB, id string, base time.Time, from, to int) {
+	t.Helper()
+	for h := from; h < to; h++ {
+		addPing(t, db, id, "success", nil, base.Add(time.Duration(h)*time.Hour))
+	}
 }
 
 func addCheck(t *testing.T, db *DB, endpointID string, success bool, ts time.Time) {
@@ -161,7 +174,8 @@ func TestEndpointDailyUptime(t *testing.T) {
 
 func TestHeartbeatDailyUptime(t *testing.T) {
 	ctx := context.Background()
-	yesterday := startOfUTCDay(time.Now()).AddDate(0, 0, -1)
+	today := startOfUTCDay(time.Now())
+	day := today.AddDate(0, 0, -2) // a complete day, with a complete day after it
 
 	t.Run("no pings returns null days", func(t *testing.T) {
 		db := openTestDB(t)
@@ -173,33 +187,86 @@ func TestHeartbeatDailyUptime(t *testing.T) {
 		}
 	})
 
-	t.Run("a run reported with start then exit code 0 is up", func(t *testing.T) {
+	t.Run("runs reported with start then exit code 0 on time keep the day up", func(t *testing.T) {
 		db := openTestDB(t)
-		id := seedUptimeHeartbeat(t, db)
-		for i := 0; i < 3; i++ {
-			run := yesterday.Add(time.Duration(i) * time.Hour)
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		for h := -1; h < 25; h++ {
+			run := day.Add(time.Duration(h) * time.Hour)
 			addPing(t, db, id, "start", nil, run)
 			addPing(t, db, id, "exit_code", exitCode(0), run.Add(time.Minute))
 		}
 
-		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 2)
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 3)
 		require.NoError(t, err)
-		requirePercent(t, result[1], 100)
-		assert.Zero(t, result[1].IncidentCount)
+		requirePercent(t, dayOf(t, result, day), 100)
+		assert.Zero(t, dayOf(t, result, day).IncidentCount)
 	})
 
-	t.Run("a failing exit code after a success is an incident", func(t *testing.T) {
+	t.Run("a missed deadline is downtime until the next ping", func(t *testing.T) {
 		db := openTestDB(t)
-		id := seedUptimeHeartbeat(t, db)
-		addPing(t, db, id, "success", nil, yesterday.Add(1*time.Hour))
-		addPing(t, db, id, "success", nil, yesterday.Add(2*time.Hour))
-		addPing(t, db, id, "exit_code", exitCode(0), yesterday.Add(3*time.Hour))
-		addPing(t, db, id, "exit_code", exitCode(2), yesterday.Add(4*time.Hour))
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		pingHourly(t, db, id, day, -1, 6)  // last ping 05:00, deadline 06:05
+		pingHourly(t, db, id, day, 12, 25) // back at 12:00
 
-		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 2)
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 3)
 		require.NoError(t, err)
-		requirePercent(t, result[1], 75)
-		assert.Equal(t, 1, result[1].IncidentCount)
+		requirePercent(t, dayOf(t, result, day), 75.35) // down from 06:05 to 12:00
+		assert.Equal(t, 1, dayOf(t, result, day).IncidentCount)
+	})
+
+	t.Run("a day without any ping after the heartbeat went down is fully down", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		pingHourly(t, db, id, day.AddDate(0, 0, -1), 0, 12)
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 4)
+		require.NoError(t, err)
+		requirePercent(t, dayOf(t, result, day), 0)
+		assert.Zero(t, dayOf(t, result, day).IncidentCount, "the outage started the day before")
+		assert.Equal(t, 1, dayOf(t, result, day.AddDate(0, 0, -1)).IncidentCount)
+		requirePercent(t, dayOf(t, result, today), 0)
+	})
+
+	t.Run("a failing exit code is down until the next successful run", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		for h := -1; h < 25; h++ {
+			code := 0
+			if h == 12 || h == 13 {
+				code = 2
+			}
+			addPing(t, db, id, "exit_code", exitCode(code), day.Add(time.Duration(h)*time.Hour))
+		}
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 3)
+		require.NoError(t, err)
+		requirePercent(t, dayOf(t, result, day), 91.67) // down from 12:00 to 14:00
+		assert.Equal(t, 1, dayOf(t, result, day).IncidentCount)
+	})
+
+	t.Run("the first day counts from the first ping", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		pingHourly(t, db, id, day, 12, 25)
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 4)
+		require.NoError(t, err)
+		requirePercent(t, dayOf(t, result, day), 100)
+		assert.Nil(t, dayOf(t, result, day.AddDate(0, 0, -1)).UptimePercent)
+	})
+
+	t.Run("days after a current pause have no uptime", func(t *testing.T) {
+		db := openTestDB(t)
+		id := seedHeartbeatEvery(t, db, 3600, 300)
+		pingHourly(t, db, id, day, -1, 12)
+		_, err := db.Writer().Exec(ctx, `UPDATE heartbeats SET status = 'paused', updated_at = ? WHERE id = ?`,
+			day.Add(11*time.Hour+30*time.Minute).Unix(), id)
+		require.NoError(t, err)
+
+		result, err := NewUptimeDailyStore(db).GetHeartbeatDailyUptime(ctx, id, 3)
+		require.NoError(t, err)
+		requirePercent(t, dayOf(t, result, day), 100)
+		assert.Nil(t, dayOf(t, result, today.AddDate(0, 0, -1)).UptimePercent, "a paused heartbeat is not down")
 	})
 }
 
@@ -265,9 +332,9 @@ func TestUptimeDaily_SurvivesRawPurge(t *testing.T) {
 	}
 	addCheck(t, db, epID, false, day.Add(3*time.Hour))
 
-	hbID := seedUptimeHeartbeat(t, db)
-	addPing(t, db, hbID, "success", nil, day.Add(time.Hour))
-	addPing(t, db, hbID, "exit_code", exitCode(1), day.Add(2*time.Hour))
+	hbID := seedHeartbeatEvery(t, db, 43200, 0)
+	addPing(t, db, hbID, "success", nil, day)
+	addPing(t, db, hbID, "exit_code", exitCode(1), day.Add(12*time.Hour))
 
 	cs := NewContainerStore(db)
 	cid := seedHostContainer(t, cs, "ext-purge", "")

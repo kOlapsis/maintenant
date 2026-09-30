@@ -20,6 +20,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/outbound"
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
@@ -272,7 +273,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("GET /api/v1/heartbeats/{id}/pings", hh.HandleListPings)
 
 		// Public ping endpoints (top-level, no auth)
-		ph := NewPingHandler(d.Heartbeats)
+		ph := NewPingHandler(d.Heartbeats, ratelimit.NewClientIPResolver(d.TrustedProxies))
 		r.mux.HandleFunc("GET /ping/{uuid}/start", ph.HandleStartPing)
 		r.mux.HandleFunc("POST /ping/{uuid}/start", ph.HandleStartPing)
 		r.mux.HandleFunc("GET /ping/{uuid}/{exit_code}", ph.HandleExitCodePing)

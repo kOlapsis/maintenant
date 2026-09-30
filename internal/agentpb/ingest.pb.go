@@ -1594,7 +1594,9 @@ type ContainerEvent struct {
 	// Set when the container was removed from the host; state is then EXITED so an older server treats it as a stop.
 	Destroyed bool `protobuf:"varint,11,opt,name=destroyed,proto3" json:"destroyed,omitempty"`
 	// The repo digests of the image the container runs, carried by inventory entries; absent when the agent could not read them.
-	RepoDigests   *RepoDigests `protobuf:"bytes,12,opt,name=repo_digests,json=repoDigests,proto3" json:"repo_digests,omitempty"`
+	RepoDigests *RepoDigests `protobuf:"bytes,12,opt,name=repo_digests,json=repoDigests,proto3" json:"repo_digests,omitempty"`
+	// Set with an EXITED state when the kernel OOM killer stopped the container: its 137 exit code is then a crash, not a stop.
+	OomKilled     bool `protobuf:"varint,13,opt,name=oom_killed,json=oomKilled,proto3" json:"oom_killed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1711,6 +1713,13 @@ func (x *ContainerEvent) GetRepoDigests() *RepoDigests {
 		return x.RepoDigests
 	}
 	return nil
+}
+
+func (x *ContainerEvent) GetOomKilled() bool {
+	if x != nil {
+		return x.OomKilled
+	}
+	return false
 }
 
 // Wrapped so that "not reported" stays distinct from an empty list, which marks an image never pulled from nor pushed to a registry.
@@ -3410,7 +3419,7 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"kubernetes\x12G\n" +
 	"\tinventory\x18\x11 \x01(\v2'.maintenant.agent.v1.ContainerInventoryH\x00R\tinventory\x129\n" +
 	"\ahost_os\x18\x12 \x01(\v2\x1e.maintenant.agent.v1.HostOSMsgH\x00R\x06hostOsB\x06\n" +
-	"\x04body\"\xd3\x04\n" +
+	"\x04body\"\xf2\x04\n" +
 	"\x0eContainerEvent\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -3425,7 +3434,9 @@ const file_proto_ingest_proto_rawDesc = "" +
 	"\x10has_health_check\x18\n" +
 	" \x01(\bR\x0ehasHealthCheck\x12\x1c\n" +
 	"\tdestroyed\x18\v \x01(\bR\tdestroyed\x12C\n" +
-	"\frepo_digests\x18\f \x01(\v2 .maintenant.agent.v1.RepoDigestsR\vrepoDigests\x1a9\n" +
+	"\frepo_digests\x18\f \x01(\v2 .maintenant.agent.v1.RepoDigestsR\vrepoDigests\x12\x1d\n" +
+	"\n" +
+	"oom_killed\x18\r \x01(\bR\toomKilled\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"'\n" +
