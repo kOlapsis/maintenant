@@ -125,7 +125,7 @@ The server's own Swarm manager raises the alerts below. They go through the [Ale
 | Alert | Severity | Raised when | Resolved when |
 |-------|----------|-------------|---------------|
 | `replica_unhealthy` | Warning | A replicated service has fewer running tasks than desired replicas for 5 minutes. The delay starts when the shortfall is first seen, by the check that runs every 60 seconds or by a service event (a scale, an image update), and a service that recovers before it ends raises nothing. | The running count reaches the desired count again, the service is scaled to zero, ignored or removed |
-| `crash_loop` | Critical | 3 tasks of a service failed within 5 minutes, on any node of the cluster. Failed tasks are read from the snapshot taken every 30 seconds. A task that Swarm shut down (a rolling update, a scale-down) does not count, nor one that exited with code 0 or 143 (a clean stop). Exit code 137 counts, because the task list does not say whether the out-of-memory killer sent it. | The service had no new failure for 10 minutes, or was removed |
+| `crash_loop` | Critical | 3 tasks of a service failed within 5 minutes, on any node of the cluster. Failed tasks are read from the snapshot taken every 30 seconds. A task that Swarm shut down (a rolling update, a scale-down) does not count, nor one that exited with code 0 or 143 (a clean stop). Exit code 137 counts, because the task list does not say whether the out-of-memory killer sent it. | The service had no new failure for 10 minutes, was removed, or is now ignored with `maintenant.ignore` |
 | `update_rollback` | Warning | A rolling update ended in a rollback | The next rolling update of the service completes, or the service is ignored or removed |
 | `update_stalled` | Warning | A rolling update is paused | The next rolling update of the service completes, or the service is ignored or removed |
 | `node_down` | Critical | A node that was ready becomes `down` or `disconnected` | The node is ready again, or left the cluster |
@@ -150,7 +150,7 @@ The Nodes page lists every node with its role, status, availability, engine vers
 
 ## Swarm Through an Agent
 
-An [agent](../guides/agent-setup.md) on a Swarm manager reports the cluster of that manager to a central maintenant: it is detected automatically, or forced with `--runtime=swarm` (`MAINTENANT_RUNTIME=swarm`). Every 30 seconds it sends a snapshot of the services, tasks and nodes, which shows up in the Services, Tasks and Nodes pages with the name of the agent. The Swarm fields of its containers (service, node, slot) are reported too. Agents are a multi-host feature: they need the Personal edition or above.
+An [agent](../guides/agent-setup.md) on a Swarm manager reports the cluster of that manager to a central maintenant: it is detected automatically, or forced with `--runtime=swarm` (`MAINTENANT_RUNTIME=swarm`). Without the flag, the agent checks the Swarm membership of a Docker host every minute: joining or leaving a Swarm restarts collection under the new runtime, and leaving makes the server drop the cluster it held for that agent. Every 30 seconds it sends a snapshot of the services, tasks and nodes, which shows up in the Services, Tasks and Nodes pages with the name of the agent. The Swarm fields of its containers (service, node, slot) are reported too. Agents are a multi-host feature: they need the Personal edition or above.
 
 - Run the agent on a **manager**. On a worker it reports the containers but the topology snapshot fails, because a worker cannot list services.
 - The alerts above are not raised for an agent's cluster.
@@ -199,7 +199,7 @@ With [MCP](mcp.md#docker-swarm-read) enabled, `get_swarm_info` returns the clust
 
 | Event | Description | Payload keys |
 |-------|-------------|--------------|
-| `swarm.status` | The cluster is active, sent once when maintenant starts on a manager (and when Swarm is switched on while it runs). It is not sent again later: changes arrive as `runtime.context_changed`. | `active`, `is_manager`, `cluster_id`, `manager_count`, `worker_count` |
+| `swarm.status` | The Swarm state changed: Swarm was activated or deactivated (`active: false`, no other key), or the manager or worker counts changed. It is checked every 60 seconds and is not sent at startup. Activation and deactivation also arrive as `runtime.context_changed`. | `active`, `is_manager`, `cluster_id`, `manager_count`, `worker_count` |
 | `swarm.service_discovered` | New service detected | `service_id`, `name`, `mode`, `desired_replicas`, `stack_name`, `image` |
 | `swarm.service_updated` | Service configuration changed, or its replica alert was raised (`replica_alert: true`) | `service_id`, `name`, `desired_replicas`, `running_replicas`, `image` (`replica_alert` instead of `image` for the alert) |
 | `swarm.service_removed` | Service removed from the cluster | `service_id`, `name` |

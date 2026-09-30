@@ -110,13 +110,13 @@ A ping that reports a non-zero exit code leaves the status at `up`, since the jo
 
 The source address is the address of the connection, unless the request comes from a proxy listed in `MAINTENANT_TRUSTED_PROXIES`: maintenant then reads it from `X-Forwarded-For` (or `X-Real-IP`). Behind a reverse proxy, set that variable, otherwise every ping carries the proxy's address.
 
-Pings and executions are kept for 30 days.
+Pings, executions and pauses are kept for 30 days.
 
 ### Uptime
 
 `GET /api/v1/heartbeats/{id}/uptime/daily?days=90` returns one entry per UTC day, most recent first, for up to 365 days (`days` defaults to 90). Each entry has a `date`, an `uptime_percent` and an `incident_count`.
 
-Uptime is weighted by time. A heartbeat counts as up from a successful ping (a plain ping or exit code `0`) until its deadline lapses without another ping, or until a ping reports a non-zero exit code. A start ping moves the deadline but does not change the state. `uptime_percent` is the share of the day spent up, and `incident_count` is the number of times the heartbeat went from up to down that day. A day before the first ping has no value (`uptime_percent` is `null`), and neither has a paused heartbeat after the moment it was paused.
+Uptime is weighted by time. A heartbeat counts as up from a successful ping (a plain ping or exit code `0`) until its deadline lapses without another ping, or until a ping reports a non-zero exit code. A start ping moves the deadline but does not change the state. `uptime_percent` is the share of the day spent up, and `incident_count` is the number of times the heartbeat went from up to down that day. A day before the first ping has no value (`uptime_percent` is `null`), and neither has a day spent entirely paused. Paused time counts neither as up nor as down: on a day with a pause, `uptime_percent` is the share of the rest of the day spent up.
 
 Completed days are aggregated by the retention job and kept for 365 days, which is what keeps the full range available after the raw pings are purged.
 
@@ -154,7 +154,7 @@ POST /api/v1/heartbeats/{id}/pause
 POST /api/v1/heartbeats/{id}/resume
 ```
 
-Resuming a heartbeat that is not paused answers `400 INVALID_INPUT`. A ping that arrives while the heartbeat is paused puts it back to `up`.
+Pausing a heartbeat that is already paused, or resuming one that is not paused, answers `400 INVALID_INPUT`. An unknown heartbeat answers `404`. Every pause is recorded and kept with the ping history. A ping that arrives while the heartbeat is paused puts it back to `up`.
 
 ### CRUD Operations
 
@@ -164,12 +164,12 @@ Resuming a heartbeat that is not paused answers `400 INVALID_INPUT`. A ping that
 | `POST` | `/api/v1/heartbeats` | Create a new heartbeat monitor (`name`, `interval_seconds`, `grace_seconds`) |
 | `GET` | `/api/v1/heartbeats/{id}` | Get a specific monitor, with its snippets |
 | `PUT` | `/api/v1/heartbeats/{id}` | Update a monitor |
-| `DELETE` | `/api/v1/heartbeats/{id}` | Delete a monitor: its ping URL answers 404 from then on |
+| `DELETE` | `/api/v1/heartbeats/{id}` | Delete a monitor and its history for good: its ping URL answers 404 from then on |
 | `GET` | `/api/v1/heartbeats/{id}/executions` | Execution history |
 | `GET` | `/api/v1/heartbeats/{id}/pings` | Raw pings |
 | `GET` | `/api/v1/heartbeats/{id}/uptime/daily` | Daily uptime |
 
-Community is limited to **5 heartbeats**; Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`. The cap counts every active heartbeat, paused ones included, and `GET /api/v1/edition` reports the current count and the limit under `quotas.heartbeats`.
+Community is limited to **5 heartbeats**; Personal and Pro have no cap. Above the cap, creation answers `403 QUOTA_EXCEEDED`. The cap counts every heartbeat, paused ones included, and `GET /api/v1/edition` reports the current count and the limit under `quotas.heartbeats`.
 
 ---
 

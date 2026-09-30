@@ -80,7 +80,7 @@ Endpoint labels apply to Docker containers: the server's own, those of agents an
 |-------|---------|-------------|
 | `maintenant.endpoint.http` | — | HTTP(S) URL to check. It needs an `http://` or `https://` scheme and a host. |
 | `maintenant.endpoint.tcp` | — | `host:port` to check, with a numeric port. |
-| `maintenant.endpoint.interval` | `30s` | Check interval (Go duration, for example `15s` or `2m`). |
+| `maintenant.endpoint.interval` | `30s` | Check interval (Go duration, for example `15s` or `2m`), at least `5s`. A shorter value is raised to 5 seconds and logged as a warning. |
 | `maintenant.endpoint.timeout` | `10s` | Timeout of one check. A timeout longer than the interval is lowered to the interval and logged. |
 | `maintenant.endpoint.failure-threshold` | `3` | Consecutive failed checks before the endpoint alert is raised. |
 | `maintenant.endpoint.recovery-threshold` | `2` | Consecutive successful checks before the alert is resolved. |
@@ -107,7 +107,7 @@ labels:
   maintenant.endpoint.http.tls-verify: "false"
 ```
 
-A malformed target, for example a URL without a scheme or a TCP target without a numeric port, creates no endpoint. maintenant logs a warning and emits an `endpoint.config_error` event.
+A malformed target, for example a URL without a scheme or a TCP target without a port between 1 and 65535, creates no endpoint. maintenant logs a warning and emits an `endpoint.config_error` event.
 
 ### Indexed: several endpoints per container
 

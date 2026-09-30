@@ -26,7 +26,7 @@ Conventions used below:
 | `MAINTENANT_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes, for every HTTP method, on the API and ping routes. It must be a positive whole number: any other value stops the startup with an error that names the variable. |
 | `MAINTENANT_UPDATE_INTERVAL` | `24h` | Interval between [Update Intelligence](../features/updates.md) registry scans. An invalid or non-positive value falls back to `24h`. |
 | `MAINTENANT_DISABLE_OS_EOL_REFRESH` | `false` | Stop the daily refresh of the operating system end-of-support dates from endoflife.date. The table embedded in the binary is then the only source. See [Host OS End-of-Support](../features/host-os.md). |
-| `MAINTENANT_SECURITY_SCORE_THRESHOLD` | — | Personal edition. Raises an alert when the security posture score (0 to 100) drops below this value, and resolves it when the score recovers. The score is evaluated every 5 minutes and each time the posture is computed. Positive integers only: unset, `0` or an invalid value disables the alert. See [Network Security Insights](../features/security.md). |
+| `MAINTENANT_SECURITY_SCORE_THRESHOLD` | — | Personal edition. Raises an alert when the security posture score (0 to 100) drops below this value, and resolves it when the score recovers. The score is evaluated every 5 minutes and each time the posture is computed. A whole number from 0 to 100: unset or `0` disables the alert, and any other value (negative, above 100, not a number) stops the startup. See [Network Security Insights](../features/security.md). |
 | `MAINTENANT_CONTAINER_DOWN_AFTER` | unset (off) | Raises a `container_down` alert for a container that has stayed stopped (`exited` or `dead`) for this long, for example `5m`, and resolves it when the container runs again. A container that ended with exit code 0 or 143, or with 137 when the out-of-memory killer was not the cause, counts as completed, not down. Unset or `0` disables the check. An invalid value stops the startup. |
 | `MAINTENANT_PROXY_LABELS` | `false` | Create endpoint monitors from the Traefik and Caddy docker-proxy labels of Docker containers. Agents honour it too. See [Reverse proxy labels](../guides/docker-labels.md#reverse-proxy-labels-traefik-caddy). |
 
@@ -115,8 +115,8 @@ These variables drive [Multi-Host Monitoring](../features/multihost.md). The [Ag
 | `MAINTENANT_EMBEDDED_AGENT` | `false` | Server mode: also run an agent for the machine that hosts the server. Personal edition or above. |
 | `MAINTENANT_AGENT_RATE_LIMIT_PER_SECOND` | `1000` | Server: gRPC calls per second allowed for each agent. |
 | `MAINTENANT_AGENT_STALE_THRESHOLD_SECONDS` | `60` | Server: seconds without a heartbeat before an agent is reported stale. |
-| `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES` | `16777216` | Agent: bytes of events held in memory before the spool writes them to disk. |
-| `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` | `134217728` | Agent: maximum size of `spool.db`. The oldest events are dropped first. |
+| `MAINTENANT_AGENT_SPOOL_MAX_MEMORY_BYTES` | `16777216` | Agent: bytes of events held in memory before the spool writes them to disk. `0` writes every event to disk. |
+| `MAINTENANT_AGENT_SPOOL_MAX_DISK_BYTES` | `134217728` | Agent: maximum size of `spool.db`. The oldest events are dropped first. `0` means no size limit. |
 | `MAINTENANT_AGENT_SPOOL_MAX_AGE_SECONDS` | `86400` | Agent: age past which a spooled event is neither kept nor replayed. `0` turns the age limit off. |
 
 While the server is unreachable, the agent queues events in the spool and replays them on reconnection; the replay feeds history only. Setting both the memory and the disk budget to `0` disables the spool. The three spool variables accept non-negative integers, and an invalid value stops the startup.

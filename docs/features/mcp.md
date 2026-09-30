@@ -175,9 +175,9 @@ and add an `agent_label` to each row that belongs to a remote agent.
 | `get_endpoint_history` | Check history for a specific endpoint (`endpoint_id`, `limit` defaulting to 50) | Community |
 | `list_heartbeats` | All heartbeat monitors with status, last ping, periods | Community |
 | `list_certificates` | TLS certificates with expiration, issuer, chain validity | Community |
-| `list_alerts` | Active alerts (or the last 100, resolved and silenced included, with `active_only: false`) | Community |
-| `get_resources` | Resource summary: CPU, memory and network totals across the containers, plus disk usage of the server's root filesystem | Community |
-| `get_top_consumers` | Containers ranked by CPU or memory usage (`metric`, `limit` defaulting to 10), live or over a history window (`period`) | Community (see above) |
+| `list_alerts` | Active alerts that are not yet acknowledged (or the last 100 alerts, acknowledged, resolved and silenced included, with `active_only: false`) | Community |
+| `get_resources` | Resource summary: CPU, memory and network throughput (`net_rx_rate` and `net_tx_rate`, in bytes per second) across the containers, plus disk usage of the server's root filesystem | Community |
+| `get_top_consumers` | Containers ranked by CPU or memory usage (`metric`, `limit` defaulting to 10, at most 20), live or over a history window (`period`) | Community (see above) |
 | `get_updates` | Returns `updates` (available image updates), `hosts` (each host's OS and end-of-support status) and `eol_table` | Community |
 | `get_health` | maintenant version, runtime, and status | Community |
 | `list_agents` | Active remote agents with label, hostname, runtime and connection state | Personal |
@@ -230,7 +230,7 @@ The write tools of this section change configuration: channels, triggers and esc
 
 | Tool | Description | Edition |
 |------|-------------|---------|
-| `acknowledge_alert` | Acknowledge an active alert (`alert_id`), which stops its escalation. The optional `acknowledged_by` defaults to `mcp`. | Community |
+| `acknowledge_alert` | Acknowledge an active alert (`alert_id`) through the same path as the REST API: the acknowledgment is broadcast as `alert.acknowledged` and stops its escalation. An unknown or already acknowledged alert is refused. The optional `acknowledged_by` defaults to `mcp`. | Community |
 | `pause_monitor` | Pause a heartbeat monitor (`monitor_type` must be `heartbeat`, plus `monitor_id`) | Community |
 | `resume_monitor` | Resume a paused heartbeat monitor (same parameters) | Community |
 | `create_incident` | Create a status page incident (`title`, `severity`, optional `status`, `message` and `component_ids`); announced on the page and emailed to subscribers like an incident created in the UI | Personal |

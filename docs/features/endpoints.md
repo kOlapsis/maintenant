@@ -66,7 +66,7 @@ labels:
 | `maintenant.endpoint.http.tls-verify` | `true` | Verify TLS certificates. Set to `false` for self-signed certs. |
 | `maintenant.endpoint.http.headers` | none | Request headers, as a JSON object or as `Name=value,Name2=value2` |
 | `maintenant.endpoint.http.max-redirects` | `5` | Redirects to follow. Past the limit, the last response is judged against `expected-status` |
-| `maintenant.endpoint.interval` | `30s` | Check interval (Go duration format) |
+| `maintenant.endpoint.interval` | `30s` | Check interval (Go duration format), at least `5s`: a shorter value is raised to 5 seconds and a warning is logged |
 | `maintenant.endpoint.timeout` | `10s` | Request timeout. A value above the interval is lowered to the interval |
 | `maintenant.endpoint.failure-threshold` | `3` | Consecutive failures before the `consecutive_failure` alert is raised |
 | `maintenant.endpoint.recovery-threshold` | `2` | Consecutive successes before that alert is resolved |
@@ -77,7 +77,7 @@ A value that cannot be parsed is ignored and the default applies; a malformed ta
 
 ## TCP Checks
 
-TCP checks attempt to establish a connection to the configured host and port. The target is `host:port`, with a numeric port.
+TCP checks attempt to establish a connection to the configured host and port. The target is `host:port`, with a port from 1 to 65535.
 
 ```yaml
 labels:
@@ -162,7 +162,7 @@ POST /api/v1/endpoints
 }
 ```
 
-`name`, `endpoint_type` (`http` or `tcp`) and `target` are required. `interval` must be at least 5 seconds, `timeout` at least 1 second and no longer than the interval. Thresholds, expected status, TLS verification and redirects take their defaults (3, 2, `2xx`, on, 5).
+`name`, `endpoint_type` (`http` or `tcp`) and `target` are required. The target is validated on creation and on update, with the same rules as for labels: an HTTP target needs an `http://` or `https://` scheme and a host, a TCP target must be `host:port` with a port from 1 to 65535, otherwise the call answers `400 INVALID_INPUT`. `interval` must be at least 5 seconds, `timeout` at least 1 second and no longer than the interval. Thresholds, expected status, TLS verification and redirects take their defaults (3, 2, `2xx`, on, 5).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

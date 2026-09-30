@@ -153,7 +153,7 @@ maintenant \
 ```
 
 On first boot the agent:
-1. Detects the local runtime (Docker, Swarm, or Kubernetes)
+1. Detects the local runtime (Docker, Swarm, or Kubernetes). A runtime that does not answer does not stop the agent: it enrolls, reports the host, and retries the runtime in the background (delay from 1 second to 1 minute)
 2. Generates an Ed25519 keypair and persists it to `identity.json` (mode `0600`) in its data directory (`MAINTENANT_DATA_DIR`, `/var/lib/maintenant` by default)
 3. Calls `RegisterAgent` on the server with the token and public key
 4. Marks itself as enrolled and enters the streaming loop
@@ -356,7 +356,7 @@ Agent status is updated in real time via SSE. The `connection_state` field refle
 
 When a stream drops or goes silent, a Warning alert (source `agent`, type `disconnected`) is raised, and resolved when the agent reconnects. Revoking or deleting an agent never raises one, and after a server restart the server waits 2 minutes before reporting agents that have not come back yet.
 
-The Agents page shows each agent's runtime, version, spool state and operating system. The same data is available from `GET /api/v1/agents` (filters `status`, `connection_state`) and `GET /api/v1/agents/{id}`.
+The Agents page shows each agent's runtime (the one the agent detected, reported after enrollment and updated when it changes, for example when a Docker host joins or leaves a Swarm), version, spool state and operating system. The same data is available from `GET /api/v1/agents` (filters `status`, `connection_state`) and `GET /api/v1/agents/{id}`.
 
 ---
 

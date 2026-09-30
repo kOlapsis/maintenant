@@ -94,11 +94,11 @@ See [Docker Swarm](swarm.md) and the [Kubernetes guide](../guides/kubernetes.md)
 ## Life of an Alert
 
 - **First event.** maintenant stores the alert as `active`, broadcasts `alert.fired` over SSE, sends it to the channels whose [trigger](#alert-triggers) matches and hands it to the [escalation policies](alert-escalation.md) (Pro).
-- **Same event again.** While an alert is active, a further event with the same source, type and entity is ignored. One with a higher severity raises the active alert in place: new severity, message, entity name and details, a new `alert.fired` broadcast and a new notification, and the escalation policies are evaluated again. The severity of an active alert never goes down.
+- **Same event again.** While an alert is active, a further event with the same source, type and entity is ignored. One with a higher severity raises the active alert in place: new severity, message, entity name and details, a new `alert.fired` broadcast and a new notification whose message starts with "Severity raised from X to Y", and the escalation policies are evaluated again. The severity of an active alert never goes down. If the alert is already acknowledged, it keeps its acknowledgment: the notification is still sent once, but no escalation starts again.
 - **Recovery.** The alert becomes `resolved` and gets a `resolved_at`. A second alert record, `resolved` with severity `info` and the recovery message, is stored and referenced by `resolved_by_id`. Channels receive a resolved notification, routed by the severity, source and entity of the original alert.
 - **Entity removed.** When a container is archived, an endpoint, a heartbeat or a certificate is deleted, or a heartbeat is paused, its active alerts are resolved without a recovery record and without a notification (the dashboard still receives `alert.resolved`). At startup, maintenant also resolves any active alert whose container, agent, heartbeat, endpoint or certificate no longer exists, so alerts left behind by an earlier run cannot linger.
 - **Silenced.** An alert that fires while a [silence rule](#silence-rules) or a maintenance window matches is stored as `silenced` and broadcast as `alert.silenced`. It is not sent and not escalated.
-- **Retention.** Alerts created more than 90 days ago are deleted, once a day.
+- **Retention.** Once a day, resolved and silenced alerts are deleted 90 days after their resolution (or after their creation when they have no resolution time). An active alert is never deleted.
 
 ---
 
@@ -425,9 +425,9 @@ POST /api/v1/alerts/{id}/acknowledge
 }
 ```
 
-`acknowledged_by` is required (`400 INVALID_REQUEST` without it). The answer is the alert with its `acknowledged_at` and `acknowledged_by`. Acknowledging broadcasts `alert.acknowledged`, removes the alert from `GET /api/v1/alerts/active` and stops its [escalation](alert-escalation.md). Only an active alert that is not yet acknowledged can be acknowledged: anything else answers `409 CONFLICT`, an unknown id `404 NOT_FOUND`.
+`acknowledged_by` is required (`400 INVALID_REQUEST` without it). The answer is the alert with its `acknowledged_at` and `acknowledged_by`. Acknowledging stores the acknowledgment once, broadcasts `alert.acknowledged`, removes the alert from `GET /api/v1/alerts/active` and stops its [escalation](alert-escalation.md). Only an active alert that is not yet acknowledged can be acknowledged: anything else answers `409 CONFLICT`, an unknown id `404 NOT_FOUND`.
 
-The **Active Alerts** list of the Alerts page has an **Acknowledge** button, which records the acknowledgement as `operator`. The MCP tool `acknowledge_alert` does the same, with `mcp` as the default name. Acknowledging every security insight of a container in the security posture (Personal) acknowledges its `dangerous_configuration` alert as well.
+The **Active Alerts** list of the Alerts page has an **Acknowledge** button, which records the acknowledgement as `operator`. The MCP tool `acknowledge_alert` goes through the same path, with `mcp` as the default name. Acknowledging every security insight of a container in the security posture (Personal) acknowledges its `dangerous_configuration` alert as well.
 
 ---
 
@@ -465,6 +465,7 @@ Returns alerts, resolved ones included, newest first, as `{"alerts": […], "has
 |-----------|-------------|
 | `limit` | 1 to 200, default 50. Another value answers `400 INVALID_PARAM`. |
 | `before` | An RFC 3339 time: only alerts fired before it. Pass the `fired_at` of the last alert you received to read the next page while `has_more` is `true`. A value that is not a time answers `400 INVALID_PARAM`. |
+| `before_id` | The `id` of the last alert you received, used together with `before`. Alerts fired in the same second are then neither skipped nor repeated between pages. Without `before` it answers `400 INVALID_PARAM`. |
 | `source` | Only this source. |
 | `severity` | Only this severity. |
 | `status` | `active`, `resolved` or `silenced`. |
@@ -505,7 +506,7 @@ GET /api/v1/alerts/{id}
 | `GET` | `/api/v1/escalation-runs/{run_id}` | Get a run (Pro) |
 | `GET` | `/api/v1/alerts/{alert_id}/escalation-runs` | List runs for an alert (Pro) |
 
-Alerts are also broadcast on the SSE event stream as `alert.fired`, `alert.resolved`, `alert.silenced` and `alert.acknowledged`, and the changes to channels, triggers and silence rules as `channel.created`, `channel.updated`, `channel.deleted`, `trigger.created`, `trigger.updated`, `trigger.deleted`, `silence.created` and `silence.cancelled`. `alert.fired` and `alert.resolved` can also be delivered to a webhook subscription (see the [API reference](../api/reference.md#webhooks)). The MCP tool `list_alerts` returns the active alerts, acknowledged ones included, or with `active_only` set to `false` the last 100 alerts, resolved and silenced ones included. `acknowledge_alert` acknowledges one.
+Alerts are also broadcast on the SSE event stream as `alert.fired`, `alert.resolved`, `alert.silenced` and `alert.acknowledged`, and the changes to channels, triggers and silence rules as `channel.created`, `channel.updated`, `channel.deleted`, `trigger.created`, `trigger.updated`, `trigger.deleted`, `silence.created` and `silence.cancelled`. `alert.fired` and `alert.resolved` can also be delivered to a webhook subscription (see the [API reference](../api/reference.md#webhooks)). The MCP tool `list_alerts` returns the active alerts that are not yet acknowledged, as `GET /api/v1/alerts/active` does, or with `active_only` set to `false` the last 100 alerts, acknowledged, resolved and silenced ones included. `acknowledge_alert` acknowledges one.
 
 ---
 

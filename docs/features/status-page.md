@@ -44,7 +44,7 @@ The status page can be reached two ways:
 | **Same domain** (default) | `https://app.example.com/status` | Simplest setup, no extra DNS or proxy work. |
 | **Dedicated subdomain** | `https://status.example.com/` | Cleaner public-facing URL, easier to keep behind a separate auth bypass, recommended for production. |
 
-Set [`MAINTENANT_STATUS_URL`](../getting-started/configuration.md#environment-variables) to the canonical public URL of the status page. It only changes the *View public status page* link in `/status-admin`: the frontend reads it from `GET /api/v1/edition` as `status_url`. When it is unset, the link is the relative path `/status` on the host that serves the admin UI. There is no fallback to `MAINTENANT_BASE_URL`.
+Set [`MAINTENANT_STATUS_URL`](../getting-started/configuration.md#environment-variables) to the canonical public URL of the status page. It sets the *View public status page* link in `/status-admin`, which the frontend reads from `GET /api/v1/edition` as `status_url`, and the links of the Atom feed. When it is unset, the admin link is the relative path `/status` on the host that serves the admin UI, and the feed links use `MAINTENANT_BASE_URL` followed by `/status`.
 
 ### Subdomain deployment
 
@@ -111,7 +111,7 @@ POST /api/v1/status/components
 | `monitors` | Explicit mode only, at least one entry. Each entry is `{type, id}` where `id` is the UUID of the monitor. |
 | `match_all_type` | Match-all mode only: `container`, `endpoint`, `heartbeat` or `certificate`. Fixed once the component exists. |
 | `display_order` | Sort position on the page. |
-| `visible` | `false` hides the component from the public page and from the global status. Default `true`. |
+| `visible` | `false` hides the component from the public page and from the global status. A hidden component is never named on a public surface: not in `/status/api`, not in the `/status/events` stream, not in subscriber emails, and it never opens an automatic incident. Default `true`. |
 | `auto_incident` | Open and resolve incidents automatically, see [Automatic Incidents](#automatic-incidents). |
 | `status_override` | Update only. Forces a status (see [Status Values](#status-values)); an empty string goes back to the status derived from the monitors. |
 
@@ -191,13 +191,13 @@ The stream carries these events. They are also sent on the admin stream `/api/v1
 
 | Event | Payload | Sent when |
 |-------|---------|-----------|
-| `status.component_changed` | `component_id`, `name`, `status`, `monitors` | A monitor linked to the component changes (container state or health, endpoint status, heartbeat or certificate alert) |
+| `status.component_changed` | `component_id`, `name`, `status`, `monitors` | A monitor linked to the component changes (container state or health, endpoint status, heartbeat or certificate alert). Not sent on the public stream for a hidden component |
 | `status.global_changed` | `status`, `message` | After every component change, creation, edit or deletion |
-| `status.component_created`, `status.component_updated`, `status.component_deleted` | `component_id` | A component is created, edited or deleted |
-| `status.incident_created` | `id`, `title`, `severity`, `status`, `components` | An incident is opened |
+| `status.component_created`, `status.component_updated`, `status.component_deleted` | `component_id` | A component is created, edited or deleted. The public page receives it only when the component is or was visible |
+| `status.incident_created` | `id`, `title`, `severity`, `status`, `components` | An incident is opened. `components` lists only the visible components; the dashboard stream gets the full list |
 | `status.incident_updated` | `id`, `status`, `message` | A timeline entry is added |
 | `status.incident_resolved` | `id`, `title` | An incident is resolved |
-| `status.maintenance_started`, `status.maintenance_ended` | `id`, `title`, `components` | A maintenance window starts or ends |
+| `status.maintenance_started`, `status.maintenance_ended` | `id`, `title`, `components` | A maintenance window starts or ends. `components` lists only the visible components on the public page |
 
 The page updates in place: `status.component_changed` and `status.global_changed` change the displayed status without a request, and every other event makes it reload `/status/api`. The stream sends a keep-alive comment every 25 seconds so that a reverse proxy does not close an idle connection.
 
@@ -208,7 +208,10 @@ The page updates in place: `status.component_changed` and `status.global_changed
   "global_status": "degraded",
   "global_message": "Degraded Performance",
   "updated_at": "2026-03-10T14:02:11Z",
-  "components": [{ "id": "…", "name": "API", "status": "degraded" }],
+  "components": [{
+    "id": "…", "name": "API", "status": "degraded",
+    "monitors": [{ "type": "endpoint", "id": "…", "name": "api.example.com", "status": "degraded" }]
+  }],
   "active_incidents": [{
     "id": "…", "title": "API latency increase", "severity": "minor",
     "status": "investigating", "components": ["API"],
@@ -221,17 +224,17 @@ The page updates in place: `status.component_changed` and `status.global_changed
 }
 ```
 
-`subscriptions_enabled` is `true` only when email subscriptions are open. The page shows its *Subscribe to updates* form only in that case. `personalization_version` is omitted when no personalization has been saved.
+`monitors` is the per-monitor breakdown of each component, the same as in the `status.component_changed` event, so a reload keeps it. Incidents and maintenance windows name only the visible components. `subscriptions_enabled` is `true` only when email subscriptions are open. The page shows its *Subscribe to updates* form only in that case. `personalization_version` is omitted when no personalization has been saved.
 
 ### `/status/feed.atom`
 
-An Atom feed of the ongoing incidents and of those resolved in the last 30 days, the most recently changed first. Each entry is titled `[<severity>] <title>` and summarizes the incident with its latest update message. The feed may be cached for 60 seconds.
+An Atom feed of the ongoing incidents and of those resolved in the last 30 days, the most recently changed first. Each entry is titled `[<severity>] <title>` and summarizes the incident with its latest update message. The links and entry ids are built from `MAINTENANT_STATUS_URL`, or from `MAINTENANT_BASE_URL` followed by `/status` when it is unset, never from the request host. The feed may be cached for 60 seconds.
 
 ---
 
 ## Automatic Incidents
 
-A component with `auto_incident: true` opens incidents by itself from alerts, in every edition. Every alert event about one of the component's monitors (or about any monitor of the type, for a match-all component) is handled like this:
+A component with `auto_incident: true` opens incidents by itself from alerts, in every edition, as long as it is visible: a hidden component opens and updates no incident, although an incident opened while it was visible still resolves. Every alert event about one of the component's monitors (or about any monitor of the type, for a match-all component) is handled like this:
 
 - **A problem alert while the component is not operational** opens an incident titled `<component name> - <alert message>`, status `investigating`, with severity `critical` for a critical alert, `major` for a warning and `minor` otherwise. If an incident is already open for the component, the alert message is added to its timeline instead.
 - **A recovery while the component is operational again** adds a `resolved` update, "Auto-resolved: all monitors operational".
@@ -286,7 +289,7 @@ POST /api/v1/status/maintenance
 }
 ```
 
-`title`, `starts_at` and `ends_at` (RFC 3339) are required, and `ends_at` must not be before `starts_at`. `component_ids` follows the [same rule as for incidents](#incident-management). A window that is currently running cannot be edited (`409`). When a `PUT` omits `component_ids`, the window keeps its components.
+`title`, `starts_at` and `ends_at` (RFC 3339) are required, and `ends_at` must not be before `starts_at`, on a `PUT` as well: a window update that would end before it starts answers `400`. `component_ids` follows the [same rule as for incidents](#incident-management). A window that is currently running cannot be edited (`409`). When a `PUT` omits `component_ids`, the window keeps its components.
 
 A scheduler checks the windows every 60 seconds:
 
@@ -392,12 +395,12 @@ POST /status/subscribe
 
 ### How a subscription works
 
-1. The visitor submits an address. `POST /status/subscribe` accepts JSON (`Content-Type: application/json`) or a form field `email`, and answers `200 {"status": "confirmation_sent"}`.
+1. The visitor submits an address. `POST /status/subscribe` accepts JSON (`Content-Type: application/json`) or a form field `email` (`application/x-www-form-urlencoded`), and answers `200 {"status": "confirmation_sent"}`.
 2. A confirmation email arrives with a link that stays valid for 24 hours. The subscription is pending until the visitor opens it.
 3. Opening the link (`GET /status/confirm?token=…`) confirms the subscription. Unconfirmed subscriptions older than 24 hours are purged daily.
 4. Every notification ends with a personal unsubscribe link (`GET /status/unsubscribe?token=…`). Unsubscribing always works, even when subscriptions are closed.
 
-The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. A pending address receives a fresh link and the previous one stops working; a confirmed address receives nothing. A failed email is only written to the log.
+The answer to `POST /status/subscribe` is the same for a new address, a pending one and a confirmed one, so nobody can use the form to find out who is subscribed. Any other `Content-Type` answers `415 unsupported_media_type`. A pending address receives a fresh link and the previous one stops working; a confirmed address receives nothing. A failed email is only written to the log.
 
 | Status | Code | Reason |
 |--------|------|--------|

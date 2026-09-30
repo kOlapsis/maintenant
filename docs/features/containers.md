@@ -149,7 +149,7 @@ maintenant provides real-time log streaming, with stdout and stderr interleaved 
 Access logs via the API:
 
 - `GET /api/v1/containers/{id}/logs`: fetch recent logs. `lines` defaults to 100 and is capped at 500, `timestamps=true` prefixes each line with its time.
-- `GET /api/v1/containers/{id}/logs/stream`: SSE stream of live logs. It emits `container.log_line` events, then a final `container.log_error` event when the container stops, and a keep-alive comment every 25 seconds. `lines` sets the initial backlog (default 100, maximum 500). On Kubernetes, `container` selects a container of the pod. While the server's own runtime is disconnected, it answers `503 RUNTIME_UNAVAILABLE`.
+- `GET /api/v1/containers/{id}/logs/stream`: SSE stream of live logs. It emits `container.log_line` events, then a final `container.log_error` event when the container stops, and a keep-alive comment every 25 seconds. `lines` sets the initial backlog (default 100, maximum 500). On Kubernetes, `container` selects a container of the pod. While the server's own runtime is disconnected, it answers `503 RUNTIME_UNAVAILABLE`, like `logs`.
 
 Containers of a [remote agent](multihost.md) are read through that agent, whatever the state of the server's own runtime. A tail waits at most 15 seconds, and an agent serves four live streams at a time. The API answers `AGENT_OFFLINE` (503), `AGENT_TOO_OLD` (501), `LOGS_BUSY` (429) or `LOGS_TIMEOUT` (504) when it cannot.
 
@@ -216,9 +216,9 @@ If the container runtime (Docker socket or Kubernetes API) is unavailable when m
 - The app starts and serves the full UI and API normally.
 - Endpoint, SSL certificate, and heartbeat monitors are **unaffected**: they continue checking and alerting as usual.
 - Container list and detail pages show **last-known data** (marked as stale) so history is preserved.
-- Live operations (log streaming, real-time stats) return a clear error instead of crashing: `logs/stream` answers `503 RUNTIME_UNAVAILABLE` with the standard error body.
+- Live operations (log streaming, real-time stats) return a clear error instead of crashing: `logs` and `logs/stream` answer `503 RUNTIME_UNAVAILABLE` with the standard error body.
 - A non-blocking banner appears on the Containers and Dashboard pages, and a **RUNTIME OFFLINE** banner at the top of every page.
-- The runtime availability is exposed on `GET /api/v1/health` (`runtime.connected: false`) and broadcast in real time via SSE when the state changes.
+- The runtime availability is exposed on `GET /api/v1/health` (`runtime.connected: false`) and broadcast in real time with the `runtime.availability_changed` SSE event when the state changes. The interface follows that event, so the banner appears and disappears without a reload.
 
 **Automatic recovery**: maintenant retries the runtime connection in the background. Each failed attempt is logged with its cause (`error`) and the delay before the next one (`retry_in`), which starts at 1 second and doubles up to 30 seconds. When the runtime becomes reachable again, container monitoring resumes (reconciliation runs, the event stream restarts, and the banner disappears), all without a restart.
 

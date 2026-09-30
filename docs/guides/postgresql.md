@@ -251,7 +251,7 @@ acknowledged findings.
 ### What does not, and what you will notice
 
 Everything the fleet rebuilds by itself: agent inventories (re-sent within
-30 s), check and resource history, state transitions, active alerts and their
+30 s), check and resource history (heartbeat pause periods included), state transitions, active alerts and their
 deliveries, CVE and image-update intelligence, ephemeral OAuth tokens.
 
 Two effects are worth knowing **before** you start, and the command says them

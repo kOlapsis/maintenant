@@ -262,7 +262,7 @@ maintenant handles edge cases without user intervention:
 | Swarm enabled while maintenant runs | Swarm monitoring starts without a restart, within 60 seconds |
 | Docker not reachable when maintenant starts | Swarm is detected as soon as Docker answers, without a restart |
 | The swarm has no leader | The manager cannot list its nodes: `quorum_degraded` is raised, and resolved once the quorum is back |
-| Docker socket unavailable | Degraded mode: monitoring is suspended while maintenant retries the connection with backoff (1 to 30 seconds) |
+| Docker socket unavailable, at startup or while running | Degraded mode: monitoring is suspended while maintenant retries the connection with backoff (1 to 30 seconds), `runtime.availability_changed` is broadcast and the container logs answer `503 RUNTIME_UNAVAILABLE`. Reconnection resumes Swarm monitoring |
 | Swarm events missed (restart, reconnection) | Full reconciliation on startup and after each reconnection, then a snapshot every 30 seconds |
 | Restart while Swarm alerts are open | The open alerts are taken over and resolved once their condition is gone |
 | Node stops answering | The manager reports it `down`, which raises `node_down` |

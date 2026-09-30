@@ -121,9 +121,9 @@ GET /api/v1/resources/top?metric=cpu&limit=10           # live ranking, every ed
 GET /api/v1/resources/top?metric=cpu&period=30d&limit=10 # ranked over a history window
 ```
 
-`metric` is required (`cpu` or `memory`, otherwise `400 INVALID_METRIC`), and `limit` defaults to 5 with a maximum of 20. Each entry has `container_id`, `container_name`, `value`, `percent` and `rank`.
+`metric` is required (`cpu` or `memory`, otherwise `400 INVALID_METRIC`), and `limit` defaults to 5 with a maximum of 20. The same cap applies to the `get_top_consumers` MCP tool. Each entry has `container_id`, `container_name`, `value`, `percent` and `rank`.
 
-Omitting `period` ranks containers on their latest sample and is open in every edition. That live ranking covers the containers of the server's own runtime and those of remote agents, as long as the agent's latest sample is less than 35 seconds old. Passing a `period` reads history (averaged over the window), and the edition cap applies exactly as it does to the per-container charts. Periods of 24 hours and more are averaged from the hourly rollup (24 hours) or the daily rollup (7, 30 and 90 days), which only hold completed hours and days: the current hour or day is not in the average. A `period` the product does not know answers `400 INVALID_PERIOD`.
+Omitting `period` ranks containers on their latest sample and is open in every edition. That live ranking covers the containers of the server's own runtime and those of remote agents, as long as the agent's latest sample is less than 35 seconds old. Passing a `period` reads history (averaged over the window), and the edition cap applies exactly as it does to the per-container charts. Periods of 24 hours and more are averaged from the hourly rollup (24 hours) or the daily rollup (7, 30 and 90 days), and the hour or day in progress is included in the average. A `period` the product does not know answers `400 INVALID_PERIOD`.
 
 ---
 
@@ -135,7 +135,7 @@ Get the load of a host, with the number of containers running on it and their ne
 GET /api/v1/resources/summary
 ```
 
-The CPU, memory and disk gauges are those of the machine itself (read from `/proc` and the root filesystem), not a sum over containers. `available` is `false` when a remote host has not reported recently. `container_count` counts the containers of that host with a recent sample, remote agents' containers included when you pass their `agent_id`. `total_net_rx_rate` and `total_net_tx_rate` add up the network byte counters of those containers: despite their names they are cumulative totals, not rates.
+The CPU, memory and disk gauges are those of the machine itself (read from `/proc` and the root filesystem), not a sum over containers. `available` is `false` when a remote host has not reported recently. `container_count` counts the containers of that host with a recent sample, remote agents' containers included when you pass their `agent_id`. `total_net_rx_rate` and `total_net_tx_rate` add up the network throughput of those containers, in bytes per second, computed from their last two samples. A container whose counters are unavailable, or were reset by a restart, adds nothing until its next sample. The `get_resources` MCP tool returns the same totals as `net_rx_rate` and `net_tx_rate`.
 
 ---
 

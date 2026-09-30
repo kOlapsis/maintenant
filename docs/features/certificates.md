@@ -66,7 +66,7 @@ maintenant validates the certificate chain the server presents against the trust
 - **Intermediate certificates**: issued by the CA to sign the leaf
 - **Root certificate**: it must be one of the roots maintenant trusts (the system roots plus your own CA, see below)
 
-If any certificate in the chain is invalid, expired, or missing, maintenant fires a `chain_invalid` alert with the reason (`expired chain certificate`, `untrusted root or missing intermediate`, and so on). A certificate that does not cover the hostname being checked (or the `server_name`, see below) fires `hostname_mismatch`. The chain check includes the hostname, so the same scan also fires `chain_invalid`, with a reason that starts with `chain validation failed: x509:`.
+If any certificate in the chain is invalid, expired, or missing, maintenant fires a `chain_invalid` alert with the reason (`expired chain certificate`, `untrusted root or missing intermediate`, and so on). A certificate that does not cover the hostname being checked (or the `server_name`, see below) fires `hostname_mismatch`. The chain is validated without the server name, so a name mismatch alone fires only `hostname_mismatch`, never `chain_invalid`.
 
 ---
 

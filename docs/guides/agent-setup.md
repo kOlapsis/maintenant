@@ -19,7 +19,7 @@ This is a step-by-step guide. For the architecture, streaming protocol and full 
 
 - A Maintenant **server** running the Personal edition or above (`--mode=server`, or the default mode: the agent listener starts in both).
 - The server's **gRPC endpoint reachable from the agent host** (see [Step 1](#step-1-make-the-grpc-endpoint-reachable)).
-- On the agent host: a Docker engine (a Swarm node included) or a Kubernetes cluster, detected automatically. The agent waits for that runtime to answer before it enrolls, retrying every 1 to 30 seconds, so a host without any container runtime cannot run an agent.
+- On the agent host: a Docker engine (a Swarm node included) or a Kubernetes cluster, detected automatically. The runtime does not have to answer at startup: without one, the agent still enrolls and reports the host (metrics and operating system), and starts container monitoring as soon as a runtime answers.
 - A free host slot. Personal caps enrolled hosts at 20, Pro has no cap. When the cap is reached, generating a token is refused (`409 HOST_LIMIT_REACHED`) and enrollment is rejected with `agent host limit reached`.
 
 ---
@@ -218,11 +218,13 @@ Pick the tab matching the host environment. Replace `grpcs://agents.example.com`
 
 What happens on first boot:
 
-1. The agent detects the local runtime (Docker, Swarm, or Kubernetes).
+1. The agent detects the local runtime (Docker, Swarm, or Kubernetes). If the runtime does not answer, the agent logs `container runtime unreachable, reporting host metrics only until it answers` and retries in the background with a delay from 1 second to 1 minute. It logs `container runtime reachable, container monitoring started` once it answers.
 2. It generates an Ed25519 keypair and persists it to `identity.json` (mode `0600`) in its data dir.
 3. It calls `RegisterAgent` with the token + public key, then enters the streaming loop.
 
 The keypair lives in the data volume (`/var/lib/maintenant`). Keep that volume to preserve the agent's identity across restarts. Losing it makes the agent a new one, which needs a new token (see [Managing agents](#managing-agents)). The volume also holds the [outage spool](../features/multihost.md#outage-spool).
+
+The runtime shown on the Agents page is the one the agent detected, reported after enrollment. It follows the host: a runtime that answers late, or a Docker host that joins or leaves a Swarm, updates it without re-enrolling. If the runtime stops answering while the agent runs, the agent logs `container runtime lost, waiting for it to come back`, keeps reporting the host, and resumes container monitoring (with a fresh inventory) when the runtime is back.
 
 ---
 
@@ -256,7 +258,7 @@ Every flag has an environment variable with the same effect (`--server` is `MAIN
 | `--data-dir` | Directory of the identity, liveness file and spool (default `/var/lib/maintenant`). The image healthcheck reads `MAINTENANT_DATA_DIR`, so set the variable rather than the flag if you move it. |
 | `--ca-cert` | PEM bundle of extra root CAs (`MAINTENANT_CA_CERT`), added to the system roots. Applies to the connection to the server, and to the endpoint probes and certificate scans of the agent. |
 | `--proxyLabels` | Create endpoints from Traefik and Caddy labels (`MAINTENANT_PROXY_LABELS`). Each agent reads its own setting, independently of the server. |
-| `--agentSpoolMaxMemoryBytes`, `--agentSpoolMaxDiskBytes`, `--agentSpoolMaxAgeSeconds` | Bounds of the outage spool (16 MB, 128 MB and 24 h by default). `0` on both budgets disables it. |
+| `--agentSpoolMaxMemoryBytes`, `--agentSpoolMaxDiskBytes`, `--agentSpoolMaxAgeSeconds` | Bounds of the outage spool (16 MB, 128 MB and 24 h by default). `0` memory writes every event to disk, `0` disk lifts the size limit, `0` age sets no age limit. The spool is off only when both budgets are `0`. |
 | `--grpc-insecure-skip-tls-verify` | Skip TLS verification: **development only**, for self-signed servers. |
 
 The full reference (server-side variables, rate limits, stale thresholds) is in [Multi-Host Monitoring → Configuration Reference](../features/multihost.md#configuration-reference).
