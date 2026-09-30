@@ -276,7 +276,6 @@ type PageData struct {
 	GlobalMessage   string
 	Components      []ComponentData
 	ActiveIncidents []Incident
-	RecentIncidents []Incident
 	Maintenance     []MaintenanceWindow
 }
 
@@ -347,13 +346,6 @@ func (s *Service) GetPageData(ctx context.Context) (*PageData, error) {
 			s.logger.Error("failed to list active incidents", "error", err)
 		} else {
 			pd.ActiveIncidents = active
-		}
-
-		recent, err := s.incidents.ListRecentIncidents(ctx, 7)
-		if err != nil {
-			s.logger.Error("failed to list recent incidents", "error", err)
-		} else {
-			pd.RecentIncidents = recent
 		}
 	}
 

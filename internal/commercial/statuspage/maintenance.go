@@ -112,10 +112,8 @@ func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *status.Ma
 
 	// Create maintenance incident
 	compIDs := make([]string, 0, len(mw.Components))
-	compNames := make([]string, 0, len(mw.Components))
 	for _, c := range mw.Components {
 		compIDs = append(compIDs, c.ID)
-		compNames = append(compNames, c.Name)
 	}
 
 	inc := &status.Incident{
@@ -159,17 +157,16 @@ func (s *MaintenanceScheduler) activateWindow(ctx context.Context, mw *status.Ma
 	}
 
 	// Broadcast
-	s.service.Broadcast(event.StatusMaintenanceStart, map[string]interface{}{
-		"id":         mw.ID,
-		"title":      mw.Title,
-		"components": compNames,
-	})
+	s.service.BroadcastNamingComponents(event.StatusMaintenanceStart, map[string]any{
+		"id":    mw.ID,
+		"title": mw.Title,
+	}, mw.Components)
 
 	// Notify subscribers
 	s.service.NotifySubscribers(ctx,
 		"Maintenance Started: "+mw.Title,
 		fmt.Sprintf("Scheduled maintenance has started: %s\nAffected components: %s\n%s",
-			mw.Title, strings.Join(compNames, ", "), mw.Description))
+			mw.Title, strings.Join(status.PublicComponentNames(mw.Components), ", "), mw.Description))
 }
 
 func (s *MaintenanceScheduler) deactivateWindow(ctx context.Context, mw *status.MaintenanceWindow) {
@@ -196,18 +193,15 @@ func (s *MaintenanceScheduler) closeWindow(ctx context.Context, mw *status.Maint
 		}
 	}
 
-	compNames := make([]string, 0, len(mw.Components))
 	for _, c := range mw.Components {
-		compNames = append(compNames, c.Name)
 		s.releaseComponent(ctx, mw.ID, c.ID)
 	}
 
 	// Broadcast
-	s.service.Broadcast(event.StatusMaintenanceEnd, map[string]interface{}{
-		"id":         mw.ID,
-		"title":      mw.Title,
-		"components": compNames,
-	})
+	s.service.BroadcastNamingComponents(event.StatusMaintenanceEnd, map[string]any{
+		"id":    mw.ID,
+		"title": mw.Title,
+	}, mw.Components)
 
 	// Notify subscribers
 	s.service.NotifySubscribers(ctx,

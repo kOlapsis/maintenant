@@ -330,7 +330,7 @@ func (s *IncidentStoreImpl) scanIncidents(ctx context.Context, rows *sql.Rows) (
 func (s *IncidentStoreImpl) loadIncidentRelations(ctx context.Context, inc *status.Incident) error {
 	// Load components
 	compRows, err := s.db.QueryContext(ctx,
-		`SELECT sc.id, sc.display_name FROM status_components sc
+		`SELECT sc.id, sc.display_name, sc.visible FROM status_components sc
 		JOIN incident_components ic ON ic.component_id = sc.id
 		WHERE ic.incident_id = ?`, inc.ID)
 	if err != nil {
@@ -341,9 +341,11 @@ func (s *IncidentStoreImpl) loadIncidentRelations(ctx context.Context, inc *stat
 	}(compRows)
 	for compRows.Next() {
 		var ref status.IncidentCompRef
-		if err := compRows.Scan(&ref.ID, &ref.Name); err != nil {
+		var visible int
+		if err := compRows.Scan(&ref.ID, &ref.Name, &visible); err != nil {
 			return fmt.Errorf("scan incident component: %w", err)
 		}
+		ref.Visible = visible != 0
 		inc.Components = append(inc.Components, ref)
 	}
 	if err := compRows.Err(); err != nil {

@@ -8,12 +8,15 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/status"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/store/storetest"
@@ -157,6 +160,76 @@ func TestMaintenance_DeletingARunningWindowEndsIt(t *testing.T) {
 	inc, err := b.incidents.GetIncident(ctx, *running.IncidentID)
 	require.NoError(t, err)
 	assert.Equal(t, status.IncidentResolved, inc.Status)
+}
+
+type eventRecorder struct {
+	mu     sync.Mutex
+	events map[string]map[string]any
+}
+
+func (r *eventRecorder) broadcast(eventType string, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.events == nil {
+		r.events = map[string]map[string]any{}
+	}
+	r.events[eventType], _ = data.(map[string]any)
+}
+
+func (r *eventRecorder) components(eventType string) any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.events[eventType]["components"]
+}
+
+func TestMaintenance_PublicSurfacesNameOnlyVisibleComponents(t *testing.T) {
+	pinEdition(t, extension.Pro)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	db := storetest.Open(t, logger)
+	components := store.NewStatusComponentStore(db)
+	incidents := store.NewIncidentStore(db)
+	maintenance := store.NewMaintenanceStore(db)
+	public, admin := &eventRecorder{}, &eventRecorder{}
+	svc := status.NewService(status.Deps{
+		Components: components, Logger: logger, Incidents: incidents, Maintenance: maintenance,
+		PublicBroadcaster: public.broadcast, AdminBroadcaster: admin.broadcast,
+	})
+	svc.SetSubscriberService(status.NewSubscriberService(&confirmedSubscribers{}, &fakeMailer{}, "https://status.example.com", logger))
+	n := &recordingNotifier{calls: make(chan notifyCall, 8)}
+	svc.SetSubscriberNotifier(n)
+	scheduler := NewMaintenanceScheduler(maintenance, components, incidents, svc, logger)
+
+	ctx := context.Background()
+	var ids []string
+	for _, c := range []*status.Component{
+		{CompositionMode: status.CompositionMatchAll, MatchAllType: "endpoint", DisplayName: "API", Visible: true},
+		{CompositionMode: status.CompositionMatchAll, MatchAllType: "container", DisplayName: "Internal DB"},
+	} {
+		id, err := components.CreateComponent(ctx, c)
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	now := time.Now().UTC()
+	windowID, err := maintenance.CreateMaintenance(ctx, &status.MaintenanceWindow{
+		Title: "db upgrade", StartsAt: now.Add(-time.Minute), EndsAt: now.Add(time.Hour),
+	}, ids)
+	require.NoError(t, err)
+	mw, err := maintenance.GetMaintenance(ctx, windowID)
+	require.NoError(t, err)
+
+	scheduler.activateWindow(ctx, mw)
+	started := n.next(t)
+	assert.Contains(t, started.message, "Affected components: API\n")
+	assert.NotContains(t, started.message, "Internal DB")
+
+	mw, err = maintenance.GetMaintenance(ctx, windowID)
+	require.NoError(t, err)
+	scheduler.deactivateWindow(ctx, mw)
+
+	for _, evt := range []string{event.StatusMaintenanceStart, event.StatusMaintenanceEnd} {
+		assert.Equal(t, []string{"API"}, public.components(evt), "%s on the public page", evt)
+		assert.ElementsMatch(t, []string{"API", "Internal DB"}, admin.components(evt), "%s on the dashboard", evt)
+	}
 }
 
 func TestMaintenance_DeletingAScheduledWindowLeavesTheComponent(t *testing.T) {

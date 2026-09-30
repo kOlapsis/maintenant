@@ -125,8 +125,9 @@ type Incident struct {
 
 // IncidentCompRef is a lightweight component reference for incident responses.
 type IncidentCompRef struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Visible bool   `json:"-"`
 }
 
 // IncidentUpdate is a timestamped entry in an incident timeline.

@@ -431,6 +431,64 @@ func TestStatusAPIDetailsTheMonitorsOfEachComponent(t *testing.T) {
 	}
 }
 
+type upcomingMaintenanceStore struct {
+	MaintenanceStore
+	windows []MaintenanceWindow
+}
+
+func (s upcomingMaintenanceStore) ListMaintenance(context.Context, string, int) ([]MaintenanceWindow, error) {
+	return s.windows, nil
+}
+
+type countingIncidentStore struct {
+	feedIncidentStore
+	recentCalls int
+}
+
+func (s *countingIncidentStore) ListRecentIncidents(context.Context, int) ([]Incident, error) {
+	s.recentCalls++
+	return nil, nil
+}
+
+func TestStatusAPINamesOnlyVisibleComponents(t *testing.T) {
+	linked := []IncidentCompRef{{ID: "c1", Name: "API", Visible: true}, {ID: "c2", Name: "Internal DB"}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(Deps{
+		Components:  &mockComponentStore{},
+		Logger:      logger,
+		Incidents:   feedIncidentStore{active: []Incident{{ID: "inc-1", Title: "Slow", Components: linked}}},
+		Maintenance: upcomingMaintenanceStore{windows: []MaintenanceWindow{{ID: "mw-1", Title: "Upgrade", Components: linked}}},
+	})
+	h := NewHandler(svc, nil, logger, nil, "https://status.example.com")
+
+	rec := httptest.NewRecorder()
+	h.HandleStatusAPI(rec, httptest.NewRequest(http.MethodGet, "/status/api", nil))
+
+	var body StatusAPIResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.ActiveIncidents) != 1 || strings.Join(body.ActiveIncidents[0].Components, ",") != "API" {
+		t.Fatalf("incidents %+v, want inc-1 naming API only", body.ActiveIncidents)
+	}
+	if len(body.UpcomingMaint) != 1 || strings.Join(body.UpcomingMaint[0].Components, ",") != "API" {
+		t.Fatalf("maintenance %+v, want mw-1 naming API only", body.UpcomingMaint)
+	}
+}
+
+func TestStatusAPIReadsNoResolvedIncident(t *testing.T) {
+	incidents := &countingIncidentStore{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(Deps{Components: &mockComponentStore{}, Logger: logger, Incidents: incidents})
+	h := NewHandler(svc, nil, logger, nil, "https://status.example.com")
+
+	h.HandleStatusAPI(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/status/api", nil))
+
+	if incidents.recentCalls != 0 {
+		t.Fatalf("the snapshot read the resolved incidents %d times, and nothing shows them", incidents.recentCalls)
+	}
+}
+
 func TestHandleSubscribeAcceptsMediaTypeParameters(t *testing.T) {
 	h, store := newSubscribeHandler(t)
 

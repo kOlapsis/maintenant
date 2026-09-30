@@ -26,7 +26,7 @@ func NewIncidentHandler(components status.ComponentStore, incidents status.Incid
 	return &IncidentHandler{components: components, incidents: incidents, service: service, logger: logger}
 }
 
-// HandleAlertEvent creates, updates or resolves the incident of every auto-incident component the event touches.
+// HandleAlertEvent creates, updates or resolves the incident of every auto-incident component the event touches; a hidden component never opens nor updates one.
 func (h *IncidentHandler) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 	if h.incidents == nil {
 		h.logger.Debug("status: no incident store, skipping alert")
@@ -82,7 +82,8 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 		return
 	}
 
-	if !isNonOperational {
+	// Checked after the resolution, so an incident opened while the component was visible still closes.
+	if !isNonOperational || !comp.Visible {
 		return
 	}
 
@@ -125,6 +126,6 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 
 	h.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title)
 	inc.ID = incID
-	inc.Components = []status.IncidentCompRef{{ID: comp.ID, Name: comp.DisplayName}}
+	inc.Components = []status.IncidentCompRef{{ID: comp.ID, Name: comp.DisplayName, Visible: comp.Visible}}
 	h.service.AnnounceIncident(ctx, inc, evt.Message)
 }

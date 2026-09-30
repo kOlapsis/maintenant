@@ -177,14 +177,12 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 
 	for _, inc := range data.ActiveIncidents {
 		brief := APIIncidentBrief{
-			ID:        inc.ID,
-			Title:     inc.Title,
-			Severity:  inc.Severity,
-			Status:    inc.Status,
-			CreatedAt: inc.CreatedAt,
-		}
-		for _, c := range inc.Components {
-			brief.Components = append(brief.Components, c.Name)
+			ID:         inc.ID,
+			Title:      inc.Title,
+			Severity:   inc.Severity,
+			Status:     inc.Status,
+			Components: PublicComponentNames(inc.Components),
+			CreatedAt:  inc.CreatedAt,
 		}
 		if len(inc.Updates) > 0 {
 			u := inc.Updates[0]
@@ -198,16 +196,13 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, mw := range data.Maintenance {
-		brief := APIMaintBrief{
-			ID:       mw.ID,
-			Title:    mw.Title,
-			StartsAt: mw.StartsAt,
-			EndsAt:   mw.EndsAt,
-		}
-		for _, c := range mw.Components {
-			brief.Components = append(brief.Components, c.Name)
-		}
-		resp.UpcomingMaint = append(resp.UpcomingMaint, brief)
+		resp.UpcomingMaint = append(resp.UpcomingMaint, APIMaintBrief{
+			ID:         mw.ID,
+			Title:      mw.Title,
+			StartsAt:   mw.StartsAt,
+			EndsAt:     mw.EndsAt,
+			Components: PublicComponentNames(mw.Components),
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

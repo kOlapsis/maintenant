@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -56,14 +57,29 @@ func (n *recordingNotifier) none(t *testing.T) {
 }
 
 type recordingBroadcaster struct {
-	mu     sync.Mutex
-	events []string
+	mu       sync.Mutex
+	events   []string
+	payloads []any
 }
 
-func (b *recordingBroadcaster) broadcast(eventType string, _ any) {
+func (b *recordingBroadcaster) broadcast(eventType string, data any) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.events = append(b.events, eventType)
+	b.payloads = append(b.payloads, data)
+}
+
+func (b *recordingBroadcaster) payload(t *testing.T, eventType string) map[string]any {
+	t.Helper()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, e := range b.events {
+		if e == eventType {
+			return b.payloads[i].(map[string]any)
+		}
+	}
+	t.Fatalf("no %s event among %v", eventType, b.events)
+	return nil
 }
 
 func (b *recordingBroadcaster) all() []string {
@@ -151,7 +167,7 @@ func TestAnnounceIncidentEmailsSubscribersOnce(t *testing.T) {
 
 	inc := &Incident{
 		ID: "inc-1", Title: "Database down", Severity: SeverityMajor, Status: IncidentInvestigating,
-		Components: []IncidentCompRef{{ID: "c1", Name: "API"}, {ID: "c2", Name: "Web"}},
+		Components: []IncidentCompRef{{ID: "c1", Name: "API", Visible: true}, {ID: "c2", Name: "Web", Visible: true}},
 	}
 	svc.AnnounceIncident(context.Background(), inc, "We are investigating.")
 
@@ -167,6 +183,36 @@ func TestAnnounceIncidentEmailsSubscribersOnce(t *testing.T) {
 	n.none(t)
 	if got := b.all(); len(got) != 1 || got[0] != event.StatusIncidentCreated {
 		t.Fatalf("events %v, want one %s", got, event.StatusIncidentCreated)
+	}
+}
+
+func TestAnnounceIncidentNamesOnlyVisibleComponentsInPublic(t *testing.T) {
+	pinEdition(t, extension.Pro)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	public, admin := &recordingBroadcaster{}, &recordingBroadcaster{}
+	svc := NewService(Deps{
+		Components:        emptyComponentStore{},
+		Logger:            logger,
+		PublicBroadcaster: public.broadcast,
+		AdminBroadcaster:  admin.broadcast,
+		Subscribers:       NewSubscriberService(&recordingSubscriberStore{}, newFakeMailer(), "http://localhost", logger),
+	})
+	n := newRecordingNotifier()
+	svc.SetSubscriberNotifier(n)
+
+	svc.AnnounceIncident(context.Background(), &Incident{
+		ID: "inc-1", Title: "Database down", Severity: SeverityMajor, Status: IncidentInvestigating,
+		Components: []IncidentCompRef{{ID: "c1", Name: "API", Visible: true}, {ID: "c2", Name: "Internal DB"}},
+	}, "")
+
+	if got := public.payload(t, event.StatusIncidentCreated)["components"]; !reflect.DeepEqual(got, []string{"API"}) {
+		t.Fatalf("public components %v, want only the visible one", got)
+	}
+	if got := admin.payload(t, event.StatusIncidentCreated)["components"]; !reflect.DeepEqual(got, []string{"API", "Internal DB"}) {
+		t.Fatalf("dashboard components %v, want every one", got)
+	}
+	if mail := n.next(t).message; !strings.Contains(mail, "Affected components: API\n") || strings.Contains(mail, "Internal DB") {
+		t.Fatalf("mail %q must name the visible component only", mail)
 	}
 }
 

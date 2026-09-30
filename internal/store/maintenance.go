@@ -255,7 +255,7 @@ func (s *MaintenanceStoreImpl) scanMaintenanceWindows(ctx context.Context, rows 
 
 func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw *status.MaintenanceWindow) error {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT sc.id, sc.display_name FROM status_components sc
+		`SELECT sc.id, sc.display_name, sc.visible FROM status_components sc
 		JOIN maintenance_components mc ON mc.component_id = sc.id
 		WHERE mc.maintenance_id = ?`, mw.ID)
 	if err != nil {
@@ -266,9 +266,11 @@ func (s *MaintenanceStoreImpl) loadMaintenanceComponents(ctx context.Context, mw
 	}(rows)
 	for rows.Next() {
 		var ref status.IncidentCompRef
-		if err := rows.Scan(&ref.ID, &ref.Name); err != nil {
+		var visible int
+		if err := rows.Scan(&ref.ID, &ref.Name, &visible); err != nil {
 			return fmt.Errorf("scan maintenance component: %w", err)
 		}
+		ref.Visible = visible != 0
 		mw.Components = append(mw.Components, ref)
 	}
 	return rows.Err()

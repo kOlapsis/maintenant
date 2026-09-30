@@ -6,6 +6,7 @@ package status
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/kolapsis/maintenant/internal/event"
@@ -22,20 +23,43 @@ func (s *Service) AnnounceComponentChange(ctx context.Context, eventType, compon
 	s.broadcastGlobalStatus(ctx)
 }
 
+// PublicComponentNames returns the names of the linked components the public page shows.
+func PublicComponentNames(refs []IncidentCompRef) []string {
+	var names []string
+	for _, c := range refs {
+		if c.Visible {
+			names = append(names, c.Name)
+		}
+	}
+	return names
+}
+
+// BroadcastNamingComponents sends an event whose components field names every linked component to the dashboard, and only the visible ones to the public page.
+func (s *Service) BroadcastNamingComponents(eventType string, data map[string]any, refs []IncidentCompRef) {
+	if s.publicBroadcaster != nil {
+		public := maps.Clone(data)
+		public["components"] = PublicComponentNames(refs)
+		s.publicBroadcaster(eventType, public)
+	}
+	all := make([]string, 0, len(refs))
+	for _, c := range refs {
+		all = append(all, c.Name)
+	}
+	admin := maps.Clone(data)
+	admin["components"] = all
+	s.broadcastAdmin(eventType, admin)
+}
+
 // AnnounceIncident pushes a newly opened incident to the public page and emails confirmed subscribers.
 func (s *Service) AnnounceIncident(ctx context.Context, inc *Incident, message string) {
-	names := make([]string, 0, len(inc.Components))
-	for _, c := range inc.Components {
-		names = append(names, c.Name)
-	}
-	s.Broadcast(event.StatusIncidentCreated, map[string]any{
-		"id":         inc.ID,
-		"title":      inc.Title,
-		"severity":   inc.Severity,
-		"status":     inc.Status,
-		"components": names,
-	})
+	s.BroadcastNamingComponents(event.StatusIncidentCreated, map[string]any{
+		"id":       inc.ID,
+		"title":    inc.Title,
+		"severity": inc.Severity,
+		"status":   inc.Status,
+	}, inc.Components)
 
+	names := PublicComponentNames(inc.Components)
 	var body strings.Builder
 	fmt.Fprintf(&body, "%s\n\nSeverity: %s\nStatus: %s\n", inc.Title, inc.Severity, inc.Status)
 	if len(names) > 0 {
