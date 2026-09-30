@@ -18,6 +18,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 )
 
+const maxLogLineBytes = 1 << 20
+
 // LogStreamer abstracts runtime log streaming for the API layer.
 type LogStreamer interface {
 	// StreamLogs returns an io.ReadCloser for following container logs.
@@ -143,10 +145,11 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 	scanned := make(chan string)
+	var scanErr error
 	go func() {
 		defer close(scanned)
 		scanner := bufio.NewScanner(reader)
-		scanner.Buffer(make([]byte, 64*1024), 64*1024)
+		scanner.Buffer(make([]byte, 64*1024), maxLogLineBytes)
 		for scanner.Scan() {
 			select {
 			case scanned <- scanner.Text():
@@ -154,6 +157,7 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 				return
 			}
 		}
+		scanErr = scanner.Err()
 	}()
 
 	keepAlive := time.NewTicker(sseKeepAliveInterval)
@@ -168,6 +172,10 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 			}
 		case line, ok := <-scanned:
 			if !ok {
+				if scanErr != nil {
+					writeLogError(w, flusher, containerDBID, "log stream interrupted: "+scanErr.Error())
+					return
+				}
 				writeLogError(w, flusher, containerDBID, "container stopped")
 				return
 			}
