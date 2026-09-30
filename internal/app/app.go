@@ -39,6 +39,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/telemetry"
+	"github.com/kolapsis/maintenant/internal/trust"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -427,7 +428,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	var eolFetcher *eol.Fetcher
 	if !cfg.DisableOSEOLRefresh {
 		eolFetcher = &eol.Fetcher{
-			Client:    &http.Client{Timeout: 15 * time.Second},
+			Client:    &http.Client{Timeout: 15 * time.Second, Transport: trust.HTTPTransport()},
 			UserAgent: "maintenant/" + cfg.Version + " (+https://maintenant.dev)",
 		}
 	}
@@ -800,6 +801,9 @@ func (a *App) Start(ctx context.Context) error {
 	if err := a.cfg.ValidateHTTP(); err != nil {
 		return err
 	}
+	if err := a.cfg.ValidateGRPCTLS(); err != nil {
+		return err
+	}
 
 	// Derived so an early return (e.g. a failed bind below) cancels every
 	// background goroutine started with ctx, instead of leaking them until
@@ -937,15 +941,21 @@ func (a *App) Start(ctx context.Context) error {
 	a.startRuntimeSupervisor(ctx)
 
 	// Agent gRPC server — server/embedded modes only, where multi-host is open.
-	if a.serveAgents != nil && a.multihostPlanAllowed() && a.cfg.Mode != "agent" {
-		if err := a.serveAgents(ctx, extpoint.GRPCConfig{
-			Listen:      a.cfg.MultiHost.GRPCListen,
-			PublicURL:   a.cfg.MultiHost.GRPCPublicURL,
-			TLSCertFile: a.cfg.MultiHost.TLSCertFile,
-			TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
-			Insecure:    a.cfg.MultiHost.InsecureGRPC,
-		}); err != nil {
-			return fmt.Errorf("start agent gRPC server: %w", err)
+	if a.serveAgents != nil && a.cfg.Mode != "agent" {
+		if a.multihostPlanAllowed() {
+			if err := a.serveAgents(ctx, extpoint.GRPCConfig{
+				Listen:      a.cfg.MultiHost.GRPCListen,
+				PublicURL:   a.cfg.MultiHost.GRPCPublicURL,
+				TLSCertFile: a.cfg.MultiHost.TLSCertFile,
+				TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
+				Insecure:    a.cfg.MultiHost.InsecureGRPC,
+			}); err != nil {
+				return fmt.Errorf("start agent gRPC server: %w", err)
+			}
+		} else {
+			required := extension.MinEdition(extension.CapMultihost)
+			a.logger.Info("agent gRPC listener not started: agents need the "+string(required)+" edition or above",
+				"edition", extension.CurrentEdition(), "required_edition", required, "listen", a.cfg.MultiHost.GRPCListen)
 		}
 	}
 

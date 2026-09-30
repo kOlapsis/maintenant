@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -150,22 +151,47 @@ func (m *svcStore) InsertTransition(_ context.Context, t *StateTransition) (stri
 		return "", m.errInsertTransition
 	}
 	clone := *t
-	clone.ID = uid.New()
+	if clone.ID == "" {
+		clone.ID = uid.New()
+	}
+	for i, existing := range m.transitions {
+		if existing.ID == clone.ID {
+			m.transitions[i] = &clone
+			return clone.ID, nil
+		}
+	}
 	m.transitions = append(m.transitions, &clone)
 	return clone.ID, nil
 }
 
-func (m *svcStore) ListTransitionsByContainer(_ context.Context, containerID string, _ ListTransitionsOpts) ([]*StateTransition, int, error) {
+// ListTransitionsByContainer mirrors the store: newest first, bounds inclusive, at the second.
+func (m *svcStore) ListTransitionsByContainer(_ context.Context, containerID string, opts ListTransitionsOpts) ([]*StateTransition, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []*StateTransition
-	for _, t := range m.transitions {
-		if t.ContainerID == containerID {
-			clone := *t
-			result = append(result, &clone)
+	for i := len(m.transitions) - 1; i >= 0; i-- {
+		t := m.transitions[i]
+		if t.ContainerID != containerID {
+			continue
 		}
+		if opts.Since != nil && t.Timestamp.Unix() < opts.Since.Unix() {
+			continue
+		}
+		if opts.Until != nil && t.Timestamp.Unix() > opts.Until.Unix() {
+			continue
+		}
+		clone := *t
+		result = append(result, &clone)
 	}
-	return result, len(result), nil
+	sort.SliceStable(result, func(i, j int) bool { return result[i].Timestamp.Unix() > result[j].Timestamp.Unix() })
+	total := len(result)
+	if opts.Offset > 0 {
+		result = result[min(opts.Offset, len(result)):]
+	}
+	if opts.Limit > 0 && len(result) > opts.Limit {
+		result = result[:opts.Limit]
+	}
+	return result, total, nil
 }
 
 func (m *svcStore) CountRestartsSince(_ context.Context, _ string, _ time.Time) (int, error) {

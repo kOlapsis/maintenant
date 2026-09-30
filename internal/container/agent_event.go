@@ -67,6 +67,29 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return s.insertAgentContainer(ctx, agentID, ev, meta)
 	}
 
+	if !meta.Replayed {
+		if err := s.refreshAgentContainer(ctx, c, ev); err != nil {
+			return err
+		}
+	}
+
+	if hs := ev.GetHealthStatus(); hs != "" && (meta.Replayed || c.HealthStatus == nil || string(*c.HealthStatus) != hs) {
+		h := base
+		h.Action = "health_status"
+		h.HealthStatus = hs
+		s.ProcessEvent(ctx, h)
+	}
+
+	if action := containerStateToAction(ev.GetState()); action != "" {
+		st := base
+		st.Action = action
+		st.ExitCode = ev.GetStatusMessage()
+		s.ProcessEvent(ctx, st)
+	}
+	return nil
+}
+
+func (s *Service) refreshAgentContainer(ctx context.Context, c *Container, ev *agentpb.ContainerEvent) error {
 	dirty := false
 	if img := ev.GetImage(); img != "" && img != c.Image {
 		c.Image = img
@@ -84,24 +107,11 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		c.ArchivedAt = nil
 		dirty = true
 	}
-	if dirty {
-		if err := s.store.UpdateContainer(ctx, c); err != nil {
-			return fmt.Errorf("agent event: update %s: %w", shortID(externalID), err)
-		}
+	if !dirty {
+		return nil
 	}
-
-	if hs := ev.GetHealthStatus(); hs != "" && (c.HealthStatus == nil || string(*c.HealthStatus) != hs) {
-		h := base
-		h.Action = "health_status"
-		h.HealthStatus = hs
-		s.ProcessEvent(ctx, h)
-	}
-
-	if action := containerStateToAction(ev.GetState()); action != "" {
-		st := base
-		st.Action = action
-		st.ExitCode = ev.GetStatusMessage()
-		s.ProcessEvent(ctx, st)
+	if err := s.store.UpdateContainer(ctx, c); err != nil {
+		return fmt.Errorf("agent event: update %s: %w", shortID(c.ExternalID), err)
 	}
 	return nil
 }
@@ -200,6 +210,13 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 	}
 	c.ID = id
 
+	// The fresh inventory precedes any replay, so a replayed container it did not carry is gone.
+	if meta.Replayed {
+		if err := s.store.ArchiveContainer(ctx, id, now); err != nil {
+			return fmt.Errorf("agent event: archive replayed %s: %w", shortID(externalID), err)
+		}
+	}
+
 	// Record an initial transition so uptime tracking has a starting point,
 	// skipping the no-op created→created case (mirrors Reconcile).
 	if state != StateCreated {
@@ -211,6 +228,12 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		}); err != nil {
 			s.logger.Error("agent event: initial transition", "container_id", id, "error", err)
 		}
+	}
+
+	if meta.Replayed {
+		s.logger.Debug("agent event: replayed container no longer reported, kept as history",
+			"external_id", shortID(externalID), "agent_id", agentID)
+		return nil
 	}
 
 	s.logger.Info("agent event: container discovered",

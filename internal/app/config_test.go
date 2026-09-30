@@ -89,6 +89,23 @@ func TestConfigValidateHTTP_MCP(t *testing.T) {
 	})
 }
 
+func TestConfigValidateGRPCTLS(t *testing.T) {
+	pair := func(cert, key string) Config {
+		return Config{MultiHost: MultiHostConfig{TLSCertFile: cert, TLSKeyFile: key}}
+	}
+
+	assert.NoError(t, pair("", "").ValidateGRPCTLS(), "no keypair falls back to the documented dev certificate")
+	assert.NoError(t, pair("/tls/cert.pem", "/tls/key.pem").ValidateGRPCTLS())
+
+	err := pair("/tls/cert.pem", "").ValidateGRPCTLS()
+	require.ErrorIs(t, err, ErrGRPCTLSPair)
+	assert.Contains(t, err.Error(), "MAINTENANT_GRPC_TLS_KEY is empty", "the message must name the missing variable")
+
+	err = pair("", "/tls/key.pem").ValidateGRPCTLS()
+	require.ErrorIs(t, err, ErrGRPCTLSPair)
+	assert.Contains(t, err.Error(), "MAINTENANT_GRPC_TLS_CERT is empty")
+}
+
 func TestConfigFromEnv_MCPAllowUnauthenticated(t *testing.T) {
 	t.Run("absent by default", func(t *testing.T) {
 		assert.False(t, ConfigFromEnv().MCP.AllowUnauthenticated)

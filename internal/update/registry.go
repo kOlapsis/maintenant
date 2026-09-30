@@ -6,6 +6,7 @@ package update
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"runtime"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -13,19 +14,24 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 // RegistryClient wraps go-containerregistry for read-only registry operations.
-type RegistryClient struct{}
+type RegistryClient struct {
+	transport http.RoundTripper
+}
 
 // NewRegistryClient creates a new registry client.
 func NewRegistryClient() *RegistryClient {
-	return &RegistryClient{}
+	return &RegistryClient{transport: trust.HTTPTransport()}
 }
 
-func remoteOptions() []remote.Option {
+func (rc *RegistryClient) remoteOptions() []remote.Option {
 	return []remote.Option{
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithTransport(rc.transport),
 	}
 }
 
@@ -35,7 +41,7 @@ func (rc *RegistryClient) ListTags(ctx context.Context, imageRef string) ([]stri
 	if err != nil {
 		return nil, fmt.Errorf("parse repository %q: %w", imageRef, err)
 	}
-	tags, err := remote.List(repo, remoteOptions()...)
+	tags, err := remote.List(repo, rc.remoteOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", imageRef, err)
 	}
@@ -49,7 +55,7 @@ func (rc *RegistryClient) GetDigest(ctx context.Context, imageRef string) (strin
 	if err != nil {
 		return "", fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, remoteOptions()...)
+	desc, err := remote.Get(ref, rc.remoteOptions()...)
 	if err != nil {
 		return "", fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}
@@ -73,7 +79,7 @@ func (rc *RegistryClient) GetManifest(ctx context.Context, imageRef string) (*re
 	if err != nil {
 		return nil, fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, remoteOptions()...)
+	desc, err := remote.Get(ref, rc.remoteOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}
@@ -86,7 +92,7 @@ func (rc *RegistryClient) GetConfigLabels(ctx context.Context, imageRef string) 
 	if err != nil {
 		return nil, fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, remoteOptions()...)
+	desc, err := remote.Get(ref, rc.remoteOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}

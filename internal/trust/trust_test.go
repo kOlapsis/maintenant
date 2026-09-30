@@ -7,10 +7,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -109,6 +112,25 @@ func TestLoad_UnreadableFileIsAnError(t *testing.T) {
 
 	require.Error(t, err, "an unreadable bundle is the exact case SSL_CERT_FILE swallows")
 	assert.Nil(t, Pool())
+}
+
+func TestHTTPTransport_TrustsTheLoadedCA(t *testing.T) {
+	resetPool(t)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+
+	_, err := (&http.Client{Transport: HTTPTransport()}).Get(srv.URL)
+	require.Error(t, err, "without the bundle the test authority is unknown")
+
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	require.NoError(t, os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600))
+	require.NoError(t, Load(path))
+
+	resp, err := (&http.Client{Transport: HTTPTransport()}).Get(srv.URL)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Same(t, Pool(), ClientTLSConfig().RootCAs)
+	assert.Equal(t, uint16(tls.VersionTLS12), ClientTLSConfig().MinVersion)
 }
 
 func TestLoad_NonCertificateContentIsAnError(t *testing.T) {

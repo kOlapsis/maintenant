@@ -13,11 +13,20 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/trust/trusttest"
 )
 
 func fixtureServer(t *testing.T, override map[string]http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(fixtureHandler(t, override))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func fixtureHandler(t *testing.T, override map[string]http.HandlerFunc) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
 		product := path.Base(r.URL.Path)
 		if handler, ok := override[product]; ok {
 			handler(w, r)
@@ -33,9 +42,18 @@ func fixtureServer(t *testing.T, override map[string]http.HandlerFunc) *httptest
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
-	}))
+	}
+}
+
+func TestFetch_DefaultClientTrustsTheConfiguredCA(t *testing.T) {
+	server := httptest.NewTLSServer(fixtureHandler(t, nil))
 	t.Cleanup(server.Close)
-	return server
+	trusttest.Trust(t, server.Certificate())
+
+	fetcher := &Fetcher{BaseURL: server.URL}
+	if _, err := fetcher.Fetch(context.Background()); err != nil {
+		t.Fatalf("a mirror behind MAINTENANT_CA_CERT must be trusted: %v", err)
+	}
 }
 
 func TestFetch(t *testing.T) {

@@ -6,12 +6,13 @@ package channels
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/smtp"
 	"strings"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 const smtpTimeout = 30 * time.Second
@@ -62,7 +63,8 @@ func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) err
 	}(c)
 
 	// STARTTLS best-effort: some servers don't support it, so continue in plaintext on error.
-	tlsCfg := &tls.Config{ServerName: s.cfg.Host, MinVersion: tls.VersionTLS12}
+	tlsCfg := trust.ClientTLSConfig()
+	tlsCfg.ServerName = s.cfg.Host
 	_ = c.StartTLS(tlsCfg)
 
 	// AUTH PLAIN if credentials are configured

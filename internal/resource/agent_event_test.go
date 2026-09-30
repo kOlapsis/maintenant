@@ -130,3 +130,33 @@ func TestHandleAgentEvent_ReplayedSampleKeepsObservationTime(t *testing.T) {
 	assert.True(t, rstore.snapshots[0].Replayed)
 	assert.False(t, callbackInvoked, "a replayed sample must not feed the threshold pipeline")
 }
+
+func TestHandleAgentEvent_ReplayedSamplesNeitherAlertNorMoveBreachCounters(t *testing.T) {
+	extID := "replay0123456789"
+	wantID := uid.Container(uid.Agent("agent-r"), extID)
+	c := &container.Container{ID: wantID, ExternalID: extID, AgentID: "agent-r", Name: "demo"}
+
+	rstore := newMockResourceStore()
+	live := baseConfig(wantID)
+	live.CPUConsecutiveBreaches = 1
+	rstore.alertConfigs[wantID] = live
+
+	var events []string
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore(c)), func(typ string, _ interface{}) {
+		events = append(events, typ)
+	})
+
+	observed := time.Now().Add(-30 * time.Minute)
+	for i, eventID := range []string{"evt-1", "evt-2", "evt-3"} {
+		require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-r", &agentpb.ResourceSample{
+			ContainerId: extID, CpuPercent: 95, MemoryBytes: 95, MemoryLimitBytes: 100,
+		}, agentevent.Meta{ObservedAt: observed.Add(time.Duration(i) * 10 * time.Second), Replayed: true, EventID: eventID}))
+	}
+
+	require.Len(t, rstore.snapshots, 3, "replayed samples still feed the history")
+	assert.Empty(t, events, "a replayed sample must neither alert nor reach the live stream")
+	cfg := storedConfig(t, rstore, wantID)
+	assert.Equal(t, AlertStateNormal, cfg.AlertState, "a replayed breach must not open an alert")
+	assert.Equal(t, 1, cfg.CPUConsecutiveBreaches, "the breach counters belong to live samples")
+	assert.Equal(t, 0, cfg.MemConsecutiveBreaches)
+}

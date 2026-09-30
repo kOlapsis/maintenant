@@ -364,7 +364,7 @@ func init() {
 		{
 			EnvName: "MAINTENANT_ENROLLMENT_TOKEN", FlagName: "enrollment-token",
 			Type: FlagTypeString, Default: "", Sensitive: true,
-			Description: "Enrollment token (agent mode, first boot)",
+			Description: "Enrollment token (agent mode: first boot, or a new enrollment when the server refuses the stored identity)",
 			ApplyTo:     func(c *Config, v string) error { c.MultiHost.EnrollmentToken = v; return nil },
 		},
 		{

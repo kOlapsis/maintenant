@@ -13,6 +13,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kolapsis/maintenant/internal/trust"
+	"github.com/kolapsis/maintenant/internal/trust/trusttest"
 )
 
 func TestIsBlocked(t *testing.T) {
@@ -85,4 +88,24 @@ func TestNewHTTPClient_BlocksLoopbackAtDial(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestNewHTTPClient_TrustsTheConfiguredCAWithoutOpeningPrivateRanges(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	trusttest.Trust(t, srv.Certificate())
+
+	resp, err := NewHTTPClient(2*time.Second, true).Get(srv.URL)
+	require.NoError(t, err, "a webhook endpoint signed by MAINTENANT_CA_CERT must be trusted")
+	_ = resp.Body.Close()
+
+	guarded := NewHTTPClient(2*time.Second, false)
+	_, err = guarded.Get(srv.URL)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ssrf guard", "trusting a CA must not lift the private-range guard")
+	transport, ok := guarded.Transport.(*http.Transport)
+	require.True(t, ok)
+	assert.Same(t, trust.Pool(), transport.TLSClientConfig.RootCAs, "the guarded client verifies against the same roots")
 }

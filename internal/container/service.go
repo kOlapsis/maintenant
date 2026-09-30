@@ -170,6 +170,26 @@ func (s *Service) lookup(ctx context.Context, evt ContainerEvent) (*Container, e
 	return s.store.GetContainerByExternalID(ctx, uid.Agent(evt.AgentID), evt.ExternalID)
 }
 
+const replayTimelineDepth = 50
+
+// timelineAt returns the state and health the timeline holds for c at ts, falling back to c's current values where it holds none.
+func (s *Service) timelineAt(ctx context.Context, c *Container, ts time.Time) (ContainerState, *HealthStatus, error) {
+	transitions, _, err := s.store.ListTransitionsByContainer(ctx, c.ID, ListTransitionsOpts{Until: &ts, Limit: replayTimelineDepth})
+	if err != nil {
+		return "", nil, err
+	}
+	state := c.State
+	if len(transitions) > 0 {
+		state = transitions[0].NewState
+	}
+	for _, t := range transitions {
+		if t.NewHealth != nil {
+			return state, t.NewHealth, nil
+		}
+	}
+	return state, c.HealthStatus, nil
+}
+
 func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, newState ContainerState) {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
@@ -190,21 +210,30 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	}
 
 	previousState := c.State
+	if evt.Replayed {
+		previousState, _, err = s.timelineAt(ctx, c, evt.Timestamp)
+		if err != nil {
+			s.logger.Error("read timeline for replayed state change", "container_id", c.ID, "error", err)
+			return
+		}
+	}
 
 	if previousState == newState {
 		s.logger.Debug("container: state unchanged, skipping", "container_id", c.ID, "state", string(previousState))
 		return
 	}
 
-	c.State = newState
-	c.LastStateChangeAt = evt.Timestamp
+	if !evt.Replayed {
+		c.State = newState
+		c.LastStateChangeAt = evt.Timestamp
 
-	if err := s.store.UpdateContainer(ctx, c); err != nil {
-		s.logger.Error("update container state", "id", c.ID, "error", err)
-		return
+		if err := s.store.UpdateContainer(ctx, c); err != nil {
+			s.logger.Error("update container state", "id", c.ID, "error", err)
+			return
+		}
+
+		s.logger.Info("container: state changed", "container_id", c.ID, "name", c.Name, "previous_state", string(previousState), "new_state", string(newState))
 	}
-
-	s.logger.Info("container: state changed", "container_id", c.ID, "name", c.Name, "previous_state", string(previousState), "new_state", string(newState))
 
 	// Record transition
 	transition := &StateTransition{
@@ -236,6 +265,10 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		s.logger.Error("insert transition", "container_id", c.ID, "error", err)
 	}
 
+	if evt.Replayed {
+		return
+	}
+
 	// Check restart threshold (T030)
 	// Trigger on any transition back to running from a crash state.
 	// Docker emits die→start (exited→running) during crash-loops; the
@@ -244,27 +277,20 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		result, err := s.restartChecker.Check(ctx, c)
 		if err != nil {
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
-		} else if !evt.Replayed {
-			if result != nil {
-				s.trackRestartAlert(c.ID)
-				s.emitEvent(event.ContainerRestartAlert, result)
-			} else {
-				// Count is below threshold — emit recovery so the alert engine
-				// can resolve any previously active restart_loop alert.
-				s.untrackRestartAlert(c.ID)
-				s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
-					"container_id":   c.ID,
-					"container_name": c.Name,
-					"timestamp":      evt.Timestamp,
-					"agent_id":       c.AgentID,
-				})
-			}
+		} else if result != nil {
+			s.trackRestartAlert(c.ID)
+			s.emitEvent(event.ContainerRestartAlert, result)
+		} else {
+			// Count is below threshold: emit recovery so the alert engine
+			// can resolve any previously active restart_loop alert.
+			s.untrackRestartAlert(c.ID)
+			s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
+				"container_id":   c.ID,
+				"container_name": c.Name,
+				"timestamp":      evt.Timestamp,
+				"agent_id":       c.AgentID,
+			})
 		}
-	}
-
-	// Replay stays silent, but the state and the transition above are already written.
-	if evt.Replayed {
-		return
 	}
 
 	s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
@@ -314,28 +340,45 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		return
 	}
 
-	previousHealth := c.HealthStatus
+	state, previousHealth := c.State, c.HealthStatus
 	newHealth := HealthStatus(evt.HealthStatus)
-	s.logger.Debug("container: health changed", "container_id", c.ID, "name", c.Name, "previous_health", previousHealth, "new_health", string(newHealth))
-	c.HealthStatus = &newHealth
-	c.LastStateChangeAt = evt.Timestamp
+	if evt.Replayed {
+		state, previousHealth, err = s.timelineAt(ctx, c, evt.Timestamp)
+		if err != nil {
+			s.logger.Error("read timeline for replayed health change", "container_id", c.ID, "error", err)
+			return
+		}
+		if previousHealth != nil && *previousHealth == newHealth {
+			return
+		}
+	}
+	s.logger.Debug("container: health changed", "container_id", c.ID, "name", c.Name, "previous_health", previousHealth, "new_health", string(newHealth), "replayed", evt.Replayed)
 
-	if err := s.store.UpdateContainer(ctx, c); err != nil {
-		s.logger.Error("update container health", "id", c.ID, "error", err)
-		return
+	if !evt.Replayed {
+		c.HealthStatus = &newHealth
+		c.LastStateChangeAt = evt.Timestamp
+
+		if err := s.store.UpdateContainer(ctx, c); err != nil {
+			s.logger.Error("update container health", "id", c.ID, "error", err)
+			return
+		}
 	}
 
 	transition := &StateTransition{
 		ID:             evt.recordID("health_transition"),
 		ContainerID:    c.ID,
-		PreviousState:  c.State,
-		NewState:       c.State,
+		PreviousState:  state,
+		NewState:       state,
 		PreviousHealth: previousHealth,
 		NewHealth:      &newHealth,
 		Timestamp:      evt.Timestamp,
 	}
 	if _, err := s.store.InsertTransition(ctx, transition); err != nil {
 		s.logger.Error("insert health transition", "container_id", c.ID, "error", err)
+	}
+
+	if evt.Replayed {
+		return
 	}
 
 	s.emitEvent(event.ContainerHealthChanged, map[string]interface{}{

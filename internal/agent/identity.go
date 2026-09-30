@@ -41,16 +41,9 @@ func LoadOrCreate(dataDir string) (*Identity, error) {
 		return nil, fmt.Errorf("read identity file: %w", err)
 	}
 
-	// Generate new keypair
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	id, err := newIdentity()
 	if err != nil {
-		return nil, fmt.Errorf("generate ed25519 key: %w", err)
-	}
-
-	id := &Identity{
-		AgentID:    generateAgentID(),
-		PublicKey:  []byte(pub),
-		PrivateKey: []byte(priv),
+		return nil, err
 	}
 
 	encoded, err := json.Marshal(id) // #nosec G117 -- agent identity file persists its own Ed25519 private key by design
@@ -74,6 +67,19 @@ func LoadOrCreate(dataDir string) (*Identity, error) {
 	}
 
 	return id, nil
+}
+
+// newIdentity generates an unregistered identity without persisting it.
+func newIdentity() (*Identity, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generate ed25519 key: %w", err)
+	}
+	return &Identity{
+		AgentID:    generateAgentID(),
+		PublicKey:  []byte(pub),
+		PrivateKey: []byte(priv),
+	}, nil
 }
 
 // Save persists updated identity fields (e.g. Registered) back to disk with mode 0600.

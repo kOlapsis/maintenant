@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/trust"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -30,7 +31,7 @@ type ChangelogResolver struct {
 func NewChangelogResolver(registry *update.RegistryClient, logger *slog.Logger) *ChangelogResolver {
 	return &ChangelogResolver{
 		registry: registry,
-		client:   &http.Client{Timeout: 15 * time.Second},
+		client:   &http.Client{Timeout: 15 * time.Second, Transport: trust.HTTPTransport()},
 		logger:   logger,
 		token:    os.Getenv("GITHUB_TOKEN"),
 	}

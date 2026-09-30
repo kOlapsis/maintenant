@@ -286,6 +286,20 @@ func (c Config) ValidateHTTP() error {
 	return nil
 }
 
+// ErrGRPCTLSPair refuses half a keypair for the agent gRPC listener.
+var ErrGRPCTLSPair = errors.New("agent gRPC TLS needs both a certificate and its key")
+
+// ValidateGRPCTLS refuses a certificate without its key, or the reverse, rather than serving a self-signed certificate in their place.
+func (c Config) ValidateGRPCTLS() error {
+	switch {
+	case c.MultiHost.TLSCertFile != "" && c.MultiHost.TLSKeyFile == "":
+		return fmt.Errorf("%w: MAINTENANT_GRPC_TLS_CERT is set but MAINTENANT_GRPC_TLS_KEY is empty", ErrGRPCTLSPair)
+	case c.MultiHost.TLSKeyFile != "" && c.MultiHost.TLSCertFile == "":
+		return fmt.Errorf("%w: MAINTENANT_GRPC_TLS_KEY is set but MAINTENANT_GRPC_TLS_CERT is empty", ErrGRPCTLSPair)
+	}
+	return nil
+}
+
 // ErrDemoRuntime is returned when a demo build is pointed at anything but a remote Docker endpoint.
 var ErrDemoRuntime = errors.New("demo mode only monitors a remote Docker endpoint: set DOCKER_HOST=tcp://host:port, and leave KUBERNETES_SERVICE_HOST and KUBECONFIG unset")
 

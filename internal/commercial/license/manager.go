@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 const (
@@ -74,7 +75,7 @@ func NewManager(licenseKey, dataDir, version, buildDate string, logger *slog.Log
 		version:    version,
 		logger:     logger.With("component", "license"),
 		publicKey:  pubKey,
-		client:     &http.Client{Timeout: 10 * time.Second},
+		client:     &http.Client{Timeout: 10 * time.Second, Transport: trust.HTTPTransport()},
 		stop:       make(chan struct{}),
 	}
 
