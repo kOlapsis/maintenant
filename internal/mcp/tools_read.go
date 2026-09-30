@@ -43,7 +43,7 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_alerts",
-		Description: "List alerts. By default returns only active (unresolved) alerts. Set active_only to false to also return recent resolved and silenced alerts (last 100).",
+		Description: "List alerts. By default returns only active (unresolved) alerts that are not yet acknowledged. Set active_only to false to return the last 100 alerts instead, acknowledged, resolved and silenced ones included.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAlertsHandler(svc))
 
@@ -231,17 +231,18 @@ func listAlertsHandler(svc *Services) gomcp.ToolHandlerFor[listAlertsInput, any]
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listAlertsInput) (*gomcp.CallToolResult, any, error) {
 		// Default (nil) and explicit true both mean active only.
 		if input.ActiveOnly == nil || *input.ActiveOnly {
-			alerts, err := svc.Alerts.ListActiveAlerts(ctx)
+			alerts, err := svc.Alerts.ListUnacknowledgedActiveAlerts(ctx)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to list active alerts: %w", err)
 			}
 			return jsonResult(alerts)
 		}
-		alerts, err := svc.Alerts.ListAlerts(ctx, alert.ListAlertsOpts{Limit: 100})
+		const recent = 100
+		alerts, err := svc.Alerts.ListAlerts(ctx, alert.ListAlertsOpts{Limit: recent})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list alerts: %w", err)
 		}
-		return jsonResult(alerts)
+		return jsonResult(alerts[:min(len(alerts), recent)])
 	}
 }
 

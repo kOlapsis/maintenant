@@ -81,7 +81,7 @@ type HandlerDeps struct {
 	TriggerStore alert.TriggerStore
 	SilenceStore alert.SilenceStore
 	Notifier     *alert.Notifier
-	Escalator    alert.Escalator
+	Acknowledger alert.Acknowledger
 
 	// Status page admin
 	StatusComponents   status.ComponentStore
@@ -323,7 +323,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Alert engine endpoints
 	if d.AlertStore != nil {
-		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks, d.Escalator)
+		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks, d.Acknowledger)
 		// Alert history
 		r.mux.HandleFunc("GET /api/v1/alerts", ah.HandleListAlerts)
 		r.mux.HandleFunc("GET /api/v1/alerts/active", ah.HandleGetActiveAlerts)
@@ -653,7 +653,7 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 	if d.Scorer == nil {
 		return
 	}
-	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore, d.AlertStore, d.SecuritySvc, d.Broker)
+	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore, d.AlertStore, d.Acknowledger, d.SecuritySvc)
 
 	// Posture endpoints
 	r.mux.HandleFunc("GET /api/v1/security/posture", requireCapability(extension.CapSecurityPosture, ph.HandleGetPosture))

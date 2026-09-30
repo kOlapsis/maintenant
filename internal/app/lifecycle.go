@@ -424,7 +424,7 @@ func (a *App) startRetentionCleanup(ctx context.Context) {
 				return
 			case <-ticker.C:
 				before := time.Now().Add(-90 * 24 * time.Hour)
-				deleted, err := a.alertStore.DeleteAlertsOlderThan(ctx, before)
+				deleted, err := a.alertStore.DeleteInactiveAlertsOlderThan(ctx, before)
 				if err != nil {
 					a.logger.Error("alert retention cleanup failed", "error", err)
 				} else if deleted > 0 {

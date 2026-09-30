@@ -6,6 +6,7 @@ package alert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -98,11 +99,6 @@ func NewEngine(d EngineDeps) *Engine {
 // SetEscalator sets the escalation extension.
 func (e *Engine) SetEscalator(esc Escalator) {
 	e.escalator = esc
-}
-
-// Escalator returns the current escalator implementation.
-func (e *Engine) Escalator() Escalator {
-	return e.escalator
 }
 
 // SetEntityRouter sets the entity routing extension.
@@ -360,6 +356,11 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
 		return
 	}
+	if stored, err := e.alertStore.GetAlert(ctx, existing.ID); err != nil {
+		e.logger.Error("alert engine: reload escalated alert", "error", err, "alert_id", existing.ID)
+	} else if stored != nil {
+		existing.AcknowledgedAt, existing.AcknowledgedBy = stored.AcknowledgedAt, stored.AcknowledgedBy
+	}
 
 	e.mu.Lock()
 	key := activeAlertKey{
@@ -384,13 +385,56 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 	// Re-evaluate escalation policies: a higher severity may match policies
 	// that did not at the previous level. The escalator dedupes per
 	// (alert, policy) so existing runs continue untouched.
-	if err := e.escalator.OnAlertCreated(ctx, existing); err != nil {
-		e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", existing.ID)
+	if existing.AcknowledgedAt == nil {
+		if err := e.escalator.OnAlertCreated(ctx, existing); err != nil {
+			e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", existing.ID)
+		}
 	}
 
 	if e.notifier != nil {
-		e.dispatchNotifications(ctx, existing, existing)
+		payload := *existing
+		payload.Message = fmt.Sprintf("Severity raised from %s to %s: %s", oldSeverity, existing.Severity, existing.Message)
+		e.dispatchNotifications(ctx, existing, &payload)
 	}
+}
+
+// ErrAlertNotFound reports an alert id that names no alert.
+var ErrAlertNotFound = errors.New("alert not found")
+
+// ErrNotAcknowledgeable reports an alert that is not active or is already acknowledged.
+var ErrNotAcknowledgeable = errors.New("alert is not active or already acknowledged")
+
+// Acknowledge records who acknowledged an active alert, broadcasts it and stops its escalation.
+func (e *Engine) Acknowledge(ctx context.Context, id, by string) (*Alert, error) {
+	a, err := e.alertStore.GetAlert(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if a == nil {
+		return nil, ErrAlertNotFound
+	}
+	if a.Status != StatusActive || a.AcknowledgedAt != nil {
+		return nil, ErrNotAcknowledgeable
+	}
+
+	at := time.Now().UTC().Truncate(time.Second)
+	acknowledged, err := e.alertStore.AcknowledgeAlert(ctx, id, by, at)
+	if err != nil {
+		return nil, err
+	}
+	if !acknowledged {
+		return nil, ErrNotAcknowledgeable
+	}
+	a.AcknowledgedAt = &at
+	a.AcknowledgedBy = by
+
+	if e.broadcaster != nil {
+		e.broadcaster.Broadcast(event.AlertAcknowledged, a)
+	}
+	if err := e.escalator.OnAlertAcknowledged(ctx, id, Acknowledgment{By: by, At: at}); err != nil {
+		e.logger.ErrorContext(ctx, "alert engine: OnAlertAcknowledged hook error", "error", err, "alert_id", id)
+	}
+	return a, nil
 }
 
 // severityRank returns a numeric rank for severity comparison (higher = more severe).

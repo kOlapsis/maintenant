@@ -87,13 +87,7 @@ type resumeMonitorInput struct {
 	MonitorID   string `json:"monitor_id" jsonschema:"Monitor ID to resume"`
 }
 
-// checkCapability gates a tool behind the capability registry, exactly as the
-// REST requireCapability middleware does — same table, same names, so a
-// capability resolves identically whichever surface asks. The refusal names the
-// edition required; it does not advertise.
-// refuseHistoryWindow is the checkCapability of a history window: same shape of
-// answer, but the thing refused is a duration, not a flag. This surface has no
-// interface in front of it, which is exactly why the cap has to live here too.
+// refuseHistoryWindow refuses a history window beyond the running edition's cap, in the shape of checkCapability.
 func refuseHistoryWindow(w extension.HistoryWindow, required extension.Edition) (*gomcp.CallToolResult, any, error) {
 	msg := fmt.Sprintf(
 		`{"error":"edition_required","feature":%q,"window":%q,"max_window":%q,"required_edition":%q,"message":"The %s window requires the %s edition of Maintenant."}`,
@@ -106,6 +100,7 @@ func refuseHistoryWindow(w extension.HistoryWindow, required extension.Edition) 
 	}, nil, nil
 }
 
+// checkCapability refuses a tool the running edition does not open, as the REST requireCapability middleware does.
 func checkCapability(c extension.Capability) (*gomcp.CallToolResult, any, error) {
 	if extension.Allows(c) {
 		return nil, nil, nil
@@ -153,40 +148,28 @@ func acknowledgeAlertHandler(svc *Services) gomcp.ToolHandlerFor[acknowledgeAler
 		if input.AlertID == "" {
 			return errResult("invalid input: alert_id is required")
 		}
-		if svc.Alerts == nil {
+		if svc.Acknowledger == nil {
 			return errResult("alert store not available")
-		}
-		a, err := svc.Alerts.GetAlert(ctx, input.AlertID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get alert: %w", err)
-		}
-		if a == nil {
-			return errResult("not found: alert does not exist")
-		}
-		if a.Status != alert.StatusActive || a.AcknowledgedAt != nil {
-			return errResult("conflict: alert is not active or already acknowledged")
 		}
 
 		by := input.AcknowledgedBy
 		if by == "" {
 			by = "mcp"
 		}
-		now := time.Now().UTC()
-		if err := svc.Alerts.AcknowledgeAlert(ctx, input.AlertID, by, now); err != nil {
+		a, err := svc.Acknowledger.Acknowledge(ctx, input.AlertID, by)
+		switch {
+		case errors.Is(err, alert.ErrAlertNotFound):
+			return errResult("not found: alert does not exist")
+		case errors.Is(err, alert.ErrNotAcknowledgeable):
+			return errResult("conflict: alert is not active or already acknowledged")
+		case err != nil:
 			return nil, nil, fmt.Errorf("failed to acknowledge alert: %w", err)
-		}
-
-		// Best-effort: stop the escalation runs of this alert.
-		if svc.Escalator != nil {
-			if err := svc.Escalator.OnAlertAcknowledged(ctx, input.AlertID, alert.Acknowledgment{By: by, At: now}); err != nil && svc.Logger != nil {
-				svc.Logger.Warn("mcp: OnAlertAcknowledged hook error", "error", err, "alert_id", input.AlertID)
-			}
 		}
 
 		return jsonResult(map[string]any{
 			"success":         true,
 			"message":         fmt.Sprintf("Alert '%s' acknowledged by %s", input.AlertID, by),
-			"acknowledged_at": now.Format(time.RFC3339),
+			"acknowledged_at": a.AcknowledgedAt.UTC().Format(time.RFC3339),
 			"acknowledged_by": by,
 		})
 	}

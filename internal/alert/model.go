@@ -159,6 +159,7 @@ type ListAlertsOpts struct {
 	Severity string
 	Status   string
 	Before   *time.Time
+	BeforeID string
 	Limit    int
 }
 
@@ -182,6 +183,11 @@ type EntityRouter interface {
 	Route(ctx context.Context, entityType string, entityID string, severity string) ([]string, error)
 }
 
+// Acknowledger acknowledges an alert on behalf of every surface that offers it.
+type Acknowledger interface {
+	Acknowledge(ctx context.Context, id, by string) (*Alert, error)
+}
+
 // MaintenanceSuppressor checks if an alert should be suppressed during a maintenance window.
 type MaintenanceSuppressor interface {
 	IsSuppressed(ctx context.Context, source string, entityType string, entityID string) (bool, error)
@@ -199,8 +205,8 @@ type AlertStore interface {
 	UpdateAlertOnEscalation(ctx context.Context, id, severity, message, entityName, details string) error
 	GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID string) (*Alert, error)
 	ListActiveAlerts(ctx context.Context) ([]*Alert, error)
-	DeleteAlertsOlderThan(ctx context.Context, before time.Time) (int64, error)
-	AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) error
+	DeleteInactiveAlertsOlderThan(ctx context.Context, before time.Time) (int64, error)
+	AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) (bool, error)
 	SetEscalatedAt(ctx context.Context, id string, at time.Time) error
 	ListUnacknowledgedActiveAlerts(ctx context.Context) ([]*Alert, error)
 }

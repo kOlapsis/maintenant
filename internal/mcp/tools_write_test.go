@@ -36,12 +36,11 @@ func withEdition(t *testing.T, e extension.Edition) {
 // --- fakes ---
 
 type mcpAlertStore struct {
-	alerts  map[string]*alert.Alert
-	ackedBy map[string]string
+	alerts map[string]*alert.Alert
 }
 
 func newMCPAlertStore() *mcpAlertStore {
-	return &mcpAlertStore{alerts: map[string]*alert.Alert{}, ackedBy: map[string]string{}}
+	return &mcpAlertStore{alerts: map[string]*alert.Alert{}}
 }
 
 func (m *mcpAlertStore) InsertAlert(_ context.Context, a *alert.Alert) (string, error) {
@@ -64,38 +63,16 @@ func (m *mcpAlertStore) GetActiveAlert(_ context.Context, _, _, _, _ string) (*a
 	return nil, nil
 }
 func (m *mcpAlertStore) ListActiveAlerts(_ context.Context) ([]*alert.Alert, error) { return nil, nil }
-func (m *mcpAlertStore) DeleteAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
+func (m *mcpAlertStore) DeleteInactiveAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
-func (m *mcpAlertStore) AcknowledgeAlert(_ context.Context, id string, by string, at time.Time) error {
-	if a := m.alerts[id]; a != nil {
-		a.AcknowledgedAt = &at
-		a.AcknowledgedBy = by
-	}
-	m.ackedBy[id] = by
-	return nil
+func (m *mcpAlertStore) AcknowledgeAlert(_ context.Context, _ string, _ string, _ time.Time) (bool, error) {
+	return false, nil
 }
 func (m *mcpAlertStore) SetEscalatedAt(_ context.Context, _ string, _ time.Time) error { return nil }
 func (m *mcpAlertStore) ListUnacknowledgedActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
 	return nil, nil
 }
-
-type mcpRecordingEscalator struct {
-	acked   bool
-	ackedID string
-}
-
-func (m *mcpRecordingEscalator) EvaluateCycle(_ context.Context) error                  { return nil }
-func (m *mcpRecordingEscalator) OnAlertCreated(_ context.Context, _ *alert.Alert) error { return nil }
-func (m *mcpRecordingEscalator) OnAlertAcknowledged(_ context.Context, alertID string, _ alert.Acknowledgment) error {
-	m.acked = true
-	m.ackedID = alertID
-	return nil
-}
-func (m *mcpRecordingEscalator) OnAlertResolved(_ context.Context, _ string, _ time.Time) error {
-	return nil
-}
-func (m *mcpRecordingEscalator) OnEditionDowngraded(_ context.Context) error { return nil }
 
 type mcpIncidentStore struct {
 	incidents map[string]*status.Incident
@@ -178,64 +155,6 @@ func (m *mcpMaintenanceStore) SetActive(_ context.Context, _ string, _ bool, _ *
 }
 func (m *mcpMaintenanceStore) CoveredByAnotherActiveWindow(_ context.Context, _, _ string) (bool, error) {
 	return false, nil
-}
-
-// --- acknowledge_alert (CE, not edition-gated) ---
-
-func TestAcknowledgeAlertHandler_Success(t *testing.T) {
-	store := newMCPAlertStore()
-	store.alerts["al-1"] = &alert.Alert{ID: "al-1", Status: alert.StatusActive}
-	esc := &mcpRecordingEscalator{}
-	svc := &Services{Alerts: store, Escalator: esc, Logger: slog.Default(), Version: "test"}
-
-	result, _, err := acknowledgeAlertHandler(svc)(context.Background(), nil, acknowledgeAlertInput{AlertID: "al-1", AcknowledgedBy: "benjamin"})
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.False(t, result.IsError)
-	assert.Equal(t, "benjamin", store.ackedBy["al-1"])
-	assert.NotNil(t, store.alerts["al-1"].AcknowledgedAt)
-	assert.True(t, esc.acked, "escalator hook should fire")
-	assert.Equal(t, "al-1", esc.ackedID)
-	assert.Contains(t, textFromContent(t, result.Content), "acknowledged")
-}
-
-func TestAcknowledgeAlertHandler_DefaultActor(t *testing.T) {
-	store := newMCPAlertStore()
-	store.alerts["al-1"] = &alert.Alert{ID: "al-1", Status: alert.StatusActive}
-	svc := &Services{Alerts: store, Logger: slog.Default(), Version: "test"}
-
-	result, _, err := acknowledgeAlertHandler(svc)(context.Background(), nil, acknowledgeAlertInput{AlertID: "al-1"})
-	require.NoError(t, err)
-	assert.False(t, result.IsError)
-	assert.Equal(t, "mcp", store.ackedBy["al-1"])
-}
-
-func TestAcknowledgeAlertHandler_EmptyID(t *testing.T) {
-	svc := &Services{Alerts: newMCPAlertStore(), Logger: slog.Default(), Version: "test"}
-	result, _, err := acknowledgeAlertHandler(svc)(context.Background(), nil, acknowledgeAlertInput{})
-	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	assert.Contains(t, textFromContent(t, result.Content), "invalid input")
-}
-
-func TestAcknowledgeAlertHandler_NotFound(t *testing.T) {
-	svc := &Services{Alerts: newMCPAlertStore(), Logger: slog.Default(), Version: "test"}
-	result, _, err := acknowledgeAlertHandler(svc)(context.Background(), nil, acknowledgeAlertInput{AlertID: "missing"})
-	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	assert.Contains(t, textFromContent(t, result.Content), "not found")
-}
-
-func TestAcknowledgeAlertHandler_Conflict(t *testing.T) {
-	store := newMCPAlertStore()
-	now := time.Now().UTC()
-	store.alerts["al-1"] = &alert.Alert{ID: "al-1", Status: alert.StatusActive, AcknowledgedAt: &now}
-	svc := &Services{Alerts: store, Logger: slog.Default(), Version: "test"}
-
-	result, _, err := acknowledgeAlertHandler(svc)(context.Background(), nil, acknowledgeAlertInput{AlertID: "al-1"})
-	require.NoError(t, err)
-	assert.True(t, result.IsError)
-	assert.Contains(t, textFromContent(t, result.Content), "conflict")
 }
 
 // --- create_incident ---

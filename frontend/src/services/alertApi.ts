@@ -31,6 +31,7 @@ export interface ListAlertsParams {
   severity?: string
   status?: string
   before?: string
+  before_id?: string
   limit?: number
 }
 
@@ -112,6 +113,7 @@ export function listAlerts(params?: ListAlertsParams): Promise<ListAlertsRespons
   if (params?.severity) url.searchParams.set('severity', params.severity)
   if (params?.status) url.searchParams.set('status', params.status)
   if (params?.before) url.searchParams.set('before', params.before)
+  if (params?.before_id) url.searchParams.set('before_id', params.before_id)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   return fetchJSON<ListAlertsResponse>(url.toString())
 }

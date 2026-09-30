@@ -347,13 +347,18 @@ func (m *alertStoreMock) GetActiveAlert(_ context.Context, _, _, _ string, _ str
 func (m *alertStoreMock) ListActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
 	return nil, nil
 }
-func (m *alertStoreMock) DeleteAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
+func (m *alertStoreMock) DeleteInactiveAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
-func (m *alertStoreMock) AcknowledgeAlert(_ context.Context, _ string, _ string, _ time.Time) error {
-	return nil
+func (m *alertStoreMock) AcknowledgeAlert(_ context.Context, _ string, _ string, _ time.Time) (bool, error) {
+	return false, nil
 }
-func (m *alertStoreMock) SetEscalatedAt(_ context.Context, _ string, _ time.Time) error {
+func (m *alertStoreMock) SetEscalatedAt(_ context.Context, id string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if a, ok := m.alerts[id]; ok {
+		a.EscalatedAt = &at
+	}
 	return nil
 }
 func (m *alertStoreMock) ListUnacknowledgedActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
@@ -676,6 +681,53 @@ func TestRunner_EvaluateCycle_ExhaustedAfterLastLevel(t *testing.T) {
 		}
 	}
 	assert.True(t, sawExhausted)
+}
+
+func TestRunner_EvaluateCycle_RecordsEscalatedAtOnEveryLevel(t *testing.T) {
+	h := newHarness(t)
+	h.channels.put(defaultChannel())
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(policyTwoLevels())
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+
+	h.advance(61 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	got, err := h.alerts.GetAlert(context.Background(), "1")
+	require.NoError(t, err)
+	require.NotNil(t, got.EscalatedAt, "the first level going out must stamp escalated_at")
+	assert.Equal(t, h.now, *got.EscalatedAt)
+
+	h.advance(120 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	got, err = h.alerts.GetAlert(context.Background(), "1")
+	require.NoError(t, err)
+	require.NotNil(t, got.EscalatedAt)
+	assert.Equal(t, h.now, *got.EscalatedAt, "escalated_at follows the latest level")
+	h.waitForDeliveries(t, 2)
+}
+
+func TestRunner_EvaluateCycle_StopsRunOfAcknowledgedAlert(t *testing.T) {
+	h := newHarness(t)
+	h.channels.put(defaultChannel())
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(policyTwoLevels())
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+
+	acked := *a
+	ackedAt := h.now
+	acked.AcknowledgedAt = &ackedAt
+	h.alerts.put(&acked)
+
+	h.advance(61 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+
+	runs := h.store.listRuns()
+	require.Len(t, runs, 1)
+	assert.Equal(t, esc.RunStatusStoppedByAck, runs[0].Status, "a run that outlived the acknowledgment must stop")
+	assert.Empty(t, h.store.listDeliveries(), "no level may go out for an acknowledged alert")
+	assert.Zero(t, h.sender.delivers.Load())
 }
 
 func TestRunner_OnAlertAcknowledged_StopsRunsAndDispatchesAck(t *testing.T) {

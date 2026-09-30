@@ -35,7 +35,7 @@ function applyFilters() {
 function loadMore() {
   const last = store.alerts[store.alerts.length - 1]
   if (!last) return
-  store.fetchAlerts({ ...buildParams(), before: last.fired_at })
+  store.fetchAlerts({ ...buildParams(), before: last.fired_at, before_id: last.id })
 }
 
 watch([sourceFilter, severityFilter, statusFilter], () => applyFilters())

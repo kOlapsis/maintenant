@@ -94,7 +94,7 @@ type escalationFiltersInput struct {
 }
 
 type escalationScopeInput struct {
-	Kind  string `json:"kind" jsonschema:"Scope kind: container, endpoint, heartbeat, certificate, monitor"`
+	Kind  string `json:"kind" jsonschema:"Scope kind: the entity_type of the alerts to match, such as container, endpoint, heartbeat, certificate, agent, swarm_service or workload"`
 	RefID string `json:"ref_id" jsonschema:"Referenced entity ID"`
 }
 

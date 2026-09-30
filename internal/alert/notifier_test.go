@@ -207,7 +207,7 @@ func TestProcessJob_UsesTheSendersRetryPolicy(t *testing.T) {
 	n.processJob(context.Background(), job)
 
 	assert.Equal(t, maxRetries, s.sends)
-	assert.Equal(t, retryBackoffs[:maxRetries-1], s.delays, "the sender is handed the product's backoff")
+	assert.Equal(t, retryBackoffs, s.delays, "the sender is handed every backoff of the product, and no other")
 	assert.Equal(t, DeliveryFailed, job.Delivery.Status)
 	assert.Equal(t, maxRetries, job.Delivery.Attempts)
 	assert.Equal(t, "fake: refused", job.Delivery.LastError)

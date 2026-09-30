@@ -598,7 +598,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		TriggerStore:  triggerStore,
 		SilenceStore:  silenceStore,
 		Notifier:      a.notifier,
-		Escalator:     a.alertEngine.Escalator(),
+		Acknowledger:  a.alertEngine,
 		EscalationSvc: a.escalationSvc,
 		// Status page admin
 		StatusComponents:   statusCompStore,
@@ -666,7 +666,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Alerts:            alertStore,
 		Channels:          channelStore,
 		Triggers:          triggerStore,
-		Escalator:         a.alertEngine.Escalator(),
+		Acknowledger:      a.alertEngine,
 		ChannelTester:     a.notifier,
 		ChannelValidators: a.notifier,
 		Updates:           a.updateSvc,

@@ -303,6 +303,9 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 	if a.Status != alert.StatusActive {
 		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByResolution, now)
 	}
+	if a.AcknowledgedAt != nil {
+		return r.store.TerminateRun(ctx, run.ID, esc.RunStatusStoppedByAck, now)
+	}
 
 	suppressed, sErr := r.suppressor.IsSuppressed(ctx, a.Source, a.EntityType, a.EntityID)
 	if sErr != nil {
@@ -344,6 +347,9 @@ func (r *Runner) processRun(ctx context.Context, run *esc.Run, now time.Time) er
 
 	level := policy.Levels[nextLevel]
 	r.executeLevel(ctx, run, nextLevel, level.ChannelIDs, a)
+	if err := r.alertStore.SetEscalatedAt(ctx, a.ID, now); err != nil {
+		r.logger.ErrorContext(ctx, "escalation: set escalated_at", "error", err, "alert_id", a.ID, "run_id", run.ID)
+	}
 
 	// Schedule the next tick. After the last level we still want the run to
 	// surface once more so the next cycle can dispatch the "exhausted" notif

@@ -25,11 +25,9 @@ const (
 	maxRetries            = 3
 )
 
-// Retry backoff durations: 1s, 5s, 25s.
 var retryBackoffs = []time.Duration{
 	1 * time.Second,
 	5 * time.Second,
-	25 * time.Second,
 }
 
 // NotificationJob represents a webhook delivery job.
