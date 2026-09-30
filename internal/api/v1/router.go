@@ -178,6 +178,7 @@ type Router struct {
 	storage          StorageStatus
 	containerHandler *ContainerHandler
 	corsOrigins      []string
+	crossOrigin      *http.CrossOriginProtection
 	maxBodySize      int64
 	buildVersion     string
 	organisationName string
@@ -192,13 +193,15 @@ func NewRouter(d HandlerDeps) *Router {
 		maxBody = 1048576 // 1 MB default
 	}
 
+	corsOrigins := parseCORSOrigins(d.CORSOrigins)
 	r := &Router{
 		mux:              http.NewServeMux(),
 		broker:           d.Broker,
 		logger:           d.Logger,
 		runtime:          d.Runtime,
 		storage:          d.Storage,
-		corsOrigins:      parseCORSOrigins(d.CORSOrigins),
+		corsOrigins:      corsOrigins,
+		crossOrigin:      newCrossOriginProtection(corsOrigins, d.Logger),
 		maxBodySize:      maxBody,
 		buildVersion:     d.BuildVersion,
 		organisationName: d.OrganisationName,
@@ -737,10 +740,11 @@ func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 }
 
 // Handler returns the HTTP handler with the full middleware chain applied.
-// Middleware order (outermost to innermost): panicRecovery → requestLogger → requestID → cors → bodyLimit → mux
+// Middleware order (outermost to innermost): panicRecovery → requestLogger → requestID → cors → crossOriginGuard → bodyLimit → mux
 func (r *Router) Handler() http.Handler {
 	var h http.Handler = r.mux
 	h = bodyLimit(r.maxBodySize, h)
+	h = crossOriginGuard(r.crossOrigin, h)
 	h = cors(r.corsOrigins, h)
 	h = requestID(h)
 	h = requestLogger(h, r.logger)

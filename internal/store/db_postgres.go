@@ -6,9 +6,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -46,13 +49,13 @@ func OpenPostgres(ctx context.Context, dsn string, logger *slog.Logger) (*DB, er
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
 		_ = db.Close()
-		return nil, classifyOpenError(err)
+		return nil, classifyOpenError(ctx, err)
 	}
 
 	var versionNum int
 	if err := db.QueryRowContext(ctx, "SHOW server_version_num").Scan(&versionNum); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("read server version: %w", classifyOpenError(err))
+		return nil, fmt.Errorf("read server version: %w", classifyOpenError(ctx, err))
 	}
 	if err := checkServerVersion(versionNum); err != nil {
 		_ = db.Close()
@@ -114,7 +117,7 @@ func checkServerVersion(versionNum int) error {
 // classifyOpenError maps a connection failure onto the startup sentinels so
 // the operator can tell refused credentials from an unreachable host. The
 // original error is kept in the chain; pgx never puts the password in it.
-func classifyOpenError(err error) error {
+func classifyOpenError(ctx context.Context, err error) error {
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) {
 		// 28P01 invalid_password, 28000 invalid_authorization_specification.
@@ -122,7 +125,63 @@ func classifyOpenError(err error) error {
 			return fmt.Errorf("%w: %s", ErrAuthRefused, pe.Message)
 		}
 	}
+	if tlsRefused(ctx, err) {
+		return fmt.Errorf("%w: %v", ErrTLSRefused, err)
+	}
 	return fmt.Errorf("%w: %v", ErrUnreachable, err)
+}
+
+const (
+	sslRequestCode  = 80877103
+	tlsProbeTimeout = 3 * time.Second
+)
+
+// tlsRefused reports whether err is a connection that had to use TLS failing on a server that declines TLS.
+func tlsRefused(ctx context.Context, err error) bool {
+	var ce *pgconn.ConnectError
+	if !errors.As(err, &ce) || ce.Config == nil || !requiresTLS(ce.Config) {
+		return false
+	}
+	// pgx reports the refusal as a bare string, so the server is asked again.
+	return declinesTLS(ctx, ce.Config.Host, ce.Config.Port)
+}
+
+func requiresTLS(cfg *pgconn.Config) bool {
+	if cfg.TLSConfig == nil {
+		return false
+	}
+	for _, fb := range cfg.Fallbacks {
+		if fb.TLSConfig == nil {
+			return false
+		}
+	}
+	return true
+}
+
+// declinesTLS sends the protocol's SSLRequest, and nothing else, and reports whether the server answers 'N'.
+func declinesTLS(ctx context.Context, host string, port uint16) bool {
+	ctx, cancel := context.WithTimeout(ctx, tlsProbeTimeout)
+	defer cancel()
+
+	network, address := pgconn.NetworkAddress(host, port)
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, network, address)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = conn.Close() }()
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+
+	if err := binary.Write(conn, binary.BigEndian, []int32{8, sslRequestCode}); err != nil {
+		return false
+	}
+	var answer [1]byte
+	if _, err := io.ReadFull(conn, answer[:]); err != nil {
+		return false
+	}
+	return answer[0] == 'N'
 }
 
 // RedactedDSN exposes the connection target without its credentials, for the

@@ -110,7 +110,7 @@ func TestHandleLogStream(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, w.Code)
 
 			if tt.wantSSE {
-				assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+				assertUnbufferedEventStream(t, w.Header())
 				assert.Contains(t, w.Body.String(), tt.wantContains)
 			}
 		})

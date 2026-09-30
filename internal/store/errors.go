@@ -26,6 +26,8 @@ var (
 	ErrUnreachable = errors.New("database unreachable")
 	// ErrAuthRefused: the database answered and refused the credentials.
 	ErrAuthRefused = errors.New("database credentials refused")
+	// ErrTLSRefused: the connection requires TLS and the server does not offer it.
+	ErrTLSRefused = errors.New("database server refused TLS")
 	// ErrUnsupportedVersion: the server runs a version older than the minimum.
 	ErrUnsupportedVersion = errors.New("database version unsupported (PostgreSQL 14 or newer required)")
 	// ErrSchemaNewer: the schema was written by a newer release of this binary.
