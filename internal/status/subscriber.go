@@ -19,9 +19,6 @@ import (
 // ErrSubscriptionsDisabled is returned when no mailer is configured or the running edition does not open subscribers.
 var ErrSubscriptionsDisabled = errors.New("email subscriptions are not enabled")
 
-// ErrConfirmationNotSent is returned when the confirmation email could not be delivered; the subscription is dropped.
-var ErrConfirmationNotSent = errors.New("confirmation email could not be sent")
-
 // SubscriberService manages email subscriptions for status updates.
 type SubscriberService struct {
 	store  SubscriberStore
@@ -54,7 +51,7 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// Subscribe creates an unconfirmed subscriber and emails it the confirmation link of the double opt-in.
+// Subscribe records a pending subscription and, unless the address is already confirmed, emails a fresh confirmation link in the background.
 func (s *SubscriberService) Subscribe(ctx context.Context, email string) error {
 	if !s.Enabled() {
 		return ErrSubscriptionsDisabled
@@ -70,31 +67,28 @@ func (s *SubscriberService) Subscribe(ctx context.Context, email string) error {
 	}
 
 	expires := time.Now().Add(24 * time.Hour)
-	sub := &StatusSubscriber{
+	issued, err := s.store.UpsertPendingSubscriber(ctx, &StatusSubscriber{
 		Email:          email,
-		Confirmed:      false,
 		ConfirmToken:   &confirmToken,
 		ConfirmExpires: &expires,
 		UnsubToken:     unsubToken,
-	}
-
-	id, err := s.store.CreateSubscriber(ctx, sub)
+	})
 	if err != nil {
-		return fmt.Errorf("create subscriber: %w", err)
+		return fmt.Errorf("record subscriber: %w", err)
 	}
+	if issued {
+		go s.sendConfirmation(context.WithoutCancel(ctx), email, confirmToken)
+	}
+	return nil
+}
 
-	confirmURL := fmt.Sprintf("%s/status/confirm?token=%s", s.baseURL, confirmToken)
+func (s *SubscriberService) sendConfirmation(ctx context.Context, email, token string) {
+	confirmURL := fmt.Sprintf("%s/status/confirm?token=%s", s.baseURL, token)
 	body := fmt.Sprintf("Confirm your subscription to status updates by opening this link:\n\n%s\n\n"+
 		"The link expires in 24 hours. If you did not ask for this, ignore this email.\n", confirmURL)
 	if err := s.mailer.Send(ctx, email, "Confirm your status page subscription", body); err != nil {
 		s.logger.Error("failed to send confirmation email", "error", err, "email", email)
-		if delErr := s.store.DeleteSubscriber(context.WithoutCancel(ctx), id); delErr != nil {
-			s.logger.Error("failed to drop unconfirmable subscriber", "error", delErr, "email", email)
-		}
-		return fmt.Errorf("%w: %w", ErrConfirmationNotSent, err)
 	}
-
-	return nil
 }
 
 // Confirm validates a confirmation token and activates the subscription.

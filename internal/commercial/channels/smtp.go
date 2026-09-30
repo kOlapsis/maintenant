@@ -7,6 +7,7 @@ package channels
 import (
 	"context"
 	"fmt"
+	"mime"
 	"net"
 	"net/smtp"
 	"strings"
@@ -102,7 +103,7 @@ func buildMIME(from, to, subject, body string) string {
 	var b strings.Builder
 	b.WriteString("From: " + sanitizeHeader(from) + "\r\n")
 	b.WriteString("To: " + sanitizeHeader(to) + "\r\n")
-	b.WriteString("Subject: " + sanitizeHeader(subject) + "\r\n")
+	b.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", sanitizeHeader(subject)) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("\r\n")

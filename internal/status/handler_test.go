@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
+	"time"
 	"testing"
 
 	"github.com/kolapsis/maintenant/internal/extension"
@@ -21,18 +21,13 @@ import (
 
 type recordingSubscriberStore struct {
 	SubscriberStore
-	created []string
-	deleted []string
+	created   []string
+	confirmed map[string]bool
 }
 
-func (s *recordingSubscriberStore) CreateSubscriber(_ context.Context, sub *StatusSubscriber) (string, error) {
+func (s *recordingSubscriberStore) UpsertPendingSubscriber(_ context.Context, sub *StatusSubscriber) (bool, error) {
 	s.created = append(s.created, sub.Email)
-	return "id-" + sub.Email, nil
-}
-
-func (s *recordingSubscriberStore) DeleteSubscriber(_ context.Context, id string) error {
-	s.deleted = append(s.deleted, id)
-	return nil
+	return !s.confirmed[sub.Email], nil
 }
 
 type sentMail struct {
@@ -40,25 +35,40 @@ type sentMail struct {
 }
 
 type fakeMailer struct {
-	mu   sync.Mutex
-	sent []sentMail
+	sent chan sentMail
 	err  error
 }
 
+func newFakeMailer() *fakeMailer {
+	return &fakeMailer{sent: make(chan sentMail, 64)}
+}
+
 func (m *fakeMailer) Send(_ context.Context, to, subject, body string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.err != nil {
 		return m.err
 	}
-	m.sent = append(m.sent, sentMail{to: to, subject: subject, body: body})
+	m.sent <- sentMail{to: to, subject: subject, body: body}
 	return nil
 }
 
-func (m *fakeMailer) mails() []sentMail {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]sentMail(nil), m.sent...)
+func (m *fakeMailer) next(t *testing.T) sentMail {
+	t.Helper()
+	select {
+	case mail := <-m.sent:
+		return mail
+	case <-time.After(2 * time.Second):
+		t.Fatal("no email was sent")
+		return sentMail{}
+	}
+}
+
+func (m *fakeMailer) none(t *testing.T) {
+	t.Helper()
+	select {
+	case mail := <-m.sent:
+		t.Fatalf("unexpected email %q to %s", mail.subject, mail.to)
+	case <-time.After(100 * time.Millisecond):
+	}
 }
 
 func pinEdition(t *testing.T, e extension.Edition) {
@@ -82,7 +92,7 @@ func newSubscribeHandlerWith(t *testing.T, mailer Mailer) (*Handler, *recordingS
 func newSubscribeHandler(t *testing.T) (*Handler, *recordingSubscriberStore) {
 	t.Helper()
 	pinEdition(t, extension.Pro)
-	return newSubscribeHandlerWith(t, &fakeMailer{})
+	return newSubscribeHandlerWith(t, newFakeMailer())
 }
 
 func postSubscribe(t *testing.T, h *Handler, body string) *httptest.ResponseRecorder {
@@ -241,8 +251,8 @@ func TestHandleSubscribeRefusedWhileSubscriptionsAreClosed(t *testing.T) {
 		mailer  Mailer
 	}{
 		{"no SMTP server", extension.Pro, nil},
-		{"edition without subscribers", extension.Personal, &fakeMailer{}},
-		{"community", extension.Community, &fakeMailer{}},
+		{"edition without subscribers", extension.Personal, newFakeMailer()},
+		{"community", extension.Community, newFakeMailer()},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -267,20 +277,73 @@ func TestHandleSubscribeRefusedWhileSubscriptionsAreClosed(t *testing.T) {
 	}
 }
 
-func TestHandleSubscribeDropsTheSubscriberWhenTheConfirmationFails(t *testing.T) {
+func TestHandleSubscribeAnswersAlikeWhateverTheAddressState(t *testing.T) {
 	pinEdition(t, extension.Pro)
-	h, store := newSubscribeHandlerWith(t, &fakeMailer{err: errors.New("connection refused")})
+	mailer := newFakeMailer()
+	h, store := newSubscribeHandlerWith(t, mailer)
+	store.confirmed = map[string]bool{"known@example.com": true}
+
+	fresh := postSubscribe(t, h, `{"email":"new@example.com"}`)
+	first := mailer.next(t)
+	pending := postSubscribe(t, h, `{"email":"new@example.com"}`)
+	second := mailer.next(t)
+	confirmed := postSubscribe(t, h, `{"email":"known@example.com"}`)
+	mailer.none(t)
+
+	for name, rec := range map[string]*httptest.ResponseRecorder{"pending": pending, "confirmed": confirmed} {
+		if rec.Code != fresh.Code || rec.Body.String() != fresh.Body.String() || rec.Header().Get("Content-Type") != fresh.Header().Get("Content-Type") {
+			t.Fatalf("%s address: got %d %q, a new one got %d %q", name, rec.Code, rec.Body.String(), fresh.Code, fresh.Body.String())
+		}
+	}
+	if fresh.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", fresh.Code)
+	}
+	if first.to != "new@example.com" || second.to != "new@example.com" {
+		t.Fatalf("confirmations went to %s and %s", first.to, second.to)
+	}
+	if first.body == second.body {
+		t.Fatal("a pending address must get a fresh confirmation link")
+	}
+}
+
+type stalledMailer struct {
+	release chan struct{}
+}
+
+func (m *stalledMailer) Send(context.Context, string, string, string) error {
+	<-m.release
+	return nil
+}
+
+func TestHandleSubscribeDoesNotWaitForTheMailServer(t *testing.T) {
+	pinEdition(t, extension.Pro)
+	mailer := &stalledMailer{release: make(chan struct{})}
+	t.Cleanup(func() { close(mailer.release) })
+	h, _ := newSubscribeHandlerWith(t, mailer)
+
+	done := make(chan int, 1)
+	go func() { done <- postSubscribe(t, h, `{"email":"ok@example.com"}`).Code }()
+
+	select {
+	case code := <-done:
+		if code != http.StatusOK {
+			t.Fatalf("got %d, want 200", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the answer waited for the mail server, so its delay tells a new address from a confirmed one")
+	}
+}
+
+func TestHandleSubscribeAnswersAlikeWhenTheConfirmationFails(t *testing.T) {
+	pinEdition(t, extension.Pro)
+	mailer := newFakeMailer()
+	mailer.err = errors.New("connection refused")
+	h, _ := newSubscribeHandlerWith(t, mailer)
 
 	rec := postSubscribe(t, h, `{"email":"ok@example.com"}`)
 
-	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("got %d, want 502", rec.Code)
-	}
-	if code := errorCode(t, rec); code != "confirmation_failed" {
-		t.Fatalf("code %q, want confirmation_failed", code)
-	}
-	if len(store.deleted) != 1 || store.deleted[0] != "id-ok@example.com" {
-		t.Fatalf("deleted %v, want the subscriber just created", store.deleted)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "confirmation_sent") {
+		t.Fatalf("got %d %q: the answer must not depend on the mail server", rec.Code, rec.Body.String())
 	}
 }
 
@@ -309,9 +372,9 @@ func TestStatusAPIReportsWhetherSubscriptionsAreOpen(t *testing.T) {
 		mailer  Mailer
 		want    bool
 	}{
-		{"pro with SMTP", extension.Pro, &fakeMailer{}, true},
+		{"pro with SMTP", extension.Pro, newFakeMailer(), true},
 		{"pro without SMTP", extension.Pro, nil, false},
-		{"personal with SMTP", extension.Personal, &fakeMailer{}, false},
+		{"personal with SMTP", extension.Personal, newFakeMailer(), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

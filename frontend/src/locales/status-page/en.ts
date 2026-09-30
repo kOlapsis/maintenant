@@ -31,7 +31,6 @@ const en = {
   subscribeInvalidEmail: 'Enter a valid email address.',
   subscribeRateLimited: 'Too many attempts. Try again later.',
   subscribeUnavailable: 'Email updates are not available right now.',
-  subscribeConfirmationFailed: 'The confirmation email could not be sent. Try again later.',
   subscribeFailed: 'The subscription failed. Try again later.',
   updatedAt: 'Updated',
   poweredBy: 'Powered by Maintenant',

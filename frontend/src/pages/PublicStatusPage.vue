@@ -171,7 +171,6 @@ const subscribeErrors: Record<string, StatusPageDictKey> = {
   invalid_email: 'subscribeInvalidEmail',
   rate_limited: 'subscribeRateLimited',
   subscriptions_unavailable: 'subscribeUnavailable',
-  confirmation_failed: 'subscribeConfirmationFailed',
 }
 
 async function handleSubscribe() {

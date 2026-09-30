@@ -280,17 +280,15 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.service.subscribers.Subscribe(r.Context(), req.Email); err != nil {
 		h.logger.Error("subscribe failed", "error", err)
-		switch {
-		case errors.Is(err, ErrSubscriptionsDisabled):
+		if errors.Is(err, ErrSubscriptionsDisabled) {
 			writeSubscriptionsUnavailable(w)
-		case errors.Is(err, ErrConfirmationNotSent):
-			writeJSONError(w, http.StatusBadGateway, "confirmation_failed", "The confirmation email could not be sent, try again later")
-		default:
-			writeJSONError(w, http.StatusInternalServerError, "subscription_failed", "Subscription failed")
+			return
 		}
+		writeJSONError(w, http.StatusInternalServerError, "subscription_failed", "Subscription failed")
 		return
 	}
 
+	// New, pending or already confirmed: the answer is the same, so it reveals nobody's subscription.
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmation_sent"})
 }

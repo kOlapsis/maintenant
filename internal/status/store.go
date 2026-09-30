@@ -38,7 +38,7 @@ type IncidentStore interface {
 
 // SubscriberStore defines the persistence interface for email subscribers.
 type SubscriberStore interface {
-	CreateSubscriber(ctx context.Context, s *StatusSubscriber) (string, error)
+	UpsertPendingSubscriber(ctx context.Context, s *StatusSubscriber) (issued bool, err error)
 	GetSubscriberByToken(ctx context.Context, confirmToken string) (*StatusSubscriber, error)
 	GetSubscriberByUnsubToken(ctx context.Context, unsubToken string) (*StatusSubscriber, error)
 	ConfirmSubscriber(ctx context.Context, id string) error

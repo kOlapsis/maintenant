@@ -89,7 +89,7 @@ func newAnnouncingService(t *testing.T, mailer Mailer) (*Service, *recordingNoti
 
 func TestAnnounceIncidentEmailsSubscribersOnce(t *testing.T) {
 	pinEdition(t, extension.Pro)
-	svc, n, b := newAnnouncingService(t, &fakeMailer{})
+	svc, n, b := newAnnouncingService(t, newFakeMailer())
 
 	inc := &Incident{
 		ID: "inc-1", Title: "Database down", Severity: SeverityMajor, Status: IncidentInvestigating,
@@ -114,7 +114,7 @@ func TestAnnounceIncidentEmailsSubscribersOnce(t *testing.T) {
 
 func TestAnnounceIncidentUpdateResolvingSendsOnlyTheResolution(t *testing.T) {
 	pinEdition(t, extension.Pro)
-	svc, n, b := newAnnouncingService(t, &fakeMailer{})
+	svc, n, b := newAnnouncingService(t, newFakeMailer())
 
 	inc := &Incident{ID: "inc-1", Title: "Database down", Status: IncidentInvestigating}
 	svc.AnnounceIncidentUpdate(context.Background(), inc, &IncidentUpdate{IncidentID: "inc-1", Status: IncidentResolved, Message: "Back to normal."})
@@ -134,7 +134,7 @@ func TestAnnounceIncidentUpdateResolvingSendsOnlyTheResolution(t *testing.T) {
 
 func TestAnnounceIncidentUpdateOnAnOpenIncident(t *testing.T) {
 	pinEdition(t, extension.Pro)
-	svc, n, b := newAnnouncingService(t, &fakeMailer{})
+	svc, n, b := newAnnouncingService(t, newFakeMailer())
 
 	inc := &Incident{ID: "inc-1", Title: "Database down", Status: IncidentInvestigating}
 	svc.AnnounceIncidentUpdate(context.Background(), inc, &IncidentUpdate{IncidentID: "inc-1", Status: "monitoring", Message: "Fix deployed."})
@@ -154,7 +154,7 @@ func TestAnnounceIncidentUpdateOnAnOpenIncident(t *testing.T) {
 
 func TestAnnounceIncidentUpdateAfterResolutionIsAnUpdate(t *testing.T) {
 	pinEdition(t, extension.Pro)
-	svc, n, _ := newAnnouncingService(t, &fakeMailer{})
+	svc, n, _ := newAnnouncingService(t, newFakeMailer())
 
 	inc := &Incident{ID: "inc-1", Title: "Database down", Status: IncidentResolved}
 	svc.AnnounceIncidentUpdate(context.Background(), inc, &IncidentUpdate{IncidentID: "inc-1", Status: IncidentResolved, Message: "Post-mortem published."})
@@ -167,7 +167,7 @@ func TestAnnounceIncidentUpdateAfterResolutionIsAnUpdate(t *testing.T) {
 
 func TestNotifySubscribersOutlivesTheRequest(t *testing.T) {
 	pinEdition(t, extension.Pro)
-	svc, n, _ := newAnnouncingService(t, &fakeMailer{})
+	svc, n, _ := newAnnouncingService(t, newFakeMailer())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -185,7 +185,7 @@ func TestNotifySubscribersSilentWhileSubscriptionsAreClosed(t *testing.T) {
 		mailer  Mailer
 	}{
 		{"no SMTP server", extension.Pro, nil},
-		{"edition without subscribers", extension.Personal, &fakeMailer{}},
+		{"edition without subscribers", extension.Personal, newFakeMailer()},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -207,32 +207,45 @@ type tokenSubscriberStore struct {
 	confirmToken string
 }
 
-func (s *tokenSubscriberStore) CreateSubscriber(ctx context.Context, sub *StatusSubscriber) (string, error) {
+func (s *tokenSubscriberStore) UpsertPendingSubscriber(ctx context.Context, sub *StatusSubscriber) (bool, error) {
 	s.confirmToken = *sub.ConfirmToken
-	return s.recordingSubscriberStore.CreateSubscriber(ctx, sub)
+	return s.recordingSubscriberStore.UpsertPendingSubscriber(ctx, sub)
 }
 
 func TestSubscribeEmailsTheConfirmationLink(t *testing.T) {
 	pinEdition(t, extension.Pro)
 	store := &tokenSubscriberStore{}
-	mailer := &fakeMailer{}
+	mailer := newFakeMailer()
 	svc := NewSubscriberService(store, mailer, "https://status.example.com/", slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := svc.Subscribe(context.Background(), "visitor@example.com"); err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
 
-	mails := mailer.mails()
-	if len(mails) != 1 || mails[0].to != "visitor@example.com" {
-		t.Fatalf("mails %+v, want one to the visitor", mails)
+	mail := mailer.next(t)
+	if mail.to != "visitor@example.com" {
+		t.Fatalf("mail to %s, want the visitor", mail.to)
 	}
-	link := regexp.MustCompile(`https://status\.example\.com/status/confirm\?token=([0-9a-f]{64})`).FindStringSubmatch(mails[0].body)
+	link := regexp.MustCompile(`https://status\.example\.com/status/confirm\?token=([0-9a-f]{64})`).FindStringSubmatch(mail.body)
 	if link == nil {
-		t.Fatalf("body %q holds no confirmation link", mails[0].body)
+		t.Fatalf("body %q holds no confirmation link", mail.body)
 	}
 	if link[1] != store.confirmToken {
 		t.Fatalf("link token %q is not the stored token %q", link[1], store.confirmToken)
 	}
+	mailer.none(t)
+}
+
+func TestSubscribeSendsNothingToAConfirmedAddress(t *testing.T) {
+	pinEdition(t, extension.Pro)
+	store := &recordingSubscriberStore{confirmed: map[string]bool{"visitor@example.com": true}}
+	mailer := newFakeMailer()
+	svc := NewSubscriberService(store, mailer, "https://status.example.com", slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if err := svc.Subscribe(context.Background(), "visitor@example.com"); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	mailer.none(t)
 }
 
 func TestSubscribeRefusedWhileSubscriptionsAreClosed(t *testing.T) {

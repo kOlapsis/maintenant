@@ -183,6 +183,52 @@ func TestStatusPageMailFlow(t *testing.T) {
 	mailer.none(t)
 }
 
+func TestSubscribeRevealsNothingAboutTheAddress(t *testing.T) {
+	withEdition(t, extension.Pro)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	db := storetest.Open(t, logger)
+	subscribers := store.NewSubscriberStore(db)
+	mailer := newRecordingMailer()
+	svc := status.NewService(status.Deps{
+		Components:  store.NewStatusComponentStore(db),
+		Logger:      logger,
+		Subscribers: status.NewSubscriberService(subscribers, mailer, "https://status.example.com", logger),
+	})
+	public := http.NewServeMux()
+	status.NewHandler(svc, http.NotFoundHandler(), logger, ratelimit.New(5.0/3600.0, 5, nil)).Register(public, nil)
+	subscribe := func() *httptest.ResponseRecorder {
+		return serve(t, public, http.MethodPost, "/status/subscribe", `{"email":"visitor@example.com"}`)
+	}
+
+	fresh := subscribe()
+	require.Equal(t, http.StatusOK, fresh.Code, fresh.Body.String())
+	firstLink := confirmLink.FindString(mailer.next(t).body)
+	require.NotEmpty(t, firstLink)
+
+	pending := subscribe()
+	secondLink := confirmLink.FindString(mailer.next(t).body)
+	require.NotEmpty(t, secondLink)
+	assert.NotEqual(t, firstLink, secondLink, "a pending address gets a fresh link")
+
+	rec := serve(t, public, http.MethodGet, requestURI(t, firstLink), "")
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "the replaced link no longer confirms")
+	rec = serve(t, public, http.MethodGet, requestURI(t, secondLink), "")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	confirmed := subscribe()
+	mailer.none(t)
+
+	for name, got := range map[string]*httptest.ResponseRecorder{"pending": pending, "confirmed": confirmed} {
+		assert.Equal(t, fresh.Code, got.Code, name)
+		assert.Equal(t, fresh.Body.String(), got.Body.String(), name)
+		assert.Equal(t, fresh.Header().Get("Content-Type"), got.Header().Get("Content-Type"), name)
+	}
+	stats, err := subscribers.GetSubscriberStats(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Total)
+	assert.Equal(t, 1, stats.Confirmed)
+}
+
 func TestStatusSmtpTest(t *testing.T) {
 	withEdition(t, extension.Pro)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
