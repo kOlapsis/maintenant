@@ -127,6 +127,18 @@ func (s *AgentStore) UpdateAgentVersion(ctx context.Context, agentID, version st
 	return nil
 }
 
+// UpdateDetectedRuntime records the runtime an agent reports after enrollment and
+// reports whether it differs from the one already stored.
+func (s *AgentStore) UpdateDetectedRuntime(ctx context.Context, agentID, runtime string) (bool, error) {
+	res, err := s.writer.Exec(ctx,
+		`UPDATE agents SET detected_runtime = ? WHERE id = ? AND detected_runtime <> ?`,
+		runtime, agentID, runtime)
+	if err != nil {
+		return false, fmt.Errorf("update agent runtime: %w", err)
+	}
+	return res.RowsAffected > 0, nil
+}
+
 // UpdateAgentOS records the operating system identity of an agent's host and
 // reports whether it differs from the one already stored.
 func (s *AgentStore) UpdateAgentOS(ctx context.Context, agentID string, os agent.OSIdentity, reportedAt time.Time) (bool, error) {

@@ -83,7 +83,7 @@ func TestRunCollector_KubernetesEmitsTopologyAndHostSamples(t *testing.T) {
 	defer cancel()
 
 	link := newRuntimeLink(kubeRuntime{}, RuntimeKubernetes)
-	_, err := link.attach(ctx, slog.Default())
+	_, err := link.attach(ctx)
 	require.NoError(t, err)
 
 	done := make(chan error, 1)

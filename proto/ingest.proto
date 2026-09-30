@@ -234,7 +234,18 @@ message AgentEvent {
     KubernetesTopology kubernetes = 16;
     ContainerInventory inventory = 17;
     HostOSMsg          host_os   = 18;
+    RuntimeMsg         runtime   = 19;
   }
+}
+
+// ----- Runtime --------------------------------------------------------------
+
+// The container runtime the agent runs on, as current state: sent once the
+// runtime answers and again when the host joins or leaves a Swarm. It corrects
+// RegisterRequest.detected_runtime, which is frozen at enrollment. A server
+// predating it keeps the enrollment value.
+message RuntimeMsg {
+  Runtime kind = 1;  // never RUNTIME_UNSPECIFIED
 }
 
 // ----- Container ------------------------------------------------------------

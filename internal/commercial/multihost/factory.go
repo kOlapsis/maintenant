@@ -40,6 +40,7 @@ func NewMultiHost(d extpoint.MultiHostDeps) extpoint.MultiHost {
 				Swarm:       d.Swarm,
 				Kubernetes:  d.Kubernetes,
 				HostOS:      d.HostOS,
+				Runtime:     runtimeRecorder{store: d.AgentStore, broadcaster: d.Broadcaster},
 				LabelSync:   d.LabelSync,
 			}),
 			Logger: d.Logger.With("component", "agentserver"),

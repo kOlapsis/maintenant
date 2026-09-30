@@ -11,15 +11,16 @@ import (
 	"sync"
 	"time"
 
+	dockerswarm "github.com/moby/moby/api/types/swarm"
+
 	"github.com/kolapsis/maintenant/internal/docker"
 	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
-	"github.com/kolapsis/maintenant/internal/swarm"
 )
 
-// Runtime labels reported by the agent during enrollment.
-// "docker" / "kubernetes" come from runtime.Runtime.Name(); "swarm" is derived
-// from the swarm.Detector check applied to the docker runtime.
+// Runtime labels reported by the agent at enrollment and whenever they change.
+// "docker" / "kubernetes" come from runtime.Runtime.Name(); "swarm" is a Docker
+// host in a Swarm, or forced by the operator.
 const (
 	RuntimeDocker     = "docker"
 	RuntimeSwarm      = "swarm"
@@ -65,7 +66,7 @@ func Run(ctx context.Context, cfg AgentConfig, logger *slog.Logger) error {
 		retrying.Wait()
 		_ = rt.Close()
 	}()
-	rtLabel, connErr := link.attach(ctx, logger)
+	rtLabel, connErr := link.attach(ctx)
 	if connErr != nil {
 		retrying.Go(func() {
 			link.keepTrying(linkCtx, connErr, retry.New(runtimeRetryMin, runtimeRetryMax, 0), logger)
@@ -229,24 +230,33 @@ func detectRuntime(ctx context.Context, override string, proxyLabels bool, logge
 
 // runtimeLink hands the local runtime to the collector once it answers, which may be long after the agent started.
 type runtimeLink struct {
-	rt    runtime.Runtime
-	kind  string
-	ready chan struct{}
-	label string // set before ready closes
+	rt      runtime.Runtime
+	kind    string
+	inSwarm func(context.Context) (bool, error) // nil when Swarm membership is not followed
+	ready   chan struct{}
+	label   string // set before ready closes
 }
 
+// newRuntimeLink follows the Swarm membership of a Docker host, unless the operator forced the label.
 func newRuntimeLink(rt runtime.Runtime, kind string) *runtimeLink {
-	return &runtimeLink{rt: rt, kind: kind, ready: make(chan struct{})}
+	l := &runtimeLink{rt: rt, kind: kind, ready: make(chan struct{})}
+	if dr, ok := rt.(*docker.Runtime); ok && kind == RuntimeDocker {
+		l.inSwarm = func(ctx context.Context) (bool, error) {
+			info, err := dr.Client().Info(ctx)
+			return info.Swarm.LocalNodeState == dockerswarm.LocalNodeStateActive, err
+		}
+	}
+	return l
 }
 
 // attach makes one bounded attempt at the runtime and, when it answers, hands it to the collector under its final label.
-func (l *runtimeLink) attach(ctx context.Context, logger *slog.Logger) (string, error) {
+func (l *runtimeLink) attach(ctx context.Context) (string, error) {
 	if err := l.rt.TryConnect(ctx); err != nil {
 		return l.kind, err
 	}
 	l.label = l.kind
-	if dr, ok := l.rt.(*docker.Runtime); ok && l.kind == RuntimeDocker {
-		if res, err := swarm.NewDetector(dr.Client(), logger).Detect(ctx); err == nil && res.Active {
+	if l.inSwarm != nil {
+		if active, err := l.inSwarm(ctx); err == nil && active {
 			l.label = RuntimeSwarm
 		}
 	}
@@ -265,7 +275,7 @@ func (l *runtimeLink) keepTrying(ctx context.Context, lastErr error, backoff *re
 			return
 		case <-time.After(delay):
 		}
-		label, err := l.attach(ctx, logger)
+		label, err := l.attach(ctx)
 		if err == nil {
 			logger.Info("agent: container runtime reachable, container monitoring started", "runtime", label)
 			return

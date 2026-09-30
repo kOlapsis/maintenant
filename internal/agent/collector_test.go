@@ -202,7 +202,7 @@ func TestRunCollector_ReportsTheHostUntilTheRuntimeAnswers(t *testing.T) {
 
 	rt := &lateRuntime{}
 	link := newRuntimeLink(rt, RuntimeDocker)
-	_, err := link.attach(context.Background(), testLogger())
+	_, err := link.attach(context.Background())
 	require.Error(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -232,15 +232,79 @@ func TestRunCollector_ReportsTheHostUntilTheRuntimeAnswers(t *testing.T) {
 	}, 5*time.Second, 5*time.Millisecond, "the host must be reported while the runtime keeps being retried")
 	_, _, inventory := seen()
 	assert.False(t, inventory, "no container inventory before the runtime answers")
+	assert.Empty(t, reportedRuntimes(sink), "no runtime is reported before it answers")
 
 	rt.up.Store(true)
 	require.Eventually(t, func() bool {
 		_, _, inventory := seen()
 		return inventory
 	}, 5*time.Second, 5*time.Millisecond, "container monitoring must start as soon as the runtime answers")
+	assert.Equal(t, []agentpb.Runtime{agentpb.Runtime_RUNTIME_DOCKER}, reportedRuntimes(sink),
+		"the runtime that answered is reported, since enrollment may have happened before")
 
 	cancel()
 	wg.Wait()
+}
+
+func reportedRuntimes(sink *captureSink) []agentpb.Runtime {
+	var out []agentpb.Runtime
+	for _, ev := range sink.events() {
+		if r := ev.GetRuntime(); r != nil {
+			out = append(out, r.GetKind())
+		}
+	}
+	return out
+}
+
+func TestRunCollector_ReportsJoiningAndLeavingASwarm(t *testing.T) {
+	prev := swarmRecheckInterval
+	swarmRecheckInterval = 5 * time.Millisecond
+	t.Cleanup(func() { swarmRecheckInterval = prev })
+
+	sink := &captureSink{}
+	spool := NewSpool(t.TempDir(), SpoolConfig{}, testLogger())
+	spool.Attach(sink)
+	t.Cleanup(func() { _ = spool.Close() })
+
+	rt := &lateRuntime{}
+	rt.up.Store(true)
+	var joined atomic.Bool
+	link := newRuntimeLink(rt, RuntimeDocker)
+	link.inSwarm = func(context.Context) (bool, error) { return joined.Load(), nil }
+	_, err := link.attach(context.Background())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runCollector(ctx, &Identity{AgentID: "agent-1"}, link, "", spool, testLogger()) }()
+
+	last := func() agentpb.Runtime {
+		runtimes := reportedRuntimes(sink)
+		if len(runtimes) == 0 {
+			return agentpb.Runtime_RUNTIME_UNSPECIFIED
+		}
+		return runtimes[len(runtimes)-1]
+	}
+	require.Eventually(t, func() bool { return last() == agentpb.Runtime_RUNTIME_DOCKER }, 5*time.Second, 2*time.Millisecond)
+
+	joined.Store(true)
+	require.Eventually(t, func() bool { return last() == agentpb.Runtime_RUNTIME_SWARM }, 5*time.Second, 2*time.Millisecond,
+		"a host that joins a Swarm must be reported as such without a restart")
+
+	joined.Store(false)
+	require.Eventually(t, func() bool { return last() == agentpb.Runtime_RUNTIME_DOCKER }, 5*time.Second, 2*time.Millisecond,
+		"a host that leaves its Swarm must be reported as Docker again")
+
+	var cleared bool
+	for _, ev := range sink.events() {
+		if topo := ev.GetSwarm(); topo != nil && len(topo.GetServices())+len(topo.GetTasks())+len(topo.GetNodes()) == 0 {
+			cleared = true
+		}
+	}
+	assert.True(t, cleared, "leaving the Swarm must retire the topology the server holds")
+
+	cancel()
+	require.NoError(t, <-done)
 }
 
 func TestRuntimeEventToProto_DieCarriesTheOOMFlag(t *testing.T) {

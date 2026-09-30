@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -33,8 +34,9 @@ var resourceSampleInterval = 10 * time.Second
 var containerInventoryInterval = 30 * time.Second
 
 // runCollector reports the host at once and the local runtime from the moment it
-// answers, pushing both to spool. nodeName is the Kubernetes node the agent runs
-// on, empty unless the operator set it.
+// answers, pushing both to spool, and restarts the runtime part under its new
+// label when the host joins or leaves a Swarm. nodeName is the Kubernetes node
+// the agent runs on, empty unless the operator set it.
 // Blocks until ctx is cancelled or a fatal push error occurs.
 func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName string, spool *Spool, logger *slog.Logger) error {
 	g, gCtx := errgroup.WithContext(ctx)
@@ -47,15 +49,39 @@ func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName
 		if !link.wait(gCtx) {
 			return nil
 		}
-		return collectRuntime(gCtx, id, link.rt, link.label, nodeName, spool, logger)
+		label := link.label
+		for {
+			err := collectRuntime(gCtx, id, link, label, nodeName, spool, logger)
+			var changed runtimeChanged
+			if !errors.As(err, &changed) {
+				return err
+			}
+			logger.Info("agent: runtime changed", "previous", label, "current", changed.label)
+			if label == RuntimeSwarm {
+				// An empty topology is what retires the cluster the server holds for this agent.
+				if err := spool.Send(swarmTopologyEvent(id.AgentID, swarm.TopologySnapshot{})); err != nil {
+					logger.Debug("collector: swarm topology not cleared", "error", err)
+				}
+			}
+			label = changed.label
+		}
 	})
 	return g.Wait()
 }
 
-func collectRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label, nodeName string, spool *Spool, logger *slog.Logger) error {
+// runtimeChanged ends the runtime collection when the host joins or leaves a Swarm, so it restarts under the new label.
+type runtimeChanged struct{ label string }
+
+func (e runtimeChanged) Error() string { return "runtime changed to " + e.label }
+
+func collectRuntime(ctx context.Context, id *Identity, link *runtimeLink, label, nodeName string, spool *Spool, logger *slog.Logger) error {
+	if err := spool.Send(runtimeEvent(id.AgentID, label)); err != nil {
+		logger.Debug("collector: runtime not reported", "error", err)
+	}
+	rt := link.rt
 	switch label {
 	case RuntimeDocker, RuntimeSwarm:
-		return collectContainerRuntime(ctx, id, rt, label, spool, logger)
+		return collectContainerRuntime(ctx, id, rt, label, link.inSwarm, spool, logger)
 	case RuntimeKubernetes:
 		src, ok := rt.(kubernetes.SnapshotSource)
 		if !ok {
@@ -69,7 +95,7 @@ func collectRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label
 	}
 }
 
-func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, spool *Spool, logger *slog.Logger) error {
+func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, inSwarm func(context.Context) (bool, error), spool *Spool, logger *slog.Logger) error {
 	if err := syncInventory(ctx, id, rt, spool, logger); err != nil {
 		return err
 	}
@@ -78,6 +104,9 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	g.Go(func() error { return streamInventory(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return runLabelProbers(gCtx, id, rt, spool, logger) })
+	if inSwarm != nil {
+		g.Go(func() error { return watchSwarmMembership(gCtx, label, inSwarm, logger) })
+	}
 
 	// Swarm: also push a periodic full topology snapshot (services/tasks/nodes)
 	// so the server can serve the Services/Tasks/Nodes views for this agent.
@@ -186,6 +215,15 @@ func inventoryEvent(agentID string, entries []*agentpb.ContainerEvent) *agentpb.
 			Containers: entries,
 			Complete:   true,
 		}},
+	}
+}
+
+func runtimeEvent(agentID, label string) *agentpb.AgentEvent {
+	return &agentpb.AgentEvent{
+		AgentId:    agentID,
+		EventId:    uuid.NewString(),
+		ObservedAt: timestamppb.Now(),
+		Body:       &agentpb.AgentEvent_Runtime{Runtime: &agentpb.RuntimeMsg{Kind: runtimeToProto(label)}},
 	}
 }
 
