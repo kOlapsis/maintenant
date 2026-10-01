@@ -193,7 +193,7 @@ The first send happens within seconds of creating the target. Two instances can 
 - A 2xx response counts as a success. Any other status, or a network error, is recorded as the target's last error and logged as a warning.
 - A disabled target keeps its settings but is no longer called.
 - An extra root CA set with `MAINTENANT_CA_CERT` applies, so the other instance may use an internal PKI.
-- The page is not available in demo mode.
+- In demo mode the page is read-only and no ping is sent.
 
 !!! note "HTTPS and public addresses only"
     Targets must use `https://` and resolve to a public address. Loopback, private,

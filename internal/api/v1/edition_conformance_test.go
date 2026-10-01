@@ -201,7 +201,7 @@ func TestNewRouter_WiresDemoModeIntoTheEditionEndpoint(t *testing.T) {
 	assert.Equal(t, true, body["demo"])
 }
 
-func TestNewRouter_DemoModeDropsOutboundHeartbeats(t *testing.T) {
+func TestNewRouter_DemoModeKeepsOutboundHeartbeats(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := outbound.NewService(outbound.Deps{Store: &memOutboundStore{items: map[string]outbound.OutboundHeartbeat{}}})
 
@@ -210,11 +210,7 @@ func TestNewRouter_DemoModeDropsOutboundHeartbeats(t *testing.T) {
 			r := NewRouter(HandlerDeps{Logger: logger, DemoMode: demo, Outbound: svc})
 			rec := httptest.NewRecorder()
 			r.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/outbound-heartbeats", nil))
-			if demo {
-				assert.Equal(t, http.StatusNotFound, rec.Code)
-			} else {
-				assert.Equal(t, http.StatusOK, rec.Code)
-			}
+			assert.Equal(t, http.StatusOK, rec.Code)
 		})
 	}
 }

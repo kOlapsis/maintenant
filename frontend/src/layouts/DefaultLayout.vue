@@ -62,7 +62,6 @@ const router = useRouter()
 const { version } = useAppVersion()
 const {
   isCommunity,
-  isDemo,
   editionName,
   hasFeature,
   licenseMessage,
@@ -164,7 +163,7 @@ const allNav: NavItem[] = [
   { type: 'separator' },
   { type: 'item', to: '/status-admin', label: 'Status Pages', icon: Activity },
   { type: 'item', to: '/agents', label: 'Agents', icon: MonitorDot },
-  { type: 'item', to: '/outbound-heartbeats', label: 'Outbound heartbeats', icon: RadioTower, hideInDemo: true },
+  { type: 'item', to: '/outbound-heartbeats', label: 'Outbound heartbeats', icon: RadioTower },
 ]
 
 const mainNav = computed(() =>
@@ -172,7 +171,6 @@ const mainNav = computed(() =>
     isNavItemVisible(item, {
       hasFeature,
       availableRuntimes: availableRuntimes.value,
-      isDemo: isDemo.value,
     }),
   ),
 )

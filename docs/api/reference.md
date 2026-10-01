@@ -49,7 +49,7 @@ The remaining codes are specific to a route and are listed with it. Most are upp
 
 Three answers are not JSON:
 
-- A route the server did not register (a feature that is not wired, such as the outbound heartbeats in demo mode) and a wrong method on a known path answer the plain-text `404` and `405` of the Go router.
+- A route the server did not register (a feature that is not wired) and a wrong method on a known path answer the plain-text `404` and `405` of the Go router.
 - A request still running after 10 seconds is cut with `503` and the plain-text body `request timeout`. Streams are exempt. The work the request started can still finish, for example a synchronous certificate scan.
 - The OAuth routes answer with the RFC 6749 shape (`{"error": "...", "error_description": "..."}`).
 
@@ -90,7 +90,7 @@ The API refuses a browser write that comes from another origin, unless that orig
 
 ### Demo mode
 
-A demo build of maintenant is read-only. Every request other than `GET`, `HEAD` and `OPTIONS` answers `403 DEMO_MODE` (only `POST /api/v1/escalation-policies/overlap-probe`, which changes nothing, is let through). `/ping/`, `/mcp`, `/oauth/` and `/.well-known/oauth-*` answer `403 DEMO_MODE` for every method, and the outbound heartbeat routes are not registered. A request carrying the `X-Maintenant-Demo-Token` header with the value of `MAINTENANT_DEMO_TOKEN` bypasses the guard. `GET /api/v1/edition` reports `"demo": true`.
+A demo build of maintenant is read-only. Every request other than `GET`, `HEAD` and `OPTIONS` answers `403 DEMO_MODE` (only `POST /api/v1/escalation-policies/overlap-probe`, which changes nothing, is let through). `/ping/`, `/mcp`, `/oauth/` and `/.well-known/oauth-*` answer `403 DEMO_MODE` for every method. Outbound heartbeats are never sent. A request carrying the `X-Maintenant-Demo-Token` header with the value of `MAINTENANT_DEMO_TOKEN` bypasses the guard. `GET /api/v1/edition` reports `"demo": true`.
 
 ---
 
@@ -271,7 +271,7 @@ These routes need no credentials: the UUID of the heartbeat is the secret. They 
 
 ### Outbound heartbeats
 
-Outbound heartbeats make this instance ping an external URL so another system notices when it stops. The routes are not registered in demo mode. All are open in every edition. See [Outbound Heartbeats](../features/heartbeats.md#outbound-heartbeats).
+Outbound heartbeats make this instance ping an external URL so another system notices when it stops. In demo mode they are read-only like every other route and no ping is sent. All are open in every edition. See [Outbound Heartbeats](../features/heartbeats.md#outbound-heartbeats).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
