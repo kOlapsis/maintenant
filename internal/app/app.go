@@ -369,7 +369,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Password: cfg.SMTP.Password,
 		From:     cfg.SMTP.From,
 	}
-	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks)
+	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks, alert.WithBaseURL(cfg.BaseURL))
 	if a.ext.Channels != nil {
 		channels := a.ext.Channels(extpoint.ChannelDeps{
 			HTTPClient: a.notifier.HTTPClient(),

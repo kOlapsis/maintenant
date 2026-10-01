@@ -327,3 +327,42 @@ func TestSendTestWebhook_UnregisteredTypeIsAGenericWebhook(t *testing.T) {
 	_, ok := n.Validator("webhook")
 	assert.False(t, ok)
 }
+
+func TestWebhookPayload_CarriesAgentAndLink(t *testing.T) {
+	const alertID = "0190a1b2-0000-7000-8000-000000000001"
+	const remote = "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+
+	tests := []struct {
+		name    string
+		opts    []NotifierOption
+		wantURL string
+	}{
+		{"public base url", []NotifierOption{WithBaseURL("https://mnt.example.com/")}, "https://mnt.example.com/alerts/history?alert=" + alertID},
+		{"base url under a path", []NotifierOption{WithBaseURL("https://example.com/maintenant")}, "https://example.com/maintenant/alerts/history?alert=" + alertID},
+		{"listen address without host", []NotifierOption{WithBaseURL("http://:8080")}, ""},
+		{"unspecified address", []NotifierOption{WithBaseURL("http://0.0.0.0:8080")}, ""},
+		{"no base url", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, body, _ := captureServer(t, http.StatusOK)
+			n := NewNotifier(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), true, tt.opts...)
+			a := &Alert{
+				ID: alertID, Source: SourceContainer, AlertType: "health_unhealthy", Severity: SeverityWarning,
+				Status: StatusActive, Message: "unhealthy", EntityType: "container", EntityID: "c1", EntityName: "web",
+				AgentID: remote, FiredAt: time.Now(), CreatedAt: time.Now(),
+			}
+			require.NoError(t, n.SendNow(context.Background(), a, &NotificationChannel{Type: "webhook", URL: srv.URL}))
+
+			var payload WebhookPayload
+			require.NoError(t, json.Unmarshal(*body, &payload))
+			assert.Equal(t, remote, payload.Alert["agent_id"])
+			link, ok := payload.Alert["url"]
+			if tt.wantURL == "" {
+				assert.False(t, ok, "url must be absent, got %v", link)
+				return
+			}
+			assert.Equal(t, tt.wantURL, link)
+		})
+	}
+}

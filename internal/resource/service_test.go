@@ -396,7 +396,9 @@ func TestService_evaluateAlerts_AlertEventFiredOnCPUTransition(t *testing.T) {
 	// No alert yet — only one breach.
 	assert.Empty(t, events)
 
-	svc.evaluateAlerts(ctx, snap(containerID, 90.0, 0, 0))
+	remote := snap(containerID, 90.0, 0, 0)
+	remote.AgentID = "agent-1"
+	svc.evaluateAlerts(ctx, remote)
 	// Second breach triggers alert.
 	require.Len(t, events, 1)
 	assert.Equal(t, event.ResourceAlert, events[0].eventType)
@@ -404,6 +406,7 @@ func TestService_evaluateAlerts_AlertEventFiredOnCPUTransition(t *testing.T) {
 	assert.InDelta(t, 90.0, events[0].data["current_value"], 0.001)
 	assert.InDelta(t, 80.0, events[0].data["threshold"], 0.001)
 	assert.Equal(t, containerID, events[0].data["container_id"])
+	assert.Equal(t, "agent-1", events[0].data["agent_id"])
 }
 
 func TestService_evaluateAlerts_AlertEventFiredOnMemoryTransition(t *testing.T) {

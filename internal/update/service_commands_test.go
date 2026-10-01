@@ -245,7 +245,7 @@ func TestRunScan_PersistsThePreviousImageAndCarriesAlertOn(t *testing.T) {
 		Store:   store,
 		Scanner: newTestScanner(reg, store),
 		Containers: stubLister{containers: []ContainerInfo{{
-			UID: "uid1", ExternalID: "ctr1", Name: "web", Image: "nginx:1.24.0",
+			UID: "uid1", AgentID: "agent-1", ExternalID: "ctr1", Name: "web", Image: "nginx:1.24.0",
 			RepoDigests: []string{"nginx@sha256:running"},
 			Labels:      map[string]string{"maintenant.update.alert_on": "critical"},
 		}}},
@@ -263,6 +263,7 @@ func TestRunScan_PersistsThePreviousImageAndCarriesAlertOn(t *testing.T) {
 	assert.Equal(t, "sha256:running", store.inserted[0].PreviousDigest)
 	require.NotNil(t, detected)
 	assert.Equal(t, AlertOnCritical, detected["alert_on"])
+	assert.Equal(t, "agent-1", detected["agent_id"])
 	assert.Equal(t, "docker pull nginx@sha256:running\n"+
 		"docker stop web && docker rm web\n"+
 		"docker run -d --name web nginx@sha256:running", detected["rollback_command"])

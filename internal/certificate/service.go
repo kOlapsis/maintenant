@@ -818,9 +818,9 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 		return
 	}
 
-	// withSNI tags alert payloads with the SNI so multi-vhost monitors on the
-	// same host:port are distinguishable in notifications.
-	withSNI := func(data map[string]interface{}) map[string]interface{} {
+	// withMonitor tags an alert payload with the scanning agent and the SNI that tells multi-vhost monitors apart.
+	withMonitor := func(data map[string]interface{}) map[string]interface{} {
+		data["agent_id"] = uid.Agent(monitor.AgentID)
 		if monitor.ServerName != "" {
 			data["server_name"] = monitor.ServerName
 		}
@@ -828,7 +828,7 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 	}
 
 	recovery := func(alertType string) {
-		data := withSNI(map[string]interface{}{
+		data := withMonitor(map[string]interface{}{
 			"monitor_id":          monitor.ID,
 			"hostname":            monitor.Hostname,
 			"port":                monitor.Port,
@@ -855,7 +855,7 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 
 	// Check chain validation alerts
 	if result.ChainValid != nil && !*result.ChainValid {
-		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
+		s.emit(event.CertificateAlert, withMonitor(map[string]interface{}{
 			"monitor_id":  monitor.ID,
 			"hostname":    monitor.Hostname,
 			"port":        monitor.Port,
@@ -868,7 +868,7 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 
 	// Check hostname mismatch alerts
 	if result.HostnameMatch != nil && !*result.HostnameMatch {
-		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
+		s.emit(event.CertificateAlert, withMonitor(map[string]interface{}{
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
@@ -881,7 +881,7 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 	// Only "revoked" triggers an alert. "unknown" and "error" are inconclusive
 	// and do not warrant a critical page.
 	if result.OCSPStatus == "revoked" {
-		alertData := withSNI(map[string]interface{}{
+		alertData := withMonitor(map[string]interface{}{
 			"monitor_id": monitor.ID,
 			"hostname":   monitor.Hostname,
 			"port":       monitor.Port,
@@ -903,7 +903,7 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 
 	// Check if certificate has expired
 	if result.NotAfter.Before(time.Now()) {
-		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
+		s.emit(event.CertificateAlert, withMonitor(map[string]interface{}{
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,
@@ -944,7 +944,7 @@ func (s *Service) evaluateAlerts(monitor *CertMonitor, result, previous *CertChe
 
 	// Check if we need to escalate (fire alert at a new, lower threshold)
 	if monitor.LastAlertedThreshold == nil || *crossedThreshold < *monitor.LastAlertedThreshold {
-		s.emit(event.CertificateAlert, withSNI(map[string]interface{}{
+		s.emit(event.CertificateAlert, withMonitor(map[string]interface{}{
 			"monitor_id":     monitor.ID,
 			"hostname":       monitor.Hostname,
 			"port":           monitor.Port,

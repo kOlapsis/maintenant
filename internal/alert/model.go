@@ -58,6 +58,7 @@ type Event struct {
 	EntityType string         // "container", "endpoint", "heartbeat", "certificate"
 	EntityID   string         // UUID of the referenced entity in its source table
 	EntityName string         // display name
+	AgentID    string         // host the entity belongs to; empty means the local runtime
 	Details    map[string]any // source-specific metadata
 	Timestamp  time.Time      // when condition was detected
 }
@@ -73,6 +74,7 @@ type Alert struct {
 	EntityType     string     `json:"entity_type"`
 	EntityID       string     `json:"entity_id"`
 	EntityName     string     `json:"entity_name"`
+	AgentID        string     `json:"agent_id"`
 	Details        string     `json:"details"`
 	ResolvedByID   *string    `json:"resolved_by_id"`
 	FiredAt        time.Time  `json:"fired_at"`

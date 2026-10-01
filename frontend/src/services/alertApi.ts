@@ -17,6 +17,7 @@ export interface Alert {
   entity_type: string
   entity_id: string
   entity_name: string
+  agent_id: string
   details?: Record<string, unknown>
   resolved_by_id?: string | null
   acknowledged_at?: string | null

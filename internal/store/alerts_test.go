@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 func seedAlert(t *testing.T, s *AlertStoreImpl, entityID, status string, firedAt time.Time, resolvedAt *time.Time) string {
@@ -138,4 +139,35 @@ func TestAlertStore_ListUnacknowledgedActiveAlerts(t *testing.T) {
 	require.Len(t, alerts, 1)
 	assert.Equal(t, open, alerts[0].ID, "an escalated alert is still unacknowledged")
 	require.NotNil(t, alerts[0].EscalatedAt)
+}
+
+func TestAlertStore_AgentIDRoundTrips(t *testing.T) {
+	s := NewAlertStore(openTestDB(t))
+	ctx := context.Background()
+	now := time.Now().UTC()
+	const remote = "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+
+	id, err := s.InsertAlert(ctx, &alert.Alert{
+		Source: alert.SourceContainer, AlertType: "health_unhealthy", Severity: alert.SeverityWarning,
+		Status: alert.StatusActive, Message: "unhealthy", EntityType: "container", EntityID: "c1", EntityName: "web",
+		FiredAt: now, AgentID: remote,
+	})
+	require.NoError(t, err)
+	local := seedAlert(t, s, "c2", alert.StatusActive, now, nil)
+
+	got, err := s.GetAlert(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, remote, got.AgentID)
+
+	got, err = s.GetAlert(ctx, local)
+	require.NoError(t, err)
+	assert.Equal(t, uid.LocalAgent, got.AgentID, "an alert without an agent belongs to the local runtime")
+
+	active, err := s.ListActiveAlerts(ctx)
+	require.NoError(t, err)
+	byID := map[string]string{}
+	for _, a := range active {
+		byID[a.ID] = a.AgentID
+	}
+	assert.Equal(t, map[string]string{id: remote, local: uid.LocalAgent}, byID)
 }

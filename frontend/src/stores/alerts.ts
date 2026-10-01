@@ -27,6 +27,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     info: [],
   })
   const hasMore = ref(false)
+  const pinnedId = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -51,7 +52,8 @@ export const useAlertsStore = defineStore('alerts', () => {
       if (params?.before) {
         alerts.value = [...alerts.value, ...res.alerts]
       } else {
-        alerts.value = res.alerts
+        const pinned = alerts.value.find((a) => a.id === pinnedId.value)
+        alerts.value = pinned && !res.alerts.some((a) => a.id === pinned.id) ? [pinned, ...res.alerts] : res.alerts
       }
       hasMore.value = res.has_more
     } catch (e) {
@@ -227,6 +229,17 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
+  function pinAlert(alert: Alert) {
+    pinnedId.value = alert.id
+    if (!alerts.value.some((a) => a.id === alert.id)) {
+      alerts.value = [alert, ...alerts.value]
+    }
+  }
+
+  function unpinAlert() {
+    pinnedId.value = null
+  }
+
   function updateAlertInList(updated: Alert) {
     const idx = alerts.value.findIndex((a) => a.id === updated.id)
     if (idx >= 0) {
@@ -249,6 +262,8 @@ export const useAlertsStore = defineStore('alerts', () => {
     fetchActiveAlerts,
     fetchSilenceRules,
     acknowledgeAlert,
+    pinAlert,
+    unpinAlert,
     clearNewAlertCount,
     connectSSE,
     disconnectSSE,

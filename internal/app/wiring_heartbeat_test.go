@@ -17,7 +17,7 @@ import (
 // recovery must clear both dedup keys a failing ping can have used (deadline_missed
 // and exit_code_failure), since the engine resolves by exact key.
 func TestHeartbeatAlertEvents_Recovery_ClearsBothAlertTypes(t *testing.T) {
-	h := &heartbeat.Heartbeat{ID: "hb-1", Name: "backup"}
+	h := &heartbeat.Heartbeat{ID: "hb-1", Name: "backup", AgentID: "agent-1"}
 
 	events := heartbeatAlertEvents(h, "recovery", map[string]any{"heartbeat_id": "hb-1"})
 
@@ -31,6 +31,7 @@ func TestHeartbeatAlertEvents_Recovery_ClearsBothAlertTypes(t *testing.T) {
 		assert.Equal(t, alert.SourceHeartbeat, evt.Source)
 		assert.Equal(t, "heartbeat", evt.EntityType)
 		assert.Equal(t, "hb-1", evt.EntityID)
+		assert.Equal(t, "agent-1", evt.AgentID)
 	}
 	assert.True(t, types[heartbeat.AlertTypeDeadlineMissed])
 	assert.True(t, types[heartbeat.AlertTypeExitCodeFailure])

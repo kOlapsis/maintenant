@@ -8,6 +8,7 @@
 
 <p align="center">
   <strong>Drop a container. Your stack is monitored.</strong><br>
+  <em>When something breaks, fixed rules catch it, the alert is pushed to you, and your AI agent investigates through the built-in MCP server.</em><br><br>
   Docker, Kubernetes, uptime, TLS, cron jobs, live logs, image updates, CVEs: auto-discovered, alerting on every one of them,<br>
   from a single Go binary that idles under 30 MB of RAM. No PromQL, no exporters, no dashboards to build.
 </p>
@@ -20,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-maintenant">Why maintenant</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#editions">Editions</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>
+  <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-maintenant">Why maintenant</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#agents">Agents</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#editions">Editions</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>
 </p>
 
 ---
@@ -113,6 +114,7 @@ Against the tools usually stacked up next to it:
 |                              | maintenant     | Uptime Kuma | Portainer  | Dozzle     |
 | ---------------------------- |:--------------:|:-----------:|:----------:|:----------:|
 | Container auto-discovery     | **Yes**        | No          | Yes        | Yes        |
+| MCP server, agent-ready      | **Built in**   | Third-party | Separate   | No         |
 | Live container logs          | **Yes**        | No          | Yes        | Yes        |
 | HTTP/TCP endpoint checks     | **Yes**        | Yes         | No         | No         |
 | Cron/heartbeat monitoring    | **Yes**        | Yes         | No         | No         |
@@ -211,6 +213,46 @@ Against the tools usually stacked up next to it:
 
 ---
 
+## Agents
+
+maintenant watches, your AI agent investigates. The loop has three steps:
+
+1. **Detect.** Fixed rules decide that something is down: consecutive failures, thresholds, missed deadlines, restart loops. No model is involved, so an alert is never invented and nothing is spent while everything is fine.
+2. **Push.** The alert leaves as a [webhook](https://docs.maintenant.dev/features/alerts/#webhook-payload): `alert.fired` when it starts, `alert.resolved` when it recovers, with the host it belongs to (`agent_id`) and a link back to it.
+3. **Investigate.** Your agent receives the alert and queries maintenant's built-in MCP server: the container's logs, the endpoint's check history, CPU and memory, the other active alerts on the same host. You get a diagnosis, not just a red light.
+
+```mermaid
+flowchart LR
+    S[containers, endpoints,<br>certificates, cron jobs, hosts] --> M[maintenant<br>rules fire an alert]
+    M -- webhook --> A[your agent<br>Claude Code, OpenCode, n8n]
+    A -- MCP: logs, history,<br>active alerts --> M
+```
+
+**With Claude Code.** A [small receiver](examples/agent-webhook/receiver.py) (Python, standard library only) runs on the host next to maintenant. Each fired alert starts a headless Claude Code session that can only call maintenant's read-only MCP tools, and the diagnosis lands in `reports/<alert-id>.md`:
+
+```bash
+export RECEIVER_TOKEN=$(openssl rand -hex 32)
+python3 examples/agent-webhook/receiver.py      # listens on 127.0.0.1:9099
+```
+
+```bash
+# what the receiver runs for each alert
+claude -p "maintenant just fired this alert: {...} Investigate it read-only." \
+  --setting-sources project --mcp-config mcp.json --strict-mcp-config --tools "" \
+  --allowedTools mcp__maintenant__list_alerts mcp__maintenant__get_container_logs \
+                 mcp__maintenant__get_endpoint_history mcp__maintenant__get_resources
+```
+
+`mcp.json` reaches maintenant over stdio with `docker exec -i maintenant /app/maintenant --mcp-stdio`, so no MCP port is opened. Point a webhook channel at the receiver with an `Authorization: Bearer <token>` header and route alerts to it with a trigger. The [AI agents guide](https://docs.maintenant.dev/guides/ai-agents/) walks through the setup.
+
+**With OpenCode**, the same receiver calls `opencode run` instead of `claude -p`, with maintenant declared as a local MCP server in `opencode.json`. **With n8n**, a Webhook trigger feeds an AI Agent node whose MCP Client tool points at your instance's `/mcp` endpoint.
+
+### [MCP server](https://docs.maintenant.dev/features/mcp/)
+
+Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server with 51 tools. Ask your AI assistant what is burning, read a container's logs, check the alert queue, acknowledge an alert, open an incident. stdio and Streamable HTTP transports, OAuth2 with a client id and secret for remote clients (Claude web, mobile and Desktop).
+
+---
+
 ## Features
 
 Every section links to its full documentation.
@@ -285,10 +327,6 @@ Channels: Discord and webhooks (Community), email and Telegram (Personal), Slack
 ### [Public status page](https://docs.maintenant.dev/features/status-page/)
 
 Real-time status page with severity aggregation across every monitor, live over SSE. **Personal** adds incident timelines, **Pro** adds email subscribers (double opt-in, through your own SMTP server), maintenance windows and branding.
-
-### [MCP server](https://docs.maintenant.dev/features/mcp/)
-
-Built-in [Model Context Protocol](https://modelcontextprotocol.io/) server with 51 tools. Ask your AI assistant what is burning, read a container's logs, check the alert queue, acknowledge an alert, open an incident. stdio and Streamable HTTP transports, OAuth2 with a client id and secret for remote clients (Claude web, mobile and Desktop).
 
 ---
 

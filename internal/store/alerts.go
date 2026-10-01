@@ -31,21 +31,23 @@ func NewAlertStore(d *DB) *AlertStoreImpl {
 const alertColumns = `id, source, alert_type, severity, status, message,
 	entity_type, entity_id, entity_name, details,
 	resolved_by_id, fired_at, resolved_at,
-	acknowledged_at, acknowledged_by, escalated_at, created_at`
+	acknowledged_at, acknowledged_by, escalated_at, created_at, agent_id`
 
 func (s *AlertStoreImpl) InsertAlert(ctx context.Context, a *alert.Alert) (string, error) {
 	a.ID = uid.New()
+	a.AgentID = uid.Agent(a.AgentID)
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO alerts (id, source, alert_type, severity, status, message,
 			entity_type, entity_id, entity_name, details,
-			resolved_by_id, fired_at, resolved_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			resolved_by_id, fired_at, resolved_at, created_at, agent_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.Source, a.AlertType, a.Severity, a.Status, a.Message,
 		a.EntityType, a.EntityID, a.EntityName, a.Details,
 		nullableStrPtr(a.ResolvedByID), a.FiredAt.Unix(), nullableTime(a.ResolvedAt), a.CreatedAt.Unix(),
+		a.AgentID,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert alert: %w", err)
@@ -195,7 +197,7 @@ func scanAlertFromRow(scanner rowScanner) (*alert.Alert, error) {
 		&a.ID, &a.Source, &a.AlertType, &a.Severity, &a.Status, &a.Message,
 		&a.EntityType, &a.EntityID, &a.EntityName, &details,
 		&resolvedByID, &firedAt, &resolvedAt,
-		&acknowledgedAt, &acknowledgedBy, &escalatedAt, &createdAt,
+		&acknowledgedAt, &acknowledgedBy, &escalatedAt, &createdAt, &a.AgentID,
 	)
 	if err != nil {
 		return nil, err

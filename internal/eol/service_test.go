@@ -110,7 +110,7 @@ func TestEvaluateAllDebianJourney(t *testing.T) {
 		t.Fatalf("warning = %+v", warning)
 	}
 	if warning.Source != alert.SourceHost || warning.AlertType != AlertType ||
-		warning.EntityType != "agent" || warning.EntityID != "web-1" || warning.EntityName != "web-1" {
+		warning.EntityType != "agent" || warning.EntityID != "web-1" || warning.EntityName != "web-1" || warning.AgentID != "web-1" {
 		t.Fatalf("event key = %+v", warning)
 	}
 	if want := "Debian GNU/Linux 11 (bullseye): free security support ends on 2026-08-31 (in 30 days)"; warning.Message != want {
@@ -263,7 +263,7 @@ func TestEvaluateAllResolvesAgentsThatLeft(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("events = %d, want 1", len(got))
 	}
-	if !got[0].IsRecover || got[0].EntityID != "web-1" {
+	if !got[0].IsRecover || got[0].EntityID != "web-1" || got[0].AgentID != "web-1" {
 		t.Fatalf("event = %+v", got[0])
 	}
 
