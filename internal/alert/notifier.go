@@ -9,13 +9,16 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/ssrf"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 const (
@@ -68,27 +71,40 @@ type Notifier struct {
 	logger       *slog.Logger
 	webhook      *webhookSender
 	senders      map[string]ChannelSender
+	baseURL      string
 
 	suspendedMu     sync.Mutex
 	suspendedLogged map[string]bool
 }
 
+// NotifierOption configures a Notifier at construction.
+type NotifierOption func(*Notifier)
+
+// WithBaseURL sets the public URL of the UI that webhook payloads link each alert to.
+func WithBaseURL(baseURL string) NotifierOption {
+	return func(n *Notifier) {
+		n.baseURL = usableBaseURL(baseURL)
+	}
+}
+
 // NewNotifier creates a new webhook notifier. Its HTTP client blocks delivery
 // to private/internal IPs (SSRF guard) at dial time unless allowPrivate is set
 // (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS).
-func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool) *Notifier {
+func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool, opts ...NotifierOption) *Notifier {
 	client := ssrf.NewHTTPClient(webhookTimeout, allowPrivate)
-	webhook := &webhookSender{client: client, format: formatWebhookPayload, logger: logger}
 	n := &Notifier{
-		channelStore: channelStore,
-		httpClient:   client,
-		logger:       logger,
-		webhook:      webhook,
-		senders: map[string]ChannelSender{
-			"webhook": webhook,
-			"discord": NewWebhookSender(client, formatDiscordPayload, logger),
-		},
+		channelStore:    channelStore,
+		httpClient:      client,
+		logger:          logger,
 		suspendedLogged: make(map[string]bool),
+	}
+	for _, opt := range opts {
+		opt(n)
+	}
+	n.webhook = &webhookSender{client: client, format: n.formatWebhookPayload, logger: logger}
+	n.senders = map[string]ChannelSender{
+		"webhook": n.webhook,
+		"discord": NewWebhookSender(client, formatDiscordPayload, logger),
 	}
 	for i := range n.queues {
 		n.queues[i] = make(chan NotificationJob, notifierChannelBuffer)
@@ -324,6 +340,7 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 		Message:    "maintenant test notification",
 		EntityType: "test",
 		EntityName: "test",
+		AgentID:    uid.LocalAgent,
 		FiredAt:    time.Now().UTC(),
 		CreatedAt:  time.Now().UTC(),
 	}
@@ -338,13 +355,33 @@ func (n *Notifier) SendTestWebhook(ctx context.Context, ch *NotificationChannel)
 	return sender.SendTest(ctx, ch, testAlert)
 }
 
-func formatWebhookPayload(eventType string, a *Alert) ([]byte, error) {
+func (n *Notifier) formatWebhookPayload(eventType string, a *Alert) ([]byte, error) {
+	m := alertToMap(a)
+	if n.baseURL != "" && a.ID != "" {
+		m["url"] = n.baseURL + "/alerts/history?alert=" + url.QueryEscape(a.ID)
+	}
 	payload := WebhookPayload{
 		Event:     eventType,
-		Alert:     alertToMap(a),
+		Alert:     m,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 	return json.Marshal(payload)
+}
+
+// usableBaseURL returns baseURL without its trailing slash, or "" when it names no host a recipient could open.
+func usableBaseURL(baseURL string) string {
+	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	host := u.Hostname()
+	if host == "" {
+		return ""
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+		return ""
+	}
+	return u.String()
 }
 
 func formatDiscordPayload(eventType string, a *Alert) ([]byte, error) {

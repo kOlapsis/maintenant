@@ -434,7 +434,7 @@ All routes are open in every edition.
 - `GET /api/v1/alerts/active` answers `{ "critical": [...], "warning": [...], "info": [...] }`. Acknowledged and resolved alerts are left out.
 - `GET /api/v1/alerts/{id}` answers `404 NOT_FOUND` for an unknown alert.
 - A daily job purges the alerts that are not active (resolved or silenced) once they are older than 90 days, counted from their resolution, or from their creation when they never resolved. An alert that is still active is never purged, however old.
-- An alert has `id`, `source`, `alert_type`, `severity` (`critical`, `warning` or `info`), `status`, `message`, `entity_type`, `entity_id`, `entity_name`, `details` (a string holding JSON), `fired_at`, `resolved_at`, `resolved_by_id`, `acknowledged_at`, `acknowledged_by`, `escalated_at` (set when an escalation policy notifies a level for the alert) and `created_at`.
+- An alert has `id`, `source`, `alert_type`, `severity` (`critical`, `warning` or `info`), `status`, `message`, `entity_type`, `entity_id`, `entity_name`, `agent_id` (the host the alert belongs to: the agent that runs the container, endpoint, heartbeat or certificate, the disconnected agent itself, or `00000000-0000-0000-0000-000000000000` for the server's own runtime and for alerts with no host, such as the infrastructure security score), `details` (a string holding JSON), `fired_at`, `resolved_at`, `resolved_by_id`, `acknowledged_at`, `acknowledged_by`, `escalated_at` (set when an escalation policy notifies a level for the alert) and `created_at`.
 - `POST .../acknowledge` takes `{ "acknowledged_by": "..." }` (required). It answers the alert, emits `alert.acknowledged` and stops its running escalation. The dashboard, the MCP server and the security posture acknowledgments all go through this one path, so they behave the same. An acknowledged alert whose severity later rises does not start a new escalation. Errors: `400 INVALID_BODY`, `400 INVALID_REQUEST`, `404 NOT_FOUND` (unknown alert) and `409 CONFLICT` (the alert is not active or is already acknowledged).
 
 ---
@@ -464,6 +464,7 @@ A channel has `id`, `name`, `type`, `url`, `headers` (a string holding a JSON ob
 
 - `POST` body: `name` (required), `url` (required), `type`, `headers`, `secret` (required for Telegram), `config` and `enabled` (default `true`). A URL must be HTTPS and must not resolve to a private or internal address, unless `MAINTENANT_ALLOW_PRIVATE_WEBHOOKS` is set. Answers `201` with the channel.
 - `PUT` takes the same fields, all optional. A secret cannot be cleared. A request that only sets `enabled` to `false` is always accepted, even after the edition dropped.
+- A `webhook` channel receives `{ "event": "alert.fired" | "alert.resolved", "alert": {...}, "timestamp": "..." }`. `alert` holds the fields of the [`alert.fired` SSE event](#sse-event-stream), plus `url`, the link to the alert in the UI (`<MAINTENANT_BASE_URL>/alerts/history?alert=<id>`). `url` is absent when the base URL has no host a recipient could open, as with the default built from a listen address such as `:8080` or `0.0.0.0:8080`.
 - `test` answers `404 NOT_FOUND` for an unknown channel. Otherwise it answers `200`: `{ "status": "delivered", "response_code": n }` or `{ "status": "failed", "error": "..." }`.
 - Creating, updating or testing a channel of a type the edition does not open answers `403 EDITION_REQUIRED` (`feature` is the capability: `slack`, `teams`, `smtp` or `telegram`). After a downgrade such a channel is `suspended`: it stops delivering and `GET /api/v1/edition` lists it under `suspended_channels`.
 - Errors: `400 INVALID_BODY`, `400 VALIDATION_ERROR`, `404 NOT_FOUND` and `409 DUPLICATE_NAME` on create.
@@ -877,13 +878,13 @@ The SSE `event:` field is the event type, and `data:` holds the JSON payload onl
 | `certificate.created` | A certificate monitor is created or auto-detected | `monitor_id`, `hostname`, `port`, `source`, plus `server_name` and `agent_id` when they apply |
 | `certificate.check_completed` | A check finishes, including failed ones | `monitor_id`, `hostname`, `status`, `checked_at`, plus `subject_cn`, `issuer_cn`, `not_after`, `days_remaining`, `chain_valid`, `hostname_match` when known |
 | `certificate.status_changed` | A monitor changes status | `monitor_id`, `hostname`, `previous_status`, `new_status`, `days_remaining`, `timestamp` |
-| `certificate.alert` | Expiry threshold, invalid chain, hostname mismatch, revoked OCSP response or expiry | `monitor_id`, `hostname`, `port`, `alert_type`, `severity`, `timestamp` and details |
-| `certificate.recovery` | A certificate alert clears: the certificate was renewed, or the chain, hostname or OCSP problem is gone | `monitor_id`, `hostname`, `port`, `previous_alert_type` (`expiring`, `expired`, `chain_invalid`, `hostname_mismatch` or `ocsp_revoked`), `days_remaining`, `timestamp`, plus `new_not_after` and `server_name` when they apply |
+| `certificate.alert` | Expiry threshold, invalid chain, hostname mismatch, revoked OCSP response or expiry | `monitor_id`, `hostname`, `port`, `alert_type`, `severity`, `timestamp`, `agent_id` and details |
+| `certificate.recovery` | A certificate alert clears: the certificate was renewed, or the chain, hostname or OCSP problem is gone | `monitor_id`, `hostname`, `port`, `previous_alert_type` (`expiring`, `expired`, `chain_invalid`, `hostname_mismatch` or `ocsp_revoked`), `days_remaining`, `timestamp`, `agent_id`, plus `new_not_after` and `server_name` when they apply |
 | `certificate.deleted` | A certificate monitor is deleted | `monitor_id`, `hostname` |
 | `resource.snapshot` | A sample is stored (live samples only) | `container_id`, `cpu_percent`, `mem_used`, `mem_limit`, `mem_percent`, `net_rx_bytes`, `net_tx_bytes`, `block_read_bytes`, `block_write_bytes`, `timestamp`, `agent_id` |
-| `resource.alert` | CPU or memory stays over its threshold (one event per metric) | `container_id`, `container_name`, `alert_type` (`cpu` or `memory`), `current_value`, `threshold`, `timestamp` |
-| `resource.recovery` | CPU or memory returns to normal (one event per metric) | `container_id`, `container_name`, `recovered_type` (`cpu` or `memory`), `current_value`, `threshold`, `timestamp` |
-| `alert.fired` | An alert is raised, or its severity escalates | the alert: `id`, `source`, `alert_type`, `severity`, `status`, `message`, `entity_type`, `entity_id`, `entity_name`, `details` (an object), `fired_at`, `created_at` |
+| `resource.alert` | CPU or memory stays over its threshold (one event per metric) | `container_id`, `container_name`, `alert_type` (`cpu` or `memory`), `current_value`, `threshold`, `timestamp`, `agent_id` |
+| `resource.recovery` | CPU or memory returns to normal (one event per metric) | `container_id`, `container_name`, `recovered_type` (`cpu` or `memory`), `current_value`, `threshold`, `timestamp`, `agent_id` |
+| `alert.fired` | An alert is raised, or its severity escalates | the alert: `id`, `source`, `alert_type`, `severity`, `status`, `message`, `entity_type`, `entity_id`, `entity_name`, `agent_id`, `details` (an object), `fired_at`, `created_at` |
 | `alert.silenced` | An alert is raised while a silence rule or a maintenance window matches | same as `alert.fired` |
 | `alert.resolved` | An alert resolves | same as `alert.fired`, with `resolved_at` |
 | `alert.acknowledged` | An alert is acknowledged, from the REST route, the MCP server or a security posture acknowledgment | the alert as stored: `details` is a string holding JSON |
@@ -898,8 +899,8 @@ The SSE `event:` field is the event type, and `data:` holds the JSON payload onl
 | `storage.availability_changed` | The database becomes unreachable, or answers again | `engine`, `connected` |
 | `update.scan_started` | A scan starts | `scan_id`, `started_at` |
 | `update.scan_completed` | A scan ends | `scan_id`, `updates_found`, `errors` |
-| `update.detected` | A scan finds an update (on every scan, for each container) | `container_id`, `container_uid`, `container_name`, `image`, `current_tag`, `latest_tag`, `update_type`, `risk_score`, `alert_on`, plus `update_command`, `rollback_command` |
-| `update.resolved` | An update is no longer pending | `container_id`, `container_uid`, `container_name` |
+| `update.detected` | A scan finds an update (on every scan, for each container) | `container_id`, `container_uid`, `container_name`, `image`, `current_tag`, `latest_tag`, `update_type`, `risk_score`, `alert_on`, `agent_id`, plus `update_command`, `rollback_command` |
+| `update.resolved` | An update is no longer pending | `container_id`, `container_uid`, `container_name`, `agent_id` (empty when the scan no longer sees the container) |
 | `security.insights_changed` | A container's insights change | `container_id`, `container_name`, `highest_severity`, `count`, `change` |
 | `security.insights_resolved` | All insights of a container are gone | `container_id`, `container_name` |
 | `security.posture_changed` | The posture score moved by 5 points or more, or changed colour (needs `MAINTENANT_SECURITY_SCORE_THRESHOLD`; evaluated at every scoring) | `score`, `previous_score`, `color` |

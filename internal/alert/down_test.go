@@ -17,6 +17,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/store/storetest"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 const downThreshold = 5 * time.Minute
@@ -73,6 +74,7 @@ func (f *downFixture) fire(t *testing.T, evt alert.Event) {
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
 		EntityName: evt.EntityName,
+		AgentID:    evt.AgentID,
 		Details:    "{}",
 		FiredAt:    evt.Timestamp,
 	})
@@ -100,6 +102,7 @@ func TestDownDetector_FiresPastTheThreshold(t *testing.T) {
 	assert.Equal(t, "container", evt.EntityType)
 	assert.Equal(t, id, evt.EntityID)
 	assert.Equal(t, "api", evt.EntityName)
+	assert.Equal(t, uid.LocalAgent, evt.AgentID)
 	assert.Equal(t, int64(downThreshold/time.Second), evt.Details["threshold_seconds"])
 }
 
@@ -164,6 +167,7 @@ func TestDownDetector_ResolvesWhenTheContainerRunsAgain(t *testing.T) {
 	assert.Equal(t, alert.SeverityInfo, events[0].Severity)
 	assert.Equal(t, alert.AlertTypeContainerDown, events[0].AlertType)
 	assert.Equal(t, "api", events[0].EntityName)
+	assert.Equal(t, uid.LocalAgent, events[0].AgentID)
 }
 
 // Nothing is emitted for a container that never crossed the threshold, so a

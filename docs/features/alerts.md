@@ -158,13 +158,38 @@ POST /api/v1/channels
 }
 ```
 
-maintenant POSTs this JSON body, with `event` set to `alert.fired` or `alert.resolved` (`test` for a test notification):
+#### Webhook payload
+
+maintenant sends one `POST` per notification, with `Content-Type: application/json` and the channel's own headers. Any 2xx answer counts as delivered; anything else, or no answer within 10 seconds, is retried as described in [Delivery and Retries](#delivery-and-retries).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event` | string | `alert.fired`, `alert.resolved` or `test` |
+| `timestamp` | string | When the notification was sent, RFC 3339 UTC |
+| `alert.id` | string | UUID of the alert. The resolved notification carries the id of the alert it resolves. |
+| `alert.agent_id` | string | UUID of the host the alert belongs to. The server's own runtime is `00000000-0000-0000-0000-000000000000`; remote hosts are listed by `GET /api/v1/agents`. |
+| `alert.url` | string | Link to the alert in the UI, `<MAINTENANT_BASE_URL>/alerts/history?alert=<id>`. Set `MAINTENANT_BASE_URL` to the address your team opens: without it, the link is built from the listen address. Absent when that address names no reachable host (`0.0.0.0`, `::` or an empty host), and on `test` notifications. |
+| `alert.source` | string | `container`, `endpoint`, `heartbeat`, `certificate`, `resource`, `update`, `security`, `agent`, `host`, `swarm` or `kubernetes` (see [Alert Sources](#alert-sources)) |
+| `alert.alert_type` | string | Source-specific type, such as `consecutive_failure` or `restart_loop` |
+| `alert.severity` | string | `critical`, `warning` or `info` |
+| `alert.status` | string | `active` on `alert.fired`, `resolved` on `alert.resolved` |
+| `alert.message` | string | Human-readable description; on `alert.resolved`, the recovery message |
+| `alert.entity_type`, `alert.entity_id`, `alert.entity_name` | string | The monitored object: its type, UUID and display name |
+| `alert.fired_at` | string | When the condition was detected, RFC 3339 UTC |
+| `alert.created_at` | string | When the alert was stored |
+| `alert.details` | object | Source-specific values (target, failure count, threshold, last error...). Absent when the source has none. |
+| `alert.resolved_at`, `alert.resolved_by_id` | string | On `alert.resolved` only: the recovery time and the UUID of the recovery record |
+| `alert.acknowledged_at`, `alert.acknowledged_by`, `alert.escalated_at` | string | Present once the alert has been acknowledged or escalated |
+
+An alert that fires:
 
 ```json
 {
   "event": "alert.fired",
   "alert": {
     "id": "0198b1c2-7a3e-7f00-9c11-2d4e5f60a7b8",
+    "agent_id": "0198a0f4-1c2d-7e3f-8a4b-5c6d7e8f9a0b",
+    "url": "https://now.example.com/alerts/history?alert=0198b1c2-7a3e-7f00-9c11-2d4e5f60a7b8",
     "source": "endpoint",
     "alert_type": "consecutive_failure",
     "severity": "critical",
@@ -186,7 +211,41 @@ maintenant POSTs this JSON body, with `event` set to `alert.fired` or `alert.res
 }
 ```
 
-A resolved notification carries the same alert with `status` set to `resolved`, a `resolved_at` time, the `resolved_by_id` of the recovery record, the `info` severity and the recovery message. The payload is maintenant's own: Slack and Teams expect theirs, which is why they are native channels.
+The same alert when it recovers. The id, the host, the entity, `fired_at` and `details` are those of the original alert; the severity and the message come from the recovery:
+
+```json
+{
+  "event": "alert.resolved",
+  "alert": {
+    "id": "0198b1c2-7a3e-7f00-9c11-2d4e5f60a7b8",
+    "agent_id": "0198a0f4-1c2d-7e3f-8a4b-5c6d7e8f9a0b",
+    "url": "https://now.example.com/alerts/history?alert=0198b1c2-7a3e-7f00-9c11-2d4e5f60a7b8",
+    "source": "endpoint",
+    "alert_type": "consecutive_failure",
+    "severity": "info",
+    "status": "resolved",
+    "message": "Endpoint https://api.example.com/health recovered after 2 consecutive successes",
+    "entity_type": "endpoint",
+    "entity_id": "0198b1c2-8b4f-7a11-8d22-3e5f6071b8c9",
+    "entity_name": "api",
+    "fired_at": "2026-03-01T02:00:00Z",
+    "created_at": "2026-03-01T02:00:00Z",
+    "resolved_at": "2026-03-01T02:04:30Z",
+    "resolved_by_id": "0198b1c6-9d01-7c22-b733-4f6a7182c9da",
+    "details": {
+      "target": "https://api.example.com/health",
+      "failures": 3,
+      "threshold": 3,
+      "last_error": "connection refused"
+    }
+  },
+  "timestamp": "2026-03-01T02:04:30Z"
+}
+```
+
+A few cases send `alert.fired` again for the same `id`: a [severity raise](#life-of-an-alert) (the message starts with "Severity raised from X to Y") and each level of an [escalation policy](alert-escalation.md) that targets the channel. A receiver that must act once per alert keys on `id`. The **Test** button sends `event: "test"` with an `alert` whose `id`, `agent_id` and `entity_id` are empty and whose `source` and `alert_type` are `test`.
+
+The payload is maintenant's own: Slack and Teams expect theirs, which is why they are native channels. To hand alerts to an AI agent, see [AI Agents](../guides/ai-agents.md).
 
 ### Email (SMTP) :material-star-four-points:{ title="Personal" }
 

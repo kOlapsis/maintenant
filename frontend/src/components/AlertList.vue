@@ -4,17 +4,70 @@
 -->
 
 <script setup lang="ts">
-import { ref, watch, inject } from 'vue'
+import { ref, watch, inject, nextTick, onUnmounted } from 'vue'
 import { useAlertsStore } from '@/stores/alerts'
 import { detailSlideOverKey, type EntityType } from '@/composables/useDetailSlideOver'
-import type { Alert, ListAlertsParams } from '@/services/alertApi'
+import { getAlert, type Alert, type ListAlertsParams } from '@/services/alertApi'
+import { ApiError } from '@/services/apiFetch'
 import { humanizeAlertType } from '@/utils/alertLabels'
 import AcknowledgeButton from '@/components/ui/AcknowledgeButton.vue'
+import InlineAlert from '@/components/ui/InlineAlert.vue'
 import SelectInput from '@/components/ui/SelectInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
+const props = defineProps<{ linkedId?: string }>()
+
 const detailSlideOver = inject(detailSlideOverKey)!
 const store = useAlertsStore()
+
+const linkedError = ref<string | null>(null)
+const root = ref<HTMLElement | null>(null)
+let userScrolled = false
+
+watch(
+  () => props.linkedId,
+  async (id) => {
+    store.unpinAlert()
+    linkedError.value = null
+    userScrolled = false
+    if (!id) return
+    try {
+      const alert = await getAlert(id)
+      if (props.linkedId === id) store.pinAlert(alert)
+    } catch (e) {
+      if (props.linkedId !== id) return
+      linkedError.value = e instanceof ApiError && e.status === 404
+        ? 'This alert no longer exists. Alerts that are no longer active are purged after 90 days.'
+        : 'This alert could not be loaded.'
+    }
+  },
+  { immediate: true },
+)
+
+const USER_SCROLL_EVENTS = ['wheel', 'touchmove', 'keydown'] as const
+
+function onUserScroll() {
+  userScrolled = true
+}
+
+USER_SCROLL_EVENTS.forEach((e) => window.addEventListener(e, onUserScroll, { passive: true }))
+
+watch(
+  () => [props.linkedId, store.alerts.length, store.loading, store.totalActiveCount] as const,
+  async ([id]) => {
+    if (!id || userScrolled || store.loading || !store.alerts.some((a) => a.id === id)) return
+    await nextTick()
+    const target = Array.from(root.value?.querySelectorAll<HTMLElement>('[data-alert-id]') ?? [])
+      .find((el) => el.dataset.alertId === id && el.offsetParent !== null)
+    target?.scrollIntoView({ block: 'center', inline: 'start' })
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  USER_SCROLL_EVENTS.forEach((e) => window.removeEventListener(e, onUserScroll))
+  store.unpinAlert()
+})
 
 const sourceFilter = ref('')
 const severityFilter = ref('')
@@ -29,6 +82,7 @@ function buildParams(): ListAlertsParams {
 }
 
 function applyFilters() {
+  store.unpinAlert()
   store.fetchAlerts(buildParams())
 }
 
@@ -103,7 +157,11 @@ const statusOptions = [
 </script>
 
 <template>
-  <div>
+  <div ref="root">
+    <InlineAlert v-if="linkedError" severity="info" title="Linked alert not found" class="mb-4">
+      {{ linkedError }}
+    </InlineAlert>
+
     <!-- Filters -->
     <div class="mb-4 flex flex-wrap gap-3">
       <SelectInput v-model="sourceFilter" size="sm" class="w-auto" :options="sourceOptions" />
@@ -117,8 +175,10 @@ const statusOptions = [
       <div
         v-for="alert in store.alerts"
         :key="'m-' + alert.id"
-        class="rounded-lg border p-3 cursor-pointer transition-colors"
-        style="background: var(--mnt-bg-surface); border-color: var(--mnt-border-default)"
+        :data-alert-id="alert.id"
+        class="alert-card rounded-lg border p-3 cursor-pointer transition-colors"
+        :class="{ 'alert-linked': alert.id === linkedId }"
+        :aria-current="alert.id === linkedId ? 'true' : undefined"
         @click="openEntityDetail(alert)"
       >
         <div class="flex items-center justify-between gap-2 mb-1.5">
@@ -174,10 +234,10 @@ const statusOptions = [
           <tr
             v-for="alert in store.alerts"
             :key="alert.id"
-            class="transition-colors cursor-pointer"
-            :style="{ borderBottom: '1px solid var(--mnt-border-subtle)' }"
-            @mouseenter="($event.currentTarget as HTMLElement).style.background = 'var(--mnt-bg-hover)'"
-            @mouseleave="($event.currentTarget as HTMLElement).style.background = 'transparent'"
+            :data-alert-id="alert.id"
+            class="alert-row transition-colors cursor-pointer"
+            :class="{ 'alert-linked': alert.id === linkedId }"
+            :aria-current="alert.id === linkedId ? 'true' : undefined"
             @click="openEntityDetail(alert)"
           >
             <td class="px-4 py-2">
@@ -229,3 +289,24 @@ const statusOptions = [
     </div>
   </div>
 </template>
+
+<style scoped>
+.alert-card {
+  background: var(--mnt-bg-surface);
+  border-color: var(--mnt-border-default);
+}
+.alert-row {
+  border-bottom: 1px solid var(--mnt-border-subtle);
+}
+.alert-row:hover {
+  background: var(--mnt-bg-hover);
+}
+.alert-linked,
+.alert-linked:hover {
+  background: color-mix(in srgb, var(--mnt-accent) 12%, var(--mnt-bg-surface));
+  box-shadow: inset 3px 0 0 var(--mnt-accent);
+}
+.alert-card.alert-linked {
+  border-color: var(--mnt-accent);
+}
+</style>

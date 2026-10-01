@@ -144,6 +144,7 @@ func TestContainerServiceAdapter_AgentContainersUseWhatTheAgentReported(t *testi
 	byID := infosByID(t, adapter)
 
 	require.Contains(t, byID, "reported")
+	assert.Equal(t, agentID, byID["reported"].AgentID)
 	assert.Equal(t, map[string]string{"maintenant.update.enabled": "false"}, byID["reported"].Labels)
 	assert.Equal(t, []string{"nginx@sha256:running"}, byID["reported"].RepoDigests)
 	assert.NotContains(t, byID, "silent", "an agent container is scanned once its agent has reported its labels")

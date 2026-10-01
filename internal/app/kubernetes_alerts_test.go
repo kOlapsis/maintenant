@@ -16,6 +16,7 @@ import (
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 type fakeCluster struct {
@@ -100,6 +101,7 @@ func TestKubernetesReconcile_RaisesAndResolvesAlerts(t *testing.T) {
 	assert.Equal(t, "pod", fired.EntityType)
 	assert.Equal(t, "shop/api-x", fired.EntityID)
 	assert.Equal(t, alert.SeverityCritical, fired.Severity)
+	assert.Equal(t, uid.LocalAgent, fired.AgentID)
 
 	seen := map[string]bool{}
 	require.Eventually(t, func() bool {

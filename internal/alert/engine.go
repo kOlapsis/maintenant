@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 const engineChannelBuffer = 256
@@ -272,6 +273,7 @@ func (e *Engine) processEvent(ctx context.Context, evt Event) {
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
 		EntityName: evt.EntityName,
+		AgentID:    uid.Agent(evt.AgentID),
 		Details:    detailsJSON,
 		FiredAt:    evt.Timestamp,
 	}
@@ -480,6 +482,7 @@ func (e *Engine) processRecovery(ctx context.Context, evt Event) {
 		EntityType: evt.EntityType,
 		EntityID:   evt.EntityID,
 		EntityName: evt.EntityName,
+		AgentID:    activeAlert.AgentID,
 		Details:    detailsJSON,
 		FiredAt:    evt.Timestamp,
 	}
@@ -739,6 +742,7 @@ func alertToMap(a *Alert) map[string]interface{} {
 		"entity_type": a.EntityType,
 		"entity_id":   a.EntityID,
 		"entity_name": a.EntityName,
+		"agent_id":    a.AgentID,
 		"fired_at":    a.FiredAt.UTC().Format(time.RFC3339),
 		"created_at":  a.CreatedAt.UTC().Format(time.RFC3339),
 	}

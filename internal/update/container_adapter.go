@@ -116,6 +116,7 @@ func (a *ContainerServiceAdapter) detailsFor(c *container.Container, local map[s
 func newContainerInfo(c *container.Container, d RuntimeDetails) ContainerInfo {
 	return ContainerInfo{
 		UID:                c.ID,
+		AgentID:            uid.Agent(c.AgentID),
 		ExternalID:         c.ExternalID,
 		Name:               c.Name,
 		Image:              c.Image,

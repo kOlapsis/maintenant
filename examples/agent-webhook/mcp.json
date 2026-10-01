@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "maintenant": {
+      "command": "docker",
+      "args": ["exec", "-i", "maintenant", "/app/maintenant", "--mcp-stdio"]
+    }
+  }
+}

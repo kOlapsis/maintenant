@@ -17,6 +17,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -35,6 +36,7 @@ func heartbeatAlertEvents(h *heartbeat.Heartbeat, alertType string, details map[
 			EntityType: "heartbeat",
 			EntityID:   h.ID,
 			EntityName: h.Name,
+			AgentID:    h.AgentID,
 			Details:    details,
 		}
 	}
@@ -80,6 +82,7 @@ func certificateRecoveryEvent(m map[string]any) alert.Event {
 		EntityType: "certificate",
 		EntityID:   toString(m["monitor_id"]),
 		EntityName: host,
+		AgentID:    agentIDOf(m),
 		Details:    m,
 	}
 }
@@ -124,6 +127,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					EntityType: "container",
 					EntityID:   ra.ContainerID,
 					EntityName: ra.ContainerName,
+					AgentID:    ra.AgentID,
 					Details: map[string]any{
 						"restart_count": ra.RestartCount,
 						"threshold":     ra.Threshold,
@@ -142,6 +146,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					EntityType: "container",
 					EntityID:   toString(m["container_id"]),
 					EntityName: toString(m["container_name"]),
+					AgentID:    agentIDOf(m),
 					Timestamp:  time.Now(),
 				})
 			}
@@ -169,6 +174,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					EntityType: "container",
 					EntityID:   toString(m["id"]),
 					EntityName: toString(m["container_name"]),
+					AgentID:    agentIDOf(m),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})
@@ -182,6 +188,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					EntityType: "container",
 					EntityID:   toString(m["id"]),
 					EntityName: toString(m["container_name"]),
+					AgentID:    agentIDOf(m),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})
@@ -218,6 +225,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				EntityType: "endpoint",
 				EntityID:   ep.ID,
 				EntityName: epName,
+				AgentID:    ep.AgentID,
 				Details: map[string]any{
 					"target": ep.Target,
 					"reason": result.DegradedReason,
@@ -234,6 +242,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				EntityType: "endpoint",
 				EntityID:   ep.ID,
 				EntityName: epName,
+				AgentID:    ep.AgentID,
 				Timestamp:  result.Timestamp,
 			})
 		}
@@ -255,6 +264,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				EntityType: "endpoint",
 				EntityID:   al.EndpointID,
 				EntityName: entityName,
+				AgentID:    ep.AgentID,
 				Details: map[string]any{
 					"target":     al.Target,
 					"failures":   al.Failures,
@@ -282,6 +292,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			EntityType: "endpoint",
 			EntityID:   al.EndpointID,
 			EntityName: entityName,
+			AgentID:    ep.AgentID,
 			Details: map[string]any{
 				"target":    al.Target,
 				"successes": al.Successes,
@@ -374,6 +385,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				EntityType: "certificate",
 				EntityID:   toString(m["monitor_id"]),
 				EntityName: toString(m["hostname"]),
+				AgentID:    agentIDOf(m),
 				Details:    m,
 				Timestamp:  time.Now(),
 			})
@@ -402,6 +414,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				EntityType: "container",
 				EntityID:   toString(m["container_id"]),
 				EntityName: toString(m["container_name"]),
+				AgentID:    agentIDOf(m),
 				Details:    m,
 				Timestamp:  time.Now(),
 			})
@@ -416,6 +429,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				EntityType: "container",
 				EntityID:   toString(m["container_id"]),
 				EntityName: toString(m["container_name"]),
+				AgentID:    agentIDOf(m),
 				Details:    m,
 				Timestamp:  time.Now(),
 			})
@@ -424,6 +438,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 
 	// Security insight alerts
 	a.securitySvc.SetAlertCallback(func(containerID string, containerName string, insights []security.Insight, isRecover bool) {
+		agentID := a.containerAgentID(ctx, containerID)
 		if isRecover {
 			sendAlert(alert.Event{
 				Source:     alert.SourceSecurity,
@@ -434,6 +449,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				EntityType: "container",
 				EntityID:   containerID,
 				EntityName: containerName,
+				AgentID:    agentID,
 				Details:    map[string]any{},
 				Timestamp:  time.Now(),
 			})
@@ -448,6 +464,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 			EntityType: "container",
 			EntityID:   containerID,
 			EntityName: containerName,
+			AgentID:    agentID,
 			Details: map[string]any{
 				"insight_count":    fmt.Sprintf("%d", len(insights)),
 				"highest_severity": hs,
@@ -507,6 +524,7 @@ func updateDetectedAlert(m map[string]any, withChangelog bool) alert.Event {
 		EntityType: "container",
 		EntityID:   entityID,
 		EntityName: containerName,
+		AgentID:    agentIDOf(m),
 		Details:    details,
 	}
 }
@@ -543,6 +561,7 @@ func updateResolvedAlert(m map[string]any) alert.Event {
 		EntityType: "container",
 		EntityID:   entityID,
 		EntityName: containerName,
+		AgentID:    agentIDOf(m),
 	}
 }
 
@@ -609,6 +628,7 @@ func (a *App) wirePostureCallbacks() {
 			EntityType: "infrastructure",
 			EntityID:   "",
 			EntityName: "infrastructure",
+			AgentID:    uid.LocalAgent,
 			Details: map[string]any{
 				"score":          score,
 				"previous_score": previousScore,
@@ -634,19 +654,19 @@ func (a *App) wireSwarmCallbacks(m *swarmManager) {
 	m.events.SetNodeService(m.nodeSvc)
 
 	m.nodeSvc.SetEventCallback(sseBroadcast)
-	m.nodeSvc.SetAlertCallback(a.emitAlert)
+	m.nodeSvc.SetAlertCallback(a.emitLocalRuntimeAlert)
 	m.crashLoop.SetEventCallback(sseBroadcast)
-	m.crashLoop.SetAlertCallback(a.emitAlert)
+	m.crashLoop.SetAlertCallback(a.emitLocalRuntimeAlert)
 	m.updateTracker.SetEventCallback(sseBroadcast)
-	m.updateTracker.SetAlertCallback(a.emitAlert)
+	m.updateTracker.SetAlertCallback(a.emitLocalRuntimeAlert)
 	m.replicaChecker.SetEventCallback(sseBroadcast)
-	m.replicaChecker.SetAlertCallback(a.emitAlert)
+	m.replicaChecker.SetAlertCallback(a.emitLocalRuntimeAlert)
 }
 
 // wireKubernetesAlerts routes the local cluster's alerts to the alert engine and
 // their SSE events to the broker.
 func (a *App) wireKubernetesAlerts() {
-	a.k8sAlerts.SetAlertCallback(a.emitAlert)
+	a.k8sAlerts.SetAlertCallback(a.emitLocalRuntimeAlert)
 	a.k8sAlerts.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 	})
@@ -665,6 +685,7 @@ func agentLifecycleEvent(agentID, name, reason string, connected bool) alert.Eve
 		EntityType: "agent",
 		EntityID:   agentID,
 		EntityName: name,
+		AgentID:    agentID,
 	}
 	switch {
 	case connected:
@@ -726,6 +747,21 @@ func (a *App) emitAlert(evt alert.Event) {
 	a.statusSvc.HandleAlertEvent(context.Background(), evt)
 }
 
+// emitLocalRuntimeAlert pushes an alert raised by the server's own Swarm or Kubernetes runtime.
+func (a *App) emitLocalRuntimeAlert(evt alert.Event) {
+	evt.AgentID = uid.LocalAgent
+	a.emitAlert(evt)
+}
+
+// containerAgentID returns the agent that runs the container, empty when the container is unknown.
+func (a *App) containerAgentID(ctx context.Context, containerID string) string {
+	c, err := a.containerSvc.GetContainer(ctx, containerID)
+	if err != nil || c == nil {
+		return ""
+	}
+	return c.AgentID
+}
+
 // broadcastAgentUpdated republishes an agent over SSE after its identity changed.
 func (a *App) broadcastAgentUpdated(ctx context.Context, agentID string) {
 	ag, err := a.agentStore.Get(ctx, agentID)
@@ -762,6 +798,11 @@ func (a *App) startOSEOL(ctx context.Context) {
 			a.logger.Error("os end-of-support service stopped", "error", err)
 		}
 	}()
+}
+
+func agentIDOf(m map[string]any) string {
+	id, _ := m["agent_id"].(string)
+	return id
 }
 
 func toString(v any) string {

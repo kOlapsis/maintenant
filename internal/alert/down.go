@@ -94,6 +94,7 @@ func (d *DownDetector) Check(ctx context.Context) error {
 			EntityType: "container",
 			EntityID:   c.ID,
 			EntityName: c.Name,
+			AgentID:    c.AgentID,
 			Details: map[string]any{
 				"state":             string(c.State),
 				"stopped_for":       int64(stoppedFor / time.Second),
@@ -122,6 +123,7 @@ func (d *DownDetector) Check(ctx context.Context) error {
 			EntityType: "container",
 			EntityID:   id,
 			EntityName: name,
+			AgentID:    a.AgentID,
 			Timestamp:  now,
 		})
 	}

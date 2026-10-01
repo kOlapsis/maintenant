@@ -398,6 +398,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 				"current_value":  m.value,
 				"threshold":      m.thresh,
 				"timestamp":      now,
+				"agent_id":       snap.AgentID,
 			})
 		case m.was && !m.is:
 			s.emit(event.ResourceRecovery, map[string]interface{}{
@@ -407,6 +408,7 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 				"current_value":  m.value,
 				"threshold":      m.thresh,
 				"timestamp":      now,
+				"agent_id":       snap.AgentID,
 			})
 		}
 	}

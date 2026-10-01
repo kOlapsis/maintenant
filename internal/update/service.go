@@ -464,6 +464,7 @@ func (s *Service) runScan(ctx context.Context) {
 			"container_id":   r.ContainerID,
 			"container_uid":  containerByID[r.ContainerID].UID,
 			"container_name": r.ContainerName,
+			"agent_id":       containerByID[r.ContainerID].AgentID,
 			"image":          r.Image,
 			"current_tag":    r.CurrentTag,
 			"latest_tag":     r.LatestTag,
@@ -536,6 +537,7 @@ func (s *Service) runScan(ctx context.Context) {
 			"container_id":   su.ContainerID,
 			"container_uid":  containerUID,
 			"container_name": su.ContainerName,
+			"agent_id":       containerByID[su.ContainerID].AgentID,
 		})
 	}
 

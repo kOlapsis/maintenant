@@ -124,6 +124,7 @@ func TestMigratePostgres_ConcurrentCatchUp(t *testing.T) {
 		"ALTER TABLE heartbeats ADD COLUMN active INTEGER NOT NULL DEFAULT 1",                               // 39
 		"CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at) WHERE active=1", // 39
 		"CREATE INDEX idx_heartbeat_active ON heartbeats(active)",                                           // 39
+		"ALTER TABLE alerts DROP COLUMN agent_id",                                                           // 40
 	} {
 		_, err = db.ReadDB().Exec(undo)
 		require.NoError(t, err, undo)

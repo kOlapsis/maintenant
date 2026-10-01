@@ -42,6 +42,9 @@ func TestAgentLifecycleEvent(t *testing.T) {
 			if evt.EntityID != "agent-uuid" {
 				t.Errorf("entityID = %q, want agent-uuid", evt.EntityID)
 			}
+			if evt.AgentID != "agent-uuid" {
+				t.Errorf("agentID = %q, want agent-uuid", evt.AgentID)
+			}
 			if evt.Message == "" {
 				t.Error("message must not be empty")
 			}

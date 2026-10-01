@@ -23,8 +23,14 @@ const router = useRouter()
 const store = useAlertsStore()
 const triggersStore = useTriggersStore()
 
+const linkedAlertId = computed(() => {
+  const id = route.query.alert
+  return typeof id === 'string' && id !== '' ? id : undefined
+})
+
 const activeTab = computed<Tab>({
   get: () => {
+    if (linkedAlertId.value) return 'history'
     const t = route.params.tab as string
     if (t === 'channels') return 'triggers' // legacy redirect
     if (t === 'triggers' || t === 'silence' || t === 'history') return t
@@ -77,7 +83,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Tab content -->
-    <AlertList v-if="activeTab === 'history'" />
+    <AlertList v-if="activeTab === 'history'" :linked-id="linkedAlertId" />
     <template v-else-if="activeTab === 'triggers'">
       <FeatureHint
         storage-key="alerts-triggers"

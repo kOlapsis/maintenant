@@ -399,7 +399,8 @@ CREATE TABLE alerts (
     created_at    BIGINT NOT NULL DEFAULT 0,
     acknowledged_at BIGINT,
     acknowledged_by TEXT,
-    escalated_at  BIGINT
+    escalated_at  BIGINT,
+    agent_id      TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
 );
 CREATE INDEX idx_alerts_status ON alerts(status);
 CREATE INDEX idx_alerts_source_severity ON alerts(source, severity);

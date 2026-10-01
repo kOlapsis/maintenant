@@ -142,3 +142,14 @@ func TestUpdateResolvedAlert(t *testing.T) {
 		t.Errorf("message = %q", evt.Message)
 	}
 }
+
+func TestUpdateAlerts_CarryTheContainerAgent(t *testing.T) {
+	p := detectedPayload("svc", "id", 90)
+	p["agent_id"] = "agent-1"
+	if got := updateDetectedAlert(p, false).AgentID; got != "agent-1" {
+		t.Errorf("detected AgentID = %q, want agent-1", got)
+	}
+	if got := updateResolvedAlert(p).AgentID; got != "agent-1" {
+		t.Errorf("resolved AgentID = %q, want agent-1", got)
+	}
+}

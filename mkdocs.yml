@@ -1,6 +1,6 @@
 site_name: maintenant
 site_description: The all-in-one monitoring dashboard your self-hosted stack deserves.
-site_url: https://kolapsis.github.io/maintenant/
+site_url: https://docs.maintenant.dev/
 
 repo_name: kolapsis/maintenant
 repo_url: https://github.com/kolapsis/maintenant
@@ -52,7 +52,11 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
@@ -96,6 +100,7 @@ nav:
       - Vultr Deployment: guides/vultr.md
       - Docker Swarm Deployment: guides/swarm.md
       - PostgreSQL Storage: guides/postgresql.md
+      - AI Agents: guides/ai-agents.md
   - API:
       - API Reference: api/reference.md
   - Security: security.md

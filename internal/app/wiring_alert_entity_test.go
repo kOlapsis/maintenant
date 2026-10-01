@@ -22,6 +22,15 @@ import (
 
 // An event without an entity name reaches every channel titled "Alert: ".
 func TestAlertEvents_BuiltInThisPackageNameTheirEntity(t *testing.T) {
+	assertEveryAlertEventSets(t, "EntityName")
+}
+
+func TestAlertEvents_BuiltInThisPackageNameTheirAgent(t *testing.T) {
+	assertEveryAlertEventSets(t, "AgentID")
+}
+
+func assertEveryAlertEventSets(t *testing.T, field string) {
+	t.Helper()
 	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)
 
@@ -39,7 +48,7 @@ func TestAlertEvents_BuiltInThisPackageNameTheirEntity(t *testing.T) {
 				return true
 			}
 			built++
-			assert.True(t, setsField(lit, "EntityName"), "%s builds an alert.Event without EntityName", fset.Position(lit.Pos()))
+			assert.True(t, setsField(lit, field), "%s builds an alert.Event without %s", fset.Position(lit.Pos()), field)
 			return true
 		})
 	}

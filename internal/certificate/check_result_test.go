@@ -146,7 +146,13 @@ func TestProcessCheckResult_EachAlertRecoversWhenItsConditionClears(t *testing.T
 			bad := healthyScan()
 			tc.broken(bad)
 			svc.processCheckResult(ctx, monitor, bad, true)
-			assert.Contains(t, alertTypes(drain()), tc.alertType)
+			fired := drain()
+			assert.Contains(t, alertTypes(fired), tc.alertType)
+			for _, e := range fired {
+				if e.eventType == event.CertificateAlert {
+					assert.Equal(t, monitor.AgentID, e.data["agent_id"], "the alert names the agent that scans the certificate")
+				}
+			}
 
 			svc.processCheckResult(ctx, monitor, bad, true)
 			assert.Empty(t, recoveredTypes(drain()), "a condition still present must not recover")

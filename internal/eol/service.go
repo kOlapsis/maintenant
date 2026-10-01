@@ -397,6 +397,7 @@ func (s *Service) forget(agentID string, now time.Time) {
 		EntityType: "agent",
 		EntityID:   agentID,
 		EntityName: agentID,
+		AgentID:    agentID,
 		Timestamp:  now,
 	})
 }
@@ -415,6 +416,7 @@ func hostEvent(a agent.Agent, identity Identity, support Support, now time.Time)
 		EntityType: "agent",
 		EntityID:   a.AgentID,
 		EntityName: name,
+		AgentID:    a.AgentID,
 		Message:    supportMessage(identity, support),
 		Details:    supportDetails(identity, support),
 		Timestamp:  now,
