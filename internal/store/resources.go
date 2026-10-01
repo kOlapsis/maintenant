@@ -282,11 +282,11 @@ func (s *ResourceStore) InsertDailyRollup(ctx context.Context, r *resource.Rollu
 }
 
 // GetTopConsumersByPeriod ranks containers by average resource usage over a
-// period, the hour or day in progress included. agentID filters by host: nil =
-// all hosts, a pointer to "" = the local server (containers owned by the
-// LocalAgent sentinel), a pointer to an id = that agent.
-func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string) ([]resource.TopConsumerRow, error) {
-	now := time.Now().UTC()
+// period ending at now, the hour or day in progress included. agentID filters
+// by host: nil = all hosts, a pointer to "" = the local server (containers owned
+// by the LocalAgent sentinel), a pointer to an id = that agent.
+func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string, now time.Time) ([]resource.TopConsumerRow, error) {
+	now = now.UTC()
 	currentHour := now.Truncate(time.Hour).Unix()
 	currentDay := startOfUTCDay(now).Unix()
 

@@ -46,14 +46,13 @@ func (s *Service) runRollups(ctx context.Context) {
 		dailyBuckets++
 	}
 
-	s.rollupHourly(ctx)
-	s.rollupDaily(ctx)
+	s.rollupHourly(ctx, now)
+	s.rollupDaily(ctx, now)
 
 	s.logger.Info("resource: rollup completed", "hourly_buckets", hourlyBuckets, "daily_buckets", dailyBuckets)
 }
 
-func (s *Service) rollupHourly(ctx context.Context) {
-	now := time.Now().UTC()
+func (s *Service) rollupHourly(ctx context.Context, now time.Time) {
 	currentHour := now.Truncate(time.Hour)
 	backfillStart := now.Add(-s.rawWindow).Truncate(time.Hour)
 
@@ -65,8 +64,7 @@ func (s *Service) rollupHourly(ctx context.Context) {
 	}
 }
 
-func (s *Service) rollupDaily(ctx context.Context) {
-	now := time.Now().UTC()
+func (s *Service) rollupDaily(ctx context.Context, now time.Time) {
 	currentDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	backfillStart := now.Add(-s.rawWindow).UTC()
 	backfillStart = time.Date(backfillStart.Year(), backfillStart.Month(), backfillStart.Day(), 0, 0, 0, 0, time.UTC)

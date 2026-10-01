@@ -192,14 +192,15 @@ func TestRunResourceCleanup_PurgesAllThreeTables(t *testing.T) {
 	cid := seedHostContainer(t, NewContainerStore(db), "ext-all", "")
 	store := NewResourceStore(db)
 
-	seedSnapshots(t, db, cid, 1200, time.Now().Add(-30*24*time.Hour))
-	seedSnapshots(t, db, cid, 5, time.Now())
-	seedBuckets(t, db, "resource_hourly", cid, 1200, time.Now().Add(-100*24*time.Hour))
-	seedBuckets(t, db, "resource_daily", cid, 1200, time.Now().Add(-400*24*time.Hour))
+	now := time.Now()
+	seedSnapshots(t, db, cid, 1200, now.Add(-30*24*time.Hour))
+	seedSnapshots(t, db, cid, 5, now)
+	seedBuckets(t, db, "resource_hourly", cid, 1200, now.Add(-100*24*time.Hour))
+	seedBuckets(t, db, "resource_daily", cid, 1200, now.Add(-400*24*time.Hour))
 
 	cfg := RetentionConfig{}.withDefaults(testLogger())
 	var pass retentionPass
-	runResourceCleanup(context.Background(), store, testLogger(), cfg, &pass)
+	runResourceCleanup(context.Background(), now, store, testLogger(), cfg, &pass)
 
 	assert.False(t, pass.truncated)
 	assert.Equal(t, int64(3600), pass.deleted)

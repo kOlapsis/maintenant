@@ -271,7 +271,7 @@ func hostMatchesFilter(snapAgent string, filter *string) bool {
 // period. agentID filters by host: nil = all hosts, *agentID == "" = the local
 // server, *agentID == id = that agent.
 func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]TopConsumerRow, error) {
-	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, min(limit, MaxTopConsumers), agentID)
+	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, min(limit, MaxTopConsumers), agentID, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("get top consumers by period: %w", err)
 	}

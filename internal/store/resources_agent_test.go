@@ -152,18 +152,18 @@ func TestGetTopConsumersByPeriod_HostFilter(t *testing.T) {
 	}
 
 	// nil => all hosts.
-	all, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, nil)
+	all, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, nil, now)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{localCID, agentCID}, ids(all))
 
 	// "" => local server only.
 	local := ""
-	localRows, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, &local)
+	localRows, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, &local, now)
 	require.NoError(t, err)
 	assert.Equal(t, []string{localCID}, ids(localRows))
 
 	// specific agent.
-	agentRows, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, &agentID)
+	agentRows, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, &agentID, now)
 	require.NoError(t, err)
 	assert.Equal(t, []string{agentCID}, ids(agentRows))
 }
@@ -178,38 +178,39 @@ func TestGetTopConsumersByPeriod_AddedWindows(t *testing.T) {
 	rstore := NewResourceStore(db)
 
 	cid := seedHostContainer(t, cstore, "ext-windows", "")
+	now := time.Now().UTC()
 
 	// Raw sample three hours back: inside 6h, outside 1h.
 	_, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
 		ContainerID: cid, CPUPercent: 42, MemUsed: 10, MemLimit: 100,
-		Timestamp: time.Now().Add(-3 * time.Hour),
+		Timestamp: now.Add(-3 * time.Hour),
 	})
 	require.NoError(t, err)
 
 	// Daily bucket sixty days back: inside 90d, outside 30d.
 	require.NoError(t, rstore.InsertDailyRollup(ctx, &resource.RollupRow{
 		ContainerID:   cid,
-		Bucket:        time.Now().UTC().AddDate(0, 0, -60).Truncate(24 * time.Hour),
+		Bucket:        startOfUTCDay(now).AddDate(0, 0, -60),
 		AvgCPUPercent: 77,
 		AvgMemLimit:   100,
 		SampleCount:   24,
 	}))
 
-	sixHours, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "6h", 10, nil)
+	sixHours, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "6h", 10, nil, now)
 	require.NoError(t, err)
 	require.Len(t, sixHours, 1)
 	assert.EqualValues(t, 42, sixHours[0].AvgValue)
 
-	oneHour, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, nil)
+	oneHour, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "1h", 10, nil, now)
 	require.NoError(t, err)
 	assert.Empty(t, oneHour, "the sample is older than an hour")
 
-	ninetyDays, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, nil)
+	ninetyDays, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, nil, now)
 	require.NoError(t, err)
 	require.Len(t, ninetyDays, 1)
 	assert.EqualValues(t, 77, ninetyDays[0].AvgValue)
 
-	thirtyDays, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "30d", 10, nil)
+	thirtyDays, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "30d", 10, nil, now)
 	require.NoError(t, err)
 	assert.Empty(t, thirtyDays, "the bucket is older than thirty days")
 }
@@ -221,19 +222,20 @@ func TestGetTopConsumersByPeriod_IncludesThePeriodInProgress(t *testing.T) {
 	ctx := context.Background()
 	rstore := NewResourceStore(db)
 	cid := seedHostContainer(t, NewContainerStore(db), "ext-fresh", "")
+	now := time.Now()
 
 	_, err := rstore.InsertSnapshot(ctx, &resource.ResourceSnapshot{
-		ContainerID: cid, CPUPercent: 40, MemUsed: 25, MemLimit: 100, Timestamp: time.Now(),
+		ContainerID: cid, CPUPercent: 40, MemUsed: 25, MemLimit: 100, Timestamp: now,
 	})
 	require.NoError(t, err)
 
 	for _, period := range []string{"24h", "7d", "30d", "90d"} {
-		cpu, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", period, 10, nil)
+		cpu, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", period, 10, nil, now)
 		require.NoError(t, err)
 		require.Len(t, cpu, 1, period)
 		assert.EqualValues(t, 40, cpu[0].AvgValue, period)
 
-		mem, err := rstore.GetTopConsumersByPeriod(ctx, "memory", period, 10, nil)
+		mem, err := rstore.GetTopConsumersByPeriod(ctx, "memory", period, 10, nil, now)
 		require.NoError(t, err)
 		require.Len(t, mem, 1, period)
 		assert.InDelta(t, 25, mem[0].AvgPercent, 0.001, period)
@@ -265,7 +267,7 @@ func TestGetTopConsumersByPeriod_WeighsThePeriodInProgressAsOneBucket(t *testing
 		ContainerID: cid, Bucket: yesterday, AvgCPUPercent: 90, AvgMemLimit: 100, SampleCount: 8640,
 	}))
 
-	day, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "24h", 10, nil)
+	day, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "24h", 10, nil, now)
 	require.NoError(t, err)
 	require.Len(t, day, 1)
 	assert.InDelta(t, 30, day[0].AvgValue, 0.001, "the closed hour at 10 and the hour in progress at 50")
@@ -274,7 +276,7 @@ func TestGetTopConsumersByPeriod_WeighsThePeriodInProgressAsOneBucket(t *testing
 	if !lastHour.Before(startOfUTCDay(now)) {
 		today = 30
 	}
-	week, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "7d", 10, nil)
+	week, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "7d", 10, nil, now)
 	require.NoError(t, err)
 	require.Len(t, week, 1)
 	assert.InDelta(t, (90+today)/2, week[0].AvgValue, 0.001, "yesterday at 90 and today so far")
@@ -298,18 +300,19 @@ func TestGetTopConsumersByPeriod_AddedWindowsRespectTheHostFilter(t *testing.T) 
 	localCID := seedHostContainer(t, cstore, "ext-local-w", "")
 	agentCID := seedHostContainer(t, cstore, "ext-agent-w", agentID)
 
-	bucket := time.Now().UTC().AddDate(0, 0, -60).Truncate(24 * time.Hour)
+	now := time.Now()
+	bucket := startOfUTCDay(now).AddDate(0, 0, -60)
 	for _, cid := range []string{localCID, agentCID} {
 		require.NoError(t, rstore.InsertDailyRollup(ctx, &resource.RollupRow{
 			ContainerID: cid, Bucket: bucket, AvgCPUPercent: 50, AvgMemLimit: 100, SampleCount: 24,
 		}))
 	}
 
-	all, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, nil)
+	all, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, nil, now)
 	require.NoError(t, err)
 	assert.Len(t, all, 2)
 
-	onlyAgent, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, &agentID)
+	onlyAgent, err := rstore.GetTopConsumersByPeriod(ctx, "cpu", "90d", 10, &agentID, now)
 	require.NoError(t, err)
 	require.Len(t, onlyAgent, 1)
 	assert.Equal(t, agentCID, onlyAgent[0].ContainerID)

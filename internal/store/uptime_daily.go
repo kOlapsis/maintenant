@@ -68,23 +68,23 @@ var (
 	containerUptimeTable = uptimeTable{name: "container_uptime_daily", column: "container_id"}
 )
 
-// GetEndpointDailyUptime returns one entry per day, most recent first.
-func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointID string, days int) ([]DailyUptime, error) {
-	return s.daily(ctx, endpointUptimeTable, endpointID, days, s.endpointDays)
+// GetEndpointDailyUptime returns one entry per day up to the day of now, most recent first.
+func (s *UptimeDailyStore) GetEndpointDailyUptime(ctx context.Context, endpointID string, days int, now time.Time) ([]DailyUptime, error) {
+	return s.daily(ctx, endpointUptimeTable, endpointID, days, now, s.endpointDays)
 }
 
-// GetHeartbeatDailyUptime returns one entry per day, most recent first.
-func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int) ([]DailyUptime, error) {
-	return s.daily(ctx, heartbeatUptimeTable, heartbeatID, days, s.heartbeatDays)
+// GetHeartbeatDailyUptime returns one entry per day up to the day of now, most recent first.
+func (s *UptimeDailyStore) GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int, now time.Time) ([]DailyUptime, error) {
+	return s.daily(ctx, heartbeatUptimeTable, heartbeatID, days, now, s.heartbeatDays)
 }
 
-// GetContainerDailyUptime returns one entry per day, most recent first.
-func (s *UptimeDailyStore) GetContainerDailyUptime(ctx context.Context, containerID string, days int) ([]DailyUptime, error) {
+// GetContainerDailyUptime returns one entry per day up to the day of now, most recent first.
+func (s *UptimeDailyStore) GetContainerDailyUptime(ctx context.Context, containerID string, days int, now time.Time) ([]DailyUptime, error) {
 	until, err := s.containerUntil(ctx, containerID)
 	if err != nil {
 		return nil, err
 	}
-	return s.daily(ctx, containerUptimeTable, containerID, days,
+	return s.daily(ctx, containerUptimeTable, containerID, days, now,
 		func(ctx context.Context, id string, from, to time.Time) (dayUptimes, error) {
 			if until != nil && until.Before(to) {
 				to = *until
@@ -93,10 +93,10 @@ func (s *UptimeDailyStore) GetContainerDailyUptime(ctx context.Context, containe
 		})
 }
 
-func (s *UptimeDailyStore) daily(ctx context.Context, t uptimeTable, id string, days int, compute computeDays) ([]DailyUptime, error) {
+func (s *UptimeDailyStore) daily(ctx context.Context, t uptimeTable, id string, days int, now time.Time, compute computeDays) ([]DailyUptime, error) {
 	days = clampUptimeDays(days)
 
-	now := time.Now().UTC()
+	now = now.UTC()
 	today := startOfUTCDay(now)
 	windowStart := today.AddDate(0, 0, -(days - 1))
 

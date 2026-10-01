@@ -101,7 +101,7 @@ func (m *mockResourceStore) AggregateHourlyRollup(_ context.Context, _, _ time.T
 func (m *mockResourceStore) AggregateDailyRollup(_ context.Context, _, _ time.Time) error {
 	return nil
 }
-func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, limit int, _ *string) ([]TopConsumerRow, error) {
+func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, limit int, _ *string, _ time.Time) ([]TopConsumerRow, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.topLimit = limit

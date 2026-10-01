@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +25,7 @@ type mockUptimeDailyStore struct {
 	err              error
 }
 
-func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpointID string, days int) ([]store.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpointID string, days int, _ time.Time) ([]store.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -42,7 +43,7 @@ func (m *mockUptimeDailyStore) GetEndpointDailyUptime(_ context.Context, endpoin
 	return result, nil
 }
 
-func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartbeatID string, days int) ([]store.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartbeatID string, days int, _ time.Time) ([]store.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -59,7 +60,7 @@ func (m *mockUptimeDailyStore) GetHeartbeatDailyUptime(_ context.Context, heartb
 	return result, nil
 }
 
-func (m *mockUptimeDailyStore) GetContainerDailyUptime(_ context.Context, containerID string, days int) ([]store.DailyUptime, error) {
+func (m *mockUptimeDailyStore) GetContainerDailyUptime(_ context.Context, containerID string, days int, _ time.Time) ([]store.DailyUptime, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
