@@ -35,7 +35,6 @@ const (
 	CapSlack              Capability = "slack"
 	CapTeams              Capability = "teams"
 	CapAlertEscalation    Capability = "alert_escalation"
-	CapAlertEntityRouting Capability = "alert_entity_routing"
 	CapMaintenanceWindows Capability = "maintenance_windows"
 	CapSubscribers        Capability = "subscribers"
 	CapPersonalization    Capability = "personalization"

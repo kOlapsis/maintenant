@@ -280,7 +280,7 @@ Flags what should not be there: ports bound to `0.0.0.0`, exposed database ports
 
 One alert pipeline for every source: container restart loops, unhealthy checks and stopped containers, endpoint failures, missed heartbeats, expiring or invalid certificates, CPU and memory thresholds, available updates, Swarm and Kubernetes health, agents going offline, hosts whose OS loses support. Channels are silent by default and routed through **triggers** (severity, source, scope). Alerts can be acknowledged. Silence rules for planned maintenance, three delivery attempts per notification.
 
-Channels: Discord and webhooks (Community), email and Telegram (Personal), Slack and Microsoft Teams (Pro). **Pro** adds [escalation policies](https://docs.maintenant.dev/features/alert-escalation/) of up to five levels that page the on-call, then the backup, then the lead, plus per-entity routing and maintenance windows.
+Channels: Discord and webhooks (Community), email and Telegram (Personal), Slack and Microsoft Teams (Pro). **Pro** adds [escalation policies](https://docs.maintenant.dev/features/alert-escalation/) of up to five levels that page the on-call, then the backup, then the lead, plus maintenance windows.
 
 ### [Public status page](https://docs.maintenant.dev/features/status-page/)
 
@@ -385,7 +385,7 @@ Community is free forever and runs production infrastructure every day: it is th
 | Heartbeats                | 5                        | unlimited                          | unlimited                            |
 | Certificates              | 5                        | unlimited                          | unlimited                            |
 | Resource history          | 7 days                   | 30 days                            | 90 days                              |
-| Alert channels            | Discord, webhooks        | + email, Telegram, advanced filters | + Slack, Teams, escalation, per-entity routing, maintenance windows |
+| Alert channels            | Discord, webhooks        | + email, Telegram, advanced filters | + Slack, Teams, escalation, maintenance windows |
 | Security                  | network insights         | + CVE enrichment, risk scoring, security posture, OCSP | same                     |
 | Status page               | 3 components             | unlimited, incident timelines      | + subscriber notifications, branding |
 | Use                       | anything                 | your own infrastructure            | + running it for others, email support |

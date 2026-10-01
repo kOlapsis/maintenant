@@ -62,7 +62,6 @@ const CAPABILITY_LABELS: Record<string, string> = {
   slack: 'Slack channel',
   teams: 'Microsoft Teams channel',
   alert_escalation: 'Escalation policies',
-  alert_entity_routing: 'Per-entity alert routing',
   maintenance_windows: 'Maintenance windows',
   subscribers: 'Status page subscribers',
   personalization: 'Status page personalization',

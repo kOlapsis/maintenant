@@ -63,7 +63,7 @@ The core of maintenant is licensed under **Apache 2.0** and needs no key: it is 
 |---|---|---|
 | **Community** | Everyone, free | Containers, endpoints, heartbeats, certificates, the status page, alerts with Discord and webhook channels, the Swarm and Kubernetes views, 7 days of resource history, on a single host, with caps on hand-made monitors (10 endpoints, 5 heartbeats, 5 certificate monitors, 3 status components). |
 | **Personal** | One person, on their own infrastructure, freelancers included | No caps, up to 20 remote hosts, email and Telegram alerts, CVE enrichment, risk scoring, security posture, incidents, changelog, 30 days of resource history, advanced trigger filters, OCSP stapling. Bought once, it never expires and includes a year of updates. |
-| **Pro** | Teams, and anyone running it for others | Everything in Personal with unlimited hosts, Slack and Teams, escalation policies, per-entity routing, maintenance windows, status page subscribers and branding, 90 days of resource history, and support. Subscription. |
+| **Pro** | Teams, and anyone running it for others | Everything in Personal with unlimited hosts, Slack and Teams, escalation policies, maintenance windows, status page subscribers and branding, 90 days of resource history, and support. Subscription. |
 
 Prices and terms are in [COMMERCIAL-LICENSE.md](https://github.com/kOlapsis/maintenant/blob/main/COMMERCIAL-LICENSE.md). The Configuration page explains [how a license key is verified and what happens offline](getting-started/configuration.md#verification-and-offline-behavior), and [what happens when the edition drops](getting-started/configuration.md#when-the-edition-drops).
 

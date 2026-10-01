@@ -178,11 +178,6 @@ type Acknowledgment struct {
 	At time.Time
 }
 
-// EntityRouter provides per-entity alert routing.
-type EntityRouter interface {
-	Route(ctx context.Context, entityType string, entityID string, severity string) ([]string, error)
-}
-
 // Acknowledger acknowledges an alert on behalf of every surface that offers it.
 type Acknowledger interface {
 	Acknowledge(ctx context.Context, id, by string) (*Alert, error)

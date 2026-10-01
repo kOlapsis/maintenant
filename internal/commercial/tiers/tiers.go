@@ -25,7 +25,6 @@ var minEdition = map[extension.Capability]extension.Edition{
 	extension.CapSlack:              extension.Pro,
 	extension.CapTeams:              extension.Pro,
 	extension.CapAlertEscalation:    extension.Pro,
-	extension.CapAlertEntityRouting: extension.Pro,
 	extension.CapMaintenanceWindows: extension.Pro,
 	extension.CapSubscribers:        extension.Pro,
 	extension.CapPersonalization:    extension.Pro,

@@ -54,9 +54,8 @@ type Engine struct {
 	logger       *slog.Logger
 
 	// Extension points (Pro injects real implementations; CE uses no-ops)
-	escalator    Escalator
-	entityRouter EntityRouter
-	suppressor   MaintenanceSuppressor
+	escalator  Escalator
+	suppressor MaintenanceSuppressor
 
 	// In-memory active alert map for recovery linking and dedup
 	activeAlerts map[activeAlertKey]*Alert
@@ -90,7 +89,6 @@ func NewEngine(d EngineDeps) *Engine {
 		broadcaster:  d.Broadcaster,
 		logger:       d.Logger,
 		escalator:    noopEscalator{},
-		entityRouter: noopEntityRouter{},
 		suppressor:   noopSuppressor{},
 		activeAlerts: make(map[activeAlertKey]*Alert),
 	}
@@ -99,11 +97,6 @@ func NewEngine(d EngineDeps) *Engine {
 // SetEscalator sets the escalation extension.
 func (e *Engine) SetEscalator(esc Escalator) {
 	e.escalator = esc
-}
-
-// SetEntityRouter sets the entity routing extension.
-func (e *Engine) SetEntityRouter(r EntityRouter) {
-	e.entityRouter = r
 }
 
 // SetMaintenanceSuppressor sets the maintenance suppression extension.
@@ -121,13 +114,6 @@ func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ string, _ Acknowle
 }
 func (noopEscalator) OnAlertResolved(_ context.Context, _ string, _ time.Time) error { return nil }
 func (noopEscalator) OnEditionDowngraded(_ context.Context) error                    { return nil }
-
-// noopEntityRouter is the Engine-internal no-op default.
-type noopEntityRouter struct{}
-
-func (noopEntityRouter) Route(_ context.Context, _ string, _ string, _ string) ([]string, error) {
-	return nil, nil
-}
 
 // noopSuppressor is the Engine-internal no-op default.
 type noopSuppressor struct{}
@@ -629,28 +615,6 @@ func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payl
 				e.enqueueDelivery(ctx, ch, payload)
 			}
 		}
-	}
-
-	// Consult entity router extension for additional channels (Pro: per-entity routing).
-	// Continues to operate independently from triggers.
-	extraIDs, err := e.entityRouter.Route(ctx, routeBy.EntityType, routeBy.EntityID, routeBy.Severity)
-	if err != nil {
-		e.logger.Error("alert engine: entity router error", "error", err)
-	}
-	for _, chID := range extraIDs {
-		if dispatched[chID] {
-			continue // dedup
-		}
-		ch, chErr := e.channelStore.GetChannel(ctx, chID)
-		if chErr != nil {
-			e.logger.Error("alert engine: get entity-routed channel", "error", chErr, "channel_id", chID)
-			continue
-		}
-		if ch == nil || !ch.Enabled {
-			continue
-		}
-		dispatched[chID] = true
-		e.enqueueDelivery(ctx, ch, payload)
 	}
 }
 

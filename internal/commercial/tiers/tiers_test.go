@@ -31,7 +31,7 @@ var editions = []extension.Edition{extension.Community, extension.Personal, exte
 
 func TestAllows_EveryEditionEveryCapability(t *testing.T) {
 	catalog := extension.Catalog()
-	require.Len(t, catalog, 21)
+	require.Len(t, catalog, 20)
 
 	for _, edition := range editions {
 		for c, min := range catalog {
@@ -57,7 +57,7 @@ func TestMinEdition_TierMembership(t *testing.T) {
 		},
 		extension.Pro: {
 			extension.CapSlack, extension.CapTeams, extension.CapAlertEscalation,
-			extension.CapAlertEntityRouting, extension.CapMaintenanceWindows,
+			extension.CapMaintenanceWindows,
 			extension.CapSubscribers, extension.CapPersonalization,
 		},
 	}
@@ -73,7 +73,7 @@ func TestMinEdition_TierMembership(t *testing.T) {
 			}
 		}
 	}
-	assert.Equal(t, 21, total)
+	assert.Equal(t, 20, total)
 }
 
 func TestMinEdition_UnknownCapability(t *testing.T) {
@@ -93,7 +93,7 @@ func TestCatalog_ReturnsACopy(t *testing.T) {
 	c["invented"] = extension.Community
 
 	assert.Equal(t, extension.Pro, extension.MinEdition(extension.CapAlertEscalation))
-	assert.Len(t, extension.Catalog(), 21)
+	assert.Len(t, extension.Catalog(), 20)
 }
 
 func TestLimit_Matrix(t *testing.T) {

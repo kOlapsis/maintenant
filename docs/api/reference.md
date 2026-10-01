@@ -61,7 +61,7 @@ Three answers are not JSON:
 |---------|---------------------|
 | Community | `alert_routing`, `swarm_dashboard`, `k8s_cluster`, `resource_history` |
 | Personal | Community, plus `multihost`, `cve_enrichment`, `risk_scoring`, `changelog`, `incidents`, `smtp`, `alert_advanced_filters`, `security_posture`, `ocsp_stapling`, `telegram` |
-| Pro | Personal, plus `slack`, `teams`, `alert_escalation`, `alert_entity_routing`, `maintenance_windows`, `subscribers`, `personalization` |
+| Pro | Personal, plus `slack`, `teams`, `alert_escalation`, `maintenance_windows`, `subscribers`, `personalization` |
 
 | Resource | Community | Personal | Pro |
 |----------|:---------:|:--------:|:---:|
