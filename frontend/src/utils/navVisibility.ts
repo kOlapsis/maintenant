@@ -10,13 +10,11 @@ export interface NavItem {
   icon?: Component
   feature?: string
   runtime?: string[]
-  hideInDemo?: boolean
 }
 
 export interface NavVisibilityContext {
   hasFeature: (feature: string) => boolean
   availableRuntimes: string[]
-  isDemo: boolean
 }
 
 export function isNavItemVisible(item: NavItem, ctx: NavVisibilityContext): boolean {
@@ -24,6 +22,5 @@ export function isNavItemVisible(item: NavItem, ctx: NavVisibilityContext): bool
   if (item.runtime && !item.runtime.some((rt) => ctx.availableRuntimes.includes(rt))) {
     return false
   }
-  if (item.hideInDemo && ctx.isDemo) return false
   return true
 }

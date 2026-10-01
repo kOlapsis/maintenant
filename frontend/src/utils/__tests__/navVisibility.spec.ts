@@ -8,7 +8,6 @@ function ctx(overrides: Partial<Parameters<typeof isNavItemVisible>[1]> = {}) {
   return {
     hasFeature: () => true,
     availableRuntimes: ['docker'],
-    isDemo: false,
     ...overrides,
   }
 }
@@ -32,15 +31,5 @@ describe('isNavItemVisible', () => {
   it('hides a runtime-scoped item when the runtime is not available', () => {
     const item: NavItem = { type: 'item', to: '/pods', label: 'Pods', runtime: ['kubernetes'] }
     expect(isNavItemVisible(item, ctx({ availableRuntimes: ['docker'] }))).toBe(false)
-  })
-
-  it('hides a hideInDemo item in demo mode', () => {
-    const item: NavItem = { type: 'item', to: '/outbound-heartbeats', label: 'Outbound heartbeats', hideInDemo: true }
-    expect(isNavItemVisible(item, ctx({ isDemo: true }))).toBe(false)
-  })
-
-  it('shows a hideInDemo item outside demo mode', () => {
-    const item: NavItem = { type: 'item', to: '/outbound-heartbeats', label: 'Outbound heartbeats', hideInDemo: true }
-    expect(isNavItemVisible(item, ctx({ isDemo: false }))).toBe(true)
   })
 })
