@@ -17,6 +17,10 @@ import (
 // fetchLogs retrieves the last N lines of logs from a pod.
 // externalID format: "namespace/pod-name[/container-name]" or "namespace/Kind/name[/container-name]".
 func (r *Runtime) fetchLogs(ctx context.Context, externalID string, lines int, timestamps bool) ([]string, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	ns, podName, containerName, err := r.resolveLogTarget(ctx, externalID)
 	if err != nil {
 		return nil, err
@@ -31,7 +35,7 @@ func (r *Runtime) fetchLogs(ctx context.Context, externalID string, lines int, t
 		opts.Container = containerName
 	}
 
-	stream, err := r.clientset.CoreV1().Pods(ns).GetLogs(podName, opts).Stream(ctx)
+	stream, err := cs.CoreV1().Pods(ns).GetLogs(podName, opts).Stream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get logs %s/%s: %w", ns, podName, err)
 	}
@@ -49,6 +53,10 @@ func (r *Runtime) fetchLogs(ctx context.Context, externalID string, lines int, t
 
 // streamLogs returns a streaming reader for pod logs.
 func (r *Runtime) streamLogs(ctx context.Context, externalID string, lines int, timestamps bool) (io.ReadCloser, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	ns, podName, containerName, err := r.resolveLogTarget(ctx, externalID)
 	if err != nil {
 		return nil, err
@@ -64,7 +72,7 @@ func (r *Runtime) streamLogs(ctx context.Context, externalID string, lines int, 
 		opts.Container = containerName
 	}
 
-	stream, err := r.clientset.CoreV1().Pods(ns).GetLogs(podName, opts).Stream(ctx)
+	stream, err := cs.CoreV1().Pods(ns).GetLogs(podName, opts).Stream(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stream logs %s/%s: %w", ns, podName, err)
 	}
@@ -116,12 +124,16 @@ func isControllerKind(s string) bool {
 
 // findActivePod resolves a controller to one of its running pods.
 func (r *Runtime) findActivePod(ctx context.Context, ns, kind, name string) (string, error) {
+	cs, err := r.client()
+	if err != nil {
+		return "", err
+	}
 	selector, err := r.controllerSelector(ctx, ns, kind, name)
 	if err != nil {
 		return "", err
 	}
 
-	podList, err := r.clientset.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
+	podList, err := cs.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
 		LabelSelector: selector,
 	})
 	if err != nil {

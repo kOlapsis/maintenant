@@ -17,24 +17,28 @@ import (
 
 // stubRegistry is a fake registryQuerier that returns predefined tag lists and digests.
 type stubRegistry struct {
-	tags   map[string][]string // imageRef -> tags
-	digest string
+	tags      map[string][]string // imageRef -> tags
+	digest    string
+	platforms []string
+	listCalls int
 }
 
 func (r *stubRegistry) ListTags(_ context.Context, imageRef string) ([]string, error) {
+	r.listCalls++
 	if tags, ok := r.tags[imageRef]; ok {
 		return tags, nil
 	}
 	return []string{}, nil
 }
 
-func (r *stubRegistry) GetDigest(_ context.Context, _ string) (string, error) {
-	return r.digest, nil
+func (r *stubRegistry) ResolveDigests(_ context.Context, _ string) (RemoteDigests, error) {
+	return RemoteDigests{Digest: r.digest, Platforms: r.platforms}, nil
 }
 
-// stubStore is a minimal UpdateStore that returns no pins, no exclusions, and no baseline.
+// stubStore is a minimal UpdateStore that returns no pins, no exclusions, and the baseline last upserted.
 type stubStore struct {
-	baseline *DigestBaseline
+	baseline   *DigestBaseline
+	exclusions []*UpdateExclusion
 }
 
 func (s *stubStore) InsertScanRecord(_ context.Context, _ *ScanRecord) (string, error) {
@@ -75,11 +79,13 @@ func (s *stubStore) InsertVersionPin(_ context.Context, _ *VersionPin) (string, 
 }
 func (s *stubStore) GetVersionPin(_ context.Context, _ string) (*VersionPin, error) { return nil, nil }
 func (s *stubStore) DeleteVersionPin(_ context.Context, _ string) error             { return nil }
-func (s *stubStore) InsertExclusion(_ context.Context, _ *UpdateExclusion) (string, error) {
-	return "", nil
+func (s *stubStore) CreateExclusion(_ context.Context, _ *UpdateExclusion) (bool, error) {
+	return false, nil
 }
-func (s *stubStore) ListExclusions(_ context.Context) ([]*UpdateExclusion, error) { return nil, nil }
-func (s *stubStore) DeleteExclusion(_ context.Context, _ string) error            { return nil }
+func (s *stubStore) ListExclusions(_ context.Context) ([]*UpdateExclusion, error) {
+	return s.exclusions, nil
+}
+func (s *stubStore) DeleteExclusion(_ context.Context, _ string) error { return nil }
 func (s *stubStore) InsertCVECacheEntry(_ context.Context, _ *CVECacheEntry) (string, error) {
 	return "", nil
 }
@@ -105,8 +111,11 @@ func (s *stubStore) UpsertCVEEvaluation(_ context.Context, _ *CVEEvaluation) err
 func (s *stubStore) GetCVEEvaluation(_ context.Context, _ string) (*CVEEvaluation, error) {
 	return nil, nil
 }
-func (s *stubStore) DeleteCVEEvaluation(_ context.Context, _ string) error           { return nil }
-func (s *stubStore) UpsertDigestBaseline(_ context.Context, _ *DigestBaseline) error { return nil }
+func (s *stubStore) DeleteCVEEvaluation(_ context.Context, _ string) error { return nil }
+func (s *stubStore) UpsertDigestBaseline(_ context.Context, b *DigestBaseline) error {
+	s.baseline = b
+	return nil
+}
 func (s *stubStore) GetDigestBaseline(_ context.Context, _ string) (*DigestBaseline, error) {
 	return s.baseline, nil
 }
@@ -165,6 +174,19 @@ func TestScanner_TagInclude_FiltersTagsBeforeFindBestUpdate(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, "1.25.1", results[0].LatestTag)
 	assert.True(t, results[0].HasUpdate)
+}
+
+// The enricher reads exposure and restarts by the container's store id, so every result carries it.
+func TestScanner_ResultsCarryTheContainerUID(t *testing.T) {
+	reg := &stubRegistry{tags: map[string][]string{"library/nginx": {"1.24.0", "1.25.0"}}}
+	sc := newTestScanner(reg, &stubStore{})
+	c := ContainerInfo{UID: "uid-1", ExternalID: "ctr1", Name: "nginx", Image: "nginx:1.24.0"}
+
+	results, errs := sc.Scan(context.Background(), []ContainerInfo{c})
+	require.Empty(t, errs)
+	require.Len(t, results, 1)
+	assert.Equal(t, "uid-1", results[0].ContainerUID)
+	assert.Equal(t, "uid-1", runningImage(c).ContainerUID)
 }
 
 // TestScanner_TagInclude_NoMatchingTags_NoUpdate verifies that when tag-include
@@ -348,8 +370,6 @@ func TestScanner_InvalidTagExclude_FallsBackToDefault(t *testing.T) {
 // TestScanner_DigestOnlyMode_TagFilterBypassed verifies that tag filter labels are
 // ignored when the container uses a non-semver channel tag like "latest".
 // The digest comparison should proceed normally even if tag-include is set.
-// Uses docker.io/library/nginx:latest to avoid the local-image heuristic check
-// (which skips single-component images tagged "latest").
 func TestScanner_DigestOnlyMode_TagFilterBypassed(t *testing.T) {
 	reg := &stubRegistry{
 		tags: map[string][]string{
@@ -369,8 +389,6 @@ func TestScanner_DigestOnlyMode_TagFilterBypassed(t *testing.T) {
 	sc := newTestScanner(reg, &stubStore{baseline: oldBaseline})
 
 	// tag-include set to semver pattern — should NOT affect "latest" digest comparison.
-	// Use docker.io/library/nginx:latest so imageRef is "library/nginx" (contains "/"),
-	// bypassing the local-image heuristic that skips bare "nginx:latest".
 	containers := []ContainerInfo{
 		{
 			ExternalID: "ctr1",

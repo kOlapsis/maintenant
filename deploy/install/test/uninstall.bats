@@ -99,6 +99,37 @@ run_uninstall() {
     rm -rf "$FAKE_INSTALL_DIR" "$FAKE_DATA_DIR" "$FAKE_CONFIG_DIR" "$SERVICE_FILE" 2>/dev/null || true
 }
 
+@test "uninstall --purge: removes the data dir set in the env file" {
+    FAKE_INSTALL_DIR=$(mktemp -d)
+    FAKE_DATA_DIR=$(mktemp -d)
+    FAKE_CONFIG_DIR=$(mktemp -d)
+    CUSTOM_DATA_DIR=$(mktemp -d)
+    touch "$CUSTOM_DATA_DIR/agent-identity.json"
+    printf 'MAINTENANT_DATA_DIR=%s\n' "$CUSTOM_DATA_DIR" > "$FAKE_CONFIG_DIR/maintenant.env"
+
+    run bash -c "
+        NO_COLOR=1
+        id()        { echo 0; }
+        systemctl() { return 0; }
+        getent()    { return 1; }
+        userdel()   { return 0; }
+        export -f id systemctl getent userdel
+        INSTALL_DIR='$FAKE_INSTALL_DIR'
+        DATA_DIR='$FAKE_DATA_DIR'
+        CONFIG_DIR='$FAKE_CONFIG_DIR'
+        SERVICE_FILE='/tmp/no-such-service-$$.service'
+        export INSTALL_DIR DATA_DIR CONFIG_DIR SERVICE_FILE NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        parse_maintenant_flags --uninstall --purge
+        check_prereqs
+        uninstall
+    "
+    [ "$status" -eq 0 ]
+    [ ! -d "$CUSTOM_DATA_DIR" ]
+
+    rm -rf "$FAKE_INSTALL_DIR" "$FAKE_DATA_DIR" "$FAKE_CONFIG_DIR" "$CUSTOM_DATA_DIR"
+}
+
 @test "uninstall on system without maintenant returns 0 (idempotent)" {
     FAKE_INSTALL_DIR=$(mktemp -d)
     FAKE_DATA_DIR=$(mktemp -d)

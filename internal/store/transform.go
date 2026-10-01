@@ -140,10 +140,11 @@ func runConversion(ctx context.Context, conn *sql.Conn) error {
 	// Drop any pre-existing agents/enrollment_tokens from the never-deployed
 	// agent migrations (22-23) so the new schema can recreate them cleanly. No-op
 	// on production databases (migrations 1-21 never created these tables).
-	// instances, cve_evaluations and outbound_heartbeats were created empty by
-	// later migrations moments ago (none is a legacy table), and uuid_schema
-	// recreates them below.
-	for _, t := range []string{"agents", "enrollment_tokens", "instances", "cve_evaluations", "outbound_heartbeats"} {
+	// instances, cve_evaluations, outbound_heartbeats, the uptime_daily tables
+	// and heartbeat_pauses were created by later migrations moments ago (none is
+	// a legacy table), and uuid_schema recreates them below.
+	for _, t := range []string{"agents", "enrollment_tokens", "instances", "cve_evaluations", "outbound_heartbeats",
+		"endpoint_uptime_daily", "heartbeat_uptime_daily", "container_uptime_daily", "heartbeat_pauses"} {
 		if err := exec("drop unreleased "+t, fmt.Sprintf("DROP TABLE IF EXISTS %q", t)); err != nil {
 			return err
 		}
@@ -239,16 +240,16 @@ func copyStatements() []stmt {
 		{"containers", `INSERT INTO containers
 			(id, agent_id, external_id, name, image, state, health_status, has_health_check,
 			 orchestration_group, orchestration_unit, custom_group, is_ignored, alert_severity,
-			 restart_threshold, alert_channels, archived, first_seen_at, last_state_change_at, archived_at,
+			 restart_threshold, archived, first_seen_at, last_state_change_at, archived_at,
 			 runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
-			 compose_working_dir, swarm_service_id, swarm_service_name, swarm_service_mode,
-			 swarm_node_id, swarm_task_slot, swarm_desired_replicas)
+			 compose_working_dir, swarm_service_id, swarm_service_name,
+			 swarm_node_id, swarm_task_slot)
 			SELECT mnt_container_id('` + s + `', external_id), '` + s + `', external_id, name, image, state,
 			 health_status, has_health_check, orchestration_group, orchestration_unit, custom_group,
-			 is_ignored, alert_severity, restart_threshold, alert_channels, archived, first_seen_at,
+			 is_ignored, alert_severity, restart_threshold, archived, first_seen_at,
 			 last_state_change_at, archived_at, runtime_type, error_detail, controller_kind, namespace,
 			 pod_count, ready_count, compose_working_dir, swarm_service_id, swarm_service_name,
-			 swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas
+			 swarm_node_id, swarm_task_slot
 			FROM _old_containers`},
 
 		{"state_transitions", `INSERT INTO state_transitions
@@ -338,10 +339,10 @@ func copyStatements() []stmt {
 		{"heartbeats", `INSERT INTO heartbeats
 			(id, agent_id, name, status, alert_state, interval_seconds, grace_seconds, last_ping_at,
 			 next_deadline_at, current_run_started_at, last_exit_code, last_duration_ms,
-			 consecutive_failures, consecutive_successes, active, created_at, updated_at)
+			 consecutive_failures, consecutive_successes, created_at, updated_at)
 			SELECT uuid, '` + s + `', name, status, alert_state, interval_seconds, grace_seconds, last_ping_at,
 			 next_deadline_at, current_run_started_at, last_exit_code, last_duration_ms, consecutive_failures,
-			 consecutive_successes, active, created_at, updated_at
+			 consecutive_successes, created_at, updated_at
 			FROM _old_heartbeats`},
 
 		{"heartbeat_pings", `INSERT INTO heartbeat_pings
@@ -418,8 +419,8 @@ func copyStatements() []stmt {
 
 		// -------- alert triggers (minted) + channels join -----------------------
 		{"alert_triggers", `INSERT INTO alert_triggers
-			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, notify_on_resolve, created_at, updated_at)
-			SELECT mt.new_id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes, t.filter_tags,
+			(id, name, filter_severities, filter_sources, filter_scopes, enabled, notify_on_resolve, created_at, updated_at)
+			SELECT mt.new_id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes,
 			 t.enabled, t.notify_on_resolve, ` + epoch("t.created_at") + `, ` + epoch("t.updated_at") + `
 			FROM _old_alert_triggers t JOIN _map_trigger mt ON t.id = mt.old_id`},
 
@@ -430,10 +431,10 @@ func copyStatements() []stmt {
 
 		// -------- escalation policies/runs/deliveries (minted) ------------------
 		{"escalation_policies", `INSERT INTO escalation_policies
-			(id, name, active, active_before_downgrade, severities_json, scopes_json, tags_json, levels_json,
+			(id, name, active, active_before_downgrade, severities_json, scopes_json, levels_json,
 			 created_at, created_by, updated_at, updated_by)
 			SELECT mp.new_id, p.name, p.active, p.active_before_downgrade, p.severities_json, p.scopes_json,
-			 p.tags_json, p.levels_json, ` + epoch("p.created_at") + `, p.created_by,
+			 p.levels_json, ` + epoch("p.created_at") + `, p.created_by,
 			 ` + epoch("p.updated_at") + `, p.updated_by
 			FROM _old_escalation_policies p JOIN _map_policy mp ON p.id = mp.old_id`},
 

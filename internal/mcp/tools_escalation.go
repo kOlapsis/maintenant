@@ -67,7 +67,7 @@ func registerEscalationTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "set_escalation_policy_active",
-		Description: "Activate or deactivate an escalation policy." + requires(extension.CapAlertEscalation),
+		Description: "Activate or deactivate an escalation policy; deactivating it stops its running escalations." + requires(extension.CapAlertEscalation),
 	}, setEscalationPolicyActiveHandler(svc))
 }
 
@@ -91,11 +91,10 @@ type createEscalationPolicyInput struct {
 type escalationFiltersInput struct {
 	Severities []string               `json:"severities,omitempty" jsonschema:"Severity filters: warning, critical"`
 	Scopes     []escalationScopeInput `json:"scopes,omitempty" jsonschema:"Scope filters"`
-	Tags       []string               `json:"tags,omitempty" jsonschema:"Tag filters"`
 }
 
 type escalationScopeInput struct {
-	Kind  string `json:"kind" jsonschema:"Scope kind: container, endpoint, heartbeat, certificate, monitor"`
+	Kind  string `json:"kind" jsonschema:"Scope kind: the entity_type of the alerts to match, such as container, endpoint, heartbeat, certificate, agent, swarm_service or workload"`
 	RefID string `json:"ref_id" jsonschema:"Referenced entity ID"`
 }
 
@@ -198,7 +197,6 @@ func createEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[createEsc
 			Filters: escalation.Filters{
 				Severities: input.Filters.Severities,
 				Scopes:     scopes,
-				Tags:       input.Filters.Tags,
 			},
 			Levels: levels,
 		}
@@ -292,7 +290,6 @@ func updateEscalationPolicyHandler(svc *Services) gomcp.ToolHandlerFor[updateEsc
 			Filters: escalation.Filters{
 				Severities: input.Filters.Severities,
 				Scopes:     scopes,
-				Tags:       input.Filters.Tags,
 			},
 			Levels: levels,
 		}

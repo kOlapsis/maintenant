@@ -204,14 +204,14 @@ function runtimeLabel(rt: string): string {
               v-if="agent.spool?.draining"
               class="ml-1 rounded-full px-2 py-0.5 text-xs font-medium"
               :style="{ backgroundColor: 'var(--mnt-status-warn-bg)', color: 'var(--mnt-status-warn-text)' }"
-              :title="`${agent.spool.queued} événements en attente de rejeu`"
-            >rattrapage · {{ agent.spool.queued }}</span>
+              :title="`${agent.spool.queued} events waiting to be replayed`"
+            >catching up · {{ agent.spool.queued }}</span>
             <span
               v-if="agent.spool && agent.spool.dropped_since_connect > 0"
               class="ml-1 rounded-full px-2 py-0.5 text-xs font-medium"
               :style="{ backgroundColor: 'var(--mnt-status-down-bg)', color: 'var(--mnt-status-down-text)' }"
-              :title="'Événements abandonnés faute de place dans le spool de l’agent'"
-            >{{ agent.spool.dropped_since_connect }} perdus</span>
+              title="Events dropped because the agent's spool was full"
+            >{{ agent.spool.dropped_since_connect }} lost</span>
           </td>
           <td class="px-4 py-3 text-xs text-mnt-muted hidden md:table-cell">
             {{ formatDate(agent.last_seen_at) }}

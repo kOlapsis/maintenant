@@ -133,7 +133,7 @@ func cors(origins []string, next http.Handler) http.Handler {
 					}
 				}
 			}
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		}
 
@@ -142,6 +142,34 @@ func cors(origins []string, next http.Handler) http.Handler {
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+const crossOriginMessage = "Cross-origin request refused: add the calling origin to MAINTENANT_CORS_ORIGINS to allow it."
+
+// newCrossOriginProtection trusts the origins MAINTENANT_CORS_ORIGINS lists, and none for the wildcard.
+func newCrossOriginProtection(origins []string, logger *slog.Logger) *http.CrossOriginProtection {
+	cop := http.NewCrossOriginProtection()
+	if len(origins) == 1 && origins[0] == "*" {
+		return cop
+	}
+	for _, origin := range origins {
+		if err := cop.AddTrustedOrigin(origin); err != nil {
+			logger.Warn("MAINTENANT_CORS_ORIGINS entry is not an origin and matches no request",
+				"entry", origin, "expected", "scheme://host[:port]", "error", err)
+		}
+	}
+	return cop
+}
+
+// crossOriginGuard refuses a browser request with an unsafe method on the API when it comes from another, untrusted origin.
+func crossOriginGuard(cop *http.CrossOriginProtection, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && cop.Check(r) != nil {
+			WriteError(w, http.StatusForbidden, "CROSS_ORIGIN_REFUSED", crossOriginMessage)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }

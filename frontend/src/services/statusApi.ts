@@ -42,7 +42,7 @@ export interface Incident {
 }
 
 export interface IncidentComponentRef {
-  component_id: string
+  id: string
   name: string
 }
 
@@ -66,7 +66,7 @@ export interface MaintenanceWindow {
 }
 
 export interface MaintenanceComponentRef {
-  component_id: string
+  id: string
   name: string
 }
 
@@ -242,32 +242,12 @@ export function listSubscribers(): Promise<SubscriberListResponse> {
   return fetchJSON<SubscriberListResponse>(`${API_BASE}/status/subscribers`)
 }
 
-// --- SMTP Config ---
+// --- SMTP ---
 
-export interface SmtpConfig {
-  host: string
-  port: number
-  username: string
-  password?: string
-  tls_policy: string
-  from_address: string
-  from_name: string
-  configured: boolean
-  password_set?: boolean
-}
-
-export function getSmtpConfig(): Promise<SmtpConfig> {
-  return fetchJSON<SmtpConfig>(`${API_BASE}/status/smtp`)
-}
-
-export function updateSmtpConfig(data: Partial<SmtpConfig>): Promise<{ status: string }> {
-  return fetchJSON(`${API_BASE}/status/smtp`, {
-    method: 'PUT',
+export function testSmtp(to: string): Promise<{ status: string }> {
+  return fetchJSON(`${API_BASE}/status/smtp/test`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ to }),
   })
-}
-
-export function testSmtp(): Promise<{ status: string; error?: string }> {
-  return fetchJSON(`${API_BASE}/status/smtp/test`, { method: 'POST' })
 }

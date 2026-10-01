@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/resource"
+	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +33,7 @@ func (m *mockResourceTopService) GetAllLatestSnapshots() map[string]*resource.Re
 func (m *mockResourceTopService) TopConsumersNow(metric string, limit int, agentID *string) []resource.TopConsumerRow {
 	rows := make([]resource.TopConsumerRow, 0, len(m.snapshots))
 	for id, snap := range m.snapshots {
-		if !hostMatches(snap.AgentID, agentID) {
+		if agentID != nil && !onHost(snap.AgentID, *agentID) {
 			continue
 		}
 		var value, percent float64
@@ -55,6 +56,14 @@ func (m *mockResourceTopService) TopConsumersNow(metric string, limit int, agent
 		rows = rows[:limit]
 	}
 	return rows
+}
+
+// onHost tells whether a sample belongs to host, "" being the local server.
+func onHost(snapAgent, host string) bool {
+	if host == "" {
+		return snapAgent == "" || snapAgent == uid.LocalAgent
+	}
+	return snapAgent == host
 }
 
 func (m *mockResourceTopService) GetContainerName(containerID string) string {

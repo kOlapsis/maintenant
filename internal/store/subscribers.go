@@ -28,7 +28,8 @@ func NewSubscriberStore(d *DB) *SubscriberStoreImpl {
 	}
 }
 
-func (s *SubscriberStoreImpl) CreateSubscriber(ctx context.Context, sub *status.StatusSubscriber) (string, error) {
+// UpsertPendingSubscriber records sub as an unconfirmed subscription, or hands a still unconfirmed one sub's confirmation token and a fresh 24 h window; issued is false when the address is already confirmed.
+func (s *SubscriberStoreImpl) UpsertPendingSubscriber(ctx context.Context, sub *status.StatusSubscriber) (bool, error) {
 	now := time.Now().Unix()
 	var confirmExpires *int64
 	if sub.ConfirmExpires != nil {
@@ -36,17 +37,20 @@ func (s *SubscriberStoreImpl) CreateSubscriber(ctx context.Context, sub *status.
 		confirmExpires = &v
 	}
 
-	sub.ID = uid.New()
-	_, err := s.writer.Exec(ctx,
+	res, err := s.writer.Exec(ctx,
 		`INSERT INTO status_subscribers (id, email, confirmed, confirm_token, confirm_expires, unsub_token, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sub.ID, sub.Email, boolToInt(sub.Confirmed), sub.ConfirmToken, confirmExpires, sub.UnsubToken, now,
+		VALUES (?, ?, 0, ?, ?, ?, ?)
+		ON CONFLICT (email) DO UPDATE SET
+			confirm_token = excluded.confirm_token,
+			confirm_expires = excluded.confirm_expires,
+			created_at = excluded.created_at
+		WHERE status_subscribers.confirmed = 0`,
+		uid.New(), sub.Email, sub.ConfirmToken, confirmExpires, sub.UnsubToken, now,
 	)
 	if err != nil {
-		return "", fmt.Errorf("create subscriber: %w", err)
+		return false, fmt.Errorf("upsert subscriber: %w", err)
 	}
-	sub.CreatedAt = time.Unix(now, 0).UTC()
-	return sub.ID, nil
+	return res.RowsAffected == 1, nil
 }
 
 func (s *SubscriberStoreImpl) GetSubscriberByToken(ctx context.Context, confirmToken string) (*status.StatusSubscriber, error) {

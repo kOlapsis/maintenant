@@ -17,15 +17,17 @@ type CertPostureAdapter struct {
 	CertSvc *certificate.Service
 }
 
-func (a *CertPostureAdapter) ListCertificatesForContainer(ctx context.Context, containerExternalID string) ([]security.CertificateInfo, error) {
+// CertificatesByContainer lists the monitors once and keeps those of the given containers.
+func (a *CertPostureAdapter) CertificatesByContainer(ctx context.Context, containerExternalIDs []string) (map[string][]security.CertificateInfo, error) {
+	wanted := idSet(containerExternalIDs)
 	monitors, err := a.CertSvc.ListMonitors(ctx, certificate.ListCertificatesOpts{})
 	if err != nil {
 		return nil, fmt.Errorf("list cert monitors: %w", err)
 	}
 
-	var result []security.CertificateInfo
+	result := make(map[string][]security.CertificateInfo)
 	for _, m := range monitors {
-		if m.ExternalID != containerExternalID {
+		if !wanted[m.ExternalID] {
 			continue
 		}
 		info := security.CertificateInfo{
@@ -35,7 +37,7 @@ func (a *CertPostureAdapter) ListCertificatesForContainer(ctx context.Context, c
 		if err == nil && cr != nil {
 			info.DaysRemaining = cr.DaysRemaining()
 		}
-		result = append(result, info)
+		result[m.ExternalID] = append(result[m.ExternalID], info)
 	}
 	return result, nil
 }
@@ -81,20 +83,30 @@ type UpdatePostureAdapter struct {
 	Store update.UpdateStore
 }
 
-func (a *UpdatePostureAdapter) ListUpdatesForContainer(ctx context.Context, containerExternalID string) ([]security.UpdateInfo, error) {
+// UpdatesByContainer lists the pending updates once and keeps those of the given containers.
+func (a *UpdatePostureAdapter) UpdatesByContainer(ctx context.Context, containerExternalIDs []string) (map[string][]security.UpdateInfo, error) {
+	wanted := idSet(containerExternalIDs)
 	updates, err := a.Store.ListImageUpdates(ctx, update.ListImageUpdatesOpts{})
 	if err != nil {
 		return nil, fmt.Errorf("list image updates: %w", err)
 	}
-	var result []security.UpdateInfo
+	result := make(map[string][]security.UpdateInfo)
 	for _, u := range updates {
-		if u.ContainerID != containerExternalID {
+		if !wanted[u.ContainerID] {
 			continue
 		}
-		result = append(result, security.UpdateInfo{
+		result[u.ContainerID] = append(result[u.ContainerID], security.UpdateInfo{
 			UpdateType:  string(u.UpdateType),
 			PublishedAt: u.PublishedAt,
 		})
 	}
 	return result, nil
+}
+
+func idSet(ids []string) map[string]bool {
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
 }

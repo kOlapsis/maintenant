@@ -110,7 +110,7 @@ func TestHandleLogStream(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, w.Code)
 
 			if tt.wantSSE {
-				assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+				assertUnbufferedEventStream(t, w.Header())
 				assert.Contains(t, w.Body.String(), tt.wantContains)
 			}
 		})
@@ -144,4 +144,22 @@ func TestHandleLogStream_LinesParsing(t *testing.T) {
 			assert.Equal(t, http.StatusOK, w.Code)
 		})
 	}
+}
+
+func TestHandleLogStream_LongLines(t *testing.T) {
+	serve := func(line string) string {
+		handler := NewLogStreamHandler(&mockLogStreamer{lines: []string{line}}, nil)
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /api/v1/containers/{id}/logs/stream", handler.HandleLogStream)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/containers/1/logs/stream", nil))
+		return w.Body.String()
+	}
+
+	body := serve(strings.Repeat("a", 100*1024))
+	assert.Contains(t, body, "container.log_line", "a line longer than 64 KiB is still delivered")
+
+	body = serve(strings.Repeat("a", maxLogLineBytes+1))
+	assert.Contains(t, body, "log stream interrupted")
+	assert.NotContains(t, body, "container stopped")
 }

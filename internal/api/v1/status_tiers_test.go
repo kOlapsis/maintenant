@@ -25,7 +25,6 @@ func TestStatusPageWriteRoutes_PerEdition(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	db := storetest.Open(t, logger)
 	components := store.NewStatusComponentStore(db)
-	broker := NewSSEBroker(logger)
 	r := NewRouter(HandlerDeps{
 		Logger:             logger,
 		StatusComponents:   components,
@@ -33,7 +32,7 @@ func TestStatusPageWriteRoutes_PerEdition(t *testing.T) {
 		StatusMaintenance:  store.NewMaintenanceStore(db),
 		StatusSubscribers:  store.NewSubscriberStore(db),
 		StatusSvc:          status.NewService(status.Deps{Components: components, Logger: logger}),
-		StatusBroker:       broker,
+		StatusMailer:       newRecordingMailer(),
 		PersonalizationSvc: statuspage.NewPersonalizationService(store.NewPersonalizationStore(db), logger),
 	})
 	h := r.Handler()
@@ -46,7 +45,7 @@ func TestStatusPageWriteRoutes_PerEdition(t *testing.T) {
 	}
 	routes := []route{
 		{extension.CapIncidents, http.MethodPost, "/api/v1/status/incidents", `{"title":"db down","severity":"minor"}`, http.StatusCreated},
-		{extension.CapSMTP, http.MethodPut, "/api/v1/status/smtp", `{"host":"smtp.example.com","port":587,"from_address":"a@example.com"}`, http.StatusOK},
+		{extension.CapSMTP, http.MethodPost, "/api/v1/status/smtp/test", `{"to":"ops@example.com"}`, http.StatusOK},
 		{extension.CapMaintenanceWindows, http.MethodPost, "/api/v1/status/maintenance", `{"title":"upgrade","starts_at":"2030-01-01T00:00:00Z","ends_at":"2030-01-01T01:00:00Z"}`, http.StatusCreated},
 		{extension.CapSubscribers, http.MethodGet, "/api/v1/status/subscribers", "", http.StatusOK},
 		{extension.CapPersonalization, http.MethodGet, "/api/v1/status-page/footer-links", "", http.StatusOK},

@@ -51,6 +51,7 @@ type Store interface {
 	BulkDeactivateAllPolicies(ctx context.Context) error
 	BulkRestorePoliciesFromDowngrade(ctx context.Context) error
 	BulkStopActiveRuns(ctx context.Context, stopStatus string, endedAt time.Time) error
+	StopPolicyRuns(ctx context.Context, policyID string, stopStatus string, endedAt time.Time) error
 	PurgeRunsAndDeliveriesOlderThan(ctx context.Context, before time.Time) error
 
 	// Run lifecycle (used by the concrete Pro Runner).
@@ -75,24 +76,26 @@ type Store interface {
 
 // Run statuses (mirror the SQL CHECK constraint on escalation_runs).
 const (
-	RunStatusActive                = "active"
-	RunStatusPausedByMaintenance   = "paused_by_maintenance"
-	RunStatusStoppedByAck          = "stopped_by_ack"
-	RunStatusStoppedByResolution   = "stopped_by_resolution"
-	RunStatusStoppedByPolicyDelete = "stopped_by_policy_deletion"
-	RunStatusStoppedByPolicyDisabl = "stopped_by_policy_disabled"
-	RunStatusStoppedByDowngrade    = "stopped_by_edition_downgrade"
-	RunStatusExhausted             = "exhausted"
+	RunStatusActive                  = "active"
+	RunStatusPausedByMaintenance     = "paused_by_maintenance"
+	RunStatusStoppedByAck            = "stopped_by_ack"
+	RunStatusStoppedByResolution     = "stopped_by_resolution"
+	RunStatusStoppedByPolicyDelete   = "stopped_by_policy_deletion"
+	RunStatusStoppedByPolicyDisabled = "stopped_by_policy_disabled"
+	RunStatusStoppedByDowngrade      = "stopped_by_edition_downgrade"
+	RunStatusExhausted               = "exhausted"
 )
 
 // Delivery statuses (mirror the SQL CHECK constraint on escalation_deliveries).
 const (
-	DeliveryStatusPending            = "pending"
-	DeliveryStatusSent               = "sent"
-	DeliveryStatusFailed             = "failed"
-	DeliveryStatusAbandoned          = "abandoned"
-	DeliveryStatusSkippedMaintenance = "skipped_maintenance"
+	DeliveryStatusPending   = "pending"
+	DeliveryStatusSent      = "sent"
+	DeliveryStatusFailed    = "failed"
+	DeliveryStatusAbandoned = "abandoned"
 )
+
+// MaxLevels is the most levels a policy may hold.
+const MaxLevels = 5
 
 // Service manages escalation policies and reads their runs.
 type Service interface {

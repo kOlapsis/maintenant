@@ -5,17 +5,19 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cmodel "github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/informers"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -34,12 +36,13 @@ func init() {
 
 // Runtime implements runtime.Runtime for Kubernetes.
 type Runtime struct {
-	logger    *slog.Logger
-	nsFilter  *NamespaceFilter
-	clientset k8s.Interface
-	metrics   metricsv.Interface
-	factory   informers.SharedInformerFactory
-	stopCh    chan struct{}
+	logger   *slog.Logger
+	nsFilter *NamespaceFilter
+	conn     atomic.Pointer[clients]
+	stopCh   chan struct{}
+
+	probeEvery  time.Duration
+	probeMisses int
 
 	mu               sync.Mutex
 	connected        bool
@@ -51,6 +54,31 @@ type Runtime struct {
 	podMetricsAt    time.Time
 }
 
+// clients are the API clients of one connection, replaced as a whole when the runtime reconnects.
+type clients struct {
+	core    k8s.Interface
+	metrics metricsv.Interface
+}
+
+var errNotConnected = errors.New("kubernetes runtime has never connected")
+
+func (r *Runtime) client() (k8s.Interface, error) {
+	c := r.conn.Load()
+	if c == nil {
+		return nil, errNotConnected
+	}
+	return c.core, nil
+}
+
+// metricsClient returns the metrics-server client of the current connection, nil when there is none.
+func (r *Runtime) metricsClient() metricsv.Interface {
+	c := r.conn.Load()
+	if c == nil {
+		return nil
+	}
+	return c.metrics
+}
+
 type cpuPrev struct {
 	milliCPU  int64
 	timestamp time.Time
@@ -59,19 +87,44 @@ type cpuPrev struct {
 // NewRuntime creates a Kubernetes runtime. Connection is deferred to Connect().
 func NewRuntime(logger *slog.Logger, nsFilter *NamespaceFilter) (*Runtime, error) {
 	return &Runtime{
-		logger:   logger,
-		nsFilter: nsFilter,
-		prevCPU:  make(map[string]*cpuPrev),
-		stopCh:   make(chan struct{}),
+		logger:      logger,
+		nsFilter:    nsFilter,
+		prevCPU:     make(map[string]*cpuPrev),
+		stopCh:      make(chan struct{}),
+		probeEvery:  15 * time.Second,
+		probeMisses: 3,
 	}, nil
 }
 
+const (
+	connectInitialBackoff = 1 * time.Second
+	connectMaxBackoff     = 30 * time.Second
+)
+
+// Connect retries until the API server answers or ctx is cancelled, but returns a configuration error at once.
 func (r *Runtime) Connect(ctx context.Context) error {
 	config, err := buildConfig()
 	if err != nil {
 		return fmt.Errorf("kubernetes config: %w", err)
 	}
 
+	b := retry.New(connectInitialBackoff, connectMaxBackoff, 0)
+	for {
+		err := r.connect(ctx, config)
+		if err == nil {
+			return nil
+		}
+		delay := b.Next()
+		r.logger.Warn("kubernetes connection failed, retrying", "error", err, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+}
+
+func (r *Runtime) connect(ctx context.Context, config *rest.Config) error {
 	clientset, err := k8s.NewForConfig(config)
 	if err != nil {
 		return fmt.Errorf("kubernetes clientset: %w", err)
@@ -82,13 +135,9 @@ func (r *Runtime) Connect(ctx context.Context) error {
 		r.logger.Warn("metrics-server client failed; resource metrics will be unavailable", "error", err)
 	}
 
-	// Verify connectivity.
-	_, err = clientset.Discovery().ServerVersion()
-	if err != nil {
+	if _, err := clientset.Discovery().RESTClient().Get().AbsPath("/version").DoRaw(ctx); err != nil {
 		return fmt.Errorf("kubernetes connectivity check failed: %w", err)
 	}
-
-	factory := informers.NewSharedInformerFactory(clientset, 30*time.Second)
 
 	// Probe metrics-server availability.
 	metricsOK := false
@@ -101,26 +150,25 @@ func (r *Runtime) Connect(ctx context.Context) error {
 		}
 	}
 
+	r.conn.Store(&clients{core: clientset, metrics: metricsClient})
 	r.mu.Lock()
-	r.clientset = clientset
-	r.metrics = metricsClient
 	r.metricsAvailable = metricsOK
-	r.factory = factory
 	r.connected = true
 	r.mu.Unlock()
-
-	// Start informers.
-	factory.Start(r.stopCh)
-	factory.WaitForCacheSync(r.stopCh)
 
 	r.logger.Info("kubernetes runtime connected")
 	return nil
 }
 
+// TryConnect makes a single attempt bounded to a few seconds.
 func (r *Runtime) TryConnect(ctx context.Context) error {
+	config, err := buildConfig()
+	if err != nil {
+		return fmt.Errorf("kubernetes config: %w", err)
+	}
 	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	return r.Connect(tctx)
+	return r.connect(tctx, config)
 }
 
 func buildConfig() (*rest.Config, error) {
@@ -211,12 +259,16 @@ func (r *Runtime) GetHealthInfo(ctx context.Context, externalID string) (*runtim
 // ListContainerNames returns the container names in a workload's pod spec.
 // For controllers, resolves to a pod's spec. For bare pods, reads the pod directly.
 func (r *Runtime) ListContainerNames(ctx context.Context, externalID string) ([]string, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	ns, podName, _, err := r.resolveLogTarget(ctx, externalID)
 	if err != nil {
 		return nil, err
 	}
 
-	pod, err := r.clientset.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
+	pod, err := cs.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get pod %s/%s: %w", ns, podName, err)
 	}

@@ -341,6 +341,25 @@ func TestAgentStore_InsertGet(t *testing.T) {
 	assert.Equal(t, a.Status, got.Status)
 }
 
+func TestAgentStore_UpdateDetectedRuntime(t *testing.T) {
+	db := openTestDB(t)
+	store := NewAgentStore(db)
+	ctx := context.Background()
+
+	require.NoError(t, store.Insert(ctx, enrollAgentRecord("rt-agent-1")))
+
+	changed, err := store.UpdateDetectedRuntime(ctx, "rt-agent-1", "swarm")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	got, err := store.Get(ctx, "rt-agent-1")
+	require.NoError(t, err)
+	assert.Equal(t, "swarm", got.DetectedRuntime)
+
+	changed, err = store.UpdateDetectedRuntime(ctx, "rt-agent-1", "swarm")
+	require.NoError(t, err)
+	assert.False(t, changed, "the same runtime is not a change")
+}
+
 func TestAgentStore_UpdateAgentOS(t *testing.T) {
 	db := openTestDB(t)
 	store := NewAgentStore(db)

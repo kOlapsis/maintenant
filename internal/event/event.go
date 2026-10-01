@@ -113,7 +113,7 @@ const (
 	SecurityPostureChanged   = "security.posture_changed"
 )
 
-// Swarm monitoring events (CE).
+// Swarm service events.
 const (
 	SwarmServiceDiscovered = "swarm.service_discovered"
 	SwarmServiceUpdated    = "swarm.service_updated"
@@ -121,9 +121,10 @@ const (
 	SwarmStatus            = "swarm.status"
 )
 
-// Swarm monitoring events (Pro).
+// Swarm node, task and rolling update events.
 const (
 	SwarmNodeStatusChanged  = "swarm.node_status_changed"
+	SwarmNodeUpdated        = "swarm.node_updated"
 	SwarmTaskFailed         = "swarm.task_failed"
 	SwarmCrashLoopDetected  = "swarm.crash_loop_detected"
 	SwarmCrashLoopRecovered = "swarm.crash_loop_recovered"
@@ -138,7 +139,7 @@ const (
 	KubernetesNodeChanged     = "kubernetes.node_changed"
 )
 
-// Multi-host agent events (Pro).
+// Multi-host agent events.
 const (
 	AgentCreated      = "agent.created"
 	AgentUpdated      = "agent.updated"
@@ -150,6 +151,9 @@ const (
 
 // Public status page events.
 const (
+	StatusComponentCreated = "status.component_created"
+	StatusComponentUpdated = "status.component_updated"
+	StatusComponentDeleted = "status.component_deleted"
 	StatusComponentChanged = "status.component_changed"
 	StatusIncidentCreated  = "status.incident_created"
 	StatusIncidentUpdated  = "status.incident_updated"

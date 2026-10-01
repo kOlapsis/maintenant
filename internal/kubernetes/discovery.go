@@ -18,12 +18,16 @@ import (
 
 // discoverAll lists Deployments, StatefulSets, DaemonSets, and bare pods.
 func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	var containers []*cmodel.Container
 	var rbacDenied int
 
 	// Deployments
-	depList, err := r.clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	depList, err := cs.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list deployments, skipping", "error", err)
@@ -42,7 +46,7 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 	}
 
 	// StatefulSets
-	ssList, err := r.clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	ssList, err := cs.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list statefulsets, skipping", "error", err)
@@ -61,7 +65,7 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 	}
 
 	// DaemonSets
-	dsList, err := r.clientset.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	dsList, err := cs.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list daemonsets, skipping", "error", err)
@@ -80,7 +84,7 @@ func (r *Runtime) discoverAll(ctx context.Context) ([]*cmodel.Container, error) 
 	}
 
 	// Bare pods (no ownerReference to a controller)
-	podList, err := r.clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	podList, err := cs.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		if k8serrors.IsForbidden(err) {
 			r.logger.Warn("RBAC: forbidden to list pods, skipping", "error", err)
@@ -336,9 +340,6 @@ func applyAnnotations(cm *cmodel.Container, annotations map[string]string) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cm.RestartThreshold = n
 		}
-	}
-	if v, ok := annotations["maintenant.alert.channels"]; ok && v != "" {
-		cm.AlertChannels = v
 	}
 	// Fallback display name from K8s standard labels.
 	if cm.Name == "" {

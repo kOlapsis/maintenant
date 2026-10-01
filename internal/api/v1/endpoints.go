@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -63,12 +62,11 @@ func (h *EndpointHandler) HandleListEndpoints(w http.ResponseWriter, r *http.Req
 	q := r.URL.Query()
 
 	opts := endpoint.ListEndpointsOpts{
-		Status:             q.Get("status"),
-		ContainerName:      q.Get("container"),
-		OrchestrationGroup: q.Get("orchestration_group"),
-		EndpointType:       q.Get("type"),
-		Source:             q.Get("source"),
-		IncludeInactive:    q.Get("include_inactive") == "true",
+		Status:          q.Get("status"),
+		ContainerName:   q.Get("container"),
+		EndpointType:    q.Get("type"),
+		Source:          q.Get("source"),
+		IncludeInactive: q.Get("include_inactive") == "true",
 	}
 	if a := q.Get("agent_id"); a != "" {
 		opts.AgentFilter = &a
@@ -289,18 +287,16 @@ func (h *EndpointHandler) HandleCreateEndpoint(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if epType == endpoint.TypeHTTP {
-		if _, err := url.ParseRequestURI(input.Target); err != nil {
-			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "target must be a valid URL for HTTP endpoints")
-			return
-		}
+	if err := endpoint.ValidateTarget(epType, input.Target); err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+		return
 	}
 
 	config := endpoint.DefaultConfig()
 	if input.Interval != "" {
 		d, err := time.ParseDuration(input.Interval)
-		if err != nil || d < 5*time.Second {
-			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= 5s")
+		if err != nil || d < endpoint.MinInterval {
+			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= "+endpoint.MinInterval.String())
 			return
 		}
 		config.Interval = endpoint.Duration(d)
@@ -392,12 +388,16 @@ func (h *EndpointHandler) HandleUpdateEndpoint(w http.ResponseWriter, r *http.Re
 			return
 		}
 	}
+	if err := endpoint.ValidateTarget(epType, target); err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+		return
+	}
 
 	config := existing.Config
 	if input.Interval != "" {
 		d, err := time.ParseDuration(input.Interval)
-		if err != nil || d < 5*time.Second {
-			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= 5s")
+		if err != nil || d < endpoint.MinInterval {
+			WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "interval must be a valid duration >= "+endpoint.MinInterval.String())
 			return
 		}
 		config.Interval = endpoint.Duration(d)

@@ -21,8 +21,8 @@ type mockCertReader struct {
 	certs map[string][]security.CertificateInfo
 }
 
-func (m *mockCertReader) ListCertificatesForContainer(_ context.Context, containerExternalID string) ([]security.CertificateInfo, error) {
-	return m.certs[containerExternalID], nil
+func (m *mockCertReader) CertificatesByContainer(_ context.Context, _ []string) (map[string][]security.CertificateInfo, error) {
+	return m.certs, nil
 }
 
 type mockCVEReader struct {
@@ -49,8 +49,8 @@ type mockUpdateReader struct {
 	updates map[string][]security.UpdateInfo
 }
 
-func (m *mockUpdateReader) ListUpdatesForContainer(_ context.Context, containerExternalID string) ([]security.UpdateInfo, error) {
-	return m.updates[containerExternalID], nil
+func (m *mockUpdateReader) UpdatesByContainer(_ context.Context, _ []string) (map[string][]security.UpdateInfo, error) {
+	return m.updates, nil
 }
 
 type mockAckStore struct {

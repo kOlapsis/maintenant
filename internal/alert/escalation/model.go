@@ -23,7 +23,6 @@ type Policy struct {
 type Filters struct {
 	Severities []string `json:"severities"`
 	Scopes     []Scope  `json:"scopes"`
-	Tags       []string `json:"tags"`
 }
 
 // Scope identifies a specific monitored entity.

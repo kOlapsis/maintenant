@@ -45,8 +45,6 @@ function insightIcon(type: string) {
     case 'service_load_balancer':
     case 'service_node_port':
       return Server
-    case 'missing_network_policy':
-      return ShieldAlert
     default:
       return ShieldAlert
   }

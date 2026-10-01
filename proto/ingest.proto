@@ -234,7 +234,18 @@ message AgentEvent {
     KubernetesTopology kubernetes = 16;
     ContainerInventory inventory = 17;
     HostOSMsg          host_os   = 18;
+    RuntimeMsg         runtime   = 19;
   }
+}
+
+// ----- Runtime --------------------------------------------------------------
+
+// The container runtime the agent runs on, as current state: sent once the
+// runtime answers and again when the host joins or leaves a Swarm. It corrects
+// RegisterRequest.detected_runtime, which is frozen at enrollment. A server
+// predating it keeps the enrollment value.
+message RuntimeMsg {
+  Runtime kind = 1;  // never RUNTIME_UNSPECIFIED
 }
 
 // ----- Container ------------------------------------------------------------
@@ -253,6 +264,15 @@ message ContainerEvent {
   bool has_health_check = 10;
   // Set when the container was removed from the host; state is then EXITED so an older server treats it as a stop.
   bool destroyed = 11;
+  // The repo digests of the image the container runs, carried by inventory entries; absent when the agent could not read them.
+  RepoDigests repo_digests = 12;
+  // Set with an EXITED state when the kernel OOM killer stopped the container: its 137 exit code is then a crash, not a stop.
+  bool oom_killed = 13;
+}
+
+// Wrapped so that "not reported" stays distinct from an empty list, which marks an image never pulled from nor pushed to a registry.
+message RepoDigests {
+  repeated string digests = 1;  // "repo@sha256:..."
 }
 
 // A full snapshot of every container the agent's runtime knows about, sent on

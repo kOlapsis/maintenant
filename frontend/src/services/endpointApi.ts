@@ -41,8 +41,6 @@ export interface Endpoint {
   active: boolean
   first_seen_at: string
   last_seen_at: string
-  orchestration_group?: string
-  orchestration_unit?: string
   source: EndpointSource
   name?: string
   agent_id?: string | null
@@ -56,12 +54,12 @@ export interface CheckResult {
   http_status?: number
   error_message?: string
   timestamp: string
+  agent_id: string
 }
 
 export interface ListEndpointsParams {
   status?: string
   container?: string
-  orchestration_group?: string
   type?: string
   source?: string
   include_inactive?: boolean
@@ -119,7 +117,6 @@ export function listEndpoints(params?: ListEndpointsParams): Promise<EndpointsRe
   const url = new URL(`${API_BASE}/endpoints`, window.location.origin)
   if (params?.status) url.searchParams.set('status', params.status)
   if (params?.container) url.searchParams.set('container', params.container)
-  if (params?.orchestration_group) url.searchParams.set('orchestration_group', params.orchestration_group)
   if (params?.type) url.searchParams.set('type', params.type)
   if (params?.source) url.searchParams.set('source', params.source)
   if (params?.include_inactive) url.searchParams.set('include_inactive', 'true')

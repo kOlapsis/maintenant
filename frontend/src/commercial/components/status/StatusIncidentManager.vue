@@ -194,7 +194,7 @@ const incidentStatusOptions = ['investigating', 'identified', 'monitoring', 'res
         <div v-if="inc.components?.length" class="mt-1 flex flex-wrap gap-1">
           <span
             v-for="c in inc.components"
-            :key="c.component_id"
+            :key="c.id"
             class="rounded px-1.5 py-0.5 text-xs"
             style="background: var(--mnt-bg-elevated); color: var(--mnt-text-secondary)"
           >

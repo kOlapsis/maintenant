@@ -30,6 +30,12 @@ func Limit(r Resource) int {
 	return policy.Limit(CurrentEdition(), r)
 }
 
+// WithinLimit reports whether a new r fits beside count existing ones under the running edition's cap.
+func WithinLimit(r Resource, count int) bool {
+	limit := Limit(r)
+	return limit < 0 || count < limit
+}
+
 // Tiers returns the cap of every resource for every edition.
 func Tiers() map[Edition]map[Resource]int {
 	out := make(map[Edition]map[Resource]int, len(editionOrder))

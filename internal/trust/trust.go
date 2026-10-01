@@ -1,8 +1,9 @@
 // Copyright 2026 Benjamin Touchard (Kolapsis)
 // SPDX-License-Identifier: Apache-2.0
 
-// Package trust holds the root certificates used to validate the TLS endpoints
-// and certificates we monitor.
+// Package trust holds the root certificates used to validate every outbound TLS
+// connection: monitored endpoints and certificates, the agent's link to its
+// server, notification channels and third-party APIs.
 //
 // It exists because Go's own escape hatch is a trap for this use case:
 // SSL_CERT_FILE *replaces* the system bundle rather than extending it, so
@@ -13,8 +14,10 @@
 package trust
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"os"
 	"sync/atomic"
 )
@@ -58,4 +61,16 @@ func Load(path string) error {
 // exactly the behaviour it had before this package existed.
 func Pool() *x509.CertPool {
 	return pool.Load()
+}
+
+// ClientTLSConfig returns a client TLS configuration that verifies servers against Pool.
+func ClientTLSConfig() *tls.Config {
+	return &tls.Config{RootCAs: Pool(), MinVersion: tls.VersionTLS12}
+}
+
+// HTTPTransport returns a clone of http.DefaultTransport that verifies servers against Pool.
+func HTTPTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = ClientTLSConfig()
+	return t
 }

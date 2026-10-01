@@ -157,9 +157,6 @@ func (m *mockIncidentStore) DeleteIncident(ctx context.Context, id string) error
 func (m *mockIncidentStore) ListUpdates(ctx context.Context, incidentID string) ([]status.IncidentUpdate, error) {
 	return nil, nil
 }
-func (m *mockIncidentStore) DeleteIncidentsOlderThan(ctx context.Context, days int) (int64, error) {
-	return 0, nil
-}
 
 // --- Helpers ---
 
@@ -184,6 +181,7 @@ func makeExplicitComponent(monitorType string, monitorID string) *status.Compone
 		DisplayName:     "API Gateway",
 		CompositionMode: status.CompositionExplicit,
 		Monitors:        []status.MonitorRef{{Type: monitorType, ID: monitorID}},
+		Visible:         true,
 		AutoIncident:    true,
 	}
 }
@@ -320,6 +318,46 @@ func TestService_HandleAlertEvent_UpdatesExistingIncidentOnRepeat(t *testing.T) 
 	assert.Equal(t, evt.Message, upd.Message)
 }
 
+func TestService_HandleAlertEvent_HiddenComponentNeverFeedsAPublicIncident(t *testing.T) {
+	comp := makeExplicitComponent("endpoint", "ep-5")
+	comp.Visible = false
+	cs := &mockComponentStore{}
+	cs.setComponentsByMonitor([]status.Component{*comp})
+	existing := &status.Incident{ID: "inc-55", Title: "API Gateway - first alert", Status: status.IncidentInvestigating}
+	monitor := status.StatusMajorOutage
+
+	t.Run("no incident is opened", func(t *testing.T) {
+		is := &mockIncidentStore{createIncidentID: "inc-1"}
+		svc := newTestService(cs, is)
+		svc.SetMonitorStatusProvider(func(context.Context, string, string) string { return monitor })
+
+		svc.HandleAlertEvent(context.Background(), makeAlertEvent("critical", false))
+
+		assert.Empty(t, is.createIncidentCalls)
+	})
+
+	t.Run("an incident opened while it was visible gets no update", func(t *testing.T) {
+		is := &mockIncidentStore{activeByComponent: map[string]*status.Incident{comp.ID: existing}}
+		svc := newTestService(cs, is)
+		svc.SetMonitorStatusProvider(func(context.Context, string, string) string { return monitor })
+
+		svc.HandleAlertEvent(context.Background(), makeAlertEvent("critical", false))
+
+		assert.Empty(t, is.createUpdateCalls)
+	})
+
+	t.Run("that incident still resolves", func(t *testing.T) {
+		is := &mockIncidentStore{activeByComponent: map[string]*status.Incident{comp.ID: existing}}
+		svc := newTestService(cs, is)
+		svc.SetMonitorStatusProvider(func(context.Context, string, string) string { return status.StatusOperational })
+
+		svc.HandleAlertEvent(context.Background(), makeAlertEvent("critical", true))
+
+		require.Len(t, is.createUpdateCalls, 1)
+		assert.Equal(t, status.IncidentResolved, is.createUpdateCalls[0].Status)
+	})
+}
+
 func TestService_HandleAlertEvent_SkipsWhenNoIncidentStore(t *testing.T) {
 	cs := &mockComponentStore{}
 	svc := newTestService(cs, nil)
@@ -407,6 +445,7 @@ func TestService_HandleAlertEvent_MultiComponentBroadcast(t *testing.T) {
 		DisplayName:     "API Gateway",
 		CompositionMode: status.CompositionExplicit,
 		Monitors:        []status.MonitorRef{{Type: "endpoint", ID: "ep-5"}},
+		Visible:         true,
 		AutoIncident:    true,
 	}
 	comp2 := &status.Component{
@@ -414,6 +453,7 @@ func TestService_HandleAlertEvent_MultiComponentBroadcast(t *testing.T) {
 		DisplayName:     "Frontend",
 		CompositionMode: status.CompositionExplicit,
 		Monitors:        []status.MonitorRef{{Type: "endpoint", ID: "ep-5"}},
+		Visible:         true,
 		AutoIncident:    true,
 	}
 	cs := &mockComponentStore{}

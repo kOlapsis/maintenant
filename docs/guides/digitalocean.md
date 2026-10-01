@@ -24,7 +24,7 @@ maintenant is a single Go binary with the frontend embedded and SQLite as its de
 
 ---
 
-## Step 1 — Create the Droplet
+## Step 1: Create the Droplet
 
 The repository ships a ready-to-use cloud-config at [`deploy/cloud-init/maintenant.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/cloud-init/maintenant.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
 
@@ -47,6 +47,14 @@ ssh -L 8080:127.0.0.1:8080 root@$(doctl compute droplet get maintenant --format 
 
 Open **http://localhost:8080**. Every container on the host is already discovered.
 
+!!! warning "The Docker socket is root on this Droplet"
+    The cloud-config mounts `/var/run/docker.sock`. `:ro` only protects the socket file: the Docker API behind it still accepts writes, so whoever controls maintenant can start containers on this Droplet. Before you open the dashboard to anyone else, put a read-only docker-socket-proxy in front of the socket. See [Security: Docker socket proxy](../security.md#recommended-docker-socket-proxy), and enable `IMAGES` on the proxy as well if you use update checks.
+
+!!! tip "Keeping the database on a Volume?"
+    Create the Volume first and add `--volumes <volume-id>` to the command above: DigitalOcean only
+    mounts a Volume that is attached while the Droplet is created. See
+    [Step 3](#step-3-put-the-database-on-a-volume).
+
 !!! warning "User data is set once, at creation"
     A Droplet's user data cannot be changed afterwards, and it is capped at 64 KiB. Get the file
     right before you create the Droplet; to change it later, edit
@@ -57,7 +65,7 @@ Droplet joins the right rules by carrying the tag.
 
 ---
 
-## Step 2 — Cloud Firewall
+## Step 2: Cloud Firewall
 
 `droplet create` has no `--firewall` flag, so the firewall is created separately and attached by tag.
 
@@ -88,16 +96,30 @@ doctl compute firewall add-rules <firewall-id> \
 `firewall update` resets every attribute you do not pass, which silently drops the rules you
 already have.
 
+### Behind a reverse proxy
+
+Authentication is the proxy's job: maintenant has none. [Security](../security.md#reverse-proxy-setup) has working Traefik, Caddy and nginx setups. Two settings in `/opt/maintenant/compose.yml` make maintenant behave correctly behind it:
+
+```yaml
+    environment:
+      MAINTENANT_BASE_URL: "https://maintenant.example.com"
+      MAINTENANT_TRUSTED_PROXIES: "172.18.0.1"
+```
+
+- `MAINTENANT_BASE_URL` is the public address. It defaults to `http://0.0.0.0:8080` here, which is what heartbeat ping URLs, status page subscriber links and the MCP OAuth issuer would otherwise carry.
+- `MAINTENANT_TRUSTED_PROXIES` lists the addresses the proxy connects from. Empty, no forwarded header is read and every visitor is counted as the proxy, so they share one rate limit. A proxy on this Droplet reaches the port published on `127.0.0.1` through the Docker network's gateway, so list that address (`docker network inspect maintenant_default`, field `Gateway`), not `127.0.0.1`. See [Running behind a proxy](../security.md#running-behind-a-proxy).
+
 ---
 
-## Step 3 — Put the database on a Volume
+## Step 3: Put the database on a Volume
 
 The Droplet's disk goes away with the Droplet. A Volume survives a rebuild, resizes, and can be
 snapshotted on its own. Volumes start at 1 GiB and cost $0.10 per GiB per month.
 
 **Attach it at creation time.** DigitalOcean formats and mounts a Volume automatically only when
 it is attached to a Droplet being created; a Volume attached to an existing Droplet has to be
-partitioned and mounted by hand.
+partitioned and mounted by hand. So create the Volume before the Droplet, and run this in place of
+the command from Step 1:
 
 ```bash
 doctl compute volume create maintenant-data \
@@ -110,6 +132,10 @@ doctl compute droplet create maintenant \
   --user-data-file deploy/cloud-init/maintenant.yaml --wait
 ```
 
+If you already created the Droplet in Step 1 without the Volume, delete that empty Droplet first
+(`doctl compute droplet delete maintenant`): running the command again would leave two Droplets
+named `maintenant`.
+
 The mount path is `/mnt/<volume-name>`, with hyphens turned into underscores to match systemd
 mount unit naming. `maintenant-data` therefore lands on `/mnt/maintenant_data`. Point the Compose
 volume at it:
@@ -121,6 +147,20 @@ volume at it:
     environment:
       MAINTENANT_DB: "/data/maintenant.db"
 ```
+
+You do not need to create or `chown` the `maintenant` directory: Docker creates it as root if it is missing, and the entrypoint hands it to uid 65534 at start.
+
+The first boot already started maintenant on the named volume `maintenant_maintenant-data`, and the database created there does not follow the new mount: the next start opens an empty database at the new path. That is fine on a Droplet you have just created. To keep what was collected, copy it across while the stack is stopped (`cp -a` keeps the ownership):
+
+```bash
+docker compose -f /opt/maintenant/compose.yml down
+mkdir -p /mnt/maintenant_data/maintenant
+cp -a /var/lib/docker/volumes/maintenant_maintenant-data/_data/. /mnt/maintenant_data/maintenant/
+# edit compose.yml as above, then
+docker compose -f /opt/maintenant/compose.yml up -d
+```
+
+Do this before you enrol any agent: the server's database holds their identities. Once maintenant runs on the Volume, `docker volume rm maintenant_maintenant-data` removes the old copy.
 
 !!! warning "Size the volume for migrations, not just for the data"
     Schema migrations rebuild tables in place and transiently need several times the size of the
@@ -145,15 +185,34 @@ A Droplet reads its own private address from the metadata service:
 curl -s http://169.254.169.254/metadata/v1/interfaces/private/0/ipv4/address
 ```
 
-Bind the gRPC listener to that address on the server:
+!!! note "Enrolling hosts needs the Personal edition"
+    Remote hosts require the Personal edition or above (`MAINTENANT_LICENSE_KEY`). Personal covers up to 20 hosts, Pro has no cap. On Community the server does not open the agent port: it logs `agent gRPC listener not started: agents need the personal edition or above`.
 
-```bash
-MAINTENANT_GRPC_LISTEN=10.102.0.2:8443
-MAINTENANT_GRPC_URL=grpcs://maintenant.internal.example.com:8443
+The gRPC listener defaults to `127.0.0.1:8443`. Inside the container that address cannot be reached from the network, for the same reason as the HTTP port. The server must listen on all interfaces **in the container**, and the private address must be published in the Compose file. Edit `/opt/maintenant/compose.yml`:
+
+```diff
+   maintenant:
+     ports:
+       - "127.0.0.1:8080:8080"
++      - "10.102.0.2:8443:8443"
+     volumes:
++      - /opt/maintenant/tls:/etc/maintenant/tls:ro
+       - maintenant-data:/data
+     environment:
+       MAINTENANT_ADDR: "0.0.0.0:8080"
+       MAINTENANT_DB: "/data/maintenant.db"
++      MAINTENANT_LICENSE_KEY: "<your license key>"
++      MAINTENANT_GRPC_LISTEN: "0.0.0.0:8443"
++      MAINTENANT_GRPC_URL: "grpcs://maintenant.internal.example.com:8443"
++      MAINTENANT_GRPC_TLS_CERT: "/etc/maintenant/tls/server.crt"
++      MAINTENANT_GRPC_TLS_KEY: "/etc/maintenant/tls/server.key"
 ```
 
-Then enrol each other Droplet. Generate a token from **Agents → Add host**: the modal hands you a
-ready-made command. Run it on the host, pointing at the private address:
+Publish on the private address (`10.102.0.2`), never as a bare `8443:8443`. That address must exist on the host when the container starts, or Docker refuses it with `cannot assign requested address`. Apply with `docker compose -f /opt/maintenant/compose.yml up -d`.
+
+The certificate and key are read at startup by uid 65534, so they must be readable by it, and a renewed certificate is only picked up when the container restarts. The certificate has to cover the name in `MAINTENANT_GRPC_URL`. A DNS-01 ACME certificate works for a name that only resolves privately, as long as the domain is yours. With a private CA instead, issue the server certificate from it and give the agents the CA, as shown below.
+
+Then enrol each other Droplet. In the web UI, open **Agents** and click **Generate enrollment token**: the modal shows the token once, with a ready-made command per environment and the server address taken from `MAINTENANT_GRPC_URL`. Run it on the host, pointing at the private address:
 
 ```bash
 docker run -d \
@@ -169,6 +228,15 @@ docker run -d \
   --enrollment-token=mnt_enr_XXXXXXXXXXXXXXXX
 ```
 
+With a private CA, add these two lines to the agent command (the generated one does not include them):
+
+```bash
+  -e MAINTENANT_CA_CERT=/etc/maintenant/ca.pem \
+  -v /opt/maintenant/ca.pem:/etc/maintenant/ca.pem:ro \
+```
+
+The file must be readable by uid 65534: an unreadable or invalid CA makes the agent stop at start with `failed to load extra CA bundle`.
+
 Allow the gRPC port between tagged Droplets rather than by IP, so a replaced Droplet needs no rule change:
 
 ```bash
@@ -177,9 +245,8 @@ doctl compute firewall add-rules <firewall-id> \
 ```
 
 !!! important "Private does not mean plaintext"
-    Binding on the VPC address keeps the listener off the public internet, but the agent still
-    speaks TLS. Use a certificate that covers the internal hostname; a DNS-01 ACME certificate
-    works fine for a name that only resolves privately. Do **not** reach for
+    Publishing on the VPC address keeps the listener off the public internet, but the agent still
+    speaks TLS. Use a certificate that covers the internal hostname. Do **not** reach for
     `--grpc-insecure-skip-tls-verify` outside a lab. The full matrix of TLS modes is in
     [Agent Setup → Step 1](agent-setup.md#step-1-make-the-grpc-endpoint-reachable).
 
@@ -249,10 +316,12 @@ A Droplet snapshot copies the disk while the database is being written to. For S
 that is a torn copy, not a backup. DigitalOcean says as much: powering the Droplet off first is
 recommended precisely because databases do not guarantee on-disk consistency otherwise.
 
+The image does not ship a `sqlite3` client. Install one on the Droplet and copy the database from the file behind the Volume, which works while maintenant keeps running:
+
 ```bash
-# On the Droplet: consistent copy while maintenant keeps running
-docker compose -f /opt/maintenant/compose.yml exec maintenant \
-  sqlite3 /data/maintenant.db ".backup '/data/maintenant.backup.db'"
+apt-get install -y sqlite3
+sqlite3 -readonly /mnt/maintenant_data/maintenant/maintenant.db \
+  ".backup '/mnt/maintenant_data/maintenant/maintenant.backup.db'"
 
 # Then snapshot the Droplet, or just the volume
 doctl compute droplet-action snapshot <droplet-id> \
@@ -261,11 +330,12 @@ doctl compute volume snapshot <volume-id> \
   --snapshot-name "maintenant-data-$(date -u +%F)"
 ```
 
-If the image has no `sqlite3` binary, stop the stack for the few seconds the copy takes:
+Without a client, stop the stack for the few seconds the copy takes and copy the database files together:
 
 ```bash
 docker compose -f /opt/maintenant/compose.yml stop
-cp /mnt/maintenant_data/maintenant/maintenant.db /root/maintenant-$(date -u +%F).db
+mkdir -p /root/maintenant-$(date -u +%F)
+cp -a /mnt/maintenant_data/maintenant/maintenant.db* /root/maintenant-$(date -u +%F)/
 docker compose -f /opt/maintenant/compose.yml start
 ```
 
@@ -277,9 +347,12 @@ docker compose -f /opt/maintenant/compose.yml start
 
 ## Related
 
-- [Installation](../getting-started/installation.md) — Docker, Kubernetes and source builds
-- [Hetzner Cloud Deployment](hetzner.md) — The same ground on Hetzner
-- [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
-- [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
-- [PostgreSQL Storage](postgresql.md) — Making the server replaceable
-- [Endpoint Monitoring](../features/endpoints.md) — HTTP/TCP checks behind a Load Balancer
+- [Installation](../getting-started/installation.md): Docker, Kubernetes and source builds
+- [Hetzner Cloud Deployment](hetzner.md): The same ground on Hetzner
+- [Scaleway Deployment](scaleway.md): The same ground on Scaleway
+- [OVHcloud Deployment](ovhcloud.md): The same ground on OVHcloud
+- [Vultr Deployment](vultr.md): The same ground on Vultr
+- [Agent Setup](agent-setup.md): Enrolling additional hosts over gRPC
+- [Kubernetes Guide](kubernetes.md): RBAC, Helm values, workload monitoring
+- [PostgreSQL Storage](postgresql.md): Making the server replaceable
+- [Endpoint Monitoring](../features/endpoints.md): HTTP/TCP checks behind a Load Balancer

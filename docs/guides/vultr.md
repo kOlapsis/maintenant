@@ -22,56 +22,10 @@ maintenant is a single Go binary with the frontend embedded and SQLite as its de
 
 ---
 
-## Step 1 — Create the instance
+## Step 1: Firewall group and VPC
 
-The repository ships a ready-to-use cloud-config at [`deploy/cloud-init/maintenant.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/cloud-init/maintenant.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
-
-Find the OS id first. Vultr's own examples all use `1743`, which is Ubuntu **22.04**:
-
-```bash
-vultr-cli os list | grep -i "24.04"     # Ubuntu 24.04 LTS x64 is 2284
-```
-
-```bash
-vultr-cli instance create \
-  --region="ewr" \
-  --plan="vc2-2c-4gb" \
-  --os=2284 \
-  --label="maintenant" \
-  --host="maintenant" \
-  --ssh-keys="<sshkey-uuid>" \
-  --vpc-ids="<vpc-uuid>" \
-  --firewall-group="<firewall-group-uuid>" \
-  --userdata-file=deploy/cloud-init/maintenant.yaml
-```
-
-Then reach the dashboard, which the cloud-config binds to loopback:
-
-```bash
-ssh -L 8080:127.0.0.1:8080 root@<instance-ip>
-```
-
-Open **http://localhost:8080**. Every container on the host is already discovered.
-
-Three details that cost time if you get them wrong:
-
-!!! warning "Do not base64-encode the user data yourself"
-    The API expects base64, but `vultr-cli` encodes it for you. Encoding it yourself produces a
-    double-encoded blob, and cloud-init then does nothing at all, silently. Pass the plain file
-    with `--userdata-file`, or plain text with `-u`. The two flags are mutually exclusive.
-
-!!! warning "`-o` is not short for `--os`"
-    `--os` takes an integer and has no short form. `-o` is the global `--output` flag. The
-    abbreviated example shipped in the CLI's own help (`-o=1743`) is wrong and will not select an
-    operating system.
-
-!!! note "The flag is `--firewall-group` here"
-    At creation the flag is `--firewall-group`. `--firewall-group-id` exists only on
-    `vultr-cli instance update-firewall-group`, which is how you attach one afterwards.
-
----
-
-## Step 2 — Firewall group
+Create these before the instance: the instance command of the next step takes the firewall group
+and the VPC as arguments.
 
 ```bash
 FW=$(vultr-cli firewall group create --description="maintenant" -o json | jq -r '.firewall_group.id')
@@ -107,9 +61,88 @@ To attach the group to an existing instance:
 vultr-cli instance update-firewall-group <instance-id> -f $FW
 ```
 
+If you will enrol other instances later, create the VPC now too. It has to exist before the
+instance, because a VPC is only configured on the instance when it is attached at deployment
+(see the warning in the VPC section below).
+
+```bash
+vultr-cli vpc create --region="ewr" --description="maintenant" \
+  --subnet="10.200.0.0" --size=24
+```
+
+VPC ranges are RFC1918 only, and you get five VPC networks per location. For a single server, skip
+this and drop `--vpc-ids` from the next command.
+
 ---
 
-## Step 3 — Put the database on a Block Storage volume
+## Step 2: Create the instance
+
+The repository ships a ready-to-use cloud-config at [`deploy/cloud-init/maintenant.yaml`](https://github.com/kolapsis/maintenant/blob/main/deploy/cloud-init/maintenant.yaml). It installs Docker from the official repository, writes `/opt/maintenant/compose.yml`, and starts the stack on first boot.
+
+Find the OS id first. Vultr's own examples all use `1743`, which is Ubuntu **22.04**:
+
+```bash
+vultr-cli os list | grep -i "24.04"     # Ubuntu 24.04 LTS x64 is 2284
+```
+
+```bash
+vultr-cli instance create \
+  --region="ewr" \
+  --plan="vc2-2c-4gb" \
+  --os=2284 \
+  --label="maintenant" \
+  --host="maintenant" \
+  --ssh-keys="<sshkey-uuid>" \
+  --vpc-ids="<vpc-uuid>" \
+  --firewall-group="<firewall-group-uuid>" \
+  --userdata-file=deploy/cloud-init/maintenant.yaml
+```
+
+`--firewall-group` takes the id that `$FW` holds after Step 1, and `--vpc-ids` the id printed by `vpc create`.
+
+Then reach the dashboard, which the cloud-config binds to loopback:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 root@<instance-ip>
+```
+
+Open **http://localhost:8080**. Every container on the host is already discovered.
+
+!!! warning "The Docker socket is root on this instance"
+    The cloud-config mounts `/var/run/docker.sock`. `:ro` only protects the socket file: the Docker API behind it still accepts writes, so whoever controls maintenant can start containers on this instance. Before you open the dashboard to anyone else, put a read-only docker-socket-proxy in front of the socket. See [Security: Docker socket proxy](../security.md#recommended-docker-socket-proxy), and enable `IMAGES` on the proxy as well if you use update checks.
+
+Three details that cost time if you get them wrong:
+
+!!! warning "Do not base64-encode the user data yourself"
+    The API expects base64, but `vultr-cli` encodes it for you. Encoding it yourself produces a
+    double-encoded blob, and cloud-init then does nothing at all, silently. Pass the plain file
+    with `--userdata-file`, or plain text with `-u`. The two flags are mutually exclusive.
+
+!!! warning "`-o` is not short for `--os`"
+    `--os` takes an integer and has no short form. `-o` is the global `--output` flag. The
+    abbreviated example shipped in the CLI's own help (`-o=1743`) is wrong and will not select an
+    operating system.
+
+!!! note "The flag is `--firewall-group` here"
+    At creation the flag is `--firewall-group`. `--firewall-group-id` exists only on
+    `vultr-cli instance update-firewall-group`, which is how you attach one afterwards.
+
+### Behind a reverse proxy
+
+Authentication is the proxy's job: maintenant has none. [Security](../security.md#reverse-proxy-setup) has working Traefik, Caddy and nginx setups. Two settings in `/opt/maintenant/compose.yml` make maintenant behave correctly behind it:
+
+```yaml
+    environment:
+      MAINTENANT_BASE_URL: "https://maintenant.example.com"
+      MAINTENANT_TRUSTED_PROXIES: "172.18.0.1"
+```
+
+- `MAINTENANT_BASE_URL` is the public address. It defaults to `http://0.0.0.0:8080` here, which is what heartbeat ping URLs, status page subscriber links and the MCP OAuth issuer would otherwise carry.
+- `MAINTENANT_TRUSTED_PROXIES` lists the addresses the proxy connects from. Empty, no forwarded header is read and every visitor is counted as the proxy, so they share one rate limit. A proxy on this instance reaches the port published on `127.0.0.1` through the Docker network's gateway, so list that address (`docker network inspect maintenant_default`, field `Gateway`), not `127.0.0.1`. See [Running behind a proxy](../security.md#running-behind-a-proxy).
+
+---
+
+## Step 3: Put the database on a Block Storage volume
 
 The instance's disk goes away with the instance. A Block Storage volume survives, resizes, and
 can be cloned from a snapshot.
@@ -160,6 +193,20 @@ Then point the Compose volume at it:
       MAINTENANT_DB: "/data/maintenant.db"
 ```
 
+You do not need to create or `chown` the `maintenant` directory: Docker creates it as root if it is missing, and the entrypoint hands it to uid 65534 at start.
+
+The first boot already started maintenant on the named volume `maintenant_maintenant-data`, and the database created there does not follow the new mount: the next start opens an empty database at the new path. That is fine on an instance you have just created. To keep what was collected, copy it across while the stack is stopped (`cp -a` keeps the ownership):
+
+```bash
+docker compose -f /opt/maintenant/compose.yml down
+mkdir -p /mnt/maintenant-data/maintenant
+cp -a /var/lib/docker/volumes/maintenant_maintenant-data/_data/. /mnt/maintenant-data/maintenant/
+# edit compose.yml as above, then
+docker compose -f /opt/maintenant/compose.yml up -d
+```
+
+Do this before you enrol any agent: the server's database holds their identities. Once maintenant runs on the volume, `docker volume rm maintenant_maintenant-data` removes the old copy.
+
 !!! tip "Mount by UUID, not by device name"
     `/dev/vdb` is the order the kernel happened to enumerate the disks in. Attach a second volume
     and the names can swap, which is how a database ends up pointed at the wrong filesystem.
@@ -182,12 +229,8 @@ Then point the Compose volume at it:
 
 ## Monitoring several instances over a VPC
 
-```bash
-vultr-cli vpc create --region="ewr" --description="maintenant" \
-  --subnet="10.200.0.0" --size=24
-```
-
-VPC ranges are RFC1918 only, and you get five VPC networks per location.
+The VPC was created in Step 1 and attached to the server when it was deployed. Every other instance
+joins it the same way, with `--vpc-ids` on `instance create`.
 
 !!! warning "Attach the VPC at creation, or configure the interface by hand"
     This is the one Vultr detail that will cost you an afternoon. On Linux, cloud-init configures
@@ -203,12 +246,32 @@ Vultr documents no internal DNS for VPC networks, so address the server by its p
 `internal_ip` field of the instance) or by a name you maintain yourself. Whichever you choose, it
 has to match the certificate the server presents.
 
-Bind the gRPC listener to the private address:
+!!! note "Enrolling hosts needs the Personal edition"
+    Remote hosts require the Personal edition or above (`MAINTENANT_LICENSE_KEY`). Personal covers up to 20 hosts, Pro has no cap. On Community the server does not open the agent port: it logs `agent gRPC listener not started: agents need the personal edition or above`.
 
-```bash
-MAINTENANT_GRPC_LISTEN=10.200.0.2:8443
-MAINTENANT_GRPC_URL=grpcs://maintenant.internal.example.com:8443
+The gRPC listener defaults to `127.0.0.1:8443`. Inside the container that address cannot be reached from the network, for the same reason as the HTTP port. The server must listen on all interfaces **in the container**, and the private address must be published in the Compose file. Edit `/opt/maintenant/compose.yml`:
+
+```diff
+   maintenant:
+     ports:
+       - "127.0.0.1:8080:8080"
++      - "10.200.0.2:8443:8443"
+     volumes:
++      - /opt/maintenant/tls:/etc/maintenant/tls:ro
+       - maintenant-data:/data
+     environment:
+       MAINTENANT_ADDR: "0.0.0.0:8080"
+       MAINTENANT_DB: "/data/maintenant.db"
++      MAINTENANT_LICENSE_KEY: "<your license key>"
++      MAINTENANT_GRPC_LISTEN: "0.0.0.0:8443"
++      MAINTENANT_GRPC_URL: "grpcs://maintenant.internal.example.com:8443"
++      MAINTENANT_GRPC_TLS_CERT: "/etc/maintenant/tls/server.crt"
++      MAINTENANT_GRPC_TLS_KEY: "/etc/maintenant/tls/server.key"
 ```
+
+Publish on the private address (`10.200.0.2`), never as a bare `8443:8443`. That address must exist on the host when the container starts, or Docker refuses it with `cannot assign requested address`: this is what you get if the VPC was attached after deployment and the interface is still unconfigured. Apply with `docker compose -f /opt/maintenant/compose.yml up -d`.
+
+The certificate and key are read at startup by uid 65534, so they must be readable by it, and a renewed certificate is only picked up when the container restarts. The certificate has to cover the name in `MAINTENANT_GRPC_URL`. A DNS-01 ACME certificate works for a name that only resolves privately, as long as the domain is yours. With a private CA instead, issue the server certificate from it and give the agents the CA, as shown below. If you put the private IP itself in `MAINTENANT_GRPC_URL`, the enrollment modal shows a "Local address detected" warning: expected here, since the agents reach the server over the VPC.
 
 Open the port to the VPC range only:
 
@@ -218,8 +281,7 @@ vultr-cli firewall rule create $FW \
   --notes="agent gRPC"
 ```
 
-Then enrol each other instance. Generate a token from **Agents → Add host**: the modal hands you a
-ready-made command. Run it on the host, pointing at the private address:
+Then enrol each other instance. In the web UI, open **Agents** and click **Generate enrollment token**: the modal shows the token once, with a ready-made command per environment and the server address taken from `MAINTENANT_GRPC_URL`. Run it on the host, pointing at the private address:
 
 ```bash
 docker run -d \
@@ -236,11 +298,21 @@ docker run -d \
 ```
 
 !!! important "Private does not mean plaintext"
-    Binding on the VPC address keeps the listener off the public internet, but the agent still
-    speaks TLS. Use a certificate that covers the name you gave the server; a DNS-01 ACME
-    certificate works for a name that only resolves privately. Do **not** reach for
+    Publishing on the VPC address keeps the listener off the public internet, but the agent still
+    speaks TLS. Use a certificate that covers the name you gave the server. Do **not** reach for
     `--grpc-insecure-skip-tls-verify` outside a lab. The full matrix of TLS modes is in
     [Agent Setup → Step 1](agent-setup.md#step-1-make-the-grpc-endpoint-reachable).
+
+    With a private CA, add these two lines to the agent command (the generated one does not
+    include them):
+
+    ```bash
+      -e MAINTENANT_CA_CERT=/etc/maintenant/ca.pem \
+      -v /opt/maintenant/ca.pem:/etc/maintenant/ca.pem:ro \
+    ```
+
+    The file must be readable by uid 65534: an unreadable or invalid CA makes the agent stop at
+    start with `failed to load extra CA bundle`.
 
 ---
 
@@ -325,20 +397,23 @@ Vultr snapshots a running instance without stopping it, and says plainly what th
 from one is like rebooting after a non-graceful restart. For SQLite in WAL mode that is a
 crash-consistent copy, not a backup. Take an application-level copy first.
 
+The image does not ship a `sqlite3` client. Install one on the instance and copy the database from the file behind the volume, which works while maintenant keeps running:
+
 ```bash
-# On the instance: consistent copy while maintenant keeps running
-docker compose -f /opt/maintenant/compose.yml exec maintenant \
-  sqlite3 /data/maintenant.db ".backup '/data/maintenant.backup.db'"
+apt-get install -y sqlite3
+sqlite3 -readonly /mnt/maintenant-data/maintenant/maintenant.db \
+  ".backup '/root/maintenant-backup.db'"
 
 # Then snapshot the instance
 vultr-cli snapshot create -i <instance-id> -d "maintenant $(date -u +%F)"
 ```
 
-If the image has no `sqlite3` binary, stop the stack for the few seconds the copy takes:
+Without a client, stop the stack for the few seconds the copy takes and copy the database files together:
 
 ```bash
 docker compose -f /opt/maintenant/compose.yml stop
-cp /mnt/maintenant-data/maintenant/maintenant.db /root/maintenant-$(date -u +%F).db
+mkdir -p /root/maintenant-$(date -u +%F)
+cp -a /mnt/maintenant-data/maintenant/maintenant.db* /root/maintenant-$(date -u +%F)/
 docker compose -f /opt/maintenant/compose.yml start
 ```
 
@@ -352,12 +427,12 @@ docker compose -f /opt/maintenant/compose.yml start
 
 ## Related
 
-- [Installation](../getting-started/installation.md) — Docker, Kubernetes and source builds
-- [Hetzner Cloud Deployment](hetzner.md) — The same ground on Hetzner
-- [DigitalOcean Deployment](digitalocean.md) — The same ground on DigitalOcean
-- [Scaleway Deployment](scaleway.md) — The same ground on Scaleway
-- [OVHcloud Deployment](ovhcloud.md) — The same ground on OVHcloud
-- [Agent Setup](agent-setup.md) — Enrolling additional hosts over gRPC
-- [Kubernetes Guide](kubernetes.md) — RBAC, Helm values, workload monitoring
-- [PostgreSQL Storage](postgresql.md) — Making the server replaceable
-- [Endpoint Monitoring](../features/endpoints.md) — HTTP/TCP checks behind a load balancer
+- [Installation](../getting-started/installation.md): Docker, Kubernetes and source builds
+- [Hetzner Cloud Deployment](hetzner.md): The same ground on Hetzner
+- [DigitalOcean Deployment](digitalocean.md): The same ground on DigitalOcean
+- [Scaleway Deployment](scaleway.md): The same ground on Scaleway
+- [OVHcloud Deployment](ovhcloud.md): The same ground on OVHcloud
+- [Agent Setup](agent-setup.md): Enrolling additional hosts over gRPC
+- [Kubernetes Guide](kubernetes.md): RBAC, Helm values, workload monitoring
+- [PostgreSQL Storage](postgresql.md): Making the server replaceable
+- [Endpoint Monitoring](../features/endpoints.md): HTTP/TCP checks behind a load balancer

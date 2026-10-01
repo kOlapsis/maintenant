@@ -38,10 +38,6 @@ func (s *EscalationStore) InsertPolicy(ctx context.Context, p *escalation.Policy
 	if err != nil {
 		return "", fmt.Errorf("marshal scopes: %w", err)
 	}
-	tagsJSON, err := json.Marshal(p.Filters.Tags)
-	if err != nil {
-		return "", fmt.Errorf("marshal tags: %w", err)
-	}
 	levelsJSON, err := json.Marshal(p.Levels)
 	if err != nil {
 		return "", fmt.Errorf("marshal levels: %w", err)
@@ -53,10 +49,10 @@ func (s *EscalationStore) InsertPolicy(ctx context.Context, p *escalation.Policy
 	}
 	_, err = s.writer.Exec(ctx,
 		`INSERT INTO escalation_policies
-			(id, name, active, active_before_downgrade, severities_json, scopes_json, tags_json, levels_json, created_at, created_by, updated_at, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(id, name, active, active_before_downgrade, severities_json, scopes_json, levels_json, created_at, created_by, updated_at, updated_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.Name, boolToInt(p.Active), boolToInt(p.ActiveBeforeDowngrade),
-		string(sevJSON), string(scopesJSON), string(tagsJSON), string(levelsJSON),
+		string(sevJSON), string(scopesJSON), string(levelsJSON),
 		p.CreatedAt.Unix(), NullableString(p.CreatedBy), p.CreatedAt.Unix(), NullableString(p.UpdatedBy),
 	)
 	if err != nil {
@@ -74,10 +70,6 @@ func (s *EscalationStore) UpdatePolicy(ctx context.Context, p *escalation.Policy
 	if err != nil {
 		return fmt.Errorf("marshal scopes: %w", err)
 	}
-	tagsJSON, err := json.Marshal(p.Filters.Tags)
-	if err != nil {
-		return fmt.Errorf("marshal tags: %w", err)
-	}
 	levelsJSON, err := json.Marshal(p.Levels)
 	if err != nil {
 		return fmt.Errorf("marshal levels: %w", err)
@@ -86,11 +78,11 @@ func (s *EscalationStore) UpdatePolicy(ctx context.Context, p *escalation.Policy
 	_, err = s.writer.Exec(ctx,
 		`UPDATE escalation_policies SET
 			name=?, active=?, active_before_downgrade=?,
-			severities_json=?, scopes_json=?, tags_json=?, levels_json=?,
+			severities_json=?, scopes_json=?, levels_json=?,
 			updated_at=?, updated_by=?
 		WHERE id=?`,
 		p.Name, boolToInt(p.Active), boolToInt(p.ActiveBeforeDowngrade),
-		string(sevJSON), string(scopesJSON), string(tagsJSON), string(levelsJSON),
+		string(sevJSON), string(scopesJSON), string(levelsJSON),
 		time.Now().Unix(), NullableString(p.UpdatedBy),
 		p.ID,
 	)
@@ -103,7 +95,7 @@ func (s *EscalationStore) UpdatePolicy(ctx context.Context, p *escalation.Policy
 func (s *EscalationStore) SelectPolicy(ctx context.Context, id string) (*escalation.Policy, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, active, active_before_downgrade,
-			severities_json, scopes_json, tags_json, levels_json,
+			severities_json, scopes_json, levels_json,
 			created_at, created_by, updated_at, updated_by
 		FROM escalation_policies WHERE id = ?`, id)
 	p, err := scanEscalationPolicy(row)
@@ -115,7 +107,7 @@ func (s *EscalationStore) SelectPolicy(ctx context.Context, id string) (*escalat
 
 func (s *EscalationStore) SelectPolicies(ctx context.Context, activeOnly bool) ([]*escalation.Policy, error) {
 	q := `SELECT id, name, active, active_before_downgrade,
-		severities_json, scopes_json, tags_json, levels_json,
+		severities_json, scopes_json, levels_json,
 		created_at, created_by, updated_at, updated_by
 		FROM escalation_policies`
 	if activeOnly {
@@ -141,19 +133,25 @@ func (s *EscalationStore) SelectPolicies(ctx context.Context, activeOnly bool) (
 }
 
 func (s *EscalationStore) DeletePolicy(ctx context.Context, id string) error {
-	now := time.Now().Unix()
 	// Stop active runs before deleting; runs retain history via ended_at.
-	_, err := s.writer.Exec(ctx,
-		`UPDATE escalation_runs SET status='stopped_by_policy_deletion', ended_at=?, next_action_at=NULL
-		WHERE policy_id=? AND status IN ('active','paused_by_maintenance')`,
-		now, id,
-	)
-	if err != nil {
+	if err := s.StopPolicyRuns(ctx, id, escalation.RunStatusStoppedByPolicyDelete, time.Now()); err != nil {
 		return fmt.Errorf("stop runs before policy delete: %w", err)
 	}
-	_, err = s.writer.Exec(ctx, `DELETE FROM escalation_policies WHERE id = ?`, id)
-	if err != nil {
+	if _, err := s.writer.Exec(ctx, `DELETE FROM escalation_policies WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete escalation policy: %w", err)
+	}
+	return nil
+}
+
+// StopPolicyRuns ends the running and paused runs of one policy with the given status.
+func (s *EscalationStore) StopPolicyRuns(ctx context.Context, policyID string, stopStatus string, endedAt time.Time) error {
+	_, err := s.writer.Exec(ctx,
+		`UPDATE escalation_runs SET status = ?, ended_at = ?, next_action_at = NULL
+		WHERE policy_id = ? AND status IN ('active','paused_by_maintenance')`,
+		stopStatus, endedAt.Unix(), policyID,
+	)
+	if err != nil {
+		return fmt.Errorf("stop policy runs: %w", err)
 	}
 	return nil
 }
@@ -481,13 +479,13 @@ func (s *EscalationStore) PurgeRunsAndDeliveriesOlderThan(ctx context.Context, b
 func scanEscalationPolicy(scanner rowScanner) (*escalation.Policy, error) {
 	var p escalation.Policy
 	var active, activeBeforeDowngrade int
-	var sevJSON, scopesJSON, tagsJSON, levelsJSON string
+	var sevJSON, scopesJSON, levelsJSON string
 	var createdAt, updatedAt int64
 	var createdBy, updatedBy sql.NullString
 
 	err := scanner.Scan(
 		&p.ID, &p.Name, &active, &activeBeforeDowngrade,
-		&sevJSON, &scopesJSON, &tagsJSON, &levelsJSON,
+		&sevJSON, &scopesJSON, &levelsJSON,
 		&createdAt, &createdBy, &updatedAt, &updatedBy,
 	)
 	if err != nil {
@@ -507,7 +505,6 @@ func scanEscalationPolicy(scanner rowScanner) (*escalation.Policy, error) {
 
 	_ = json.Unmarshal([]byte(sevJSON), &p.Filters.Severities)
 	_ = json.Unmarshal([]byte(scopesJSON), &p.Filters.Scopes)
-	_ = json.Unmarshal([]byte(tagsJSON), &p.Filters.Tags)
 	_ = json.Unmarshal([]byte(levelsJSON), &p.Levels)
 
 	if p.Filters.Severities == nil {
@@ -515,9 +512,6 @@ func scanEscalationPolicy(scanner rowScanner) (*escalation.Policy, error) {
 	}
 	if p.Filters.Scopes == nil {
 		p.Filters.Scopes = []escalation.Scope{}
-	}
-	if p.Filters.Tags == nil {
-		p.Filters.Tags = []string{}
 	}
 	if p.Levels == nil {
 		p.Levels = []escalation.Level{}

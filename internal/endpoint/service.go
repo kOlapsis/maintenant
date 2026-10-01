@@ -34,18 +34,11 @@ type LicenseChecker interface {
 	CanCreateEndpoint(currentCount int) bool
 }
 
-// DefaultLicenseChecker caps how many endpoints may exist. A negative maximum
-// means unlimited — the value comes straight from extension.Limit, where -1 is
-// the declared "no cap" value.
-type DefaultLicenseChecker struct {
-	MaxEndpoints int
-}
+// DefaultLicenseChecker caps endpoints at the running edition's limit, read at every call.
+type DefaultLicenseChecker struct{}
 
-func (c *DefaultLicenseChecker) CanCreateEndpoint(currentCount int) bool {
-	if c.MaxEndpoints < 0 {
-		return true
-	}
-	return currentCount < c.MaxEndpoints
+func (DefaultLicenseChecker) CanCreateEndpoint(currentCount int) bool {
+	return extension.WithinLimit(extension.ResourceEndpoints, currentCount)
 }
 
 // EventCallback is called when an endpoint event occurs (for SSE broadcasting).
@@ -64,7 +57,7 @@ type Deps struct {
 	Store                   EndpointStore           // required
 	Engine                  *CheckEngine            // required
 	Logger                  *slog.Logger            // required
-	LicenseChecker          LicenseChecker          // optional, defaults to extension.Limit
+	LicenseChecker          LicenseChecker          // optional, defaults to DefaultLicenseChecker
 	EventCallback           EventCallback           // optional — nil-safe
 	AlertCallback           AlertCallback           // optional — nil-safe
 	EndpointRemovedCallback EndpointRemovedCallback // optional — nil-safe
@@ -98,7 +91,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxEndpoints: extension.Limit(extension.ResourceEndpoints)}
+		lc = DefaultLicenseChecker{}
 	}
 	return &Service{
 		store:             d.Store,
@@ -137,7 +130,7 @@ func (s *Service) Stop() {
 }
 
 // SyncEndpoints synchronizes endpoint definitions from container labels with the store and check engine.
-func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID string, labels map[string]string, orchestrationGroup, orchestrationUnit string) {
+func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID string, labels map[string]string) {
 	parsed, parseErrors := ParseEndpointLabels(labels, s.logger)
 	s.logger.Debug("endpoint: sync started", "external_id", externalID, "count", len(parsed))
 
@@ -171,14 +164,12 @@ func (s *Service) SyncEndpoints(ctx context.Context, containerName, externalID s
 		parsedKeys[p.LabelKey] = true
 
 		ep := &Endpoint{
-			ContainerName:      containerName,
-			LabelKey:           p.LabelKey,
-			ExternalID:         externalID,
-			EndpointType:       p.EndpointType,
-			Target:             p.Target,
-			Config:             p.Config,
-			OrchestrationGroup: orchestrationGroup,
-			OrchestrationUnit:  orchestrationUnit,
+			ContainerName: containerName,
+			LabelKey:      p.LabelKey,
+			ExternalID:    externalID,
+			EndpointType:  p.EndpointType,
+			Target:        p.Target,
+			Config:        p.Config,
 		}
 
 		id, err := s.store.UpsertEndpoint(ctx, ep)
@@ -484,8 +475,8 @@ func (s *Service) HandleContainerStop(ctx context.Context, externalID string) {
 }
 
 // HandleContainerStart re-syncs endpoint labels and resumes checks when a container starts.
-func (s *Service) HandleContainerStart(ctx context.Context, containerName, externalID string, labels map[string]string, orchestrationGroup, orchestrationUnit string) {
-	s.SyncEndpoints(ctx, containerName, externalID, labels, orchestrationGroup, orchestrationUnit)
+func (s *Service) HandleContainerStart(ctx context.Context, containerName, externalID string, labels map[string]string) {
+	s.SyncEndpoints(ctx, containerName, externalID, labels)
 }
 
 // HandleContainerDestroy deactivates all endpoints for a destroyed container.

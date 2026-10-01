@@ -27,6 +27,7 @@ type ContainerEvent struct {
 	ExternalID   string
 	Name         string
 	ExitCode     string
+	OOMKilled    bool
 	HealthStatus string
 	ErrorDetail  string
 	Timestamp    time.Time
@@ -88,6 +89,9 @@ type Service struct {
 	restartRecoveryInterval time.Duration
 	restartMu               sync.Mutex
 	trackedRestartAlerts    map[string]struct{}
+
+	agentDetailsMu sync.RWMutex
+	agentDetails   map[agentContainerKey]AgentDetails
 }
 
 // NewService creates a new container service with all dependencies.
@@ -112,6 +116,7 @@ func NewService(d Deps) *Service {
 		agentRuntime:            d.AgentRuntime,
 		restartRecoveryInterval: interval,
 		trackedRestartAlerts:    make(map[string]struct{}),
+		agentDetails:            make(map[agentContainerKey]AgentDetails),
 	}
 }
 
@@ -148,7 +153,7 @@ func (s *Service) ProcessEvent(ctx context.Context, evt ContainerEvent) {
 		}
 		s.handleStateChange(ctx, evt, StateExited)
 	case "die":
-		if evt.ExitCode != "" && isGracefulExitCode(parseExitCode(evt.ExitCode)) {
+		if evt.ExitCode != "" && IsCleanExit(parseExitCode(evt.ExitCode), evt.OOMKilled) {
 			s.handleStateChange(ctx, evt, StateCompleted)
 		} else {
 			s.handleStateChange(ctx, evt, StateExited)
@@ -170,41 +175,73 @@ func (s *Service) lookup(ctx context.Context, evt ContainerEvent) (*Container, e
 	return s.store.GetContainerByExternalID(ctx, uid.Agent(evt.AgentID), evt.ExternalID)
 }
 
+const replayTimelineDepth = 50
+
+// timelineAt returns the state and health the timeline holds for c at ts, falling back to c's current values where it holds none.
+func (s *Service) timelineAt(ctx context.Context, c *Container, ts time.Time) (ContainerState, *HealthStatus, error) {
+	transitions, _, err := s.store.ListTransitionsByContainer(ctx, c.ID, ListTransitionsOpts{Until: &ts, Limit: replayTimelineDepth})
+	if err != nil {
+		return "", nil, err
+	}
+	state := c.State
+	if len(transitions) > 0 {
+		state = transitions[0].NewState
+	}
+	for _, t := range transitions {
+		if t.NewHealth != nil {
+			return state, t.NewHealth, nil
+		}
+	}
+	return state, c.HealthStatus, nil
+}
+
 func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, newState ContainerState) {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
-		s.logger.Error("get container for state change", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("get container for state change", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
 	if c == nil {
 		if newState != StateRunning || s.discoverer == nil || uid.Agent(evt.AgentID) != uid.LocalAgent {
-			s.logger.Debug("unknown container event, skipping", "external_id", evt.ExternalID[:12], "action", evt.Action)
+			s.logger.Debug("unknown container event, skipping", "external_id", shortID(evt.ExternalID), "action", evt.Action)
 			return
 		}
 		// New container started after initial reconciliation — discover it.
-		s.logger.Info("new container detected, running reconciliation", "external_id", evt.ExternalID[:12])
+		s.logger.Info("new container detected, running reconciliation", "external_id", shortID(evt.ExternalID))
 		if err := s.Reconcile(ctx, s.discoverer); err != nil {
 			s.logger.Error("on-demand reconciliation failed", "error", err)
 		}
 		return
 	}
+	if c.IsIgnored {
+		return
+	}
 
 	previousState := c.State
+	if evt.Replayed {
+		previousState, _, err = s.timelineAt(ctx, c, evt.Timestamp)
+		if err != nil {
+			s.logger.Error("read timeline for replayed state change", "container_id", c.ID, "error", err)
+			return
+		}
+	}
 
 	if previousState == newState {
 		s.logger.Debug("container: state unchanged, skipping", "container_id", c.ID, "state", string(previousState))
 		return
 	}
 
-	c.State = newState
-	c.LastStateChangeAt = evt.Timestamp
+	if !evt.Replayed {
+		c.State = newState
+		c.LastStateChangeAt = evt.Timestamp
 
-	if err := s.store.UpdateContainer(ctx, c); err != nil {
-		s.logger.Error("update container state", "id", c.ID, "error", err)
-		return
+		if err := s.store.UpdateContainer(ctx, c); err != nil {
+			s.logger.Error("update container state", "id", c.ID, "error", err)
+			return
+		}
+
+		s.logger.Info("container: state changed", "container_id", c.ID, "name", c.Name, "previous_state", string(previousState), "new_state", string(newState))
 	}
-
-	s.logger.Info("container: state changed", "container_id", c.ID, "name", c.Name, "previous_state", string(previousState), "new_state", string(newState))
 
 	// Record transition
 	transition := &StateTransition{
@@ -226,7 +263,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 	if evt.Action == "die" && s.logFetcher != nil && c.AgentID == uid.LocalAgent {
 		snippet, err := s.logFetcher.FetchLogSnippet(ctx, evt.ExternalID)
 		if err != nil {
-			s.logger.Warn("fetch log snippet", "external_id", evt.ExternalID[:12], "error", err)
+			s.logger.Warn("fetch log snippet", "external_id", shortID(evt.ExternalID), "error", err)
 		} else {
 			transition.LogSnippet = snippet
 		}
@@ -234,6 +271,10 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 
 	if _, err := s.store.InsertTransition(ctx, transition); err != nil {
 		s.logger.Error("insert transition", "container_id", c.ID, "error", err)
+	}
+
+	if evt.Replayed {
+		return
 	}
 
 	// Check restart threshold (T030)
@@ -244,27 +285,20 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 		result, err := s.restartChecker.Check(ctx, c)
 		if err != nil {
 			s.logger.Error("restart check", "container_id", c.ID, "error", err)
-		} else if !evt.Replayed {
-			if result != nil {
-				s.trackRestartAlert(c.ID)
-				s.emitEvent(event.ContainerRestartAlert, result)
-			} else {
-				// Count is below threshold — emit recovery so the alert engine
-				// can resolve any previously active restart_loop alert.
-				s.untrackRestartAlert(c.ID)
-				s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
-					"container_id":   c.ID,
-					"container_name": c.Name,
-					"timestamp":      evt.Timestamp,
-					"agent_id":       c.AgentID,
-				})
-			}
+		} else if result != nil {
+			s.trackRestartAlert(c.ID)
+			s.emitEvent(event.ContainerRestartAlert, result)
+		} else {
+			// Count is below threshold: emit recovery so the alert engine
+			// can resolve any previously active restart_loop alert.
+			s.untrackRestartAlert(c.ID)
+			s.emitEvent(event.ContainerRestartRecover, map[string]interface{}{
+				"container_id":   c.ID,
+				"container_name": c.Name,
+				"timestamp":      evt.Timestamp,
+				"agent_id":       c.AgentID,
+			})
 		}
-	}
-
-	// Replay stays silent, but the state and the transition above are already written.
-	if evt.Replayed {
-		return
 	}
 
 	s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
@@ -281,7 +315,7 @@ func (s *Service) handleStateChange(ctx context.Context, evt ContainerEvent, new
 func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
-		s.logger.Error("get container for destroy", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("get container for destroy", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
 	if c == nil {
@@ -291,7 +325,7 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 
 	now := evt.Timestamp
 	if err := s.store.ArchiveContainer(ctx, c.ID, now); err != nil {
-		s.logger.Error("archive container", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("archive container", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
 	s.untrackRestartAlert(c.ID)
@@ -307,29 +341,42 @@ func (s *Service) handleDestroy(ctx context.Context, evt ContainerEvent) {
 func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 	c, err := s.lookup(ctx, evt)
 	if err != nil {
-		s.logger.Error("get container for health change", "external_id", evt.ExternalID[:12], "error", err)
+		s.logger.Error("get container for health change", "external_id", shortID(evt.ExternalID), "error", err)
 		return
 	}
-	if c == nil {
+	if c == nil || c.IsIgnored {
 		return
 	}
 
-	previousHealth := c.HealthStatus
+	state, previousHealth := c.State, c.HealthStatus
 	newHealth := HealthStatus(evt.HealthStatus)
-	s.logger.Debug("container: health changed", "container_id", c.ID, "name", c.Name, "previous_health", previousHealth, "new_health", string(newHealth))
-	c.HealthStatus = &newHealth
-	c.LastStateChangeAt = evt.Timestamp
+	if evt.Replayed {
+		state, previousHealth, err = s.timelineAt(ctx, c, evt.Timestamp)
+		if err != nil {
+			s.logger.Error("read timeline for replayed health change", "container_id", c.ID, "error", err)
+			return
+		}
+		if previousHealth != nil && *previousHealth == newHealth {
+			return
+		}
+	}
+	s.logger.Debug("container: health changed", "container_id", c.ID, "name", c.Name, "previous_health", previousHealth, "new_health", string(newHealth), "replayed", evt.Replayed)
 
-	if err := s.store.UpdateContainer(ctx, c); err != nil {
-		s.logger.Error("update container health", "id", c.ID, "error", err)
-		return
+	if !evt.Replayed {
+		c.HealthStatus = &newHealth
+		c.LastStateChangeAt = evt.Timestamp
+
+		if err := s.store.UpdateContainer(ctx, c); err != nil {
+			s.logger.Error("update container health", "id", c.ID, "error", err)
+			return
+		}
 	}
 
 	transition := &StateTransition{
 		ID:             evt.recordID("health_transition"),
 		ContainerID:    c.ID,
-		PreviousState:  c.State,
-		NewState:       c.State,
+		PreviousState:  state,
+		NewState:       state,
 		PreviousHealth: previousHealth,
 		NewHealth:      &newHealth,
 		Timestamp:      evt.Timestamp,
@@ -338,8 +385,13 @@ func (s *Service) handleHealthChange(ctx context.Context, evt ContainerEvent) {
 		s.logger.Error("insert health transition", "container_id", c.ID, "error", err)
 	}
 
+	if evt.Replayed {
+		return
+	}
+
 	s.emitEvent(event.ContainerHealthChanged, map[string]interface{}{
 		"id":              c.ID,
+		"container_name":  c.Name,
 		"health_status":   newHealth,
 		"previous_health": previousHealth,
 		"timestamp":       evt.Timestamp,
@@ -428,7 +480,9 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				dc.ImageVersion, dc.ImageSource, dc.ImageURL, dc.ImageDescription
 		}
 
-		if sc.State == dc.State && metadataChanged {
+		labelsChanged := sc.adoptLabelFields(dc)
+
+		if sc.State == dc.State && (metadataChanged || labelsChanged) {
 			if err := s.store.UpdateContainer(ctx, sc); err != nil {
 				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
 			}
@@ -453,9 +507,11 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				s.logger.Error("reconcile update", "container_id", sc.ID, "error", err)
 			}
 
-			s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
-				"id": sc.ID, "state": dc.State, "previous_state": previousState, "timestamp": now, "agent_id": sc.AgentID,
-			})
+			if !sc.IsIgnored {
+				s.emitEvent(event.ContainerStateChanged, map[string]interface{}{
+					"id": sc.ID, "state": dc.State, "previous_state": previousState, "timestamp": now, "agent_id": sc.AgentID,
+				})
+			}
 		}
 	}
 
@@ -489,7 +545,9 @@ func (s *Service) Reconcile(ctx context.Context, discoverer RuntimeDiscoverer) e
 				}
 			}
 
-			s.emitEvent(event.ContainerDiscovered, dc)
+			if !dc.IsIgnored {
+				s.emitEvent(event.ContainerDiscovered, dc)
+			}
 		}
 	}
 
@@ -545,11 +603,14 @@ func parseExitCode(s string) int {
 	return ec
 }
 
-// isGracefulExitCode returns true for exit codes that indicate a voluntary/normal
-// termination rather than a crash:
-//   - 0: normal exit
-//   - 137: SIGKILL (128+9) — sent by docker stop after SIGTERM timeout
-//   - 143: SIGTERM (128+15) — graceful shutdown signal
-func isGracefulExitCode(code int) bool {
-	return code == 0 || code == 137 || code == 143
+// IsCleanExit reports whether a container that exited with code stopped normally rather than crashed: exit 0, SIGTERM (143) or SIGKILL (137) unless the OOM killer sent it.
+func IsCleanExit(code int, oomKilled bool) bool {
+	switch code {
+	case 0, 143:
+		return true
+	case 137:
+		return !oomKilled
+	default:
+		return false
+	}
 }

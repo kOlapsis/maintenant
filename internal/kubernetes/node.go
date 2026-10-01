@@ -39,7 +39,11 @@ type K8sResourceQuantity struct {
 
 // ListNodes returns all cluster nodes with their resource capacity and status.
 func (r *Runtime) ListNodes(ctx context.Context) ([]K8sNode, error) {
-	nodeList, err := r.clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	nodeList, err := cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}

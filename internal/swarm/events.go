@@ -5,11 +5,8 @@ package swarm
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"time"
 
-	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/runtime"
 )
@@ -19,26 +16,24 @@ type EventCallback func(eventType string, data interface{})
 
 // EventProcessor handles Swarm-specific runtime events (service/node type).
 type EventProcessor struct {
-	discovery      *ServiceDiscovery
-	nodeSvc        *NodeService
-	logger         *slog.Logger
-	callback       EventCallback
-	alertCb        NodeAlertCallback
-	replicaAlerted map[string]bool // tracks which services have active replica alerts
+	discovery *ServiceDiscovery
+	nodeSvc   *NodeService
+	replicas  *ReplicaHealthChecker
+	logger    *slog.Logger
+	callback  EventCallback
 }
 
 // NewEventProcessor creates a new Swarm event processor.
 func NewEventProcessor(discovery *ServiceDiscovery, logger *slog.Logger) *EventProcessor {
 	return &EventProcessor{
-		discovery:      discovery,
-		logger:         logger,
-		replicaAlerted: make(map[string]bool),
+		discovery: discovery,
+		logger:    logger,
 	}
 }
 
-// SetAlertCallback sets the alert callback for replica health alerts.
-func (ep *EventProcessor) SetAlertCallback(cb NodeAlertCallback) {
-	ep.alertCb = cb
+// SetReplicaChecker hands the services changed by events to the replica health checker.
+func (ep *EventProcessor) SetReplicaChecker(rhc *ReplicaHealthChecker) {
+	ep.replicas = rhc
 }
 
 // SetNodeService sets the node service for routing node events.
@@ -80,6 +75,7 @@ func (ep *EventProcessor) processServiceEvent(ctx context.Context, evt runtime.R
 			"stack_name":       svc.StackName,
 			"image":            svc.Image,
 		})
+		ep.observeReplicas(svc)
 
 	case "update":
 		ep.logger.Debug("Swarm service updated", "service_id", serviceID)
@@ -95,7 +91,7 @@ func (ep *EventProcessor) processServiceEvent(ctx context.Context, evt runtime.R
 			"running_replicas": svc.RunningReplicas,
 			"image":            svc.Image,
 		})
-		ep.checkReplicaHealth(svc)
+		ep.observeReplicas(svc)
 
 	case "remove":
 		ep.logger.Info("Swarm service removed", "service_id", serviceID, "name", evt.Name)
@@ -117,56 +113,9 @@ func (ep *EventProcessor) processNodeEvent(ctx context.Context, evt runtime.Runt
 	}
 }
 
-func (ep *EventProcessor) checkReplicaHealth(svc *SwarmService) {
-	if svc.Mode != "replicated" || svc.DesiredReplicas == 0 {
-		return
-	}
-
-	degraded := svc.RunningReplicas < svc.DesiredReplicas
-	wasAlerted := ep.replicaAlerted[svc.ServiceID]
-
-	if degraded && !wasAlerted {
-		ep.replicaAlerted[svc.ServiceID] = true
-		ep.logger.Warn("service replica health degraded",
-			"service", svc.Name, "running", svc.RunningReplicas, "desired", svc.DesiredReplicas)
-
-		if ep.alertCb != nil {
-			ep.alertCb(alert.Event{
-				Source:     "swarm",
-				AlertType:  "replica_unhealthy",
-				Severity:   alert.SeverityWarning,
-				Message:    fmt.Sprintf("Swarm service %s degraded: %d/%d replicas running", svc.Name, svc.RunningReplicas, svc.DesiredReplicas),
-				EntityType: "swarm_service",
-				EntityName: svc.Name,
-				Details: map[string]any{
-					"service_id":       svc.ServiceID,
-					"running_replicas": svc.RunningReplicas,
-					"desired_replicas": svc.DesiredReplicas,
-				},
-				Timestamp: time.Now(),
-			})
-		}
-	} else if !degraded && wasAlerted {
-		delete(ep.replicaAlerted, svc.ServiceID)
-		ep.logger.Info("service replica health recovered", "service", svc.Name)
-
-		if ep.alertCb != nil {
-			ep.alertCb(alert.Event{
-				Source:     "swarm",
-				AlertType:  "replica_unhealthy",
-				Severity:   alert.SeverityInfo,
-				IsRecover:  true,
-				Message:    fmt.Sprintf("Swarm service %s recovered: %d/%d replicas running", svc.Name, svc.RunningReplicas, svc.DesiredReplicas),
-				EntityType: "swarm_service",
-				EntityName: svc.Name,
-				Details: map[string]any{
-					"service_id":       svc.ServiceID,
-					"running_replicas": svc.RunningReplicas,
-					"desired_replicas": svc.DesiredReplicas,
-				},
-				Timestamp: time.Now(),
-			})
-		}
+func (ep *EventProcessor) observeReplicas(svc *SwarmService) {
+	if ep.replicas != nil {
+		ep.replicas.Observe(svc)
 	}
 }
 

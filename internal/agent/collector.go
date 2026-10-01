@@ -5,9 +5,11 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,15 +33,63 @@ var resourceSampleInterval = 10 * time.Second
 // aligned with the Swarm and Kubernetes topology snapshots.
 var containerInventoryInterval = 30 * time.Second
 
-// RunCollector starts collecting events from the local runtime and pushing them to stream.
-// rt is the already-connected runtime resolved by agent.Run; label is the reported
-// runtime kind ("docker", "swarm" or "kubernetes"); nodeName is the Kubernetes node
-// the agent runs on, empty unless the operator set it.
+// runCollector reports the host at once and the local runtime from the moment it
+// answers, pushing both to spool, and restarts the runtime part under its new
+// label when the host joins or leaves a Swarm, or once a lost runtime answers
+// again. nodeName is the Kubernetes node the agent runs on, empty unless the
+// operator set it.
 // Blocks until ctx is cancelled or a fatal push error occurs.
-func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label, nodeName string, spool *Spool, logger *slog.Logger) error {
+func runCollector(ctx context.Context, id *Identity, link *runtimeLink, nodeName string, spool *Spool, logger *slog.Logger) error {
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
+	// A Kubernetes agent runs in a pod: its host identity comes from the node, once the cluster answers.
+	if link.kind != RuntimeKubernetes {
+		g.Go(func() error { return streamHostOS(gCtx, id, hoststat.ReadOSRelease, spool, logger) })
+	}
+	g.Go(func() error {
+		if !link.wait(gCtx) {
+			return nil
+		}
+		label := link.label
+		for {
+			err := collectRuntime(gCtx, id, link, label, nodeName, spool, logger)
+			if errors.Is(err, errRuntimeLost) {
+				logger.Warn("agent: container runtime lost, waiting for it to come back", "runtime", label)
+				if err := link.rt.Connect(gCtx); err != nil {
+					return err
+				}
+				continue
+			}
+			var changed runtimeChanged
+			if !errors.As(err, &changed) {
+				return err
+			}
+			logger.Info("agent: runtime changed", "previous", label, "current", changed.label)
+			if label == RuntimeSwarm {
+				// An empty topology is what retires the cluster the server holds for this agent.
+				if err := spool.Send(swarmTopologyEvent(id.AgentID, swarm.TopologySnapshot{})); err != nil {
+					logger.Debug("collector: swarm topology not cleared", "error", err)
+				}
+			}
+			label = changed.label
+		}
+	})
+	return g.Wait()
+}
+
+// runtimeChanged ends the runtime collection when the host joins or leaves a Swarm, so it restarts under the new label.
+type runtimeChanged struct{ label string }
+
+func (e runtimeChanged) Error() string { return "runtime changed to " + e.label }
+
+func collectRuntime(ctx context.Context, id *Identity, link *runtimeLink, label, nodeName string, spool *Spool, logger *slog.Logger) error {
+	if err := spool.Send(runtimeEvent(id.AgentID, label)); err != nil {
+		logger.Debug("collector: runtime not reported", "error", err)
+	}
+	rt := link.rt
 	switch label {
 	case RuntimeDocker, RuntimeSwarm:
-		return collectContainerRuntime(ctx, id, rt, label, spool, logger)
+		return collectContainerRuntime(ctx, id, rt, label, link.inSwarm, spool, logger)
 	case RuntimeKubernetes:
 		src, ok := rt.(kubernetes.SnapshotSource)
 		if !ok {
@@ -53,7 +103,7 @@ func RunCollector(ctx context.Context, id *Identity, rt runtime.Runtime, label, 
 	}
 }
 
-func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, spool *Spool, logger *slog.Logger) error {
+func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runtime, label string, inSwarm func(context.Context) (bool, error), spool *Spool, logger *slog.Logger) error {
 	if err := syncInventory(ctx, id, rt, spool, logger); err != nil {
 		return err
 	}
@@ -61,9 +111,10 @@ func collectContainerRuntime(ctx context.Context, id *Identity, rt runtime.Runti
 	g.Go(func() error { return watchRuntimeEvents(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return streamInventory(gCtx, id, rt, spool, logger) })
 	g.Go(func() error { return sampleRuntimeResources(gCtx, id, rt, spool, logger) })
-	g.Go(func() error { return sampleHostResources(gCtx, id, spool, logger) })
 	g.Go(func() error { return runLabelProbers(gCtx, id, rt, spool, logger) })
-	g.Go(func() error { return streamHostOS(gCtx, id, hoststat.ReadOSRelease, spool, logger) })
+	if inSwarm != nil {
+		g.Go(func() error { return watchSwarmMembership(gCtx, label, inSwarm, logger) })
+	}
 
 	// Swarm: also push a periodic full topology snapshot (services/tasks/nodes)
 	// so the server can serve the Services/Tasks/Nodes views for this agent.
@@ -86,11 +137,25 @@ type labeledDiscoverer interface {
 	DiscoverAllWithLabels(ctx context.Context) ([]*docker.DiscoveryResult, error)
 }
 
+// repoDigestLister is satisfied by the docker runtime, so the inventory names each running image by its registry digests.
+type repoDigestLister interface {
+	ContainerRepoDigests(ctx context.Context) (map[string][]string, error)
+}
+
 // syncInventory pushes a full snapshot of every container the runtime currently
 // knows about, marked complete so the server can reconcile away what it no
 // longer sees. Discovery failure yields no message at all.
 func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
-	entry := func(c *cmodel.Container, labels map[string]string) *agentpb.ContainerEvent {
+	var digests map[string][]string
+	if dl, ok := rt.(repoDigestLister); ok {
+		d, err := dl.ContainerRepoDigests(ctx)
+		if err != nil {
+			logger.Warn("collector: image digests not read", "err", err)
+		}
+		digests = d
+	}
+
+	entry := func(c *cmodel.Container, labels map[string]string, exit *docker.ExitInfo) *agentpb.ContainerEvent {
 		state, ok := containerStateToProto(c.State)
 		if !ok {
 			return nil
@@ -99,7 +164,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 		if c.HealthStatus != nil {
 			health = string(*c.HealthStatus)
 		}
-		return &agentpb.ContainerEvent{
+		ev := &agentpb.ContainerEvent{
 			ContainerId:    c.ExternalID,
 			Name:           c.Name,
 			Image:          c.Image,
@@ -108,6 +173,14 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 			HealthStatus:   health,
 			HasHealthCheck: c.HasHealthCheck,
 		}
+		if exit != nil && state == agentpb.ContainerState_CONTAINER_STATE_EXITED {
+			ev.StatusMessage = strconv.Itoa(exit.Code)
+			ev.OomKilled = exit.OOMKilled
+		}
+		if d, known := digests[c.ExternalID]; known {
+			ev.RepoDigests = &agentpb.RepoDigests{Digests: d}
+		}
+		return ev
 	}
 
 	var entries []*agentpb.ContainerEvent
@@ -118,7 +191,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 			return nil
 		}
 		for _, res := range results {
-			if e := entry(res.Container, res.Labels); e != nil {
+			if e := entry(res.Container, res.Labels, res.Exit); e != nil {
 				entries = append(entries, e)
 			}
 		}
@@ -129,7 +202,7 @@ func syncInventory(ctx context.Context, id *Identity, rt runtime.Runtime, spool 
 			return nil
 		}
 		for _, c := range containers {
-			if e := entry(c, nil); e != nil {
+			if e := entry(c, nil, nil); e != nil {
 				entries = append(entries, e)
 			}
 		}
@@ -150,6 +223,15 @@ func inventoryEvent(agentID string, entries []*agentpb.ContainerEvent) *agentpb.
 			Containers: entries,
 			Complete:   true,
 		}},
+	}
+}
+
+func runtimeEvent(agentID, label string) *agentpb.AgentEvent {
+	return &agentpb.AgentEvent{
+		AgentId:    agentID,
+		EventId:    uuid.NewString(),
+		ObservedAt: timestamppb.Now(),
+		Body:       &agentpb.AgentEvent_Runtime{Runtime: &agentpb.RuntimeMsg{Kind: runtimeToProto(label)}},
 	}
 }
 
@@ -190,6 +272,9 @@ func containerStateToProto(s cmodel.ContainerState) (agentpb.ContainerState, boo
 	}
 }
 
+// errRuntimeLost ends the runtime collection when the runtime event stream closes, so it restarts once the runtime answers again.
+var errRuntimeLost = errors.New("container runtime lost")
+
 func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, spool *Spool, logger *slog.Logger) error {
 	evCh := rt.StreamEvents(ctx)
 	for {
@@ -198,7 +283,10 @@ func watchRuntimeEvents(ctx context.Context, id *Identity, rt runtime.Runtime, s
 			return nil
 		case ev, ok := <-evCh:
 			if !ok {
-				return nil
+				if ctx.Err() != nil {
+					return nil
+				}
+				return errRuntimeLost
 			}
 			proto := runtimeEventToProto(ev)
 			if proto == nil {
@@ -285,7 +373,7 @@ func collectResourceSnapshots(ctx context.Context, id *Identity, rt runtime.Runt
 	}
 
 	for _, c := range containers {
-		if c.State != cmodel.StateRunning {
+		if c.State != cmodel.StateRunning || c.IsIgnored {
 			continue
 		}
 		raw, err := rt.StatsSnapshot(ctx, c.ExternalID)
@@ -363,6 +451,7 @@ func runtimeEventToProto(ev runtime.RuntimeEvent) *agentpb.ContainerEvent {
 		Image:         ev.Image,
 		State:         state,
 		StatusMessage: ev.ExitCode,
+		OomKilled:     ev.OOMKilled,
 		Labels:        ev.Labels,
 	}
 }

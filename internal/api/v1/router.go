@@ -20,6 +20,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/outbound"
+	"github.com/kolapsis/maintenant/internal/ratelimit"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/runtime"
 	"github.com/kolapsis/maintenant/internal/security"
@@ -80,20 +81,21 @@ type HandlerDeps struct {
 	TriggerStore alert.TriggerStore
 	SilenceStore alert.SilenceStore
 	Notifier     *alert.Notifier
-	Escalator    alert.Escalator
+	Acknowledger alert.Acknowledger
 
 	// Status page admin
 	StatusComponents   status.ComponentStore
 	StatusIncidents    status.IncidentStore
 	StatusSubscribers  status.SubscriberStore
 	StatusMaintenance  status.MaintenanceStore
+	StatusMaintRunner  status.MaintenanceRunner
 	StatusSvc          *status.Service
-	StatusBroker       *SSEBroker
 	PersonalizationSvc status.PersonalizationManager
-	StatusMailer       func(status.SmtpConfig) status.Mailer
+	StatusMailer       status.Mailer
 
 	// Webhooks
-	WebhookStore webhook.WebhookSubscriptionStore
+	WebhookStore  webhook.WebhookSubscriptionStore
+	WebhookTester WebhookTester
 
 	// UI extras
 	UptimeDaily      UptimeDailyFetcher
@@ -118,19 +120,18 @@ type HandlerDeps struct {
 	LicenseMgr extension.EditionSource
 
 	// Swarm
-	SwarmCluster        func() *swarm.SwarmCluster
-	SwarmDiscovery      func() *swarm.ServiceDiscovery
-	SwarmDetector       func() *swarm.Detector
-	SwarmNodeStore      swarm.NodeStore
-	SwarmUpdateTracker  *swarm.UpdateTracker
-	SwarmCrashLoop      *swarm.CrashLoopDetector
-	SwarmReplicaChecker *swarm.ReplicaHealthChecker
-	SwarmTopologyStore  *store.SwarmTopologyStore
+	SwarmCluster       func() *swarm.SwarmCluster
+	SwarmDiscovery     func() *swarm.ServiceDiscovery
+	SwarmDetector      func() *swarm.Detector
+	SwarmNodeStore     swarm.NodeStore
+	SwarmUpdateTracker func() *swarm.UpdateTracker
+	SwarmCrashLoop     func() *swarm.CrashLoopDetector
+	SwarmTopologyStore *store.SwarmTopologyStore
 
 	// Kubernetes (per-agent store-backed reads)
 	KubernetesStore *store.KubernetesStore
 
-	// Multi-host agents (Pro)
+	// Multi-host agents
 	AgentStore          *store.AgentStore
 	AgentSessions       AgentSessions
 	GRPCPublicURL       string
@@ -178,6 +179,7 @@ type Router struct {
 	storage          StorageStatus
 	containerHandler *ContainerHandler
 	corsOrigins      []string
+	crossOrigin      *http.CrossOriginProtection
 	maxBodySize      int64
 	buildVersion     string
 	organisationName string
@@ -192,13 +194,15 @@ func NewRouter(d HandlerDeps) *Router {
 		maxBody = 1048576 // 1 MB default
 	}
 
+	corsOrigins := parseCORSOrigins(d.CORSOrigins)
 	r := &Router{
 		mux:              http.NewServeMux(),
 		broker:           d.Broker,
 		logger:           d.Logger,
 		runtime:          d.Runtime,
 		storage:          d.Storage,
-		corsOrigins:      parseCORSOrigins(d.CORSOrigins),
+		corsOrigins:      corsOrigins,
+		crossOrigin:      newCrossOriginProtection(corsOrigins, d.Logger),
 		maxBodySize:      maxBody,
 		buildVersion:     d.BuildVersion,
 		organisationName: d.OrganisationName,
@@ -208,7 +212,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Webhook management
 	if d.WebhookStore != nil {
-		wh := NewWebhookHandler(d.WebhookStore, d.Logger, d.AllowPrivateWebhooks)
+		wh := NewWebhookHandler(d.WebhookStore, d.WebhookTester, d.Logger, d.AllowPrivateWebhooks)
 		r.mux.HandleFunc("GET /api/v1/webhooks", wh.HandleListWebhooks)
 		r.mux.HandleFunc("POST /api/v1/webhooks", wh.HandleCreateWebhook)
 		r.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", wh.HandleDeleteWebhook)
@@ -271,7 +275,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("GET /api/v1/heartbeats/{id}/pings", hh.HandleListPings)
 
 		// Public ping endpoints (top-level, no auth)
-		ph := NewPingHandler(d.Heartbeats)
+		ph := NewPingHandler(d.Heartbeats, ratelimit.NewClientIPResolver(d.TrustedProxies))
 		r.mux.HandleFunc("GET /ping/{uuid}/start", ph.HandleStartPing)
 		r.mux.HandleFunc("POST /ping/{uuid}/start", ph.HandleStartPing)
 		r.mux.HandleFunc("GET /ping/{uuid}/{exit_code}", ph.HandleExitCodePing)
@@ -319,7 +323,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Alert engine endpoints
 	if d.AlertStore != nil {
-		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks, d.Escalator)
+		ah := NewAlertHandler(d.AlertStore, d.ChannelStore, d.SilenceStore, d.Notifier, d.Broker, d.AllowPrivateWebhooks, d.Acknowledger)
 		// Alert history
 		r.mux.HandleFunc("GET /api/v1/alerts", ah.HandleListAlerts)
 		r.mux.HandleFunc("GET /api/v1/alerts/active", ah.HandleGetActiveAlerts)
@@ -331,7 +335,7 @@ func NewRouter(d HandlerDeps) *Router {
 		r.mux.HandleFunc("PUT /api/v1/channels/{id}", ah.HandleUpdateChannel)
 		r.mux.HandleFunc("DELETE /api/v1/channels/{id}", ah.HandleDeleteChannel)
 		r.mux.HandleFunc("POST /api/v1/channels/{id}/test", ah.HandleTestChannel)
-		// Alert triggers (CRUD; advanced filters scopes/tags gated to Pro inside the handler)
+		// Alert triggers
 		if d.TriggerStore != nil {
 			th := NewAlertTriggerHandler(d.TriggerStore, d.ChannelStore, d.Broker)
 			r.mux.HandleFunc("GET /api/v1/alert-triggers", th.HandleListTriggers)
@@ -348,7 +352,7 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Status page admin endpoints
 	if d.StatusComponents != nil {
-		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusSvc, d.StatusBroker, d.StatusMailer)
+		sh := NewStatusAdminHandler(d.StatusComponents, d.StatusIncidents, d.StatusSubscribers, d.StatusMaintenance, d.StatusMaintRunner, d.StatusSvc, d.StatusMailer)
 		// Status components
 		r.mux.HandleFunc("GET /api/v1/status/components", sh.HandleListComponents)
 		r.mux.HandleFunc("POST /api/v1/status/components", sh.HandleCreateComponent)
@@ -373,9 +377,6 @@ func NewRouter(d HandlerDeps) *Router {
 		if d.StatusSubscribers != nil {
 			r.mux.HandleFunc("GET /api/v1/status/subscribers", requireCapability(extension.CapSubscribers, sh.HandleListSubscribers))
 		}
-		// SMTP config (Pro only)
-		r.mux.HandleFunc("GET /api/v1/status/smtp", requireCapability(extension.CapSMTP, sh.HandleGetSmtpConfig))
-		r.mux.HandleFunc("PUT /api/v1/status/smtp", requireCapability(extension.CapSMTP, sh.HandleUpdateSmtpConfig))
 		r.mux.HandleFunc("POST /api/v1/status/smtp/test", requireCapability(extension.CapSMTP, sh.HandleTestSmtp))
 	}
 
@@ -412,7 +413,7 @@ func NewRouter(d HandlerDeps) *Router {
 	// Runtime status endpoint
 	r.mux.HandleFunc("GET /api/v1/runtime/status", r.handleRuntimeStatus(d))
 
-	// Edition endpoint — exposes CE/Pro feature flags for frontend gating
+	// Edition endpoint: feature flags, quotas and tiers for frontend gating
 	smtpConfigured := d.Notifier != nil && d.Notifier.SMTPConfigured()
 	r.mux.HandleFunc("GET /api/v1/edition", r.handleGetEdition(smtpConfigured, d))
 
@@ -440,7 +441,7 @@ func NewRouter(d HandlerDeps) *Router {
 	// Kubernetes monitoring
 	r.registerKubernetesRoutes(d)
 
-	// Multi-host agents (Pro)
+	// Multi-host agents
 	r.registerAgentRoutes(d)
 
 	return r
@@ -627,8 +628,7 @@ func (r *Router) registerUpdateRoutes(d HandlerDeps) {
 	r.mux.HandleFunc("GET /api/v1/cve", ch.HandleListCVEs)
 	r.mux.HandleFunc("GET /api/v1/cve/{container_id...}", ch.HandleGetContainerCVEs)
 
-	// Risk scoring routes (Pro only)
-	// Note: history uses a query param (?history=1) to avoid conflict with {container_id...}.
+	// Risk scoring routes; the history is the ?period= form of the per-container route.
 	rh := NewRiskHandler(d.UpdateStore)
 	r.mux.HandleFunc("GET /api/v1/risk", requireCapability(extension.CapRiskScoring, rh.HandleListRiskScores))
 	r.mux.HandleFunc("GET /api/v1/risk/{container_id...}", requireCapability(extension.CapRiskScoring, rh.HandleGetContainerRisk))
@@ -653,7 +653,7 @@ func (r *Router) registerPostureRoutes(d HandlerDeps) {
 	if d.Scorer == nil {
 		return
 	}
-	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore, d.AlertStore, d.SecuritySvc, d.Broker)
+	ph := NewPostureHandler(d.Scorer, d.Containers, d.AckStore, d.AlertStore, d.Acknowledger, d.SecuritySvc)
 
 	// Posture endpoints
 	r.mux.HandleFunc("GET /api/v1/security/posture", requireCapability(extension.CapSecurityPosture, ph.HandleGetPosture))
@@ -692,14 +692,11 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 		kh.SetEOLTables(d.EOL)
 	}
 
-	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/kubernetes/namespaces", kh.HandleListNamespaces)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads", kh.HandleListWorkloads)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}", kh.HandleGetWorkload)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/pods", kh.HandleListPods)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/pods/{namespace}/{name}", kh.HandleGetPodDetail)
-
-	// Pro endpoints
 	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes", kh.HandleListNodes)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/nodes/{name}/resources", kh.HandleGetNodeResources)
 	r.mux.HandleFunc("GET /api/v1/kubernetes/workloads/{id}/resources", kh.HandleGetWorkloadResources)
@@ -709,27 +706,22 @@ func (r *Router) registerKubernetesRoutes(d HandlerDeps) {
 func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 	// Mounted unconditionally: the services/tasks/nodes lists are store-backed
 	// (per-agent), so they work even when this server is not itself a swarm
-	// manager. The live Pro dashboards guard internally on the local
-	// runtime being a swarm cluster.
+	// manager. The live dashboards guard internally on the local runtime
+	// being a swarm cluster.
 	if d.SwarmTopologyStore == nil {
 		return
 	}
-	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmTopologyStore, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop, d.SwarmReplicaChecker, d.Containers, d.Resources)
+	sh := NewSwarmHandler(d.SwarmCluster, d.SwarmDiscovery, d.SwarmDetector, d.SwarmTopologyStore, d.SwarmNodeStore, d.SwarmUpdateTracker, d.SwarmCrashLoop, d.Containers, d.Resources)
 	if d.AgentStore != nil {
 		sh.SetAgentDirectory(agentStoreDirectory{store: d.AgentStore})
 	}
 
-	// CE endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/info", sh.HandleGetInfo)
 	r.mux.HandleFunc("GET /api/v1/swarm/services", sh.HandleListServices)
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}", sh.HandleGetService)
 	r.mux.HandleFunc("GET /api/v1/swarm/tasks", sh.HandleListTasks)
-
-	// Pro node endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/nodes", sh.HandleListNodes)
 	r.mux.HandleFunc("GET /api/v1/swarm/nodes/{nodeID}", sh.HandleGetNodeDetail)
-
-	// Pro update status, resources, dashboard, and cluster endpoints
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/update-status", sh.HandleGetUpdateStatus)
 	r.mux.HandleFunc("GET /api/v1/swarm/services/{serviceID}/resources", sh.HandleGetServiceResources)
 	r.mux.HandleFunc("GET /api/v1/swarm/dashboard", sh.HandleGetDashboard)
@@ -737,10 +729,11 @@ func (r *Router) registerSwarmRoutes(d HandlerDeps) {
 }
 
 // Handler returns the HTTP handler with the full middleware chain applied.
-// Middleware order (outermost to innermost): panicRecovery → requestLogger → requestID → cors → bodyLimit → mux
+// Middleware order (outermost to innermost): panicRecovery → requestLogger → requestID → cors → crossOriginGuard → bodyLimit → mux
 func (r *Router) Handler() http.Handler {
 	var h http.Handler = r.mux
 	h = bodyLimit(r.maxBodySize, h)
+	h = crossOriginGuard(r.crossOrigin, h)
 	h = cors(r.corsOrigins, h)
 	h = requestID(h)
 	h = requestLogger(h, r.logger)

@@ -159,9 +159,7 @@ func (c *Collector) collect(ctx context.Context) {
 				AgentID:         uid.LocalAgent,
 			}
 
-			c.mu.Lock()
-			c.latest[ct.ID] = snap
-			c.mu.Unlock()
+			c.keep(snap)
 
 			if c.onSnapshot != nil {
 				c.onSnapshot(snap)
@@ -173,6 +171,14 @@ func (c *Collector) collect(ctx context.Context) {
 
 	// Clean up stale entries for containers no longer running.
 	c.cleanStale(running)
+}
+
+// keep records snap as its container's latest sample, deriving its network rates from the sample it replaces.
+func (c *Collector) keep(snap *ResourceSnapshot) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	setNetRates(snap, c.latest[snap.ContainerID])
+	c.latest[snap.ContainerID] = snap
 }
 
 func (c *Collector) cleanStale(running []*container.Container) {

@@ -26,7 +26,11 @@ func (r *Runtime) getHealthInfo(ctx context.Context, externalID string) (*runtim
 }
 
 func (r *Runtime) podHealth(ctx context.Context, ns, podName string) (*runtime.HealthInfo, error) {
-	pod, err := r.clientset.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	pod, err := cs.CoreV1().Pods(ns).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get pod %s/%s: %w", ns, podName, err)
 	}
@@ -35,12 +39,16 @@ func (r *Runtime) podHealth(ctx context.Context, ns, podName string) (*runtime.H
 }
 
 func (r *Runtime) controllerHealth(ctx context.Context, ns, kind, name string) (*runtime.HealthInfo, error) {
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
 	selector, err := r.controllerSelector(ctx, ns, kind, name)
 	if err != nil {
 		return nil, err
 	}
 
-	podList, err := r.clientset.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
+	podList, err := cs.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{
 		LabelSelector: selector,
 	})
 	if err != nil {

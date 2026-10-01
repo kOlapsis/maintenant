@@ -33,6 +33,8 @@ type mockResourceStore struct {
 	dailyRangeCalls int
 	dailyFrom       time.Time
 	dailyTo         time.Time
+
+	topLimit int
 }
 
 func newMockResourceStore() *mockResourceStore {
@@ -99,7 +101,10 @@ func (m *mockResourceStore) AggregateHourlyRollup(_ context.Context, _, _ time.T
 func (m *mockResourceStore) AggregateDailyRollup(_ context.Context, _, _ time.Time) error {
 	return nil
 }
-func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, _ int, _ *string) ([]TopConsumerRow, error) {
+func (m *mockResourceStore) GetTopConsumersByPeriod(_ context.Context, _, _ string, limit int, _ *string, _ time.Time) ([]TopConsumerRow, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.topLimit = limit
 	return nil, nil
 }
 func (m *mockResourceStore) DeleteHourlyBefore(_ context.Context, _ time.Time, _ int) (int64, error) {
@@ -591,38 +596,81 @@ func TestService_evaluateAlerts_MemPercentCalculatedCorrectly(t *testing.T) {
 	assert.Equal(t, AlertStateMemory, cfg.AlertState, "75%% mem usage must breach 70%% threshold")
 }
 
-func TestService_evaluateAlerts_RecoveryTypeIsBothWhenPrevStateWasBoth(t *testing.T) {
+func TestService_evaluateAlerts_EachMetricRecoversOnItsOwn(t *testing.T) {
 	const containerID = "ctr-00000000-0000-0000-0000-000000000014"
+	type emitted struct{ eventType, metric string }
+
+	cases := []struct {
+		name     string
+		prev     AlertState
+		cpu      float64
+		memUsed  int64
+		want     []emitted
+		endState AlertState
+	}{
+		{"both back to normal", AlertStateBoth, 10, 10,
+			[]emitted{{event.ResourceRecovery, "cpu"}, {event.ResourceRecovery, "memory"}}, AlertStateNormal},
+		{"memory recovers, cpu still high", AlertStateBoth, 90, 10,
+			[]emitted{{event.ResourceRecovery, "memory"}}, AlertStateCPU},
+		{"memory joins cpu", AlertStateCPU, 90, 90,
+			[]emitted{{event.ResourceAlert, "memory"}}, AlertStateBoth},
+		{"cpu hands over to memory", AlertStateCPU, 10, 90,
+			[]emitted{{event.ResourceAlert, "memory"}, {event.ResourceRecovery, "cpu"}}, AlertStateMemory},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMockResourceStore()
+			store.alertConfigs[containerID] = &ResourceAlertConfig{
+				ContainerID:            containerID,
+				Enabled:                true,
+				CPUThreshold:           80.0,
+				MemThreshold:           80.0,
+				AlertState:             tc.prev,
+				CPUConsecutiveBreaches: 3,
+				MemConsecutiveBreaches: 3,
+			}
+			containerSvc := buildContainerSvc(newMockContainerStore(&container.Container{ID: containerID, Name: "proxy"}))
+
+			var got []emitted
+			svc := newTestService(store, containerSvc, func(eventType string, data interface{}) {
+				m := data.(map[string]interface{})
+				metric, _ := m["alert_type"].(string)
+				if eventType == event.ResourceRecovery {
+					metric, _ = m["recovered_type"].(string)
+				}
+				got = append(got, emitted{eventType, metric})
+			})
+
+			svc.evaluateAlerts(context.Background(), snap(containerID, tc.cpu, tc.memUsed, 100))
+
+			assert.ElementsMatch(t, tc.want, got)
+			assert.Equal(t, tc.endState, storedConfig(t, store, containerID).AlertState)
+		})
+	}
+}
+
+func TestService_evaluateAlerts_RecoveryCarriesTheRecoveredMetricValues(t *testing.T) {
+	const containerID = "ctr-00000000-0000-0000-0000-000000000016"
 	store := newMockResourceStore()
 	store.alertConfigs[containerID] = &ResourceAlertConfig{
 		ContainerID:            containerID,
 		Enabled:                true,
 		CPUThreshold:           80.0,
-		MemThreshold:           80.0,
-		AlertState:             AlertStateBoth,
-		CPUConsecutiveBreaches: 3,
-		MemConsecutiveBreaches: 3,
+		MemThreshold:           70.0,
+		AlertState:             AlertStateMemory,
+		MemConsecutiveBreaches: 2,
 	}
-
-	containerStore := newMockContainerStore(&container.Container{ID: containerID, Name: "proxy"})
-	containerSvc := buildContainerSvc(containerStore)
 
 	var events []capturedEvent
-	cb := func(eventType string, data interface{}) {
-		if m, ok := data.(map[string]interface{}); ok {
-			events = append(events, capturedEvent{eventType: eventType, data: m})
-		}
-	}
+	svc := newTestService(store, buildContainerSvc(newMockContainerStore()), func(eventType string, data interface{}) {
+		events = append(events, capturedEvent{eventType: eventType, data: data.(map[string]interface{})})
+	})
 
-	svc := newTestService(store, containerSvc, cb)
-	ctx := context.Background()
-
-	// Both metrics drop below threshold → recovery from AlertStateBoth.
-	svc.evaluateAlerts(ctx, snap(containerID, 10.0, 10, 100))
+	svc.evaluateAlerts(context.Background(), snap(containerID, 50.0, 20, 100))
 
 	require.Len(t, events, 1)
-	assert.Equal(t, event.ResourceRecovery, events[0].eventType)
-	assert.Equal(t, "both", events[0].data["recovered_type"])
+	assert.InDelta(t, 20.0, events[0].data["current_value"], 0.001)
+	assert.InDelta(t, 70.0, events[0].data["threshold"], 0.001)
 }
 
 func TestService_evaluateAlerts_RecoveryTypeIsMemoryWhenPrevStateWasMemory(t *testing.T) {

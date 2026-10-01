@@ -112,14 +112,13 @@ type NotificationChannel struct {
 // AlertTrigger is a routing rule that maps an alert filter to one or more channels.
 // Filters are stored as CSV strings; an empty filter matches anything.
 // Filters are combined in AND between fields, OR within a field.
-// FilterScopes and FilterTags are Pro-only (gated at the handler level).
+// FilterScopes needs the advanced filters capability (gated at the handler level).
 type AlertTrigger struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
 	FilterSeverities string    `json:"filter_severities"`
 	FilterSources    string    `json:"filter_sources"`
 	FilterScopes     string    `json:"filter_scopes"`
-	FilterTags       string    `json:"filter_tags"`
 	Enabled          bool      `json:"enabled"`
 	NotifyOnResolve  bool      `json:"notify_on_resolve"`
 	ChannelIDs       []string  `json:"channel_ids"`
@@ -160,6 +159,7 @@ type ListAlertsOpts struct {
 	Severity string
 	Status   string
 	Before   *time.Time
+	BeforeID string
 	Limit    int
 }
 
@@ -178,9 +178,9 @@ type Acknowledgment struct {
 	At time.Time
 }
 
-// EntityRouter provides per-entity alert routing.
-type EntityRouter interface {
-	Route(ctx context.Context, entityType string, entityID string, severity string) ([]string, error)
+// Acknowledger acknowledges an alert on behalf of every surface that offers it.
+type Acknowledger interface {
+	Acknowledge(ctx context.Context, id, by string) (*Alert, error)
 }
 
 // MaintenanceSuppressor checks if an alert should be suppressed during a maintenance window.
@@ -200,8 +200,8 @@ type AlertStore interface {
 	UpdateAlertOnEscalation(ctx context.Context, id, severity, message, entityName, details string) error
 	GetActiveAlert(ctx context.Context, source, alertType, entityType string, entityID string) (*Alert, error)
 	ListActiveAlerts(ctx context.Context) ([]*Alert, error)
-	DeleteAlertsOlderThan(ctx context.Context, before time.Time) (int64, error)
-	AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) error
+	DeleteInactiveAlertsOlderThan(ctx context.Context, before time.Time) (int64, error)
+	AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) (bool, error)
 	SetEscalatedAt(ctx context.Context, id string, at time.Time) error
 	ListUnacknowledgedActiveAlerts(ctx context.Context) ([]*Alert, error)
 }

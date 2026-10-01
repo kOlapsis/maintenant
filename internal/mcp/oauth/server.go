@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,14 +31,14 @@ type Config struct {
 
 // OAuthServer implements OAuth 2.1 with PKCE for MCP authentication.
 type OAuthServer struct {
-	clientID               string
-	clientSecretHash       [sha256.Size]byte
-	issuerURL              string
-	accessTTL              time.Duration
-	refreshTTL             time.Duration
-	allowedRedirectURIs    []string
-	store                  MCPOAuthStore
-	logger                 *slog.Logger
+	clientID            string
+	clientSecretHash    [sha256.Size]byte
+	issuerURL           string
+	accessTTL           time.Duration
+	refreshTTL          time.Duration
+	allowedRedirectURIs []string
+	store               MCPOAuthStore
+	logger              *slog.Logger
 }
 
 // NewOAuthServer creates an OAuth 2.1 server from config.
@@ -60,29 +61,56 @@ func NewOAuthServer(cfg Config, store MCPOAuthStore, logger *slog.Logger) *OAuth
 	}
 
 	return &OAuthServer{
-		clientID:               cfg.ClientID,
-		clientSecretHash:       sha256.Sum256([]byte(cfg.ClientSecret)),
-		issuerURL:              strings.TrimRight(cfg.IssuerURL, "/"),
-		accessTTL:              accessTTL,
-		refreshTTL:             refreshTTL,
-		allowedRedirectURIs:    allowed,
-		store:                  store,
-		logger:                 logger,
+		clientID:            cfg.ClientID,
+		clientSecretHash:    sha256.Sum256([]byte(cfg.ClientSecret)),
+		issuerURL:           strings.TrimRight(cfg.IssuerURL, "/"),
+		accessTTL:           accessTTL,
+		refreshTTL:          refreshTTL,
+		allowedRedirectURIs: allowed,
+		store:               store,
+		logger:              logger,
 	}
 }
 
 // isRedirectURIAllowed returns true when uri is a loopback address or matches
 // an allowed redirect URI exactly (simple string comparison, RFC 6749 §3.1.2.3).
 func (s *OAuthServer) isRedirectURIAllowed(rawURI string) bool {
+	return s.redirectTarget(rawURI) != nil
+}
+
+var loopbackHosts = map[string]string{"localhost": "localhost", "127.0.0.1": "127.0.0.1", "::1": "[::1]"}
+
+var redirectSchemes = map[string]string{"http": "http", "https": "https"}
+
+// redirectTarget returns the allowed redirect URI rebuilt from trusted parts, or nil when rawURI is not allowed.
+func (s *OAuthServer) redirectTarget(rawURI string) *url.URL {
+	if i := slices.Index(s.allowedRedirectURIs, rawURI); i >= 0 {
+		u, err := url.Parse(s.allowedRedirectURIs[i])
+		if err != nil {
+			return nil
+		}
+		return u
+	}
 	u, err := url.Parse(rawURI)
 	if err != nil {
-		return false
+		return nil
 	}
-	host := u.Hostname()
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return u.Scheme == "http" || u.Scheme == "https"
+	scheme, ok := redirectSchemes[u.Scheme]
+	if !ok {
+		return nil
 	}
-	return slices.Contains(s.allowedRedirectURIs, rawURI)
+	host, ok := loopbackHosts[u.Hostname()]
+	if !ok {
+		return nil
+	}
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return nil
+		}
+		host += ":" + strconv.Itoa(n)
+	}
+	return &url.URL{Scheme: scheme, Host: host, Path: u.Path, RawQuery: u.RawQuery}
 }
 
 // VerifyClientSecret checks the provided secret against the stored hash

@@ -5,6 +5,8 @@ package resource
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -74,6 +76,21 @@ func TestHandleAgentEvent_SkipsWhenContainerUnknown(t *testing.T) {
 	assert.Empty(t, rstore.snapshots, "no snapshot when container not yet known")
 }
 
+func TestHandleAgentEvent_SkipsIgnoredContainer(t *testing.T) {
+	extID := "abc123def4567890"
+	c := &container.Container{
+		ID:         uid.Container(uid.Agent("agent-9"), extID),
+		ExternalID: extID, AgentID: "agent-9", Name: "demo", IsIgnored: true,
+	}
+	rstore := newMockResourceStore()
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore(c)), nil)
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 3,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+	assert.Empty(t, rstore.snapshots, "an ignored container is left out of resource collection")
+}
+
 func TestHandleAgentEvent_UsesRowIDNotDerivedID(t *testing.T) {
 	extID := "abc123def4567890"
 	// An inherited row: its primary key does not derive from its current agent.
@@ -105,6 +122,71 @@ func TestHandleAgentEvent_IgnoresOtherAgentsContainer(t *testing.T) {
 	assert.Empty(t, rstore.snapshots, "a sample must never land on another agent's container")
 }
 
+func TestHandleAgentEvent_LiveSampleFeedsTheCurrentReads(t *testing.T) {
+	extID := "live0123456789ab"
+	id := uid.Container(uid.Agent("agent-9"), extID)
+	c := &container.Container{ID: id, ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	svc := newTestService(newMockResourceStore(), buildContainerSvc(newMockContainerStore(c)), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+	svc.collector.latest = map[string]*ResourceSnapshot{
+		"local-ctr": {ContainerID: "local-ctr", CPUPercent: 10, AgentID: uid.LocalAgent},
+	}
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 42, MemoryBytes: 10, MemoryLimitBytes: 100,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+
+	cur := svc.GetCurrentSnapshot(id)
+	require.NotNil(t, cur, "an agent container has a current sample")
+	assert.Equal(t, 42.0, cur.CPUPercent)
+
+	all := svc.GetAllLatestSnapshots()
+	assert.Len(t, all, 2)
+	assert.Contains(t, all, id)
+	assert.Contains(t, all, "local-ctr")
+
+	rows := svc.TopConsumersNow("cpu", 10, nil)
+	require.Len(t, rows, 2)
+	assert.Equal(t, id, rows[0].ContainerID, "the live ranking includes the agents")
+	agent := "agent-9"
+	scoped := svc.TopConsumersNow("cpu", 10, &agent)
+	require.Len(t, scoped, 1)
+	assert.Equal(t, id, scoped[0].ContainerID)
+}
+
+func TestHandleAgentEvent_ReplayedSampleIsNotCurrent(t *testing.T) {
+	extID := "replay0123456789"
+	id := uid.Container(uid.Agent("agent-9"), extID)
+	c := &container.Container{ID: id, ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	svc := newTestService(newMockResourceStore(), buildContainerSvc(newMockContainerStore(c)), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+
+	require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+		ContainerId: extID, CpuPercent: 42,
+	}, agentevent.Meta{ObservedAt: time.Now(), Replayed: true}))
+
+	assert.Nil(t, svc.GetCurrentSnapshot(id))
+	assert.Empty(t, svc.GetAllLatestSnapshots())
+}
+
+func TestAgentLatest_ExpiresOnReceiveTime(t *testing.T) {
+	var reg agentLatest
+	now := time.Now()
+	reg.put(&ResourceSnapshot{ContainerID: "a", Timestamp: now.Add(time.Hour)}, now)
+	reg.put(&ResourceSnapshot{ContainerID: "b", Timestamp: now}, now.Add(-agentSnapshotTTL-time.Second))
+
+	assert.NotNil(t, reg.get("a", now), "a sample stamped ahead by the agent's clock is still judged on receive time")
+	assert.Nil(t, reg.get("b", now), "a sample not refreshed within the TTL is gone")
+
+	fresh := reg.fresh(now)
+	assert.Len(t, fresh, 1)
+	assert.Contains(t, fresh, "a")
+	assert.Nil(t, reg.get("a", now.Add(agentSnapshotTTL+time.Second)))
+
+	reg.put(&ResourceSnapshot{ContainerID: "a", Timestamp: now}, now)
+	assert.Equal(t, now, reg.get("a", now).Timestamp, "an agent whose clock stepped back still refreshes its sample")
+}
+
 // FR-026: a replayed sample is stored at the time the agent observed it, and it
 // must not wake the threshold pipeline.
 func TestHandleAgentEvent_ReplayedSampleKeepsObservationTime(t *testing.T) {
@@ -129,4 +211,92 @@ func TestHandleAgentEvent_ReplayedSampleKeepsObservationTime(t *testing.T) {
 		"the snapshot must carry the observation time, not the receive time")
 	assert.True(t, rstore.snapshots[0].Replayed)
 	assert.False(t, callbackInvoked, "a replayed sample must not feed the threshold pipeline")
+}
+
+func TestHandleAgentEvent_ReplayedSamplesNeitherAlertNorMoveBreachCounters(t *testing.T) {
+	extID := "replay0123456789"
+	wantID := uid.Container(uid.Agent("agent-r"), extID)
+	c := &container.Container{ID: wantID, ExternalID: extID, AgentID: "agent-r", Name: "demo"}
+
+	rstore := newMockResourceStore()
+	live := baseConfig(wantID)
+	live.CPUConsecutiveBreaches = 1
+	rstore.alertConfigs[wantID] = live
+
+	var events []string
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore(c)), func(typ string, _ interface{}) {
+		events = append(events, typ)
+	})
+
+	observed := time.Now().Add(-30 * time.Minute)
+	for i, eventID := range []string{"evt-1", "evt-2", "evt-3"} {
+		require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-r", &agentpb.ResourceSample{
+			ContainerId: extID, CpuPercent: 95, MemoryBytes: 95, MemoryLimitBytes: 100,
+		}, agentevent.Meta{ObservedAt: observed.Add(time.Duration(i) * 10 * time.Second), Replayed: true, EventID: eventID}))
+	}
+
+	require.Len(t, rstore.snapshots, 3, "replayed samples still feed the history")
+	assert.Empty(t, events, "a replayed sample must neither alert nor reach the live stream")
+	cfg := storedConfig(t, rstore, wantID)
+	assert.Equal(t, AlertStateNormal, cfg.AlertState, "a replayed breach must not open an alert")
+	assert.Equal(t, 1, cfg.CPUConsecutiveBreaches, "the breach counters belong to live samples")
+	assert.Equal(t, 0, cfg.MemConsecutiveBreaches)
+}
+
+// Two samples of a container give its network throughput. A counter the runtime
+// cannot read (-1 on Kubernetes) or one reset by a restart gives none, rather
+// than a negative or absurd figure.
+func TestNetworkTotals_AreRatesBetweenTwoSamples(t *testing.T) {
+	extID := "net0123456789abc"
+	id := uid.Container(uid.Agent("agent-9"), extID)
+	c := &container.Container{ID: id, ExternalID: extID, AgentID: "agent-9", Name: "demo"}
+	svc := newTestService(newMockResourceStore(), buildContainerSvc(newMockContainerStore(c)), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+
+	t0 := time.Now()
+	for i, counters := range [][2]uint64{{1000, 500}, {6000, 1500}} {
+		require.NoError(t, svc.HandleAgentEvent(context.Background(), "agent-9", &agentpb.ResourceSample{
+			ContainerId: extID, NetworkRxBytes: counters[0], NetworkTxBytes: counters[1],
+		}, agentevent.Meta{ObservedAt: t0.Add(time.Duration(i) * 10 * time.Second)}))
+	}
+
+	for _, pair := range [][2]*ResourceSnapshot{
+		{{ContainerID: "k8s", NetRxBytes: -1, NetTxBytes: -1, Timestamp: t0},
+			{ContainerID: "k8s", NetRxBytes: -1, NetTxBytes: -1, Timestamp: t0.Add(10 * time.Second)}},
+		{{ContainerID: "restarted", NetRxBytes: 9000, NetTxBytes: 9000, Timestamp: t0},
+			{ContainerID: "restarted", NetRxBytes: 10, NetTxBytes: 10, Timestamp: t0.Add(10 * time.Second)}},
+	} {
+		pair[0].AgentID, pair[1].AgentID = uid.LocalAgent, uid.LocalAgent
+		svc.collector.keep(pair[0])
+		svc.collector.keep(pair[1])
+	}
+
+	agent := "agent-9"
+	n, rx, tx := svc.NetworkTotals(&agent)
+	assert.Equal(t, 1, n)
+	assert.InDelta(t, 500, rx, 0.001)
+	assert.InDelta(t, 100, tx, 0.001)
+
+	local := ""
+	n, rx, tx = svc.NetworkTotals(&local)
+	assert.Equal(t, 2, n)
+	assert.Zero(t, rx)
+	assert.Zero(t, tx)
+}
+
+// Every surface (REST, MCP) goes through the service, so the cap holds for all of them.
+func TestTopConsumers_AreCappedWhateverTheCaller(t *testing.T) {
+	rstore := newMockResourceStore()
+	svc := newTestService(rstore, buildContainerSvc(newMockContainerStore()), nil)
+	svc.collector = NewCollector(nil, nil, slog.Default())
+	for i := range MaxTopConsumers + 5 {
+		id := fmt.Sprintf("ctr-%d", i)
+		svc.collector.latest[id] = &ResourceSnapshot{ContainerID: id, CPUPercent: float64(i), AgentID: uid.LocalAgent}
+	}
+
+	assert.Len(t, svc.TopConsumersNow("cpu", 50, nil), MaxTopConsumers)
+
+	_, err := svc.GetTopConsumersByPeriod(context.Background(), "cpu", "24h", 50, nil)
+	require.NoError(t, err)
+	assert.Equal(t, MaxTopConsumers, rstore.topLimit)
 }

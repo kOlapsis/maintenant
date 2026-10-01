@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/agent"
@@ -17,6 +18,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/eol"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/store"
 )
 
@@ -145,20 +147,18 @@ func (h *AgentHandler) HandleCreateEnrollmentToken(w http.ResponseWriter, r *htt
 
 func buildInstallTemplates(serverURL, token string) map[string]string {
 	return map[string]string{
-		"standalone":     buildInstallStandalone(),
+		"standalone":     buildInstallStandalone(serverURL, token),
 		"docker_run":     buildInstallDockerRun(serverURL, token),
 		"docker_compose": buildInstallDockerCompose(serverURL, token),
 		"kubernetes":     buildInstallKubernetes(serverURL, token),
 	}
 }
 
-// The standalone installer is not released yet. Until it is, the tab announces
-// itself rather than handing out an invocation that would fetch nothing.
-func buildInstallStandalone() string {
-	return "Coming soon.\n\n" +
-		"The standalone installer (binary + systemd unit) is not released yet.\n" +
-		"Run the agent with Docker in the meantime — see the Docker run,\n" +
-		"Compose and Kubernetes tabs."
+func buildInstallStandalone(serverURL, token string) string {
+	return "curl -fsSL https://install.maintenant.dev | sudo bash -s -- \\\n" +
+		"  --mode agent \\\n" +
+		"  --server " + serverURL + " \\\n" +
+		"  --enrollment-token " + token
 }
 
 func buildInstallDockerRun(serverURL, token string) string {
@@ -219,9 +219,7 @@ func buildInstallKubernetes(serverURL, token string) string {
 		"metadata:\n" +
 		"  name: maintenant-agent\n" +
 		"rules:\n" +
-		"  - apiGroups: [\"\"]\n" +
-		"    resources: [pods, nodes, services, events]\n" +
-		"    verbs: [get, list, watch]\n" +
+		kubernetesReadRules() +
 		"---\n" +
 		"apiVersion: rbac.authorization.k8s.io/v1\n" +
 		"kind: ClusterRoleBinding\n" +
@@ -236,12 +234,26 @@ func buildInstallKubernetes(serverURL, token string) string {
 		"    name: maintenant-agent\n" +
 		"    namespace: maintenant\n" +
 		"---\n" +
+		"apiVersion: v1\n" +
+		"kind: PersistentVolumeClaim\n" +
+		"metadata:\n" +
+		"  name: maintenant-agent-data\n" +
+		"  namespace: maintenant\n" +
+		"spec:\n" +
+		"  accessModes: [ReadWriteOnce]\n" +
+		"  resources:\n" +
+		"    requests:\n" +
+		"      storage: 1Gi\n" +
+		"---\n" +
 		"apiVersion: apps/v1\n" +
-		"kind: DaemonSet\n" +
+		"kind: Deployment\n" +
 		"metadata:\n" +
 		"  name: maintenant-agent\n" +
 		"  namespace: maintenant\n" +
 		"spec:\n" +
+		"  replicas: 1\n" +
+		"  strategy:\n" +
+		"    type: Recreate\n" +
 		"  selector:\n" +
 		"    matchLabels: { app: maintenant-agent }\n" +
 		"  template:\n" +
@@ -249,13 +261,18 @@ func buildInstallKubernetes(serverURL, token string) string {
 		"      labels: { app: maintenant-agent }\n" +
 		"    spec:\n" +
 		"      serviceAccountName: maintenant-agent\n" +
+		"      hostname: maintenant-agent\n" +
+		"      securityContext:\n" +
+		"        runAsNonRoot: true\n" +
+		"        runAsUser: 65534\n" +
+		"        runAsGroup: 65534\n" +
+		"        fsGroup: 65534\n" +
 		"      containers:\n" +
 		"        - name: agent\n" +
 		"          image: ghcr.io/kolapsis/maintenant:latest\n" +
 		"          args:\n" +
 		"            - --mode=agent\n" +
 		"            - --server=" + serverURL + "\n" +
-		"            - --enrollment-token=$(MAINTENANT_ENROLLMENT_TOKEN)\n" +
 		"            - --runtime=kubernetes\n" +
 		"          env:\n" +
 		"            - name: MAINTENANT_ENROLLMENT_TOKEN\n" +
@@ -263,19 +280,37 @@ func buildInstallKubernetes(serverURL, token string) string {
 		"                secretKeyRef:\n" +
 		"                  name: maintenant-agent-enrollment\n" +
 		"                  key: token\n" +
-		"            - name: MAINTENANT_LABEL\n" +
-		"              valueFrom:\n" +
-		"                fieldRef: { fieldPath: spec.nodeName }\n" +
 		"            - name: MAINTENANT_NODE_NAME\n" +
 		"              valueFrom:\n" +
 		"                fieldRef: { fieldPath: spec.nodeName }\n" +
+		"          securityContext:\n" +
+		"            allowPrivilegeEscalation: false\n" +
+		"            readOnlyRootFilesystem: true\n" +
+		"            capabilities:\n" +
+		"              drop: [ALL]\n" +
 		"          volumeMounts:\n" +
-		"            - { name: identity, mountPath: /var/lib/maintenant }\n" +
+		"            - { name: data, mountPath: /var/lib/maintenant }\n" +
+		"            - { name: tmp, mountPath: /tmp }\n" +
 		"      volumes:\n" +
-		"        - name: identity\n" +
-		"          hostPath:\n" +
-		"            path: /var/lib/maintenant-agent\n" +
-		"            type: DirectoryOrCreate\n"
+		"        - name: data\n" +
+		"          persistentVolumeClaim:\n" +
+		"            claimName: maintenant-agent-data\n" +
+		"        - name: tmp\n" +
+		"          emptyDir: {}\n"
+}
+
+func kubernetesReadRules() string {
+	var b strings.Builder
+	for _, r := range kubernetes.ReadRules() {
+		groups := make([]string, len(r.APIGroups))
+		for i, g := range r.APIGroups {
+			groups[i] = strconv.Quote(g)
+		}
+		b.WriteString("  - apiGroups: [" + strings.Join(groups, ", ") + "]\n" +
+			"    resources: [" + strings.Join(r.Resources, ", ") + "]\n" +
+			"    verbs: [" + strings.Join(r.Verbs, ", ") + "]\n")
+	}
+	return b.String()
 }
 
 func (h *AgentHandler) HandleListEnrollmentTokens(w http.ResponseWriter, r *http.Request) {

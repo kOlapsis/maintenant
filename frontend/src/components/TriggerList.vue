@@ -36,7 +36,6 @@ function summarizeFilter(t: AlertTrigger): string {
   if (t.filter_severities) parts.push(`severity: ${t.filter_severities}`)
   if (t.filter_sources) parts.push(`source: ${t.filter_sources}`)
   if (t.filter_scopes) parts.push(`scope: ${t.filter_scopes}`)
-  if (t.filter_tags) parts.push(`tags: ${t.filter_tags}`)
   if (parts.length === 0) return 'matches all alerts'
   return parts.join('  ·  ')
 }

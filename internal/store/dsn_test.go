@@ -62,6 +62,22 @@ func TestApplyDefaultSSLMode(t *testing.T) {
 	assert.Equal(t, "not-a-dsn", ApplyDefaultSSLMode("not-a-dsn"))
 }
 
+func TestDefaultsSSLMode_AgreesWithApplyDefaultSSLMode(t *testing.T) {
+	for _, raw := range []string{
+		"postgres://app:pw@db.internal:5432/maintenant",
+		"postgres://app:pw@db:5432/maintenant",
+		"postgres://app@localhost:5432/maintenant",
+		"postgres://app@127.0.0.1/maintenant",
+		"postgres://app@/maintenant?host=/var/run/postgresql",
+		"postgres://app@db.internal/maintenant?sslmode=disable",
+		"postgres://app@db.internal/maintenant?sslmode=require",
+		"not-a-dsn",
+	} {
+		assert.Equal(t, ApplyDefaultSSLMode(raw) != raw, DefaultsSSLMode(raw), raw)
+	}
+	assert.True(t, DefaultsSSLMode("postgres://app:pw@db:5432/maintenant"), "a Compose service name is not local")
+}
+
 func TestRedactDSN(t *testing.T) {
 	raw := "postgres://maintenant:" + secretPassword + "@db.internal:5432/prod?sslmode=require&application_name=x"
 	red := RedactDSN(raw)

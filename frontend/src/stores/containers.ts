@@ -24,19 +24,14 @@ export const useContainersStore = defineStore('containers', () => {
   const error = ref<string | null>(null)
   const sseConnected = sseBus.connected
   const sseSuspended = sseBus.suspended
-  const runtimeConnected = ref(true)
-  const runtimeName = ref('docker')
-  const runtimeLabel = ref('Docker')
   const totalCount = ref(0)
   const archivedCount = ref(0)
 
   const expandedControllers = ref<Set<string>>(new Set())
 
-  // Derived from the runtime store: false when container monitoring is unavailable.
-  const isContainerMonitoringAvailable = computed(() => {
-    const runtimeStore = useRuntimeStore()
-    return runtimeStore.connected
-  })
+  const isContainerMonitoringAvailable = computed(() => useRuntimeStore().connected)
+  const runtimeName = computed(() => useRuntimeStore().runtime)
+  const runtimeLabel = computed(() => (useRuntimeStore().isKubernetes ? 'Kubernetes' : 'Docker'))
 
   const allContainers = computed(() =>
     groups.value.flatMap((g) => g.containers),
@@ -48,8 +43,8 @@ export const useContainersStore = defineStore('containers', () => {
 
   const containerCount = computed(() => activeContainers.value.length)
 
-  const isKubernetesMode = computed(() => runtimeName.value === 'kubernetes')
-  const isSwarmMode = ref(false)
+  const isKubernetesMode = computed(() => useRuntimeStore().isKubernetes)
+  const isSwarmMode = computed(() => useRuntimeStore().isSwarm)
 
   function toggleController(key: string) {
     if (expandedControllers.value.has(key)) {
@@ -147,30 +142,8 @@ export const useContainersStore = defineStore('containers', () => {
     }
   }
 
-  function onRuntimeStatus(e: MessageEvent) {
-    let data
-    try {
-      data = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    if (typeof data.connected === 'boolean') runtimeConnected.value = data.connected
-    if (data.name) runtimeName.value = data.name
-    if (data.label) runtimeLabel.value = data.label
-  }
-
   function onSwarmServiceEvent() {
     fetchContainers()
-  }
-
-  function onSwarmStatus(e: MessageEvent) {
-    let data
-    try {
-      data = JSON.parse(e.data)
-    } catch {
-      return
-    }
-    if (typeof data.active === 'boolean') isSwarmMode.value = data.active
   }
 
   function onReconnected() {
@@ -182,11 +155,9 @@ export const useContainersStore = defineStore('containers', () => {
     sseBus.on('container.state_changed', onStateChanged)
     sseBus.on('container.health_changed', onHealthChanged)
     sseBus.on('container.archived', onArchived)
-    sseBus.on('runtime.status', onRuntimeStatus)
     sseBus.on('swarm.service_discovered', onSwarmServiceEvent)
     sseBus.on('swarm.service_updated', onSwarmServiceEvent)
     sseBus.on('swarm.service_removed', onSwarmServiceEvent)
-    sseBus.on('swarm.status', onSwarmStatus)
     sseBus.on('sse.reconnected', onReconnected)
     sseBus.connect()
   }
@@ -196,11 +167,9 @@ export const useContainersStore = defineStore('containers', () => {
     sseBus.off('container.state_changed', onStateChanged)
     sseBus.off('container.health_changed', onHealthChanged)
     sseBus.off('container.archived', onArchived)
-    sseBus.off('runtime.status', onRuntimeStatus)
     sseBus.off('swarm.service_discovered', onSwarmServiceEvent)
     sseBus.off('swarm.service_updated', onSwarmServiceEvent)
     sseBus.off('swarm.service_removed', onSwarmServiceEvent)
-    sseBus.off('swarm.status', onSwarmStatus)
     sseBus.off('sse.reconnected', onReconnected)
     sseBus.disconnect()
   }
@@ -211,7 +180,6 @@ export const useContainersStore = defineStore('containers', () => {
     error,
     sseConnected,
     sseSuspended,
-    runtimeConnected,
     runtimeName,
     runtimeLabel,
     isContainerMonitoringAvailable,

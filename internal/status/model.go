@@ -3,7 +3,12 @@
 
 package status
 
-import "time"
+import (
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+)
 
 // Component status values.
 const (
@@ -24,8 +29,38 @@ const (
 // Incident status values.
 const (
 	IncidentInvestigating = "investigating"
+	IncidentIdentified    = "identified"
+	IncidentMonitoring    = "monitoring"
 	IncidentResolved      = "resolved"
 )
+
+var (
+	componentStatuses = []string{StatusOperational, StatusDegraded, StatusPartialOutage, StatusMajorOutage, StatusUnderMaint}
+	severities        = []string{SeverityMinor, SeverityMajor, SeverityCritical}
+	incidentStatuses  = []string{IncidentInvestigating, IncidentIdentified, IncidentMonitoring, IncidentResolved}
+)
+
+// CheckComponentStatus refuses a component status the page does not know.
+func CheckComponentStatus(field, s string) error {
+	return checkOneOf(field, s, componentStatuses)
+}
+
+// CheckSeverity refuses an incident severity the page does not know.
+func CheckSeverity(field, s string) error {
+	return checkOneOf(field, s, severities)
+}
+
+// CheckIncidentStatus refuses an incident status the page does not know.
+func CheckIncidentStatus(field, s string) error {
+	return checkOneOf(field, s, incidentStatuses)
+}
+
+func checkOneOf(field, s string, allowed []string) error {
+	if slices.Contains(allowed, s) {
+		return nil
+	}
+	return fmt.Errorf("%s must be one of %s, got %q", field, strings.Join(allowed, ", "), s)
+}
 
 // Global status messages.
 const (
@@ -34,12 +69,6 @@ const (
 	GlobalPartialOutage  = "Partial System Outage"
 	GlobalMajorOutage    = "Major System Outage"
 	GlobalMaintenance    = "Scheduled Maintenance"
-)
-
-// TLS policy values for SMTP.
-const (
-	TLSMandatory = "mandatory"
-	TLSNone      = "none"
 )
 
 // CompositionMode describes how a status component selects its monitors.
@@ -62,20 +91,21 @@ type MonitorRef struct {
 
 // Component is a public-facing representation of a monitored application or service.
 type Component struct {
-	ID              string          `json:"id"`
-	CompositionMode CompositionMode `json:"composition_mode"`
-	Monitors        []MonitorRef    `json:"monitors,omitempty"`
-	MatchAllType    string          `json:"match_all_type,omitempty"`
-	DisplayName     string          `json:"display_name"`
-	DisplayOrder    int             `json:"display_order"`
-	Visible         bool            `json:"visible"`
-	DerivedStatus   string          `json:"derived_status,omitempty"`
-	StatusOverride  *string         `json:"status_override"`
-	EffectiveStatus string          `json:"effective_status,omitempty"`
-	AutoIncident    bool            `json:"auto_incident"`
-	NeedsAttention  bool            `json:"needs_attention,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                        string          `json:"id"`
+	CompositionMode           CompositionMode `json:"composition_mode"`
+	Monitors                  []MonitorRef    `json:"monitors,omitempty"`
+	MatchAllType              string          `json:"match_all_type,omitempty"`
+	DisplayName               string          `json:"display_name"`
+	DisplayOrder              int             `json:"display_order"`
+	Visible                   bool            `json:"visible"`
+	DerivedStatus             string          `json:"derived_status,omitempty"`
+	StatusOverride            *string         `json:"status_override"`
+	OverrideBeforeMaintenance *string         `json:"-"`
+	EffectiveStatus           string          `json:"effective_status,omitempty"`
+	AutoIncident              bool            `json:"auto_incident"`
+	NeedsAttention            bool            `json:"needs_attention,omitempty"`
+	CreatedAt                 time.Time       `json:"created_at"`
+	UpdatedAt                 time.Time       `json:"updated_at"`
 }
 
 // Incident represents a public-facing incident.
@@ -95,8 +125,9 @@ type Incident struct {
 
 // IncidentCompRef is a lightweight component reference for incident responses.
 type IncidentCompRef struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Visible bool   `json:"-"`
 }
 
 // IncidentUpdate is a timestamped entry in an incident timeline.
@@ -133,18 +164,6 @@ type MaintenanceWindow struct {
 	Components  []IncidentCompRef `json:"components,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
-}
-
-// SmtpConfig holds SMTP server configuration for sending emails.
-type SmtpConfig struct {
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	Password    string `json:"password,omitempty"`
-	TLSPolicy   string `json:"tls_policy"`
-	FromAddress string `json:"from_address"`
-	FromName    string `json:"from_name"`
-	Configured  bool   `json:"configured"`
 }
 
 // ListIncidentsOpts contains filter parameters for listing incidents.

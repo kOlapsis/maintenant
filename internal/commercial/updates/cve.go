@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/trust"
 	"github.com/kolapsis/maintenant/internal/update"
 )
 
@@ -40,7 +41,7 @@ type CVEClient struct {
 func NewCVEClient(store update.UpdateStore, logger *slog.Logger) *CVEClient {
 	return &CVEClient{
 		store:   store,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		client:  &http.Client{Timeout: 30 * time.Second, Transport: trust.HTTPTransport()},
 		logger:  logger,
 		delay:   500 * time.Millisecond,
 		baseURL: osvBaseURL,

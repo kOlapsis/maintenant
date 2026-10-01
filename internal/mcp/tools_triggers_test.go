@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,7 +190,6 @@ func TestCreateTriggerHandler_Happy(t *testing.T) {
 
 	result, _, err := handler(context.Background(), nil, triggerInput{
 		Name:       "AlertAll",
-		Enabled:    true,
 		ChannelIDs: []string{"1"},
 	})
 	require.NoError(t, err)
@@ -290,22 +290,21 @@ func TestCreateTriggerHandler_FilterScopes_CommunityBlocked(t *testing.T) {
 	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
 }
 
-func TestCreateTriggerHandler_FilterTags_CommunityBlocked(t *testing.T) {
-	original := extension.CurrentEdition
-	extension.CurrentEdition = func() extension.Edition { return extension.Community }
-	defer func() { extension.CurrentEdition = original }()
-
-	svc, _ := buildTriggerServices()
-	handler := createTriggerHandler(svc)
-
-	result, _, err := handler(context.Background(), nil, triggerInput{
-		Name:       "TaggedTrigger",
-		FilterTags: "prod",
-		ChannelIDs: []string{"1"},
-	})
-	require.NoError(t, err)
-	require.True(t, result.IsError)
-	assert.Contains(t, textFromContent(t, result.Content), "edition_required")
+func TestFilterTools_HaveNoTagFilter(t *testing.T) {
+	tools := listToolNames(t, newTestServer(t))
+	for name, property := range map[string]string{
+		"create_trigger":           `"filter_tags"`,
+		"update_trigger":           `"filter_tags"`,
+		"create_escalation_policy": `"tags"`,
+		"update_escalation_policy": `"tags"`,
+	} {
+		tool := tools[name]
+		require.NotNil(t, tool, name)
+		schema, err := json.Marshal(tool.InputSchema)
+		require.NoError(t, err)
+		assert.NotContains(t, string(schema), property, "%s must not offer a tag filter", name)
+		assert.NotContains(t, strings.ToLower(tool.Description), "tag", name)
+	}
 }
 
 func TestCreateTriggerHandler_FilterScopes_ProAllowed(t *testing.T) {
@@ -341,7 +340,6 @@ func TestUpdateTriggerHandler_Happy(t *testing.T) {
 		ID: id,
 		triggerInput: triggerInput{
 			Name:       "AfterUpdate",
-			Enabled:    true,
 			ChannelIDs: []string{"1"},
 		},
 	})
@@ -363,7 +361,6 @@ func TestUpdateTriggerHandler_NotifyOnResolve_False(t *testing.T) {
 		ID: id,
 		triggerInput: triggerInput{
 			Name:            "AfterUpdate",
-			Enabled:         true,
 			NotifyOnResolve: &notifyOnResolve,
 			ChannelIDs:      []string{"1"},
 		},
@@ -388,7 +385,6 @@ func TestUpdateTriggerHandler_NotifyOnResolve_OmittedKeepsExisting(t *testing.T)
 		ID: id,
 		triggerInput: triggerInput{
 			Name:       "AfterUpdate",
-			Enabled:    true,
 			ChannelIDs: []string{"1"},
 		},
 	})
@@ -398,6 +394,80 @@ func TestUpdateTriggerHandler_NotifyOnResolve_OmittedKeepsExisting(t *testing.T)
 	got := ts.triggers[id]
 	require.NotNil(t, got)
 	assert.False(t, got.NotifyOnResolve, "omitted field must keep the existing value")
+}
+
+func TestCreateTriggerHandler_Enabled_DefaultsTrue(t *testing.T) {
+	svc, ts := buildTriggerServices()
+	result, _, err := createTriggerHandler(svc)(context.Background(), nil, triggerInput{
+		Name:       "NoEnabledField",
+		ChannelIDs: []string{"1"},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+	require.NotNil(t, ts.triggers["1"])
+	assert.True(t, ts.triggers["1"].Enabled)
+}
+
+func TestUpdateTriggerHandler_Enabled(t *testing.T) {
+	off := false
+	for name, tc := range map[string]struct {
+		input *bool
+		want  bool
+	}{
+		"omitted keeps the stored value": {nil, true},
+		"explicit false switches off":    {&off, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, ts := buildTriggerServices()
+			id, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
+				Name: "On", Enabled: true, ChannelIDs: []string{"1"},
+			})
+			require.NoError(t, err)
+
+			result, _, err := updateTriggerHandler(svc)(context.Background(), nil, updateTriggerInputWithID{
+				ID:           id,
+				triggerInput: triggerInput{Name: "On", Enabled: tc.input, ChannelIDs: []string{"1"}},
+			})
+			require.NoError(t, err)
+			require.False(t, result.IsError)
+			assert.Equal(t, tc.want, ts.triggers[id].Enabled)
+		})
+	}
+}
+
+func TestUpdateTriggerHandler_Scopes_AfterDowngrade(t *testing.T) {
+	withEdition(t, extension.Community)
+	off := false
+	for name, tc := range map[string]struct {
+		scopes  string
+		refused bool
+	}{
+		"unchanged scopes are kept": {"container:42", false},
+		"new scopes are refused":    {"container:43", true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, ts := buildTriggerServices()
+			id, err := ts.InsertTrigger(context.Background(), &alert.AlertTrigger{
+				Name: "Scoped", FilterScopes: "container:42", Enabled: true, ChannelIDs: []string{"1"},
+			})
+			require.NoError(t, err)
+
+			result, _, err := updateTriggerHandler(svc)(context.Background(), nil, updateTriggerInputWithID{
+				ID: id,
+				triggerInput: triggerInput{
+					Name: "Scoped", FilterScopes: tc.scopes, Enabled: &off, ChannelIDs: []string{"1"},
+				},
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.refused, result.IsError, textFromContent(t, result.Content))
+			if tc.refused {
+				assert.Contains(t, textFromContent(t, result.Content), "edition_required")
+				assert.True(t, ts.triggers[id].Enabled)
+			} else {
+				assert.False(t, ts.triggers[id].Enabled)
+			}
+		})
+	}
 }
 
 func TestUpdateTriggerHandler_NotFound(t *testing.T) {

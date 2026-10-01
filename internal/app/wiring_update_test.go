@@ -88,6 +88,31 @@ func TestUpdateDetectedAlert_SeverityFromRiskScore(t *testing.T) {
 	}
 }
 
+func TestUpdateAlertWanted_FollowsAlertOnLabel(t *testing.T) {
+	cases := []struct {
+		alertOn string
+		risk    int
+		want    bool
+	}{
+		{"", 10, true},
+		{"all", 10, true},
+		{"critical", 90, true},
+		{"critical", 70, false},
+		{"critical", 10, false},
+		{"none", 90, false},
+	}
+	for _, tc := range cases {
+		m := detectedPayload("svc", "id", tc.risk)
+		if tc.alertOn != "" {
+			m["alert_on"] = tc.alertOn
+		}
+		evt := updateDetectedAlert(m, false)
+		if got := updateAlertWanted(m, evt.Severity); got != tc.want {
+			t.Errorf("alert_on=%q risk=%d → %v, want %v", tc.alertOn, tc.risk, got, tc.want)
+		}
+	}
+}
+
 func TestUpdateDetectedAlert_ProDetailsGated(t *testing.T) {
 	ce := updateDetectedAlert(detectedPayload("svc", "id", 90), false)
 	if _, ok := ce.Details["update_command"]; ok {

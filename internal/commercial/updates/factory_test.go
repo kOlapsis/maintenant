@@ -5,6 +5,7 @@
 package updates
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
 	"os"
@@ -47,4 +48,20 @@ func TestNewEnricher_PerEdition(t *testing.T) {
 			assert.IsType(t, &ProEnricher{}, e)
 		})
 	}
+}
+
+func TestNewEnricher_LogsTheRunningEdition(t *testing.T) {
+	prev := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Personal }
+	t.Cleanup(func() { extension.CurrentEdition = prev })
+
+	var logs bytes.Buffer
+	NewEnricher(extpoint.EnricherDeps{
+		Store:    &stubStore{},
+		Registry: update.NewRegistryClient(),
+		Logger:   slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+
+	assert.Contains(t, logs.String(), "edition=personal")
+	assert.NotContains(t, logs.String(), "Pro")
 }

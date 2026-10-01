@@ -51,7 +51,7 @@ const posture = computed(() => store.posture)
         title="Scored view of your infrastructure risk"
         :doc-href="docUrl('features/security/#security-posture-dashboard')"
       >
-        The posture score weights network exposure, configuration risks (privileged, host network), and pending updates across all {{ containerStore.runtimeLabel }} containers. Drill into individual containers to see the underlying insights, and <em>acknowledge</em> known findings to exclude them from the score with an audit trail.
+        The posture score of each {{ containerStore.runtimeLabel }} container weighs five categories: vulnerabilities (CVEs, 30%), network exposure (25%, privileged mode and host network included), TLS certificates (20%), available updates (15%) and image age (10%). A category without data is left out and its weight goes to the others. Drill into individual containers to see the findings, and <em>acknowledge</em> known CVEs and exposure findings to exclude them from the score with an audit trail.
       </FeatureHint>
 
       <!-- Pro gate -->
@@ -67,14 +67,14 @@ const posture = computed(() => store.posture)
               </div>
               <h2 class="text-base font-bold text-mnt-primary mb-1">Security Posture</h2>
               <p class="text-sm text-mnt-muted max-w-md mb-6 leading-relaxed">
-                Get an infrastructure-wide security score that weights network exposure, configuration risks, and pending updates across every monitored container.
+                Get an infrastructure-wide security score that weighs vulnerabilities, network exposure, TLS certificates, pending updates and image age across every monitored container.
               </p>
 
               <ul class="text-left space-y-3 mb-8 w-full max-w-sm">
                 <li class="flex items-start gap-3">
                   <CheckCircle2 :size="15" class="text-mnt-green-400 mt-0.5 shrink-0" />
                   <span class="text-sm text-mnt-secondary">
-                    Single weighted score with per-category breakdown (network, config, updates)
+                    Single weighted score with per-category breakdown (CVEs, exposure, TLS, updates, image age)
                   </span>
                 </li>
                 <li class="flex items-start gap-3">

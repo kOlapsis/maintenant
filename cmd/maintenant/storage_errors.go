@@ -24,6 +24,12 @@ func logStorageStartupError(logger *slog.Logger, err error, dsn string) bool {
 	case errors.Is(err, store.ErrInvalidDSN):
 		logger.Error("the database connection string cannot be read",
 			"fix", "expected postgres://user:password@host:5432/database[?sslmode=require]")
+	case errors.Is(err, store.ErrTLSRefused) && store.DefaultsSSLMode(dsn):
+		logger.Error("the database server does not accept TLS", "target", target,
+			"fix", "sslmode=require is added by default for a non-local host: enable TLS on the PostgreSQL server, or set sslmode=disable explicitly in MAINTENANT_DATABASE_URL if the network to the database is trusted")
+	case errors.Is(err, store.ErrTLSRefused):
+		logger.Error("the database server does not accept TLS", "target", target,
+			"fix", "the connection string requires TLS through its sslmode: enable TLS on the PostgreSQL server, or lower sslmode if the network to the database is trusted")
 	case errors.Is(err, store.ErrUnreachable):
 		logger.Error("the database does not answer", "target", target,
 			"fix", "check the host and port, the network route and the firewall; the instance does not fall back to the local file")

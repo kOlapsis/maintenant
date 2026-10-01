@@ -10,7 +10,6 @@ export interface EscalationScope {
 export interface EscalationFilters {
   severities: string[]
   scopes: EscalationScope[]
-  tags: string[]
 }
 
 export interface EscalationLevel {

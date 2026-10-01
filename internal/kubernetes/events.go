@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,18 +10,32 @@ import (
 	"github.com/kolapsis/maintenant/internal/runtime"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
+	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 )
 
-// streamEvents uses SharedInformerFactory to watch pods and controllers,
-// converting events to runtime.RuntimeEvent.
+const informerResync = 30 * time.Second
+
+// streamEvents turns pod and controller changes into runtime events, from informers of its own, until
+// ctx ends, the runtime closes or the API server stops answering; the channel then closes.
 func (r *Runtime) streamEvents(ctx context.Context) <-chan runtime.RuntimeEvent {
 	out := make(chan runtime.RuntimeEvent, 128)
 
-	podInformer := r.factory.Core().V1().Pods().Informer()
-	depInformer := r.factory.Apps().V1().Deployments().Informer()
-	ssInformer := r.factory.Apps().V1().StatefulSets().Informer()
-	dsInformer := r.factory.Apps().V1().DaemonSets().Informer()
+	clientset, err := r.client()
+	if err != nil {
+		r.logger.Error("kubernetes event stream not started", "error", err)
+		close(out)
+		return out
+	}
+	factory := informers.NewSharedInformerFactory(clientset, informerResync)
+
+	podInformer := factory.Core().V1().Pods().Informer()
+	depInformer := factory.Apps().V1().Deployments().Informer()
+	ssInformer := factory.Apps().V1().StatefulSets().Informer()
+	dsInformer := factory.Apps().V1().DaemonSets().Informer()
 
 	emit := func(evt runtime.RuntimeEvent) {
 		select {
@@ -162,12 +177,58 @@ func (r *Runtime) streamEvents(ctx context.Context) <-chan runtime.RuntimeEvent 
 		},
 	})
 
+	stop := make(chan struct{})
+	factory.Start(stop)
 	go func() {
-		<-ctx.Done()
+		r.waitForLoss(ctx, clientset)
+		close(stop)
+		// Shutdown returns once no handler can run, so nothing sends on the closed channel.
+		factory.Shutdown()
 		close(out)
 	}()
 
 	return out
+}
+
+// waitForLoss returns when ctx ends, the runtime closes, or probeMisses probes in a row find the API server unreachable.
+func (r *Runtime) waitForLoss(ctx context.Context, clientset k8s.Interface) {
+	ticker := time.NewTicker(r.probeEvery)
+	defer ticker.Stop()
+	misses := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.stopCh:
+			return
+		case <-ticker.C:
+		}
+		err := probeAPIServer(ctx, clientset, r.probeEvery)
+		if err == nil {
+			misses = 0
+			continue
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		misses++
+		r.logger.Warn("kubernetes API server unreachable", "error", err, "misses", misses, "of", r.probeMisses)
+		if misses >= r.probeMisses {
+			return
+		}
+	}
+}
+
+// probeAPIServer fails only when the API server cannot be reached: any answer, a refusal included, proves it is up.
+func probeAPIServer(ctx context.Context, clientset k8s.Interface, timeout time.Duration) error {
+	pctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	_, err := clientset.CoreV1().Namespaces().List(pctx, metav1.ListOptions{Limit: 1})
+	var status k8serrors.APIStatus
+	if err != nil && !errors.As(err, &status) {
+		return err
+	}
+	return nil
 }
 
 func podToEvent(action string, pod *corev1.Pod) runtime.RuntimeEvent {

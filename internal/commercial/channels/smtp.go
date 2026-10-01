@@ -8,10 +8,16 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"mime"
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
+
+const smtpTimeout = 30 * time.Second
 
 // SMTPConfig holds SMTP connection parameters.
 type SMTPConfig struct {
@@ -22,24 +28,43 @@ type SMTPConfig struct {
 	From     string
 }
 
-// SMTPSender sends email notifications via SMTP with STARTTLS.
+const implicitTLSPort = "465"
+
+// SMTPSender sends email notifications via SMTP, over implicit TLS on port 465 and STARTTLS elsewhere when the server offers it.
 type SMTPSender struct {
-	cfg SMTPConfig
+	cfg         SMTPConfig
+	implicitTLS bool
 }
 
 // NewSMTPSender creates a new SMTPSender with the given configuration.
 func NewSMTPSender(cfg SMTPConfig) *SMTPSender {
-	return &SMTPSender{cfg: cfg}
+	return &SMTPSender{cfg: cfg, implicitTLS: cfg.Port == implicitTLSPort}
 }
 
-// Send delivers an email via SMTP. The to parameter is the recipient address,
-// subject is the email subject line, and textBody is the plain-text content.
-func (s *SMTPSender) Send(_ context.Context, to, subject, textBody string) error {
+// Send delivers a plain-text email via SMTP, giving up when ctx ends or after smtpTimeout.
+func (s *SMTPSender) Send(ctx context.Context, to, subject, textBody string) error {
+	ctx, cancel := context.WithTimeout(ctx, smtpTimeout)
+	defer cancel()
 	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
+	tlsCfg := trust.ClientTLSConfig()
+	tlsCfg.ServerName = s.cfg.Host
 
-	conn, err := net.Dial("tcp", addr)
+	var conn net.Conn
+	var err error
+	if s.implicitTLS {
+		dialer := tls.Dialer{Config: tlsCfg}
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	} else {
+		var dialer net.Dialer
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
+	}
+	deadline, _ := ctx.Deadline()
+	if err := conn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("smtp deadline: %w", err)
 	}
 
 	c, err := smtp.NewClient(conn, s.cfg.Host)
@@ -51,9 +76,14 @@ func (s *SMTPSender) Send(_ context.Context, to, subject, textBody string) error
 		_ = c.Close()
 	}(c)
 
-	// STARTTLS best-effort: some servers don't support it, so continue in plaintext on error.
-	tlsCfg := &tls.Config{ServerName: s.cfg.Host, MinVersion: tls.VersionTLS12}
-	_ = c.StartTLS(tlsCfg)
+	// A relay that does not offer STARTTLS is accepted in clear; one that offers it and fails the negotiation is not.
+	if !s.implicitTLS {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(tlsCfg); err != nil {
+				return fmt.Errorf("smtp starttls: %w", err)
+			}
+		}
+	}
 
 	// AUTH PLAIN if credentials are configured
 	if s.cfg.Username != "" {
@@ -90,7 +120,7 @@ func buildMIME(from, to, subject, body string) string {
 	var b strings.Builder
 	b.WriteString("From: " + sanitizeHeader(from) + "\r\n")
 	b.WriteString("To: " + sanitizeHeader(to) + "\r\n")
-	b.WriteString("Subject: " + sanitizeHeader(subject) + "\r\n")
+	b.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", sanitizeHeader(subject)) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("\r\n")

@@ -26,20 +26,14 @@ type LicenseChecker interface {
 	CanStorePayload() bool
 }
 
-// DefaultLicenseChecker caps how many heartbeats may exist. A negative maximum
-// means unlimited (extension.Limit reports -1 for an uncapped resource).
-type DefaultLicenseChecker struct {
-	MaxHeartbeats int
+// DefaultLicenseChecker caps heartbeats at the running edition's limit, read at every call.
+type DefaultLicenseChecker struct{}
+
+func (DefaultLicenseChecker) CanCreateHeartbeat(currentCount int) bool {
+	return extension.WithinLimit(extension.ResourceHeartbeats, currentCount)
 }
 
-func (c *DefaultLicenseChecker) CanCreateHeartbeat(currentCount int) bool {
-	if c.MaxHeartbeats < 0 {
-		return true
-	}
-	return currentCount < c.MaxHeartbeats
-}
-
-func (c *DefaultLicenseChecker) CanStorePayload() bool {
+func (DefaultLicenseChecker) CanStorePayload() bool {
 	return false
 }
 
@@ -54,7 +48,7 @@ var (
 type Deps struct {
 	Store          HeartbeatStore // required
 	Logger         *slog.Logger   // required
-	LicenseChecker LicenseChecker // optional, defaults to extension.Limit
+	LicenseChecker LicenseChecker // optional, defaults to DefaultLicenseChecker
 	EventCallback  EventCallback  // optional — nil-safe
 	AlertCallback  AlertCallback  // optional — nil-safe
 	BaseURL        string         // optional
@@ -80,7 +74,7 @@ func NewService(d Deps) *Service {
 	}
 	lc := d.LicenseChecker
 	if lc == nil {
-		lc = &DefaultLicenseChecker{MaxHeartbeats: extension.Limit(extension.ResourceHeartbeats)}
+		lc = DefaultLicenseChecker{}
 	}
 	return &Service{
 		store:          d.Store,
@@ -135,7 +129,6 @@ func (s *Service) CreateHeartbeat(ctx context.Context, input CreateHeartbeatInpu
 		AlertState:      AlertNormal,
 		IntervalSeconds: input.IntervalSeconds,
 		GraceSeconds:    input.GraceSeconds,
-		Active:          true,
 	}
 
 	id, err := s.store.CreateHeartbeat(ctx, h)
@@ -232,7 +225,7 @@ func (s *Service) DeleteHeartbeat(ctx context.Context, id string) error {
 // --- Ping Processing ---
 
 func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, error) {
-	h, err := s.store.GetHeartbeatByUUID(ctx, token)
+	h, err := s.store.GetHeartbeatByID(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -308,6 +301,7 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 		h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
 		return nil, fmt.Errorf("update heartbeat state: %w", err)
 	}
+	s.endPause(ctx, h.ID, previousStatus, now)
 
 	// Emit events
 	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
@@ -347,7 +341,7 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 }
 
 func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, httpMethod string) (*Heartbeat, error) {
-	h, err := s.store.GetHeartbeatByUUID(ctx, token)
+	h, err := s.store.GetHeartbeatByID(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -401,6 +395,7 @@ func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, 
 		h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
 		return nil, fmt.Errorf("update heartbeat state: %w", err)
 	}
+	s.endPause(ctx, h.ID, previousStatus, now)
 
 	// Emit events
 	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
@@ -428,7 +423,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 		return nil, ErrInvalidExitCode
 	}
 
-	h, err := s.store.GetHeartbeatByUUID(ctx, token)
+	h, err := s.store.GetHeartbeatByID(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -516,6 +511,7 @@ func (s *Service) ProcessExitCodePing(ctx context.Context, token string, exitCod
 		h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
 		return nil, fmt.Errorf("update heartbeat state: %w", err)
 	}
+	s.endPause(ctx, h.ID, previousStatus, now)
 
 	// Emit events
 	s.emitEvent(event.HeartbeatPingReceived, map[string]interface{}{
@@ -668,8 +664,11 @@ func (s *Service) PauseHeartbeat(ctx context.Context, id string) (*Heartbeat, er
 	if h == nil {
 		return nil, ErrHeartbeatNotFound
 	}
+	if h.Status == StatusPaused {
+		return nil, fmt.Errorf("%w: heartbeat is already paused", ErrInvalidInput)
+	}
 
-	if err := s.store.PauseHeartbeat(ctx, id); err != nil {
+	if err := s.store.PauseHeartbeat(ctx, id, time.Now()); err != nil {
 		return nil, err
 	}
 
@@ -697,8 +696,9 @@ func (s *Service) ResumeHeartbeat(ctx context.Context, id string) (*Heartbeat, e
 		return nil, fmt.Errorf("%w: heartbeat is not paused", ErrInvalidInput)
 	}
 
-	deadline := time.Now().Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
-	if err := s.store.ResumeHeartbeat(ctx, id, deadline); err != nil {
+	now := time.Now()
+	deadline := now.Add(time.Duration(h.IntervalSeconds+h.GraceSeconds) * time.Second)
+	if err := s.store.ResumeHeartbeat(ctx, id, now, deadline); err != nil {
 		return nil, err
 	}
 
@@ -711,6 +711,16 @@ func (s *Service) ResumeHeartbeat(ctx context.Context, id string) (*Heartbeat, e
 	})
 
 	return s.store.GetHeartbeatByID(ctx, id)
+}
+
+// endPause closes the pause of a heartbeat that a ping has just put back to monitoring.
+func (s *Service) endPause(ctx context.Context, id string, previous HeartbeatStatus, at time.Time) {
+	if previous != StatusPaused {
+		return
+	}
+	if err := s.store.EndPause(ctx, id, at); err != nil {
+		s.logger.Error("close heartbeat pause", "heartbeat_id", id, "error", err)
+	}
 }
 
 // --- Pings & Executions listing ---

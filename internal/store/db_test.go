@@ -50,8 +50,6 @@ func TestVacuumSliceReclaimsMoreThanOnePage(t *testing.T) {
 	db := openTestDB(t)
 	ctx := t.Context()
 
-	db.Writer().Start(ctx)
-
 	_, err := db.Writer().Exec(ctx, `CREATE TABLE vacuum_probe (id INTEGER PRIMARY KEY, blob BLOB)`)
 	require.NoError(t, err)
 

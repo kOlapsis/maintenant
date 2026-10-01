@@ -124,3 +124,33 @@ func TestHandleAuthorize_RedirectsWithCodeForListedURI(t *testing.T) {
 		t.Errorf("state = %q, want xyz", loc.Query().Get("state"))
 	}
 }
+
+func TestRedirectTargetRebuildsTheAllowedURI(t *testing.T) {
+	s := newTestServer("https://claude.ai/api/mcp/auth_callback")
+
+	tests := []struct {
+		uri  string
+		want string
+	}{
+		{"https://claude.ai/api/mcp/auth_callback", "https://claude.ai/api/mcp/auth_callback"},
+		{"http://localhost:33418/oauth/callback?x=1", "http://localhost:33418/oauth/callback?x=1"},
+		{"http://[::1]:9000/cb", "http://[::1]:9000/cb"},
+		{"https://127.0.0.1/cb", "https://127.0.0.1/cb"},
+		{"ftp://localhost/cb", ""},
+		{"http://localhost:0/cb", ""},
+		{"http://localhost:99999/cb", ""},
+		{"http://localhost.evil.example/cb", ""},
+	}
+	for _, tt := range tests {
+		got := s.redirectTarget(tt.uri)
+		if tt.want == "" {
+			if got != nil {
+				t.Errorf("redirectTarget(%q) = %q, want nil", tt.uri, got)
+			}
+			continue
+		}
+		if got == nil || got.String() != tt.want {
+			t.Errorf("redirectTarget(%q) = %v, want %q", tt.uri, got, tt.want)
+		}
+	}
+}

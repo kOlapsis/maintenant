@@ -18,6 +18,8 @@ import (
 	"github.com/kolapsis/maintenant/internal/container"
 )
 
+const maxLogLineBytes = 1 << 20
+
 // LogStreamer abstracts runtime log streaming for the API layer.
 type LogStreamer interface {
 	// StreamLogs returns an io.ReadCloser for following container logs.
@@ -89,9 +91,8 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 	// serve its own logs, so only gate the local path on it.
 	remote := isRemoteAgent(agentID)
 	if !remote && h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"error":"container monitoring unavailable"}`))
+		WriteError(w, http.StatusServiceUnavailable, "RUNTIME_UNAVAILABLE",
+			"Container monitoring is unavailable: the container runtime is disconnected.")
 		return
 	}
 
@@ -139,29 +140,50 @@ func (h *LogStreamHandler) HandleLogStream(w http.ResponseWriter, r *http.Reques
 	// Set SSE headers. CORS is deliberately absent: the cors() middleware
 	// applies the configured policy, and forcing a wildcard here let any site
 	// an operator visited read this container's logs.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	setSSEHeaders(w.Header())
 	flusher.Flush()
 
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), 64*1024)
-
 	ctx := r.Context()
-	for scanner.Scan() {
+	scanned := make(chan string)
+	var scanErr error
+	go func() {
+		defer close(scanned)
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 64*1024), maxLogLineBytes)
+		for scanner.Scan() {
+			select {
+			case scanned <- scanner.Text():
+			case <-ctx.Done():
+				return
+			}
+		}
+		scanErr = scanner.Err()
+	}()
+
+	keepAlive := time.NewTicker(sseKeepAliveInterval)
+	defer keepAlive.Stop()
+	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-		}
-
-		if !writeLogLine(w, flusher, containerDBID, scanner.Text()) {
-			return
+		case <-keepAlive.C:
+			if !writeSSEKeepAlive(w, flusher) {
+				return
+			}
+		case line, ok := <-scanned:
+			if !ok {
+				if scanErr != nil {
+					writeLogError(w, flusher, containerDBID, "log stream interrupted: "+scanErr.Error())
+					return
+				}
+				writeLogError(w, flusher, containerDBID, "container stopped")
+				return
+			}
+			if !writeLogLine(w, flusher, containerDBID, line) {
+				return
+			}
 		}
 	}
-
-	// If scanner stops (container stopped or error), emit error event.
-	writeLogError(w, flusher, containerDBID, "container stopped")
 }
 
 // writeLogLine emits one SSE log line, reporting whether the client is still
@@ -232,16 +254,21 @@ func (h *LogStreamHandler) streamRemote(
 	defer release()
 
 	// Same as the local path: no wildcard CORS, cors() owns the policy.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	setSSEHeaders(w.Header())
 	flusher.Flush()
+
+	keepAlive := time.NewTicker(sseKeepAliveInterval)
+	defer keepAlive.Stop()
 
 	ctx := r.Context()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-keepAlive.C:
+			if !writeSSEKeepAlive(w, flusher) {
+				return
+			}
 		case res, ok := <-results:
 			if !ok {
 				writeLogError(w, flusher, containerDBID, "agent disconnected")

@@ -31,6 +31,7 @@ func TestLogStorageStartupError_DistinctFamilies(t *testing.T) {
 		"agent mode":         fmt.Errorf("wrapped: %w", app.ErrDatabaseURLInAgentMode),
 		"invalid dsn":        fmt.Errorf("open database: %w", store.ErrInvalidDSN),
 		"unreachable":        fmt.Errorf("open database: %w", store.ErrUnreachable),
+		"tls refused":        fmt.Errorf("open database: %w", store.ErrTLSRefused),
 		"credentials":        fmt.Errorf("open database: %w", store.ErrAuthRefused),
 		"version":            fmt.Errorf("open database: %w", store.ErrUnsupportedVersion),
 		"schema from future": fmt.Errorf("run migrations: %w", store.ErrSchemaNewer),
@@ -62,6 +63,25 @@ func TestLogStorageStartupError_DistinctFamilies(t *testing.T) {
 
 	// The version message names the minimum required.
 	assert.Contains(t, messages["version"], "14")
+}
+
+func TestLogStorageStartupError_TLSRefusedNamesTheDefault(t *testing.T) {
+	err := fmt.Errorf("open database: %w", store.ErrTLSRefused)
+
+	var defaulted bytes.Buffer
+	require.True(t, logStorageStartupError(slog.New(slog.NewTextHandler(&defaulted, nil)), err,
+		"postgres://app:"+cliSentinelPassword+"@db:5432/maintenant"))
+	assert.Contains(t, defaulted.String(), "does not accept TLS")
+	assert.Contains(t, defaulted.String(), "sslmode=require is added by default")
+	assert.Contains(t, defaulted.String(), "sslmode=disable")
+	assert.NotContains(t, defaulted.String(), "firewall")
+	assert.NotContains(t, defaulted.String(), cliSentinelPassword)
+
+	var explicit bytes.Buffer
+	require.True(t, logStorageStartupError(slog.New(slog.NewTextHandler(&explicit, nil)), err,
+		"postgres://app@db:5432/maintenant?sslmode=require"))
+	assert.Contains(t, explicit.String(), "does not accept TLS")
+	assert.NotContains(t, explicit.String(), "added by default", "the operator asked for TLS")
 }
 
 // TestLogStorageStartupError_PassesThroughOtherErrors keeps the classifier

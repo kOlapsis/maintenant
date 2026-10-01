@@ -19,6 +19,7 @@ import (
 const (
 	initialBackoff = 1 * time.Second
 	maxBackoff     = 30 * time.Second
+	pingTimeout    = 3 * time.Second
 )
 
 // Client wraps the Docker SDK client with reconnection logic.
@@ -30,6 +31,9 @@ type Client struct {
 	connected bool
 
 	proxyLabels bool
+
+	serviceMu     sync.Mutex
+	serviceLabels map[string]serviceLabels
 }
 
 // NewClient creates a new Docker client wrapper.
@@ -59,7 +63,11 @@ func (c *Client) SetProxyLabels(enabled bool) {
 	c.proxyLabels = enabled
 }
 
-func (c *Client) containerLabels(labels map[string]string) map[string]string {
+// containerLabels returns the labels maintenant reads for a container: its own,
+// over those of its Swarm service, expanded from reverse proxy labels when
+// enabled.
+func (c *Client) containerLabels(ctx context.Context, labels map[string]string) map[string]string {
+	labels = withServiceLabels(labels, c.swarmServiceLabels(ctx, labels[labelSwarmServiceID]))
 	if !c.proxyLabels {
 		return labels
 	}
@@ -82,15 +90,10 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// ConnectWithRetry attempts to connect with exponential backoff.
+// TryConnect pings the daemon once, bounded by pingTimeout.
 func (c *Client) TryConnect(ctx context.Context) error {
-	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	_, err := c.cli.Ping(tctx, client.PingOptions{})
-	if err != nil {
-		c.mu.Lock()
-		c.connected = false
-		c.mu.Unlock()
+	if err := c.ping(ctx); err != nil {
+		c.SetDisconnected()
 		return fmt.Errorf("docker ping failed: %w", err)
 	}
 	c.mu.Lock()
@@ -100,6 +103,15 @@ func (c *Client) TryConnect(ctx context.Context) error {
 	return nil
 }
 
+// ping reports whether the daemon answers within pingTimeout.
+func (c *Client) ping(ctx context.Context) error {
+	pctx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+	_, err := c.cli.Ping(pctx, client.PingOptions{})
+	return err
+}
+
+// ConnectWithRetry attempts to connect with exponential backoff.
 func (c *Client) ConnectWithRetry(ctx context.Context) error {
 	b := retry.New(initialBackoff, maxBackoff, 0)
 	for {

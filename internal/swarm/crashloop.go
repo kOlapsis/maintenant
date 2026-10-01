@@ -9,7 +9,10 @@ import (
 	"sync"
 	"time"
 
+	dockerswarm "github.com/moby/moby/api/types/swarm"
+
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
@@ -22,6 +25,7 @@ const (
 
 // serviceFailureState tracks failure timestamps for a single service.
 type serviceFailureState struct {
+	name        string
 	failures    []time.Time
 	inCrashLoop bool
 	lastFailure time.Time
@@ -29,18 +33,20 @@ type serviceFailureState struct {
 
 // CrashLoopDetector detects crash-loop patterns per service.
 type CrashLoopDetector struct {
-	mu       sync.Mutex
-	services map[string]*serviceFailureState // keyed by service ID
-	logger   *slog.Logger
-	callback EventCallback
-	alertCb  NodeAlertCallback
+	mu          sync.Mutex
+	services    map[string]*serviceFailureState // keyed by service ID
+	failedTasks map[string]bool                 // failed task IDs already counted
+	logger      *slog.Logger
+	callback    EventCallback
+	alertCb     NodeAlertCallback
 }
 
 // NewCrashLoopDetector creates a new crash-loop detector.
 func NewCrashLoopDetector(logger *slog.Logger) *CrashLoopDetector {
 	return &CrashLoopDetector{
-		services: make(map[string]*serviceFailureState),
-		logger:   logger,
+		services:    make(map[string]*serviceFailureState),
+		failedTasks: make(map[string]bool),
+		logger:      logger,
 	}
 }
 
@@ -54,20 +60,90 @@ func (cld *CrashLoopDetector) SetAlertCallback(cb NodeAlertCallback) {
 	cld.alertCb = cb
 }
 
-// RecordFailure records a task failure for a service and checks for crash-loop.
-func (cld *CrashLoopDetector) RecordFailure(serviceID, serviceName, lastError string) {
+// Resume takes over the active crash-loop alerts left by a previous run, so a
+// service that stays quiet for the recovery time resolves its alert.
+func (cld *CrashLoopDetector) Resume(active []*alert.Alert) {
 	cld.mu.Lock()
 	defer cld.mu.Unlock()
 
 	now := time.Now()
+	for _, a := range active {
+		if a.Source == "swarm" && a.AlertType == "crash_loop" && a.EntityType == "swarm_service" {
+			cld.services[a.EntityID] = &serviceFailureState{name: a.EntityName, inCrashLoop: true, lastFailure: now}
+		}
+	}
+}
+
+// ObserveTasks counts once each task of the snapshot that failed within the detection window, on any node, and resolves at once the crash loop of a service that became ignored.
+func (cld *CrashLoopDetector) ObserveTasks(snap TopologySnapshot) {
+	services := make(map[string]*SwarmService, len(snap.Services))
+	for i := range snap.Services {
+		services[snap.Services[i].ServiceID] = &snap.Services[i]
+	}
+
+	cld.mu.Lock()
+	defer cld.mu.Unlock()
+
+	now := time.Now()
+	for id, svc := range services {
+		if state, tracked := cld.services[id]; tracked && container.IgnoredByLabels(svc.Labels) {
+			delete(cld.services, id)
+			if state.inCrashLoop {
+				cld.resolve(id, svc.Name, fmt.Sprintf("Swarm service %s is ignored", svc.Name), now)
+			}
+		}
+	}
+
+	failed := make(map[string]bool)
+	for _, t := range snap.Tasks {
+		svc, known := services[t.ServiceID]
+		if !known || !taskFailed(t) {
+			continue
+		}
+		failed[t.TaskID] = true
+		at := t.Timestamp
+		if at.IsZero() {
+			at = now
+		}
+		if cld.failedTasks[t.TaskID] || container.IgnoredByLabels(svc.Labels) || now.Sub(at) >= crashLoopWindow {
+			continue
+		}
+		cld.emit(event.SwarmTaskFailed, map[string]interface{}{
+			"task_id":      t.TaskID,
+			"service_id":   t.ServiceID,
+			"service_name": svc.Name,
+			"node_id":      t.NodeID,
+			"container_id": t.ContainerID,
+			"error":        t.Error,
+			"exit_code":    t.ExitCode,
+			"timestamp":    at.Format(time.RFC3339),
+		})
+		cld.recordFailure(t.ServiceID, svc.Name, t.Error, at, now)
+	}
+	cld.failedTasks = failed
+}
+
+// taskFailed reports a task that stopped while Swarm wanted it running: a rolling update or a scale-down shuts tasks down instead of failing them.
+func taskFailed(t SwarmTask) bool {
+	if t.State != string(dockerswarm.TaskStateFailed) {
+		return false
+	}
+	// The task API does not report the OOM killer, so a SIGKILL there counts as one.
+	return t.ExitCode == nil || !container.IsCleanExit(*t.ExitCode, true)
+}
+
+func (cld *CrashLoopDetector) recordFailure(serviceID, serviceName, lastError string, at, now time.Time) {
 	state, ok := cld.services[serviceID]
 	if !ok {
 		state = &serviceFailureState{}
 		cld.services[serviceID] = state
 	}
 
-	state.failures = append(state.failures, now)
-	state.lastFailure = now
+	state.name = serviceName
+	state.failures = append(state.failures, at)
+	if at.After(state.lastFailure) {
+		state.lastFailure = at
+	}
 
 	// Prune old failures beyond buffer max.
 	cutoff := now.Add(-crashLoopBufferMax)
@@ -108,6 +184,7 @@ func (cld *CrashLoopDetector) RecordFailure(serviceID, serviceName, lastError st
 			Severity:   alert.SeverityCritical,
 			Message:    fmt.Sprintf("Swarm service %s is crash-looping (%d failures in %d min)", serviceName, count, int(crashLoopWindow.Minutes())),
 			EntityType: "swarm_service",
+			EntityID:   serviceID,
 			EntityName: serviceName,
 			Details: map[string]any{
 				"service_id":    serviceID,
@@ -131,26 +208,31 @@ func (cld *CrashLoopDetector) CheckRecoveries() {
 		}
 		if now.Sub(state.lastFailure) >= crashLoopRecoveryTime {
 			state.inCrashLoop = false
-			cld.logger.Info("crash-loop recovered", "service_id", serviceID)
-
-			cld.emit(event.SwarmCrashLoopRecovered, map[string]interface{}{
-				"service_id":   serviceID,
-				"service_name": serviceID, // best effort — name may not be available
-				"timestamp":    now.Format(time.RFC3339),
-			})
-
-			cld.sendAlert(alert.Event{
-				Source:     "swarm",
-				AlertType:  "crash_loop",
-				Severity:   alert.SeverityInfo,
-				IsRecover:  true,
-				Message:    fmt.Sprintf("Swarm service crash-loop resolved for %s", serviceID),
-				EntityType: "swarm_service",
-				EntityName: serviceID,
-				Timestamp:  now,
-			})
+			cld.resolve(serviceID, state.name, fmt.Sprintf("Swarm service crash-loop resolved for %s", state.name), now)
 		}
 	}
+}
+
+func (cld *CrashLoopDetector) resolve(serviceID, serviceName, message string, now time.Time) {
+	cld.logger.Info("crash-loop recovered", "service_id", serviceID)
+
+	cld.emit(event.SwarmCrashLoopRecovered, map[string]interface{}{
+		"service_id":   serviceID,
+		"service_name": serviceName,
+		"timestamp":    now.Format(time.RFC3339),
+	})
+
+	cld.sendAlert(alert.Event{
+		Source:     "swarm",
+		AlertType:  "crash_loop",
+		Severity:   alert.SeverityInfo,
+		IsRecover:  true,
+		Message:    message,
+		EntityType: "swarm_service",
+		EntityID:   serviceID,
+		EntityName: serviceName,
+		Timestamp:  now,
+	})
 }
 
 // IsCrashLooping returns whether a service is currently in crash-loop state.

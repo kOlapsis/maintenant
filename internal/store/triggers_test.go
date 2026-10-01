@@ -43,7 +43,6 @@ func setupTriggerTestDB(t *testing.T) (*TriggerStoreImpl, *sql.DB) {
 			filter_severities TEXT    NOT NULL DEFAULT '',
 			filter_sources    TEXT    NOT NULL DEFAULT '',
 			filter_scopes     TEXT    NOT NULL DEFAULT '',
-			filter_tags       TEXT    NOT NULL DEFAULT '',
 			enabled           INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
 			notify_on_resolve INTEGER NOT NULL DEFAULT 1 CHECK (notify_on_resolve IN (0,1)),
 			created_at        BIGINT  NOT NULL DEFAULT 0,

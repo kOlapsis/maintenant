@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -150,22 +151,47 @@ func (m *svcStore) InsertTransition(_ context.Context, t *StateTransition) (stri
 		return "", m.errInsertTransition
 	}
 	clone := *t
-	clone.ID = uid.New()
+	if clone.ID == "" {
+		clone.ID = uid.New()
+	}
+	for i, existing := range m.transitions {
+		if existing.ID == clone.ID {
+			m.transitions[i] = &clone
+			return clone.ID, nil
+		}
+	}
 	m.transitions = append(m.transitions, &clone)
 	return clone.ID, nil
 }
 
-func (m *svcStore) ListTransitionsByContainer(_ context.Context, containerID string, _ ListTransitionsOpts) ([]*StateTransition, int, error) {
+// ListTransitionsByContainer mirrors the store: newest first, bounds inclusive, at the second.
+func (m *svcStore) ListTransitionsByContainer(_ context.Context, containerID string, opts ListTransitionsOpts) ([]*StateTransition, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []*StateTransition
-	for _, t := range m.transitions {
-		if t.ContainerID == containerID {
-			clone := *t
-			result = append(result, &clone)
+	for i := len(m.transitions) - 1; i >= 0; i-- {
+		t := m.transitions[i]
+		if t.ContainerID != containerID {
+			continue
 		}
+		if opts.Since != nil && t.Timestamp.Unix() < opts.Since.Unix() {
+			continue
+		}
+		if opts.Until != nil && t.Timestamp.Unix() > opts.Until.Unix() {
+			continue
+		}
+		clone := *t
+		result = append(result, &clone)
 	}
-	return result, len(result), nil
+	sort.SliceStable(result, func(i, j int) bool { return result[i].Timestamp.Unix() > result[j].Timestamp.Unix() })
+	total := len(result)
+	if opts.Offset > 0 {
+		result = result[min(opts.Offset, len(result)):]
+	}
+	if opts.Limit > 0 && len(result) > opts.Limit {
+		result = result[:opts.Limit]
+	}
+	return result, total, nil
 }
 
 func (m *svcStore) CountRestartsSince(_ context.Context, _ string, _ time.Time) (int, error) {
@@ -343,6 +369,14 @@ func TestService_ProcessEvent_StartTransitionsToRunning(t *testing.T) {
 	require.Len(t, transitions, 1)
 	assert.Equal(t, StateExited, transitions[0].PreviousState)
 	assert.Equal(t, StateRunning, transitions[0].NewState)
+}
+
+func TestService_ProcessEvent_ShortKubernetesIDOfAnUnknownContainer(t *testing.T) {
+	svc := newTestService(newSvcStore())
+
+	assert.NotPanics(t, func() {
+		svc.ProcessEvent(context.Background(), makeTestEvent("die", "db/pg-0"))
+	})
 }
 
 func TestService_HandleStateChange_LogFetcherSkippedForRemote(t *testing.T) {
@@ -755,20 +789,15 @@ func TestService_ProcessEvent_DieWithoutLogFetcherLeavesEmptySnippet(t *testing.
 	assert.Empty(t, transitions[0].LogSnippet)
 }
 
-// ---------------------------------------------------------------------------
-// isGracefulExitCode tests
-// ---------------------------------------------------------------------------
-
-func TestIsGracefulExitCode(t *testing.T) {
-	graceful := []int{0, 137, 143}
-	for _, code := range graceful {
-		assert.True(t, isGracefulExitCode(code), "exit code %d should be graceful", code)
+func TestIsCleanExit(t *testing.T) {
+	for _, code := range []int{0, 137, 143} {
+		assert.True(t, IsCleanExit(code, false), "exit code %d should be a clean stop", code)
 	}
-
-	nonGraceful := []int{1, 2, 127, 255, -1, 130, 138}
-	for _, code := range nonGraceful {
-		assert.False(t, isGracefulExitCode(code), "exit code %d should not be graceful", code)
+	for _, code := range []int{1, 2, 127, 255, -1, 130, 138} {
+		assert.False(t, IsCleanExit(code, false), "exit code %d should be a crash", code)
 	}
+	assert.False(t, IsCleanExit(137, true), "an OOM kill is a crash")
+	assert.True(t, IsCleanExit(143, true), "SIGTERM stays a stop whatever the OOM flag")
 }
 
 // ---------------------------------------------------------------------------
@@ -961,6 +990,25 @@ func TestService_ProcessEvent_DieWithSIGTERM143SetsCompleted(t *testing.T) {
 
 	assert.Equal(t, StateCompleted, store.storedState(c.ExternalID),
 		"exit code 143 (SIGTERM) is considered graceful")
+}
+
+func TestService_ProcessEvent_DieWithOOMKill137SetsExitedAndCountsRestart(t *testing.T) {
+	store := newSvcStore()
+	c := makeTestContainer(extID("oom"), StateRunning)
+	c.ID = "102"
+	store.seed(c)
+
+	checker := &mockRestartChecker{result: nil}
+	svc := newTestService(store, func(d *Deps) { d.RestartChecker = checker })
+
+	die := makeTestEvent("die", c.ExternalID)
+	die.ExitCode = "137"
+	die.OOMKilled = true
+	svc.ProcessEvent(context.Background(), die)
+	assert.Equal(t, StateExited, store.storedState(c.ExternalID), "an OOM kill is a crash, not a stop")
+
+	svc.ProcessEvent(context.Background(), makeTestEvent("start", c.ExternalID))
+	assert.Equal(t, 1, checker.calls, "the restart after an OOM kill must count towards the restart loop")
 }
 
 // ---------------------------------------------------------------------------

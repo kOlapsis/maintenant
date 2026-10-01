@@ -282,61 +282,72 @@ func (s *ResourceStore) InsertDailyRollup(ctx context.Context, r *resource.Rollu
 }
 
 // GetTopConsumersByPeriod ranks containers by average resource usage over a
-// period. agentID filters by host: nil = all hosts, a pointer to "" = the local
-// server (containers owned by the LocalAgent sentinel), a pointer to an id = that agent.
-func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string) ([]resource.TopConsumerRow, error) {
-	now := time.Now()
+// period ending at now, the hour or day in progress included. agentID filters
+// by host: nil = all hosts, a pointer to "" = the local server (containers owned
+// by the LocalAgent sentinel), a pointer to an id = that agent.
+func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string, now time.Time) ([]resource.TopConsumerRow, error) {
+	now = now.UTC()
+	currentHour := now.Truncate(time.Hour).Unix()
+	currentDay := startOfUTCDay(now).Unix()
 
-	var table, timeCol, valExpr, pctExpr string
-	var from int64
+	const (
+		rawSince = `SELECT container_id, cpu_percent AS cpu, mem_used, mem_limit
+			FROM resource_snapshots WHERE timestamp >= ?`
+		hourInProgress = `SELECT container_id, AVG(cpu_percent) AS cpu, AVG(mem_used) AS mem_used, AVG(mem_limit) AS mem_limit
+			FROM resource_snapshots WHERE timestamp >= ? GROUP BY container_id`
+		closedHours = `SELECT container_id, avg_cpu_percent AS cpu, avg_mem_used AS mem_used, avg_mem_limit AS mem_limit
+			FROM resource_hourly WHERE bucket >= ? AND bucket < ?`
+		closedDays = `SELECT container_id, avg_cpu_percent AS cpu, avg_mem_used AS mem_used, avg_mem_limit AS mem_limit
+			FROM resource_daily WHERE bucket >= ? AND bucket < ?`
+	)
+
+	// A row of the source weighs one bucket, as in the rollups: the period in
+	// progress is averaged the way its rollup will be once it closes.
+	var source string
+	var args []any
 	switch period {
 	case "1h", "6h":
 		hours := 1
 		if period == "6h" {
 			hours = 6
 		}
-		table, timeCol, from = "resource_snapshots", "timestamp", now.Add(-time.Duration(hours)*time.Hour).Unix()
-		switch metric {
-		case "cpu":
-			valExpr, pctExpr = "AVG(cpu_percent)", "AVG(cpu_percent)"
-		case "memory":
-			valExpr = "CAST(AVG(mem_used) AS REAL)"
-			pctExpr = "CASE WHEN AVG(mem_limit) > 0 THEN AVG(mem_used) * 100.0 / AVG(mem_limit) ELSE 0 END"
-		default:
-			return nil, fmt.Errorf("invalid metric: %s", metric)
-		}
-	case "24h", "7d", "30d", "90d":
-		table, timeCol = "resource_daily", "bucket"
+		source = rawSince
+		args = []any{now.Add(-time.Duration(hours) * time.Hour).Unix()}
+	case "24h":
+		source = closedHours + ` UNION ALL ` + hourInProgress
+		args = []any{now.Add(-24 * time.Hour).Unix(), currentHour, currentHour}
+	case "7d", "30d", "90d":
+		days := 30
 		switch period {
-		case "24h":
-			table = "resource_hourly"
-			from = now.Add(-24 * time.Hour).Unix()
 		case "7d":
-			from = now.AddDate(0, 0, -7).Unix()
+			days = 7
 		case "90d":
-			from = now.AddDate(0, 0, -90).Unix()
-		default:
-			from = now.AddDate(0, 0, -30).Unix()
+			days = 90
 		}
-		switch metric {
-		case "cpu":
-			valExpr, pctExpr = "AVG(avg_cpu_percent)", "AVG(avg_cpu_percent)"
-		case "memory":
-			valExpr = "CAST(AVG(avg_mem_used) AS REAL)"
-			pctExpr = "CASE WHEN AVG(avg_mem_limit) > 0 THEN AVG(avg_mem_used) * 100.0 / AVG(avg_mem_limit) ELSE 0 END"
-		default:
-			return nil, fmt.Errorf("invalid metric: %s", metric)
-		}
+		dayInProgress := `SELECT container_id, AVG(cpu) AS cpu, AVG(mem_used) AS mem_used, AVG(mem_limit) AS mem_limit
+			FROM (` + closedHours + ` UNION ALL ` + hourInProgress + `) today GROUP BY container_id`
+		source = closedDays + ` UNION ALL ` + dayInProgress
+		args = []any{now.AddDate(0, 0, -days).Unix(), currentDay, currentDay, currentHour, currentHour}
 	default:
 		return nil, fmt.Errorf("invalid period: %s", period)
 	}
 
+	var valExpr, pctExpr string
+	switch metric {
+	case "cpu":
+		valExpr, pctExpr = "AVG(cpu)", "AVG(cpu)"
+	case "memory":
+		valExpr = "CAST(AVG(mem_used) AS REAL)"
+		pctExpr = "CASE WHEN AVG(mem_limit) > 0 THEN AVG(mem_used) * 100.0 / AVG(mem_limit) ELSE 0 END"
+	default:
+		return nil, fmt.Errorf("invalid metric: %s", metric)
+	}
+
 	// Filter by host through the container's owning agent so it works across
 	// the snapshot and rollup tables alike (rollups carry no agent_id column).
-	args := []any{from}
 	hostClause := ""
 	if agentID != nil {
-		hostClause = " AND container_id IN (SELECT id FROM containers WHERE agent_id = ?)"
+		hostClause = " WHERE container_id IN (SELECT id FROM containers WHERE agent_id = ?)"
 		args = append(args, uid.Agent(*agentID))
 	}
 	args = append(args, limit)
@@ -345,9 +356,9 @@ func (s *ResourceStore) GetTopConsumersByPeriod(ctx context.Context, metric stri
 	// switches above (invalid values already returned an error); args are bound.
 	query := fmt.Sprintf(
 		`SELECT container_id, %s AS avg_val, %s AS avg_pct
-		FROM %s WHERE %s >= ?%s
+		FROM (%s) samples%s
 		GROUP BY container_id ORDER BY avg_val DESC LIMIT ?`,
-		valExpr, pctExpr, table, timeCol, hostClause)
+		valExpr, pctExpr, source, hostClause)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

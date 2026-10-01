@@ -34,9 +34,9 @@ func (s *TriggerStoreImpl) InsertTrigger(ctx context.Context, t *alert.AlertTrig
 	now := time.Now().Unix()
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO alert_triggers
-			(id, name, filter_severities, filter_sources, filter_scopes, filter_tags, enabled, notify_on_resolve, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags, boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), now, now,
+			(id, name, filter_severities, filter_sources, filter_scopes, enabled, notify_on_resolve, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), now, now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert trigger: %w", err)
@@ -49,7 +49,7 @@ func (s *TriggerStoreImpl) InsertTrigger(ctx context.Context, t *alert.AlertTrig
 
 func (s *TriggerStoreImpl) GetTrigger(ctx context.Context, id string) (*alert.AlertTrigger, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, filter_severities, filter_sources, filter_scopes, filter_tags,
+		`SELECT id, name, filter_severities, filter_sources, filter_scopes,
 			enabled, notify_on_resolve, created_at, updated_at
 			FROM alert_triggers WHERE id = ?`, id)
 
@@ -80,7 +80,7 @@ func (s *TriggerStoreImpl) ListEnabledTriggers(ctx context.Context) ([]*alert.Al
 
 func (s *TriggerStoreImpl) listTriggersWhere(ctx context.Context, where string) ([]*alert.AlertTrigger, error) {
 	// #nosec G202 -- `where` is a package-internal constant, never caller input.
-	query := `SELECT id, name, filter_severities, filter_sources, filter_scopes, filter_tags,
+	query := `SELECT id, name, filter_severities, filter_sources, filter_scopes,
 		enabled, notify_on_resolve, created_at, updated_at
 		FROM alert_triggers ` + where + ` ORDER BY created_at ASC`
 
@@ -117,10 +117,10 @@ func (s *TriggerStoreImpl) listTriggersWhere(ctx context.Context, where string) 
 func (s *TriggerStoreImpl) UpdateTrigger(ctx context.Context, t *alert.AlertTrigger) error {
 	_, err := s.writer.Exec(ctx,
 		`UPDATE alert_triggers
-			SET name=?, filter_severities=?, filter_sources=?, filter_scopes=?, filter_tags=?,
+			SET name=?, filter_severities=?, filter_sources=?, filter_scopes=?,
 				enabled=?, notify_on_resolve=?, updated_at=?
 			WHERE id=?`,
-		t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes, t.FilterTags,
+		t.Name, t.FilterSeverities, t.FilterSources, t.FilterScopes,
 		boolToInt(t.Enabled), boolToInt(t.NotifyOnResolve), time.Now().Unix(), t.ID,
 	)
 	if err != nil {
@@ -193,7 +193,7 @@ func (s *TriggerStoreImpl) ListChannelsForTrigger(ctx context.Context, triggerID
 
 func (s *TriggerStoreImpl) ListTriggersForChannel(ctx context.Context, channelID string) ([]*alert.AlertTrigger, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT t.id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes, t.filter_tags,
+		`SELECT t.id, t.name, t.filter_severities, t.filter_sources, t.filter_scopes,
 			t.enabled, t.notify_on_resolve, t.created_at, t.updated_at
 			FROM alert_triggers t
 			JOIN alert_trigger_channels atc ON atc.trigger_id = t.id
@@ -235,7 +235,7 @@ func scanTrigger(row *sql.Row) (*alert.AlertTrigger, error) {
 	var enabled, notifyOnResolve int
 	var createdAt, updatedAt int64
 	err := row.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
-		&t.FilterScopes, &t.FilterTags, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
+		&t.FilterScopes, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func scanTriggerRow(rows *sql.Rows) (*alert.AlertTrigger, error) {
 	var enabled, notifyOnResolve int
 	var createdAt, updatedAt int64
 	err := rows.Scan(&t.ID, &t.Name, &t.FilterSeverities, &t.FilterSources,
-		&t.FilterScopes, &t.FilterTags, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
+		&t.FilterScopes, &enabled, &notifyOnResolve, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}

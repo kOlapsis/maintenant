@@ -15,7 +15,6 @@ const (
 	HostNetworkMode          InsightType = "host_network_mode"
 	ServiceLoadBalancer      InsightType = "service_load_balancer"
 	ServiceNodePort          InsightType = "service_node_port"
-	MissingNetworkPolicy     InsightType = "missing_network_policy"
 )
 
 // Severity levels for security insights.

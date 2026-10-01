@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
@@ -30,6 +31,11 @@ type UpdateProgress struct {
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 }
 
+const (
+	alertTypeUpdateRollback = "update_rollback"
+	alertTypeUpdateStalled  = "update_stalled"
+)
+
 // trackedUpdate stores the last known state of an in-progress update.
 type trackedUpdate struct {
 	lastState string
@@ -44,7 +50,8 @@ type UpdateTracker struct {
 	alertCb  NodeAlertCallback
 
 	mu      sync.Mutex
-	tracked map[string]*trackedUpdate // keyed by service ID
+	tracked map[string]*trackedUpdate  // keyed by service ID
+	alerted map[string]map[string]bool // service ID -> alert types raised
 }
 
 // NewUpdateTracker creates a new rolling update tracker.
@@ -53,6 +60,18 @@ func NewUpdateTracker(client ServiceClient, logger *slog.Logger) *UpdateTracker 
 		client:  client,
 		logger:  logger,
 		tracked: make(map[string]*trackedUpdate),
+		alerted: make(map[string]map[string]bool),
+	}
+}
+
+// Resume takes over the active rollback and stalled-update alerts left by a
+// previous run, so the next completed update resolves them.
+func (ut *UpdateTracker) Resume(active []*alert.Alert) {
+	for _, a := range active {
+		if a.Source == "swarm" && a.EntityType == "swarm_service" &&
+			(a.AlertType == alertTypeUpdateRollback || a.AlertType == alertTypeUpdateStalled) {
+			ut.markAlerted(a.EntityID, a.AlertType)
+		}
 	}
 }
 
@@ -74,6 +93,12 @@ func (ut *UpdateTracker) CheckService(ctx context.Context, serviceID string) {
 		return
 	}
 
+	serviceName := svc.Spec.Name
+	ignored := container.IgnoredByLabels(svc.Spec.Labels)
+	if ignored {
+		ut.resolveAlerts(serviceID, serviceName, fmt.Sprintf("Swarm service %s is ignored", serviceName))
+	}
+
 	us := svc.UpdateStatus
 	if us == nil || us.State == "" {
 		ut.clearTracked(serviceID)
@@ -81,7 +106,6 @@ func (ut *UpdateTracker) CheckService(ctx context.Context, serviceID string) {
 	}
 
 	state := string(us.State)
-	serviceName := svc.Spec.Name
 	newImage := ""
 	if svc.Spec.TaskTemplate.ContainerSpec != nil {
 		newImage = svc.Spec.TaskTemplate.ContainerSpec.Image
@@ -127,6 +151,7 @@ func (ut *UpdateTracker) CheckService(ctx context.Context, serviceID string) {
 			"completed_at": formatTimePtr(us.CompletedAt),
 		})
 		ut.clearTracked(serviceID)
+		ut.resolveAlerts(serviceID, serviceName, fmt.Sprintf("Swarm service %s rolling update completed", serviceName))
 
 	case state == string(swarm.UpdateStateRollbackCompleted) && prevState != string(swarm.UpdateStateRollbackCompleted):
 		ut.emit(event.SwarmUpdateCompleted, map[string]interface{}{
@@ -138,12 +163,27 @@ func (ut *UpdateTracker) CheckService(ctx context.Context, serviceID string) {
 			"completed_at": formatTimePtr(us.CompletedAt),
 		})
 
-		ut.sendAlert(alert.Event{
-			Source:     "swarm",
-			AlertType:  "update_rollback",
-			Severity:   alert.SeverityWarning,
-			Message:    fmt.Sprintf("Swarm service %s rolling update rolled back", serviceName),
-			EntityType: "swarm_service",
+		if !ignored {
+			ut.raiseAlert(alert.Event{
+				AlertType:  alertTypeUpdateRollback,
+				Message:    fmt.Sprintf("Swarm service %s rolling update rolled back", serviceName),
+				EntityID:   serviceID,
+				EntityName: serviceName,
+				Details: map[string]any{
+					"service_id": serviceID,
+					"state":      state,
+					"message":    us.Message,
+				},
+				Timestamp: now,
+			})
+		}
+		ut.clearTracked(serviceID)
+
+	case state == string(swarm.UpdateStatePaused) && prevState != string(swarm.UpdateStatePaused) && !ignored:
+		ut.raiseAlert(alert.Event{
+			AlertType:  alertTypeUpdateStalled,
+			Message:    fmt.Sprintf("Swarm service %s rolling update paused: %s", serviceName, us.Message),
+			EntityID:   serviceID,
 			EntityName: serviceName,
 			Details: map[string]any{
 				"service_id": serviceID,
@@ -152,22 +192,44 @@ func (ut *UpdateTracker) CheckService(ctx context.Context, serviceID string) {
 			},
 			Timestamp: now,
 		})
-		ut.clearTracked(serviceID)
+	}
+}
 
-	case state == string(swarm.UpdateStatePaused) && prevState != string(swarm.UpdateStatePaused):
+func (ut *UpdateTracker) raiseAlert(evt alert.Event) {
+	evt.Source = "swarm"
+	evt.Severity = alert.SeverityWarning
+	evt.EntityType = "swarm_service"
+	ut.markAlerted(evt.EntityID, evt.AlertType)
+	ut.sendAlert(evt)
+}
+
+func (ut *UpdateTracker) markAlerted(serviceID, alertType string) {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+	if ut.alerted[serviceID] == nil {
+		ut.alerted[serviceID] = make(map[string]bool)
+	}
+	ut.alerted[serviceID][alertType] = true
+}
+
+// resolveAlerts resolves the rollback and stalled-update alerts raised for a service.
+func (ut *UpdateTracker) resolveAlerts(serviceID, serviceName, message string) {
+	ut.mu.Lock()
+	raised := ut.alerted[serviceID]
+	delete(ut.alerted, serviceID)
+	ut.mu.Unlock()
+
+	for alertType := range raised {
 		ut.sendAlert(alert.Event{
 			Source:     "swarm",
-			AlertType:  "update_stalled",
-			Severity:   alert.SeverityWarning,
-			Message:    fmt.Sprintf("Swarm service %s rolling update paused: %s", serviceName, us.Message),
+			AlertType:  alertType,
+			Severity:   alert.SeverityInfo,
+			IsRecover:  true,
+			Message:    message,
 			EntityType: "swarm_service",
+			EntityID:   serviceID,
 			EntityName: serviceName,
-			Details: map[string]any{
-				"service_id": serviceID,
-				"state":      state,
-				"message":    us.Message,
-			},
-			Timestamp: now,
+			Timestamp:  time.Now(),
 		})
 	}
 }

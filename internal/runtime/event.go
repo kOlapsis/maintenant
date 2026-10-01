@@ -19,6 +19,7 @@ type RuntimeEvent struct {
 	Name         string
 	Image        string
 	ExitCode     string
+	OOMKilled    bool
 	HealthStatus string
 	ErrorDetail  string
 	ResourceType string // "container", "service", or "node"

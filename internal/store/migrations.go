@@ -155,6 +155,10 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) error {
 		return fmt.Errorf("enrollment token hash rebuild: %w", err)
 	}
 
+	if err := rebuildEscalationDeliveriesStatusCheck(ctx, db.db, logger); err != nil {
+		return fmt.Errorf("escalation delivery status rebuild: %w", err)
+	}
+
 	return nil
 }
 

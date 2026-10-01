@@ -36,14 +36,13 @@ func NewRestartDetector(store container.ContainerStore, logger *slog.Logger) *Re
 
 // RestartAlert represents a restart threshold alert.
 type RestartAlert struct {
-	ContainerID   string
-	ContainerName string
-	RestartCount  int
-	Threshold     int
-	Severity      container.AlertSeverity
-	Channels      string
-	Timestamp     time.Time
-	AgentID       string
+	ContainerID   string                  `json:"container_id"`
+	ContainerName string                  `json:"container_name"`
+	RestartCount  int                     `json:"restart_count"`
+	Threshold     int                     `json:"threshold"`
+	Severity      container.AlertSeverity `json:"severity"`
+	Timestamp     time.Time               `json:"timestamp"`
+	AgentID       string                  `json:"agent_id"`
 }
 
 // Check evaluates whether the container has exceeded its restart threshold.
@@ -72,7 +71,6 @@ func (d *RestartDetector) Check(ctx context.Context, c *container.Container) (in
 		RestartCount:  count,
 		Threshold:     c.RestartThreshold,
 		Severity:      c.AlertSeverity,
-		Channels:      c.AlertChannels,
 		Timestamp:     time.Now(),
 		AgentID:       c.AgentID,
 	}, nil
@@ -85,7 +83,6 @@ type HealthAlert struct {
 	PreviousHealth *container.HealthStatus
 	NewHealth      container.HealthStatus
 	Severity       container.AlertSeverity
-	Channels       string
 	Timestamp      time.Time
 }
 
@@ -102,7 +99,6 @@ func CheckHealthTransition(c *container.Container, previousHealth *container.Hea
 		PreviousHealth: previousHealth,
 		NewHealth:      newHealth,
 		Severity:       c.AlertSeverity,
-		Channels:       c.AlertChannels,
 		Timestamp:      time.Now(),
 	}
 }

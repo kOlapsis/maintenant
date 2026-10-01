@@ -12,6 +12,7 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/status"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -87,13 +88,7 @@ type resumeMonitorInput struct {
 	MonitorID   string `json:"monitor_id" jsonschema:"Monitor ID to resume"`
 }
 
-// checkCapability gates a tool behind the capability registry, exactly as the
-// REST requireCapability middleware does — same table, same names, so a
-// capability resolves identically whichever surface asks. The refusal names the
-// edition required; it does not advertise.
-// refuseHistoryWindow is the checkCapability of a history window: same shape of
-// answer, but the thing refused is a duration, not a flag. This surface has no
-// interface in front of it, which is exactly why the cap has to live here too.
+// refuseHistoryWindow refuses a history window beyond the running edition's cap, in the shape of checkCapability.
 func refuseHistoryWindow(w extension.HistoryWindow, required extension.Edition) (*gomcp.CallToolResult, any, error) {
 	msg := fmt.Sprintf(
 		`{"error":"edition_required","feature":%q,"window":%q,"max_window":%q,"required_edition":%q,"message":"The %s window requires the %s edition of Maintenant."}`,
@@ -106,6 +101,7 @@ func refuseHistoryWindow(w extension.HistoryWindow, required extension.Edition) 
 	}, nil, nil
 }
 
+// checkCapability refuses a tool the running edition does not open, as the REST requireCapability middleware does.
 func checkCapability(c extension.Capability) (*gomcp.CallToolResult, any, error) {
 	if extension.Allows(c) {
 		return nil, nil, nil
@@ -119,6 +115,22 @@ func checkCapability(c extension.Capability) (*gomcp.CallToolResult, any, error)
 		Content: []gomcp.Content{&gomcp.TextContent{Text: msg}},
 		IsError: true,
 	}, nil, nil
+}
+
+// checkComponentIDs refuses, as the REST API does, component ids that do not each name a distinct existing component.
+func checkComponentIDs(ctx context.Context, svc *Services, ids []string) (*gomcp.CallToolResult, any, error) {
+	if len(ids) > 0 && svc.StatusComponents == nil {
+		return errResult("status component store not available")
+	}
+	err := status.CheckComponentIDs(ctx, svc.StatusComponents, ids)
+	var invalid *status.InvalidComponentIDsError
+	if errors.As(err, &invalid) {
+		return errResult("invalid input: " + invalid.Error())
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check component_ids: %w", err)
+	}
+	return nil, nil, nil
 }
 
 // titleEdition renders an edition for display: "personal" reads as "Personal".
@@ -137,40 +149,28 @@ func acknowledgeAlertHandler(svc *Services) gomcp.ToolHandlerFor[acknowledgeAler
 		if input.AlertID == "" {
 			return errResult("invalid input: alert_id is required")
 		}
-		if svc.Alerts == nil {
+		if svc.Acknowledger == nil {
 			return errResult("alert store not available")
-		}
-		a, err := svc.Alerts.GetAlert(ctx, input.AlertID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get alert: %w", err)
-		}
-		if a == nil {
-			return errResult("not found: alert does not exist")
-		}
-		if a.Status != alert.StatusActive || a.AcknowledgedAt != nil {
-			return errResult("conflict: alert is not active or already acknowledged")
 		}
 
 		by := input.AcknowledgedBy
 		if by == "" {
 			by = "mcp"
 		}
-		now := time.Now().UTC()
-		if err := svc.Alerts.AcknowledgeAlert(ctx, input.AlertID, by, now); err != nil {
+		a, err := svc.Acknowledger.Acknowledge(ctx, input.AlertID, by)
+		switch {
+		case errors.Is(err, alert.ErrAlertNotFound):
+			return errResult("not found: alert does not exist")
+		case errors.Is(err, alert.ErrNotAcknowledgeable):
+			return errResult("conflict: alert is not active or already acknowledged")
+		case err != nil:
 			return nil, nil, fmt.Errorf("failed to acknowledge alert: %w", err)
-		}
-
-		// Best-effort: terminate active escalation runs (Pro). Noop in CE.
-		if svc.Escalator != nil {
-			if err := svc.Escalator.OnAlertAcknowledged(ctx, input.AlertID, alert.Acknowledgment{By: by, At: now}); err != nil && svc.Logger != nil {
-				svc.Logger.Warn("mcp: OnAlertAcknowledged hook error", "error", err, "alert_id", input.AlertID)
-			}
 		}
 
 		return jsonResult(map[string]any{
 			"success":         true,
 			"message":         fmt.Sprintf("Alert '%s' acknowledged by %s", input.AlertID, by),
-			"acknowledged_at": now.Format(time.RFC3339),
+			"acknowledged_at": a.AcknowledgedAt.UTC().Format(time.RFC3339),
 			"acknowledged_by": by,
 		})
 	}
@@ -191,6 +191,15 @@ func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInp
 		if st == "" {
 			st = status.IncidentInvestigating
 		}
+		if err := status.CheckSeverity("severity", input.Severity); err != nil {
+			return errResult("invalid input: " + err.Error())
+		}
+		if err := status.CheckIncidentStatus("status", st); err != nil {
+			return errResult("invalid input: " + err.Error())
+		}
+		if r, v, err := checkComponentIDs(ctx, svc, input.ComponentIDs); r != nil || err != nil {
+			return r, v, err
+		}
 
 		inc := &status.Incident{Title: input.Title, Severity: input.Severity, Status: st}
 		id, err := svc.Incidents.CreateIncident(ctx, inc, input.ComponentIDs, input.Message)
@@ -199,6 +208,9 @@ func createIncidentHandler(svc *Services) gomcp.ToolHandlerFor[createIncidentInp
 		}
 		if created, _ := svc.Incidents.GetIncident(ctx, id); created != nil {
 			inc = created
+		}
+		if svc.IncidentAnnouncer != nil {
+			svc.IncidentAnnouncer.AnnounceIncident(ctx, inc, input.Message)
 		}
 		return jsonResult(inc)
 	}
@@ -215,6 +227,9 @@ func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInp
 		if input.IncidentID == "" || input.Status == "" || input.Message == "" {
 			return errResult("invalid input: incident_id, status and message are required")
 		}
+		if err := status.CheckIncidentStatus("status", input.Status); err != nil {
+			return errResult("invalid input: " + err.Error())
+		}
 		inc, err := svc.Incidents.GetIncident(ctx, input.IncidentID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get incident: %w", err)
@@ -229,6 +244,9 @@ func updateIncidentHandler(svc *Services) gomcp.ToolHandlerFor[updateIncidentInp
 			return nil, nil, fmt.Errorf("failed to post incident update: %w", err)
 		}
 		upd.ID = updateID
+		if svc.IncidentAnnouncer != nil {
+			svc.IncidentAnnouncer.AnnounceIncidentUpdate(ctx, inc, upd)
+		}
 		return jsonResult(upd)
 	}
 }
@@ -252,8 +270,11 @@ func createMaintenanceHandler(svc *Services) gomcp.ToolHandlerFor[createMaintena
 		if err != nil {
 			return errResult("invalid input: end_time must be RFC 3339")
 		}
-		if endsAt.Before(startsAt) {
+		if !endsAt.After(startsAt) {
 			return errResult("invalid input: end_time must be after start_time")
+		}
+		if r, v, err := checkComponentIDs(ctx, svc, input.ComponentIDs); r != nil || err != nil {
+			return r, v, err
 		}
 
 		mw := &status.MaintenanceWindow{
@@ -280,8 +301,11 @@ func pauseMonitorHandler(svc *Services) gomcp.ToolHandlerFor[pauseMonitorInput, 
 		}
 		hb, err := svc.Heartbeats.PauseHeartbeat(ctx, input.MonitorID)
 		if err != nil {
-			if errors.Is(err, fmt.Errorf("not found")) {
+			if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
 				return errResult("not found: heartbeat monitor does not exist")
+			}
+			if errors.Is(err, heartbeat.ErrInvalidInput) {
+				return errResult(err.Error())
 			}
 			return nil, nil, fmt.Errorf("failed to pause heartbeat: %w", err)
 		}
@@ -299,8 +323,11 @@ func resumeMonitorHandler(svc *Services) gomcp.ToolHandlerFor[resumeMonitorInput
 		}
 		hb, err := svc.Heartbeats.ResumeHeartbeat(ctx, input.MonitorID)
 		if err != nil {
-			if errors.Is(err, fmt.Errorf("not found")) {
+			if errors.Is(err, heartbeat.ErrHeartbeatNotFound) {
 				return errResult("not found: heartbeat monitor does not exist")
+			}
+			if errors.Is(err, heartbeat.ErrInvalidInput) {
+				return errResult(err.Error())
 			}
 			return nil, nil, fmt.Errorf("failed to resume heartbeat: %w", err)
 		}

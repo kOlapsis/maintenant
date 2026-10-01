@@ -9,6 +9,7 @@ import (
 	"errors"
 	"html"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/mail"
 	"time"
@@ -24,16 +25,19 @@ type Handler struct {
 	personalization *PersonalizationPublicHandler
 	indexHTML       []byte
 	subscribeRL     *ratelimit.Limiter
+	pageURL         string
 }
 
 // NewHandler creates a new public status page handler.
 // sseHandler should be an SSEBroker that implements http.Handler for /status/events.
-func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger, subscribeRL *ratelimit.Limiter) *Handler {
+// pageURL is the public address of the page, as PageURL resolves it.
+func NewHandler(service *Service, sseHandler http.Handler, logger *slog.Logger, subscribeRL *ratelimit.Limiter, pageURL string) *Handler {
 	return &Handler{
 		service:     service,
 		sseHandler:  sseHandler,
 		logger:      logger,
 		subscribeRL: subscribeRL,
+		pageURL:     pageURL,
 	}
 }
 
@@ -105,13 +109,15 @@ type StatusAPIResponse struct {
 	ActiveIncidents        []APIIncidentBrief  `json:"active_incidents"`
 	UpcomingMaint          []APIMaintBrief     `json:"upcoming_maintenance"`
 	PersonalizationVersion int64               `json:"personalization_version,omitempty"`
+	SubscriptionsEnabled   bool                `json:"subscriptions_enabled"`
 }
 
 // APIComponentBrief is a brief component in the JSON API.
 type APIComponentBrief struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	ID       string       `json:"id"`
+	Name     string       `json:"name"`
+	Status   string       `json:"status"`
+	Monitors []MonitorRef `json:"monitors"`
 }
 
 // APIIncidentBrief is a brief incident in the JSON API.
@@ -151,9 +157,10 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := StatusAPIResponse{
-		GlobalStatus:  data.GlobalStatus,
-		GlobalMessage: data.GlobalMessage,
-		UpdatedAt:     time.Now().UTC(),
+		GlobalStatus:         data.GlobalStatus,
+		GlobalMessage:        data.GlobalMessage,
+		UpdatedAt:            time.Now().UTC(),
+		SubscriptionsEnabled: h.service.SubscriptionsEnabled(),
 	}
 	if h.personalization != nil {
 		resp.PersonalizationVersion = h.personalization.GetVersion(r)
@@ -161,22 +168,21 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 
 	for _, c := range data.Components {
 		resp.Components = append(resp.Components, APIComponentBrief{
-			ID:     c.ID,
-			Name:   c.DisplayName,
-			Status: c.EffectiveStatus,
+			ID:       c.ID,
+			Name:     c.DisplayName,
+			Status:   c.EffectiveStatus,
+			Monitors: c.Monitors,
 		})
 	}
 
 	for _, inc := range data.ActiveIncidents {
 		brief := APIIncidentBrief{
-			ID:        inc.ID,
-			Title:     inc.Title,
-			Severity:  inc.Severity,
-			Status:    inc.Status,
-			CreatedAt: inc.CreatedAt,
-		}
-		for _, c := range inc.Components {
-			brief.Components = append(brief.Components, c.Name)
+			ID:         inc.ID,
+			Title:      inc.Title,
+			Severity:   inc.Severity,
+			Status:     inc.Status,
+			Components: PublicComponentNames(inc.Components),
+			CreatedAt:  inc.CreatedAt,
 		}
 		if len(inc.Updates) > 0 {
 			u := inc.Updates[0]
@@ -190,16 +196,13 @@ func (h *Handler) HandleStatusAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, mw := range data.Maintenance {
-		brief := APIMaintBrief{
-			ID:       mw.ID,
-			Title:    mw.Title,
-			StartsAt: mw.StartsAt,
-			EndsAt:   mw.EndsAt,
-		}
-		for _, c := range mw.Components {
-			brief.Components = append(brief.Components, c.Name)
-		}
-		resp.UpcomingMaint = append(resp.UpcomingMaint, brief)
+		resp.UpcomingMaint = append(resp.UpcomingMaint, APIMaintBrief{
+			ID:         mw.ID,
+			Title:      mw.Title,
+			StartsAt:   mw.StartsAt,
+			EndsAt:     mw.EndsAt,
+			Components: PublicComponentNames(mw.Components),
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -225,15 +228,15 @@ func limitBody(maxBytes int64, next http.Handler) http.Handler {
 
 // HandleSubscribe processes a new email subscription request.
 func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
-	if h.service.subscribers == nil {
-		http.Error(w, "Subscriptions not available", http.StatusServiceUnavailable)
+	if !h.service.SubscriptionsEnabled() {
+		writeSubscriptionsUnavailable(w)
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxStatusBody)
 
 	if !h.subscribeRL.AllowRequest(r) {
-		http.Error(w, "Too many requests", http.StatusTooManyRequests)
+		h.subscribeRL.Reject(w)
 		return
 	}
 
@@ -241,49 +244,76 @@ func (h *Handler) HandleSubscribe(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 	}
 
-	contentType := r.Header.Get("Content-Type")
-	if contentType == "application/json" {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		mediaType = ""
+	}
+	switch mediaType {
+	case "application/json":
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
-				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body too large")
 				return
 			}
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 			return
 		}
-	} else {
+	case "application/x-www-form-urlencoded":
 		if err := r.ParseForm(); err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
-				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+				writeJSONError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Request body too large")
 				return
 			}
-			http.Error(w, "Invalid form", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", "Invalid form")
 			return
 		}
 		req.Email = r.PostFormValue("email")
+	default:
+		writeJSONError(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
+			"Content-Type must be application/json or application/x-www-form-urlencoded")
+		return
 	}
 
 	if len(req.Email) > maxEmailLength {
-		http.Error(w, "Email is too long", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_email", "Email is too long")
 		return
 	}
 	addr, err := mail.ParseAddress(req.Email)
 	if err != nil {
-		http.Error(w, "Email is not a valid address", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_email", "Email is not a valid address")
 		return
 	}
 	req.Email = addr.Address
 
 	if err := h.service.subscribers.Subscribe(r.Context(), req.Email); err != nil {
 		h.logger.Error("subscribe failed", "error", err)
-		http.Error(w, "Subscription failed", http.StatusInternalServerError)
+		if errors.Is(err, ErrSubscriptionsDisabled) {
+			writeSubscriptionsUnavailable(w)
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "subscription_failed", "Subscription failed")
 		return
 	}
 
+	// New, pending or already confirmed: the answer is the same, so it reveals nobody's subscription.
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "confirmation_sent"})
+}
+
+func writeSubscriptionsUnavailable(w http.ResponseWriter) {
+	writeJSONError(w, http.StatusServiceUnavailable, "subscriptions_unavailable",
+		"Email subscriptions are not available on this status page")
+}
+
+// writeJSONError answers with the error shape of the rest of the API.
+func writeJSONError(w http.ResponseWriter, statusCode int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error": map[string]string{"code": code, "message": message},
+	})
 }
 
 // HandleConfirm processes a subscription confirmation.
@@ -294,7 +324,7 @@ func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.service.subscribers == nil {
+	if !h.service.SubscriptionsEnabled() {
 		writeSimpleHTML(w, http.StatusServiceUnavailable, "Error", "Subscriptions not available.")
 		return
 	}

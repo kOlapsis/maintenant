@@ -80,7 +80,7 @@ func TestIsUnavailable(t *testing.T) {
 // TestSentinelsCarryNoSecret pins that no startup sentinel can ever leak a
 // credential: their messages are constants.
 func TestSentinelsCarryNoSecret(t *testing.T) {
-	for _, err := range []error{ErrInvalidDSN, ErrUnreachable, ErrAuthRefused, ErrUnsupportedVersion, ErrSchemaNewer} {
+	for _, err := range []error{ErrInvalidDSN, ErrUnreachable, ErrAuthRefused, ErrTLSRefused, ErrUnsupportedVersion, ErrSchemaNewer} {
 		assert.NotContains(t, err.Error(), "://")
 		assert.NotContains(t, err.Error(), "password")
 	}

@@ -5,8 +5,10 @@ package v1
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"time"
 
@@ -21,28 +23,28 @@ type StatusAdminHandler struct {
 	incidents   status.IncidentStore
 	subscribers status.SubscriberStore
 	maintenance status.MaintenanceStore
+	maintRunner status.MaintenanceRunner
 	statusSvc   *status.Service
-	broker      *SSEBroker
-	mailer      func(status.SmtpConfig) status.Mailer
+	mailer      status.Mailer
 }
 
-// NewStatusAdminHandler creates a new status admin handler.
+// NewStatusAdminHandler creates a status admin handler; a nil mailer means SMTP is not configured, a nil runner that no window ever runs.
 func NewStatusAdminHandler(
 	components status.ComponentStore,
 	incidents status.IncidentStore,
 	subscribers status.SubscriberStore,
 	maintenance status.MaintenanceStore,
+	maintRunner status.MaintenanceRunner,
 	statusSvc *status.Service,
-	broker *SSEBroker,
-	mailer func(status.SmtpConfig) status.Mailer,
+	mailer status.Mailer,
 ) *StatusAdminHandler {
 	return &StatusAdminHandler{
 		components:  components,
 		incidents:   incidents,
 		subscribers: subscribers,
 		maintenance: maintenance,
+		maintRunner: maintRunner,
 		statusSvc:   statusSvc,
-		broker:      broker,
 		mailer:      mailer,
 	}
 }
@@ -152,10 +154,11 @@ func (h *StatusAdminHandler) HandleCreateComponent(w http.ResponseWriter, r *htt
 	}
 	if _, err := h.components.CreateComponent(r.Context(), c); err != nil {
 		slog.Error("failed to create status component", "error", err)
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create component")
+		WriteError(w, http.StatusInternalServerError, "internal", "Failed to create component")
 		return
 	}
 	c.EffectiveStatus = h.statusSvc.DeriveComponentStatus(r.Context(), c)
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentCreated, c.ID, c.Visible)
 	WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -170,6 +173,7 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 		WriteError(w, http.StatusNotFound, "not_found", "Component not found")
 		return
 	}
+	wasVisible := existing.Visible
 	var req struct {
 		CompositionMode *string             `json:"composition_mode"`
 		Monitors        []status.MonitorRef `json:"monitors"`
@@ -230,6 +234,10 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 		if *req.StatusOverride == "" {
 			existing.StatusOverride = nil
 		} else {
+			if err := status.CheckComponentStatus("status_override", *req.StatusOverride); err != nil {
+				WriteError(w, http.StatusBadRequest, "validation", err.Error())
+				return
+			}
 			existing.StatusOverride = req.StatusOverride
 		}
 	}
@@ -247,6 +255,7 @@ func (h *StatusAdminHandler) HandleUpdateComponent(w http.ResponseWriter, r *htt
 	} else {
 		existing.EffectiveStatus = existing.DerivedStatus
 	}
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentUpdated, existing.ID, wasVisible || existing.Visible)
 	WriteJSON(w, http.StatusOK, existing)
 }
 
@@ -256,10 +265,16 @@ func (h *StatusAdminHandler) HandleDeleteComponent(w http.ResponseWriter, r *htt
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid component ID")
 		return
 	}
+	existing, err := h.components.GetComponent(r.Context(), id)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 	if err := h.components.DeleteComponent(r.Context(), id); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	h.statusSvc.AnnounceComponentChange(r.Context(), event.StatusComponentDeleted, id, existing != nil && existing.Visible)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -306,6 +321,17 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 	if req.Status == "" {
 		req.Status = status.IncidentInvestigating
 	}
+	if err := status.CheckSeverity("severity", req.Severity); err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	if err := status.CheckIncidentStatus("status", req.Status); err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
+		return
+	}
 	inc := &status.Incident{
 		Title:    req.Title,
 		Severity: req.Severity,
@@ -320,18 +346,7 @@ func (h *StatusAdminHandler) HandleCreateIncident(w http.ResponseWriter, r *http
 	if created != nil {
 		inc = created
 	}
-
-	compNames := make([]string, 0, len(inc.Components))
-	for _, c := range inc.Components {
-		compNames = append(compNames, c.Name)
-	}
-	h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentCreated, Data: map[string]any{
-		"id":         inc.ID,
-		"title":      inc.Title,
-		"severity":   inc.Severity,
-		"status":     inc.Status,
-		"components": compNames,
-	}})
+	h.statusSvc.AnnounceIncident(r.Context(), inc, req.Message)
 
 	WriteJSON(w, http.StatusCreated, inc)
 }
@@ -359,6 +374,10 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 		WriteError(w, http.StatusBadRequest, "validation", "status and message are required")
 		return
 	}
+	if err := status.CheckIncidentStatus("status", req.Status); err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", err.Error())
+		return
+	}
 	upd := &status.IncidentUpdate{
 		IncidentID: id,
 		Status:     req.Status,
@@ -370,19 +389,7 @@ func (h *StatusAdminHandler) HandlePostUpdate(w http.ResponseWriter, r *http.Req
 		return
 	}
 	upd.ID = updateID
-
-	if req.Status == status.IncidentResolved {
-		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentResolved, Data: map[string]any{
-			"id":    id,
-			"title": inc.Title,
-		}})
-	} else {
-		h.broker.Broadcast(SSEEvent{Type: event.StatusIncidentUpdated, Data: map[string]any{
-			"id":      id,
-			"status":  req.Status,
-			"message": req.Message,
-		}})
-	}
+	h.statusSvc.AnnounceIncidentUpdate(r.Context(), inc, upd)
 
 	WriteJSON(w, http.StatusCreated, upd)
 }
@@ -411,7 +418,14 @@ func (h *StatusAdminHandler) HandleUpdateIncident(w http.ResponseWriter, r *http
 		inc.Title = *req.Title
 	}
 	if req.Severity != nil {
+		if err := status.CheckSeverity("severity", *req.Severity); err != nil {
+			WriteError(w, http.StatusBadRequest, "validation", err.Error())
+			return
+		}
 		inc.Severity = *req.Severity
+	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
+		return
 	}
 	if err := h.incidents.UpdateIncident(r.Context(), inc, req.ComponentIDs); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
@@ -479,8 +493,11 @@ func (h *StatusAdminHandler) HandleCreateMaintenance(w http.ResponseWriter, r *h
 		WriteError(w, http.StatusBadRequest, "validation", "Invalid ends_at format")
 		return
 	}
-	if endsAt.Before(startsAt) {
+	if !endsAt.After(startsAt) {
 		WriteError(w, http.StatusBadRequest, "validation", "ends_at must be after starts_at")
+		return
+	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
 		return
 	}
 	mw := &status.MaintenanceWindow{
@@ -549,6 +566,13 @@ func (h *StatusAdminHandler) HandleUpdateMaintenance(w http.ResponseWriter, r *h
 		}
 		existing.EndsAt = t
 	}
+	if !existing.EndsAt.After(existing.StartsAt) {
+		WriteError(w, http.StatusBadRequest, "validation", "ends_at must be after starts_at")
+		return
+	}
+	if !h.componentIDsExist(w, r, req.ComponentIDs) {
+		return
+	}
 	if err := h.maintenance.UpdateMaintenance(r.Context(), existing, req.ComponentIDs); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -566,11 +590,32 @@ func (h *StatusAdminHandler) HandleDeleteMaintenance(w http.ResponseWriter, r *h
 		WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid maintenance ID")
 		return
 	}
-	if err := h.maintenance.DeleteMaintenance(r.Context(), id); err != nil {
+	var err error
+	if h.maintRunner != nil {
+		err = h.maintRunner.DeleteWindow(r.Context(), id)
+	} else {
+		err = h.maintenance.DeleteMaintenance(r.Context(), id)
+	}
+	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// componentIDsExist answers 400 unless every id names a distinct existing component.
+func (h *StatusAdminHandler) componentIDsExist(w http.ResponseWriter, r *http.Request, ids []string) bool {
+	err := status.CheckComponentIDs(r.Context(), h.components, ids)
+	var invalid *status.InvalidComponentIDsError
+	switch {
+	case errors.As(err, &invalid):
+		WriteError(w, http.StatusBadRequest, "validation", invalid.Error())
+		return false
+	case err != nil:
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return false
+	}
+	return true
 }
 
 // --- Subscribers ---
@@ -610,74 +655,30 @@ func (h *StatusAdminHandler) HandleListSubscribers(w http.ResponseWriter, r *htt
 	})
 }
 
-// --- SMTP Config ---
+// --- SMTP ---
 
-func (h *StatusAdminHandler) HandleGetSmtpConfig(w http.ResponseWriter, r *http.Request) {
-	cfg := h.statusSvc.GetSmtpConfig()
-	if cfg == nil {
-		WriteJSON(w, http.StatusOK, struct {
-			Host        string `json:"host"`
-			Port        int    `json:"port"`
-			Username    string `json:"username"`
-			TLSPolicy   string `json:"tls_policy"`
-			FromAddress string `json:"from_address"`
-			FromName    string `json:"from_name"`
-			Configured  bool   `json:"configured"`
-			PasswordSet bool   `json:"password_set"`
-		}{})
+// HandleTestSmtp sends a test email to the given address through the SMTP server of the environment.
+func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Request) {
+	if h.mailer == nil {
+		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured: set MAINTENANT_SMTP_HOST")
 		return
 	}
-	resp := struct {
-		Host        string `json:"host"`
-		Port        int    `json:"port"`
-		Username    string `json:"username"`
-		TLSPolicy   string `json:"tls_policy"`
-		FromAddress string `json:"from_address"`
-		FromName    string `json:"from_name"`
-		Configured  bool   `json:"configured"`
-		PasswordSet bool   `json:"password_set"`
-	}{
-		Host:        cfg.Host,
-		Port:        cfg.Port,
-		Username:    cfg.Username,
-		TLSPolicy:   cfg.TLSPolicy,
-		FromAddress: cfg.FromAddress,
-		FromName:    cfg.FromName,
-		Configured:  cfg.Configured,
-		PasswordSet: cfg.Password != "",
+	var req struct {
+		To string `json:"to"`
 	}
-	WriteJSON(w, http.StatusOK, resp)
-}
-
-func (h *StatusAdminHandler) HandleUpdateSmtpConfig(w http.ResponseWriter, r *http.Request) {
-	var cfg status.SmtpConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON")
 		return
 	}
-	if cfg.Password == "" {
-		if old := h.statusSvc.GetSmtpConfig(); old != nil {
-			cfg.Password = old.Password
-		}
-	}
-	cfg.Configured = cfg.Host != "" && cfg.Port > 0 && cfg.FromAddress != ""
-	h.statusSvc.SetSmtpConfig(&cfg)
-	WriteJSON(w, http.StatusOK, map[string]string{"status": "saved"})
-}
-
-func (h *StatusAdminHandler) HandleTestSmtp(w http.ResponseWriter, r *http.Request) {
-	cfg := h.statusSvc.GetSmtpConfig()
-	if cfg == nil || !cfg.Configured {
-		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
+	addr, err := mail.ParseAddress(req.To)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "validation", "to must be a valid email address")
 		return
 	}
-	if h.mailer == nil {
-		WriteError(w, http.StatusBadRequest, "not_configured", "SMTP is not configured")
-		return
-	}
-	client := h.mailer(*cfg)
-	if err := client.Send(cfg.FromAddress, "Maintenant SMTP Test", "<p>This is a test email from Maintenant.</p>"); err != nil {
-		WriteJSON(w, http.StatusOK, map[string]any{"status": "error", "error": err.Error()})
+	if err := h.mailer.Send(r.Context(), addr.Address, "maintenant SMTP test",
+		"This is a test email from the maintenant status page.\n\n"+
+			"If you received it, subscription confirmations and incident notifications can be delivered.\n"); err != nil {
+		WriteError(w, http.StatusBadGateway, "smtp_failed", err.Error())
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "sent"})

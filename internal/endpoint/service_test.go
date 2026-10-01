@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -703,7 +705,7 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 		Store:          store,
 		Engine:         noopEngine(),
 		Logger:         noopLogger(),
-		LicenseChecker: &DefaultLicenseChecker{MaxEndpoints: 2},
+		LicenseChecker: endpointCap(2),
 	})
 	ctx := context.Background()
 
@@ -738,7 +740,7 @@ func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) 
 		Store:          store,
 		Engine:         noopEngine(),
 		Logger:         noopLogger(),
-		LicenseChecker: &DefaultLicenseChecker{MaxEndpoints: 2},
+		LicenseChecker: endpointCap(2),
 	})
 	ctx := context.Background()
 
@@ -746,7 +748,7 @@ func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) 
 	for i := 1; i <= 5; i++ {
 		labels[fmt.Sprintf("maintenant.endpoint.%d.http", i)] = fmt.Sprintf("http://svc:80%d/health", i)
 	}
-	svc.SyncEndpoints(ctx, "web", "container-1", labels, "", "")
+	svc.SyncEndpoints(ctx, "web", "container-1", labels)
 
 	all, err := store.ListEndpoints(ctx, ListEndpointsOpts{})
 	require.NoError(t, err)
@@ -772,26 +774,16 @@ func TestService_CreateStandalone_LabelEndpointsDoNotConsumeQuota(t *testing.T) 
 	require.Equal(t, 2, count, "the reported usage never exceeds the cap")
 }
 
-// TestDefaultLicenseChecker_Unlimited: extension.Limit reports -1 for an
-// uncapped resource, and the checker must read that as "no cap" rather than as
-// a maximum of minus one, which would refuse every creation.
-func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxEndpoints: -1}
-	for _, count := range []int{0, 1, 10, 1000} {
-		if !c.CanCreateEndpoint(count) {
-			t.Errorf("CanCreateEndpoint(%d) = false with an unlimited cap", count)
-		}
-	}
-}
+type endpointCap int
 
-func TestDefaultLicenseChecker_Capped(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxEndpoints: 10}
-	if !c.CanCreateEndpoint(9) {
-		t.Error("the tenth endpoint must be allowed")
-	}
-	if c.CanCreateEndpoint(10) {
-		t.Error("the eleventh endpoint must be refused")
-	}
+func (c endpointCap) CanCreateEndpoint(currentCount int) bool { return currentCount < int(c) }
+
+func TestDefaultLicenseChecker_AppliesTheRunningEditionCap(t *testing.T) {
+	limit := extension.Limit(extension.ResourceEndpoints)
+	require.Positive(t, limit)
+	c := DefaultLicenseChecker{}
+	assert.True(t, c.CanCreateEndpoint(limit-1))
+	assert.False(t, c.CanCreateEndpoint(limit))
 }
 
 // ---------------------------------------------------------------------------
@@ -1088,4 +1080,89 @@ func TestService_ProcessCheckResult_DuplicateReplayDoesNotInflateCounters(t *tes
 
 	assert.Equal(t, first.ConsecutiveFailures, second.ConsecutiveFailures,
 		"the same probe delivered twice must count once")
+}
+
+func TestParseEndpointLabels_IgnoredContainerDeclaresNone(t *testing.T) {
+	parsed, errs := ParseEndpointLabels(map[string]string{
+		"maintenant.ignore":        "true",
+		"maintenant.endpoint.http": "http://web:8080/health",
+		"maintenant.endpoint.tcp":  "not a target",
+	}, noopLogger())
+	assert.Empty(t, parsed)
+	assert.Empty(t, errs)
+}
+
+// A label cannot probe faster than the API allows: the interval is raised to the
+// minimum, and the operator is told why.
+func TestParseEndpointLabels_IntervalBelowTheMinimumIsRaised(t *testing.T) {
+	var logs strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+	parsed, errs := ParseEndpointLabels(map[string]string{
+		"maintenant.endpoint.0.http":     "http://web:8080/health",
+		"maintenant.endpoint.0.interval": "1s",
+		"maintenant.endpoint.1.http":     "http://web:8080/ready",
+		"maintenant.endpoint.1.interval": "10s",
+	}, logger)
+	require.Empty(t, errs)
+	require.Len(t, parsed, 2)
+
+	intervals := map[string]time.Duration{}
+	for _, p := range parsed {
+		intervals[p.Target] = time.Duration(p.Config.Interval)
+	}
+	assert.Equal(t, MinInterval, intervals["http://web:8080/health"])
+	assert.Equal(t, 10*time.Second, intervals["http://web:8080/ready"])
+	assert.Contains(t, logs.String(), "endpoint interval below the minimum")
+}
+
+func TestValidateTarget(t *testing.T) {
+	for _, tc := range []struct {
+		typ    EndpointType
+		target string
+		ok     bool
+	}{
+		{TypeHTTP, "https://example.com/health", true},
+		{TypeHTTP, "http://10.0.0.1:8080", true},
+		{TypeHTTP, "ftp://example.com", false},
+		{TypeHTTP, "/health", false},
+		{TypeHTTP, "example.com", false},
+		{TypeTCP, "db:5432", true},
+		{TypeTCP, "[::1]:6379", true},
+		{TypeTCP, "db", false},
+		{TypeTCP, ":5432", false},
+		{TypeTCP, "db:http", false},
+		{TypeTCP, "db:0", false},
+		{TypeTCP, "db:70000", false},
+		{"icmp", "db", false},
+	} {
+		err := ValidateTarget(tc.typ, tc.target)
+		assert.Equal(t, tc.ok, err == nil, "%s %q: %v", tc.typ, tc.target, err)
+	}
+}
+
+func TestService_SyncEndpoints_IgnoredContainerLosesItsEndpoints(t *testing.T) {
+	store := newMemStore()
+	svc := newService(store)
+	ctx := context.Background()
+	labels := map[string]string{"maintenant.endpoint.http": "http://web:8080/health"}
+
+	svc.SyncEndpoints(ctx, "web", "container-1", labels)
+	eps, err := store.ListEndpointsByExternalID(ctx, uid.LocalAgent, "container-1")
+	require.NoError(t, err)
+	require.Len(t, eps, 1)
+
+	labels["maintenant.ignore"] = "true"
+	svc.SyncEndpoints(ctx, "web", "container-1", labels)
+	ep, err := store.GetEndpointByID(ctx, eps[0].ID)
+	require.NoError(t, err)
+	assert.False(t, ep.Active, "an ignored container keeps no endpoint")
+
+	svc.SyncAgentEndpoints(ctx, "agent-1", "api", "container-2", map[string]string{
+		"maintenant.ignore":        "1",
+		"maintenant.endpoint.http": "http://api:8080/health",
+	})
+	agentEps, err := store.ListEndpointsByExternalID(ctx, "agent-1", "container-2")
+	require.NoError(t, err)
+	assert.Empty(t, agentEps)
 }

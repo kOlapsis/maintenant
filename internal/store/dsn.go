@@ -50,17 +50,23 @@ func localDSNHost(u *url.URL) bool {
 // An unparseable string is returned unchanged; opening it fails with
 // ErrInvalidDSN anyway.
 func ApplyDefaultSSLMode(raw string) string {
-	u, err := ParseDSN(raw)
-	if err != nil {
+	if !DefaultsSSLMode(raw) {
 		return raw
 	}
+	u, _ := ParseDSN(raw)
 	q := u.Query()
-	if q.Has("sslmode") || localDSNHost(u) {
-		return raw
-	}
 	q.Set("sslmode", "require")
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+// DefaultsSSLMode reports whether ApplyDefaultSSLMode adds sslmode=require to raw.
+func DefaultsSSLMode(raw string) bool {
+	u, err := ParseDSN(raw)
+	if err != nil {
+		return false
+	}
+	return !u.Query().Has("sslmode") && !localDSNHost(u)
 }
 
 // RedactDSN renders a connection string safe for logs and errors:

@@ -56,7 +56,11 @@ func (s *AlertStoreImpl) InsertAlert(ctx context.Context, a *alert.Alert) (strin
 func (s *AlertStoreImpl) GetAlert(ctx context.Context, id string) (*alert.Alert, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+alertColumns+` FROM alerts WHERE id = ?`, id)
-	return scanAlertFromRow(row)
+	a, err := scanAlertFromRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return a, err
 }
 
 func (s *AlertStoreImpl) ListAlerts(ctx context.Context, opts alert.ListAlertsOpts) ([]*alert.Alert, error) {
@@ -75,12 +79,16 @@ func (s *AlertStoreImpl) ListAlerts(ctx context.Context, opts alert.ListAlertsOp
 		query += ` AND status = ?`
 		args = append(args, opts.Status)
 	}
-	if opts.Before != nil {
+	switch {
+	case opts.Before != nil && opts.BeforeID != "":
+		query += ` AND (fired_at < ? OR (fired_at = ? AND id < ?))`
+		args = append(args, opts.Before.Unix(), opts.Before.Unix(), opts.BeforeID)
+	case opts.Before != nil:
 		query += ` AND fired_at < ?`
 		args = append(args, opts.Before.Unix())
 	}
 
-	query += ` ORDER BY fired_at DESC`
+	query += ` ORDER BY fired_at DESC, id DESC`
 
 	limit := opts.Limit
 	if limit <= 0 || limit > 200 {
@@ -164,9 +172,9 @@ func (s *AlertStoreImpl) ListActiveAlerts(ctx context.Context) ([]*alert.Alert, 
 	return alerts, rows.Err()
 }
 
-func (s *AlertStoreImpl) DeleteAlertsOlderThan(ctx context.Context, before time.Time) (int64, error) {
+func (s *AlertStoreImpl) DeleteInactiveAlertsOlderThan(ctx context.Context, before time.Time) (int64, error) {
 	res, err := s.writer.Exec(ctx,
-		`DELETE FROM alerts WHERE created_at < ?`,
+		`DELETE FROM alerts WHERE status <> 'active' AND COALESCE(resolved_at, created_at) < ?`,
 		before.Unix(),
 	)
 	if err != nil {
@@ -220,16 +228,16 @@ func scanAlertFromRow(scanner rowScanner) (*alert.Alert, error) {
 	return a, nil
 }
 
-func (s *AlertStoreImpl) AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) error {
-	_, err := s.writer.Exec(ctx,
+func (s *AlertStoreImpl) AcknowledgeAlert(ctx context.Context, id string, by string, at time.Time) (bool, error) {
+	res, err := s.writer.Exec(ctx,
 		`UPDATE alerts SET acknowledged_at = ?, acknowledged_by = ?
 		WHERE id = ? AND status = 'active' AND acknowledged_at IS NULL`,
 		at.Unix(), by, id,
 	)
 	if err != nil {
-		return fmt.Errorf("acknowledge alert: %w", err)
+		return false, fmt.Errorf("acknowledge alert: %w", err)
 	}
-	return nil
+	return res.RowsAffected == 1, nil
 }
 
 func (s *AlertStoreImpl) SetEscalatedAt(ctx context.Context, id string, at time.Time) error {
@@ -246,8 +254,8 @@ func (s *AlertStoreImpl) SetEscalatedAt(ctx context.Context, id string, at time.
 func (s *AlertStoreImpl) ListUnacknowledgedActiveAlerts(ctx context.Context) ([]*alert.Alert, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+alertColumns+` FROM alerts
-		WHERE status = 'active' AND acknowledged_at IS NULL AND escalated_at IS NULL
-		ORDER BY fired_at ASC`)
+		WHERE status = 'active' AND acknowledged_at IS NULL
+		ORDER BY fired_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list unacknowledged active alerts: %w", err)
 	}

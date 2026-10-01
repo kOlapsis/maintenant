@@ -1,0 +1,1 @@
+ALTER TABLE status_components DROP COLUMN override_before_maintenance;

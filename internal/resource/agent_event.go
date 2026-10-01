@@ -6,6 +6,8 @@ package resource
 import (
 	"context"
 	"math"
+	"sync"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/agentevent"
 	"github.com/kolapsis/maintenant/internal/agentpb"
@@ -32,7 +34,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	c, err := s.containerSvc.GetContainerByExternalID(ctx, agentID, containerExternalID)
-	if err != nil || c == nil {
+	if err != nil || c == nil || c.IsIgnored {
 		return err
 	}
 
@@ -53,8 +55,58 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		snap.ID = uid.EventRecord(snap.AgentID, meta.EventID, "resource_snapshot")
 	}
 
+	if !snap.Replayed {
+		s.agentLatest.put(snap, time.Now())
+	}
 	s.processSnapshot(snap)
 	return nil
+}
+
+const agentSnapshotTTL = 35 * time.Second
+
+// agentLatest ages each sample by its receive time: an agent's skewed clock must not keep a stale sample live.
+type agentLatest struct {
+	mu      sync.Mutex
+	samples map[string]agentSample
+}
+
+type agentSample struct {
+	snap       *ResourceSnapshot
+	receivedAt time.Time
+}
+
+func (a *agentLatest) put(snap *ResourceSnapshot, now time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.samples == nil {
+		a.samples = make(map[string]agentSample)
+	}
+	setNetRates(snap, a.samples[snap.ContainerID].snap)
+	a.samples[snap.ContainerID] = agentSample{snap: snap, receivedAt: now}
+}
+
+func (a *agentLatest) get(containerID string, now time.Time) *ResourceSnapshot {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur, ok := a.samples[containerID]
+	if !ok || now.Sub(cur.receivedAt) > agentSnapshotTTL {
+		return nil
+	}
+	return cur.snap
+}
+
+func (a *agentLatest) fresh(now time.Time) map[string]*ResourceSnapshot {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make(map[string]*ResourceSnapshot, len(a.samples))
+	for id, cur := range a.samples {
+		if now.Sub(cur.receivedAt) > agentSnapshotTTL {
+			delete(a.samples, id)
+			continue
+		}
+		out[id] = cur.snap
+	}
+	return out
 }
 
 // clampInt64 converts an unsigned byte/count metric to int64, saturating at

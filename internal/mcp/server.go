@@ -35,7 +35,7 @@ type AgentLister interface {
 	List(ctx context.Context, statusFilter string) ([]*agent.Agent, error)
 }
 
-// SessionChecker reports whether an agent currently has an active gRPC stream.
+// ChannelTester sends a test notification through a channel.
 type ChannelTester interface {
 	SendTestWebhook(ctx context.Context, ch *alert.NotificationChannel) (int, error)
 }
@@ -45,8 +45,15 @@ type ChannelValidators interface {
 	Validator(chType string) (alert.ChannelValidator, bool)
 }
 
+// SessionChecker reports whether an agent currently has an active gRPC stream.
 type SessionChecker interface {
 	IsConnected(agentID string) bool
+}
+
+// IncidentAnnouncer pushes incident changes to the public status page and emails its subscribers.
+type IncidentAnnouncer interface {
+	AnnounceIncident(ctx context.Context, inc *status.Incident, message string)
+	AnnounceIncidentUpdate(ctx context.Context, inc *status.Incident, upd *status.IncidentUpdate)
 }
 
 // AgentLogFetcher reads logs of a container living on a remote agent's host,
@@ -84,12 +91,14 @@ type Services struct {
 	Alerts            alert.AlertStore
 	Channels          alert.ChannelStore
 	Triggers          alert.TriggerStore
-	Escalator         alert.Escalator
+	Acknowledger      alert.Acknowledger
 	ChannelTester     ChannelTester
 	ChannelValidators ChannelValidators
 	Updates           *update.Service
 	Incidents         status.IncidentStore
+	IncidentAnnouncer IncidentAnnouncer
 	Maintenance       status.MaintenanceStore
+	StatusComponents  status.ComponentStore
 	Runtime           runtime.Runtime
 	LogFetcher        LogFetcher
 	EscalationSvc     escalation.Service

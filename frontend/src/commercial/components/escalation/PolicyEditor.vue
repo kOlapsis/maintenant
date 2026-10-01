@@ -10,7 +10,12 @@ import { RouterLink } from 'vue-router'
 import { useEscalationStore } from '@/commercial/stores/escalation'
 import { useTriggersStore } from '@/stores/triggers'
 import { apiFetch } from '@/services/apiFetch'
-import type { EscalationPolicy, OverlapWarning as OverlapWarningType } from '@/commercial/types/escalation'
+import type {
+  EscalationPolicy,
+  EscalationScope,
+  OverlapWarning as OverlapWarningType,
+  PolicyRequest,
+} from '@/commercial/types/escalation'
 import { X, Plus, Loader2, ArrowRight, Shield } from 'lucide-vue-next'
 import LevelEditor from './LevelEditor.vue'
 import OverlapWarningComponent from './OverlapWarning.vue'
@@ -31,7 +36,6 @@ interface Channel {
 
 const props = defineProps<{
   policy?: EscalationPolicy | null
-  maxLevels?: number
 }>()
 
 const emit = defineEmits<{
@@ -46,8 +50,10 @@ const escalationApi = useEscalationApi()
 const name = ref(props.policy?.name ?? '')
 const active = ref(props.policy?.active ?? true)
 const severities = ref<string[]>(props.policy?.filters.severities ?? [])
+const scopes = ref<EscalationScope[]>(props.policy?.filters.scopes.map((s) => ({ ...s })) ?? [])
 
-const maxLevels = computed(() => props.maxLevels ?? 5)
+const maxLevels = computed(() => store.limits?.max_levels ?? null)
+const canAddLevel = computed(() => maxLevels.value === null || levels.value.length < maxLevels.value)
 const levels = ref<Array<{ delay_seconds: number; channel_ids: string[] }>>(
   props.policy?.levels.map((l) => ({ delay_seconds: l.delay_seconds, channel_ids: [...l.channel_ids] })) ??
     [{ delay_seconds: 300, channel_ids: [] }],
@@ -61,14 +67,13 @@ const overlapWarnings = ref<OverlapWarningType[]>([])
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-function buildCurrentPayload() {
+function buildCurrentPayload(): PolicyRequest {
   return {
     name: name.value.trim(),
     active: active.value,
     filters: {
       severities: severities.value,
-      scopes: [],
-      tags: [],
+      scopes: scopes.value,
     },
     levels: levels.value.map((l) => ({
       delay_seconds: l.delay_seconds,
@@ -94,7 +99,7 @@ watch([name, severities, levels], () => checkOverlap(), { deep: true })
 const SEVERITY_OPTIONS = ['warning', 'critical']
 
 function addLevel() {
-  if (levels.value.length >= maxLevels.value) return
+  if (!canAddLevel.value) return
   const last = levels.value[levels.value.length - 1]
   const prevDelay = last?.delay_seconds ?? 300
   levels.value = [...levels.value, { delay_seconds: prevDelay + 300, channel_ids: [] }]
@@ -131,19 +136,7 @@ async function handleSave() {
   saveError.value = null
   saving.value = true
   try {
-    const payload = {
-      name: name.value.trim(),
-      active: active.value,
-      filters: {
-        severities: severities.value,
-        scopes: [],
-        tags: [],
-      },
-      levels: levels.value.map((l) => ({
-        delay_seconds: l.delay_seconds,
-        channel_ids: l.channel_ids,
-      })),
-    }
+    const payload = buildCurrentPayload()
     if (props.policy) {
       await store.updatePolicy(props.policy.id, payload)
     } else {
@@ -225,6 +218,19 @@ onMounted(() => {
         </div>
       </div>
 
+      <div v-if="scopes.length > 0" class="space-y-2" data-test="policy-scopes">
+        <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest">
+          Scopes <span class="text-mnt-muted normal-case font-normal">(set through the API, kept on save)</span>
+        </label>
+        <div class="flex flex-wrap gap-2">
+          <code
+            v-for="s in scopes"
+            :key="`${s.kind}:${s.ref_id}`"
+            class="rounded bg-mnt-elevated px-1.5 py-0.5 text-[10px] text-mnt-secondary"
+          >{{ s.kind }}:{{ s.ref_id }}</code>
+        </div>
+      </div>
+
       <!-- No channels warning -->
       <InlineAlert
         v-if="!channelsLoading && channels.length === 0"
@@ -272,7 +278,9 @@ onMounted(() => {
           <label class="text-[10px] text-mnt-muted font-bold uppercase tracking-widest block">
             Escalation levels
           </label>
-          <span class="text-[10px] text-mnt-muted">{{ levels.length }}/{{ maxLevels }} levels</span>
+          <span class="text-[10px] text-mnt-muted" data-test="level-count">
+            {{ maxLevels === null ? levels.length : `${levels.length}/${maxLevels}` }} levels
+          </span>
         </div>
 
         <div v-if="channelsLoading" class="flex items-center gap-2 text-xs text-mnt-muted py-2">
@@ -293,7 +301,7 @@ onMounted(() => {
           />
 
           <UiButton
-            v-if="levels.length < maxLevels"
+            v-if="canAddLevel"
             variant="secondary"
             size="sm"
             :icon="Plus"

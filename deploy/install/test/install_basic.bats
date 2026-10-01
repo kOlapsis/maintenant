@@ -129,6 +129,20 @@ run_script() {
     rm -rf "$FAKE_TMPDIR"
 }
 
+@test "download_and_verify: a failed download exits 20" {
+    run bash -c "
+        VERSION='v1.0.0'
+        ARCH='amd64'
+        SKIP_COSIGN=1
+        NO_COLOR=1
+        export VERSION ARCH SKIP_COSIGN NO_COLOR
+        _INSTALL_SH_TESTING=1 . '$SCRIPT'
+        fetch_url_to() { return 22; }
+        download_and_verify
+    "
+    [ "$status" -eq 20 ]
+}
+
 # ── full flow --no-service ────────────────────────────────────────────────────
 
 @test "full install with --no-service succeeds" {

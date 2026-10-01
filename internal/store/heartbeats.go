@@ -33,7 +33,7 @@ const heartbeatColumns = `id, agent_id, name, status, alert_state,
 	last_ping_at, next_deadline_at, current_run_started_at,
 	last_exit_code, last_duration_ms,
 	consecutive_failures, consecutive_successes,
-	active, created_at, updated_at`
+	created_at, updated_at`
 
 // CreateHeartbeat upserts a heartbeat. Its id is the public ping token: the
 // caller supplies it via h.ID, falling back to a fresh UUID when empty.
@@ -47,11 +47,11 @@ func (s *HeartbeatStore) CreateHeartbeat(ctx context.Context, h *heartbeat.Heart
 		`INSERT INTO heartbeats (id, agent_id, name, status, alert_state,
 			interval_seconds, grace_seconds,
 			consecutive_failures, consecutive_successes,
-			active, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)
+			created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, interval_seconds=excluded.interval_seconds,
-			grace_seconds=excluded.grace_seconds, active=excluded.active,
+			grace_seconds=excluded.grace_seconds,
 			updated_at=excluded.updated_at`,
 		h.ID, h.AgentID, h.Name, string(heartbeat.StatusNew), string(heartbeat.AlertNormal),
 		h.IntervalSeconds, h.GraceSeconds,
@@ -70,19 +70,10 @@ func (s *HeartbeatStore) GetHeartbeatByID(ctx context.Context, id string) (*hear
 		`SELECT `+heartbeatColumns+` FROM heartbeats WHERE id=?`, id))
 }
 
-// GetHeartbeatByUUID looks up an active heartbeat by its ping token (the id).
-func (s *HeartbeatStore) GetHeartbeatByUUID(ctx context.Context, token string) (*heartbeat.Heartbeat, error) {
-	return s.scanHeartbeat(s.db.QueryRowContext(ctx,
-		`SELECT `+heartbeatColumns+` FROM heartbeats WHERE id=? AND active=1`, token))
-}
-
 func (s *HeartbeatStore) ListHeartbeats(ctx context.Context, opts heartbeat.ListHeartbeatsOpts) ([]*heartbeat.Heartbeat, error) {
 	query := `SELECT ` + heartbeatColumns + ` FROM heartbeats WHERE 1=1`
 	var args []interface{}
 
-	if !opts.IncludeInactive {
-		query += ` AND active=1`
-	}
 	if opts.Status != "" {
 		query += ` AND status=?`
 		args = append(args, opts.Status)
@@ -146,10 +137,9 @@ func (s *HeartbeatStore) UpdateHeartbeat(ctx context.Context, id string, input h
 	return nil
 }
 
+// DeleteHeartbeat removes a heartbeat; its pings, executions, pauses and daily uptime go with it.
 func (s *HeartbeatStore) DeleteHeartbeat(ctx context.Context, id string) error {
-	now := time.Now().Unix()
-	_, err := s.writer.Exec(ctx,
-		`UPDATE heartbeats SET active=0, updated_at=? WHERE id=?`, now, id)
+	_, err := s.writer.Exec(ctx, `DELETE FROM heartbeats WHERE id=?`, id)
 	if err != nil {
 		return fmt.Errorf("delete heartbeat %s: %w", id, err)
 	}
@@ -193,25 +183,45 @@ func (s *HeartbeatStore) UpdateHeartbeatState(ctx context.Context, id string,
 	return nil
 }
 
-func (s *HeartbeatStore) PauseHeartbeat(ctx context.Context, id string) error {
-	now := time.Now().Unix()
-	// Pausing stops monitoring, so alert_state must not stay stuck on alerting.
-	_, err := s.writer.Exec(ctx,
-		`UPDATE heartbeats SET status='paused', alert_state='normal', next_deadline_at=NULL, updated_at=? WHERE id=?`,
-		now, id)
-	if err != nil {
-		return fmt.Errorf("pause heartbeat %s: %w", id, err)
-	}
-	return nil
+const endPauseSQL = `UPDATE heartbeat_pauses SET resumed_at=? WHERE heartbeat_id=? AND resumed_at IS NULL`
+
+// PauseHeartbeat stops monitoring a heartbeat from at on, and records when the pause began.
+func (s *HeartbeatStore) PauseHeartbeat(ctx context.Context, id string, at time.Time) error {
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		// Pausing stops monitoring, so alert_state must not stay stuck on alerting.
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE heartbeats SET status='paused', alert_state='normal', next_deadline_at=NULL, updated_at=? WHERE id=?`,
+			at.Unix(), id); err != nil {
+			return fmt.Errorf("pause heartbeat %s: %w", id, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO heartbeat_pauses (id, heartbeat_id, paused_at) VALUES (?, ?, ?)`,
+			uid.New(), id, at.Unix()); err != nil {
+			return fmt.Errorf("record pause of heartbeat %s: %w", id, err)
+		}
+		return nil
+	})
 }
 
-func (s *HeartbeatStore) ResumeHeartbeat(ctx context.Context, id string, nextDeadlineAt time.Time) error {
-	now := time.Now().Unix()
-	_, err := s.writer.Exec(ctx,
-		`UPDATE heartbeats SET status='up', next_deadline_at=?, updated_at=? WHERE id=?`,
-		nextDeadlineAt.Unix(), now, id)
-	if err != nil {
-		return fmt.Errorf("resume heartbeat %s: %w", id, err)
+// ResumeHeartbeat puts a paused heartbeat back to monitoring from at on, and closes its pause.
+func (s *HeartbeatStore) ResumeHeartbeat(ctx context.Context, id string, at, nextDeadlineAt time.Time) error {
+	return s.writer.Tx(ctx, func(ctx context.Context, tx *Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE heartbeats SET status='up', next_deadline_at=?, updated_at=? WHERE id=?`,
+			nextDeadlineAt.Unix(), at.Unix(), id); err != nil {
+			return fmt.Errorf("resume heartbeat %s: %w", id, err)
+		}
+		if _, err := tx.ExecContext(ctx, endPauseSQL, at.Unix(), id); err != nil {
+			return fmt.Errorf("close pause of heartbeat %s: %w", id, err)
+		}
+		return nil
+	})
+}
+
+// EndPause closes the open pause of a heartbeat when a ping puts it back to monitoring.
+func (s *HeartbeatStore) EndPause(ctx context.Context, id string, at time.Time) error {
+	if _, err := s.writer.Exec(ctx, endPauseSQL, at.Unix(), id); err != nil {
+		return fmt.Errorf("close pause of heartbeat %s: %w", id, err)
 	}
 	return nil
 }
@@ -219,7 +229,7 @@ func (s *HeartbeatStore) ResumeHeartbeat(ctx context.Context, id string, nextDea
 func (s *HeartbeatStore) ListOverdueHeartbeats(ctx context.Context, now time.Time) ([]*heartbeat.Heartbeat, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+heartbeatColumns+` FROM heartbeats
-		WHERE active=1 AND status IN ('up', 'started') AND next_deadline_at IS NOT NULL AND next_deadline_at<?`,
+		WHERE status IN ('up', 'started') AND next_deadline_at IS NOT NULL AND next_deadline_at<?`,
 		now.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("list overdue heartbeats: %w", err)
@@ -242,7 +252,7 @@ func (s *HeartbeatStore) ListOverdueHeartbeats(ctx context.Context, now time.Tim
 func (s *HeartbeatStore) CountActiveHeartbeats(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM heartbeats WHERE active=1`).Scan(&count)
+		`SELECT COUNT(*) FROM heartbeats`).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count active heartbeats: %w", err)
 	}
@@ -250,8 +260,7 @@ func (s *HeartbeatStore) CountActiveHeartbeats(ctx context.Context) (int, error)
 }
 
 // CountConfigured satisfies the telemetry counter interface uniformly across
-// stores. Paused heartbeats keep active=1; active=0 is delete-pending.
-// See specs/015-shm-telemetry.
+// stores, paused heartbeats included. See specs/015-shm-telemetry.
 func (s *HeartbeatStore) CountConfigured(ctx context.Context) (int, error) {
 	return s.CountActiveHeartbeats(ctx)
 }
@@ -422,12 +431,16 @@ func (s *HeartbeatStore) deleteExecutionsBefore(ctx context.Context, before time
 		"completed_at IS NOT NULL AND completed_at<?", before.Unix())
 }
 
+func (s *HeartbeatStore) deletePausesBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
+	return deleteRowsWhere(ctx, s.writer, o, "heartbeat_pauses",
+		"resumed_at IS NOT NULL AND resumed_at<?", before.Unix())
+}
+
 // --- Scanners ---
 
 func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, error) {
 	var h heartbeat.Heartbeat
 	var lastPingAt, nextDeadlineAt, currentRunStartedAt, lastExitCode, lastDurationMs sql.NullInt64
-	var active int
 	var createdAt, updatedAt int64
 
 	err := row.Scan(
@@ -436,7 +449,7 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 		&lastPingAt, &nextDeadlineAt, &currentRunStartedAt,
 		&lastExitCode, &lastDurationMs,
 		&h.ConsecutiveFailures, &h.ConsecutiveSuccesses,
-		&active, &createdAt, &updatedAt,
+		&createdAt, &updatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -445,7 +458,6 @@ func (s *HeartbeatStore) scanHeartbeat(row rowScanner) (*heartbeat.Heartbeat, er
 		return nil, fmt.Errorf("scan heartbeat: %w", err)
 	}
 
-	h.Active = active != 0
 	h.CreatedAt = time.Unix(createdAt, 0)
 	h.UpdatedAt = time.Unix(updatedAt, 0)
 

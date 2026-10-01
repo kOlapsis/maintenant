@@ -128,6 +128,7 @@ type UpdateExclusion struct {
 // UpdateResult is the output of scanning a single container.
 type UpdateResult struct {
 	ContainerID        string
+	ContainerUID       string
 	ContainerName      string
 	Image              string
 	CurrentTag         string
@@ -142,6 +143,7 @@ type UpdateResult struct {
 	HasBreakingChanges bool
 	SourceURL          string
 	PreviousDigest     string
+	AlertOn            string
 }
 
 // ScanError represents an error scanning a specific container.
@@ -255,8 +257,7 @@ type RiskScore struct {
 	Factors     map[string]RiskFactor `json:"factors"`
 }
 
-// DigestBaseline stores the last-known remote digest for a non-semver tag.
-// Used to detect when a channel tag (e.g. "lts", "alpine") has been republished.
+// DigestBaseline records the registry digest a container runs, the reference for a floating tag when its runtime does not report it.
 type DigestBaseline struct {
 	ContainerID  string    `json:"container_id"`
 	Image        string    `json:"image"`
@@ -273,16 +274,6 @@ type ReleaseInfo struct {
 	PublishedAt        time.Time `json:"published_at"`
 	HTMLURL            string    `json:"html_url"`
 	HasBreakingChanges bool      `json:"has_breaking_changes"`
-}
-
-// DigestReport is a structured summary of all updates for digest generation.
-type DigestReport struct {
-	Critical    []ImageUpdate `json:"critical"`
-	Recommended []ImageUpdate `json:"recommended"`
-	Available   []ImageUpdate `json:"available"`
-	UpToDate    int           `json:"up_to_date"`
-	Untracked   int           `json:"untracked"`
-	TotalCVEs   int           `json:"total_cves"`
 }
 
 // RiskLevelFromScore converts a numeric score to a risk level.
@@ -306,6 +297,21 @@ type EcosystemResult struct {
 	DetectionMethod string `json:"detection_method"`
 }
 
+// Accepted values of the maintenant.update.track label.
+const (
+	TrackMajor  = "major"
+	TrackMinor  = "minor"
+	TrackPatch  = "patch"
+	TrackDigest = "digest"
+)
+
+// Accepted values of the maintenant.update.alert_on label.
+const (
+	AlertOnAll      = "all"
+	AlertOnCritical = "critical"
+	AlertOnNone     = "none"
+)
+
 // UpdateConfig holds parsed maintenant.update.* label values.
 type UpdateConfig struct {
 	Enabled     bool
@@ -317,4 +323,19 @@ type UpdateConfig struct {
 	DigestOnly  bool
 	TagInclude  *regexp.Regexp // compiled tag-include regex, nil if absent/invalid
 	TagExclude  *regexp.Regexp // compiled tag-exclude regex, nil if absent/invalid
+}
+
+// TrackLevel returns the widest change the labels allow: a Track* value, digest_only and ignore_major applied.
+func (cfg UpdateConfig) TrackLevel() string {
+	if cfg.DigestOnly {
+		return TrackDigest
+	}
+	level := cfg.Track
+	if level == "" {
+		level = TrackMajor
+	}
+	if cfg.IgnoreMajor && level == TrackMajor {
+		return TrackMinor
+	}
+	return level
 }

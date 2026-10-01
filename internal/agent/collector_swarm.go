@@ -17,6 +17,34 @@ import (
 
 const swarmTopologyInterval = 30 * time.Second
 
+// swarmRecheckInterval is how often a Docker agent re-reads its Swarm membership. A var so tests can shorten it.
+var swarmRecheckInterval = time.Minute
+
+// watchSwarmMembership ends the collection with runtimeChanged when the host joins or leaves a Swarm.
+func watchSwarmMembership(ctx context.Context, label string, inSwarm func(context.Context) (bool, error), logger *slog.Logger) error {
+	ticker := time.NewTicker(swarmRecheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			active, err := inSwarm(ctx)
+			if err != nil {
+				logger.Debug("collector: swarm membership not read", "error", err)
+				continue
+			}
+			next := RuntimeDocker
+			if active {
+				next = RuntimeSwarm
+			}
+			if next != label {
+				return runtimeChanged{label: next}
+			}
+		}
+	}
+}
+
 // streamSwarmTopology periodically snapshots the agent's swarm (services, tasks,
 // nodes) and pushes a full SwarmTopology event. The server reconciles each
 // snapshot against the rows it holds for this agent, hard-deleting whatever is

@@ -15,7 +15,7 @@ import { AlertTriangle } from 'lucide-vue-next'
         style="color: var(--mnt-status-warning)"
       />
       <p class="text-sm text-mnt-muted">
-        La surveillance des conteneurs est indisponible. Les données affichées peuvent être obsolètes.
+        Container monitoring is unavailable. The data shown may be out of date.
       </p>
     </div>
   </div>

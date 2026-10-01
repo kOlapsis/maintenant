@@ -40,13 +40,12 @@ func TestDiscoverAll_Deployments(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -105,13 +104,12 @@ func TestDiscoverAll_NamespaceFiltering(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -143,13 +141,12 @@ func TestDiscoverAll_BarePods(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -191,13 +188,12 @@ func TestDiscoverAll_ManagedPodsExcluded(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -220,7 +216,6 @@ func TestDiscoverAll_Annotations(t *testing.T) {
 				"maintenant.group":                   "backend",
 				"maintenant.alert.severity":          "critical",
 				"maintenant.alert.restart_threshold": "5",
-				"maintenant.alert.channels":          "slack",
 				"maintenant.ignore":                  "true",
 			},
 		},
@@ -236,13 +231,12 @@ func TestDiscoverAll_Annotations(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(dep)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	containers, err := rt.discoverAll(context.Background())
 	if err != nil {
@@ -259,9 +253,6 @@ func TestDiscoverAll_Annotations(t *testing.T) {
 			}
 			if c.RestartThreshold != 5 {
 				t.Errorf("expected RestartThreshold=5, got %d", c.RestartThreshold)
-			}
-			if c.AlertChannels != "slack" {
-				t.Errorf("expected AlertChannels=slack, got %s", c.AlertChannels)
 			}
 			if !c.IsIgnored {
 				t.Error("expected IsIgnored=true")

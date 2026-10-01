@@ -11,7 +11,9 @@ import (
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/docker"
+	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/uid"
 )
 
 // ScanContainerSecurity inspects a single container and updates its security insights.
@@ -40,23 +42,78 @@ func ScanContainerSecurity(ctx context.Context, dr *docker.Runtime, containerSvc
 		if c == nil {
 			return
 		}
-
-		bindings := make([]security.PortBinding, 0, len(r.SecurityConfig.PortBindings))
-		for _, pb := range r.SecurityConfig.PortBindings {
-			bindings = append(bindings, security.PortBinding{
-				HostIP:   pb.HostIP,
-				HostPort: pb.HostPort,
-				Port:     pb.ContainerPort,
-				Protocol: pb.Protocol,
-			})
-		}
-		insights := security.AnalyzeDocker(c.ID, c.Name, security.DockerSecurityConfig{
-			Privileged:  r.SecurityConfig.Privileged,
-			NetworkMode: r.SecurityConfig.NetworkMode,
-			Bindings:    bindings,
-		}, now)
-		secSvc.UpdateContainer(c.ID, c.Name, insights)
+		secSvc.UpdateContainer(c.ID, c.Name, dockerInsights(c, r.SecurityConfig, now))
 		return
+	}
+}
+
+// dockerInsights analyses a container's Docker configuration; an ignored
+// container has none.
+func dockerInsights(c *container.Container, cfg *docker.SecurityConfig, now time.Time) []security.Insight {
+	if c.IsIgnored {
+		return nil
+	}
+	bindings := make([]security.PortBinding, 0, len(cfg.PortBindings))
+	for _, pb := range cfg.PortBindings {
+		bindings = append(bindings, security.PortBinding{
+			HostIP:   pb.HostIP,
+			HostPort: pb.HostPort,
+			Port:     pb.ContainerPort,
+			Protocol: pb.Protocol,
+		})
+	}
+	return security.AnalyzeDocker(c.ID, c.Name, security.DockerSecurityConfig{
+		Privileged:  cfg.Privileged,
+		NetworkMode: cfg.NetworkMode,
+		Bindings:    bindings,
+	}, now)
+}
+
+// serviceExposureSource lists the ports Kubernetes Services open outside the cluster.
+type serviceExposureSource interface {
+	ListServiceExposures(ctx context.Context) ([]kubernetes.ServiceExposure, error)
+}
+
+type containerLister interface {
+	ListContainers(ctx context.Context, opts container.ListContainersOpts) ([]*container.Container, error)
+}
+
+// ScanKubernetesSecurity refreshes the insights of the local cluster's
+// workloads from the LoadBalancer and NodePort Services that expose them.
+func ScanKubernetesSecurity(ctx context.Context, src serviceExposureSource, containers containerLister, secSvc *security.Service, logger *slog.Logger) {
+	exposures, err := src.ListServiceExposures(ctx)
+	if err != nil {
+		logger.Warn("security: kubernetes services not analysed", "error", err)
+		return
+	}
+	byWorkload := make(map[string][]security.ServicePort, len(exposures))
+	for _, e := range exposures {
+		byWorkload[e.WorkloadID] = append(byWorkload[e.WorkloadID], security.ServicePort{
+			Service:    e.Service,
+			Type:       e.ServiceType,
+			Port:       e.Port,
+			TargetPort: e.TargetPort,
+			NodePort:   e.NodePort,
+			Protocol:   e.Protocol,
+		})
+	}
+
+	local := uid.LocalAgent
+	workloads, err := containers.ListContainers(ctx, container.ListContainersOpts{IncludeIgnored: true, AgentFilter: &local})
+	if err != nil {
+		logger.Warn("security: kubernetes workloads not listed", "error", err)
+		return
+	}
+	now := time.Now()
+	for _, c := range workloads {
+		if c.RuntimeType != "kubernetes" {
+			continue
+		}
+		var insights []security.Insight
+		if !c.IsIgnored {
+			insights = security.AnalyzeKubernetes(c.ID, c.Name, byWorkload[c.ExternalID], now)
+		}
+		secSvc.UpdateContainer(c.ID, c.Name, insights)
 	}
 }
 

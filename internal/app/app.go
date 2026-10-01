@@ -39,6 +39,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/swarm"
 	"github.com/kolapsis/maintenant/internal/telemetry"
+	"github.com/kolapsis/maintenant/internal/trust"
 	"github.com/kolapsis/maintenant/internal/update"
 	"github.com/kolapsis/maintenant/internal/webhook"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -72,7 +73,7 @@ type App struct {
 	statusSvc          *status.Service
 	subscriberSvc      *status.SubscriberService
 	personalizationSvc status.PersonalizationManager
-	statusMailer       func(status.SmtpConfig) status.Mailer
+	statusMailer       status.Mailer
 
 	// Alert pipeline
 	alertEngine     *alert.Engine
@@ -96,6 +97,7 @@ type App struct {
 	hbStore        *store.HeartbeatStore
 	certStore      *store.CertificateStore
 	resStore       *store.ResourceStore
+	uptimeStore    *store.UptimeDailyStore
 	agentStore     *store.AgentStore
 	agentSessions  extpoint.AgentSessions
 	serveAgents    func(ctx context.Context, cfg extpoint.GRPCConfig) error
@@ -130,22 +132,18 @@ type App struct {
 	webhookDispatcher *webhook.Dispatcher
 
 	// Swarm
-	swarmDetector       *swarm.Detector
-	swarmCluster        *swarm.SwarmCluster
-	swarmDiscovery      *swarm.ServiceDiscovery
-	swarmEvents         *swarm.EventProcessor
-	swarmNodeStore      *store.SwarmNodeStore
-	swarmTopologyStore  *store.SwarmTopologyStore
-	swarmIngest         *swarm.IngestService
-	swarmNodeSvc        *swarm.NodeService
-	swarmCrashLoop      *swarm.CrashLoopDetector
-	swarmUpdateTracker  *swarm.UpdateTracker
-	swarmTaskTracker    *swarm.TaskTracker
-	swarmReplicaChecker *swarm.ReplicaHealthChecker
+	swarmDetector      *swarm.Detector
+	swarmRecheckNow    chan struct{}
+	swarmCluster       atomic.Pointer[swarm.SwarmCluster]
+	swarmMgr           atomic.Pointer[swarmManager]
+	swarmNodeStore     *store.SwarmNodeStore
+	swarmTopologyStore *store.SwarmTopologyStore
+	swarmIngest        *swarm.IngestService
 
 	// Kubernetes
 	k8sStore  *store.KubernetesStore
 	k8sIngest *kubernetes.IngestService
+	k8sAlerts *kubernetes.K8sAlertChecker
 }
 
 // sseBroadcaster adapts the SSEBroker to the extpoint.EventBroadcaster interface.
@@ -272,7 +270,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	}
 
 	if err := rt.TryConnect(ctx); err != nil {
-		logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name())
+		logger.Warn("container runtime unavailable, starting in degraded mode", "runtime", rt.Name(), "error", err)
 		rt.SetDisconnected()
 	}
 
@@ -289,35 +287,19 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// server's own runtime.
 	a.k8sStore = store.NewKubernetesStore(db)
 	a.k8sIngest = kubernetes.NewIngestService(a.k8sStore, logger)
+	a.k8sAlerts = kubernetes.NewK8sAlertChecker(logger)
 
-	// --- Swarm detection (only when runtime is connected) ---
-	if rt.IsConnected() {
-		if dr, ok := rt.(*docker.Runtime); ok {
-			detector := swarm.NewDetector(dr.Client(), logger)
-			a.swarmDetector = detector
-			result, err := detector.Detect(ctx)
+	// --- Swarm detection: armed for any Docker runtime, run now if it answers ---
+	if dr, ok := rt.(*docker.Runtime); ok {
+		a.swarmDetector = swarm.NewDetector(dr.Client(), logger)
+		a.swarmRecheckNow = make(chan struct{}, 1)
+		if rt.IsConnected() {
+			result, err := a.swarmDetector.Detect(ctx)
 			if err != nil {
 				logger.Warn("Swarm detection failed, continuing without Swarm support", "error", err)
-			} else if result.Active && result.IsManager {
-				a.swarmCluster = &swarm.SwarmCluster{
-					ID:        result.ClusterID,
-					IsManager: result.IsManager,
-				}
-				a.swarmDiscovery = swarm.NewServiceDiscovery(dr.Client(), logger)
-				a.swarmDiscovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
-					net, err := dr.Client().NetworkInspect(ctx, networkID)
-					if err != nil {
-						return "", "", err
-					}
-					return net.Name, net.Scope, nil
-				})
-				a.swarmEvents = swarm.NewEventProcessor(a.swarmDiscovery, logger)
-
-				a.swarmNodeSvc = swarm.NewNodeService(dr.Client(), a.swarmNodeStore, logger)
-				a.swarmCrashLoop = swarm.NewCrashLoopDetector(logger)
-				a.swarmUpdateTracker = swarm.NewUpdateTracker(dr.Client(), logger)
-				a.swarmTaskTracker = swarm.NewTaskTracker(dr.Client(), logger)
-				a.swarmReplicaChecker = swarm.NewReplicaHealthChecker(logger)
+			} else if cluster := result.Cluster(); cluster != nil {
+				a.swarmCluster.Store(cluster)
+				a.swarmMgr.Store(newSwarmManager(dr, a.swarmNodeStore, logger))
 			}
 		}
 	}
@@ -345,19 +327,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Logger:       logger,
 		RawWindow:    cfg.Retention.Snapshots,
 	})
-	// --- License checkers for quota enforcement ---
-	// The checkers are always injected, built from the single declaration of the
-	// caps: -1 means unlimited, so there is no sentinel to invent and no edition
-	// branch here. Leaving them nil in one edition let the service defaults drift
-	// away from the values the interface reports.
-	certLicenseChecker := &certificate.DefaultLicenseChecker{MaxCertificates: extension.Limit(extension.ResourceCertificates)}
-	endpointLicenseChecker := &endpoint.DefaultLicenseChecker{MaxEndpoints: extension.Limit(extension.ResourceEndpoints)}
-	heartbeatLicenseChecker := &heartbeat.DefaultLicenseChecker{MaxHeartbeats: extension.Limit(extension.ResourceHeartbeats)}
-
 	a.certSvc = certificate.NewService(certificate.Deps{
-		Store:          certStore,
-		Logger:         logger,
-		LicenseChecker: certLicenseChecker,
+		Store:  certStore,
+		Logger: logger,
 	})
 
 	// --- Endpoint monitoring ---
@@ -371,19 +343,17 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		}
 	}, logger)
 	a.endpointSvc = endpoint.NewService(endpoint.Deps{
-		Store:          epStore,
-		Engine:         a.checkEngine,
-		Logger:         logger,
-		LicenseChecker: endpointLicenseChecker,
+		Store:  epStore,
+		Engine: a.checkEngine,
+		Logger: logger,
 	})
 	alertDetector := alert.NewEndpointAlertDetector()
 
 	// --- Heartbeat monitoring ---
 	a.heartbeatSvc = heartbeat.NewService(heartbeat.Deps{
-		Store:          hbStore,
-		Logger:         logger,
-		LicenseChecker: heartbeatLicenseChecker,
-		BaseURL:        cfg.BaseURL,
+		Store:   hbStore,
+		Logger:  logger,
+		BaseURL: cfg.BaseURL,
 	})
 	a.outboundSvc = outbound.NewService(outbound.Deps{
 		Store:   store.NewOutboundHeartbeatStore(db),
@@ -392,18 +362,19 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	})
 
 	// --- Alert engine ---
+	smtpCfg := extpoint.SMTPConfig{
+		Host:     cfg.SMTP.Host,
+		Port:     cfg.SMTP.Port,
+		Username: cfg.SMTP.Username,
+		Password: cfg.SMTP.Password,
+		From:     cfg.SMTP.From,
+	}
 	a.notifier = alert.NewNotifier(channelStore, logger, cfg.AllowPrivateWebhooks)
 	if a.ext.Channels != nil {
 		channels := a.ext.Channels(extpoint.ChannelDeps{
 			HTTPClient: a.notifier.HTTPClient(),
-			SMTP: extpoint.SMTPConfig{
-				Host:     cfg.SMTP.Host,
-				Port:     cfg.SMTP.Port,
-				Username: cfg.SMTP.Username,
-				Password: cfg.SMTP.Password,
-				From:     cfg.SMTP.From,
-			},
-			Logger: logger,
+			SMTP:       smtpCfg,
+			Logger:     logger,
 		})
 		for chType, sender := range channels {
 			a.notifier.RegisterChannel(chType, sender)
@@ -426,7 +397,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	var eolFetcher *eol.Fetcher
 	if !cfg.DisableOSEOLRefresh {
 		eolFetcher = &eol.Fetcher{
-			Client:    &http.Client{Timeout: 15 * time.Second},
+			Client:    &http.Client{Timeout: 15 * time.Second, Transport: trust.HTTPTransport()},
 			UserAgent: "maintenant/" + cfg.Version + " (+https://maintenant.dev)",
 		}
 	}
@@ -488,15 +459,16 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	}
 
 	// --- Public Status Page ---
-	a.subscriberSvc = status.NewSubscriberService(subscriberStore, nil, cfg.BaseURL, logger)
 	a.statusSvc = status.NewService(status.Deps{
 		Components:  statusCompStore,
 		Logger:      logger,
 		Incidents:   incidentStore,
 		Maintenance: maintenanceStore,
-		Subscribers: a.subscriberSvc,
-		Broadcaster: func(eventType string, data any) {
+		PublicBroadcaster: func(eventType string, data any) {
 			a.statusBroker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		},
+		AdminBroadcaster: func(eventType string, data any) {
+			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 		},
 	})
 	a.wireStatusProvider()
@@ -508,6 +480,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 			Maintenance:     maintenanceStore,
 			Subscribers:     subscriberStore,
 			Personalization: personalizationStore,
+			SMTP:            smtpCfg,
 			BaseURL:         cfg.BaseURL,
 			Logger:          logger,
 		})
@@ -517,8 +490,10 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		a.personalizationSvc = sp.Personalization
 		a.statusMailer = sp.Mailer
 	}
+	a.subscriberSvc = status.NewSubscriberService(subscriberStore, a.statusMailer, cfg.BaseURL, logger)
+	a.statusSvc.SetSubscriberService(a.subscriberSvc)
 	personalizationPublicHandler := status.NewPersonalizationPublicHandler(personalizationStore, logger)
-	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL)
+	a.statusHandler = status.NewHandler(a.statusSvc, a.statusBroker, logger, a.subscribeRL, status.PageURL(cfg.StatusURL, cfg.BaseURL))
 	a.statusHandler.SetPersonalizationHandler(personalizationPublicHandler)
 
 	// --- Webhook dispatcher ---
@@ -527,16 +502,20 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// --- Update intelligence ---
 	registryClient := update.NewRegistryClient()
 	updateScanner := update.NewScanner(registryClient, updateStore, logger)
-	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc)
-	// Wire live label fetching from Docker so maintenant.update.tag-include/exclude labels
-	// are available at scan time (labels are not persisted in SQLite).
-	if dr, ok := a.rt.(*docker.Runtime); ok {
-		containerAdapter.WithLabelFetcher(&dockerLabelFetcher{rt: dr})
+	containerAdapter := update.NewContainerServiceAdapter(a.containerSvc, logger)
+	if fetcher := updateDetailsFetcher(a.rt, logger); fetcher != nil {
+		containerAdapter.WithDetailsFetcher(fetcher)
 	}
 
 	var updateEnricher update.Enricher
 	if a.ext.Enricher != nil {
-		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{Store: updateStore, Registry: registryClient, Logger: logger})
+		updateEnricher = a.ext.Enricher(extpoint.EnricherDeps{
+			Store:    updateStore,
+			Registry: registryClient,
+			Insights: a.securitySvc,
+			Restarts: containerStore,
+			Logger:   logger,
+		})
 	}
 	a.updateSvc = update.NewService(update.Deps{
 		Store:      updateStore,
@@ -598,11 +577,14 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	if a.scorer != nil {
 		a.wirePostureCallbacks()
 	}
-	a.wireSwarmCallbacks()
+	if m := a.swarmMgr.Load(); m != nil {
+		a.wireSwarmCallbacks(m)
+	}
+	a.wireKubernetesAlerts()
 	a.wireAgentLifecycleAlerts()
 
 	// --- Router ---
-	uptimeDailyStore := store.NewUptimeDailyStore(db)
+	a.uptimeStore = store.NewUptimeDailyStore(db)
 	a.router = v1.NewRouter(v1.HandlerDeps{
 		// Core services
 		Broker:       a.broker,
@@ -622,21 +604,22 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		TriggerStore:  triggerStore,
 		SilenceStore:  silenceStore,
 		Notifier:      a.notifier,
-		Escalator:     a.alertEngine.Escalator(),
+		Acknowledger:  a.alertEngine,
 		EscalationSvc: a.escalationSvc,
 		// Status page admin
 		StatusComponents:   statusCompStore,
 		StatusIncidents:    incidentStore,
 		StatusSubscribers:  subscriberStore,
 		StatusMaintenance:  maintenanceStore,
+		StatusMaintRunner:  a.maintScheduler,
 		StatusSvc:          a.statusSvc,
-		StatusBroker:       a.statusBroker,
 		PersonalizationSvc: a.personalizationSvc,
 		StatusMailer:       a.statusMailer,
 		// Webhooks
-		WebhookStore: webhookStore,
+		WebhookStore:  webhookStore,
+		WebhookTester: a.webhookDispatcher,
 		// UI extras
-		UptimeDaily:      uptimeDailyStore,
+		UptimeDaily:      a.uptimeStore,
 		LogStreamer:      rt,
 		ResourceTopSvc:   a.resourceSvc,
 		SparklineFetcher: epStore,
@@ -651,17 +634,16 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		// License
 		LicenseMgr: a.licenseMgr,
 		// Swarm
-		SwarmCluster:        func() *swarm.SwarmCluster { return a.swarmCluster },
-		SwarmDiscovery:      func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
-		SwarmDetector:       func() *swarm.Detector { return a.swarmDetector },
-		SwarmNodeStore:      a.swarmNodeStoreAsInterface(),
-		SwarmUpdateTracker:  a.swarmUpdateTracker,
-		SwarmCrashLoop:      a.swarmCrashLoop,
-		SwarmReplicaChecker: a.swarmReplicaChecker,
-		SwarmTopologyStore:  a.swarmTopologyStore,
+		SwarmCluster:       a.swarmCluster.Load,
+		SwarmDiscovery:     a.currentSwarmDiscovery,
+		SwarmDetector:      func() *swarm.Detector { return a.swarmDetector },
+		SwarmNodeStore:     a.swarmNodeStoreAsInterface(),
+		SwarmUpdateTracker: a.currentSwarmUpdateTracker,
+		SwarmCrashLoop:     a.currentSwarmCrashLoop,
+		SwarmTopologyStore: a.swarmTopologyStore,
 		// Kubernetes (per-agent store-backed reads)
 		KubernetesStore: a.k8sStore,
-		// Multi-host agents (Pro)
+		// Multi-host agents
 		AgentStore:          a.agentStore,
 		AgentSessions:       a.agentSessions,
 		GRPCPublicURL:       cfg.MultiHost.GRPCPublicURL,
@@ -674,6 +656,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		MaxBodySize:          cfg.MaxBodySize,
 		BuildVersion:         cfg.Version,
 		OrganisationName:     cfg.OrgName,
+		StatusURL:            cfg.StatusURL,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
 		TrustedProxies:       trustedProxies,
 		DemoMode:             cfg.DemoMode,
@@ -689,12 +672,14 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		Alerts:            alertStore,
 		Channels:          channelStore,
 		Triggers:          triggerStore,
-		Escalator:         a.alertEngine.Escalator(),
+		Acknowledger:      a.alertEngine,
 		ChannelTester:     a.notifier,
 		ChannelValidators: a.notifier,
 		Updates:           a.updateSvc,
 		Incidents:         incidentStore,
+		IncidentAnnouncer: a.statusSvc,
 		Maintenance:       maintenanceStore,
+		StatusComponents:  statusCompStore,
 		Runtime:           rt,
 		LogFetcher:        rt,
 		EscalationSvc:     a.escalationSvc,
@@ -708,8 +693,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		UpdateStore: updateStore,
 		// Orchestrators (read-only)
 		Kubernetes:           a.k8sStore,
-		SwarmCluster:         func() *swarm.SwarmCluster { return a.swarmCluster },
-		SwarmDiscovery:       func() *swarm.ServiceDiscovery { return a.swarmDiscovery },
+		SwarmCluster:         a.swarmCluster.Load,
+		SwarmDiscovery:       a.currentSwarmDiscovery,
 		SwarmTopology:        a.swarmTopologyStore,
 		SwarmNodes:           a.swarmNodeStore,
 		AllowPrivateWebhooks: cfg.AllowPrivateWebhooks,
@@ -725,6 +710,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// --- Telemetry (SHM SDK, opt-out via MAINTENANT_DISABLE_TELEMETRY) ---
 	a.telemetrySvc = telemetry.New(telemetry.Config{
 		Disabled:   cfg.DisableTelemetry,
+		DataDir:    filepath.Join(filepath.Dir(cfg.DBPath), "shm"),
 		AppVersion: cfg.Version,
 	}, telemetry.Deps{
 		Containers:       containerStore,
@@ -796,8 +782,22 @@ func (a *App) Start(ctx context.Context) error {
 	if err := a.cfg.ValidateHTTP(); err != nil {
 		return err
 	}
+	if err := a.cfg.ValidateGRPCTLS(); err != nil {
+		return err
+	}
 
-	// Derived so an early return (e.g. a failed bind below) cancels every
+	// Bound before any service starts: a taken port must fail the boot before it has side effects.
+	var httpLn net.Listener
+	if a.cfg.Mode != "agent" {
+		ln, err := net.Listen("tcp", a.srv.Addr)
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", a.srv.Addr, err)
+		}
+		defer func() { _ = ln.Close() }()
+		httpLn = ln
+	}
+
+	// Derived so an early return (e.g. a failed gRPC listener below) cancels every
 	// background goroutine started with ctx, instead of leaking them until
 	// the caller's own context is cancelled.
 	ctx, cancel := context.WithCancel(ctx)
@@ -830,10 +830,6 @@ func (a *App) Start(ctx context.Context) error {
 	// Runs here too so DB-backed monitors are swept even without a container runtime.
 	a.pruneOrphanAlerts(ctx)
 
-	if a.escalationSvc != nil && extension.Allows(extension.CapAlertEscalation) {
-		go a.escalationSvc.RunRetentionLoop(ctx)
-		a.logger.Info("escalation retention loop started")
-	}
 	a.notifier.Start(ctx)
 	a.endpointSvc.Start(ctx)
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
@@ -901,26 +897,26 @@ func (a *App) Start(ctx context.Context) error {
 		}()
 	}
 
-	// Swarm node periodic refresh (Pro, 60s).
-	if a.swarmNodeSvc != nil {
-		go a.startNodeRefresh(ctx)
+	// Swarm manager loops; the Kubernetes reconcile is wired with each runtime
+	// connection cycle.
+	if m := a.swarmMgr.Load(); m != nil {
+		a.startSwarmManager(ctx, m)
 	}
-
-	// Local-runtime topology reconcile into the per-agent store (under LocalAgent),
-	// so store-backed K8s/Swarm views reflect the local cluster too. Each is a
-	// no-op unless the matching runtime is active.
-	go a.startKubernetesReconcile(ctx)
-	go a.startSwarmTopologyReconcile(ctx)
 
 	// Sustained container downtime (opt-in via MAINTENANT_CONTAINER_DOWN_AFTER).
 	if a.downDetector != nil {
 		go a.startContainerDownCheck(ctx)
 	}
 
+	if a.scorer != nil && a.scorer.Threshold() > 0 {
+		go a.startPostureCheck(ctx)
+	}
+
 	a.startOSEOL(ctx)
 
 	a.seedRestartAlertTracking(ctx)
 	go a.containerSvc.RunRestartRecoveryLoop(ctx)
+	a.seedKubernetesAlertTracking(ctx)
 
 	// Swarm context recheck (60s) — detects swarm activation/deactivation.
 	if a.swarmDetector != nil {
@@ -935,19 +931,25 @@ func (a *App) Start(ctx context.Context) error {
 	a.startRuntimeSupervisor(ctx)
 
 	// Agent gRPC server — server/embedded modes only, where multi-host is open.
-	if a.serveAgents != nil && a.multihostPlanAllowed() && a.cfg.Mode != "agent" {
-		if err := a.serveAgents(ctx, extpoint.GRPCConfig{
-			Listen:      a.cfg.MultiHost.GRPCListen,
-			PublicURL:   a.cfg.MultiHost.GRPCPublicURL,
-			TLSCertFile: a.cfg.MultiHost.TLSCertFile,
-			TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
-			Insecure:    a.cfg.MultiHost.InsecureGRPC,
-		}); err != nil {
-			return fmt.Errorf("start agent gRPC server: %w", err)
+	if a.serveAgents != nil && a.cfg.Mode != "agent" {
+		if a.multihostPlanAllowed() {
+			if err := a.serveAgents(ctx, extpoint.GRPCConfig{
+				Listen:      a.cfg.MultiHost.GRPCListen,
+				PublicURL:   a.cfg.MultiHost.GRPCPublicURL,
+				TLSCertFile: a.cfg.MultiHost.TLSCertFile,
+				TLSKeyFile:  a.cfg.MultiHost.TLSKeyFile,
+				Insecure:    a.cfg.MultiHost.InsecureGRPC,
+			}); err != nil {
+				return fmt.Errorf("start agent gRPC server: %w", err)
+			}
+		} else {
+			required := extension.MinEdition(extension.CapMultihost)
+			a.logger.Info("agent gRPC listener not started: agents need the "+string(required)+" edition or above",
+				"edition", extension.CurrentEdition(), "required_edition", required, "listen", a.cfg.MultiHost.GRPCListen)
 		}
 	}
 
-	// Embedded agent (mode=server + --embedded-agent + Pro).
+	// Embedded agent (mode=server + --embedded-agent + multi-host plan).
 	// Starts a local agent goroutine that connects to the local gRPC endpoint.
 	if a.serveAgents != nil && a.cfg.Mode == "server" && a.cfg.MultiHost.EmbeddedAgent && a.multihostPlanAllowed() && !a.cfg.DemoMode {
 		a.startEmbeddedAgent(ctx)
@@ -959,13 +961,9 @@ func (a *App) Start(ctx context.Context) error {
 	if a.cfg.Mode == "agent" {
 		a.logger.Warn("agent mode: HTTP server disabled")
 	} else {
-		ln, err := net.Listen("tcp", a.srv.Addr)
-		if err != nil {
-			return fmt.Errorf("listen on %s: %w", a.srv.Addr, err)
-		}
 		a.logger.Info("starting HTTP server", "addr", a.cfg.Addr)
 		go func() {
-			if err := a.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := a.srv.Serve(httpLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				a.logger.Error("HTTP server error", "error", err)
 			}
 		}()
@@ -1028,7 +1026,7 @@ func (a *App) Shutdown() error {
 
 // startEmbeddedAgent launches a local agent goroutine connecting to the local gRPC endpoint.
 // If the agent is not yet enrolled, a short-lived enrollment token is auto-created.
-// Called only when mode=server, --embedded-agent, and Pro license are all active.
+// Called only when mode=server, --embedded-agent and the multi-host plan are all active.
 func (a *App) startEmbeddedAgent(ctx context.Context) {
 	dataDir := filepath.Dir(a.cfg.DBPath)
 	agentDataDir := filepath.Join(dataDir, "embedded-agent")
@@ -1065,7 +1063,7 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		enrollToken = cleartext
 	}
 
-	grpcURL := "grpcs://" + a.cfg.MultiHost.GRPCListen
+	grpcURL := embeddedAgentURL(a.cfg.MultiHost)
 	agentCfg := agent.AgentConfig{
 		DataDir:             agentDataDir,
 		ServerURL:           grpcURL,
@@ -1094,29 +1092,71 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	a.logger.Info("embedded agent scheduled", "grpc_url", grpcURL)
 }
 
+// swarmManager holds a Swarm manager's services, published whole so no reader sees half of it.
+type swarmManager struct {
+	discovery      *swarm.ServiceDiscovery
+	events         *swarm.EventProcessor
+	nodeSvc        *swarm.NodeService
+	crashLoop      *swarm.CrashLoopDetector
+	updateTracker  *swarm.UpdateTracker
+	replicaChecker *swarm.ReplicaHealthChecker
+	stop           context.CancelFunc
+	loops          sync.WaitGroup
+}
+
+// newSwarmManager builds the services of a Swarm manager on the Docker client.
+func newSwarmManager(dr *docker.Runtime, nodeStore swarm.NodeStore, logger *slog.Logger) *swarmManager {
+	discovery := swarm.NewServiceDiscovery(dr.Client(), logger)
+	discovery.SetNetworkResolver(func(ctx context.Context, networkID string) (string, string, error) {
+		net, err := dr.Client().NetworkInspect(ctx, networkID)
+		if err != nil {
+			return "", "", err
+		}
+		return net.Name, net.Scope, nil
+	})
+	return &swarmManager{
+		discovery:      discovery,
+		events:         swarm.NewEventProcessor(discovery, logger),
+		nodeSvc:        swarm.NewNodeService(dr.Client(), nodeStore, logger),
+		crashLoop:      swarm.NewCrashLoopDetector(logger),
+		updateTracker:  swarm.NewUpdateTracker(dr.Client(), logger),
+		replicaChecker: swarm.NewReplicaHealthChecker(logger),
+	}
+}
+
+func (a *App) currentSwarmDiscovery() *swarm.ServiceDiscovery {
+	if m := a.swarmMgr.Load(); m != nil {
+		return m.discovery
+	}
+	return nil
+}
+
+func (a *App) currentSwarmUpdateTracker() *swarm.UpdateTracker {
+	if m := a.swarmMgr.Load(); m != nil {
+		return m.updateTracker
+	}
+	return nil
+}
+
+func (a *App) currentSwarmCrashLoop() *swarm.CrashLoopDetector {
+	if m := a.swarmMgr.Load(); m != nil {
+		return m.crashLoop
+	}
+	return nil
+}
+
+// embeddedAgentURL dials the local gRPC listener with the scheme it serves: plaintext h2c in insecure mode, TLS otherwise.
+func embeddedAgentURL(mh MultiHostConfig) string {
+	if mh.InsecureGRPC {
+		return "grpc://" + mh.GRPCListen
+	}
+	return "grpcs://" + mh.GRPCListen
+}
+
 // swarmNodeStoreAsInterface returns the SwarmNodeStore as a NodeStore interface, or nil if not available.
 func (a *App) swarmNodeStoreAsInterface() swarm.NodeStore {
 	if a.swarmNodeStore == nil {
 		return nil
 	}
 	return a.swarmNodeStore
-}
-
-// dockerLabelFetcher implements update.LabelFetcher for Docker runtimes.
-// It fetches live container labels at scan time so tag-include/tag-exclude labels
-// are available without persisting them in SQLite.
-type dockerLabelFetcher struct {
-	rt *docker.Runtime
-}
-
-func (f *dockerLabelFetcher) FetchLabels(ctx context.Context) (map[string]map[string]string, error) {
-	results, err := f.rt.DiscoverAllWithLabels(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fetch container labels: %w", err)
-	}
-	labels := make(map[string]map[string]string, len(results))
-	for _, r := range results {
-		labels[r.Container.ExternalID] = r.Labels
-	}
-	return labels, nil
 }

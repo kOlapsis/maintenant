@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/container"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
 
@@ -259,7 +260,6 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		"is_ignored":           c.IsIgnored,
 		"alert_severity":       c.AlertSeverity,
 		"restart_threshold":    c.RestartThreshold,
-		"alert_channels":       c.AlertChannels,
 		"archived":             c.Archived,
 		"first_seen_at":        c.FirstSeenAt,
 		"last_state_change_at": c.LastStateChangeAt,
@@ -274,11 +274,15 @@ func (h *ContainerHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		"image_source":         c.ImageSource,
 		"image_url":            c.ImageURL,
 		"image_description":    c.ImageDescription,
+		"swarm_service_id":     c.SwarmServiceID,
+		"swarm_service_name":   c.SwarmServiceName,
+		"swarm_node_id":        c.SwarmNodeID,
+		"swarm_task_slot":      c.SwarmTaskSlot,
 	}
 
 	// Add uptime if calculator is available
 	if h.uptime != nil {
-		uptimeResult, err := h.uptime.Calculate(r.Context(), c.ID, false)
+		uptimeResult, err := h.uptime.Calculate(r.Context(), c.ID, extension.MaxHistoryWindow().Duration)
 		if err == nil && uptimeResult != nil {
 			detail["uptime"] = uptimeResult
 		}
@@ -457,6 +461,11 @@ func (h *ContainerHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
 		if h.logFetcher == nil {
 			WriteError(w, http.StatusBadGateway, "RUNTIME_UNAVAILABLE",
 				"Cannot connect to container runtime for log retrieval.")
+			return
+		}
+		if h.runtimeChecker != nil && !h.runtimeChecker.IsConnected() {
+			WriteError(w, http.StatusServiceUnavailable, "RUNTIME_UNAVAILABLE",
+				"Container monitoring is unavailable: the container runtime is disconnected.")
 			return
 		}
 		local, err := h.logFetcher.FetchLogs(r.Context(), c.ExternalID, lines, timestamps)

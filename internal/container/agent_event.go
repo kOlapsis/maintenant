@@ -26,7 +26,6 @@ const (
 	labelPBGroup     = "maintenant.group"
 	labelPBSeverity  = "maintenant.alert.severity"
 	labelPBThreshold = "maintenant.alert.restart_threshold"
-	labelPBChannels  = "maintenant.alert.channels"
 )
 
 // HandleAgentEvent processes a ContainerEvent received from a remote agent.
@@ -57,6 +56,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 	}
 
 	if ev.GetDestroyed() {
+		s.forgetAgentDetails(agentID, externalID)
 		if c != nil {
 			base.Action = "destroy"
 			s.ProcessEvent(ctx, base)
@@ -64,16 +64,47 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		return nil
 	}
 
+	if !meta.Replayed {
+		s.recordAgentDetails(agentID, ev)
+	}
+
 	if c == nil {
 		return s.insertAgentContainer(ctx, agentID, ev, meta)
 	}
 
+	if !meta.Replayed {
+		if err := s.refreshAgentContainer(ctx, c, ev); err != nil {
+			return err
+		}
+	}
+
+	if hs := ev.GetHealthStatus(); hs != "" && (meta.Replayed || c.HealthStatus == nil || string(*c.HealthStatus) != hs) {
+		h := base
+		h.Action = "health_status"
+		h.HealthStatus = hs
+		s.ProcessEvent(ctx, h)
+	}
+
+	if action := containerStateToAction(ev); action != "" {
+		st := base
+		st.Action = action
+		st.ExitCode = ev.GetStatusMessage()
+		st.OOMKilled = ev.GetOomKilled()
+		s.ProcessEvent(ctx, st)
+	}
+	return nil
+}
+
+func (s *Service) refreshAgentContainer(ctx context.Context, c *Container, ev *agentpb.ContainerEvent) error {
 	dirty := false
 	if img := ev.GetImage(); img != "" && img != c.Image {
 		c.Image = img
 		dirty = true
 	}
 	if labels := ev.GetLabels(); len(labels) > 0 && c.ApplyImageLabels(labels) {
+		dirty = true
+	}
+	if labels := ev.GetLabels(); len(labels) > 0 && c.adoptLabelFields(agentLabelFields(labels)) {
 		dirty = true
 	}
 	if ev.GetHasHealthCheck() && !c.HasHealthCheck {
@@ -85,24 +116,11 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		c.ArchivedAt = nil
 		dirty = true
 	}
-	if dirty {
-		if err := s.store.UpdateContainer(ctx, c); err != nil {
-			return fmt.Errorf("agent event: update %s: %w", shortID(externalID), err)
-		}
+	if !dirty {
+		return nil
 	}
-
-	if hs := ev.GetHealthStatus(); hs != "" && (c.HealthStatus == nil || string(*c.HealthStatus) != hs) {
-		h := base
-		h.Action = "health_status"
-		h.HealthStatus = hs
-		s.ProcessEvent(ctx, h)
-	}
-
-	if action := containerStateToAction(ev.GetState()); action != "" {
-		st := base
-		st.Action = action
-		st.ExitCode = ev.GetStatusMessage()
-		s.ProcessEvent(ctx, st)
+	if err := s.store.UpdateContainer(ctx, c); err != nil {
+		return fmt.Errorf("agent event: update %s: %w", shortID(c.ExternalID), err)
 	}
 	return nil
 }
@@ -147,6 +165,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 			s.logger.Error("agent inventory: archive", "external_id", shortID(sc.ExternalID), "error", err)
 			continue
 		}
+		s.forgetAgentDetails(agentID, sc.ExternalID)
 		s.untrackRestartAlert(sc.ID)
 		s.logger.Info("agent inventory: container gone, archived",
 			"external_id", shortID(sc.ExternalID), "name", sc.Name, "agent_id", agentID)
@@ -162,7 +181,7 @@ func (s *Service) HandleAgentInventory(ctx context.Context, agentID string, ev *
 func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *agentpb.ContainerEvent, meta agentevent.Meta) error {
 	externalID := ev.GetContainerId()
 	labels := ev.GetLabels()
-	state := containerStateToState(ev.GetState())
+	state := agentContainerState(ev)
 	now := agentEventTime(ev, meta)
 
 	readyCount := 0
@@ -177,7 +196,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		Name:               ev.GetName(),
 		Image:              ev.GetImage(),
 		State:              state,
-		OrchestrationGroup: labels[labelComposeProject],
+		OrchestrationGroup: OrchestrationGroupFromLabels(labels),
 		OrchestrationUnit:  labels[labelComposeService],
 		ComposeWorkingDir:  labels[labelComposeWorkingDir],
 		RuntimeType:        s.resolveAgentRuntime(ctx, agentID),
@@ -193,6 +212,7 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		c.HealthStatus = &h
 	}
 	applyAgentLabels(c, labels)
+	c.ApplySwarmTaskLabels(labels)
 	c.ApplyImageLabels(labels)
 
 	id, err := s.store.InsertContainer(ctx, c)
@@ -200,6 +220,13 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		return fmt.Errorf("agent event: insert %s: %w", shortID(externalID), err)
 	}
 	c.ID = id
+
+	// The fresh inventory precedes any replay, so a replayed container it did not carry is gone.
+	if meta.Replayed {
+		if err := s.store.ArchiveContainer(ctx, id, now); err != nil {
+			return fmt.Errorf("agent event: archive replayed %s: %w", shortID(externalID), err)
+		}
+	}
 
 	// Record an initial transition so uptime tracking has a starting point,
 	// skipping the no-op created→created case (mirrors Reconcile).
@@ -214,9 +241,17 @@ func (s *Service) insertAgentContainer(ctx context.Context, agentID string, ev *
 		}
 	}
 
+	if meta.Replayed {
+		s.logger.Debug("agent event: replayed container no longer reported, kept as history",
+			"external_id", shortID(externalID), "agent_id", agentID)
+		return nil
+	}
+
 	s.logger.Info("agent event: container discovered",
 		"external_id", shortID(externalID), "name", c.Name, "agent_id", agentID, "state", string(state))
-	s.emitEvent(event.ContainerDiscovered, c)
+	if !c.IsIgnored {
+		s.emitEvent(event.ContainerDiscovered, c)
+	}
 	return nil
 }
 
@@ -239,9 +274,6 @@ func applyAgentLabels(c *Container, labels map[string]string) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.RestartThreshold = n
 		}
-	}
-	if v, ok := labels[labelPBChannels]; ok && v != "" {
-		c.AlertChannels = v
 	}
 }
 
@@ -281,13 +313,26 @@ func containerStateToState(state agentpb.ContainerState) ContainerState {
 	}
 }
 
+// agentContainerState reads an EXITED report that carries a clean exit code as completed.
+func agentContainerState(ev *agentpb.ContainerEvent) ContainerState {
+	state := containerStateToState(ev.GetState())
+	if state == StateExited && ev.GetStatusMessage() != "" && IsCleanExit(parseExitCode(ev.GetStatusMessage()), ev.GetOomKilled()) {
+		return StateCompleted
+	}
+	return state
+}
+
 // containerStateToAction maps a proto ContainerState to the action string
 // expected by ProcessEvent (mirrors the Docker event action vocabulary).
-func containerStateToAction(state agentpb.ContainerState) string {
-	switch state {
+// An EXITED report without an exit code (stop, kill, older agent's inventory) is a stop: it keeps a completed container completed.
+func containerStateToAction(ev *agentpb.ContainerEvent) string {
+	switch ev.GetState() {
 	case agentpb.ContainerState_CONTAINER_STATE_RUNNING:
 		return "start"
 	case agentpb.ContainerState_CONTAINER_STATE_EXITED:
+		if ev.GetStatusMessage() == "" {
+			return "stop"
+		}
 		return "die"
 	case agentpb.ContainerState_CONTAINER_STATE_PAUSED:
 		return "pause"

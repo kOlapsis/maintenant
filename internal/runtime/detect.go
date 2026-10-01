@@ -71,28 +71,14 @@ func DetectWithOverride(ctx context.Context, logger *slog.Logger, override strin
 
 	// Try KUBECONFIG for out-of-cluster K8s development.
 	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
-		if f, ok := factories["kubernetes"]; ok {
-			logger.Info("detected Kubernetes via KUBECONFIG", "kubeconfig", kubeconfig, "method", "KUBECONFIG")
-			rt, err := f(ctx, logger)
-			if err != nil {
-				logger.Warn("KUBECONFIG present but Kubernetes runtime failed, falling back to Docker", "error", err)
-			} else {
-				logger.Info("runtime initialized", "runtime", rt.Name(), "method", "auto_detect_kubeconfig")
-				return rt, nil
-			}
+		if rt := fromKubeconfig(ctx, logger, kubeconfig, "auto_detect_kubeconfig"); rt != nil {
+			return rt, nil
 		}
 	} else if home, err := os.UserHomeDir(); err == nil {
 		defaultKubeconfig := home + "/.kube/config"
 		if _, err := os.Stat(defaultKubeconfig); err == nil {
-			if f, ok := factories["kubernetes"]; ok {
-				logger.Info("detected default kubeconfig", "path", defaultKubeconfig, "method", "default_kubeconfig")
-				rt, err := f(ctx, logger)
-				if err != nil {
-					logger.Warn("default kubeconfig present but Kubernetes runtime failed, falling back to Docker", "error", err)
-				} else {
-					logger.Info("runtime initialized", "runtime", rt.Name(), "method", "auto_detect_default_kubeconfig")
-					return rt, nil
-				}
+			if rt := fromKubeconfig(ctx, logger, defaultKubeconfig, "auto_detect_default_kubeconfig"); rt != nil {
+				return rt, nil
 			}
 		}
 	}
@@ -108,6 +94,28 @@ func DetectWithOverride(ctx context.Context, logger *slog.Logger, override strin
 	}
 
 	return nil, fmt.Errorf("no runtime detected; ensure Docker socket is mounted or set MAINTENANT_RUNTIME; registered: %v", registeredNames())
+}
+
+// fromKubeconfig returns the Kubernetes runtime when the cluster of kubeconfig answers, nil to let detection move on to Docker.
+func fromKubeconfig(ctx context.Context, logger *slog.Logger, kubeconfig, method string) Runtime {
+	f, ok := factories["kubernetes"]
+	if !ok {
+		return nil
+	}
+	logger.Info("detected Kubernetes via kubeconfig", "kubeconfig", kubeconfig, "method", method)
+	rt, err := f(ctx, logger)
+	if err != nil {
+		logger.Warn("kubeconfig present but Kubernetes runtime failed, falling back to Docker", "kubeconfig", kubeconfig, "error", err)
+		return nil
+	}
+	if err := rt.TryConnect(ctx); err != nil {
+		_ = rt.Close()
+		logger.Warn("kubeconfig present but its cluster is unreachable, falling back to Docker; set MAINTENANT_RUNTIME=kubernetes to wait for that cluster instead",
+			"kubeconfig", kubeconfig, "error", err)
+		return nil
+	}
+	logger.Info("runtime initialized", "runtime", rt.Name(), "method", method)
+	return rt
 }
 
 func registeredNames() []string {

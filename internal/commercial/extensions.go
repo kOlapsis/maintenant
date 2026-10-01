@@ -8,6 +8,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/commercial/channels"
 	"github.com/kolapsis/maintenant/internal/commercial/escalation"
 	"github.com/kolapsis/maintenant/internal/commercial/maintenance"
+	"github.com/kolapsis/maintenant/internal/commercial/multihost"
 	"github.com/kolapsis/maintenant/internal/commercial/posture"
 	"github.com/kolapsis/maintenant/internal/commercial/statuspage"
 	"github.com/kolapsis/maintenant/internal/commercial/updates"
@@ -23,5 +24,6 @@ func Extensions() extpoint.Set {
 		StatusPage:    statuspage.NewStatusPage,
 		Suppressor:    maintenance.NewMaintenanceSuppressor,
 		Escalation:    escalation.NewEscalation,
+		MultiHost:     multihost.NewMultiHost,
 	}
 }

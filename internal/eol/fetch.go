@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 const (
@@ -143,7 +145,7 @@ func (f *Fetcher) client() *http.Client {
 	if f.Client != nil {
 		return f.Client
 	}
-	return &http.Client{Timeout: fetchTimeout}
+	return &http.Client{Timeout: fetchTimeout, Transport: trust.HTTPTransport()}
 }
 
 func (f *Fetcher) now() time.Time {

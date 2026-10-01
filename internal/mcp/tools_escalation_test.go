@@ -5,8 +5,10 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -83,6 +85,9 @@ func (m *mcpEscalationStore) SelectRunDeliveries(_ context.Context, _ string) ([
 func (m *mcpEscalationStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
 func (m *mcpEscalationStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
 func (m *mcpEscalationStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+func (m *mcpEscalationStore) StopPolicyRuns(_ context.Context, _ string, _ string, _ time.Time) error {
 	return nil
 }
 func (m *mcpEscalationStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
@@ -416,4 +421,29 @@ func TestEscalationTools_Pro_GetRun_NotFound(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.IsError)
 	assert.Contains(t, textFromContent(t, result.Content), "run_not_found")
+}
+
+func TestEscalationTools_Pro_CreatePolicyRefusesMoreLevelsThanTheCap(t *testing.T) {
+	original := extension.CurrentEdition
+	extension.CurrentEdition = func() extension.Edition { return extension.Pro }
+	defer func() { extension.CurrentEdition = original }()
+
+	levels := make([]escalationLevelInput, escalation.MaxLevels+1)
+	for i := range levels {
+		levels[i] = escalationLevelInput{DelaySeconds: 300 * (i + 1), ChannelIDs: []string{"ch-1"}}
+	}
+	result, _, err := createEscalationPolicyHandler(buildProEscalationServices())(context.Background(), nil,
+		createEscalationPolicyInput{Name: "too deep", Active: true, Levels: levels})
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textFromContent(t, result.Content), fmt.Sprintf("at most %d levels", escalation.MaxLevels))
+}
+
+func TestEscalationTools_LevelsSchemaStatesTheCap(t *testing.T) {
+	want := fmt.Sprintf("max %d", escalation.MaxLevels)
+	for _, in := range []any{createEscalationPolicyInput{}, updateEscalationPolicyInput{}} {
+		f, ok := reflect.TypeOf(in).FieldByName("Levels")
+		require.True(t, ok)
+		assert.Contains(t, f.Tag.Get("jsonschema"), want, "%T", in)
+	}
 }

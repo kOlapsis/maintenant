@@ -51,7 +51,7 @@ func (s *Service) HandleAgentEvent(ctx context.Context, agentID string, ev *agen
 		})
 	}
 
-	s.processCheckResult(ctx, monitor, agentCertToRaw(ev))
+	s.processCheckResult(ctx, monitor, agentCertToRaw(ev), true)
 	return nil
 }
 

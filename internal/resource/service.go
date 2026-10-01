@@ -44,6 +44,8 @@ type Service struct {
 	// hosts holds the latest host-level sample reported by each remote agent.
 	hosts *hostRegistry
 
+	agentLatest agentLatest
+
 	// noAlertConfigLogged tracks container IDs for which we've already logged
 	// "alerts not configured" once. Set membership is the only signal — values
 	// are unused.
@@ -91,6 +93,12 @@ func (s *Service) SetEventCallback(fn EventCallback) {
 	s.eventCallback = fn
 }
 
+func (s *Service) emit(eventType string, data map[string]interface{}) {
+	if s.eventCallback != nil {
+		s.eventCallback(eventType, data)
+	}
+}
+
 // Start begins the resource collection loop. Blocks until ctx is cancelled.
 func (s *Service) Start(ctx context.Context) {
 	s.logger.Info("starting resource collector", "interval", s.collector.interval)
@@ -98,14 +106,36 @@ func (s *Service) Start(ctx context.Context) {
 	s.collector.Start(ctx)
 }
 
-// GetCurrentSnapshot returns the latest in-memory snapshot for a container.
+// GetCurrentSnapshot returns the latest in-memory snapshot for a container, local or on a remote agent.
 func (s *Service) GetCurrentSnapshot(containerID string) *ResourceSnapshot {
-	return s.collector.GetLatestSnapshot(containerID)
+	if snap := s.collector.GetLatestSnapshot(containerID); snap != nil {
+		return snap
+	}
+	return s.agentLatest.get(containerID, time.Now())
 }
 
-// GetAllLatestSnapshots returns the latest snapshots for all containers.
+// GetAllLatestSnapshots returns the latest snapshots for all containers, local and on remote agents.
 func (s *Service) GetAllLatestSnapshots() map[string]*ResourceSnapshot {
-	return s.collector.GetAllLatest()
+	all := s.agentLatest.fresh(time.Now())
+	for id, snap := range s.collector.GetAllLatest() {
+		all[id] = snap
+	}
+	return all
+}
+
+// NetworkTotals counts the containers of the hosts filter selects and sums their network throughput in bytes per second.
+func (s *Service) NetworkTotals(filter *string) (containers int, rxPerSec, txPerSec float64) {
+	for _, snap := range s.GetAllLatestSnapshots() {
+		if !hostMatchesFilter(snap.AgentID, filter) {
+			continue
+		}
+		containers++
+		if snap.HasNetRates {
+			rxPerSec += snap.NetRxBytesPerSec
+			txPerSec += snap.NetTxBytesPerSec
+		}
+	}
+	return containers, rxPerSec, txPerSec
 }
 
 // GetHostStat returns the host stat reader for CPU and memory.
@@ -183,12 +213,16 @@ func (s *Service) UpsertAlertConfig(ctx context.Context, cfg *ResourceAlertConfi
 	return s.store.UpsertAlertConfig(ctx, cfg)
 }
 
+// MaxTopConsumers caps how many containers a top consumers ranking returns.
+const MaxTopConsumers = 20
+
 // TopConsumersNow ranks containers on their latest sample rather than on a
 // history window. It is open in every edition: what the tiering caps is how far
 // back a history goes, not the live picture.
 //
 // agentID filters by host with the same convention as the historical ranking.
 func (s *Service) TopConsumersNow(metric string, limit int, agentID *string) []TopConsumerRow {
+	limit = min(limit, MaxTopConsumers)
 	all := s.GetAllLatestSnapshots()
 
 	rows := make([]TopConsumerRow, 0, len(all))
@@ -237,7 +271,7 @@ func hostMatchesFilter(snapAgent string, filter *string) bool {
 // period. agentID filters by host: nil = all hosts, *agentID == "" = the local
 // server, *agentID == id = that agent.
 func (s *Service) GetTopConsumersByPeriod(ctx context.Context, metric, period string, limit int, agentID *string) ([]TopConsumerRow, error) {
-	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, limit, agentID)
+	rows, err := s.store.GetTopConsumersByPeriod(ctx, metric, period, min(limit, MaxTopConsumers), agentID, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("get top consumers by period: %w", err)
 	}
@@ -255,7 +289,11 @@ func (s *Service) processSnapshot(snap *ResourceSnapshot) {
 		return
 	}
 
-	if s.eventCallback != nil && !snap.Replayed {
+	if snap.Replayed {
+		return
+	}
+
+	if s.eventCallback != nil {
 		memPercent := 0.0
 		if snap.MemLimit > 0 {
 			memPercent = float64(snap.MemUsed) / float64(snap.MemLimit) * 100.0
@@ -341,49 +379,33 @@ func (s *Service) evaluateAlerts(ctx context.Context, snap *ResourceSnapshot) {
 
 	now := time.Now()
 
-	// Fire alert events on state transitions.
-	if newState != AlertStateNormal && prevState == AlertStateNormal {
-		cfg.LastAlertedAt = &now
-		if s.eventCallback != nil {
-			if cpuAlert {
-				s.eventCallback(event.ResourceAlert, map[string]interface{}{
-					"container_id":   snap.ContainerID,
-					"container_name": containerName,
-					"alert_type":     "cpu",
-					"current_value":  snap.CPUPercent,
-					"threshold":      cfg.CPUThreshold,
-					"timestamp":      now,
-				})
-			}
-			if memAlert {
-				s.eventCallback(event.ResourceAlert, map[string]interface{}{
-					"container_id":   snap.ContainerID,
-					"container_name": containerName,
-					"alert_type":     "memory",
-					"current_value":  memPercent,
-					"threshold":      cfg.MemThreshold,
-					"timestamp":      now,
-				})
-			}
-		}
+	metrics := []struct {
+		name          string
+		was, is       bool
+		value, thresh float64
+	}{
+		{"cpu", prevState == AlertStateCPU || prevState == AlertStateBoth, cpuAlert, snap.CPUPercent, cfg.CPUThreshold},
+		{"memory", prevState == AlertStateMemory || prevState == AlertStateBoth, memAlert, memPercent, cfg.MemThreshold},
 	}
-
-	// Fire recovery event when returning to normal.
-	if newState == AlertStateNormal && prevState != AlertStateNormal {
-		if s.eventCallback != nil {
-			recoveredType := "cpu"
-			switch prevState {
-			case AlertStateMemory:
-				recoveredType = "memory"
-			case AlertStateBoth:
-				recoveredType = "both"
-			}
-			s.eventCallback(event.ResourceRecovery, map[string]interface{}{
+	for _, m := range metrics {
+		switch {
+		case m.is && !m.was:
+			cfg.LastAlertedAt = &now
+			s.emit(event.ResourceAlert, map[string]interface{}{
 				"container_id":   snap.ContainerID,
 				"container_name": containerName,
-				"recovered_type": recoveredType,
-				"current_value":  snap.CPUPercent,
-				"threshold":      cfg.CPUThreshold,
+				"alert_type":     m.name,
+				"current_value":  m.value,
+				"threshold":      m.thresh,
+				"timestamp":      now,
+			})
+		case m.was && !m.is:
+			s.emit(event.ResourceRecovery, map[string]interface{}{
+				"container_id":   snap.ContainerID,
+				"container_name": containerName,
+				"recovered_type": m.name,
+				"current_value":  m.value,
+				"threshold":      m.thresh,
 				"timestamp":      now,
 			})
 		}

@@ -143,17 +143,20 @@ const showCreate = ref(false)
 const testing = ref<string | null>(null)
 const testResult = ref<TestWebhookResponse | null>(null)
 
-async function load() {
-  loading.value = true
-  error.value = ''
+async function refresh() {
   try {
     const res = await listWebhooks()
     webhooks.value = res.webhooks
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load webhooks'
-  } finally {
-    loading.value = false
   }
+}
+
+async function load() {
+  loading.value = true
+  error.value = ''
+  await refresh()
+  loading.value = false
 }
 
 async function handleTest(wh: WebhookSubscription) {
@@ -166,6 +169,7 @@ async function handleTest(wh: WebhookSubscription) {
   } finally {
     testing.value = null
   }
+  await refresh()
 }
 
 async function handleDelete(wh: WebhookSubscription) {

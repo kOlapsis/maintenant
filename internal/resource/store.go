@@ -45,7 +45,7 @@ type ResourceStore interface {
 	InsertDailyRollup(ctx context.Context, r *RollupRow) error
 	AggregateHourlyRollup(ctx context.Context, bucketStart, bucketEnd time.Time) error
 	AggregateDailyRollup(ctx context.Context, bucketStart, bucketEnd time.Time) error
-	GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string) ([]TopConsumerRow, error)
+	GetTopConsumersByPeriod(ctx context.Context, metric string, period string, limit int, agentID *string, now time.Time) ([]TopConsumerRow, error)
 	DeleteHourlyBefore(ctx context.Context, before time.Time, batchSize int) (int64, error)
 	DeleteDailyBefore(ctx context.Context, before time.Time, batchSize int) (int64, error)
 }

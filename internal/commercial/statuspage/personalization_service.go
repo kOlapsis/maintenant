@@ -284,6 +284,6 @@ func (svc *PersonalizationService) AssetSizeCap(role status.AssetRole) int64 {
 }
 
 // DetectAssetMIME sniffs the upload's MIME type and refuses one role does not allow.
-func (svc *PersonalizationService) DetectAssetMIME(role status.AssetRole, head []byte) (string, error) {
-	return DetectAssetMIME(role, head)
+func (svc *PersonalizationService) DetectAssetMIME(role status.AssetRole, data []byte) (string, error) {
+	return DetectAssetMIME(role, data)
 }

@@ -38,42 +38,39 @@ const (
 
 // Container represents a discovered container/workload tracked by maintenant.
 type Container struct {
-	ID                   string         `json:"id"`
-	ExternalID           string         `json:"external_id"`
-	AgentID              string         `json:"agent_id"`
-	Name                 string         `json:"name"`
-	Image                string         `json:"image"`
-	State                ContainerState `json:"state"`
-	HealthStatus         *HealthStatus  `json:"health_status"`
-	HasHealthCheck       bool           `json:"has_health_check"`
-	OrchestrationGroup   string         `json:"orchestration_group,omitempty"`
-	OrchestrationUnit    string         `json:"orchestration_unit,omitempty"`
-	CustomGroup          string         `json:"custom_group,omitempty"`
-	IsIgnored            bool           `json:"is_ignored"`
-	AlertSeverity        AlertSeverity  `json:"alert_severity"`
-	RestartThreshold     int            `json:"restart_threshold"`
-	AlertChannels        string         `json:"alert_channels,omitempty"`
-	Archived             bool           `json:"archived"`
-	FirstSeenAt          time.Time      `json:"first_seen_at"`
-	LastStateChangeAt    time.Time      `json:"last_state_change_at"`
-	ArchivedAt           *time.Time     `json:"archived_at,omitempty"`
-	RuntimeType          string         `json:"runtime_type"`
-	ErrorDetail          string         `json:"error_detail,omitempty"`
-	ControllerKind       string         `json:"controller_kind,omitempty"`
-	Namespace            string         `json:"namespace,omitempty"`
-	PodCount             int            `json:"pod_count"`
-	ReadyCount           int            `json:"ready_count"`
-	ComposeWorkingDir    string         `json:"compose_working_dir,omitempty"`
-	ImageVersion         string         `json:"image_version,omitempty"`
-	ImageSource          string         `json:"image_source,omitempty"`
-	ImageURL             string         `json:"image_url,omitempty"`
-	ImageDescription     string         `json:"image_description,omitempty"`
-	SwarmServiceID       string         `json:"swarm_service_id,omitempty"`
-	SwarmServiceName     string         `json:"swarm_service_name,omitempty"`
-	SwarmServiceMode     string         `json:"swarm_service_mode,omitempty"`
-	SwarmNodeID          string         `json:"swarm_node_id,omitempty"`
-	SwarmTaskSlot        int            `json:"swarm_task_slot,omitempty"`
-	SwarmDesiredReplicas int            `json:"swarm_desired_replicas,omitempty"`
+	ID                 string         `json:"id"`
+	ExternalID         string         `json:"external_id"`
+	AgentID            string         `json:"agent_id"`
+	Name               string         `json:"name"`
+	Image              string         `json:"image"`
+	State              ContainerState `json:"state"`
+	HealthStatus       *HealthStatus  `json:"health_status"`
+	HasHealthCheck     bool           `json:"has_health_check"`
+	OrchestrationGroup string         `json:"orchestration_group,omitempty"`
+	OrchestrationUnit  string         `json:"orchestration_unit,omitempty"`
+	CustomGroup        string         `json:"custom_group,omitempty"`
+	IsIgnored          bool           `json:"is_ignored"`
+	AlertSeverity      AlertSeverity  `json:"alert_severity"`
+	RestartThreshold   int            `json:"restart_threshold"`
+	Archived           bool           `json:"archived"`
+	FirstSeenAt        time.Time      `json:"first_seen_at"`
+	LastStateChangeAt  time.Time      `json:"last_state_change_at"`
+	ArchivedAt         *time.Time     `json:"archived_at,omitempty"`
+	RuntimeType        string         `json:"runtime_type"`
+	ErrorDetail        string         `json:"error_detail,omitempty"`
+	ControllerKind     string         `json:"controller_kind,omitempty"`
+	Namespace          string         `json:"namespace,omitempty"`
+	PodCount           int            `json:"pod_count"`
+	ReadyCount         int            `json:"ready_count"`
+	ComposeWorkingDir  string         `json:"compose_working_dir,omitempty"`
+	ImageVersion       string         `json:"image_version,omitempty"`
+	ImageSource        string         `json:"image_source,omitempty"`
+	ImageURL           string         `json:"image_url,omitempty"`
+	ImageDescription   string         `json:"image_description,omitempty"`
+	SwarmServiceID     string         `json:"swarm_service_id,omitempty"`
+	SwarmServiceName   string         `json:"swarm_service_name,omitempty"`
+	SwarmNodeID        string         `json:"swarm_node_id,omitempty"`
+	SwarmTaskSlot      int            `json:"swarm_task_slot,omitempty"`
 }
 
 // StateTransition records a container state change event.
@@ -120,7 +117,7 @@ func (c *Container) GroupSource() string {
 	if c.CustomGroup != "" {
 		return "label"
 	}
-	if c.ControllerKind != "" {
+	if c.ControllerKind != "" && c.RuntimeType == "kubernetes" {
 		return "namespace"
 	}
 	if c.OrchestrationGroup != "" && c.RuntimeType == "docker" {

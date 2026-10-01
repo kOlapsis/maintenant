@@ -38,12 +38,12 @@ func registerTriggerTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "create_trigger",
-		Description: "Create a new alert trigger, notifying recoveries by default. Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
+		Description: "Create a new alert trigger, notifying recoveries by default." + scopeFiltersRequire(),
 	}, createTriggerHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "update_trigger",
-		Description: "Update an existing alert trigger (last-write-wins). Scope and tag filters" + requires(extension.CapAlertAdvancedFilters),
+		Description: "Update an existing alert trigger (last-write-wins)." + scopeFiltersRequire(),
 	}, updateTriggerHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
@@ -65,8 +65,7 @@ type triggerInput struct {
 	FilterSeverities string   `json:"filter_severities" jsonschema:"CSV severity filter (e.g. 'critical,warning'). Empty matches everything."`
 	FilterSources    string   `json:"filter_sources" jsonschema:"CSV source filter (e.g. 'container,endpoint'). Empty matches everything."`
 	FilterScopes     string   `json:"filter_scopes" jsonschema:"CSV scope filter (e.g. 'container:42,endpoint:7'). Needs the advanced filters capability. Empty matches everything."`
-	FilterTags       string   `json:"filter_tags" jsonschema:"CSV tag filter. Needs the advanced filters capability. Empty matches everything."`
-	Enabled          bool     `json:"enabled" jsonschema:"Whether the trigger is active"`
+	Enabled          *bool    `json:"enabled,omitempty" jsonschema:"Whether the trigger is active. Defaults to true on creation; omitted on update, the current value is kept."`
 	NotifyOnResolve  *bool    `json:"notify_on_resolve,omitempty" jsonschema:"Relay recovery (resolved) notifications, default true"`
 	ChannelIDs       []string `json:"channel_ids" jsonschema:"Notification channel IDs (at least one required)"`
 }
@@ -82,11 +81,16 @@ type deleteTriggerInput struct {
 
 // --- helpers ---
 
-// checkAdvancedFilters refuses scope/tag filters the running edition does not
-// open. Only the "are advanced filters even in play" shortcut lives here; the
-// edition decision itself goes through the registry like every other.
-func checkAdvancedFilters(scopes, tags string) (*gomcp.CallToolResult, any, error) {
-	if scopes == "" && tags == "" {
+// scopeFiltersRequire tells, in a tool description, which edition scope filters need.
+func scopeFiltersRequire() string {
+	return " Scope filters require the " + titleEdition(extension.MinEdition(extension.CapAlertAdvancedFilters)) + " edition."
+}
+
+// checkAdvancedFilters refuses a scope filter other than the stored one when the
+// running edition does not open it. Only the "are advanced filters even in play"
+// shortcut lives here; the edition decision itself goes through the registry.
+func checkAdvancedFilters(scopes, stored string) (*gomcp.CallToolResult, any, error) {
+	if scopes == "" || scopes == stored {
 		return nil, nil, nil
 	}
 	return checkCapability(extension.CapAlertAdvancedFilters)
@@ -144,7 +148,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 		if svc.Triggers == nil || svc.Channels == nil {
 			return errResult("trigger or channel store not available")
 		}
-		if r, v, err := checkAdvancedFilters(input.FilterScopes, input.FilterTags); r != nil {
+		if r, v, err := checkAdvancedFilters(input.FilterScopes, ""); r != nil {
 			return r, v, err
 		}
 		if err := validateTriggerCommon(&input); err != nil {
@@ -160,6 +164,10 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 			}
 		}
 
+		enabled := true
+		if input.Enabled != nil {
+			enabled = *input.Enabled
+		}
 		notifyOnResolve := true
 		if input.NotifyOnResolve != nil {
 			notifyOnResolve = *input.NotifyOnResolve
@@ -170,8 +178,7 @@ func createTriggerHandler(svc *Services) gomcp.ToolHandlerFor[triggerInput, any]
 			FilterSeverities: input.FilterSeverities,
 			FilterSources:    input.FilterSources,
 			FilterScopes:     input.FilterScopes,
-			FilterTags:       input.FilterTags,
-			Enabled:          input.Enabled,
+			Enabled:          enabled,
 			NotifyOnResolve:  notifyOnResolve,
 			ChannelIDs:       input.ChannelIDs,
 		}
@@ -198,7 +205,7 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		if existing == nil {
 			return errResult("trigger not found")
 		}
-		if r, v, err := checkAdvancedFilters(input.FilterScopes, input.FilterTags); r != nil {
+		if r, v, err := checkAdvancedFilters(input.FilterScopes, existing.FilterScopes); r != nil {
 			return r, v, err
 		}
 		if err := validateTriggerCommon(&input.triggerInput); err != nil {
@@ -218,8 +225,9 @@ func updateTriggerHandler(svc *Services) gomcp.ToolHandlerFor[updateTriggerInput
 		existing.FilterSeverities = input.FilterSeverities
 		existing.FilterSources = input.FilterSources
 		existing.FilterScopes = input.FilterScopes
-		existing.FilterTags = input.FilterTags
-		existing.Enabled = input.Enabled
+		if input.Enabled != nil {
+			existing.Enabled = *input.Enabled
+		}
 		if input.NotifyOnResolve != nil {
 			existing.NotifyOnResolve = *input.NotifyOnResolve
 		}

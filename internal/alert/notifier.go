@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -24,11 +25,9 @@ const (
 	maxRetries            = 3
 )
 
-// Retry backoff durations: 1s, 5s, 25s.
 var retryBackoffs = []time.Duration{
 	1 * time.Second,
 	5 * time.Second,
-	25 * time.Second,
 }
 
 // NotificationJob represents a webhook delivery job.
@@ -41,6 +40,8 @@ type NotificationJob struct {
 	// they already marshalled and signed). When nil, the body is formatted
 	// from Alert.
 	Body []byte
+	// Done, when set, receives the outcome once the last attempt is over.
+	Done func(ctx context.Context, err error)
 }
 
 // jobAlertID returns the job's alert id for logging, or "" when the job has no
@@ -61,7 +62,7 @@ type WebhookPayload struct {
 
 // Notifier dispatches alert notifications with a bounded worker pool.
 type Notifier struct {
-	jobs         chan NotificationJob
+	queues       [notifierWorkerCount]chan NotificationJob
 	channelStore ChannelStore
 	httpClient   *http.Client
 	logger       *slog.Logger
@@ -78,8 +79,7 @@ type Notifier struct {
 func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bool) *Notifier {
 	client := ssrf.NewHTTPClient(webhookTimeout, allowPrivate)
 	webhook := &webhookSender{client: client, format: formatWebhookPayload, logger: logger}
-	return &Notifier{
-		jobs:         make(chan NotificationJob, notifierChannelBuffer),
+	n := &Notifier{
 		channelStore: channelStore,
 		httpClient:   client,
 		logger:       logger,
@@ -90,6 +90,10 @@ func NewNotifier(channelStore ChannelStore, logger *slog.Logger, allowPrivate bo
 		},
 		suspendedLogged: make(map[string]bool),
 	}
+	for i := range n.queues {
+		n.queues[i] = make(chan NotificationJob, notifierChannelBuffer)
+	}
+	return n
 }
 
 // HTTPClient returns the SSRF-guarded client the notifier delivers webhooks with.
@@ -125,27 +129,39 @@ func (n *Notifier) SMTPConfigured() bool {
 // Start begins the worker pool. Call in a goroutine.
 func (n *Notifier) Start(ctx context.Context) {
 	n.logger.Info("alert notifier: started", "workers", notifierWorkerCount)
-	for i := 0; i < notifierWorkerCount; i++ {
-		go n.worker(ctx)
+	for _, q := range n.queues {
+		go n.worker(ctx, q)
 	}
 }
 
-// Enqueue adds a notification job to the work queue.
+// Enqueue adds a notification job to the queue of its stream, whose jobs one worker delivers in order.
 func (n *Notifier) Enqueue(job NotificationJob) {
 	select {
-	case n.jobs <- job:
+	case n.queues[streamOf(job)] <- job:
 	default:
 		n.logger.Warn("notifier: job queue full, dropping notification",
 			"alert_id", jobAlertID(job), "channel_id", job.Channel.ID)
 	}
 }
 
-func (n *Notifier) worker(ctx context.Context) {
+// streamOf picks the queue shared by an alert's notifications to one channel, or by a webhook subscription's
+// events, so a recovery never overtakes the alert it resolves.
+func streamOf(job NotificationJob) uint32 {
+	h := fnv.New32a()
+	if job.Alert != nil {
+		_, _ = h.Write([]byte(job.Alert.ID + "\x00" + job.Channel.ID))
+	} else {
+		_, _ = h.Write([]byte(job.Channel.URL))
+	}
+	return h.Sum32() % notifierWorkerCount
+}
+
+func (n *Notifier) worker(ctx context.Context, jobs <-chan NotificationJob) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case job, ok := <-n.jobs:
+		case job, ok := <-jobs:
 			if !ok {
 				return
 			}
@@ -208,6 +224,9 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 				"channel_id", job.Channel.ID,
 				"channel_type", job.Channel.Type,
 			)
+			if job.Done != nil {
+				job.Done(ctx, nil)
+			}
 			return
 		}
 
@@ -217,6 +236,9 @@ func (n *Notifier) deliver(ctx context.Context, job NotificationJob, sender Chan
 	}
 
 	n.failDelivery(ctx, job.Delivery, sender.FailureMessage(lastErr))
+	if job.Done != nil {
+		job.Done(ctx, lastErr)
+	}
 }
 
 func (n *Notifier) failDelivery(ctx context.Context, d *NotificationDelivery, errMsg string) {
@@ -285,6 +307,11 @@ func (n *Notifier) SendNow(ctx context.Context, a *Alert, ch *NotificationChanne
 			"attempt", attempt+1, "channel_id", ch.ID, "channel_type", ch.Type, "alert_id", a.ID, "error", lastErr)
 	}
 	return lastErr
+}
+
+// SendBodyNow posts a pre-rendered body to ch once, with the channel's headers, and returns the HTTP status.
+func (n *Notifier) SendBodyNow(ctx context.Context, ch *NotificationChannel, body []byte) (int, error) {
+	return n.webhook.sendBody(ctx, ch, body)
 }
 
 // SendTestWebhook sends a test notification to verify a channel is reachable.

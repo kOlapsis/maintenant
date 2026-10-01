@@ -183,7 +183,7 @@ func TestStatusPageHTML_NoUnhashedInlineScript(t *testing.T) {
 
 	policy := contentSecurityPolicy(index)
 
-	h := status.NewHandler(nil, nil, nil, nil)
+	h := status.NewHandler(nil, nil, nil, nil, "")
 	h.SetIndexHTML(index)
 
 	rec := httptest.NewRecorder()

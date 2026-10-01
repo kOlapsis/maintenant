@@ -23,20 +23,19 @@ type swarmTopologyReader interface {
 }
 
 // SwarmHandler handles Swarm API endpoints. The services/tasks/nodes lists are
-// store-backed (per-agent); the Pro live dashboards (dashboard, cluster,
-// update-status, resources) still read the server's own live runtime.
+// store-backed (per-agent); the live views (dashboard, cluster,
+// update-status, resources) read the server's own live runtime.
 type SwarmHandler struct {
-	cluster        func() *swarm.SwarmCluster
-	discovery      func() *swarm.ServiceDiscovery
-	detector       func() *swarm.Detector
-	topo           swarmTopologyReader
-	nodeStore      swarm.NodeStore
-	updateTracker  *swarm.UpdateTracker
-	crashLoop      *swarm.CrashLoopDetector
-	replicaChecker *swarm.ReplicaHealthChecker
-	containerSvc   *container.Service
-	resourceSvc    *resource.Service
-	agents         AgentDirectory
+	cluster       func() *swarm.SwarmCluster
+	discovery     func() *swarm.ServiceDiscovery
+	detector      func() *swarm.Detector
+	topo          swarmTopologyReader
+	nodeStore     swarm.NodeStore
+	updateTracker func() *swarm.UpdateTracker
+	crashLoop     func() *swarm.CrashLoopDetector
+	containerSvc  *container.Service
+	resourceSvc   *resource.Service
+	agents        AgentDirectory
 }
 
 // SetAgentDirectory wires agent name resolution so multi-host list views can show
@@ -63,23 +62,21 @@ func NewSwarmHandler(
 	detectorFn func() *swarm.Detector,
 	topo swarmTopologyReader,
 	nodeStore swarm.NodeStore,
-	updateTracker *swarm.UpdateTracker,
-	crashLoop *swarm.CrashLoopDetector,
-	replicaChecker *swarm.ReplicaHealthChecker,
+	updateTrackerFn func() *swarm.UpdateTracker,
+	crashLoopFn func() *swarm.CrashLoopDetector,
 	containerSvc *container.Service,
 	resourceSvc *resource.Service,
 ) *SwarmHandler {
 	return &SwarmHandler{
-		cluster:        clusterFn,
-		discovery:      discoveryFn,
-		detector:       detectorFn,
-		topo:           topo,
-		nodeStore:      nodeStore,
-		updateTracker:  updateTracker,
-		crashLoop:      crashLoop,
-		replicaChecker: replicaChecker,
-		containerSvc:   containerSvc,
-		resourceSvc:    resourceSvc,
+		cluster:       clusterFn,
+		discovery:     discoveryFn,
+		detector:      detectorFn,
+		topo:          topo,
+		nodeStore:     nodeStore,
+		updateTracker: updateTrackerFn,
+		crashLoop:     crashLoopFn,
+		containerSvc:  containerSvc,
+		resourceSvc:   resourceSvc,
 	}
 }
 
@@ -178,7 +175,7 @@ func (h *SwarmHandler) HandleGetService(w http.ResponseWriter, r *http.Request) 
 	WriteJSON(w, http.StatusOK, resp)
 }
 
-// HandleListNodes handles GET /api/v1/swarm/nodes (Pro).
+// HandleListNodes handles GET /api/v1/swarm/nodes.
 func (h *SwarmHandler) HandleListNodes(w http.ResponseWriter, r *http.Request) {
 	if h.nodeStore == nil {
 		WriteError(w, http.StatusConflict, "SWARM_NODES_NOT_AVAILABLE", "Node monitoring is not available")
@@ -212,7 +209,7 @@ func (h *SwarmHandler) HandleListNodes(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleGetNodeDetail handles GET /api/v1/swarm/nodes/{nodeID} (Pro).
+// HandleGetNodeDetail handles GET /api/v1/swarm/nodes/{nodeID}.
 func (h *SwarmHandler) HandleGetNodeDetail(w http.ResponseWriter, r *http.Request) {
 	nodeID := r.PathValue("nodeID")
 
@@ -258,7 +255,7 @@ func (h *SwarmHandler) HandleGetNodeDetail(w http.ResponseWriter, r *http.Reques
 	WriteJSON(w, http.StatusOK, resp)
 }
 
-// HandleGetUpdateStatus handles GET /api/v1/swarm/services/{serviceID}/update-status (Pro).
+// HandleGetUpdateStatus handles GET /api/v1/swarm/services/{serviceID}/update-status.
 func (h *SwarmHandler) HandleGetUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	serviceID := r.PathValue("serviceID")
 
@@ -274,7 +271,8 @@ func (h *SwarmHandler) HandleGetUpdateStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if h.updateTracker == nil {
+	tracker := h.updateTracker()
+	if tracker == nil {
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"service_id":    serviceID,
 			"service_name":  svc.Name,
@@ -284,7 +282,7 @@ func (h *SwarmHandler) HandleGetUpdateStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	progress, err := h.updateTracker.GetUpdateStatus(r.Context(), serviceID)
+	progress, err := tracker.GetUpdateStatus(r.Context(), serviceID)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get update status")
 		return
@@ -391,7 +389,7 @@ func taskToJSON(t *swarm.SwarmTask, serviceName string) map[string]interface{} {
 	return m
 }
 
-// HandleGetDashboard handles GET /api/v1/swarm/dashboard (Pro).
+// HandleGetDashboard handles GET /api/v1/swarm/dashboard.
 func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request) {
 	cluster := h.cluster()
 	if cluster == nil {
@@ -408,6 +406,7 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 	services := make([]map[string]interface{}, 0)
 
 	if disc != nil {
+		crashLoop := h.crashLoop()
 		svcList := disc.ListServices()
 		serviceCount = len(svcList)
 		for _, svc := range svcList {
@@ -426,7 +425,7 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 			if svc.UpdateStatus != nil {
 				entry["update_state"] = svc.UpdateStatus.State
 			}
-			if h.crashLoop != nil && h.crashLoop.IsCrashLooping(svc.ServiceID) {
+			if crashLoop != nil && crashLoop.IsCrashLooping(svc.ServiceID) {
 				entry["crash_loop"] = true
 			}
 			services = append(services, entry)
@@ -460,13 +459,12 @@ func (h *SwarmHandler) HandleGetDashboard(w http.ResponseWriter, r *http.Request
 			"task_count":         taskCount,
 			"healthy_task_count": healthyTaskCount,
 		},
-		"nodes":         nodeResults,
-		"services":      services,
-		"recent_events": []interface{}{},
+		"nodes":    nodeResults,
+		"services": services,
 	})
 }
 
-// HandleGetCluster handles GET /api/v1/swarm/cluster (Pro).
+// HandleGetCluster handles GET /api/v1/swarm/cluster.
 func (h *SwarmHandler) HandleGetCluster(w http.ResponseWriter, r *http.Request) {
 	cluster := h.cluster()
 	if cluster == nil {
@@ -550,7 +548,7 @@ func nodeToJSON(n *swarm.SwarmNode) map[string]interface{} {
 	}
 }
 
-// HandleGetServiceResources handles GET /api/v1/swarm/services/{serviceID}/resources (Pro).
+// HandleGetServiceResources handles GET /api/v1/swarm/services/{serviceID}/resources.
 // Returns per-task CPU/RAM/network snapshots for a Swarm service.
 func (h *SwarmHandler) HandleGetServiceResources(w http.ResponseWriter, r *http.Request) {
 	serviceID := r.PathValue("serviceID")

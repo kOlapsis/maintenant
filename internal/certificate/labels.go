@@ -7,6 +7,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/kolapsis/maintenant/internal/container"
 )
 
 const tlsLabel = "maintenant.tls.certificates"
@@ -19,8 +21,11 @@ type ParsedCertLabel struct {
 
 // ParseCertificateLabels extracts certificate monitoring targets from container labels.
 // The label format is: maintenant.tls.certificates=host1,host2:8443,host3
-// Hostnames without a port default to 443.
+// Hostnames without a port default to 443. An ignored container declares none.
 func ParseCertificateLabels(labels map[string]string) []ParsedCertLabel {
+	if container.IgnoredByLabels(labels) {
+		return nil
+	}
 	raw, ok := labels[tlsLabel]
 	if !ok {
 		return nil

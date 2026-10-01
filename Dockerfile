@@ -42,7 +42,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata setpriv \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates tzdata setpriv \
     && mkdir -p /data \
     && chown 65534:65534 /data
 
@@ -50,6 +51,9 @@ RUN apk add --no-cache ca-certificates tzdata setpriv \
 # UUID conversion of large tables) on the data volume. The hardened runtime mounts
 # /tmp as a tiny tmpfs, which SQLITE_FULL-fails the conversion; /data has real space.
 ENV SQLITE_TMPDIR=/data
+
+# Its directory also holds the licence cache and the update window, PostgreSQL or not.
+ENV MAINTENANT_DB=/data/maintenant.db
 
 # Tells the OS identity reader it must not fall back to the image's own
 # /etc/os-release, which describes the container rather than the host.

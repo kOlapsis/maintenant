@@ -37,18 +37,18 @@ func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Conta
 	_, err := s.writer.Exec(ctx,
 		`INSERT INTO containers (id, agent_id, external_id, name, image, state, health_status, has_health_check,
 			orchestration_group, orchestration_unit, custom_group, is_ignored, alert_severity,
-			restart_threshold, alert_channels, archived, first_seen_at, last_state_change_at,
+			restart_threshold, archived, first_seen_at, last_state_change_at,
 			runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
 			compose_working_dir,
-			swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas,
+			swarm_service_id, swarm_service_name, swarm_node_id, swarm_task_slot,
 			image_version, image_source, image_url, image_description)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, image=excluded.image, state=excluded.state, health_status=excluded.health_status,
 			has_health_check=excluded.has_health_check, orchestration_group=excluded.orchestration_group,
 			orchestration_unit=excluded.orchestration_unit, custom_group=excluded.custom_group,
 			is_ignored=excluded.is_ignored, alert_severity=excluded.alert_severity,
-			restart_threshold=excluded.restart_threshold, alert_channels=excluded.alert_channels,
+			restart_threshold=excluded.restart_threshold,
 			archived=excluded.archived, last_state_change_at=excluded.last_state_change_at,
 			agent_id=excluded.agent_id,
 			runtime_type=excluded.runtime_type, error_detail=excluded.error_detail,
@@ -56,18 +56,17 @@ func (s *ContainerStore) InsertContainer(ctx context.Context, c *container.Conta
 			pod_count=excluded.pod_count, ready_count=excluded.ready_count,
 			compose_working_dir=excluded.compose_working_dir,
 			swarm_service_id=excluded.swarm_service_id, swarm_service_name=excluded.swarm_service_name,
-			swarm_service_mode=excluded.swarm_service_mode, swarm_node_id=excluded.swarm_node_id,
-			swarm_task_slot=excluded.swarm_task_slot, swarm_desired_replicas=excluded.swarm_desired_replicas,
+			swarm_node_id=excluded.swarm_node_id, swarm_task_slot=excluded.swarm_task_slot,
 			image_version=excluded.image_version, image_source=excluded.image_source,
 			image_url=excluded.image_url, image_description=excluded.image_description`,
 		c.ID, c.AgentID, c.ExternalID, c.Name, c.Image, string(c.State), nullableHealth(c.HealthStatus),
 		boolToInt(c.HasHealthCheck), NullableString(c.OrchestrationGroup), NullableString(c.OrchestrationUnit),
 		NullableString(c.CustomGroup), boolToInt(c.IsIgnored), string(c.AlertSeverity),
-		c.RestartThreshold, NullableString(c.AlertChannels), boolToInt(c.Archived),
+		c.RestartThreshold, boolToInt(c.Archived),
 		c.FirstSeenAt.Unix(), c.LastStateChangeAt.Unix(),
 		c.RuntimeType, c.ErrorDetail, c.ControllerKind, c.Namespace, c.PodCount, c.ReadyCount,
 		c.ComposeWorkingDir,
-		c.SwarmServiceID, c.SwarmServiceName, c.SwarmServiceMode, c.SwarmNodeID, c.SwarmTaskSlot, c.SwarmDesiredReplicas,
+		c.SwarmServiceID, c.SwarmServiceName, c.SwarmNodeID, c.SwarmTaskSlot,
 		c.ImageVersion, c.ImageSource, c.ImageURL, c.ImageDescription,
 	)
 	if err != nil {
@@ -81,21 +80,21 @@ func (s *ContainerStore) UpdateContainer(ctx context.Context, c *container.Conta
 	_, err := s.writer.Exec(ctx,
 		`UPDATE containers SET name=?, image=?, state=?, health_status=?, has_health_check=?,
 			orchestration_group=?, orchestration_unit=?, custom_group=?, is_ignored=?, alert_severity=?,
-			restart_threshold=?, alert_channels=?, archived=?, last_state_change_at=?, archived_at=?,
+			restart_threshold=?, archived=?, last_state_change_at=?, archived_at=?,
 			runtime_type=?, error_detail=?, controller_kind=?, namespace=?, pod_count=?, ready_count=?,
 			compose_working_dir=?,
-			swarm_service_id=?, swarm_service_name=?, swarm_service_mode=?, swarm_node_id=?, swarm_task_slot=?, swarm_desired_replicas=?,
+			swarm_service_id=?, swarm_service_name=?, swarm_node_id=?, swarm_task_slot=?,
 			image_version=?, image_source=?, image_url=?, image_description=?,
 			agent_id=?
 		WHERE id=?`,
 		c.Name, c.Image, string(c.State), nullableHealth(c.HealthStatus),
 		boolToInt(c.HasHealthCheck), NullableString(c.OrchestrationGroup), NullableString(c.OrchestrationUnit),
 		NullableString(c.CustomGroup), boolToInt(c.IsIgnored), string(c.AlertSeverity),
-		c.RestartThreshold, NullableString(c.AlertChannels), boolToInt(c.Archived),
+		c.RestartThreshold, boolToInt(c.Archived),
 		c.LastStateChangeAt.Unix(), nullableTime(c.ArchivedAt),
 		c.RuntimeType, c.ErrorDetail, c.ControllerKind, c.Namespace, c.PodCount, c.ReadyCount,
 		c.ComposeWorkingDir,
-		c.SwarmServiceID, c.SwarmServiceName, c.SwarmServiceMode, c.SwarmNodeID, c.SwarmTaskSlot, c.SwarmDesiredReplicas,
+		c.SwarmServiceID, c.SwarmServiceName, c.SwarmNodeID, c.SwarmTaskSlot,
 		c.ImageVersion, c.ImageSource, c.ImageURL, c.ImageDescription,
 		c.AgentID,
 		c.ID,
@@ -333,8 +332,14 @@ func (s *ContainerStore) DeleteTransitionsBefore(ctx context.Context, before tim
 	return deleted, err
 }
 
+// deleteTransitionsBefore keeps the latest transition of each container,
+// however old: it is the state the container is still in, and uptime starts
+// from it.
 func (s *ContainerStore) deleteTransitionsBefore(ctx context.Context, before time.Time, o batchOpts) (int64, bool, error) {
-	return deleteRowsBefore(ctx, s.writer, o, "state_transitions", "timestamp", before)
+	return deleteRowsWhere(ctx, s.writer, o, "state_transitions",
+		`timestamp < ? AND EXISTS (SELECT 1 FROM state_transitions later
+			WHERE later.container_id = state_transitions.container_id AND later.timestamp > state_transitions.timestamp)`,
+		before.Unix())
 }
 
 func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, before time.Time) (int64, error) {
@@ -375,10 +380,10 @@ func (s *ContainerStore) DeleteArchivedContainersBefore(ctx context.Context, bef
 
 const containerColumns = `id, agent_id, external_id, name, image, state, health_status, has_health_check,
 	orchestration_group, orchestration_unit, custom_group, is_ignored, alert_severity,
-	restart_threshold, alert_channels, archived, first_seen_at, last_state_change_at, archived_at,
+	restart_threshold, archived, first_seen_at, last_state_change_at, archived_at,
 	runtime_type, error_detail, controller_kind, namespace, pod_count, ready_count,
 	compose_working_dir,
-	swarm_service_id, swarm_service_name, swarm_service_mode, swarm_node_id, swarm_task_slot, swarm_desired_replicas,
+	swarm_service_id, swarm_service_name, swarm_node_id, swarm_task_slot,
 	image_version, image_source, image_url, image_description`
 
 const transitionColumns = `id, container_id, previous_state, new_state, previous_health, new_health, exit_code, log_snippet, timestamp`
@@ -389,7 +394,7 @@ type rowScanner interface {
 
 func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, error) {
 	var c container.Container
-	var healthStatus, orchestrationGroup, orchestrationUnit, customGroup, alertChannels sql.NullString
+	var healthStatus, orchestrationGroup, orchestrationUnit, customGroup sql.NullString
 	var hasHealthCheck, isIgnored, archived int
 	var firstSeen, lastChange int64
 	var archivedAt sql.NullInt64
@@ -399,11 +404,11 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 		&healthStatus, &hasHealthCheck,
 		&orchestrationGroup, &orchestrationUnit, &customGroup,
 		&isIgnored, &c.AlertSeverity,
-		&c.RestartThreshold, &alertChannels,
+		&c.RestartThreshold,
 		&archived, &firstSeen, &lastChange, &archivedAt,
 		&c.RuntimeType, &c.ErrorDetail, &c.ControllerKind, &c.Namespace, &c.PodCount, &c.ReadyCount,
 		&c.ComposeWorkingDir,
-		&c.SwarmServiceID, &c.SwarmServiceName, &c.SwarmServiceMode, &c.SwarmNodeID, &c.SwarmTaskSlot, &c.SwarmDesiredReplicas,
+		&c.SwarmServiceID, &c.SwarmServiceName, &c.SwarmNodeID, &c.SwarmTaskSlot,
 		&c.ImageVersion, &c.ImageSource, &c.ImageURL, &c.ImageDescription,
 	)
 	if err != nil {
@@ -431,9 +436,6 @@ func (s *ContainerStore) scanContainer(row rowScanner) (*container.Container, er
 	}
 	if customGroup.Valid {
 		c.CustomGroup = customGroup.String
-	}
-	if alertChannels.Valid {
-		c.AlertChannels = alertChannels.String
 	}
 	if archivedAt.Valid {
 		t := time.Unix(archivedAt.Int64, 0)

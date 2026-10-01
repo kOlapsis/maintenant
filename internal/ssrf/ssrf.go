@@ -18,6 +18,8 @@ import (
 	"net/url"
 	"syscall"
 	"time"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 // ErrBlockedAddress is returned when a URL resolves to, or a connection targets,
@@ -100,7 +102,7 @@ func control(_, address string, _ syscall.RawConn) error {
 // internal/private IPs on every hop, including redirects. When allowPrivate is
 // true (dev only, via MAINTENANT_ALLOW_PRIVATE_WEBHOOKS) the guard is disabled.
 func NewHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := trust.HTTPTransport()
 	if !allowPrivate {
 		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: control}
 		transport.DialContext = dialer.DialContext

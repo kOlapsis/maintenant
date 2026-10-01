@@ -39,24 +39,6 @@ func TestParseHostFilter(t *testing.T) {
 	}
 }
 
-func TestHostMatches(t *testing.T) {
-	local := ""
-	agent := "a1"
-
-	// nil filter => all hosts match.
-	assert.True(t, hostMatches("", nil))
-	assert.True(t, hostMatches(agent, nil))
-
-	// local filter ("") => only local (empty / sentinel) snapshots.
-	assert.True(t, hostMatches("", &local))
-	assert.False(t, hostMatches(agent, &local))
-
-	// specific agent filter.
-	assert.True(t, hostMatches(agent, &agent))
-	assert.False(t, hostMatches("a2", &agent))
-	assert.False(t, hostMatches("", &agent))
-}
-
 // The realtime top-consumers path must honour the ?agent_id host filter.
 func TestHandleGetTopConsumers_RealtimeHostFilter(t *testing.T) {
 	agentID := "a1"

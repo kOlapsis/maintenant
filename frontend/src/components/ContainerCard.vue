@@ -211,7 +211,7 @@ function getStateStyle(state: string) {
       class="mt-2.5 flex items-center gap-2 text-[10px]"
     >
       <span class="rounded px-1.5 py-0.5 bg-mnt-elevated text-mnt-muted">
-        {{ container.swarm_service_mode }}
+        {{ container.swarm_service_name }}
       </span>
       <span v-if="container.swarm_task_slot" class="text-mnt-muted">
         slot {{ container.swarm_task_slot }}

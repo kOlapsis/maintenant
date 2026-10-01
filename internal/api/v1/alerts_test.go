@@ -190,6 +190,37 @@ func TestHandleCreateChannel_EmailValidation(t *testing.T) {
 	}
 }
 
+func TestHandleCreateChannel_EnabledDefaultsToTrue(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	cases := []struct {
+		name        string
+		body        string
+		wantEnabled bool
+	}{
+		{"absent", `{"name":"hook","url":"https://example.com/hook"}`, true},
+		{"explicit true", `{"name":"hook","url":"https://example.com/hook","enabled":true}`, true},
+		{"explicit false", `{"name":"hook","url":"https://example.com/hook","enabled":false}`, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &AlertHandler{channelStore: &stubChannelStore{}, broker: NewSSEBroker(logger), allowPrivateWebhooks: true}
+
+			req := httptest.NewRequest("POST", "/api/v1/channels", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			h.HandleCreateChannel(rec, req)
+
+			require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+			var ch alert.NotificationChannel
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ch))
+			assert.Equal(t, tc.wantEnabled, ch.Enabled)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // HandleTestChannel — Pro channel type guard
 // ---------------------------------------------------------------------------

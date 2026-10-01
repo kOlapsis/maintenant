@@ -5,19 +5,21 @@
 package statuspage
 
 import (
+	"github.com/kolapsis/maintenant/internal/commercial/channels"
 	"github.com/kolapsis/maintenant/internal/extpoint"
-	"github.com/kolapsis/maintenant/internal/status"
 )
 
-// NewStatusPage builds the incident, subscriber, maintenance and personalization features in every edition; their admin routes are gated by capability.
+// NewStatusPage builds the incident, subscriber, maintenance and personalization features in every edition, emailing through the SMTP server of the environment when one is set.
 func NewStatusPage(d extpoint.StatusPageDeps) extpoint.StatusPage {
-	return extpoint.StatusPage{
+	sp := extpoint.StatusPage{
 		Incidents:       NewIncidentHandler(d.Components, d.Incidents, d.Service, d.Logger),
-		Notifier:        NewSubscriberNotifier(d.Subscribers, nil, d.BaseURL, d.Logger),
 		Maintenance:     NewMaintenanceScheduler(d.Maintenance, d.Components, d.Incidents, d.Service, d.Logger),
 		Personalization: NewPersonalizationService(d.Personalization, d.Logger.With("component", "personalization")),
-		Mailer: func(cfg status.SmtpConfig) status.Mailer {
-			return NewSmtpClient(cfg)
-		},
 	}
+	if d.SMTP.Host != "" {
+		mailer := channels.NewSMTPSender(channels.SMTPConfig(d.SMTP))
+		sp.Mailer = mailer
+		sp.Notifier = NewSubscriberNotifier(d.Subscribers, mailer, d.BaseURL, d.Logger)
+	}
+	return sp
 }

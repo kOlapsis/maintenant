@@ -10,12 +10,14 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
+	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/security"
+	"github.com/kolapsis/maintenant/internal/update"
 )
 
 const restartLoopAlertType = "restart_loop"
@@ -54,6 +56,32 @@ func heartbeatAlertEvents(h *heartbeat.Heartbeat, alertType string, details map[
 		msg = fmt.Sprintf("Heartbeat '%s' failed with exit code %v", h.Name, details["exit_code"])
 	}
 	return []alert.Event{build(hbAlertType, false, alert.SeverityCritical, msg)}
+}
+
+// certificateRecoveryEvent resolves the certificate alert whose type the recovery names. Caller sets Timestamp.
+func certificateRecoveryEvent(m map[string]any) alert.Event {
+	alertType := toString(m["previous_alert_type"])
+	host := toString(m["hostname"])
+	msg := fmt.Sprintf("Certificate renewed for %s", host)
+	switch alertType {
+	case certificate.AlertTypeChainInvalid:
+		msg = fmt.Sprintf("Certificate chain for %s verifies again", host)
+	case certificate.AlertTypeHostnameMismatch:
+		msg = fmt.Sprintf("Certificate for %s matches its hostname again", host)
+	case certificate.AlertTypeOCSPRevoked:
+		msg = fmt.Sprintf("Certificate for %s is no longer reported revoked", host)
+	}
+	return alert.Event{
+		Source:     alert.SourceCertificate,
+		AlertType:  alertType,
+		Severity:   alert.SeverityInfo,
+		IsRecover:  true,
+		Message:    msg,
+		EntityType: "certificate",
+		EntityID:   toString(m["monitor_id"]),
+		EntityName: host,
+		Details:    m,
+	}
 }
 
 // wireAlertCallbacks wires all service event callbacks for SSE broadcasting,
@@ -140,6 +168,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					Message:    "Container became unhealthy",
 					EntityType: "container",
 					EntityID:   toString(m["id"]),
+					EntityName: toString(m["container_name"]),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})
@@ -152,6 +181,7 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 					Message:    "Container recovered to healthy",
 					EntityType: "container",
 					EntityID:   toString(m["id"]),
+					EntityName: toString(m["container_name"]),
 					Details:    m,
 					Timestamp:  time.Now(),
 				})
@@ -159,10 +189,16 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 		}
 	})
 
+	// Endpoint events: the alerts they announce are raised by the alert callback below.
+	a.endpointSvc.SetEventCallback(func(eventType string, data any) {
+		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
+		if m, ok := data.(map[string]any); ok && eventType == event.EndpointStatusChanged {
+			a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", toString(m["endpoint_id"]))
+		}
+	})
+
 	// Endpoint alerts
 	a.endpointSvc.SetAlertCallback(func(ep *endpoint.Endpoint, result endpoint.CheckResult) (string, any) {
-		a.statusSvc.NotifyMonitorChanged(ctx, "endpoint", ep.ID)
-
 		epName := ep.ContainerName
 		if epName == "" {
 			epName = ep.Name
@@ -342,18 +378,9 @@ func (a *App) wireAlertCallbacks(alertDetector *alert.EndpointAlertDetector) {
 				Timestamp:  time.Now(),
 			})
 		case "certificate.recovery":
-			sendAlert(alert.Event{
-				Source:     alert.SourceCertificate,
-				AlertType:  "expiring",
-				Severity:   alert.SeverityInfo,
-				IsRecover:  true,
-				Message:    fmt.Sprintf("Certificate renewed for %v", m["hostname"]),
-				EntityType: "certificate",
-				EntityID:   toString(m["monitor_id"]),
-				EntityName: toString(m["hostname"]),
-				Details:    m,
-				Timestamp:  time.Now(),
-			})
+			evt := certificateRecoveryEvent(m)
+			evt.Timestamp = time.Now()
+			sendAlert(evt)
 		}
 	})
 
@@ -484,6 +511,19 @@ func updateDetectedAlert(m map[string]any, withChangelog bool) alert.Event {
 	}
 }
 
+// updateAlertWanted applies the container's maintenant.update.alert_on label to the severity computed for its update.
+func updateAlertWanted(m map[string]any, severity string) bool {
+	alertOn, _ := m["alert_on"].(string)
+	switch alertOn {
+	case update.AlertOnNone:
+		return false
+	case update.AlertOnCritical:
+		return severity == alert.SeverityCritical
+	default:
+		return true
+	}
+}
+
 // updateResolvedAlert builds the recovery event when a container's update is no
 // longer pending. EntityID uses the same container UID as updateDetectedAlert so
 // the right alert is resolved by dedup key. The caller sets Timestamp.
@@ -532,7 +572,10 @@ func (a *App) wireUpdateCallback() {
 			}
 			sendAlert(updateResolvedAlert(m))
 		case event.UpdateDetected:
-			sendAlert(updateDetectedAlert(m, extension.Allows(extension.CapChangelog)))
+			evt := updateDetectedAlert(m, extension.Allows(extension.CapChangelog))
+			if updateAlertWanted(m, evt.Severity) {
+				sendAlert(evt)
+			}
 		}
 	})
 }
@@ -579,75 +622,34 @@ func (a *App) wirePostureCallbacks() {
 	})
 }
 
-// wireSwarmCallbacks wires Swarm event callbacks for SSE broadcasting.
-func (a *App) wireSwarmCallbacks() {
-	if a.swarmEvents == nil {
-		return
+// wireSwarmCallbacks routes the Swarm manager's events to the SSE broker and
+// its alerts to the alert engine.
+func (a *App) wireSwarmCallbacks(m *swarmManager) {
+	sseBroadcast := func(eventType string, data any) {
+		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 	}
-	a.swarmEvents.SetCallback(func(eventType string, data any) {
+
+	m.events.SetCallback(sseBroadcast)
+	m.events.SetReplicaChecker(m.replicaChecker)
+	m.events.SetNodeService(m.nodeSvc)
+
+	m.nodeSvc.SetEventCallback(sseBroadcast)
+	m.nodeSvc.SetAlertCallback(a.emitAlert)
+	m.crashLoop.SetEventCallback(sseBroadcast)
+	m.crashLoop.SetAlertCallback(a.emitAlert)
+	m.updateTracker.SetEventCallback(sseBroadcast)
+	m.updateTracker.SetAlertCallback(a.emitAlert)
+	m.replicaChecker.SetEventCallback(sseBroadcast)
+	m.replicaChecker.SetAlertCallback(a.emitAlert)
+}
+
+// wireKubernetesAlerts routes the local cluster's alerts to the alert engine and
+// their SSE events to the broker.
+func (a *App) wireKubernetesAlerts() {
+	a.k8sAlerts.SetAlertCallback(a.emitAlert)
+	a.k8sAlerts.SetEventCallback(func(eventType string, data any) {
 		a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
 	})
-
-	// Wire replica health alerting (available for all editions with Swarm).
-	{
-		alertCh := a.alertEngine.EventChannel()
-		ctx := context.Background()
-		a.swarmEvents.SetAlertCallback(func(evt alert.Event) {
-			alertCh <- evt
-			a.statusSvc.HandleAlertEvent(ctx, evt)
-		})
-	}
-
-	// Wire node service into event processor and alert pipeline (Pro).
-	if a.swarmNodeSvc != nil {
-		a.swarmEvents.SetNodeService(a.swarmNodeSvc)
-
-		alertCh := a.alertEngine.EventChannel()
-		ctx := context.Background()
-
-		sseBroadcast := func(eventType string, data any) {
-			a.broker.Broadcast(v1.SSEEvent{Type: eventType, Data: data})
-		}
-		alertForward := func(evt alert.Event) {
-			alertCh <- evt
-			a.statusSvc.HandleAlertEvent(ctx, evt)
-		}
-
-		a.swarmNodeSvc.SetEventCallback(sseBroadcast)
-		a.swarmNodeSvc.SetAlertCallback(alertForward)
-
-		// Wire crash-loop detector (Pro).
-		if a.swarmCrashLoop != nil {
-			a.swarmCrashLoop.SetEventCallback(sseBroadcast)
-			a.swarmCrashLoop.SetAlertCallback(alertForward)
-		}
-
-		// Wire update tracker (Pro).
-		if a.swarmUpdateTracker != nil {
-			a.swarmUpdateTracker.SetEventCallback(sseBroadcast)
-			a.swarmUpdateTracker.SetAlertCallback(alertForward)
-		}
-
-		// Wire replica health checker (Pro).
-		if a.swarmReplicaChecker != nil {
-			a.swarmReplicaChecker.SetEventCallback(sseBroadcast)
-			a.swarmReplicaChecker.SetAlertCallback(alertForward)
-		}
-	}
-
-	// Broadcast initial Swarm status.
-	if a.swarmCluster != nil {
-		a.broker.Broadcast(v1.SSEEvent{
-			Type: event.SwarmStatus,
-			Data: map[string]any{
-				"active":        true,
-				"is_manager":    a.swarmCluster.IsManager,
-				"cluster_id":    a.swarmCluster.ID,
-				"manager_count": a.swarmCluster.ManagerCount,
-				"worker_count":  a.swarmCluster.WorkerCount,
-			},
-		})
-	}
 }
 
 // agentLifecycleEvent builds the alert event for an agent connection-state

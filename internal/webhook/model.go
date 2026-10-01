@@ -23,6 +23,12 @@ var ValidEventTypes = map[string]bool{
 // MaxConsecutiveFailures is the threshold at which a webhook is auto-disabled.
 const MaxConsecutiveFailures = 10
 
+// Delivery statuses recorded on a subscription.
+const (
+	DeliveryDelivered = "delivered"
+	DeliveryFailed    = "failed"
+)
+
 // WebhookSubscription represents a registered webhook URL.
 type WebhookSubscription struct {
 	ID                 string     `json:"id"`

@@ -68,6 +68,37 @@ func TestMiddlewareCountsForwardedClientBehindTrustedProxy(t *testing.T) {
 	}
 }
 
+func TestRejectTellsHowLongATokenTakesToComeBack(t *testing.T) {
+	cases := []struct {
+		name  string
+		rate  float64
+		after string
+	}{
+		{"public bucket", 10, "1"},
+		{"api bucket", 50, "1"},
+		{"subscriptions, five an hour", 5.0 / 3600.0, "720"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			New(tc.rate, 1, nil).Reject(rec)
+
+			if rec.Code != http.StatusTooManyRequests {
+				t.Fatalf("got %d, want 429", rec.Code)
+			}
+			if got := rec.Header().Get("Retry-After"); got != tc.after {
+				t.Fatalf("Retry-After %q, want %q", got, tc.after)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/json" {
+				t.Fatalf("Content-Type %q", got)
+			}
+			if got := rec.Body.String(); got != `{"error":{"code":"rate_limited","message":"Too many requests"}}` {
+				t.Fatalf("body %q", got)
+			}
+		})
+	}
+}
+
 func TestLimiterEvictionWaitsForARefilledBucket(t *testing.T) {
 	tight := New(10, 20, nil)
 	if got := tight.idleBeforeEviction(); got != 3*time.Minute {

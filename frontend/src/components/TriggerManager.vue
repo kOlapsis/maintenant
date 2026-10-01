@@ -20,6 +20,7 @@ const confirm = useConfirm()
 
 const showEditor = ref(false)
 const editingTrigger = ref<AlertTrigger | null>(null)
+const actionError = ref<string | null>(null)
 
 function openCreate() {
   editingTrigger.value = null
@@ -49,20 +50,32 @@ async function handleDelete(t: AlertTrigger) {
     destructive: true,
   })
   if (!ok) return
-  await store.remove(t.id)
+  await runAction(() => store.remove(t.id), 'Failed to delete trigger.')
 }
 
 async function handleToggleEnabled(t: AlertTrigger) {
-  await store.update(t.id, {
-    name: t.name,
-    filter_severities: t.filter_severities,
-    filter_sources: t.filter_sources,
-    filter_scopes: t.filter_scopes,
-    filter_tags: t.filter_tags,
-    enabled: !t.enabled,
-    notify_on_resolve: t.notify_on_resolve,
-    channel_ids: t.channel_ids,
-  })
+  await runAction(
+    () =>
+      store.update(t.id, {
+        name: t.name,
+        filter_severities: t.filter_severities,
+        filter_sources: t.filter_sources,
+        filter_scopes: t.filter_scopes,
+        enabled: !t.enabled,
+        notify_on_resolve: t.notify_on_resolve,
+        channel_ids: t.channel_ids,
+      }),
+    t.enabled ? 'Failed to disable trigger.' : 'Failed to enable trigger.',
+  )
+}
+
+async function runAction(action: () => Promise<unknown>, fallback: string) {
+  actionError.value = null
+  try {
+    await action()
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : fallback
+  }
 }
 
 onMounted(async () => {
@@ -114,10 +127,11 @@ onMounted(async () => {
 
     <!-- Error -->
     <div
-      v-if="store.error"
+      v-if="actionError || store.error"
+      role="alert"
       class="px-4 py-3 rounded-lg bg-mnt-status-down/10 border border-mnt-status-down/30 text-xs text-mnt-status-down"
     >
-      {{ store.error }}
+      {{ actionError ?? store.error }}
     </div>
   </div>
 </template>

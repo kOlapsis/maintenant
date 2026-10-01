@@ -62,26 +62,6 @@ func (n *noopSuppressor) IsSuppressed(_ context.Context, _, _, _ string) (bool, 
 	return false, nil
 }
 
-// purgeCountStore wraps a mock escalation.Store that counts PurgeRunsAndDeliveriesOlderThan calls.
-type purgeCountStore struct {
-	escalation.Store
-	mu    sync.Mutex
-	count int
-}
-
-func (p *purgeCountStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.count++
-	return nil
-}
-
-func (p *purgeCountStore) called() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.count
-}
-
 // TestEditionDowngradePropagatesToEscalation verifies that a Pro→CE license
 // transition deactivates all active escalation policies and stops all active
 // runs. This exercises the callback registered by wireLicenseSubscriber.
@@ -178,64 +158,6 @@ func TestEditionDowngradePropagatesToEscalation(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, runs, 1)
 	assert.Equal(t, "stopped_by_edition_downgrade", runs[0].Status)
-}
-
-// TestRetentionLoopStartsInProOnly verifies that RunRetentionLoop is started
-// in Pro (Pro) mode and triggers a purge, while in Community (CE) mode
-// the loop goroutine is never launched and the purge count stays at zero.
-func TestRetentionLoopStartsInProOnly(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	t.Run("pro_mode_calls_purge", func(t *testing.T) {
-		pstore := &purgeCountStore{}
-		svc := commesc.NewService(
-			pstore,
-			&noopChannelStore{},
-			func() extension.Edition { return extension.Pro },
-			&noopSuppressor{},
-			logger,
-		)
-
-		callN := 0
-		// First call returns just before 03:00 so the tick fires in <1s.
-		// Subsequent calls return past 03:00 so the purge executes immediately.
-		svc.SetClockFn(func() time.Time {
-			callN++
-			if callN <= 1 {
-				return time.Date(2026, 1, 15, 2, 59, 59, 500_000_000, time.Local)
-			}
-			return time.Date(2026, 1, 15, 3, 0, 1, 0, time.Local)
-		})
-
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-
-		// Replicate the conditional in app.go Start():
-		//   if extension.CurrentEdition() == extension.Pro { go svc.RunRetentionLoop(ctx) }
-		if svc != nil { // svc is Pro; always true — mirrors the runtime check
-			go svc.RunRetentionLoop(ctx)
-		}
-
-		require.Eventually(t, func() bool {
-			return pstore.called() >= 1
-		}, 2*time.Second, 50*time.Millisecond, "purge must be called at least once in Pro mode")
-	})
-
-	t.Run("ce_mode_no_purge", func(t *testing.T) {
-		pstore := &purgeCountStore{}
-		svc := commesc.NewService(
-			pstore,
-			&noopChannelStore{},
-			func() extension.Edition { return extension.Community },
-			&noopSuppressor{},
-			logger,
-		)
-		_ = svc // created but loop never started — mirrors the CE branch in app.go
-
-		// In CE mode the goroutine is never launched: 0 purge calls after 200ms.
-		time.Sleep(200 * time.Millisecond)
-		assert.Equal(t, 0, pstore.called(), "purge must not be called in CE mode")
-	})
 }
 
 // TestEditionTransitions_AllSixDirectedPairs covers the machine wireLicenseSubscriber

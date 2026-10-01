@@ -19,10 +19,10 @@ func NewEnricher(d extpoint.EnricherDeps) update.Enricher {
 		d.Store,
 		NewCVEClient(d.Store, d.Logger.With("component", "cve")),
 		NewChangelogResolver(d.Registry, d.Logger.With("component", "changelog")),
-		NewRiskEngine(),
+		NewRiskEngine(d.Insights, d.Restarts),
 		NewEcosystemResolver(d.Registry, d.Logger.With("component", "ecosystem")),
 		d.Logger.With("component", "enricher"),
 	)
-	d.Logger.Info("update enrichment pipeline enabled (Pro)")
+	d.Logger.Info("update enrichment pipeline enabled", "edition", extension.CurrentEdition())
 	return e
 }

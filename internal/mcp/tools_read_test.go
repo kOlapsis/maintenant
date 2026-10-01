@@ -148,9 +148,9 @@ func newMCPListAlertsSpy() *mcpListAlertsSpy {
 	return &mcpListAlertsSpy{mcpAlertStore: newMCPAlertStore()}
 }
 
-func (m *mcpListAlertsSpy) ListActiveAlerts(ctx context.Context) ([]*alert.Alert, error) {
+func (m *mcpListAlertsSpy) ListUnacknowledgedActiveAlerts(ctx context.Context) ([]*alert.Alert, error) {
 	m.activeOnlyCalled = true
-	return m.mcpAlertStore.ListActiveAlerts(ctx)
+	return m.mcpAlertStore.ListUnacknowledgedActiveAlerts(ctx)
 }
 
 func (m *mcpListAlertsSpy) ListAlerts(ctx context.Context, opts alert.ListAlertsOpts) ([]*alert.Alert, error) {
@@ -165,7 +165,7 @@ func TestListAlertsHandler_DefaultActiveOnly(t *testing.T) {
 
 	_, _, err := listAlertsHandler(svc)(context.Background(), nil, listAlertsInput{})
 	require.NoError(t, err)
-	assert.True(t, spy.activeOnlyCalled, "nil active_only must default to ListActiveAlerts")
+	assert.True(t, spy.activeOnlyCalled, "nil active_only must default to the unacknowledged active alerts")
 	assert.False(t, spy.listAlertsCalled)
 }
 
@@ -187,7 +187,7 @@ func TestListAlertsHandler_ActiveOnlyFalse_ReturnsAllStatuses(t *testing.T) {
 
 	_, _, err := listAlertsHandler(svc)(context.Background(), nil, listAlertsInput{ActiveOnly: &activeOnly})
 	require.NoError(t, err)
-	assert.False(t, spy.activeOnlyCalled, "active_only:false must not call ListActiveAlerts")
+	assert.False(t, spy.activeOnlyCalled, "active_only:false must not list the active alerts")
 	assert.True(t, spy.listAlertsCalled)
 	assert.Equal(t, 100, spy.listAlertsOpts.Limit)
 }

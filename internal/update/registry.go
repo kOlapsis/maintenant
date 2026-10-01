@@ -6,26 +6,33 @@ package update
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"runtime"
+	"slices"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 // RegistryClient wraps go-containerregistry for read-only registry operations.
-type RegistryClient struct{}
+type RegistryClient struct {
+	transport http.RoundTripper
+}
 
 // NewRegistryClient creates a new registry client.
 func NewRegistryClient() *RegistryClient {
-	return &RegistryClient{}
+	return &RegistryClient{transport: trust.HTTPTransport()}
 }
 
-func remoteOptions() []remote.Option {
+func (rc *RegistryClient) remoteOptions() []remote.Option {
 	return []remote.Option{
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithTransport(rc.transport),
 	}
 }
 
@@ -35,36 +42,51 @@ func (rc *RegistryClient) ListTags(ctx context.Context, imageRef string) ([]stri
 	if err != nil {
 		return nil, fmt.Errorf("parse repository %q: %w", imageRef, err)
 	}
-	tags, err := remote.List(repo, remoteOptions()...)
+	tags, err := remote.List(repo, rc.remoteOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", imageRef, err)
 	}
 	return tags, nil
 }
 
-// GetDigest returns the platform-specific digest for the given image reference.
-// For multi-arch manifests, it resolves the platform matching the host OS/arch.
-func (rc *RegistryClient) GetDigest(ctx context.Context, imageRef string) (string, error) {
+// RemoteDigests is what a reference points at in its registry: the digest of that manifest and, for a multi-platform index, the digests of the platform manifests it lists.
+type RemoteDigests struct {
+	Digest    string
+	Platforms []string
+}
+
+// Contains reports whether digest names the manifest itself or one of its platform manifests.
+func (d RemoteDigests) Contains(digest string) bool {
+	return digest != "" && (digest == d.Digest || slices.Contains(d.Platforms, digest))
+}
+
+// ResolveDigests returns the digests the given image reference resolves to, the same for every platform.
+func (rc *RegistryClient) ResolveDigests(ctx context.Context, imageRef string) (RemoteDigests, error) {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return "", fmt.Errorf("parse reference %q: %w", imageRef, err)
+		return RemoteDigests{}, fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, remoteOptions()...)
+	desc, err := remote.Get(ref, append(rc.remoteOptions(), remote.WithContext(ctx))...)
 	if err != nil {
-		return "", fmt.Errorf("get manifest for %q: %w", imageRef, err)
+		return RemoteDigests{}, fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}
 
-	// Check if this is a manifest list / OCI index
-	switch desc.MediaType {
-	case types.OCIImageIndex, types.DockerManifestList:
-		digest, err := rc.resolvePlatformDigest(desc)
-		if err != nil {
-			return "", fmt.Errorf("resolve platform digest for %q: %w", imageRef, err)
-		}
-		return digest, nil
-	default:
-		return desc.Digest.String(), nil
+	out := RemoteDigests{Digest: desc.Digest.String()}
+	if !desc.MediaType.IsIndex() {
+		return out, nil
 	}
+	idx, err := desc.ImageIndex()
+	if err != nil {
+		return RemoteDigests{}, fmt.Errorf("read image index for %q: %w", imageRef, err)
+	}
+	manifest, err := idx.IndexManifest()
+	if err != nil {
+		return RemoteDigests{}, fmt.Errorf("read index manifest for %q: %w", imageRef, err)
+	}
+	for _, m := range manifest.Manifests {
+		out.Platforms = append(out.Platforms, m.Digest.String())
+	}
+	return out, nil
 }
 
 // GetManifest returns the raw manifest descriptor for the given image reference.
@@ -73,7 +95,7 @@ func (rc *RegistryClient) GetManifest(ctx context.Context, imageRef string) (*re
 	if err != nil {
 		return nil, fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, remoteOptions()...)
+	desc, err := remote.Get(ref, rc.remoteOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}
@@ -86,7 +108,7 @@ func (rc *RegistryClient) GetConfigLabels(ctx context.Context, imageRef string) 
 	if err != nil {
 		return nil, fmt.Errorf("parse reference %q: %w", imageRef, err)
 	}
-	desc, err := remote.Get(ref, remoteOptions()...)
+	desc, err := remote.Get(ref, rc.remoteOptions()...)
 	if err != nil {
 		return nil, fmt.Errorf("get manifest for %q: %w", imageRef, err)
 	}
@@ -104,33 +126,6 @@ func (rc *RegistryClient) GetConfigLabels(ctx context.Context, imageRef string) 
 		return nil, nil
 	}
 	return cf.Config.Labels, nil
-}
-
-// resolvePlatformDigest resolves the platform-specific digest from a manifest list.
-func (rc *RegistryClient) resolvePlatformDigest(desc *remote.Descriptor) (string, error) {
-	idx, err := desc.ImageIndex()
-	if err != nil {
-		return "", fmt.Errorf("read image index: %w", err)
-	}
-	manifest, err := idx.IndexManifest()
-	if err != nil {
-		return "", fmt.Errorf("read index manifest: %w", err)
-	}
-
-	targetOS := runtime.GOOS
-	targetArch := runtime.GOARCH
-
-	for _, m := range manifest.Manifests {
-		if m.Platform != nil && m.Platform.OS == targetOS && m.Platform.Architecture == targetArch {
-			return m.Digest.String(), nil
-		}
-	}
-
-	// Fallback: return the first manifest if no platform match
-	if len(manifest.Manifests) > 0 {
-		return manifest.Manifests[0].Digest.String(), nil
-	}
-	return "", fmt.Errorf("no manifests found in index")
 }
 
 // resolveImage resolves a single v1.Image from a descriptor, handling manifest lists.

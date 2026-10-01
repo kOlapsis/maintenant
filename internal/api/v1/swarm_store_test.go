@@ -39,7 +39,10 @@ func newSwarmHandlerForTest(topo swarmTopologyReader) *SwarmHandler {
 		func() *swarm.SwarmCluster { return nil },
 		func() *swarm.ServiceDiscovery { return nil },
 		func() *swarm.Detector { return nil },
-		topo, nil, nil, nil, nil, nil, nil,
+		topo, nil,
+		func() *swarm.UpdateTracker { return nil },
+		func() *swarm.CrashLoopDetector { return nil },
+		nil, nil,
 	)
 }
 

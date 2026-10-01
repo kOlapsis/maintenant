@@ -230,12 +230,12 @@ func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID string,
 	countQuery := `SELECT COUNT(*) FROM check_results WHERE endpoint_id=?`
 	countArgs := []interface{}{endpointID}
 
-	query := `SELECT id, endpoint_id, success, response_time_ms, http_status, error_message, timestamp
-		FROM check_results WHERE endpoint_id=?`
+	query := `SELECT cr.id, cr.endpoint_id, cr.success, cr.response_time_ms, cr.http_status, cr.error_message, cr.timestamp, e.agent_id
+		FROM check_results cr JOIN endpoints e ON e.id = cr.endpoint_id WHERE cr.endpoint_id=?`
 	args := []interface{}{endpointID}
 
 	if opts.Since != nil {
-		query += ` AND timestamp>=?`
+		query += ` AND cr.timestamp>=?`
 		args = append(args, opts.Since.Unix())
 		countQuery += ` AND timestamp>=?`
 		countArgs = append(countArgs, opts.Since.Unix())
@@ -246,7 +246,7 @@ func (s *EndpointStore) ListCheckResults(ctx context.Context, endpointID string,
 		return nil, 0, fmt.Errorf("count check results: %w", err)
 	}
 
-	query += ` ORDER BY timestamp DESC`
+	query += ` ORDER BY cr.timestamp DESC`
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 50
@@ -471,7 +471,7 @@ func scanCheckResultRow(row rowScanner) (*endpoint.CheckResult, error) {
 
 	err := row.Scan(
 		&r.ID, &r.EndpointID, &success, &r.ResponseTimeMs,
-		&httpStatus, &errorMessage, &ts,
+		&httpStatus, &errorMessage, &ts, &r.AgentID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan check result: %w", err)

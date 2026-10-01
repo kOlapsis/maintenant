@@ -31,14 +31,11 @@ type IncidentStore interface {
 	// Incident updates
 	ListUpdates(ctx context.Context, incidentID string) ([]IncidentUpdate, error)
 	CreateUpdate(ctx context.Context, u *IncidentUpdate) (string, error)
-
-	// Cleanup
-	DeleteIncidentsOlderThan(ctx context.Context, days int) (int64, error)
 }
 
 // SubscriberStore defines the persistence interface for email subscribers.
 type SubscriberStore interface {
-	CreateSubscriber(ctx context.Context, s *StatusSubscriber) (string, error)
+	UpsertPendingSubscriber(ctx context.Context, s *StatusSubscriber) (issued bool, err error)
 	GetSubscriberByToken(ctx context.Context, confirmToken string) (*StatusSubscriber, error)
 	GetSubscriberByUnsubToken(ctx context.Context, unsubToken string) (*StatusSubscriber, error)
 	ConfirmSubscriber(ctx context.Context, id string) error
@@ -61,4 +58,5 @@ type MaintenanceStore interface {
 	GetPendingActivation(ctx context.Context, now int64) ([]MaintenanceWindow, error)
 	GetPendingDeactivation(ctx context.Context, now int64) ([]MaintenanceWindow, error)
 	SetActive(ctx context.Context, id string, active bool, incidentID *string) error
+	CoveredByAnotherActiveWindow(ctx context.Context, componentID, windowID string) (bool, error)
 }

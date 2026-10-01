@@ -34,7 +34,6 @@ export interface UpdateSummary {
     recommended: number
     available: number
     up_to_date: number
-    untracked: number
     pinned: number
   }
   cve_counts: {

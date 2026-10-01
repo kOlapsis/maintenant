@@ -90,6 +90,11 @@ func (r *Runtime) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult
 	return r.client.DiscoverAllWithLabels(ctx)
 }
 
+// ContainerRepoDigests delegates to the underlying Docker client.
+func (r *Runtime) ContainerRepoDigests(ctx context.Context) (map[string][]string, error) {
+	return r.client.ContainerRepoDigests(ctx)
+}
+
 func (r *Runtime) StreamEvents(ctx context.Context) <-chan runtime.RuntimeEvent {
 	dockerCh := r.client.StreamEvents(ctx)
 	out := make(chan runtime.RuntimeEvent, 64)
@@ -102,6 +107,7 @@ func (r *Runtime) StreamEvents(ctx context.Context) <-chan runtime.RuntimeEvent 
 				Name:         evt.Name,
 				Image:        evt.Image,
 				ExitCode:     evt.ExitCode,
+				OOMKilled:    evt.OOMKilled,
 				HealthStatus: evt.HealthStatus,
 				ResourceType: evt.ResourceType,
 				Timestamp:    evt.Timestamp,

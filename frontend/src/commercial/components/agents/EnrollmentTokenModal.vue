@@ -25,7 +25,7 @@ const MODES: Array<{ id: InstallMode; label: string }> = [
   { id: 'docker_run', label: 'Docker run' },
   { id: 'docker_compose', label: 'Compose' },
   { id: 'kubernetes', label: 'Kubernetes' },
-  { id: 'standalone', label: 'Standalone (soon)' },
+  { id: 'standalone', label: 'Standalone' },
 ]
 const MODE_OPTIONS = MODES.map((m) => ({ value: m.id, label: m.label }))
 
@@ -126,7 +126,6 @@ watch(open, (value) => {
         >{{ currentTemplate }}</pre>
 
         <UiButton
-          v-if="selectedMode !== 'standalone'"
           variant="secondary"
           class="mt-2 w-full"
           @click="copyText(currentTemplate, 'command')"

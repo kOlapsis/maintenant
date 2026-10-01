@@ -102,23 +102,17 @@ export const useSwarmStore = defineStore('swarm', () => {
 
   function onSwarmNodeUpdated(e: MessageEvent) {
     try {
-      const data = JSON.parse(e.data)
+      const data = JSON.parse(e.data) as Partial<SwarmNodeResponse> & { node_id: string }
       const idx = nodes.value.findIndex((n) => n.node_id === data.node_id)
       if (idx >= 0) {
-        const existing = nodes.value[idx]!
         nodes.value[idx] = {
-          ...existing,
-          status: (data.new_status ?? data.status ?? existing.status) as string,
-          availability: (data.new_availability ??
-            data.availability ??
-            existing.availability) as string,
+          ...nodes.value[idx]!,
+          ...data,
           last_seen_at: new Date().toISOString(),
-          last_status_change_at: new Date().toISOString(),
         }
       } else {
         loadNodes()
       }
-      // Refresh cluster overview when node state changes.
       loadCluster()
     } catch {
       /* ignore */

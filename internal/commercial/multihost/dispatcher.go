@@ -62,6 +62,11 @@ type HostOSHandler interface {
 	HandleAgentHostOS(ctx context.Context, agentID string, ev *agentpb.HostOSMsg) error
 }
 
+// RuntimeHandler records the container runtime an agent reports after enrollment.
+type RuntimeHandler interface {
+	HandleAgentRuntime(ctx context.Context, agentID string, ev *agentpb.RuntimeMsg) error
+}
+
 // KubernetesTopologyHandler processes a full Kubernetes topology snapshot from an agent.
 type KubernetesTopologyHandler interface {
 	HandleAgentEvent(ctx context.Context, agentID string, ev *agentpb.KubernetesTopology) error
@@ -85,6 +90,7 @@ type DispatchDeps struct {
 	Swarm       SwarmTopologyHandler
 	Kubernetes  KubernetesTopologyHandler
 	HostOS      HostOSHandler
+	Runtime     RuntimeHandler
 	// LabelSync, if set, provisions endpoint/cert monitors from a container's
 	// labels after each container event. Optional (nil = no label discovery).
 	LabelSync LabelSyncFunc
@@ -225,6 +231,12 @@ func (d *Dispatcher) Dispatch(ctx context.Context, agentID string, evt *agentpb.
 		if d.deps.HostOS != nil {
 			if err := d.deps.HostOS.HandleAgentHostOS(ctx, agentID, body.HostOs); err != nil {
 				return fmt.Errorf("dispatch host os identity: %w", err)
+			}
+		}
+	case *agentpb.AgentEvent_Runtime:
+		if d.deps.Runtime != nil {
+			if err := d.deps.Runtime.HandleAgentRuntime(ctx, agentID, body.Runtime); err != nil {
+				return fmt.Errorf("dispatch runtime: %w", err)
 			}
 		}
 	}

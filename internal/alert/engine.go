@@ -6,6 +6,7 @@ package alert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -53,9 +54,8 @@ type Engine struct {
 	logger       *slog.Logger
 
 	// Extension points (Pro injects real implementations; CE uses no-ops)
-	escalator    Escalator
-	entityRouter EntityRouter
-	suppressor   MaintenanceSuppressor
+	escalator  Escalator
+	suppressor MaintenanceSuppressor
 
 	// In-memory active alert map for recovery linking and dedup
 	activeAlerts map[activeAlertKey]*Alert
@@ -89,7 +89,6 @@ func NewEngine(d EngineDeps) *Engine {
 		broadcaster:  d.Broadcaster,
 		logger:       d.Logger,
 		escalator:    noopEscalator{},
-		entityRouter: noopEntityRouter{},
 		suppressor:   noopSuppressor{},
 		activeAlerts: make(map[activeAlertKey]*Alert),
 	}
@@ -98,16 +97,6 @@ func NewEngine(d EngineDeps) *Engine {
 // SetEscalator sets the escalation extension.
 func (e *Engine) SetEscalator(esc Escalator) {
 	e.escalator = esc
-}
-
-// Escalator returns the current escalator implementation.
-func (e *Engine) Escalator() Escalator {
-	return e.escalator
-}
-
-// SetEntityRouter sets the entity routing extension.
-func (e *Engine) SetEntityRouter(r EntityRouter) {
-	e.entityRouter = r
 }
 
 // SetMaintenanceSuppressor sets the maintenance suppression extension.
@@ -125,13 +114,6 @@ func (noopEscalator) OnAlertAcknowledged(_ context.Context, _ string, _ Acknowle
 }
 func (noopEscalator) OnAlertResolved(_ context.Context, _ string, _ time.Time) error { return nil }
 func (noopEscalator) OnEditionDowngraded(_ context.Context) error                    { return nil }
-
-// noopEntityRouter is the Engine-internal no-op default.
-type noopEntityRouter struct{}
-
-func (noopEntityRouter) Route(_ context.Context, _ string, _ string, _ string) ([]string, error) {
-	return nil, nil
-}
 
 // noopSuppressor is the Engine-internal no-op default.
 type noopSuppressor struct{}
@@ -360,6 +342,11 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 		e.logger.Error("alert engine: escalate", "error", err, "alert_id", existing.ID)
 		return
 	}
+	if stored, err := e.alertStore.GetAlert(ctx, existing.ID); err != nil {
+		e.logger.Error("alert engine: reload escalated alert", "error", err, "alert_id", existing.ID)
+	} else if stored != nil {
+		existing.AcknowledgedAt, existing.AcknowledgedBy = stored.AcknowledgedAt, stored.AcknowledgedBy
+	}
 
 	e.mu.Lock()
 	key := activeAlertKey{
@@ -384,13 +371,56 @@ func (e *Engine) escalateAlert(ctx context.Context, existing *Alert, evt Event) 
 	// Re-evaluate escalation policies: a higher severity may match policies
 	// that did not at the previous level. The escalator dedupes per
 	// (alert, policy) so existing runs continue untouched.
-	if err := e.escalator.OnAlertCreated(ctx, existing); err != nil {
-		e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", existing.ID)
+	if existing.AcknowledgedAt == nil {
+		if err := e.escalator.OnAlertCreated(ctx, existing); err != nil {
+			e.logger.ErrorContext(ctx, "alert engine: OnAlertCreated hook error", "error", err, "alert_id", existing.ID)
+		}
 	}
 
 	if e.notifier != nil {
-		e.dispatchNotifications(ctx, existing, existing)
+		payload := *existing
+		payload.Message = fmt.Sprintf("Severity raised from %s to %s: %s", oldSeverity, existing.Severity, existing.Message)
+		e.dispatchNotifications(ctx, existing, &payload)
 	}
+}
+
+// ErrAlertNotFound reports an alert id that names no alert.
+var ErrAlertNotFound = errors.New("alert not found")
+
+// ErrNotAcknowledgeable reports an alert that is not active or is already acknowledged.
+var ErrNotAcknowledgeable = errors.New("alert is not active or already acknowledged")
+
+// Acknowledge records who acknowledged an active alert, broadcasts it and stops its escalation.
+func (e *Engine) Acknowledge(ctx context.Context, id, by string) (*Alert, error) {
+	a, err := e.alertStore.GetAlert(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if a == nil {
+		return nil, ErrAlertNotFound
+	}
+	if a.Status != StatusActive || a.AcknowledgedAt != nil {
+		return nil, ErrNotAcknowledgeable
+	}
+
+	at := time.Now().UTC().Truncate(time.Second)
+	acknowledged, err := e.alertStore.AcknowledgeAlert(ctx, id, by, at)
+	if err != nil {
+		return nil, err
+	}
+	if !acknowledged {
+		return nil, ErrNotAcknowledgeable
+	}
+	a.AcknowledgedAt = &at
+	a.AcknowledgedBy = by
+
+	if e.broadcaster != nil {
+		e.broadcaster.Broadcast(event.AlertAcknowledged, a)
+	}
+	if err := e.escalator.OnAlertAcknowledged(ctx, id, Acknowledgment{By: by, At: at}); err != nil {
+		e.logger.ErrorContext(ctx, "alert engine: OnAlertAcknowledged hook error", "error", err, "alert_id", id)
+	}
+	return a, nil
 }
 
 // severityRank returns a numeric rank for severity comparison (higher = more severe).
@@ -586,28 +616,6 @@ func (e *Engine) dispatchNotifications(ctx context.Context, routeBy *Alert, payl
 			}
 		}
 	}
-
-	// Consult entity router extension for additional channels (Pro: per-entity routing).
-	// Continues to operate independently from triggers.
-	extraIDs, err := e.entityRouter.Route(ctx, routeBy.EntityType, routeBy.EntityID, routeBy.Severity)
-	if err != nil {
-		e.logger.Error("alert engine: entity router error", "error", err)
-	}
-	for _, chID := range extraIDs {
-		if dispatched[chID] {
-			continue // dedup
-		}
-		ch, chErr := e.channelStore.GetChannel(ctx, chID)
-		if chErr != nil {
-			e.logger.Error("alert engine: get entity-routed channel", "error", chErr, "channel_id", chID)
-			continue
-		}
-		if ch == nil || !ch.Enabled {
-			continue
-		}
-		dispatched[chID] = true
-		e.enqueueDelivery(ctx, ch, payload)
-	}
 }
 
 func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a *Alert) {
@@ -639,9 +647,6 @@ func (e *Engine) enqueueDelivery(ctx context.Context, ch *NotificationChannel, a
 // matchesTrigger reports whether an alert satisfies all of a trigger's
 // non-empty filters (AND between fields, OR within a CSV field). An empty
 // filter matches everything.
-//
-// FilterTags is treated as no-op for now: Alert does not yet expose tags.
-// The match is enforced via filter_severities, filter_sources and filter_scopes.
 func matchesTrigger(t *AlertTrigger, a *Alert) bool {
 	if a.Status == StatusResolved && !t.NotifyOnResolve {
 		return false

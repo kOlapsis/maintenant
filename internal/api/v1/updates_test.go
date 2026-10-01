@@ -8,8 +8,11 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,6 +140,21 @@ func TestHandleGetUpdateSummary_OSCounts(t *testing.T) {
 	assert.Equal(t, 0, body.OSCounts["unknown"])
 }
 
+func TestHandleGetUpdateSummary_ReportsOnlyComputedCounts(t *testing.T) {
+	h, _ := hostOSFixture(t)
+
+	rec := httptest.NewRecorder()
+	h.HandleGetUpdateSummary(rec, httptest.NewRequest(http.MethodGet, "/api/v1/updates/summary", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Counts map[string]int `json:"counts"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.ElementsMatch(t, []string{"critical", "recommended", "available", "up_to_date", "pinned"},
+		slices.Collect(maps.Keys(body.Counts)))
+}
+
 func TestHandleListAgents_CarriesOSSupport(t *testing.T) {
 	_, ah := hostOSFixture(t)
 
@@ -168,4 +186,95 @@ func TestHandleListAgents_CarriesOSSupport(t *testing.T) {
 		return
 	}
 	t.Fatal("agent web-03 missing from the listing")
+}
+
+type fixedContainerInfo struct {
+	info update.ContainerInfo
+}
+
+func (f fixedContainerInfo) GetContainerInfo(context.Context, string) (update.ContainerInfo, error) {
+	return f.info, nil
+}
+
+func TestHandleGetContainerUpdate_RollbackReturnsToThePreviousImage(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	db := storetest.Open(t, logger)
+	updateStore := store.NewUpdateStore(db)
+
+	scanID, err := updateStore.InsertScanRecord(ctx, &update.ScanRecord{StartedAt: time.Now(), Status: update.ScanStatusCompleted})
+	require.NoError(t, err)
+	_, err = updateStore.InsertImageUpdate(ctx, &update.ImageUpdate{
+		ScanID:         scanID,
+		ContainerID:    "ctr1",
+		ContainerName:  "app-web-1",
+		Image:          "nginx:latest",
+		CurrentTag:     "latest",
+		CurrentDigest:  "sha256:old",
+		Registry:       "registry-1.docker.io",
+		LatestTag:      "latest",
+		LatestDigest:   "sha256:new",
+		UpdateType:     update.UpdateTypeDigestOnly,
+		PreviousDigest: "sha256:old",
+		Status:         update.StatusAvailable,
+		DetectedAt:     time.Now(),
+	})
+	require.NoError(t, err)
+
+	h := NewUpdateHandler(update.NewService(update.Deps{
+		Store:      updateStore,
+		Scanner:    update.NewScanner(update.NewRegistryClient(), updateStore, logger),
+		Containers: noContainers{},
+		Logger:     logger,
+	}), updateStore, fixedContainerInfo{info: update.ContainerInfo{
+		ExternalID:         "ctr1",
+		Name:               "app-web-1",
+		Image:              "nginx:latest",
+		OrchestrationGroup: "app",
+		OrchestrationUnit:  "web",
+		ComposeWorkingDir:  "/srv/app",
+		RuntimeType:        "docker",
+	}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/updates/ctr1", nil)
+	req.SetPathValue("container_id", "ctr1")
+	rec := httptest.NewRecorder()
+	h.HandleGetContainerUpdate(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		UpdateCommand   string `json:"update_command"`
+		RollbackCommand string `json:"rollback_command"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.NotEqual(t, body.UpdateCommand, body.RollbackCommand)
+	assert.Contains(t, body.RollbackCommand, "docker tag nginx@sha256:old nginx:latest")
+}
+
+func TestHandleCreateExclusion_ADuplicateAnswersWithTheStoredRow(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	updateStore := store.NewUpdateStore(storetest.Open(t, logger))
+	h := NewUpdateHandler(nil, updateStore, nil)
+
+	post := func() (int, map[string]any) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/updates/exclusions",
+			strings.NewReader(`{"pattern":"nginx*","pattern_type":"image"}`))
+		w := httptest.NewRecorder()
+		h.HandleCreateExclusion(w, req)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		return w.Code, body
+	}
+
+	code, first := post()
+	assert.Equal(t, http.StatusCreated, code)
+	code, again := post()
+	assert.Equal(t, http.StatusOK, code, "a duplicate creates nothing")
+	assert.Equal(t, first["id"], again["id"])
+	assert.Equal(t, first["created_at"], again["created_at"])
+
+	stored, err := updateStore.ListExclusions(context.Background())
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+	assert.Equal(t, first["id"], stored[0].ID)
 }

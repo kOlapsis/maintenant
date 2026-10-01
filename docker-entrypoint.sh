@@ -8,18 +8,43 @@ if [ "${1#-}" != "$1" ]; then
     set -- /app/maintenant "$@"
 fi
 
-# Ensure the data directory used by the chosen mode is writable by the
-# unprivileged runtime user. Covers both named volumes (Docker creates them
-# root:root when the target path doesn't exist in the image) and bind mounts
-# (host ownership leaks into the container).
-case " $* " in
-    *" --mode=agent "*|*" --mode agent "*)
-        mkdir -p /var/lib/maintenant
-        chown 65534:65534 /var/lib/maintenant
+# Already unprivileged (runAsUser, --user): no chown possible, and setpriv needs CAP_SETGID.
+if [ "$(id -u)" != "0" ]; then
+    exec "$@"
+fi
+
+mode="${MAINTENANT_MODE:-embedded}"
+db="${MAINTENANT_DB:-./maintenant.db}"
+data_dir="${MAINTENANT_DATA_DIR:-/var/lib/maintenant}"
+prev=""
+for arg in "$@"; do
+    case "$prev" in
+        --mode | -mode) mode="$arg" ;;
+        --db | -db) db="$arg" ;;
+        --data-dir | -data-dir) data_dir="$arg" ;;
+    esac
+    case "$arg" in
+        --mode=* | -mode=*) mode="${arg#*=}" ;;
+        --db=* | -db=*) db="${arg#*=}" ;;
+        --data-dir=* | -data-dir=*) data_dir="${arg#*=}" ;;
+    esac
+    prev="$arg"
+done
+
+# Volumes and bind mounts arrive root-owned: hand the directory itself, never its content nor /, to the runtime user.
+own_dir() {
+    mkdir -p -- "$1"
+    [ "$(cd -- "$1" && pwd -P)" != "/" ] || return 0
+    chown 65534:65534 -- "$1"
+}
+
+case "$mode" in
+    agent)
+        own_dir "$data_dir"
         ;;
     *)
-        mkdir -p /data/shm
-        chown 65534:65534 /data/shm
+        own_dir "$(dirname -- "$db")"
+        own_dir /data/shm
         ;;
 esac
 

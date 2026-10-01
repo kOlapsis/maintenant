@@ -5,7 +5,6 @@ package agent
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,11 +22,15 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentpb"
 	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/runtime"
+	"github.com/kolapsis/maintenant/internal/trust"
 )
 
 // ErrAgentRevokedServer is returned by RunWithReconnect when the server revokes the agent.
 // The caller should exit without retrying.
 var ErrAgentRevokedServer = errors.New("agent revoked by server")
+
+// ErrAgentUnknownServer is returned by RunWithReconnect when the server has no record of the agent.
+var ErrAgentUnknownServer = errors.New("agent unknown to the server, deleted or enrolled with another one")
 
 // streamErrorRateLimited is the code the server sends when an agent pushes
 // events faster than its per-agent allowance.
@@ -70,10 +73,8 @@ func NewClient(ctx context.Context, serverURL string, insecureSkipVerify bool, l
 
 	var creds credentials.TransportCredentials
 	if useTLS {
-		tlsCfg := &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: insecureSkipVerify, // #nosec G402 -- explicit opt-in flag, warning logged at boot.
-		}
+		tlsCfg := trust.ClientTLSConfig()
+		tlsCfg.InsecureSkipVerify = insecureSkipVerify // #nosec G402 -- explicit opt-in flag, warning logged at boot.
 		if insecureSkipVerify {
 			logger.Warn("TLS certificate verification is disabled — do not use in production")
 		}
@@ -116,6 +117,7 @@ type PushStream struct {
 	mu     sync.Mutex
 	stream agentpb.Ingest_PushClient
 	recvCh chan error
+	done   chan struct{}
 
 	// commands executes server-issued commands; nil disables the command channel.
 	commands *CommandRunner
@@ -203,6 +205,7 @@ func (ps *PushStream) recvLoop(logger *slog.Logger) {
 		ps.commands.CancelAll()
 	}
 	ps.recvCh <- retErr
+	close(ps.done)
 }
 
 // DialPush opens the bidirectional Push stream, performs the Ed25519 auth handshake,
@@ -251,6 +254,7 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 	ps := &PushStream{
 		stream:   stream,
 		recvCh:   make(chan error, 1),
+		done:     make(chan struct{}),
 		commands: c.commands,
 		hooks:    hooks,
 		ctx:      ctx,
@@ -261,7 +265,8 @@ func (c *Client) DialPush(ctx context.Context, id *Identity, logger *slog.Logger
 }
 
 // RunWithReconnect runs onStream with exponential backoff reconnect.
-// Returns nil when ctx is cancelled, ErrAgentRevokedServer when the server revokes the agent.
+// Returns nil when ctx is cancelled, ErrAgentRevokedServer or ErrAgentUnknownServer
+// when the server refuses the identity.
 // Backoff: min(60s, 1s * 2^attempt) ±25% jitter. Attempt resets to 0 if stream was stable >30s.
 func RunWithReconnect(
 	ctx context.Context,
@@ -285,13 +290,23 @@ func RunWithReconnect(
 			if ctx.Err() != nil {
 				return nil
 			}
-			if isRevokedErr(dialErr) {
-				logger.Error("agent: revoked during dial, exiting", "err", dialErr)
-				return ErrAgentRevokedServer
+			if refusal := refusedIdentity(dialErr); refusal != nil {
+				logger.Error("agent: identity refused during dial", "err", dialErr)
+				return refusal
 			}
 			logger.Warn("agent: push dial failed", "err", dialErr, "attempt", backoff.Attempt())
 		} else {
-			streamErr := onStream(ctx, stream)
+			// A sender only notices a closed stream on its next write, which may never come.
+			streamCtx, stopStream := context.WithCancel(ctx)
+			go func() {
+				select {
+				case <-stream.done:
+					stopStream()
+				case <-streamCtx.Done():
+				}
+			}()
+			streamErr := onStream(streamCtx, stream)
+			stopStream()
 			stream.Close()
 			// The server reports revocation on the receive side; the send side only
 			// ever surfaces a generic EOF. Ignoring this error turned a revocation
@@ -305,9 +320,9 @@ func RunWithReconnect(
 			if ctx.Err() != nil {
 				return nil
 			}
-			if isRevokedErr(streamErr) || isRevokedErr(recvErr) {
-				logger.Error("agent: revoked by server, exiting", "err", errors.Join(streamErr, recvErr))
-				return ErrAgentRevokedServer
+			if refusal := refusedIdentity(errors.Join(streamErr, recvErr)); refusal != nil {
+				logger.Error("agent: identity refused by server", "err", errors.Join(streamErr, recvErr))
+				return refusal
 			}
 			if streamErr != nil || recvErr != nil {
 				logger.Warn("agent: stream closed, will reconnect",
@@ -325,13 +340,29 @@ func RunWithReconnect(
 	}
 }
 
-// isRevokedErr reports whether err is a gRPC PermissionDenied "agent_revoked" status.
-func isRevokedErr(err error) bool {
-	if err == nil {
-		return false
+// refusedIdentity maps a server refusal of the stored identity to its sentinel, or returns nil.
+func refusedIdentity(err error) error {
+	for _, e := range flatten(err) {
+		var carrier interface{ GRPCStatus() *grpcstatus.Status }
+		if !errors.As(e, &carrier) {
+			continue
+		}
+		st := carrier.GRPCStatus()
+		switch {
+		case st.Code() == codes.PermissionDenied && st.Message() == "agent_revoked":
+			return ErrAgentRevokedServer
+		case st.Code() == codes.NotFound && st.Message() == "agent not found":
+			return ErrAgentUnknownServer
+		}
 	}
-	st, ok := grpcstatus.FromError(err)
-	return ok && st.Code() == codes.PermissionDenied && st.Message() == "agent_revoked"
+	return nil
+}
+
+func flatten(err error) []error {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		return joined.Unwrap()
+	}
+	return []error{err}
 }
 
 // parseServerURL extracts the host:port target and whether TLS should be used.

@@ -247,7 +247,6 @@ func TestHandleAgentEvent_AppliesMaintenantLabels(t *testing.T) {
 			labelPBGroup:     "infra",
 			labelPBSeverity:  "critical",
 			labelPBThreshold: "5",
-			labelPBChannels:  "ops",
 		},
 	}
 	require.NoError(t, svc.HandleAgentEvent(context.Background(), "a", ev, agentevent.Meta{ObservedAt: time.Now()}))
@@ -258,7 +257,6 @@ func TestHandleAgentEvent_AppliesMaintenantLabels(t *testing.T) {
 	assert.Equal(t, "infra", c.CustomGroup)
 	assert.Equal(t, SeverityCritical, c.AlertSeverity)
 	assert.Equal(t, 5, c.RestartThreshold)
-	assert.Equal(t, "ops", c.AlertChannels)
 }
 
 func TestHandleAgentEvent_EmptyContainerIDIsNoOp(t *testing.T) {
@@ -311,6 +309,74 @@ func TestHandleAgentEvent_DieNonZeroExitBecomesExited(t *testing.T) {
 		StatusMessage: "1",
 	}, agentevent.Meta{ObservedAt: time.Now()}))
 	assert.Equal(t, StateExited, store.storedState(id))
+}
+
+func TestHandleAgentEvent_OOMKillBecomesExited(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+	ctx := context.Background()
+	id := extID("oom")
+
+	agentID := "agent-1"
+	seed := makeTestContainer(id, StateRunning)
+	seed.AgentID = agentID
+	store.seed(seed)
+
+	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+		ContainerId: id, Name: "oom",
+		State:         agentpb.ContainerState_CONTAINER_STATE_EXITED,
+		StatusMessage: "137",
+		OomKilled:     true,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+	assert.Equal(t, StateExited, store.storedState(id))
+}
+
+func TestHandleAgentInventory_KeepsCompletedContainersCompleted(t *testing.T) {
+	for name, entry := range map[string]*agentpb.ContainerEvent{
+		"exit code reported":    {State: agentpb.ContainerState_CONTAINER_STATE_EXITED, StatusMessage: "137"},
+		"older agent, no code":  {State: agentpb.ContainerState_CONTAINER_STATE_EXITED},
+		"clean exit code (0)":   {State: agentpb.ContainerState_CONTAINER_STATE_EXITED, StatusMessage: "0"},
+		"SIGTERM with OOM flag": {State: agentpb.ContainerState_CONTAINER_STATE_EXITED, StatusMessage: "143", OomKilled: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newSvcStore()
+			svc := newTestService(store)
+			ctx := context.Background()
+			id := extID("job")
+
+			seed := makeTestContainer(id, StateCompleted)
+			seed.AgentID = "agent-1"
+			store.seed(seed)
+
+			entry.ContainerId, entry.Name = id, "job"
+			require.NoError(t, svc.HandleAgentInventory(ctx, "agent-1", &agentpb.ContainerInventory{
+				Containers: []*agentpb.ContainerEvent{entry}, Complete: true,
+			}, agentevent.Meta{ObservedAt: time.Now()}))
+
+			assert.Equal(t, StateCompleted, store.storedState(id))
+			c, _ := store.GetContainerByExternalID(ctx, "agent-1", id)
+			require.NotNil(t, c)
+			assert.Empty(t, store.transitionsFor(c.ID))
+		})
+	}
+}
+
+func TestHandleAgentInventory_InsertsCompletedContainerAsCompleted(t *testing.T) {
+	store := newSvcStore()
+	svc := newTestService(store)
+	ctx := context.Background()
+	id := extID("oneshot")
+
+	require.NoError(t, svc.HandleAgentInventory(ctx, "agent-1", &agentpb.ContainerInventory{
+		Containers: []*agentpb.ContainerEvent{{
+			ContainerId: id, Name: "oneshot",
+			State:         agentpb.ContainerState_CONTAINER_STATE_EXITED,
+			StatusMessage: "0",
+		}},
+		Complete: true,
+	}, agentevent.Meta{ObservedAt: time.Now()}))
+
+	assert.Equal(t, StateCompleted, store.storedState(id))
 }
 
 func TestHandleAgentEvent_PreservesImageWhenEventImageEmpty(t *testing.T) {
@@ -646,37 +712,150 @@ func TestHandleAgentEvent_InsertErrorIsReturned(t *testing.T) {
 	require.Error(t, err)
 }
 
-// FR-017: a replayed container event writes the state and the timeline, and
-// emits nothing.
-func TestHandleAgentEvent_ReplayedRecordsStateWithoutEmitting(t *testing.T) {
+// A replayed container event writes the timeline, leaves the current
+// state to the fresh inventory, and emits nothing.
+func TestHandleAgentEvent_ReplayedStateChangeWritesTimelineOnly(t *testing.T) {
 	store := newSvcStore()
 	var events []capturedEvent
-	svc := newTestService(store, captureEvents(&events))
+	checker := &mockRestartChecker{result: "restart loop"}
+	svc := newTestService(store, captureEvents(&events), func(d *Deps) { d.RestartChecker = checker })
 	ctx := context.Background()
 	id := extID("replay")
 
 	agentID := "agent-replay"
 	seed := makeTestContainer(id, StateRunning)
 	seed.AgentID = agentID
+	liveChange := time.Now().Add(-time.Minute).Truncate(time.Second)
+	seed.LastStateChangeAt = liveChange
 	store.seed(seed)
 
-	observed := time.Now().Add(-3 * time.Hour).Truncate(time.Second)
+	died := time.Now().Add(-3 * time.Hour).Truncate(time.Second)
+	restarted := died.Add(30 * time.Second)
 	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
-		ContainerId: id, Name: "replay", State: agentpb.ContainerState_CONTAINER_STATE_EXITED,
-	}, agentevent.Meta{ObservedAt: observed, Replayed: true}))
+		ContainerId: id, Name: "replay", State: agentpb.ContainerState_CONTAINER_STATE_EXITED, StatusMessage: "1",
+	}, agentevent.Meta{ObservedAt: died, Replayed: true, EventID: "evt-die"}))
+	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+		ContainerId: id, Name: "replay", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
+	}, agentevent.Meta{ObservedAt: restarted, Replayed: true, EventID: "evt-start"}))
 
 	c, err := store.GetContainerByExternalID(ctx, uid.Agent(agentID), id)
 	require.NoError(t, err)
 	require.NotNil(t, c)
-	assert.Equal(t, StateExited, c.State, "a replayed event must still move the container state")
+	assert.Equal(t, StateRunning, c.State, "a replayed event must not overwrite the current state")
+	assert.True(t, liveChange.Equal(c.LastStateChangeAt), "a replayed event must not move the last live change")
 
 	transitions := store.transitionsFor(c.ID)
-	require.Len(t, transitions, 1, "a replayed event must still be written to the timeline")
-	assert.True(t, observed.Equal(transitions[0].Timestamp))
+	require.Len(t, transitions, 2, "both replayed changes belong to the timeline")
+	assert.Equal(t, StateRunning, transitions[0].PreviousState)
+	assert.Equal(t, StateExited, transitions[0].NewState)
+	assert.True(t, died.Equal(transitions[0].Timestamp))
+	require.NotNil(t, transitions[0].ExitCode)
+	assert.Equal(t, 1, *transitions[0].ExitCode)
+	assert.Equal(t, StateExited, transitions[1].PreviousState)
+	assert.Equal(t, StateRunning, transitions[1].NewState)
+	assert.True(t, restarted.Equal(transitions[1].Timestamp))
 
-	for _, e := range events {
-		assert.NotEqual(t, event.ContainerStateChanged, e.typ, "a replayed event must emit nothing")
+	assert.Empty(t, events, "a replayed event must neither alert nor notify")
+	assert.Zero(t, checker.calls, "the restart threshold belongs to live events")
+}
+
+func TestHandleAgentEvent_ReplayedHealthChangeWritesTimelineOnly(t *testing.T) {
+	store := newSvcStore()
+	var events []capturedEvent
+	svc := newTestService(store, captureEvents(&events))
+	ctx := context.Background()
+	id := extID("replayhealth")
+
+	agentID := "agent-replay"
+	healthy := HealthHealthy
+	seed := makeTestContainer(id, StateRunning)
+	seed.AgentID = agentID
+	seed.HasHealthCheck = true
+	seed.HealthStatus = &healthy
+	store.seed(seed)
+
+	sick := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
+	recovered := sick.Add(time.Minute)
+	for _, step := range []struct {
+		health string
+		at     time.Time
+		id     string
+	}{
+		{"unhealthy", sick, "evt-sick"},
+		{"healthy", recovered, "evt-recovered"},
+	} {
+		require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+			ContainerId: id, Name: "replayhealth", HealthStatus: step.health,
+		}, agentevent.Meta{ObservedAt: step.at, Replayed: true, EventID: step.id}))
 	}
+
+	stored := store.storedHealthStatus(id)
+	require.NotNil(t, stored)
+	assert.Equal(t, HealthHealthy, *stored, "a replayed health change must not overwrite the current health")
+
+	c, err := store.GetContainerByExternalID(ctx, uid.Agent(agentID), id)
+	require.NoError(t, err)
+	transitions := store.transitionsFor(c.ID)
+	require.Len(t, transitions, 2, "a recovery equal to the current health still belongs to the timeline")
+	require.NotNil(t, transitions[0].PreviousHealth)
+	assert.Equal(t, HealthHealthy, *transitions[0].PreviousHealth)
+	assert.Equal(t, HealthUnhealthy, *transitions[0].NewHealth)
+	assert.True(t, sick.Equal(transitions[0].Timestamp))
+	assert.Equal(t, HealthUnhealthy, *transitions[1].PreviousHealth)
+	assert.Equal(t, HealthHealthy, *transitions[1].NewHealth)
+
+	assert.False(t, hasEvent(events, event.ContainerHealthChanged), "a replayed health change must not reach the health alert")
+}
+
+func TestHandleAgentEvent_ReplayedEventLeavesArchivedContainerArchived(t *testing.T) {
+	store := newSvcStore()
+	var events []capturedEvent
+	svc := newTestService(store, captureEvents(&events))
+	ctx := context.Background()
+	id := extID("gone")
+
+	agentID := "agent-replay"
+	seed := makeTestContainer(id, StateExited)
+	seed.AgentID = agentID
+	seed.Image = "app:2"
+	seed.Archived = true
+	store.seed(seed)
+
+	require.NoError(t, svc.HandleAgentEvent(ctx, agentID, &agentpb.ContainerEvent{
+		ContainerId: id, Name: "gone", Image: "app:1", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
+	}, agentevent.Meta{ObservedAt: time.Now().Add(-time.Hour), Replayed: true, EventID: "evt-old"}))
+
+	c, err := store.GetContainerByExternalID(ctx, uid.Agent(agentID), id)
+	require.NoError(t, err)
+	assert.True(t, c.Archived, "a replayed event must not bring back a container the inventory archived")
+	assert.Equal(t, "app:2", c.Image, "a replayed event must not roll back the container's metadata")
+	assert.Equal(t, StateExited, c.State)
+	assert.Len(t, store.transitionsFor(c.ID), 1, "the replayed start still belongs to the timeline")
+	assert.Empty(t, events)
+}
+
+func TestHandleAgentEvent_ReplayedUnknownContainerIsKeptAsHistory(t *testing.T) {
+	store := newSvcStore()
+	var events []capturedEvent
+	svc := newTestService(store, captureEvents(&events), func(d *Deps) {
+		d.AgentRuntime = &mockAgentRuntime{runtime: "docker"}
+	})
+	ctx := context.Background()
+	id := extID("ephemeral")
+
+	started := time.Now().Add(-time.Hour).Truncate(time.Second)
+	require.NoError(t, svc.HandleAgentEvent(ctx, "agent-replay", &agentpb.ContainerEvent{
+		ContainerId: id, Name: "ephemeral", Image: "job:1", State: agentpb.ContainerState_CONTAINER_STATE_RUNNING,
+	}, agentevent.Meta{ObservedAt: started, Replayed: true, EventID: "evt-start"}))
+
+	c, err := store.GetContainerByExternalID(ctx, "agent-replay", id)
+	require.NoError(t, err)
+	require.NotNil(t, c, "the replayed lifecycle needs a row to hang its timeline on")
+	assert.True(t, c.Archived, "a container the fresh inventory did not carry is gone")
+	transitions := store.transitionsFor(c.ID)
+	require.Len(t, transitions, 1)
+	assert.True(t, started.Equal(transitions[0].Timestamp))
+	assert.False(t, hasEvent(events, event.ContainerDiscovered), "a replayed container must not be announced as discovered")
 }
 
 // At-least-once delivery is by design: a stream that breaks mid-drain resends

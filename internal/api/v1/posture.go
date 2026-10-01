@@ -13,7 +13,6 @@ import (
 
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/container"
-	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/security"
 	"github.com/kolapsis/maintenant/internal/store"
 )
@@ -24,19 +23,19 @@ type PostureHandler struct {
 	containerSvc *container.Service
 	ackStore     security.AcknowledgmentStore
 	alertStore   alert.AlertStore
+	acknowledger alert.Acknowledger
 	securitySvc  *security.Service
-	broker       *SSEBroker
 }
 
 // NewPostureHandler creates a new posture handler.
-func NewPostureHandler(scorer security.PostureScorer, containerSvc *container.Service, ackStore security.AcknowledgmentStore, alertStore alert.AlertStore, securitySvc *security.Service, broker *SSEBroker) *PostureHandler {
+func NewPostureHandler(scorer security.PostureScorer, containerSvc *container.Service, ackStore security.AcknowledgmentStore, alertStore alert.AlertStore, acknowledger alert.Acknowledger, securitySvc *security.Service) *PostureHandler {
 	return &PostureHandler{
 		scorer:       scorer,
 		containerSvc: containerSvc,
 		ackStore:     ackStore,
 		alertStore:   alertStore,
+		acknowledger: acknowledger,
 		securitySvc:  securitySvc,
-		broker:       broker,
 	}
 }
 
@@ -62,9 +61,6 @@ func (h *PostureHandler) HandleGetPosture(w http.ResponseWriter, r *http.Request
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to compute posture")
 		return
 	}
-
-	// Check threshold alerts after scoring
-	h.scorer.CheckPostureThreshold(posture.Score, posture.ColorLevel)
 
 	WriteJSON(w, http.StatusOK, posture)
 }
@@ -129,17 +125,24 @@ func (h *PostureHandler) HandleListContainerPostures(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Score all containers
+	infos := make([]security.ContainerInfo, len(containers))
+	for i, c := range containers {
+		infos[i] = security.ContainerInfo{ID: c.ID, ExternalID: c.ExternalID, Name: c.Name}
+	}
+	scores, err := h.scorer.ScoreContainers(r.Context(), infos)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to compute posture")
+		return
+	}
+
 	type scoredContainer struct {
 		score *security.SecurityScore
 	}
 	var scored []scoredContainer
-	for _, c := range containers {
-		s, err := h.scorer.ScoreContainer(r.Context(), c.ID, c.ExternalID, c.Name)
-		if err != nil || s == nil {
-			continue
+	for _, s := range scores {
+		if s != nil {
+			scored = append(scored, scoredContainer{score: s})
 		}
-		scored = append(scored, scoredContainer{score: s})
 	}
 
 	// Sort by score ascending (worst first)
@@ -252,7 +255,7 @@ func (h *PostureHandler) HandleCreateAcknowledgment(w http.ResponseWriter, r *ht
 // tryAcknowledgeSecurityAlert checks if all security insights for a container
 // are acknowledged, and if so, acknowledges the active security alert.
 func (h *PostureHandler) tryAcknowledgeSecurityAlert(ctx context.Context, c *container.Container, by string) {
-	if h.alertStore == nil || h.securitySvc == nil {
+	if h.alertStore == nil || h.acknowledger == nil || h.securitySvc == nil {
 		return
 	}
 
@@ -276,15 +279,8 @@ func (h *PostureHandler) tryAcknowledgeSecurityAlert(ctx context.Context, c *con
 		return
 	}
 
-	now := time.Now().UTC()
-	if err := h.alertStore.AcknowledgeAlert(ctx, a.ID, by, now); err != nil {
-		return
-	}
-	a.AcknowledgedAt = &now
-	a.AcknowledgedBy = by
-
-	if h.broker != nil {
-		h.broker.Broadcast(SSEEvent{Type: event.AlertAcknowledged, Data: a})
+	if _, err := h.acknowledger.Acknowledge(ctx, a.ID, by); err != nil {
+		slog.WarnContext(ctx, "posture: acknowledge security alert", "error", err, "alert_id", a.ID)
 	}
 }
 

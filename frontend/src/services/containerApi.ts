@@ -23,7 +23,6 @@ export interface Container {
   is_ignored: boolean
   alert_severity: string
   restart_threshold: number
-  alert_channels?: string
   archived: boolean
   first_seen_at: string
   last_state_change_at: string
@@ -43,10 +42,8 @@ export interface Container {
   security_highest_severity?: string | null
   swarm_service_id?: string
   swarm_service_name?: string
-  swarm_service_mode?: string
   swarm_node_id?: string
   swarm_task_slot?: number
-  swarm_desired_replicas?: number
   agent_id?: string | null
   agent_hostname?: string | null
   agent_label?: string | null
@@ -61,10 +58,10 @@ export interface ContainerListResponse {
 
 export interface ContainerDetailResponse extends Container {
   uptime?: {
-    '24h': number | null
-    '7d': number | null
-    '30d': number | null
-    '90d': number | null
+    '24h': number
+    '7d'?: number
+    '30d'?: number
+    '90d'?: number
   }
   recent_transitions?: StateTransition[]
   container_names?: string[]

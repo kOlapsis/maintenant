@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kolapsis/maintenant/cmd/maintenant/web"
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
@@ -187,17 +188,41 @@ func SecurityHeaders(csp string) func(http.Handler) http.Handler {
 	}
 }
 
+const minMCPClientSecretLength = 32
+
+// warnWeakMCPClientSecret warns when the only credential the MCP OAuth flow checks is short enough to guess.
+func (a *App) warnWeakMCPClientSecret() {
+	n := utf8.RuneCountInString(a.cfg.MCP.ClientSecret)
+	if n >= minMCPClientSecretLength {
+		return
+	}
+	a.logger.Warn("MAINTENANT_MCP_CLIENT_SECRET is shorter than 32 characters: /oauth/authorize approves every request, so this secret alone keeps /mcp closed",
+		"length", n, "minimum", minMCPClientSecretLength, "fix", "generate one with: openssl rand -hex 32")
+}
+
+// unbufferedStream asks a buffering reverse proxy such as nginx to relay h's responses as they are written.
+func unbufferedStream(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Accel-Buffering", "no")
+		h.ServeHTTP(w, r)
+	})
+}
+
 // buildHTTPServer assembles the top-level HTTP mux and creates the server.
 func (a *App) buildHTTPServer() *http.Server {
 	topMux := http.NewServeMux()
 
 	if a.cfg.MCP.Enabled && !a.cfg.DemoMode {
-		mcpHTTPHandler := gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
+		oauthConfigured := a.cfg.MCP.ClientID != "" && a.cfg.MCP.ClientSecret != ""
+		mcpHandler := unbufferedStream(gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
 			return a.mcpServer
-		}, nil)
-		var mcpHandler http.Handler = mcpHTTPHandler
+		}, &gomcp.StreamableHTTPOptions{
+			// A reverse proxy on the same host forwards the public Host, which the SDK refuses on a loopback listener.
+			DisableLocalhostProtection: oauthConfigured,
+		}))
 
-		if a.cfg.MCP.ClientID != "" && a.cfg.MCP.ClientSecret != "" {
+		if oauthConfigured {
+			a.warnWeakMCPClientSecret()
 			mcpOAuthStore := store.NewMCPOAuthStore(a.db)
 			oauthSrv := mcpoauth.NewOAuthServer(mcpoauth.Config{
 				ClientID:            a.cfg.MCP.ClientID,
@@ -223,7 +248,7 @@ func (a *App) buildHTTPServer() *http.Server {
 			authMiddleware := mcpauth.RequireBearerToken(tokenVerifier, &mcpauth.RequireBearerTokenOptions{
 				ResourceMetadataURL: resourceMetadataURL,
 			})
-			mcpHandler = authMiddleware(mcpHTTPHandler)
+			mcpHandler = authMiddleware(mcpHandler)
 
 			go mcpoauth.StartCleanup(context.Background(), mcpOAuthStore, a.logger.With("component", "mcp-oauth-cleanup"))
 

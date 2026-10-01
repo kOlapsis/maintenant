@@ -73,7 +73,6 @@ CREATE TABLE containers (
     is_ignored           INTEGER NOT NULL DEFAULT 0,
     alert_severity       TEXT NOT NULL DEFAULT 'warning' CHECK(alert_severity IN ('critical','warning','info')),
     restart_threshold    INTEGER NOT NULL DEFAULT 3,
-    alert_channels       TEXT,
     archived             INTEGER NOT NULL DEFAULT 0,
     first_seen_at        BIGINT NOT NULL,
     last_state_change_at BIGINT NOT NULL,
@@ -87,11 +86,9 @@ CREATE TABLE containers (
     compose_working_dir  TEXT NOT NULL DEFAULT '',
     swarm_service_id     TEXT NOT NULL DEFAULT '',
     swarm_service_name   TEXT NOT NULL DEFAULT '',
-    swarm_service_mode   TEXT NOT NULL DEFAULT '',
     swarm_node_id        TEXT NOT NULL DEFAULT '',
     swarm_task_slot      INTEGER NOT NULL DEFAULT 0,
-    swarm_desired_replicas INTEGER NOT NULL DEFAULT 0,
-    image_version        TEXT NOT NULL DEFAULT '',
+    image_version       TEXT NOT NULL DEFAULT '',
     image_source         TEXT NOT NULL DEFAULT '',
     image_url            TEXT NOT NULL DEFAULT '',
     image_description    TEXT NOT NULL DEFAULT '',
@@ -116,6 +113,15 @@ CREATE TABLE state_transitions (
 );
 CREATE INDEX idx_transition_container_time ON state_transitions(container_id, timestamp DESC);
 CREATE INDEX idx_transition_timestamp ON state_transitions(timestamp);
+
+CREATE TABLE container_uptime_daily (
+    id             TEXT PRIMARY KEY NOT NULL,
+    container_id   TEXT NOT NULL REFERENCES containers(id) ON DELETE CASCADE,
+    day            BIGINT NOT NULL,                           -- UTC midnight, epoch seconds
+    uptime_percent REAL NOT NULL,
+    incident_count INTEGER NOT NULL,
+    UNIQUE(container_id, day)
+);
 
 CREATE TABLE resource_snapshots (
     id            TEXT PRIMARY KEY NOT NULL,
@@ -222,6 +228,15 @@ CREATE TABLE check_results (
 CREATE INDEX idx_check_endpoint_time ON check_results(endpoint_id, timestamp DESC);
 CREATE INDEX idx_check_timestamp ON check_results(timestamp);
 
+CREATE TABLE endpoint_uptime_daily (
+    id             TEXT PRIMARY KEY NOT NULL,
+    endpoint_id    TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+    day            BIGINT NOT NULL,                           -- UTC midnight, epoch seconds
+    uptime_percent REAL NOT NULL,
+    incident_count INTEGER NOT NULL,
+    UNIQUE(endpoint_id, day)
+);
+
 -- ========================================================= cert monitors =====
 CREATE TABLE cert_monitors (
     id              TEXT PRIMARY KEY NOT NULL,              -- uid.CertMonitor(agent,host,port[,server_name]) or minted (standalone)
@@ -301,12 +316,10 @@ CREATE TABLE heartbeats (
     last_duration_ms BIGINT,
     consecutive_failures  INTEGER NOT NULL DEFAULT 0,
     consecutive_successes INTEGER NOT NULL DEFAULT 0,
-    active          INTEGER NOT NULL DEFAULT 1,
     created_at      BIGINT NOT NULL,
     updated_at      BIGINT NOT NULL
 );
-CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at) WHERE active=1;
-CREATE INDEX idx_heartbeat_active ON heartbeats(active);
+CREATE INDEX idx_heartbeat_status_deadline ON heartbeats(status, next_deadline_at);
 CREATE INDEX idx_heartbeats_agent_id ON heartbeats(agent_id);
 
 CREATE TABLE outbound_heartbeats (
@@ -334,6 +347,23 @@ CREATE TABLE heartbeat_pings (
 );
 CREATE INDEX idx_hb_ping_heartbeat_time ON heartbeat_pings(heartbeat_id, timestamp DESC);
 CREATE INDEX idx_hb_ping_timestamp ON heartbeat_pings(timestamp);
+
+CREATE TABLE heartbeat_pauses (
+    id           TEXT PRIMARY KEY NOT NULL,
+    heartbeat_id TEXT NOT NULL REFERENCES heartbeats(id) ON DELETE CASCADE,
+    paused_at    BIGINT NOT NULL,
+    resumed_at   BIGINT
+);
+CREATE INDEX idx_hb_pause_heartbeat ON heartbeat_pauses(heartbeat_id, paused_at);
+
+CREATE TABLE heartbeat_uptime_daily (
+    id             TEXT PRIMARY KEY NOT NULL,
+    heartbeat_id   TEXT NOT NULL REFERENCES heartbeats(id) ON DELETE CASCADE,
+    day            BIGINT NOT NULL,                           -- UTC midnight, epoch seconds
+    uptime_percent REAL NOT NULL,
+    incident_count INTEGER NOT NULL,
+    UNIQUE(heartbeat_id, day)
+);
 
 CREATE TABLE heartbeat_executions (
     id            TEXT PRIMARY KEY NOT NULL,
@@ -423,7 +453,6 @@ CREATE TABLE alert_triggers (
     filter_severities TEXT NOT NULL DEFAULT '',
     filter_sources    TEXT NOT NULL DEFAULT '',
     filter_scopes     TEXT NOT NULL DEFAULT '',
-    filter_tags       TEXT NOT NULL DEFAULT '',
     enabled       INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
     notify_on_resolve INTEGER NOT NULL DEFAULT 1 CHECK(notify_on_resolve IN (0,1)),
     created_at    BIGINT NOT NULL DEFAULT 0,
@@ -446,7 +475,6 @@ CREATE TABLE escalation_policies (
     active_before_downgrade INTEGER NOT NULL DEFAULT 0,
     severities_json TEXT NOT NULL DEFAULT '[]',
     scopes_json   TEXT NOT NULL DEFAULT '[]',
-    tags_json     TEXT NOT NULL DEFAULT '[]',
     levels_json   TEXT NOT NULL,
     created_at    BIGINT NOT NULL DEFAULT 0,
     created_by    TEXT,
@@ -476,7 +504,7 @@ CREATE TABLE escalation_deliveries (
     run_id        TEXT NOT NULL REFERENCES escalation_runs(id) ON DELETE CASCADE,
     level_index   INTEGER NOT NULL,
     channel_id    TEXT REFERENCES notification_channels(id) ON DELETE SET NULL,
-    status        TEXT NOT NULL CHECK(status IN ('pending','sent','failed','abandoned','skipped_maintenance')),
+    status        TEXT NOT NULL CHECK(status IN ('pending','sent','failed','abandoned')),
     error         TEXT,
     attempt_started_at BIGINT NOT NULL DEFAULT 0,
     sent_at       BIGINT
@@ -496,7 +524,8 @@ CREATE TABLE status_components (
     status_override TEXT,
     auto_incident   INTEGER NOT NULL DEFAULT 0,
     created_at      BIGINT NOT NULL,
-    updated_at      BIGINT NOT NULL
+    updated_at      BIGINT NOT NULL,
+    override_before_maintenance TEXT
 );
 CREATE INDEX idx_status_components_visible ON status_components(visible);
 

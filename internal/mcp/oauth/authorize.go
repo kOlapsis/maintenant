@@ -32,7 +32,8 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := url.ParseRequestURI(redirectURI); err != nil || !s.isRedirectURIAllowed(redirectURI) {
+	target := s.redirectTarget(redirectURI)
+	if _, err := url.ParseRequestURI(redirectURI); err != nil || target == nil {
 		s.logger.Warn("authorization request with invalid or disallowed redirect_uri", "redirect_uri", redirectURI, "client_id", clientID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -44,7 +45,7 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if responseType != "code" {
-		oauthRedirectError(w, r, redirectURI, state, "unsupported_response_type", "only 'code' is supported")
+		oauthRedirectError(w, r, target, state, "unsupported_response_type", "only 'code' is supported")
 		return
 	}
 
@@ -52,17 +53,17 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Secret verification happens at the /token endpoint.
 	if clientID != s.clientID {
 		s.logger.Warn("authorization request with unknown client_id", "client_id", clientID)
-		oauthRedirectError(w, r, redirectURI, state, "unauthorized_client", "unknown client")
+		oauthRedirectError(w, r, target, state, "unauthorized_client", "unknown client")
 		return
 	}
 
 	// PKCE is mandatory per OAuth 2.1
 	if codeChallenge == "" {
-		oauthRedirectError(w, r, redirectURI, state, "invalid_request", "missing code_challenge")
+		oauthRedirectError(w, r, target, state, "invalid_request", "missing code_challenge")
 		return
 	}
 	if codeChallengeMethod != "S256" {
-		oauthRedirectError(w, r, redirectURI, state, "invalid_request", "code_challenge_method must be S256")
+		oauthRedirectError(w, r, target, state, "invalid_request", "code_challenge_method must be S256")
 		return
 	}
 
@@ -82,35 +83,32 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.Error("failed to store authorization code", "error", err)
-		oauthRedirectError(w, r, redirectURI, state, "server_error", "internal error")
+		oauthRedirectError(w, r, target, state, "server_error", "internal error")
 		return
 	}
 
 	s.logger.Info("authorization code issued", "client_id", clientID)
 
-	redirectURL := buildRedirectURL(redirectURI, map[string]string{
+	redirectURL := buildRedirectURL(target, map[string]string{
 		"code":  code,
 		"state": state,
 	})
-	// #nosec G710 -- redirect_uri validated by isRedirectURIAllowed before any redirect.
+	// #nosec G710 -- target is rebuilt from trusted parts by redirectTarget.
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
-func oauthRedirectError(w http.ResponseWriter, r *http.Request, redirectURI, state, errCode, desc string) {
-	u := buildRedirectURL(redirectURI, map[string]string{
+func oauthRedirectError(w http.ResponseWriter, r *http.Request, target *url.URL, state, errCode, desc string) {
+	u := buildRedirectURL(target, map[string]string{
 		"error":             errCode,
 		"error_description": desc,
 		"state":             state,
 	})
-	// #nosec G710 -- callers only reach this after isRedirectURIAllowed passed.
+	// #nosec G710 -- target is rebuilt from trusted parts by redirectTarget.
 	http.Redirect(w, r, u, http.StatusFound)
 }
 
-func buildRedirectURL(baseURI string, params map[string]string) string {
-	u, err := url.Parse(baseURI)
-	if err != nil {
-		return baseURI
-	}
+func buildRedirectURL(target *url.URL, params map[string]string) string {
+	u := *target
 	q := u.Query()
 	for k, v := range params {
 		if v != "" {

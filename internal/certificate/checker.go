@@ -71,7 +71,7 @@ func CheckCertificate(hostname string, port int, serverName string, timeout time
 	result := extractCertDetails(leaf, state.PeerCertificates)
 
 	// Validate chain
-	result.ChainValid, result.ChainError = validateChain(leaf, state.PeerCertificates[1:], validationName)
+	result.ChainValid, result.ChainError = validateChain(leaf, state.PeerCertificates[1:])
 
 	// Check hostname match
 	result.HostnameMatch = checkHostnameMatch(leaf, validationName)
@@ -94,7 +94,7 @@ func CheckCertificateFromPeerCerts(certs []*x509.Certificate, hostname string, o
 	result := extractCertDetails(leaf, certs)
 
 	// Validate chain
-	result.ChainValid, result.ChainError = validateChain(leaf, certs[1:], hostname)
+	result.ChainValid, result.ChainError = validateChain(leaf, certs[1:])
 
 	// Check hostname match
 	result.HostnameMatch = checkHostnameMatch(leaf, hostname)
@@ -177,14 +177,14 @@ func extractCertDetails(leaf *x509.Certificate, allCerts []*x509.Certificate) *C
 	return result
 }
 
-func validateChain(leaf *x509.Certificate, intermediates []*x509.Certificate, hostname string) (bool, string) {
+// validateChain verifies the chain up to a trusted root; the hostname is checked apart, by checkHostnameMatch.
+func validateChain(leaf *x509.Certificate, intermediates []*x509.Certificate) (bool, string) {
 	pool := x509.NewCertPool()
 	for _, cert := range intermediates {
 		pool.AddCert(cert)
 	}
 
 	opts := x509.VerifyOptions{
-		DNSName:       hostname,
 		Intermediates: pool,
 		// nil falls back to the system pool. Without this the endpoint probe
 		// would go green on an internal CA while the monitor kept reporting an

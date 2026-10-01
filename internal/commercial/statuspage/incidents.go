@@ -26,7 +26,7 @@ func NewIncidentHandler(components status.ComponentStore, incidents status.Incid
 	return &IncidentHandler{components: components, incidents: incidents, service: service, logger: logger}
 }
 
-// HandleAlertEvent creates, updates or resolves the incident of every auto-incident component the event touches.
+// HandleAlertEvent creates, updates or resolves the incident of every auto-incident component the event touches; a hidden component never opens nor updates one.
 func (h *IncidentHandler) HandleAlertEvent(ctx context.Context, evt alert.Event) {
 	if h.incidents == nil {
 		h.logger.Debug("status: no incident store, skipping alert")
@@ -77,17 +77,13 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 				return
 			}
 			h.logger.Info("status: auto-incident resolved", "incident_id", existing.ID)
-			h.service.Broadcast(event.StatusIncidentResolved, map[string]any{
-				"id":    existing.ID,
-				"title": existing.Title,
-			})
-			h.service.NotifySubscribers(ctx, "Resolved: "+existing.Title,
-				"<p>status.Incident <strong>"+existing.Title+"</strong> has been resolved.</p>")
+			h.service.AnnounceIncidentUpdate(ctx, existing, upd)
 		}
 		return
 	}
 
-	if !isNonOperational {
+	// Checked after the resolution, so an incident opened while the component was visible still closes.
+	if !isNonOperational || !comp.Visible {
 		return
 	}
 
@@ -129,13 +125,7 @@ func (h *IncidentHandler) handleAlertForComponent(ctx context.Context, evt alert
 	}
 
 	h.logger.Info("status: auto-incident created", "incident_id", incID, "title", inc.Title)
-	h.service.Broadcast(event.StatusIncidentCreated, map[string]any{
-		"id":         incID,
-		"title":      inc.Title,
-		"severity":   inc.Severity,
-		"status":     inc.Status,
-		"components": []string{comp.DisplayName},
-	})
-	h.service.NotifySubscribers(ctx, "["+inc.Severity+"] "+inc.Title,
-		"<p><strong>"+inc.Title+"</strong></p><p>Severity: "+inc.Severity+"</p><p>"+evt.Message+"</p>")
+	inc.ID = incID
+	inc.Components = []status.IncidentCompRef{{ID: comp.ID, Name: comp.DisplayName, Visible: comp.Visible}}
+	h.service.AnnounceIncident(ctx, inc, evt.Message)
 }

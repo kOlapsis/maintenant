@@ -15,13 +15,12 @@ import (
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
-// Enricher enriches raw scan results with additional data.
-// CE: no-op (returns nil). Pro: runs an enrichment pipeline (CVE, changelog, risk).
+// Enricher enriches raw scan results with CVE, changelog and risk data, as far as the running edition opens them.
 type Enricher interface {
 	Enrich(ctx context.Context, results []UpdateResult) error
 }
 
-// noopUpdateEnricher is the CE default — skips enrichment silently.
+// noopUpdateEnricher is the default when no enricher is plugged in.
 type noopUpdateEnricher struct{}
 
 func (noopUpdateEnricher) Enrich(_ context.Context, _ []UpdateResult) error {
@@ -101,7 +100,7 @@ func NewService(d Deps) *Service {
 	}
 }
 
-// SetEnricher sets the update enricher (no-op in CE, CVE/changelog/risk in Pro).
+// SetEnricher sets the update enricher.
 func (s *Service) SetEnricher(e Enricher) {
 	s.enricher = e
 }
@@ -198,25 +197,31 @@ func (s *Service) ListImageUpdates(ctx context.Context, opts ListImageUpdatesOpt
 	return s.store.ListImageUpdates(ctx, opts)
 }
 
-// GenerateUpdateCommand produces a shell command to update a container.
-func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) string {
-	repo, _, _ := ParseImageRef(c.Image)
+// GenerateUpdateCommand produces a shell command to update a container to latestTag, whose manifest is latestDigest.
+func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag, latestDigest string) string {
+	repo, currentTag, _ := ParseImageRef(c.Image)
 
-	// Kubernetes workloads
-	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
-		kind := strings.ToLower(c.ControllerKind)
-		return fmt.Sprintf("kubectl set image %s/%s %s=%s:%s -n %s",
-			kind, c.OrchestrationUnit, c.Name, repo, latestTag, c.OrchestrationGroup)
+	if c.RuntimeType == "kubernetes" || c.SwarmService != "" {
+		ref := repo + ":" + latestTag
+		// An unchanged image reference can leave the workload as it is, so a republished tag is deployed by its digest.
+		if latestTag == currentTag && latestDigest != "" {
+			ref += "@" + latestDigest
+		}
+		if c.SwarmService != "" {
+			return swarmServiceUpdate(c, ref)
+		}
+		return kubectlSetImage(c, ref)
 	}
 
 	// Docker Compose
-	if c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != "" {
-		dir := c.ComposeWorkingDir
-		if dir == "" {
-			dir = "<compose-project-dir>"
+	if isCompose(c) {
+		// Compose pulls the tag written in the compose file, so a new tag has to be written there first.
+		if latestTag != currentTag {
+			return fmt.Sprintf("cd %s\n# Set the image of service %s to %s:%s in the compose file, then:\ndocker compose pull %s\ndocker compose up -d %s",
+				composeDir(c), c.OrchestrationUnit, repo, latestTag, c.OrchestrationUnit, c.OrchestrationUnit)
 		}
 		return fmt.Sprintf("cd %s\ndocker compose pull %s\ndocker compose up -d --force-recreate %s",
-			dir, c.OrchestrationUnit, c.OrchestrationUnit)
+			composeDir(c), c.OrchestrationUnit, c.OrchestrationUnit)
 	}
 
 	// Standalone Docker container
@@ -224,34 +229,89 @@ func (s *Service) GenerateUpdateCommand(c ContainerInfo, latestTag string) strin
 		repo, latestTag, c.Name, c.Name, c.Name, repo, latestTag)
 }
 
-// GenerateRollbackCommand produces a shell command to revert a container to its previous image digest.
-func (s *Service) GenerateRollbackCommand(c ContainerInfo, previousDigest string) string {
-	if previousDigest == "" {
+// GenerateRollbackCommand produces a shell command that puts a container back on the image it ran before the update, or "" when that image cannot be named.
+func (s *Service) GenerateRollbackCommand(c ContainerInfo, u *ImageUpdate) string {
+	ref := previousImageRef(u.Image, u.CurrentTag, u.PreviousDigest)
+	if ref == "" {
 		return ""
 	}
 
-	repo, _, _ := ParseImageRef(c.Image)
-
-	// Kubernetes workloads — use rollout undo
-	if c.RuntimeType == "kubernetes" && c.ControllerKind != "" {
-		kind := strings.ToLower(c.ControllerKind)
-		return fmt.Sprintf("kubectl rollout undo %s/%s -n %s",
-			kind, c.OrchestrationUnit, c.OrchestrationGroup)
+	if c.RuntimeType == "kubernetes" {
+		return kubectlSetImage(c, ref)
+	}
+	if c.SwarmService != "" {
+		return swarmServiceUpdate(c, ref)
 	}
 
-	// Docker Compose — recreate with previous digest
-	if c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != "" {
-		dir := c.ComposeWorkingDir
-		if dir == "" {
-			dir = "<compose-project-dir>"
+	// Docker Compose
+	if isCompose(c) {
+		svc := c.OrchestrationUnit
+		if u.LatestTag == u.CurrentTag {
+			// The compose file keeps the same tag: point that tag back at the previous image locally.
+			return fmt.Sprintf("cd %s\ndocker pull %s\ndocker tag %s %s\ndocker compose up -d --pull never --force-recreate %s",
+				composeDir(c), ref, ref, imageWithoutDigest(u.Image), svc)
 		}
-		return fmt.Sprintf("cd %s\ndocker compose pull %s\ndocker compose up -d --force-recreate %s",
-			dir, c.OrchestrationUnit, c.OrchestrationUnit)
+		return fmt.Sprintf("cd %s\n# Set the image of service %s back to %s in the compose file, then:\ndocker compose up -d %s",
+			composeDir(c), svc, ref, svc)
 	}
 
-	// Standalone Docker container — stop/rm/run with digest reference
-	return fmt.Sprintf("docker stop %s && docker rm %s\ndocker run -d --name %s %s@%s",
-		c.Name, c.Name, c.Name, repo, previousDigest)
+	// Standalone Docker container
+	return fmt.Sprintf("docker pull %s\ndocker stop %s && docker rm %s\ndocker run -d --name %s %s",
+		ref, c.Name, c.Name, c.Name, ref)
+}
+
+// previousImageRef names the image a container ran before an update: by digest when known,
+// else by its tag when that tag is a fixed release; a moving tag without digest cannot name it.
+func previousImageRef(image, currentTag, previousDigest string) string {
+	repo, _, _ := ParseImageRef(image)
+	if previousDigest != "" {
+		return repo + "@" + previousDigest
+	}
+	if isFixedVersionTag(currentTag) {
+		return repo + ":" + currentTag
+	}
+	return ""
+}
+
+func imageWithoutDigest(image string) string {
+	if i := strings.Index(image, "@"); i > 0 {
+		return image[:i]
+	}
+	return image
+}
+
+// kubectlSetImage points the workload's container at ref; a pod without a controller is updated in place.
+func kubectlSetImage(c ContainerInfo, ref string) string {
+	kind := strings.ToLower(c.ControllerKind)
+	if kind == "" {
+		kind = "pod"
+	}
+	return fmt.Sprintf("kubectl set image %s/%s %s=%s -n %s",
+		kind, c.OrchestrationUnit, podContainer(c), ref, c.OrchestrationGroup)
+}
+
+// swarmServiceUpdate points the Swarm service that runs the task at ref.
+func swarmServiceUpdate(c ContainerInfo, ref string) string {
+	return fmt.Sprintf("docker service update --image %s %s", ref, c.SwarmService)
+}
+
+// podContainer names the container of a Kubernetes pod that runs the workload's image.
+func podContainer(c ContainerInfo) string {
+	if c.PodContainer != "" {
+		return c.PodContainer
+	}
+	return c.Name
+}
+
+func isCompose(c ContainerInfo) bool {
+	return c.RuntimeType != "kubernetes" && c.OrchestrationGroup != "" && c.OrchestrationUnit != ""
+}
+
+func composeDir(c ContainerInfo) string {
+	if c.ComposeWorkingDir == "" {
+		return "<compose-project-dir>"
+	}
+	return c.ComposeWorkingDir
 }
 
 // GenerateFixCommand produces a shell command to update a container to a specific CVE fix version.
@@ -276,7 +336,7 @@ func (s *Service) GenerateFixCommand(c ContainerInfo, currentTag, fixedInVersion
 		return ""
 	}
 
-	return s.GenerateUpdateCommand(c, fixedInVersion)
+	return s.GenerateUpdateCommand(c, fixedInVersion, "")
 }
 
 // IsFixedByUpdate returns true when the latest available tag already covers the CVE fix version.
@@ -356,10 +416,16 @@ func (s *Service) runScan(ctx context.Context) {
 		containerByID[c.ExternalID] = c
 	}
 
-	// Collect scanned container names for stale update cleanup
+	// A container whose scan failed keeps its pending update until a scan reaches its registry.
+	failed := make(map[string]bool, len(scanErrors))
+	for _, se := range scanErrors {
+		failed[se.ContainerName] = true
+	}
 	scannedNames := make([]string, 0, len(containers))
 	for _, c := range containers {
-		scannedNames = append(scannedNames, c.Name)
+		if !failed[c.Name] {
+			scannedNames = append(scannedNames, c.Name)
+		}
 	}
 
 	// Persist results
@@ -371,19 +437,20 @@ func (s *Service) runScan(ctx context.Context) {
 
 		riskScore := BaseRiskScore(r.UpdateType)
 		u := &ImageUpdate{
-			ScanID:        scanID,
-			ContainerID:   r.ContainerID,
-			ContainerName: r.ContainerName,
-			Image:         r.Image,
-			CurrentTag:    r.CurrentTag,
-			CurrentDigest: r.CurrentDigest,
-			Registry:      r.Registry,
-			LatestTag:     r.LatestTag,
-			LatestDigest:  r.LatestDigest,
-			UpdateType:    r.UpdateType,
-			RiskScore:     riskScore,
-			Status:        StatusAvailable,
-			DetectedAt:    time.Now(),
+			ScanID:         scanID,
+			ContainerID:    r.ContainerID,
+			ContainerName:  r.ContainerName,
+			Image:          r.Image,
+			CurrentTag:     r.CurrentTag,
+			CurrentDigest:  r.CurrentDigest,
+			Registry:       r.Registry,
+			LatestTag:      r.LatestTag,
+			LatestDigest:   r.LatestDigest,
+			UpdateType:     r.UpdateType,
+			RiskScore:      riskScore,
+			PreviousDigest: r.PreviousDigest,
+			Status:         StatusAvailable,
+			DetectedAt:     time.Now(),
 		}
 
 		if _, err := s.store.InsertImageUpdate(ctx, u); err != nil {
@@ -402,23 +469,24 @@ func (s *Service) runScan(ctx context.Context) {
 			"latest_tag":     r.LatestTag,
 			"update_type":    string(r.UpdateType),
 			"risk_score":     riskScore,
+			"alert_on":       r.AlertOn,
 		}
 
 		if ci, ok := containerByID[r.ContainerID]; ok {
-			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag)
-			if r.CurrentDigest != "" {
-				eventData["rollback_command"] = s.GenerateRollbackCommand(ci, r.CurrentDigest)
+			eventData["update_command"] = s.GenerateUpdateCommand(ci, r.LatestTag, r.LatestDigest)
+			if cmd := s.GenerateRollbackCommand(ci, u); cmd != "" {
+				eventData["rollback_command"] = cmd
 			}
 		}
 
 		s.emitEvent(event.UpdateDetected, eventData)
 	}
 
-	// Enrichment pipeline (no-op in CE, runs CVE/changelog/risk in Pro).
-	// Gated on results, not updates: a container on its latest tag still needs a CVE pass.
-	if len(results) > 0 {
-		s.logger.Info("starting enrichment pipeline", "containers", len(results), "updates", updatesFound)
-		if err := s.enricher.Enrich(ctx, results); err != nil {
+	// Enrichment pipeline, as far as the edition opens it: a CVE pass on every container,
+	// then changelog and risk on those with an update.
+	if targets := enrichmentTargets(containers, results); len(targets) > 0 {
+		s.logger.Info("starting enrichment pipeline", "containers", len(targets), "updates", updatesFound)
+		if err := s.enricher.Enrich(ctx, targets); err != nil {
 			s.logger.Warn("update enrichment failed", "error", err)
 		}
 		s.logger.Info("enrichment pipeline completed")
@@ -472,6 +540,21 @@ func (s *Service) runScan(ctx context.Context) {
 	}
 
 	s.completeScan(ctx, scanRecord, ScanStatusCompleted, len(containers), updatesFound, len(scanErrors))
+}
+
+// enrichmentTargets returns the scan results, followed by the running image of every container they do not cover.
+func enrichmentTargets(containers []ContainerInfo, results []UpdateResult) []UpdateResult {
+	covered := make(map[string]bool, len(results))
+	for _, r := range results {
+		covered[r.ContainerID] = true
+	}
+	targets := append(make([]UpdateResult, 0, len(containers)), results...)
+	for _, c := range containers {
+		if !covered[c.ExternalID] {
+			targets = append(targets, runningImage(c))
+		}
+	}
+	return targets
 }
 
 func (s *Service) completeScan(ctx context.Context, record *ScanRecord, status ScanStatus, scanned, found, errors int) {

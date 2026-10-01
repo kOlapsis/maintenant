@@ -6,6 +6,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -27,11 +28,11 @@ type AlertHandler struct {
 	notifier             *alert.Notifier
 	broker               *SSEBroker
 	allowPrivateWebhooks bool
-	escalator            alert.Escalator
+	acknowledger         alert.Acknowledger
 }
 
 // NewAlertHandler creates a new alert handler.
-func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool, escalator alert.Escalator) *AlertHandler {
+func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStore, silenceStore alert.SilenceStore, notifier *alert.Notifier, broker *SSEBroker, allowPrivateWebhooks bool, acknowledger alert.Acknowledger) *AlertHandler {
 	return &AlertHandler{
 		alertStore:           alertStore,
 		channelStore:         channelStore,
@@ -39,7 +40,7 @@ func NewAlertHandler(alertStore alert.AlertStore, channelStore alert.ChannelStor
 		notifier:             notifier,
 		broker:               broker,
 		allowPrivateWebhooks: allowPrivateWebhooks,
-		escalator:            escalator,
+		acknowledger:         acknowledger,
 	}
 }
 
@@ -58,6 +59,10 @@ func (h *AlertHandler) HandleListAlerts(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		opts.Before = &t
+	}
+	if opts.BeforeID = r.URL.Query().Get("before_id"); opts.BeforeID != "" && opts.Before == nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_PARAM", "'before_id' requires 'before'")
+		return
 	}
 
 	if limit := r.URL.Query().Get("limit"); limit != "" {
@@ -96,7 +101,7 @@ func (h *AlertHandler) HandleListAlerts(w http.ResponseWriter, r *http.Request) 
 
 // HandleGetActiveAlerts handles GET /api/v1/alerts/active.
 func (h *AlertHandler) HandleGetActiveAlerts(w http.ResponseWriter, r *http.Request) {
-	alerts, err := h.alertStore.ListActiveAlerts(r.Context())
+	alerts, err := h.alertStore.ListUnacknowledgedActiveAlerts(r.Context())
 	if err != nil {
 		WriteStoreError(w, err, "Failed to list active alerts")
 		return
@@ -108,9 +113,6 @@ func (h *AlertHandler) HandleGetActiveAlerts(w http.ResponseWriter, r *http.Requ
 		"info":     {},
 	}
 	for _, a := range alerts {
-		if a.AcknowledgedAt != nil {
-			continue
-		}
 		grouped[a.Severity] = append(grouped[a.Severity], a)
 	}
 
@@ -158,36 +160,17 @@ func (h *AlertHandler) HandleAcknowledgeAlert(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	a, err := h.alertStore.GetAlert(r.Context(), id)
-	if err != nil {
-		WriteStoreError(w, err, "failed to get alert")
-		return
-	}
-	if a == nil {
+	a, err := h.acknowledger.Acknowledge(r.Context(), id, input.AcknowledgedBy)
+	switch {
+	case errors.Is(err, alert.ErrAlertNotFound):
 		WriteError(w, http.StatusNotFound, "NOT_FOUND", "alert not found")
-		return
-	}
-	if a.Status != "active" || a.AcknowledgedAt != nil {
+	case errors.Is(err, alert.ErrNotAcknowledgeable):
 		WriteError(w, http.StatusConflict, "CONFLICT", "alert is not active")
-		return
+	case err != nil:
+		WriteStoreError(w, err, "failed to acknowledge alert")
+	default:
+		WriteJSON(w, http.StatusOK, a)
 	}
-
-	now := time.Now().UTC()
-	if err := h.alertStore.AcknowledgeAlert(r.Context(), id, input.AcknowledgedBy, now); err != nil {
-		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to acknowledge alert")
-		return
-	}
-
-	a.AcknowledgedAt = &now
-	a.AcknowledgedBy = input.AcknowledgedBy
-
-	h.broker.Broadcast(SSEEvent{Type: event.AlertAcknowledged, Data: a})
-
-	if err := h.escalator.OnAlertAcknowledged(r.Context(), id, alert.Acknowledgment{By: input.AcknowledgedBy, At: now}); err != nil {
-		slog.ErrorContext(r.Context(), "alert engine: OnAlertAcknowledged hook error", "error", err, "alert_id", id)
-	}
-
-	WriteJSON(w, http.StatusOK, a)
 }
 
 // --- Channel CRUD handlers ---
@@ -236,7 +219,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		Headers string          `json:"headers"`
 		Secret  string          `json:"secret"`
 		Config  json.RawMessage `json:"config"`
-		Enabled bool            `json:"enabled"`
+		Enabled *bool           `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid JSON body")
@@ -276,6 +259,11 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+
 	ch := &alert.NotificationChannel{
 		Name:    input.Name,
 		Type:    input.Type,
@@ -283,7 +271,7 @@ func (h *AlertHandler) HandleCreateChannel(w http.ResponseWriter, r *http.Reques
 		Headers: input.Headers,
 		Secret:  input.Secret,
 		Config:  config,
-		Enabled: input.Enabled,
+		Enabled: enabled,
 	}
 
 	id, err := h.channelStore.InsertChannel(r.Context(), ch)

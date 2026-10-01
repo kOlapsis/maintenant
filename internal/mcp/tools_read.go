@@ -43,13 +43,13 @@ func registerReadTools(server *gomcp.Server, svc *Services) {
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "list_alerts",
-		Description: "List alerts. By default returns only active (unresolved) alerts. Set active_only to false to also return recent resolved and silenced alerts (last 100).",
+		Description: "List alerts. By default returns only active (unresolved) alerts that are not yet acknowledged. Set active_only to false to return the last 100 alerts instead, acknowledged, resolved and silenced ones included.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, listAlertsHandler(svc))
 
 	addTool(server, svc, &gomcp.Tool{
 		Name:        "get_resources",
-		Description: "Get current host resource metrics summary including CPU usage, memory usage, network I/O, and disk usage.",
+		Description: "Get current host resource metrics summary including CPU usage, memory usage, network throughput in bytes per second (net_rx_rate, net_tx_rate), and disk usage.",
 		Annotations: &gomcp.ToolAnnotations{ReadOnlyHint: true},
 	}, getResourcesHandler(svc))
 
@@ -122,7 +122,7 @@ type getResourcesInput struct{}
 type getTopConsumersInput struct {
 	Metric string `json:"metric" jsonschema:"Resource metric to sort by: cpu or memory"`
 	Period string `json:"period,omitempty" jsonschema:"Time period for ranking: current (live), or one of 1h, 6h, 24h, 7d, 30d, 90d. How far back a history window may go depends on the edition."`
-	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of containers to return, default 10"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of containers to return, default 10, at most 20"`
 }
 type listEndpointsInput struct {
 	AgentID string `json:"agent_id,omitempty" jsonschema:"Filter by agent UUID, or 'local' for endpoints checked directly by the server. Omit to return all."`
@@ -231,17 +231,18 @@ func listAlertsHandler(svc *Services) gomcp.ToolHandlerFor[listAlertsInput, any]
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, input listAlertsInput) (*gomcp.CallToolResult, any, error) {
 		// Default (nil) and explicit true both mean active only.
 		if input.ActiveOnly == nil || *input.ActiveOnly {
-			alerts, err := svc.Alerts.ListActiveAlerts(ctx)
+			alerts, err := svc.Alerts.ListUnacknowledgedActiveAlerts(ctx)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to list active alerts: %w", err)
 			}
 			return jsonResult(alerts)
 		}
-		alerts, err := svc.Alerts.ListAlerts(ctx, alert.ListAlertsOpts{Limit: 100})
+		const recent = 100
+		alerts, err := svc.Alerts.ListAlerts(ctx, alert.ListAlertsOpts{Limit: recent})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list alerts: %w", err)
 		}
-		return jsonResult(alerts)
+		return jsonResult(alerts[:min(len(alerts), recent)])
 	}
 }
 
@@ -251,15 +252,13 @@ func getResourcesHandler(svc *Services) gomcp.ToolHandlerFor[getResourcesInput, 
 
 		var totalCPU float64
 		var totalMemUsed, totalMemLimit int64
-		var totalNetRx, totalNetTx int64
 
 		for _, snap := range all {
 			totalCPU += snap.CPUPercent
 			totalMemUsed += snap.MemUsed
 			totalMemLimit += snap.MemLimit
-			totalNetRx += snap.NetRxBytes
-			totalNetTx += snap.NetTxBytes
 		}
+		_, netRxRate, netTxRate := svc.Resources.NetworkTotals(nil)
 
 		totalMemPercent := 0.0
 		if totalMemLimit > 0 {
@@ -285,8 +284,8 @@ func getResourcesHandler(svc *Services) gomcp.ToolHandlerFor[getResourcesInput, 
 			"mem_used":        totalMemUsed,
 			"mem_limit":       totalMemLimit,
 			"mem_percent":     totalMemPercent,
-			"net_rx_bytes":    totalNetRx,
-			"net_tx_bytes":    totalNetTx,
+			"net_rx_rate":     netRxRate,
+			"net_tx_rate":     netTxRate,
 			"disk_total":      diskTotal,
 			"disk_used":       diskUsed,
 			"disk_percent":    diskPercent,
@@ -433,6 +432,9 @@ func getHealthHandler(svc *Services) gomcp.ToolHandlerFor[getHealthInput, any] {
 
 func listAgentsHandler(svc *Services) gomcp.ToolHandlerFor[listAgentsInput, any] {
 	return func(ctx context.Context, _ *gomcp.CallToolRequest, _ listAgentsInput) (*gomcp.CallToolResult, any, error) {
+		if r, v, err := checkCapability(extension.CapMultihost); r != nil {
+			return r, v, err
+		}
 		if svc.Agents == nil {
 			return jsonResult([]any{})
 		}

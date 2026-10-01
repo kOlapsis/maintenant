@@ -42,8 +42,9 @@ type Config struct {
 	MCP MCPConfig
 
 	// HTTP
-	CORSOrigins string
-	MaxBodySize int64
+	CORSOrigins        string
+	MaxBodySize        int64
+	MaxBodySizeInvalid string
 	// TrustedProxies lists the CIDRs and addresses whose forwarded headers are
 	// believed, comma-separated. Empty means no header is ever read.
 	TrustedProxies string
@@ -63,7 +64,8 @@ type Config struct {
 	K8sExcludeNS  string
 
 	// Security
-	SecurityScoreThreshold int
+	SecurityScoreThreshold        int
+	SecurityScoreThresholdInvalid string
 
 	// ContainerDownAfter is how long a container must stay stopped before it
 	// raises an alert. Zero disables the check.
@@ -79,7 +81,7 @@ type Config struct {
 
 	ProxyLabels bool
 
-	// Multi-host agent mode (Pro only)
+	// Multi-host agent mode
 	Mode      string // "embedded" | "server" | "agent"
 	MultiHost MultiHostConfig
 
@@ -98,7 +100,7 @@ type Config struct {
 	DemoToken    string
 }
 
-// MultiHostConfig holds multi-server agent configuration (Pro only).
+// MultiHostConfig holds multi-server agent configuration.
 type MultiHostConfig struct {
 	GRPCPublicURL              string
 	GRPCListen                 string
@@ -224,15 +226,51 @@ func (c Config) ValidateProxies() error {
 	return err
 }
 
+// ErrMaxBodySize refuses a request body cap that is not a positive number of bytes.
+var ErrMaxBodySize = errors.New(
+	"MAINTENANT_MAX_BODY_SIZE is not a valid size: use a positive whole number of bytes such as 1048576")
+
+// ValidateBodySize refuses a request body cap that would silently be replaced by the 1 MiB default.
+func (c Config) ValidateBodySize() error {
+	switch {
+	case c.MaxBodySize > 0:
+		return nil
+	case c.MaxBodySizeInvalid != "":
+		return fmt.Errorf("%w (got %q)", ErrMaxBodySize, c.MaxBodySizeInvalid)
+	default:
+		return fmt.Errorf("%w (got %d)", ErrMaxBodySize, c.MaxBodySize)
+	}
+}
+
 // ErrContainerDownAfter refuses a container-down threshold that does not parse.
 var ErrContainerDownAfter = errors.New(
 	"MAINTENANT_CONTAINER_DOWN_AFTER is not a valid duration: use a Go duration such as 5m, 30s or 1h30m")
+
+// ErrSecurityScoreThreshold refuses a posture threshold that is not a score.
+var ErrSecurityScoreThreshold = errors.New(
+	"MAINTENANT_SECURITY_SCORE_THRESHOLD is not a valid score: use a whole number from 1 to 100, or 0 to disable the alert")
+
+// parseScoreThreshold reads a posture score threshold, empty or 0 meaning no alert.
+func parseScoreThreshold(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 || n > 100 {
+		return 0, fmt.Errorf("%w (got %q)", ErrSecurityScoreThreshold, raw)
+	}
+	return n, nil
+}
 
 // ValidateAlerting refuses an alerting configuration that would leave a check
 // silently off.
 func (c Config) ValidateAlerting() error {
 	if c.ContainerDownAfterInvalid != "" {
 		return fmt.Errorf("%w (got %q)", ErrContainerDownAfter, c.ContainerDownAfterInvalid)
+	}
+	if c.SecurityScoreThresholdInvalid != "" {
+		return fmt.Errorf("%w (got %q)", ErrSecurityScoreThreshold, c.SecurityScoreThresholdInvalid)
 	}
 	return nil
 }
@@ -286,6 +324,20 @@ func (c Config) ValidateHTTP() error {
 	return nil
 }
 
+// ErrGRPCTLSPair refuses half a keypair for the agent gRPC listener.
+var ErrGRPCTLSPair = errors.New("agent gRPC TLS needs both a certificate and its key")
+
+// ValidateGRPCTLS refuses a certificate without its key, or the reverse, rather than serving a self-signed certificate in their place.
+func (c Config) ValidateGRPCTLS() error {
+	switch {
+	case c.MultiHost.TLSCertFile != "" && c.MultiHost.TLSKeyFile == "":
+		return fmt.Errorf("%w: MAINTENANT_GRPC_TLS_CERT is set but MAINTENANT_GRPC_TLS_KEY is empty", ErrGRPCTLSPair)
+	case c.MultiHost.TLSKeyFile != "" && c.MultiHost.TLSCertFile == "":
+		return fmt.Errorf("%w: MAINTENANT_GRPC_TLS_KEY is set but MAINTENANT_GRPC_TLS_CERT is empty", ErrGRPCTLSPair)
+	}
+	return nil
+}
+
 // ErrDemoRuntime is returned when a demo build is pointed at anything but a remote Docker endpoint.
 var ErrDemoRuntime = errors.New("demo mode only monitors a remote Docker endpoint: set DOCKER_HOST=tcp://host:port, and leave KUBERNETES_SERVICE_HOST and KUBECONFIG unset")
 
@@ -333,7 +385,6 @@ func ConfigFromEnv() Config {
 
 		CORSOrigins:    os.Getenv("MAINTENANT_CORS_ORIGINS"),
 		TrustedProxies: os.Getenv("MAINTENANT_TRUSTED_PROXIES"),
-		MaxBodySize:    int64OrDefault("MAINTENANT_MAX_BODY_SIZE", 1048576),
 		CACertFile:     os.Getenv("MAINTENANT_CA_CERT"),
 
 		OrgName:   envOr("MAINTENANT_ORGANISATION_NAME", "Maintenant"),
@@ -346,10 +397,11 @@ func ConfigFromEnv() Config {
 		LogLevel: envOr("MAINTENANT_LOG_LEVEL", "info"),
 	}
 
-	if thresholdStr := os.Getenv("MAINTENANT_SECURITY_SCORE_THRESHOLD"); thresholdStr != "" {
-		if threshold, err := strconv.Atoi(thresholdStr); err == nil && threshold > 0 {
-			cfg.SecurityScoreThreshold = threshold
-		}
+	threshold := os.Getenv("MAINTENANT_SECURITY_SCORE_THRESHOLD")
+	if n, err := parseScoreThreshold(threshold); err != nil {
+		cfg.SecurityScoreThresholdInvalid = strings.TrimSpace(threshold)
+	} else {
+		cfg.SecurityScoreThreshold = n
 	}
 
 	cfg.Retention = RetentionConfig{
@@ -359,6 +411,7 @@ func ConfigFromEnv() Config {
 	}
 
 	cfg.ContainerDownAfter, cfg.ContainerDownAfterInvalid = envOptionalDuration("MAINTENANT_CONTAINER_DOWN_AFTER")
+	cfg.MaxBodySize, cfg.MaxBodySizeInvalid = envBodySize("MAINTENANT_MAX_BODY_SIZE", 1048576)
 
 	cfg.DisableTelemetry = parseTruthy(os.Getenv("MAINTENANT_DISABLE_TELEMETRY"))
 	cfg.DisableOSEOLRefresh = parseTruthy(os.Getenv("MAINTENANT_DISABLE_OS_EOL_REFRESH"))
@@ -379,6 +432,7 @@ func ConfigFromEnv() Config {
 		EnrollmentToken:            os.Getenv("MAINTENANT_ENROLLMENT_TOKEN"),
 		RuntimeOverride:            os.Getenv("MAINTENANT_RUNTIME"),
 		Label:                      os.Getenv("MAINTENANT_LABEL"),
+		NodeName:                   os.Getenv("MAINTENANT_NODE_NAME"),
 		InsecureSkipVerify:         parseTruthy(os.Getenv("MAINTENANT_GRPC_INSECURE_SKIP_TLS_VERIFY")),
 		EmbeddedAgent:              parseTruthy(os.Getenv("MAINTENANT_EMBEDDED_AGENT")),
 	}
@@ -395,13 +449,17 @@ func ConfigFromEnv() Config {
 	return cfg
 }
 
-func int64OrDefault(key string, def int64) int64 {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
-			return n
-		}
+// envBodySize reads a positive byte count, returning the raw value instead when it is not one.
+func envBodySize(key string, def int64) (int64, string) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def, ""
 	}
-	return def
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, raw
+	}
+	return n, ""
 }
 
 func parseTruthy(raw string) bool {

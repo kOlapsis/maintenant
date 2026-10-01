@@ -7,7 +7,6 @@ export interface AlertTrigger {
   filter_severities: string
   filter_sources: string
   filter_scopes: string
-  filter_tags: string
   enabled: boolean
   notify_on_resolve: boolean
   channel_ids: string[]
@@ -20,7 +19,6 @@ export interface TriggerRequest {
   filter_severities: string
   filter_sources: string
   filter_scopes: string
-  filter_tags: string
   enabled: boolean
   notify_on_resolve: boolean
   channel_ids: string[]

@@ -32,13 +32,12 @@ func TestPodHealth_Running_AllReady(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	hi, err := rt.podHealth(context.Background(), "default", "web")
 	if err != nil {
@@ -77,13 +76,12 @@ func TestPodHealth_ProbeFailure(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	hi, err := rt.podHealth(context.Background(), "default", "web")
 	if err != nil {
@@ -112,13 +110,12 @@ func TestPodHealth_NoProbe(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	hi, err := rt.podHealth(context.Background(), "default", "worker")
 	if err != nil {
@@ -147,13 +144,12 @@ func TestPodHealth_Pending(t *testing.T) {
 	}
 
 	cs := fake.NewClientset(pod)
-	rt := &Runtime{
-		logger:    slog.Default(),
-		nsFilter:  NewNamespaceFilter("", ""),
-		clientset: cs,
-		prevCPU:   make(map[string]*cpuPrev),
-		stopCh:    make(chan struct{}),
-	}
+	rt := withClient(&Runtime{
+		logger:   slog.Default(),
+		nsFilter: NewNamespaceFilter("", ""),
+		prevCPU:  make(map[string]*cpuPrev),
+		stopCh:   make(chan struct{}),
+	}, cs)
 
 	hi, err := rt.podHealth(context.Background(), "default", "web")
 	if err != nil {

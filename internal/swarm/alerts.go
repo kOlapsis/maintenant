@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/alert"
+	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/event"
 )
 
@@ -56,6 +57,20 @@ func (rhc *ReplicaHealthChecker) SetAlertCallback(cb NodeAlertCallback) {
 	rhc.alertCb = cb
 }
 
+// Resume takes over the active replica alerts left by a previous run, so the
+// next check resolves those whose service is healthy again.
+func (rhc *ReplicaHealthChecker) Resume(active []*alert.Alert) {
+	rhc.mu.Lock()
+	defer rhc.mu.Unlock()
+
+	now := time.Now()
+	for _, a := range active {
+		if a.Source == "swarm" && a.AlertType == "replica_unhealthy" && a.EntityType == "swarm_service" {
+			rhc.services[a.EntityID] = &replicaState{firstSeen: now.Add(-rhc.alertDelay), alerted: true}
+		}
+	}
+}
+
 // Check evaluates replica health for all services and emits alerts
 // for services that have been under-replicated beyond the alert delay.
 func (rhc *ReplicaHealthChecker) Check(services []*SwarmService) {
@@ -67,39 +82,7 @@ func (rhc *ReplicaHealthChecker) Check(services []*SwarmService) {
 
 	for _, svc := range services {
 		activeServiceIDs[svc.ServiceID] = true
-
-		// Only check replicated services with a non-zero desired count.
-		if svc.Mode != "replicated" || svc.DesiredReplicas == 0 {
-			rhc.recover(svc.ServiceID, svc.Name, now)
-			continue
-		}
-
-		underReplicated := svc.RunningReplicas < svc.DesiredReplicas
-		state, tracked := rhc.services[svc.ServiceID]
-
-		if underReplicated {
-			if !tracked {
-				// First time seeing this service under-replicated.
-				rhc.services[svc.ServiceID] = &replicaState{
-					firstSeen: now,
-					alerted:   false,
-				}
-				continue
-			}
-			if !state.alerted && now.Sub(state.firstSeen) >= rhc.alertDelay {
-				state.alerted = true
-				rhc.logger.Warn("sustained under-replication detected",
-					"service", svc.Name,
-					"running", svc.RunningReplicas,
-					"desired", svc.DesiredReplicas,
-					"duration", now.Sub(state.firstSeen).Round(time.Second),
-				)
-				rhc.emitAlert(svc, now)
-			}
-		} else {
-			// Service is healthy — recover if previously tracked.
-			rhc.recover(svc.ServiceID, svc.Name, now)
-		}
+		rhc.evaluate(svc, now)
 	}
 
 	// Clean up services that no longer exist.
@@ -107,6 +90,37 @@ func (rhc *ReplicaHealthChecker) Check(services []*SwarmService) {
 		if !activeServiceIDs[serviceID] {
 			delete(rhc.services, serviceID)
 		}
+	}
+}
+
+// Observe evaluates one service as soon as an event changes it, with the same delay as Check.
+func (rhc *ReplicaHealthChecker) Observe(svc *SwarmService) {
+	rhc.mu.Lock()
+	defer rhc.mu.Unlock()
+	rhc.evaluate(svc, time.Now())
+}
+
+func (rhc *ReplicaHealthChecker) evaluate(svc *SwarmService, now time.Time) {
+	if svc.Mode != "replicated" || svc.DesiredReplicas == 0 || container.IgnoredByLabels(svc.Labels) ||
+		svc.RunningReplicas >= svc.DesiredReplicas {
+		rhc.recover(svc.ServiceID, svc.Name, now)
+		return
+	}
+
+	state, tracked := rhc.services[svc.ServiceID]
+	if !tracked {
+		rhc.services[svc.ServiceID] = &replicaState{firstSeen: now}
+		return
+	}
+	if !state.alerted && now.Sub(state.firstSeen) >= rhc.alertDelay {
+		state.alerted = true
+		rhc.logger.Warn("sustained under-replication detected",
+			"service", svc.Name,
+			"running", svc.RunningReplicas,
+			"desired", svc.DesiredReplicas,
+			"duration", now.Sub(state.firstSeen).Round(time.Second),
+		)
+		rhc.emitAlert(svc, now)
 	}
 }
 
@@ -141,6 +155,7 @@ func (rhc *ReplicaHealthChecker) emitAlert(svc *SwarmService, now time.Time) {
 			Severity:   alert.SeverityWarning,
 			Message:    fmt.Sprintf("Swarm service %s under-replicated for %s: %d/%d replicas", svc.Name, rhc.alertDelay, svc.RunningReplicas, svc.DesiredReplicas),
 			EntityType: "swarm_service",
+			EntityID:   svc.ServiceID,
 			EntityName: svc.Name,
 			Details: map[string]any{
 				"service_id":       svc.ServiceID,
@@ -161,6 +176,7 @@ func (rhc *ReplicaHealthChecker) emitRecovery(serviceID, serviceName string, now
 			IsRecover:  true,
 			Message:    fmt.Sprintf("Swarm service %s replicas restored", serviceName),
 			EntityType: "swarm_service",
+			EntityID:   serviceID,
 			EntityName: serviceName,
 			Details: map[string]any{
 				"service_id": serviceID,

@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	labelComposeProject    = "com.docker.compose.project"
 	labelComposeService    = "com.docker.compose.service"
 	labelComposeWorkingDir = "com.docker.compose.project.working_dir"
 	labelComposeOneOff     = "com.docker.compose.oneoff"
@@ -26,7 +25,6 @@ const (
 	labelPBGroup           = "maintenant.group"
 	labelPBSeverity        = "maintenant.alert.severity"
 	labelPBThreshold       = "maintenant.alert.restart_threshold"
-	labelPBChannels        = "maintenant.alert.channels"
 )
 
 // SecurityConfig holds security-relevant fields extracted from Docker's ContainerInspect.
@@ -55,6 +53,13 @@ type DiscoveryResult struct {
 	Container      *cmodel.Container
 	Labels         map[string]string
 	SecurityConfig *SecurityConfig
+	Exit           *ExitInfo // nil unless the container has exited and inspect succeeded
+}
+
+// ExitInfo is how an exited container last stopped.
+type ExitInfo struct {
+	Code      int
+	OOMKilled bool
 }
 
 // IsOneOff reports whether a container was created by `docker compose run`.
@@ -82,10 +87,11 @@ func (c *Client) DiscoverAll(ctx context.Context) ([]*cmodel.Container, error) {
 		if IsOneOff(dc.Labels) {
 			continue
 		}
-		result, err := c.inspectAndMap(ctx, dc, now)
+		labels := c.containerLabels(ctx, dc.Labels)
+		result, err := c.inspectAndMap(ctx, dc, labels, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
-			containers = append(containers, mapFromList(dc, now))
+			containers = append(containers, mapFromList(dc, labels, now))
 			continue
 		}
 		containers = append(containers, result.Container)
@@ -109,40 +115,72 @@ func (c *Client) DiscoverAllWithLabels(ctx context.Context) ([]*DiscoveryResult,
 		if IsOneOff(dc.Labels) {
 			continue
 		}
-		result, err := c.inspectAndMap(ctx, dc, now)
+		labels := c.containerLabels(ctx, dc.Labels)
+		result, err := c.inspectAndMap(ctx, dc, labels, now)
 		if err != nil {
 			c.logger.Warn("failed to inspect container", "docker_id", dc.ID[:12], "error", err)
 			results = append(results, &DiscoveryResult{
-				Container: mapFromList(dc, now),
-				Labels:    c.containerLabels(dc.Labels),
+				Container: mapFromList(dc, labels, now),
+				Labels:    labels,
 			})
 			continue
 		}
 		results = append(results, &DiscoveryResult{
 			Container:      result.Container,
-			Labels:         c.containerLabels(dc.Labels),
+			Labels:         labels,
 			SecurityConfig: result.SecurityConfig,
+			Exit:           result.Exit,
 		})
 	}
 
 	return results, nil
 }
 
+// ContainerRepoDigests maps each container ID to the repo digests of the image it runs, empty for an image never pulled nor pushed.
+func (c *Client) ContainerRepoDigests(ctx context.Context) (map[string][]string, error) {
+	containers, err := c.cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("container list: %w", err)
+	}
+	images, err := c.cli.ImageList(ctx, client.ImageListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("image list: %w", err)
+	}
+
+	digestsByImage := make(map[string][]string, len(images.Items))
+	for _, img := range images.Items {
+		digestsByImage[img.ID] = img.RepoDigests
+	}
+
+	out := make(map[string][]string, len(containers.Items))
+	for _, dc := range containers.Items {
+		if digests, ok := digestsByImage[dc.ImageID]; ok {
+			out[dc.ID] = digests
+		}
+	}
+	return out, nil
+}
+
 // inspectResult holds the mapped container along with its extracted security config.
 type inspectResult struct {
 	Container      *cmodel.Container
 	SecurityConfig *SecurityConfig
+	Exit           *ExitInfo
 }
 
 // inspectAndMap calls ContainerInspect and maps the result to our domain model.
-func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, now time.Time) (*inspectResult, error) {
+func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, labels map[string]string, now time.Time) (*inspectResult, error) {
 	res, err := c.cli.ContainerInspect(ctx, dc.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s: %w", dc.ID[:12], err)
 	}
 	info := res.Container
 
-	cm := mapFromList(dc, now)
+	cm := mapFromList(dc, labels, now)
+	// The list shows the image ID instead once the tag the container was created from points elsewhere.
+	if info.Config != nil && info.Config.Image != "" {
+		cm.Image = info.Config.Image
+	}
 
 	// Health check info from inspect
 	if info.Config != nil && info.Config.Healthcheck != nil && len(info.Config.Healthcheck.Test) > 0 {
@@ -153,16 +191,18 @@ func (c *Client) inspectAndMap(ctx context.Context, dc container.Summary, now ti
 		cm.HealthStatus = &hs
 	}
 
-	// Reclassify gracefully-stopped containers as "completed" (normal termination).
-	// Exit 0 = normal exit, 137 = SIGKILL (docker stop), 143 = SIGTERM.
-	if info.State != nil && info.State.Status == "exited" && isGracefulExitCode(info.State.ExitCode) {
-		cm.State = cmodel.StateCompleted
+	var exit *ExitInfo
+	if info.State != nil && info.State.Status == "exited" {
+		exit = &ExitInfo{Code: info.State.ExitCode, OOMKilled: info.State.OOMKilled}
+		if cmodel.IsCleanExit(exit.Code, exit.OOMKilled) {
+			cm.State = cmodel.StateCompleted
+		}
 	}
 
 	// Extract security-relevant config from HostConfig
 	secCfg := extractSecurityConfig(info.HostConfig)
 
-	return &inspectResult{Container: cm, SecurityConfig: secCfg}, nil
+	return &inspectResult{Container: cm, SecurityConfig: secCfg, Exit: exit}, nil
 }
 
 // extractSecurityConfig extracts security-relevant fields from Docker's HostConfig.
@@ -194,8 +234,9 @@ func extractSecurityConfig(hc *container.HostConfig) *SecurityConfig {
 	return cfg
 }
 
-// mapFromList creates a Container from the docker ContainerList response.
-func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
+// mapFromList creates a Container from the docker ContainerList response and
+// the container's effective labels.
+func mapFromList(dc container.Summary, labels map[string]string, now time.Time) *cmodel.Container {
 	name := ""
 	if len(dc.Names) > 0 {
 		name = dc.Names[0]
@@ -215,9 +256,9 @@ func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
 		Name:               name,
 		Image:              dc.Image,
 		State:              state,
-		OrchestrationGroup: dc.Labels[labelComposeProject],
-		OrchestrationUnit:  dc.Labels[labelComposeService],
-		ComposeWorkingDir:  dc.Labels[labelComposeWorkingDir],
+		OrchestrationGroup: cmodel.OrchestrationGroupFromLabels(labels),
+		OrchestrationUnit:  labels[labelComposeService],
+		ComposeWorkingDir:  labels[labelComposeWorkingDir],
 		RuntimeType:        "docker",
 		PodCount:           1,
 		ReadyCount:         readyCount,
@@ -227,8 +268,9 @@ func mapFromList(dc container.Summary, now time.Time) *cmodel.Container {
 		LastStateChangeAt:  now,
 	}
 
-	applyLabels(cm, dc.Labels)
-	cm.ApplyImageLabels(dc.Labels)
+	applyLabels(cm, labels)
+	cm.ApplySwarmTaskLabels(labels)
+	cm.ApplyImageLabels(labels)
 
 	return cm
 }
@@ -251,9 +293,6 @@ func applyLabels(cm *cmodel.Container, labels map[string]string) {
 			cm.RestartThreshold = n
 		}
 	}
-	if v, ok := labels[labelPBChannels]; ok && v != "" {
-		cm.AlertChannels = v
-	}
 }
 
 func mapContainerState(state string) cmodel.ContainerState {
@@ -264,12 +303,6 @@ func mapContainerState(state string) cmodel.ContainerState {
 	default:
 		return cmodel.StateCreated
 	}
-}
-
-// isGracefulExitCode returns true for exit codes that indicate a voluntary stop:
-// 0 = normal, 137 = SIGKILL (docker stop), 143 = SIGTERM.
-func isGracefulExitCode(code int) bool {
-	return code == 0 || code == 137 || code == 143
 }
 
 func mapHealthStatus(status string) cmodel.HealthStatus {

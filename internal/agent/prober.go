@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -21,9 +22,9 @@ import (
 )
 
 const (
-	endpointProbeInterval = 30 * time.Second
-	certScanInterval      = 60 * time.Second
-	certScanTimeout       = 10 * time.Second
+	endpointDiscoveryInterval = 30 * time.Second
+	certScanInterval          = 60 * time.Second
+	certScanTimeout           = 10 * time.Second
 )
 
 // eventSender pushes an event on the stream; decoupled from *PushStream so the
@@ -45,9 +46,8 @@ func runLabelProbers(ctx context.Context, id *Identity, rt runtime.Runtime, spoo
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return probeLoop(gCtx, endpointProbeInterval, func() error {
-			return probeEndpointsOnce(gCtx, id.AgentID, ld, spool.Send, logger)
-		})
+		runEndpointProbes(gCtx, id.AgentID, ld, spool.Send, endpointDiscoveryInterval, logger)
+		return nil
 	})
 	g.Go(func() error {
 		return probeLoop(gCtx, certScanInterval, func() error {
@@ -78,41 +78,72 @@ func probeLoop(ctx context.Context, interval time.Duration, fn func() error) err
 	}
 }
 
-// probeEndpointsOnce discovers labelled endpoints across the agent's containers,
-// probes each unique target (HTTP/TCP, reusing the server's checkers for parity)
-// and pushes an EndpointEvent. The server attaches the result to the monitor it
-// provisioned for the same target.
-func probeEndpointsOnce(ctx context.Context, agentID string, ld labeledDiscoverer, send eventSender, logger *slog.Logger) error {
-	results, err := ld.DiscoverAllWithLabels(ctx)
-	if err != nil {
-		logger.Warn("prober: endpoint discovery failed", "err", err)
-		return nil
-	}
-	seen := make(map[string]bool)
-	for _, res := range results {
-		parsed, _ := endpoint.ParseEndpointLabels(res.Labels, logger)
-		for _, p := range parsed {
-			if seen[p.Target] {
-				continue
-			}
-			seen[p.Target] = true
+// runEndpointProbes probes each labelled endpoint through the server's check
+// engine, at the interval and timeout its labels set, until ctx is done.
+func runEndpointProbes(ctx context.Context, agentID string, ld labeledDiscoverer, send eventSender, discoverEvery time.Duration, logger *slog.Logger) {
+	engine := endpoint.NewCheckEngine(func(target string, result endpoint.CheckResult) {
+		if err := send(endpointEvent(agentID, target, result)); err != nil {
+			logger.Debug("prober: endpoint result not sent", "target", target, "error", err)
+		}
+	}, logger)
+	defer engine.Stop()
 
-			ep := &endpoint.Endpoint{EndpointType: p.EndpointType, Target: p.Target, Config: p.Config}
-			var result endpoint.CheckResult
-			switch p.EndpointType {
-			case endpoint.TypeHTTP:
-				result = endpoint.CheckHTTP(ctx, ep, logger)
-			case endpoint.TypeTCP:
-				result = endpoint.CheckTCP(ctx, ep, logger)
-			default:
+	probing := make(map[string]*endpoint.Endpoint)
+	refresh := func() {
+		declared, err := discoverEndpoints(ctx, ld, logger)
+		if err != nil {
+			logger.Warn("prober: endpoint discovery failed", "err", err)
+			return
+		}
+		for target, ep := range declared {
+			if current, ok := probing[target]; ok && current.EndpointType == ep.EndpointType && reflect.DeepEqual(current.Config, ep.Config) {
 				continue
 			}
-			if err := send(endpointEvent(agentID, p.Target, result)); err != nil {
-				return fmt.Errorf("send endpoint event: %w", err)
+			probing[target] = ep
+			engine.AddEndpoint(ctx, ep)
+		}
+		for target := range probing {
+			if _, ok := declared[target]; !ok {
+				delete(probing, target)
+				engine.RemoveEndpoint(target)
 			}
 		}
 	}
-	return nil
+
+	refresh()
+	t := time.NewTicker(discoverEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			refresh()
+		}
+	}
+}
+
+// discoverEndpoints returns the HTTP/TCP endpoints declared on the agent's
+// containers, keyed by target; the first declaration of a target wins.
+func discoverEndpoints(ctx context.Context, ld labeledDiscoverer, logger *slog.Logger) (map[string]*endpoint.Endpoint, error) {
+	results, err := ld.DiscoverAllWithLabels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	declared := make(map[string]*endpoint.Endpoint)
+	for _, res := range results {
+		parsed, _ := endpoint.ParseEndpointLabels(res.Labels, logger)
+		for _, p := range parsed {
+			if _, seen := declared[p.Target]; seen {
+				continue
+			}
+			if p.EndpointType != endpoint.TypeHTTP && p.EndpointType != endpoint.TypeTCP {
+				continue
+			}
+			declared[p.Target] = &endpoint.Endpoint{ID: p.Target, EndpointType: p.EndpointType, Target: p.Target, Config: p.Config}
+		}
+	}
+	return declared, nil
 }
 
 // scanCertsOnce discovers labelled TLS targets, scans each unique host:port

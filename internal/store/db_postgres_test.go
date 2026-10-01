@@ -5,6 +5,8 @@ package store
 
 import (
 	"context"
+	"encoding/binary"
+	"net"
 	"net/url"
 	"testing"
 	"time"
@@ -68,6 +70,65 @@ func TestOpenPostgres_AuthRefused(t *testing.T) {
 	assert.Nil(t, db)
 	assert.NotErrorIs(t, err, ErrUnreachable, "the database answered; it refused us")
 	assert.NotContains(t, err.Error(), "definitely-not-the-password")
+}
+
+// sslRequestServer answers each SSLRequest as PostgreSQL does with ssl=off ('N') or ssl=on ('S'), then hangs up.
+func sslRequestServer(t *testing.T, answer byte) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				var req [2]int32
+				if binary.Read(conn, binary.BigEndian, &req) != nil || req != [2]int32{8, sslRequestCode} {
+					return
+				}
+				_, _ = conn.Write([]byte{answer})
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestOpenPostgres_TLSRefused(t *testing.T) {
+	const password = "s3cr3t-Sentinel-tls"
+	addr := sslRequestServer(t, 'N')
+
+	db, err := OpenPostgres(context.Background(),
+		"postgres://app:"+password+"@"+addr+"/maintenant?sslmode=require", testLogger())
+
+	require.ErrorIs(t, err, ErrTLSRefused)
+	assert.Nil(t, db)
+	assert.NotErrorIs(t, err, ErrUnreachable, "the server answered")
+	assert.NotContains(t, err.Error(), password)
+}
+
+func TestOpenPostgres_TLSOfferedIsNotRefused(t *testing.T) {
+	addr := sslRequestServer(t, 'S')
+
+	_, err := OpenPostgres(context.Background(),
+		"postgres://app:pw@"+addr+"/maintenant?sslmode=require", testLogger())
+
+	require.ErrorIs(t, err, ErrUnreachable, "a server offering TLS did not refuse it")
+	assert.NotErrorIs(t, err, ErrTLSRefused)
+}
+
+func TestOpenPostgres_OptionalTLSIsNeverBlamed(t *testing.T) {
+	addr := sslRequestServer(t, 'N')
+
+	_, err := OpenPostgres(context.Background(),
+		"postgres://app:pw@"+addr+"/maintenant?sslmode=prefer", testLogger())
+
+	require.ErrorIs(t, err, ErrUnreachable, "pgx falls back to plain text, so TLS is not the failure")
+	assert.NotErrorIs(t, err, ErrTLSRefused)
 }
 
 // TestCheckServerVersion covers the version refusal without needing an old

@@ -44,6 +44,26 @@ func TestLimit_DelegatesToThePolicy(t *testing.T) {
 	}
 }
 
+func TestWithinLimit_ReadsTheRunningEditionAtEachCall(t *testing.T) {
+	withPolicy(t, fakePolicy{limits: map[Edition]map[Resource]int{
+		Community: {ResourceEndpoints: 2},
+		Pro:       {ResourceEndpoints: Unlimited},
+	}})
+
+	withEdition(t, Community)
+	if !WithinLimit(ResourceEndpoints, 1) {
+		t.Error("a second endpoint must fit under a cap of 2")
+	}
+	if WithinLimit(ResourceEndpoints, 2) {
+		t.Error("a third endpoint must not fit under a cap of 2")
+	}
+
+	withEdition(t, Pro)
+	if !WithinLimit(ResourceEndpoints, 1000) {
+		t.Error("an unlimited edition must accept any count")
+	}
+}
+
 func TestTiers_ProjectsEveryResourceForEveryEdition(t *testing.T) {
 	withPolicy(t, fakePolicy{limits: map[Edition]map[Resource]int{
 		Community: {ResourceEndpoints: 1, ResourceAgentHosts: 0},

@@ -72,7 +72,11 @@ func (f *NamespaceFilter) IsAllowed(namespace string) bool {
 // ListNamespaces returns the allowed namespace names from the cluster.
 // The result respects the allowlist/blocklist configured via env vars.
 func (r *Runtime) ListNamespaces(ctx context.Context) ([]string, error) {
-	nsList, err := r.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	cs, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	nsList, err := cs.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list namespaces: %w", err)
 	}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kolapsis/maintenant/internal/event"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/uid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -280,6 +281,15 @@ func TestParseCertificateLabels_StripsSchemeAndPath(t *testing.T) {
 	assert.Equal(t, 443, parsed[0].Port)
 }
 
+func TestParseCertificateLabels_IgnoredContainerDeclaresNone(t *testing.T) {
+	parsed := ParseCertificateLabels(map[string]string{
+		"maintenant.ignore":           "true",
+		"maintenant.tls.certificates": "example.com",
+	})
+
+	assert.Empty(t, parsed)
+}
+
 // ---------------------------------------------------------------------------
 // Mock store for quota testing
 // ---------------------------------------------------------------------------
@@ -386,7 +396,7 @@ func TestService_CreateStandalone_QuotaEnforced(t *testing.T) {
 	svc := NewService(Deps{
 		Store:          store,
 		Logger:         noopLogger(),
-		LicenseChecker: &DefaultLicenseChecker{MaxCertificates: 2},
+		LicenseChecker: certificateCap(2),
 	})
 	ctx := context.Background()
 
@@ -476,24 +486,16 @@ func TestService_CreateStandalone_SNICoexistsAndDedups(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrDuplicateMonitor), "expected ErrDuplicateMonitor, got %v", err)
 }
 
-// TestDefaultLicenseChecker_Unlimited: -1 means no cap, not a cap of -1.
-func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxCertificates: -1}
-	for _, count := range []int{0, 1, 5, 500} {
-		if !c.CanCreateCertificate(count) {
-			t.Errorf("CanCreateCertificate(%d) = false with an unlimited cap", count)
-		}
-	}
-}
+type certificateCap int
 
-func TestDefaultLicenseChecker_Capped(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxCertificates: 5}
-	if !c.CanCreateCertificate(4) {
-		t.Error("the fifth monitor must be allowed")
-	}
-	if c.CanCreateCertificate(5) {
-		t.Error("the sixth monitor must be refused")
-	}
+func (c certificateCap) CanCreateCertificate(currentCount int) bool { return currentCount < int(c) }
+
+func TestDefaultLicenseChecker_AppliesTheRunningEditionCap(t *testing.T) {
+	limit := extension.Limit(extension.ResourceCertificates)
+	require.Positive(t, limit)
+	c := DefaultLicenseChecker{}
+	assert.True(t, c.CanCreateCertificate(limit-1))
+	assert.False(t, c.CanCreateCertificate(limit))
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -112,12 +114,25 @@ func (s *runStore) CountActivePolicies(_ context.Context) (int, error) { return 
 func (s *runStore) SelectRunsByPolicy(_ context.Context, _ string, _ int, _ string) ([]*esc.Run, error) {
 	return nil, nil
 }
-func (s *runStore) SelectRunDeliveries(_ context.Context, _ string) ([]*esc.Delivery, error) {
-	return nil, nil
+func (s *runStore) SelectRunDeliveries(_ context.Context, runID string) ([]*esc.Delivery, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*esc.Delivery
+	for _, d := range s.deliveries {
+		if d.RunID == runID {
+			cp := *d
+			out = append(out, &cp)
+		}
+	}
+	slices.SortFunc(out, func(a, b *esc.Delivery) int { return strings.Compare(a.ID, b.ID) })
+	return out, nil
 }
 func (s *runStore) BulkDeactivateAllPolicies(_ context.Context) error        { return nil }
 func (s *runStore) BulkRestorePoliciesFromDowngrade(_ context.Context) error { return nil }
 func (s *runStore) BulkStopActiveRuns(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+func (s *runStore) StopPolicyRuns(_ context.Context, _ string, _ string, _ time.Time) error {
 	return nil
 }
 func (s *runStore) PurgeRunsAndDeliveriesOlderThan(_ context.Context, _ time.Time) error {
@@ -332,13 +347,18 @@ func (m *alertStoreMock) GetActiveAlert(_ context.Context, _, _, _ string, _ str
 func (m *alertStoreMock) ListActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
 	return nil, nil
 }
-func (m *alertStoreMock) DeleteAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
+func (m *alertStoreMock) DeleteInactiveAlertsOlderThan(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
-func (m *alertStoreMock) AcknowledgeAlert(_ context.Context, _ string, _ string, _ time.Time) error {
-	return nil
+func (m *alertStoreMock) AcknowledgeAlert(_ context.Context, _ string, _ string, _ time.Time) (bool, error) {
+	return false, nil
 }
-func (m *alertStoreMock) SetEscalatedAt(_ context.Context, _ string, _ time.Time) error {
+func (m *alertStoreMock) SetEscalatedAt(_ context.Context, id string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if a, ok := m.alerts[id]; ok {
+		a.EscalatedAt = &at
+	}
 	return nil
 }
 func (m *alertStoreMock) ListUnacknowledgedActiveAlerts(_ context.Context) ([]*alert.Alert, error) {
@@ -603,6 +623,7 @@ func TestRunner_EvaluateCycle_FiresLevelAndAdvances(t *testing.T) {
 	a := criticalAlert("1")
 	h.alerts.put(a)
 	h.store.addPolicy(policyTwoLevels())
+	start := h.now
 	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
 
 	h.advance(61 * time.Second) // first level due
@@ -615,8 +636,7 @@ func TestRunner_EvaluateCycle_FiresLevelAndAdvances(t *testing.T) {
 	assert.Equal(t, 0, r.LastExecutedLevelIndex)
 	assert.Equal(t, esc.RunStatusActive, r.Status)
 	require.NotNil(t, r.NextActionAt)
-	// next_action_at = current now + level[1].DelaySeconds (180s)
-	assert.Equal(t, h.now.Add(180*time.Second), *r.NextActionAt)
+	assert.Equal(t, start.Add(180*time.Second), *r.NextActionAt, "level delays count from the run start")
 
 	calls := h.sender.snapshot()
 	require.Len(t, calls, 1)
@@ -663,6 +683,53 @@ func TestRunner_EvaluateCycle_ExhaustedAfterLastLevel(t *testing.T) {
 	assert.True(t, sawExhausted)
 }
 
+func TestRunner_EvaluateCycle_RecordsEscalatedAtOnEveryLevel(t *testing.T) {
+	h := newHarness(t)
+	h.channels.put(defaultChannel())
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(policyTwoLevels())
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+
+	h.advance(61 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	got, err := h.alerts.GetAlert(context.Background(), "1")
+	require.NoError(t, err)
+	require.NotNil(t, got.EscalatedAt, "the first level going out must stamp escalated_at")
+	assert.Equal(t, h.now, *got.EscalatedAt)
+
+	h.advance(120 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	got, err = h.alerts.GetAlert(context.Background(), "1")
+	require.NoError(t, err)
+	require.NotNil(t, got.EscalatedAt)
+	assert.Equal(t, h.now, *got.EscalatedAt, "escalated_at follows the latest level")
+	h.waitForDeliveries(t, 2)
+}
+
+func TestRunner_EvaluateCycle_StopsRunOfAcknowledgedAlert(t *testing.T) {
+	h := newHarness(t)
+	h.channels.put(defaultChannel())
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(policyTwoLevels())
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+
+	acked := *a
+	ackedAt := h.now
+	acked.AcknowledgedAt = &ackedAt
+	h.alerts.put(&acked)
+
+	h.advance(61 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+
+	runs := h.store.listRuns()
+	require.Len(t, runs, 1)
+	assert.Equal(t, esc.RunStatusStoppedByAck, runs[0].Status, "a run that outlived the acknowledgment must stop")
+	assert.Empty(t, h.store.listDeliveries(), "no level may go out for an acknowledged alert")
+	assert.Zero(t, h.sender.delivers.Load())
+}
+
 func TestRunner_OnAlertAcknowledged_StopsRunsAndDispatchesAck(t *testing.T) {
 	h := newHarness(t)
 	h.channels.put(defaultChannel())
@@ -692,6 +759,128 @@ func TestRunner_OnAlertAcknowledged_StopsRunsAndDispatchesAck(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, ackCount)
+}
+
+func TestRunner_LevelsFireAtCumulativeDelaysDespiteLateTicks(t *testing.T) {
+	h := newHarness(t)
+	h.channels.put(defaultChannel())
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(&esc.Policy{
+		Name: "p", Active: true,
+		Filters: esc.Filters{Severities: []string{alert.SeverityCritical}},
+		Levels: []esc.Level{
+			{Order: 0, DelaySeconds: 60, ChannelIDs: []string{"1"}},
+			{Order: 1, DelaySeconds: 180, ChannelIDs: []string{"1"}},
+			{Order: 2, DelaySeconds: 600, ChannelIDs: []string{"1"}},
+		},
+	})
+	start := h.now
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+
+	h.advance(90 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	h.waitForDeliveries(t, 1)
+	runs := h.store.listRuns()
+	require.Len(t, runs, 1)
+	require.NotNil(t, runs[0].NextActionAt)
+	assert.Equal(t, start.Add(180*time.Second), *runs[0].NextActionAt)
+
+	h.advance(110 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	h.waitForDeliveries(t, 2)
+	runs = h.store.listRuns()
+	assert.Equal(t, 1, runs[0].LastExecutedLevelIndex)
+	require.NotNil(t, runs[0].NextActionAt)
+	assert.Equal(t, start.Add(600*time.Second), *runs[0].NextActionAt)
+}
+
+func TestRunner_MaintenancePauseShiftsLaterLevels(t *testing.T) {
+	h := newHarness(t)
+	h.channels.put(defaultChannel())
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(policyTwoLevels())
+	start := h.now
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+
+	h.supp.set(true)
+	h.advance(61 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+
+	h.supp.set(false)
+	h.advance(239 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	h.waitForDeliveries(t, 1)
+
+	runs := h.store.listRuns()
+	require.Len(t, runs, 1)
+	assert.Equal(t, 0, runs[0].LastExecutedLevelIndex)
+	require.NotNil(t, runs[0].NextActionAt)
+	assert.Equal(t, start.Add(420*time.Second), *runs[0].NextActionAt,
+		"level 0 fired at start+300 once the window closed, level 1 keeps its 120s gap")
+}
+
+func TestRunner_OnAlertAcknowledged_NotifiesEveryNotifiedChannelOnce(t *testing.T) {
+	h := newHarness(t)
+	for _, id := range []string{"1", "2", "3"} {
+		h.channels.put(&alert.NotificationChannel{ID: id, Name: "ch" + id, Type: "slack", URL: "u" + id, Enabled: true})
+	}
+	h.channels.put(&alert.NotificationChannel{ID: "4", Name: "off", Type: "slack", URL: "u4", Enabled: false})
+	a := criticalAlert("1")
+	h.alerts.put(a)
+	h.store.addPolicy(&esc.Policy{
+		Name: "p", Active: true,
+		Filters: esc.Filters{Severities: []string{alert.SeverityCritical}},
+		Levels: []esc.Level{
+			{Order: 0, DelaySeconds: 60, ChannelIDs: []string{"1", "3", "4"}},
+			{Order: 1, DelaySeconds: 180, ChannelIDs: []string{"1", "2"}},
+		},
+	})
+	require.NoError(t, h.runner.OnAlertCreated(context.Background(), a))
+
+	h.advance(61 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	h.waitForDeliveries(t, 2)
+	h.advance(120 * time.Second)
+	require.NoError(t, h.runner.EvaluateCycle(context.Background()))
+	h.waitForDeliveries(t, 4)
+
+	require.NoError(t, h.runner.OnAlertAcknowledged(context.Background(), "1", alert.Acknowledgment{By: "alice", At: h.now}))
+	h.waitForDeliveries(t, 7)
+
+	var ackChannels []string
+	for _, d := range h.store.listDeliveries() {
+		if d.LevelIndex == specialLevelAck {
+			require.NotNil(t, d.ChannelID)
+			ackChannels = append(ackChannels, *d.ChannelID)
+		}
+	}
+	assert.ElementsMatch(t, []string{"1", "2", "3"}, ackChannels,
+		"every channel a level reached hears about the ack once; the disabled one never received anything")
+}
+
+func TestFormatAckAlert_English(t *testing.T) {
+	a := criticalAlert("1")
+	at := time.Date(2026, 5, 7, 12, 30, 0, 0, time.UTC)
+
+	assert.Equal(t, "Acknowledged by alice at 2026-05-07T12:30:00Z: container x stopped",
+		formatAckAlert(a, alert.Acknowledgment{By: "alice", At: at}).Message)
+	assert.Equal(t, "Acknowledged at 2026-05-07T12:30:00Z: container x stopped",
+		formatAckAlert(a, alert.Acknowledgment{At: at}).Message)
+	assert.Equal(t, "container x stopped", a.Message, "the source alert is left untouched")
+}
+
+func TestFormatExhaustedAlert_English(t *testing.T) {
+	a := criticalAlert("1")
+
+	assert.Equal(t,
+		"Escalation exhausted after 3 levels without acknowledgment, human action required: container x stopped",
+		formatExhaustedAlert(a, 3).Message)
+	assert.Equal(t,
+		"Escalation exhausted after 1 level without acknowledgment, human action required: container x stopped",
+		formatExhaustedAlert(a, 1).Message)
 }
 
 func TestRunner_OnAlertResolved_StopsRunsNoNotif(t *testing.T) {

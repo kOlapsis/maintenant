@@ -7,15 +7,16 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/kolapsis/maintenant/internal/store"
 )
 
 // UptimeDailyFetcher abstracts the daily uptime store for testing.
 type UptimeDailyFetcher interface {
-	GetEndpointDailyUptime(ctx context.Context, endpointID string, days int) ([]store.DailyUptime, error)
-	GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int) ([]store.DailyUptime, error)
-	GetContainerDailyUptime(ctx context.Context, containerID string, days int) ([]store.DailyUptime, error)
+	GetEndpointDailyUptime(ctx context.Context, endpointID string, days int, now time.Time) ([]store.DailyUptime, error)
+	GetHeartbeatDailyUptime(ctx context.Context, heartbeatID string, days int, now time.Time) ([]store.DailyUptime, error)
+	GetContainerDailyUptime(ctx context.Context, containerID string, days int, now time.Time) ([]store.DailyUptime, error)
 }
 
 // UptimeDailyHandler handles daily uptime aggregation endpoints.
@@ -38,7 +39,7 @@ func (h *UptimeDailyHandler) HandleEndpointDailyUptime(w http.ResponseWriter, r 
 
 	days := parseDaysParam(r)
 
-	results, err := h.store.GetEndpointDailyUptime(r.Context(), id, days)
+	results, err := h.store.GetEndpointDailyUptime(r.Context(), id, days, time.Now())
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch daily uptime")
 		return
@@ -61,7 +62,7 @@ func (h *UptimeDailyHandler) HandleHeartbeatDailyUptime(w http.ResponseWriter, r
 
 	days := parseDaysParam(r)
 
-	results, err := h.store.GetHeartbeatDailyUptime(r.Context(), id, days)
+	results, err := h.store.GetHeartbeatDailyUptime(r.Context(), id, days, time.Now())
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch daily uptime")
 		return
@@ -84,7 +85,7 @@ func (h *UptimeDailyHandler) HandleContainerDailyUptime(w http.ResponseWriter, r
 
 	days := parseDaysParam(r)
 
-	results, err := h.store.GetContainerDailyUptime(r.Context(), id, days)
+	results, err := h.store.GetContainerDailyUptime(r.Context(), id, days, time.Now())
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch daily uptime")
 		return

@@ -18,7 +18,6 @@ export interface Heartbeat {
   last_duration_ms?: number
   consecutive_failures: number
   consecutive_successes: number
-  active: boolean
   created_at: string
   updated_at: string
   agent_id?: string | null

@@ -195,8 +195,9 @@ func (e *ProEnricher) enrichRisk(ctx context.Context, r *update.UpdateResult, cv
 		return
 	}
 
-	riskCtx := RiskContext{
-		Criticality: "medium", // default; could be enriched from labels later
+	riskCtx, err := e.risk.Context(ctx, r.ContainerUID)
+	if err != nil {
+		e.logger.Warn("enricher: failed to read risk context", "container", r.ContainerName, "error", err)
 	}
 
 	score := e.risk.CalculateScore(u, cves, riskCtx)

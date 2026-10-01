@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,12 +30,14 @@ type mockStore struct {
 	pings      []*HeartbeatPing
 	executions []*HeartbeatExecution
 	// overdue is injected per-test for checkDeadlines scenarios
-	overdue []*Heartbeat
+	overdue    []*Heartbeat
+	openPauses map[string]bool
 }
 
 func newMockStore() *mockStore {
 	return &mockStore{
 		heartbeats: make(map[string]*Heartbeat),
+		openPauses: make(map[string]bool),
 	}
 }
 
@@ -70,17 +73,6 @@ func (m *mockStore) GetHeartbeatByID(_ context.Context, id string) (*Heartbeat, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
-	if !ok {
-		return nil, nil
-	}
-	cp := *h
-	return &cp, nil
-}
-
-func (m *mockStore) GetHeartbeatByUUID(_ context.Context, token string) (*Heartbeat, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	h, ok := m.heartbeats[token]
 	if !ok {
 		return nil, nil
 	}
@@ -153,7 +145,7 @@ func (m *mockStore) UpdateHeartbeatState(_ context.Context, id string,
 	return nil
 }
 
-func (m *mockStore) PauseHeartbeat(_ context.Context, id string) error {
+func (m *mockStore) PauseHeartbeat(_ context.Context, id string, _ time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
@@ -161,10 +153,11 @@ func (m *mockStore) PauseHeartbeat(_ context.Context, id string) error {
 		return errors.New("not found")
 	}
 	h.Status = StatusPaused
+	m.openPauses[id] = true
 	return nil
 }
 
-func (m *mockStore) ResumeHeartbeat(_ context.Context, id string, nextDeadlineAt time.Time) error {
+func (m *mockStore) ResumeHeartbeat(_ context.Context, id string, _, nextDeadlineAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.heartbeats[id]
@@ -173,6 +166,14 @@ func (m *mockStore) ResumeHeartbeat(_ context.Context, id string, nextDeadlineAt
 	}
 	h.Status = StatusUp
 	h.NextDeadlineAt = &nextDeadlineAt
+	delete(m.openPauses, id)
+	return nil
+}
+
+func (m *mockStore) EndPause(_ context.Context, id string, _ time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.openPauses, id)
 	return nil
 }
 
@@ -185,13 +186,7 @@ func (m *mockStore) ListOverdueHeartbeats(_ context.Context, _ time.Time) ([]*He
 func (m *mockStore) CountActiveHeartbeats(_ context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	count := 0
-	for _, h := range m.heartbeats {
-		if h.Active {
-			count++
-		}
-	}
-	return count, nil
+	return len(m.heartbeats), nil
 }
 
 func (m *mockStore) InsertPing(_ context.Context, p *HeartbeatPing) (string, error) {
@@ -354,7 +349,6 @@ func seedHeartbeat(store *mockStore, token string, status HeartbeatStatus, alert
 		AlertState:      alertState,
 		IntervalSeconds: 300,
 		GraceSeconds:    60,
-		Active:          true,
 	}
 	store.seed(h)
 	return h
@@ -383,7 +377,6 @@ func TestService_CreateHeartbeat_ValidInput(t *testing.T) {
 	assert.Equal(t, AlertNormal, h.AlertState)
 	assert.Equal(t, 300, h.IntervalSeconds)
 	assert.Equal(t, 60, h.GraceSeconds)
-	assert.True(t, h.Active)
 	assert.NotEmpty(t, h.ID)
 }
 
@@ -456,7 +449,7 @@ func TestService_CreateHeartbeat_GraceExceedsInterval(t *testing.T) {
 func TestService_CreateHeartbeat_LicenseLimitReached(t *testing.T) {
 	store := newMockStore()
 	// Pre-fill store with heartbeats up to the limit.
-	lc := &DefaultLicenseChecker{MaxHeartbeats: 2}
+	lc := heartbeatCap(2)
 	seedHeartbeat(store, "existing-1", StatusUp, AlertNormal)
 	seedHeartbeat(store, "existing-2", StatusUp, AlertNormal)
 
@@ -566,7 +559,6 @@ func TestService_ProcessPing_StartedToUpCompletionCalculatesDuration(t *testing.
 		IntervalSeconds:     300,
 		GraceSeconds:        60,
 		CurrentRunStartedAt: &startedAt,
-		Active:              true,
 	}
 	store.seed(h)
 
@@ -830,7 +822,6 @@ func TestService_ProcessExitCodePing_StartedToUpCalculatesDuration(t *testing.T)
 		IntervalSeconds:     300,
 		GraceSeconds:        60,
 		CurrentRunStartedAt: &startedAt,
-		Active:              true,
 	}
 	store.seed(h)
 
@@ -940,6 +931,47 @@ func TestService_PauseHeartbeat_Success(t *testing.T) {
 	result, err := svc.PauseHeartbeat(context.Background(), h.ID)
 	require.NoError(t, err)
 	assert.Equal(t, StatusPaused, result.Status)
+}
+
+// A second pause would open a second pause period over the first one.
+func TestService_PauseHeartbeat_RejectsAlreadyPaused(t *testing.T) {
+	store := newMockStore()
+	svc := newService(store, &mockLicense{canCreate: true})
+	h := seedHeartbeat(store, "uuid-pause-2", StatusPaused, AlertNormal)
+
+	_, err := svc.PauseHeartbeat(context.Background(), h.ID)
+	assert.ErrorIs(t, err, ErrInvalidInput)
+}
+
+// Any ping puts a paused heartbeat back to monitoring, so it closes the pause.
+func TestService_PingEndsThePause(t *testing.T) {
+	for name, ping := range map[string]func(*Service, string) error{
+		"success": func(svc *Service, token string) error {
+			_, err := svc.ProcessPing(context.Background(), token, "10.0.0.1", "GET", nil, nil)
+			return err
+		},
+		"start": func(svc *Service, token string) error {
+			_, err := svc.ProcessStartPing(context.Background(), token, "10.0.0.1", "GET")
+			return err
+		},
+		"exit code": func(svc *Service, token string) error {
+			_, err := svc.ProcessExitCodePing(context.Background(), token, 0, "10.0.0.1", "GET", nil)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newMockStore()
+			svc := newService(store, &mockLicense{canCreate: true})
+			h := seedHeartbeat(store, "uuid-pause-ping", StatusUp, AlertNormal)
+
+			_, err := svc.PauseHeartbeat(context.Background(), h.ID)
+			require.NoError(t, err)
+			require.True(t, store.openPauses[h.ID])
+
+			require.NoError(t, ping(svc, h.ID))
+			assert.False(t, store.openPauses[h.ID])
+		})
+	}
 }
 
 func TestService_ResumeHeartbeat_RejectsNonPaused(t *testing.T) {
@@ -1067,22 +1099,15 @@ func TestService_ProcessExitCodePing_PayloadPreservedForPro(t *testing.T) {
 	assert.Equal(t, payload, *lastPing.Payload)
 }
 
-// TestDefaultLicenseChecker_Unlimited: -1 means no cap, not a cap of -1.
-func TestDefaultLicenseChecker_Unlimited(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxHeartbeats: -1}
-	for _, count := range []int{0, 1, 5, 500} {
-		if !c.CanCreateHeartbeat(count) {
-			t.Errorf("CanCreateHeartbeat(%d) = false with an unlimited cap", count)
-		}
-	}
-}
+type heartbeatCap int
 
-func TestDefaultLicenseChecker_Capped(t *testing.T) {
-	c := &DefaultLicenseChecker{MaxHeartbeats: 5}
-	if !c.CanCreateHeartbeat(4) {
-		t.Error("the fifth heartbeat must be allowed")
-	}
-	if c.CanCreateHeartbeat(5) {
-		t.Error("the sixth heartbeat must be refused")
-	}
+func (c heartbeatCap) CanCreateHeartbeat(currentCount int) bool { return currentCount < int(c) }
+func (heartbeatCap) CanStorePayload() bool                      { return false }
+
+func TestDefaultLicenseChecker_AppliesTheRunningEditionCap(t *testing.T) {
+	limit := extension.Limit(extension.ResourceHeartbeats)
+	require.Positive(t, limit)
+	c := DefaultLicenseChecker{}
+	assert.True(t, c.CanCreateHeartbeat(limit-1))
+	assert.False(t, c.CanCreateHeartbeat(limit))
 }
