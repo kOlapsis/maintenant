@@ -734,5 +734,8 @@ func clampUptimeDays(days int) int {
 	if days <= 0 {
 		return 90
 	}
-	return min(days, maxUptimeDays)
+	if days > maxUptimeDays {
+		return maxUptimeDays
+	}
+	return days
 }

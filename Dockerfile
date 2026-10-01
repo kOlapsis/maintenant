@@ -42,7 +42,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata setpriv \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates tzdata setpriv \
     && mkdir -p /data \
     && chown 65534:65534 /data
 
