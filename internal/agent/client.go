@@ -157,6 +157,8 @@ func (ps *PushStream) SendResult(res *agentpb.CommandResult) error {
 
 // Close signals the end of the send side of the stream.
 func (ps *PushStream) Close() {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	_ = ps.stream.CloseSend()
 }
 
