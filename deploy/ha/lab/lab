@@ -56,6 +56,7 @@ RUN_ALL_GREEN_TIMEOUT=300
 RUN_ALL_GREEN_INTERVAL=5
 RUN_ALL_VERIFY_TIMEOUT=180
 RUN_ALL_VERIFY_INTERVAL=2
+RUN_ALL_ABORTED=0
 
 # The bench logs in as an ordinary account: every om command, and every
 # scenario command, is run through sudo on the machine it acts on.
@@ -117,6 +118,8 @@ usage: lab <command> [options]
 
   up [--mode <mode>]     build the topology and deploy the mode, then check it
   down                   destroy everything, leaving no residue
+  host-setup             one-time host preparation (asks for the sudo password):
+                         image directories, fencing account and key
   status [--json]        cluster, mode, probes and OpenSVC agent of each node
   chaos <n>              inject scenario n
   heal <n>               repair scenario n
@@ -637,6 +640,7 @@ run_all_scenario() {
 			one=$(jq -nc --argjson rep "$rep" --arg reason "bench not green before repetition ($pre_verdict)" \
 				'{repetition: $rep, verdict: "fail", reasons: [$reason]}')
 			printf '%s\n' "$one" >>"$reps_ndjson"
+			RUN_ALL_ABORTED=1
 			break
 		fi
 
@@ -863,6 +867,10 @@ cmd_run_all() {
 		number=$(basename "$file" | cut -c1-2)
 		number=${number#0}
 		run_all_scenario "$number" "$file" "$mode" "$repeat" "$run_log" "$scenarios_ndjson"
+		if [ "$RUN_ALL_ABORTED" -eq 1 ]; then
+			info "run-all stopped after scenario $number: the bench did not return to green"
+			break
+		fi
 	done
 
 	scenarios_json=$(jq -s '.' "$scenarios_ndjson")
@@ -1074,6 +1082,13 @@ cmd_heal() {
 	rm -f "$(injection_record "$1")"
 }
 
+cmd_host_setup() {
+	need ansible-playbook
+	info "preparing the host (sudo password required)"
+	ansible-playbook -i "$INVENTORY" "$LAB_DIR/host-setup.yml" --ask-become-pass
+	info "host ready"
+}
+
 cmd_up() {
 	mode="$DEFAULT_MODE"
 	while [ $# -gt 0 ]; do
@@ -1115,7 +1130,7 @@ cmd_up() {
 	fi
 
 	for dir in /var/lib/libvirt/images/mnt-lab /var/lib/libvirt/images/mnt-lab-base; do
-		[ -w "$dir" ] || die "$dir is missing or not writable by $(id -un); create it once with: sudo install -d -o $(id -un) -g libvirt -m 0711 /var/lib/libvirt/images/mnt-lab /var/lib/libvirt/images/mnt-lab-base" 4
+		[ -w "$dir" ] || die "$dir is missing or not writable by $(id -un); run: $0 host-setup" 4
 	done
 
 	provision="$LAB_DIR/provision.yml"
@@ -1359,6 +1374,7 @@ main() {
 	command=$1
 	shift
 	case "$command" in
+	host-setup) cmd_host_setup "$@" ;;
 	up) cmd_up "$@" ;;
 	down) cmd_down "$@" ;;
 	status) cmd_status "$@" ;;

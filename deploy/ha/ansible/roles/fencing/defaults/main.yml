@@ -15,4 +15,4 @@ fencing_host_user: maintenant-fence
 fencing_libvirt_uri: "{{ ha_fencing_libvirt_uri | default('qemu:///system') }}"
 fencing_domain_prefix: "{{ ha_fencing_domain_prefix | default('mnt-lab-') }}"
 fencing_key: /etc/opensvc/fencing_ed25519
-fencing_key_dir: "{{ lab_work_dir | default('/var/lib/libvirt/images/mnt-lab') }}"
+fencing_key_dir: "{{ lookup('env', 'HOME') }}/.local/share/maintenant-lab"

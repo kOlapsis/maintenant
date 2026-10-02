@@ -1,0 +1,58 @@
+---
+- name: Create the directory the fencing key lives in
+  ansible.builtin.file:
+    path: "{{ fencing_key_dir }}"
+    state: directory
+    mode: "0700"
+  become: false
+
+- name: Create the fencing key
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -C
+      - maintenant-fencing
+      - -f
+      - "{{ fencing_key_dir }}/fencing_ed25519"
+    creates: "{{ fencing_key_dir }}/fencing_ed25519"
+  become: false
+
+- name: Read the fencing public key
+  ansible.builtin.slurp:
+    src: "{{ fencing_key_dir }}/fencing_ed25519.pub"
+  register: fencing_public_key
+  become: false
+
+- name: Create the fencing account on the libvirt host
+  ansible.builtin.user:
+    name: "{{ fencing_host_user }}"
+    system: true
+    groups: libvirt
+    append: true
+    shell: /bin/sh
+    home: "/var/lib/{{ fencing_host_user }}"
+    create_home: true
+  become: true
+
+- name: Install the host callout
+  ansible.builtin.template:
+    src: fence-host.sh.j2
+    dest: "{{ fencing_host_agent }}"
+    mode: "0755"
+    owner: root
+    group: root
+  become: true
+
+# The key can do one thing and name one target. A node that is compromised
+# cannot use it to run anything else on the host.
+- name: Restrict the fencing key to the host callout
+  ansible.posix.authorized_key:
+    user: "{{ fencing_host_user }}"
+    key: "{{ fencing_public_key.content | b64decode | trim }}"
+    key_options: 'command="{{ fencing_host_agent }}",restrict'
+    exclusive: true
+  become: true

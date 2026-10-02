@@ -1,61 +1,36 @@
 ---
-- name: Create the fencing key
-  ansible.builtin.command:
-    argv:
-      - ssh-keygen
-      - -t
-      - ed25519
-      - -N
-      - ""
-      - -C
-      - maintenant-fencing
-      - -f
-      - "{{ fencing_key_dir }}/fencing_ed25519"
-    creates: "{{ fencing_key_dir }}/fencing_ed25519"
+- name: Look for the host callout
+  ansible.builtin.stat:
+    path: "{{ fencing_host_agent }}"
+  register: fencing_host_callout
   delegate_to: localhost
+  become: false
   run_once: true
+
+- name: Look for the fencing key
+  ansible.builtin.stat:
+    path: "{{ fencing_key_dir }}/fencing_ed25519"
+  register: fencing_key_file
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Refuse a host that has not been set up
+  ansible.builtin.assert:
+    that:
+      - fencing_host_callout.stat.exists
+      - fencing_key_file.stat.exists
+    fail_msg: "the libvirt host is not set up for fencing: run lab/lab host-setup once"
 
 - name: Read the fencing key pair
   ansible.builtin.slurp:
     src: "{{ fencing_key_dir }}/{{ item }}"
   register: fencing_key_material
   delegate_to: localhost
+  become: false
   run_once: true
   loop: [fencing_ed25519, fencing_ed25519.pub]
   no_log: true
-
-- name: Create the fencing account on the libvirt host
-  ansible.builtin.user:
-    name: "{{ fencing_host_user }}"
-    system: true
-    groups: libvirt
-    append: true
-    shell: /bin/sh
-    home: "/var/lib/{{ fencing_host_user }}"
-    create_home: true
-  delegate_to: localhost
-  run_once: true
-
-- name: Install the host callout
-  ansible.builtin.template:
-    src: fence-host.sh.j2
-    dest: "{{ fencing_host_agent }}"
-    mode: "0755"
-    owner: root
-    group: root
-  delegate_to: localhost
-  run_once: true
-
-# The key can do one thing and name one target. A node that is compromised
-# cannot use it to run anything else on the host.
-- name: Restrict the fencing key to the host callout
-  ansible.posix.authorized_key:
-    user: "{{ fencing_host_user }}"
-    key: "{{ fencing_key_material.results[1].content | b64decode | trim }}"
-    key_options: 'command="{{ fencing_host_agent }}",restrict'
-    exclusive: true
-  delegate_to: localhost
-  run_once: true
 
 - name: Create the directory the fencing key lives in
   ansible.builtin.file:
