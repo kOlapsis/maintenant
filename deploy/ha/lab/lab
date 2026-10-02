@@ -1083,6 +1083,7 @@ cmd_heal() {
 }
 
 cmd_host_setup() {
+	[ "$(id -u)" -ne 0 ] || die "run host-setup as your own user, not under sudo: it asks for the sudo password itself" 2
 	need ansible-playbook
 	info "preparing the host (sudo password required)"
 	ansible-playbook -i "$INVENTORY" "$LAB_DIR/host-setup.yml" --ask-become-pass
