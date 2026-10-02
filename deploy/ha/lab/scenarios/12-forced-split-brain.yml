@@ -16,7 +16,9 @@ injection:
     -j DROP && iptables -A OUTPUT -d "$LAB_ARBITRATOR_ADDRESS" -j DROP
 repair:
   'on': host
-  command: virsh start "$LAB_ACTIVE_DOMAIN"
+  command: |
+    for _ in $(seq 60); do LC_ALL=C virsh domstate "$LAB_ACTIVE_DOMAIN" | grep -q "shut off" && break; sleep 1; done
+    virsh start "$LAB_ACTIVE_DOMAIN"
 verify:
   'on': host
   command: |

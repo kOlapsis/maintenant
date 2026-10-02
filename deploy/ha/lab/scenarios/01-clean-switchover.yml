@@ -12,7 +12,7 @@ source: bench plan
 repetitions: 1
 injection:
   'on': active
-  command: om "$LAB_SERVICE" switch --wait
+  command: om "$LAB_SERVICE" switch
 repair:
   'on': host
   command: 'echo "giveback is an operator decision: lab giveback"'

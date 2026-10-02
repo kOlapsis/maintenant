@@ -1,8 +1,8 @@
 ---
 # What the bench needs from the host and cannot do as an ordinary user, done
-# once with `lab host-setup`: the two image directories, the fencing account,
-# the callout it is restricted to and its key. `lab up` and `lab down` then run
-# without root.
+# once with `lab host-setup`, which runs this play as root on behalf of
+# lab_operator: the two image directories, the fencing account and the callout
+# it is restricted to. `lab up` and `lab down` then run without root.
 
 - name: Set up the libvirt host for the HA bench
   hosts: localhost
@@ -15,10 +15,9 @@
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        owner: "{{ ansible_facts.user_id }}"
+        owner: "{{ lab_operator }}"
         group: libvirt
         mode: "0711"
-      become: true
       loop:
         - /var/lib/libvirt/images/mnt-lab
         - /var/lib/libvirt/images/mnt-lab-base

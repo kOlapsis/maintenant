@@ -118,7 +118,7 @@ usage: lab <command> [options]
 
   up [--mode <mode>]     build the topology and deploy the mode, then check it
   down                   destroy everything, leaving no residue
-  host-setup             one-time host preparation (asks for the sudo password):
+  host-setup             one-time host preparation (calls sudo itself):
                          image directories, fencing account and key
   status [--json]        cluster, mode, probes and OpenSVC agent of each node
   chaos <n>              inject scenario n
@@ -1083,10 +1083,25 @@ cmd_heal() {
 }
 
 cmd_host_setup() {
-	[ "$(id -u)" -ne 0 ] || die "run host-setup as your own user, not under sudo: it asks for the sudo password itself" 2
+	[ "$(id -u)" -ne 0 ] || die "run host-setup as your own user, not under sudo: it calls sudo itself" 2
 	need ansible-playbook
+	need ssh-keygen
+	need sudo
+
+	key_dir="$HOME/.local/share/maintenant-lab"
+	mkdir -p "$key_dir"
+	chmod 0700 "$key_dir"
+	if [ ! -f "$key_dir/fencing_ed25519" ]; then
+		ssh-keygen -q -t ed25519 -N "" -C maintenant-fencing -f "$key_dir/fencing_ed25519"
+	fi
+
 	info "preparing the host (sudo password required)"
-	ansible-playbook -i "$INVENTORY" "$LAB_DIR/host-setup.yml" --ask-become-pass
+	ansible_playbook=$(command -v ansible-playbook)
+	sudo env \
+		ANSIBLE_CONFIG="$ANSIBLE_CONFIG" \
+		ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_COLLECTIONS_PATH:-$HOME/.ansible/collections:/usr/share/ansible/collections}" \
+		"$ansible_playbook" -i "$INVENTORY" "$LAB_DIR/host-setup.yml" \
+		-e "lab_operator=$(id -un)" -e "fencing_key_dir=$key_dir"
 	info "host ready"
 }
 
