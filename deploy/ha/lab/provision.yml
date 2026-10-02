@@ -16,6 +16,7 @@
 - name: Provision the HA bench on libvirt
   hosts: localhost
   connection: local
+  become: false
   gather_facts: true
 
   vars:
