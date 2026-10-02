@@ -29,14 +29,7 @@ INVENTORY="${LAB_INVENTORY:-$ANSIBLE_DIR/inventories/lab/hosts.yml}"
 ANSIBLE_CONFIG="$ANSIBLE_DIR/ansible.cfg"
 export ANSIBLE_CONFIG
 
-# Under sudo, the key is the invoking user's, not root's.
-if [ -z "${LAB_SSH_KEY:-}" ]; then
-	operator_home=$HOME
-	if [ -n "${SUDO_USER:-}" ]; then
-		operator_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-	fi
-	LAB_SSH_KEY="$operator_home/.ssh/id_ed25519"
-fi
+LAB_SSH_KEY="${LAB_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 ANSIBLE_PRIVATE_KEY_FILE=$LAB_SSH_KEY
 export LAB_SSH_KEY ANSIBLE_PRIVATE_KEY_FILE
 
@@ -143,7 +136,7 @@ environment:
                   (default: ansible/inventories/lab/hosts.yml)
   LAB_SSH_KEY     private key installed on the machines and used to reach
                   them; its .pub must sit next to it
-                  (default: ~/.ssh/id_ed25519 of the user who ran sudo)
+                  (default: ~/.ssh/id_ed25519)
 USAGE
 }
 
@@ -1120,6 +1113,10 @@ cmd_up() {
 	if ! ansible-galaxy collection list community.libvirt 2>/dev/null | grep -q community.libvirt; then
 		die "the community.libvirt collection is missing: ansible-galaxy collection install -r $ANSIBLE_DIR/requirements.yml" 4
 	fi
+
+	for dir in /var/lib/libvirt/images/mnt-lab /var/lib/libvirt/images/mnt-lab-base; do
+		[ -w "$dir" ] || die "$dir is missing or not writable by $(id -un); create it once with: sudo install -d -o $(id -un) -g libvirt -m 0711 /var/lib/libvirt/images/mnt-lab /var/lib/libvirt/images/mnt-lab-base" 4
+	done
 
 	provision="$LAB_DIR/provision.yml"
 	site="$ANSIBLE_DIR/site-lab.yml"

@@ -10,8 +10,8 @@
 # upstream artefact rather than bench state.
 #
 # The host needs KVM with nested virtualisation, libvirt, qemu-img and an ISO
-# builder, and the invoking user needs passwordless sudo: no command of the
-# bench ever asks a question.
+# builder. The invoking user belongs to the libvirt group and owns the two
+# directories below: the bench never runs as root.
 
 - name: Provision the HA bench on libvirt
   hosts: localhost

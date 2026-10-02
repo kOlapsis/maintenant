@@ -51,7 +51,17 @@
   loop_control:
     label: "{{ item.name }}"
 
+- name: List the volumes and the seeds
+  ansible.builtin.find:
+    paths: "{{ lab_work_dir }}"
+    file_type: any
+    hidden: true
+  register: lab_leftovers
+
 - name: Remove the volumes and the seeds
   ansible.builtin.file:
-    path: "{{ lab_work_dir }}"
+    path: "{{ item.path }}"
     state: absent
+  loop: "{{ lab_leftovers.files }}"
+  loop_control:
+    label: "{{ item.path }}"
