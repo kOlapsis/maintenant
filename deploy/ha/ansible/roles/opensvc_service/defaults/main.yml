@@ -9,6 +9,7 @@ opensvc_service_node_address: "{{ ansible_host | default(inventory_hostname) }}"
 
 # Starting values, recorded with every run; the bench is what fixes them.
 opensvc_service_monitor_action: switch
+opensvc_service_monitor_schedule: "@10s"
 opensvc_service_ip_restart: 2
 opensvc_service_ip_restart_delay: 2s
 opensvc_service_app_restart: 2
