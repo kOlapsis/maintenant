@@ -1,4 +1,13 @@
 ---
+- name: Create the directory the probes are built in
+  ansible.builtin.file:
+    path: "{{ probes_build_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  run_once: true
+  become: false
+
 - name: Build the probes
   ansible.builtin.command:
     argv:

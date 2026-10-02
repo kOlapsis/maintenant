@@ -21,4 +21,4 @@ probes_heartbeat_interval_seconds: 86400
 probes_heartbeat_grace_seconds: 86400
 
 probes_source_dir: "{{ playbook_dir }}/../lab/probes"
-probes_build_dir: /tmp/lab-probes-build
+probes_build_dir: "{{ lookup('env', 'HOME') }}/.cache/maintenant-lab/probes-build"
