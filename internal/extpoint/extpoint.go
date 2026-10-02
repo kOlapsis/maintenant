@@ -13,10 +13,12 @@ import (
 	"github.com/kolapsis/maintenant/internal/agentproto"
 	"github.com/kolapsis/maintenant/internal/alert"
 	"github.com/kolapsis/maintenant/internal/alert/escalation"
+	"github.com/kolapsis/maintenant/internal/anomaly"
 	"github.com/kolapsis/maintenant/internal/certificate"
 	"github.com/kolapsis/maintenant/internal/container"
 	"github.com/kolapsis/maintenant/internal/endpoint"
 	"github.com/kolapsis/maintenant/internal/eol"
+	"github.com/kolapsis/maintenant/internal/extension"
 	"github.com/kolapsis/maintenant/internal/heartbeat"
 	"github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/resource"
@@ -37,6 +39,7 @@ type Set struct {
 	Suppressor    func(SuppressorDeps) alert.MaintenanceSuppressor
 	Escalation    func(EscalationDeps) Escalation
 	MultiHost     func(MultiHostDeps) MultiHost
+	Anomaly       func(AnomalyDeps) Anomaly
 }
 
 // EnricherDeps is what an update enricher is built from.
@@ -177,4 +180,24 @@ type GRPCConfig struct {
 type MultiHost struct {
 	Sessions AgentSessions
 	Serve    func(ctx context.Context, cfg GRPCConfig) error
+}
+
+// AnomalyDeps is what anomaly detection is built from.
+type AnomalyDeps struct {
+	Store       anomaly.Store
+	Broadcaster EventBroadcaster
+	Alerts      func(alert.Event)
+	Logger      *slog.Logger
+}
+
+// Anomaly holds the anomaly detection API and, unless detection is disabled, its background jobs.
+type Anomaly struct {
+	API  http.Handler
+	Jobs AnomalyJobs
+}
+
+// AnomalyJobs runs the baseline and detection jobs while the running edition opens anomaly detection.
+type AnomalyJobs interface {
+	Start(ctx context.Context)
+	OnEditionChange(ctx context.Context, prev, next extension.Edition)
 }

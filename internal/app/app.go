@@ -144,6 +144,10 @@ type App struct {
 	k8sStore  *store.KubernetesStore
 	k8sIngest *kubernetes.IngestService
 	k8sAlerts *kubernetes.K8sAlertChecker
+
+	// Anomaly detection
+	anomalyAPI  http.Handler
+	anomalyJobs extpoint.AnomalyJobs
 }
 
 // sseBroadcaster adapts the SSEBroker to the extpoint.EventBroadcaster interface.
@@ -458,6 +462,17 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 			logger.With("component", "container-down"))
 	}
 
+	if a.ext.Anomaly != nil {
+		an := a.ext.Anomaly(extpoint.AnomalyDeps{
+			Store:       store.NewAnomalyStore(db),
+			Broadcaster: &sseBroadcaster{broker: a.broker},
+			Alerts:      a.emitAlert,
+			Logger:      logger,
+		})
+		a.anomalyAPI = an.API
+		a.anomalyJobs = an.Jobs
+	}
+
 	// --- Public Status Page ---
 	a.statusSvc = status.NewService(status.Deps{
 		Components:  statusCompStore,
@@ -631,6 +646,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 		SecuritySvc: a.securitySvc,
 		Scorer:      a.scorer,
 		AckStore:    ackStore,
+		// Anomaly detection
+		Anomaly: a.anomalyAPI,
 		// License
 		LicenseMgr: a.licenseMgr,
 		// Swarm
@@ -811,6 +828,9 @@ func (a *App) Start(ctx context.Context) error {
 
 	if a.licenseMgr != nil {
 		a.wireLicenseSubscriber(ctx)
+		if a.anomalyJobs != nil {
+			a.licenseMgr.RegisterEditionChangeCallback(a.anomalyJobs.OnEditionChange)
+		}
 		a.licenseMgr.Start(ctx)
 	}
 
@@ -835,6 +855,10 @@ func (a *App) Start(ctx context.Context) error {
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
 	if !a.cfg.DemoMode {
 		a.outboundSvc.Start(ctx)
+	}
+
+	if a.anomalyJobs != nil {
+		a.anomalyJobs.Start(ctx)
 	}
 
 	// Telemetry: best-effort. Self-exits on ctx cancellation; panics are

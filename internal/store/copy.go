@@ -100,6 +100,7 @@ var carriedTables = []carriedTable{
 	{"update_exclusions", "update exclusions"},
 	{"version_pins", "version pins"},
 	{"risk_acknowledgments", "acknowledged security findings"},
+	{"anomaly_settings", "anomaly detection tuning"},
 }
 
 // leftBehind groups what the fleet rebuilds on its own, for the announcement.
@@ -127,6 +128,8 @@ var leftBehindGroups = []leftBehindGroup{
 		"cve_cache", "risk_score_history", "digest_baselines"}, "recomputed on the next scan"},
 	{"Ephemeral tokens", []string{"mcp_oauth_codes", "mcp_oauth_tokens"},
 		"short-lived, re-issued by clients"},
+	{"Anomaly baselines", []string{"anomaly_baseline", "anomaly_series_state", "anomaly_event"},
+		"relearned from the resource history as it refills"},
 	{"Engine state", []string{"schema_meta", "instances"},
 		"specific to the local file and to each running process"},
 }

@@ -113,6 +113,9 @@ type HandlerDeps struct {
 	Scorer      security.PostureScorer
 	AckStore    security.AcknowledgmentStore
 
+	// Anomaly detection, served under /api/v1/anomaly/
+	Anomaly http.Handler
+
 	// Escalation policies
 	EscalationSvc escalation.Service
 
@@ -443,6 +446,10 @@ func NewRouter(d HandlerDeps) *Router {
 
 	// Multi-host agents
 	r.registerAgentRoutes(d)
+
+	if d.Anomaly != nil {
+		r.mux.HandleFunc("/api/v1/anomaly/", requireCapability(extension.CapAnomalyDetection, d.Anomaly.ServeHTTP))
+	}
 
 	return r
 }

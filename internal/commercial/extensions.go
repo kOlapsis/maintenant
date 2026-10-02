@@ -5,6 +5,7 @@
 package commercial
 
 import (
+	"github.com/kolapsis/maintenant/internal/commercial/anomaly"
 	"github.com/kolapsis/maintenant/internal/commercial/channels"
 	"github.com/kolapsis/maintenant/internal/commercial/escalation"
 	"github.com/kolapsis/maintenant/internal/commercial/maintenance"
@@ -25,5 +26,6 @@ func Extensions() extpoint.Set {
 		Suppressor:    maintenance.NewMaintenanceSuppressor,
 		Escalation:    escalation.NewEscalation,
 		MultiHost:     multihost.NewMultiHost,
+		Anomaly:       anomaly.NewAnomaly,
 	}
 }

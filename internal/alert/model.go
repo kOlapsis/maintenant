@@ -10,14 +10,15 @@ import (
 
 // Alert sources.
 const (
-	SourceContainer   = "container"
-	SourceEndpoint    = "endpoint"
-	SourceHeartbeat   = "heartbeat"
-	SourceCertificate = "certificate"
-	SourceResource    = "resource"
-	SourceSecurity    = "security"
-	SourceAgent       = "agent"
-	SourceHost        = "host"
+	SourceContainer       = "container"
+	SourceEndpoint        = "endpoint"
+	SourceHeartbeat       = "heartbeat"
+	SourceCertificate     = "certificate"
+	SourceResource        = "resource"
+	SourceSecurity        = "security"
+	SourceAgent           = "agent"
+	SourceHost            = "host"
+	SourceResourceAnomaly = "resource.anomaly"
 )
 
 // Security alert types.

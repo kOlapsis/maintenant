@@ -14,6 +14,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/agent"
 	"github.com/kolapsis/maintenant/internal/app"
 	"github.com/kolapsis/maintenant/internal/commercial"
+	"github.com/kolapsis/maintenant/internal/commercial/anomaly/devseed"
 	_ "github.com/kolapsis/maintenant/internal/kubernetes"
 	"github.com/kolapsis/maintenant/internal/resource"
 	"github.com/kolapsis/maintenant/internal/trust"
@@ -159,6 +160,18 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if span, reset := visited["seed-anomaly-history"], visited["seed-anomaly-reset"] == "true"; span != "" || reset {
+		if cfg.DatabaseURL != "" {
+			logger.Error("anomaly seeding works on the SQLite database only", "fix", "unset MAINTENANT_DATABASE_URL")
+			os.Exit(1)
+		}
+		if err := devseed.Run(ctx, devseed.Options{DBPath: cfg.DBPath, Span: span, Reset: reset}, logger); err != nil {
+			logger.Error("anomaly seed failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if cfg.Mode == "agent" {
 		dataDir := os.Getenv("MAINTENANT_DATA_DIR")

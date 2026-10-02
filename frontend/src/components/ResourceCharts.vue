@@ -13,10 +13,12 @@ import { ApiError } from '@/services/apiFetch'
 import EditionBadge from '@/components/EditionBadge.vue'
 import SegmentedToggle from '@/components/ui/SegmentedToggle.vue'
 import { Lock } from 'lucide-vue-next'
+import type { BaselinePoint } from '@/commercial/services/anomalyApi'
 import type uPlot from 'uplot'
 
 const props = defineProps<{
   containerId: string
+  cpuBand?: BaselinePoint[]
 }>()
 
 const resourcesStore = useResourcesStore()
@@ -59,10 +61,27 @@ const cpuChart = useChart({
     series: [
       {},
       { label: 'CPU %', stroke: chartColors[0], width: 2, fill: chartColors[0] + '20' },
+      { label: 'Baseline ↑', stroke: 'transparent', points: { show: false } },
+      { label: 'Baseline ↓', stroke: 'transparent', points: { show: false } },
     ],
+    bands: [{ series: [2, 3], fill: chartColors[1] + '20' }],
   }),
-  data: () => [[], []] as uPlot.AlignedData,
+  data: () => [[], [], [], []] as uPlot.AlignedData,
 })
+
+// Projects the hourly anomaly baseline band onto the chart timestamps.
+function alignBand(ts: number[]): { upper: (number | null)[]; lower: (number | null)[] } {
+  const band = props.cpuBand ?? []
+  if (band.length === 0) {
+    return { upper: ts.map(() => null), lower: ts.map(() => null) }
+  }
+  const byHour = new Map<number, BaselinePoint>()
+  for (const p of band) byHour.set(Math.floor(p.timestamp / 3600), p)
+  return {
+    upper: ts.map((t) => byHour.get(Math.floor(t / 3600))?.upper ?? null),
+    lower: ts.map((t) => byHour.get(Math.floor(t / 3600))?.lower ?? null),
+  }
+}
 
 const memChart = useChart({
   el: memEl,
@@ -160,7 +179,8 @@ watch(points, async (pts) => {
 
 function updateCharts() {
   const ts = toTimestamps(points.value)
-  cpuChart.setData([ts, points.value.map((p) => p.cpu_percent)])
+  const band = alignBand(ts)
+  cpuChart.setData([ts, points.value.map((p) => p.cpu_percent), band.upper, band.lower])
   memChart.setData([ts, points.value.map((p) => p.mem_used)])
   netChart.setData([
     ts,
@@ -202,6 +222,7 @@ const rangeOptions = computed(() =>
 )
 
 watch(selectedRange, () => fetchHistory())
+watch(() => props.cpuBand, () => updateCharts())
 onMounted(() => fetchHistory())
 </script>
 

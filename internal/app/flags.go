@@ -521,6 +521,72 @@ func init() {
 			Description: "PostgreSQL connection string (server/embedded only; empty = SQLite)",
 			ApplyTo:     func(c *Config, v string) error { c.DatabaseURL = v; return nil },
 		},
+		// Anomaly detection, read from the environment by the detection engine
+		{
+			EnvName: "MAINTENANT_ANOMALY_ENABLED", FlagName: "anomalyEnabled",
+			Type: FlagTypeBool, Default: "true",
+			Description: "Learn resource baselines and detect anomalies (Pro edition)",
+			ApplyTo:     setenvBool("MAINTENANT_ANOMALY_ENABLED"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_BASELINE_WINDOW_DAYS", FlagName: "anomalyBaselineWindowDays",
+			Type: FlagTypeInt, Default: "28",
+			Description: "Days of hourly history the baselines are learned from",
+			ApplyTo:     setenvPositiveInt("MAINTENANT_ANOMALY_BASELINE_WINDOW_DAYS"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_REQUIRED_DAYS", FlagName: "anomalyRequiredDays",
+			Type: FlagTypeInt, Default: "14",
+			Description: "Days a series is observed before it can leave learning",
+			ApplyTo:     setenvPositiveInt("MAINTENANT_ANOMALY_REQUIRED_DAYS"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_RELEARN_DAYS", FlagName: "anomalyRelearnDays",
+			Type: FlagTypeInt, Default: "3",
+			Description: "Days a series is observed before it can leave relearning",
+			ApplyTo:     setenvPositiveInt("MAINTENANT_ANOMALY_RELEARN_DAYS"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_MIN_SAMPLES", FlagName: "anomalyMinSamples",
+			Type: FlagTypeInt, Default: "4",
+			Description: "Hourly samples each hour-of-week bucket needs before a series is ready (one per week)",
+			ApplyTo:     setenvPositiveInt("MAINTENANT_ANOMALY_MIN_SAMPLES"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_SPIKE_PERSISTENCE", FlagName: "anomalySpikePersistence",
+			Type: FlagTypeInt, Default: "3",
+			Description: "Consecutive detection passes a spike must hold before it raises an alert",
+			ApplyTo:     setenvPositiveInt("MAINTENANT_ANOMALY_SPIKE_PERSISTENCE"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_DETECT_INTERVAL", FlagName: "anomalyDetectInterval",
+			Type: FlagTypeDuration, Default: "60s",
+			Description: "Time between two detection passes",
+			ApplyTo:     setenvPositiveDuration("MAINTENANT_ANOMALY_DETECT_INTERVAL"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_BASELINE_INTERVAL", FlagName: "anomalyBaselineInterval",
+			Type: FlagTypeDuration, Default: "1h",
+			Description: "Time between two baseline recomputations",
+			ApplyTo:     setenvPositiveDuration("MAINTENANT_ANOMALY_BASELINE_INTERVAL"),
+		},
+		{
+			EnvName: "MAINTENANT_ANOMALY_SEVERITY", FlagName: "anomalySeverity",
+			Type: FlagTypeString, Default: "warning",
+			Description: "Severity of anomaly alerts (info|warning|critical)",
+			ApplyTo:     setenv("MAINTENANT_ANOMALY_SEVERITY"),
+		},
+		{
+			EnvName: "MAINTENANT_TZ", FlagName: "tz",
+			Type: FlagTypeString, Default: "UTC",
+			Description: "Time zone the anomaly hour-of-week buckets are cut in (IANA name)",
+			ApplyTo: func(_ *Config, v string) error {
+				if _, err := time.LoadLocation(v); err != nil {
+					return fmt.Errorf("expected an IANA time zone, got %q", v)
+				}
+				return os.Setenv("MAINTENANT_TZ", v)
+			},
+		},
 		// Actions — read straight from the visited map by main, they configure
 		// nothing.
 		{
@@ -533,6 +599,18 @@ func init() {
 			FlagName: "yes", NoEnv: true,
 			Type: FlagTypeBool, Default: "false",
 			Description: "Skip the confirmation prompt (for scripts)",
+			ApplyTo:     func(*Config, string) error { return nil },
+		},
+		{
+			FlagName: "seed-anomaly-history", NoEnv: true,
+			Type: FlagTypeString, Default: "",
+			Description: "Development: backfill the SQLite database with this span of synthetic hourly history (e.g. 28d), then exit",
+			ApplyTo:     func(*Config, string) error { return nil },
+		},
+		{
+			FlagName: "seed-anomaly-reset", NoEnv: true,
+			Type: FlagTypeBool, Default: "false",
+			Description: "Development: clear the learned anomaly baselines, states and events and withdraw seeded history, then exit",
 			ApplyTo:     func(*Config, string) error { return nil },
 		},
 	}
@@ -587,6 +665,39 @@ func init() {
 			"embedded-agent", "ca-cert", "data-dir",
 		)},
 		{Name: "Storage (PostgreSQL)", Specs: specsFor("database-url", "copy-store-to", "yes")},
+		{Name: "Anomaly detection (Pro)", Specs: specsFor(
+			"anomalyEnabled", "anomalyBaselineWindowDays", "anomalyRequiredDays", "anomalyRelearnDays",
+			"anomalyMinSamples", "anomalySpikePersistence", "anomalyDetectInterval", "anomalyBaselineInterval",
+			"anomalySeverity", "tz",
+		)},
+		{Name: "Development", Specs: specsFor("seed-anomaly-history", "seed-anomaly-reset")},
+	}
+}
+
+// setenv hands a flag to a package that reads its configuration from the environment.
+func setenv(env string) func(*Config, string) error {
+	return func(_ *Config, v string) error { return os.Setenv(env, v) }
+}
+
+func setenvBool(env string) func(*Config, string) error {
+	return func(_ *Config, v string) error { return os.Setenv(env, strconv.FormatBool(parseTruthy(v))) }
+}
+
+func setenvPositiveInt(env string) func(*Config, string) error {
+	return func(_ *Config, v string) error {
+		if n, err := strconv.Atoi(v); err != nil || n <= 0 {
+			return fmt.Errorf("expected a positive integer, got %q", v)
+		}
+		return os.Setenv(env, v)
+	}
+}
+
+func setenvPositiveDuration(env string) func(*Config, string) error {
+	return func(_ *Config, v string) error {
+		if d, err := time.ParseDuration(v); err != nil || d <= 0 {
+			return fmt.Errorf("expected a positive Go duration (e.g. 60s, 1h), got %q", v)
+		}
+		return os.Setenv(env, v)
 	}
 }
 

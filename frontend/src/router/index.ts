@@ -28,6 +28,7 @@ const NodesPage = () => import('../pages/NodesPage.vue')
 const EscalationPage = () => import('../pages/EscalationPage.vue')
 const ChannelsPage = () => import('../pages/ChannelsPage.vue')
 const AgentsPage = () => import('../pages/AgentsPage.vue')
+const AnomaliesPage = () => import('../pages/AnomaliesPage.vue')
 
 const isStatusSubdomain =
   document.querySelector('meta[name="maintenant-status"]')?.getAttribute('content') === 'true' ||
@@ -62,6 +63,7 @@ const router = createRouter({
         { path: 'webhooks', name: 'webhooks', component: WebhooksPage },
         { path: 'updates', name: 'updates', component: UpdatesPage },
         { path: 'security', name: 'security', component: SecurityPosturePage },
+        { path: 'anomalies', name: 'anomalies', component: AnomaliesPage },
         { path: 'services', name: 'services', component: ServicesPage },
         { path: 'tasks', name: 'tasks', component: TasksPage },
         { path: 'workloads', name: 'workloads', component: WorkloadsPage },

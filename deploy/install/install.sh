@@ -23,7 +23,8 @@ NL='
 
 # Kept in step with internal/app/flags.go by internal/app/install_script_test.go.
 BOOL_FLAGS="proxyLabels disableOsEolRefresh disableTelemetry allowPrivateWebhooks \
-mcp mcpAllowUnauthenticated grpc-tls-insecure grpc-insecure-skip-tls-verify embedded-agent"
+mcp mcpAllowUnauthenticated grpc-tls-insecure grpc-insecure-skip-tls-verify embedded-agent \
+anomalyEnabled"
 VALUE_FLAGS="addr baseUrl corsOrigins trustedProxies db organisationName runtime logLevel \
 maxBodySize updateInterval securityScoreThreshold licenseKey \
 smtpHost smtpPort smtpUsername smtpPassword smtpFrom \
@@ -32,7 +33,10 @@ statusUrl containerDownAfter retentionSnapshots retentionInterval retentionBatch
 mode server enrollment-token label nodeName grpc-listen grpc-url grpc-tls-cert grpc-tls-key \
 agentRateLimitPerSecond agentStaleThresholdSeconds \
 agentSpoolMaxMemoryBytes agentSpoolMaxDiskBytes agentSpoolMaxAgeSeconds \
-data-dir ca-cert database-url"
+data-dir ca-cert database-url \
+anomalyBaselineWindowDays anomalyRequiredDays anomalyRelearnDays anomalyMinSamples \
+anomalySpikePersistence anomalyDetectInterval anomalyBaselineInterval \
+anomalySeverity tz"
 
 # ── Color / output ────────────────────────────────────────────────────────────
 
@@ -139,6 +143,16 @@ or "--flag=true|false". Run "maintenant --help" for what each flag does.
   --ca-cert <path>
   --data-dir <path>
   --database-url <postgres-url>
+  --anomalyEnabled
+  --anomalyBaselineWindowDays <days>
+  --anomalyRequiredDays <days>
+  --anomalyRelearnDays <days>
+  --anomalyMinSamples <int>
+  --anomalySpikePersistence <int>
+  --anomalyDetectInterval <duration>
+  --anomalyBaselineInterval <duration>
+  --anomalySeverity <info|warning|critical>
+  --tz <zone>
 
 Examples:
   # Standalone server on this host

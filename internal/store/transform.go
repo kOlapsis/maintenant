@@ -140,11 +140,12 @@ func runConversion(ctx context.Context, conn *sql.Conn) error {
 	// Drop any pre-existing agents/enrollment_tokens from the never-deployed
 	// agent migrations (22-23) so the new schema can recreate them cleanly. No-op
 	// on production databases (migrations 1-21 never created these tables).
-	// instances, cve_evaluations, outbound_heartbeats, the uptime_daily tables
-	// and heartbeat_pauses were created by later migrations moments ago (none is
-	// a legacy table), and uuid_schema recreates them below.
+	// instances, cve_evaluations, outbound_heartbeats, the uptime_daily tables,
+	// heartbeat_pauses and the anomaly tables were created by later migrations
+	// moments ago (none is a legacy table), and uuid_schema recreates them below.
 	for _, t := range []string{"agents", "enrollment_tokens", "instances", "cve_evaluations", "outbound_heartbeats",
-		"endpoint_uptime_daily", "heartbeat_uptime_daily", "container_uptime_daily", "heartbeat_pauses"} {
+		"endpoint_uptime_daily", "heartbeat_uptime_daily", "container_uptime_daily", "heartbeat_pauses",
+		"anomaly_baseline", "anomaly_series_state", "anomaly_event", "anomaly_settings"} {
 		if err := exec("drop unreleased "+t, fmt.Sprintf("DROP TABLE IF EXISTS %q", t)); err != nil {
 			return err
 		}

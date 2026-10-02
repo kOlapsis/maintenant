@@ -44,6 +44,13 @@ const (
 	ContainerRestartRecover = "container.restart_recovery"
 )
 
+// Anomaly detection events.
+const (
+	AnomalyOpened       = "anomaly.opened"
+	AnomalyClosed       = "anomaly.closed"
+	AnomalyStateChanged = "anomaly.state_changed"
+)
+
 // Resource monitoring events.
 const (
 	ResourceSnapshot = "resource.snapshot"

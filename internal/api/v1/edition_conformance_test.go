@@ -15,7 +15,7 @@ import (
 	"github.com/kolapsis/maintenant/internal/outbound"
 )
 
-// This file is SC-003: for the 3 editions × 20 capabilities, the answer must be
+// This file is SC-003: for the 3 editions × 21 capabilities, the answer must be
 // the same whichever surface is asked. Without it, FR-004 ("a capability
 // announced as available must actually be usable") is a claim nobody checks.
 //
@@ -83,8 +83,8 @@ func TestConformance_FeatureEditionsMirrorsTheFlags(t *testing.T) {
 			features := body["features"].(map[string]any)
 			editions := body["feature_editions"].(map[string]any)
 
-			require.Len(t, features, 20)
-			require.Len(t, editions, 20)
+			require.Len(t, features, 21)
+			require.Len(t, editions, 21)
 			for key := range features {
 				require.Contains(t, editions, key, "feature_editions is missing %q", key)
 			}

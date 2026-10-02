@@ -9,6 +9,7 @@ import { useHeartbeatsStore } from './heartbeats'
 import { useCertificatesStore } from './certificates'
 import { useAlertsStore } from './alerts'
 import { useResourcesStore } from './resources'
+import { useAnomaliesStore } from '@/commercial/stores/anomalies'
 import { useKubernetesStore } from './kubernetes'
 import { useHostLabel } from '@/composables/useHostLabel'
 import { useFleetRuntimes } from '@/composables/useFleetRuntimes'
@@ -123,6 +124,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const certificates = useCertificatesStore()
   const alertsStore = useAlertsStore()
   const resourcesStore = useResourcesStore()
+  const anomaliesStore = useAnomaliesStore()
   const kubernetes = useKubernetesStore()
   const { hostOf } = useHostLabel()
   const { availableRuntimes } = useFleetRuntimes()
@@ -377,6 +379,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     certificates.connectSSE()
     alertsStore.connectSSE()
     resourcesStore.connectSSE()
+    anomaliesStore.connectSSE()
     sseBus.on('kubernetes.workload_changed', onWorkloadTopologyChanged)
     sseBus.on('kubernetes.topology_changed', onWorkloadTopologyChanged)
 
@@ -394,6 +397,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     certificates.disconnectSSE()
     alertsStore.disconnectSSE()
     resourcesStore.disconnectSSE()
+    anomaliesStore.disconnectSSE()
     sseBus.off('kubernetes.workload_changed', onWorkloadTopologyChanged)
     sseBus.off('kubernetes.topology_changed', onWorkloadTopologyChanged)
 

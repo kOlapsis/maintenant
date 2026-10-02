@@ -65,6 +65,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   maintenance_windows: 'Maintenance windows',
   subscribers: 'Status page subscribers',
   personalization: 'Status page personalization',
+  anomaly_detection: 'Behavioral anomaly detection',
 }
 
 const RESOURCE_LABELS: Record<QuotaResource, string> = {
