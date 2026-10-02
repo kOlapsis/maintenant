@@ -668,8 +668,21 @@ run_all_scenario() {
 		done
 		t1=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
-		if heal_out=$( { scenario_act repair "$number" && scenario_act verify "$number"; } 2>&1); then
+		if heal_out=$(scenario_act repair "$number" 2>&1); then
 			repair_rc=0
+			deadline=$(($(date +%s) + RUN_ALL_VERIFY_TIMEOUT))
+			while :; do
+				if ver_out=$(scenario_act verify "$number" 2>&1); then
+					break
+				fi
+				if [ "$(date +%s)" -ge "$deadline" ]; then
+					repair_rc=1
+					heal_out="$heal_out
+$ver_out"
+					break
+				fi
+				sleep "$RUN_ALL_VERIFY_INTERVAL"
+			done
 		else
 			repair_rc=$?
 		fi
