@@ -8,6 +8,7 @@
   register: probes_service
   until: probes_service is succeeded
   delegate_to: localhost
+  become: false
 
 - name: Read the heartbeats that already exist
   ansible.builtin.uri:
@@ -15,6 +16,7 @@
     status_code: 200
   register: probes_existing
   delegate_to: localhost
+  become: false
 
 - name: Create the heartbeat the records are written to
   ansible.builtin.uri:
@@ -32,6 +34,7 @@
     | selectattr('name', 'equalto', probes_heartbeat_name)
     | list | length == 0
   delegate_to: localhost
+  become: false
 
 # The ping token is the heartbeat id itself, so one value addresses both the
 # write path and the read-back.
