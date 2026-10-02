@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,8 +46,9 @@ import (
 
 // App holds all application services and manages their lifecycle.
 type App struct {
-	cfg    Config
-	logger *slog.Logger
+	stateRoot StateRoot
+	cfg       Config
+	logger    *slog.Logger
 
 	// Infrastructure
 	db *store.DB
@@ -193,11 +193,30 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// A configured but unusable external database refuses to start: there is
 	// no silent fallback to the local file (FR-004).
 	ctx := context.Background()
+	if err := checkRequireStateDir(cfg); err != nil {
+		return nil, err
+	}
+	root, err := ResolveStateRoot(cfg)
+	if err != nil {
+		return nil, err
+	}
+	cfg.DBPath = root.DBPath
+	a.cfg = cfg
+	a.stateRoot = root
+	if err := prepareStateRoot(root); err != nil {
+		return nil, err
+	}
+
 	db, err := openStorage(ctx, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
 	a.db = db
+
+	if err := checkRequireExistingData(ctx, cfg, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	if err := store.Migrate(ctx, db, logger); err != nil {
 		_ = db.Close()
@@ -246,7 +265,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	lm, err := extension.NewEditionSource(extension.SourceConfig{
 		LicenseKey:   cfg.LicenseKey,
 		PublicKeyB64: cfg.PublicKeyB64,
-		DataDir:      filepath.Dir(cfg.DBPath),
+		DataDir:      root.LicenseDir,
 		Version:      cfg.Version,
 		BuildDate:    cfg.BuildDate,
 		Logger:       logger,
@@ -351,9 +370,10 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 
 	// --- Heartbeat monitoring ---
 	a.heartbeatSvc = heartbeat.NewService(heartbeat.Deps{
-		Store:   hbStore,
-		Logger:  logger,
-		BaseURL: cfg.BaseURL,
+		Store:     hbStore,
+		Logger:    logger,
+		BaseURL:   cfg.BaseURL,
+		StartedAt: a.instanceRecord.StartedAt,
 	})
 	a.outboundSvc = outbound.NewService(outbound.Deps{
 		Store:   store.NewOutboundHeartbeatStore(db),
@@ -710,7 +730,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) (*App, error) {
 	// --- Telemetry (SHM SDK, opt-out via MAINTENANT_DISABLE_TELEMETRY) ---
 	a.telemetrySvc = telemetry.New(telemetry.Config{
 		Disabled:   cfg.DisableTelemetry,
-		DataDir:    filepath.Join(filepath.Dir(cfg.DBPath), "shm"),
+		DataDir:    root.TelemetryDir,
 		AppVersion: cfg.Version,
 	}, telemetry.Deps{
 		Containers:       containerStore,
@@ -831,7 +851,9 @@ func (a *App) Start(ctx context.Context) error {
 	a.pruneOrphanAlerts(ctx)
 
 	a.notifier.Start(ctx)
-	a.endpointSvc.Start(ctx)
+	if err := a.endpointSvc.Start(ctx); err != nil {
+		return err
+	}
 	a.heartbeatSvc.StartDeadlineChecker(ctx)
 	if !a.cfg.DemoMode {
 		a.outboundSvc.Start(ctx)
@@ -1028,8 +1050,7 @@ func (a *App) Shutdown() error {
 // If the agent is not yet enrolled, a short-lived enrollment token is auto-created.
 // Called only when mode=server, --embedded-agent and the multi-host plan are all active.
 func (a *App) startEmbeddedAgent(ctx context.Context) {
-	dataDir := filepath.Dir(a.cfg.DBPath)
-	agentDataDir := filepath.Join(dataDir, "embedded-agent")
+	agentDataDir := a.stateRoot.EmbeddedAgentDir
 	if err := os.MkdirAll(agentDataDir, 0o700); err != nil {
 		a.logger.Error("embedded agent: failed to create data directory", "err", err)
 		return

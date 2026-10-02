@@ -1,0 +1,9 @@
+---
+# The only variable that separates the bench from the production deployment.
+# Everything else is shared (FR-052).
+#
+# On the bench, fencing is the host destroying the VM through libvirt. The
+# command is run from the host, and a failed fencing blocks the start on the
+# survivor: it never lets through (FR-024).
+ha_fencing_method: libvirt
+ha_fencing_command: "virsh destroy {{ ha_fencing_target }}"

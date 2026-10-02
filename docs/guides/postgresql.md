@@ -147,15 +147,20 @@ follows the instance.
 |---|---|---|
 | Signed licence cache | `<dataDir>/.maintenant-license` | Re-verified online at startup. Offline: Community until the network returns. |
 | Update window record | `<dataDir>/.maintenant-update-window` | A fresh grace window opens, which plays in your favour. |
-| Embedded agent identity (only with `MAINTENANT_EMBEDDED_AGENT`) | `<dataDir>/embedded-agent/` | The embedded agent enrols again as a new host. The previous one stays in the list, stale, until you delete it. |
+| Embedded agent identity (only with `MAINTENANT_EMBEDDED_AGENT`) | `<dataDir>/embedded-agent/identity.json` | The embedded agent enrols again as a new host. The previous one stays in the list, stale, until you delete it. |
 
-Anonymous telemetry keeps its own state in a `shm` directory next to them
-(`/data/shm` in the image). There is no setting for it. Losing it only breaks
+Anonymous telemetry keeps its own identity, `shm/shm_identity.json`, next to
+them (`/data/shm` in the image). There is no setting for it. Losing it only breaks
 the continuity of anonymous counters; nothing about the fleet depends on it.
 
 So keep the `/data` volume with the instance when it moves. It is the only case
 where a move is not fully transparent, and it is settled by carrying the volume,
 which any cluster manager can do.
+
+`MAINTENANT_STATE_DIR` gathers all of it under one root (database, licence
+cache, update window, embedded agent identity, telemetry identity, gRPC
+certificate pair and SQLite temporary files), so that one volume is the whole
+answer. It is opt-in: unset, every path stays where it is today.
 
 ## On Kubernetes (Helm)
 

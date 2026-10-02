@@ -1,0 +1,34 @@
+---
+# Pinned versions for the HA bench and the reference production.
+#
+# FR-059: every version below is frozen. Changing any of them invalidates the
+# evidence, so it MUST be followed by a full replay of the campaign
+# (`lab run-all` on every implemented mode) and by a new run report. A version
+# is never bumped "in passing".
+#
+# These values are read by the roles and copied verbatim into
+# run.json.versions, so that two runs can be compared (see
+# specs/030-ha-opensvc/contracts/run-report.md).
+
+# OpenSVC om3. Pinned to a release-candidate tag: om3 has no GA, and 31 RCs
+# were published in six months. Never a branch, never "latest". If a GA is
+# published before the freeze, it replaces this tag and the campaign is
+# replayed.
+#
+# v3.0.0-rc31 is the tag recorded by the state of the art on 2026-08-24. It is
+# re-confirmed against the upstream releases at the start of lot 2 and, if a
+# newer RC is chosen there, this is the single place that changes.
+opensvc_version: "v3.0.0-rc31"
+
+# DRBD 9, from the vendor packages. Protocol C, after-sb-* set to disconnect,
+# no automatic resolution that throws writes away (FR-018, FR-023).
+drbd_version: "9.2"
+
+# PostgreSQL, from PGDG. 14 is the product floor; the bench pins one major and
+# keeps it for the whole campaign.
+postgres_version: "16"
+
+# The kernel is a version too: it decides whether fanotify (fatrace) is
+# available for the on-disk state inventory, and it is reported in
+# run.json.versions. Pinned to the distribution kernel of the node image.
+node_os: "debian-13"

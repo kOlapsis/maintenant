@@ -23,8 +23,9 @@ NL='
 
 # Kept in step with internal/app/flags.go by internal/app/install_script_test.go.
 BOOL_FLAGS="proxyLabels disableOsEolRefresh disableTelemetry allowPrivateWebhooks \
-mcp mcpAllowUnauthenticated grpc-tls-insecure grpc-insecure-skip-tls-verify embedded-agent"
-VALUE_FLAGS="addr baseUrl corsOrigins trustedProxies db organisationName runtime logLevel \
+mcp mcpAllowUnauthenticated grpc-tls-insecure grpc-insecure-skip-tls-verify embedded-agent \
+require-state-dir require-existing-data"
+VALUE_FLAGS="addr baseUrl corsOrigins trustedProxies db state-dir sqlite-synchronous organisationName runtime logLevel \
 maxBodySize updateInterval securityScoreThreshold licenseKey \
 smtpHost smtpPort smtpUsername smtpPassword smtpFrom \
 mcpClientId mcpClientSecret mcpAllowedRedirectUris k8sNamespaces k8sExcludeNamespaces \
@@ -91,6 +92,10 @@ or "--flag=true|false". Run "maintenant --help" for what each flag does.
   --corsOrigins <list>
   --trustedProxies <list>
   --db <path>
+  --state-dir <path>
+  --sqlite-synchronous <NORMAL|FULL>
+  --require-state-dir
+  --require-existing-data
   --containerDownAfter <duration>
   --retentionSnapshots <duration>
   --retentionInterval <duration>
