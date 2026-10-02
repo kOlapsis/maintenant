@@ -47,7 +47,7 @@ postgres_ha_ready_timeout_seconds: 60
 postgres_ha_promote_timeout_seconds: 60
 
 postgres_ha_user: maintenant_ha
-postgres_ha_password_file: "{{ maintenant_build_dir | default('{{ lookup('env', 'HOME') }}/.cache/maintenant-lab/maintenant-build') }}/postgres/maintenant_ha.password"
+postgres_ha_password_file: "{{ maintenant_build_dir | default(lookup('env', 'HOME') ~ '/.cache/maintenant-lab/maintenant-build') }}/postgres/maintenant_ha.password"
 postgres_ha_database: "{{ maintenant_database_name | default('maintenant') }}"
 postgres_ha_database_owner: "{{ maintenant_user | default('maintenant') }}"
 
