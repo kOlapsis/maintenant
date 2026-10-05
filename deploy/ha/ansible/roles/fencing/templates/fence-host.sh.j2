@@ -9,6 +9,10 @@ set -eu
 LIBVIRT_DEFAULT_URI={{ fencing_libvirt_uri | quote }}
 export LIBVIRT_DEFAULT_URI
 
+# virsh translates the domain state, and the check below reads the English one.
+LC_ALL=C
+export LC_ALL
+
 set -f
 # shellcheck disable=SC2086 # the split is the point; -f stops the globbing
 set -- ${SSH_ORIGINAL_COMMAND:-}

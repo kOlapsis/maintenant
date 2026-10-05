@@ -18,6 +18,8 @@ wal_keep_size = 0
 max_slot_wal_keep_size = {{ postgres_ha_max_slot_wal_keep_size }}
 
 hot_standby = on
+# A destroyed primary closes nothing: the standby would see it streaming for 60 s.
+wal_receiver_timeout = 5s
 primary_conninfo = 'host={{ postgres_ha_peer_address }} port={{ postgres_ha_port }} user={{ postgres_ha_user }} application_name={{ postgres_ha_self_name }} passfile={{ postgres_ha_etc_dir }}/pgpass connect_timeout=5'
 primary_slot_name = '{{ postgres_ha_self_name }}'
 recovery_target_timeline = 'latest'

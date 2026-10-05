@@ -1,38 +1,70 @@
 #!/bin/sh
-# Shoot a peer node, or check that we could.
+# Shoot a peer node, check that we could, or refuse a start after a failed shot.
 #
 #   maintenant-fence <node>
 #   maintenant-fence --check <node>
+#   maintenant-fence --guard
 #
-# Exit 0 only when the peer is down for certain. Any other outcome exits
-# non-zero, and om3 then refuses to start the service here: a fence that cannot
-# be proven must block the start, never let it through (FR-024).
+# Exit 0 only when the peer is down for certain. om3 logs a failed stonith and
+# starts the service anyway, so a failure leaves a mark that --guard, run before
+# the service starts, refuses on (FR-024). Only a later successful shot of the
+# same node, or the operator, removes the mark.
 
 set -eu
 
+failed_dir={{ fencing_failed_dir }}
+
 mode=fence
-if [ "${1:-}" = "--check" ]; then
-	mode=check
+case "${1:-}" in
+--check | --guard)
+	mode=${1#--}
 	shift
+	;;
+esac
+
+if [ "$mode" = guard ]; then
+	for mark in "$failed_dir"/failed-*; do
+		[ -e "$mark" ] || continue
+		echo "refused: fencing ${mark##*/failed-} failed at $(cat "$mark"); make sure that node is down, then remove $mark" >&2
+		exit 1
+	done
+	exit 0
 fi
 
 target="${1:-}"
 if [ -z "$target" ]; then
-	echo "usage: $0 [--check] <node>" >&2
+	echo "usage: $0 [--check] <node> | --guard" >&2
 	exit 2
 fi
 
+shoot() {
 {% if fencing_method == 'libvirt' %}
-exec ssh -i {{ fencing_key }} \
-	-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
-	-o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-	{{ fencing_host_user }}@{{ fencing_host }} "$mode $target"
+	ssh -i {{ fencing_key }} \
+		-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+		-o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+		{{ fencing_host_user }}@{{ fencing_host }} "$mode $target"
 {% else %}
-ha_fencing_target="$target"
-export ha_fencing_target
+	ha_fencing_target="$target"
+	export ha_fencing_target
+	if [ "$mode" = check ]; then
+		/bin/sh -c {{ fencing_check_command | quote }}
+	else
+		/bin/sh -c {{ fencing_command | quote }}
+	fi
+{% endif %}
+}
 
 if [ "$mode" = check ]; then
-	exec /bin/sh -c {{ fencing_check_command | quote }}
+	shoot
+	exit 0
 fi
-exec /bin/sh -c {{ fencing_command | quote }}
-{% endif %}
+
+if shoot; then
+	rm -f "$failed_dir/failed-$target"
+else
+	status=$?
+	mkdir -p "$failed_dir"
+	date -u +%Y-%m-%dT%H:%M:%SZ >"$failed_dir/failed-$target"
+	logger -t maintenant-fence -- "fencing $target failed: the service will not start on this node until $failed_dir/failed-$target is removed"
+	exit "$status"
+fi

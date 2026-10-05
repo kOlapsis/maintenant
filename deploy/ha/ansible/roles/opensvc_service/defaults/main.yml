@@ -3,6 +3,9 @@ opensvc_service_name: maintenant
 opensvc_service_template: "{{ playbook_dir }}/../opensvc/maintenant-{{ ha_mode | default('ip-only') | replace('/', '-') }}.conf"
 opensvc_service_rendered: /etc/maintenant-ha/service.conf
 
+# Installed by the fencing role, which runs in an earlier play.
+opensvc_service_fence_guard: /usr/local/sbin/maintenant-fence --guard
+
 # The node address on the network the service address lives on. The bench
 # carries both on one network; a deployment that separates them overrides this.
 opensvc_service_node_address: "{{ ansible_host | default(inventory_hostname) }}"

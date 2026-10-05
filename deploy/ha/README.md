@@ -95,7 +95,7 @@ same role serve the bench and a real deployment: `ha_fencing_command` shoots,
 `ha_fencing_check_command` proves the mechanism answers. On the bench the nodes reach the libvirt host over SSH with a key restricted to a single forced command, and that command destroys the peer's domain; elsewhere the same two variables carry IPMI, a PDU or a provider API. Both are required — a deployment with no fencing is refused, not warned about.
 
 Two things never happen quietly. A fence that cannot prove the peer went down exits
-non-zero, and om3 then refuses to start the service on the survivor (FR-024). And the role exercises the mechanism at deploy time with the check command: a cluster should not discover during an incident that it was never able to fence.
+non-zero. om3 only logs that and starts the service anyway, so the callout also leaves `/var/lib/maintenant-fence/failed-<node>` behind, and `maintenant-fence --guard`, the blocking pre-start of `ip#0`, refuses to start the service while such a file exists (FR-024). A later successful fence of the same node removes it; otherwise the operator makes sure the node is down, removes the file and starts the service. And the role exercises the mechanism at deploy time with the check command: a cluster should not discover during an incident that it was never able to fence.
 
 `DEFAULT.stonith=true` is the other half, and it lives on the service rather than the node: a failover service without it never calls the callout at all. The service templates carry it.
 
