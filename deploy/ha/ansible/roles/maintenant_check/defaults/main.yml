@@ -7,3 +7,6 @@ maintenant_check_url: "http://{{ ha_service_address }}:{{ maintenant_http_port |
 # and a dead one keeps the service. It is written into run.json.settings so a
 # measured recovery time can never be read without it.
 maintenant_check_timeout_seconds: 5
+
+maintenant_start_script: /usr/local/sbin/maintenant-start
+maintenant_start_term_wait_seconds: 5

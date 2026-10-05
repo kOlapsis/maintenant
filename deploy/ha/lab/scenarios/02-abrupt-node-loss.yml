@@ -40,15 +40,19 @@ modes:
     max_rto_s: 60
     expected: 'Automatic failover with no human action. The survivor fences the destroyed
       node, then app#pg promotes its standby, only once no other primary answers and only if
-      that standby had caught up since it was built; app#0 starts after it. The service answers
+      that standby had caught up since it was built. Before promoting, it switches to
+      asynchronous replication and logs event=sync_dropped loss_window=open reason=promotion,
+      whatever postgres_ha_standby_missing says, so no commit waits for the destroyed peer;
+      app#0 starts after it. The service answers
       again on the same address in under 60 s, never more than 90 s across all runs (SC-001).
       writes.lost == 0 over at least 20 repetitions (SC-002). Every enrolled agent reconnects
       within 90 s with the same identity, with no re-enrolment and no alert caused by the failover
       alone (SC-007). When the destroyed node boots again, its PostgreSQL unit refuses to start
       as a primary: the node marks itself overtaken and rebuilds as a standby of the survivor,
-      pg_rewind first and a full copy if that fails, with no intervention. The bench turns green
-      again only once that standby streams synchronously; the service stays on the survivor
-      (SC-011).'
+      pg_rewind first and a full copy if that fails, with no intervention. Once that standby is
+      less than a WAL segment behind, the survivor returns to synchronous replication (event=sync_restored
+      loss_window=closed); the bench turns green again only then, and the service stays on the
+      survivor (SC-011).'
   sqlite/drbd:
     applicable: true
     expected: Automatic failover with no human action. The service answers again on the same

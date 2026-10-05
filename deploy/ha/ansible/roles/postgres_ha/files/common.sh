@@ -105,11 +105,22 @@ mark_fenced() {
 	before=$(local_state)
 	mkdir -p "$HA_STATE_DIR"
 	printf 'at=%s reason=%s\n' "$(now)" "$1" >"$HA_FENCED"
-	rm -f "$HA_ALLOWANCE" "$HA_SYNCED"
+	rm -f "$HA_ALLOWANCE" "$HA_SYNCED" "$HA_ASYNC_CONF" "$HA_ABSENT_SINCE"
 	if [ -f "$PG_DATADIR/PG_VERSION" ]; then
 		as_postgres touch "$PG_DATADIR/standby.signal"
 	fi
 	log_event "fenced state_before=$before reason=\"$1\""
+}
+
+drop_sync() {
+	printf "synchronous_standby_names = ''\n" >"$HA_ASYNC_CONF"
+	chown postgres:postgres "$HA_ASYNC_CONF"
+	local_sql 'select pg_reload_conf()' >/dev/null
+}
+
+restore_sync() {
+	rm -f "$HA_ASYNC_CONF"
+	local_sql 'select pg_reload_conf()' >/dev/null
 }
 
 # The slot this node streams from on the peer: ok, lost, missing or unreachable.

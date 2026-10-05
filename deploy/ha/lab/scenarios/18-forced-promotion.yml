@@ -57,8 +57,8 @@ modes:
     expected: 'The primary is killed with its unit masked, so the local restart cannot succeed.
       om3 tries app#pg.restart times (run.json.settings.local_restarts), then monitor_action
       moves the service. The standby is promoted only once the former primary is stopped and
-      no other primary answers; exactly one primary exists before app#0 starts, and
-      writes.lost == 0. The former node, its allowance withdrawn by the stop, is marked
+      no other primary answers, in asynchronous replication as in scenario 2; exactly one
+      primary exists before app#0 starts, and writes.lost == 0. The former node, its allowance withdrawn by the stop, is marked
       overtaken and, once the unit is unmasked, rebuilt as a standby of the new primary
       without ever running as a primary.'
   sqlite/drbd:

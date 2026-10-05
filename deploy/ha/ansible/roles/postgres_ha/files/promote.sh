@@ -14,6 +14,17 @@ refuse() {
 	exit 1
 }
 
+wait_async() {
+	tries=10
+	until [ "$(local_sql "select current_setting('synchronous_standby_names') = ''")" = t ]; do
+		tries=$((tries - 1))
+		if [ "$tries" -le 0 ]; then
+			return 1
+		fi
+		sleep 1
+	done
+}
+
 wait_receiver_gone() {
 	tries=10
 	while [ "$(receiver_status)" = streaming ]; do
@@ -41,12 +52,19 @@ promote_standby() {
 
 	received=$(local_sql 'select pg_last_wal_receive_lsn()')
 	log_event "promoting received_lsn=${received:-none} standby_missing=$HA_STANDBY_MISSING"
+	drop_sync
+	if ! wait_async; then
+		restore_sync
+		refuse sync_drop_failed "synchronous_standby_names is still set after the reload"
+	fi
 	allow_primary
 	local_sql "select pg_promote(true, $HA_PROMOTE_TIMEOUT)" >/dev/null
 	if [ "$(local_sql 'select pg_is_in_recovery()')" != f ]; then
 		rm -f "$HA_ALLOWANCE"
+		restore_sync
 		refuse promote_failed "the standby is still in recovery after ${HA_PROMOTE_TIMEOUT}s"
 	fi
+	log_event "sync_dropped loss_window=open reason=promotion"
 
 	local_sql "select pg_create_physical_replication_slot('$HA_PEER_NAME', true) where not exists (select 1 from pg_replication_slots where slot_name = '$HA_PEER_NAME')" >/dev/null
 	position=$(local_sql 'select pg_walfile_name(pg_current_wal_lsn())')

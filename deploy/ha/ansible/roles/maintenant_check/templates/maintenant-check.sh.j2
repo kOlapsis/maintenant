@@ -14,11 +14,14 @@ url="{{ maintenant_check_url }}"
 deadline={{ maintenant_check_timeout_seconds }}
 
 body=$(curl -fsS -m "$deadline" "$url" 2>/dev/null) || exit 2
-connected=$(printf '%s' "$body" | jq -r '.storage.connected // "absent"' 2>/dev/null) || exit 2
+connected=$(printf '%s' "$body" | jq -r 'if .storage.connected == null then "absent" else .storage.connected end' 2>/dev/null) || exit 2
 
 case "$connected" in
 true) exit 0 ;;
-false) exit 1 ;;
+false)
+	echo "storage not connected" >&2
+	exit 1
+	;;
 *)
 	echo "health body carries no storage.connected" >&2
 	exit 2

@@ -56,8 +56,10 @@ modes:
       PostgreSQL unit refuses to start without the primary allowance, the node sees the survivor
       answering as a primary, marks itself overtaken (event=fenced) and rebuilds as a standby of
       the survivor with pg_rewind, falling back to pg_basebackup (event=rebuilt method=...).
-      Between the mark and the rebuild it never runs as a primary. No human action; the service
-      stays on the survivor. Each repetition counts one return towards SC-011.'
+      Between the mark and the rebuild it never runs as a primary. Once the rebuilt standby is
+      less than a WAL segment behind, the survivor leaves the asynchronous replication the promotion set
+      (event=sync_restored). No human action; the service stays on the survivor. Each
+      repetition counts one return towards SC-011.'
   sqlite/drbd:
     applicable: false
     reason: no PostgreSQL standby in this mode; the returning node's resynchronisation is scenario 21

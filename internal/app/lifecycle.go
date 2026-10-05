@@ -614,8 +614,10 @@ func (a *App) startRuntimeSupervisor(ctx context.Context) {
 
 	if a.rt.IsConnected() {
 		// Comportement nominal : câblage immédiat + supervision de fond.
-		streamDone := a.wireContainerMonitoring(ctx)
-		go a.supervisorLoop(ctx, streamDone, retry.New(runtimeRetryMin, runtimeRetryMax, 0))
+		go func() {
+			streamDone := a.wireContainerMonitoring(ctx)
+			a.supervisorLoop(ctx, streamDone, retry.New(runtimeRetryMin, runtimeRetryMax, 0))
+		}()
 	} else {
 		// Dégradé au boot : reconnexion de fond.
 		a.logger.Info("container runtime unavailable, monitoring suspended", "runtime", a.rt.Name())

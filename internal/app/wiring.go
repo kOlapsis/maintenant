@@ -789,11 +789,10 @@ func (a *App) startOSEOL(ctx context.Context) {
 		a.eolSvc.SeedSeverities(alerts)
 	}
 
-	if err := a.eolSvc.RefreshLocalOS(ctx); err != nil {
-		a.logger.Warn("local os identity not stored", "error", err)
-	}
-
 	go func() {
+		if err := a.eolSvc.RefreshLocalOS(ctx); err != nil {
+			a.logger.Warn("local os identity not stored", "error", err)
+		}
 		if err := a.eolSvc.Start(ctx); err != nil {
 			a.logger.Error("os end-of-support service stopped", "error", err)
 		}

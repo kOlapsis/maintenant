@@ -843,7 +843,7 @@ func (a *App) Start(ctx context.Context) error {
 
 	a.alertEngine.Start(ctx)
 	// Runs here too so DB-backed monitors are swept even without a container runtime.
-	a.pruneOrphanAlerts(ctx)
+	go a.pruneOrphanAlerts(ctx)
 
 	a.notifier.Start(ctx)
 	if err := a.endpointSvc.Start(ctx); err != nil {
@@ -1057,33 +1057,10 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 		return
 	}
 
-	var enrollToken string
-	if !id.Registered {
-		cleartext, hash, tokenID, prefix, err := agent.NewToken()
-		if err != nil {
-			a.logger.Error("embedded agent: failed to generate enrollment token", "err", err)
-			return
-		}
-		t := &agent.EnrollmentToken{
-			TokenID:     tokenID,
-			TokenHash:   hash,
-			TokenPrefix: prefix,
-			CreatedAt:   time.Now(),
-			ExpiresAt:   time.Now().Add(5 * time.Minute),
-		}
-		if err := a.agentStore.InsertToken(ctx, t); err != nil {
-			a.logger.Error("embedded agent: failed to create enrollment token", "err", err)
-			return
-		}
-		// Held in memory just long enough to hand to the agent goroutine below.
-		enrollToken = cleartext
-	}
-
 	grpcURL := embeddedAgentURL(a.cfg.MultiHost)
 	agentCfg := agent.AgentConfig{
 		DataDir:             agentDataDir,
 		ServerURL:           grpcURL,
-		EnrollmentToken:     enrollToken,
 		Label:               "embedded",
 		AgentVersion:        a.cfg.Version,
 		InsecureSkipVerify:  true, // loopback TLS
@@ -1094,6 +1071,26 @@ func (a *App) startEmbeddedAgent(ctx context.Context) {
 	}
 
 	go func() {
+		if !id.Registered {
+			cleartext, hash, tokenID, prefix, err := agent.NewToken()
+			if err != nil {
+				a.logger.Error("embedded agent: failed to generate enrollment token", "err", err)
+				return
+			}
+			t := &agent.EnrollmentToken{
+				TokenID:     tokenID,
+				TokenHash:   hash,
+				TokenPrefix: prefix,
+				CreatedAt:   time.Now(),
+				ExpiresAt:   time.Now().Add(5 * time.Minute),
+			}
+			if err := a.agentStore.InsertToken(ctx, t); err != nil {
+				a.logger.Error("embedded agent: failed to create enrollment token", "err", err)
+				return
+			}
+			agentCfg.EnrollmentToken = cleartext
+		}
+
 		// Short delay to let the gRPC server open its listener.
 		select {
 		case <-ctx.Done():

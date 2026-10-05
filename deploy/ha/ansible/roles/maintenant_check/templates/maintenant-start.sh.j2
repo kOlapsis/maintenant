@@ -1,0 +1,18 @@
+#!/bin/sh
+# Starts the binary for the OpenSVC service, after removing any instance left
+# by the previous start.
+
+set -u
+
+user="{{ maintenant_user }}"
+name="{{ maintenant_bin | basename }}"
+
+pkill -TERM -u "$user" -x "$name"
+n=0
+while pgrep -u "$user" -x "$name" >/dev/null && [ "$n" -lt {{ maintenant_start_term_wait_seconds * 10 }} ]; do
+	sleep 0.1
+	n=$((n + 1))
+done
+pkill -KILL -u "$user" -x "$name"
+
+exec /usr/bin/systemd-cat --identifier={{ opensvc_service_log_identifier }} {{ maintenant_bin }}

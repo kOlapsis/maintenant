@@ -74,7 +74,7 @@ and `14-binary-update`, keep their numbers, which are free.
 | **Injection** | `virsh destroy site-a` from the host — the active node disappears, with no shutdown and no warning. |
 | **Repair** | Restart the VM. It rejoins the cluster, its copy resynchronises from the survivor, and the service stays where it is: no automatic giveback. |
 | **Expected, all modes** | Automatic failover with no human action. The service answers again on the same address in under 60 s, never more than 90 s across all runs (SC-001). `writes.lost == 0` over at least 20 repetitions (SC-002). Every enrolled agent reconnects within 90 s with the same identity, with no re-enrolment and no alert caused by the failover alone (SC-007). |
-| **Expected, `postgres/streaming`** | The standby is promoted, exactly one primary is established before the application starts, and the returning node is rebuilt as a standby — never restarted as a primary (SC-011). |
+| **Expected, `postgres/streaming`** | The standby is promoted in asynchronous replication, exactly one primary is established before the application starts, and the returning node is rebuilt as a standby — never restarted as a primary (SC-011). |
 | **Expected, `sqlite/drbd`** | The volume is promoted on the survivor, the file system is mounted, the SQLite journal is recovered, then the application starts. |
 | **Measures** | `rto_ms`, `writes`, `telemetry_gap_s`, `telemetry_samples_lost`, `alerts_induced`, `agents`, `nodes_written`, `inventory`. |
 
@@ -212,9 +212,18 @@ the journal (tag `maintenant-pg`): `promoted`, `fenced`, `rebuild_started`, `reb
 `start_refused`, `standby_absent`, `sync_dropped`, `sync_restored`, `retention_exceeded`. The
 scenarios read that log; `maintenant-pg-state` prints the role of a node as JSON.
 
+A promotion always switches the new primary to asynchronous replication before it leaves
+recovery, and logs `sync_dropped loss_window=open reason=promotion`, whatever
+`postgres_ha_standby_missing` says. The promoted standby had caught up, so no acknowledged
+write is lost at the switch, and its former primary is gone: waiting for it would block every
+write until that node comes back. The watch restores synchronous replication and logs
+`sync_restored loss_window=closed` once the rebuilt standby is less than a WAL segment behind.
+`postgres_ha_standby_missing` only governs a standby that goes missing while its primary keeps
+running (scenario 15).
+
 In this mode `lab status` is green only when exactly one node runs a primary, holds the
 service address, and has its standby streaming synchronously. Every repair is therefore
-checked down to the rebuild of the former primary.
+checked down to the rebuild of the former primary and the end of the loss window it opened.
 
 ### 15. Standby absent while writes continue
 
@@ -222,7 +231,7 @@ checked down to the rebuild of the former primary.
 |---|---|
 | **Injection** | Stop the standby and its watch on the passive node. |
 | **Repair** | Start the watch again; it restarts the standby, which catches up. |
-| **Expected** | With `block` (the default of `postgres_ha_standby_missing`), writes wait: none is acknowledged while the standby is gone, `writes.lost == 0`. With `continue`, the primary drops to asynchronous replication after the grace and logs the opening of the loss window; it returns to synchronous replication only once the standby is zero bytes behind. No failover either way. The conduct is recorded in `run.json.settings.sync_standby`. |
+| **Expected** | With `block` (the default of `postgres_ha_standby_missing`), writes wait: none is acknowledged while the standby is gone, `writes.lost == 0`. With `continue`, the primary drops to asynchronous replication after the grace and logs the opening of the loss window; it returns to synchronous replication once the standby is less than a WAL segment behind. No failover either way, and neither conduct applies after a promotion, which always opens the loss window. The conduct is recorded in `run.json.settings.sync_standby`. |
 | **Measures** | `rto_ms`, `writes`, `sync_standby`, the loss window from the events log. |
 
 ### 16. Former primary returns and is rebuilt as standby
@@ -231,7 +240,7 @@ checked down to the rebuild of the former primary.
 |---|---|
 | **Injection** | `virsh destroy` on the active node, as in scenario 2. |
 | **Repair** | Restart the VM, then wait until its events log shows, after the injection, the node marked overtaken and rebuilt, with no primary start in between. |
-| **Expected** | The standby is promoted. The returning node's PostgreSQL unit refuses to start without the allowance the promotion grants, which lives under `/run` and never survives a reboot; the node sees the survivor answering as a primary, marks itself overtaken, and rebuilds as a standby with `pg_rewind`, or `pg_basebackup` when the rewind fails. No human action. Played ten times, it is the SC-011 count. |
+| **Expected** | The standby is promoted, in asynchronous replication. The returning node's PostgreSQL unit refuses to start without the allowance the promotion grants, which lives under `/run` and never survives a reboot; the node sees the survivor answering as a primary, marks itself overtaken, and rebuilds as a standby with `pg_rewind`, or `pg_basebackup` when the rewind fails; once it is less than a WAL segment behind, the survivor returns to synchronous replication. No human action. Played ten times, it is the SC-011 count. |
 | **Measures** | `rto_ms`, `writes`, `primary_count`, `former_primary_rebuild`. |
 
 ### 17. Write-ahead log retention exhausted

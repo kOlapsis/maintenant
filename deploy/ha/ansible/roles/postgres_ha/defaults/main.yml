@@ -30,10 +30,11 @@ postgres_ha_resource: "{{ postgres_ha_sbin_dir }}/maintenant-pg-resource"
 postgres_ha_state: "{{ postgres_ha_sbin_dir }}/maintenant-pg-state"
 postgres_ha_rebuild: "{{ postgres_ha_sbin_dir }}/maintenant-pg-rebuild"
 
-# block: writes wait while the standby is missing, nothing acknowledged can be
-# lost. continue: after the grace, the primary drops to asynchronous replication
-# and announces the loss window; it goes back to synchronous only once the
-# standby has fully caught up.
+# The conduct of a running primary whose standby goes missing. block: writes
+# wait, nothing acknowledged can be lost. continue: after the grace, the primary
+# drops to asynchronous replication and announces the loss window. A promotion
+# always opens the loss window, whatever this says. Either way synchronous
+# replication comes back once the standby is less than a WAL segment behind.
 postgres_ha_standby_missing: block
 postgres_ha_standby_missing_grace_seconds: 10
 

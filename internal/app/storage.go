@@ -15,6 +15,7 @@ import (
 	v1 "github.com/kolapsis/maintenant/internal/api/v1"
 	"github.com/kolapsis/maintenant/internal/event"
 	"github.com/kolapsis/maintenant/internal/extension"
+	"github.com/kolapsis/maintenant/internal/retry"
 	"github.com/kolapsis/maintenant/internal/store"
 	"github.com/kolapsis/maintenant/internal/uid"
 )
@@ -29,6 +30,9 @@ const (
 	instanceStaleAfter = 5 * time.Minute
 	// instancePurgeInterval is how often stale rows are dropped.
 	instancePurgeInterval = 5 * time.Minute
+
+	instanceRegisterRetryMin = time.Second
+	instanceRegisterRetryMax = 30 * time.Second
 )
 
 // ErrStateDirRequired is returned when the operator demanded an explicit state root and none is set.
@@ -230,13 +234,13 @@ func (a *App) startInstanceHeartbeat(ctx context.Context) {
 	if a.instanceStore == nil {
 		return
 	}
-	if err := a.instanceStore.Register(ctx, a.instanceRecord); err != nil {
-		a.logger.Warn("instance registration failed, peer visibility is degraded", "error", err)
-		return
-	}
-	a.reportPeers(ctx)
 
 	go func() {
+		if !a.registerWithRetry(ctx) {
+			return
+		}
+		a.reportPeers(ctx)
+
 		beat := time.NewTicker(instanceBeatInterval)
 		purge := time.NewTicker(instancePurgeInterval)
 		defer beat.Stop()
@@ -258,6 +262,34 @@ func (a *App) startInstanceHeartbeat(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// registerWithRetry inserts this instance's row, retrying until it lands or ctx is done.
+func (a *App) registerWithRetry(ctx context.Context) bool {
+	backoff := retry.New(instanceRegisterRetryMin, instanceRegisterRetryMax, 0.25)
+	failed := false
+	for {
+		record := a.instanceRecord
+		record.LastSeenAt = time.Now()
+		err := a.instanceStore.Register(ctx, record)
+		// An attempt reported as failed may still have committed, leaving our own row behind.
+		if err == nil || store.IsUniqueViolation(err) {
+			if failed {
+				a.logger.Info("instance registered, peer visibility restored")
+			}
+			return true
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		if !failed {
+			a.logger.Warn("instance registration failed, peer visibility is degraded", "error", err)
+			failed = true
+		}
+		if backoff.Sleep(ctx) != nil {
+			return false
+		}
+	}
 }
 
 // reportPeers refreshes the peer count and says so, once per transition into

@@ -2,7 +2,7 @@
 # Runs on both nodes for as long as they are up. On a node that was overtaken it
 # rebuilds the standby; on a standby it watches its slot and records the first
 # full catch-up; on the primary it applies the configured conduct when the
-# standby goes missing.
+# standby goes missing, and restores synchronous replication once it is less than a WAL segment behind.
 
 set -eu
 
@@ -26,11 +26,12 @@ watch_primary() {
 	# shellcheck disable=SC2046 # the row is three words on purpose
 	set -- $(standby_row "$HA_PEER_NAME" local)
 	streaming=no
-	caught_up=no
+	near=no
 	if [ "${1:-}" = streaming ]; then
 		streaming=yes
-		if [ "${3:-}" = 0 ]; then
-			caught_up=yes
+		segment=$(local_sql "select pg_size_bytes(current_setting('wal_segment_size'))")
+		if [ "${3:-$segment}" -lt "$segment" ]; then
+			near=yes
 		fi
 	fi
 
@@ -43,20 +44,16 @@ watch_primary() {
 		log_event "standby_absent standby_missing=$HA_STANDBY_MISSING"
 	fi
 
-	if [ "$HA_STANDBY_MISSING" != continue ]; then
-		return 0
-	fi
-	if [ -f "$HA_ASYNC_CONF" ] && [ "$caught_up" = yes ]; then
-		rm -f "$HA_ASYNC_CONF"
-		local_sql 'select pg_reload_conf()' >/dev/null
-		log_event "sync_restored loss_window=closed"
-	elif [ ! -f "$HA_ASYNC_CONF" ] && [ -f "$HA_ABSENT_SINCE" ]; then
+	if [ -f "$HA_ASYNC_CONF" ]; then
+		if [ "$near" = yes ]; then
+			restore_sync
+			log_event "sync_restored loss_window=closed"
+		fi
+	elif [ "$HA_STANDBY_MISSING" = continue ] && [ -f "$HA_ABSENT_SINCE" ]; then
 		since=$(cat "$HA_ABSENT_SINCE")
 		if [ $(($(date +%s) - since)) -ge "$HA_STANDBY_MISSING_GRACE" ]; then
-			printf "synchronous_standby_names = ''\n" >"$HA_ASYNC_CONF"
-			chown postgres:postgres "$HA_ASYNC_CONF"
-			local_sql 'select pg_reload_conf()' >/dev/null
-			log_event "sync_dropped loss_window=open"
+			drop_sync
+			log_event "sync_dropped loss_window=open reason=standby_absent"
 		fi
 	fi
 }

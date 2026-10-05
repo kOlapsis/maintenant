@@ -41,8 +41,9 @@ modes:
       continue, after the grace the primary drops to asynchronous replication and logs
       event=sync_dropped loss_window=open; writes are acknowledged again, and only those are
       exposed to a loss if the primary dies before the standby is back. Either way no failover
-      happens. After repair the watch restarts the standby, which catches up; synchronous
-      replication comes back only once it is zero bytes behind (event=sync_restored), and the
+      happens; the conduct only governs a primary that keeps running, a promotion always opens
+      the loss window (scenario 2). After repair the watch restarts the standby, which catches up; synchronous
+      replication comes back once it is less than a WAL segment behind (event=sync_restored), and the
       bench is green again only then.'
   sqlite/drbd:
     applicable: false
