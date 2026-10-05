@@ -432,10 +432,12 @@ wait_for_status_green() {
 	timeout=$1
 	interval=$2
 	outfile=$3
+	want_holder=${4:-}
 	deadline=$(($(date +%s) + timeout))
 	while :; do
 		collect_status >"$outfile" 2>"$TMP/wait-status.err" || true
-		if [ -s "$outfile" ] && [ "$(jq -r '.verdict // empty' "$outfile" 2>/dev/null)" = "green" ]; then
+		if [ -s "$outfile" ] && jq -e --arg h "$want_holder" \
+			'.verdict == "green" and ($h == "" or .service.holders == [$h])' "$outfile" >/dev/null 2>&1; then
 			return 0
 		fi
 		[ "$(date +%s)" -ge "$deadline" ] && return 1
@@ -1383,8 +1385,9 @@ cmd_giveback() {
 	esac
 
 	info "giving the service back to $preferred"
-	ssh_to "$holder" "$OM ${LAB_SERVICE_NAME:-maintenant} giveback --wait"
-	if ! wait_for_status_green "$RUN_ALL_GREEN_TIMEOUT" "$RUN_ALL_GREEN_INTERVAL" "$TMP/status-giveback-after.json"; then
+	# Without --wait: om3 wants the instance up at once, and the writes stall until the former primary streams again.
+	ssh_to "$holder" "$OM ${LAB_SERVICE_NAME:-maintenant} giveback"
+	if ! wait_for_status_green "$RUN_ALL_GREEN_TIMEOUT" "$RUN_ALL_GREEN_INTERVAL" "$TMP/status-giveback-after.json" "$preferred"; then
 		render_status <"$TMP/status-giveback-after.json"
 		die "the bench did not return to green after the giveback" 1
 	fi
