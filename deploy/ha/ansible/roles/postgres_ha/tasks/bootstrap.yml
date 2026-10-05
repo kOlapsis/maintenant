@@ -52,6 +52,7 @@
       ansible.builtin.command:
         argv: [runuser, -u, postgres, --, psql, -X, -q, -v, ON_ERROR_STOP=1, -d, postgres]
         stdin: |
+          SET synchronous_commit = local;
           DO $$
           BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_ha_user }}') THEN
@@ -73,6 +74,7 @@
           WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ postgres_ha_database }}')
           \gexec
       changed_when: true
+      timeout: 60
       no_log: true
       when: inventory_hostname == postgres_ha_initial_primary
 
