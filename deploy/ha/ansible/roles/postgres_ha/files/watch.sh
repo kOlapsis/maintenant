@@ -86,13 +86,16 @@ tick() {
 
 	state=$(local_state)
 	case "$state" in
-	primary-running | primary-stopped)
-		if [ ! -f "$HA_ALLOWANCE" ]; then
-			if [ "$(peer_role)" = primary ]; then
-				"$FENCE" "former primary while $HA_PEER is primary"
-			fi
-		elif [ "$state" = primary-running ]; then
+	primary-running)
+		if [ -f "$HA_ALLOWANCE" ]; then
 			watch_primary
+		elif [ "$(peer_role)" = primary ]; then
+			"$FENCE" "former primary while $HA_PEER is primary"
+		fi
+		;;
+	primary-stopped)
+		if [ "$(peer_role)" = primary ]; then
+			"$FENCE" "former primary while $HA_PEER is primary"
 		fi
 		;;
 	standby-running) watch_standby ;;

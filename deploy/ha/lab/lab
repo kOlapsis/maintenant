@@ -71,8 +71,8 @@ GIVEBACK_LAG_TRIES=10
 
 # Must match opensvc_service_log_identifier: the tag systemd-cat gives the binary's output.
 SERVER_LOG_IDENTIFIER="maintenant"
-# The ping is answered 200 even when its history row was not written, so a run
-# where this was logged cannot conclude on its writes.
+# The ping is answered 200 even when its history row was not written, so a run where this was
+# logged cannot conclude on its writes, unless the client had abandoned the request.
 SERVER_LOG_INCONCLUSIVE="insert ping"
 
 # virsh reads qemu:///session for a non-root user, where the bench has nothing.
@@ -531,17 +531,29 @@ run_all_settings() {
 		}'
 }
 
-# Prints one line per failed ping insert the server logged between two epochs,
-# on every cluster node, and one line per node whose journal cannot be read.
+# Records, per cluster node, the journal position the next findings start after.
+server_log_cursors() {
+	dir=$1
+	mkdir -p "$dir"
+	for host in $(group_hosts opensvc_cluster); do
+		cursor=$(ssh_to "$host" "sudo -n journalctl --quiet --no-pager -n 1 -o cat --show-cursor" 2>/dev/null | sed -n 's/^-- cursor: //p') || cursor=""
+		printf '%s' "$cursor" >"$dir/$host"
+	done
+}
+
+# Prints one line per failed ping insert the server logged on every cluster node
+# after the recorded cursor and before an epoch, and one per node whose journal cannot be read.
 server_log_findings() {
-	since=$1
+	dir=$1
 	until=$2
 	for host in $(group_hosts opensvc_cluster); do
-		if ! journal=$(ssh_to "$host" "sudo -n journalctl --quiet --no-pager -o short-iso -t $SERVER_LOG_IDENTIFIER --since @$since --until @$until" 2>/dev/null); then
+		cursor=$(cat "$dir/$host" 2>/dev/null) || cursor=""
+		if [ -z "$cursor" ] || ! journal=$(ssh_to "$host" "sudo -n journalctl --quiet --no-pager -o short-iso --after-cursor $(shell_quote "$cursor") --until @$until" 2>/dev/null); then
 			printf '%s: journal unreadable\n' "$host"
 			continue
 		fi
-		printf '%s\n' "$journal" | grep -F "$SERVER_LOG_INCONCLUSIVE" | sed "s/^/$host: /" || true
+		# journalctl 252 drops the first match after the cursor when -t is also given.
+		printf '%s\n' "$journal" | grep -F " ${SERVER_LOG_IDENTIFIER}[" | grep -F "$SERVER_LOG_INCONCLUSIVE" | grep -vF -e 'context canceled' -e 'context deadline exceeded' | sed "s/^/$host: /" || true
 	done
 }
 
@@ -630,6 +642,18 @@ run_all_scenario() {
 	fi
 	max_rto_s=$(printf '%s' "$mode_entry" | jq -r '.max_rto_s // empty')
 	settle_s=$(jq -r '.settle_s // 0' "$TMP/scenario-def-$number.json")
+	start_holder=""
+	case "$(jq -r '.start_on // empty' "$TMP/scenario-def-$number.json")" in
+	'') ;;
+	preferred) start_holder=$(preferred_node) ;;
+	*)
+		printf '%s %-30s fail (start_on only accepts preferred)\n' "$padded" "$slug"
+		scenario=$(jq -nc --argjson id "$id" --arg name "$scenario_name" \
+			'{id: $id, name: $name, verdict: "fail", reason: "start_on only accepts preferred", repetitions: 0, measures: null, runs: []}')
+		printf '%s\n' "$scenario" >>"$scenarios_ndjson"
+		return 0
+		;;
+	esac
 
 	reps_ndjson="$TMP/reps-$number.ndjson"
 	: >"$reps_ndjson"
@@ -646,6 +670,19 @@ run_all_scenario() {
 			break
 		fi
 
+		if [ -n "$start_holder" ] && ! jq -e --arg h "$start_holder" '.service.holders == [$h]' "$TMP/status-pre-$number.json" >/dev/null; then
+			printf '%s giveback to %s before scenario %s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" "$start_holder" "$number" >>"$run_log"
+			# A subshell, because cmd_giveback dies on refusal and clobbers globals.
+			if ! (cmd_giveback) >>"$run_log" 2>&1; then
+				printf '%s %-30s rep %s/%s fail (the service could not be given back to %s)\n' "$padded" "$slug" "$rep" "$repetitions" "$start_holder"
+				one=$(jq -nc --argjson rep "$rep" --arg reason "the service could not be given back to $start_holder before the repetition" \
+					'{repetition: $rep, verdict: "fail", reasons: [$reason]}')
+				printf '%s\n' "$one" >>"$reps_ndjson"
+				break
+			fi
+		fi
+
+		server_log_cursors "$TMP/server-log-cursors-$number-$rep"
 		t0=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 		if inj_out=$(scenario_act injection "$number" 2>&1); then
@@ -739,9 +776,8 @@ $ver_out"
 
 		rto_ms=$(printf '%s' "$availability_json" | jq -r 'if . == null then "" else (.rto_ms | tostring) end' 2>/dev/null)
 
-		log_since=$(($(date -u -d "$t0" +%s) - CLOCK_DRIFT_MAX))
-		log_until=$(($(date -u -d "$t1_window" +%s) + CLOCK_DRIFT_MAX))
-		server_log_findings "$log_since" "$log_until" >"$TMP/server-log-$number-$rep.txt"
+		log_until=$(date -u -d "$t1_window" +%s)
+		server_log_findings "$TMP/server-log-cursors-$number-$rep" "$log_until" >"$TMP/server-log-$number-$rep.txt"
 		server_log_json=$(jq -Rsc 'split("\n") | map(select(length > 0))' "$TMP/server-log-$number-$rep.txt")
 
 		reasons_file="$TMP/reasons-$number-$rep.json"
@@ -756,7 +792,7 @@ $ver_out"
 		[ "$green_after" -eq 1 ] || add_reason "bench did not return to green after repair"
 		[ "$holders" -eq 1 ] || add_reason "holders after recovery = $holders, expected 1"
 		if [ -s "$TMP/server-log-$number-$rep.txt" ]; then
-			add_reason "inconclusive: the server logged '$SERVER_LOG_INCONCLUSIVE' or its journal could not be read during the measurement window"
+			add_reason "inconclusive: the server logged a failed '$SERVER_LOG_INCONCLUSIVE' or its journal could not be read during the measurement window"
 		fi
 		if [ -n "$max_rto_s" ]; then
 			if [ -z "$rto_ms" ]; then

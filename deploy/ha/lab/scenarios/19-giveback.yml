@@ -6,6 +6,7 @@ slug: giveback
 name: Full giveback to the preferred node
 source: postgres/streaming
 repetitions: 1
+start_on: preferred
 injection:
   'on': active
   command: om "$LAB_SERVICE" switch --wait
@@ -14,10 +15,17 @@ repair:
   command: |
     set -eu
     $LAB_SSH_ACTIVE "sudo -n systemctl stop maintenant-pg-watch.service 'postgresql@*.service'"
-    if "$LAB_CLI" giveback; then
+    if refusal=$("$LAB_CLI" giveback 2>&1); then
       echo "giveback was accepted while the copy on $LAB_ACTIVE was stopped" >&2
       exit 1
     fi
+    case "$refusal" in
+    *"$LAB_ACTIVE is not a caught-up standby"*) ;;
+    *)
+      printf 'giveback was refused for another reason than the stopped copy: %s\n' "$refusal" >&2
+      exit 1
+      ;;
+    esac
     $LAB_SSH_ACTIVE "sudo -n systemctl start maintenant-pg-watch.service"
     tries=0
     until "$LAB_CLI" giveback; do

@@ -265,15 +265,17 @@ checked down to the rebuild of the former primary and the end of the loss window
 
 | | |
 |---|---|
-| **Injection** | `om <service> switch` away from the preferred node. |
-| **Repair** | Stop the preferred node's copy and check `lab giveback` is refused; start it again and retry `lab giveback` until it is accepted. |
+| **Injection** | `om <service> switch` away from the preferred node. The scenario carries `start_on: preferred`, so `lab run-all` first gives the service back to that node when a previous scenario left it elsewhere. |
+| **Repair** | Stop the preferred node's copy and check `lab giveback` is refused because that node is not a caught-up standby; start it again and retry `lab giveback` until it is accepted. |
 | **Expected** | The giveback is refused while the preferred node is not a caught-up standby, streaming, synchronous and zero bytes behind. Once it is, the service goes back, the other node is rebuilt as its standby, and no acknowledged write is lost. |
 | **Measures** | `rto_ms`, `writes`, `primary_count`, `former_primary_rebuild`. |
 
 ## Runs that cannot conclude
 
 `lab run-all` fails a repetition as inconclusive when a node's journal holds a line with
-`insert ping` from the server during the measurement window, or cannot be read. The server
+`insert ping` from the server between the start of the injection and the end of the measurement
+window, or cannot be read. Lines whose error is `context canceled` or `context deadline exceeded`
+are ignored: the client abandoned the request, so the server never answered it 200. The server
 answers a heartbeat ping with 200 even when it failed to write the ping's history row, so a
 run where that happened cannot conclude on its writes. The binary's output reaches the
 journal under the tag `maintenant`, through `systemd-cat` in the service templates.
