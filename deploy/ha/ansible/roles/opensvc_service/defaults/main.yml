@@ -1,5 +1,6 @@
 ---
 opensvc_service_name: maintenant
+opensvc_service_nodename: "{{ ansible_facts['hostname'] }}"
 opensvc_service_template: "{{ playbook_dir }}/../opensvc/maintenant-{{ ha_mode | default('ip-only') | replace('/', '-') }}.conf"
 opensvc_service_rendered: /etc/maintenant-ha/service.conf
 

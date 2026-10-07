@@ -9,4 +9,6 @@ maintenant_check_url: "http://{{ ha_service_address }}:{{ maintenant_http_port |
 maintenant_check_timeout_seconds: 5
 
 maintenant_start_script: /usr/local/sbin/maintenant-start
+maintenant_stop_script: /usr/local/sbin/maintenant-stop
+maintenant_start_timeout_seconds: 60
 maintenant_start_term_wait_seconds: 5

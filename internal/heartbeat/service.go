@@ -232,12 +232,18 @@ func (s *Service) DeleteHeartbeat(ctx context.Context, id string) error {
 // --- Ping Processing ---
 
 func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, error) {
+	h, _, err := s.RecordPing(ctx, token, sourceIP, httpMethod, payload, agentID)
+	return h, err
+}
+
+// RecordPing processes a success ping and returns the id of the stored ping, empty when the ping row could not be written.
+func (s *Service) RecordPing(ctx context.Context, token string, sourceIP, httpMethod string, payload *string, agentID *string) (*Heartbeat, string, error) {
 	h, err := s.store.GetHeartbeatByID(ctx, token)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if h == nil {
-		return nil, ErrHeartbeatNotFound
+		return nil, "", ErrHeartbeatNotFound
 	}
 
 	s.logger.Debug("heartbeat: ping received", "heartbeat_id", h.ID, "source_ip", sourceIP)
@@ -255,7 +261,8 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 		Payload:     storedPayload,
 		Timestamp:   now,
 	}
-	if _, err := s.store.InsertPing(ctx, ping); err != nil {
+	pingID, err := s.store.InsertPing(ctx, ping)
+	if err != nil {
 		s.logger.Error("insert ping", "heartbeat_id", h.ID, "error", err)
 	}
 
@@ -306,7 +313,7 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 		h.LastPingAt, h.NextDeadlineAt, h.CurrentRunStartedAt,
 		h.LastExitCode, h.LastDurationMs,
 		h.ConsecutiveFailures, h.ConsecutiveSuccesses); err != nil {
-		return nil, fmt.Errorf("update heartbeat state: %w", err)
+		return nil, "", fmt.Errorf("update heartbeat state: %w", err)
 	}
 	s.endPause(ctx, h.ID, previousStatus, now)
 
@@ -344,7 +351,7 @@ func (s *Service) ProcessPing(ctx context.Context, token string, sourceIP, httpM
 
 	h.Status = newStatus
 	h.AlertState = alertState
-	return h, nil
+	return h, pingID, nil
 }
 
 func (s *Service) ProcessStartPing(ctx context.Context, token string, sourceIP, httpMethod string) (*Heartbeat, error) {

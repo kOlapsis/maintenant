@@ -1,0 +1,18 @@
+#!/bin/sh
+# Stops every instance of the binary the service account runs.
+
+set -u
+
+user="{{ maintenant_user }}"
+name="{{ maintenant_bin | basename }}"
+
+pkill -TERM -u "$user" -x "$name"
+n=0
+while pgrep -u "$user" -x "$name" >/dev/null && [ "$n" -lt {{ maintenant_start_term_wait_seconds * 10 }} ]; do
+	sleep 0.1
+	n=$((n + 1))
+done
+pkill -KILL -u "$user" -x "$name"
+sleep 0.1
+
+! pgrep -u "$user" -x "$name" >/dev/null

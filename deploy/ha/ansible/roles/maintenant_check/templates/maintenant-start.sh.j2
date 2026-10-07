@@ -1,18 +1,26 @@
 #!/bin/sh
-# Starts the binary for the OpenSVC service, after removing any instance left
-# by the previous start.
+# Starts the binary for the OpenSVC service and returns once it passes the application test.
 
 set -u
 
-user="{{ maintenant_user }}"
-name="{{ maintenant_bin | basename }}"
+{{ maintenant_stop_script }}
 
-pkill -TERM -u "$user" -x "$name"
-n=0
-while pgrep -u "$user" -x "$name" >/dev/null && [ "$n" -lt {{ maintenant_start_term_wait_seconds * 10 }} ]; do
-	sleep 0.1
-	n=$((n + 1))
+/usr/bin/systemd-cat --identifier={{ opensvc_service_log_identifier }} {{ maintenant_bin }} </dev/null >/dev/null 2>&1 &
+pid=$!
+
+deadline=$(($(date +%s) + {{ maintenant_start_timeout_seconds }}))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+	if ! kill -0 "$pid" 2>/dev/null; then
+		echo "{{ maintenant_bin | basename }} exited before answering" >&2
+		exit 1
+	fi
+	{{ maintenant_check_script }} >/dev/null 2>&1
+	case $? in
+	0 | 1) exit 0 ;;
+	esac
+	sleep 1
 done
-pkill -KILL -u "$user" -x "$name"
 
-exec /usr/bin/systemd-cat --identifier={{ opensvc_service_log_identifier }} {{ maintenant_bin }}
+echo "{{ maintenant_bin | basename }} did not answer within {{ maintenant_start_timeout_seconds }} s" >&2
+{{ maintenant_stop_script }}
+exit 1

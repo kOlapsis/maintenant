@@ -24,6 +24,16 @@
       when: ha_mode | default('ip-only') == 'postgres/streaming'
     - opensvc_service
 
+- name: Run the witness container
+  hosts: measurement
+  roles:
+    - lab_witness
+
+- name: Enroll an agent on every machine that is not the arbitrator
+  hosts: opensvc_cluster:measurement
+  roles:
+    - maintenant_agent
+
 - name: Start the probes
   hosts: measurement
   roles:

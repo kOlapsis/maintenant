@@ -1,0 +1,16 @@
+---
+maintenant_agent_bin: /usr/local/bin/maintenant-agent
+maintenant_agent_config_dir: /etc/maintenant-agent
+maintenant_agent_token_file: "{{ maintenant_agent_config_dir }}/enrollment.env"
+maintenant_agent_ca_file: "{{ maintenant_agent_config_dir }}/server.crt"
+maintenant_agent_data_dir: /var/lib/maintenant-agent
+
+maintenant_agent_build_dir: "{{ lookup('env', 'HOME') }}/.cache/maintenant-lab/maintenant-build"
+maintenant_agent_service_name: "{{ ha_service_name }}"
+maintenant_agent_server: "grpcs://{{ maintenant_agent_service_name }}:8443"
+maintenant_agent_resolve_service: false
+
+maintenant_agent_base_url: "http://{{ ha_service_address }}:{{ ha_service_http_port | default(8080) }}"
+maintenant_agent_token_ttl_hours: 1
+maintenant_agent_enroll_retries: 30
+maintenant_agent_enroll_delay: 2

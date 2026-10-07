@@ -1,0 +1,15 @@
+[Unit]
+Description=Maintenant agent
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile={{ maintenant_agent_token_file }}
+ExecStart={{ maintenant_agent_bin }} --mode=agent --server={{ maintenant_agent_server }} --label={{ inventory_hostname }} --data-dir={{ maintenant_agent_data_dir }} --ca-cert={{ maintenant_agent_ca_file }}
+Restart=always
+RestartSec=1
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

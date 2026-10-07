@@ -14,10 +14,13 @@
     group: root
     mode: "0755"
 
-- name: Install the start wrapper
+- name: Install the start and stop wrappers
   ansible.builtin.template:
-    src: maintenant-start.sh.j2
-    dest: "{{ maintenant_start_script }}"
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
     owner: root
     group: root
     mode: "0755"
+  loop:
+    - { src: maintenant-start.sh.j2, dest: "{{ maintenant_start_script }}" }
+    - { src: maintenant-stop.sh.j2, dest: "{{ maintenant_stop_script }}" }

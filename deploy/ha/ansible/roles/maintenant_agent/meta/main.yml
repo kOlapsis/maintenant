@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Kolapsis
+  role_name: maintenant_agent
+  description: An ordinary Maintenant agent, run as a systemd unit on the machine it watches
+  license: LicenseRef-Maintenant-Commercial
+  min_ansible_version: "2.15"
+dependencies: []

@@ -57,6 +57,8 @@ RUN_ALL_GREEN_INTERVAL=5
 RUN_ALL_VERIFY_TIMEOUT=180
 RUN_ALL_VERIFY_INTERVAL=2
 RUN_ALL_ABORTED=0
+AGENTS_RECONNECT_MAX_S=90
+WIRED_MEASURES='["rto_ms", "writes", "telemetry_gap_s", "telemetry_samples_lost", "alerts_induced", "agents"]'
 
 # The bench logs in as an ordinary account: every om command, and every
 # scenario command, is run through sudo on the machine it acts on.
@@ -290,7 +292,7 @@ collect_status() {
 		total=0
 		for name in $(group_hosts opensvc_cluster); do
 			total=$((total + 1))
-			uri=$(ssh_to "$name" "$OM node config get --kw 'arbitrator#0.uri'" 2>/dev/null) || continue
+			uri=$(ssh_to "$name" "$OM cluster config get --kw 'arbitrator#0.uri'" 2>/dev/null) || continue
 			if [ -n "$uri" ] && ssh_to "$name" "curl -fsS -m 3 -o /dev/null '$uri'" >/dev/null 2>&1; then
 				reached=$((reached + 1))
 			fi
@@ -468,14 +470,18 @@ run_all_versions() {
 		esac
 	fi
 
+	edition=$(curl -fsS -m 5 "http://$(service_address):8080/api/v1/license/status" 2>/dev/null | jq -r '.edition // empty') || edition=""
+
 	jq -n \
 		--arg maintenant "$maintenant_version" \
+		--arg edition "$edition" \
 		--arg opensvc "$opensvc_version" \
 		--arg kernel "$kernel_version" \
 		--arg postgres "$postgres_version" \
 		--arg lab_commit "$lab_commit" \
 		'{
 			maintenant: (if $maintenant == "" then null else $maintenant end),
+			edition: (if $edition == "" then null else $edition end),
 			opensvc: (if $opensvc == "" then null else $opensvc end),
 			drbd: null,
 			postgres: (if $postgres == "" then null else $postgres end),
@@ -494,7 +500,7 @@ run_all_settings() {
 	sync_standby=""
 	slot_keep=""
 	if [ -n "$node" ]; then
-		quorum_raw=$(ssh_to "$node" "sudo -n om node config get --kw cluster.quorum" 2>/dev/null | tr -d '[:space:]') || quorum_raw=""
+		quorum_raw=$(ssh_to "$node" "sudo -n om cluster status -o json" 2>/dev/null | jq -r ".cluster.config.quorum") || quorum_raw=""
 		stonith_raw=$(ssh_to "$node" "sudo -n om maintenant config get --kw DEFAULT.stonith" 2>/dev/null | tr -d '[:space:]') || stonith_raw=""
 		sqlite_sync=$(ssh_to "$node" "sudo -n grep -m1 '^MAINTENANT_SQLITE_SYNCHRONOUS=' /etc/maintenant.env" 2>/dev/null | cut -d= -f2-) || sqlite_sync=""
 		app_restart=$(ssh_to "$node" "sudo -n om maintenant config get --kw 'app#0.restart'" 2>/dev/null | tr -d '[:space:]') || app_restart=""
@@ -557,33 +563,119 @@ server_log_findings() {
 	done
 }
 
+# Prints one "node boot_id" line per cluster node, the id left empty when it cannot be read.
+cluster_boot_ids() {
+	for bi_host in $(group_hosts opensvc_cluster); do
+		bi_value=$(ssh_to "$bi_host" "cat /proc/sys/kernel/random/boot_id" 2>/dev/null) || bi_value=""
+		printf '%s %s\n' "$bi_host" "$bi_value"
+	done
+}
+
+# Prints, comma-separated, the cluster nodes whose boot id changed between two cluster_boot_ids files or could not be read in either.
+faulted_nodes() {
+	for fn_host in $(group_hosts opensvc_cluster); do
+		fn_before=$(awk -v h="$fn_host" '$1 == h { print $2 }' "$1")
+		fn_after=$(awk -v h="$fn_host" '$1 == h { print $2 }' "$2")
+		if [ -z "$fn_before" ] || [ -z "$fn_after" ] || [ "$fn_before" != "$fn_after" ]; then
+			printf '%s\n' "$fn_host"
+		fi
+	done | paste -sd, -
+}
+
+# Prints the JSON value a probe left on stdout, or null when it printed none.
+probe_json() {
+	pj_out=$(printf '%s' "$1" | jq -ce 'select(type == "object")' 2>/dev/null) || pj_out=""
+	printf '%s' "${pj_out:-null}"
+}
+
+# Prints the reasons, as a JSON array, the wired measures of one repetition fail it for.
+measure_reasons() {
+	cat >"$TMP/measure-reasons.jq" <<'JQEOF'
+def declared($m): $declared | index($m) != null;
+def trimmed: tostring | sub("\\s+$"; "");
+def observed($m):
+	if $observer == null then {value: null, error: ($observer_error // "the observer produced no result")}
+	else {value: $observer[$m], error: ($observer.errors[$m]? // $observer_error // "the observer left it empty")} end;
+[
+	(if $mode == "ip-only" then empty
+	 elif $writes == null then
+		(if declared("writes") then "writes: not measured (\(($writes_error // "the writes probe produced no result") | trimmed))" else empty end)
+	 elif $writes.lost > 0 then
+		"writes: \($writes.lost) acknowledged writes lost (seq \($writes.lost_seqs[0:10] | map(tostring) | join(", "))\(if ($writes.lost_seqs | length) > 10 then ", ..." else "" end))"
+	 else empty end),
+	($wired[] | select(. != "rto_ms" and . != "writes") as $m | select(declared($m))
+		| observed($m) | select(.value == null) | "\($m): not measured (\(.error | trimmed))"),
+	(if declared("alerts_induced") and ($observer.alerts_induced? // null) != null
+		and ([$observer.alerts_induced[]] | add) > 0 then
+		"alerts_induced: \([$observer.alerts_induced[]] | add) alerts raised by the failover (\($observer.alerts_induced_ids | join(", ")))"
+	 else empty end),
+	(if declared("agents") and ($observer.agents? // null) != null then
+		$observer.agents as $a
+		| (if ($a.missing | length) > 0 then "agents: \($a.missing | join(", ")) not back by the end of the window" else empty end),
+		  (if ($a.new_agent_ids | length) > 0 then "agents: re-enrolled under new ids \($a.new_agent_ids | join(", "))" else empty end),
+		  (if $a.max_reconnect_s > $max_reconnect then "agents: max_reconnect_s=\($a.max_reconnect_s) exceeds \($max_reconnect)s" else empty end)
+	 else empty end)
+]
+JQEOF
+	jq -nc \
+		--argjson declared "$1" \
+		--arg mode "$2" \
+		--argjson writes "$3" \
+		--argjson writes_error "$4" \
+		--argjson observer "$5" \
+		--argjson observer_error "$6" \
+		--argjson wired "$WIRED_MEASURES" \
+		--argjson max_reconnect "$AGENTS_RECONNECT_MAX_S" \
+		-f "$TMP/measure-reasons.jq"
+}
+
 # Aggregates one scenario's repetitions into its measures and verdict.
 build_scenario_summary() {
 	id=$1
 	scenario_name=$2
 	repetitions=$3
 	runs_json=$4
+	declared=$5
+	summary_mode=$6
 
 	printf '%s' "$runs_json" | jq \
-		--argjson id "$id" --arg name "$scenario_name" --argjson repetitions "$repetitions" '
+		--argjson id "$id" --arg name "$scenario_name" --argjson repetitions "$repetitions" \
+		--argjson declared "$declared" --arg mode "$summary_mode" --argjson wired "$WIRED_MEASURES" '
 		def med: sort as $s | ($s | length) as $n |
 			if $n == 0 then null
 			elif ($n % 2) == 1 then $s[($n - 1) / 2]
 			else ($s[$n / 2 - 1] + $s[$n / 2]) / 2
 			end;
+		def sum(f): map(f) | add;
 		(map(select(.rto_ms != null) | .rto_ms)) as $rtos |
+		(map(.writes? // empty)) as $writes |
 		(map(.observer.telemetry_gap_s? // empty)) as $gaps |
 		(map(.observer.telemetry_samples_lost? // empty)) as $lost |
 		(map(.observer.alerts_induced? // empty)) as $alerts |
+		(map(.observer.agents? // empty)) as $agents |
+		[$declared[] | select(. as $m | $wired | index($m) | not)] as $not_measured |
 		{
 			id: $id,
 			name: $name,
 			verdict: (if (length > 0) and (length == $repetitions) and (all(.[]; .verdict == "pass"))
 				then "pass" else "fail" end),
 			repetitions: length,
-			measures: {
+			measures_declared: $declared,
+			not_measured: $not_measured,
+			measures: ({
 				rto_ms: (if ($rtos | length) > 0 then {min: ($rtos | min), p50: ($rtos | med), max: ($rtos | max)} else null end),
-				writes: null,
+				writes: (if $mode == "ip-only" then "not_applicable"
+					elif ($writes | length) > 0 then {
+						repetitions: ($writes | length),
+						ack: ($writes | sum(.ack)),
+						refused: ($writes | sum(.refused)),
+						unknown: ($writes | sum(.unknown)),
+						lost: ($writes | sum(.lost)),
+						max_lost: ($writes | map(.lost) | max),
+						unrecorded: ($writes | sum(.unrecorded)),
+						unknown_present: ($writes | sum(.unknown_present)),
+						unknown_absent: ($writes | sum(.unknown_absent))
+					} else null end),
 				telemetry_gap_s: (if ($gaps | length) > 0 then ($gaps | max) else null end),
 				telemetry_samples_lost: (if ($lost | length) > 0 then ($lost | max) else null end),
 				alerts_induced: (if ($alerts | length) > 0 then {
@@ -592,10 +684,16 @@ build_scenario_summary() {
 					endpoint_down: ([$alerts[].endpoint_down] | max),
 					other: ([$alerts[].other] | max)
 				} else null end),
-				agents: null,
-				nodes_written: null,
-				inventory: null
-			},
+				agents: (if ($agents | length) > 0 then {
+					repetitions: ($agents | length),
+					expected: ($agents | map(.expected | length) | max),
+					reconnected: ($agents | map(.reconnected) | min),
+					missing: ($agents | sum(.missing | length)),
+					missing_hosts: ($agents | map(.missing[]) | unique),
+					max_reconnect_s: ($agents | map(.max_reconnect_s) | max),
+					new_agent_ids: ($agents | map(.new_agent_ids[]) | unique)
+				} else null end)
+			} + ([$not_measured[] | {key: ., value: "not_measured"}] | from_entries)),
 			runs: .
 		}'
 }
@@ -617,6 +715,7 @@ run_all_scenario() {
 	scenario_name=$(jq -r '.name' "$TMP/scenario-def-$number.json")
 
 	mode_entry=$(jq -c --arg m "$mode" '.modes[$m] // empty' "$TMP/scenario-def-$number.json")
+	declared=$(jq -c '.measures // []' "$TMP/scenario-def-$number.json")
 
 	if [ -z "$mode_entry" ]; then
 		printf '%s %-30s fail (no expectation for mode %s)\n' "$padded" "$slug" "$mode"
@@ -683,6 +782,7 @@ run_all_scenario() {
 		fi
 
 		server_log_cursors "$TMP/server-log-cursors-$number-$rep"
+		cluster_boot_ids >"$TMP/boot-before-$number-$rep"
 		t0=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)
 
 		if inj_out=$(scenario_act injection "$number" 2>&1); then
@@ -732,24 +832,33 @@ $ver_out"
 		wait_for_status_green "$RUN_ALL_GREEN_TIMEOUT" "$RUN_ALL_GREEN_INTERVAL" "$TMP/status-post-$number.json" || green_after=0
 		holders=$(jq -r '.service.holders | length' "$TMP/status-post-$number.json" 2>/dev/null)
 		case "$holders" in '' | *[!0-9]*) holders=-1 ;; esac
+		cluster_boot_ids >"$TMP/boot-after-$number-$rep"
+		faulted=$(faulted_nodes "$TMP/boot-before-$number-$rep" "$TMP/boot-after-$number-$rep")
 
 		t1_window=$(date -u -d "$t1 +10 seconds" +%Y-%m-%dT%H:%M:%S.%NZ)
+		agents_to=$(date -u -d "$t1 +$AGENTS_RECONNECT_MAX_S seconds" +%Y-%m-%dT%H:%M:%S.%NZ)
+		agents_wait=$(($(date -u -d "$agents_to" +%s) + 2 - $(date +%s)))
+		[ "$agents_wait" -le 0 ] || sleep "$agents_wait"
 
 		availability_json=null
 		availability_error=null
 		observer_json=null
 		observer_error=null
+		writes_json=null
+		writes_error=null
 
 		probe_host=$(group_hosts measurement | head -n 1)
 		if [ -z "$probe_host" ]; then
 			availability_error='"the inventory declares no measurement host"'
 			observer_error='"the inventory declares no measurement host"'
+			writes_error='"the inventory declares no measurement host"'
 		else
 			state_dir=$(probe_env_value "$probe_host" PROBE_STATE_DIR) || state_dir=""
 			base_url=$(probe_env_value "$probe_host" PROBE_BASE_URL) || base_url=""
 			if [ -z "$state_dir" ]; then
 				availability_error='"PROBE_STATE_DIR could not be read on the measurement host"'
 				observer_error='"PROBE_STATE_DIR could not be read on the measurement host"'
+				writes_error='"PROBE_STATE_DIR could not be read on the measurement host"'
 			else
 				avail_journal="$state_dir/availability.ndjson"
 				observer_journal="$state_dir/observer.ndjson"
@@ -761,14 +870,37 @@ $ver_out"
 					availability_error=$(jq -Rs '.' "$TMP/avail-$number.err")
 				fi
 
+				witness=$(probe_env_value "$probe_host" PROBE_WITNESS_CONTAINER) || witness=""
 				if [ -z "$base_url" ]; then
 					observer_error='"PROBE_BASE_URL could not be read on the measurement host"'
+				elif [ -z "$witness" ]; then
+					observer_error='"PROBE_WITNESS_CONTAINER could not be read on the measurement host"'
 				else
-					obs_cmd="sudo -n $PROBE_BIN_DIR/lab-probe-observer -mode summarise -journal $(shell_quote "$observer_journal") -from $(shell_quote "$t0") -to $(shell_quote "$t1_window") -base $(shell_quote "$base_url")"
-					if obs_out=$(ssh_to "$probe_host" "$obs_cmd" 2>"$TMP/obs-$number.err"); then
-						observer_json=$obs_out
-					else
+					obs_cmd="sudo -n $PROBE_BIN_DIR/lab-probe-observer -mode summarise -journal $(shell_quote "$observer_journal") -from $(shell_quote "$t0") -to $(shell_quote "$t1_window") -agents-to $(shell_quote "$agents_to") -base $(shell_quote "$base_url") -container-name $(shell_quote "$witness") -container-host $(shell_quote "$probe_host") -faulted-hosts $(shell_quote "$faulted")"
+					obs_out=$(ssh_to "$probe_host" "$obs_cmd" 2>"$TMP/obs-$number.err") || true
+					observer_json=$(probe_json "$obs_out")
+					if [ -s "$TMP/obs-$number.err" ]; then
 						observer_error=$(jq -Rs '.' "$TMP/obs-$number.err")
+					elif [ "$observer_json" = null ]; then
+						observer_error='"the observer printed no result"'
+					fi
+				fi
+
+				heartbeat=$(probe_env_value "$probe_host" PROBE_HEARTBEAT) || heartbeat=""
+				if [ "$mode" = ip-only ]; then
+					:
+				elif [ -z "$base_url" ] || [ -z "$heartbeat" ]; then
+					writes_error='"PROBE_BASE_URL or PROBE_HEARTBEAT could not be read on the measurement host"'
+				else
+					writes_cmd="sudo -n $PROBE_BIN_DIR/lab-probe-writes -mode verify -base $(shell_quote "$base_url") -heartbeat $(shell_quote "$heartbeat") -journal $(shell_quote "$state_dir/writes.ndjson") -from $(shell_quote "$t0") -to $(shell_quote "$t1_window")"
+					writes_out=$(ssh_to "$probe_host" "$writes_cmd" 2>"$TMP/writes-$number.err") || true
+					writes_json=$(probe_json "$writes_out")
+					if [ "$writes_json" = null ]; then
+						if [ -s "$TMP/writes-$number.err" ]; then
+							writes_error=$(jq -Rs '.' "$TMP/writes-$number.err")
+						else
+							writes_error='"the writes probe printed no result"'
+						fi
 					fi
 				fi
 			fi
@@ -793,6 +925,14 @@ $ver_out"
 		[ "$holders" -eq 1 ] || add_reason "holders after recovery = $holders, expected 1"
 		if [ -s "$TMP/server-log-$number-$rep.txt" ]; then
 			add_reason "inconclusive: the server logged a failed '$SERVER_LOG_INCONCLUSIVE' or its journal could not be read during the measurement window"
+		fi
+		if measure_reasons "$declared" "$mode" "$writes_json" "$writes_error" "$observer_json" "$observer_error" >"$TMP/measure-reasons-$number-$rep.json" &&
+			jq -r '.[]' "$TMP/measure-reasons-$number-$rep.json" >"$TMP/measure-reasons-$number-$rep.txt"; then
+			while IFS= read -r measure_reason; do
+				add_reason "$measure_reason"
+			done <"$TMP/measure-reasons-$number-$rep.txt"
+		else
+			add_reason "the measures could not be judged"
 		fi
 		if [ -n "$max_rto_s" ]; then
 			if [ -z "$rto_ms" ]; then
@@ -829,6 +969,9 @@ $ver_out"
 			--argjson availability_error "$availability_error" \
 			--argjson observer "$observer_json" \
 			--argjson observer_error "$observer_error" \
+			--argjson writes "$writes_json" \
+			--argjson writes_error "$writes_error" \
+			--arg faulted "$faulted" \
 			--argjson server_log "$server_log_json" \
 			--argjson reasons "$(cat "$reasons_file")" \
 			--arg verdict "$rep_verdict" \
@@ -839,6 +982,8 @@ $ver_out"
 				rto_ms: (if $rto_ms_raw == "" then null else ($rto_ms_raw | tonumber) end),
 				availability: $availability, availability_error: $availability_error,
 				observer: $observer, observer_error: $observer_error,
+				writes: $writes, writes_error: $writes_error,
+				faulted_hosts: ($faulted | split(",") | map(select(length > 0))),
 				server_log: $server_log,
 				verdict: $verdict, reasons: $reasons
 			}')
@@ -848,7 +993,7 @@ $ver_out"
 	done
 
 	runs_json=$(jq -s '.' "$reps_ndjson")
-	scenario=$(build_scenario_summary "$id" "$scenario_name" "$repetitions" "$runs_json")
+	scenario=$(build_scenario_summary "$id" "$scenario_name" "$repetitions" "$runs_json" "$declared" "$mode")
 	printf '%s\n' "$scenario" >>"$scenarios_ndjson"
 }
 
@@ -876,6 +1021,7 @@ cmd_run_all() {
 	need ssh
 	need python3
 	need git
+	need curl
 
 	deployed=$(current_mode)
 	[ "$deployed" != "unknown" ] || die "no mode is deployed: run 'lab up' first" 2
@@ -1268,6 +1414,11 @@ render_report() {
 def or_na(v): if v == null then "n/a" else (v | tostring) end;
 def sec_s(v): if v == null then "n/a" else (((v / 1000) | tostring) + "s") end;
 def bool_s(v): if v == null then "n/a" elif v == true then "yes" elif v == false then "no" else (v | tostring) end;
+def cell($s; $m; f):
+	if $s.measures == null then "n/a"
+	elif ($s.measures[$m] | type) == "string" then ($s.measures[$m] | gsub("_"; " "))
+	elif $s.measures[$m] == null then (if (($s.measures_declared // []) | index($m)) != null then "no result" else "-" end)
+	else ($s.measures[$m] | f) end;
 
 . as $r
 | (if $r.mode.backend == null then $r.mode.replication else ($r.mode.backend + "/" + $r.mode.replication) end) as $mode_label
@@ -1279,6 +1430,7 @@ def bool_s(v): if v == null then "n/a" elif v == true then "yes" elif v == false
      "## Versions",
      "",
      "- maintenant: \(or_na($r.versions.maintenant))",
+     "- edition: \(or_na($r.versions.edition))",
      "- opensvc: \(or_na($r.versions.opensvc))",
      "- drbd: \(or_na($r.versions.drbd))",
      "- postgres: \(or_na($r.versions.postgres))",
@@ -1296,19 +1448,26 @@ def bool_s(v): if v == null then "n/a" elif v == true then "yes" elif v == false
      "",
      "## Scenarios",
      "",
-     "| # | Scenario | Verdict | Repetitions | RTO min/p50/max | Telemetry gap | Alerts induced |",
-     "|---|---|---|---|---|---|---|"]
-    + [ $r.scenarios[] |
+     "| # | Scenario | Verdict | Repetitions | RTO min/p50/max | Writes lost/acked | Telemetry gap | Samples lost | Alerts induced | Agents back/expected | Not measured |",
+     "|---|---|---|---|---|---|---|---|---|---|---|"]
+    + [ $r.scenarios[] | . as $s |
         "| \(.id) | \(.name) | \(.verdict) | \(.repetitions) | "
         + (if .measures == null or .measures.rto_ms == null then "n/a"
            else "\(sec_s(.measures.rto_ms.min)) / \(sec_s(.measures.rto_ms.p50)) / \(sec_s(.measures.rto_ms.max))"
            end)
         + " | "
-        + (if .measures == null or .measures.telemetry_gap_s == null then "n/a" else "\(.measures.telemetry_gap_s)s" end)
+        + cell($s; "writes"; "\(.lost)/\(.ack)")
         + " | "
-        + (if .measures == null or .measures.alerts_induced == null then "n/a"
-           else "agent=\(.measures.alerts_induced.agent_offline) hb=\(.measures.alerts_induced.heartbeat_overdue) endpoint=\(.measures.alerts_induced.endpoint_down) other=\(.measures.alerts_induced.other)"
-           end)
+        + cell($s; "telemetry_gap_s"; "\(.)s")
+        + " | "
+        + cell($s; "telemetry_samples_lost"; tostring)
+        + " | "
+        + cell($s; "alerts_induced"; "agent=\(.agent_offline) hb=\(.heartbeat_overdue) endpoint=\(.endpoint_down) other=\(.other)")
+        + " | "
+        + cell($s; "agents"; "\(.reconnected)/\(.expected), max \(.max_reconnect_s)s"
+            + (if (.new_agent_ids | length) > 0 then ", re-enrolled \(.new_agent_ids | length)" else "" end))
+        + " | "
+        + (if ((.not_measured // []) | length) > 0 then (.not_measured | join(", ")) else "-" end)
         + " |"
       ]
     + ( [$r.scenarios[] | select(.verdict == "not_applicable")] as $na

@@ -1,0 +1,9 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart the witness
+  ansible.builtin.systemd_service:
+    name: lab-witness.service
+    state: restarted

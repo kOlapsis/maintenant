@@ -22,9 +22,11 @@ opensvc_arbitrator_uri: >-
 opensvc_arbitrator_quorum: true
 opensvc_arbitrator_split_action: crash
 
-# What each node must hold. Read back and asserted after being set.
-opensvc_arbitrator_settings:
+# om3 reads cluster.quorum and reloads the arbitrators from cluster.conf only.
+opensvc_arbitrator_cluster_settings:
   cluster.quorum: "{{ opensvc_arbitrator_quorum | bool | ternary('true', 'false') }}"
-  node.split_action: "{{ opensvc_arbitrator_split_action }}"
   "arbitrator#0.uri": "{{ opensvc_arbitrator_uri | trim }}"
   "arbitrator#0.weight": "{{ opensvc_arbitrator_weight }}"
+
+opensvc_arbitrator_node_settings:
+  node.split_action: "{{ opensvc_arbitrator_split_action }}"

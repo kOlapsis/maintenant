@@ -24,37 +24,16 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/kolapsis/maintenant/deploy/ha/lab/probes/journal"
 )
-
-type alertSeen struct {
-	ID       string `json:"id"`
-	Source   string `json:"source"`
-	EntityID string `json:"entity_id"`
-	Severity string `json:"severity"`
-}
-
-type hostSeen struct {
-	AgentID   string `json:"agent_id"`
-	Available bool   `json:"available"`
-}
-
-type observation struct {
-	Seq       uint64      `json:"seq"`
-	Wall      string      `json:"wall"`
-	Epoch     string      `json:"epoch"`
-	MonoNS    int64       `json:"mono_ns"`
-	Reachable bool        `json:"reachable"`
-	Hosts     []hostSeen  `json:"hosts"`
-	Alerts    []alertSeen `json:"alerts"`
-	Error     string      `json:"error,omitempty"`
-}
 
 func main() {
 	mode := flag.String("mode", "collect", "collect or summarise")
@@ -64,7 +43,10 @@ func main() {
 	journalPath := flag.String("journal", "observer.ndjson", "ndjson journal of observations")
 	from := flag.String("from", "", "start of the window, RFC3339")
 	to := flag.String("to", "", "end of the window, RFC3339")
-	container := flag.String("container", "", "container whose history says how many samples were lost")
+	agentsTo := flag.String("agents-to", "", "end of the window the agents have to reconnect in, RFC3339 (default: -to)")
+	containerName := flag.String("container-name", "", "name of the container, run by a remote agent, whose history says how many samples were lost")
+	containerHost := flag.String("container-host", "", "label or hostname of the agent running that container, when the name alone is ambiguous")
+	faultedHosts := flag.String("faulted-hosts", "", "comma-separated labels or hostnames of the nodes that rebooted or died during the window")
 	flag.Parse()
 
 	var err error
@@ -78,10 +60,20 @@ func main() {
 		if *from == "" || *to == "" {
 			fail("-from and -to are required to summarise")
 		}
-		if *container == "" || *base == "" {
-			fail("-container and -base are required: the samples lost are counted in the stored history")
+		if *containerName == "" || *base == "" {
+			fail("-container-name and -base are required: the samples lost are counted in the stored history")
 		}
-		err = summarise(*journalPath, *base, *container, *from, *to, *timeout)
+		err = summarise(summariseArgs{
+			journalPath:   *journalPath,
+			base:          *base,
+			containerName: *containerName,
+			containerHost: *containerHost,
+			faulted:       splitList(*faultedHosts),
+			from:          *from,
+			to:            *to,
+			agentsTo:      *agentsTo,
+			timeout:       *timeout,
+		})
 	default:
 		fail("-mode must be collect or summarise")
 	}
@@ -94,6 +86,16 @@ func main() {
 func fail(msg string) {
 	fmt.Fprintf(os.Stderr, "observer: %s\n", msg)
 	os.Exit(2)
+}
+
+func splitList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func client(timeout time.Duration) *http.Client {
@@ -154,10 +156,7 @@ func observe(c *http.Client, base string, seq uint64, start time.Time, epoch str
 	}
 
 	var hosts struct {
-		Hosts []struct {
-			AgentID   string `json:"agent_id"`
-			Available bool   `json:"available"`
-		} `json:"hosts"`
+		Hosts []hostSeen `json:"hosts"`
 	}
 	if err := getJSON(c, base+"/api/v1/resources/hosts", &hosts); err != nil {
 		o.Error = err.Error()
@@ -173,9 +172,7 @@ func observe(c *http.Client, base string, seq uint64, start time.Time, epoch str
 	}
 
 	o.Reachable = true
-	for _, h := range hosts.Hosts {
-		o.Hosts = append(o.Hosts, hostSeen{AgentID: h.AgentID, Available: h.Available})
-	}
+	o.Hosts = hosts.Hosts
 	o.Alerts = alerts.Alerts
 	return o
 }
@@ -193,63 +190,111 @@ func getJSON(c *http.Client, url string, into interface{}) error {
 	return json.NewDecoder(resp.Body).Decode(into)
 }
 
-type induced struct {
-	AgentOffline     int `json:"agent_offline"`
-	HeartbeatOverdue int `json:"heartbeat_overdue"`
-	EndpointDown     int `json:"endpoint_down"`
-	Other            int `json:"other"`
-}
-
 type summary struct {
-	From                 string   `json:"from"`
-	To                   string   `json:"to"`
-	TelemetryGapS        float64  `json:"telemetry_gap_s"`
-	TelemetrySamplesLost int      `json:"telemetry_samples_lost"`
-	AlertsInduced        induced  `json:"alerts_induced"`
-	AlertsInducedIDs     []string `json:"alerts_induced_ids"`
-	Observations         int      `json:"observations"`
+	From                 string            `json:"from"`
+	To                   string            `json:"to"`
+	AgentsTo             string            `json:"agents_to"`
+	FaultedHosts         []string          `json:"faulted_hosts"`
+	FaultedAgentIDs      []string          `json:"faulted_agent_ids"`
+	Container            string            `json:"container,omitempty"`
+	TelemetryGapS        *float64          `json:"telemetry_gap_s"`
+	TelemetrySamplesLost *int              `json:"telemetry_samples_lost"`
+	AlertsInduced        *induced          `json:"alerts_induced"`
+	AlertsInducedIDs     []string          `json:"alerts_induced_ids"`
+	Agents               *agentsMeasure    `json:"agents"`
+	Errors               map[string]string `json:"errors"`
+	Observations         int               `json:"observations"`
 }
 
-func summarise(journalPath, base, container, fromRaw, toRaw string, timeout time.Duration) error {
-	from, err := time.Parse(time.RFC3339, fromRaw)
+type summariseArgs struct {
+	journalPath   string
+	base          string
+	containerName string
+	containerHost string
+	faulted       []string
+	from          string
+	to            string
+	agentsTo      string
+	timeout       time.Duration
+}
+
+func summarise(a summariseArgs) error {
+	from, err := time.Parse(time.RFC3339, a.from)
 	if err != nil {
 		return fmt.Errorf("-from: %w", err)
 	}
-	to, err := time.Parse(time.RFC3339, toRaw)
+	to, err := time.Parse(time.RFC3339, a.to)
 	if err != nil {
 		return fmt.Errorf("-to: %w", err)
 	}
+	agentsTo := to
+	if a.agentsTo != "" {
+		if agentsTo, err = time.Parse(time.RFC3339, a.agentsTo); err != nil {
+			return fmt.Errorf("-agents-to: %w", err)
+		}
+	}
 
-	observations, err := readObservations(journalPath)
+	observations, err := readObservations(a.journalPath)
 	if err != nil {
 		return err
 	}
 
+	faultedIDs := faultedAgents(observations, a.faulted)
 	s := summary{
 		From:             from.UTC().Format(time.RFC3339Nano),
 		To:               to.UTC().Format(time.RFC3339Nano),
+		AgentsTo:         agentsTo.UTC().Format(time.RFC3339Nano),
+		FaultedHosts:     append([]string{}, a.faulted...),
+		FaultedAgentIDs:  sortedKeys(faultedIDs),
 		Observations:     len(observations),
 		AlertsInducedIDs: []string{},
+		Errors:           map[string]string{},
 	}
 
-	s.TelemetryGapS = telemetryGap(observations, from, to)
-
-	s.AlertsInduced, s.AlertsInducedIDs, err = alertsInduced(observations, from, to)
-	if err != nil {
-		return err
+	if gap, err := telemetryGap(observations, from, to, faultedIDs); err != nil {
+		s.Errors["telemetry_gap_s"] = err.Error()
+	} else {
+		s.TelemetryGapS = &gap
 	}
 
-	lost, err := samplesLost(base, container, from, to, timeout)
-	if err != nil {
-		return err
+	if counts, ids, err := alertsInduced(observations, from, to, faultedIDs); err != nil {
+		s.Errors["alerts_induced"] = err.Error()
+	} else {
+		s.AlertsInduced = &counts
+		s.AlertsInducedIDs = ids
 	}
-	s.TelemetrySamplesLost = lost
+
+	if m, err := agentsReconnect(observations, from, agentsTo, faultedIDs); err != nil {
+		s.Errors["agents"] = err.Error()
+	} else {
+		s.Agents = &m
+	}
+
+	c := client(a.timeout)
+	if id, err := findContainer(c, a.base, a.containerName, a.containerHost); err != nil {
+		s.Errors["telemetry_samples_lost"] = err.Error()
+	} else {
+		s.Container = id
+		if lost, err := fetchSamplesLost(c, a.base, id, from, to); err != nil {
+			s.Errors["telemetry_samples_lost"] = err.Error()
+		} else {
+			s.TelemetrySamplesLost = &lost
+		}
+	}
 
 	out, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
 	fmt.Println(string(out))
+
+	if len(s.Errors) > 0 {
+		var parts []string
+		for _, k := range sortedKeys(s.Errors) {
+			parts = append(parts, k+": "+s.Errors[k])
+		}
+		return errors.New(strings.Join(parts, "; "))
+	}
 	return nil
 }
 
@@ -272,147 +317,43 @@ func readObservations(path string) ([]observation, error) {
 		}
 		out = append(out, o)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Wall < out[j].Wall })
+	sort.SliceStable(out, func(i, j int) bool {
+		a, _ := wallOf(out[i])
+		b, _ := wallOf(out[j])
+		return a.Before(b)
+	})
 	return out, nil
 }
 
-// Telemetry flows when the service answers and at least one host is reporting
-// fresh samples. The hole is the span between the last observation where it
-// flowed and the first where it flowed again.
-func flowing(o observation) bool {
-	if !o.Reachable {
-		return false
+func findContainer(c *http.Client, base, name, host string) (string, error) {
+	var body struct {
+		Groups []struct {
+			Containers []containerSeen `json:"containers"`
+		} `json:"groups"`
 	}
-	for _, h := range o.Hosts {
-		if h.Available {
-			return true
-		}
+	if err := getJSON(c, base+"/api/v1/containers", &body); err != nil {
+		return "", err
 	}
-	return false
+	var all []containerSeen
+	for _, g := range body.Groups {
+		all = append(all, g.Containers...)
+	}
+	return resolveContainer(all, name, host)
 }
 
-func telemetryGap(observations []observation, from, to time.Time) float64 {
-	var lastFlowing time.Time
-	var widest float64
-	haveFlowing := false
-
-	for _, o := range observations {
-		at, err := time.Parse(time.RFC3339Nano, o.Wall)
-		if err != nil || at.Before(from) || at.After(to) {
-			continue
-		}
-		if flowing(o) {
-			if haveFlowing {
-				if gap := at.Sub(lastFlowing).Seconds(); gap > widest {
-					widest = gap
-				}
-			}
-			lastFlowing = at
-			haveFlowing = true
-		}
-	}
-	return widest
-}
-
-func alertsInduced(observations []observation, from, to time.Time) (induced, []string, error) {
-	var counts induced
-	ids := []string{}
-
-	// Whatever was already firing when the injection happened is the baseline,
-	// keyed by subject: a monitor already down does not become the failover's
-	// fault when its alert is replaced by another one.
-	baseline := map[string]bool{}
-	haveBaseline := false
-	for _, o := range observations {
-		at, err := time.Parse(time.RFC3339Nano, o.Wall)
-		if err != nil || at.After(from) {
-			continue
-		}
-		if !o.Reachable {
-			continue
-		}
-		baseline = map[string]bool{}
-		for _, a := range o.Alerts {
-			baseline[a.Source+"/"+a.EntityID] = true
-		}
-		haveBaseline = true
-	}
-
-	// Without a reading from before the injection, an alert that was already
-	// firing cannot be told from one the failover caused, and every one of
-	// them would be blamed on the failover.
-	if !haveBaseline {
-		return counts, ids, fmt.Errorf("no reachable observation at or before %s: nothing to compare the alerts against",
-			from.UTC().Format(time.RFC3339Nano))
-	}
-
-	counted := map[string]bool{}
-	for _, o := range observations {
-		at, err := time.Parse(time.RFC3339Nano, o.Wall)
-		if err != nil || !at.After(from) || at.After(to) {
-			continue
-		}
-		for _, a := range o.Alerts {
-			if counted[a.ID] || baseline[a.Source+"/"+a.EntityID] {
-				continue
-			}
-			counted[a.ID] = true
-			ids = append(ids, a.ID)
-			switch a.Source {
-			case "agent":
-				counts.AgentOffline++
-			case "heartbeat":
-				counts.HeartbeatOverdue++
-			case "endpoint":
-				counts.EndpointDown++
-			default:
-				counts.Other++
-			}
-		}
-	}
-	sort.Strings(ids)
-	return counts, ids, nil
-}
-
-// The cadence is read from the history itself rather than assumed, so the
-// figure holds whatever the agent's sample period is.
-func samplesLost(base, container string, from, to time.Time, timeout time.Duration) (int, error) {
+func fetchSamplesLost(c *http.Client, base, containerID string, from, to time.Time) (int, error) {
 	var body struct {
 		Points []struct {
 			Timestamp time.Time `json:"timestamp"`
 		} `json:"points"`
 	}
-	url := fmt.Sprintf("%s/api/v1/containers/%s/resources/history?range=1h", base, container)
-	if err := getJSON(client(timeout), url, &body); err != nil {
+	u := fmt.Sprintf("%s/api/v1/containers/%s/resources/history?range=1h", base, url.PathEscape(containerID))
+	if err := getJSON(c, u, &body); err != nil {
 		return 0, err
 	}
-
-	var stamps []time.Time
+	stamps := make([]time.Time, 0, len(body.Points))
 	for _, p := range body.Points {
-		if !p.Timestamp.Before(from) && !p.Timestamp.After(to) {
-			stamps = append(stamps, p.Timestamp)
-		}
+		stamps = append(stamps, p.Timestamp)
 	}
-	if len(stamps) < 3 {
-		return 0, fmt.Errorf("history holds %d points in the window, too few to read a cadence", len(stamps))
-	}
-	sort.Slice(stamps, func(i, j int) bool { return stamps[i].Before(stamps[j]) })
-
-	gaps := make([]time.Duration, 0, len(stamps)-1)
-	for i := 1; i < len(stamps); i++ {
-		gaps = append(gaps, stamps[i].Sub(stamps[i-1]))
-	}
-	sort.Slice(gaps, func(i, j int) bool { return gaps[i] < gaps[j] })
-	cadence := gaps[len(gaps)/2]
-	if cadence <= 0 {
-		return 0, errors.New("history cadence reads as zero")
-	}
-
-	lost := 0
-	for _, g := range gaps {
-		if missing := int(g/cadence) - 1; missing > 0 {
-			lost += missing
-		}
-	}
-	return lost, nil
+	return samplesLost(stamps, from, to)
 }

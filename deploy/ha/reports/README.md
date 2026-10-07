@@ -25,7 +25,7 @@ The directory name is the `run_id` recorded inside `run.json`; the two never dis
 which is authoritative. In short, each report carries:
 
 - `mode` — backend and replication;
-- `versions` — Maintenant, OpenSVC, DRBD, PostgreSQL, kernel, bench commit. Mandatory: a
+- `versions` — Maintenant and the edition it ran, OpenSVC, DRBD, PostgreSQL, kernel, bench commit. Mandatory: a
   report without them is not comparable, so it has no evidential value;
 - `settings` — SQLite synchronous mode, heartbeat timeout, ready period, quorum, stonith,
   synchronous standby. Mandatory for the same reason;

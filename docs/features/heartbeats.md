@@ -63,7 +63,7 @@ curl -fsS -o /dev/null https://now.example.com/ping/{uuid}/${EXIT_CODE}
 
 maintenant calculates the duration between start and finish pings. A start ping also moves the deadline, so a job that starts and never finishes raises an alert once the deadline passes. Starting again while a run is still open closes the previous run as `timeout`.
 
-All ping routes accept `GET` and `POST`. A `POST` body of up to 10 KB is accepted but not stored. An unknown UUID answers `404 HEARTBEAT_NOT_FOUND`.
+All ping routes accept `GET` and `POST`. A `POST` body of up to 10 KB is accepted but not stored. `/ping/{uuid}` answers the `id` of the ping it stored, the one the ping history lists. An unknown UUID answers `404 HEARTBEAT_NOT_FOUND`.
 
 ---
 

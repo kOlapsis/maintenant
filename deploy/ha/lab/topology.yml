@@ -16,8 +16,8 @@ host:
 image:
   # Base cloud image the four machines are cloned from. Each machine gets a
   # qcow2 overlay on top of it, so a rebuild costs no download.
-  url: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
-  checksum_url: "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS"
+  url: "https://cloud.debian.org/images/cloud/bookworm/20260923-2610/debian-12-genericcloud-amd64-20260923-2610.qcow2"
+  checksum_url: "https://cloud.debian.org/images/cloud/bookworm/20260923-2610/SHA512SUMS"
   user: debian
   system_disk_gb: 20
 
@@ -81,7 +81,7 @@ machines:
     memory_mb: 512
 
   - name: probe
-    # The measurement machine. It carries the two probes (availability, writes)
+    # The measurement machine. It carries the three probes (availability, writes, observer)
     # and sits outside both sites, so it measures what a user sees rather than
     # what the cluster believes.
     role: measurement
@@ -89,7 +89,7 @@ machines:
     addresses:
       net-wan: 10.10.9.14
     vcpu: 1
-    memory_mb: 512
+    memory_mb: 1024
 
 service:
   # Service address, carried by the ip#0 resource of the OpenSVC service and

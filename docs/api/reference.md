@@ -264,7 +264,7 @@ These routes need no credentials: the UUID of the heartbeat is the secret. They 
 | `GET/POST` | `/ping/{uuid}/start` | Signal job start |
 | `GET/POST` | `/ping/{uuid}/{exit_code}` | Ping with exit code (0 = success) |
 
-- `/ping/{uuid}` and `/ping/{uuid}/start` answer `200 {"ok": true}`. `/ping/{uuid}/{exit_code}` answers `200 {"ok": true, "exit_code": n}`. A non-zero exit code raises an alert.
+- `/ping/{uuid}` answers `200 {"ok": true, "id": "<ping id>"}`, where `id` is the ping as listed by `GET /api/v1/heartbeats/{id}/pings`; `id` is absent when the ping could not be stored. `/ping/{uuid}/start` answers `200 {"ok": true}`. `/ping/{uuid}/{exit_code}` answers `200 {"ok": true, "exit_code": n}`. A non-zero exit code raises an alert.
 - Errors: `404 HEARTBEAT_NOT_FOUND` (unknown or deleted heartbeat), `400 INVALID_EXIT_CODE` (not an integer between 0 and 255, checked before the lookup) and `500 INTERNAL_ERROR`.
 - A `POST` body of up to 10 KiB is read but never stored.
 - The `source_ip` of a ping is the client address resolved like the rate limit does: forwarded headers are believed only when the connection comes from a proxy listed in `MAINTENANT_TRUSTED_PROXIES`.

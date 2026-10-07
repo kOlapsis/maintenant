@@ -1,0 +1,117 @@
+---
+- name: Resolve the service name to the service address
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '\s{{ maintenant_agent_service_name | regex_escape }}$'
+    line: "{{ ha_service_address }} {{ maintenant_agent_service_name }}"
+  when: maintenant_agent_resolve_service | bool
+
+- name: Create the agent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop:
+    - "{{ maintenant_agent_config_dir }}"
+    - "{{ maintenant_agent_data_dir }}"
+
+- name: Install the agent binary
+  ansible.builtin.copy:
+    src: "{{ maintenant_agent_build_dir }}/maintenant"
+    dest: "{{ maintenant_agent_bin }}"
+    mode: "0755"
+    owner: root
+    group: root
+  notify: Restart the agent
+
+- name: Install the certificate the agent verifies the service against
+  ansible.builtin.copy:
+    src: "{{ maintenant_agent_build_dir }}/tls/server.crt"
+    dest: "{{ maintenant_agent_ca_file }}"
+    mode: "0644"
+    owner: root
+    group: root
+  notify: Restart the agent
+
+- name: Install the agent unit
+  ansible.builtin.template:
+    src: maintenant-agent.service.j2
+    dest: /etc/systemd/system/maintenant-agent.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart the agent
+
+- name: Wait for the service to answer
+  ansible.builtin.uri:
+    url: "{{ maintenant_agent_base_url }}/api/v1/health"
+    status_code: 200
+  retries: 30
+  delay: 2
+  register: maintenant_agent_service
+  until: maintenant_agent_service is succeeded
+  delegate_to: localhost
+  become: false
+
+- name: Generate an enrollment token
+  ansible.builtin.uri:
+    url: "{{ maintenant_agent_base_url }}/api/v1/agents/enrollment-tokens"
+    method: POST
+    body_format: json
+    body:
+      ttl_hours: "{{ maintenant_agent_token_ttl_hours }}"
+    status_code: 201
+  register: maintenant_agent_token
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Hand the token to the agent
+  ansible.builtin.copy:
+    content: "MAINTENANT_ENROLLMENT_TOKEN={{ maintenant_agent_token.json.token }}\n"
+    dest: "{{ maintenant_agent_token_file }}"
+    mode: "0600"
+    owner: root
+    group: root
+  no_log: true
+
+- name: Apply the unit before starting it
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the agent
+  ansible.builtin.systemd_service:
+    name: maintenant-agent.service
+    enabled: true
+    state: started
+
+- name: Wait for the host to report in
+  ansible.builtin.uri:
+    url: "{{ maintenant_agent_base_url }}/api/v1/resources/hosts"
+    status_code: 200
+    return_content: true
+  register: maintenant_agent_hosts
+  until: >-
+    maintenant_agent_hosts.json.hosts | default([])
+    | selectattr('label', 'equalto', inventory_hostname)
+    | selectattr('available')
+    | list | length > 0
+  retries: "{{ maintenant_agent_enroll_retries }}"
+  delay: "{{ maintenant_agent_enroll_delay }}"
+  delegate_to: localhost
+  become: false
+  failed_when: false
+
+- name: Refuse a host the service does not list as available
+  ansible.builtin.assert:
+    that: >-
+      maintenant_agent_hosts.json.hosts | default([])
+      | selectattr('label', 'equalto', inventory_hostname)
+      | selectattr('available')
+      | list | length > 0
+    fail_msg: >-
+      The agent on {{ inventory_hostname }} did not appear as an available host
+      of {{ maintenant_agent_base_url }} after
+      {{ maintenant_agent_enroll_retries * maintenant_agent_enroll_delay }} s.
+      Read journalctl -u maintenant-agent on that machine.

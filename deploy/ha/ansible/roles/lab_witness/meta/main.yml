@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  author: Kolapsis
+  role_name: lab_witness
+  description: A container that does nothing, whose resource history shows how many samples a failover lost
+  license: LicenseRef-Maintenant-Commercial
+  min_ansible_version: "2.15"
+dependencies: []

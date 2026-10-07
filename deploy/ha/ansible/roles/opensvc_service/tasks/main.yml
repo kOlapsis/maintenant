@@ -65,7 +65,59 @@
 - name: Unfreeze the service before waiting on it
   ansible.builtin.meta: flush_handlers
 
-- name: Wait for the service to be up on exactly one node
+- name: Read the instance this node holds
+  ansible.builtin.command:
+    argv: [om, cluster, status, -o, json]
+  register: opensvc_service_before
+  changed_when: false
+
+- name: Keep the instance this node holds
+  ansible.builtin.set_fact:
+    opensvc_service_local: >-
+      {{ (opensvc_service_before.stdout | from_json).cluster.node[opensvc_service_nodename].instance[opensvc_service_name]
+         | default({}) }}
+
+# om3 never retries a failed start on its own: the state has to be cleared.
+- name: Clear the failed start this node holds
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name }}", instance, clear]
+  when: opensvc_service_local.monitor.state | default('') == 'start failed'
+  register: opensvc_service_cleared
+  changed_when: true
+
+- name: Wait for the cleared instance to leave the failed state
+  ansible.builtin.command:
+    argv: [om, cluster, status, -o, json]
+  register: opensvc_service_after_clear
+  changed_when: false
+  retries: 12
+  delay: 1
+  until: >-
+    (opensvc_service_after_clear.stdout | from_json).cluster.node[opensvc_service_nodename].instance[opensvc_service_name].monitor.state
+    != 'start failed'
+  when: opensvc_service_cleared is changed
+
+# The orchestrator only starts a down instance; one left in warn stays as it is.
+- name: Finish the start the failed attempt left half done
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name }}", instance, start]
+  register: opensvc_service_finished
+  changed_when: true
+  failed_when: false
+  when:
+    - opensvc_service_cleared is changed
+    - opensvc_service_local.status.avail | default('') == 'warn'
+
+- name: Restart the product where the service runs
+  ansible.builtin.command:
+    argv: [om, "{{ opensvc_service_name }}", instance, restart, --rid, "app#0"]
+  changed_when: true
+  when:
+    - opensvc_service_existing.rc == 0
+    - opensvc_service_local.status.avail | default('') == 'up'
+    - maintenant_binary_install is changed or opensvc_service_render is changed
+
+- name: Wait for the service to be up on exactly one node, or to fail starting
   ansible.builtin.command:
     argv: [om, cluster, status, -o, json]
   register: opensvc_service_status
@@ -73,7 +125,50 @@
   retries: "{{ opensvc_service_wait_retries }}"
   delay: "{{ opensvc_service_wait_delay }}"
   until: >-
-    (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name] is defined
-    and (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name].avail == 'up'
-    and (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name].up_instances_count | int == 1
+    (opensvc_service_status.stdout | from_json).cluster.node | dict2items
+    | map(attribute='value.instance') | map(attribute=opensvc_service_name, default={})
+    | selectattr('monitor', 'defined') | map(attribute='monitor.state')
+    | select('equalto', 'start failed') | list | length > 0
+    or ((opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name] is defined
+        and (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name].avail == 'up'
+        and (opensvc_service_status.stdout | from_json).cluster.object[opensvc_service_name].up_instances_count | int == 1)
+  run_once: true
+
+- name: Read why the product did not start on this node
+  ansible.builtin.command:
+    argv: [journalctl, --identifier, "{{ opensvc_service_log_identifier }}", --lines, "15", --output, cat, --no-pager]
+  register: opensvc_service_journal
+  changed_when: false
+  when: >-
+    (opensvc_service_status.stdout | from_json).cluster.node[opensvc_service_nodename].instance[opensvc_service_name].monitor.state
+    | default('') == 'start failed'
+    or (opensvc_service_finished.rc | default(0)) != 0
+
+- name: Refuse a service that failed to start
+  ansible.builtin.fail:
+    msg: |-
+      {{ opensvc_service_name }} failed to start on {{ inventory_hostname }}. Last lines of the product:
+      {{ opensvc_service_journal.stdout }}
+      {{ opensvc_service_finished.stderr | default('') }}
+  when: opensvc_service_journal is not skipped
+
+- name: Read the edition the service runs
+  ansible.builtin.uri:
+    url: "http://{{ ha_service_address }}:{{ ha_service_http_port | default(8080) }}/api/v1/license/status"
+    status_code: 200
+  register: opensvc_service_license
+  retries: 12
+  delay: 5
+  until: opensvc_service_license is succeeded
+  run_once: true
+  delegate_to: localhost
+  become: false
+
+- name: Refuse a service that runs below the Pro edition
+  ansible.builtin.assert:
+    that: opensvc_service_license.json.edition == 'pro'
+    fail_msg: >-
+      The service runs the {{ opensvc_service_license.json.edition }} edition
+      ({{ opensvc_service_license.json.status }}: {{ opensvc_service_license.json.message | default('') }}).
+      The high availability options are ignored below Pro.
   run_once: true

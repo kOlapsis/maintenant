@@ -1,0 +1,16 @@
+[Unit]
+Description=Bench witness container
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f {{ lab_witness_container }}
+ExecStart=/usr/bin/docker run --rm --name {{ lab_witness_container }} {{ lab_witness_image }} sleep infinity
+ExecStop=/usr/bin/docker stop -t 1 {{ lab_witness_container }}
+Restart=always
+RestartSec=1
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

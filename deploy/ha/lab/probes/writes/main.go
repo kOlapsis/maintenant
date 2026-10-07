@@ -11,13 +11,13 @@
 // count as loss; an unknown is never counted as a loss and never as a success
 // either, because nobody can say whether it committed (FR-016, FR-019).
 //
-// The record is a heartbeat ping carrying a sequence number as its payload:
-// the pings table is append-only, uncapped, and is the busiest write path the
-// product has, so the instrument writes the way the product does.
+// The record is a heartbeat ping: the pings table is append-only, uncapped, and
+// is the busiest write path the product has, so the instrument writes the way
+// the product does. The server answers the id of the ping it stored, which the
+// journal keeps and the read-back looks for.
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -41,12 +42,8 @@ type record struct {
 	MonoNS int64  `json:"mono_ns"`
 	Class  string `json:"class"`
 	Status int    `json:"status,omitempty"`
+	ID     string `json:"id,omitempty"`
 	Error  string `json:"error,omitempty"`
-}
-
-type payload struct {
-	Seq uint64 `json:"seq"`
-	At  string `json:"at"`
 }
 
 const (
@@ -63,6 +60,8 @@ func main() {
 	rate := flag.Duration("interval", 100*time.Millisecond, "delay between two writes")
 	timeout := flag.Duration("timeout", 2*time.Second, "per-request timeout")
 	journal := flag.String("journal", "writes.ndjson", "ndjson journal of what the server answered")
+	from := flag.String("from", "", "verify: only judge records written at or after this instant, RFC3339")
+	to := flag.String("to", "", "verify: only judge records written at or before this instant, RFC3339")
 	flag.Parse()
 
 	if *base == "" {
@@ -80,7 +79,11 @@ func main() {
 		if *id == "" {
 			fail("-heartbeat is required to verify")
 		}
-		err = verify(*base, *id, *timeout, *journal)
+		var w window
+		if w, err = parseWindow(*from, *to); err != nil {
+			fail(err.Error())
+		}
+		err = verify(*base, *id, *timeout, *journal, w)
 	default:
 		fail("-mode must be generate or verify")
 	}
@@ -158,23 +161,15 @@ func write(c *http.Client, url string, seq uint64, start time.Time, epoch string
 		MonoNS: at.Sub(start).Nanoseconds(),
 	}
 
-	body, err := json.Marshal(payload{Seq: seq, At: r.Wall})
-	if err != nil {
-		r.Class = classRefused
-		r.Error = err.Error()
-		return r
-	}
-
 	reqCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, nil)
 	if err != nil {
 		r.Class = classRefused
 		r.Error = err.Error()
 		return r
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.Do(req)
 	if err != nil {
@@ -183,14 +178,21 @@ func write(c *http.Client, url string, seq uint64, start time.Time, epoch string
 		return r
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
 
 	r.Status = resp.StatusCode
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		r.Class = classAck
-	} else {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		r.Class = classRefused
+		return r
 	}
+	r.Class = classAck
+	var answer struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&answer); err != nil {
+		r.Error = "acknowledged, answer unreadable: " + err.Error()
+	}
+	r.ID = answer.ID
 	return r
 }
 
@@ -210,27 +212,73 @@ func classifyWriteError(err error) string {
 	}
 }
 
+type window struct {
+	from, to time.Time
+}
+
+func parseWindow(fromRaw, toRaw string) (window, error) {
+	var w window
+	var err error
+	if fromRaw != "" {
+		if w.from, err = time.Parse(time.RFC3339, fromRaw); err != nil {
+			return w, fmt.Errorf("-from: %w", err)
+		}
+	}
+	if toRaw != "" {
+		if w.to, err = time.Parse(time.RFC3339, toRaw); err != nil {
+			return w, fmt.Errorf("-to: %w", err)
+		}
+	}
+	return w, nil
+}
+
+func (w window) holds(wall string) bool {
+	if w.from.IsZero() && w.to.IsZero() {
+		return true
+	}
+	at, err := time.Parse(time.RFC3339Nano, wall)
+	if err != nil {
+		return false
+	}
+	return (w.from.IsZero() || !at.Before(w.from)) && (w.to.IsZero() || !at.After(w.to))
+}
+
+// holdsStored widens the window by a second on each side: stored timestamps are truncated to the second.
+func (w window) holdsStored(at time.Time) bool {
+	return (w.from.IsZero() || !at.Before(w.from.Add(-time.Second))) && (w.to.IsZero() || !at.After(w.to.Add(time.Second)))
+}
+
+func (w window) bound(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
 type tally struct {
+	From           string   `json:"from,omitempty"`
+	To             string   `json:"to,omitempty"`
 	Ack            int      `json:"ack"`
 	Refused        int      `json:"refused"`
 	Unknown        int      `json:"unknown"`
 	Lost           int      `json:"lost"`
 	LostSeqs       []uint64 `json:"lost_seqs"`
+	Unrecorded     int      `json:"unrecorded"`
 	UnknownPresent int      `json:"unknown_present"`
 	UnknownAbsent  int      `json:"unknown_absent"`
 	Recorded       int      `json:"recorded"`
 }
 
-func verify(base, id string, timeout time.Duration, journalPath string) error {
+func verify(base, id string, timeout time.Duration, journalPath string, w window) error {
 	f, err := os.Open(journalPath)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
 
-	t := tally{LostSeqs: []uint64{}}
-	acked := map[uint64]bool{}
-	unknown := map[uint64]bool{}
+	t := tally{From: w.bound(w.from), To: w.bound(w.to), LostSeqs: []uint64{}}
+	acked := map[uint64]string{}
+	claimed := map[string]bool{}
 
 	decoder := json.NewDecoder(f)
 	for {
@@ -241,37 +289,48 @@ func verify(base, id string, timeout time.Duration, journalPath string) error {
 			}
 			return fmt.Errorf("journal %s: %w", journalPath, err)
 		}
+		if r.Class == classAck && r.ID != "" {
+			claimed[r.ID] = true
+		}
+		if !w.holds(r.Wall) {
+			continue
+		}
 		switch r.Class {
 		case classAck:
 			t.Ack++
-			acked[r.Seq] = true
+			acked[r.Seq] = r.ID
 		case classRefused:
 			t.Refused++
 		case classUnknown:
 			t.Unknown++
-			unknown[r.Seq] = true
 		}
 	}
 
-	present, err := readBack(base, id, timeout)
+	stored, err := readBack(base, id, timeout)
 	if err != nil {
 		return err
 	}
-	t.Recorded = len(present)
+	t.Recorded = len(stored)
 
-	for seq := range acked {
-		if !present[seq] {
+	// An acknowledgement without an id is the server saying it answered 200 without storing the ping.
+	for seq, pingID := range acked {
+		if pingID == "" {
+			t.Unrecorded++
+		}
+		if _, ok := stored[pingID]; !ok {
 			t.Lost++
 			t.LostSeqs = append(t.LostSeqs, seq)
 		}
 	}
-	for seq := range unknown {
-		if present[seq] {
+	sort.Slice(t.LostSeqs, func(i, j int) bool { return t.LostSeqs[i] < t.LostSeqs[j] })
+
+	// Only this probe writes to the heartbeat, so a stored ping no acknowledgement claims is an unknown that committed.
+	for pingID, at := range stored {
+		if !claimed[pingID] && w.holdsStored(at) {
 			t.UnknownPresent++
-		} else {
-			t.UnknownAbsent++
 		}
 	}
+	t.UnknownAbsent = max(t.Unknown-t.UnknownPresent, 0)
 
 	out, err := json.MarshalIndent(t, "", "  ")
 	if err != nil {
@@ -284,12 +343,14 @@ func verify(base, id string, timeout time.Duration, journalPath string) error {
 	return nil
 }
 
-func readBack(base, id string, timeout time.Duration) (map[uint64]bool, error) {
+func readBack(base, id string, timeout time.Duration) (map[string]time.Time, error) {
 	c := client(timeout)
-	present := map[uint64]bool{}
+	stored := map[string]time.Time{}
 	const page = 500
+	// The API orders pings by a timestamp in whole seconds, so rows sharing one may swap between two pages: pages overlap.
+	const stride = page - 100
 
-	for offset := 0; ; offset += page {
+	for offset := 0; ; offset += stride {
 		url := fmt.Sprintf("%s/api/v1/heartbeats/%s/pings?limit=%d&offset=%d", base, id, page, offset)
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -304,7 +365,8 @@ func readBack(base, id string, timeout time.Duration) (map[uint64]bool, error) {
 		}
 		var body struct {
 			Pings []struct {
-				Payload *string `json:"payload"`
+				ID        string    `json:"id"`
+				Timestamp time.Time `json:"timestamp"`
 			} `json:"pings"`
 			Total int `json:"total"`
 		}
@@ -318,16 +380,10 @@ func readBack(base, id string, timeout time.Duration) (map[uint64]bool, error) {
 			return nil, fmt.Errorf("reading records back: %s", resp.Status)
 		}
 		for _, p := range body.Pings {
-			if p.Payload == nil {
-				continue
-			}
-			var pl payload
-			if json.Unmarshal([]byte(*p.Payload), &pl) == nil && pl.Seq > 0 {
-				present[pl.Seq] = true
-			}
+			stored[p.ID] = p.Timestamp
 		}
 		if len(body.Pings) < page || offset+len(body.Pings) >= body.Total {
-			return present, nil
+			return stored, nil
 		}
 	}
 }

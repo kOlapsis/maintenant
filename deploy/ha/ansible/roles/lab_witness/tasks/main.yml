@@ -1,0 +1,36 @@
+---
+- name: Install Docker
+  ansible.builtin.apt:
+    name: docker.io
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Start Docker
+  ansible.builtin.systemd_service:
+    name: docker.service
+    enabled: true
+    state: started
+
+- name: Pull the witness image
+  ansible.builtin.command:
+    argv: [docker, pull, "{{ lab_witness_image }}"]
+  changed_when: false
+
+- name: Install the witness unit
+  ansible.builtin.template:
+    src: lab-witness.service.j2
+    dest: /etc/systemd/system/lab-witness.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart the witness
+
+- name: Apply the unit before starting it
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the witness
+  ansible.builtin.systemd_service:
+    name: lab-witness.service
+    enabled: true
+    state: started
