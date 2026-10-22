@@ -14,6 +14,11 @@
 </p>
 
 <p align="center">
+  <a href="https://demo.maintenant.dev/"><strong>Try the live demo →</strong></a>
+  <br><sub>A Pro instance monitoring a real stack, read-only. Nothing to install, nothing to sign up for.</sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/kolapsis/maintenant/releases"><img src="https://img.shields.io/github/v/release/kolapsis/maintenant?style=flat-square&color=blue" alt="Release" /></a>
   <a href="https://github.com/kolapsis/maintenant/pkgs/container/maintenant"><img src="https://img.shields.io/badge/ghcr.io-kolapsis%2Fmaintenant-blue?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kolapsis/maintenant?style=flat-square" alt="License" /></a>
@@ -21,7 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-maintenant">Why maintenant</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#agents">Agents</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#editions">Editions</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>
+  <a href="https://demo.maintenant.dev/">Live demo</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#quick-start">Quick Start</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#why-maintenant">Why maintenant</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#agents">Agents</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#features">Features</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://docs.maintenant.dev/">Documentation</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="#editions">Editions</a>&nbsp;&nbsp;&bull;&nbsp;&nbsp;<a href="https://maintenant.dev/pricing/">Pricing</a>
 </p>
 
 ---

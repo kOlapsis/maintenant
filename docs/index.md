@@ -4,6 +4,8 @@
 
 Drop a single container. Watch everything. Sleep at night.
 
+**[Try the live demo](https://demo.maintenant.dev/)**: a Pro instance monitoring a real stack, read-only. Nothing to install, nothing to sign up for.
+
 ---
 
 ## What is maintenant?
