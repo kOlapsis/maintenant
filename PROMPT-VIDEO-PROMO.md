@@ -83,8 +83,8 @@ Chaque ligne indique le temps de début, ce qu'on voit, puis la voix off.
      *« And one alert pipeline, to every channel you use. »*
 5. **46 s, plusieurs hôtes** : un serveur central et huit agents (Docker, Swarm, Kubernetes, Linux) reliés par des flux. Texte : « One server. Every host. », avec les badges « Personal : up to 20 hosts » et « Pro : unlimited ».
    *« One server watches every host. »*
-6. **50,5 s, l'empreinte** : quatre chiffres claquent sur le temps puis se rangent dans une grille : 1 binaire, <30 Mo de RAM, 0 dépendance, 4 environnements.
-   *« One binary. Under thirty megabytes. Zero dependencies. »*
+6. **50,5 s, l'empreinte** : quatre chiffres claquent sur le temps puis se rangent dans une grille : 1 binaire, environ 100 Mo de RAM, 0 dépendance, 4 environnements.
+   *« One binary. About a hundred megabytes. Zero dependencies. »*
 7. **56 s, tableau de bord et MCP** : le tableau de bord s'assemble en 3D. Une discussion avec l'assistant IA pose « What's burning right now? », appelle les outils MCP, puis répond.
    *« And when something breaks, just ask your AI what's burning. »*
 8. **64 s, les éditions** : « Start free. Grow when you need to. » et trois cartes : Community (« free · Apache 2.0 »), Personal et Pro. Chacune liste quelques points et finit par « + and much more… ».
