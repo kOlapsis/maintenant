@@ -13,6 +13,8 @@
 #   to be stolen, and the certificate binds the signature to this workflow file.
 #   deploy/install/install.sh pins that identity, so renaming this file or moving
 #   the jobs breaks every native install until the script is updated too.
+# - The Docker Hub copy is the same manifest list, copied by digest from GHCR
+#   (no rebuild), then signed and attested under the same workflow identity.
 # - Artifacts are independently verifiable: SLSA build provenance on both the
 #   binaries and the image, a CycloneDX SBOM attested in the registry, a Cosign
 #   signature on the image and on SHA256SUMS. See SECURITY.md for the commands.
@@ -487,3 +489,125 @@ jobs:
         run: |
           cp "$BUNDLE" provenance.intoto.jsonl
           gh release upload "$TAG" provenance.intoto.jsonl sbom.cdx.json --clobber
+
+  # Copies the manifest list the pipeline built to Docker Hub by digest, so both
+  # registries serve the identical, already signed image. Nothing is rebuilt and
+  # no project code runs here.
+  mirror-dockerhub:
+    name: Mirror the image to Docker Hub
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    env:
+      DOCKERHUB_IMAGE: docker.io/kolapsis/maintenant
+      DOCKERHUB_SUBJECT: index.docker.io/kolapsis/maintenant
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Validate required secrets
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::error::DOCKERHUB_USERNAME (variable) and DOCKERHUB_TOKEN (secret) must be set."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Same tag rules as the GHCR publication in build-docker.yml.
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.DOCKERHUB_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Copy the manifest list by digest
+        env:
+          SOURCE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            "$SOURCE"
+
+      - name: Check that the digest is unchanged
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          EXPECTED: ${{ needs.build.outputs.digest }}
+        run: |
+          actual="$(docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${VERSION}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')"
+          if [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::Docker Hub digest ${actual} differs from ${EXPECTED}"
+            exit 1
+          fi
+
+      - name: SLSA build provenance attestation (Docker Hub)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.DOCKERHUB_SUBJECT }}
+          subject-digest: ${{ needs.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate the SBOM (Trivy, CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+          format: cyclonedx
+          output: sbom.cdx.json
+
+      - name: Attest the SBOM (Docker Hub)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.DOCKERHUB_SUBJECT }}
+          subject-digest: ${{ needs.build.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the image (keyless Sigstore)
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: cosign sign --yes "${DOCKERHUB_IMAGE}@${DIGEST}"
+
+      # Needs a token with read, write and delete scope; the description is
+      # rendered from deploy/dockerhub/README.md, not from the repository README.
+      - name: Sync the Docker Hub description
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: kolapsis/maintenant
+          readme-filepath: deploy/dockerhub/README.md
+          short-description: "Self-hosted Docker, Swarm and Kubernetes monitoring: containers, endpoints, certificates, alerts."

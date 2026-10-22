@@ -71,6 +71,7 @@ LABEL org.opencontainers.image.title="maintenant" \
       org.opencontainers.image.source="https://github.com/kOlapsis/maintenant" \
       org.opencontainers.image.vendor="kOlapsis" \
       org.opencontainers.image.licenses="Apache-2.0 AND LicenseRef-Maintenant-Commercial" \
+      io.modelcontextprotocol.server.name="io.github.kOlapsis/maintenant" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${COMMIT}" \
       org.opencontainers.image.created="${BUILD_DATE}"
