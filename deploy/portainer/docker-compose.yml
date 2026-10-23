@@ -1,0 +1,45 @@
+services:
+  socketproxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: "1"
+      IMAGES: "1"
+      INFO: "1"
+      NETWORKS: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [dockerapi]
+    read_only: true
+    tmpfs: [/run, /tmp]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  maintenant:
+    image: ghcr.io/kolapsis/maintenant:latest
+    ports:
+      - "${MAINTENANT_PORT:-8080}:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    environment:
+      DOCKER_HOST: tcp://socketproxy:2375
+      MAINTENANT_ADDR: "0.0.0.0:8080"
+      MAINTENANT_DB: "/data/maintenant.db"
+      MAINTENANT_BASE_URL: "${MAINTENANT_BASE_URL:-http://localhost:8080}"
+    volumes:
+      - /proc:/host/proc:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - maintenant-data:/data
+    networks: [dockerapi, default]
+    depends_on: [socketproxy]
+    restart: unless-stopped
+
+networks:
+  dockerapi:
+    internal: true
+
+volumes:
+  maintenant-data:
