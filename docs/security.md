@@ -365,9 +365,11 @@ The proxy's session cookie travels with every request a browser makes, including
 
 ### Host header
 
-A DNS rebinding attack points a domain the attacker controls at the address of your instance, so a page on that domain can read the API and the dashboard from the visitor's browser. maintenant therefore checks the `Host` header: outside the public routes, a request whose host name is not accepted gets `421` with `{"error":{"code":"misdirected_request","message":"Host not allowed"}}`. A request without a `Host` header is refused the same way. The port and the case of the header do not matter.
+A DNS rebinding attack points a domain the attacker controls at the address of your instance, so a page on that domain can read the API and the dashboard from the visitor's browser. maintenant therefore checks the `Host` header: outside the public routes, a request whose host name is not accepted gets `421` with `{"error":{"code":"misdirected_request","message":"Host not allowed: add it to MAINTENANT_BASE_URL or MAINTENANT_ALLOWED_HOSTS"}}`. A request without a `Host` header is refused the same way. The port and the case of the header do not matter.
 
-The accepted host names are `localhost`, `127.0.0.1`, `::1`, the host of `MAINTENANT_ADDR` (unless it is `0.0.0.0` or `::`), and either the entries of `MAINTENANT_ALLOWED_HOSTS` or, when it is not set, the hosts of `MAINTENANT_BASE_URL` and `MAINTENANT_STATUS_URL`:
+An IP address is always accepted, IPv4 or IPv6, because a rebinding attack goes through a domain name and never through an IP address. Opening the dashboard at `http://192.168.1.10:8080` therefore works without any setting. Only host names have to be declared.
+
+The accepted host names are `localhost`, the host of `MAINTENANT_ADDR` (unless it is `0.0.0.0` or `::`), and either the entries of `MAINTENANT_ALLOWED_HOSTS` or, when it is not set, the hosts of `MAINTENANT_BASE_URL` and `MAINTENANT_STATUS_URL`:
 
 ```bash
 MAINTENANT_ALLOWED_HOSTS=now.example.com,monitor.lan
