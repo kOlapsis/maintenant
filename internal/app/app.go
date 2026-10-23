@@ -792,7 +792,7 @@ func (a *App) warnDefaultAllowedHosts() {
 	if ip := net.ParseIP(h); h == "localhost" || (ip != nil && ip.IsLoopback()) {
 		return
 	}
-	a.logger.Warn("MAINTENANT_ALLOWED_HOSTS is not set, accepting the default hosts only",
+	a.logger.Warn("MAINTENANT_ALLOWED_HOSTS is not set, accepting IP addresses and the default host names only",
 		"hosts", slices.Sorted(maps.Keys(a.cfg.AllowedHostSet())))
 }
 

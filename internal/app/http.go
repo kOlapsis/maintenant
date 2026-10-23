@@ -244,7 +244,7 @@ func statusHostFilter(statusHost, baseHost string, next http.Handler) http.Handl
 	})
 }
 
-// hostGuard answers 421 when the Host of a request outside the public routes is not an accepted one.
+// hostGuard answers 421 when the Host of a request outside the public routes is neither an IP address nor an accepted name.
 func hostGuard(allowed map[string]struct{}, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -252,8 +252,9 @@ func hostGuard(allowed map[string]struct{}, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if _, ok := allowed[hostname(r.Host)]; !ok {
-			v1.WriteError(w, http.StatusMisdirectedRequest, "misdirected_request", "Host not allowed")
+		name := hostname(r.Host)
+		if _, ok := allowed[name]; !ok && net.ParseIP(name) == nil {
+			v1.WriteError(w, http.StatusMisdirectedRequest, "misdirected_request", "Host not allowed: add it to MAINTENANT_BASE_URL or MAINTENANT_ALLOWED_HOSTS")
 			return
 		}
 		next.ServeHTTP(w, r)
