@@ -193,13 +193,16 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, id string, input UpdateHe
 	if input.IntervalSeconds != nil && (*input.IntervalSeconds < MinIntervalSeconds || *input.IntervalSeconds > MaxIntervalSeconds) {
 		return nil, fmt.Errorf("%w: interval must be %d-%d seconds", ErrInvalidInput, MinIntervalSeconds, MaxIntervalSeconds)
 	}
-	if input.GraceSeconds != nil {
-		maxGrace := h.IntervalSeconds
+	if input.IntervalSeconds != nil || input.GraceSeconds != nil {
+		interval, grace := h.IntervalSeconds, h.GraceSeconds
 		if input.IntervalSeconds != nil {
-			maxGrace = *input.IntervalSeconds
+			interval = *input.IntervalSeconds
 		}
-		if *input.GraceSeconds < 0 || *input.GraceSeconds > maxGrace {
-			return nil, fmt.Errorf("%w: grace must be 0-%d seconds", ErrInvalidInput, maxGrace)
+		if input.GraceSeconds != nil {
+			grace = *input.GraceSeconds
+		}
+		if grace < 0 || grace > interval {
+			return nil, fmt.Errorf("%w: grace must be 0-%d seconds", ErrInvalidInput, interval)
 		}
 	}
 
@@ -207,7 +210,26 @@ func (s *Service) UpdateHeartbeat(ctx context.Context, id string, input UpdateHe
 		return nil, err
 	}
 
-	return s.store.GetHeartbeatByID(ctx, id)
+	updated, err := s.store.GetHeartbeatByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, ErrHeartbeatNotFound
+	}
+
+	payload := map[string]interface{}{
+		"heartbeat_id":     updated.ID,
+		"name":             updated.Name,
+		"interval_seconds": updated.IntervalSeconds,
+		"grace_seconds":    updated.GraceSeconds,
+	}
+	if updated.NextDeadlineAt != nil {
+		payload["next_deadline_at"] = updated.NextDeadlineAt
+	}
+	s.emitEvent(event.HeartbeatUpdated, payload)
+
+	return updated, nil
 }
 
 func (s *Service) DeleteHeartbeat(ctx context.Context, id string) error {

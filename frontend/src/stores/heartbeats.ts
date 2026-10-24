@@ -83,6 +83,27 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
     }
   }
 
+  function onUpdated(e: MessageEvent) {
+    let data
+    try {
+      data = JSON.parse(e.data)
+    } catch {
+      return
+    }
+    const idx = heartbeats.value.findIndex((hb) => hb.id === data.heartbeat_id)
+    if (idx >= 0) {
+      heartbeats.value[idx] = {
+        ...heartbeats.value[idx]!,
+        name: data.name,
+        interval_seconds: data.interval_seconds,
+        grace_seconds: data.grace_seconds,
+        next_deadline_at: data.next_deadline_at,
+      }
+    } else {
+      fetchHeartbeats()
+    }
+  }
+
   function onAlert(e: MessageEvent) {
     let data
     try {
@@ -133,6 +154,7 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
     sseBus.on('heartbeat.created', onCreated)
     sseBus.on('heartbeat.ping_received', onPingReceived)
     sseBus.on('heartbeat.status_changed', onStatusChanged)
+    sseBus.on('heartbeat.updated', onUpdated)
     sseBus.on('heartbeat.alert', onAlert)
     sseBus.on('heartbeat.recovery', onRecovery)
     sseBus.on('heartbeat.deleted', onDeleted)
@@ -144,6 +166,7 @@ export const useHeartbeatsStore = defineStore('heartbeats', () => {
     sseBus.off('heartbeat.created', onCreated)
     sseBus.off('heartbeat.ping_received', onPingReceived)
     sseBus.off('heartbeat.status_changed', onStatusChanged)
+    sseBus.off('heartbeat.updated', onUpdated)
     sseBus.off('heartbeat.alert', onAlert)
     sseBus.off('heartbeat.recovery', onRecovery)
     sseBus.off('heartbeat.deleted', onDeleted)

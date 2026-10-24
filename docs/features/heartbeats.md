@@ -166,6 +166,14 @@ POST /api/v1/heartbeats/{id}/resume
 
 Pausing a heartbeat that is already paused, or resuming one that is not paused, answers `400 INVALID_INPUT`. An unknown heartbeat answers `404`. Every pause is recorded and kept with the ping history. A ping that arrives while the heartbeat is paused puts it back to `up`.
 
+### Edit a Heartbeat
+
+Change the name, the interval or the grace period from the **Edit** button of the detail panel, or with `PUT /api/v1/heartbeats/{id}`. The heartbeat keeps its id, its ping URL and its whole history, so the jobs that ping it need no change.
+
+When the interval or the grace period changes, the deadline of a heartbeat that is `up` or `started` is recomputed from the same starting point as before: the last ping, the start of the current run, or the resume after a pause when no ping has arrived since. The new deadline is that starting point plus the new interval plus the new grace period. A heartbeat that is `new` or `paused` has no deadline and keeps none; a heartbeat that is `down` stays down until its next ping. Editing never raises nor resolves an alert by itself: if the recomputed deadline is already past, the next deadline check marks the heartbeat `down` and raises the usual `deadline_missed` alert.
+
+The grace period must stay between 0 and the interval. Lowering the interval under the current grace period answers `400 INVALID_INPUT`, as does any value outside the limits given for creation.
+
 ### Rotate the Ping Token
 
 Replace the ping token of a heartbeat, from the **Rotate token** button of its detail panel or through the API:

@@ -129,6 +129,13 @@ func (s *HeartbeatStore) UpdateHeartbeat(ctx context.Context, id string, input h
 		query += `, grace_seconds=?`
 		args = append(args, *input.GraceSeconds)
 	}
+	if input.IntervalSeconds != nil || input.GraceSeconds != nil {
+		// Every SET expression reads the row as it was before this UPDATE, so the shift uses the old window.
+		query += `, next_deadline_at = CASE WHEN status IN ('up','started')
+			THEN next_deadline_at - interval_seconds - grace_seconds + COALESCE(?, interval_seconds) + COALESCE(?, grace_seconds)
+			ELSE next_deadline_at END`
+		args = append(args, input.IntervalSeconds, input.GraceSeconds)
+	}
 
 	query += ` WHERE id=?`
 	args = append(args, id)

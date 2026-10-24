@@ -38,14 +38,3 @@ export function formatInterval(intervalSeconds: number): string {
   if (days === 1) return 'Every day'
   return `Every ${days} days`
 }
-
-/**
- * Computes the next expected ping datetime based on the last ping and interval.
- * @param lastPingAt ISO 8601 timestamp of the last ping
- * @param intervalSeconds Interval in seconds between expected pings
- * @returns Date of the next expected ping
- */
-export function nextExpectedPing(lastPingAt: string, intervalSeconds: number): Date {
-  const last = new Date(lastPingAt)
-  return new Date(last.getTime() + intervalSeconds * 1000)
-}
